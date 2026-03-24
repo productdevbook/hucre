@@ -6,7 +6,7 @@
   <br><br>
   Zero-dependency spreadsheet engine.
   <br>
-  Read & write XLSX, CSV. Schema validation, streaming, tree-shakeable. Pure TypeScript, works everywhere.
+  Read & write XLSX, CSV, ODS. Schema validation, streaming, round-trip preservation. Pure TypeScript, works everywhere.
   <br><br>
   <a href="https://npmjs.com/package/defter"><img src="https://img.shields.io/npm/v/defter?style=flat&colorA=18181B&colorB=34d399" alt="npm version"></a>
   <a href="https://npmjs.com/package/defter"><img src="https://img.shields.io/npm/dm/defter?style=flat&colorA=18181B&colorB=34d399" alt="npm downloads"></a>
@@ -118,7 +118,7 @@ const buffer = await writeXlsx({
 });
 ```
 
-Features: cell styles (fonts, fills, borders, alignment), auto column widths, merged cells, freeze panes, auto-filter, data validation (dropdowns), hyperlinks, number formats, formulas, multiple sheets, hidden sheets.
+Features: cell styles, auto column widths, merged cells, freeze panes, auto-filter, data validation, hyperlinks, images, comments, tables, conditional formatting, named ranges, print settings, sheet protection, rich text, number formats, formulas, hidden sheets.
 
 ### Auto Column Width
 
@@ -202,6 +202,91 @@ const buffer = await writeXlsx({
     },
   ],
 });
+```
+
+### Streaming
+
+Process large files row-by-row without loading everything into memory:
+
+```ts
+import { streamXlsxRows, XlsxStreamWriter } from "defter/xlsx";
+
+// Stream read — async generator yields rows one at a time
+for await (const row of streamXlsxRows(buffer)) {
+  console.log(row.index, row.values);
+}
+
+// Stream write — add rows incrementally
+const writer = new XlsxStreamWriter({
+  name: "BigData",
+  columns: [{ header: "ID" }, { header: "Value" }],
+  freezePane: { rows: 1 },
+});
+for (let i = 0; i < 100_000; i++) {
+  writer.addRow([i + 1, Math.random()]);
+}
+const buffer = await writer.finish();
+```
+
+### ODS (OpenDocument)
+
+```ts
+import { readOds, writeOds } from "defter/ods";
+
+const wb = await readOds(buffer);
+const ods = await writeOds({ sheets: [{ name: "Sheet1", rows: [["Hello", 42]] }] });
+```
+
+### Round-trip Preservation
+
+Open, modify, save — without losing charts, macros, or features defter doesn't natively handle:
+
+```ts
+import { openXlsx, saveXlsx } from "defter/xlsx";
+
+const workbook = await openXlsx(buffer);
+workbook.sheets[0].rows[0][0] = "Updated!";
+const output = await saveXlsx(workbook); // Charts, VBA, themes preserved
+```
+
+### Unified API
+
+Auto-detect format and work with simple helpers:
+
+```ts
+import { read, write, readObjects, writeObjects } from "defter";
+
+// Auto-detect XLSX vs ODS
+const wb = await read(buffer);
+
+// Quick: file → array of objects
+const products = await readObjects<{ name: string; price: number }>(buffer);
+
+// Quick: objects → XLSX
+const xlsx = await writeObjects(products, { sheetName: "Products" });
+```
+
+### CLI
+
+```bash
+npx defter convert input.xlsx output.csv
+npx defter convert input.csv output.xlsx
+npx defter inspect file.xlsx
+npx defter inspect file.xlsx --sheet 0
+npx defter validate data.xlsx --schema schema.json
+```
+
+### Sheet Operations
+
+Manipulate sheet data in memory:
+
+```ts
+import { insertRows, deleteRows, cloneSheet, moveSheet } from "defter";
+
+insertRows(sheet, 5, 3); // Insert 3 rows at position 5
+deleteRows(sheet, 0, 1); // Delete first row
+const copy = cloneSheet(sheet, "Copy"); // Deep clone
+moveSheet(workbook, 0, 2); // Reorder sheets
 ```
 
 ### CSV
@@ -297,28 +382,55 @@ defter works everywhere — no Node.js APIs (`fs`, `crypto`, `Buffer`) in core.
 ## Architecture
 
 ```
-defter (18 KB gzipped)
-├── zip/          Zero-dep DEFLATE/inflate + ZIP read/write
-├── xml/          SAX parser + XML writer (CSP-compliant, no eval)
+defter (~37 KB gzipped)
+├── zip/            Zero-dep DEFLATE/inflate + ZIP read/write
+├── xml/            SAX parser + XML writer (CSP-compliant, no eval)
 ├── xlsx/
-│   ├── reader    Shared strings, styles, worksheets, relationships
-│   └── writer    Styles collector, shared strings dedup, worksheet gen
-├── csv/          RFC 4180 parser/writer, auto-detect, type inference
-├── _date         Timezone-safe serial ↔ Date, Lotus bug, 1900/1904
-├── _schema       Schema validation, type coercion, error collection
-└── _types        Full TypeScript type definitions
+│   ├── reader      Shared strings, styles, worksheets, relationships
+│   ├── writer      Styles, shared strings, drawing, tables, comments
+│   ├── roundtrip   Open → modify → save with preservation
+│   ├── stream-*    Streaming reader (AsyncGenerator) + writer
+│   └── auto-width  Font-aware column width calculation
+├── ods/            OpenDocument Spreadsheet read/write
+├── csv/            RFC 4180 parser/writer + streaming
+├── defter          Unified read/write API, format auto-detect
+├── sheet-ops       Insert/delete/move rows+cols, clone, copy
+├── worker          Web Worker serialization helpers
+├── _date           Timezone-safe serial ↔ Date, Lotus bug, 1900/1904
+├── _schema         Schema validation, type coercion, error collection
+└── cli             Convert, inspect, validate (citty + consola)
 ```
 
 Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`DecompressionStream` Web APIs with a pure TS fallback.
 
 ## API Reference
 
+### High-level
+
+| Function                       | Description                                       |
+| ------------------------------ | ------------------------------------------------- |
+| `read(input, options?)`        | Auto-detect format (XLSX/ODS), returns `Workbook` |
+| `write(options)`               | Write XLSX or ODS (via `format` option)           |
+| `readObjects(input, options?)` | File → array of objects (first row = headers)     |
+| `writeObjects(data, options?)` | Objects → XLSX/ODS                                |
+
 ### XLSX
 
-| Function                    | Description                                 |
-| --------------------------- | ------------------------------------------- |
-| `readXlsx(input, options?)` | Parse XLSX from `Uint8Array \| ArrayBuffer` |
-| `writeXlsx(options)`        | Generate XLSX, returns `Uint8Array`         |
+| Function                          | Description                                   |
+| --------------------------------- | --------------------------------------------- |
+| `readXlsx(input, options?)`       | Parse XLSX from `Uint8Array \| ArrayBuffer`   |
+| `writeXlsx(options)`              | Generate XLSX, returns `Uint8Array`           |
+| `openXlsx(input, options?)`       | Open for round-trip (preserves unknown parts) |
+| `saveXlsx(workbook)`              | Save round-trip workbook back to XLSX         |
+| `streamXlsxRows(input, options?)` | AsyncGenerator yielding rows one at a time    |
+| `XlsxStreamWriter`                | Class for incremental row-by-row XLSX writing |
+
+### ODS
+
+| Function                   | Description                          |
+| -------------------------- | ------------------------------------ |
+| `readOds(input, options?)` | Parse ODS (OpenDocument Spreadsheet) |
+| `writeOds(options)`        | Generate ODS                         |
 
 ### CSV
 
@@ -329,38 +441,47 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `writeCsv(rows, options?)`         | Write `CellValue[][]` → CSV string           |
 | `writeCsvObjects(data, options?)`  | Write objects → CSV string                   |
 | `detectDelimiter(input)`           | Auto-detect delimiter character              |
-| `stripBom(input)`                  | Remove BOM from string                       |
-| `formatCsvValue(value, options?)`  | Format single value for CSV                  |
+| `streamCsvRows(input, options?)`   | Generator yielding CSV rows                  |
+| `CsvStreamWriter`                  | Class for incremental CSV writing            |
 
-### Schema
+### Sheet Operations
+
+| Function                                | Description                  |
+| --------------------------------------- | ---------------------------- |
+| `insertRows(sheet, index, count)`       | Insert rows, shift down      |
+| `deleteRows(sheet, index, count)`       | Delete rows, shift up        |
+| `insertColumns(sheet, index, count)`    | Insert columns, shift right  |
+| `deleteColumns(sheet, index, count)`    | Delete columns, shift left   |
+| `moveRows(sheet, from, count, to)`      | Move rows                    |
+| `cloneSheet(sheet, name)`               | Deep clone a sheet           |
+| `copySheetToWorkbook(sheet, wb, name?)` | Copy sheet between workbooks |
+| `copyRange(sheet, source, target)`      | Copy cell range within sheet |
+| `moveSheet(wb, from, to)`               | Reorder sheets               |
+| `removeSheet(wb, index)`                | Remove a sheet               |
+
+### Schema & Validation
 
 | Function                                     | Description                        |
 | -------------------------------------------- | ---------------------------------- |
 | `validateWithSchema(rows, schema, options?)` | Validate & coerce data with schema |
 
-### Date
+### Date Utilities
 
-| Function                        | Description                                         |
-| ------------------------------- | --------------------------------------------------- |
-| `serialToDate(serial, is1904?)` | Excel serial → Date (UTC)                           |
-| `dateToSerial(date, is1904?)`   | Date → Excel serial                                 |
-| `isDateFormat(numFmt)`          | Check if format string is date                      |
-| `formatDate(date, format)`      | Format Date with Excel format string                |
-| `parseDate(value)`              | Parse date string → Date or null                    |
-| `serialToTime(serial)`          | Serial fraction → `{ hours, minutes, seconds, ms }` |
-| `timeToSerial(h, m, s?, ms?)`   | Time components → serial fraction                   |
+| Function                        | Description                          |
+| ------------------------------- | ------------------------------------ |
+| `serialToDate(serial, is1904?)` | Excel serial → Date (UTC)            |
+| `dateToSerial(date, is1904?)`   | Date → Excel serial                  |
+| `isDateFormat(numFmt)`          | Check if format string is date       |
+| `formatDate(date, format)`      | Format Date with Excel format string |
+| `parseDate(value)`              | Parse date string → Date or null     |
 
-### Errors
+### Web Worker Helpers
 
-| Class                    | When                      |
-| ------------------------ | ------------------------- |
-| `DefterError`            | Base error class          |
-| `ParseError`             | Invalid file structure    |
-| `ZipError`               | ZIP archive issues        |
-| `XmlError`               | Malformed XML             |
-| `ValidationError`        | Schema validation failure |
-| `UnsupportedFormatError` | Unknown file format       |
-| `EncryptedFileError`     | Password-protected file   |
+| Function                    | Description                                                          |
+| --------------------------- | -------------------------------------------------------------------- |
+| `serializeWorkbook(wb)`     | Convert Workbook for `postMessage` (Maps → objects, Dates → strings) |
+| `deserializeWorkbook(data)` | Restore Workbook from serialized form                                |
+| `WORKER_SAFE_FUNCTIONS`     | List of all defter functions safe for Web Workers (all of them)      |
 
 ## Development
 
@@ -377,7 +498,7 @@ pnpm typecheck    # tsgo
 
 Contributions are welcome! Please [open an issue](https://github.com/productdevbook/defter/issues) or submit a PR.
 
-See the [issue tracker](https://github.com/productdevbook/defter/issues) for planned features — there are 39 tracked issues covering everything from ODS support to chart creation.
+35 of 39 planned features are implemented. See the [issue tracker](https://github.com/productdevbook/defter/issues) for remaining items (XLS BIFF, encryption, charts, pivot tables).
 
 ## License
 
