@@ -118,7 +118,91 @@ const buffer = await writeXlsx({
 });
 ```
 
-Features: cell styles (fonts, fills, borders, alignment), column widths, merged cells, freeze panes, auto-filter, number formats, formulas, multiple sheets, hidden sheets.
+Features: cell styles (fonts, fills, borders, alignment), auto column widths, merged cells, freeze panes, auto-filter, data validation (dropdowns), hyperlinks, number formats, formulas, multiple sheets, hidden sheets.
+
+### Auto Column Width
+
+```ts
+const buffer = await writeXlsx({
+  sheets: [
+    {
+      name: "Products",
+      columns: [
+        { header: "Name", key: "name", autoWidth: true },
+        { header: "Price", key: "price", autoWidth: true, numFmt: "$#,##0.00" },
+        { header: "SKU", key: "sku", autoWidth: true },
+      ],
+      data: products,
+    },
+  ],
+});
+```
+
+Calculates optimal column widths from cell content — font-aware, handles CJK double-width characters, number formats, min/max constraints.
+
+### Data Validation
+
+```ts
+const buffer = await writeXlsx({
+  sheets: [
+    {
+      name: "Sheet1",
+      rows: [
+        ["Status", "Quantity"],
+        ["active", 10],
+      ],
+      dataValidations: [
+        {
+          type: "list",
+          values: ["active", "inactive", "draft"],
+          range: "A2:A100",
+          showErrorMessage: true,
+          errorTitle: "Invalid",
+          errorMessage: "Pick from the list",
+        },
+        {
+          type: "whole",
+          operator: "between",
+          formula1: "0",
+          formula2: "1000",
+          range: "B2:B100",
+        },
+      ],
+    },
+  ],
+});
+```
+
+### Hyperlinks
+
+```ts
+const buffer = await writeXlsx({
+  sheets: [
+    {
+      name: "Links",
+      rows: [["Visit Google", "Go to Sheet2"]],
+      cells: new Map([
+        [
+          "0,0",
+          {
+            value: "Visit Google",
+            type: "string",
+            hyperlink: { target: "https://google.com", tooltip: "Open Google" },
+          },
+        ],
+        [
+          "0,1",
+          {
+            value: "Go to Sheet2",
+            type: "string",
+            hyperlink: { target: "", location: "Sheet2!A1" },
+          },
+        ],
+      ]),
+    },
+  ],
+});
+```
 
 ### CSV
 

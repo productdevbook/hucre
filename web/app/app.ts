@@ -197,6 +197,7 @@ function setupWrite() {
       const sheetName = ($("write-name") as HTMLInputElement).value || "Sheet1";
       const freezeRows = parseInt(($("write-freeze") as HTMLInputElement).value) || 0;
       const autoFilter = ($("write-autofilter") as HTMLInputElement).checked;
+      const autoWidth = ($("write-autowidth") as HTMLInputElement).checked;
 
       const columns: Record<string, { header?: string; width?: number; numFmt?: string }> = rawCols;
       const sheet: WriteSheet = {
@@ -207,6 +208,7 @@ function setupWrite() {
           header: col.header || key,
           width: col.width,
           numFmt: col.numFmt,
+          autoWidth: autoWidth && !col.width,
         })),
         freezePane: freezeRows > 0 ? { rows: freezeRows } : undefined,
         autoFilter: autoFilter

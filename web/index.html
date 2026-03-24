@@ -113,10 +113,13 @@
                   <label for="write-freeze">Freeze Rows</label>
                   <input id="write-freeze" type="number" value="1" min="0" max="10" />
                 </div>
-                <div class="field full">
+                <div class="field">
                   <label>
                     <input id="write-autofilter" type="checkbox" checked /> Auto Filter
                   </label>
+                </div>
+                <div class="field">
+                  <label> <input id="write-autowidth" type="checkbox" checked /> Auto Width </label>
                 </div>
               </div>
             </details>
@@ -128,11 +131,11 @@
                   <label for="write-cols">Column Config (JSON)</label>
                   <textarea id="write-cols" rows="6" spellcheck="false">
 {
-  "name": { "header": "Product Name", "width": 25 },
-  "price": { "header": "Price", "width": 12, "numFmt": "$#,##0.00" },
-  "sku": { "header": "SKU", "width": 15 },
-  "stock": { "header": "Stock", "width": 10 },
-  "active": { "header": "Active", "width": 10 }
+  "name": { "header": "Product Name" },
+  "price": { "header": "Price", "numFmt": "$#,##0.00" },
+  "sku": { "header": "SKU" },
+  "stock": { "header": "Stock" },
+  "active": { "header": "Active" }
 }</textarea
                   >
                 </div>
