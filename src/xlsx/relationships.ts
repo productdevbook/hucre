@@ -7,6 +7,7 @@ export interface Relationship {
   id: string;
   type: string;
   target: string;
+  targetMode?: string;
 }
 
 /**
@@ -24,8 +25,11 @@ export function parseRelationships(xml: string): Relationship[] {
       const id = child.attrs["Id"] ?? "";
       const type = child.attrs["Type"] ?? "";
       const target = child.attrs["Target"] ?? "";
+      const targetMode = child.attrs["TargetMode"];
       if (id && type && target) {
-        rels.push({ id, type, target });
+        const rel: Relationship = { id, type, target };
+        if (targetMode) rel.targetMode = targetMode;
+        rels.push(rel);
       }
     }
   }

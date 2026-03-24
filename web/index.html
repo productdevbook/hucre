@@ -34,8 +34,8 @@
       <!-- ═══════ READ XLSX ═══════ -->
       <section class="panel active" data-panel="read">
         <p class="panel-desc">
-          Drop an XLSX file to parse it. All cell types, shared strings, dates,
-          and merged cells are handled correctly.
+          Drop an XLSX file to parse it. All cell types, shared strings, dates, and merged cells are
+          handled correctly.
         </p>
         <div class="split">
           <div class="controls">
@@ -57,14 +57,10 @@
                   <input id="read-header" type="number" value="1" min="0" />
                 </div>
                 <div class="field">
-                  <label>
-                    <input id="read-styles" type="checkbox" /> Read Styles
-                  </label>
+                  <label> <input id="read-styles" type="checkbox" /> Read Styles </label>
                 </div>
                 <div class="field">
-                  <label>
-                    <input id="read-dates" type="checkbox" checked /> Detect Dates
-                  </label>
+                  <label> <input id="read-dates" type="checkbox" checked /> Detect Dates </label>
                 </div>
               </div>
             </details>
@@ -74,7 +70,7 @@
 
           <div class="preview">
             <div class="output" id="read-output">
-              <p style="color:var(--text-dim);text-align:center;padding:3rem 0">
+              <p style="color: var(--text-dim); text-align: center; padding: 3rem 0">
                 Drop an XLSX file to see parsed data
               </p>
             </div>
@@ -95,13 +91,15 @@
           <div class="controls">
             <div class="field full">
               <label for="write-data">JSON Data</label>
-              <textarea id="write-data" rows="12" spellcheck="false">[
+              <textarea id="write-data" rows="12" spellcheck="false">
+[
   { "name": "Widget", "price": 9.99, "sku": "WDG-001", "stock": 142, "active": true },
   { "name": "Gadget", "price": 24.50, "sku": "GDG-002", "stock": 87, "active": true },
   { "name": "Bolt", "price": 0.75, "sku": "BLT-003", "stock": 3420, "active": false },
   { "name": "Cable", "price": 12.00, "sku": "CBL-004", "stock": 256, "active": true },
   { "name": "Sensor", "price": 45.99, "sku": "SNS-005", "stock": 64, "active": true }
-]</textarea>
+]</textarea
+              >
             </div>
 
             <details class="section" open>
@@ -128,13 +126,15 @@
               <div class="field-grid">
                 <div class="field full">
                   <label for="write-cols">Column Config (JSON)</label>
-                  <textarea id="write-cols" rows="6" spellcheck="false">{
+                  <textarea id="write-cols" rows="6" spellcheck="false">
+{
   "name": { "header": "Product Name", "width": 25 },
   "price": { "header": "Price", "width": 12, "numFmt": "$#,##0.00" },
   "sku": { "header": "SKU", "width": 15 },
   "stock": { "header": "Stock", "width": 10 },
   "active": { "header": "Active", "width": 10 }
-}</textarea>
+}</textarea
+                  >
                 </div>
               </div>
             </details>
@@ -142,7 +142,7 @@
 
           <div class="preview">
             <div class="output" id="write-output">
-              <p style="color:var(--text-dim);text-align:center;padding:3rem 0">
+              <p style="color: var(--text-dim); text-align: center; padding: 3rem 0">
                 Click "Generate XLSX" to preview
               </p>
             </div>
@@ -157,18 +157,21 @@
       <!-- ═══════ CSV ═══════ -->
       <section class="panel" data-panel="csv">
         <p class="panel-desc">
-          Parse and generate CSV with auto-delimiter detection, type inference, and RFC 4180 compliance.
+          Parse and generate CSV with auto-delimiter detection, type inference, and RFC 4180
+          compliance.
         </p>
         <div class="split">
           <div class="controls">
             <div class="field full">
               <label for="csv-input">CSV Input</label>
-              <textarea id="csv-input" rows="10" spellcheck="false">name,price,sku,stock,active
+              <textarea id="csv-input" rows="10" spellcheck="false">
+name,price,sku,stock,active
 Widget,9.99,WDG-001,142,true
 Gadget,24.50,GDG-002,87,true
 "Bolt, Standard",0.75,BLT-003,3420,false
 Cable,12.00,CBL-004,256,true
-Sensor,45.99,SNS-005,64,true</textarea>
+Sensor,45.99,SNS-005,64,true</textarea
+              >
             </div>
 
             <details class="section" open>
@@ -178,26 +181,20 @@ Sensor,45.99,SNS-005,64,true</textarea>
                   <label for="csv-delim">Delimiter</label>
                   <select id="csv-delim">
                     <option value="auto" selected>Auto-detect</option>
-                    <option value=",">,  (comma)</option>
+                    <option value=",">, (comma)</option>
                     <option value=";">; (semicolon)</option>
                     <option value="&#9;">⇥ (tab)</option>
                     <option value="|">| (pipe)</option>
                   </select>
                 </div>
                 <div class="field">
-                  <label>
-                    <input id="csv-header" type="checkbox" checked /> Has Header
-                  </label>
+                  <label> <input id="csv-header" type="checkbox" checked /> Has Header </label>
                 </div>
                 <div class="field">
-                  <label>
-                    <input id="csv-types" type="checkbox" checked /> Type Inference
-                  </label>
+                  <label> <input id="csv-types" type="checkbox" checked /> Type Inference </label>
                 </div>
                 <div class="field">
-                  <label>
-                    <input id="csv-skip-empty" type="checkbox" /> Skip Empty
-                  </label>
+                  <label> <input id="csv-skip-empty" type="checkbox" /> Skip Empty </label>
                 </div>
               </div>
             </details>
@@ -205,7 +202,7 @@ Sensor,45.99,SNS-005,64,true</textarea>
 
           <div class="preview">
             <div class="output" id="csv-output">
-              <p style="color:var(--text-dim);text-align:center;padding:3rem 0">
+              <p style="color: var(--text-dim); text-align: center; padding: 3rem 0">
                 Edit CSV and click Parse
               </p>
             </div>
@@ -221,35 +218,40 @@ Sensor,45.99,SNS-005,64,true</textarea>
       <!-- ═══════ SCHEMA ═══════ -->
       <section class="panel" data-panel="schema">
         <p class="panel-desc">
-          Validate spreadsheet data against a schema. Type coercion, pattern matching, min/max, enums.
+          Validate spreadsheet data against a schema. Type coercion, pattern matching, min/max,
+          enums.
         </p>
         <div class="split">
           <div class="controls">
             <div class="field full">
               <label for="schema-data">Sample Data (CSV)</label>
-              <textarea id="schema-data" rows="8" spellcheck="false">Name,Price,SKU,Stock,Status
+              <textarea id="schema-data" rows="8" spellcheck="false">
+Name,Price,SKU,Stock,Status
 Widget,9.99,WDG-001,142,active
 ,24.50,GDG-002,87,active
 Bolt,abc,BLT-003,3420,inactive
 Cable,12.00,CBL-004,-5,active
-Sensor,45.99,SNS-005,64,unknown</textarea>
+Sensor,45.99,SNS-005,64,unknown</textarea
+              >
             </div>
 
             <div class="field full">
               <label for="schema-def">Schema Definition (JSON)</label>
-              <textarea id="schema-def" rows="14" spellcheck="false">{
+              <textarea id="schema-def" rows="14" spellcheck="false">
+{
   "Name": { "type": "string", "required": true },
   "Price": { "type": "number", "required": true, "min": 0 },
   "SKU": { "type": "string", "required": true, "pattern": "^[A-Z]{3}-\\d{3}$" },
   "Stock": { "type": "integer", "min": 0 },
   "Status": { "type": "string", "enum": ["active", "inactive", "draft"] }
-}</textarea>
+}</textarea
+              >
             </div>
           </div>
 
           <div class="preview">
             <div class="output" id="schema-output">
-              <p style="color:var(--text-dim);text-align:center;padding:3rem 0">
+              <p style="color: var(--text-dim); text-align: center; padding: 3rem 0">
                 Click "Validate" to check data against schema
               </p>
             </div>

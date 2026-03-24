@@ -163,12 +163,6 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
 
   // 10. Parse each worksheet
   const readStyles = options?.readStyles ?? false;
-  const worksheetCtx = {
-    sharedStrings,
-    styles: parsedStyles,
-    readStyles,
-    dateSystem,
-  };
 
   const sheets = [];
   for (const info of sheetsToRead) {
@@ -176,6 +170,25 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
     if (!wsPath || !zip.has(wsPath)) {
       throw new ParseError(`Invalid XLSX: missing worksheet file for sheet "${info.name}"`);
     }
+
+    // Check for worksheet-level relationships (hyperlinks, etc.)
+    const wsDir = dirname(wsPath);
+    const wsFileName = wsPath.slice(wsDir.length + 1);
+    const wsRelsPath = wsDir ? `${wsDir}/_rels/${wsFileName}.rels` : `_rels/${wsFileName}.rels`;
+    let worksheetRels: Relationship[] | undefined;
+    if (zip.has(wsRelsPath)) {
+      const wsRelsXml = decodeUtf8(await zip.extract(wsRelsPath));
+      worksheetRels = parseRelationships(wsRelsXml);
+    }
+
+    const worksheetCtx = {
+      sharedStrings,
+      styles: parsedStyles,
+      readStyles,
+      dateSystem,
+      worksheetRels,
+    };
+
     const wsXml = decodeUtf8(await zip.extract(wsPath));
     const sheet = parseWorksheet(wsXml, info.name, worksheetCtx);
     if (info.state === "hidden") sheet.hidden = true;

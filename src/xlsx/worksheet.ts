@@ -1,9 +1,21 @@
 // ── Worksheet Parser ─────────────────────────────────────────────────
 // Parses xl/worksheets/sheetN.xml into a Sheet object.
 
-import type { Sheet, Cell, CellValue, MergeRange, RichTextRun, FontStyle } from "../_types";
+import type {
+  Sheet,
+  Cell,
+  CellValue,
+  MergeRange,
+  RichTextRun,
+  FontStyle,
+  Hyperlink,
+  DataValidation,
+  ValidationType,
+  ValidationOperator,
+} from "../_types";
 import type { SharedString } from "./shared-strings";
 import type { ParsedStyles } from "./styles";
+import type { Relationship } from "./relationships";
 import { resolveStyle, isDateStyle } from "./styles";
 import { serialToDate } from "../_date";
 import { parseSax, decodeOoxmlEscapes } from "../xml/parser";
@@ -15,6 +27,8 @@ export interface WorksheetContext {
   styles: ParsedStyles | null;
   readStyles: boolean;
   dateSystem: "1900" | "1904";
+  /** Worksheet-level relationships (from xl/worksheets/_rels/sheetN.xml.rels) */
+  worksheetRels?: Relationship[];
 }
 
 // ── Cell Reference Parsing ───────────────────────────────────────────
@@ -81,6 +95,19 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   let maxRow = -1;
   let hasCells = false;
 
+  // Hyperlinks parsed from <hyperlinks> section
+  interface RawHyperlink {
+    ref: string;
+    rId?: string;
+    location?: string;
+    tooltip?: string;
+    display?: string;
+  }
+  const rawHyperlinks: RawHyperlink[] = [];
+
+  // Data validations parsed from <dataValidations> section
+  const dataValidations: DataValidation[] = [];
+
   // SAX parsing state
   let inSheetData = false;
   let inRow = false;
@@ -90,6 +117,16 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   let inInlineStr = false;
   let inInlineT = false;
   let inMergeCells = false;
+  let inHyperlinks = false;
+  let inDataValidations = false;
+  let inDataValidation = false;
+  let inDvFormula1 = false;
+  let inDvFormula2 = false;
+
+  // Current data validation state
+  let dvFormula1Text = "";
+  let dvFormula2Text = "";
+  let dvAttrs: Record<string, string> = {};
 
   // Rich text in inline strings
   let inInlineR = false;
@@ -170,6 +207,38 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
             merges.push(parseRangeRef(attrs["ref"]));
           }
           break;
+        case "hyperlinks":
+          inHyperlinks = true;
+          break;
+        case "hyperlink":
+          if (inHyperlinks && attrs["ref"]) {
+            const hl: RawHyperlink = { ref: attrs["ref"] };
+            // r:id for external hyperlinks
+            const rId = attrs["r:id"] ?? attrs["R:id"];
+            if (rId) hl.rId = rId;
+            if (attrs["location"]) hl.location = attrs["location"];
+            if (attrs["tooltip"]) hl.tooltip = attrs["tooltip"];
+            if (attrs["display"]) hl.display = attrs["display"];
+            rawHyperlinks.push(hl);
+          }
+          break;
+        case "dataValidations":
+          inDataValidations = true;
+          break;
+        case "dataValidation":
+          if (inDataValidations) {
+            inDataValidation = true;
+            dvAttrs = { ...attrs };
+            dvFormula1Text = "";
+            dvFormula2Text = "";
+          }
+          break;
+        case "formula1":
+          if (inDataValidation) inDvFormula1 = true;
+          break;
+        case "formula2":
+          if (inDataValidation) inDvFormula2 = true;
+          break;
         default:
           // Handle font property tags inside rPr
           if (inInlineRPr && currentRunFont) {
@@ -189,6 +258,10 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
         inlineText += text;
       } else if (inInlineRT) {
         currentRunText += text;
+      } else if (inDvFormula1) {
+        dvFormula1Text += text;
+      } else if (inDvFormula2) {
+        dvFormula2Text += text;
       }
     },
 
@@ -259,6 +332,27 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
         case "mergeCells":
           inMergeCells = false;
           break;
+        case "hyperlinks":
+          inHyperlinks = false;
+          break;
+        case "dataValidations":
+          inDataValidations = false;
+          break;
+        case "dataValidation":
+          if (inDataValidation) {
+            const dv = buildDataValidation(dvAttrs, dvFormula1Text, dvFormula2Text);
+            if (dv) {
+              dataValidations.push(dv);
+            }
+            inDataValidation = false;
+          }
+          break;
+        case "formula1":
+          inDvFormula1 = false;
+          break;
+        case "formula2":
+          inDvFormula2 = false;
+          break;
         default:
           if (inInlineRPr) {
             _fontPropTag = "";
@@ -282,6 +376,49 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
     }
   }
 
+  // ── Resolve hyperlinks ──
+  // Build a map of rId → target URL from worksheet relationships
+  const relMap = new Map<string, string>();
+  if (ctx.worksheetRels) {
+    for (const rel of ctx.worksheetRels) {
+      relMap.set(rel.id, rel.target);
+    }
+  }
+
+  for (const hl of rawHyperlinks) {
+    const pos = parseCellRef(hl.ref);
+    const key = `${pos.row},${pos.col}`;
+
+    // Get or create cell in the cells map
+    let cell = cells.get(key);
+    if (!cell) {
+      cell = {
+        value: (rows[pos.row] && rows[pos.row][pos.col]) ?? null,
+        type: "string",
+      };
+      cells.set(key, cell);
+    }
+
+    const hyperlink: Hyperlink = { target: "" };
+
+    if (hl.location) {
+      // Internal hyperlink
+      hyperlink.location = hl.location;
+      hyperlink.target = hl.location;
+    } else if (hl.rId) {
+      // External hyperlink — resolve from relationships
+      const target = relMap.get(hl.rId);
+      if (target) {
+        hyperlink.target = target;
+      }
+    }
+
+    if (hl.tooltip) hyperlink.tooltip = hl.tooltip;
+    if (hl.display) hyperlink.display = hl.display;
+
+    cell.hyperlink = hyperlink;
+  }
+
   const sheet: Sheet = {
     name,
     rows,
@@ -293,8 +430,103 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   if (merges.length > 0) {
     sheet.merges = merges;
   }
+  if (dataValidations.length > 0) {
+    sheet.dataValidations = dataValidations;
+  }
 
   return sheet;
+}
+
+// ── Data Validation Builder ─────────────────────────────────────────
+
+const VALID_TYPES = new Set<string>([
+  "list",
+  "whole",
+  "decimal",
+  "date",
+  "time",
+  "textLength",
+  "custom",
+]);
+const VALID_OPERATORS = new Set<string>([
+  "between",
+  "notBetween",
+  "equal",
+  "notEqual",
+  "greaterThan",
+  "lessThan",
+  "greaterThanOrEqual",
+  "lessThanOrEqual",
+]);
+
+function buildDataValidation(
+  attrs: Record<string, string>,
+  formula1Text: string,
+  formula2Text: string,
+): DataValidation | null {
+  const typeStr = attrs["type"];
+  if (!typeStr || !VALID_TYPES.has(typeStr)) return null;
+
+  const sqref = attrs["sqref"];
+  if (!sqref) return null;
+
+  const dv: DataValidation = {
+    type: typeStr as ValidationType,
+    range: sqref,
+  };
+
+  // Operator
+  const operatorStr = attrs["operator"];
+  if (operatorStr && VALID_OPERATORS.has(operatorStr)) {
+    dv.operator = operatorStr as ValidationOperator;
+  }
+
+  // Boolean flags (XLSX uses "1" for true)
+  if (attrs["allowBlank"] === "1" || attrs["allowBlank"] === "true") {
+    dv.allowBlank = true;
+  }
+  if (attrs["showInputMessage"] === "1" || attrs["showInputMessage"] === "true") {
+    dv.showInputMessage = true;
+  }
+  if (attrs["showErrorMessage"] === "1" || attrs["showErrorMessage"] === "true") {
+    dv.showErrorMessage = true;
+  }
+
+  // Error style
+  const errorStyle = attrs["errorStyle"];
+  if (errorStyle === "stop" || errorStyle === "warning" || errorStyle === "information") {
+    dv.errorStyle = errorStyle;
+  }
+
+  // Input/error messages (XLSX uses promptTitle/prompt for input messages)
+  if (attrs["promptTitle"]) dv.inputTitle = attrs["promptTitle"];
+  if (attrs["prompt"]) dv.inputMessage = attrs["prompt"];
+  if (attrs["errorTitle"]) dv.errorTitle = attrs["errorTitle"];
+  if (attrs["error"]) dv.errorMessage = attrs["error"];
+
+  // Formulas
+  if (formula1Text) {
+    if (typeStr === "list") {
+      // Check if formula1 is a quoted comma-separated list: "val1,val2,val3"
+      const trimmed = formula1Text.trim();
+      if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+        // Quoted list — parse into values array
+        const inner = trimmed.slice(1, -1);
+        dv.values = inner.split(",");
+      } else {
+        // Formula reference (e.g. Sheet2!$A$1:$A$10)
+        dv.formula1 = formula1Text;
+      }
+    } else {
+      dv.formula1 = formula1Text;
+    }
+  }
+
+  if (formula2Text) {
+    dv.formula2 = formula2Text;
+  }
+
+  return dv;
 }
 
 // ── Cell Processing ──────────────────────────────────────────────────

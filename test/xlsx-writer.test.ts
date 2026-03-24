@@ -419,7 +419,7 @@ describe("writeWorksheetXml", () => {
     const styles = createStylesCollector();
     const ss = createSharedStrings();
 
-    const xml = writeWorksheetXml(sheet, styles, ss);
+    const xml = writeWorksheetXml(sheet, styles, ss).xml;
     const doc = parseXml(xml);
 
     const sheetData = findChild(doc, "sheetData");
@@ -466,7 +466,7 @@ describe("writeWorksheetXml", () => {
     const styles = createStylesCollector();
     const ss = createSharedStrings();
 
-    const xml = writeWorksheetXml(sheet, styles, ss);
+    const xml = writeWorksheetXml(sheet, styles, ss).xml;
     const doc = parseXml(xml);
 
     const sheetData = findChild(doc, "sheetData");
@@ -489,7 +489,7 @@ describe("writeWorksheetXml", () => {
     const styles = createStylesCollector();
     const ss = createSharedStrings();
 
-    const xml = writeWorksheetXml(sheet, styles, ss);
+    const xml = writeWorksheetXml(sheet, styles, ss).xml;
     const doc = parseXml(xml);
 
     const sheetData = findChild(doc, "sheetData");
@@ -524,7 +524,7 @@ describe("writeWorksheetXml", () => {
     const styles = createStylesCollector();
     const ss = createSharedStrings();
 
-    const xml = writeWorksheetXml(sheet, styles, ss);
+    const xml = writeWorksheetXml(sheet, styles, ss).xml;
     const doc = parseXml(xml);
 
     const sheetData = findChild(doc, "sheetData");
@@ -553,7 +553,7 @@ describe("writeWorksheetXml", () => {
     const styles = createStylesCollector();
     const ss = createSharedStrings();
 
-    const xml = writeWorksheetXml(sheet, styles, ss);
+    const xml = writeWorksheetXml(sheet, styles, ss).xml;
     const doc = parseXml(xml);
 
     const mergeCellsEl = findChild(doc, "mergeCells");
@@ -573,7 +573,7 @@ describe("writeWorksheetXml", () => {
     const styles = createStylesCollector();
     const ss = createSharedStrings();
 
-    const xml = writeWorksheetXml(sheet, styles, ss);
+    const xml = writeWorksheetXml(sheet, styles, ss).xml;
     const doc = parseXml(xml);
 
     const sheetViews = findChild(doc, "sheetViews");
@@ -598,7 +598,7 @@ describe("writeWorksheetXml", () => {
     const styles = createStylesCollector();
     const ss = createSharedStrings();
 
-    const xml = writeWorksheetXml(sheet, styles, ss);
+    const xml = writeWorksheetXml(sheet, styles, ss).xml;
     const doc = parseXml(xml);
 
     const sheetViews = findChild(doc, "sheetViews");
@@ -617,7 +617,7 @@ describe("writeWorksheetXml", () => {
     const styles = createStylesCollector();
     const ss = createSharedStrings();
 
-    const xml = writeWorksheetXml(sheet, styles, ss);
+    const xml = writeWorksheetXml(sheet, styles, ss).xml;
     const doc = parseXml(xml);
 
     const sheetViews = findChild(doc, "sheetViews");
@@ -640,7 +640,7 @@ describe("writeWorksheetXml", () => {
     const styles = createStylesCollector();
     const ss = createSharedStrings();
 
-    const xml = writeWorksheetXml(sheet, styles, ss);
+    const xml = writeWorksheetXml(sheet, styles, ss).xml;
     const doc = parseXml(xml);
 
     const autoFilter = findChild(doc, "autoFilter");
@@ -657,7 +657,7 @@ describe("writeWorksheetXml", () => {
     const styles = createStylesCollector();
     const ss = createSharedStrings();
 
-    const xml = writeWorksheetXml(sheet, styles, ss);
+    const xml = writeWorksheetXml(sheet, styles, ss).xml;
     const doc = parseXml(xml);
 
     const colsEl = findChild(doc, "cols");
@@ -684,7 +684,7 @@ describe("writeWorksheetXml", () => {
     const styles = createStylesCollector();
     const ss = createSharedStrings();
 
-    const xml = writeWorksheetXml(sheet, styles, ss);
+    const xml = writeWorksheetXml(sheet, styles, ss).xml;
     const doc = parseXml(xml);
 
     const sheetData = findChild(doc, "sheetData");

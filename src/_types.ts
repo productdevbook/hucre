@@ -194,6 +194,8 @@ export interface ColumnDef {
   key?: string;
   /** Column width in characters */
   width?: number;
+  /** Auto-calculate optimal width from cell content */
+  autoWidth?: boolean;
   /** Default style for the column */
   style?: CellStyle;
   /** Number format */

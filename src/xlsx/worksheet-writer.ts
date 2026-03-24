@@ -1,10 +1,23 @@
 // ── Worksheet XML Writer ─────────────────────────────────────────────
 // Generates xl/worksheets/sheetN.xml for an XLSX package.
 
-import type { WriteSheet, CellValue, CellStyle } from "../_types";
+import type { WriteSheet, CellValue, CellStyle, DataValidation } from "../_types";
 import type { StylesCollector } from "./styles-writer";
 import { dateToSerial } from "../_date";
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer";
+import { calculateColumnWidth } from "./auto-width";
+
+// ── Hyperlink Relationship ────────────────────────────────────────
+
+export interface HyperlinkRelationship {
+  id: string;
+  target: string;
+}
+
+export interface WorksheetResult {
+  xml: string;
+  hyperlinkRelationships: HyperlinkRelationship[];
+}
 
 const NS_SPREADSHEET = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -105,13 +118,13 @@ const DEFAULT_DATE_FORMAT = "yyyy-mm-dd";
 
 // ── Worksheet Writer ───────────────────────────────────────────────
 
-/** Generate xl/worksheets/sheetN.xml */
+/** Generate xl/worksheets/sheetN.xml along with any hyperlink relationships */
 export function writeWorksheetXml(
   sheet: WriteSheet,
   styles: StylesCollector,
   sharedStrings: SharedStringsCollector,
   dateSystem?: "1900" | "1904",
-): string {
+): WorksheetResult {
   const is1904 = dateSystem === "1904";
 
   // Resolve rows from data or rows
@@ -188,13 +201,29 @@ export function writeWorksheetXml(
     const colElements: string[] = [];
     for (let i = 0; i < sheet.columns.length; i++) {
       const col = sheet.columns[i];
-      if (col.width !== undefined || col.hidden || col.outlineLevel) {
+
+      // Calculate auto-width if requested and no explicit width is set
+      let effectiveWidth = col.width;
+      if (col.autoWidth && effectiveWidth === undefined) {
+        const columnValues: CellValue[] = [];
+        for (const row of resolvedRows) {
+          if (row && i < row.length && row[i]) {
+            columnValues.push(row[i]!.value);
+          }
+        }
+        effectiveWidth = calculateColumnWidth(columnValues, {
+          font: col.style?.font,
+          numFmt: col.numFmt ?? col.style?.numFmt,
+        });
+      }
+
+      if (effectiveWidth !== undefined || col.hidden || col.outlineLevel) {
         const colAttrs: Record<string, string | number | boolean> = {
           min: i + 1,
           max: i + 1,
         };
-        if (col.width !== undefined) {
-          colAttrs["width"] = col.width;
+        if (effectiveWidth !== undefined) {
+          colAttrs["width"] = effectiveWidth;
           colAttrs["customWidth"] = true;
         }
         if (col.hidden) {
@@ -254,7 +283,21 @@ export function writeWorksheetXml(
     parts.push(xmlSelfClose("autoFilter", { ref: sheet.autoFilter.range }));
   }
 
-  return xmlDocument("worksheet", { xmlns: NS_SPREADSHEET, "xmlns:r": NS_R }, parts);
+  // ── Data Validations ──
+  if (sheet.dataValidations && sheet.dataValidations.length > 0) {
+    parts.push(serializeDataValidations(sheet.dataValidations));
+  }
+
+  // ── Hyperlinks ──
+  const { xml: hyperlinksXml, relationships: hyperlinkRelationships } = collectHyperlinks(sheet);
+  if (hyperlinksXml) {
+    parts.push(hyperlinksXml);
+  }
+
+  return {
+    xml: xmlDocument("worksheet", { xmlns: NS_SPREADSHEET, "xmlns:r": NS_R }, parts),
+    hyperlinkRelationships,
+  };
 }
 
 // ── Row Resolution ─────────────────────────────────────────────────
@@ -429,4 +472,128 @@ function serializeCell(
   }
 
   return null;
+}
+
+// ── Data Validation Serialization ─────────────────────────────────
+
+/** Serialize data validations into a `<dataValidations>` XML block */
+function serializeDataValidations(validations: DataValidation[]): string {
+  const dvElements: string[] = [];
+
+  for (const dv of validations) {
+    const attrs: Record<string, string | number> = {
+      type: dv.type,
+      sqref: dv.range,
+    };
+
+    if (dv.operator) {
+      attrs["operator"] = dv.operator;
+    }
+    if (dv.allowBlank) {
+      attrs["allowBlank"] = 1;
+    }
+    if (dv.showInputMessage) {
+      attrs["showInputMessage"] = 1;
+    }
+    if (dv.showErrorMessage) {
+      attrs["showErrorMessage"] = 1;
+    }
+    if (dv.errorStyle) {
+      attrs["errorStyle"] = dv.errorStyle;
+    }
+    if (dv.inputTitle) {
+      attrs["promptTitle"] = dv.inputTitle;
+    }
+    if (dv.inputMessage) {
+      attrs["prompt"] = dv.inputMessage;
+    }
+    if (dv.errorTitle) {
+      attrs["errorTitle"] = dv.errorTitle;
+    }
+    if (dv.errorMessage) {
+      attrs["error"] = dv.errorMessage;
+    }
+
+    // Build formula children
+    const children: string[] = [];
+
+    if (dv.type === "list" && dv.values && dv.values.length > 0) {
+      // List with explicit values: formula1 is quoted, comma-separated
+      const quotedList = `"${dv.values.join(",")}"`;
+      children.push(xmlElement("formula1", undefined, xmlEscape(quotedList)));
+    } else if (dv.formula1 !== undefined) {
+      children.push(xmlElement("formula1", undefined, xmlEscape(dv.formula1)));
+    }
+
+    if (dv.formula2 !== undefined) {
+      children.push(xmlElement("formula2", undefined, xmlEscape(dv.formula2)));
+    }
+
+    if (children.length > 0) {
+      dvElements.push(xmlElement("dataValidation", attrs, children));
+    } else {
+      dvElements.push(xmlSelfClose("dataValidation", attrs));
+    }
+  }
+
+  return xmlElement("dataValidations", { count: validations.length }, dvElements);
+}
+
+// ── Hyperlink Collection ──────────────────────────────────────────
+
+/**
+ * Collect hyperlinks from the sheet's cell overrides and generate
+ * the `<hyperlinks>` XML section plus external relationship entries.
+ */
+export function collectHyperlinks(sheet: WriteSheet): {
+  xml: string;
+  relationships: HyperlinkRelationship[];
+} {
+  if (!sheet.cells) {
+    return { xml: "", relationships: [] };
+  }
+
+  const hyperlinkElements: string[] = [];
+  const relationships: HyperlinkRelationship[] = [];
+  let rIdCounter = 1;
+
+  for (const [key, cellOverride] of sheet.cells) {
+    if (!cellOverride.hyperlink) continue;
+
+    const [rowStr, colStr] = key.split(",");
+    const r = parseInt(rowStr, 10);
+    const c = parseInt(colStr, 10);
+    const ref = cellRef(r, c);
+    const hl = cellOverride.hyperlink;
+
+    const attrs: Record<string, string> = { ref };
+
+    if (hl.location) {
+      // Internal hyperlink — uses location attribute directly, no relationship needed
+      attrs["location"] = hl.location;
+    } else if (hl.target) {
+      // External hyperlink — needs a relationship entry
+      const rId = `rId${rIdCounter++}`;
+      attrs["r:id"] = rId;
+      relationships.push({ id: rId, target: hl.target });
+    }
+
+    if (hl.tooltip) {
+      attrs["tooltip"] = hl.tooltip;
+    }
+    if (hl.display) {
+      attrs["display"] = hl.display;
+    }
+
+    hyperlinkElements.push(xmlSelfClose("hyperlink", attrs));
+  }
+
+  if (hyperlinkElements.length === 0) {
+    return { xml: "", relationships: [] };
+  }
+
+  return {
+    xml: xmlElement("hyperlinks", undefined, hyperlinkElements),
+    relationships,
+  };
 }

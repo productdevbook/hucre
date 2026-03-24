@@ -7,8 +7,14 @@ import { writeContentTypes } from "./content-types-writer";
 import { writeRootRels, writeWorkbookXml, writeWorkbookRels } from "./workbook-writer";
 import { createStylesCollector } from "./styles-writer";
 import { createSharedStrings, writeSharedStringsXml, writeWorksheetXml } from "./worksheet-writer";
+import type { WorksheetResult } from "./worksheet-writer";
+import { xmlDocument, xmlSelfClose } from "../xml/writer";
 
 const encoder = /* @__PURE__ */ new TextEncoder();
+
+const NS_RELATIONSHIPS = "http://schemas.openxmlformats.org/package/2006/relationships";
+const REL_HYPERLINK =
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";
 
 /**
  * Write a Workbook to XLSX format.
@@ -22,10 +28,10 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
   const sharedStrings = createSharedStrings();
 
   // Generate worksheet XMLs (also populates styles and shared strings)
-  const worksheetXmls: string[] = [];
+  const worksheetResults: WorksheetResult[] = [];
   for (const sheet of sheets) {
-    const xml = writeWorksheetXml(sheet, styles, sharedStrings, dateSystem);
-    worksheetXmls.push(xml);
+    const result = writeWorksheetXml(sheet, styles, sharedStrings, dateSystem);
+    worksheetResults.push(result);
   }
 
   const hasSharedStrings = sharedStrings.count() > 0;
@@ -59,9 +65,27 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
     zip.add("xl/sharedStrings.xml", encoder.encode(writeSharedStringsXml(sharedStrings)));
   }
 
-  // xl/worksheets/sheetN.xml
-  for (let i = 0; i < worksheetXmls.length; i++) {
-    zip.add(`xl/worksheets/sheet${i + 1}.xml`, encoder.encode(worksheetXmls[i]));
+  // xl/worksheets/sheetN.xml + optional xl/worksheets/_rels/sheetN.xml.rels
+  for (let i = 0; i < worksheetResults.length; i++) {
+    const result = worksheetResults[i];
+    zip.add(`xl/worksheets/sheet${i + 1}.xml`, encoder.encode(result.xml));
+
+    // Generate worksheet .rels for external hyperlinks
+    if (result.hyperlinkRelationships.length > 0) {
+      const relElements: string[] = [];
+      for (const rel of result.hyperlinkRelationships) {
+        relElements.push(
+          xmlSelfClose("Relationship", {
+            Id: rel.id,
+            Type: REL_HYPERLINK,
+            Target: rel.target,
+            TargetMode: "External",
+          }),
+        );
+      }
+      const relsXml = xmlDocument("Relationships", { xmlns: NS_RELATIONSHIPS }, relElements);
+      zip.add(`xl/worksheets/_rels/sheet${i + 1}.xml.rels`, encoder.encode(relsXml));
+    }
   }
 
   return zip.build();

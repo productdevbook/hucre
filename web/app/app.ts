@@ -43,7 +43,11 @@ function $(id: string) {
 }
 
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function cellClass(v: CellValue): string {
@@ -115,7 +119,7 @@ async function handleReadFile(file: File) {
     let headers: string[];
     let dataRows: CellValue[][];
     if (headerRow > 0 && rows.length > 0) {
-      headers = (rows[headerRow - 1] || []).map((v, i) => v != null ? String(v) : `Col ${i + 1}`);
+      headers = (rows[headerRow - 1] || []).map((v, i) => (v != null ? String(v) : `Col ${i + 1}`));
       dataRows = rows.slice(headerRow);
     } else {
       headers = (rows[0] || []).map((_, i) => `Col ${i + 1}`);
@@ -168,10 +172,7 @@ function setupRead() {
 
   $("read-download").addEventListener("click", () => {
     if (!lastReadResult) return;
-    const csv = writeCsv(
-      [lastReadResult.headers, ...lastReadResult.rows],
-      { bom: true },
-    );
+    const csv = writeCsv([lastReadResult.headers, ...lastReadResult.rows], { bom: true });
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -208,7 +209,11 @@ function setupWrite() {
           numFmt: col.numFmt,
         })),
         freezePane: freezeRows > 0 ? { rows: freezeRows } : undefined,
-        autoFilter: autoFilter ? { range: `A1:${String.fromCharCode(64 + Object.keys(columns).length)}${rawData.length + 1}` } : undefined,
+        autoFilter: autoFilter
+          ? {
+              range: `A1:${String.fromCharCode(64 + Object.keys(columns).length)}${rawData.length + 1}`,
+            }
+          : undefined,
       };
 
       const result = await writeXlsx({ sheets: [sheet] });
@@ -268,7 +273,9 @@ function setupCsv() {
           skipEmptyRows,
         });
         const headers = result.headers;
-        const rows = result.data.map((obj) => headers.map((h) => (obj as Record<string, CellValue>)[h] ?? null));
+        const rows = result.data.map((obj) =>
+          headers.map((h) => (obj as Record<string, CellValue>)[h] ?? null),
+        );
         lastCsvParsed = { headers, rows };
         output.innerHTML = renderTable(headers, rows);
       } else {
@@ -304,11 +311,13 @@ function setupCsv() {
     if (!lastCsvParsed) return;
     try {
       const result = await writeXlsx({
-        sheets: [{
-          name: "CSV Import",
-          columns: lastCsvParsed.headers.map((h) => ({ header: h, key: h })),
-          rows: [lastCsvParsed.headers, ...lastCsvParsed.rows],
-        }],
+        sheets: [
+          {
+            name: "CSV Import",
+            columns: lastCsvParsed.headers.map((h) => ({ header: h, key: h })),
+            rows: [lastCsvParsed.headers, ...lastCsvParsed.rows],
+          },
+        ],
       });
       const blob = new Blob([result], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -337,7 +346,9 @@ function setupSchema() {
 
       // Convert pattern strings to RegExp
       const schema: SchemaDefinition = {};
-      for (const [key, field] of Object.entries(schemaDef) as Array<[string, Record<string, unknown>]>) {
+      for (const [key, field] of Object.entries(schemaDef) as Array<
+        [string, Record<string, unknown>]
+      >) {
         schema[key] = { ...field } as SchemaDefinition[string];
         if (typeof field["pattern"] === "string") {
           schema[key].pattern = new RegExp(field["pattern"] as string);
@@ -359,7 +370,8 @@ function setupSchema() {
       // Valid data table
       if (result.data.length > 0) {
         const headers = Object.keys(schema);
-        html += '<div style="margin-bottom:0.5rem;color:var(--accent);font-weight:600;font-size:0.8rem">VALID ROWS</div>';
+        html +=
+          '<div style="margin-bottom:0.5rem;color:var(--accent);font-weight:600;font-size:0.8rem">VALID ROWS</div>';
         html += "<table><thead><tr>";
         for (const h of headers) html += `<th>${escapeHtml(h)}</th>`;
         html += "</tr></thead><tbody>";
@@ -376,8 +388,10 @@ function setupSchema() {
 
       // Errors
       if (result.errors.length > 0) {
-        html += '<div style="margin-top:1rem;margin-bottom:0.5rem;color:var(--error);font-weight:600;font-size:0.8rem">VALIDATION ERRORS</div>';
-        html += "<table><thead><tr><th>Row</th><th>Field</th><th>Message</th><th>Value</th></tr></thead><tbody>";
+        html +=
+          '<div style="margin-top:1rem;margin-bottom:0.5rem;color:var(--error);font-weight:600;font-size:0.8rem">VALIDATION ERRORS</div>';
+        html +=
+          "<table><thead><tr><th>Row</th><th>Field</th><th>Message</th><th>Value</th></tr></thead><tbody>";
         for (const err of result.errors) {
           html += `<tr>
             <td class="num">${err.row}</td>
