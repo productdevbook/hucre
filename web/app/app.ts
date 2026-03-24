@@ -6,6 +6,10 @@ import {
   detectDelimiter,
   writeCsv,
   validateWithSchema,
+  streamXlsxRows,
+  XlsxStreamWriter,
+  readOds,
+  writeOds,
 } from "defter";
 import type { CellValue, WriteSheet, SchemaDefinition } from "defter";
 
@@ -413,6 +417,192 @@ function setupSchema() {
   });
 }
 
+// ── Streaming ─────────────────────────────────────────────────────
+
+let lastStreamBlob: Blob | null = null;
+
+function setupStreaming() {
+  $("stream-generate").addEventListener("click", async () => {
+    const output = $("stream-output");
+    const rowCount = parseInt(($("stream-rows") as HTMLInputElement).value) || 10000;
+    const colCount = parseInt(($("stream-cols") as HTMLInputElement).value) || 5;
+
+    try {
+      output.innerHTML = '<p style="color:var(--text-dim);text-align:center">Generating...</p>';
+
+      const t0 = performance.now();
+
+      // Write with streaming writer
+      const headers = Array.from({ length: colCount }, (_, i) => `Col ${i + 1}`);
+      const writer = new XlsxStreamWriter({
+        name: "StreamData",
+        columns: headers.map((h) => ({ header: h, key: h })),
+        freezePane: { rows: 1 },
+      });
+
+      for (let r = 0; r < rowCount; r++) {
+        const row: CellValue[] = [];
+        for (let c = 0; c < colCount; c++) {
+          row.push(c === 0 ? `Row ${r + 1}` : Math.round(Math.random() * 10000) / 100);
+        }
+        writer.addRow(row);
+      }
+
+      const xlsxBuffer = await writer.finish();
+      const writeTime = performance.now() - t0;
+
+      // Read back with streaming reader
+      const t1 = performance.now();
+      let streamedRows = 0;
+      let firstRow: CellValue[] | null = null;
+      let lastRow: CellValue[] | null = null;
+
+      for await (const row of streamXlsxRows(xlsxBuffer)) {
+        streamedRows++;
+        if (streamedRows === 1) firstRow = row.values;
+        lastRow = row.values;
+      }
+
+      const readTime = performance.now() - t1;
+      const fileSize = (xlsxBuffer.byteLength / 1024).toFixed(1);
+
+      let html = '<div class="stats" style="margin-bottom:1rem">';
+      html += `<div class="stat"><div class="value">${rowCount.toLocaleString()}</div><div class="label">Rows Written</div></div>`;
+      html += `<div class="stat"><div class="value">${streamedRows.toLocaleString()}</div><div class="label">Rows Read</div></div>`;
+      html += `<div class="stat"><div class="value">${writeTime.toFixed(0)}ms</div><div class="label">Write Time</div></div>`;
+      html += `<div class="stat"><div class="value">${readTime.toFixed(0)}ms</div><div class="label">Read Time</div></div>`;
+      html += `<div class="stat"><div class="value">${fileSize} KB</div><div class="label">File Size</div></div>`;
+      html += "</div>";
+
+      if (firstRow) {
+        html +=
+          '<div style="color:var(--accent);font-weight:600;font-size:0.8rem;margin-bottom:0.5rem">FIRST ROW</div>';
+        html += `<div style="font-family:monospace;font-size:0.8rem;color:var(--text-muted);margin-bottom:1rem">${firstRow.map((v) => escapeHtml(String(v))).join(" | ")}</div>`;
+      }
+      if (lastRow) {
+        html +=
+          '<div style="color:var(--accent);font-weight:600;font-size:0.8rem;margin-bottom:0.5rem">LAST ROW</div>';
+        html += `<div style="font-family:monospace;font-size:0.8rem;color:var(--text-muted)">${lastRow.map((v) => escapeHtml(String(v))).join(" | ")}</div>`;
+      }
+
+      output.innerHTML = html;
+
+      lastStreamBlob = new Blob([xlsxBuffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      ($("stream-download") as HTMLButtonElement).disabled = false;
+    } catch (e: unknown) {
+      output.innerHTML = `<p class="error">${escapeHtml(String(e))}</p>`;
+    }
+  });
+
+  $("stream-download").addEventListener("click", () => {
+    if (!lastStreamBlob) return;
+    const url = URL.createObjectURL(lastStreamBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "stream-data.xlsx";
+    a.click();
+    URL.revokeObjectURL(url);
+    toast("XLSX downloaded");
+  });
+}
+
+// ── ODS ───────────────────────────────────────────────────────────
+
+let lastOdsBlob: Blob | null = null;
+
+async function handleOdsFile(file: File) {
+  const output = $("ods-output");
+  try {
+    output.innerHTML = '<p style="color:var(--text-dim);text-align:center">Parsing...</p>';
+    const buffer = await file.arrayBuffer();
+    const data = new Uint8Array(buffer);
+    const wb = await readOds(data);
+
+    if (wb.sheets.length === 0) {
+      output.innerHTML = '<p class="error">No sheets found</p>';
+      return;
+    }
+
+    const sheet = wb.sheets[0];
+    const rows = sheet.rows;
+    const headers = rows[0]?.map((v, i) => (v != null ? String(v) : `Col ${i + 1}`)) || [];
+    const dataRows = rows.slice(1);
+
+    output.innerHTML = renderTable(headers, dataRows);
+    output.innerHTML += `<div class="meta">${wb.sheets.length} sheets, ${rows.length} rows, ${(data.byteLength / 1024).toFixed(1)} KB</div>`;
+  } catch (e: unknown) {
+    output.innerHTML = `<p class="error">${escapeHtml(String(e))}</p>`;
+  }
+}
+
+function setupOds() {
+  const drop = $("ods-drop");
+  const fileInput = $("ods-file") as HTMLInputElement;
+
+  drop.addEventListener("click", () => fileInput.click());
+  drop.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    drop.classList.add("drag-over");
+  });
+  drop.addEventListener("dragleave", () => drop.classList.remove("drag-over"));
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault();
+    drop.classList.remove("drag-over");
+    const file = (e as DragEvent).dataTransfer?.files[0];
+    if (file) handleOdsFile(file);
+  });
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files?.[0]) handleOdsFile(fileInput.files[0]);
+  });
+
+  $("ods-generate").addEventListener("click", async () => {
+    const output = $("ods-output");
+    try {
+      const rawData = JSON.parse(($("ods-data") as HTMLTextAreaElement).value);
+      const keys = Object.keys(rawData[0] || {});
+
+      const result = await writeOds({
+        sheets: [
+          {
+            name: "Sheet1",
+            columns: keys.map((k) => ({ header: k, key: k })),
+            data: rawData,
+          },
+        ],
+      });
+
+      lastOdsBlob = new Blob([result], {
+        type: "application/vnd.oasis.opendocument.spreadsheet",
+      });
+
+      // Read it back to show preview
+      const wb = await readOds(result);
+      const sheet = wb.sheets[0];
+      const rows = sheet.rows;
+      const headers = rows[0]?.map((v, i) => (v != null ? String(v) : `Col ${i + 1}`)) || [];
+      output.innerHTML = renderTable(headers, rows.slice(1));
+      output.innerHTML += `<div class="meta">Generated: ${(result.byteLength / 1024).toFixed(1)} KB ODS</div>`;
+
+      ($("ods-download") as HTMLButtonElement).disabled = false;
+    } catch (e: unknown) {
+      output.innerHTML = `<p class="error">${escapeHtml(String(e))}</p>`;
+    }
+  });
+
+  $("ods-download").addEventListener("click", () => {
+    if (!lastOdsBlob) return;
+    const url = URL.createObjectURL(lastOdsBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "export.ods";
+    a.click();
+    URL.revokeObjectURL(url);
+    toast("ODS downloaded");
+  });
+}
+
 // ── Init ──────────────────────────────────────────────────────────
 
 export function setupApp() {
@@ -421,4 +611,6 @@ export function setupApp() {
   setupWrite();
   setupCsv();
   setupSchema();
+  setupStreaming();
+  setupOds();
 }

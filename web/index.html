@@ -28,7 +28,9 @@
         <button class="tab active" data-tab="read" role="tab">Read XLSX</button>
         <button class="tab" data-tab="write" role="tab">Write XLSX</button>
         <button class="tab" data-tab="csv" role="tab">CSV</button>
-        <button class="tab" data-tab="schema" role="tab">Schema Validation</button>
+        <button class="tab" data-tab="schema" role="tab">Schema</button>
+        <button class="tab" data-tab="streaming" role="tab">Streaming</button>
+        <button class="tab" data-tab="ods" role="tab">ODS</button>
       </nav>
 
       <!-- ═══════ READ XLSX ═══════ -->
@@ -260,6 +262,78 @@ Sensor,45.99,SNS-005,64,unknown</textarea
             </div>
             <div class="actions">
               <button class="btn primary" id="schema-validate">Validate</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ STREAMING ═══════ -->
+      <section class="panel" data-panel="streaming">
+        <p class="panel-desc">
+          Stream large XLSX files row-by-row without loading everything into memory. Or generate
+          XLSX incrementally with XlsxStreamWriter.
+        </p>
+        <div class="split">
+          <div class="controls">
+            <div class="field full">
+              <label for="stream-rows">Number of rows to generate</label>
+              <input id="stream-rows" type="number" value="10000" min="100" max="100000" />
+            </div>
+            <div class="field full">
+              <label for="stream-cols">Number of columns</label>
+              <input id="stream-cols" type="number" value="5" min="1" max="20" />
+            </div>
+            <button class="btn primary" id="stream-generate" style="margin-top: 0.5rem">
+              Generate &amp; Stream
+            </button>
+          </div>
+          <div class="preview">
+            <div class="output" id="stream-output">
+              <p style="color: var(--text-dim); text-align: center; padding: 3rem 0">
+                Click "Generate &amp; Stream" to write and read back rows
+              </p>
+            </div>
+            <div class="actions">
+              <button class="btn" id="stream-download" disabled>Download .xlsx</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ ODS ═══════ -->
+      <section class="panel" data-panel="ods">
+        <p class="panel-desc">
+          Read and write OpenDocument Spreadsheet (.ods) files — compatible with LibreOffice, Google
+          Sheets, and other open-source tools.
+        </p>
+        <div class="split">
+          <div class="controls">
+            <div class="drop-zone" id="ods-drop">
+              <div class="icon">📂</div>
+              <p>Drop .ods file here or click to browse</p>
+              <input type="file" id="ods-file" accept=".ods" />
+            </div>
+
+            <div class="field full" style="margin-top: 0.75rem">
+              <label for="ods-data">Or generate ODS from JSON</label>
+              <textarea id="ods-data" rows="8" spellcheck="false">
+[
+  { "name": "Widget", "price": 9.99, "active": true },
+  { "name": "Gadget", "price": 24.50, "active": true },
+  { "name": "Bolt", "price": 0.75, "active": false }
+]</textarea
+              >
+            </div>
+          </div>
+          <div class="preview">
+            <div class="output" id="ods-output">
+              <p style="color: var(--text-dim); text-align: center; padding: 3rem 0">
+                Drop an ODS file or click "Generate ODS"
+              </p>
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="ods-generate">Generate ODS</button>
+              <button class="btn" id="ods-download" disabled>Download .ods</button>
             </div>
           </div>
         </div>
