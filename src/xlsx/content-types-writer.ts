@@ -35,6 +35,10 @@ export interface ContentTypesOptions {
   commentIndices?: number[];
   /** 1-based indices of tables (e.g. [1, 2, 3] means table1.xml, table2.xml, table3.xml exist) */
   tableIndices?: number[];
+  /** Whether docProps/core.xml is present */
+  hasCoreProps?: boolean;
+  /** Whether docProps/app.xml is present */
+  hasAppProps?: boolean;
 }
 
 /** Generate [Content_Types].xml for XLSX */
@@ -144,6 +148,24 @@ export function writeContentTypes(
         }),
       );
     }
+  }
+
+  // Override for docProps
+  if (opts.hasCoreProps) {
+    children.push(
+      xmlSelfClose("Override", {
+        PartName: "/docProps/core.xml",
+        ContentType: "application/vnd.openxmlformats-package.core-properties+xml",
+      }),
+    );
+  }
+  if (opts.hasAppProps) {
+    children.push(
+      xmlSelfClose("Override", {
+        PartName: "/docProps/app.xml",
+        ContentType: "application/vnd.openxmlformats-officedocument.extended-properties+xml",
+      }),
+    );
   }
 
   return xmlDocument("Types", { xmlns: NS_CONTENT_TYPES }, children);

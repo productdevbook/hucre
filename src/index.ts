@@ -7,6 +7,10 @@ export type { StreamRow } from "./xlsx/stream-reader";
 export { XlsxStreamWriter } from "./xlsx/stream-writer";
 export type { StreamWriterOptions } from "./xlsx/stream-writer";
 
+// ── ODS ────────────────────────────────────────────────────────────
+export { readOds } from "./ods/reader";
+export { writeOds } from "./ods/writer";
+
 // ── CSV ────────────────────────────────────────────────────────────
 export {
   parseCsv,

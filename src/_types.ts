@@ -286,6 +286,34 @@ export interface ConditionalRule {
   style?: CellStyle;
   stopIfTrue?: boolean;
   range: string;
+  /** Color scale configuration */
+  colorScale?: {
+    cfvo: Array<{
+      type: "min" | "max" | "num" | "percent" | "percentile";
+      value?: string;
+    }>;
+    colors: string[]; // hex ARGB colors like "FF63BE7B"
+  };
+  /** Data bar configuration */
+  dataBar?: {
+    cfvo: Array<{
+      type: "min" | "max" | "num" | "percent" | "percentile";
+      value?: string;
+    }>;
+    color: string;
+  };
+  /** Icon set configuration */
+  iconSet?: {
+    iconSet: string; // "3Arrows", "3TrafficLights1", etc.
+    cfvo: Array<{
+      type: "min" | "num" | "percent" | "percentile";
+      value?: string;
+    }>;
+    reverse?: boolean;
+    showValue?: boolean;
+  };
+  /** Text value for containsText, notContainsText, beginsWith, endsWith */
+  text?: string;
 }
 
 // ── Auto Filter ────────────────────────────────────────────────────

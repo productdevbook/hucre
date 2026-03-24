@@ -115,8 +115,8 @@ export function writeWorkbookRels(sheetCount: number, hasSharedStrings: boolean)
   return xmlDocument("Relationships", { xmlns: NS_RELATIONSHIPS }, children);
 }
 
-/** Generate _rels/.rels */
-export function writeRootRels(): string {
+/** Generate _rels/.rels (with optional docProps) */
+export function writeRootRels(options?: { hasCoreProps?: boolean; hasAppProps?: boolean }): string {
   const children: string[] = [];
 
   children.push(
@@ -126,6 +126,28 @@ export function writeRootRels(): string {
       Target: "xl/workbook.xml",
     }),
   );
+
+  let nextRId = 2;
+
+  if (options?.hasCoreProps) {
+    children.push(
+      xmlSelfClose("Relationship", {
+        Id: `rId${nextRId++}`,
+        Type: "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties",
+        Target: "docProps/core.xml",
+      }),
+    );
+  }
+
+  if (options?.hasAppProps) {
+    children.push(
+      xmlSelfClose("Relationship", {
+        Id: `rId${nextRId++}`,
+        Type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties",
+        Target: "docProps/app.xml",
+      }),
+    );
+  }
 
   return xmlDocument("Relationships", { xmlns: NS_RELATIONSHIPS }, children);
 }

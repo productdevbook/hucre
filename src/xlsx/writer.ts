@@ -16,6 +16,7 @@ import type { CommentsResult } from "./comments-writer";
 import { writeTable } from "./table-writer";
 import { colToLetter } from "./worksheet-writer";
 import { xmlDocument, xmlSelfClose } from "../xml/writer";
+import { writeCoreProperties, writeAppProperties } from "./doc-props-writer";
 
 const encoder = /* @__PURE__ */ new TextEncoder();
 
@@ -33,7 +34,7 @@ const REL_TABLE = "http://schemas.openxmlformats.org/officeDocument/2006/relatio
  * Returns a Uint8Array containing the ZIP archive.
  */
 export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
-  const { sheets, defaultFont, dateSystem, namedRanges } = options;
+  const { sheets, defaultFont, dateSystem, namedRanges, properties } = options;
 
   // Create shared collectors
   const styles = createStylesCollector(defaultFont);
@@ -129,11 +130,19 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
     imageExtensions: imageExtensions.size > 0 ? imageExtensions : undefined,
     commentIndices: commentIndices.length > 0 ? commentIndices : undefined,
     tableIndices: allTableIndices.length > 0 ? allTableIndices : undefined,
+    hasCoreProps: true,
+    hasAppProps: true,
   };
   zip.add("[Content_Types].xml", encoder.encode(writeContentTypes(ctOpts)));
 
-  // _rels/.rels
-  zip.add("_rels/.rels", encoder.encode(writeRootRels()));
+  // _rels/.rels (with docProps relationships)
+  zip.add("_rels/.rels", encoder.encode(writeRootRels({ hasCoreProps: true, hasAppProps: true })));
+
+  // docProps/core.xml
+  zip.add("docProps/core.xml", encoder.encode(writeCoreProperties(properties)));
+
+  // docProps/app.xml
+  zip.add("docProps/app.xml", encoder.encode(writeAppProperties(properties)));
 
   // xl/workbook.xml — merge user named ranges with auto-generated print area/titles
   const allNamedRanges = buildNamedRanges(sheets, namedRanges);

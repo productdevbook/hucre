@@ -23,6 +23,7 @@ import type { SharedString } from "./shared-strings";
 import type { Relationship } from "./relationships";
 import { parseComments } from "./comments-reader";
 import { parseCellRef } from "./worksheet";
+import { parseCoreProperties, parseAppProperties } from "./doc-props-reader";
 
 // ── OOXML Relationship Types ─────────────────────────────────────────
 
@@ -276,7 +277,26 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
     sheets.push(sheet);
   }
 
-  // 11. Build workbook
+  // 11. Parse document properties (if present)
+  let properties: import("../_types").WorkbookProperties | undefined;
+
+  if (zip.has("docProps/core.xml")) {
+    const coreXml = decodeUtf8(await zip.extract("docProps/core.xml"));
+    const coreProps = parseCoreProperties(coreXml);
+    if (Object.keys(coreProps).length > 0) {
+      properties = { ...coreProps };
+    }
+  }
+
+  if (zip.has("docProps/app.xml")) {
+    const appXml = decodeUtf8(await zip.extract("docProps/app.xml"));
+    const appProps = parseAppProperties(appXml);
+    if (Object.keys(appProps).length > 0) {
+      properties = { ...properties, ...appProps };
+    }
+  }
+
+  // 12. Build workbook
   const workbook: Workbook = {
     sheets,
     dateSystem,
@@ -284,6 +304,10 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
 
   if (namedRanges.length > 0) {
     workbook.namedRanges = namedRanges;
+  }
+
+  if (properties) {
+    workbook.properties = properties;
   }
 
   return workbook;

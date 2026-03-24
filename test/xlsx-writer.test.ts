@@ -743,8 +743,10 @@ describe("writeXlsx", () => {
 
     const doc = await parseXmlFromZip(result, "_rels/.rels");
     const rels = findChildren(doc, "Relationship");
-    expect(rels.length).toBe(1);
+    expect(rels.length).toBe(3);
     expect(rels[0].attrs["Target"]).toBe("xl/workbook.xml");
+    expect(rels[1].attrs["Target"]).toBe("docProps/core.xml");
+    expect(rels[2].attrs["Target"]).toBe("docProps/app.xml");
   });
 
   it("verifies xl/workbook.xml has correct sheet names", async () => {

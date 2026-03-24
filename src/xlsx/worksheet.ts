@@ -9,10 +9,14 @@ import type {
   RichTextRun,
   FontStyle,
   Hyperlink,
+  ConditionalRule,
+  ConditionalRuleType,
   DataValidation,
   ValidationType,
   ValidationOperator,
   SheetProtection,
+  SheetView,
+  Color,
   PageSetup,
   PageMargins,
   HeaderFooter,
@@ -113,8 +117,15 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   // Data validations parsed from <dataValidations> section
   const dataValidations: DataValidation[] = [];
 
+  // Conditional formatting rules parsed from <conditionalFormatting> sections
+  const conditionalRules: ConditionalRule[] = [];
+
   // Sheet protection parsed from <sheetProtection> element
   let sheetProtection: SheetProtection | undefined;
+
+  // Sheet view settings (gridlines, zoom, RTL, tab color)
+  let sheetView: SheetView | undefined;
+  let inSheetPr = false;
 
   // Page setup / print settings
   let pageSetup: PageSetup | undefined;
@@ -150,6 +161,27 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   let dvFormula1Text = "";
   let dvFormula2Text = "";
   let dvAttrs: Record<string, string> = {};
+
+  // Conditional formatting SAX state
+  let inConditionalFormatting = false;
+  let cfSqref = "";
+  let inCfRule = false;
+  let cfRuleAttrs: Record<string, string> = {};
+  let inCfFormula = false;
+  let cfFormulaText = "";
+  let cfFormulas: string[] = [];
+  // colorScale state
+  let inColorScale = false;
+  let csCfvos: Array<{ type: string; value?: string }> = [];
+  let csColors: string[] = [];
+  // dataBar state
+  let inDataBar = false;
+  let dbCfvos: Array<{ type: string; value?: string }> = [];
+  let dbColor = "";
+  // iconSet state
+  let inIconSet = false;
+  let isAttrs: Record<string, string> = {};
+  let isCfvos: Array<{ type: string; value?: string }> = [];
 
   // Rich text in inline strings
   let inInlineR = false;
@@ -222,6 +254,35 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
             currentRunFont = {};
           }
           break;
+        case "sheetPr":
+          inSheetPr = true;
+          break;
+        case "tabColor":
+          if (inSheetPr) {
+            if (!sheetView) sheetView = {};
+            sheetView.tabColor = parseColorAttrs(attrs);
+          }
+          break;
+        case "sheetView":
+          if (!inSheetData) {
+            if (!sheetView) sheetView = {};
+            if (attrs["showGridLines"] === "0" || attrs["showGridLines"] === "false") {
+              sheetView.showGridLines = false;
+            }
+            if (attrs["showRowColHeaders"] === "0" || attrs["showRowColHeaders"] === "false") {
+              sheetView.showRowColHeaders = false;
+            }
+            if (attrs["zoomScale"]) {
+              const zoom = Number(attrs["zoomScale"]);
+              if (!Number.isNaN(zoom)) {
+                sheetView.zoomScale = zoom;
+              }
+            }
+            if (attrs["rightToLeft"] === "1" || attrs["rightToLeft"] === "true") {
+              sheetView.rightToLeft = true;
+            }
+          }
+          break;
         case "sheetProtection":
           sheetProtection = parseSheetProtectionAttrs(attrs);
           break;
@@ -246,6 +307,53 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
             if (attrs["tooltip"]) hl.tooltip = attrs["tooltip"];
             if (attrs["display"]) hl.display = attrs["display"];
             rawHyperlinks.push(hl);
+          }
+          break;
+        case "conditionalFormatting":
+          inConditionalFormatting = true;
+          cfSqref = attrs["sqref"] ?? "";
+          break;
+        case "cfRule":
+          if (inConditionalFormatting) {
+            inCfRule = true;
+            cfRuleAttrs = { ...attrs };
+            cfFormulas = [];
+            csCfvos = [];
+            csColors = [];
+            dbCfvos = [];
+            dbColor = "";
+            isCfvos = [];
+            isAttrs = {};
+          }
+          break;
+        case "colorScale":
+          if (inCfRule) {
+            inColorScale = true;
+            csCfvos = [];
+            csColors = [];
+          }
+          break;
+        case "cfvo":
+          if (inColorScale) {
+            csCfvos.push({ type: attrs["type"] ?? "min", value: attrs["val"] });
+          } else if (inDataBar) {
+            dbCfvos.push({ type: attrs["type"] ?? "min", value: attrs["val"] });
+          } else if (inIconSet) {
+            isCfvos.push({ type: attrs["type"] ?? "min", value: attrs["val"] });
+          }
+          break;
+        case "dataBar":
+          if (inCfRule) {
+            inDataBar = true;
+            dbCfvos = [];
+            dbColor = "";
+          }
+          break;
+        case "iconSet":
+          if (inCfRule) {
+            inIconSet = true;
+            isAttrs = { ...attrs };
+            isCfvos = [];
           }
           break;
         case "dataValidations":
@@ -317,6 +425,21 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
             hfText = "";
           }
           break;
+        case "color":
+          if (inColorScale) {
+            csColors.push(attrs["rgb"] ?? "");
+          } else if (inDataBar) {
+            dbColor = attrs["rgb"] ?? "";
+          } else if (inInlineRPr && currentRunFont) {
+            applyFontProp(currentRunFont, local, attrs);
+          }
+          break;
+        case "formula":
+          if (inCfRule && !inDataValidation) {
+            inCfFormula = true;
+            cfFormulaText = "";
+          }
+          break;
         default:
           // Handle font property tags inside rPr
           if (inInlineRPr && currentRunFont) {
@@ -332,6 +455,8 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
         cellValueText += text;
       } else if (inFormula) {
         cellFormulaText += text;
+      } else if (inCfFormula) {
+        cfFormulaText += text;
       } else if (inInlineT) {
         inlineText += text;
       } else if (inInlineRT) {
@@ -416,11 +541,53 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
         case "rPr":
           inInlineRPr = false;
           break;
+        case "sheetPr":
+          inSheetPr = false;
+          break;
         case "mergeCells":
           inMergeCells = false;
           break;
         case "hyperlinks":
           inHyperlinks = false;
+          break;
+        case "conditionalFormatting":
+          inConditionalFormatting = false;
+          break;
+        case "cfRule":
+          if (inCfRule) {
+            const cfRule = buildConditionalRule(
+              cfRuleAttrs,
+              cfSqref,
+              cfFormulas,
+              csCfvos,
+              csColors,
+              dbCfvos,
+              dbColor,
+              isCfvos,
+              isAttrs,
+            );
+            if (cfRule) {
+              conditionalRules.push(cfRule);
+            }
+            inCfRule = false;
+          }
+          break;
+        case "colorScale":
+          inColorScale = false;
+          break;
+        case "dataBar":
+          if (inCfRule) {
+            inDataBar = false;
+          }
+          break;
+        case "iconSet":
+          inIconSet = false;
+          break;
+        case "formula":
+          if (inCfFormula) {
+            cfFormulas.push(cfFormulaText);
+            inCfFormula = false;
+          }
           break;
         case "dataValidations":
           inDataValidations = false;
@@ -559,8 +726,16 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   if (dataValidations.length > 0) {
     sheet.dataValidations = dataValidations;
   }
+  if (conditionalRules.length > 0) {
+    sheet.conditionalRules = conditionalRules;
+  }
   if (sheetProtection) {
     sheet.protection = sheetProtection;
+  }
+
+  // Attach sheet view settings
+  if (sheetView && Object.keys(sheetView).length > 0) {
+    sheet.view = sheetView;
   }
 
   // Attach page setup (merge margins into pageSetup if present)
@@ -729,6 +904,115 @@ function buildDataValidation(
   }
 
   return dv;
+}
+
+// ── Conditional Rule Builder ─────────────────────────────────────────
+
+const VALID_CF_TYPES = new Set<string>([
+  "cellIs",
+  "expression",
+  "colorScale",
+  "dataBar",
+  "iconSet",
+  "top10",
+  "aboveAverage",
+  "duplicateValues",
+  "uniqueValues",
+  "containsText",
+  "notContainsText",
+  "beginsWith",
+  "endsWith",
+  "containsBlanks",
+  "notContainsBlanks",
+]);
+
+function buildConditionalRule(
+  attrs: Record<string, string>,
+  sqref: string,
+  formulas: string[],
+  csCfvos: Array<{ type: string; value?: string }>,
+  csColors: string[],
+  dbCfvos: Array<{ type: string; value?: string }>,
+  dbColor: string,
+  isCfvos: Array<{ type: string; value?: string }>,
+  isAttrsObj: Record<string, string>,
+): ConditionalRule | null {
+  const typeStr = attrs["type"];
+  if (!typeStr || !VALID_CF_TYPES.has(typeStr)) return null;
+  if (!sqref) return null;
+
+  const rule: ConditionalRule = {
+    type: typeStr as ConditionalRuleType,
+    priority: Number(attrs["priority"] ?? "1"),
+    range: sqref,
+  };
+
+  // Operator
+  const operatorStr = attrs["operator"];
+  if (operatorStr && VALID_OPERATORS.has(operatorStr)) {
+    rule.operator = operatorStr as ValidationOperator;
+  }
+
+  // dxfId — we store it but don't resolve to a style (dxf styles are not parsed in the reader yet)
+  // The round-trip test will check the type/priority/formulas; style is write-only for now.
+
+  // stopIfTrue
+  if (attrs["stopIfTrue"] === "1" || attrs["stopIfTrue"] === "true") {
+    rule.stopIfTrue = true;
+  }
+
+  // text attribute (for containsText, beginsWith, endsWith, etc.)
+  if (attrs["text"] !== undefined) {
+    rule.text = attrs["text"];
+  }
+
+  // Formulas
+  if (formulas.length === 1) {
+    rule.formula = formulas[0];
+  } else if (formulas.length > 1) {
+    rule.formula = formulas;
+  }
+
+  // colorScale
+  if (typeStr === "colorScale" && csCfvos.length > 0) {
+    rule.colorScale = {
+      cfvo: csCfvos.map((c) => ({
+        type: c.type as "min" | "max" | "num" | "percent" | "percentile",
+        value: c.value,
+      })),
+      colors: csColors,
+    };
+  }
+
+  // dataBar
+  if (typeStr === "dataBar" && dbCfvos.length > 0) {
+    rule.dataBar = {
+      cfvo: dbCfvos.map((c) => ({
+        type: c.type as "min" | "max" | "num" | "percent" | "percentile",
+        value: c.value,
+      })),
+      color: dbColor,
+    };
+  }
+
+  // iconSet
+  if (typeStr === "iconSet" && isCfvos.length > 0) {
+    rule.iconSet = {
+      iconSet: isAttrsObj["iconSet"] ?? "3TrafficLights1",
+      cfvo: isCfvos.map((c) => ({
+        type: c.type as "min" | "num" | "percent" | "percentile",
+        value: c.value,
+      })),
+    };
+    if (isAttrsObj["reverse"] === "1" || isAttrsObj["reverse"] === "true") {
+      rule.iconSet.reverse = true;
+    }
+    if (isAttrsObj["showValue"] === "0" || isAttrsObj["showValue"] === "false") {
+      rule.iconSet.showValue = false;
+    }
+  }
+
+  return rule;
 }
 
 // ── Cell Processing ──────────────────────────────────────────────────
@@ -1003,4 +1287,26 @@ function parsePageSetupAttrs(attrs: Record<string, string>): PageSetup {
   }
 
   return ps;
+}
+
+// ── Color Attribute Parser ──────────────────────────────────────────────
+
+/** Parse color attributes from an XML element (e.g. <tabColor>, <color>) */
+function parseColorAttrs(attrs: Record<string, string>): Color {
+  const color: Color = {};
+  if (attrs["rgb"]) {
+    const rgb = attrs["rgb"];
+    // Strip ARGB alpha prefix if present (8 chars → 6 chars)
+    color.rgb = rgb.length === 8 ? rgb.slice(2) : rgb;
+  }
+  if (attrs["theme"]) {
+    color.theme = Number(attrs["theme"]);
+  }
+  if (attrs["tint"]) {
+    color.tint = Number(attrs["tint"]);
+  }
+  if (attrs["indexed"]) {
+    color.indexed = Number(attrs["indexed"]);
+  }
+  return color;
 }

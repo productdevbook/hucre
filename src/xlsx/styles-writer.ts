@@ -207,6 +207,8 @@ export interface StylesCollector {
   addStyle(style: CellStyle): number;
   /** Register a number format, return its numFmt id */
   addNumFmt(format: string): number;
+  /** Register a differential format (for conditional formatting), return its dxfId */
+  addDxf(style: CellStyle): number;
   /** Generate the complete styles.xml */
   toXml(): string;
 }
@@ -350,6 +352,31 @@ export function createStylesCollector(defaultFont?: FontStyle): StylesCollector 
     return parts.join(",");
   }
 
+  // ── Differential Formats (dxf) ──
+  const dxfs: CellStyle[] = [];
+  const dxfMap = new Map<string, number>();
+
+  function dxfKey(style: CellStyle): string {
+    const parts: string[] = [];
+    if (style.font) parts.push(`f:${fontKey(style.font)}`);
+    if (style.fill) parts.push(`fl:${fillKey(style.fill)}`);
+    if (style.border) parts.push(`b:${borderKey(style.border)}`);
+    if (style.numFmt) parts.push(`nf:${style.numFmt}`);
+    if (style.alignment) parts.push(`a:${alignmentKey(style.alignment)}`);
+    return parts.join("|");
+  }
+
+  function addDxf(style: CellStyle): number {
+    const key = dxfKey(style);
+    const existing = dxfMap.get(key);
+    if (existing !== undefined) return existing;
+
+    const id = dxfs.length;
+    dxfs.push(style);
+    dxfMap.set(key, id);
+    return id;
+  }
+
   function addStyle(style: CellStyle): number {
     const fontId = style.font ? addFont(style.font) : 0;
     const fillId = style.fill ? addFill(style.fill) : 0;
@@ -474,12 +501,35 @@ export function createStylesCollector(defaultFont?: FontStyle): StylesCollector 
     });
     parts.push(xmlElement("cellXfs", { count: xfs.length }, xfChildren));
 
+    // dxfs (differential formatting for conditional formatting)
+    if (dxfs.length > 0) {
+      const dxfChildren = dxfs.map((style) => {
+        const children: string[] = [];
+        if (style.font) children.push(serializeFont(style.font));
+        if (style.numFmt) {
+          const numFmtId = addNumFmt(style.numFmt);
+          children.push(
+            xmlSelfClose("numFmt", {
+              numFmtId,
+              formatCode: style.numFmt,
+            }),
+          );
+        }
+        if (style.fill) children.push(serializeFill(style.fill));
+        if (style.border) children.push(serializeBorder(style.border));
+        if (style.alignment) children.push(serializeAlignment(style.alignment));
+        return xmlElement("dxf", undefined, children);
+      });
+      parts.push(xmlElement("dxfs", { count: dxfs.length }, dxfChildren));
+    }
+
     return xmlDocument("styleSheet", { xmlns: NS_SPREADSHEET }, parts);
   }
 
   return {
     addStyle,
     addNumFmt,
+    addDxf,
     toXml,
   };
 }

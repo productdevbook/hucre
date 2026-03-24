@@ -5,12 +5,16 @@ import type {
   WriteSheet,
   CellValue,
   CellStyle,
+  ConditionalRule,
   DataValidation,
   SheetProtection,
   PageSetup,
   PageMargins,
   HeaderFooter,
   PaperSize,
+  RichTextRun,
+  FontStyle,
+  Color,
 } from "../_types";
 import type { StylesCollector } from "./styles-writer";
 import { dateToSerial } from "../_date";
@@ -131,6 +135,7 @@ interface ResolvedCell {
   style?: CellStyle;
   formula?: string;
   formulaResult?: CellValue;
+  richText?: RichTextRun[];
 }
 
 // ── Default date format ────────────────────────────────────────────
@@ -164,6 +169,12 @@ export function writeWorksheetXml(
 
   const parts: string[] = [];
 
+  // ── SheetPr (tab color, etc.) — must come before sheetViews ──
+  if (sheet.view?.tabColor) {
+    const tabColorAttrs = serializeColorAttrs(sheet.view.tabColor);
+    parts.push(xmlElement("sheetPr", undefined, [xmlSelfClose("tabColor", tabColorAttrs)]));
+  }
+
   // ── SheetViews (freeze panes, view settings) ──
   const sheetViewParts: string[] = [];
 
@@ -196,15 +207,15 @@ export function writeWorksheetXml(
     sheetViewParts.push(xmlSelfClose("pane", paneAttrs));
   }
 
-  const viewAttrs: Record<string, string | number | boolean> = {
+  const viewAttrs: Record<string, string | number> = {
     workbookViewId: 0,
   };
 
   if (sheet.view) {
-    if (sheet.view.showGridLines === false) viewAttrs["showGridLines"] = false;
-    if (sheet.view.showRowColHeaders === false) viewAttrs["showRowColHeaders"] = false;
+    if (sheet.view.showGridLines === false) viewAttrs["showGridLines"] = 0;
+    if (sheet.view.showRowColHeaders === false) viewAttrs["showRowColHeaders"] = 0;
     if (sheet.view.zoomScale !== undefined) viewAttrs["zoomScale"] = sheet.view.zoomScale;
-    if (sheet.view.rightToLeft) viewAttrs["rightToLeft"] = true;
+    if (sheet.view.rightToLeft) viewAttrs["rightToLeft"] = 1;
   }
 
   parts.push(
@@ -308,6 +319,11 @@ export function writeWorksheetXml(
   // ── Auto Filter ──
   if (sheet.autoFilter) {
     parts.push(xmlSelfClose("autoFilter", { ref: sheet.autoFilter.range }));
+  }
+
+  // ── Conditional Formatting ──
+  if (sheet.conditionalRules && sheet.conditionalRules.length > 0) {
+    parts.push(...serializeConditionalFormatting(sheet.conditionalRules, styles));
   }
 
   // ── Data Validations ──
@@ -462,6 +478,7 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
         style: cellOverride.style ?? existing?.style,
         formula: cellOverride.formula ?? existing?.formula,
         formulaResult: cellOverride.formulaResult ?? existing?.formulaResult,
+        richText: cellOverride.richText ?? existing?.richText,
       };
     }
   }
@@ -479,7 +496,7 @@ function serializeCell(
   sharedStrings: SharedStringsCollector,
   is1904: boolean,
 ): string | null {
-  const { value, style, formula, formulaResult } = resolved;
+  const { value, style, formula, formulaResult, richText } = resolved;
 
   // Determine style index
   let styleIdx = 0;
@@ -498,6 +515,14 @@ function serializeCell(
   }
 
   const ref = cellRef(row, col);
+
+  // Rich text cell (inline string)
+  if (richText && richText.length > 0) {
+    const cellAttrs: Record<string, string | number> = { r: ref, t: "inlineStr" };
+    if (styleIdx !== 0) cellAttrs["s"] = styleIdx;
+    const isContent = serializeRichTextRuns(richText);
+    return xmlElement("c", cellAttrs, [xmlElement("is", undefined, isContent)]);
+  }
 
   // Formula cell
   if (formula) {
@@ -880,4 +905,229 @@ function serializeHeaderFooter(hf: HeaderFooter): string {
   }
 
   return xmlElement("headerFooter", Object.keys(attrs).length > 0 ? attrs : undefined, children);
+}
+
+// ── Color Attribute Serialization ──────────────────────────────────────
+
+/** Serialize a Color object into XML attributes for a color element */
+function serializeColorAttrs(color: Color): Record<string, string | number> {
+  const attrs: Record<string, string | number> = {};
+  if (color.rgb !== undefined) {
+    // XLSX expects ARGB format (8 chars), add "FF" alpha prefix if only 6 chars
+    const rgb = color.rgb;
+    attrs["rgb"] = rgb.length === 6 ? `FF${rgb}` : rgb;
+  }
+  if (color.theme !== undefined) {
+    attrs["theme"] = color.theme;
+  }
+  if (color.tint !== undefined) {
+    attrs["tint"] = color.tint;
+  }
+  if (color.indexed !== undefined) {
+    attrs["indexed"] = color.indexed;
+  }
+  return attrs;
+}
+
+// ── Rich Text Serialization ──────────────────────────────────────────
+
+/** Serialize an array of RichTextRun into XML elements for an <is> (inline string) block */
+function serializeRichTextRuns(runs: RichTextRun[]): string[] {
+  const elements: string[] = [];
+
+  for (const run of runs) {
+    const runChildren: string[] = [];
+
+    // Run properties (<rPr>)
+    if (run.font) {
+      const rPrParts = serializeFontProps(run.font);
+      if (rPrParts.length > 0) {
+        runChildren.push(xmlElement("rPr", undefined, rPrParts));
+      }
+    }
+
+    // Run text (<t>)
+    // Use xml:space="preserve" to preserve whitespace
+    const text = xmlEscape(run.text);
+    const needsPreserve =
+      run.text.length > 0 &&
+      (run.text[0] === " " ||
+        run.text[run.text.length - 1] === " " ||
+        run.text.includes("\n") ||
+        run.text.includes("\t"));
+    if (needsPreserve) {
+      runChildren.push(`<t xml:space="preserve">${text}</t>`);
+    } else {
+      runChildren.push(xmlElement("t", undefined, text));
+    }
+
+    elements.push(xmlElement("r", undefined, runChildren));
+  }
+
+  return elements;
+}
+
+/** Serialize FontStyle into individual XML elements for <rPr> */
+function serializeFontProps(font: FontStyle): string[] {
+  const parts: string[] = [];
+
+  if (font.bold) {
+    parts.push(xmlSelfClose("b"));
+  }
+  if (font.italic) {
+    parts.push(xmlSelfClose("i"));
+  }
+  if (font.underline) {
+    if (font.underline === true || font.underline === "single") {
+      parts.push(xmlSelfClose("u"));
+    } else {
+      parts.push(xmlSelfClose("u", { val: font.underline }));
+    }
+  }
+  if (font.strikethrough) {
+    parts.push(xmlSelfClose("strike"));
+  }
+  if (font.vertAlign) {
+    parts.push(xmlSelfClose("vertAlign", { val: font.vertAlign }));
+  }
+  if (font.size !== undefined) {
+    parts.push(xmlSelfClose("sz", { val: font.size }));
+  }
+  if (font.color) {
+    parts.push(xmlSelfClose("color", serializeColorAttrs(font.color)));
+  }
+  if (font.name) {
+    parts.push(xmlSelfClose("rFont", { val: font.name }));
+  }
+  if (font.family !== undefined) {
+    parts.push(xmlSelfClose("family", { val: font.family }));
+  }
+  if (font.charset !== undefined) {
+    parts.push(xmlSelfClose("charset", { val: font.charset }));
+  }
+  if (font.scheme) {
+    parts.push(xmlSelfClose("scheme", { val: font.scheme }));
+  }
+
+  return parts;
+}
+
+// ── Conditional Formatting Serialization ─────────────────────────
+
+/**
+ * Serialize conditional formatting rules into `<conditionalFormatting>` XML blocks.
+ * Rules are grouped by range (sqref) — multiple rules on the same range go into one element.
+ */
+function serializeConditionalFormatting(
+  rules: ConditionalRule[],
+  styles: StylesCollector,
+): string[] {
+  // Group rules by range
+  const byRange = new Map<string, ConditionalRule[]>();
+  for (const rule of rules) {
+    const existing = byRange.get(rule.range);
+    if (existing) {
+      existing.push(rule);
+    } else {
+      byRange.set(rule.range, [rule]);
+    }
+  }
+
+  const elements: string[] = [];
+
+  for (const [range, rangeRules] of byRange) {
+    const cfRuleElements: string[] = [];
+
+    for (const rule of rangeRules) {
+      cfRuleElements.push(serializeCfRule(rule, styles));
+    }
+
+    elements.push(xmlElement("conditionalFormatting", { sqref: range }, cfRuleElements));
+  }
+
+  return elements;
+}
+
+/** Serialize a single `<cfRule>` element */
+function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string {
+  const attrs: Record<string, string | number | boolean> = {
+    type: rule.type,
+    priority: rule.priority,
+  };
+
+  // Register dxf style and set dxfId
+  if (rule.style) {
+    attrs["dxfId"] = styles.addDxf(rule.style);
+  }
+
+  if (rule.operator) {
+    attrs["operator"] = rule.operator;
+  }
+
+  if (rule.stopIfTrue) {
+    attrs["stopIfTrue"] = true;
+  }
+
+  // Text-based rule attributes
+  if (rule.text !== undefined) {
+    attrs["text"] = rule.text;
+  }
+
+  const children: string[] = [];
+
+  // Formulas
+  if (rule.formula !== undefined) {
+    const formulas = Array.isArray(rule.formula) ? rule.formula : [rule.formula];
+    for (const f of formulas) {
+      children.push(xmlElement("formula", undefined, xmlEscape(f)));
+    }
+  }
+
+  // Color scale
+  if (rule.type === "colorScale" && rule.colorScale) {
+    const csChildren: string[] = [];
+    for (const cfvo of rule.colorScale.cfvo) {
+      const cfvoAttrs: Record<string, string> = { type: cfvo.type };
+      if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value;
+      csChildren.push(xmlSelfClose("cfvo", cfvoAttrs));
+    }
+    for (const color of rule.colorScale.colors) {
+      csChildren.push(xmlSelfClose("color", { rgb: color }));
+    }
+    children.push(xmlElement("colorScale", undefined, csChildren));
+  }
+
+  // Data bar
+  if (rule.type === "dataBar" && rule.dataBar) {
+    const dbChildren: string[] = [];
+    for (const cfvo of rule.dataBar.cfvo) {
+      const cfvoAttrs: Record<string, string> = { type: cfvo.type };
+      if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value;
+      dbChildren.push(xmlSelfClose("cfvo", cfvoAttrs));
+    }
+    dbChildren.push(xmlSelfClose("color", { rgb: rule.dataBar.color }));
+    children.push(xmlElement("dataBar", undefined, dbChildren));
+  }
+
+  // Icon set
+  if (rule.type === "iconSet" && rule.iconSet) {
+    const isAttrs: Record<string, string | boolean> = {
+      iconSet: rule.iconSet.iconSet,
+    };
+    if (rule.iconSet.reverse) isAttrs["reverse"] = true;
+    if (rule.iconSet.showValue === false) isAttrs["showValue"] = false;
+
+    const isChildren: string[] = [];
+    for (const cfvo of rule.iconSet.cfvo) {
+      const cfvoAttrs: Record<string, string> = { type: cfvo.type };
+      if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value;
+      isChildren.push(xmlSelfClose("cfvo", cfvoAttrs));
+    }
+    children.push(xmlElement("iconSet", isAttrs, isChildren));
+  }
+
+  if (children.length > 0) {
+    return xmlElement("cfRule", attrs, children);
+  }
+  return xmlSelfClose("cfRule", attrs);
 }
