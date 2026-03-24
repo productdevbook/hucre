@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>defter — Spreadsheet Playground</title>
+    <meta
+      name="description"
+      content="Zero-dependency spreadsheet engine. Read & write XLSX, CSV. Schema validation, streaming, tree-shakeable."
+    />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📗</text></svg>"
+    />
+    <style>
+      @import "~/app/assets/main.css";
+    </style>
+  </head>
+  <body>
+    <main id="app">
+      <header>
+        <h1><span class="accent">defter</span></h1>
+        <p>Zero-dependency spreadsheet engine &mdash; XLSX, CSV, ODS</p>
+      </header>
+
+      <nav class="tabs" role="tablist">
+        <button class="tab active" data-tab="read" role="tab">Read XLSX</button>
+        <button class="tab" data-tab="write" role="tab">Write XLSX</button>
+        <button class="tab" data-tab="csv" role="tab">CSV</button>
+        <button class="tab" data-tab="schema" role="tab">Schema Validation</button>
+      </nav>
+
+      <!-- ═══════ READ XLSX ═══════ -->
+      <section class="panel active" data-panel="read">
+        <p class="panel-desc">
+          Drop an XLSX file to parse it. All cell types, shared strings, dates,
+          and merged cells are handled correctly.
+        </p>
+        <div class="split">
+          <div class="controls">
+            <div class="drop-zone" id="read-drop">
+              <div class="icon">📂</div>
+              <p>Drop .xlsx file here or click to browse</p>
+              <input type="file" id="read-file" accept=".xlsx" />
+            </div>
+
+            <details class="section" open>
+              <summary>Options</summary>
+              <div class="field-grid">
+                <div class="field">
+                  <label for="read-sheets">Sheets</label>
+                  <input id="read-sheets" type="text" placeholder="all (or 0,1,2)" />
+                </div>
+                <div class="field">
+                  <label for="read-header">Header Row</label>
+                  <input id="read-header" type="number" value="1" min="0" />
+                </div>
+                <div class="field">
+                  <label>
+                    <input id="read-styles" type="checkbox" /> Read Styles
+                  </label>
+                </div>
+                <div class="field">
+                  <label>
+                    <input id="read-dates" type="checkbox" checked /> Detect Dates
+                  </label>
+                </div>
+              </div>
+            </details>
+
+            <div id="read-stats" class="stats" hidden></div>
+          </div>
+
+          <div class="preview">
+            <div class="output" id="read-output">
+              <p style="color:var(--text-dim);text-align:center;padding:3rem 0">
+                Drop an XLSX file to see parsed data
+              </p>
+            </div>
+            <div class="actions">
+              <button class="btn" id="read-copy" disabled>Copy JSON</button>
+              <button class="btn" id="read-download" disabled>Download CSV</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ WRITE XLSX ═══════ -->
+      <section class="panel" data-panel="write">
+        <p class="panel-desc">
+          Generate XLSX files from JSON data. Define columns, styles, and sheet options.
+        </p>
+        <div class="split">
+          <div class="controls">
+            <div class="field full">
+              <label for="write-data">JSON Data</label>
+              <textarea id="write-data" rows="12" spellcheck="false">[
+  { "name": "Widget", "price": 9.99, "sku": "WDG-001", "stock": 142, "active": true },
+  { "name": "Gadget", "price": 24.50, "sku": "GDG-002", "stock": 87, "active": true },
+  { "name": "Bolt", "price": 0.75, "sku": "BLT-003", "stock": 3420, "active": false },
+  { "name": "Cable", "price": 12.00, "sku": "CBL-004", "stock": 256, "active": true },
+  { "name": "Sensor", "price": 45.99, "sku": "SNS-005", "stock": 64, "active": true }
+]</textarea>
+            </div>
+
+            <details class="section" open>
+              <summary>Sheet Options</summary>
+              <div class="field-grid">
+                <div class="field">
+                  <label for="write-name">Sheet Name</label>
+                  <input id="write-name" type="text" value="Products" />
+                </div>
+                <div class="field">
+                  <label for="write-freeze">Freeze Rows</label>
+                  <input id="write-freeze" type="number" value="1" min="0" max="10" />
+                </div>
+                <div class="field full">
+                  <label>
+                    <input id="write-autofilter" type="checkbox" checked /> Auto Filter
+                  </label>
+                </div>
+              </div>
+            </details>
+
+            <details class="section">
+              <summary>Columns</summary>
+              <div class="field-grid">
+                <div class="field full">
+                  <label for="write-cols">Column Config (JSON)</label>
+                  <textarea id="write-cols" rows="6" spellcheck="false">{
+  "name": { "header": "Product Name", "width": 25 },
+  "price": { "header": "Price", "width": 12, "numFmt": "$#,##0.00" },
+  "sku": { "header": "SKU", "width": 15 },
+  "stock": { "header": "Stock", "width": 10 },
+  "active": { "header": "Active", "width": 10 }
+}</textarea>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <div class="preview">
+            <div class="output" id="write-output">
+              <p style="color:var(--text-dim);text-align:center;padding:3rem 0">
+                Click "Generate XLSX" to preview
+              </p>
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="write-generate">Generate XLSX</button>
+              <button class="btn" id="write-download" disabled>Download .xlsx</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ CSV ═══════ -->
+      <section class="panel" data-panel="csv">
+        <p class="panel-desc">
+          Parse and generate CSV with auto-delimiter detection, type inference, and RFC 4180 compliance.
+        </p>
+        <div class="split">
+          <div class="controls">
+            <div class="field full">
+              <label for="csv-input">CSV Input</label>
+              <textarea id="csv-input" rows="10" spellcheck="false">name,price,sku,stock,active
+Widget,9.99,WDG-001,142,true
+Gadget,24.50,GDG-002,87,true
+"Bolt, Standard",0.75,BLT-003,3420,false
+Cable,12.00,CBL-004,256,true
+Sensor,45.99,SNS-005,64,true</textarea>
+            </div>
+
+            <details class="section" open>
+              <summary>Parse Options</summary>
+              <div class="field-grid">
+                <div class="field">
+                  <label for="csv-delim">Delimiter</label>
+                  <select id="csv-delim">
+                    <option value="auto" selected>Auto-detect</option>
+                    <option value=",">,  (comma)</option>
+                    <option value=";">; (semicolon)</option>
+                    <option value="&#9;">⇥ (tab)</option>
+                    <option value="|">| (pipe)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>
+                    <input id="csv-header" type="checkbox" checked /> Has Header
+                  </label>
+                </div>
+                <div class="field">
+                  <label>
+                    <input id="csv-types" type="checkbox" checked /> Type Inference
+                  </label>
+                </div>
+                <div class="field">
+                  <label>
+                    <input id="csv-skip-empty" type="checkbox" /> Skip Empty
+                  </label>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <div class="preview">
+            <div class="output" id="csv-output">
+              <p style="color:var(--text-dim);text-align:center;padding:3rem 0">
+                Edit CSV and click Parse
+              </p>
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="csv-parse">Parse CSV</button>
+              <button class="btn" id="csv-copy" disabled>Copy JSON</button>
+              <button class="btn" id="csv-to-xlsx" disabled>Export as XLSX</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ SCHEMA ═══════ -->
+      <section class="panel" data-panel="schema">
+        <p class="panel-desc">
+          Validate spreadsheet data against a schema. Type coercion, pattern matching, min/max, enums.
+        </p>
+        <div class="split">
+          <div class="controls">
+            <div class="field full">
+              <label for="schema-data">Sample Data (CSV)</label>
+              <textarea id="schema-data" rows="8" spellcheck="false">Name,Price,SKU,Stock,Status
+Widget,9.99,WDG-001,142,active
+,24.50,GDG-002,87,active
+Bolt,abc,BLT-003,3420,inactive
+Cable,12.00,CBL-004,-5,active
+Sensor,45.99,SNS-005,64,unknown</textarea>
+            </div>
+
+            <div class="field full">
+              <label for="schema-def">Schema Definition (JSON)</label>
+              <textarea id="schema-def" rows="14" spellcheck="false">{
+  "Name": { "type": "string", "required": true },
+  "Price": { "type": "number", "required": true, "min": 0 },
+  "SKU": { "type": "string", "required": true, "pattern": "^[A-Z]{3}-\\d{3}$" },
+  "Stock": { "type": "integer", "min": 0 },
+  "Status": { "type": "string", "enum": ["active", "inactive", "draft"] }
+}</textarea>
+            </div>
+          </div>
+
+          <div class="preview">
+            <div class="output" id="schema-output">
+              <p style="color:var(--text-dim);text-align:center;padding:3rem 0">
+                Click "Validate" to check data against schema
+              </p>
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="schema-validate">Validate</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        <a href="https://github.com/productdevbook/defter">defter</a>
+        &mdash; Zero-dependency spreadsheet engine
+      </footer>
+    </main>
+
+    <div class="toast" id="toast"></div>
+    <script type="module" src="/app/entry-client.ts"></script>
+  </body>
+</html>

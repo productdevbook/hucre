@@ -1,0 +1,628 @@
+// ── Cell Value Types ────────────────────────────────────────────────
+
+export type CellValue = string | number | boolean | Date | null;
+
+export type CellType =
+  | "string"
+  | "number"
+  | "boolean"
+  | "date"
+  | "error"
+  | "formula"
+  | "richText"
+  | "empty";
+
+// ── Color ──────────────────────────────────────────────────────────
+
+export interface Color {
+  /** Hex RGB string without '#', e.g. "FF0000" */
+  rgb?: string;
+  /** Theme color index */
+  theme?: number;
+  /** Tint applied to theme color (-1.0 to 1.0) */
+  tint?: number;
+  /** Indexed color (legacy) */
+  indexed?: number;
+}
+
+// ── Font ───────────────────────────────────────────────────────────
+
+export interface FontStyle {
+  name?: string;
+  size?: number;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean | "single" | "double" | "singleAccounting" | "doubleAccounting";
+  strikethrough?: boolean;
+  color?: Color;
+  vertAlign?: "superscript" | "subscript";
+  family?: number;
+  charset?: number;
+  scheme?: "major" | "minor" | "none";
+}
+
+// ── Fill ───────────────────────────────────────────────────────────
+
+export type FillPattern =
+  | "none"
+  | "solid"
+  | "darkDown"
+  | "darkGray"
+  | "darkGrid"
+  | "darkHorizontal"
+  | "darkTrellis"
+  | "darkUp"
+  | "darkVertical"
+  | "gray0625"
+  | "gray125"
+  | "lightDown"
+  | "lightGray"
+  | "lightGrid"
+  | "lightHorizontal"
+  | "lightTrellis"
+  | "lightUp"
+  | "lightVertical"
+  | "mediumGray";
+
+export interface PatternFill {
+  type: "pattern";
+  pattern: FillPattern;
+  fgColor?: Color;
+  bgColor?: Color;
+}
+
+export interface GradientFill {
+  type: "gradient";
+  degree?: number;
+  stops: Array<{ position: number; color: Color }>;
+}
+
+export type FillStyle = PatternFill | GradientFill;
+
+// ── Border ─────────────────────────────────────────────────────────
+
+export type BorderLineStyle =
+  | "thin"
+  | "medium"
+  | "thick"
+  | "dotted"
+  | "dashed"
+  | "double"
+  | "hair"
+  | "mediumDashed"
+  | "dashDot"
+  | "mediumDashDot"
+  | "dashDotDot"
+  | "mediumDashDotDot"
+  | "slantDashDot";
+
+export interface BorderSide {
+  style: BorderLineStyle;
+  color?: Color;
+}
+
+export interface BorderStyle {
+  top?: BorderSide;
+  right?: BorderSide;
+  bottom?: BorderSide;
+  left?: BorderSide;
+  diagonal?: BorderSide;
+  diagonalUp?: boolean;
+  diagonalDown?: boolean;
+}
+
+// ── Alignment ──────────────────────────────────────────────────────
+
+export interface AlignmentStyle {
+  horizontal?:
+    | "left"
+    | "center"
+    | "right"
+    | "fill"
+    | "justify"
+    | "centerContinuous"
+    | "distributed"
+    | "general";
+  vertical?: "top" | "center" | "bottom" | "justify" | "distributed";
+  wrapText?: boolean;
+  shrinkToFit?: boolean;
+  textRotation?: number;
+  indent?: number;
+  readingOrder?: "ltr" | "rtl" | "context";
+}
+
+// ── Cell Style ─────────────────────────────────────────────────────
+
+export interface CellStyle {
+  font?: FontStyle;
+  fill?: FillStyle;
+  border?: BorderStyle;
+  alignment?: AlignmentStyle;
+  numFmt?: string;
+  protection?: CellProtection;
+}
+
+export interface CellProtection {
+  locked?: boolean;
+  hidden?: boolean;
+}
+
+// ── Rich Text ──────────────────────────────────────────────────────
+
+export interface RichTextRun {
+  text: string;
+  font?: FontStyle;
+}
+
+// ── Hyperlink ──────────────────────────────────────────────────────
+
+export interface Hyperlink {
+  target: string;
+  tooltip?: string;
+  display?: string;
+  /** Internal reference (e.g. "Sheet2!A1") */
+  location?: string;
+}
+
+// ── Comment ────────────────────────────────────────────────────────
+
+export interface CellComment {
+  author?: string;
+  text: string;
+  richText?: RichTextRun[];
+}
+
+// ── Cell ───────────────────────────────────────────────────────────
+
+export interface Cell {
+  value: CellValue;
+  type: CellType;
+  style?: CellStyle;
+  formula?: string;
+  formulaResult?: CellValue;
+  richText?: RichTextRun[];
+  hyperlink?: Hyperlink;
+  comment?: CellComment;
+}
+
+// ── Column Definition ──────────────────────────────────────────────
+
+export interface ColumnDef {
+  /** Column header text */
+  header?: string;
+  /** Key for object-based data */
+  key?: string;
+  /** Column width in characters */
+  width?: number;
+  /** Default style for the column */
+  style?: CellStyle;
+  /** Number format */
+  numFmt?: string;
+  /** Hide column */
+  hidden?: boolean;
+  /** Outline level (grouping) */
+  outlineLevel?: number;
+}
+
+// ── Merge Range ────────────────────────────────────────────────────
+
+export interface MergeRange {
+  /** Start row (0-based) */
+  startRow: number;
+  /** Start column (0-based) */
+  startCol: number;
+  /** End row (0-based, inclusive) */
+  endRow: number;
+  /** End column (0-based, inclusive) */
+  endCol: number;
+}
+
+// ── Data Validation ────────────────────────────────────────────────
+
+export type ValidationType =
+  | "list"
+  | "whole"
+  | "decimal"
+  | "date"
+  | "time"
+  | "textLength"
+  | "custom";
+
+export type ValidationOperator =
+  | "between"
+  | "notBetween"
+  | "equal"
+  | "notEqual"
+  | "greaterThan"
+  | "lessThan"
+  | "greaterThanOrEqual"
+  | "lessThanOrEqual";
+
+export interface DataValidation {
+  type: ValidationType;
+  operator?: ValidationOperator;
+  formula1?: string;
+  formula2?: string;
+  /** List values (for type: "list") */
+  values?: string[];
+  allowBlank?: boolean;
+  showInputMessage?: boolean;
+  showErrorMessage?: boolean;
+  inputTitle?: string;
+  inputMessage?: string;
+  errorTitle?: string;
+  errorMessage?: string;
+  errorStyle?: "stop" | "warning" | "information";
+  /** Cell range (e.g. "A1:A100") */
+  range: string;
+}
+
+// ── Conditional Formatting ─────────────────────────────────────────
+
+export type ConditionalRuleType =
+  | "cellIs"
+  | "expression"
+  | "colorScale"
+  | "dataBar"
+  | "iconSet"
+  | "top10"
+  | "aboveAverage"
+  | "duplicateValues"
+  | "uniqueValues"
+  | "containsText"
+  | "notContainsText"
+  | "beginsWith"
+  | "endsWith"
+  | "containsBlanks"
+  | "notContainsBlanks";
+
+export interface ConditionalRule {
+  type: ConditionalRuleType;
+  priority: number;
+  operator?: ValidationOperator;
+  formula?: string | string[];
+  style?: CellStyle;
+  stopIfTrue?: boolean;
+  range: string;
+}
+
+// ── Auto Filter ────────────────────────────────────────────────────
+
+export interface AutoFilter {
+  /** Range (e.g. "A1:D100") */
+  range: string;
+}
+
+// ── Freeze Pane ────────────────────────────────────────────────────
+
+export interface FreezePane {
+  /** Number of rows to freeze from top */
+  rows?: number;
+  /** Number of columns to freeze from left */
+  columns?: number;
+}
+
+// ── Named Range ────────────────────────────────────────────────────
+
+export interface NamedRange {
+  name: string;
+  /** Cell range reference (e.g. "Sheet1!$A$1:$D$10") */
+  range: string;
+  /** Scope: undefined = workbook level, string = sheet name */
+  scope?: string;
+  comment?: string;
+}
+
+// ── Page Setup / Print ─────────────────────────────────────────────
+
+export type PaperSize =
+  | "letter"
+  | "legal"
+  | "a3"
+  | "a4"
+  | "a5"
+  | "b4"
+  | "b5"
+  | "executive"
+  | "tabloid";
+
+export interface PageSetup {
+  paperSize?: PaperSize;
+  orientation?: "portrait" | "landscape";
+  fitToPage?: boolean;
+  fitToWidth?: number;
+  fitToHeight?: number;
+  scale?: number;
+  margins?: PageMargins;
+  printArea?: string;
+  printTitlesRow?: string;
+  printTitlesColumn?: string;
+  showGridLines?: boolean;
+  showRowColHeaders?: boolean;
+  horizontalCentered?: boolean;
+  verticalCentered?: boolean;
+}
+
+export interface PageMargins {
+  top?: number;
+  right?: number;
+  bottom?: number;
+  left?: number;
+  header?: number;
+  footer?: number;
+}
+
+export interface HeaderFooter {
+  oddHeader?: string;
+  oddFooter?: string;
+  evenHeader?: string;
+  evenFooter?: string;
+  firstHeader?: string;
+  firstFooter?: string;
+  differentOddEven?: boolean;
+  differentFirst?: boolean;
+}
+
+// ── Image ──────────────────────────────────────────────────────────
+
+export interface SheetImage {
+  data: Uint8Array;
+  type: "png" | "jpeg" | "gif";
+  /** Anchor to cell */
+  anchor: {
+    from: { row: number; col: number };
+    to?: { row: number; col: number };
+  };
+  width?: number;
+  height?: number;
+}
+
+// ── Sheet Protection ───────────────────────────────────────────────
+
+export interface SheetProtection {
+  password?: string;
+  sheet?: boolean;
+  objects?: boolean;
+  scenarios?: boolean;
+  selectLockedCells?: boolean;
+  selectUnlockedCells?: boolean;
+  formatCells?: boolean;
+  formatColumns?: boolean;
+  formatRows?: boolean;
+  insertColumns?: boolean;
+  insertRows?: boolean;
+  insertHyperlinks?: boolean;
+  deleteColumns?: boolean;
+  deleteRows?: boolean;
+  sort?: boolean;
+  autoFilter?: boolean;
+  pivotTables?: boolean;
+}
+
+// ── Sheet View ─────────────────────────────────────────────────────
+
+export interface SheetView {
+  showGridLines?: boolean;
+  showRowColHeaders?: boolean;
+  zoomScale?: number;
+  rightToLeft?: boolean;
+  tabColor?: Color;
+}
+
+// ── Sheet ──────────────────────────────────────────────────────────
+
+export interface Sheet {
+  name: string;
+  rows: CellValue[][];
+  /** Detailed cell data (keyed by "row,col" e.g. "0,2") */
+  cells?: Map<string, Cell>;
+  columns?: ColumnDef[];
+  merges?: MergeRange[];
+  dataValidations?: DataValidation[];
+  conditionalRules?: ConditionalRule[];
+  autoFilter?: AutoFilter;
+  freezePane?: FreezePane;
+  images?: SheetImage[];
+  protection?: SheetProtection;
+  pageSetup?: PageSetup;
+  headerFooter?: HeaderFooter;
+  view?: SheetView;
+  hidden?: boolean;
+  /** Very hidden (only unhideable via VBA) */
+  veryHidden?: boolean;
+}
+
+// ── Workbook Properties ────────────────────────────────────────────
+
+export interface WorkbookProperties {
+  title?: string;
+  subject?: string;
+  creator?: string;
+  keywords?: string;
+  description?: string;
+  lastModifiedBy?: string;
+  created?: Date;
+  modified?: Date;
+  company?: string;
+  manager?: string;
+  category?: string;
+  /** Custom properties */
+  custom?: Record<string, string | number | boolean | Date>;
+}
+
+// ── Workbook ───────────────────────────────────────────────────────
+
+export interface Workbook {
+  sheets: Sheet[];
+  properties?: WorkbookProperties;
+  namedRanges?: NamedRange[];
+  /** Date system: 1900 (default/Windows) or 1904 (Mac) */
+  dateSystem?: "1900" | "1904";
+  /** Default font for the workbook */
+  defaultFont?: FontStyle;
+  /** Active sheet index */
+  activeSheet?: number;
+}
+
+// ── Read Options ───────────────────────────────────────────────────
+
+export interface ReadOptions {
+  /** Which sheets to read (by index or name). Default: all */
+  sheets?: Array<number | string>;
+  /** Which row is the header row (1-based). Default: none */
+  headerRow?: number;
+  /** Schema for validation and type coercion */
+  schema?: SchemaDefinition;
+  /** Date system override. Default: auto-detect from file */
+  dateSystem?: "1900" | "1904" | "auto";
+  /** Whether to read styles. Default: false (faster without) */
+  readStyles?: boolean;
+  /** Password for encrypted files */
+  password?: string;
+}
+
+// ── Write Options ──────────────────────────────────────────────────
+
+export interface WriteOptions {
+  sheets: WriteSheet[];
+  properties?: WorkbookProperties;
+  defaultFont?: FontStyle;
+  dateSystem?: "1900" | "1904";
+}
+
+export interface WriteSheet {
+  name: string;
+  columns?: ColumnDef[];
+  /** Raw row data (array of arrays) */
+  rows?: CellValue[][];
+  /** Object data (array of objects — uses column keys) */
+  data?: Array<Record<string, CellValue>>;
+  /** Detailed cell overrides (keyed by "row,col") */
+  cells?: Map<string, Partial<Cell>>;
+  merges?: MergeRange[];
+  dataValidations?: DataValidation[];
+  conditionalRules?: ConditionalRule[];
+  autoFilter?: AutoFilter;
+  freezePane?: FreezePane;
+  images?: SheetImage[];
+  protection?: SheetProtection;
+  pageSetup?: PageSetup;
+  headerFooter?: HeaderFooter;
+  view?: SheetView;
+  hidden?: boolean;
+  veryHidden?: boolean;
+}
+
+// ── CSV Options ────────────────────────────────────────────────────
+
+export interface CsvReadOptions {
+  /** Field delimiter. Default: auto-detect */
+  delimiter?: string;
+  /** Line separator. Default: auto-detect */
+  lineSeparator?: string;
+  /** Quote character. Default: " */
+  quote?: string;
+  /** Escape character. Default: " (RFC 4180 doubled quotes) */
+  escape?: string;
+  /** Whether first row is header. Default: false */
+  header?: boolean;
+  /** Skip BOM if present. Default: true */
+  skipBom?: boolean;
+  /** Type inference for numbers, booleans, dates. Default: false */
+  typeInference?: boolean;
+  /** Schema for validation */
+  schema?: SchemaDefinition;
+  /** Encoding. Default: "utf-8" */
+  encoding?: string;
+  /** Skip empty rows. Default: false */
+  skipEmptyRows?: boolean;
+  /** Comment character (lines starting with this are skipped) */
+  comment?: string;
+}
+
+export interface CsvWriteOptions {
+  /** Field delimiter. Default: "," */
+  delimiter?: string;
+  /** Line separator. Default: "\n" */
+  lineSeparator?: string;
+  /** Quote character. Default: " */
+  quote?: string;
+  /** Quote style. Default: "required" */
+  quoteStyle?: "all" | "required" | "none";
+  /** Headers row from column names */
+  headers?: string[] | boolean;
+  /** Prepend UTF-8 BOM (for Excel compatibility). Default: false */
+  bom?: boolean;
+  /** Date format string. Default: ISO 8601 */
+  dateFormat?: string;
+  /** Null/undefined representation. Default: "" */
+  nullValue?: string;
+}
+
+// ── Schema Validation ──────────────────────────────────────────────
+
+export type SchemaFieldType = "string" | "number" | "integer" | "boolean" | "date";
+
+export interface SchemaField {
+  /** Expected column header name (for matching) */
+  column?: string;
+  /** Column index (0-based, alternative to column name) */
+  columnIndex?: number;
+  type?: SchemaFieldType;
+  required?: boolean;
+  /** Custom validation function */
+  validate?: (value: unknown) => boolean | string;
+  /** Transform value after parsing */
+  transform?: (value: unknown) => unknown;
+  /** Regular expression pattern (for strings) */
+  pattern?: RegExp;
+  /** Minimum value (for numbers) or length (for strings) */
+  min?: number;
+  /** Maximum value (for numbers) or length (for strings) */
+  max?: number;
+  /** Allowed values */
+  enum?: unknown[];
+  /** Default value for empty cells */
+  default?: unknown;
+}
+
+export type SchemaDefinition = Record<string, SchemaField>;
+
+export interface ValidationError {
+  /** 1-based row number */
+  row: number;
+  /** Column name or index */
+  column: string | number;
+  /** Error message */
+  message: string;
+  /** The raw value that failed validation */
+  value: unknown;
+  /** Field name in the schema */
+  field: string;
+}
+
+export interface ReadResult<T = Record<string, unknown>> {
+  /** Parsed and validated rows */
+  data: T[];
+  /** Validation errors (if schema provided) */
+  errors: ValidationError[];
+  /** Raw sheet data */
+  sheets: Sheet[];
+}
+
+// ── Streaming Types ────────────────────────────────────────────────
+
+export interface StreamReadOptions extends ReadOptions {
+  /** Batch size for row events. Default: 1 */
+  batchSize?: number;
+}
+
+export interface StreamWriteOptions extends WriteOptions {
+  /** Sheet being written */
+  sheet: WriteSheet;
+}
+
+// ── Input/Output Types ─────────────────────────────────────────────
+
+export type ReadInput = Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>;
+export type WriteOutput = Uint8Array;

@@ -1,0 +1,14 @@
+{
+  "name": "defter-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite dev",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "nitro": "latest",
+    "vite": "latest"
+  }
+}

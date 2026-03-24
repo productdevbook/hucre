@@ -1,0 +1,317 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 628" width="1200" height="628">
+  <defs>
+    <filter id="grain">
+      <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feBlend in="SourceGraphic" mode="overlay" result="blend"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.06"/>
+      </feComponentTransfer>
+      <feBlend in="SourceGraphic" mode="normal"/>
+    </filter>
+
+    <filter id="glow-emerald" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feFlood flood-color="#34d399" flood-opacity="0.5"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <filter id="glow-cyan" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feFlood flood-color="#06b6d4" flood-opacity="0.45"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <filter id="glow-purple" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feFlood flood-color="#a78bfa" flood-opacity="0.4"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <filter id="glow-orange" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feFlood flood-color="#f97316" flood-opacity="0.35"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <filter id="glow-rose" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feFlood flood-color="#fb7185" flood-opacity="0.35"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <filter id="glow-amber" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feFlood flood-color="#fbbf24" flood-opacity="0.35"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <radialGradient id="ambientEmerald" cx="0.05" cy="0.2" r="0.4">
+      <stop offset="0%" stop-color="#34d399" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#34d399" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ambientCyan" cx="0.95" cy="0.15" r="0.35">
+      <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.07"/>
+      <stop offset="100%" stop-color="#06b6d4" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ambientPurple" cx="0.05" cy="0.85" r="0.35">
+      <stop offset="0%" stop-color="#a78bfa" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#a78bfa" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ambientOrange" cx="0.95" cy="0.85" r="0.35">
+      <stop offset="0%" stop-color="#f97316" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#f97316" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="centerBackdrop" cx="0.5" cy="0.5" r="0.55">
+      <stop offset="0%" stop-color="#06070b" stop-opacity="0.96"/>
+      <stop offset="55%" stop-color="#06070b" stop-opacity="0.9"/>
+      <stop offset="80%" stop-color="#06070b" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#06070b" stop-opacity="0"/>
+    </radialGradient>
+
+    <pattern id="dotGrid" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="14" cy="14" r="0.6" fill="#334155" opacity="0.35"/>
+    </pattern>
+
+    <radialGradient id="vignetteGrad" cx="0.5" cy="0.5" r="0.7">
+      <stop offset="0%" stop-color="transparent"/>
+      <stop offset="100%" stop-color="#06070b"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="628" fill="#06070b"/>
+  <rect width="1200" height="628" fill="url(#ambientEmerald)"/>
+  <rect width="1200" height="628" fill="url(#ambientCyan)"/>
+  <rect width="1200" height="628" fill="url(#ambientPurple)"/>
+  <rect width="1200" height="628" fill="url(#ambientOrange)"/>
+  <rect width="1200" height="628" fill="url(#dotGrid)" opacity="0.4"/>
+
+  <!-- ════════════════════════════════════════ -->
+  <!-- SPREADSHEET GRID — top left             -->
+  <!-- ════════════════════════════════════════ -->
+  <g transform="translate(-40, -20) rotate(-12, 180, 180)" filter="url(#glow-emerald)" opacity="0.8">
+    <g stroke="#34d399" fill="none" stroke-width="1.2">
+      <!-- Grid lines -->
+      <rect x="20" y="20" width="280" height="200" rx="4"/>
+      <!-- Header row -->
+      <rect x="20" y="20" width="280" height="28" rx="4" fill="#34d39918"/>
+      <line x1="20" y1="48" x2="300" y2="48"/>
+      <!-- Column dividers -->
+      <line x1="90" y1="20" x2="90" y2="220"/>
+      <line x1="160" y1="20" x2="160" y2="220"/>
+      <line x1="230" y1="20" x2="230" y2="220"/>
+      <!-- Row dividers -->
+      <line x1="20" y1="76" x2="300" y2="76"/>
+      <line x1="20" y1="104" x2="300" y2="104"/>
+      <line x1="20" y1="132" x2="300" y2="132"/>
+      <line x1="20" y1="160" x2="300" y2="160"/>
+      <line x1="20" y1="188" x2="300" y2="188"/>
+    </g>
+    <!-- Header labels -->
+    <text font-family="'SF Mono','Fira Code',monospace" font-size="11" fill="#34d399" opacity="0.9">
+      <tspan x="46" y="39">A</tspan>
+      <tspan x="118" y="39">B</tspan>
+      <tspan x="188" y="39">C</tspan>
+      <tspan x="258" y="39">D</tspan>
+    </text>
+    <!-- Cell data -->
+    <text font-family="'SF Mono','Fira Code',monospace" font-size="10" fill="#34d399" opacity="0.7">
+      <tspan x="30" y="66">Name</tspan>
+      <tspan x="100" y="66">Price</tspan>
+      <tspan x="170" y="66">SKU</tspan>
+      <tspan x="240" y="66">Stock</tspan>
+      <tspan x="30" y="94">Widget</tspan>
+      <tspan x="100" y="94">9.99</tspan>
+      <tspan x="170" y="94">WDG-01</tspan>
+      <tspan x="240" y="94">142</tspan>
+      <tspan x="30" y="122">Gadget</tspan>
+      <tspan x="100" y="122">24.50</tspan>
+      <tspan x="170" y="122">GDG-02</tspan>
+      <tspan x="240" y="122">87</tspan>
+      <tspan x="30" y="150">Bolt</tspan>
+      <tspan x="100" y="150">0.75</tspan>
+      <tspan x="170" y="150">BLT-03</tspan>
+      <tspan x="240" y="150">3420</tspan>
+      <tspan x="30" y="178">Cable</tspan>
+      <tspan x="100" y="178">12.00</tspan>
+      <tspan x="170" y="178">CBL-04</tspan>
+      <tspan x="240" y="178">256</tspan>
+    </text>
+    <!-- Selected cell highlight -->
+    <rect x="90" y="76" width="70" height="28" fill="#34d39920" stroke="#34d399" stroke-width="2" rx="2"/>
+    <text x="160" y="250" text-anchor="middle" fill="#34d399" opacity="0.6" font-family="'SF Mono','Fira Code',monospace" font-size="13" font-weight="bold" letter-spacing="4">SPREADSHEET</text>
+  </g>
+
+  <!-- ════════════════════════════════════════ -->
+  <!-- CSV TEXT — top right                    -->
+  <!-- ════════════════════════════════════════ -->
+  <g transform="translate(880, -50) rotate(10, 180, 160)" filter="url(#glow-cyan)" opacity="0.7">
+    <text font-family="'SF Mono','Fira Code',monospace" font-size="13" fill="#06b6d4" opacity="0.85" letter-spacing="0.5">
+      <tspan x="0" y="20">name,price,sku,qty</tspan>
+      <tspan x="0" y="40">"Widget",9.99,WDG-01,142</tspan>
+      <tspan x="0" y="60">"Gadget",24.50,GDG-02,87</tspan>
+      <tspan x="0" y="80">"Bolt",0.75,BLT-03,3420</tspan>
+      <tspan x="0" y="100">"Cable",12.00,CBL-04,256</tspan>
+      <tspan x="0" y="120">"Sensor",45.99,SNS-05,64</tspan>
+      <tspan x="0" y="140">"Motor",89.00,MTR-06,31</tspan>
+      <tspan x="0" y="160">"Fuse",1.25,FUS-07,980</tspan>
+      <tspan x="0" y="180">"Relay",15.50,RLY-08,412</tspan>
+      <tspan x="0" y="200">"Pump",120.00,PMP-09,18</tspan>
+      <tspan x="0" y="220">"Valve",34.75,VLV-10,93</tspan>
+      <tspan x="0" y="240">"Gear",8.90,GER-11,567</tspan>
+    </text>
+    <!-- Highlight a comma -->
+    <rect x="42" y="28" width="8" height="16" fill="#06b6d420" rx="2"/>
+    <rect x="77" y="28" width="8" height="16" fill="#06b6d420" rx="2"/>
+    <text x="130" y="275" text-anchor="middle" fill="#06b6d4" opacity="0.55" font-family="'SF Mono','Fira Code',monospace" font-size="13" font-weight="bold" letter-spacing="5">CSV</text>
+  </g>
+
+  <!-- ════════════════════════════════════════ -->
+  <!-- FORMULA BAR — bottom left               -->
+  <!-- ════════════════════════════════════════ -->
+  <g transform="translate(-30, 400) rotate(5, 160, 80)" filter="url(#glow-purple)" opacity="0.7">
+    <!-- Formula bar background -->
+    <rect x="10" y="10" width="300" height="34" rx="6" fill="#a78bfa10" stroke="#a78bfa" stroke-width="1.2"/>
+    <text x="20" y="32" font-family="'SF Mono','Fira Code',monospace" font-size="12" fill="#a78bfa" opacity="0.9" font-weight="bold">fx</text>
+    <line x1="44" y1="14" x2="44" y2="40" stroke="#a78bfa" stroke-width="0.8" opacity="0.4"/>
+    <text x="54" y="32" font-family="'SF Mono','Fira Code',monospace" font-size="12" fill="#a78bfa" opacity="0.75">=SUM(B2:B1048576)</text>
+    <!-- More formulas floating -->
+    <text font-family="'SF Mono','Fira Code',monospace" font-size="11" fill="#a78bfa" opacity="0.5">
+      <tspan x="20" y="68">=VLOOKUP(A2,Sheet2!A:D,3,FALSE)</tspan>
+      <tspan x="40" y="90">=IF(C2&gt;100,"High","Low")</tspan>
+      <tspan x="10" y="112">=COUNTIFS(D:D,"&gt;0",E:E,"Active")</tspan>
+      <tspan x="60" y="134">=TEXT(NOW(),"yyyy-mm-dd")</tspan>
+      <tspan x="20" y="156">=ROUND(B2*1.18,2)</tspan>
+      <tspan x="50" y="178">=INDEX(MATCH(...))</tspan>
+    </text>
+    <text x="160" y="210" text-anchor="middle" fill="#a78bfa" opacity="0.5" font-family="'SF Mono','Fira Code',monospace" font-size="13" font-weight="bold" letter-spacing="4">FORMULAS</text>
+  </g>
+
+  <!-- ════════════════════════════════════════ -->
+  <!-- XML TAGS — bottom right                 -->
+  <!-- ════════════════════════════════════════ -->
+  <g transform="translate(870, 390) rotate(-6, 160, 100)" filter="url(#glow-orange)" opacity="0.6">
+    <text font-family="'SF Mono','Fira Code',monospace" font-size="11" fill="#f97316" opacity="0.75">
+      <tspan x="0" y="16">&lt;worksheet&gt;</tspan>
+      <tspan x="16" y="34">&lt;sheetData&gt;</tspan>
+      <tspan x="32" y="52">&lt;row r="1"&gt;</tspan>
+      <tspan x="48" y="70">&lt;c r="A1" t="s"&gt;</tspan>
+      <tspan x="64" y="88">&lt;v&gt;0&lt;/v&gt;</tspan>
+      <tspan x="48" y="106">&lt;/c&gt;</tspan>
+      <tspan x="48" y="124">&lt;c r="B1" t="n"&gt;</tspan>
+      <tspan x="64" y="142">&lt;v&gt;42&lt;/v&gt;</tspan>
+      <tspan x="48" y="160">&lt;/c&gt;</tspan>
+      <tspan x="32" y="178">&lt;/row&gt;</tspan>
+      <tspan x="16" y="196">&lt;/sheetData&gt;</tspan>
+      <tspan x="0" y="214">&lt;/worksheet&gt;</tspan>
+    </text>
+    <text x="120" y="245" text-anchor="middle" fill="#f97316" opacity="0.5" font-family="'SF Mono','Fira Code',monospace" font-size="13" font-weight="bold" letter-spacing="4">OOXML</text>
+  </g>
+
+  <!-- ════════════════════════════════════════ -->
+  <!-- CHART BARS — far right edge mid         -->
+  <!-- ════════════════════════════════════════ -->
+  <g transform="translate(1080, 190) rotate(15, 50, 70)" filter="url(#glow-rose)" opacity="0.45">
+    <g fill="#fb7185">
+      <rect x="0" y="90" width="14" height="50" rx="2"/>
+      <rect x="18" y="60" width="14" height="80" rx="2"/>
+      <rect x="36" y="30" width="14" height="110" rx="2"/>
+      <rect x="54" y="70" width="14" height="70" rx="2"/>
+      <rect x="72" y="10" width="14" height="130" rx="2"/>
+      <rect x="90" y="50" width="14" height="90" rx="2"/>
+    </g>
+    <!-- Axis -->
+    <line x1="0" y1="142" x2="106" y2="142" stroke="#fb7185" stroke-width="1" opacity="0.5"/>
+    <text x="53" y="165" text-anchor="middle" fill="#fb7185" opacity="0.4" font-family="'SF Mono','Fira Code',monospace" font-size="11" font-weight="bold" letter-spacing="3">CHARTS</text>
+  </g>
+
+  <!-- ════════════════════════════════════════ -->
+  <!-- ZIP ICON — far left edge mid            -->
+  <!-- ════════════════════════════════════════ -->
+  <g transform="translate(20, 240)" filter="url(#glow-amber)" opacity="0.4">
+    <!-- Zip file icon -->
+    <rect x="5" y="5" width="60" height="80" rx="4" fill="none" stroke="#fbbf24" stroke-width="1.5"/>
+    <!-- Zip zigzag pattern -->
+    <g fill="#fbbf24" opacity="0.7">
+      <rect x="25" y="8" width="10" height="8"/>
+      <rect x="35" y="16" width="10" height="8"/>
+      <rect x="25" y="24" width="10" height="8"/>
+      <rect x="35" y="32" width="10" height="8"/>
+      <rect x="25" y="40" width="10" height="8"/>
+      <rect x="35" y="48" width="10" height="8"/>
+    </g>
+    <!-- Zip tab -->
+    <rect x="22" y="56" width="26" height="14" rx="2" fill="none" stroke="#fbbf24" stroke-width="1.2"/>
+    <text x="35" y="108" text-anchor="middle" fill="#fbbf24" opacity="0.45" font-family="'SF Mono','Fira Code',monospace" font-size="12" font-weight="bold" letter-spacing="3">ZIP</text>
+  </g>
+
+  <!-- ════════════════════════════════════════ -->
+  <!-- CENTER DARK BACKDROP                    -->
+  <!-- ════════════════════════════════════════ -->
+  <rect width="1200" height="628" fill="url(#centerBackdrop)"/>
+
+  <!-- ════════════════════════════════════════ -->
+  <!-- CENTER CONTENT                          -->
+  <!-- ════════════════════════════════════════ -->
+
+  <!-- "defter" wordmark -->
+  <text x="600" y="260" text-anchor="middle" fill="#f8fafc" font-family="'Georgia','Playfair Display','Times New Roman',serif" font-size="148" font-weight="bold" letter-spacing="-3" opacity="0.97">defter</text>
+
+  <!-- Thin rule -->
+  <line x1="340" y1="286" x2="860" y2="286" stroke="#475569" stroke-width="1" opacity="0.5"/>
+
+  <!-- Tagline -->
+  <text x="600" y="326" text-anchor="middle" fill="#cbd5e1" font-family="'SF Mono','Fira Code','Menlo',monospace" font-size="19" letter-spacing="6">ZERO-DEP SPREADSHEET ENGINE</text>
+
+  <!-- Feature pills -->
+  <g font-family="'SF Mono','Fira Code','Menlo',monospace" font-size="14" letter-spacing="1.5">
+    <g transform="translate(196, 356)">
+      <rect x="0" y="0" width="164" height="38" rx="19" fill="#34d39910" stroke="#34d399" stroke-width="1.3" opacity="0.7"/>
+      <text x="82" y="25" text-anchor="middle" fill="#34d399" opacity="0.95">0 DEPENDENCIES</text>
+    </g>
+    <g transform="translate(376, 356)">
+      <rect x="0" y="0" width="100" height="38" rx="19" fill="#06b6d410" stroke="#06b6d4" stroke-width="1.3" opacity="0.7"/>
+      <text x="50" y="25" text-anchor="middle" fill="#06b6d4" opacity="0.95">~18 KB</text>
+    </g>
+    <g transform="translate(492, 356)">
+      <rect x="0" y="0" width="140" height="38" rx="19" fill="#a78bfa10" stroke="#a78bfa" stroke-width="1.3" opacity="0.7"/>
+      <text x="70" y="25" text-anchor="middle" fill="#a78bfa" opacity="0.95">TYPESCRIPT</text>
+    </g>
+    <g transform="translate(648, 356)">
+      <rect x="0" y="0" width="172" height="38" rx="19" fill="#f9731610" stroke="#f97316" stroke-width="1.3" opacity="0.7"/>
+      <text x="86" y="25" text-anchor="middle" fill="#f97316" opacity="0.95">TREE-SHAKEABLE</text>
+    </g>
+    <g transform="translate(836, 356)">
+      <rect x="0" y="0" width="140" height="38" rx="19" fill="#fb718510" stroke="#fb7185" stroke-width="1.3" opacity="0.7"/>
+      <text x="70" y="25" text-anchor="middle" fill="#fb7185" opacity="0.95">STREAMING</text>
+    </g>
+  </g>
+
+  <!-- Format list -->
+  <text x="600" y="432" text-anchor="middle" fill="#94a3b8" font-family="'SF Mono','Fira Code',monospace" font-size="13" letter-spacing="2.5">XLSX · CSV · ODS · READ · WRITE · STREAM · VALIDATE · STYLE</text>
+
+  <!-- npm install badge -->
+  <g transform="translate(496, 460)">
+    <rect x="0" y="0" width="208" height="40" rx="8" fill="#0f172a" stroke="#1e293b" stroke-width="1.2"/>
+    <text x="20" y="26" fill="#64748b" font-family="'SF Mono','Fira Code',monospace" font-size="16">$</text>
+    <text x="38" y="26" fill="#94a3b8" font-family="'SF Mono','Fira Code',monospace" font-size="16"> npm i </text>
+    <text x="118" y="26" fill="#f8fafc" font-family="'SF Mono','Fira Code',monospace" font-size="16" font-weight="bold">defter</text>
+  </g>
+
+  <!-- GitHub link -->
+  <text x="600" y="556" text-anchor="middle" fill="#64748b" font-family="'SF Mono','Fira Code',monospace" font-size="13" letter-spacing="1.5">github.com/productdevbook/defter</text>
+
+  <!-- Grain overlay -->
+  <rect width="1200" height="628" filter="url(#grain)" opacity="0.2"/>
+
+  <!-- Vignette -->
+  <rect width="1200" height="628" fill="url(#vignetteGrad)" opacity="0.45"/>
+</svg>

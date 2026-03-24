@@ -1,0 +1,11 @@
+{
+  "extends": ["nitro/tsconfig"],
+  "compilerOptions": {
+    "paths": {
+      "~/*": ["./*"],
+      "defter": ["../src/index.ts"],
+      "defter/xlsx": ["../src/xlsx.ts"],
+      "defter/csv": ["../src/csv.ts"]
+    }
+  }
+}
