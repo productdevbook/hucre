@@ -95,7 +95,7 @@ export function parseCsv(input: string, options?: CsvReadOptions): CellValue[][]
 
   // Filter comments
   const commentChar = opts.comment;
-  let filtered = commentChar
+  let filtered: CellValue[][] = commentChar
     ? rows.filter((row) => {
         if (row.length === 0) return true;
         const firstVal = row[0];
@@ -121,7 +121,29 @@ export function parseCsv(input: string, options?: CsvReadOptions): CellValue[][]
   // Type inference
   if (opts.typeInference) {
     const preserveLeadingZeros = opts.preserveLeadingZeros;
-    return filtered.map((row) => row.map((v) => inferType(v, preserveLeadingZeros)));
+    filtered = filtered.map((row) => row.map((v) => inferType(v, preserveLeadingZeros)));
+  }
+
+  // transformValue callback — applied after type inference
+  const transformValue = options?.transformValue;
+  if (transformValue) {
+    // When we don't have headers we pass column index as the header name
+    // Detect headers from first row if header option is set
+    const headerRow = options?.header && filtered.length > 0 ? filtered[0]! : null;
+    filtered = filtered.map((row, rowIdx) =>
+      row.map((val, colIdx) => {
+        const header = headerRow ? String(headerRow[colIdx] ?? colIdx) : String(colIdx);
+        return transformValue(val, header, rowIdx, colIdx);
+      }),
+    );
+  }
+
+  // onRow callback — called for each row after all processing
+  const onRow = options?.onRow;
+  if (onRow) {
+    for (let i = 0; i < filtered.length; i++) {
+      onRow(filtered[i]!, i);
+    }
   }
 
   return filtered;
@@ -135,24 +157,40 @@ export function parseCsvObjects<T extends Record<string, CellValue> = Record<str
   input: string,
   options?: CsvReadOptions & { header: true },
 ): { data: T[]; headers: string[] } {
-  const rows = parseCsv(input, { ...options, header: false });
+  // Pass through without transformValue/transformHeader to parseCsv — we handle them here
+  const { transformHeader, transformValue, ...restOptions } = options ?? {};
+  const rows = parseCsv(input, {
+    ...restOptions,
+    header: false,
+    transformValue: undefined,
+    transformHeader: undefined,
+  });
 
   if (rows.length === 0) {
     return { data: [], headers: [] };
   }
 
   const headerRow = rows[0]!;
-  const headers = headerRow.map((h) => {
+  let headers = headerRow.map((h) => {
     if (h === null) return "";
     return String(h).trim();
   });
+
+  // Apply transformHeader callback
+  if (transformHeader) {
+    headers = headers.map((h, i) => transformHeader(h, i));
+  }
 
   const data: T[] = [];
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i]!;
     const obj: Record<string, CellValue> = {};
     for (let j = 0; j < headers.length; j++) {
-      obj[headers[j]!] = j < row.length ? row[j]! : null;
+      let val: CellValue = j < row.length ? row[j]! : null;
+      if (transformValue) {
+        val = transformValue(val, headers[j]!, i, j);
+      }
+      obj[headers[j]!] = val;
     }
     data.push(obj as T);
   }

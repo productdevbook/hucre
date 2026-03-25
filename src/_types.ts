@@ -680,6 +680,12 @@ export interface CsvReadOptions {
   maxRows?: number;
   /** Skip the first N lines before parsing (useful for files with metadata headers above the CSV data). */
   skipLines?: number;
+  /** Called for each row during parsing, enabling progressive processing without buffering all rows. */
+  onRow?: (row: CellValue[], index: number) => void;
+  /** Transform each header string when `header: true`. Called on each header value. */
+  transformHeader?: (header: string, index: number) => string;
+  /** Transform each cell value after type inference. Called on every cell. */
+  transformValue?: (value: CellValue, header: string, row: number, col: number) => CellValue;
 }
 
 export interface CsvWriteOptions {

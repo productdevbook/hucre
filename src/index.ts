@@ -92,9 +92,12 @@ export {
 // ── Sheet Utilities ──────────────────────────────────────────────
 export { sheetToObjects, sheetToArrays } from "./sheet-utils";
 
-// ── Export (HTML / Markdown) ───────────────────────────────────────
-export { toHtml, toMarkdown } from "./export/index";
-export type { HtmlExportOptions, MarkdownExportOptions } from "./export/index";
+// ── Export (HTML / Markdown / JSON) ──────────────────────────────────
+export { toHtml, toMarkdown, toJson, fromHtml } from "./export/index";
+export type { HtmlExportOptions, MarkdownExportOptions, JsonExportOptions } from "./export/index";
+
+// ── Image Utilities ──────────────────────────────────────────────
+export { imageFromBase64 } from "./image";
 
 // ── Errors ─────────────────────────────────────────────────────────
 export {

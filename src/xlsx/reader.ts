@@ -38,7 +38,11 @@ const NS_STRICT = "http://purl.oclc.org/ooxml/officeDocument/relationships";
  * Excel 2013+ can save in Strict mode which uses different namespace URIs.
  */
 function matchesRelType(rel: string, type: string): boolean {
-  return rel === `${NS_TRANSITIONAL}/${type}` || rel === `${NS_STRICT}/${type}`;
+  return (
+    rel === `${NS_TRANSITIONAL}/${type}` ||
+    rel === `${NS_STRICT}/${type}` ||
+    rel.endsWith("/" + type)
+  );
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
