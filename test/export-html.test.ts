@@ -209,14 +209,15 @@ describe("toHtml", () => {
     expect(html).toContain("<style>");
     expect(html).toContain("border-collapse:collapse");
     expect(html).toContain("</style>");
-    expect(html).toContain("<table>");
+    expect(html).toContain('<table class="hucre-table">');
+    expect(html).toContain("prefers-color-scheme:dark");
   });
 
   it("includeStyleTag with empty sheet", () => {
     const sheet = makeSheet([]);
     const html = toHtml(sheet, { includeStyleTag: true });
     expect(html).toContain("<style>");
-    expect(html).toContain("<table></table>");
+    expect(html).toContain('<table class="hucre-table"></table>');
   });
 
   it("custom classPrefix", () => {

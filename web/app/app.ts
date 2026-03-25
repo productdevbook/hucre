@@ -625,8 +625,7 @@ function setupExport() {
       const styles = ($("export-styles") as HTMLInputElement).checked;
       const html = toHtml(sheet, { headerRow, styles, classes: true, includeStyleTag: true });
       lastExportText = html;
-      // Show rendered HTML preview
-      output.innerHTML = `<div style="background:#fff;color:#000;padding:1rem;border-radius:6px">${html}</div>`;
+      output.innerHTML = `<div>${html}</div>`;
       output.innerHTML += `<details style="margin-top:0.75rem"><summary style="cursor:pointer;color:var(--text-dim);font-size:0.75rem">View source (${html.length} chars)</summary><pre style="font-size:0.7rem;overflow-x:auto;margin-top:0.5rem;color:var(--text-muted)">${escapeHtml(html)}</pre></details>`;
       ($("export-copy") as HTMLButtonElement).disabled = false;
     } catch (e: unknown) {

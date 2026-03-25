@@ -172,22 +172,25 @@ export function toHtml(sheet: Sheet, options?: HtmlExportOptions): string {
     includeStyleTag: options?.includeStyleTag ?? false,
   };
 
+  const prefix = opts.classPrefix;
+  const tableClass = opts.includeStyleTag ? ` class="${prefix}-table"` : "";
+
   const rows = sheet.rows;
   if (!rows || rows.length === 0) {
     if (opts.includeStyleTag) {
-      return buildStyleTag(opts.classPrefix) + "<table></table>";
+      return buildStyleTag(prefix) + `<table${tableClass}></table>`;
     }
-    return "<table></table>";
+    return `<table${tableClass}></table>`;
   }
 
   const mergeMap = buildMergeMap(sheet.merges);
   const parts: string[] = [];
 
   if (opts.includeStyleTag) {
-    parts.push(buildStyleTag(opts.classPrefix));
+    parts.push(buildStyleTag(prefix));
   }
 
-  parts.push("<table>");
+  parts.push(`<table${tableClass}>`);
 
   const startRow = opts.headerRow ? 1 : 0;
 
@@ -265,7 +268,24 @@ function buildCellAttrs(
   return attrs.length > 0 ? " " + attrs.join(" ") : "";
 }
 
-/** Build a minimal <style> block */
+/** Build a dark/light responsive <style> block */
 function buildStyleTag(prefix: string): string {
-  return `<style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:4px 8px;text-align:left}th{background-color:#f5f5f5;font-weight:bold}.${prefix}-num{text-align:right}.${prefix}-bool{text-align:center}.${prefix}-null{color:#999}</style>`;
+  return [
+    "<style>",
+    `.${prefix}-table{border-collapse:collapse;width:100%;font-family:system-ui,-apple-system,sans-serif;font-size:14px;color:#1a1a1a;background:#fff}`,
+    `.${prefix}-table th,.${prefix}-table td{border:1px solid #e0e0e0;padding:6px 10px;text-align:left}`,
+    `.${prefix}-table th{background:#f5f5f5;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.03em}`,
+    `.${prefix}-table tr:hover td{background:#f8f8f8}`,
+    `.${prefix}-num{text-align:right;font-variant-numeric:tabular-nums}`,
+    `.${prefix}-bool{text-align:center}`,
+    `.${prefix}-null{color:#999;font-style:italic}`,
+    `@media(prefers-color-scheme:dark){`,
+    `.${prefix}-table{color:#e0e0e0;background:#1a1a1a}`,
+    `.${prefix}-table th,.${prefix}-table td{border-color:#333}`,
+    `.${prefix}-table th{background:#252525}`,
+    `.${prefix}-table tr:hover td{background:#222}`,
+    `.${prefix}-null{color:#666}`,
+    `}`,
+    "</style>",
+  ].join("");
 }
