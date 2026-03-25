@@ -237,7 +237,10 @@ describe("toHtml", () => {
   });
 
   it("dark mode CSS has correct structure", () => {
-    const sheet = makeSheet([["Name", "Price"], ["Widget", 9.99]]);
+    const sheet = makeSheet([
+      ["Name", "Price"],
+      ["Widget", 9.99],
+    ]);
     const html = toHtml(sheet, { includeStyleTag: true, headerRow: true });
     // Light mode styles
     expect(html).toContain("color:#1a1a1a");

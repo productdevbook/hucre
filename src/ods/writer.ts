@@ -14,6 +14,8 @@ const NS_TABLE = "urn:oasis:names:tc:opendocument:xmlns:table:1.0";
 const NS_TEXT = "urn:oasis:names:tc:opendocument:xmlns:text:1.0";
 const NS_STYLE = "urn:oasis:names:tc:opendocument:xmlns:style:1.0";
 const NS_FO = "urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0";
+const NS_NUMBER = "urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0";
+const NS_SVG = "urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0";
 const NS_META = "urn:oasis:names:tc:opendocument:xmlns:meta:1.0";
 const NS_DC = "http://purl.org/dc/elements/1.1/";
 
@@ -26,7 +28,7 @@ function formatOdsDate(date: Date): string {
 }
 
 function formatOdsDateValue(date: Date): string {
-  // ODS date values use ISO 8601 without time zone: YYYY-MM-DD
+  // ODS date values use ISO 8601 without time zone: YYYY-MM-DDTHH:MM:SS
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
@@ -83,6 +85,51 @@ function cellToOds(value: CellValue): string {
   return xmlSelfClose("table:table-cell");
 }
 
+// ── Row serialization with trailing-empty-cell optimization ─────────
+
+function rowToOds(row: CellValue[]): string {
+  const cellElements: string[] = [];
+
+  // Find the last non-null cell index to avoid emitting trailing empty cells
+  let lastNonNull = row.length - 1;
+  while (lastNonNull >= 0 && (row[lastNonNull] === null || row[lastNonNull] === undefined)) {
+    lastNonNull--;
+  }
+
+  // Emit cells up to and including the last non-null cell,
+  // collapsing consecutive null/undefined cells with number-columns-repeated
+  let i = 0;
+  while (i <= lastNonNull) {
+    const cell = row[i];
+
+    if (cell === null || cell === undefined) {
+      // Count consecutive empty cells
+      let count = 1;
+      while (
+        i + count <= lastNonNull &&
+        (row[i + count] === null || row[i + count] === undefined)
+      ) {
+        count++;
+      }
+      if (count > 1) {
+        cellElements.push(
+          xmlSelfClose("table:table-cell", {
+            "table:number-columns-repeated": String(count),
+          }),
+        );
+      } else {
+        cellElements.push(xmlSelfClose("table:table-cell"));
+      }
+      i += count;
+    } else {
+      cellElements.push(cellToOds(cell));
+      i++;
+    }
+  }
+
+  return xmlElement("table:table-row", undefined, cellElements);
+}
+
 // ── content.xml ─────────────────────────────────────────────────────
 
 function writeContentXml(options: WriteOptions): string {
@@ -91,7 +138,7 @@ function writeContentXml(options: WriteOptions): string {
   const tableElements: string[] = [];
 
   for (const sheet of sheets) {
-    const rowElements: string[] = [];
+    const children: string[] = [];
 
     // Resolve rows from rows or data
     let rows: CellValue[][] = [];
@@ -113,19 +160,43 @@ function writeContentXml(options: WriteOptions): string {
       }
     }
 
+    // Determine column count (max width across all rows)
+    let colCount = 0;
     for (const row of rows) {
-      const cellElements: string[] = [];
-      for (const cell of row) {
-        cellElements.push(cellToOds(cell));
-      }
-      rowElements.push(xmlElement("table:table-row", undefined, cellElements));
+      if (row.length > colCount) colCount = row.length;
     }
 
-    tableElements.push(xmlElement("table:table", { "table:name": sheet.name }, rowElements));
+    // Emit table:table-column element to declare column count
+    if (colCount > 0) {
+      if (colCount > 1) {
+        children.push(
+          xmlSelfClose("table:table-column", {
+            "table:number-columns-repeated": String(colCount),
+          }),
+        );
+      } else {
+        children.push(xmlSelfClose("table:table-column"));
+      }
+    }
+
+    // Emit rows
+    for (const row of rows) {
+      children.push(rowToOds(row));
+    }
+
+    tableElements.push(xmlElement("table:table", { "table:name": sheet.name }, children));
   }
 
   const spreadsheetBody = xmlElement("office:spreadsheet", undefined, tableElements);
   const body = xmlElement("office:body", undefined, spreadsheetBody);
+
+  // Build content sections in order per ODS spec:
+  // office:scripts, office:font-face-decls, office:automatic-styles, office:body
+  const contentParts: string[] = [];
+  contentParts.push(xmlSelfClose("office:scripts"));
+  contentParts.push(xmlElement("office:font-face-decls", undefined, ""));
+  contentParts.push(xmlElement("office:automatic-styles", undefined, ""));
+  contentParts.push(body);
 
   return xmlDocument(
     "office:document-content",
@@ -135,9 +206,11 @@ function writeContentXml(options: WriteOptions): string {
       "xmlns:text": NS_TEXT,
       "xmlns:style": NS_STYLE,
       "xmlns:fo": NS_FO,
+      "xmlns:number": NS_NUMBER,
+      "xmlns:svg": NS_SVG,
       "office:version": "1.2",
     },
-    body,
+    contentParts,
   );
 }
 
@@ -187,15 +260,27 @@ function writeMetaXml(props?: WorkbookProperties): string {
 // ── styles.xml ──────────────────────────────────────────────────────
 
 function writeStylesXml(): string {
+  // ODS spec requires these child elements even if empty:
+  // office:font-face-decls, office:styles, office:automatic-styles, office:master-styles
+  const children: string[] = [];
+  children.push(xmlElement("office:font-face-decls", undefined, ""));
+  children.push(xmlElement("office:styles", undefined, ""));
+  children.push(xmlElement("office:automatic-styles", undefined, ""));
+  children.push(xmlElement("office:master-styles", undefined, ""));
+
   return xmlDocument(
     "office:document-styles",
     {
       "xmlns:office": NS_OFFICE,
       "xmlns:style": NS_STYLE,
+      "xmlns:text": NS_TEXT,
+      "xmlns:table": NS_TABLE,
       "xmlns:fo": NS_FO,
+      "xmlns:number": NS_NUMBER,
+      "xmlns:svg": NS_SVG,
       "office:version": "1.2",
     },
-    "",
+    children,
   );
 }
 
@@ -262,7 +347,7 @@ export async function writeOds(options: WriteOptions): Promise<WriteOutput> {
   // meta.xml — document metadata
   zip.add("meta.xml", encoder.encode(writeMetaXml(options.properties)));
 
-  // styles.xml — minimal style definitions
+  // styles.xml — style definitions
   zip.add("styles.xml", encoder.encode(writeStylesXml()));
 
   return zip.build();

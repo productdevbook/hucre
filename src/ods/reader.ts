@@ -144,7 +144,10 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
 
     for (const tableRow of tableRows) {
       const rowRepeat = Number(tableRow.attrs["table:number-rows-repeated"] ?? "1");
-      const rowData: CellValue[] = [];
+
+      // Collect cell entries with their repeat counts first,
+      // so we can trim trailing nulls before expanding
+      const cellEntries: Array<{ value: CellValue; repeat: number }> = [];
 
       for (const child of tableRow.children) {
         if (typeof child === "string") continue;
@@ -153,23 +156,29 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
         if (local === "table-cell" || local === "covered-table-cell") {
           const colRepeat = Number(child.attrs["table:number-columns-repeated"] ?? "1");
           const value = parseCellValue(child);
-
-          for (let r = 0; r < colRepeat; r++) {
-            rowData.push(value);
-          }
+          cellEntries.push({ value, repeat: colRepeat });
         }
       }
 
-      // Trim trailing null cells from each row
-      while (rowData.length > 0 && rowData[rowData.length - 1] === null) {
-        rowData.pop();
+      // Trim trailing null entries (avoids expanding huge repeat counts like 16384)
+      while (cellEntries.length > 0 && cellEntries[cellEntries.length - 1].value === null) {
+        cellEntries.pop();
       }
 
-      // Repeat rows if needed
-      for (let r = 0; r < rowRepeat; r++) {
-        if (rowData.length > 0) {
-          rows.push([...rowData]);
+      // Expand into row data
+      const rowData: CellValue[] = [];
+      for (const entry of cellEntries) {
+        for (let r = 0; r < entry.repeat; r++) {
+          rowData.push(entry.value);
         }
+      }
+
+      // Cap row repeats for empty rows to avoid memory issues
+      // (LibreOffice may emit large row repeats for trailing empty rows)
+      const effectiveRowRepeat = rowData.length > 0 ? rowRepeat : 0;
+
+      for (let r = 0; r < effectiveRowRepeat; r++) {
+        rows.push(effectiveRowRepeat === 1 ? rowData : [...rowData]);
       }
     }
 
