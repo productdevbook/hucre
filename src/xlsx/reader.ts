@@ -351,7 +351,7 @@ async function extractSheetImages(zip: ZipReader, drawingPath: string): Promise<
     }
   }
 
-  // Parse the drawing XML to find twoCellAnchor elements with images
+  // Parse the drawing XML to find twoCellAnchor and oneCellAnchor elements with images
   const doc = parseXml(drawingXml);
   const images: SheetImage[] = [];
 
@@ -371,6 +371,22 @@ async function extractSheetImages(zip: ZipReader, drawingPath: string): Promise<
             type: imageInfo.type,
             anchor: imageInfo.anchor,
           });
+        }
+      }
+    } else if (local === "oneCellAnchor") {
+      const imageInfo = parseOneCellAnchor(child, imageRelMap);
+      if (imageInfo) {
+        const imagePath = imageInfo.mediaPath;
+        if (zip.has(imagePath)) {
+          const data = await zip.extract(imagePath);
+          const img: SheetImage = {
+            data,
+            type: imageInfo.type,
+            anchor: imageInfo.anchor,
+          };
+          if (imageInfo.width !== undefined) img.width = imageInfo.width;
+          if (imageInfo.height !== undefined) img.height = imageInfo.height;
+          images.push(img);
         }
       }
     }
@@ -434,6 +450,81 @@ function parseTwoCellAnchor(
       to: { row: toRow, col: toCol },
     },
   };
+}
+
+/** EMU per pixel (at 96 DPI) */
+const EMU_PER_PIXEL = 9525;
+
+/** Parse a oneCellAnchor element to extract image position, dimensions, and reference */
+function parseOneCellAnchor(
+  el: { children: Array<unknown> },
+  relMap: Map<string, string>,
+): {
+  mediaPath: string;
+  type: SheetImage["type"];
+  anchor: SheetImage["anchor"];
+  width?: number;
+  height?: number;
+} | null {
+  let fromRow = 0;
+  let fromCol = 0;
+  let widthEmu = 0;
+  let heightEmu = 0;
+  let embedId: string | undefined;
+
+  for (const child of el.children) {
+    if (typeof child === "string") continue;
+    const c = child as {
+      local?: string;
+      tag: string;
+      children: Array<unknown>;
+      attrs: Record<string, string>;
+    };
+    const local = c.local || c.tag;
+
+    if (local === "from") {
+      const pos = parseAnchorPosition(c);
+      fromRow = pos.row;
+      fromCol = pos.col;
+    } else if (local === "ext") {
+      // <xdr:ext cx="..." cy="..."/>
+      widthEmu = Number(c.attrs["cx"]) || 0;
+      heightEmu = Number(c.attrs["cy"]) || 0;
+    } else if (local === "pic") {
+      embedId = findBlipEmbed(c);
+    }
+  }
+
+  if (!embedId) return null;
+
+  const mediaPath = relMap.get(embedId);
+  if (!mediaPath) return null;
+
+  const ext = mediaPath.split(".").pop()?.toLowerCase() ?? "";
+  const imageType = EXT_TO_IMAGE_TYPE[ext] ?? "png";
+
+  const result: {
+    mediaPath: string;
+    type: SheetImage["type"];
+    anchor: SheetImage["anchor"];
+    width?: number;
+    height?: number;
+  } = {
+    mediaPath,
+    type: imageType,
+    anchor: {
+      from: { row: fromRow, col: fromCol },
+    },
+  };
+
+  if (widthEmu > 0) {
+    result.width = Math.round(widthEmu / EMU_PER_PIXEL);
+  }
+  if (heightEmu > 0) {
+    result.height = Math.round(heightEmu / EMU_PER_PIXEL);
+  }
+
+  return result;
 }
 
 /** Parse row/col from an anchor position element (from or to) */

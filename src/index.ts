@@ -42,6 +42,9 @@ export {
   timeToSerial,
 } from "./_date";
 
+// ── Number Format ─────────────────────────────────────────────────
+export { formatValue } from "./_format";
+
 // ── Sheet Operations ──────────────────────────────────────────────
 export {
   insertRows,
@@ -73,6 +76,10 @@ export type {
 // ── Cell Utilities ─────────────────────────────────────────────────
 export { parseCellRef } from "./xlsx/worksheet";
 export { colToLetter, cellRef, rangeRef } from "./xlsx/worksheet-writer";
+
+// ── Export (HTML / Markdown) ───────────────────────────────────────
+export { toHtml, toMarkdown } from "./export/index";
+export type { HtmlExportOptions, MarkdownExportOptions } from "./export/index";
 
 // ── Errors ─────────────────────────────────────────────────────────
 export {

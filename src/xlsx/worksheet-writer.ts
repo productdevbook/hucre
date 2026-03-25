@@ -135,6 +135,10 @@ interface ResolvedCell {
   style?: CellStyle;
   formula?: string;
   formulaResult?: CellValue;
+  formulaType?: "shared" | "array";
+  formulaSharedIndex?: number;
+  formulaRef?: string;
+  formulaDynamic?: boolean;
   richText?: RichTextRun[];
 }
 
@@ -350,6 +354,36 @@ export function writeWorksheetXml(
     parts.push(serializeHeaderFooter(sheet.headerFooter));
   }
 
+  // ── Row Breaks ──
+  if (sheet.rowBreaks && sheet.rowBreaks.length > 0) {
+    const sorted = [...sheet.rowBreaks].sort((a, b) => a - b);
+    const brkElements = sorted.map((row) =>
+      xmlSelfClose("brk", { id: row + 1, max: 16383, man: 1 }),
+    );
+    parts.push(
+      xmlElement(
+        "rowBreaks",
+        { count: sorted.length, manualBreakCount: sorted.length },
+        brkElements,
+      ),
+    );
+  }
+
+  // ── Column Breaks ──
+  if (sheet.colBreaks && sheet.colBreaks.length > 0) {
+    const sorted = [...sheet.colBreaks].sort((a, b) => a - b);
+    const brkElements = sorted.map((col) =>
+      xmlSelfClose("brk", { id: col + 1, max: 1048575, man: 1 }),
+    );
+    parts.push(
+      xmlElement(
+        "colBreaks",
+        { count: sorted.length, manualBreakCount: sorted.length },
+        brkElements,
+      ),
+    );
+  }
+
   // ── Drawing (images) ──
   let drawingRId: string | null = null;
   let nextRId = hyperlinkRelationships.length + 1;
@@ -478,6 +512,10 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
         style: cellOverride.style ?? existing?.style,
         formula: cellOverride.formula ?? existing?.formula,
         formulaResult: cellOverride.formulaResult ?? existing?.formulaResult,
+        formulaType: cellOverride.formulaType ?? existing?.formulaType,
+        formulaSharedIndex: cellOverride.formulaSharedIndex ?? existing?.formulaSharedIndex,
+        formulaRef: cellOverride.formulaRef ?? existing?.formulaRef,
+        formulaDynamic: cellOverride.formulaDynamic ?? existing?.formulaDynamic,
         richText: cellOverride.richText ?? existing?.richText,
       };
     }
@@ -496,7 +534,17 @@ function serializeCell(
   sharedStrings: SharedStringsCollector,
   is1904: boolean,
 ): string | null {
-  const { value, style, formula, formulaResult, richText } = resolved;
+  const {
+    value,
+    style,
+    formula,
+    formulaResult,
+    formulaType,
+    formulaSharedIndex,
+    formulaRef,
+    formulaDynamic,
+    richText,
+  } = resolved;
 
   // Determine style index
   let styleIdx = 0;
@@ -524,12 +572,34 @@ function serializeCell(
     return xmlElement("c", cellAttrs, [xmlElement("is", undefined, isContent)]);
   }
 
-  // Formula cell
-  if (formula) {
+  // Formula cell (including shared formula slave cells with empty formula text)
+  if (formula !== undefined && formula !== null) {
     const cellAttrs: Record<string, string | number> = { r: ref };
     if (styleIdx !== 0) cellAttrs["s"] = styleIdx;
 
-    const children: string[] = [xmlElement("f", undefined, xmlEscape(formula))];
+    // Build <f> element with appropriate attributes
+    let fElement: string;
+    if (formulaType === "shared") {
+      const fAttrs: Record<string, string | number> = { t: "shared" };
+      if (formulaSharedIndex !== undefined) fAttrs["si"] = formulaSharedIndex;
+      if (formulaRef) fAttrs["ref"] = formulaRef;
+      // Shared slave cell: no formula text → self-closing <f/>
+      if (formula === "") {
+        fElement = xmlSelfClose("f", fAttrs);
+      } else {
+        fElement = xmlElement("f", fAttrs, xmlEscape(formula));
+      }
+    } else if (formulaType === "array") {
+      const fAttrs: Record<string, string | number> = { t: "array" };
+      if (formulaRef) fAttrs["ref"] = formulaRef;
+      if (formulaDynamic) fAttrs["cm"] = 1;
+      fElement = xmlElement("f", fAttrs, xmlEscape(formula));
+    } else {
+      // Normal formula
+      fElement = xmlElement("f", undefined, xmlEscape(formula));
+    }
+
+    const children: string[] = [fElement];
 
     // Cached formula result
     if (formulaResult !== undefined && formulaResult !== null) {

@@ -136,6 +136,12 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   let pageMargins: PageMargins | undefined;
   let headerFooter: HeaderFooter | undefined;
 
+  // Page breaks
+  const rowBreaks: number[] = [];
+  const colBreaks: number[] = [];
+  let inRowBreaks = false;
+  let inColBreaks = false;
+
   // Header/footer SAX state
   let inHeaderFooter = false;
   let inOddHeader = false;
@@ -198,6 +204,10 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   let cellStyleIndex = -1;
   let cellValueText = "";
   let cellFormulaText = "";
+  let cellFormulaType = ""; // "shared", "array", or ""
+  let cellFormulaSi = -1; // shared formula index
+  let cellFormulaRef = ""; // formula ref range
+  let cellFormulaCm = false; // dynamic array flag
   let inlineText = "";
 
   // Inline rich text state
@@ -225,6 +235,10 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
             cellStyleIndex = attrs["s"] ? Number(attrs["s"]) : -1;
             cellValueText = "";
             cellFormulaText = "";
+            cellFormulaType = "";
+            cellFormulaSi = -1;
+            cellFormulaRef = "";
+            cellFormulaCm = false;
             inlineText = "";
             inlineRichText = [];
           }
@@ -233,7 +247,19 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
           if (inCell) inValue = true;
           break;
         case "f":
-          if (inCell) inFormula = true;
+          if (inCell) {
+            inFormula = true;
+            cellFormulaType = attrs["t"] ?? "";
+            if (attrs["si"] !== undefined) {
+              cellFormulaSi = Number(attrs["si"]);
+            }
+            if (attrs["ref"]) {
+              cellFormulaRef = attrs["ref"];
+            }
+            if (attrs["cm"] === "1") {
+              cellFormulaCm = true;
+            }
+          }
           break;
         case "is":
           if (inCell) inInlineStr = true;
@@ -434,6 +460,25 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
             hfText = "";
           }
           break;
+        case "rowBreaks":
+          inRowBreaks = true;
+          break;
+        case "colBreaks":
+          inColBreaks = true;
+          break;
+        case "brk":
+          if (inRowBreaks || inColBreaks) {
+            const brkId = attrs["id"];
+            if (brkId) {
+              const index = Number(brkId) - 1; // Convert to 0-based
+              if (inRowBreaks) {
+                rowBreaks.push(index);
+              } else {
+                colBreaks.push(index);
+              }
+            }
+          }
+          break;
         case "color":
           if (inColorScale) {
             csColors.push(attrs["rgb"] ?? "");
@@ -509,6 +554,10 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
               ctx,
               rows,
               cells,
+              cellFormulaType,
+              cellFormulaSi,
+              cellFormulaRef,
+              cellFormulaCm,
             );
             // Track max dimensions
             if (cellRef) {
@@ -655,6 +704,12 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
             inFirstFooter = false;
           }
           break;
+        case "rowBreaks":
+          inRowBreaks = false;
+          break;
+        case "colBreaks":
+          inColBreaks = false;
+          break;
         default:
           if (inInlineRPr) {
             _fontPropTag = "";
@@ -762,6 +817,14 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   // Attach header/footer
   if (headerFooter && Object.keys(headerFooter).length > 0) {
     sheet.headerFooter = headerFooter;
+  }
+
+  // Attach page breaks
+  if (rowBreaks.length > 0) {
+    sheet.rowBreaks = rowBreaks.sort((a, b) => a - b);
+  }
+  if (colBreaks.length > 0) {
+    sheet.colBreaks = colBreaks.sort((a, b) => a - b);
   }
 
   return sheet;
@@ -1040,6 +1103,10 @@ function processCell(
   ctx: WorksheetContext,
   rows: CellValue[][],
   cells: Map<string, Cell>,
+  formulaType?: string,
+  formulaSi?: number,
+  formulaRef?: string,
+  formulaCm?: boolean,
 ): void {
   if (!ref) return;
 
@@ -1060,9 +1127,12 @@ function processCell(
   let formulaResult: CellValue | undefined;
   let richText: RichTextRun[] | undefined;
 
-  // Handle formula
+  // Handle formula (including shared formula slave cells with no text)
   if (formulaText) {
     formula = formulaText;
+  } else if (formulaType === "shared" && formulaSi !== undefined && formulaSi >= 0) {
+    // Shared formula slave cell: no formula text, but has si attribute
+    formula = "";
   }
 
   // Determine cell value based on type
@@ -1166,10 +1236,28 @@ function processCell(
       value,
       type: cellType,
     };
-    if (formula) {
+    if (formula !== undefined) {
       cell.formula = formula;
       if (formulaResult !== undefined) {
         cell.formulaResult = formulaResult;
+      }
+      // Store formula type metadata
+      if (formulaType === "shared") {
+        cell.formulaType = "shared";
+        if (formulaSi !== undefined && formulaSi >= 0) {
+          cell.formulaSharedIndex = formulaSi;
+        }
+        if (formulaRef) {
+          cell.formulaRef = formulaRef;
+        }
+      } else if (formulaType === "array") {
+        cell.formulaType = "array";
+        if (formulaRef) {
+          cell.formulaRef = formulaRef;
+        }
+        if (formulaCm) {
+          cell.formulaDynamic = true;
+        }
       }
     }
     if (richText) {

@@ -180,6 +180,14 @@ export interface Cell {
   style?: CellStyle;
   formula?: string;
   formulaResult?: CellValue;
+  /** Formula type: "shared" | "array". Undefined means normal formula. */
+  formulaType?: "shared" | "array";
+  /** Shared formula index (si attribute) */
+  formulaSharedIndex?: number;
+  /** Range this formula applies to (ref attribute on master cell) */
+  formulaRef?: string;
+  /** Dynamic array flag (cm="1") */
+  formulaDynamic?: boolean;
   richText?: RichTextRun[];
   hyperlink?: Hyperlink;
   comment?: CellComment;
@@ -509,6 +517,10 @@ export interface Sheet {
   veryHidden?: boolean;
   /** Excel Tables (ListObject) defined on this sheet */
   tables?: TableDefinition[];
+  /** Row page breaks (0-based row indices) */
+  rowBreaks?: number[];
+  /** Column page breaks (0-based column indices) */
+  colBreaks?: number[];
 }
 
 // ── Workbook Properties ────────────────────────────────────────────
@@ -593,6 +605,10 @@ export interface WriteSheet {
   veryHidden?: boolean;
   /** Excel Tables (ListObject) to define on this sheet */
   tables?: TableDefinition[];
+  /** Row page breaks (0-based row indices) */
+  rowBreaks?: number[];
+  /** Column page breaks (0-based column indices) */
+  colBreaks?: number[];
 }
 
 // ── CSV Options ────────────────────────────────────────────────────
