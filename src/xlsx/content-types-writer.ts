@@ -16,6 +16,7 @@ const CT_DRAWING = "application/vnd.openxmlformats-officedocument.drawing+xml";
 const CT_COMMENTS = "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml";
 const CT_VML = "application/vnd.openxmlformats-officedocument.vmlDrawing";
 const CT_TABLE = "application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml";
+const CT_THEME = "application/vnd.openxmlformats-officedocument.theme+xml";
 
 /** Image extension → content type mapping */
 const IMAGE_CONTENT_TYPES: Record<string, string> = {
@@ -96,6 +97,14 @@ export function writeContentTypes(
     xmlSelfClose("Override", {
       PartName: "/xl/styles.xml",
       ContentType: CT_STYLES,
+    }),
+  );
+
+  // Override for theme
+  children.push(
+    xmlSelfClose("Override", {
+      PartName: "/xl/theme/theme1.xml",
+      ContentType: CT_THEME,
     }),
   );
 

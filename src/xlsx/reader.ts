@@ -24,6 +24,7 @@ import type { Relationship } from "./relationships";
 import { parseComments } from "./comments-reader";
 import { parseCellRef } from "./worksheet";
 import { parseCoreProperties, parseAppProperties } from "./doc-props-reader";
+import { parseThemeColors } from "./theme";
 
 // ── OOXML Relationship Types ─────────────────────────────────────────
 
@@ -163,6 +164,14 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
       const stylesXml = decodeUtf8(await zip.extract(stylesPath));
       parsedStyles = parseStyles(stylesXml);
     }
+  }
+
+  // 7b. Parse theme colors if theme1.xml exists
+  let themeColors: string[] | undefined;
+  const themePath = workbookDir ? `${workbookDir}/theme/theme1.xml` : "theme/theme1.xml";
+  if (zip.has(themePath)) {
+    const themeXml = decodeUtf8(await zip.extract(themePath));
+    themeColors = parseThemeColors(themeXml);
   }
 
   // 8. Build a map of rId → sheet relationship for worksheet paths
@@ -308,6 +317,10 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
 
   if (properties) {
     workbook.properties = properties;
+  }
+
+  if (themeColors) {
+    workbook.themeColors = themeColors;
   }
 
   return workbook;

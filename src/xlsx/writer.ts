@@ -17,6 +17,7 @@ import { writeTable } from "./table-writer";
 import { colToLetter } from "./worksheet-writer";
 import { xmlDocument, xmlSelfClose } from "../xml/writer";
 import { writeCoreProperties, writeAppProperties } from "./doc-props-writer";
+import { writeThemeXml } from "./theme-writer";
 
 const encoder = /* @__PURE__ */ new TextEncoder();
 
@@ -161,6 +162,9 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
 
   // xl/styles.xml
   zip.add("xl/styles.xml", encoder.encode(styles.toXml()));
+
+  // xl/theme/theme1.xml
+  zip.add("xl/theme/theme1.xml", encoder.encode(writeThemeXml()));
 
   // xl/sharedStrings.xml (if any strings)
   if (hasSharedStrings) {

@@ -103,8 +103,8 @@ describe("writeContentTypes", () => {
 
     // Check overrides
     const overrides = findChildren(doc, "Override");
-    // workbook + 2 sheets + styles + sharedStrings = 5
-    expect(overrides.length).toBe(5);
+    // workbook + 2 sheets + styles + theme + sharedStrings = 6
+    expect(overrides.length).toBe(6);
 
     const workbookOverride = overrides.find((o: any) => o.attrs["PartName"] === "/xl/workbook.xml");
     expect(workbookOverride).toBeDefined();
@@ -173,8 +173,8 @@ describe("writeWorkbookRels", () => {
     const doc = parseXml(xml);
 
     const rels = findChildren(doc, "Relationship");
-    // 2 worksheets + 1 styles + 1 shared strings = 4
-    expect(rels.length).toBe(4);
+    // 2 worksheets + 1 styles + 1 shared strings + 1 theme = 5
+    expect(rels.length).toBe(5);
 
     // First two should be worksheets
     expect(rels[0].attrs["Target"]).toBe("worksheets/sheet1.xml");
@@ -185,6 +185,9 @@ describe("writeWorkbookRels", () => {
 
     // Shared strings
     expect(rels[3].attrs["Target"]).toBe("sharedStrings.xml");
+
+    // Theme
+    expect(rels[4].attrs["Target"]).toBe("theme/theme1.xml");
   });
 
   it("omits shared strings rel when not present", () => {
@@ -192,8 +195,8 @@ describe("writeWorkbookRels", () => {
     const doc = parseXml(xml);
 
     const rels = findChildren(doc, "Relationship");
-    // 1 worksheet + 1 styles = 2
-    expect(rels.length).toBe(2);
+    // 1 worksheet + 1 styles + 1 theme = 3
+    expect(rels.length).toBe(3);
   });
 });
 
@@ -1013,8 +1016,8 @@ describe("writeXlsx", () => {
     // Verify relationships
     const relsDoc = await parseXmlFromZip(result, "xl/_rels/workbook.xml.rels");
     const rels = findChildren(relsDoc, "Relationship");
-    // 3 sheets + styles + shared strings = 5
-    expect(rels.length).toBe(5);
+    // 3 sheets + styles + shared strings + theme = 6
+    expect(rels.length).toBe(6);
   });
 
   it("writes empty sheet", async () => {

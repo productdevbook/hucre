@@ -22,6 +22,8 @@ import type {
   PageMargins,
   HeaderFooter,
   PaperSize,
+  FreezePane,
+  SplitPane,
 } from "../_types";
 import type { SharedString } from "./shared-strings";
 import type { ParsedStyles } from "./styles";
@@ -130,6 +132,10 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   // Sheet view settings (gridlines, zoom, RTL, tab color)
   let sheetView: SheetView | undefined;
   let inSheetPr = false;
+
+  // Freeze/Split pane parsed from <pane> element
+  let freezePane: FreezePane | undefined;
+  let splitPane: SplitPane | undefined;
 
   // Page setup / print settings
   let pageSetup: PageSetup | undefined;
@@ -310,6 +316,30 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
             }
             if (attrs["rightToLeft"] === "1" || attrs["rightToLeft"] === "true") {
               sheetView.rightToLeft = true;
+            }
+          }
+          break;
+        case "pane":
+          if (!inSheetData) {
+            const state = attrs["state"];
+            if (state === "frozen" || state === "frozenSplit") {
+              // Freeze pane
+              const xSplit = Number(attrs["xSplit"] || "0");
+              const ySplit = Number(attrs["ySplit"] || "0");
+              if (xSplit > 0 || ySplit > 0) {
+                freezePane = {};
+                if (xSplit > 0) freezePane.columns = xSplit;
+                if (ySplit > 0) freezePane.rows = ySplit;
+              }
+            } else if (state === "split") {
+              // Split pane
+              const xSplit = Number(attrs["xSplit"] || "0");
+              const ySplit = Number(attrs["ySplit"] || "0");
+              if (xSplit > 0 || ySplit > 0) {
+                splitPane = {};
+                if (xSplit > 0) splitPane.xSplit = xSplit;
+                if (ySplit > 0) splitPane.ySplit = ySplit;
+              }
             }
           }
           break;
@@ -795,6 +825,12 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   }
   if (autoFilter) {
     sheet.autoFilter = autoFilter;
+  }
+  if (freezePane) {
+    sheet.freezePane = freezePane;
+  }
+  if (splitPane) {
+    sheet.splitPane = splitPane;
   }
   if (sheetProtection) {
     sheet.protection = sheetProtection;

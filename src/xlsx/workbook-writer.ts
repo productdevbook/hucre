@@ -12,6 +12,7 @@ const REL_WORKSHEET =
 const REL_STYLES = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
 const REL_SHARED_STRINGS =
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings";
+const REL_THEME = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme";
 const REL_WORKBOOK =
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
 
@@ -111,6 +112,16 @@ export function writeWorkbookRels(sheetCount: number, hasSharedStrings: boolean)
       }),
     );
   }
+
+  // Theme relationship
+  const themeRid = sheetCount + (hasSharedStrings ? 3 : 2);
+  children.push(
+    xmlSelfClose("Relationship", {
+      Id: `rId${themeRid}`,
+      Type: REL_THEME,
+      Target: "theme/theme1.xml",
+    }),
+  );
 
   return xmlDocument("Relationships", { xmlns: NS_RELATIONSHIPS }, children);
 }

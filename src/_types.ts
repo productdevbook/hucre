@@ -340,6 +340,15 @@ export interface FreezePane {
   columns?: number;
 }
 
+// ── Split Pane ─────────────────────────────────────────────────────
+
+export interface SplitPane {
+  /** Horizontal split position in twips (1/20 of a point) */
+  xSplit?: number;
+  /** Vertical split position in twips (1/20 of a point) */
+  ySplit?: number;
+}
+
 // ── Named Range ────────────────────────────────────────────────────
 
 export interface NamedRange {
@@ -507,6 +516,7 @@ export interface Sheet {
   conditionalRules?: ConditionalRule[];
   autoFilter?: AutoFilter;
   freezePane?: FreezePane;
+  splitPane?: SplitPane;
   images?: SheetImage[];
   protection?: SheetProtection;
   pageSetup?: PageSetup;
@@ -553,6 +563,8 @@ export interface Workbook {
   defaultFont?: FontStyle;
   /** Active sheet index */
   activeSheet?: number;
+  /** Theme color palette (resolved from xl/theme/theme1.xml) */
+  themeColors?: string[];
 }
 
 // ── Read Options ───────────────────────────────────────────────────
@@ -596,6 +608,7 @@ export interface WriteSheet {
   conditionalRules?: ConditionalRule[];
   autoFilter?: AutoFilter;
   freezePane?: FreezePane;
+  splitPane?: SplitPane;
   images?: SheetImage[];
   protection?: SheetProtection;
   pageSetup?: PageSetup;

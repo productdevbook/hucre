@@ -209,6 +209,31 @@ export function writeWorksheetXml(
     }
 
     sheetViewParts.push(xmlSelfClose("pane", paneAttrs));
+  } else if (sheet.splitPane) {
+    const sp = sheet.splitPane;
+    const paneAttrs: Record<string, string | number> = {};
+
+    const hasXSplit = sp.xSplit !== undefined && sp.xSplit > 0;
+    const hasYSplit = sp.ySplit !== undefined && sp.ySplit > 0;
+
+    if (hasXSplit) {
+      paneAttrs["xSplit"] = sp.xSplit!;
+    }
+    if (hasYSplit) {
+      paneAttrs["ySplit"] = sp.ySplit!;
+    }
+    paneAttrs["topLeftCell"] = "A1";
+    paneAttrs["state"] = "split";
+
+    if (hasXSplit && hasYSplit) {
+      paneAttrs["activePane"] = "bottomRight";
+    } else if (hasXSplit) {
+      paneAttrs["activePane"] = "topRight";
+    } else {
+      paneAttrs["activePane"] = "bottomLeft";
+    }
+
+    sheetViewParts.push(xmlSelfClose("pane", paneAttrs));
   }
 
   const viewAttrs: Record<string, string | number> = {

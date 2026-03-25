@@ -7,6 +7,7 @@ export { writeXlsx } from "./xlsx/writer";
 export { openXlsx, saveXlsx } from "./xlsx/roundtrip";
 export type { RoundtripWorkbook } from "./xlsx/roundtrip";
 export { hashSheetPassword } from "./xlsx/password";
+export { parseThemeColors, resolveThemeColor } from "./xlsx/theme";
 export { streamXlsxRows } from "./xlsx/stream-reader";
 export type { StreamRow } from "./xlsx/stream-reader";
 export { XlsxStreamWriter } from "./xlsx/stream-writer";
@@ -123,6 +124,7 @@ export type {
   ConditionalRule,
   AutoFilter,
   FreezePane,
+  SplitPane,
   SheetImage,
   SheetProtection,
   SheetView,
