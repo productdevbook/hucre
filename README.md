@@ -118,7 +118,7 @@ const buffer = await writeXlsx({
 });
 ```
 
-Features: cell styles, auto column widths, merged cells, freeze panes, auto-filter, data validation, hyperlinks, images, comments, tables, conditional formatting, named ranges, print settings, page breaks, sheet protection, rich text, shared/array formulas, number formats, hidden sheets, HTML/Markdown export.
+Features: cell styles, auto column widths, merged cells, freeze/split panes, auto-filter with criteria, data validation, hyperlinks, images (PNG/JPEG/GIF/SVG/WebP), comments, tables, conditional formatting (cellIs/colorScale/dataBar/iconSet), named ranges, print settings, page breaks, sheet protection, workbook protection, rich text, shared/array/dynamic formulas, sparklines, textboxes, background images, number formats, hidden sheets, HTML/Markdown/JSON/TSV export, template engine.
 
 ### Auto Column Width
 
@@ -329,6 +329,52 @@ colToLetter(26); // "AA"
 rangeRef(0, 0, 9, 3); // "A1:D10"
 ```
 
+### Builder API
+
+Fluent method-chaining interface:
+
+```ts
+import { WorkbookBuilder } from "hucre";
+
+const xlsx = await WorkbookBuilder.create()
+  .addSheet("Products")
+  .columns([
+    { header: "Name", key: "name", autoWidth: true },
+    { header: "Price", key: "price", numFmt: "$#,##0.00" },
+  ])
+  .row(["Widget", 9.99])
+  .row(["Gadget", 24.5])
+  .freeze(1)
+  .done()
+  .build();
+```
+
+### Template Engine
+
+Fill `{{placeholders}}` in existing XLSX templates:
+
+```ts
+import { openXlsx, saveXlsx, fillTemplate } from "hucre";
+
+const workbook = await openXlsx(templateBuffer);
+fillTemplate(workbook, {
+  company: "Acme Inc",
+  date: new Date(),
+  total: 12500,
+});
+const output = await saveXlsx(workbook);
+```
+
+### JSON Export
+
+```ts
+import { toJson } from "hucre";
+
+toJson(sheet, { format: "objects" }); // [{Name:"Widget", Price:9.99}, ...]
+toJson(sheet, { format: "columns" }); // {Name:["Widget"], Price:[9.99]}
+toJson(sheet, { format: "arrays" }); // {headers:[...], data:[[...]]}
+```
+
 ### CSV
 
 ```ts
@@ -433,12 +479,16 @@ hucre (~37 KB gzipped)
 │   └── auto-width  Font-aware column width calculation
 ├── ods/            OpenDocument Spreadsheet read/write
 ├── csv/            RFC 4180 parser/writer + streaming
-├── export/         HTML table + Markdown table output
+├── export/         HTML, Markdown, JSON, TSV output + HTML import
 ├── hucre           Unified read/write API, format auto-detect
-├── sheet-ops       Insert/delete/move rows+cols, clone, copy, range
+├── builder         Fluent WorkbookBuilder / SheetBuilder API
+├── template        {{placeholder}} template engine
+├── sheet-ops       Insert/delete/move/sort/find/replace, clone, copy
+├── cell-utils      parseCellRef, colToLetter, parseRange, isInRange
+├── image           imageFromBase64 utility
 ├── worker          Web Worker serialization helpers
 ├── _date           Timezone-safe serial ↔ Date, Lotus bug, 1900/1904
-├── _format         Number format renderer (formatValue)
+├── _format         Number format renderer (locale-aware)
 ├── _schema         Schema validation, type coercion, error collection
 └── cli             Convert, inspect, validate (citty + consola)
 ```
@@ -473,6 +523,7 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | -------------------------- | ------------------------------------ |
 | `readOds(input, options?)` | Parse ODS (OpenDocument Spreadsheet) |
 | `writeOds(options)`        | Generate ODS                         |
+| `streamOdsRows(input)`     | AsyncGenerator yielding ODS rows     |
 
 ### CSV
 
@@ -485,43 +536,57 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `detectDelimiter(input)`           | Auto-detect delimiter character              |
 | `streamCsvRows(input, options?)`   | Generator yielding CSV rows                  |
 | `CsvStreamWriter`                  | Class for incremental CSV writing            |
+| `writeTsv(rows, options?)`         | Write TSV (tab-separated)                    |
+| `fetchCsv(url, options?)`          | Fetch and parse CSV from URL                 |
 
 ### Sheet Operations
 
-| Function                                | Description                  |
-| --------------------------------------- | ---------------------------- |
-| `insertRows(sheet, index, count)`       | Insert rows, shift down      |
-| `deleteRows(sheet, index, count)`       | Delete rows, shift up        |
-| `insertColumns(sheet, index, count)`    | Insert columns, shift right  |
-| `deleteColumns(sheet, index, count)`    | Delete columns, shift left   |
-| `moveRows(sheet, from, count, to)`      | Move rows                    |
-| `cloneSheet(sheet, name)`               | Deep clone a sheet           |
-| `copySheetToWorkbook(sheet, wb, name?)` | Copy sheet between workbooks |
-| `copyRange(sheet, source, target)`      | Copy cell range within sheet |
-| `moveSheet(wb, from, to)`               | Reorder sheets               |
-| `removeSheet(wb, index)`                | Remove a sheet               |
+| Function                                | Description                     |
+| --------------------------------------- | ------------------------------- |
+| `insertRows(sheet, index, count)`       | Insert rows, shift down         |
+| `deleteRows(sheet, index, count)`       | Delete rows, shift up           |
+| `insertColumns(sheet, index, count)`    | Insert columns, shift right     |
+| `deleteColumns(sheet, index, count)`    | Delete columns, shift left      |
+| `moveRows(sheet, from, count, to)`      | Move rows                       |
+| `cloneSheet(sheet, name)`               | Deep clone a sheet              |
+| `copySheetToWorkbook(sheet, wb, name?)` | Copy sheet between workbooks    |
+| `copyRange(sheet, source, target)`      | Copy cell range within sheet    |
+| `moveSheet(wb, from, to)`               | Reorder sheets                  |
+| `removeSheet(wb, index)`                | Remove a sheet                  |
+| `sortRows(sheet, col, order?)`          | Sort rows by column             |
+| `findCells(sheet, predicate)`           | Find cells by value or function |
+| `replaceCells(sheet, find, replace)`    | Find and replace values         |
 
 ### Export
 
-| Function                      | Description                                        |
-| ----------------------------- | -------------------------------------------------- |
-| `toHtml(sheet, options?)`     | Export sheet as HTML `<table>` with styles/classes |
-| `toMarkdown(sheet, options?)` | Export sheet as Markdown table                     |
+| Function                      | Description                                      |
+| ----------------------------- | ------------------------------------------------ |
+| `toHtml(sheet, options?)`     | HTML `<table>` with styles, a11y, dark/light CSS |
+| `toMarkdown(sheet, options?)` | Markdown table with auto-alignment               |
+| `toJson(sheet, options?)`     | JSON (objects, arrays, or columns format)        |
+| `fromHtml(html, options?)`    | Parse HTML table string → Sheet                  |
+
+### Builder
+
+| Function                       | Description                             |
+| ------------------------------ | --------------------------------------- |
+| `WorkbookBuilder.create()`     | Fluent API for building workbooks       |
+| `fillTemplate(workbook, data)` | Replace `{{placeholders}}` in templates |
 
 ### Formatting & Utilities
 
-| Function                                     | Description                                 |
-| -------------------------------------------- | ------------------------------------------- |
-| `formatValue(value, numFmt)`                 | Apply Excel number format to value → string |
-| `validateWithSchema(rows, schema, options?)` | Validate & coerce data with schema          |
-| `serialToDate(serial, is1904?)`              | Excel serial → Date (UTC)                   |
-| `dateToSerial(date, is1904?)`                | Date → Excel serial                         |
-| `isDateFormat(numFmt)`                       | Check if format string is date              |
-| `formatDate(date, format)`                   | Format Date with Excel format string        |
-| `parseCellRef(ref)`                          | "AA15" → `{ row: 14, col: 26 }`             |
-| `cellRef(row, col)`                          | `(14, 26)` → "AA15"                         |
-| `colToLetter(col)`                           | `26` → "AA"                                 |
-| `rangeRef(r1, c1, r2, c2)`                   | `(0,0,9,3)` → "A1:D10"                      |
+| Function                                     | Description                              |
+| -------------------------------------------- | ---------------------------------------- |
+| `formatValue(value, numFmt, options?)`       | Apply Excel number format (locale-aware) |
+| `validateWithSchema(rows, schema, options?)` | Validate & coerce data with schema       |
+| `serialToDate(serial, is1904?)`              | Excel serial → Date (UTC)                |
+| `dateToSerial(date, is1904?)`                | Date → Excel serial                      |
+| `isDateFormat(numFmt)`                       | Check if format string is date           |
+| `formatDate(date, format)`                   | Format Date with Excel format string     |
+| `parseCellRef(ref)`                          | "AA15" → `{ row: 14, col: 26 }`          |
+| `cellRef(row, col)`                          | `(14, 26)` → "AA15"                      |
+| `colToLetter(col)`                           | `26` → "AA"                              |
+| `rangeRef(r1, c1, r2, c2)`                   | `(0,0,9,3)` → "A1:D10"                   |
 
 ### Web Worker Helpers
 
@@ -546,7 +611,7 @@ pnpm typecheck    # tsgo
 
 Contributions are welcome! Please [open an issue](https://github.com/productdevbook/hucre/issues) or submit a PR.
 
-47 of 55 planned features are implemented. See the [issue tracker](https://github.com/productdevbook/hucre/issues) for remaining items (XLS BIFF, encryption, charts, pivot tables, sparklines).
+127 of 135 tracked features are implemented. See the [issue tracker](https://github.com/productdevbook/hucre/issues) for the v2 roadmap (XLS BIFF, encryption, charts, pivot tables).
 
 ## License
 
