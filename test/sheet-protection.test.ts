@@ -214,7 +214,7 @@ describe("sheet protection — writing", () => {
     expect(sp.attrs["sheet"]).toBe("1");
   });
 
-  it("emits sheetProtection after sheetViews and before sheetFormatPr", () => {
+  it("emits sheetProtection after sheetData (OOXML spec order)", () => {
     const sheet: WriteSheet = {
       name: "Test",
       rows: [["Data"]],
@@ -232,15 +232,13 @@ describe("sheet protection — writing", () => {
       }
     }
 
-    const viewsIdx = childNames.indexOf("sheetViews");
+    const dataIdx = childNames.indexOf("sheetData");
     const protIdx = childNames.indexOf("sheetProtection");
-    const fmtIdx = childNames.indexOf("sheetFormatPr");
 
-    expect(viewsIdx).toBeGreaterThanOrEqual(0);
+    expect(dataIdx).toBeGreaterThanOrEqual(0);
     expect(protIdx).toBeGreaterThanOrEqual(0);
-    expect(fmtIdx).toBeGreaterThanOrEqual(0);
-    expect(protIdx).toBeGreaterThan(viewsIdx);
-    expect(protIdx).toBeLessThan(fmtIdx);
+    // Per ECMA-376: sheetProtection comes after sheetData
+    expect(protIdx).toBeGreaterThan(dataIdx);
   });
 
   it("maps all protection options correctly", () => {

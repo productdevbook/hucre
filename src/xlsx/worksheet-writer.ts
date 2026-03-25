@@ -226,11 +226,6 @@ export function writeWorksheetXml(
     ]),
   );
 
-  // ── SheetProtection ──
-  if (sheet.protection) {
-    parts.push(serializeSheetProtection(sheet.protection));
-  }
-
   // ── SheetFormatPr ──
   parts.push(xmlSelfClose("sheetFormatPr", { defaultRowHeight: 15 }));
 
@@ -306,6 +301,16 @@ export function writeWorksheetXml(
 
   parts.push(xmlElement("sheetData", undefined, rowElements.length > 0 ? rowElements : ""));
 
+  // ── SheetProtection (OOXML: after sheetData, before autoFilter) ──
+  if (sheet.protection) {
+    parts.push(serializeSheetProtection(sheet.protection));
+  }
+
+  // ── Auto Filter (OOXML: after sheetProtection, before mergeCells) ──
+  if (sheet.autoFilter) {
+    parts.push(xmlSelfClose("autoFilter", { ref: sheet.autoFilter.range }));
+  }
+
   // ── Merge Cells ──
   if (sheet.merges && sheet.merges.length > 0) {
     const mergeElements = sheet.merges.map((m) =>
@@ -314,11 +319,6 @@ export function writeWorksheetXml(
       }),
     );
     parts.push(xmlElement("mergeCells", { count: sheet.merges.length }, mergeElements));
-  }
-
-  // ── Auto Filter ──
-  if (sheet.autoFilter) {
-    parts.push(xmlSelfClose("autoFilter", { ref: sheet.autoFilter.range }));
   }
 
   // ── Conditional Formatting ──
@@ -565,6 +565,13 @@ function serializeCell(
 
   // Number value
   if (typeof value === "number") {
+    // Infinity, -Infinity, and NaN cannot be represented in OOXML — emit as empty cell
+    if (!Number.isFinite(value)) {
+      if (styleIdx !== 0) {
+        return xmlSelfClose("c", { r: ref, s: styleIdx });
+      }
+      return null;
+    }
     const attrs: Record<string, string | number> = { r: ref };
     if (styleIdx !== 0) attrs["s"] = styleIdx;
     return xmlElement("c", attrs, [xmlElement("v", undefined, String(value))]);

@@ -7,7 +7,8 @@ import { writeXlsx } from "../src/xlsx/writer";
 import { readXlsx } from "../src/xlsx/reader";
 import { ZipReader } from "../src/zip/reader";
 import { parseXml } from "../src/xml/parser";
-import type { WriteSheet, CellValue, XmlElement } from "../src/_types";
+import type { WriteSheet, CellValue } from "../src/_types";
+import type { XmlElement } from "../src/xml/parser";
 
 const decoder = new TextDecoder("utf-8");
 
@@ -45,7 +46,7 @@ function getChildTagOrder(xml: string): string[] {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("OOXML worksheet element ordering", () => {
-  it("BUG: sheetProtection appears BEFORE sheetFormatPr (should be AFTER sheetData)", async () => {
+  it("sheetProtection comes after sheetData per OOXML spec", async () => {
     const xml = await getWorksheetXml([
       {
         name: "Protected",
@@ -59,39 +60,22 @@ describe("OOXML worksheet element ordering", () => {
 
     const tags = getChildTagOrder(xml);
 
-    // Find positions
     const protectionIdx = tags.indexOf("sheetProtection");
     const formatPrIdx = tags.indexOf("sheetFormatPr");
     const sheetDataIdx = tags.indexOf("sheetData");
 
-    expect(protectionIdx).toBeGreaterThan(-1); // sheetProtection should exist
-    expect(formatPrIdx).toBeGreaterThan(-1); // sheetFormatPr should exist
-    expect(sheetDataIdx).toBeGreaterThan(-1); // sheetData should exist
+    expect(protectionIdx).toBeGreaterThan(-1);
+    expect(formatPrIdx).toBeGreaterThan(-1);
+    expect(sheetDataIdx).toBeGreaterThan(-1);
 
-    // According to OOXML spec: sheetProtection MUST come AFTER sheetData
-    // Current code puts it BEFORE sheetFormatPr, which is incorrect
-    // This test documents the bug:
-    if (protectionIdx < sheetDataIdx) {
-      console.log(
-        "BUG CONFIRMED: sheetProtection (index " +
-          protectionIdx +
-          ") appears before sheetData (index " +
-          sheetDataIdx +
-          "). OOXML spec requires it after sheetData.",
-      );
-      console.log("Element order:", tags.join(", "));
-    }
-
-    // What the spec says:
     // sheetFormatPr should come before sheetData
     expect(formatPrIdx).toBeLessThan(sheetDataIdx);
 
-    // sheetProtection should come after sheetData (THIS WILL FAIL if the bug exists)
-    // Uncomment to expose the bug:
-    // expect(protectionIdx).toBeGreaterThan(sheetDataIdx);
+    // sheetProtection MUST come after sheetData per ECMA-376
+    expect(protectionIdx).toBeGreaterThan(sheetDataIdx);
   });
 
-  it("autoFilter should come after sheetData, before mergeCells per spec", async () => {
+  it("autoFilter comes after sheetData and before mergeCells per spec", async () => {
     const xml = await getWorksheetXml([
       {
         name: "Filtered",
@@ -117,17 +101,8 @@ describe("OOXML worksheet element ordering", () => {
     // autoFilter must come after sheetData
     expect(autoFilterIdx).toBeGreaterThan(sheetDataIdx);
 
-    // Per spec: autoFilter comes after sheetProtection, before mergeCells
-    // Current code puts autoFilter after mergeCells
-    if (autoFilterIdx > mergeCellsIdx) {
-      console.log(
-        "BUG: autoFilter (index " +
-          autoFilterIdx +
-          ") appears after mergeCells (index " +
-          mergeCellsIdx +
-          "). OOXML spec requires autoFilter before mergeCells.",
-      );
-    }
+    // autoFilter must come before mergeCells per ECMA-376
+    expect(autoFilterIdx).toBeLessThan(mergeCellsIdx);
   });
 
   it("verify basic element ordering: sheetViews < sheetFormatPr < cols < sheetData", async () => {
@@ -330,9 +305,8 @@ describe("XLSX: complex feature combinations", () => {
 
     // Verify features are preserved
     expect(wb.sheets[0].merges).toBeDefined();
-    // NOTE: autoFilter is written but the reader does not parse it back
-    // This is a feature gap — autoFilter is not round-tripped
-    // expect(wb.sheets[0].autoFilter).toBeDefined();
+    expect(wb.sheets[0].autoFilter).toBeDefined();
+    expect(wb.sheets[0].autoFilter!.range).toBe("A1:C3");
     expect(wb.sheets[0].dataValidations).toBeDefined();
   });
 
@@ -391,5 +365,227 @@ describe("XLSX: complex feature combinations", () => {
     expect(wb.sheets[0].name).toBe("Everything");
     expect(wb.sheets[0].rows).toHaveLength(3);
     expect(wb.sheets[0].rows[0][0]).toBe("Linked");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// Additional regression tests for fixed bugs
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("OOXML: sheetProtection position (#40)", () => {
+  it("sheetProtection comes after sheetData, not before sheetFormatPr", async () => {
+    const xml = await getWorksheetXml([
+      {
+        name: "Sheet1",
+        rows: [["data"]],
+        protection: { sheet: true },
+      },
+    ]);
+
+    const tags = getChildTagOrder(xml);
+
+    const fmtIdx = tags.indexOf("sheetFormatPr");
+    const dataIdx = tags.indexOf("sheetData");
+    const protIdx = tags.indexOf("sheetProtection");
+
+    // sheetProtection must NOT be between sheetViews and sheetFormatPr
+    expect(protIdx).toBeGreaterThan(dataIdx);
+    // sheetFormatPr must come before sheetData (unchanged)
+    expect(fmtIdx).toBeLessThan(dataIdx);
+  });
+
+  it("sheetProtection comes before autoFilter when both present", async () => {
+    const xml = await getWorksheetXml([
+      {
+        name: "Sheet1",
+        rows: [
+          ["h1", "h2"],
+          ["a", "b"],
+        ],
+        protection: { sheet: true },
+        autoFilter: { range: "A1:B2" },
+      },
+    ]);
+
+    const tags = getChildTagOrder(xml);
+
+    const protIdx = tags.indexOf("sheetProtection");
+    const filterIdx = tags.indexOf("autoFilter");
+
+    expect(protIdx).toBeGreaterThan(-1);
+    expect(filterIdx).toBeGreaterThan(-1);
+    expect(protIdx).toBeLessThan(filterIdx);
+  });
+});
+
+describe("OOXML: autoFilter before mergeCells (#41)", () => {
+  it("autoFilter comes before mergeCells", async () => {
+    const xml = await getWorksheetXml([
+      {
+        name: "Sheet1",
+        rows: [
+          ["h1", "h2"],
+          ["a", "b"],
+        ],
+        autoFilter: { range: "A1:B2" },
+        merges: [{ startRow: 0, startCol: 0, endRow: 0, endCol: 1 }],
+      },
+    ]);
+
+    const tags = getChildTagOrder(xml);
+
+    const filterIdx = tags.indexOf("autoFilter");
+    const mergeIdx = tags.indexOf("mergeCells");
+
+    expect(filterIdx).toBeGreaterThan(-1);
+    expect(mergeIdx).toBeGreaterThan(-1);
+    expect(filterIdx).toBeLessThan(mergeIdx);
+  });
+
+  it("full ordering: sheetData > sheetProtection > autoFilter > mergeCells", async () => {
+    const xml = await getWorksheetXml([
+      {
+        name: "Sheet1",
+        rows: [
+          ["h1", "h2"],
+          ["a", "b"],
+        ],
+        protection: { sheet: true },
+        autoFilter: { range: "A1:B2" },
+        merges: [{ startRow: 0, startCol: 0, endRow: 0, endCol: 1 }],
+      },
+    ]);
+
+    const tags = getChildTagOrder(xml);
+
+    const dataIdx = tags.indexOf("sheetData");
+    const protIdx = tags.indexOf("sheetProtection");
+    const filterIdx = tags.indexOf("autoFilter");
+    const mergeIdx = tags.indexOf("mergeCells");
+
+    expect(dataIdx).toBeLessThan(protIdx);
+    expect(protIdx).toBeLessThan(filterIdx);
+    expect(filterIdx).toBeLessThan(mergeIdx);
+  });
+});
+
+describe("autoFilter round-trip (#42)", () => {
+  it("autoFilter is parsed on read", async () => {
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Filtered",
+          rows: [
+            ["Name", "Age"],
+            ["Alice", 30],
+            ["Bob", 25],
+          ],
+          autoFilter: { range: "A1:B3" },
+        },
+      ],
+    });
+
+    const wb = await readXlsx(xlsx);
+    expect(wb.sheets[0].autoFilter).toBeDefined();
+    expect(wb.sheets[0].autoFilter!.range).toBe("A1:B3");
+  });
+
+  it("autoFilter round-trips through write and read", async () => {
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B", "C", "D"],
+            [1, 2, 3, 4],
+          ],
+          autoFilter: { range: "A1:D2" },
+        },
+      ],
+    });
+
+    const wb = await readXlsx(xlsx);
+    expect(wb.sheets[0].autoFilter).toEqual({ range: "A1:D2" });
+  });
+
+  it("sheet without autoFilter has no autoFilter property", async () => {
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [["data"]],
+        },
+      ],
+    });
+
+    const wb = await readXlsx(xlsx);
+    expect(wb.sheets[0].autoFilter).toBeUndefined();
+  });
+});
+
+describe("Infinity/NaN handling (#43)", () => {
+  it("Infinity becomes null (empty cell)", async () => {
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [[1, Infinity, 3]],
+        },
+      ],
+    });
+
+    const wb = await readXlsx(xlsx);
+    expect(wb.sheets[0].rows[0][0]).toBe(1);
+    expect(wb.sheets[0].rows[0][1]).toBeNull();
+    expect(wb.sheets[0].rows[0][2]).toBe(3);
+  });
+
+  it("-Infinity becomes null (empty cell)", async () => {
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [[1, -Infinity, 3]],
+        },
+      ],
+    });
+
+    const wb = await readXlsx(xlsx);
+    expect(wb.sheets[0].rows[0][0]).toBe(1);
+    expect(wb.sheets[0].rows[0][1]).toBeNull();
+    expect(wb.sheets[0].rows[0][2]).toBe(3);
+  });
+
+  it("NaN becomes null (empty cell)", async () => {
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [[1, NaN, 3]],
+        },
+      ],
+    });
+
+    const wb = await readXlsx(xlsx);
+    expect(wb.sheets[0].rows[0][0]).toBe(1);
+    expect(wb.sheets[0].rows[0][1]).toBeNull();
+    expect(wb.sheets[0].rows[0][2]).toBe(3);
+  });
+
+  it("normal numbers are unaffected", async () => {
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [[0, -1, 3.14, 1e10, -0]],
+        },
+      ],
+    });
+
+    const wb = await readXlsx(xlsx);
+    expect(wb.sheets[0].rows[0][0]).toBe(0);
+    expect(wb.sheets[0].rows[0][1]).toBe(-1);
+    expect(wb.sheets[0].rows[0][2]).toBe(3.14);
+    expect(wb.sheets[0].rows[0][3]).toBe(1e10);
   });
 });

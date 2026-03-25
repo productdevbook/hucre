@@ -612,6 +612,8 @@ export interface CsvReadOptions {
   skipBom?: boolean;
   /** Type inference for numbers, booleans, dates. Default: false */
   typeInference?: boolean;
+  /** Keep strings with leading zeros (e.g. "0123") as strings instead of converting to numbers. Default: true */
+  preserveLeadingZeros?: boolean;
   /** Schema for validation */
   schema?: SchemaDefinition;
   /** Encoding. Default: "utf-8" */

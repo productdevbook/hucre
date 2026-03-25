@@ -91,7 +91,8 @@ export function parseCsv(input: string, options?: CsvReadOptions): CellValue[][]
 
   // Type inference
   if (opts.typeInference) {
-    return filtered.map((row) => row.map(inferType));
+    const preserveLeadingZeros = opts.preserveLeadingZeros;
+    return filtered.map((row) => row.map((v) => inferType(v, preserveLeadingZeros)));
   }
 
   return filtered;
@@ -222,7 +223,7 @@ function parseRaw(input: string, delimiter: string, quote: string, escape: strin
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
 
-function inferType(value: CellValue): CellValue {
+function inferType(value: CellValue, preserveLeadingZeros: boolean): CellValue {
   if (value === null) return null;
   if (typeof value !== "string") return value;
 
@@ -234,11 +235,6 @@ function inferType(value: CellValue): CellValue {
   if (lower === "true" || lower === "yes") return true;
   if (lower === "false" || lower === "no") return false;
   if (trimmed === "1" && trimmed.length === 1) {
-    // Could be number or boolean — treat as number; "1" as boolean
-    // is ambiguous, so we prefer number. But spec says detect 1/0 as boolean.
-    // We'll check: if it's literally "1" or "0" alone, treat as number
-    // to avoid ambiguity. Actually the spec says to detect 1/0 as boolean.
-    // Let's treat them as booleans when typeInference is on.
     return true;
   }
   if (trimmed === "0" && trimmed.length === 1) {
@@ -249,6 +245,12 @@ function inferType(value: CellValue): CellValue {
   if (ISO_DATE_RE.test(trimmed)) {
     const d = new Date(trimmed);
     if (!Number.isNaN(d.getTime())) return d;
+  }
+
+  // Leading-zero preservation: keep strings like "0123", "007", "00" as strings.
+  // Exceptions: "0" (already handled above as boolean), "0.xxx" decimals are still parsed.
+  if (preserveLeadingZeros && trimmed.length > 1 && trimmed[0] === "0" && trimmed[1] !== ".") {
+    return value;
   }
 
   // Number detection
@@ -281,6 +283,7 @@ function normalizeReadOptions(options?: CsvReadOptions) {
     quote: options?.quote ?? '"',
     escape: options?.escape ?? '"',
     typeInference: options?.typeInference ?? false,
+    preserveLeadingZeros: options?.preserveLeadingZeros !== false,
     skipEmptyRows: options?.skipEmptyRows ?? false,
     comment: options?.comment,
     header: options?.header ?? false,

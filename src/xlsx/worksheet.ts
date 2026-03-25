@@ -9,6 +9,7 @@ import type {
   RichTextRun,
   FontStyle,
   Hyperlink,
+  AutoFilter,
   ConditionalRule,
   ConditionalRuleType,
   DataValidation,
@@ -119,6 +120,9 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
 
   // Conditional formatting rules parsed from <conditionalFormatting> sections
   const conditionalRules: ConditionalRule[] = [];
+
+  // Auto filter parsed from <autoFilter> element
+  let autoFilter: AutoFilter | undefined;
 
   // Sheet protection parsed from <sheetProtection> element
   let sheetProtection: SheetProtection | undefined;
@@ -285,6 +289,11 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
           break;
         case "sheetProtection":
           sheetProtection = parseSheetProtectionAttrs(attrs);
+          break;
+        case "autoFilter":
+          if (attrs["ref"]) {
+            autoFilter = { range: attrs["ref"] };
+          }
           break;
         case "mergeCells":
           inMergeCells = true;
@@ -728,6 +737,9 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   }
   if (conditionalRules.length > 0) {
     sheet.conditionalRules = conditionalRules;
+  }
+  if (autoFilter) {
+    sheet.autoFilter = autoFilter;
   }
   if (sheetProtection) {
     sheet.protection = sheetProtection;

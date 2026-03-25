@@ -70,6 +70,10 @@ export type {
   SerializedWorkbookProperties,
 } from "./worker";
 
+// ── Cell Utilities ─────────────────────────────────────────────────
+export { parseCellRef } from "./xlsx/worksheet";
+export { colToLetter, cellRef, rangeRef } from "./xlsx/worksheet-writer";
+
 // ── Errors ─────────────────────────────────────────────────────────
 export {
   DefterError,
