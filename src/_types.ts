@@ -419,11 +419,45 @@ export interface HeaderFooter {
   differentFirst?: boolean;
 }
 
+// ── Sparkline ─────────────────────────────────────────────────────
+
+export interface Sparkline {
+  /** Cell where the sparkline is displayed */
+  location: string;
+  /** Data range (e.g. "Sheet1!B2:F2") */
+  dataRange: string;
+  /** Type: line, column, or win/loss (stacked) */
+  type?: "line" | "column" | "stacked";
+  /** Color (hex RGB without '#', e.g. "376092") */
+  color?: string;
+  /** Show markers */
+  markers?: boolean;
+}
+
+// ── TextBox ───────────────────────────────────────────────────────
+
+export interface SheetTextBox {
+  text: string;
+  anchor: {
+    from: { row: number; col: number };
+    to?: { row: number; col: number };
+  };
+  width?: number;
+  height?: number;
+  style?: {
+    fontSize?: number;
+    bold?: boolean;
+    color?: string;
+    fillColor?: string;
+    borderColor?: string;
+  };
+}
+
 // ── Image ──────────────────────────────────────────────────────────
 
 export interface SheetImage {
   data: Uint8Array;
-  type: "png" | "jpeg" | "gif";
+  type: "png" | "jpeg" | "gif" | "svg" | "webp";
   /** Anchor to cell */
   anchor: {
     from: { row: number; col: number };
@@ -544,6 +578,12 @@ export interface Sheet {
   colBreaks?: number[];
   /** Outline properties (controls summary row/column position) */
   outlineProperties?: OutlineProperties;
+  /** Background image data (extracted from worksheet picture relationship) */
+  backgroundImage?: Uint8Array;
+  /** Sparklines (mini-charts in cells) */
+  sparklines?: Sparkline[];
+  /** Text boxes (shapes with text) */
+  textBoxes?: SheetTextBox[];
 }
 
 // ── Workbook Properties ────────────────────────────────────────────
@@ -656,6 +696,12 @@ export interface WriteSheet {
   rowDefs?: Map<number, RowDef>;
   /** Outline properties (controls summary row/column position) */
   outlineProperties?: OutlineProperties;
+  /** Background image for the worksheet (watermark) */
+  backgroundImage?: Uint8Array;
+  /** Sparklines (mini-charts in cells) */
+  sparklines?: Sparkline[];
+  /** Text boxes (shapes with text) */
+  textBoxes?: SheetTextBox[];
 }
 
 // ── Outline Properties ────────────────────────────────────────────

@@ -24,6 +24,7 @@ import type {
   PaperSize,
   FreezePane,
   SplitPane,
+  Sparkline,
 } from "../_types";
 import type { SharedString } from "./shared-strings";
 import type { ParsedStyles } from "./styles";
@@ -160,6 +161,19 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   const colBreaks: number[] = [];
   let inRowBreaks = false;
   let inColBreaks = false;
+
+  // Sparkline SAX state
+  const sparklines: Sparkline[] = [];
+  let inSparklineGroups = false;
+  let inSparklineGroup = false;
+  let inSparkline = false;
+  let inSparklineF = false;
+  let inSparklineSqref = false;
+  let sparklineGroupType = "";
+  let sparklineGroupColor = "";
+  let sparklineGroupMarkers = false;
+  let sparklineF = "";
+  let sparklineSqref = "";
 
   // Header/footer SAX state
   let inHeaderFooter = false;
@@ -355,7 +369,10 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
           if (inCell) inValue = true;
           break;
         case "f":
-          if (inCell) {
+          if (inSparkline) {
+            inSparklineF = true;
+            sparklineF = "";
+          } else if (inCell) {
             inFormula = true;
             cellFormulaType = attrs["t"] ?? "";
             if (attrs["si"] !== undefined) {
@@ -638,7 +655,38 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
             cfFormulaText = "";
           }
           break;
+        case "sparklineGroups":
+          inSparklineGroups = true;
+          break;
+        case "sparklineGroup":
+          if (inSparklineGroups) {
+            inSparklineGroup = true;
+            sparklineGroupType = attrs["type"] ?? "line";
+            sparklineGroupColor = "";
+            sparklineGroupMarkers = attrs["markers"] === "1" || attrs["markers"] === "true";
+          }
+          break;
+        case "colorSeries":
+          if (inSparklineGroup) {
+            const rgb = attrs["rgb"] ?? "";
+            // Strip ARGB alpha prefix if present (8 chars → 6 chars)
+            sparklineGroupColor = rgb.length === 8 ? rgb.slice(2) : rgb;
+          }
+          break;
+        case "sparkline":
+          if (inSparklineGroup) {
+            inSparkline = true;
+            sparklineF = "";
+            sparklineSqref = "";
+          }
+          break;
         default:
+          // Handle xm:sqref inside sparkline
+          if (inSparkline && local === "sqref") {
+            inSparklineSqref = true;
+            sparklineSqref = "";
+            break;
+          }
           // Handle font property tags inside rPr
           if (inInlineRPr && currentRunFont) {
             _fontPropTag = local;
@@ -672,6 +720,10 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
         inFirstFooter
       ) {
         hfText += text;
+      } else if (inSparklineF) {
+        sparklineF += text;
+      } else if (inSparklineSqref) {
+        sparklineSqref += text;
       }
     },
 
@@ -739,7 +791,11 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
           inValue = false;
           break;
         case "f":
-          inFormula = false;
+          if (inSparklineF) {
+            inSparklineF = false;
+          } else {
+            inFormula = false;
+          }
           break;
         case "is":
           inInlineStr = false;
@@ -895,7 +951,37 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
         case "colBreaks":
           inColBreaks = false;
           break;
+        case "sparklineGroups":
+          inSparklineGroups = false;
+          break;
+        case "sparklineGroup":
+          inSparklineGroup = false;
+          break;
+        case "sparkline":
+          if (inSparkline && sparklineSqref) {
+            const sp: Sparkline = {
+              location: sparklineSqref,
+              dataRange: sparklineF,
+            };
+            if (sparklineGroupType && sparklineGroupType !== "line") {
+              sp.type = sparklineGroupType as Sparkline["type"];
+            }
+            if (sparklineGroupColor) {
+              sp.color = sparklineGroupColor;
+            }
+            if (sparklineGroupMarkers) {
+              sp.markers = true;
+            }
+            sparklines.push(sp);
+          }
+          inSparkline = false;
+          break;
         default:
+          // Handle xm:sqref close inside sparkline
+          if (inSparkline && local === "sqref") {
+            inSparklineSqref = false;
+            break;
+          }
           if (inInlineRPr) {
             _fontPropTag = "";
           }
@@ -1025,6 +1111,11 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   // Attach row definitions (height, hidden, outlineLevel)
   if (rowDefs.size > 0) {
     sheet.rowDefs = rowDefs;
+  }
+
+  // Attach sparklines
+  if (sparklines.length > 0) {
+    sheet.sparklines = sparklines;
   }
 
   return sheet;

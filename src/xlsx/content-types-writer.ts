@@ -25,6 +25,8 @@ const IMAGE_CONTENT_TYPES: Record<string, string> = {
   png: "image/png",
   jpeg: "image/jpeg",
   gif: "image/gif",
+  svg: "image/svg+xml",
+  webp: "image/webp",
 };
 
 export interface ContentTypesOptions {

@@ -15,6 +15,7 @@ import type {
   RichTextRun,
   FontStyle,
   Color,
+  Sparkline,
 } from "../_types";
 import type { StylesCollector } from "./styles-writer";
 import { dateToSerial } from "../_date";
@@ -42,6 +43,8 @@ export interface WorksheetResult {
   hasComments: boolean;
   /** Table parts info: rId and global table index for each table */
   tables: Array<{ rId: string; globalTableIndex: number }>;
+  /** The rId used for the background image (picture) reference */
+  pictureRId: string | null;
 }
 
 const NS_SPREADSHEET = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -498,10 +501,12 @@ export function writeWorksheetXml(
     );
   }
 
-  // ── Drawing (images) ──
+  // ── Drawing (images and/or textboxes) ──
   let drawingRId: string | null = null;
   let nextRId = hyperlinkRelationships.length + 1;
-  if (sheet.images && sheet.images.length > 0) {
+  const hasImages = sheet.images && sheet.images.length > 0;
+  const hasTextBoxes = sheet.textBoxes && sheet.textBoxes.length > 0;
+  if (hasImages || hasTextBoxes) {
     // Drawing rId comes after all hyperlink rIds
     drawingRId = `rId${nextRId}`;
     nextRId++;
@@ -542,6 +547,19 @@ export function writeWorksheetXml(
     parts.push(xmlElement("tableParts", { count: sheet.tables.length }, tablePartElements));
   }
 
+  // ── Sparklines (extLst) ──
+  if (sheet.sparklines && sheet.sparklines.length > 0) {
+    parts.push(serializeSparklines(sheet.sparklines));
+  }
+
+  // ── Picture (background image) — <picture r:id="..."/> ──
+  let pictureRId: string | null = null;
+  if (sheet.backgroundImage) {
+    pictureRId = `rId${nextRId}`;
+    nextRId++;
+    parts.push(xmlSelfClose("picture", { "r:id": pictureRId }));
+  }
+
   return {
     xml: xmlDocument("worksheet", { xmlns: NS_SPREADSHEET, "xmlns:r": NS_R }, parts),
     hyperlinkRelationships,
@@ -550,6 +568,7 @@ export function writeWorksheetXml(
     commentsRId,
     hasComments,
     tables: tableEntries,
+    pictureRId,
   };
 }
 
@@ -1328,4 +1347,76 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
     return xmlElement("cfRule", attrs, children);
   }
   return xmlSelfClose("cfRule", attrs);
+}
+
+// ── Sparkline Serialization ─────────────────────────────────────────
+
+const NS_X14 = "http://schemas.microsoft.com/office/spreadsheetml/2009/9/main";
+const NS_XM = "http://schemas.microsoft.com/office/excel/2006/main";
+const NS_XR2 = "http://schemas.microsoft.com/office/spreadsheetml/2015/revision2";
+const SPARKLINE_EXT_URI = "{05C60535-1F16-4fd2-B633-F4F36F0B64E0}";
+
+/**
+ * Serialize sparklines into an `<extLst>` XML block with `<x14:sparklineGroups>`.
+ * Each sparkline gets its own sparklineGroup for simplicity.
+ */
+function serializeSparklines(sparklines: Sparkline[]): string {
+  // Group sparklines by type+color+markers to form sparkline groups
+  // For simplicity, each sparkline is its own group (matching Excel behavior for independent sparklines)
+  const sparklineGroupElements: string[] = [];
+
+  let uidCounter = 1;
+  for (const sp of sparklines) {
+    const groupAttrs: Record<string, string> = {};
+
+    const spType = sp.type ?? "line";
+    if (spType !== "line") {
+      // "stacked" maps to OOXML "stacked" (win/loss)
+      groupAttrs["type"] = spType;
+    }
+    groupAttrs["displayEmptyCellsAs"] = "gap";
+
+    // Generate a UID for this group
+    const uid = `{00000000-0000-0000-0000-${String(uidCounter++).padStart(12, "0")}}`;
+    groupAttrs["xr2:uid"] = uid;
+
+    if (sp.markers) {
+      groupAttrs["markers"] = "1";
+    }
+
+    const groupChildren: string[] = [];
+
+    // Color series
+    const color = sp.color ?? "376092";
+    const colorRgb = color.length === 6 ? `FF${color}` : color;
+    groupChildren.push(xmlSelfClose("x14:colorSeries", { rgb: colorRgb }));
+
+    // Sparkline element
+    const sparklineEl = xmlElement("x14:sparkline", undefined, [
+      xmlElement("xm:f", undefined, sp.dataRange),
+      xmlElement("xm:sqref", undefined, sp.location),
+    ]);
+
+    groupChildren.push(xmlElement("x14:sparklines", undefined, [sparklineEl]));
+
+    sparklineGroupElements.push(xmlElement("x14:sparklineGroup", groupAttrs, groupChildren));
+  }
+
+  const sparklineGroupsEl = xmlElement(
+    "x14:sparklineGroups",
+    { "xmlns:xm": NS_XM },
+    sparklineGroupElements,
+  );
+
+  const extEl = xmlElement(
+    "ext",
+    {
+      uri: SPARKLINE_EXT_URI,
+      "xmlns:x14": NS_X14,
+      "xmlns:xr2": NS_XR2,
+    },
+    [sparklineGroupsEl],
+  );
+
+  return xmlElement("extLst", undefined, [extEl]);
 }

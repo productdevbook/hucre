@@ -25,7 +25,7 @@ function base64ToUint8Array(base64: string): Uint8Array {
 /** Create a SheetImage from a base64 string */
 export function imageFromBase64(
   base64: string,
-  type: "png" | "jpeg" | "gif",
+  type: SheetImage["type"],
   anchor: SheetImage["anchor"],
 ): SheetImage {
   const data = base64ToUint8Array(base64);

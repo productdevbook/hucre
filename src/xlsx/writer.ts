@@ -29,6 +29,7 @@ const REL_COMMENTS = "http://schemas.openxmlformats.org/officeDocument/2006/rela
 const REL_VML_DRAWING =
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing";
 const REL_TABLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/table";
+const REL_IMAGE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
 
 /**
  * Write a Workbook to XLSX format.
@@ -77,7 +78,7 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
 
   const hasSharedStrings = sharedStrings.count() > 0;
 
-  // Generate drawing data for sheets that have images
+  // Generate drawing data for sheets that have images or text boxes
   const drawingResults: Array<DrawingResult | null> = [];
   const drawingIndices: number[] = [];
   const imageExtensions = new Set<string>();
@@ -85,8 +86,10 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
 
   for (let i = 0; i < sheets.length; i++) {
     const sheet = sheets[i];
-    if (sheet.images && sheet.images.length > 0) {
-      const result = writeDrawing(sheet.images, globalImageIndex);
+    const hasImages = sheet.images && sheet.images.length > 0;
+    const hasTextBoxes = sheet.textBoxes && sheet.textBoxes.length > 0;
+    if (hasImages || hasTextBoxes) {
+      const result = writeDrawing(sheet.images ?? [], globalImageIndex, sheet.textBoxes);
       drawingResults.push(result);
       drawingIndices.push(i + 1); // 1-based drawing index matches sheet index
 
@@ -95,9 +98,26 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
         const ext = img.path.split(".").pop();
         if (ext) imageExtensions.add(ext);
       }
-      globalImageIndex += sheet.images.length;
+      if (sheet.images) {
+        globalImageIndex += sheet.images.length;
+      }
     } else {
       drawingResults.push(null);
+    }
+  }
+
+  // Track background image paths per sheet (for picture relationships)
+  const backgroundImagePaths: Array<string | null> = [];
+  for (let i = 0; i < sheets.length; i++) {
+    const sheet = sheets[i];
+    if (sheet.backgroundImage) {
+      // Background images are stored as PNG by default
+      const bgPath = `xl/media/image${globalImageIndex}.png`;
+      backgroundImagePaths.push(bgPath);
+      imageExtensions.add("png");
+      globalImageIndex++;
+    } else {
+      backgroundImagePaths.push(null);
     }
   }
 
@@ -206,13 +226,14 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
 
     zip.add(`xl/worksheets/sheet${i + 1}.xml`, encoder.encode(result.xml));
 
-    // Generate worksheet .rels if there are hyperlinks, a drawing, comments, or tables
+    // Generate worksheet .rels if there are hyperlinks, a drawing, comments, tables, or picture
     const hasHyperlinks = result.hyperlinkRelationships.length > 0;
     const hasDrawing = drawing !== null && result.drawingRId !== null;
     const hasComments = comments !== null && result.legacyDrawingRId !== null;
     const hasTables = result.tables.length > 0;
+    const hasPicture = result.pictureRId !== null && backgroundImagePaths[i] !== null;
 
-    if (hasHyperlinks || hasDrawing || hasComments || hasTables) {
+    if (hasHyperlinks || hasDrawing || hasComments || hasTables || hasPicture) {
       const relElements: string[] = [];
 
       // Hyperlink relationships
@@ -270,6 +291,19 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
         );
       }
 
+      // Background image (picture) relationship
+      if (hasPicture && result.pictureRId && backgroundImagePaths[i]) {
+        const bgMediaPath = backgroundImagePaths[i]!;
+        const relTarget = `../${bgMediaPath.slice(3)}`; // Remove "xl/" prefix → "../media/imageN.png"
+        relElements.push(
+          xmlSelfClose("Relationship", {
+            Id: result.pictureRId,
+            Type: REL_IMAGE,
+            Target: relTarget,
+          }),
+        );
+      }
+
       const relsXml = xmlDocument("Relationships", { xmlns: NS_RELATIONSHIPS }, relElements);
       zip.add(`xl/worksheets/_rels/sheet${i + 1}.xml.rels`, encoder.encode(relsXml));
     }
@@ -283,6 +317,11 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
       for (const img of drawing.images) {
         zip.add(img.path, img.data, { compress: false });
       }
+    }
+
+    // Add background image file to ZIP
+    if (hasPicture && backgroundImagePaths[i] && sheets[i].backgroundImage) {
+      zip.add(backgroundImagePaths[i]!, sheets[i].backgroundImage!, { compress: false });
     }
 
     // Add comments and VML drawing files

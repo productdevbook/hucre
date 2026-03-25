@@ -6,6 +6,7 @@ import type {
   ReadOptions,
   ReadInput,
   SheetImage,
+  SheetTextBox,
   NamedRange,
   TableDefinition,
   TableColumn,
@@ -230,14 +231,17 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
     if (info.state === "hidden") sheet.hidden = true;
     if (info.state === "veryHidden") sheet.veryHidden = true;
 
-    // Extract images from drawing if present
+    // Extract images and textboxes from drawing if present
     if (worksheetRels) {
       const drawingRel = worksheetRels.find((r) => matchesRelType(r.type, "drawing"));
       if (drawingRel) {
         const drawingPath = resolvePath(wsDir, drawingRel.target);
-        const images = await extractSheetImages(zip, drawingPath);
-        if (images.length > 0) {
-          sheet.images = images;
+        const drawing = await extractSheetDrawing(zip, drawingPath);
+        if (drawing.images.length > 0) {
+          sheet.images = drawing.images;
+        }
+        if (drawing.textBoxes.length > 0) {
+          sheet.textBoxes = drawing.textBoxes;
         }
       }
     }
@@ -291,6 +295,17 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
         }
         if (tables.length > 0) {
           sheet.tables = tables;
+        }
+      }
+    }
+
+    // Extract background image (picture relationship) if present
+    if (worksheetRels) {
+      const pictureRel = worksheetRels.find((r) => matchesRelType(r.type, "image"));
+      if (pictureRel) {
+        const picturePath = resolvePath(wsDir, pictureRel.target);
+        if (zip.has(picturePath)) {
+          sheet.backgroundImage = await zip.extract(picturePath);
         }
       }
     }
@@ -359,15 +374,25 @@ const EXT_TO_IMAGE_TYPE: Record<string, SheetImage["type"]> = {
   jpg: "jpeg",
   jpeg: "jpeg",
   gif: "gif",
+  svg: "svg",
+  webp: "webp",
 };
 
+interface DrawingExtraction {
+  images: SheetImage[];
+  textBoxes: SheetTextBox[];
+}
+
 /**
- * Extract images from a drawing XML and the ZIP archive.
- * Parses the drawing XML to find image anchors, resolves their
- * relationships to media files, and extracts the binary data.
+ * Extract images and textboxes from a drawing XML and the ZIP archive.
+ * Parses the drawing XML to find image anchors and textbox shapes,
+ * resolves their relationships to media files, and extracts the binary data.
  */
-async function extractSheetImages(zip: ZipReader, drawingPath: string): Promise<SheetImage[]> {
-  if (!zip.has(drawingPath)) return [];
+async function extractSheetDrawing(
+  zip: ZipReader,
+  drawingPath: string,
+): Promise<DrawingExtraction> {
+  if (!zip.has(drawingPath)) return { images: [], textBoxes: [] };
 
   const drawingXml = decodeUtf8(await zip.extract(drawingPath));
 
@@ -389,15 +414,23 @@ async function extractSheetImages(zip: ZipReader, drawingPath: string): Promise<
     }
   }
 
-  // Parse the drawing XML to find twoCellAnchor and oneCellAnchor elements with images
+  // Parse the drawing XML to find twoCellAnchor and oneCellAnchor elements with images/textboxes
   const doc = parseXml(drawingXml);
   const images: SheetImage[] = [];
+  const textBoxes: SheetTextBox[] = [];
 
   for (const child of doc.children) {
     if (typeof child === "string") continue;
     const local = child.local || child.tag;
 
     if (local === "twoCellAnchor") {
+      // Check if this anchor contains a textbox shape
+      const textBox = parseTwoCellAnchorTextBox(child);
+      if (textBox) {
+        textBoxes.push(textBox);
+        continue;
+      }
+
       const imageInfo = parseTwoCellAnchor(child, imageRelMap);
       if (imageInfo) {
         // Extract image data from ZIP
@@ -430,7 +463,7 @@ async function extractSheetImages(zip: ZipReader, drawingPath: string): Promise<
     }
   }
 
-  return images;
+  return { images, textBoxes };
 }
 
 /** Parse a twoCellAnchor element to extract image position and reference */
@@ -488,6 +521,202 @@ function parseTwoCellAnchor(
       to: { row: toRow, col: toCol },
     },
   };
+}
+
+/** Parse a twoCellAnchor element that contains a textbox shape (sp with txBox="1") */
+function parseTwoCellAnchorTextBox(el: { children: Array<unknown> }): SheetTextBox | null {
+  let fromRow = 0;
+  let fromCol = 0;
+  let toRow = 0;
+  let toCol = 0;
+  let spElement: any = null;
+
+  for (const child of el.children) {
+    if (typeof child === "string") continue;
+    const c = child as {
+      local?: string;
+      tag: string;
+      children: Array<unknown>;
+      attrs: Record<string, string>;
+    };
+    const local = c.local || c.tag;
+
+    if (local === "from") {
+      const pos = parseAnchorPosition(c);
+      fromRow = pos.row;
+      fromCol = pos.col;
+    } else if (local === "to") {
+      const pos = parseAnchorPosition(c);
+      toRow = pos.row;
+      toCol = pos.col;
+    } else if (local === "sp") {
+      // Check if this is a textbox shape
+      const nvSpPr = findChildEl(c, "nvSpPr");
+      if (nvSpPr) {
+        const cNvSpPr = findChildEl(nvSpPr, "cNvSpPr");
+        if (cNvSpPr && (cNvSpPr.attrs["txBox"] === "1" || cNvSpPr.attrs["txBox"] === "true")) {
+          spElement = c;
+        }
+      }
+    }
+  }
+
+  if (!spElement) return null;
+
+  // Extract text from txBody
+  const txBody = findChildEl(spElement, "txBody");
+  let text = "";
+  let fontSize: number | undefined;
+  let bold: boolean | undefined;
+  let color: string | undefined;
+
+  if (txBody) {
+    // Collect text from all paragraphs
+    const paragraphs: string[] = [];
+    for (const pChild of txBody.children) {
+      if (typeof pChild === "string") continue;
+      const pLocal = (pChild as any).local || (pChild as any).tag;
+      if (pLocal === "p") {
+        const pText = extractParagraphText(pChild as any);
+        paragraphs.push(pText.text);
+        // Get style from first run with properties
+        if (pText.fontSize !== undefined && fontSize === undefined) fontSize = pText.fontSize;
+        if (pText.bold !== undefined && bold === undefined) bold = pText.bold;
+        if (pText.color !== undefined && color === undefined) color = pText.color;
+      }
+    }
+    text = paragraphs.join("\n");
+  }
+
+  if (!text) return null;
+
+  // Extract fill and border colors from spPr
+  let fillColor: string | undefined;
+  let borderColor: string | undefined;
+  const spPr = findChildEl(spElement, "spPr");
+  if (spPr) {
+    const solidFill = findChildEl(spPr, "solidFill");
+    if (solidFill) {
+      const srgbClr = findChildEl(solidFill, "srgbClr");
+      if (srgbClr && srgbClr.attrs["val"]) {
+        fillColor = srgbClr.attrs["val"];
+      }
+    }
+    const ln = findChildEl(spPr, "ln");
+    if (ln) {
+      const lnFill = findChildEl(ln, "solidFill");
+      if (lnFill) {
+        const lnClr = findChildEl(lnFill, "srgbClr");
+        if (lnClr && lnClr.attrs["val"]) {
+          borderColor = lnClr.attrs["val"];
+        }
+      }
+    }
+  }
+
+  const tb: SheetTextBox = {
+    text,
+    anchor: {
+      from: { row: fromRow, col: fromCol },
+      to: { row: toRow, col: toCol },
+    },
+  };
+
+  const style: SheetTextBox["style"] = {};
+  let hasStyle = false;
+  if (fontSize !== undefined) {
+    style.fontSize = fontSize;
+    hasStyle = true;
+  }
+  if (bold !== undefined) {
+    style.bold = bold;
+    hasStyle = true;
+  }
+  if (color !== undefined) {
+    style.color = color;
+    hasStyle = true;
+  }
+  if (fillColor !== undefined) {
+    style.fillColor = fillColor;
+    hasStyle = true;
+  }
+  if (borderColor !== undefined) {
+    style.borderColor = borderColor;
+    hasStyle = true;
+  }
+  if (hasStyle) tb.style = style;
+
+  return tb;
+}
+
+/** Find a child element by local name */
+function findChildEl(
+  el: { children: Array<unknown> },
+  localName: string,
+): { local?: string; tag: string; children: Array<unknown>; attrs: Record<string, string> } | null {
+  for (const child of el.children) {
+    if (typeof child === "string") continue;
+    const c = child as {
+      local?: string;
+      tag: string;
+      children: Array<unknown>;
+      attrs: Record<string, string>;
+    };
+    const local = c.local || c.tag;
+    if (local === localName) return c;
+  }
+  return null;
+}
+
+/** Extract text content from a DrawingML <a:p> paragraph element */
+function extractParagraphText(pEl: { children: Array<unknown> }): {
+  text: string;
+  fontSize?: number;
+  bold?: boolean;
+  color?: string;
+} {
+  let text = "";
+  let fontSize: number | undefined;
+  let bold: boolean | undefined;
+  let color: string | undefined;
+
+  for (const child of pEl.children) {
+    if (typeof child === "string") continue;
+    const c = child as {
+      local?: string;
+      tag: string;
+      children: Array<unknown>;
+      attrs: Record<string, string>;
+    };
+    const local = c.local || c.tag;
+
+    if (local === "r") {
+      // Run element: extract rPr and t
+      const rPr = findChildEl(c, "rPr");
+      if (rPr) {
+        if (rPr.attrs["sz"]) {
+          fontSize = Number(rPr.attrs["sz"]) / 100;
+        }
+        if (rPr.attrs["b"] === "1" || rPr.attrs["b"] === "true") {
+          bold = true;
+        }
+        // Check for color in solidFill child
+        const solidFill = findChildEl(rPr, "solidFill");
+        if (solidFill) {
+          const srgbClr = findChildEl(solidFill, "srgbClr");
+          if (srgbClr && srgbClr.attrs["val"]) {
+            color = srgbClr.attrs["val"];
+          }
+        }
+      }
+      const tEl = findChildEl(c, "t");
+      if (tEl) {
+        text += tEl.children.filter((ch: unknown) => typeof ch === "string").join("");
+      }
+    }
+  }
+
+  return { text, fontSize, bold, color };
 }
 
 /** EMU per pixel (at 96 DPI) */
