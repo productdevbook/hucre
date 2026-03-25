@@ -10,8 +10,11 @@ import {
   XlsxStreamWriter,
   readOds,
   writeOds,
+  toHtml,
+  toMarkdown,
+  formatValue,
 } from "hucre";
-import type { CellValue, WriteSheet, SchemaDefinition } from "hucre";
+import type { CellValue, WriteSheet, SchemaDefinition, Sheet } from "hucre";
 
 // ── Toast ─────────────────────────────────────────────────────────
 
@@ -603,6 +606,100 @@ function setupOds() {
   });
 }
 
+// ── Export (HTML / Markdown) ───────────────────────────────────────
+
+let lastExportText = "";
+
+function setupExport() {
+  function getExportSheet(): Sheet {
+    const rawData = JSON.parse(($("export-data") as HTMLTextAreaElement).value);
+    const rows: CellValue[][] = rawData;
+    return { name: "Export", rows };
+  }
+
+  $("export-html").addEventListener("click", () => {
+    const output = $("export-output");
+    try {
+      const sheet = getExportSheet();
+      const headerRow = ($("export-header") as HTMLInputElement).checked;
+      const styles = ($("export-styles") as HTMLInputElement).checked;
+      const html = toHtml(sheet, { headerRow, styles, classes: true, includeStyleTag: true });
+      lastExportText = html;
+      // Show rendered HTML preview
+      output.innerHTML = `<div style="background:#fff;color:#000;padding:1rem;border-radius:6px">${html}</div>`;
+      output.innerHTML += `<details style="margin-top:0.75rem"><summary style="cursor:pointer;color:var(--text-dim);font-size:0.75rem">View source (${html.length} chars)</summary><pre style="font-size:0.7rem;overflow-x:auto;margin-top:0.5rem;color:var(--text-muted)">${escapeHtml(html)}</pre></details>`;
+      ($("export-copy") as HTMLButtonElement).disabled = false;
+    } catch (e: unknown) {
+      output.innerHTML = `<p class="error">${escapeHtml(String(e))}</p>`;
+    }
+  });
+
+  $("export-md").addEventListener("click", () => {
+    const output = $("export-output");
+    try {
+      const sheet = getExportSheet();
+      const headerRow = ($("export-header") as HTMLInputElement).checked;
+      const md = toMarkdown(sheet, { headerRow });
+      lastExportText = md;
+      output.innerHTML = `<pre style="font-size:0.8rem;line-height:1.6;color:var(--text-muted)">${escapeHtml(md)}</pre>`;
+      ($("export-copy") as HTMLButtonElement).disabled = false;
+    } catch (e: unknown) {
+      output.innerHTML = `<p class="error">${escapeHtml(String(e))}</p>`;
+    }
+  });
+
+  $("export-copy").addEventListener("click", () => {
+    if (!lastExportText) return;
+    navigator.clipboard.writeText(lastExportText);
+    toast("Copied to clipboard");
+  });
+}
+
+// ── Format Value ──────────────────────────────────────────────────
+
+function setupFormat() {
+  function doFormat() {
+    const output = $("fmt-output");
+    try {
+      const rawVal = ($("fmt-value") as HTMLInputElement).value;
+      const fmt = ($("fmt-format") as HTMLInputElement).value;
+
+      // Try to parse as number
+      let value: unknown = rawVal;
+      const num = Number(rawVal);
+      if (!Number.isNaN(num) && rawVal.trim() !== "") value = num;
+      if (rawVal.toLowerCase() === "true") value = true;
+      if (rawVal.toLowerCase() === "false") value = false;
+
+      const result = formatValue(value, fmt);
+
+      let html = `<div style="text-align:center;padding:2rem 0">`;
+      html += `<div style="font-size:2.5rem;font-weight:700;color:var(--accent);font-family:'SF Mono','Fira Code',monospace">${escapeHtml(result)}</div>`;
+      html += `<div style="margin-top:1rem;color:var(--text-dim);font-size:0.8rem">`;
+      html += `<span style="color:var(--text-muted)">formatValue(</span>`;
+      html += `<span style="color:#60a5fa">${escapeHtml(String(value))}</span>`;
+      html += `<span style="color:var(--text-muted)">, </span>`;
+      html += `<span style="color:#fbbf24">"${escapeHtml(fmt)}"</span>`;
+      html += `<span style="color:var(--text-muted)">)</span>`;
+      html += `</div></div>`;
+      output.innerHTML = html;
+    } catch (e: unknown) {
+      output.innerHTML = `<p class="error">${escapeHtml(String(e))}</p>`;
+    }
+  }
+
+  $("fmt-apply").addEventListener("click", doFormat);
+
+  // Quick example buttons
+  document.querySelectorAll<HTMLButtonElement>("[data-fmt-val]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      ($("fmt-value") as HTMLInputElement).value = btn.dataset["fmtVal"] || "";
+      ($("fmt-format") as HTMLInputElement).value = btn.dataset["fmtStr"] || "";
+      doFormat();
+    });
+  });
+}
+
 // ── Init ──────────────────────────────────────────────────────────
 
 export function setupApp() {
@@ -613,4 +710,6 @@ export function setupApp() {
   setupSchema();
   setupStreaming();
   setupOds();
+  setupExport();
+  setupFormat();
 }

@@ -29,6 +29,8 @@
         <button class="tab" data-tab="schema" role="tab">Schema</button>
         <button class="tab" data-tab="streaming" role="tab">Streaming</button>
         <button class="tab" data-tab="ods" role="tab">ODS</button>
+        <button class="tab" data-tab="export" role="tab">Export</button>
+        <button class="tab" data-tab="format" role="tab">Format</button>
       </nav>
 
       <!-- ═══════ READ XLSX ═══════ -->
@@ -332,6 +334,110 @@ Sensor,45.99,SNS-005,64,unknown</textarea
             <div class="actions">
               <button class="btn primary" id="ods-generate">Generate ODS</button>
               <button class="btn" id="ods-download" disabled>Download .ods</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ EXPORT ═══════ -->
+      <section class="panel" data-panel="export">
+        <p class="panel-desc">
+          Export spreadsheet data as HTML table or Markdown. Try editing the data and clicking
+          export.
+        </p>
+        <div class="split">
+          <div class="controls">
+            <div class="field full">
+              <label for="export-data">Data (JSON)</label>
+              <textarea id="export-data" rows="10" spellcheck="false">
+[
+  ["Product", "Price", "Stock", "Active"],
+  ["Widget", 9.99, 142, true],
+  ["Gadget", 24.50, 87, true],
+  ["Bolt", 0.75, 3420, false],
+  ["Cable", 12.00, 256, true],
+  ["Sensor", 45.99, 64, true]
+]</textarea
+              >
+            </div>
+            <details class="section" open>
+              <summary>Options</summary>
+              <div class="field-grid">
+                <div class="field">
+                  <label>
+                    <input id="export-header" type="checkbox" checked /> First Row as Header
+                  </label>
+                </div>
+                <div class="field">
+                  <label>
+                    <input id="export-styles" type="checkbox" /> Include Styles (HTML)
+                  </label>
+                </div>
+              </div>
+            </details>
+          </div>
+          <div class="preview">
+            <div class="output" id="export-output">
+              <p style="color: var(--text-dim); text-align: center; padding: 3rem 0">
+                Click "HTML" or "Markdown" to export
+              </p>
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="export-html">Export HTML</button>
+              <button class="btn primary" id="export-md">Export Markdown</button>
+              <button class="btn" id="export-copy" disabled>Copy</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ FORMAT ═══════ -->
+      <section class="panel" data-panel="format">
+        <p class="panel-desc">
+          Apply Excel number formats to values. formatValue(value, numFmt) renders any cell value
+          with its format string.
+        </p>
+        <div class="split">
+          <div class="controls">
+            <div class="field full">
+              <label for="fmt-value">Value</label>
+              <input id="fmt-value" type="text" value="1234567.89" />
+            </div>
+            <div class="field full">
+              <label for="fmt-format">Format String</label>
+              <input id="fmt-format" type="text" value="#,##0.00" />
+            </div>
+            <button class="btn primary" id="fmt-apply" style="margin-top: 0.5rem">Format</button>
+
+            <details class="section" open style="margin-top: 1rem">
+              <summary>Quick Examples</summary>
+              <div class="field-grid">
+                <div class="field full">
+                  <button class="btn" data-fmt-val="1234567.89" data-fmt-str="#,##0.00">
+                    #,##0.00
+                  </button>
+                  <button class="btn" data-fmt-val="0.1567" data-fmt-str="0.00%">0.00%</button>
+                  <button class="btn" data-fmt-val="1234.5" data-fmt-str="$#,##0.00">
+                    $#,##0.00
+                  </button>
+                  <button class="btn" data-fmt-val="44197" data-fmt-str="yyyy-mm-dd">
+                    yyyy-mm-dd
+                  </button>
+                  <button class="btn" data-fmt-val="44197.75" data-fmt-str="m/d/yy h:mm AM/PM">
+                    date+time
+                  </button>
+                  <button class="btn" data-fmt-val="1234" data-fmt-str="0.00E+00">0.00E+00</button>
+                  <button class="btn" data-fmt-val="0.333" data-fmt-str="# ?/?">fraction</button>
+                  <button class="btn" data-fmt-val="42" data-fmt-str="General">General</button>
+                </div>
+              </div>
+            </details>
+          </div>
+          <div class="preview">
+            <div class="output" id="fmt-output">
+              <p style="color: var(--text-dim); text-align: center; padding: 3rem 0">
+                Click "Format" or pick a quick example
+              </p>
             </div>
           </div>
         </div>
