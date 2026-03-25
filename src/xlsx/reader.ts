@@ -212,6 +212,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
       readStyles,
       dateSystem,
       worksheetRels,
+      maxRows: options?.maxRows,
     };
 
     const wsXml = decodeUtf8(await zip.extract(wsPath));

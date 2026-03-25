@@ -32,8 +32,12 @@ export function formatCsvValue(value: CellValue, options?: CsvWriteOptions): str
     return formatDate(value, opts.dateFormat);
   }
 
-  // String — apply quoting
-  return quoteField(String(value), opts.delimiter, opts.quote, opts.quoteStyle);
+  // String — apply formula escaping if enabled, then quoting
+  let str = String(value);
+  if (opts.escapeFormulae) {
+    str = escapeFormula(str);
+  }
+  return quoteField(str, opts.delimiter, opts.quote, opts.quoteStyle);
 }
 
 /**
@@ -132,6 +136,7 @@ interface NormalizedWriteOptions {
   bom: boolean;
   dateFormat: string | undefined;
   nullValue: string;
+  escapeFormulae: boolean;
 }
 
 function normalizeWriteOptions(options?: CsvWriteOptions): NormalizedWriteOptions {
@@ -144,7 +149,21 @@ function normalizeWriteOptions(options?: CsvWriteOptions): NormalizedWriteOption
     bom: options?.bom ?? false,
     dateFormat: options?.dateFormat,
     nullValue: options?.nullValue ?? "",
+    escapeFormulae: options?.escapeFormulae ?? false,
   };
+}
+
+// Characters that trigger formula interpretation in Excel/Sheets
+const FORMULA_PREFIXES = ["=", "+", "-", "@", "\t", "\r"];
+
+/**
+ * Prefix a string value with a single quote if it starts with a formula-triggering character.
+ */
+function escapeFormula(value: string): string {
+  if (value.length > 0 && FORMULA_PREFIXES.includes(value[0]!)) {
+    return "'" + value;
+  }
+  return value;
 }
 
 function formatAndQuote(value: CellValue, opts: NormalizedWriteOptions): string {
@@ -171,7 +190,11 @@ function formatAndQuote(value: CellValue, opts: NormalizedWriteOptions): string 
     return quoteField(raw, opts.delimiter, opts.quote, opts.quoteStyle);
   }
 
-  return quoteField(String(value), opts.delimiter, opts.quote, opts.quoteStyle);
+  let str = String(value);
+  if (opts.escapeFormulae) {
+    str = escapeFormula(str);
+  }
+  return quoteField(str, opts.delimiter, opts.quote, opts.quoteStyle);
 }
 
 function quoteField(

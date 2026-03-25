@@ -89,6 +89,11 @@ export function parseCsv(input: string, options?: CsvReadOptions): CellValue[][]
     );
   }
 
+  // Limit to maxRows data rows
+  if (opts.maxRows !== undefined && opts.maxRows >= 0 && filtered.length > opts.maxRows) {
+    filtered = filtered.slice(0, opts.maxRows);
+  }
+
   // Type inference
   if (opts.typeInference) {
     const preserveLeadingZeros = opts.preserveLeadingZeros;
@@ -281,6 +286,7 @@ function normalizeReadOptions(options?: CsvReadOptions) {
     skipEmptyRows: options?.skipEmptyRows ?? false,
     comment: options?.comment,
     header: options?.header ?? false,
+    maxRows: options?.maxRows,
   };
 }
 

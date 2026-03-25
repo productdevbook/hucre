@@ -1,7 +1,16 @@
 // ── ODS Writer ──────────────────────────────────────────────────────
 // Generates valid OpenDocument Spreadsheet (.ods) files.
 
-import type { WriteOptions, WriteOutput, CellValue, WorkbookProperties } from "../_types";
+import type {
+  WriteOptions,
+  WriteOutput,
+  CellValue,
+  WorkbookProperties,
+  WriteSheet,
+  Cell,
+  CellStyle,
+  MergeRange,
+} from "../_types";
 import { ZipWriter } from "../zip/writer";
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer";
 
@@ -18,6 +27,8 @@ const NS_NUMBER = "urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0";
 const NS_SVG = "urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0";
 const NS_META = "urn:oasis:names:tc:opendocument:xmlns:meta:1.0";
 const NS_DC = "http://purl.org/dc/elements/1.1/";
+const NS_XLINK = "http://www.w3.org/1999/xlink";
+const NS_OF = "urn:oasis:names:tc:opendocument:xmlns:of:1.2";
 
 const MIMETYPE = "application/vnd.oasis.opendocument.spreadsheet";
 
@@ -39,93 +50,325 @@ function formatOdsDateValue(date: Date): string {
   return `${y}-${m}-${d}T${hh}:${mm}:${ss}`;
 }
 
-function cellToOds(value: CellValue): string {
+// ── Style Generation ────────────────────────────────────────────────
+
+/** Maps a CellStyle to a unique string key for deduplication */
+function styleKey(style: CellStyle): string {
+  const parts: string[] = [];
+  if (style.font?.bold) parts.push("b");
+  if (style.font?.italic) parts.push("i");
+  if (style.font?.size) parts.push(`sz${style.font.size}`);
+  if (style.font?.color?.rgb) parts.push(`fc${style.font.color.rgb}`);
+  if (style.fill?.type === "pattern" && style.fill.fgColor?.rgb) {
+    parts.push(`bg${style.fill.fgColor.rgb}`);
+  }
+  return parts.join("|");
+}
+
+/** Generate a <style:style> element for a cell style */
+function generateStyleElement(name: string, style: CellStyle): string {
+  const textProps: Record<string, string> = {};
+  const cellProps: Record<string, string> = {};
+
+  if (style.font?.bold) {
+    textProps["fo:font-weight"] = "bold";
+  }
+  if (style.font?.italic) {
+    textProps["fo:font-style"] = "italic";
+  }
+  if (style.font?.size) {
+    textProps["fo:font-size"] = `${style.font.size}pt`;
+  }
+  if (style.font?.color?.rgb) {
+    textProps["fo:color"] = `#${style.font.color.rgb}`;
+  }
+
+  if (style.fill?.type === "pattern" && style.fill.fgColor?.rgb) {
+    cellProps["fo:background-color"] = `#${style.fill.fgColor.rgb}`;
+  }
+
+  const children: string[] = [];
+  if (Object.keys(textProps).length > 0) {
+    children.push(xmlSelfClose("style:text-properties", textProps));
+  }
+  if (Object.keys(cellProps).length > 0) {
+    children.push(xmlSelfClose("style:table-cell-properties", cellProps));
+  }
+
+  return xmlElement("style:style", { "style:name": name, "style:family": "table-cell" }, children);
+}
+
+// ── Style Collector ────────────────────────────────────────────────
+
+interface StyleCollector {
+  /** Map from style key → style name (e.g. "ce1") */
+  styleMap: Map<string, string>;
+  /** Map from style name → XML element string */
+  styleElements: Map<string, string>;
+  /** Counter for generating unique names */
+  counter: number;
+}
+
+function createStyleCollector(): StyleCollector {
+  return { styleMap: new Map(), styleElements: new Map(), counter: 1 };
+}
+
+function getOrCreateStyleName(collector: StyleCollector, style: CellStyle): string {
+  const key = styleKey(style);
+  if (!key) return ""; // No style properties
+
+  const existing = collector.styleMap.get(key);
+  if (existing) return existing;
+
+  const name = `ce${collector.counter++}`;
+  collector.styleMap.set(key, name);
+  collector.styleElements.set(name, generateStyleElement(name, style));
+  return name;
+}
+
+// ── Formula Conversion ──────────────────────────────────────────────
+
+/**
+ * Convert an Excel-style formula to ODS formula syntax.
+ * ODS formulas use `of:=` prefix and `[.A1]` cell references.
+ */
+function excelFormulaToOds(formula: string): string {
+  // Convert cell references like A1, $A$1, A1:B2 to ODS [.A1] notation
+  // Handle range references like A1:B2 → [.A1:.B2]
+  const converted = formula.replace(
+    /(\$?[A-Z]{1,3}\$?\d+)(?::(\$?[A-Z]{1,3}\$?\d+))?/g,
+    (_match, ref1: string, ref2?: string) => {
+      if (ref2) {
+        return `[.${ref1}:.${ref2}]`;
+      }
+      return `[.${ref1}]`;
+    },
+  );
+  return `of:=${converted}`;
+}
+
+// ── Cell Serialization ──────────────────────────────────────────────
+
+interface CellContext {
+  /** Cell override from sheet.cells */
+  cellOverride?: Partial<Cell>;
+  /** Style name to apply (from style collector) */
+  styleName?: string;
+  /** Merge span attributes */
+  colSpan?: number;
+  rowSpan?: number;
+}
+
+function cellToOds(value: CellValue, ctx?: CellContext): string {
+  const attrs: Record<string, string> = {};
+  const children: string[] = [];
+
+  if (ctx?.styleName) {
+    attrs["table:style-name"] = ctx.styleName;
+  }
+  if (ctx?.colSpan && ctx.colSpan > 1) {
+    attrs["table:number-columns-spanned"] = String(ctx.colSpan);
+  }
+  if (ctx?.rowSpan && ctx.rowSpan > 1) {
+    attrs["table:number-rows-spanned"] = String(ctx.rowSpan);
+  }
+
+  // Formula
+  const formula = ctx?.cellOverride?.formula;
+  if (formula) {
+    attrs["table:formula"] = excelFormulaToOds(formula);
+  }
+
+  // Hyperlink
+  const hyperlink = ctx?.cellOverride?.hyperlink;
+
   if (value === null || value === undefined) {
-    return xmlSelfClose("table:table-cell");
+    if (Object.keys(attrs).length === 0) {
+      return xmlSelfClose("table:table-cell");
+    }
+    return xmlElement("table:table-cell", attrs, children);
   }
 
   if (typeof value === "string") {
-    return xmlElement(
-      "table:table-cell",
-      { "office:value-type": "string" },
-      xmlElement("text:p", undefined, xmlEscape(value)),
-    );
+    attrs["office:value-type"] = "string";
+    if (hyperlink) {
+      const linkEl = xmlElement(
+        "text:a",
+        { "xlink:href": hyperlink.target, "xlink:type": "simple" },
+        xmlEscape(value),
+      );
+      children.push(xmlElement("text:p", undefined, linkEl));
+    } else {
+      children.push(xmlElement("text:p", undefined, xmlEscape(value)));
+    }
+    return xmlElement("table:table-cell", attrs, children);
   }
 
   if (typeof value === "number") {
-    return xmlElement(
-      "table:table-cell",
-      { "office:value-type": "float", "office:value": String(value) },
-      xmlElement("text:p", undefined, String(value)),
-    );
+    attrs["office:value-type"] = "float";
+    attrs["office:value"] = String(value);
+    children.push(xmlElement("text:p", undefined, String(value)));
+    return xmlElement("table:table-cell", attrs, children);
   }
 
   if (typeof value === "boolean") {
-    return xmlElement(
-      "table:table-cell",
-      {
-        "office:value-type": "boolean",
-        "office:boolean-value": value ? "true" : "false",
-      },
-      xmlElement("text:p", undefined, value ? "TRUE" : "FALSE"),
-    );
+    attrs["office:value-type"] = "boolean";
+    attrs["office:boolean-value"] = value ? "true" : "false";
+    children.push(xmlElement("text:p", undefined, value ? "TRUE" : "FALSE"));
+    return xmlElement("table:table-cell", attrs, children);
   }
 
   if (value instanceof Date) {
     const dateStr = formatOdsDateValue(value);
-    return xmlElement(
-      "table:table-cell",
-      {
-        "office:value-type": "date",
-        "office:date-value": dateStr,
-      },
-      xmlElement("text:p", undefined, dateStr),
-    );
+    attrs["office:value-type"] = "date";
+    attrs["office:date-value"] = dateStr;
+    children.push(xmlElement("text:p", undefined, dateStr));
+    return xmlElement("table:table-cell", attrs, children);
   }
 
-  return xmlSelfClose("table:table-cell");
+  if (Object.keys(attrs).length === 0) {
+    return xmlSelfClose("table:table-cell");
+  }
+  return xmlElement("table:table-cell", attrs, children);
 }
 
-// ── Row serialization with trailing-empty-cell optimization ─────────
+// ── Merge helpers ───────────────────────────────────────────────────
 
-function rowToOds(row: CellValue[]): string {
-  const cellElements: string[] = [];
+/** Build a set of covered cell positions from merge ranges */
+function buildMergeMap(merges: MergeRange[] | undefined): {
+  /** Cells that are the start of a merge: "row,col" → { colSpan, rowSpan } */
+  starts: Map<string, { colSpan: number; rowSpan: number }>;
+  /** Cells covered by a merge (not the start cell) */
+  covered: Set<string>;
+} {
+  const starts = new Map<string, { colSpan: number; rowSpan: number }>();
+  const covered = new Set<string>();
 
-  // Find the last non-null cell index to avoid emitting trailing empty cells
-  let lastNonNull = row.length - 1;
-  while (lastNonNull >= 0 && (row[lastNonNull] === null || row[lastNonNull] === undefined)) {
-    lastNonNull--;
+  if (!merges) return { starts, covered };
+
+  for (const m of merges) {
+    const colSpan = m.endCol - m.startCol + 1;
+    const rowSpan = m.endRow - m.startRow + 1;
+    starts.set(`${m.startRow},${m.startCol}`, { colSpan, rowSpan });
+
+    for (let r = m.startRow; r <= m.endRow; r++) {
+      for (let c = m.startCol; c <= m.endCol; c++) {
+        if (r === m.startRow && c === m.startCol) continue;
+        covered.add(`${r},${c}`);
+      }
+    }
   }
 
-  // Emit cells up to and including the last non-null cell,
-  // collapsing consecutive null/undefined cells with number-columns-repeated
-  let i = 0;
-  while (i <= lastNonNull) {
-    const cell = row[i];
+  return { starts, covered };
+}
 
-    if (cell === null || cell === undefined) {
-      // Count consecutive empty cells
+// ── Row serialization with merge and cell override support ──────────
+
+function rowToOds(
+  row: CellValue[],
+  rowIndex: number,
+  sheet: WriteSheet,
+  mergeMap: { starts: Map<string, { colSpan: number; rowSpan: number }>; covered: Set<string> },
+  styleCollector: StyleCollector,
+  maxCol: number,
+): string {
+  const cellElements: string[] = [];
+
+  // We need to emit cells for the full width including merge-covered columns
+  const effectiveMax = Math.max(row.length - 1, maxCol);
+
+  // Find the last column that has meaningful content (value, merge start, covered cell)
+  let lastMeaningful = row.length - 1;
+  while (
+    lastMeaningful >= 0 &&
+    (row[lastMeaningful] === null || row[lastMeaningful] === undefined)
+  ) {
+    lastMeaningful--;
+  }
+  // Also consider merge starts and covered cells beyond data
+  for (let c = lastMeaningful + 1; c <= effectiveMax; c++) {
+    const key = `${rowIndex},${c}`;
+    if (mergeMap.starts.has(key) || mergeMap.covered.has(key)) {
+      lastMeaningful = c;
+    }
+  }
+
+  let i = 0;
+  while (i <= lastMeaningful) {
+    const key = `${rowIndex},${i}`;
+
+    // Check if this cell is covered by a merge
+    if (mergeMap.covered.has(key)) {
+      // Count consecutive covered cells
       let count = 1;
-      while (
-        i + count <= lastNonNull &&
-        (row[i + count] === null || row[i + count] === undefined)
-      ) {
+      while (i + count <= lastMeaningful && mergeMap.covered.has(`${rowIndex},${i + count}`)) {
         count++;
       }
       if (count > 1) {
         cellElements.push(
-          xmlSelfClose("table:table-cell", {
+          xmlSelfClose("table:covered-table-cell", {
             "table:number-columns-repeated": String(count),
           }),
         );
       } else {
-        cellElements.push(xmlSelfClose("table:table-cell"));
+        cellElements.push(xmlSelfClose("table:covered-table-cell"));
       }
       i += count;
-    } else {
-      cellElements.push(cellToOds(cell));
-      i++;
+      continue;
     }
+
+    const cell = i < row.length ? row[i] : null;
+
+    // Get cell override for formulas, hyperlinks, styles
+    const cellOverride = sheet.cells?.get(key);
+
+    // Build cell context
+    const ctx: CellContext = {};
+    if (cellOverride) ctx.cellOverride = cellOverride;
+
+    // Merge span
+    const mergeInfo = mergeMap.starts.get(key);
+    if (mergeInfo) {
+      ctx.colSpan = mergeInfo.colSpan;
+      ctx.rowSpan = mergeInfo.rowSpan;
+    }
+
+    // Style from cell override
+    const style = cellOverride?.style;
+    if (style) {
+      const name = getOrCreateStyleName(styleCollector, style);
+      if (name) ctx.styleName = name;
+    }
+
+    if (cell === null || cell === undefined) {
+      if (Object.keys(ctx).length === 0 && !ctx.cellOverride && !mergeInfo) {
+        // Plain empty cell — count consecutive empties
+        let count = 1;
+        while (
+          i + count <= lastMeaningful &&
+          (i + count >= row.length || row[i + count] === null || row[i + count] === undefined) &&
+          !mergeMap.covered.has(`${rowIndex},${i + count}`) &&
+          !mergeMap.starts.has(`${rowIndex},${i + count}`) &&
+          !sheet.cells?.has(`${rowIndex},${i + count}`)
+        ) {
+          count++;
+        }
+        if (count > 1) {
+          cellElements.push(
+            xmlSelfClose("table:table-cell", {
+              "table:number-columns-repeated": String(count),
+            }),
+          );
+        } else {
+          cellElements.push(xmlSelfClose("table:table-cell"));
+        }
+        i += count;
+        continue;
+      }
+    }
+
+    cellElements.push(cellToOds(cell, ctx));
+    i++;
   }
 
   return xmlElement("table:table-row", undefined, cellElements);
@@ -136,7 +379,11 @@ function rowToOds(row: CellValue[]): string {
 function writeContentXml(options: WriteOptions): string {
   const { sheets } = options;
 
+  const styleCollector = createStyleCollector();
   const tableElements: string[] = [];
+
+  // First pass: collect styles and build table XML (deferred because styles go before body)
+  const sheetXmlParts: string[][] = [];
 
   for (const sheet of sheets) {
     const children: string[] = [];
@@ -161,10 +408,26 @@ function writeContentXml(options: WriteOptions): string {
       }
     }
 
-    // Determine column count (max width across all rows)
+    // Build merge map
+    const mergeMap = buildMergeMap(sheet.merges);
+
+    // Determine column count (max width across all rows, considering merges)
     let colCount = 0;
     for (const row of rows) {
       if (row.length > colCount) colCount = row.length;
+    }
+    if (sheet.merges) {
+      for (const m of sheet.merges) {
+        if (m.endCol + 1 > colCount) colCount = m.endCol + 1;
+      }
+    }
+
+    // Determine max row needed (considering merges)
+    let rowCount = rows.length;
+    if (sheet.merges) {
+      for (const m of sheet.merges) {
+        if (m.endRow + 1 > rowCount) rowCount = m.endRow + 1;
+      }
     }
 
     // Emit table:table-column element to declare column count
@@ -180,23 +443,37 @@ function writeContentXml(options: WriteOptions): string {
       }
     }
 
-    // Emit rows
-    for (const row of rows) {
-      children.push(rowToOds(row));
+    // Emit rows (extend to cover merged rows beyond data)
+    for (let r = 0; r < rowCount; r++) {
+      const row = r < rows.length ? rows[r] : [];
+      children.push(rowToOds(row, r, sheet, mergeMap, styleCollector, colCount - 1));
     }
 
-    tableElements.push(xmlElement("table:table", { "table:name": sheet.name }, children));
+    sheetXmlParts.push(children);
+  }
+
+  // Now build the final XML with styles collected during serialization
+  for (let i = 0; i < sheets.length; i++) {
+    tableElements.push(
+      xmlElement("table:table", { "table:name": sheets[i].name }, sheetXmlParts[i]),
+    );
   }
 
   const spreadsheetBody = xmlElement("office:spreadsheet", undefined, tableElements);
   const body = xmlElement("office:body", undefined, spreadsheetBody);
+
+  // Build automatic styles from collected styles
+  const styleXml =
+    styleCollector.styleElements.size > 0
+      ? xmlElement("office:automatic-styles", undefined, [...styleCollector.styleElements.values()])
+      : xmlElement("office:automatic-styles", undefined, "");
 
   // Build content sections in order per ODS spec:
   // office:scripts, office:font-face-decls, office:automatic-styles, office:body
   const contentParts: string[] = [];
   contentParts.push(xmlSelfClose("office:scripts"));
   contentParts.push(xmlElement("office:font-face-decls", undefined, ""));
-  contentParts.push(xmlElement("office:automatic-styles", undefined, ""));
+  contentParts.push(styleXml);
   contentParts.push(body);
 
   return xmlDocument(
@@ -209,6 +486,8 @@ function writeContentXml(options: WriteOptions): string {
       "xmlns:fo": NS_FO,
       "xmlns:number": NS_NUMBER,
       "xmlns:svg": NS_SVG,
+      "xmlns:xlink": NS_XLINK,
+      "xmlns:of": NS_OF,
       "office:version": "1.2",
     },
     contentParts,

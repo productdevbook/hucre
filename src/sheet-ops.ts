@@ -1,7 +1,7 @@
 // ── Sheet Operations ────────────────────────────────────────────────
 // In-memory row/column manipulation utilities for Sheet objects.
 
-import type { Sheet, MergeRange, RowDef, Workbook, Cell, CellStyle } from "./_types";
+import type { Sheet, MergeRange, RowDef, Workbook, Cell, CellStyle, CellValue } from "./_types";
 import { parseCellRef } from "./xlsx/worksheet";
 import { rangeRef } from "./xlsx/worksheet-writer";
 
@@ -1155,4 +1155,80 @@ export function removeSheet(workbook: Workbook, index: number): void {
       workbook.activeSheet--;
     }
   }
+}
+
+// ── Cell Search ─────────────────────────────────────────────────────
+
+/**
+ * Find cells matching a value or predicate.
+ *
+ * @param sheet - The sheet to search
+ * @param predicate - A value to match exactly, or a function `(value, row, col) => boolean`
+ * @returns Array of matching cells with their positions and values
+ */
+export function findCells(
+  sheet: Sheet,
+  predicate: CellValue | ((value: CellValue, row: number, col: number) => boolean),
+): Array<{ row: number; col: number; value: CellValue }> {
+  const results: Array<{ row: number; col: number; value: CellValue }> = [];
+  const isFn = typeof predicate === "function";
+
+  for (let r = 0; r < sheet.rows.length; r++) {
+    const row = sheet.rows[r]!;
+    for (let c = 0; c < row.length; c++) {
+      const value = row[c] ?? null;
+      const match = isFn
+        ? (predicate as (value: CellValue, row: number, col: number) => boolean)(value, r, c)
+        : value === predicate;
+      if (match) {
+        results.push({ row: r, col: c, value });
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Find and replace cell values in a sheet.
+ *
+ * @param sheet - The sheet to modify (mutated in place)
+ * @param find - The value or RegExp to search for
+ * @param replace - The replacement value. For RegExp finds on string cells,
+ *                  if replace is a string, `String.replace(regex, replace)` is used.
+ * @returns The number of cells that were modified
+ */
+export function replaceCells(sheet: Sheet, find: CellValue | RegExp, replace: CellValue): number {
+  let count = 0;
+
+  for (let r = 0; r < sheet.rows.length; r++) {
+    const row = sheet.rows[r]!;
+    for (let c = 0; c < row.length; c++) {
+      const value = row[c] ?? null;
+
+      if (find instanceof RegExp) {
+        // RegExp matching: only applies to string cells
+        if (typeof value === "string" && find.test(value)) {
+          if (typeof replace === "string") {
+            // Reset lastIndex for global regexes
+            find.lastIndex = 0;
+            row[c] = value.replace(find, replace);
+          } else {
+            row[c] = replace;
+          }
+          // Reset lastIndex after test() for global regexes
+          find.lastIndex = 0;
+          count++;
+        }
+      } else {
+        // Exact value matching
+        if (value === find) {
+          row[c] = replace;
+          count++;
+        }
+      }
+    }
+  }
+
+  return count;
 }

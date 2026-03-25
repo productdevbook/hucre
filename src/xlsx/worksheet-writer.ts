@@ -314,24 +314,45 @@ export function writeWorksheetXml(
 
   for (let r = 0; r < rowCount; r++) {
     const row = resolvedRows[r];
-    if (!row || row.length === 0) continue;
+    const rowDef = sheet.rowDefs?.get(r);
+    const hasRowDef =
+      rowDef && (rowDef.height !== undefined || rowDef.hidden || rowDef.outlineLevel);
+
+    if ((!row || row.length === 0) && !hasRowDef) continue;
 
     const cellElements: string[] = [];
     let hasAnyCells = false;
 
-    for (let c = 0; c < row.length; c++) {
-      const resolved = row[c];
-      if (!resolved) continue;
+    if (row) {
+      for (let c = 0; c < row.length; c++) {
+        const resolved = row[c];
+        if (!resolved) continue;
 
-      const cellXml = serializeCell(r, c, resolved, styles, sharedStrings, is1904);
-      if (cellXml) {
-        cellElements.push(cellXml);
-        hasAnyCells = true;
+        const cellXml = serializeCell(r, c, resolved, styles, sharedStrings, is1904);
+        if (cellXml) {
+          cellElements.push(cellXml);
+          hasAnyCells = true;
+        }
       }
     }
 
-    if (hasAnyCells) {
-      rowElements.push(xmlElement("row", { r: r + 1 }, cellElements));
+    if (hasAnyCells || hasRowDef) {
+      const rowAttrs: Record<string, string | number | boolean> = { r: r + 1 };
+      if (rowDef?.height !== undefined) {
+        rowAttrs["ht"] = rowDef.height;
+        rowAttrs["customHeight"] = 1;
+      }
+      if (rowDef?.hidden) {
+        rowAttrs["hidden"] = 1;
+      }
+      if (rowDef?.outlineLevel) {
+        rowAttrs["outlineLevel"] = rowDef.outlineLevel;
+      }
+      if (hasAnyCells) {
+        rowElements.push(xmlElement("row", rowAttrs, cellElements));
+      } else {
+        rowElements.push(xmlSelfClose("row", rowAttrs));
+      }
     }
   }
 

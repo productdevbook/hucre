@@ -582,6 +582,8 @@ export interface ReadOptions {
   readStyles?: boolean;
   /** Password for encrypted files */
   password?: string;
+  /** Maximum number of data rows to read per sheet. Default: unlimited */
+  maxRows?: number;
 }
 
 // ── Write Options ──────────────────────────────────────────────────
@@ -624,6 +626,8 @@ export interface WriteSheet {
   rowBreaks?: number[];
   /** Column page breaks (0-based column indices) */
   colBreaks?: number[];
+  /** Row-level properties (keyed by 0-based row index) */
+  rowDefs?: Map<number, RowDef>;
 }
 
 // ── CSV Options ────────────────────────────────────────────────────
@@ -653,6 +657,8 @@ export interface CsvReadOptions {
   skipEmptyRows?: boolean;
   /** Comment character (lines starting with this are skipped) */
   comment?: string;
+  /** Maximum number of data rows to parse. When set, parsing stops after this many rows. */
+  maxRows?: number;
 }
 
 export interface CsvWriteOptions {
@@ -672,6 +678,8 @@ export interface CsvWriteOptions {
   dateFormat?: string;
   /** Null/undefined representation. Default: "" */
   nullValue?: string;
+  /** Escape formula injection by prefixing cells starting with =, +, -, @, \t, \r with a single quote. Default: false */
+  escapeFormulae?: boolean;
 }
 
 // ── Schema Validation ──────────────────────────────────────────────

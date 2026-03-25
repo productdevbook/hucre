@@ -41,6 +41,8 @@ export interface WorksheetContext {
   dateSystem: "1900" | "1904";
   /** Worksheet-level relationships (from xl/worksheets/_rels/sheetN.xml.rels) */
   worksheetRels?: Relationship[];
+  /** Maximum number of data rows to parse. Default: unlimited */
+  maxRows?: number;
 }
 
 // ── Cell Reference Parsing ───────────────────────────────────────────
@@ -158,6 +160,14 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   let inFirstFooter = false;
   let hfText = "";
 
+  // Row limit tracking (maxRows option)
+  const maxRowsLimit = ctx.maxRows ?? 0; // 0 = unlimited
+  let dataRowCount = 0;
+  let maxRowsReached = false;
+
+  // Row definitions (height, hidden, outlineLevel)
+  const rowDefs = new Map<number, import("../_types").RowDef>();
+
   // SAX parsing state
   let inSheetData = false;
   let inRow = false;
@@ -231,7 +241,44 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
           inSheetData = true;
           break;
         case "row":
-          if (inSheetData) inRow = true;
+          if (inSheetData) {
+            // Check maxRows limit
+            if (maxRowsLimit > 0 && dataRowCount >= maxRowsLimit) {
+              maxRowsReached = true;
+              break;
+            }
+            inRow = true;
+            // Parse row-level attributes: ht, customHeight, hidden
+            if (
+              attrs["ht"] &&
+              (attrs["customHeight"] === "1" || attrs["customHeight"] === "true")
+            ) {
+              const rowNum = Number(attrs["r"]) - 1; // 0-based
+              const height = Number(attrs["ht"]);
+              if (!Number.isNaN(rowNum) && !Number.isNaN(height)) {
+                const existing = rowDefs.get(rowNum) ?? {};
+                existing.height = height;
+                rowDefs.set(rowNum, existing);
+              }
+            }
+            if (attrs["hidden"] === "1" || attrs["hidden"] === "true") {
+              const rowNum = Number(attrs["r"]) - 1;
+              if (!Number.isNaN(rowNum)) {
+                const existing = rowDefs.get(rowNum) ?? {};
+                existing.hidden = true;
+                rowDefs.set(rowNum, existing);
+              }
+            }
+            if (attrs["outlineLevel"]) {
+              const rowNum = Number(attrs["r"]) - 1;
+              const level = Number(attrs["outlineLevel"]);
+              if (!Number.isNaN(rowNum) && !Number.isNaN(level) && level > 0) {
+                const existing = rowDefs.get(rowNum) ?? {};
+                existing.outlineLevel = level;
+                rowDefs.set(rowNum, existing);
+              }
+            }
+          }
           break;
         case "c":
           if (inRow) {
@@ -569,6 +616,9 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
           inSheetData = false;
           break;
         case "row":
+          if (inRow) {
+            dataRowCount++;
+          }
           inRow = false;
           break;
         case "c":
@@ -861,6 +911,11 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   }
   if (colBreaks.length > 0) {
     sheet.colBreaks = colBreaks.sort((a, b) => a - b);
+  }
+
+  // Attach row definitions (height, hidden, outlineLevel)
+  if (rowDefs.size > 0) {
+    sheet.rowDefs = rowDefs;
   }
 
   return sheet;

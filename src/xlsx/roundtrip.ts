@@ -143,6 +143,7 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     hidden: sheet.hidden,
     veryHidden: sheet.veryHidden,
     tables: sheet.tables,
+    rowDefs: sheet.rowDefs,
   }));
 
   // Create shared collectors
@@ -273,6 +274,10 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
 
   // 1. Add all preserved raw entries (parts we don't regenerate)
   for (const [path, data] of workbook._rawEntries) {
+    // Remove calcChain.xml — it becomes stale when formulas change.
+    // Excel rebuilds it automatically when opening the file.
+    if (path.toLowerCase() === "xl/calcchain.xml") continue;
+
     if (!regeneratedPaths.has(path)) {
       // Check if this path matches any regenerated prefix pattern (case-insensitive)
       const lowerPath = path.toLowerCase();

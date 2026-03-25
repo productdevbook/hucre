@@ -61,6 +61,8 @@ export {
   copyRange,
   moveSheet,
   removeSheet,
+  findCells,
+  replaceCells,
 } from "./sheet-ops";
 
 // ── Web Worker Helpers ───────────────────────────────────────────
@@ -75,8 +77,18 @@ export type {
 } from "./worker";
 
 // ── Cell Utilities ─────────────────────────────────────────────────
-export { parseCellRef } from "./xlsx/worksheet";
-export { colToLetter, cellRef, rangeRef } from "./xlsx/worksheet-writer";
+export {
+  parseCellRef,
+  colToLetter,
+  cellRef,
+  rangeRef,
+  letterToCol,
+  parseRange,
+  isInRange,
+} from "./cell-utils";
+
+// ── Sheet Utilities ──────────────────────────────────────────────
+export { sheetToObjects, sheetToArrays } from "./sheet-utils";
 
 // ── Export (HTML / Markdown) ───────────────────────────────────────
 export { toHtml, toMarkdown } from "./export/index";
