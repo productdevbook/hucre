@@ -1,5 +1,5 @@
 {
-  "name": "defter",
+  "name": "hucre",
   "version": "0.0.1",
   "description": "Zero-dependency spreadsheet engine. Read & write XLSX, CSV, ODS. Schema validation, streaming, tree-shakeable. Pure TypeScript, works everywhere.",
   "keywords": [
@@ -18,19 +18,19 @@
     "xlsx",
     "zero-dependency"
   ],
-  "homepage": "https://github.com/productdevbook/defter",
+  "homepage": "https://github.com/productdevbook/hucre",
   "bugs": {
-    "url": "https://github.com/productdevbook/defter/issues"
+    "url": "https://github.com/productdevbook/hucre/issues"
   },
   "license": "MIT",
   "author": "productdevbook",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/productdevbook/defter.git"
+    "url": "git+https://github.com/productdevbook/hucre.git"
   },
   "funding": "https://github.com/sponsors/productdevbook",
   "bin": {
-    "defter": "./dist/cli.mjs"
+    "hucre": "./dist/cli.mjs"
   },
   "files": [
     "dist"

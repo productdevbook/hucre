@@ -263,7 +263,7 @@
   <!-- ════════════════════════════════════════ -->
 
   <!-- "defter" wordmark -->
-  <text x="600" y="260" text-anchor="middle" fill="#f8fafc" font-family="'Georgia','Playfair Display','Times New Roman',serif" font-size="148" font-weight="bold" letter-spacing="-3" opacity="0.97">defter</text>
+  <text x="600" y="260" text-anchor="middle" fill="#f8fafc" font-family="'Georgia','Playfair Display','Times New Roman',serif" font-size="148" font-weight="bold" letter-spacing="-3" opacity="0.97">hucre</text>
 
   <!-- Thin rule -->
   <line x1="340" y1="286" x2="860" y2="286" stroke="#475569" stroke-width="1" opacity="0.5"/>
@@ -303,11 +303,11 @@
     <rect x="0" y="0" width="208" height="40" rx="8" fill="#0f172a" stroke="#1e293b" stroke-width="1.2"/>
     <text x="20" y="26" fill="#64748b" font-family="'SF Mono','Fira Code',monospace" font-size="16">$</text>
     <text x="38" y="26" fill="#94a3b8" font-family="'SF Mono','Fira Code',monospace" font-size="16"> npm i </text>
-    <text x="118" y="26" fill="#f8fafc" font-family="'SF Mono','Fira Code',monospace" font-size="16" font-weight="bold">defter</text>
+    <text x="118" y="26" fill="#f8fafc" font-family="'SF Mono','Fira Code',monospace" font-size="16" font-weight="bold">hucre</text>
   </g>
 
   <!-- GitHub link -->
-  <text x="600" y="556" text-anchor="middle" fill="#64748b" font-family="'SF Mono','Fira Code',monospace" font-size="13" letter-spacing="1.5">github.com/productdevbook/defter</text>
+  <text x="600" y="556" text-anchor="middle" fill="#64748b" font-family="'SF Mono','Fira Code',monospace" font-size="13" letter-spacing="1.5">github.com/productdevbook/hucre</text>
 
   <!-- Grain overlay -->
   <rect width="1200" height="628" filter="url(#grain)" opacity="0.2"/>

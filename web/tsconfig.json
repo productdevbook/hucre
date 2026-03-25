@@ -3,9 +3,9 @@
   "compilerOptions": {
     "paths": {
       "~/*": ["./*"],
-      "defter": ["../src/index.ts"],
-      "defter/xlsx": ["../src/xlsx.ts"],
-      "defter/csv": ["../src/csv.ts"]
+      "hucre": ["../src/index.ts"],
+      "hucre/xlsx": ["../src/xlsx.ts"],
+      "hucre/csv": ["../src/csv.ts"]
     }
   }
 }

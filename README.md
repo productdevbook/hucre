@@ -1,27 +1,27 @@
 <p align="center">
   <br>
-  <img src=".github/assets/cover.svg" alt="defter — Zero-dependency spreadsheet engine" width="100%">
+  <img src=".github/assets/cover.svg" alt="hucre — Zero-dependency spreadsheet engine" width="100%">
   <br><br>
-  <b style="font-size: 2em;">defter</b>
+  <b style="font-size: 2em;">hucre</b>
   <br><br>
   Zero-dependency spreadsheet engine.
   <br>
   Read & write XLSX, CSV, ODS. Schema validation, streaming, round-trip preservation. Pure TypeScript, works everywhere.
   <br><br>
-  <a href="https://npmjs.com/package/defter"><img src="https://img.shields.io/npm/v/defter?style=flat&colorA=18181B&colorB=34d399" alt="npm version"></a>
-  <a href="https://npmjs.com/package/defter"><img src="https://img.shields.io/npm/dm/defter?style=flat&colorA=18181B&colorB=34d399" alt="npm downloads"></a>
-  <a href="https://bundlephobia.com/result?p=defter"><img src="https://img.shields.io/bundlephobia/minzip/defter?style=flat&colorA=18181B&colorB=34d399" alt="bundle size"></a>
-  <a href="https://github.com/productdevbook/defter/blob/main/LICENSE"><img src="https://img.shields.io/github/license/productdevbook/defter?style=flat&colorA=18181B&colorB=34d399" alt="license"></a>
+  <a href="https://npmjs.com/package/hucre"><img src="https://img.shields.io/npm/v/hucre?style=flat&colorA=18181B&colorB=34d399" alt="npm version"></a>
+  <a href="https://npmjs.com/package/hucre"><img src="https://img.shields.io/npm/dm/hucre?style=flat&colorA=18181B&colorB=34d399" alt="npm downloads"></a>
+  <a href="https://bundlephobia.com/result?p=hucre"><img src="https://img.shields.io/bundlephobia/minzip/hucre?style=flat&colorA=18181B&colorB=34d399" alt="bundle size"></a>
+  <a href="https://github.com/productdevbook/hucre/blob/main/LICENSE"><img src="https://img.shields.io/github/license/productdevbook/hucre?style=flat&colorA=18181B&colorB=34d399" alt="license"></a>
 </p>
 
 ## Quick Start
 
 ```sh
-npm install defter
+npm install hucre
 ```
 
 ```ts
-import { readXlsx, writeXlsx } from "defter";
+import { readXlsx, writeXlsx } from "hucre";
 
 // Read an XLSX file
 const workbook = await readXlsx(buffer);
@@ -51,13 +51,13 @@ const xlsx = await writeXlsx({
 Import only what you need:
 
 ```ts
-import { readXlsx, writeXlsx } from "defter/xlsx"; // XLSX only (~14 KB gzipped)
-import { parseCsv, writeCsv } from "defter/csv"; // CSV only (~2 KB gzipped)
+import { readXlsx, writeXlsx } from "hucre/xlsx"; // XLSX only (~14 KB gzipped)
+import { parseCsv, writeCsv } from "hucre/csv"; // CSV only (~2 KB gzipped)
 ```
 
-## Why defter?
+## Why hucre?
 
-|                   | defter | SheetJS       | ExcelJS   | read-excel-file |
+|                   | hucre  | SheetJS       | ExcelJS   | read-excel-file |
 | ----------------- | ------ | ------------- | --------- | --------------- |
 | **Dependencies**  | 0      | 0\*           | 12 (CVEs) | 2               |
 | **Bundle (gzip)** | ~18 KB | ~300 KB       | ~500 KB   | ~40 KB          |
@@ -75,7 +75,7 @@ import { parseCsv, writeCsv } from "defter/csv"; // CSV only (~2 KB gzipped)
 ### Reading
 
 ```ts
-import { readXlsx } from "defter/xlsx";
+import { readXlsx } from "hucre/xlsx";
 
 const wb = await readXlsx(uint8Array, {
   sheets: [0, "Products"], // Filter sheets by index or name
@@ -95,7 +95,7 @@ Supported cell types: strings, numbers, booleans, dates, formulas, rich text, er
 ### Writing
 
 ```ts
-import { writeXlsx } from "defter/xlsx";
+import { writeXlsx } from "hucre/xlsx";
 
 const buffer = await writeXlsx({
   sheets: [
@@ -209,7 +209,7 @@ const buffer = await writeXlsx({
 Process large files row-by-row without loading everything into memory:
 
 ```ts
-import { streamXlsxRows, XlsxStreamWriter } from "defter/xlsx";
+import { streamXlsxRows, XlsxStreamWriter } from "hucre/xlsx";
 
 // Stream read — async generator yields rows one at a time
 for await (const row of streamXlsxRows(buffer)) {
@@ -231,7 +231,7 @@ const buffer = await writer.finish();
 ### ODS (OpenDocument)
 
 ```ts
-import { readOds, writeOds } from "defter/ods";
+import { readOds, writeOds } from "hucre/ods";
 
 const wb = await readOds(buffer);
 const ods = await writeOds({ sheets: [{ name: "Sheet1", rows: [["Hello", 42]] }] });
@@ -239,10 +239,10 @@ const ods = await writeOds({ sheets: [{ name: "Sheet1", rows: [["Hello", 42]] }]
 
 ### Round-trip Preservation
 
-Open, modify, save — without losing charts, macros, or features defter doesn't natively handle:
+Open, modify, save — without losing charts, macros, or features hucre doesn't natively handle:
 
 ```ts
-import { openXlsx, saveXlsx } from "defter/xlsx";
+import { openXlsx, saveXlsx } from "hucre/xlsx";
 
 const workbook = await openXlsx(buffer);
 workbook.sheets[0].rows[0][0] = "Updated!";
@@ -254,7 +254,7 @@ const output = await saveXlsx(workbook); // Charts, VBA, themes preserved
 Auto-detect format and work with simple helpers:
 
 ```ts
-import { read, write, readObjects, writeObjects } from "defter";
+import { read, write, readObjects, writeObjects } from "hucre";
 
 // Auto-detect XLSX vs ODS
 const wb = await read(buffer);
@@ -269,11 +269,11 @@ const xlsx = await writeObjects(products, { sheetName: "Products" });
 ### CLI
 
 ```bash
-npx defter convert input.xlsx output.csv
-npx defter convert input.csv output.xlsx
-npx defter inspect file.xlsx
-npx defter inspect file.xlsx --sheet 0
-npx defter validate data.xlsx --schema schema.json
+npx hucre convert input.xlsx output.csv
+npx hucre convert input.csv output.xlsx
+npx hucre inspect file.xlsx
+npx hucre inspect file.xlsx --sheet 0
+npx hucre validate data.xlsx --schema schema.json
 ```
 
 ### Sheet Operations
@@ -281,7 +281,7 @@ npx defter validate data.xlsx --schema schema.json
 Manipulate sheet data in memory:
 
 ```ts
-import { insertRows, deleteRows, cloneSheet, moveSheet } from "defter";
+import { insertRows, deleteRows, cloneSheet, moveSheet } from "hucre";
 
 insertRows(sheet, 5, 3); // Insert 3 rows at position 5
 deleteRows(sheet, 0, 1); // Delete first row
@@ -292,7 +292,7 @@ moveSheet(workbook, 0, 2); // Reorder sheets
 ### CSV
 
 ```ts
-import { parseCsv, parseCsvObjects, writeCsv, detectDelimiter } from "defter/csv";
+import { parseCsv, parseCsvObjects, writeCsv, detectDelimiter } from "hucre/csv";
 
 // Parse — auto-detects delimiter, handles RFC 4180 edge cases
 const rows = parseCsv(csvString, { typeInference: true });
@@ -312,8 +312,8 @@ detectDelimiter(csvString); // "," or ";" or "\t" or "|"
 Validate imported data with type coercion, pattern matching, and error collection:
 
 ```ts
-import { validateWithSchema } from "defter";
-import { parseCsv } from "defter/csv";
+import { validateWithSchema } from "hucre";
+import { parseCsv } from "hucre/csv";
 
 const rows = parseCsv(csvString);
 
@@ -354,7 +354,7 @@ Schema field options:
 Timezone-safe Excel date serial number conversion:
 
 ```ts
-import { serialToDate, dateToSerial, isDateFormat, formatDate } from "defter";
+import { serialToDate, dateToSerial, isDateFormat, formatDate } from "hucre";
 
 serialToDate(44197); // 2021-01-01T00:00:00.000Z
 dateToSerial(new Date("2021-01-01")); // 44197
@@ -367,7 +367,7 @@ Handles the Lotus 1-2-3 bug (serial 60), 1900/1904 date systems, and time fracti
 
 ## Platform Support
 
-defter works everywhere — no Node.js APIs (`fs`, `crypto`, `Buffer`) in core.
+hucre works everywhere — no Node.js APIs (`fs`, `crypto`, `Buffer`) in core.
 
 | Runtime               | Status       |
 | --------------------- | ------------ |
@@ -382,7 +382,7 @@ defter works everywhere — no Node.js APIs (`fs`, `crypto`, `Buffer`) in core.
 ## Architecture
 
 ```
-defter (~37 KB gzipped)
+hucre (~37 KB gzipped)
 ├── zip/            Zero-dep DEFLATE/inflate + ZIP read/write
 ├── xml/            SAX parser + XML writer (CSP-compliant, no eval)
 ├── xlsx/
@@ -393,7 +393,7 @@ defter (~37 KB gzipped)
 │   └── auto-width  Font-aware column width calculation
 ├── ods/            OpenDocument Spreadsheet read/write
 ├── csv/            RFC 4180 parser/writer + streaming
-├── defter          Unified read/write API, format auto-detect
+├── hucre          Unified read/write API, format auto-detect
 ├── sheet-ops       Insert/delete/move rows+cols, clone, copy
 ├── worker          Web Worker serialization helpers
 ├── _date           Timezone-safe serial ↔ Date, Lotus bug, 1900/1904
@@ -481,7 +481,7 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | --------------------------- | -------------------------------------------------------------------- |
 | `serializeWorkbook(wb)`     | Convert Workbook for `postMessage` (Maps → objects, Dates → strings) |
 | `deserializeWorkbook(data)` | Restore Workbook from serialized form                                |
-| `WORKER_SAFE_FUNCTIONS`     | List of all defter functions safe for Web Workers (all of them)      |
+| `WORKER_SAFE_FUNCTIONS`     | List of all hucre functions safe for Web Workers (all of them)       |
 
 ## Development
 
@@ -496,9 +496,9 @@ pnpm typecheck    # tsgo
 
 ## Contributing
 
-Contributions are welcome! Please [open an issue](https://github.com/productdevbook/defter/issues) or submit a PR.
+Contributions are welcome! Please [open an issue](https://github.com/productdevbook/hucre/issues) or submit a PR.
 
-35 of 39 planned features are implemented. See the [issue tracker](https://github.com/productdevbook/defter/issues) for remaining items (XLS BIFF, encryption, charts, pivot tables).
+35 of 39 planned features are implemented. See the [issue tracker](https://github.com/productdevbook/hucre/issues) for remaining items (XLS BIFF, encryption, charts, pivot tables).
 
 ## License
 

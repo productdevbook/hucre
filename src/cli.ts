@@ -313,7 +313,7 @@ const validateCommand = defineCommand({
 
 const main = defineCommand({
   meta: {
-    name: "defter",
+    name: "hucre",
     version: "0.0.1",
     description:
       "Spreadsheet Swiss Army knife. Convert, inspect, and validate XLSX, CSV, and ODS files.",

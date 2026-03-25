@@ -100,7 +100,7 @@ describe("writeAppProperties", () => {
 
     const app = findChild(doc, "Application");
     expect(app).toBeDefined();
-    expect(getElementText(app)).toBe("defter");
+    expect(getElementText(app)).toBe("hucre");
   });
 
   it("includes company and manager", () => {
@@ -196,7 +196,7 @@ describe("XLSX document properties integration", () => {
 
     // Verify app.xml includes Application
     const appDoc = await parseXmlFromZip(data, "docProps/app.xml");
-    expect(getElementText(findChild(appDoc, "Application"))).toBe("defter");
+    expect(getElementText(findChild(appDoc, "Application"))).toBe("hucre");
   });
 
   it("writes all property fields", async () => {
@@ -257,7 +257,7 @@ describe("XLSX document properties integration", () => {
 
     // app.xml should have Application: defter
     const appDoc = await parseXmlFromZip(data, "docProps/app.xml");
-    expect(getElementText(findChild(appDoc, "Application"))).toBe("defter");
+    expect(getElementText(findChild(appDoc, "Application"))).toBe("hucre");
   });
 
   it("includes docProps content type overrides", async () => {

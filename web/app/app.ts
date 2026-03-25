@@ -10,8 +10,8 @@ import {
   XlsxStreamWriter,
   readOds,
   writeOds,
-} from "defter";
-import type { CellValue, WriteSheet, SchemaDefinition } from "defter";
+} from "hucre";
+import type { CellValue, WriteSheet, SchemaDefinition } from "hucre";
 
 // ── Toast ─────────────────────────────────────────────────────────
 

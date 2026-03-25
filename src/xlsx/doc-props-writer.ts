@@ -86,13 +86,13 @@ export function writeCoreProperties(props?: WorkbookProperties): string {
 
 /**
  * Generate docProps/app.xml from workbook properties.
- * Always includes Application: "defter".
+ * Always includes Application: "hucre".
  */
 export function writeAppProperties(props?: WorkbookProperties): string {
   const children: string[] = [];
 
   // Always include the application name
-  children.push(xmlElement("Application", undefined, "defter"));
+  children.push(xmlElement("Application", undefined, "hucre"));
 
   if (props?.company) {
     children.push(xmlElement("Company", undefined, xmlEscape(props.company)));
