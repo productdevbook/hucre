@@ -331,6 +331,13 @@ export interface ConditionalRule {
 export interface AutoFilter {
   /** Range (e.g. "A1:D100") */
   range: string;
+  /** Column filter criteria */
+  columns?: Array<{
+    /** 0-based column index within the autoFilter range */
+    colIndex: number;
+    /** List of values to filter by */
+    filters?: string[];
+  }>;
 }
 
 // ── Freeze Pane ────────────────────────────────────────────────────
@@ -571,6 +578,11 @@ export interface Workbook {
   activeSheet?: number;
   /** Theme color palette (resolved from xl/theme/theme1.xml) */
   themeColors?: string[];
+  /** Workbook-level protection */
+  workbookProtection?: {
+    lockStructure?: boolean;
+    lockWindows?: boolean;
+  };
 }
 
 // ── Read Options ───────────────────────────────────────────────────
@@ -604,6 +616,12 @@ export interface WriteOptions {
   dateSystem?: "1900" | "1904";
   /** Active sheet index (0-based). Default: 0 */
   activeSheet?: number;
+  /** Workbook-level protection (lock structure/windows) */
+  workbookProtection?: {
+    lockStructure?: boolean;
+    lockWindows?: boolean;
+    password?: string;
+  };
 }
 
 export interface WriteSheet {
@@ -686,6 +704,8 @@ export interface CsvReadOptions {
   transformHeader?: (header: string, index: number) => string;
   /** Transform each cell value after type inference. Called on every cell. */
   transformValue?: (value: CellValue, header: string, row: number, col: number) => CellValue;
+  /** Fast mode: skip quote handling and just split by delimiter/newlines. Faster for files known to have no quoted fields. Default: false */
+  fastMode?: boolean;
 }
 
 export interface CsvWriteOptions {

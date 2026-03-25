@@ -8,6 +8,8 @@ const NS_CONTENT_TYPES = "http://schemas.openxmlformats.org/package/2006/content
 const CT_RELS = "application/vnd.openxmlformats-package.relationships+xml";
 const CT_XML = "application/xml";
 const CT_WORKBOOK = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml";
+const CT_WORKBOOK_MACRO = "application/vnd.ms-excel.sheet.macroEnabled.main+xml";
+const CT_VBA_PROJECT = "application/vnd.ms-office.vbaProject";
 const CT_WORKSHEET = "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml";
 const CT_STYLES = "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml";
 const CT_SHARED_STRINGS =
@@ -40,6 +42,10 @@ export interface ContentTypesOptions {
   hasCoreProps?: boolean;
   /** Whether docProps/app.xml is present */
   hasAppProps?: boolean;
+  /** Whether docProps/custom.xml is present */
+  hasCustomProps?: boolean;
+  /** Whether VBA macros are present (xl/vbaProject.bin). Uses XLSM content types. */
+  hasMacros?: boolean;
 }
 
 /** Generate [Content_Types].xml for XLSX */
@@ -64,6 +70,11 @@ export function writeContentTypes(
   children.push(xmlSelfClose("Default", { Extension: "rels", ContentType: CT_RELS }));
   children.push(xmlSelfClose("Default", { Extension: "xml", ContentType: CT_XML }));
 
+  // Default extension for VBA binary (needed for macro-enabled workbooks)
+  if (opts.hasMacros) {
+    children.push(xmlSelfClose("Default", { Extension: "bin", ContentType: CT_VBA_PROJECT }));
+  }
+
   // Default extensions for image types
   if (opts.imageExtensions) {
     for (const ext of opts.imageExtensions) {
@@ -74,11 +85,11 @@ export function writeContentTypes(
     }
   }
 
-  // Override for workbook
+  // Override for workbook (use macro-enabled content type when VBA present)
   children.push(
     xmlSelfClose("Override", {
       PartName: "/xl/workbook.xml",
-      ContentType: CT_WORKBOOK,
+      ContentType: opts.hasMacros ? CT_WORKBOOK_MACRO : CT_WORKBOOK,
     }),
   );
 
@@ -173,6 +184,14 @@ export function writeContentTypes(
       xmlSelfClose("Override", {
         PartName: "/docProps/app.xml",
         ContentType: "application/vnd.openxmlformats-officedocument.extended-properties+xml",
+      }),
+    );
+  }
+  if (opts.hasCustomProps) {
+    children.push(
+      xmlSelfClose("Override", {
+        PartName: "/docProps/custom.xml",
+        ContentType: "application/vnd.openxmlformats-officedocument.custom-properties+xml",
       }),
     );
   }

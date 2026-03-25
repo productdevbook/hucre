@@ -406,7 +406,22 @@ export function writeWorksheetXml(
 
   // ── Auto Filter (OOXML: after sheetProtection, before mergeCells) ──
   if (sheet.autoFilter) {
-    parts.push(xmlSelfClose("autoFilter", { ref: sheet.autoFilter.range }));
+    if (sheet.autoFilter.columns && sheet.autoFilter.columns.length > 0) {
+      const filterChildren: string[] = [];
+      for (const col of sheet.autoFilter.columns) {
+        if (col.filters && col.filters.length > 0) {
+          const filterElements = col.filters.map((v) => xmlSelfClose("filter", { val: v }));
+          filterChildren.push(
+            xmlElement("filterColumn", { colId: col.colIndex }, [
+              xmlElement("filters", undefined, filterElements),
+            ]),
+          );
+        }
+      }
+      parts.push(xmlElement("autoFilter", { ref: sheet.autoFilter.range }, filterChildren));
+    } else {
+      parts.push(xmlSelfClose("autoFilter", { ref: sheet.autoFilter.range }));
+    }
   }
 
   // ── Merge Cells ──

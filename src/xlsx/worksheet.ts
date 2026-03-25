@@ -135,6 +135,9 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
 
   // Auto filter parsed from <autoFilter> element
   let autoFilter: AutoFilter | undefined;
+  let inAutoFilter = false;
+  let currentFilterColIndex = -1;
+  let currentFilterValues: string[] = [];
 
   // Sheet protection parsed from <sheetProtection> element
   let sheetProtection: SheetProtection | undefined;
@@ -448,6 +451,18 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
         case "autoFilter":
           if (attrs["ref"]) {
             autoFilter = { range: attrs["ref"] };
+            inAutoFilter = true;
+          }
+          break;
+        case "filterColumn":
+          if (inAutoFilter && attrs["colId"] !== undefined) {
+            currentFilterColIndex = Number(attrs["colId"]);
+            currentFilterValues = [];
+          }
+          break;
+        case "filter":
+          if (inAutoFilter && currentFilterColIndex >= 0 && attrs["val"] !== undefined) {
+            currentFilterValues.push(attrs["val"]);
           }
           break;
         case "mergeCells":
@@ -755,6 +770,25 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
           break;
         case "mergeCells":
           inMergeCells = false;
+          break;
+        case "autoFilter":
+          inAutoFilter = false;
+          break;
+        case "filterColumn":
+          if (
+            inAutoFilter &&
+            autoFilter &&
+            currentFilterColIndex >= 0 &&
+            currentFilterValues.length > 0
+          ) {
+            if (!autoFilter.columns) autoFilter.columns = [];
+            autoFilter.columns.push({
+              colIndex: currentFilterColIndex,
+              filters: currentFilterValues,
+            });
+          }
+          currentFilterColIndex = -1;
+          currentFilterValues = [];
           break;
         case "hyperlinks":
           inHyperlinks = false;

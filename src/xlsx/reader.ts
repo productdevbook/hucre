@@ -23,7 +23,7 @@ import type { SharedString } from "./shared-strings";
 import type { Relationship } from "./relationships";
 import { parseComments } from "./comments-reader";
 import { parseCellRef } from "./worksheet";
-import { parseCoreProperties, parseAppProperties } from "./doc-props-reader";
+import { parseCoreProperties, parseAppProperties, parseCustomProperties } from "./doc-props-reader";
 import { parseThemeColors } from "./theme";
 
 // ── OOXML Relationship Types ─────────────────────────────────────────
@@ -147,7 +147,12 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
     throw new ParseError(`Invalid XLSX: missing workbook at ${workbookPath}`);
   }
   const workbookXml = decodeUtf8(await zip.extract(workbookPath));
-  const { sheets: sheetInfos, dateSystem, namedRanges } = parseWorkbookXml(workbookXml, options);
+  const {
+    sheets: sheetInfos,
+    dateSystem,
+    namedRanges,
+    workbookProtection,
+  } = parseWorkbookXml(workbookXml, options);
 
   // 6. Parse shared strings if present
   let sharedStrings: SharedString[] = [];
@@ -312,6 +317,15 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
     }
   }
 
+  if (zip.has("docProps/custom.xml")) {
+    const customXml = decodeUtf8(await zip.extract("docProps/custom.xml"));
+    const customProps = parseCustomProperties(customXml);
+    if (Object.keys(customProps).length > 0) {
+      if (!properties) properties = {};
+      properties.custom = customProps;
+    }
+  }
+
   // 12. Build workbook
   const workbook: Workbook = {
     sheets,
@@ -328,6 +342,10 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
 
   if (themeColors) {
     workbook.themeColors = themeColors;
+  }
+
+  if (workbookProtection) {
+    workbook.workbookProtection = workbookProtection;
   }
 
   return workbook;
@@ -617,7 +635,12 @@ interface SheetInfo {
 function parseWorkbookXml(
   xml: string,
   options?: ReadOptions,
-): { sheets: SheetInfo[]; dateSystem: "1900" | "1904"; namedRanges: NamedRange[] } {
+): {
+  sheets: SheetInfo[];
+  dateSystem: "1900" | "1904";
+  namedRanges: NamedRange[];
+  workbookProtection?: { lockStructure?: boolean; lockWindows?: boolean };
+} {
   const doc = parseXml(xml);
 
   const sheets: SheetInfo[] = [];
@@ -631,6 +654,8 @@ function parseWorkbookXml(
     dateSystem = "1900";
   }
 
+  let wbProtection: { lockStructure?: boolean; lockWindows?: boolean } | undefined;
+
   // First pass: collect sheets (needed for resolving localSheetId)
   for (const child of doc.children) {
     if (typeof child === "string") continue;
@@ -643,6 +668,18 @@ function parseWorkbookXml(
         if (!options?.dateSystem || options.dateSystem === "auto") {
           dateSystem = "1904";
         }
+      }
+    }
+
+    if (local === "workbookProtection") {
+      const lockStructure =
+        child.attrs["lockStructure"] === "1" || child.attrs["lockStructure"] === "true";
+      const lockWindows =
+        child.attrs["lockWindows"] === "1" || child.attrs["lockWindows"] === "true";
+      if (lockStructure || lockWindows) {
+        wbProtection = {};
+        if (lockStructure) wbProtection.lockStructure = true;
+        if (lockWindows) wbProtection.lockWindows = true;
       }
     }
 
@@ -709,7 +746,7 @@ function parseWorkbookXml(
     }
   }
 
-  return { sheets, dateSystem, namedRanges };
+  return { sheets, dateSystem, namedRanges, workbookProtection: wbProtection };
 }
 
 /** Find an r:id attribute regardless of namespace prefix */

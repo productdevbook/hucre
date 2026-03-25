@@ -83,6 +83,62 @@ export function parseCoreProperties(xml: string): Partial<WorkbookProperties> {
   return props;
 }
 
+// ── custom.xml parsing ──────────────────────────────────────────────
+
+/**
+ * Parse docProps/custom.xml into WorkbookProperties.custom.
+ */
+export function parseCustomProperties(
+  xml: string,
+): Record<string, string | number | boolean | Date> {
+  const doc = parseXml(xml);
+  const custom: Record<string, string | number | boolean | Date> = {};
+
+  for (const child of doc.children) {
+    if (typeof child === "string") continue;
+    const local = child.local || child.tag;
+    if (local !== "property") continue;
+
+    const name = child.attrs["name"];
+    if (!name) continue;
+
+    // Find the value type element (first non-string child)
+    for (const vtChild of child.children) {
+      if (typeof vtChild === "string") continue;
+      const vtLocal = vtChild.local || vtChild.tag;
+      const text = vtChild.children.filter((c: unknown) => typeof c === "string").join("");
+
+      switch (vtLocal) {
+        case "lpwstr":
+          custom[name] = text;
+          break;
+        case "i4":
+        case "i8":
+        case "int":
+          if (text) custom[name] = parseInt(text, 10);
+          break;
+        case "r8":
+        case "decimal":
+          if (text) custom[name] = parseFloat(text);
+          break;
+        case "bool":
+          custom[name] = text === "true" || text === "1";
+          break;
+        case "filetime":
+        case "date":
+          if (text) {
+            const d = new Date(text);
+            if (!Number.isNaN(d.getTime())) custom[name] = d;
+          }
+          break;
+      }
+      break; // Only first value element matters
+    }
+  }
+
+  return custom;
+}
+
 // ── app.xml parsing ─────────────────────────────────────────────────
 
 /**

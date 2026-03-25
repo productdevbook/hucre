@@ -17,6 +17,7 @@ export type { StreamWriterOptions } from "./xlsx/stream-writer";
 // ── ODS ────────────────────────────────────────────────────────────
 export { readOds } from "./ods/reader";
 export { writeOds } from "./ods/writer";
+export { streamOdsRows } from "./ods/stream";
 
 // ── CSV ────────────────────────────────────────────────────────────
 export {
@@ -46,6 +47,13 @@ export {
 
 // ── Number Format ─────────────────────────────────────────────────
 export { formatValue } from "./_format";
+export type { FormatOptions, LocaleFormat } from "./_format";
+
+// ── Builder Pattern ──────────────────────────────────────────────
+export { WorkbookBuilder, SheetBuilder } from "./builder";
+
+// ── Template Engine ──────────────────────────────────────────────
+export { fillTemplate } from "./template";
 
 // ── Sheet Operations ──────────────────────────────────────────────
 export {
@@ -92,9 +100,10 @@ export {
 // ── Sheet Utilities ──────────────────────────────────────────────
 export { sheetToObjects, sheetToArrays } from "./sheet-utils";
 
-// ── Export (HTML / Markdown / JSON) ──────────────────────────────────
+// ── Export (HTML / Markdown / JSON / TSV) ────────────────────────────
 export { toHtml, toMarkdown, toJson, fromHtml } from "./export/index";
 export type { HtmlExportOptions, MarkdownExportOptions, JsonExportOptions } from "./export/index";
+export { writeTsv, writeTsvObjects } from "./export/tsv";
 
 // ── Image Utilities ──────────────────────────────────────────────
 export { imageFromBase64 } from "./image";

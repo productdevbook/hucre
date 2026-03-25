@@ -91,7 +91,9 @@ export function parseCsv(input: string, options?: CsvReadOptions): CellValue[][]
   const quote = opts.quote;
   const escape = opts.escape;
 
-  const rows = parseRaw(input, delimiter, quote, escape);
+  const rows = options?.fastMode
+    ? parseFast(input, delimiter)
+    : parseRaw(input, delimiter, quote, escape);
 
   // Filter comments
   const commentChar = opts.comment;
@@ -196,6 +198,24 @@ export function parseCsvObjects<T extends Record<string, CellValue> = Record<str
   }
 
   return { data, headers };
+}
+
+// ── Fast parser (no quote handling) ──────────────────────────────────
+
+function parseFast(input: string, delimiter: string): string[][] {
+  const rows: string[][] = [];
+  const lines = input.split(/\r\n|\r|\n/);
+
+  // Drop trailing empty line from trailing newline
+  if (lines.length > 0 && lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+
+  for (const line of lines) {
+    rows.push(line.split(delimiter));
+  }
+
+  return rows;
 }
 
 // ── Core parser (RFC 4180) ───────────────────────────────────────────

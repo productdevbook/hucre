@@ -3,6 +3,7 @@
 
 import type { WriteSheet, NamedRange } from "../_types";
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer";
+import { hashSheetPassword } from "./password";
 
 const NS_SPREADSHEET = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -24,6 +25,7 @@ export function writeWorkbookXml(
   namedRanges?: NamedRange[],
   dateSystem?: "1900" | "1904",
   activeSheet?: number,
+  workbookProtection?: { lockStructure?: boolean; lockWindows?: boolean; password?: string },
 ): string {
   const sheetElements: string[] = [];
 
@@ -62,6 +64,17 @@ export function writeWorkbookXml(
       }),
     ]),
   );
+
+  // workbookProtection — lock structure and/or windows
+  if (workbookProtection) {
+    const protAttrs: Record<string, string | number> = {};
+    if (workbookProtection.lockStructure) protAttrs["lockStructure"] = 1;
+    if (workbookProtection.lockWindows) protAttrs["lockWindows"] = 1;
+    if (workbookProtection.password) {
+      protAttrs["workbookPassword"] = hashSheetPassword(workbookProtection.password);
+    }
+    parts.push(xmlSelfClose("workbookProtection", protAttrs));
+  }
 
   parts.push(xmlElement("sheets", undefined, sheetElements));
 
@@ -104,8 +117,14 @@ export function writeWorkbookXml(
   return xmlDocument("workbook", { xmlns: NS_SPREADSHEET, "xmlns:r": NS_R }, parts);
 }
 
+const REL_VBA_PROJECT = "http://schemas.microsoft.com/office/2006/relationships/vbaProject";
+
 /** Generate xl/_rels/workbook.xml.rels */
-export function writeWorkbookRels(sheetCount: number, hasSharedStrings: boolean): string {
+export function writeWorkbookRels(
+  sheetCount: number,
+  hasSharedStrings: boolean,
+  hasMacros?: boolean,
+): string {
   const children: string[] = [];
 
   // Worksheet relationships
@@ -120,42 +139,58 @@ export function writeWorkbookRels(sheetCount: number, hasSharedStrings: boolean)
   }
 
   // Styles relationship
-  const stylesRid = sheetCount + 1;
+  let nextRid = sheetCount + 1;
   children.push(
     xmlSelfClose("Relationship", {
-      Id: `rId${stylesRid}`,
+      Id: `rId${nextRid}`,
       Type: REL_STYLES,
       Target: "styles.xml",
     }),
   );
+  nextRid++;
 
   // Shared strings relationship (if present)
   if (hasSharedStrings) {
-    const ssRid = sheetCount + 2;
     children.push(
       xmlSelfClose("Relationship", {
-        Id: `rId${ssRid}`,
+        Id: `rId${nextRid}`,
         Type: REL_SHARED_STRINGS,
         Target: "sharedStrings.xml",
       }),
     );
+    nextRid++;
   }
 
   // Theme relationship
-  const themeRid = sheetCount + (hasSharedStrings ? 3 : 2);
   children.push(
     xmlSelfClose("Relationship", {
-      Id: `rId${themeRid}`,
+      Id: `rId${nextRid}`,
       Type: REL_THEME,
       Target: "theme/theme1.xml",
     }),
   );
+  nextRid++;
+
+  // VBA project relationship (for macro-enabled workbooks)
+  if (hasMacros) {
+    children.push(
+      xmlSelfClose("Relationship", {
+        Id: `rId${nextRid}`,
+        Type: REL_VBA_PROJECT,
+        Target: "vbaProject.bin",
+      }),
+    );
+  }
 
   return xmlDocument("Relationships", { xmlns: NS_RELATIONSHIPS }, children);
 }
 
 /** Generate _rels/.rels (with optional docProps) */
-export function writeRootRels(options?: { hasCoreProps?: boolean; hasAppProps?: boolean }): string {
+export function writeRootRels(options?: {
+  hasCoreProps?: boolean;
+  hasAppProps?: boolean;
+  hasCustomProps?: boolean;
+}): string {
   const children: string[] = [];
 
   children.push(
@@ -184,6 +219,16 @@ export function writeRootRels(options?: { hasCoreProps?: boolean; hasAppProps?: 
         Id: `rId${nextRId++}`,
         Type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties",
         Target: "docProps/app.xml",
+      }),
+    );
+  }
+
+  if (options?.hasCustomProps) {
+    children.push(
+      xmlSelfClose("Relationship", {
+        Id: `rId${nextRId++}`,
+        Type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties",
+        Target: "docProps/custom.xml",
       }),
     );
   }

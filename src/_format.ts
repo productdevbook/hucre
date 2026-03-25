@@ -8,14 +8,44 @@
 
 import { isDateFormat, formatDate, serialToDate, dateToSerial } from "./_date";
 
+// ── Locale Definitions ──────────────────────────────────────────────
+
+export interface LocaleFormat {
+  /** Decimal separator character */
+  decimal: string;
+  /** Thousands grouping separator character */
+  thousands: string;
+  /** Currency symbol */
+  currency: string;
+}
+
+const LOCALE_MAP: Record<string, LocaleFormat> = {
+  "en-US": { decimal: ".", thousands: ",", currency: "$" },
+  "de-DE": { decimal: ",", thousands: ".", currency: "\u20AC" },
+  "fr-FR": { decimal: ",", thousands: "\u00A0", currency: "\u20AC" },
+  "tr-TR": { decimal: ",", thousands: ".", currency: "\u20BA" },
+};
+
+/** Resolve a locale string to its format definition, or undefined if unsupported. */
+function resolveLocale(locale?: string): LocaleFormat | undefined {
+  if (!locale) return undefined;
+  return LOCALE_MAP[locale];
+}
+
+export interface FormatOptions {
+  /** BCP 47 locale tag for number formatting (e.g. "de-DE", "tr-TR"). */
+  locale?: string;
+}
+
 /**
  * Apply an Excel number format string to a value and return formatted text.
  *
  * @param value - The raw cell value (number, string, boolean, Date)
  * @param numFmt - Excel number format string (e.g., "#,##0.00", "0%", "yyyy-mm-dd")
+ * @param options - Optional formatting options (locale, etc.)
  * @returns Formatted string
  */
-export function formatValue(value: unknown, numFmt: string): string {
+export function formatValue(value: unknown, numFmt: string, options?: FormatOptions): string {
   // Null/undefined → ""
   if (value === null || value === undefined) {
     return "";
@@ -92,7 +122,8 @@ export function formatValue(value: unknown, numFmt: string): string {
     }
   }
 
-  return applyNumberSection(numValue, section);
+  const localeInfo = resolveLocale(options?.locale);
+  return applyNumberSection(numValue, section, localeInfo);
 }
 
 // ── Section Parsing ─────────────────────────────────────────────────
@@ -255,7 +286,7 @@ function expandLiterals(fmt: string): string {
 
 // ── Number Section ──────────────────────────────────────────────────
 
-function applyNumberSection(value: number, section: string): string {
+function applyNumberSection(value: number, section: string, locale?: LocaleFormat): string {
   const cleaned = cleanSection(section);
 
   // Text format: @ — return as string
@@ -271,12 +302,12 @@ function applyNumberSection(value: number, section: string): string {
 
   // Percentage: multiply by 100
   if (cleaned.includes("%")) {
-    return formatPercentage(value, cleaned);
+    return formatPercentage(value, cleaned, locale);
   }
 
   // Scientific notation
   if (/[eE][+-]/.test(cleaned) || /[eE]\d/.test(cleaned)) {
-    return formatScientific(value, cleaned);
+    return formatScientific(value, cleaned, locale);
   }
 
   // Fractions
@@ -285,22 +316,22 @@ function applyNumberSection(value: number, section: string): string {
   }
 
   // Regular number format
-  return formatNumber(value, cleaned);
+  return formatNumber(value, cleaned, locale);
 }
 
 // ── Percentage ──────────────────────────────────────────────────────
 
-function formatPercentage(value: number, fmt: string): string {
+function formatPercentage(value: number, fmt: string, locale?: LocaleFormat): string {
   const percentValue = value * 100;
   // Remove the % sign, format the number, then add % back
   const numFmt = fmt.replace(/%/g, "");
-  const formatted = formatNumber(percentValue, numFmt);
+  const formatted = formatNumber(percentValue, numFmt, locale);
   return formatted + "%";
 }
 
 // ── Scientific Notation ─────────────────────────────────────────────
 
-function formatScientific(value: number, fmt: string): string {
+function formatScientific(value: number, fmt: string, locale?: LocaleFormat): string {
   // Parse the format: e.g., "0.00E+00"
   const match = fmt.match(/^([#0?.,]*?)([eE])([+-])(\d+)$/);
   if (!match) {
@@ -322,8 +353,13 @@ function formatScientific(value: number, fmt: string): string {
 
   const expStr = value.toExponential(decPlaces);
   const parts = expStr.split(/[eE]/);
-  const mantissa = parts[0];
+  let mantissa = parts[0];
   let exp = Number.parseInt(parts[1], 10);
+
+  // Apply locale decimal separator
+  if (locale && locale.decimal !== ".") {
+    mantissa = mantissa.replace(".", locale.decimal);
+  }
 
   const expSign = exp >= 0 ? "+" : "-";
   const absExp = Math.abs(exp).toString().padStart(expDigits, "0");
@@ -427,7 +463,7 @@ function findBestFraction(value: number, maxDen: number): { num: number; den: nu
 
 // ── Number Formatting ───────────────────────────────────────────────
 
-function formatNumber(value: number, fmt: string): string {
+function formatNumber(value: number, fmt: string, locale?: LocaleFormat): string {
   // Extract literal strings and escaped chars first
   const literals: { index: number; text: string }[] = [];
   let stripped = "";
@@ -489,13 +525,26 @@ function formatNumber(value: number, fmt: string): string {
     formattedDec = "." + formatDecimalPart(decStr, decFmt);
   }
 
+  // Apply locale-specific separators if requested
+  let localizedInt = formattedInt;
+  let localizedDec = formattedDec;
+  if (locale) {
+    if (locale.thousands !== "," && useThousandSep) {
+      localizedInt = localizedInt.replace(/,/g, locale.thousands);
+    }
+    if (locale.decimal !== "." && localizedDec.length > 0) {
+      // Replace the leading "." with locale decimal
+      localizedDec = locale.decimal + localizedDec.slice(1);
+    }
+  }
+
   // Combine
   let result = prefix;
   if (isNegative && fmt.indexOf("-") === -1) {
     // Only add minus if the format doesn't explicitly have one
     result += "-";
   }
-  result += formattedInt + formattedDec + suffix;
+  result += localizedInt + localizedDec + suffix;
 
   return result;
 }

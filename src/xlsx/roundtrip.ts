@@ -33,6 +33,13 @@ export interface RoundtripWorkbook extends Workbook {
   _contentTypes: string;
   /** Original root rels XML */
   _rootRels: string;
+  /**
+   * Whether the workbook contains VBA macros (xl/vbaProject.bin).
+   * When true, saveXlsx uses XLSM content types
+   * (`application/vnd.ms-excel.sheet.macroEnabled.12`).
+   * The output should be saved with an `.xlsm` extension.
+   */
+  hasMacros?: boolean;
 }
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -104,13 +111,17 @@ export async function openXlsx(
     : "";
   const rootRels = zip.has("_rels/.rels") ? decoder.decode(await zip.extract("_rels/.rels")) : "";
 
-  // 4. Build RoundtripWorkbook
+  // 4. Detect VBA macros
+  const hasMacros = rawEntries.has("xl/vbaProject.bin");
+
+  // 5. Build RoundtripWorkbook
   const rtWorkbook: RoundtripWorkbook = {
     ...workbook,
     _rawEntries: rawEntries,
     _modifiedParts: new Set<string>(),
     _contentTypes: contentTypes,
     _rootRels: rootRels,
+    hasMacros,
   };
 
   return rtWorkbook;
@@ -315,6 +326,7 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     tableIndices: allTableIndices.length > 0 ? allTableIndices : undefined,
     hasCoreProps: true,
     hasAppProps: true,
+    hasMacros: workbook.hasMacros,
   };
   zip.add("[Content_Types].xml", encoder.encode(writeContentTypes(ctOpts)));
 
@@ -342,7 +354,7 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
   // xl/_rels/workbook.xml.rels
   zip.add(
     "xl/_rels/workbook.xml.rels",
-    encoder.encode(writeWorkbookRels(writeSheets.length, hasSharedStrings)),
+    encoder.encode(writeWorkbookRels(writeSheets.length, hasSharedStrings, workbook.hasMacros)),
   );
 
   // xl/styles.xml

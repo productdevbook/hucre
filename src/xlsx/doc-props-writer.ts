@@ -88,6 +88,59 @@ export function writeCoreProperties(props?: WorkbookProperties): string {
  * Generate docProps/app.xml from workbook properties.
  * Always includes Application: "hucre".
  */
+// ── custom.xml ─────────────────────────────────────────────────────
+
+const NS_CUSTOM_PROPERTIES =
+  "http://schemas.openxmlformats.org/officeDocument/2006/custom-properties";
+const NS_VT = "http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes";
+const CUSTOM_FMTID = "{D5CDD505-2E9C-101B-9397-08002B2CF9AE}";
+
+/**
+ * Generate docProps/custom.xml from workbook custom properties.
+ * Returns null if there are no custom properties.
+ */
+export function writeCustomProperties(props?: WorkbookProperties): string | null {
+  if (!props?.custom) return null;
+  const entries = Object.entries(props.custom);
+  if (entries.length === 0) return null;
+
+  const children: string[] = [];
+  let pid = 2; // pid starts at 2 per OOXML spec
+
+  for (const [name, value] of entries) {
+    let vtElement: string;
+
+    if (typeof value === "string") {
+      vtElement = xmlElement("vt:lpwstr", undefined, xmlEscape(value));
+    } else if (typeof value === "number") {
+      if (Number.isInteger(value)) {
+        vtElement = xmlElement("vt:i4", undefined, String(value));
+      } else {
+        vtElement = xmlElement("vt:r8", undefined, String(value));
+      }
+    } else if (typeof value === "boolean") {
+      vtElement = xmlElement("vt:bool", undefined, value ? "true" : "false");
+    } else if (value instanceof Date) {
+      vtElement = xmlElement("vt:filetime", undefined, formatW3CDTF(value));
+    } else {
+      continue;
+    }
+
+    children.push(xmlElement("property", { fmtid: CUSTOM_FMTID, pid: pid++, name }, vtElement));
+  }
+
+  if (children.length === 0) return null;
+
+  return xmlDocument(
+    "Properties",
+    {
+      xmlns: NS_CUSTOM_PROPERTIES,
+      "xmlns:vt": NS_VT,
+    },
+    children,
+  );
+}
+
 export function writeAppProperties(props?: WorkbookProperties): string {
   const children: string[] = [];
 

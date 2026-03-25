@@ -40,8 +40,8 @@ describe("toHtml", () => {
     const html = toHtml(sheet, { headerRow: true, classes: false });
     expect(html).toContain("<thead>");
     expect(html).toContain("</thead>");
-    expect(html).toContain("<th>Name</th>");
-    expect(html).toContain("<th>Value</th>");
+    expect(html).toContain('<th scope="col">Name</th>');
+    expect(html).toContain('<th scope="col">Value</th>');
     expect(html).toContain("<tbody>");
     expect(html).toContain("<td>foo</td>");
     expect(html).toContain("<td>42</td>");

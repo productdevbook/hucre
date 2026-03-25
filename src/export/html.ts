@@ -11,6 +11,10 @@ export interface HtmlExportOptions {
   classPrefix?: string;
   /** Include a minimal <style> block. Default: false */
   includeStyleTag?: boolean;
+  /** Table caption text. Adds <caption> as first child of <table>. */
+  caption?: string;
+  /** ARIA label for the table. Adds aria-label attribute. */
+  ariaLabel?: string;
 }
 
 /** Escape HTML entities */
@@ -164,23 +168,33 @@ function buildMergeMap(
  * Export a sheet as an HTML <table> string.
  */
 export function toHtml(sheet: Sheet, options?: HtmlExportOptions): string {
-  const opts: Required<HtmlExportOptions> = {
+  const opts: Required<Omit<HtmlExportOptions, "caption" | "ariaLabel">> &
+    Pick<HtmlExportOptions, "caption" | "ariaLabel"> = {
     styles: options?.styles ?? false,
     classes: options?.classes ?? true,
     headerRow: options?.headerRow ?? false,
     classPrefix: options?.classPrefix ?? "hucre",
     includeStyleTag: options?.includeStyleTag ?? false,
+    caption: options?.caption,
+    ariaLabel: options?.ariaLabel,
   };
 
   const prefix = opts.classPrefix;
-  const tableClass = opts.includeStyleTag ? ` class="${prefix}-table"` : "";
+  const tableAttrs: string[] = [];
+  if (opts.includeStyleTag) tableAttrs.push(`class="${prefix}-table"`);
+  if (opts.headerRow) tableAttrs.push(`role="table"`);
+  if (opts.ariaLabel) tableAttrs.push(`aria-label="${escapeHtml(opts.ariaLabel)}"`);
+  const tableAttrStr = tableAttrs.length > 0 ? " " + tableAttrs.join(" ") : "";
 
   const rows = sheet.rows;
   if (!rows || rows.length === 0) {
+    let empty = `<table${tableAttrStr}>`;
+    if (opts.caption) empty += `<caption>${escapeHtml(opts.caption)}</caption>`;
+    empty += "</table>";
     if (opts.includeStyleTag) {
-      return buildStyleTag(prefix) + `<table${tableClass}></table>`;
+      return buildStyleTag(prefix) + empty;
     }
-    return `<table${tableClass}></table>`;
+    return empty;
   }
 
   const mergeMap = buildMergeMap(sheet.merges);
@@ -190,7 +204,12 @@ export function toHtml(sheet: Sheet, options?: HtmlExportOptions): string {
     parts.push(buildStyleTag(prefix));
   }
 
-  parts.push(`<table${tableClass}>`);
+  parts.push(`<table${tableAttrStr}>`);
+
+  // Caption (first child of table)
+  if (opts.caption) {
+    parts.push(`<caption>${escapeHtml(opts.caption)}</caption>`);
+  }
 
   const startRow = opts.headerRow ? 1 : 0;
 
@@ -205,7 +224,7 @@ export function toHtml(sheet: Sheet, options?: HtmlExportOptions): string {
 
       const value = row[c];
       const attrs = buildCellAttrs(value, 0, c, sheet, opts, mergeInfo);
-      parts.push(`<th${attrs}>${formatCellValue(value)}</th>`);
+      parts.push(`<th scope="col"${attrs}>${formatCellValue(value)}</th>`);
     }
     parts.push("</tr>");
     parts.push("</thead>");
@@ -239,7 +258,8 @@ function buildCellAttrs(
   row: number,
   col: number,
   sheet: Sheet,
-  opts: Required<HtmlExportOptions>,
+  opts: Required<Omit<HtmlExportOptions, "caption" | "ariaLabel">> &
+    Pick<HtmlExportOptions, "caption" | "ariaLabel">,
   mergeInfo: { colspan?: number; rowspan?: number; hidden?: boolean } | undefined,
 ): string {
   const attrs: string[] = [];
