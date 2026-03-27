@@ -1,4 +1,9 @@
 node_modules
 dist
-*.tgz
-.DS_Store
+.data
+.nitro
+.cache
+.output
+.env
+.env.local
+.vercel
