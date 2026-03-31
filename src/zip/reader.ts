@@ -116,6 +116,15 @@ export class ZipReader {
     return this.extractEntry(entry);
   }
 
+  /** Extract a single file as a ReadableStream of decompressed bytes */
+  extractStream(path: string): ReadableStream<Uint8Array> {
+    const entry = this.entryMap.get(path);
+    if (!entry) {
+      throw new ZipError(`Entry not found: ${path}`);
+    }
+    return this.extractEntryStream(entry);
+  }
+
   /** Extract all files */
   async extractAll(): Promise<Map<string, Uint8Array>> {
     const result = new Map<string, Uint8Array>();
@@ -282,6 +291,90 @@ export class ZipReader {
     }
 
     return result;
+  }
+
+  private extractEntryStream(entry: CentralDirEntry): ReadableStream<Uint8Array> {
+    const pos = entry.localHeaderOffset;
+
+    if (pos + 30 > this.data.length) {
+      throw new ZipError("Local file header extends beyond file");
+    }
+
+    const sig = this.view.getUint32(pos, true);
+    if (sig !== SIG_LOCAL_FILE) {
+      throw new ZipError(`Invalid local file header signature at offset ${pos}`);
+    }
+
+    const fileNameLength = this.view.getUint16(pos + 26, true);
+    const extraFieldLength = this.view.getUint16(pos + 28, true);
+    const dataStart = pos + 30 + fileNameLength + extraFieldLength;
+
+    let { compressedSize } = entry;
+
+    if (entry.hasDataDescriptor && compressedSize === 0) {
+      const localCompressedSize = this.view.getUint32(pos + 18, true);
+      if (localCompressedSize > 0) {
+        compressedSize = localCompressedSize;
+      }
+      if (compressedSize === 0) {
+        const found = this.findDataDescriptor(dataStart);
+        if (found) {
+          compressedSize = found.compressedSize;
+        }
+      }
+    }
+
+    if (dataStart + compressedSize > this.data.length) {
+      throw new ZipError(`Compressed data extends beyond file for entry: ${entry.fileName}`);
+    }
+
+    const compressedData = this.data.subarray(dataStart, dataStart + compressedSize);
+
+    if (entry.compressionMethod === 0) {
+      // STORE — return raw data as a stream
+      return new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(compressedData);
+          controller.close();
+        },
+      });
+    }
+
+    if (entry.compressionMethod === 8) {
+      // DEFLATE — stream through DecompressionStream if available
+      if (compressedSize === 0 && entry.uncompressedSize === 0) {
+        return new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.close();
+          },
+        });
+      }
+
+      if (checkDecompressionStream()) {
+        const inputStream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(compressedData);
+            controller.close();
+          },
+        });
+        return inputStream.pipeThrough(
+          new DecompressionStream("deflate-raw"),
+        ) as ReadableStream<Uint8Array>;
+      }
+
+      // Fallback: inflate synchronously and emit as stream
+      const inflated = inflate(compressedData);
+      return new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(inflated);
+          controller.close();
+        },
+      });
+    }
+
+    throw new ZipError(
+      `Unsupported compression method ${entry.compressionMethod} for entry: ${entry.fileName}`,
+    );
   }
 
   /** Attempt to locate a data descriptor after the compressed data */
