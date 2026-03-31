@@ -267,6 +267,309 @@ describe("streamXlsxRows", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
+// XLSX Stream Reader — ReadableStream Input
+// ═══════════════════════════════════════════════════════════════════════
+
+/** Convert Uint8Array to ReadableStream<Uint8Array> for testing */
+function toReadableStream(data: Uint8Array): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(data);
+      controller.close();
+    },
+  });
+}
+
+/** Convert Uint8Array to ReadableStream with small chunks for testing chunk boundaries */
+function toChunkedReadableStream(data: Uint8Array, chunkSize: number): ReadableStream<Uint8Array> {
+  let offset = 0;
+  return new ReadableStream({
+    pull(controller) {
+      if (offset >= data.length) {
+        controller.close();
+        return;
+      }
+      const end = Math.min(offset + chunkSize, data.length);
+      controller.enqueue(data.subarray(offset, end));
+      offset = end;
+    },
+  });
+}
+
+describe("streamXlsxRows — ReadableStream input", () => {
+  it("streams rows from ReadableStream", async () => {
+    const xlsx = await createTestXlsx([
+      {
+        name: "Sheet1",
+        rows: [
+          ["Name", "Age", "Active"],
+          ["Alice", 30, true],
+          ["Bob", 25, false],
+        ],
+      },
+    ]);
+
+    const stream = toReadableStream(xlsx);
+    const rows = await collectStreamRows(streamXlsxRows(stream));
+
+    expect(rows).toHaveLength(3);
+    expect(rows[0].values).toEqual(["Name", "Age", "Active"]);
+    expect(rows[1].values).toEqual(["Alice", 30, true]);
+    expect(rows[2].values).toEqual(["Bob", 25, false]);
+  });
+
+  it("ReadableStream output matches Uint8Array output", async () => {
+    const xlsx = await createTestXlsx([
+      {
+        name: "Data",
+        rows: [
+          ["Hello", 42, true, null, "World"],
+          [null, 3.14, false, "Test", null],
+          ["A", "B", "C", "D", "E"],
+        ],
+      },
+    ]);
+
+    const uint8Rows = await collectStreamRows(streamXlsxRows(xlsx));
+    const streamRows = await collectStreamRows(streamXlsxRows(toReadableStream(xlsx)));
+
+    expect(streamRows).toHaveLength(uint8Rows.length);
+    for (let i = 0; i < uint8Rows.length; i++) {
+      expect(streamRows[i].index).toBe(uint8Rows[i].index);
+      expect(streamRows[i].values).toEqual(uint8Rows[i].values);
+    }
+  });
+
+  it("resolves shared strings from ReadableStream", async () => {
+    const xlsx = await createTestXlsx([
+      {
+        name: "Strings",
+        rows: [
+          ["Apple", "Banana", "Cherry"],
+          ["Apple", "Date", "Elderberry"],
+          ["Banana", "Banana", "Cherry"],
+        ],
+      },
+    ]);
+
+    const rows = await collectStreamRows(streamXlsxRows(toReadableStream(xlsx)));
+
+    expect(rows[0].values).toEqual(["Apple", "Banana", "Cherry"]);
+    expect(rows[1].values).toEqual(["Apple", "Date", "Elderberry"]);
+    expect(rows[2].values).toEqual(["Banana", "Banana", "Cherry"]);
+  });
+
+  it("detects date cells from ReadableStream", async () => {
+    const date1 = new Date(Date.UTC(2024, 0, 15));
+    const date2 = new Date(Date.UTC(2024, 5, 30));
+
+    const xlsx = await createTestXlsx([
+      {
+        name: "Dates",
+        rows: [
+          ["Date", "Value"],
+          [date1, 100],
+          [date2, 200],
+        ],
+      },
+    ]);
+
+    const rows = await collectStreamRows(streamXlsxRows(toReadableStream(xlsx)));
+
+    expect(rows).toHaveLength(3);
+    const val1 = rows[1].values[0];
+    expect(val1).toBeInstanceOf(Date);
+    expect((val1 as Date).getUTCFullYear()).toBe(2024);
+    expect((val1 as Date).getUTCMonth()).toBe(0);
+    expect((val1 as Date).getUTCDate()).toBe(15);
+
+    const val2 = rows[2].values[0];
+    expect(val2).toBeInstanceOf(Date);
+    expect((val2 as Date).getUTCMonth()).toBe(5);
+  });
+
+  it("streams specific sheet by name from ReadableStream", async () => {
+    const xlsx = await createTestXlsx([
+      { name: "Alpha", rows: [["AlphaData"]] },
+      { name: "Beta", rows: [["BetaData"]] },
+      { name: "Gamma", rows: [["GammaData"]] },
+    ]);
+
+    const rows = await collectStreamRows(streamXlsxRows(toReadableStream(xlsx), { sheet: "Beta" }));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].values[0]).toBe("BetaData");
+  });
+
+  it("streams specific sheet by index from ReadableStream", async () => {
+    const xlsx = await createTestXlsx([
+      { name: "First", rows: [["Sheet1Data"]] },
+      { name: "Second", rows: [["Sheet2Data"]] },
+      { name: "Third", rows: [["Sheet3Data"]] },
+    ]);
+
+    const rows = await collectStreamRows(streamXlsxRows(toReadableStream(xlsx), { sheet: 2 }));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].values[0]).toBe("Sheet3Data");
+  });
+
+  it("handles empty sheet from ReadableStream", async () => {
+    const xlsx = await createTestXlsx([{ name: "Empty", rows: [] }]);
+
+    const rows = await collectStreamRows(streamXlsxRows(toReadableStream(xlsx)));
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("handles single row from ReadableStream", async () => {
+    const xlsx = await createTestXlsx([{ name: "One", rows: [["only row"]] }]);
+
+    const rows = await collectStreamRows(streamXlsxRows(toReadableStream(xlsx)));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].index).toBe(0);
+    expect(rows[0].values).toEqual(["only row"]);
+  });
+
+  it("handles small chunks (tests chunk boundary handling)", async () => {
+    const xlsx = await createTestXlsx([
+      {
+        name: "Chunked",
+        rows: [
+          ["Name", "Value"],
+          ["test", 123],
+          ["data", 456],
+        ],
+      },
+    ]);
+
+    // Use very small chunks (64 bytes) to stress chunk boundary handling
+    const stream = toChunkedReadableStream(xlsx, 64);
+    const rows = await collectStreamRows(streamXlsxRows(stream));
+
+    expect(rows).toHaveLength(3);
+    expect(rows[0].values).toEqual(["Name", "Value"]);
+    expect(rows[1].values).toEqual(["test", 123]);
+    expect(rows[2].values).toEqual(["data", 456]);
+  });
+
+  it("handles mixed types from ReadableStream", async () => {
+    const xlsx = await createTestXlsx([
+      {
+        name: "Mixed",
+        rows: [
+          ["text", 42, true, null, 3.14],
+          [null, null, false, "hello", 0],
+        ],
+      },
+    ]);
+
+    const rows = await collectStreamRows(streamXlsxRows(toReadableStream(xlsx)));
+
+    expect(rows[0].values).toEqual(["text", 42, true, null, 3.14]);
+    expect(rows[1].values).toEqual([null, null, false, "hello", 0]);
+  });
+
+  it("yields no rows for non-existent sheet from ReadableStream", async () => {
+    const xlsx = await createTestXlsx([{ name: "Sheet1", rows: [["data"]] }]);
+
+    const rows = await collectStreamRows(
+      streamXlsxRows(toReadableStream(xlsx), { sheet: "NonExistent" }),
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("handles large sheet (100k rows) from ReadableStream", async () => {
+    const largeRows: CellValue[][] = [];
+    for (let i = 0; i < 100_000; i++) {
+      largeRows.push([`Row${i}`, i, i % 2 === 0]);
+    }
+
+    const xlsx = await createTestXlsx([{ name: "Large", rows: largeRows }]);
+
+    let count = 0;
+    for await (const row of streamXlsxRows(toReadableStream(xlsx))) {
+      if (count === 0) {
+        expect(row.values[0]).toBe("Row0");
+        expect(row.values[1]).toBe(0);
+      }
+      if (count === 99_999) {
+        expect(row.values[0]).toBe("Row99999");
+        expect(row.values[1]).toBe(99_999);
+      }
+      count++;
+    }
+
+    expect(count).toBe(100_000);
+  }, 30_000);
+
+  it("formula cells return cached result from ReadableStream", async () => {
+    const cells = new Map<string, { formula: string; formulaResult: number }>();
+    cells.set("0,2", { formula: "A1+B1", formulaResult: 30 });
+    cells.set("1,2", { formula: "A2+B2", formulaResult: 70 });
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Formulas",
+          rows: [
+            [10, 20],
+            [30, 40],
+          ],
+          cells,
+        },
+      ],
+    });
+
+    const rows = await collectStreamRows(streamXlsxRows(toReadableStream(xlsx)));
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0].values[0]).toBe(10);
+    expect(rows[0].values[1]).toBe(20);
+    // Formula result should appear in column C
+    expect(rows[0].values[2]).toBe(30);
+    expect(rows[1].values[0]).toBe(30);
+    expect(rows[1].values[1]).toBe(40);
+    expect(rows[1].values[2]).toBe(70);
+  });
+
+  it("backward compatibility: Uint8Array path still works identically", async () => {
+    const xlsx = await createTestXlsx([
+      {
+        name: "Compat",
+        rows: [
+          ["a", 1, true],
+          ["b", 2, false],
+          ["c", 3, null],
+        ],
+      },
+    ]);
+
+    // Test all three input types produce identical results
+    const uint8Rows = await collectStreamRows(streamXlsxRows(xlsx));
+    const arrayBufRows = await collectStreamRows(
+      streamXlsxRows(
+        xlsx.buffer.slice(xlsx.byteOffset, xlsx.byteOffset + xlsx.byteLength) as ArrayBuffer,
+      ),
+    );
+    const streamRows = await collectStreamRows(streamXlsxRows(toReadableStream(xlsx)));
+
+    expect(uint8Rows).toHaveLength(3);
+    expect(arrayBufRows).toHaveLength(3);
+    expect(streamRows).toHaveLength(3);
+
+    for (let i = 0; i < 3; i++) {
+      expect(uint8Rows[i].index).toBe(arrayBufRows[i].index);
+      expect(uint8Rows[i].index).toBe(streamRows[i].index);
+      expect(uint8Rows[i].values).toEqual(arrayBufRows[i].values);
+      expect(uint8Rows[i].values).toEqual(streamRows[i].values);
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
 // XLSX Stream Writer
 // ═══════════════════════════════════════════════════════════════════════
 
