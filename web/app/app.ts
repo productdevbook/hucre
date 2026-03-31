@@ -510,6 +510,91 @@ function setupStreaming() {
     URL.revokeObjectURL(url);
     toast("XLSX downloaded");
   });
+
+  // ── Stream from File (ReadableStream input) ───────────────────
+  const fileDrop = $("stream-file-drop");
+  const fileInput = $("stream-file-input") as HTMLInputElement;
+
+  fileDrop.addEventListener("click", () => fileInput.click());
+  fileDrop.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    fileDrop.classList.add("drag-over");
+  });
+  fileDrop.addEventListener("dragleave", () => fileDrop.classList.remove("drag-over"));
+  fileDrop.addEventListener("drop", (e) => {
+    e.preventDefault();
+    fileDrop.classList.remove("drag-over");
+    const file = (e as DragEvent).dataTransfer?.files[0];
+    if (file) handleStreamFile(file);
+  });
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files?.[0]) handleStreamFile(fileInput.files[0]);
+  });
+}
+
+async function handleStreamFile(file: File) {
+  const output = $("stream-file-output");
+  output.innerHTML = '<p style="color:var(--text-dim);text-align:center">Streaming...</p>';
+
+  try {
+    const buffer = await file.arrayBuffer();
+    const data = new Uint8Array(buffer);
+    const fileSize = (data.byteLength / 1024).toFixed(1);
+
+    // ── Buffered read (Uint8Array) ──
+    const t0 = performance.now();
+    let bufferedCount = 0;
+    for await (const _row of streamXlsxRows(data)) {
+      bufferedCount++;
+    }
+    const bufferedTime = performance.now() - t0;
+
+    // ── Streaming read (ReadableStream) ──
+    const readableStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(data);
+        controller.close();
+      },
+    });
+
+    const t1 = performance.now();
+    let streamCount = 0;
+    let firstRowStream: CellValue[] | null = null;
+    let lastRowStream: CellValue[] | null = null;
+    for await (const row of streamXlsxRows(readableStream)) {
+      streamCount++;
+      if (streamCount === 1) firstRowStream = row.values;
+      lastRowStream = row.values;
+    }
+    const streamTime = performance.now() - t1;
+
+    const rowsMatch = bufferedCount === streamCount;
+
+    let html = `<div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem"><strong>${escapeHtml(file.name)}</strong> &mdash; ${fileSize} KB</div>`;
+
+    html += '<div class="stats" style="margin-bottom:1rem">';
+    html += `<div class="stat"><div class="value">${streamCount.toLocaleString()}</div><div class="label">Rows</div></div>`;
+    html += `<div class="stat"><div class="value">${bufferedTime.toFixed(0)}ms</div><div class="label">Uint8Array</div></div>`;
+    html += `<div class="stat"><div class="value">${streamTime.toFixed(0)}ms</div><div class="label">ReadableStream</div></div>`;
+    html += `<div class="stat"><div class="value">${rowsMatch ? "✓" : "✗"}</div><div class="label">Match</div></div>`;
+    html += "</div>";
+
+    if (firstRowStream) {
+      html +=
+        '<div style="color:var(--accent);font-weight:600;font-size:0.8rem;margin-bottom:0.5rem">FIRST ROW</div>';
+      html += `<div style="font-family:monospace;font-size:0.75rem;color:var(--text-muted);margin-bottom:1rem;word-break:break-all">${firstRowStream.map((v) => escapeHtml(String(v))).join(" | ")}</div>`;
+    }
+    if (lastRowStream) {
+      html +=
+        '<div style="color:var(--accent);font-weight:600;font-size:0.8rem;margin-bottom:0.5rem">LAST ROW</div>';
+      html += `<div style="font-family:monospace;font-size:0.75rem;color:var(--text-muted);word-break:break-all">${lastRowStream.map((v) => escapeHtml(String(v))).join(" | ")}</div>`;
+    }
+
+    output.innerHTML = html;
+    toast(`Streamed ${streamCount.toLocaleString()} rows`);
+  } catch (e: unknown) {
+    output.innerHTML = `<p class="error">${escapeHtml(String(e))}</p>`;
+  }
 }
 
 // ── ODS ───────────────────────────────────────────────────────────
