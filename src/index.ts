@@ -106,6 +106,8 @@ export {
   letterToCol,
   parseRange,
   isInRange,
+  r1c1ToA1,
+  a1ToR1C1,
 } from "./cell-utils";
 
 // ── Sheet Utilities ──────────────────────────────────────────────

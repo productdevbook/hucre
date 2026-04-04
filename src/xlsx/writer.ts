@@ -72,6 +72,7 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
       sharedStrings,
       dateSystem,
       sheetTableStartIndices[i],
+      options.stringMode === "inline",
     );
     worksheetResults.push(result);
   }
@@ -156,6 +157,8 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
   const hasCustomProps = customPropsXml !== null;
 
   // [Content_Types].xml
+  const hasMacros = options.vbaProject !== undefined && options.vbaProject.length > 0;
+
   const ctOpts: ContentTypesOptions = {
     sheetCount: sheets.length,
     hasSharedStrings,
@@ -166,6 +169,7 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
     hasCoreProps: true,
     hasAppProps: true,
     hasCustomProps,
+    hasMacros,
   };
   zip.add("[Content_Types].xml", encoder.encode(writeContentTypes(ctOpts)));
 
@@ -204,7 +208,7 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
   // xl/_rels/workbook.xml.rels
   zip.add(
     "xl/_rels/workbook.xml.rels",
-    encoder.encode(writeWorkbookRels(sheets.length, hasSharedStrings)),
+    encoder.encode(writeWorkbookRels(sheets.length, hasSharedStrings, hasMacros)),
   );
 
   // xl/styles.xml
@@ -216,6 +220,11 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
   // xl/sharedStrings.xml (if any strings)
   if (hasSharedStrings) {
     zip.add("xl/sharedStrings.xml", encoder.encode(writeSharedStringsXml(sharedStrings)));
+  }
+
+  // xl/vbaProject.bin (if macros provided)
+  if (hasMacros) {
+    zip.add("xl/vbaProject.bin", options.vbaProject!);
   }
 
   // xl/worksheets/sheetN.xml + optional xl/worksheets/_rels/sheetN.xml.rels

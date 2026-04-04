@@ -158,16 +158,41 @@ function normalizeWriteOptions(options?: CsvWriteOptions): NormalizedWriteOption
   };
 }
 
-// Characters that trigger formula interpretation in Excel/Sheets
-const FORMULA_PREFIXES = ["=", "+", "-", "@", "\t", "\r"];
+// Characters that trigger formula interpretation in Excel/Sheets/LibreOffice
+// Covers: formulas (=), unary operators (+, -), at-sign (@), whitespace injection (\t, \r, \n), null byte (\0)
+const FORMULA_PREFIXES = ["=", "+", "-", "@", "\t", "\r", "\n", "\0", "|"];
+
+// DDE and dangerous function patterns (case-insensitive)
+const DANGEROUS_PATTERNS = [
+  /^=cmd\b/i,
+  /^=HYPERLINK\s*\(/i,
+  /^=IMPORTXML\s*\(/i,
+  /^=IMPORTDATA\s*\(/i,
+  /^=IMPORTFEED\s*\(/i,
+  /^=IMPORTHTML\s*\(/i,
+  /^=IMPORTRANGE\s*\(/i,
+  /^=IMAGE\s*\(/i,
+];
 
 /**
- * Prefix a string value with a single quote if it starts with a formula-triggering character.
+ * Prefix a string value with a single quote if it starts with a formula-triggering character
+ * or matches a dangerous function/DDE pattern.
  */
 function escapeFormula(value: string): string {
-  if (value.length > 0 && FORMULA_PREFIXES.includes(value[0]!)) {
+  if (value.length === 0) return value;
+
+  // Check prefix characters
+  if (FORMULA_PREFIXES.includes(value[0]!)) {
     return "'" + value;
   }
+
+  // Check dangerous patterns (DDE, data exfiltration via HYPERLINK, etc.)
+  for (const pattern of DANGEROUS_PATTERNS) {
+    if (pattern.test(value)) {
+      return "'" + value;
+    }
+  }
+
   return value;
 }
 

@@ -180,6 +180,7 @@ export function writeWorksheetXml(
   sharedStrings: SharedStringsCollector,
   dateSystem?: "1900" | "1904",
   globalTableStartIndex?: number,
+  inlineStrings?: boolean,
 ): WorksheetResult {
   const is1904 = dateSystem === "1904";
 
@@ -375,7 +376,7 @@ export function writeWorksheetXml(
         const resolved = row[c];
         if (!resolved) continue;
 
-        const cellXml = serializeCell(r, c, resolved, styles, sharedStrings, is1904);
+        const cellXml = serializeCell(r, c, resolved, styles, sharedStrings, is1904, inlineStrings);
         if (cellXml) {
           cellElements.push(cellXml);
           hasAnyCells = true;
@@ -968,6 +969,7 @@ function serializeCell(
   styles: StylesCollector,
   sharedStrings: SharedStringsCollector,
   is1904: boolean,
+  inlineStrings?: boolean,
 ): string | null {
   const {
     value,
@@ -1069,6 +1071,14 @@ function serializeCell(
 
   // String value
   if (typeof value === "string") {
+    if (inlineStrings) {
+      // Inline string: <c t="inlineStr"><is><t>value</t></is></c>
+      const attrs: Record<string, string | number> = { r: ref, t: "inlineStr" };
+      if (styleIdx !== 0) attrs["s"] = styleIdx;
+      return xmlElement("c", attrs, [
+        xmlElement("is", undefined, [xmlElement("t", undefined, xmlEscape(value))]),
+      ]);
+    }
     const ssIdx = sharedStrings.add(value);
     const attrs: Record<string, string | number> = { r: ref, t: "s" };
     if (styleIdx !== 0) attrs["s"] = styleIdx;
