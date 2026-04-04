@@ -418,3 +418,138 @@ describe("headerStyle", () => {
     expect(dataCell?.style?.font?.italic).toBe(true);
   });
 });
+
+// ── Excel table auto-generation (#142) ────────────────────────────
+
+describe("Excel table option", () => {
+  it("generates a native Excel table from writeObjects", async () => {
+    const data = [
+      { product: "Widget", revenue: 100 },
+      { product: "Gadget", revenue: 200 },
+    ];
+    const xlsx = await writeObjects(data, {
+      columns: [
+        { key: "product", header: "Product" },
+        { key: "revenue", header: "Revenue" },
+      ],
+      table: {
+        name: "SalesTable",
+        style: "TableStyleMedium2",
+      },
+    });
+    const wb = await readXlsx(xlsx);
+    const sheet = wb.sheets[0]!;
+    expect(sheet.tables).toBeDefined();
+    expect(sheet.tables!.length).toBe(1);
+    expect(sheet.tables![0]!.name).toBe("SalesTable");
+    expect(sheet.tables![0]!.columns.length).toBe(2);
+    expect(sheet.tables![0]!.columns[0]!.name).toBe("Product");
+    expect(sheet.tables![0]!.columns[1]!.name).toBe("Revenue");
+  });
+
+  it("generates totals row with functions", async () => {
+    const data = [{ val: 10 }, { val: 20 }];
+    const xlsx = await writeObjects(data, {
+      columns: [{ key: "val", header: "Value" }],
+      table: {
+        name: "TotalsTable",
+        showTotalRow: true,
+        totals: { val: "sum" },
+      },
+    });
+    const wb = await readXlsx(xlsx);
+    const table = wb.sheets[0]!.tables![0]!;
+    expect(table.showTotalRow).toBe(true);
+    expect(table.columns[0]!.totalFunction).toBe("sum");
+  });
+});
+
+// ── Context parameter (#149) ──────────────────────────────────────
+
+describe("context parameter", () => {
+  it("passes context to value accessor via __ctx", async () => {
+    const data: Record<string, unknown>[] = [{ price: 100 }];
+    const xlsx = await writeObjects(data, {
+      columns: [
+        {
+          header: "Converted",
+          value: (item) => (item.price as number) * (item.__ctx as { rate: number }).rate,
+        },
+      ],
+      context: { rate: 0.92 },
+    });
+    const wb = await readXlsx(xlsx);
+    // 100 * 0.92 = 92
+    expect(wb.sheets[0]!.rows[1]![0]).toBeCloseTo(92, 5);
+  });
+
+  it("passes context to transform via __ctx", async () => {
+    const data: Record<string, unknown>[] = [{ amount: 50 }];
+    const xlsx = await writeObjects(data, {
+      columns: [
+        {
+          key: "amount",
+          header: "Amount",
+          transform: (_v, item) => {
+            const ctx = item.__ctx as { currency: string };
+            return `${ctx.currency} ${_v}`;
+          },
+        },
+      ],
+      context: { currency: "EUR" },
+    });
+    const wb = await readXlsx(xlsx);
+    expect(wb.sheets[0]!.rows[1]![0]).toBe("EUR 50");
+  });
+});
+
+// ── Streaming addObject (#150) ─────────────────────────────────────
+
+describe("XlsxStreamWriter.addObject", () => {
+  it("writes object data using column definitions", async () => {
+    const { XlsxStreamWriter } = await import("../src/xlsx/stream-writer");
+    const { readXlsx: read } = await import("../src/xlsx/reader");
+
+    const writer = new XlsxStreamWriter({
+      name: "Stream",
+      columns: [
+        { key: "name", header: "Name" },
+        { key: "score", header: "Score" },
+      ],
+    });
+
+    writer.addObject({ name: "Alice", score: 95 });
+    writer.addObject({ name: "Bob", score: 82 });
+
+    const xlsx = await writer.finish();
+    const wb = await read(xlsx);
+    expect(wb.sheets[0]!.rows[0]).toEqual(["Name", "Score"]);
+    expect(wb.sheets[0]!.rows[1]).toEqual(["Alice", 95]);
+    expect(wb.sheets[0]!.rows[2]).toEqual(["Bob", 82]);
+  });
+
+  it("supports dot-path value accessors", async () => {
+    const { XlsxStreamWriter } = await import("../src/xlsx/stream-writer");
+    const { readXlsx: read } = await import("../src/xlsx/reader");
+
+    const writer = new XlsxStreamWriter({
+      name: "Stream",
+      columns: [
+        { value: "user.name", header: "Name" },
+        { value: "user.age", header: "Age" },
+      ],
+    });
+
+    writer.addObject({ user: { name: "Alice", age: 30 } });
+
+    const xlsx = await writer.finish();
+    const wb = await read(xlsx);
+    expect(wb.sheets[0]!.rows[1]).toEqual(["Alice", 30]);
+  });
+
+  it("throws without columns", async () => {
+    const { XlsxStreamWriter } = await import("../src/xlsx/stream-writer");
+    const writer = new XlsxStreamWriter({ name: "NoCol" });
+    expect(() => writer.addObject({ x: 1 })).toThrow("addObject requires columns");
+  });
+});

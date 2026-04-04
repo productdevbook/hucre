@@ -1,5 +1,6 @@
 // ── High-Level API ──────────────────────────────────────────────────
 export { read, write, readObjects, writeObjects } from "./defter";
+export type { WriteObjectsTableOption } from "./defter";
 
 // ── XLSX ────────────────────────────────────────────────────────────
 export { readXlsx } from "./xlsx/reader";
