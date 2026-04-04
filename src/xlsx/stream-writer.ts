@@ -94,6 +94,19 @@ export class XlsxStreamWriter {
     }
   }
 
+  /** Add a row from an object, using column definitions for value extraction.
+   *  Requires columns with key or value accessors. */
+  addObject(item: Record<string, unknown>): void {
+    if (!this.columns) throw new Error("addObject requires columns with key/value accessors");
+    const values: CellValue[] = this.columns.map((col) => {
+      if (typeof col.value === "function") return col.value(item, this.rowCount);
+      if (typeof col.value === "string") return getByPath(item, col.value) as CellValue;
+      if (col.key !== undefined) return (item[col.key] ?? null) as CellValue;
+      return null;
+    });
+    this.addRow(values);
+  }
+
   /** Finalize and return the XLSX buffer */
   async finish(): Promise<Uint8Array> {
     const hasSharedStrings = this.sharedStrings.count() > 0;
@@ -289,7 +302,7 @@ export class XlsxStreamWriter {
       return xmlElement("c", attrs, [xmlElement("v", undefined, value ? "1" : "0")]);
     }
 
-    // Date
+    // Date — convert to serial number
     if (value instanceof Date) {
       const serial = dateToSerial(value, is1904);
       const attrs: Record<string, string | number> = { r: ref };
@@ -299,4 +312,15 @@ export class XlsxStreamWriter {
 
     return null;
   }
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────
+
+function getByPath(obj: unknown, path: string): unknown {
+  let cur: unknown = obj;
+  for (const p of path.split(".")) {
+    if (cur == null || typeof cur !== "object") return null;
+    cur = (cur as Record<string, unknown>)[p];
+  }
+  return cur ?? null;
 }

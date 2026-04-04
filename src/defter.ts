@@ -12,6 +12,8 @@ import type {
   CellValue,
   ReadInput,
   ColumnDef,
+  TableDefinition,
+  TableColumn,
 } from "./_types";
 import { readXlsx } from "./xlsx/reader";
 import { writeXlsx } from "./xlsx/writer";
@@ -156,6 +158,25 @@ export async function readObjects<T extends Record<string, CellValue> = Record<s
   return data;
 }
 
+/** Options for writeObjects table generation */
+export interface WriteObjectsTableOption {
+  /** Table name (must be unique in workbook) */
+  name: string;
+  /** Table style (e.g. "TableStyleMedium2") */
+  style?: string;
+  /** Show totals row */
+  showTotalRow?: boolean;
+  /** Show auto-filter. Default: true */
+  showAutoFilter?: boolean;
+  /** Show banded rows. Default: true */
+  showRowStripes?: boolean;
+  /** Totals per column key: { revenue: "sum", margin: "average" } */
+  totals?: Record<
+    string,
+    "sum" | "average" | "count" | "min" | "max" | "countNums" | "stdDev" | "var"
+  >;
+}
+
 /**
  * Quick helper: write an array of objects to a spreadsheet format.
  *
@@ -169,6 +190,10 @@ export async function writeObjects<T extends Record<string, unknown> = Record<st
     sheetName?: string;
     format?: "xlsx" | "ods";
     columns?: ColumnDef<T>[];
+    /** Wrap output in a native Excel table (ListObject) */
+    table?: WriteObjectsTableOption;
+    /** Context object passed to column callbacks (value, transform, formula, numFmt) */
+    context?: unknown;
   },
 ): Promise<WriteOutput> {
   const sheetName = options?.sheetName ?? "Sheet1";
@@ -187,8 +212,109 @@ export async function writeObjects<T extends Record<string, unknown> = Record<st
     ? (options.columns as ColumnDef[])
     : Object.keys(data[0]!).map((key) => ({ key, header: key }));
 
+  // Flatten column groups to get leaf columns for table generation
+  const leaves = flattenLeaves(columns);
+
+  // Build Excel table if requested
+  let tables: TableDefinition[] | undefined;
+  if (options?.table) {
+    const t = options.table;
+    const colCount = leaves.length;
+    const rowCount = data.length + 1; // +1 for header
+    const endCol = String.fromCharCode(64 + colCount); // works for <= 26 cols
+    const range = `A1:${colCount <= 26 ? endCol : colToLetterSimple(colCount - 1)}${rowCount + (t.showTotalRow ? 1 : 0)}`;
+
+    const tableColumns: TableColumn[] = leaves.map((col) => {
+      const name = col.header ?? col.key ?? "";
+      const key = col.key ?? col.header ?? "";
+      const totalFn = t.totals?.[key];
+      return {
+        name,
+        ...(totalFn ? { totalFunction: totalFn } : {}),
+      };
+    });
+
+    tables = [
+      {
+        name: t.name,
+        displayName: t.name,
+        range,
+        columns: tableColumns,
+        style: t.style,
+        showAutoFilter: t.showAutoFilter,
+        showRowStripes: t.showRowStripes,
+        showTotalRow: t.showTotalRow,
+      },
+    ];
+  }
+
+  // Store context on columns via closure-wrapped accessors if context provided
+  let finalColumns = columns;
+  if (options?.context !== undefined) {
+    finalColumns = injectContext(columns, options.context);
+  }
+
   return write({
-    sheets: [{ name: sheetName, data: data as Array<Record<string, unknown>>, columns }],
+    sheets: [
+      {
+        name: sheetName,
+        data: data as Array<Record<string, unknown>>,
+        columns: finalColumns,
+        tables,
+      },
+    ],
     format,
+  });
+}
+
+/** Flatten column groups to leaf columns */
+function flattenLeaves(columns: ColumnDef[]): ColumnDef[] {
+  const leaves: ColumnDef[] = [];
+  for (const col of columns) {
+    if (col.children && col.children.length > 0) {
+      leaves.push(...flattenLeaves(col.children));
+    } else {
+      leaves.push(col);
+    }
+  }
+  return leaves;
+}
+
+/** Simple column index to letter (0-based) */
+function colToLetterSimple(col: number): string {
+  let result = "";
+  let n = col;
+  while (n >= 0) {
+    result = String.fromCharCode(65 + (n % 26)) + result;
+    n = Math.floor(n / 26) - 1;
+  }
+  return result;
+}
+
+/** Inject context into column callbacks by wrapping them */
+function injectContext(columns: ColumnDef[], ctx: unknown): ColumnDef[] {
+  return columns.map((col) => {
+    const result: ColumnDef = { ...col };
+
+    // Wrap value function to pass context as 3rd arg via item.__ctx
+    if (typeof col.value === "function") {
+      const origValue = col.value;
+      result.value = (item: Record<string, unknown>, index: number) =>
+        origValue({ ...item, __ctx: ctx }, index);
+    }
+
+    // Wrap transform
+    if (col.transform) {
+      const origTransform = col.transform;
+      result.transform = (value: unknown, item: Record<string, unknown>, index: number) =>
+        origTransform(value, { ...item, __ctx: ctx }, index);
+    }
+
+    // Handle children recursively
+    if (col.children) {
+      result.children = injectContext(col.children, ctx);
+    }
+
+    return result;
   });
 }
