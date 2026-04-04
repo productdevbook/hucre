@@ -167,6 +167,8 @@ interface RowSaxState {
   inlineText: string;
   inlineRichTextParts: string[];
   currentRunText: string;
+  /** Implicit column counter for cells without r attribute */
+  implicitCol: number;
 }
 
 function createRowSaxState(): RowSaxState {
@@ -189,11 +191,13 @@ function createRowSaxState(): RowSaxState {
     inlineText: "",
     inlineRichTextParts: [],
     currentRunText: "",
+    implicitCol: 0,
   };
 }
 
 function buildRowFromCells(cells: Array<{ col: number; value: CellValue }>): CellValue[] {
-  const maxCol = cells.length > 0 ? Math.max(...cells.map((c) => c.col)) : -1;
+  // Use reduce instead of Math.max(...spread) to avoid RangeError on wide rows (>65K cols)
+  const maxCol = cells.reduce((m, c) => (c.col > m ? c.col : m), -1);
   const values: CellValue[] = maxCol >= 0 ? Array.from({ length: maxCol + 1 }, () => null) : [];
   for (const cell of cells) {
     values[cell.col] = cell.value;
@@ -213,6 +217,7 @@ function handleOpenTag(tag: string, attrs: Record<string, string>, s: RowSaxStat
         s.inRow = true;
         s.currentRowIndex = attrs["r"] ? Number(attrs["r"]) - 1 : s.currentRowIndex + 1;
         s.currentRowCells = [];
+        s.implicitCol = 0;
       }
       break;
     case "c":
@@ -300,6 +305,11 @@ function handleCloseTag(
         if (s.cellRef) {
           const pos = parseCellRef(s.cellRef);
           s.currentRowCells.push({ col: pos.col, value });
+          s.implicitCol = pos.col + 1;
+        } else {
+          // Fallback: cells without r attribute use implicit column ordering
+          s.currentRowCells.push({ col: s.implicitCol, value });
+          s.implicitCol++;
         }
         s.inCell = false;
       }
@@ -400,7 +410,7 @@ function resolveStreamCellValue(
       if (!Number.isNaN(idx) && idx >= 0 && idx < sharedStrings.length) {
         return sharedStrings[idx].text;
       }
-      return valueText;
+      return null; // Out-of-bounds SST index — return null, not the raw index string
     }
     case "str": {
       // Inline formula string result
