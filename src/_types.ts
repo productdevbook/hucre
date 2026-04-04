@@ -195,16 +195,17 @@ export interface Cell {
 
 // ── Column Definition ──────────────────────────────────────────────
 
-export interface ColumnDef {
+// eslint-disable-next-line ts/no-unnecessary-type-parameters
+export interface ColumnDef<T = Record<string, unknown>> {
   /** Column header text */
   header?: string;
-  /** Key for object-based data */
+  /** Key for object-based data (simple property name) */
   key?: string;
   /** Column width in characters */
   width?: number;
   /** Auto-calculate optimal width from cell content */
   autoWidth?: boolean;
-  /** Default style for the column */
+  /** Default style for data cells in this column */
   style?: CellStyle;
   /** Number format */
   numFmt?: string;
@@ -214,6 +215,63 @@ export interface ColumnDef {
   outlineLevel?: number;
   /** Whether this outline group is collapsed */
   collapsed?: boolean;
+
+  /** Value accessor: dot-path string (e.g. "address.city") or function */
+  value?: string | ((item: T, index: number) => CellValue);
+  /** Transform the extracted value before writing to cell */
+  transform?: (value: unknown, item: T, index: number) => CellValue;
+  /** Default value when accessor returns null/undefined */
+  defaultValue?: CellValue;
+  /** Excel formula per row. Receives 1-based Excel row number. */
+  formula?: (row: number) => string;
+  /** Summary/total row appended after data rows */
+  summary?: ColumnSummary;
+  /** Conditional style rules applied per data cell */
+  when?: ColumnCondition<T> | ColumnCondition<T>[];
+  /** Style for the header cell (separate from data cell style) */
+  headerStyle?: CellStyle;
+  /** Child columns for grouped/nested headers. Makes this a group header spanning children. */
+  children?: ColumnDef<T>[];
+  /** Sub-row expansion: return an array to expand one item into multiple rows */
+  expand?: (item: T) => CellValue[];
+}
+
+// ── Column Summary ────────────────────────────────────────────────
+
+export interface ColumnSummary {
+  /** Predefined aggregation function */
+  fn?: "sum" | "average" | "count" | "min" | "max" | "countA";
+  /** Custom formula — receives the data range string (e.g. "B2:B101") */
+  custom?: (range: string) => string;
+  /** Text label instead of formula */
+  label?: string;
+  /** Style for the summary cell */
+  style?: CellStyle;
+  /** Number format for the summary cell */
+  numFmt?: string;
+}
+
+// ── Column Condition ──────────────────────────────────────────────
+
+// eslint-disable-next-line ts/no-unnecessary-type-parameters
+export interface ColumnCondition<T = Record<string, unknown>> {
+  /** Predicate: receives cell value, source item, and row index */
+  test: (value: CellValue, item: T, index: number) => boolean;
+  /** Style to merge when test returns true */
+  style: CellStyle;
+}
+
+// ── Style Preset ──────────────────────────────────────────────────
+
+export interface StylePreset {
+  /** Style for header cells */
+  header: CellStyle;
+  /** Style for data cells */
+  data: CellStyle;
+  /** Style for alternating data rows */
+  altData?: CellStyle;
+  /** Style for summary/total row */
+  summary?: CellStyle;
 }
 
 // ── Merge Range ────────────────────────────────────────────────────
@@ -669,8 +727,8 @@ export interface WriteSheet {
   columns?: ColumnDef[];
   /** Raw row data (array of arrays) */
   rows?: CellValue[][];
-  /** Object data (array of objects — uses column keys) */
-  data?: Array<Record<string, CellValue>>;
+  /** Object data (array of objects — uses column keys/value accessors) */
+  data?: Array<Record<string, unknown>>;
   /** Detailed cell overrides (keyed by "row,col") */
   cells?: Map<string, Partial<Cell>>;
   merges?: MergeRange[];

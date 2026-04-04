@@ -11,6 +11,7 @@ import type {
   WriteOutput,
   CellValue,
   ReadInput,
+  ColumnDef,
 } from "./_types";
 import { readXlsx } from "./xlsx/reader";
 import { writeXlsx } from "./xlsx/writer";
@@ -157,11 +158,18 @@ export async function readObjects<T extends Record<string, CellValue> = Record<s
 
 /**
  * Quick helper: write an array of objects to a spreadsheet format.
- * Infers column headers from the keys of the first object.
+ *
+ * When `columns` is provided, supports value accessors (dot-path, functions),
+ * transforms, formulas, summary rows, conditional styles, column groups, and more.
+ * When omitted, infers columns from the first object's keys.
  */
-export async function writeObjects(
-  data: Array<Record<string, CellValue>>,
-  options?: { sheetName?: string; format?: "xlsx" | "ods" },
+export async function writeObjects<T extends Record<string, unknown> = Record<string, CellValue>>(
+  data: T[],
+  options?: {
+    sheetName?: string;
+    format?: "xlsx" | "ods";
+    columns?: ColumnDef<T>[];
+  },
 ): Promise<WriteOutput> {
   const sheetName = options?.sheetName ?? "Sheet1";
   const format = options?.format ?? "xlsx";
@@ -173,26 +181,14 @@ export async function writeObjects(
     });
   }
 
-  // Infer columns from first object's keys
-  const keys = Object.keys(data[0]!);
-
-  // Build rows: header row + data rows
-  const rows: CellValue[][] = [];
-
-  // Header row
-  rows.push(keys);
-
-  // Data rows
-  for (const item of data) {
-    const row: CellValue[] = keys.map((key) => {
-      const val = item[key];
-      return val === undefined ? null : val;
-    });
-    rows.push(row);
-  }
+  // If columns provided, use data+columns path for full ColumnDef support.
+  // Otherwise, infer columns from first object's keys.
+  const columns: ColumnDef[] = options?.columns
+    ? (options.columns as ColumnDef[])
+    : Object.keys(data[0]!).map((key) => ({ key, header: key }));
 
   return write({
-    sheets: [{ name: sheetName, rows }],
+    sheets: [{ name: sheetName, data: data as Array<Record<string, unknown>>, columns }],
     format,
   });
 }

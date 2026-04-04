@@ -1,6 +1,7 @@
 import {
   readXlsx,
   writeXlsx,
+  writeObjects,
   parseCsv,
   parseCsvObjects,
   detectDelimiter,
@@ -14,8 +15,15 @@ import {
   toMarkdown,
   toJson,
   formatValue,
+  fx,
+  applyPreset,
+  slate,
+  ocean,
+  forest,
+  rose,
+  minimal,
 } from "hucre";
-import type { CellValue, WriteSheet, SchemaDefinition, Sheet } from "hucre";
+import type { CellValue, ColumnDef, StylePreset, WriteSheet, SchemaDefinition, Sheet } from "hucre";
 
 // ── Toast ─────────────────────────────────────────────────────────
 
@@ -732,6 +740,311 @@ function setupExport() {
   });
 }
 
+// ── Report Builder ───────────────────────────────────────────────
+
+interface ReportDemo {
+  data: Record<string, unknown>[];
+  columns: ColumnDef[];
+  description: string;
+}
+
+function getDemos(): Record<string, ReportDemo> {
+  return {
+    sales: {
+      description: `columns: [
+  { key: "product", header: "Product" },
+  { key: "qty", header: "Qty", numFmt: "#,##0" },
+  { key: "price", header: "Price", numFmt: "$#,##0.00" },
+  { header: "Total",
+    formula: (row) => fx.round(\`B\${row}*C\${row}\`, 2),
+    numFmt: "$#,##0.00",
+    summary: { fn: "sum" } },
+  { key: "product", header: " ", summary: { label: "TOTAL" } },
+]`,
+      data: [
+        { product: "Widget", qty: 150, price: 9.99 },
+        { product: "Gadget", qty: 87, price: 24.5 },
+        { product: "Bolt", qty: 3420, price: 0.75 },
+        { product: "Cable", qty: 256, price: 12.0 },
+        { product: "Sensor", qty: 64, price: 45.99 },
+      ],
+      columns: [
+        { key: "product", header: "Product" },
+        { key: "qty", header: "Qty", numFmt: "#,##0" },
+        { key: "price", header: "Price", numFmt: "$#,##0.00" },
+        {
+          header: "Total",
+          formula: (row: number) => fx.round(`B${row}*C${row}`, 2),
+          numFmt: "$#,##0.00",
+          summary: { fn: "sum" as const },
+        },
+        { key: "product", header: " ", summary: { label: "TOTAL" } },
+      ],
+    },
+    nested: {
+      description: `columns: [
+  { value: "user.name", header: "Name" },
+  { value: "user.address.city", header: "City" },
+  { value: "user.address.country", header: "Country" },
+  { key: "score", header: "Score" },
+  { header: "Grade",
+    value: (item) => item.score >= 90 ? "A"
+      : item.score >= 80 ? "B" : "C" },
+]`,
+      data: [
+        { user: { name: "Alice", address: { city: "Istanbul", country: "TR" } }, score: 95 },
+        { user: { name: "Bob", address: { city: "Berlin", country: "DE" } }, score: 82 },
+        { user: { name: "Charlie", address: { city: "Tokyo", country: "JP" } }, score: 71 },
+        { user: { name: "Diana", address: { city: "Paris", country: "FR" } }, score: 88 },
+      ],
+      columns: [
+        { value: "user.name", header: "Name" },
+        { value: "user.address.city", header: "City" },
+        { value: "user.address.country", header: "Country" },
+        { key: "score", header: "Score" },
+        {
+          header: "Grade",
+          value: (item: Record<string, unknown>) => {
+            const s = item.score as number;
+            return s >= 90 ? "A" : s >= 80 ? "B" : "C";
+          },
+        },
+      ],
+    },
+    groups: {
+      description: `columns: [
+  { key: "product", header: "Product" },
+  { header: "Commercial",
+    children: [
+      { key: "arr", header: "ARR", numFmt: "$#,##0" },
+      { key: "nrr", header: "NRR", numFmt: "0%" },
+    ] },
+  { header: "Adoption",
+    children: [
+      { key: "dau", header: "DAU", numFmt: "#,##0" },
+      { key: "mau", header: "MAU", numFmt: "#,##0" },
+    ] },
+]`,
+      data: [
+        { product: "Platform A", arr: 120000, nrr: 1.15, dau: 8500, mau: 24000 },
+        { product: "Platform B", arr: 85000, nrr: 0.92, dau: 3200, mau: 12000 },
+        { product: "Platform C", arr: 210000, nrr: 1.08, dau: 15000, mau: 45000 },
+      ],
+      columns: [
+        { key: "product", header: "Product" },
+        {
+          header: "Commercial",
+          children: [
+            { key: "arr", header: "ARR", numFmt: "$#,##0" },
+            { key: "nrr", header: "NRR", numFmt: "0%" },
+          ],
+        },
+        {
+          header: "Adoption",
+          children: [
+            { key: "dau", header: "DAU", numFmt: "#,##0" },
+            { key: "mau", header: "MAU", numFmt: "#,##0" },
+          ],
+        },
+      ],
+    },
+    expand: {
+      description: `columns: [
+  { key: "id", header: "Order" },
+  { key: "customer", header: "Customer" },
+  { header: "Product",
+    expand: (row) => row.items.map(i => i.name) },
+  { header: "Qty",
+    expand: (row) => row.items.map(i => i.qty) },
+  { header: "Price",
+    expand: (row) => row.items.map(i => i.price) },
+]`,
+      data: [
+        {
+          id: "ORD-001",
+          customer: "Acme Corp",
+          items: [
+            { name: "Widget", qty: 10, price: 9.99 },
+            { name: "Gadget", qty: 5, price: 24.5 },
+            { name: "Cable", qty: 20, price: 12.0 },
+          ],
+        },
+        {
+          id: "ORD-002",
+          customer: "Beta Inc",
+          items: [
+            { name: "Sensor", qty: 3, price: 45.99 },
+            { name: "Bolt", qty: 100, price: 0.75 },
+          ],
+        },
+        { id: "ORD-003", customer: "Gamma LLC", items: [{ name: "Widget", qty: 50, price: 9.99 }] },
+      ],
+      columns: [
+        { key: "id", header: "Order" },
+        { key: "customer", header: "Customer" },
+        {
+          header: "Product",
+          expand: (row: Record<string, unknown>) =>
+            (row.items as Array<{ name: string }>).map((i) => i.name),
+        },
+        {
+          header: "Qty",
+          expand: (row: Record<string, unknown>) =>
+            (row.items as Array<{ qty: number }>).map((i) => i.qty),
+        },
+        {
+          header: "Price",
+          numFmt: "$#,##0.00",
+          expand: (row: Record<string, unknown>) =>
+            (row.items as Array<{ price: number }>).map((i) => i.price),
+        },
+      ],
+    },
+    conditional: {
+      description: `columns: [
+  { key: "product", header: "Product" },
+  { key: "revenue", header: "Revenue",
+    numFmt: "$#,##0",
+    when: [
+      { test: (v) => v >= 50000,
+        style: { font: { color: { rgb: "006600" } } } },
+      { test: (v) => v < 10000,
+        style: { font: { color: { rgb: "CC0000" } } } },
+    ] },
+  { key: "growth", header: "Growth",
+    numFmt: "0.0%",
+    when: [
+      { test: (v) => v >= 0,
+        style: { font: { color: { rgb: "006600" } } } },
+      { test: (v) => v < 0,
+        style: { font: { color: { rgb: "CC0000" } } } },
+    ] },
+  { key: "status", header: "Status",
+    transform: (v) =>
+      v === "active" ? "Active"
+      : v === "churn" ? "Churned" : "At Risk" },
+]`,
+      data: [
+        { product: "Widget Pro", revenue: 85000, growth: 0.15, status: "active" },
+        { product: "Gadget Lite", revenue: 8500, growth: -0.08, status: "churn" },
+        { product: "Bolt Standard", revenue: 52000, growth: 0.03, status: "active" },
+        { product: "Cable Plus", revenue: 12000, growth: -0.22, status: "risk" },
+        { product: "Sensor Max", revenue: 120000, growth: 0.42, status: "active" },
+      ],
+      columns: [
+        { key: "product", header: "Product" },
+        {
+          key: "revenue",
+          header: "Revenue",
+          numFmt: "$#,##0",
+          when: [
+            {
+              test: (v: CellValue) => typeof v === "number" && v >= 50000,
+              style: { font: { color: { rgb: "006600" } } },
+            },
+            {
+              test: (v: CellValue) => typeof v === "number" && v < 10000,
+              style: { font: { color: { rgb: "CC0000" } } },
+            },
+          ],
+        },
+        {
+          key: "growth",
+          header: "Growth",
+          numFmt: "0.0%",
+          when: [
+            {
+              test: (v: CellValue) => typeof v === "number" && v >= 0,
+              style: { font: { color: { rgb: "006600" } } },
+            },
+            {
+              test: (v: CellValue) => typeof v === "number" && v < 0,
+              style: { font: { color: { rgb: "CC0000" } } },
+            },
+          ],
+        },
+        {
+          key: "status",
+          header: "Status",
+          transform: (v: unknown) =>
+            v === "active" ? "Active" : v === "churn" ? "Churned" : "At Risk",
+        },
+      ],
+    },
+  };
+}
+
+const presetMap: Record<string, StylePreset> = { slate, ocean, forest, rose, minimal };
+let lastReportBlob: Blob | null = null;
+
+function setupReport() {
+  const demos = getDemos();
+
+  function loadDemo(name: string) {
+    const demo = demos[name];
+    if (!demo) return;
+    ($("report-data") as HTMLTextAreaElement).value = JSON.stringify(demo.data, null, 2);
+    ($("report-columns") as HTMLTextAreaElement).value = demo.description;
+  }
+
+  // Load initial demo
+  loadDemo("sales");
+
+  ($("report-demo") as HTMLSelectElement).addEventListener("change", (e) => {
+    loadDemo((e.target as HTMLSelectElement).value);
+  });
+
+  $("report-generate").addEventListener("click", async () => {
+    const output = $("report-output");
+    try {
+      const demoName = ($("report-demo") as HTMLSelectElement).value;
+      const demo = demos[demoName];
+      if (!demo) throw new Error("Unknown demo");
+
+      const presetName = ($("report-preset") as HTMLSelectElement).value;
+      let columns = demo.columns;
+      if (presetName !== "none" && presetMap[presetName]) {
+        columns = applyPreset(columns, presetMap[presetName]);
+      }
+
+      const result = await writeObjects(demo.data, {
+        sheetName: "Report",
+        columns,
+      });
+
+      lastReportBlob = new Blob([result], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+
+      // Read back to show preview
+      const wb = await readXlsx(result, { readStyles: true });
+      const sheet = wb.sheets[0]!;
+      const rows = sheet.rows;
+
+      output.innerHTML = renderTable(
+        rows[0]?.map((v, i) => (v != null ? String(v) : `Col ${i + 1}`)) || [],
+        rows.slice(1),
+      );
+      output.innerHTML += `<div class="meta">Generated: ${(result.byteLength / 1024).toFixed(1)} KB XLSX &middot; ${rows.length} rows &middot; ${rows[0]?.length || 0} columns</div>`;
+
+      ($("report-download") as HTMLButtonElement).disabled = false;
+    } catch (e: unknown) {
+      output.innerHTML = `<p class="error">${escapeHtml(String(e))}</p>`;
+    }
+  });
+
+  $("report-download").addEventListener("click", () => {
+    if (!lastReportBlob) return;
+    const url = URL.createObjectURL(lastReportBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "report.xlsx";
+    a.click();
+    URL.revokeObjectURL(url);
+    toast("XLSX downloaded");
+  });
+}
+
 // ── Format Value ──────────────────────────────────────────────────
 
 function setupFormat() {
@@ -788,5 +1101,6 @@ export function setupApp() {
   setupStreaming();
   setupOds();
   setupExport();
+  setupReport();
   setupFormat();
 }
