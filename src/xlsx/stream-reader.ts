@@ -9,7 +9,7 @@ import type { ParsedStyles } from "./styles";
 import type { Relationship } from "./relationships";
 import { ParseError, ZipError } from "../errors";
 import { ZipReader } from "../zip/reader";
-import { parseXml, parseSax, decodeOoxmlEscapes } from "../xml/parser";
+import { parseXml, parseSaxStream, decodeOoxmlEscapes } from "../xml/parser";
 import { parseContentTypes } from "./content-types";
 import { parseRelationships } from "./relationships";
 import { parseSharedStrings } from "./shared-strings";
@@ -146,182 +146,249 @@ function resolveTargetSheet(allSheets: SheetInfo[], sheetSpec?: number | string)
   return allSheets.find((s) => s.name === sheetSpec) ?? null;
 }
 
-// ── Streaming row parser via SAX ────────────────────────────────────
+// ── Worksheet SAX handlers (shared between sync and streaming paths) ─
 
-function* parseWorksheetRows(
-  xml: string,
+interface RowSaxState {
+  inSheetData: boolean;
+  inRow: boolean;
+  inCell: boolean;
+  inValue: boolean;
+  inFormula: boolean;
+  inInlineStr: boolean;
+  inInlineT: boolean;
+  inInlineR: boolean;
+  inInlineRT: boolean;
+  currentRowIndex: number;
+  currentRowCells: Array<{ col: number; value: CellValue }>;
+  cellRef: string;
+  cellType: string;
+  cellStyleIndex: number;
+  cellValueText: string;
+  inlineText: string;
+  inlineRichTextParts: string[];
+  currentRunText: string;
+  /** Implicit column counter for cells without r attribute */
+  implicitCol: number;
+}
+
+function createRowSaxState(): RowSaxState {
+  return {
+    inSheetData: false,
+    inRow: false,
+    inCell: false,
+    inValue: false,
+    inFormula: false,
+    inInlineStr: false,
+    inInlineT: false,
+    inInlineR: false,
+    inInlineRT: false,
+    currentRowIndex: -1,
+    currentRowCells: [],
+    cellRef: "",
+    cellType: "",
+    cellStyleIndex: -1,
+    cellValueText: "",
+    inlineText: "",
+    inlineRichTextParts: [],
+    currentRunText: "",
+    implicitCol: 0,
+  };
+}
+
+function buildRowFromCells(cells: Array<{ col: number; value: CellValue }>): CellValue[] {
+  // Use reduce instead of Math.max(...spread) to avoid RangeError on wide rows (>65K cols)
+  const maxCol = cells.reduce((m, c) => (c.col > m ? c.col : m), -1);
+  const values: CellValue[] = maxCol >= 0 ? Array.from({ length: maxCol + 1 }, () => null) : [];
+  for (const cell of cells) {
+    values[cell.col] = cell.value;
+  }
+  return values;
+}
+
+function handleOpenTag(tag: string, attrs: Record<string, string>, s: RowSaxState): void {
+  const local = tag.includes(":") ? tag.slice(tag.indexOf(":") + 1) : tag;
+
+  switch (local) {
+    case "sheetData":
+      s.inSheetData = true;
+      break;
+    case "row":
+      if (s.inSheetData) {
+        s.inRow = true;
+        s.currentRowIndex = attrs["r"] ? Number(attrs["r"]) - 1 : s.currentRowIndex + 1;
+        s.currentRowCells = [];
+        s.implicitCol = 0;
+      }
+      break;
+    case "c":
+      if (s.inRow) {
+        s.inCell = true;
+        s.cellRef = attrs["r"] ?? "";
+        s.cellType = attrs["t"] ?? "";
+        s.cellStyleIndex = attrs["s"] ? Number(attrs["s"]) : -1;
+        s.cellValueText = "";
+        s.inlineText = "";
+        s.inlineRichTextParts = [];
+      }
+      break;
+    case "v":
+      if (s.inCell) s.inValue = true;
+      break;
+    case "f":
+      if (s.inCell) s.inFormula = true;
+      break;
+    case "is":
+      if (s.inCell) s.inInlineStr = true;
+      break;
+    case "t":
+      if (s.inInlineStr && !s.inInlineR) {
+        s.inInlineT = true;
+      } else if (s.inInlineR) {
+        s.inInlineRT = true;
+      }
+      break;
+    case "r":
+      if (s.inInlineStr) {
+        s.inInlineR = true;
+        s.currentRunText = "";
+      }
+      break;
+  }
+}
+
+function handleText(text: string, s: RowSaxState): void {
+  if (s.inValue) {
+    s.cellValueText += text;
+  } else if (s.inInlineT) {
+    s.inlineText += text;
+  } else if (s.inInlineRT) {
+    s.currentRunText += text;
+  }
+}
+
+/**
+ * Handle a closing tag. Returns a completed StreamRow if a row just ended, otherwise null.
+ */
+function handleCloseTag(
+  tag: string,
+  s: RowSaxState,
   sharedStrings: SharedString[],
   styles: ParsedStyles | null,
   dateSystem: "1900" | "1904",
-): Generator<StreamRow, void, undefined> {
-  // We will collect rows from the SAX parser and yield them.
-  // Since parseSax is synchronous and runs callbacks, we accumulate
-  // completed rows into an array, then yield them after parseSax finishes
-  // processing a section. But since parseSax processes the whole string
-  // at once, we collect all rows and yield them one by one.
-  //
-  // The key memory advantage: we don't build Cell objects or a cells Map.
-  // We only emit the CellValue[] for each row, discarding per-row state
-  // immediately.
+): StreamRow | null {
+  const local = tag.includes(":") ? tag.slice(tag.indexOf(":") + 1) : tag;
 
-  const completedRows: StreamRow[] = [];
+  switch (local) {
+    case "sheetData":
+      s.inSheetData = false;
+      break;
+    case "row":
+      if (s.inRow) {
+        const values = buildRowFromCells(s.currentRowCells);
+        const row: StreamRow = { index: s.currentRowIndex, values };
+        s.inRow = false;
+        return row;
+      }
+      break;
+    case "c":
+      if (s.inCell) {
+        const value = resolveStreamCellValue(
+          s.cellType,
+          s.cellStyleIndex,
+          s.cellValueText,
+          s.inlineText,
+          s.inlineRichTextParts,
+          sharedStrings,
+          styles,
+          dateSystem,
+        );
+        if (s.cellRef) {
+          const pos = parseCellRef(s.cellRef);
+          s.currentRowCells.push({ col: pos.col, value });
+          s.implicitCol = pos.col + 1;
+        } else {
+          // Fallback: cells without r attribute use implicit column ordering
+          s.currentRowCells.push({ col: s.implicitCol, value });
+          s.implicitCol++;
+        }
+        s.inCell = false;
+      }
+      break;
+    case "v":
+      s.inValue = false;
+      break;
+    case "f":
+      s.inFormula = false;
+      break;
+    case "is":
+      s.inInlineStr = false;
+      break;
+    case "t":
+      if (s.inInlineRT) {
+        s.inInlineRT = false;
+      } else if (s.inInlineT) {
+        s.inInlineT = false;
+      }
+      break;
+    case "r":
+      if (s.inInlineR) {
+        s.inlineRichTextParts.push(decodeOoxmlEscapes(s.currentRunText));
+        s.inInlineR = false;
+      }
+      break;
+  }
+  return null;
+}
 
-  let inSheetData = false;
-  let inRow = false;
-  let inCell = false;
-  let inValue = false;
-  let _inFormula = false;
-  let inInlineStr = false;
-  let inInlineT = false;
+// ── Streaming row parser via SAX (async — ReadableStream) ──────────
 
-  let currentRowIndex = -1;
-  let currentRowCells: Array<{ col: number; value: CellValue }> = [];
+async function* parseWorksheetRowsStreaming(
+  stream: ReadableStream<Uint8Array>,
+  sharedStrings: SharedString[],
+  styles: ParsedStyles | null,
+  dateSystem: "1900" | "1904",
+): AsyncGenerator<StreamRow, void, undefined> {
+  const s = createRowSaxState();
+  const pendingRows: StreamRow[] = [];
+  let resolve: (() => void) | null = null;
+  let done = false;
 
-  // Rich text in inline strings
-  let inInlineR = false;
-  let inInlineRT = false;
-
-  // Current cell state
-  let cellRef = "";
-  let cellType = "";
-  let cellStyleIndex = -1;
-  let cellValueText = "";
-  let inlineText = "";
-  let inlineRichTextParts: string[] = [];
-  let currentRunText = "";
-
-  parseSax(xml, {
+  const parsePromise = parseSaxStream(stream, {
     onOpenTag(tag, attrs) {
-      const local = tag.includes(":") ? tag.slice(tag.indexOf(":") + 1) : tag;
-
-      switch (local) {
-        case "sheetData":
-          inSheetData = true;
-          break;
-        case "row":
-          if (inSheetData) {
-            inRow = true;
-            currentRowIndex = attrs["r"] ? Number(attrs["r"]) - 1 : currentRowIndex + 1;
-            currentRowCells = [];
-          }
-          break;
-        case "c":
-          if (inRow) {
-            inCell = true;
-            cellRef = attrs["r"] ?? "";
-            cellType = attrs["t"] ?? "";
-            cellStyleIndex = attrs["s"] ? Number(attrs["s"]) : -1;
-            cellValueText = "";
-            inlineText = "";
-            inlineRichTextParts = [];
-          }
-          break;
-        case "v":
-          if (inCell) inValue = true;
-          break;
-        case "f":
-          if (inCell) _inFormula = true;
-          break;
-        case "is":
-          if (inCell) inInlineStr = true;
-          break;
-        case "t":
-          if (inInlineStr && !inInlineR) {
-            inInlineT = true;
-          } else if (inInlineR) {
-            inInlineRT = true;
-          }
-          break;
-        case "r":
-          if (inInlineStr) {
-            inInlineR = true;
-            currentRunText = "";
-          }
-          break;
-      }
+      handleOpenTag(tag, attrs, s);
     },
-
     onText(text) {
-      if (inValue) {
-        cellValueText += text;
-      } else if (inInlineT) {
-        inlineText += text;
-      } else if (inInlineRT) {
-        currentRunText += text;
-      }
+      handleText(text, s);
     },
-
     onCloseTag(tag) {
-      const local = tag.includes(":") ? tag.slice(tag.indexOf(":") + 1) : tag;
-
-      switch (local) {
-        case "sheetData":
-          inSheetData = false;
-          break;
-        case "row":
-          if (inRow) {
-            // Emit row
-            const maxCol =
-              currentRowCells.length > 0 ? Math.max(...currentRowCells.map((c) => c.col)) : -1;
-            const values: CellValue[] =
-              maxCol >= 0 ? Array.from({ length: maxCol + 1 }, () => null) : [];
-            for (const cell of currentRowCells) {
-              values[cell.col] = cell.value;
-            }
-            completedRows.push({ index: currentRowIndex, values });
-            inRow = false;
-          }
-          break;
-        case "c":
-          if (inCell) {
-            // Process cell and add to current row
-            const value = resolveStreamCellValue(
-              cellType,
-              cellStyleIndex,
-              cellValueText,
-              inlineText,
-              inlineRichTextParts,
-              sharedStrings,
-              styles,
-              dateSystem,
-            );
-            if (cellRef) {
-              const pos = parseCellRef(cellRef);
-              currentRowCells.push({ col: pos.col, value });
-            }
-            inCell = false;
-          }
-          break;
-        case "v":
-          inValue = false;
-          break;
-        case "f":
-          _inFormula = false;
-          break;
-        case "is":
-          inInlineStr = false;
-          break;
-        case "t":
-          if (inInlineRT) {
-            inInlineRT = false;
-          } else if (inInlineT) {
-            inInlineT = false;
-          }
-          break;
-        case "r":
-          if (inInlineR) {
-            inlineRichTextParts.push(decodeOoxmlEscapes(currentRunText));
-            inInlineR = false;
-          }
-          break;
+      const row = handleCloseTag(tag, s, sharedStrings, styles, dateSystem);
+      if (row) {
+        pendingRows.push(row);
+        if (resolve) {
+          resolve();
+          resolve = null;
+        }
       }
     },
+  }).then(() => {
+    done = true;
+    if (resolve) {
+      resolve();
+      resolve = null;
+    }
   });
 
-  // Yield all completed rows
-  for (const row of completedRows) {
-    yield row;
+  while (!done || pendingRows.length > 0) {
+    if (pendingRows.length > 0) {
+      yield pendingRows.shift()!;
+    } else if (!done) {
+      await new Promise<void>((r) => {
+        resolve = r;
+      });
+    }
   }
+
+  await parsePromise;
 }
 
 // ── Cell value resolution (streaming — no Cell objects) ──────────────
@@ -343,7 +410,7 @@ function resolveStreamCellValue(
       if (!Number.isNaN(idx) && idx >= 0 && idx < sharedStrings.length) {
         return sharedStrings[idx].text;
       }
-      return valueText;
+      return null; // Out-of-bounds SST index — return null, not the raw index string
     }
     case "str": {
       // Inline formula string result
@@ -384,18 +451,58 @@ function resolveStreamCellValue(
   }
 }
 
+// ── Helper: buffer a ReadableStream into Uint8Array ────────────────
+
+async function bufferStream(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalLen = 0;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    totalLen += value.length;
+  }
+
+  if (chunks.length === 1) return chunks[0];
+
+  const result = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
+}
+
 // ── Main streaming reader ───────────────────────────────────────────
 
 /**
  * Create an async iterable that yields rows one at a time.
  * Parses shared strings and styles upfront (they're small),
  * then streams worksheet rows via SAX parsing.
+ *
+ * Accepts Uint8Array, ArrayBuffer, or ReadableStream<Uint8Array>.
+ * For ReadableStream input, the stream is buffered to read the ZIP
+ * central directory, then the worksheet entry is stream-decompressed
+ * and piped through the SAX parser in chunks.
  */
 export async function* streamXlsxRows(
-  input: Uint8Array | ArrayBuffer,
+  input: Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>,
   options?: ReadOptions & { sheet?: number | string },
 ): AsyncGenerator<StreamRow, void, undefined> {
-  const data = input instanceof Uint8Array ? input : new Uint8Array(input);
+  // Normalize input to Uint8Array for ZIP central directory parsing.
+  // ReadableStream must be fully buffered because ZIP central directory
+  // is at the end of the file.
+  let data: Uint8Array;
+  if (input instanceof Uint8Array) {
+    data = input;
+  } else if (input instanceof ArrayBuffer) {
+    data = new Uint8Array(input);
+  } else {
+    data = await bufferStream(input);
+  }
 
   // 1. Open ZIP archive
   let zip: ZipReader;
@@ -490,7 +597,9 @@ export async function* streamXlsxRows(
     throw new ParseError(`Invalid XLSX: missing worksheet file for sheet "${targetSheet.name}"`);
   }
 
-  // 10. Stream worksheet rows via SAX
-  const wsXml = decodeUtf8(await zip.extract(wsPath));
-  yield* parseWorksheetRows(wsXml, sharedStrings, parsedStyles, dateSystem);
+  // 10. Stream worksheet rows
+  // Use streaming decompression: pipe ZIP entry through DecompressionStream
+  // directly into the SAX parser, yielding rows as they complete.
+  const wsStream = zip.extractStream(wsPath);
+  yield* parseWorksheetRowsStreaming(wsStream, sharedStrings, parsedStyles, dateSystem);
 }

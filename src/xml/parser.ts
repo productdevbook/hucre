@@ -251,6 +251,173 @@ export function parseSax(xml: string, handlers: SaxHandlers): void {
   }
 }
 
+// ── Streaming SAX Parser ─────────────────────────────────────────
+
+/**
+ * SAX parser that consumes a ReadableStream<Uint8Array> in chunks.
+ * Calls handlers incrementally as XML constructs are completed.
+ * Handles chunk boundaries that split tags or text content.
+ */
+export async function parseSaxStream(
+  stream: ReadableStream<Uint8Array>,
+  handlers: SaxHandlers,
+): Promise<void> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buf = "";
+  let bomStripped = false;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+
+    if (!bomStripped) {
+      if (buf.charCodeAt(0) === 0xfeff) buf = buf.slice(1);
+      bomStripped = true;
+    }
+
+    buf = processSaxBuffer(buf, handlers, false);
+  }
+
+  // Flush remaining decoder state
+  buf += decoder.decode();
+  if (buf.length > 0) {
+    processSaxBuffer(buf, handlers, true);
+  }
+}
+
+/**
+ * Process as much XML as possible from the buffer.
+ * Returns the unprocessed remainder (incomplete tag/text at chunk boundary).
+ * When `final` is true, all remaining content must be processable.
+ */
+function processSaxBuffer(buf: string, handlers: SaxHandlers, final: boolean): string {
+  let i = 0;
+  const len = buf.length;
+
+  while (i < len) {
+    if (buf.charCodeAt(i) === 60 /* < */) {
+      const next = i + 1 < len ? buf.charCodeAt(i + 1) : -1;
+
+      if (next === -1 && !final) {
+        // Incomplete: just '<' at end of chunk
+        return buf.slice(i);
+      }
+
+      if (next === 33 /* ! */) {
+        // Comment or CDATA
+        if (buf.slice(i, i + 4) === "<!--") {
+          const end = buf.indexOf("-->", i + 4);
+          if (end === -1) {
+            return final ? "" : buf.slice(i);
+          }
+          i = end + 3;
+          continue;
+        }
+        if (buf.slice(i, i + 9) === "<![CDATA[") {
+          const end = buf.indexOf("]]>", i + 9);
+          if (end === -1) {
+            return final ? "" : buf.slice(i);
+          }
+          const text = buf.slice(i + 9, end);
+          handlers.onCData?.(text);
+          handlers.onText?.(text);
+          i = end + 3;
+          continue;
+        }
+        // Could be incomplete CDATA/comment marker
+        if (!final && len - i < 9) {
+          return buf.slice(i);
+        }
+        // DOCTYPE or other declaration — skip
+        const end = buf.indexOf(">", i + 2);
+        if (end === -1) {
+          return final ? "" : buf.slice(i);
+        }
+        i = end + 1;
+        continue;
+      }
+
+      if (next === 63 /* ? */) {
+        // Processing instruction: <?...?>
+        const end = buf.indexOf("?>", i + 2);
+        if (end === -1) {
+          return final ? "" : buf.slice(i);
+        }
+        i = end + 2;
+        continue;
+      }
+
+      if (next === 47 /* / */) {
+        // Closing tag: </tagName>
+        const end = buf.indexOf(">", i + 2);
+        if (end === -1) {
+          return final ? "" : buf.slice(i);
+        }
+        const tag = buf.slice(i + 2, end).trim();
+        handlers.onCloseTag?.(tag);
+        i = end + 1;
+        continue;
+      }
+
+      // Opening tag — find end, handling > inside attribute values
+      let j = i + 1;
+      let inQuote = 0;
+      while (j < len) {
+        const c = buf.charCodeAt(j);
+        if (inQuote) {
+          if (c === inQuote) inQuote = 0;
+        } else if (c === 34 /* " */ || c === 39 /* ' */) {
+          inQuote = c;
+        } else if (c === 62 /* > */) {
+          break;
+        }
+        j++;
+      }
+      if (j >= len) {
+        // Tag not complete in this chunk
+        return final ? "" : buf.slice(i);
+      }
+
+      const selfClosing = buf.charCodeAt(j - 1) === 47; /* / */
+      const tagContent = buf.slice(i + 1, selfClosing ? j - 1 : j);
+
+      let spaceIdx = 0;
+      const tcLen = tagContent.length;
+      while (spaceIdx < tcLen && !isWhitespace(tagContent.charCodeAt(spaceIdx))) spaceIdx++;
+      const tag = tagContent.slice(0, spaceIdx);
+      const attrStr = spaceIdx < tcLen ? tagContent.slice(spaceIdx + 1) : "";
+      const attrs = attrStr ? parseAttrs(attrStr) : {};
+
+      handlers.onOpenTag?.(tag, attrs);
+      if (selfClosing) {
+        handlers.onCloseTag?.(tag);
+      }
+
+      i = j + 1;
+      continue;
+    }
+
+    // Text content — read until '<' or end of buffer
+    const textStart = i;
+    while (i < len && buf.charCodeAt(i) !== 60 /* < */) i++;
+
+    if (i >= len && !final) {
+      // Text might continue in next chunk — hold it
+      return buf.slice(textStart);
+    }
+
+    const rawText = buf.slice(textStart, i);
+    if (rawText) {
+      const decoded = decodeEntities(rawText);
+      handlers.onText?.(decoded);
+    }
+  }
+
+  return "";
+}
+
 // ── DOM-style Parser ──────────────────────────────────────────────
 
 /**

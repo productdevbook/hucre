@@ -274,6 +274,19 @@ Sensor,45.99,SNS-005,64,unknown</textarea
           Stream large XLSX files row-by-row without loading everything into memory. Or generate
           XLSX incrementally with XlsxStreamWriter.
         </p>
+
+        <!-- ── Generate & Stream ── -->
+        <h3
+          style="
+            margin: 0 0 0.75rem;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+          "
+        >
+          Generate &amp; Stream
+        </h3>
         <div class="split">
           <div class="controls">
             <div class="field full">
@@ -296,6 +309,39 @@ Sensor,45.99,SNS-005,64,unknown</textarea
             </div>
             <div class="actions">
               <button class="btn" id="stream-download" disabled>Download .xlsx</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Stream from File (ReadableStream) ── -->
+        <h3
+          style="
+            margin: 1.5rem 0 0.75rem;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+          "
+        >
+          Stream from File (ReadableStream)
+        </h3>
+        <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.75rem">
+          Drop an .xlsx file to stream-read it via <code>ReadableStream&lt;Uint8Array&gt;</code>.
+          Compares streaming vs buffered read performance.
+        </p>
+        <div class="split">
+          <div class="controls">
+            <div class="drop-zone" id="stream-file-drop">
+              <div class="icon">📂</div>
+              <p>Drop .xlsx file here or click to browse</p>
+              <input type="file" id="stream-file-input" accept=".xlsx" />
+            </div>
+          </div>
+          <div class="preview">
+            <div class="output" id="stream-file-output">
+              <p style="color: var(--text-dim); text-align: center; padding: 3rem 0">
+                Drop an .xlsx file to stream rows via ReadableStream
+              </p>
             </div>
           </div>
         </div>
