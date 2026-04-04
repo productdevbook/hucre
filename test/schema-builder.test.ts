@@ -75,15 +75,11 @@ describe("value accessors", () => {
   });
 
   it("supports function accessor", async () => {
-    interface Sale {
-      qty: number;
-      price: number;
-    }
-    const data: Sale[] = [{ qty: 10, price: 5 }];
+    const data = [{ qty: 10, price: 5 }];
     const sheet = await roundTrip(data, {
       columns: [
         { key: "qty", header: "Qty" },
-        { value: (item) => item.qty * (item.price as number), header: "Total" },
+        { value: (item) => (item.qty as number) * (item.price as number), header: "Total" },
       ],
     });
     expect(sheet.rows[1]).toEqual([10, 50]);
@@ -254,11 +250,7 @@ describe("column groups", () => {
 
 describe("sub-row expansion", () => {
   it("expands array values into sub-rows", async () => {
-    interface Order {
-      id: string;
-      items: Array<{ name: string; qty: number }>;
-    }
-    const data: Order[] = [
+    const data = [
       {
         id: "ORD-1",
         items: [
@@ -271,8 +263,11 @@ describe("sub-row expansion", () => {
     const xlsx = await writeObjects(data, {
       columns: [
         { key: "id", header: "Order" },
-        { header: "Product", expand: (row) => row.items.map((i) => i.name) },
-        { header: "Qty", expand: (row) => row.items.map((i) => i.qty) },
+        {
+          header: "Product",
+          expand: (row) => (row.items as Array<{ name: string }>).map((i) => i.name),
+        },
+        { header: "Qty", expand: (row) => (row.items as Array<{ qty: number }>).map((i) => i.qty) },
       ],
     });
     const wb = await readXlsx(xlsx);
