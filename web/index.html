@@ -30,7 +30,6 @@
         <button class="tab" data-tab="streaming" role="tab">Streaming</button>
         <button class="tab" data-tab="ods" role="tab">ODS</button>
         <button class="tab" data-tab="export" role="tab">Export</button>
-        <button class="tab" data-tab="report" role="tab">Report Builder</button>
         <button class="tab" data-tab="format" role="tab">Format</button>
       </nav>
 
@@ -436,76 +435,6 @@ Sensor,45.99,64,true</textarea
               <button class="btn primary" id="export-md">Markdown</button>
               <button class="btn primary" id="export-json">JSON</button>
               <button class="btn" id="export-copy" disabled>Copy</button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ═══════ REPORT BUILDER ═══════ -->
-      <section class="panel" data-panel="report">
-        <p class="panel-desc">
-          Schema-driven report generation with typed columns, formula helpers, summary rows,
-          conditional styles, column groups, and style presets.
-        </p>
-        <div class="split">
-          <div class="controls">
-            <details class="section" open>
-              <summary>Demo Scenario</summary>
-              <div class="field-grid">
-                <div class="field full">
-                  <select id="report-demo">
-                    <option value="sales">Sales Report (summary + formulas + presets)</option>
-                    <option value="nested">Nested Objects (dot-path accessors)</option>
-                    <option value="groups">Column Groups (multi-row headers)</option>
-                    <option value="expand">Sub-Row Expansion (order line items)</option>
-                    <option value="conditional">Conditional Styles (red/green)</option>
-                  </select>
-                </div>
-              </div>
-            </details>
-
-            <div class="field full">
-              <label for="report-data">Data (JSON)</label>
-              <textarea id="report-data" rows="10" spellcheck="false"></textarea>
-            </div>
-
-            <div class="field full">
-              <label for="report-columns">Columns (JS — readonly, generated from demo)</label>
-              <textarea
-                id="report-columns"
-                rows="10"
-                spellcheck="false"
-                readonly
-                style="opacity: 0.7"
-              ></textarea>
-            </div>
-
-            <details class="section" open>
-              <summary>Style Preset</summary>
-              <div class="field-grid">
-                <div class="field full">
-                  <select id="report-preset">
-                    <option value="none">None</option>
-                    <option value="slate" selected>Slate</option>
-                    <option value="ocean">Ocean</option>
-                    <option value="forest">Forest</option>
-                    <option value="rose">Rose</option>
-                    <option value="minimal">Minimal</option>
-                  </select>
-                </div>
-              </div>
-            </details>
-          </div>
-
-          <div class="preview">
-            <div class="output" id="report-output">
-              <p style="color: var(--text-dim); text-align: center; padding: 3rem 0">
-                Pick a demo and click "Generate Report"
-              </p>
-            </div>
-            <div class="actions">
-              <button class="btn primary" id="report-generate">Generate Report</button>
-              <button class="btn" id="report-download" disabled>Download .xlsx</button>
             </div>
           </div>
         </div>

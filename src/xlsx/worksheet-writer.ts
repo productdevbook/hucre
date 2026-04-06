@@ -5,11 +5,8 @@ import type {
   WriteSheet,
   CellValue,
   CellStyle,
-  ColumnDef,
-  ColumnCondition,
   ConditionalRule,
   DataValidation,
-  MergeRange,
   SheetProtection,
   PageSetup,
   PageMargins,
@@ -185,11 +182,8 @@ export function writeWorksheetXml(
   const is1904 = dateSystem === "1904";
 
   // Resolve rows from data or rows
-  const { rows: resolvedRows, merges: generatedMerges } = resolveRows(sheet);
+  const resolvedRows = resolveRows(sheet);
   const rowCount = resolvedRows.length;
-
-  // Combine user-defined merges with auto-generated merges (from column groups, expand)
-  const allMerges: MergeRange[] = [...(sheet.merges ?? []), ...generatedMerges];
 
   // Calculate max column count
   let maxCols = 0;
@@ -435,13 +429,13 @@ export function writeWorksheetXml(
   }
 
   // ── Merge Cells ──
-  if (allMerges.length > 0) {
-    const mergeElements = allMerges.map((m) =>
+  if (sheet.merges && sheet.merges.length > 0) {
+    const mergeElements = sheet.merges.map((m) =>
       xmlSelfClose("mergeCell", {
         ref: rangeRef(m.startRow, m.startCol, m.endRow, m.endCol),
       }),
     );
-    parts.push(xmlElement("mergeCells", { count: allMerges.length }, mergeElements));
+    parts.push(xmlElement("mergeCells", { count: sheet.merges.length }, mergeElements));
   }
 
   // ── Conditional Formatting ──
@@ -581,359 +575,63 @@ export function writeWorksheetXml(
 
 // ── Row Resolution ─────────────────────────────────────────────────
 
-// ── Value extraction helpers ────────────────────────────────────────
-
-function getByPath(obj: unknown, path: string): unknown {
-  let cur: unknown = obj;
-  for (const p of path.split(".")) {
-    if (cur == null || typeof cur !== "object") return null;
-    cur = (cur as Record<string, unknown>)[p];
-  }
-  return cur ?? null;
-}
-
-function extractValue(item: Record<string, unknown>, col: ColumnDef, index: number): CellValue {
-  if (typeof col.value === "function") return col.value(item, index);
-  if (typeof col.value === "string") return getByPath(item, col.value) as CellValue;
-  if (col.key !== undefined) return (item[col.key] ?? null) as CellValue;
-  return null;
-}
-
-function resolveColumnStyle(
-  col: ColumnDef,
-  value: CellValue,
-  item: Record<string, unknown>,
-  index: number,
-): CellStyle | undefined {
-  let style: CellStyle | undefined = col.style;
-  if (col.numFmt && (!style || !style.numFmt)) {
-    style = { ...style, numFmt: col.numFmt };
-  }
-  const conditions: ColumnCondition[] = col.when
-    ? Array.isArray(col.when)
-      ? col.when
-      : [col.when]
-    : [];
-  for (const cond of conditions) {
-    if (cond.test(value, item, index)) {
-      if (!style) {
-        style = cond.style;
-      } else {
-        style = {
-          ...style,
-          ...cond.style,
-          font: cond.style.font ? { ...style.font, ...cond.style.font } : style.font,
-          border: cond.style.border ? { ...style.border, ...cond.style.border } : style.border,
-          alignment: cond.style.alignment
-            ? { ...style.alignment, ...cond.style.alignment }
-            : style.alignment,
-        };
-      }
-    }
-  }
-  return style;
-}
-
-// ── Column flattening (children → leaves + header matrix) ──────────
-
-interface HeaderCell {
-  header: string | null;
-  style?: CellStyle;
-  span: number;
-}
-
-function flattenColumns(columns: ColumnDef[]): {
-  leaves: ColumnDef[];
-  headerRows: Array<Array<HeaderCell | null>>;
-  maxDepth: number;
-} {
-  // Check if any column has children
-  const hasGroups = columns.some((c) => c.children && c.children.length > 0);
-  if (!hasGroups) {
-    // Simple case: single header row
-    const leaves = columns;
-    const headerRow: Array<HeaderCell | null> = columns.map((c) => ({
-      header: c.header ?? c.key ?? null,
-      style: c.headerStyle ?? c.style,
-      span: 1,
-    }));
-    return { leaves, headerRows: [headerRow], maxDepth: 1 };
-  }
-
-  // Grouped columns: 2 header rows (group + leaf)
-  const leaves: ColumnDef[] = [];
-  const groupRow: Array<HeaderCell | null> = [];
-  const leafRow: Array<HeaderCell | null> = [];
-
-  for (const col of columns) {
-    if (col.children && col.children.length > 0) {
-      // Group header spanning children
-      groupRow.push({
-        header: col.header ?? null,
-        style: col.headerStyle ?? col.style,
-        span: col.children.length,
-      });
-      // Null placeholders for spanned cells
-      for (let i = 1; i < col.children.length; i++) {
-        groupRow.push(null);
-      }
-      // Leaf headers
-      for (const child of col.children) {
-        leaves.push(child);
-        leafRow.push({
-          header: child.header ?? child.key ?? null,
-          style: child.headerStyle ?? child.style,
-          span: 1,
-        });
-      }
-    } else {
-      // Non-grouped column spans both rows vertically
-      leaves.push(col);
-      groupRow.push({
-        header: col.header ?? col.key ?? null,
-        style: col.headerStyle ?? col.style,
-        span: 1,
-      });
-      leafRow.push(null); // will be merged vertically
-    }
-  }
-
-  return { leaves, headerRows: [groupRow, leafRow], maxDepth: 2 };
-}
-
-// ── Resolve Rows ────────────────────────────────────────────────────
-
-interface ResolveResult {
-  rows: Array<Array<ResolvedCell | null>>;
-  merges: MergeRange[];
-}
-
-function resolveRows(sheet: WriteSheet): ResolveResult {
+function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
   const resolved: Array<Array<ResolvedCell | null>> = [];
-  const merges: MergeRange[] = [];
 
   if (sheet.data && sheet.columns) {
-    // ── Object-based data with columns ──
-    const { leaves, headerRows, maxDepth } = flattenColumns(sheet.columns);
-    const hasHeaders = leaves.some((col) => col.header || col.key);
+    // Object-based data with column keys
+    const keys = sheet.columns.map((col) => col.key);
 
-    // Build header rows
+    // Add header row if columns have headers
+    const hasHeaders = sheet.columns.some((col) => col.header);
     if (hasHeaders) {
-      for (let depth = 0; depth < maxDepth; depth++) {
-        const hRow: Array<ResolvedCell | null> = [];
-        const cells = headerRows[depth];
-        for (let c = 0; c < cells.length; c++) {
-          const cell = cells[c];
-          if (cell) {
-            hRow.push({ value: cell.header, style: cell.style });
-            // If spanning multiple columns, push nulls and add merge
-            if (cell.span > 1) {
-              for (let s = 1; s < cell.span; s++) {
-                hRow.push(null);
-              }
-              merges.push({
-                startRow: depth,
-                startCol: hRow.length - cell.span,
-                endRow: depth,
-                endCol: hRow.length - 1,
-              });
-            }
-          } else {
-            hRow.push(null);
-          }
-        }
-        resolved.push(hRow);
+      const headerRow: Array<ResolvedCell | null> = [];
+      for (let c = 0; c < sheet.columns.length; c++) {
+        const col = sheet.columns[c];
+        headerRow.push({
+          value: col.header ?? col.key ?? null,
+          style: col.style,
+        });
       }
-
-      // Vertical merges for non-grouped columns (span both header rows)
-      if (maxDepth === 2) {
-        for (let c = 0; c < headerRows[1].length; c++) {
-          if (headerRows[1][c] === null && headerRows[0][c] !== null) {
-            merges.push({ startRow: 0, startCol: c, endRow: 1, endCol: c });
-          }
-        }
-      }
+      resolved.push(headerRow);
     }
 
-    const headerRowCount = hasHeaders ? maxDepth : 0;
-
-    // Check if any column has expand
-    const hasExpand = leaves.some((col) => col.expand);
-
-    // Build data rows
-    let dataRowCount = 0;
-    for (let itemIdx = 0; itemIdx < sheet.data.length; itemIdx++) {
-      const item = sheet.data[itemIdx];
-
-      if (hasExpand) {
-        // Sub-row expansion: determine max expansion length
-        let maxLen = 1;
-        const expanded: Array<CellValue[] | null> = [];
-        for (const col of leaves) {
-          if (col.expand) {
-            const arr = col.expand(item);
-            expanded.push(arr);
-            if (arr.length > maxLen) maxLen = arr.length;
-          } else {
-            expanded.push(null);
-          }
-        }
-
-        const baseRowIdx = resolved.length;
-        for (let subIdx = 0; subIdx < maxLen; subIdx++) {
-          const row: Array<ResolvedCell | null> = [];
-          for (let c = 0; c < leaves.length; c++) {
-            const col = leaves[c];
-            const exp = expanded[c];
-            let cellValue: CellValue;
-
-            if (exp) {
-              // Expand column: use sub-index value
-              cellValue = subIdx < exp.length ? exp[subIdx] : null;
-            } else if (subIdx === 0) {
-              // Scalar column: only on first sub-row
-              cellValue = extractValue(item, col, itemIdx);
-              if (cellValue === null || cellValue === undefined)
-                cellValue = col.defaultValue ?? null;
-              if (col.transform) cellValue = col.transform(cellValue, item, itemIdx);
-            } else {
-              cellValue = null;
-            }
-
-            if (col.formula && !exp) {
-              const excelRow = resolved.length + 1; // 1-based
-              row.push({
-                value: null,
-                formula: col.formula(excelRow),
-                style: resolveColumnStyle(col, cellValue, item, itemIdx),
-              });
-            } else {
-              row.push({
-                value: cellValue,
-                style: resolveColumnStyle(col, cellValue, item, itemIdx),
-              });
-            }
-          }
-          resolved.push(row);
-          dataRowCount++;
-        }
-
-        // Add vertical merges for scalar columns across sub-rows
-        if (maxLen > 1) {
-          for (let c = 0; c < leaves.length; c++) {
-            if (!expanded[c]) {
-              merges.push({
-                startRow: baseRowIdx,
-                startCol: c,
-                endRow: baseRowIdx + maxLen - 1,
-                endCol: c,
-              });
-            }
-          }
-        }
-      } else {
-        // Normal row (no expansion)
-        const row: Array<ResolvedCell | null> = [];
-        for (let c = 0; c < leaves.length; c++) {
-          const col = leaves[c];
-
-          if (col.formula) {
-            const excelRow = resolved.length + 1; // 1-based
-            row.push({
-              value: null,
-              formula: col.formula(excelRow),
-              style: resolveColumnStyle(col, null, item, itemIdx),
-            });
-          } else {
-            let cellValue = extractValue(item, col, itemIdx);
-            if (cellValue === null || cellValue === undefined) cellValue = col.defaultValue ?? null;
-            if (col.transform) cellValue = col.transform(cellValue, item, itemIdx);
-            row.push({
-              value: cellValue,
-              style: resolveColumnStyle(col, cellValue, item, itemIdx),
-            });
-          }
-        }
-        resolved.push(row);
-        dataRowCount++;
+    for (const obj of sheet.data) {
+      const row: Array<ResolvedCell | null> = [];
+      for (let c = 0; c < keys.length; c++) {
+        const key = keys[c];
+        const value = key !== undefined ? (obj[key] ?? null) : null;
+        const col = sheet.columns[c];
+        row.push({
+          value,
+          style: col.style,
+          ...(col.numFmt && !col.style?.numFmt
+            ? { style: { ...col.style, numFmt: col.numFmt } }
+            : {}),
+        });
       }
-    }
-
-    // Build summary row if any column has summary
-    const hasSummary = leaves.some((col) => col.summary);
-    if (hasSummary && dataRowCount > 0) {
-      const summaryRow: Array<ResolvedCell | null> = [];
-      const dataStartRow = headerRowCount + 1; // 1-based Excel row
-      const dataEndRow = headerRowCount + dataRowCount;
-
-      for (let c = 0; c < leaves.length; c++) {
-        const col = leaves[c];
-        const s = col.summary;
-        if (!s) {
-          summaryRow.push(null);
-          continue;
-        }
-
-        const summaryStyle: CellStyle | undefined = s.numFmt
-          ? { ...s.style, numFmt: s.numFmt }
-          : s.style;
-
-        if (s.label !== undefined) {
-          summaryRow.push({ value: s.label, style: summaryStyle });
-        } else {
-          const letter = colToLetter(c);
-          const range = `${letter}${dataStartRow}:${letter}${dataEndRow}`;
-          let formula: string;
-          if (s.custom) {
-            formula = s.custom(range);
-          } else {
-            switch (s.fn) {
-              case "sum":
-                formula = `SUM(${range})`;
-                break;
-              case "average":
-                formula = `AVERAGE(${range})`;
-                break;
-              case "count":
-                formula = `COUNT(${range})`;
-                break;
-              case "countA":
-                formula = `COUNTA(${range})`;
-                break;
-              case "min":
-                formula = `MIN(${range})`;
-                break;
-              case "max":
-                formula = `MAX(${range})`;
-                break;
-              default:
-                formula = `SUM(${range})`;
-                break;
-            }
-          }
-          summaryRow.push({ value: null, formula, style: summaryStyle });
-        }
-      }
-      resolved.push(summaryRow);
+      resolved.push(row);
     }
   } else if (sheet.rows) {
-    // ── Array-based rows ──
+    // Array-based rows
     for (const row of sheet.rows) {
       const resolvedRow: Array<ResolvedCell | null> = [];
       for (let c = 0; c < row.length; c++) {
-        resolvedRow.push({ value: row[c] });
+        const value = row[c];
+        resolvedRow.push({ value });
       }
       resolved.push(resolvedRow);
     }
   }
 
-  // ── Apply cell overrides ──
+  // Apply cell overrides
   if (sheet.cells) {
     for (const [key, cellOverride] of sheet.cells) {
       const [rowStr, colStr] = key.split(",");
       const r = parseInt(rowStr, 10);
       const c = parseInt(colStr, 10);
 
+      // Ensure row exists
       while (resolved.length <= r) {
         resolved.push([]);
       }
@@ -957,7 +655,7 @@ function resolveRows(sheet: WriteSheet): ResolveResult {
     }
   }
 
-  return { rows: resolved, merges };
+  return resolved;
 }
 
 // ── Cell Serialization ─────────────────────────────────────────────

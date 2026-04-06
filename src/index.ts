@@ -54,15 +54,6 @@ export type { FormatOptions, LocaleFormat } from "./_format";
 // ── Builder Pattern ──────────────────────────────────────────────
 export { WorkbookBuilder, SheetBuilder } from "./builder";
 
-// ── Formula Helpers ─────────────────────────────────────────────
-export * as fx from "./fx";
-
-// ── Style Presets ───────────────────────────────────────────────
-export { slate, ocean, forest, rose, minimal, applyPreset } from "./presets";
-
-// ── Column Utilities ────────────────────────────────────────────
-export { pickColumns, omitColumns } from "./column-utils";
-
 // ── Template Engine ──────────────────────────────────────────────
 export { fillTemplate } from "./template";
 
@@ -192,8 +183,4 @@ export type {
   SchemaField,
   SchemaFieldType,
   ValidationError as ValidationErrorType,
-  // Column Builder
-  ColumnSummary,
-  ColumnCondition,
-  StylePreset,
 } from "./_types";

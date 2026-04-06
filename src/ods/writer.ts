@@ -415,7 +415,7 @@ function writeContentXml(options: WriteOptions): string {
       }
 
       for (const item of sheet.data) {
-        const row = keys.map((k) => (k in item ? (item[k] as CellValue) : null));
+        const row = keys.map((k) => (k in item ? item[k] : null));
         rows.push(row);
       }
     }

@@ -95,12 +95,10 @@ export class XlsxStreamWriter {
   }
 
   /** Add a row from an object, using column definitions for value extraction.
-   *  Requires columns with key or value accessors. */
+   *  Requires columns with key accessors. */
   addObject(item: Record<string, unknown>): void {
-    if (!this.columns) throw new Error("addObject requires columns with key/value accessors");
+    if (!this.columns) throw new Error("addObject requires columns with key accessors");
     const values: CellValue[] = this.columns.map((col) => {
-      if (typeof col.value === "function") return col.value(item, this.rowCount);
-      if (typeof col.value === "string") return getByPath(item, col.value) as CellValue;
       if (col.key !== undefined) return (item[col.key] ?? null) as CellValue;
       return null;
     });
@@ -316,11 +314,4 @@ export class XlsxStreamWriter {
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-function getByPath(obj: unknown, path: string): unknown {
-  let cur: unknown = obj;
-  for (const p of path.split(".")) {
-    if (cur == null || typeof cur !== "object") return null;
-    cur = (cur as Record<string, unknown>)[p];
-  }
-  return cur ?? null;
-}
+

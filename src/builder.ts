@@ -94,7 +94,6 @@ export class WorkbookBuilder {
 export class SheetBuilder {
   private _columns: ColumnDef[] = [];
   private _rows: CellValue[][] = [];
-  private _data?: Array<Record<string, unknown>>;
   private _merges: MergeRange[] = [];
   private _freezePane?: FreezePane;
   private _validations: DataValidation[] = [];
@@ -128,14 +127,6 @@ export class SheetBuilder {
   /** Add multiple rows of values at once. */
   rows(data: CellValue[][]): this {
     this._rows.push(...data);
-    return this;
-  }
-
-  /** Set object data with column definitions.
-   *  Uses the data+columns path for full ColumnDef support (value accessors, transforms, formulas, etc.). */
-  objectRows<T extends Record<string, unknown>>(data: T[], cols: ColumnDef<T>[]): this {
-    this._data = data as Array<Record<string, unknown>>;
-    this._columns = cols as ColumnDef[];
     return this;
   }
 
@@ -193,7 +184,7 @@ export class SheetBuilder {
     return {
       name: this._name,
       columns: this._columns.length > 0 ? this._columns : undefined,
-      ...(this._data ? { data: this._data } : { rows: this._rows }),
+      rows: this._rows,
       cells: this._cells,
       merges: this._merges.length > 0 ? this._merges : undefined,
       freezePane: this._freezePane,
