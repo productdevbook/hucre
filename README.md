@@ -59,41 +59,41 @@ import { parseCsv, writeCsv } from "hucre/csv"; // CSV only (~2 KB gzipped)
 
 ### vs JavaScript / TypeScript Libraries
 
-|                        | hucre      | SheetJS CE    | ExcelJS      | xlsx-js-style |
-| ---------------------- | ---------- | ------------- | ------------ | ------------- |
-| **Dependencies**       | 0          | 0\*           | 12 (CVEs)    | 0\*           |
-| **Bundle (gzip)**      | ~18 KB     | ~300 KB       | ~500 KB      | ~300 KB       |
-| **ESM native**         | Yes        | Partial       | No (CJS)     | Partial       |
-| **TypeScript**         | Native     | Bolted-on     | Bolted-on    | Bolted-on     |
-| **Edge runtime**       | Yes        | No            | No           | No            |
-| **CSP compliant**      | Yes        | Yes           | No (eval)    | Yes           |
-| **npm published**      | Yes        | No (CDN only) | Stale        | Yes           |
-| **Read + Write**       | Yes        | Yes (Pro $)   | Yes          | Yes           |
-| **Styling**            | Yes        | No (Pro $)    | Yes          | Yes           |
-| **Cond. formatting**   | Yes (all)  | No (Pro $)    | Partial      | No            |
-| **Stream read + write**| Yes        | CSV only      | Yes          | CSV only      |
-| **ODS support**        | Yes        | Yes           | No           | Yes           |
-| **Round-trip**         | Yes        | Partial       | Partial      | Partial       |
-| **Sparklines**         | Yes        | No            | No           | No            |
-| **Tables**             | Yes        | Yes           | Yes          | Yes           |
-| **Images**             | Yes        | No (Pro $)    | Yes          | No            |
+|                         | hucre     | SheetJS CE    | ExcelJS   | xlsx-js-style |
+| ----------------------- | --------- | ------------- | --------- | ------------- |
+| **Dependencies**        | 0         | 0\*           | 12 (CVEs) | 0\*           |
+| **Bundle (gzip)**       | ~18 KB    | ~300 KB       | ~500 KB   | ~300 KB       |
+| **ESM native**          | Yes       | Partial       | No (CJS)  | Partial       |
+| **TypeScript**          | Native    | Bolted-on     | Bolted-on | Bolted-on     |
+| **Edge runtime**        | Yes       | No            | No        | No            |
+| **CSP compliant**       | Yes       | Yes           | No (eval) | Yes           |
+| **npm published**       | Yes       | No (CDN only) | Stale     | Yes           |
+| **Read + Write**        | Yes       | Yes (Pro $)   | Yes       | Yes           |
+| **Styling**             | Yes       | No (Pro $)    | Yes       | Yes           |
+| **Cond. formatting**    | Yes (all) | No (Pro $)    | Partial   | No            |
+| **Stream read + write** | Yes       | CSV only      | Yes       | CSV only      |
+| **ODS support**         | Yes       | Yes           | No        | Yes           |
+| **Round-trip**          | Yes       | Partial       | Partial   | Partial       |
+| **Sparklines**          | Yes       | No            | No        | No            |
+| **Tables**              | Yes       | Yes           | Yes       | Yes           |
+| **Images**              | Yes       | No (Pro $)    | Yes       | No            |
 
 \* SheetJS removed itself from npm; must install from CDN tarball.
 
 ### vs Libraries in Other Languages
 
-|                        | hucre (TS) | openpyxl (Py) | XlsxWriter (Py) | rust_xlsxwriter | Apache POI (Java) |
-| ---------------------- | ---------- | ------------- | ---------------- | --------------- | ----------------- |
-| **Read XLSX**          | Yes        | Yes           | No               | No              | Yes               |
-| **Write XLSX**         | Yes        | Yes           | Yes              | Yes             | Yes               |
-| **Streaming**          | Read+Write | Write-only    | No               | const_memory    | SXSSF (write)     |
-| **Charts**             | Round-trip | 15+ types     | 9 types          | 12+ types       | Limited           |
-| **Pivot tables**       | No         | Read-only     | No               | No              | Limited           |
-| **Cond. formatting**   | Yes (all)  | Yes           | Yes              | Yes             | Yes               |
-| **Sparklines**         | Yes        | No            | Yes              | Yes             | No                |
-| **Formula eval**       | No         | No            | No               | No              | Yes               |
-| **Multi-format**       | XLSX/ODS/CSV | XLSX only  | XLSX only        | XLSX only       | XLS/XLSX          |
-| **Zero dependencies**  | Yes        | lxml optional | No               | Yes             | No                |
+|                       | hucre (TS)   | openpyxl (Py) | XlsxWriter (Py) | rust_xlsxwriter | Apache POI (Java) |
+| --------------------- | ------------ | ------------- | --------------- | --------------- | ----------------- |
+| **Read XLSX**         | Yes          | Yes           | No              | No              | Yes               |
+| **Write XLSX**        | Yes          | Yes           | Yes             | Yes             | Yes               |
+| **Streaming**         | Read+Write   | Write-only    | No              | const_memory    | SXSSF (write)     |
+| **Charts**            | Round-trip   | 15+ types     | 9 types         | 12+ types       | Limited           |
+| **Pivot tables**      | No           | Read-only     | No              | No              | Limited           |
+| **Cond. formatting**  | Yes (all)    | Yes           | Yes             | Yes             | Yes               |
+| **Sparklines**        | Yes          | No            | Yes             | Yes             | No                |
+| **Formula eval**      | No           | No            | No              | No              | Yes               |
+| **Multi-format**      | XLSX/ODS/CSV | XLSX only     | XLSX only       | XLSX only       | XLS/XLSX          |
+| **Zero dependencies** | Yes          | lxml optional | No              | Yes             | No                |
 
 ## Features
 
@@ -641,6 +641,7 @@ Contributions are welcome! Please [open an issue](https://github.com/productdevb
 ### Roadmap
 
 **Upcoming Engine Features:**
+
 - Chart creation (bar, line, pie, scatter, area + subtypes)
 - XLS BIFF8 read (legacy Excel 97-2003)
 - XLSB binary format read
