@@ -1,6 +1,6 @@
 {
   "name": "hucre",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Zero-dependency spreadsheet engine. Read & write XLSX, CSV, ODS. Schema validation, streaming, tree-shakeable. Pure TypeScript, works everywhere.",
   "keywords": [
     "csv",
