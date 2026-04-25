@@ -58,6 +58,10 @@
     "./json": {
       "types": "./dist/json.d.mts",
       "default": "./dist/json.mjs"
+    },
+    "./xml": {
+      "types": "./dist/xml.d.mts",
+      "default": "./dist/xml.mjs"
     }
   },
   "scripts": {

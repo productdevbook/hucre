@@ -66,6 +66,10 @@ export type {
   FlattenOptions,
 } from "./json";
 
+// ── XML ────────────────────────────────────────────────────────────
+export { readXml, writeXml } from "./xml";
+export type { XmlReadOptions, XmlReadResult, XmlWriteOptions } from "./xml";
+
 // ── Schema Validation ──────────────────────────────────────────────
 export { validateWithSchema } from "./_schema";
 
