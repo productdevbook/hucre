@@ -6,7 +6,7 @@
   <br><br>
   Zero-dependency spreadsheet engine.
   <br>
-  Read & write XLSX, CSV, ODS. Schema validation, streaming, round-trip preservation. Pure TypeScript, works everywhere.
+  Read & write XLSX, CSV, ODS, JSON, NDJSON, XML. Schema validation, streaming, round-trip preservation. Pure TypeScript, works everywhere.
   <br><br>
   <a href="https://npmjs.com/package/hucre"><img src="https://img.shields.io/npm/v/hucre?style=flat&colorA=18181B&colorB=34d399" alt="npm version"></a>
   <a href="https://npmjs.com/package/hucre"><img src="https://img.shields.io/npm/dm/hucre?style=flat&colorA=18181B&colorB=34d399" alt="npm downloads"></a>
@@ -51,8 +51,11 @@ const xlsx = await writeXlsx({
 Import only what you need:
 
 ```ts
-import { readXlsx, writeXlsx } from "hucre/xlsx"; // XLSX only (~14 KB gzipped)
+import { readXlsx, writeXlsx } from "hucre/xlsx"; // XLSX only
 import { parseCsv, writeCsv } from "hucre/csv"; // CSV only (~2 KB gzipped)
+import { readOds, writeOds } from "hucre/ods"; // ODS only
+import { parseJson, writeNdjson } from "hucre/json"; // JSON / NDJSON
+import { readXml, writeXml } from "hucre/xml"; // Tabular XML
 ```
 
 ## Why hucre?
@@ -390,7 +393,117 @@ fillTemplate(workbook, {
 const output = await saveXlsx(workbook);
 ```
 
-### JSON Export
+### Object Shorthand (XLSX / ODS)
+
+Skip the `wb.sheets[0].rows[0] as headers, slice(1) as data` boilerplate — return objects directly, mirror of `parseCsvObjects`:
+
+```ts
+import { readXlsxObjects, writeXlsxObjects } from "hucre/xlsx";
+import { readOdsObjects, writeOdsObjects } from "hucre/ods";
+
+const { data, headers } = await readXlsxObjects(buffer, {
+  sheet: 0, // index or name (default: 0)
+  headerRow: 0, // 0-based (default: 0)
+  skipEmptyRows: true,
+  transformHeader: (h) => h.toLowerCase().replace(/ /g, "_"),
+  transformValue: (v, header) => (header === "price" ? Number(v) : v),
+});
+
+// Symmetric write — headers come from the first object's keys when omitted
+const xlsx = await writeXlsxObjects(
+  [
+    { Name: "Widget", Price: 9.99 },
+    { Name: "Gadget", Price: 24.5 },
+  ],
+  { sheetName: "Products" },
+);
+```
+
+### JSON / NDJSON
+
+```ts
+import {
+  parseJson,
+  parseNdjson,
+  writeJson,
+  writeNdjson,
+  workbookToJson,
+  NdjsonStreamWriter,
+  readNdjsonStream,
+} from "hucre/json";
+
+// Read — top-level array, { products: [...] } shape, or single object
+const { data, headers } = parseJson(jsonString);
+
+// Pick rows from a deeper path
+parseJson(text, { rowsAt: "data.rows" });
+
+// Flatten nested objects with dot-path keys (default: true)
+parseJson('[{"sku":"P1","pricing":{"cost":100}}]');
+// → data: [{ sku: "P1", "pricing.cost": 100 }]
+
+// NDJSON / JSON Lines — one object per line
+const out = parseNdjson(ndjsonText, {
+  onError: (line, ln) => console.warn(`bad line ${ln}`), // skip + report
+});
+
+// Round-trip a workbook (single sheet → array, multi-sheet → { Sheet: [...] })
+import { readXlsx } from "hucre/xlsx";
+const wb = await readXlsx(buffer);
+const json = workbookToJson(wb, { pretty: true });
+
+// Streaming write — works in Cloudflare Workers / Deno / Node 18+
+const writer = new NdjsonStreamWriter();
+for await (const row of source) writer.write(row);
+writer.end();
+return new Response(writer.toStream(), {
+  headers: { "content-type": "application/x-ndjson" },
+});
+
+// Streaming read
+for await (const row of readNdjsonStream(request.body!)) {
+  console.log(row);
+}
+```
+
+### XML
+
+Read and write tabular XML — product feeds (GS1 GDSN, Trendyol, marketplace exports), ERP dumps (SAP B1, Logo GO, Netsis), CRM catalogs. SAX-based: 50–200 MB feeds don't load into memory.
+
+```ts
+import { readXml, writeXml } from "hucre/xml";
+
+// Auto-detects the most-frequently-repeating direct child of root as the row tag
+const { data, headers, rowTag } = readXml(`
+  <Catalog>
+    <Product code="P1">
+      <Name>Oak</Name>
+      <Pricing currency="USD">
+        <Cost>100</Cost>
+        <Retail>180</Retail>
+      </Pricing>
+    </Product>
+    <Product code="P2"><Name>Pine</Name></Product>
+  </Catalog>
+`);
+// rowTag: "Product"
+// data: [{ "@code": "P1", Name: "Oak", "Pricing.@currency": "USD",
+//         "Pricing.Cost": "100", "Pricing.Retail": "180" }, ...]
+
+// Override auto-detect with rowTag, strip namespace prefixes, control flatten
+readXml(xml, { rowTag: "ns:Product", stripNamespaces: true, flatten: true });
+
+// Write — @-keyed fields become XML attributes, dot-paths reconstruct elements
+const xml = writeXml(
+  [
+    { "@code": "P1", Name: "Oak", "Pricing.Cost": 100 },
+    { "@code": "P2", Name: "Pine", "Pricing.Cost": 90 },
+  ],
+  { rootTag: "Catalog", rowTag: "Product", pretty: true },
+);
+```
+
+### JSON Export (legacy)
 
 ```ts
 import { toJson } from "hucre";
@@ -399,6 +512,8 @@ toJson(sheet, { format: "objects" }); // [{Name:"Widget", Price:9.99}, ...]
 toJson(sheet, { format: "columns" }); // {Name:["Widget"], Price:[9.99]}
 toJson(sheet, { format: "arrays" }); // {headers:[...], data:[[...]]}
 ```
+
+For new code prefer `writeJson` / `workbookToJson` from `hucre/json` — same result, consistent with `parseJson`/`parseNdjson`/`writeNdjson`.
 
 ### CSV
 
@@ -533,22 +648,26 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 
 ### XLSX
 
-| Function                          | Description                                   |
-| --------------------------------- | --------------------------------------------- |
-| `readXlsx(input, options?)`       | Parse XLSX from `Uint8Array \| ArrayBuffer`   |
-| `writeXlsx(options)`              | Generate XLSX, returns `Uint8Array`           |
-| `openXlsx(input, options?)`       | Open for round-trip (preserves unknown parts) |
-| `saveXlsx(workbook)`              | Save round-trip workbook back to XLSX         |
-| `streamXlsxRows(input, options?)` | AsyncGenerator yielding rows one at a time    |
-| `XlsxStreamWriter`                | Class for incremental row-by-row XLSX writing |
+| Function                           | Description                                            |
+| ---------------------------------- | ------------------------------------------------------ |
+| `readXlsx(input, options?)`        | Parse XLSX from `Uint8Array \| ArrayBuffer`            |
+| `writeXlsx(options)`               | Generate XLSX, returns `Uint8Array`                    |
+| `readXlsxObjects(input, options?)` | Read sheet as `{ data, headers }` — mirror of CSV      |
+| `writeXlsxObjects(data, options?)` | Write objects to XLSX (auto-derives headers from keys) |
+| `openXlsx(input, options?)`        | Open for round-trip (preserves unknown parts)          |
+| `saveXlsx(workbook)`               | Save round-trip workbook back to XLSX                  |
+| `streamXlsxRows(input, options?)`  | AsyncGenerator yielding rows one at a time             |
+| `XlsxStreamWriter`                 | Class for incremental row-by-row XLSX writing          |
 
 ### ODS
 
-| Function                   | Description                          |
-| -------------------------- | ------------------------------------ |
-| `readOds(input, options?)` | Parse ODS (OpenDocument Spreadsheet) |
-| `writeOds(options)`        | Generate ODS                         |
-| `streamOdsRows(input)`     | AsyncGenerator yielding ODS rows     |
+| Function                          | Description                          |
+| --------------------------------- | ------------------------------------ |
+| `readOds(input, options?)`        | Parse ODS (OpenDocument Spreadsheet) |
+| `writeOds(options)`               | Generate ODS                         |
+| `readOdsObjects(input, options?)` | Read sheet as `{ data, headers }`    |
+| `writeOdsObjects(data, options?)` | Write objects to ODS                 |
+| `streamOdsRows(input)`            | AsyncGenerator yielding ODS rows     |
 
 ### CSV
 
@@ -563,6 +682,26 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `CsvStreamWriter`                  | Class for incremental CSV writing            |
 | `writeTsv(rows, options?)`         | Write TSV (tab-separated)                    |
 | `fetchCsv(url, options?)`          | Fetch and parse CSV from URL                 |
+
+### JSON
+
+| Function                          | Description                                                    |
+| --------------------------------- | -------------------------------------------------------------- |
+| `parseJson(input, options?)`      | Parse JSON string/Uint8Array → `{ data, headers }`             |
+| `parseValue(value, options?)`     | Same on already-parsed JSON                                    |
+| `parseNdjson(input, options?)`    | Parse NDJSON / JSON Lines (`onError` skips invalid)            |
+| `writeJson(data, options?)`       | Serialize rows to a JSON string                                |
+| `writeNdjson(data, options?)`     | Serialize rows to NDJSON, one object per line                  |
+| `workbookToJson(wb, options?)`    | Convert a `Workbook` to JSON (single-sheet array or per-sheet) |
+| `readNdjsonStream(stream, opts?)` | Async generator over a `ReadableStream<Uint8Array>`            |
+| `NdjsonStreamWriter`              | Incremental writer with `toStream(): ReadableStream`           |
+
+### XML
+
+| Function                   | Description                                              |
+| -------------------------- | -------------------------------------------------------- |
+| `readXml(input, options?)` | SAX-based XML reader, auto-detects repeating row element |
+| `writeXml(data, options?)` | Serialize rows to XML; `@`-keys → attributes             |
 
 ### Sheet Operations
 
@@ -590,6 +729,7 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `toMarkdown(sheet, options?)` | Markdown table with auto-alignment               |
 | `toJson(sheet, options?)`     | JSON (objects, arrays, or columns format)        |
 | `fromHtml(html, options?)`    | Parse HTML table string → Sheet                  |
+| `writeTsv(rows, options?)`    | Write TSV (tab-separated)                        |
 
 ### Builder
 
