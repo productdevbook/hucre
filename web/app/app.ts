@@ -111,7 +111,16 @@ async function handleReadFile(file: File) {
     const data = new Uint8Array(buffer);
 
     const headerRow = parseInt(($("read-header") as HTMLInputElement).value) || 0;
-    const wb = await readXlsx(data, { readStyles: ($("read-styles") as HTMLInputElement).checked });
+    const skipHidden = ($("read-skip-hidden") as HTMLInputElement).checked;
+    const wb = await readXlsx(data, {
+      readStyles: ($("read-styles") as HTMLInputElement).checked,
+      ...(skipHidden
+        ? {
+            sheets: (info: { hidden?: boolean; veryHidden?: boolean }) =>
+              !info.hidden && !info.veryHidden,
+          }
+        : {}),
+    });
 
     if (wb.sheets.length === 0) {
       output.innerHTML = '<p class="error">No sheets found</p>';
@@ -213,8 +222,34 @@ function setupWrite() {
       const freezeRows = parseInt(($("write-freeze") as HTMLInputElement).value) || 0;
       const autoFilter = ($("write-autofilter") as HTMLInputElement).checked;
       const autoWidth = ($("write-autowidth") as HTMLInputElement).checked;
+      const checkboxCols = ($("write-checkbox-cols") as HTMLInputElement).value
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
 
       const columns: Record<string, { header?: string; width?: number; numFmt?: string }> = rawCols;
+      const columnKeys = Object.keys(columns);
+
+      // Build a cells Map flagging boolean cells in checkboxCols as Excel 2024 checkboxes.
+      let cellsMap: Map<string, { value: CellValue; type: "boolean"; checkbox: true }> | undefined;
+      if (checkboxCols.length > 0) {
+        cellsMap = new Map();
+        // header is row 0; data rows start at row 1
+        for (let r = 0; r < rawData.length; r++) {
+          for (const cbKey of checkboxCols) {
+            const colIdx = columnKeys.indexOf(cbKey);
+            if (colIdx === -1) continue;
+            const v = (rawData[r] as Record<string, CellValue>)[cbKey];
+            if (typeof v !== "boolean") continue;
+            cellsMap.set(`${r + 1},${colIdx}`, {
+              value: v,
+              type: "boolean",
+              checkbox: true,
+            });
+          }
+        }
+      }
+
       const sheet: WriteSheet = {
         name: sheetName,
         data: rawData,
@@ -225,10 +260,11 @@ function setupWrite() {
           numFmt: col.numFmt,
           autoWidth: autoWidth && !col.width,
         })),
+        cells: cellsMap,
         freezePane: freezeRows > 0 ? { rows: freezeRows } : undefined,
         autoFilter: autoFilter
           ? {
-              range: `A1:${String.fromCharCode(64 + Object.keys(columns).length)}${rawData.length + 1}`,
+              range: `A1:${String.fromCharCode(64 + columnKeys.length)}${rawData.length + 1}`,
             }
           : undefined,
       };
@@ -536,6 +572,70 @@ function setupStreaming() {
   });
   fileInput.addEventListener("change", () => {
     if (fileInput.files?.[0]) handleStreamFile(fileInput.files[0]);
+  });
+
+  // ── Auto-split past Excel's row limit ─────────────────────────
+  let lastAutosplitBlob: Blob | null = null;
+
+  $("autosplit-generate").addEventListener("click", async () => {
+    const output = $("autosplit-output");
+    try {
+      const totalRows = parseInt(($("autosplit-rows") as HTMLInputElement).value) || 2500;
+      const limit = parseInt(($("autosplit-limit") as HTMLInputElement).value) || 1000;
+      const repeat = ($("autosplit-repeat") as HTMLInputElement).checked;
+
+      output.innerHTML = '<p style="color:var(--text-dim);text-align:center">Generating...</p>';
+      const start = performance.now();
+
+      const writer = new XlsxStreamWriter({
+        name: "BigData",
+        columns: [
+          { key: "id", header: "ID" },
+          { key: "value", header: "Value" },
+        ],
+        maxRowsPerSheet: limit,
+        repeatHeaders: repeat,
+      });
+      for (let i = 0; i < totalRows; i++) {
+        writer.addRow([i + 1, Math.random().toFixed(4)]);
+      }
+      const xlsx = await writer.finish();
+      const writeTime = performance.now() - start;
+
+      const wb = await readXlsx(xlsx);
+      const expectedSheets = Math.ceil(repeat ? totalRows / (limit - 1) : totalRows / limit);
+
+      lastAutosplitBlob = new Blob([new Uint8Array(xlsx)], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+
+      let html = `<div class="meta">${totalRows} rows → ${wb.sheets.length} sheet${wb.sheets.length !== 1 ? "s" : ""} (${writeTime.toFixed(0)} ms, ${(xlsx.byteLength / 1024).toFixed(1)} KB)</div>`;
+      html += `<div class="meta">Expected ~${expectedSheets} sheets at maxRowsPerSheet=${limit}${repeat ? " (with repeated header)" : ""}</div>`;
+      html +=
+        "<table><thead><tr><th>Sheet</th><th>Rows</th><th>First row</th><th>Last row</th></tr></thead><tbody>";
+      for (const sheet of wb.sheets) {
+        const first = sheet.rows[0];
+        const last = sheet.rows[sheet.rows.length - 1];
+        html += `<tr><td><strong>${escapeHtml(sheet.name)}</strong></td><td class="num">${sheet.rows.length}</td><td>${escapeHtml(JSON.stringify(first))}</td><td>${escapeHtml(JSON.stringify(last))}</td></tr>`;
+      }
+      html += "</tbody></table>";
+      output.innerHTML = html;
+
+      ($("autosplit-download") as HTMLButtonElement).disabled = false;
+    } catch (e: unknown) {
+      output.innerHTML = `<p class="error">${escapeHtml(String(e))}</p>`;
+    }
+  });
+
+  $("autosplit-download").addEventListener("click", () => {
+    if (!lastAutosplitBlob) return;
+    const url = URL.createObjectURL(lastAutosplitBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "autosplit.xlsx";
+    a.click();
+    URL.revokeObjectURL(url);
+    toast("XLSX downloaded");
   });
 }
 

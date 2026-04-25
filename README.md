@@ -118,6 +118,17 @@ for (const sheet of wb.sheets) {
 }
 ```
 
+`sheets` also accepts a predicate that runs against lightweight metadata
+**before** each worksheet body is parsed — useful for visibility-based
+selection without paying the I/O cost of the full read:
+
+```ts
+const wb = await readXlsx(buf, {
+  sheets: (info) => !info.hidden && !info.veryHidden,
+});
+// info: { name, index, hidden?, veryHidden? }
+```
+
 Supported cell types: strings, numbers, booleans, dates, formulas, rich text, errors, inline strings.
 
 ### Writing
@@ -146,7 +157,7 @@ const buffer = await writeXlsx({
 });
 ```
 
-Features: cell styles, auto column widths, merged cells, freeze/split panes, auto-filter with criteria, data validation, hyperlinks, images (PNG/JPEG/GIF/SVG/WebP), comments, tables, conditional formatting (cellIs/colorScale/dataBar/iconSet), named ranges, print settings, page breaks, sheet protection, workbook protection, rich text, shared/array/dynamic formulas, sparklines, textboxes, background images, number formats, hidden sheets, HTML/Markdown/JSON/TSV export, template engine.
+Features: cell styles, auto column widths, merged cells, freeze/split panes, auto-filter with criteria, data validation, hyperlinks, images (PNG/JPEG/GIF/SVG/WebP), comments, tables, conditional formatting (cellIs/colorScale/dataBar/iconSet), named ranges, print settings, page breaks, sheet protection, workbook protection, rich text, shared/array/dynamic formulas, sparklines, textboxes, background images, number formats, hidden sheets, Excel 2024 native checkboxes, HTML/Markdown/JSON/TSV export, template engine.
 
 ### Auto Column Width
 
@@ -254,6 +265,30 @@ for (let i = 0; i < 100_000; i++) {
   writer.addRow([i + 1, Math.random()]);
 }
 const buffer = await writer.finish();
+```
+
+#### Auto-split past Excel's row limit
+
+Pass `maxRowsPerSheet` to spill into `{name}_2`, `{name}_3`, … when the
+data crosses Excel's 1,048,576-row hard limit (default). The captured
+header row is repeated on every rolled sheet.
+
+```ts
+import { XlsxStreamWriter, XLSX_MAX_ROWS_PER_SHEET } from "hucre/xlsx";
+
+const writer = new XlsxStreamWriter({
+  name: "BigData",
+  columns: [
+    { key: "id", header: "ID" },
+    { key: "v", header: "Value" },
+  ],
+  maxRowsPerSheet: 1_000_000, // optional override; default = 1_048_576
+  repeatHeaders: true, // default
+});
+
+for (let i = 0; i < 3_000_000; i++) writer.addRow([i + 1, Math.random()]);
+// → BigData, BigData_2, BigData_3
+const buf = await writer.finish();
 ```
 
 ### ODS (OpenDocument)
@@ -392,6 +427,37 @@ fillTemplate(workbook, {
 });
 const output = await saveXlsx(workbook);
 ```
+
+### Excel 2024 Checkboxes
+
+Boolean cells can be flagged as native Excel 2024 checkboxes via Microsoft's
+FeaturePropertyBag extension. The cell value drives the checked state; older
+Excel and LibreOffice fall back to the raw `TRUE`/`FALSE` display since the
+on-disk value is just a normal boolean.
+
+```ts
+import { writeXlsx, readXlsx } from "hucre/xlsx";
+
+const buf = await writeXlsx({
+  sheets: [
+    {
+      name: "Tasks",
+      rows: [["Done?"], [true], [false], [true]],
+      cells: new Map([
+        ["1,0", { value: true, type: "boolean", checkbox: true }],
+        ["2,0", { value: false, type: "boolean", checkbox: true }],
+        ["3,0", { value: true, type: "boolean", checkbox: true }],
+      ]),
+    },
+  ],
+});
+
+const wb = await readXlsx(buf);
+wb.sheets[0].cells?.get("1,0")?.checkbox; // true
+```
+
+This is the first JS/TS implementation of native checkboxes — only `XlsxWriter`
+(Python) and `rust_xlsxwriter` had it before.
 
 ### Object Shorthand (XLSX / ODS)
 
@@ -648,16 +714,17 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 
 ### XLSX
 
-| Function                           | Description                                            |
-| ---------------------------------- | ------------------------------------------------------ |
-| `readXlsx(input, options?)`        | Parse XLSX from `Uint8Array \| ArrayBuffer`            |
-| `writeXlsx(options)`               | Generate XLSX, returns `Uint8Array`                    |
-| `readXlsxObjects(input, options?)` | Read sheet as `{ data, headers }` — mirror of CSV      |
-| `writeXlsxObjects(data, options?)` | Write objects to XLSX (auto-derives headers from keys) |
-| `openXlsx(input, options?)`        | Open for round-trip (preserves unknown parts)          |
-| `saveXlsx(workbook)`               | Save round-trip workbook back to XLSX                  |
-| `streamXlsxRows(input, options?)`  | AsyncGenerator yielding rows one at a time             |
-| `XlsxStreamWriter`                 | Class for incremental row-by-row XLSX writing          |
+| Function                           | Description                                                             |
+| ---------------------------------- | ----------------------------------------------------------------------- |
+| `readXlsx(input, options?)`        | Parse XLSX from `Uint8Array \| ArrayBuffer`                             |
+| `writeXlsx(options)`               | Generate XLSX, returns `Uint8Array`                                     |
+| `readXlsxObjects(input, options?)` | Read sheet as `{ data, headers }` — mirror of CSV                       |
+| `writeXlsxObjects(data, options?)` | Write objects to XLSX (auto-derives headers from keys)                  |
+| `openXlsx(input, options?)`        | Open for round-trip (preserves unknown parts)                           |
+| `saveXlsx(workbook)`               | Save round-trip workbook back to XLSX                                   |
+| `streamXlsxRows(input, options?)`  | AsyncGenerator yielding rows one at a time                              |
+| `XlsxStreamWriter`                 | Incremental row-by-row XLSX writing; auto-splits past `maxRowsPerSheet` |
+| `XLSX_MAX_ROWS_PER_SHEET`          | Excel hard row limit (1,048,576) — exported constant                    |
 
 ### ODS
 

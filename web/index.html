@@ -66,6 +66,11 @@
                 <div class="field">
                   <label> <input id="read-dates" type="checkbox" checked /> Detect Dates </label>
                 </div>
+                <div class="field">
+                  <label>
+                    <input id="read-skip-hidden" type="checkbox" /> Skip Hidden Sheets
+                  </label>
+                </div>
               </div>
             </details>
 
@@ -124,6 +129,16 @@
                 </div>
                 <div class="field">
                   <label> <input id="write-autowidth" type="checkbox" checked /> Auto Width </label>
+                </div>
+                <div class="field full">
+                  <label>
+                    <input
+                      id="write-checkbox-cols"
+                      type="text"
+                      placeholder="Excel 2024 checkbox columns (comma-separated keys, e.g. active)"
+                      style="width: 100%"
+                    />
+                  </label>
                 </div>
               </div>
             </details>
@@ -487,6 +502,53 @@ Sensor,45.99,SNS-005,64,unknown</textarea
               <p style="color: var(--text-dim); text-align: center; padding: 3rem 0">
                 Drop an .xlsx file to stream rows via ReadableStream
               </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Auto-split past Excel's row limit ── -->
+        <h3
+          style="
+            margin: 1.5rem 0 0.75rem;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+          "
+        >
+          Auto-split past Excel's 1,048,576-row limit
+        </h3>
+        <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.75rem">
+          When <code>maxRowsPerSheet</code> is reached, the writer rolls over to
+          <code>{name}_2</code>, <code>{name}_3</code>, … with the captured header repeated.
+        </p>
+        <div class="split">
+          <div class="controls">
+            <div class="field full">
+              <label for="autosplit-rows">Total rows to write</label>
+              <input id="autosplit-rows" type="number" value="2500" min="100" max="100000" />
+            </div>
+            <div class="field full">
+              <label for="autosplit-limit">maxRowsPerSheet</label>
+              <input id="autosplit-limit" type="number" value="1000" min="2" max="100000" />
+            </div>
+            <div class="field full">
+              <label>
+                <input id="autosplit-repeat" type="checkbox" checked /> Repeat header on each sheet
+              </label>
+            </div>
+            <button class="btn primary" id="autosplit-generate" style="margin-top: 0.5rem">
+              Generate & Split
+            </button>
+          </div>
+          <div class="preview">
+            <div class="output" id="autosplit-output">
+              <p style="color: var(--text-dim); text-align: center; padding: 3rem 0">
+                Click "Generate &amp; Split" to see how rows roll over to new sheets
+              </p>
+            </div>
+            <div class="actions">
+              <button class="btn" id="autosplit-download" disabled>Download .xlsx</button>
             </div>
           </div>
         </div>
