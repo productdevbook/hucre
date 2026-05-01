@@ -1,7 +1,7 @@
 // ── XLSX Writer ──────────────────────────────────────────────────────
 // Generates valid Office Open XML spreadsheet files (XLSX).
 
-import type { WriteOptions, WriteOutput, NamedRange } from "../_types";
+import type { WriteOptions, WriteOutput, NamedRange, WorkbookProperties } from "../_types";
 import { ZipWriter } from "../zip/writer";
 import { writeContentTypes } from "./content-types-writer";
 import { writeFeaturePropertyBagXml } from "./feature-property-bag";
@@ -33,19 +33,31 @@ const REL_TABLE = "http://schemas.openxmlformats.org/officeDocument/2006/relatio
 const REL_IMAGE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
 
 /**
+ * Promote the first non-empty `sheet.a11y.summary` to
+ * `properties.description` when the workbook does not already declare one.
+ * This is what screen readers announce when the file is opened.
+ */
+function effectiveProperties(options: WriteOptions): WorkbookProperties | undefined {
+  const props = options.properties;
+  if (props?.description) return props;
+
+  for (const sheet of options.sheets) {
+    const summary = sheet.a11y?.summary;
+    if (summary && summary.trim().length > 0) {
+      return { ...(props ?? {}), description: summary };
+    }
+  }
+  return props;
+}
+
+/**
  * Write a Workbook to XLSX format.
  * Returns a Uint8Array containing the ZIP archive.
  */
 export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
-  const {
-    sheets,
-    defaultFont,
-    dateSystem,
-    namedRanges,
-    properties,
-    activeSheet,
-    workbookProtection,
-  } = options;
+  const { sheets, defaultFont, dateSystem, namedRanges, activeSheet, workbookProtection } = options;
+
+  const properties = effectiveProperties(options);
 
   // Create shared collectors
   const styles = createStylesCollector(defaultFont);

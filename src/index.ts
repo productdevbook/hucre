@@ -73,6 +73,10 @@ export type { XmlReadOptions, XmlReadResult, XmlWriteOptions } from "./xml";
 // ── Schema Validation ──────────────────────────────────────────────
 export { validateWithSchema } from "./_schema";
 
+// ── Accessibility ──────────────────────────────────────────────────
+export * as a11y from "./a11y";
+export type { A11yIssue, A11ySeverity, A11yCode, A11yLocation, SheetA11y } from "./_types";
+
 // ── Date Utilities ─────────────────────────────────────────────────
 export {
   serialToDate,

@@ -461,6 +461,10 @@ export interface SheetTextBox {
     fillColor?: string;
     borderColor?: string;
   };
+  /** Alternative text for screen readers (lands in xdr:cNvPr/@descr). */
+  altText?: string;
+  /** Title/caption for the shape (lands in xdr:cNvPr/@title). */
+  title?: string;
 }
 
 // ── Image ──────────────────────────────────────────────────────────
@@ -475,6 +479,64 @@ export interface SheetImage {
   };
   width?: number;
   height?: number;
+  /** Alternative text for screen readers (lands in xdr:cNvPr/@descr). */
+  altText?: string;
+  /** Title/caption for the image (lands in xdr:cNvPr/@title). */
+  title?: string;
+}
+
+// ── Accessibility ──────────────────────────────────────────────────
+
+/**
+ * Per-sheet accessibility metadata. Hints to screen readers and
+ * input to {@link audit} from the `hucre/a11y` entry point.
+ */
+export interface SheetA11y {
+  /**
+   * Short, human-readable summary of the sheet's purpose. If the
+   * workbook does not already declare a `properties.description`,
+   * the first non-empty summary across the workbook is copied there
+   * so screen readers announce it when the file is opened.
+   */
+  summary?: string;
+  /**
+   * 0-based row index that should be treated as the column-header
+   * row. Used by the audit to verify a header is present and to
+   * cross-check tables that span the same range.
+   */
+  headerRow?: number;
+}
+
+/** Severity of an accessibility finding. */
+export type A11ySeverity = "error" | "warning" | "info";
+
+/** Stable code identifying an accessibility issue. */
+export type A11yCode =
+  | "no-doc-title"
+  | "no-doc-description"
+  | "no-header-row"
+  | "missing-alt-text"
+  | "merged-header-row"
+  | "low-contrast"
+  | "empty-sheet"
+  | "blank-row-in-data";
+
+/** Pinpoint where an issue applies. */
+export interface A11yLocation {
+  sheet?: string;
+  /** Cell reference like "B5" or range like "A1:D1". */
+  ref?: string;
+  /** Image index inside `sheet.images`. */
+  image?: number;
+  /** Text-box index inside `sheet.textBoxes`. */
+  textBox?: number;
+}
+
+export interface A11yIssue {
+  type: A11ySeverity;
+  code: A11yCode;
+  message: string;
+  location?: A11yLocation;
 }
 
 // ── Sheet Protection ───────────────────────────────────────────────
@@ -594,6 +656,8 @@ export interface Sheet {
   sparklines?: Sparkline[];
   /** Text boxes (shapes with text) */
   textBoxes?: SheetTextBox[];
+  /** Accessibility metadata for screen readers and the `audit` helper. */
+  a11y?: SheetA11y;
 }
 
 // ── Workbook Properties ────────────────────────────────────────────
@@ -754,6 +818,8 @@ export interface WriteSheet {
   sparklines?: Sparkline[];
   /** Text boxes (shapes with text) */
   textBoxes?: SheetTextBox[];
+  /** Accessibility metadata for screen readers and the `audit` helper. */
+  a11y?: SheetA11y;
 }
 
 // ── Outline Properties ────────────────────────────────────────────

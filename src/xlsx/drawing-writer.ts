@@ -134,8 +134,15 @@ export function writeDrawing(
       xmlElement("xdr:rowOff", undefined, "0"),
     ]);
 
+    const cNvPrAttrs: Record<string, string | number> = {
+      id: i + 2,
+      name: `Picture ${i + 1}`,
+    };
+    if (img.title) cNvPrAttrs.title = img.title;
+    if (img.altText) cNvPrAttrs.descr = img.altText;
+
     const nvPicPr = xmlElement("xdr:nvPicPr", undefined, [
-      xmlSelfClose("xdr:cNvPr", { id: i + 2, name: `Picture ${i + 1}` }),
+      xmlSelfClose("xdr:cNvPr", cNvPrAttrs),
       xmlElement("xdr:cNvPicPr", undefined, [xmlSelfClose("a:picLocks", { noChangeAspect: 1 })]),
     ]);
 
@@ -194,8 +201,15 @@ export function writeDrawing(
         xmlElement("xdr:rowOff", undefined, "0"),
       ]);
 
+      const cNvPrAttrs: Record<string, string | number> = {
+        id: shapeId++,
+        name: `TextBox ${t + 1}`,
+      };
+      if (tb.title) cNvPrAttrs.title = tb.title;
+      if (tb.altText) cNvPrAttrs.descr = tb.altText;
+
       const nvSpPr = xmlElement("xdr:nvSpPr", undefined, [
-        xmlSelfClose("xdr:cNvPr", { id: shapeId++, name: `TextBox ${t + 1}` }),
+        xmlSelfClose("xdr:cNvPr", cNvPrAttrs),
         xmlElement("xdr:cNvSpPr", { txBox: 1 }, []),
       ]);
 
