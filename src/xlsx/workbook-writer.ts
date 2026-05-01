@@ -121,12 +121,15 @@ const REL_VBA_PROJECT = "http://schemas.microsoft.com/office/2006/relationships/
 const REL_FEATURE_PROPERTY_BAG =
   "http://schemas.microsoft.com/office/2022/11/relationships/FeaturePropertyBag";
 
+const REL_PERSON = "http://schemas.microsoft.com/office/2017/10/relationships/person";
+
 /** Generate xl/_rels/workbook.xml.rels */
 export function writeWorkbookRels(
   sheetCount: number,
   hasSharedStrings: boolean,
   hasMacros?: boolean,
   hasFeaturePropertyBag?: boolean,
+  hasPersons?: boolean,
 ): string {
   const children: string[] = [];
 
@@ -193,6 +196,18 @@ export function writeWorkbookRels(
         Id: `rId${nextRid}`,
         Type: REL_FEATURE_PROPERTY_BAG,
         Target: "featurePropertyBag/featurePropertyBag.xml",
+      }),
+    );
+    nextRid++;
+  }
+
+  // Threaded-comments person directory (Excel 365)
+  if (hasPersons) {
+    children.push(
+      xmlSelfClose("Relationship", {
+        Id: `rId${nextRid}`,
+        Type: REL_PERSON,
+        Target: "persons/person.xml",
       }),
     );
   }

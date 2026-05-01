@@ -19,6 +19,8 @@ const CT_COMMENTS = "application/vnd.openxmlformats-officedocument.spreadsheetml
 const CT_VML = "application/vnd.openxmlformats-officedocument.vmlDrawing";
 const CT_TABLE = "application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml";
 const CT_THEME = "application/vnd.openxmlformats-officedocument.theme+xml";
+const CT_THREADED_COMMENTS = "application/vnd.ms-excel.threadedcomments+xml";
+const CT_PERSON = "application/vnd.ms-excel.person+xml";
 
 /** Image extension → content type mapping */
 const IMAGE_CONTENT_TYPES: Record<string, string> = {
@@ -40,6 +42,13 @@ export interface ContentTypesOptions {
   commentIndices?: number[];
   /** 1-based indices of tables (e.g. [1, 2, 3] means table1.xml, table2.xml, table3.xml exist) */
   tableIndices?: number[];
+  /**
+   * 1-based indices of sheets that have a threadedComments part. Each
+   * entry adds an `Override` for `/xl/threadedComments/threadedCommentN.xml`.
+   */
+  threadedCommentSheetIndices?: number[];
+  /** Whether `xl/persons/person.xml` is present. */
+  hasPersons?: boolean;
   /** Whether docProps/core.xml is present */
   hasCoreProps?: boolean;
   /** Whether docProps/app.xml is present */
@@ -172,6 +181,28 @@ export function writeContentTypes(
         }),
       );
     }
+  }
+
+  // Override for each threadedComments part (Excel 365)
+  if (opts.threadedCommentSheetIndices) {
+    for (const idx of opts.threadedCommentSheetIndices) {
+      children.push(
+        xmlSelfClose("Override", {
+          PartName: `/xl/threadedComments/threadedComment${idx}.xml`,
+          ContentType: CT_THREADED_COMMENTS,
+        }),
+      );
+    }
+  }
+
+  // Override for the workbook-wide persons directory
+  if (opts.hasPersons) {
+    children.push(
+      xmlSelfClose("Override", {
+        PartName: "/xl/persons/person.xml",
+        ContentType: CT_PERSON,
+      }),
+    );
   }
 
   // Override for FeaturePropertyBag (Excel 2024 checkboxes)

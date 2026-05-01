@@ -54,6 +54,9 @@ const REL_COMMENTS = "http://schemas.openxmlformats.org/officeDocument/2006/rela
 const REL_VML_DRAWING =
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing";
 const REL_TABLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/table";
+const REL_THREADED_COMMENT =
+  "http://schemas.microsoft.com/office/2017/10/relationships/threadedComment";
+const REL_PERSON = "http://schemas.microsoft.com/office/2017/10/relationships/person";
 
 /**
  * Parts that defter regenerates from parsed data.
@@ -280,6 +283,16 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     }
   }
 
+  // Detect Excel 365 threaded comments + persons surviving in raw entries.
+  // Threaded comments live at xl/threadedComments/threadedCommentN.xml where
+  // N matches the worksheet's 1-based index, so we just probe each sheet.
+  const threadedCommentSheetIndices: number[] = [];
+  for (let i = 0; i < worksheetResults.length; i++) {
+    const probe = `xl/threadedComments/threadedComment${i + 1}.xml`;
+    if (workbook._rawEntries.has(probe)) threadedCommentSheetIndices.push(i + 1);
+  }
+  const hasPersons = workbook._rawEntries.has("xl/persons/person.xml");
+
   // Build ZIP archive
   const zip = new ZipWriter();
 
@@ -324,6 +337,9 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     imageExtensions: imageExtensions.size > 0 ? imageExtensions : undefined,
     commentIndices: commentIndices.length > 0 ? commentIndices : undefined,
     tableIndices: allTableIndices.length > 0 ? allTableIndices : undefined,
+    threadedCommentSheetIndices:
+      threadedCommentSheetIndices.length > 0 ? threadedCommentSheetIndices : undefined,
+    hasPersons: hasPersons || undefined,
     hasCoreProps: true,
     hasAppProps: true,
     hasMacros: workbook.hasMacros,
@@ -354,7 +370,15 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
   // xl/_rels/workbook.xml.rels
   zip.add(
     "xl/_rels/workbook.xml.rels",
-    encoder.encode(writeWorkbookRels(writeSheets.length, hasSharedStrings, workbook.hasMacros)),
+    encoder.encode(
+      writeWorkbookRels(
+        writeSheets.length,
+        hasSharedStrings,
+        workbook.hasMacros,
+        false, // hasFeaturePropertyBag — not yet roundtripped
+        hasPersons,
+      ),
+    ),
   );
 
   // xl/styles.xml
@@ -378,8 +402,9 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     const hasDrawing = drawing !== null && result.drawingRId !== null;
     const hasComments = comments !== null && result.legacyDrawingRId !== null;
     const hasTables = result.tables.length > 0;
+    const hasThreadedComments = threadedCommentSheetIndices.includes(i + 1);
 
-    if (hasHyperlinks || hasDrawing || hasComments || hasTables) {
+    if (hasHyperlinks || hasDrawing || hasComments || hasTables || hasThreadedComments) {
       const relElements: string[] = [];
 
       for (const rel of result.hyperlinkRelationships) {
@@ -430,6 +455,27 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
         );
       }
 
+      // Threaded comments (Excel 365). The rId only needs to be unique
+      // within this rels file — pick the next id past everything we've
+      // already emitted for this sheet.
+      if (hasThreadedComments) {
+        const usedIds = new Set<number>();
+        for (const r of result.hyperlinkRelationships) usedIds.add(relIdNum(r.id));
+        if (result.drawingRId) usedIds.add(relIdNum(result.drawingRId));
+        if (result.legacyDrawingRId) usedIds.add(relIdNum(result.legacyDrawingRId));
+        if (result.commentsRId) usedIds.add(relIdNum(result.commentsRId));
+        for (const t of result.tables) usedIds.add(relIdNum(t.rId));
+        let next = 1;
+        while (usedIds.has(next)) next++;
+        relElements.push(
+          xmlSelfClose("Relationship", {
+            Id: `rId${next}`,
+            Type: REL_THREADED_COMMENT,
+            Target: `../threadedComments/threadedComment${i + 1}.xml`,
+          }),
+        );
+      }
+
       const relsXml = xmlDocument("Relationships", { xmlns: NS_RELATIONSHIPS }, relElements);
       zip.add(`xl/worksheets/_rels/sheet${i + 1}.xml.rels`, encoder.encode(relsXml));
     }
@@ -473,6 +519,12 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
+
+/** Numeric value for the digits at the end of an `rIdNN` identifier. */
+function relIdNum(rId: string): number {
+  const m = rId.match(/(\d+)$/);
+  return m ? parseInt(m[1], 10) : 0;
+}
 
 /**
  * Build the full list of named ranges, merging user-defined ranges with
