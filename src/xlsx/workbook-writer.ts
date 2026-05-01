@@ -26,6 +26,7 @@ export function writeWorkbookXml(
   dateSystem?: "1900" | "1904",
   activeSheet?: number,
   workbookProtection?: { lockStructure?: boolean; lockWindows?: boolean; password?: string },
+  externalLinkRels?: ReadonlyArray<{ rId: string }>,
 ): string {
   const sheetElements: string[] = [];
 
@@ -114,6 +115,19 @@ export function writeWorkbookXml(
   // ── calcPr — tells Excel to recalculate all formulas on open ──
   parts.push(xmlSelfClose("calcPr", { calcId: 0, fullCalcOnLoad: 1 }));
 
+  // ── externalReferences — must come AFTER calcPr per OOXML schema order
+  // is incorrect; the schema actually places it before. Excel however
+  // accepts both orders, and ECMA-376 §18.2.2 lists externalReferences
+  // before calcPr in the workbook content model, so emit it earlier.
+  // Move logic: rebuild parts with the block injected at the right spot.
+  if (externalLinkRels && externalLinkRels.length > 0) {
+    const refChildren = externalLinkRels.map((r) =>
+      xmlSelfClose("externalReference", { "r:id": r.rId }),
+    );
+    // Insert just before the trailing calcPr we already pushed.
+    parts.splice(parts.length - 1, 0, xmlElement("externalReferences", undefined, refChildren));
+  }
+
   return xmlDocument("workbook", { xmlns: NS_SPREADSHEET, "xmlns:r": NS_R }, parts);
 }
 
@@ -121,12 +135,23 @@ const REL_VBA_PROJECT = "http://schemas.microsoft.com/office/2006/relationships/
 const REL_FEATURE_PROPERTY_BAG =
   "http://schemas.microsoft.com/office/2022/11/relationships/FeaturePropertyBag";
 
+const REL_EXTERNAL_LINK =
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink";
+
+/** A relationship description for an externalLink emitted in workbook.xml.rels. */
+export interface ExternalLinkRel {
+  rId: string;
+  /** Path relative to the workbook directory, e.g. "externalLinks/externalLink1.xml". */
+  target: string;
+}
+
 /** Generate xl/_rels/workbook.xml.rels */
 export function writeWorkbookRels(
   sheetCount: number,
   hasSharedStrings: boolean,
   hasMacros?: boolean,
   hasFeaturePropertyBag?: boolean,
+  externalLinkRels?: ReadonlyArray<ExternalLinkRel>,
 ): string {
   const children: string[] = [];
 
@@ -195,6 +220,20 @@ export function writeWorkbookRels(
         Target: "featurePropertyBag/featurePropertyBag.xml",
       }),
     );
+    nextRid++;
+  }
+
+  // External link relationships (caller supplies pre-assigned rIds)
+  if (externalLinkRels) {
+    for (const link of externalLinkRels) {
+      children.push(
+        xmlSelfClose("Relationship", {
+          Id: link.rId,
+          Type: REL_EXTERNAL_LINK,
+          Target: link.target,
+        }),
+      );
+    }
   }
 
   return xmlDocument("Relationships", { xmlns: NS_RELATIONSHIPS }, children);

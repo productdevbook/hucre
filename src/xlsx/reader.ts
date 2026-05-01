@@ -10,7 +10,9 @@ import type {
   NamedRange,
   TableDefinition,
   TableColumn,
+  ExternalLink,
 } from "../_types";
+import { parseExternalLink } from "./external-link-reader";
 import { ParseError, ZipError } from "../errors";
 import { ZipReader } from "../zip/reader";
 import { parseXml } from "../xml/parser";
@@ -183,6 +185,25 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
   if (zip.has(themePath)) {
     const themeXml = decodeUtf8(await zip.extract(themePath));
     themeColors = parseThemeColors(themeXml);
+  }
+
+  // 7c. Parse external workbook links (xl/externalLinks/externalLinkN.xml).
+  // The workbook.xml.rels file declares them with Type=".../externalLink";
+  // resolve each one in declaration order so the index lines up with
+  // the `[N]` prefix used in formulas.
+  const externalLinkRels = workbookRels
+    .filter((r) => matchesRelType(r.type, "externalLink"))
+    .sort((a, b) => relIdNum(a.id) - relIdNum(b.id));
+  const externalLinks: ExternalLink[] = [];
+  for (const rel of externalLinkRels) {
+    const linkPath = resolvePath(workbookDir, rel.target);
+    if (!zip.has(linkPath)) continue;
+    const linkXml = decodeUtf8(await zip.extract(linkPath));
+    const linkRelsPath = relsPathFor(linkPath);
+    const linkRelsXml = zip.has(linkRelsPath)
+      ? decodeUtf8(await zip.extract(linkRelsPath))
+      : undefined;
+    externalLinks.push(parseExternalLink(linkXml, linkRelsXml));
   }
 
   // 8. Build a map of rId → sheet relationship for worksheet paths
@@ -363,7 +384,33 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
     workbook.workbookProtection = workbookProtection;
   }
 
+  if (externalLinks.length > 0) {
+    workbook.externalLinks = externalLinks;
+  }
+
   return workbook;
+}
+
+/**
+ * Numeric value for the trailing digits of an `rIdNN` identifier so we
+ * can sort external link relationships in declaration order. Falls
+ * back to `Infinity` when the id has no digits — keeps malformed
+ * entries last instead of throwing.
+ */
+function relIdNum(rId: string): number {
+  const m = rId.match(/(\d+)$/);
+  return m ? parseInt(m[1], 10) : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Path of the `_rels` file belonging to `partPath`. Returns
+ * `xl/externalLinks/_rels/externalLink1.xml.rels` for input
+ * `xl/externalLinks/externalLink1.xml`.
+ */
+function relsPathFor(partPath: string): string {
+  const slash = partPath.lastIndexOf("/");
+  if (slash === -1) return `_rels/${partPath}.rels`;
+  return `${partPath.slice(0, slash)}/_rels/${partPath.slice(slash + 1)}.rels`;
 }
 
 // ── Drawing / Image Extraction ────────────────────────────────────────
