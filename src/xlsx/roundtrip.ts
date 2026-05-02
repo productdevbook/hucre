@@ -57,6 +57,9 @@ const REL_VML_DRAWING =
 const REL_TABLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/table";
 const REL_SLICER = "http://schemas.microsoft.com/office/2007/relationships/slicer";
 const REL_TIMELINE = "http://schemas.microsoft.com/office/2011/relationships/timeline";
+const REL_THREADED_COMMENT =
+  "http://schemas.microsoft.com/office/2017/10/relationships/threadedComment";
+const REL_PERSON = "http://schemas.microsoft.com/office/2017/10/relationships/person";
 
 /**
  * Parts that defter regenerates from parsed data.
@@ -283,6 +286,16 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     }
   }
 
+  // Detect Excel 365 threaded comments + persons surviving in raw entries.
+  // Threaded comments live at xl/threadedComments/threadedCommentN.xml where
+  // N matches the worksheet's 1-based index, so we just probe each sheet.
+  const threadedCommentSheetIndices: number[] = [];
+  for (let i = 0; i < worksheetResults.length; i++) {
+    const probe = `xl/threadedComments/threadedComment${i + 1}.xml`;
+    if (workbook._rawEntries.has(probe)) threadedCommentSheetIndices.push(i + 1);
+  }
+  const hasPersons = workbook._rawEntries.has("xl/persons/person.xml");
+
   // Collect external link parts that survived in the raw entries.
   // Roundtrip preserves the externalLinkN.xml bodies and their _rels;
   // the workbook.xml + workbook.xml.rels are regenerated and need to
@@ -329,12 +342,13 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
   timelineIndices.sort((a, b) => a - b);
 
   // rIds for external link relationships: assigned after all
-  // sheet/styles/sharedStrings/theme/macros/featurePropertyBag rIds.
+  // sheet/styles/sharedStrings/theme/macros/featurePropertyBag/persons rIds.
   let nextWorkbookRelId = computeExternalLinkRelStart(
     writeSheets.length,
     hasSharedStrings,
     !!workbook.hasMacros,
     false, // featurePropertyBag — not yet roundtripped
+    hasPersons,
   );
   const externalLinkRels = externalLinkIndices.map((idx) => ({
     rId: `rId${nextWorkbookRelId++}`,
@@ -400,6 +414,9 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     imageExtensions: imageExtensions.size > 0 ? imageExtensions : undefined,
     commentIndices: commentIndices.length > 0 ? commentIndices : undefined,
     tableIndices: allTableIndices.length > 0 ? allTableIndices : undefined,
+    threadedCommentSheetIndices:
+      threadedCommentSheetIndices.length > 0 ? threadedCommentSheetIndices : undefined,
+    hasPersons: hasPersons || undefined,
     externalLinkIndices: externalLinkIndices.length > 0 ? externalLinkIndices : undefined,
     slicerIndices: slicerIndices.length > 0 ? slicerIndices : undefined,
     slicerCacheIndices: slicerCacheIndices.length > 0 ? slicerCacheIndices : undefined,
@@ -444,7 +461,8 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
         writeSheets.length,
         hasSharedStrings,
         workbook.hasMacros,
-        false,
+        false, // hasFeaturePropertyBag — not yet roundtripped
+        hasPersons,
         externalLinkRels.length > 0 ? externalLinkRels : undefined,
         slicerCacheRels.length > 0 ? slicerCacheRels : undefined,
         timelineCacheRels.length > 0 ? timelineCacheRels : undefined,
@@ -477,8 +495,17 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     const timelineTargets = sheetTimelineTargets[i] ?? [];
     const hasSlicers = slicerTargets.length > 0;
     const hasTimelines = timelineTargets.length > 0;
+    const hasThreadedComments = threadedCommentSheetIndices.includes(i + 1);
 
-    if (hasHyperlinks || hasDrawing || hasComments || hasTables || hasSlicers || hasTimelines) {
+    if (
+      hasHyperlinks ||
+      hasDrawing ||
+      hasComments ||
+      hasTables ||
+      hasSlicers ||
+      hasTimelines ||
+      hasThreadedComments
+    ) {
       const relElements: string[] = [];
       // Track the highest existing rId so newly added slicer/timeline
       // relationships pick a number that doesn't collide with anything
@@ -565,6 +592,20 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
             Id: `rId${nextSheetRid++}`,
             Type: REL_TIMELINE,
             Target: target,
+          }),
+        );
+      }
+
+      // Threaded comments (Excel 365). The rId only needs to be unique
+      // within this rels file — `nextSheetRid` already tracks the next
+      // free rId past every relationship emitted above (including the
+      // slicer/timeline ones).
+      if (hasThreadedComments) {
+        relElements.push(
+          xmlSelfClose("Relationship", {
+            Id: `rId${nextSheetRid++}`,
+            Type: REL_THREADED_COMMENT,
+            Target: `../threadedComments/threadedComment${i + 1}.xml`,
           }),
         );
       }
@@ -664,13 +705,14 @@ function collectSheetCacheTargets(
  * the starting rId for external link relationships. Keep this in sync
  * with `writeWorkbookRels` — order is: worksheets, styles, optional
  * sharedStrings, theme, optional vbaProject, optional FeaturePropertyBag,
- * then externalLinks.
+ * optional persons, then externalLinks.
  */
 function computeExternalLinkRelStart(
   sheetCount: number,
   hasSharedStrings: boolean,
   hasMacros: boolean,
   hasFeaturePropertyBag: boolean,
+  hasPersons: boolean,
 ): number {
   let next = sheetCount + 1; // worksheets occupy rId1..rId{sheetCount}
   next++; // styles
@@ -678,6 +720,7 @@ function computeExternalLinkRelStart(
   next++; // theme
   if (hasMacros) next++;
   if (hasFeaturePropertyBag) next++;
+  if (hasPersons) next++;
   return next;
 }
 

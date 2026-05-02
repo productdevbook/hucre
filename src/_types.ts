@@ -467,6 +467,57 @@ export interface SheetTextBox {
   title?: string;
 }
 
+// ── Threaded Comments (Excel 365+) ─────────────────────────────────
+
+/**
+ * A person who can author or be mentioned in threaded comments.
+ * Stored in the workbook-wide `xl/persons/person.xml` part.
+ */
+export interface ThreadedCommentPerson {
+  /** Stable GUID identifying this person within the workbook. */
+  id: string;
+  /** Display name shown in Excel's comment pane (required by the schema). */
+  displayName: string;
+  /** Identity-system user id, e.g. the Azure AD object id. */
+  userId?: string;
+  /** Identity provider name, e.g. "AD" or "PeoplePicker". */
+  providerId?: string;
+}
+
+/**
+ * An `@person` mention inside a threaded comment's text. Indices are
+ * UTF-16 code-unit offsets into the comment text.
+ */
+export interface ThreadedCommentMention {
+  mentionPersonId: string;
+  mentionId: string;
+  startIndex: number;
+  length: number;
+}
+
+/**
+ * A single message in a thread on `xl/threadedComments/threadedCommentN.xml`.
+ * Top-level messages declare a `ref`; replies omit it and link to their
+ * parent through `parentId`.
+ */
+export interface ThreadedComment {
+  id: string;
+  /** A1-style cell ref. Required for thread roots, omitted for replies. */
+  ref?: string;
+  /** GUID matching a {@link ThreadedCommentPerson.id}. */
+  personId: string;
+  /** GUID of the parent comment when this is a reply. */
+  parentId?: string;
+  /** ISO-8601 timestamp from the `dT` attribute. */
+  date?: string;
+  /** Comment body. */
+  text: string;
+  /** Whether the thread is marked resolved. */
+  done?: boolean;
+  /** `@person` mentions inside the text. */
+  mentions?: ThreadedCommentMention[];
+}
+
 // ── Image ──────────────────────────────────────────────────────────
 
 export interface SheetImage {
@@ -656,6 +707,12 @@ export interface Sheet {
   sparklines?: Sparkline[];
   /** Text boxes (shapes with text) */
   textBoxes?: SheetTextBox[];
+  /**
+   * Excel 365 threaded comments for this sheet. Stored physically in
+   * `xl/threadedComments/threadedCommentN.xml` and resolved against
+   * the workbook-wide person list (`Workbook.persons`).
+   */
+  threadedComments?: ThreadedComment[];
   /** Accessibility metadata for screen readers and the `audit` helper. */
   a11y?: SheetA11y;
   /**
@@ -855,6 +912,11 @@ export interface Workbook {
     lockWindows?: boolean;
   };
   /**
+   * Workbook-wide person directory referenced from threaded comments.
+   * Each `ThreadedComment.personId` resolves against this list.
+   */
+  persons?: ThreadedCommentPerson[];
+  /**
    * External workbook references, resolved from
    * `xl/externalLinks/externalLinkN.xml`. The 1-based position in this
    * array matches the `[N]` prefix used in formulas like `[1]Sheet1!A1`.
@@ -991,6 +1053,8 @@ export interface WriteSheet {
   sparklines?: Sparkline[];
   /** Text boxes (shapes with text) */
   textBoxes?: SheetTextBox[];
+  /** Excel 365 threaded comments for this sheet. */
+  threadedComments?: ThreadedComment[];
   /** Accessibility metadata for screen readers and the `audit` helper. */
   a11y?: SheetA11y;
 }

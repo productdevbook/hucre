@@ -10,10 +10,12 @@ import type {
   NamedRange,
   TableDefinition,
   TableColumn,
+  ThreadedCommentPerson,
   ExternalLink,
   SlicerCache,
   TimelineCache,
 } from "../_types";
+import { parsePersons, parseThreadedComments } from "./threaded-comments-reader";
 import { parseExternalLink } from "./external-link-reader";
 import {
   parseSlicers,
@@ -195,7 +197,19 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
     themeColors = parseThemeColors(themeXml);
   }
 
-  // 7c. Parse external workbook links (xl/externalLinks/externalLinkN.xml).
+  // 7c. Parse the workbook-wide threaded-comments person directory
+  // (xl/persons/person.xml). Linked from workbook.xml.rels by Type=".../person".
+  let persons: ThreadedCommentPerson[] | undefined;
+  const personsRel = workbookRels.find((r) => matchesRelType(r.type, "person"));
+  if (personsRel) {
+    const personsPath = resolvePath(workbookDir, personsRel.target);
+    if (zip.has(personsPath)) {
+      const personsXml = decodeUtf8(await zip.extract(personsPath));
+      persons = parsePersons(personsXml);
+    }
+  }
+
+  // 7d. Parse external workbook links (xl/externalLinks/externalLinkN.xml).
   // The workbook.xml.rels file declares them with Type=".../externalLink";
   // resolve each one in declaration order so the index lines up with
   // the `[N]` prefix used in formulas.
@@ -335,6 +349,20 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
           }
         }
       }
+
+      // Extract Excel 365 threaded comments if present.
+      // Sheets can have BOTH legacy comments and threaded comments — Excel
+      // writes a legacy stub for backward compat, so we treat them as
+      // independent surfaces rather than overwriting each other.
+      const threadedRel = worksheetRels.find((r) => matchesRelType(r.type, "threadedComment"));
+      if (threadedRel) {
+        const tcPath = resolvePath(wsDir, threadedRel.target);
+        if (zip.has(tcPath)) {
+          const tcXml = decodeUtf8(await zip.extract(tcPath));
+          const threaded = parseThreadedComments(tcXml);
+          if (threaded.length > 0) sheet.threadedComments = threaded;
+        }
+      }
     }
 
     // Extract tables if present
@@ -449,6 +477,10 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
 
   if (workbookProtection) {
     workbook.workbookProtection = workbookProtection;
+  }
+
+  if (persons && persons.length > 0) {
+    workbook.persons = persons;
   }
 
   if (externalLinks.length > 0) {
