@@ -551,6 +551,67 @@ export interface SheetImage {
 export type WriteChartKind = "bar" | "column" | "line" | "pie" | "scatter" | "area";
 
 /**
+ * Where a data label is placed relative to its data point.
+ *
+ * Mirrors the OOXML `c:dLblPos` value space. Not every chart kind
+ * accepts every position — Excel will silently fall back to a sensible
+ * default when an invalid combination is requested:
+ *
+ * - **Bar / column**: `"ctr"`, `"inEnd"`, `"inBase"`, `"outEnd"` (clustered) or `"ctr"`, `"inEnd"`, `"inBase"` (stacked).
+ * - **Line / area / scatter**: `"t"`, `"b"`, `"l"`, `"r"`, `"ctr"`.
+ * - **Pie / doughnut**: `"ctr"`, `"inEnd"`, `"outEnd"`, `"bestFit"`.
+ */
+export type ChartDataLabelPosition =
+  | "t"
+  | "b"
+  | "l"
+  | "r"
+  | "ctr"
+  | "inEnd"
+  | "inBase"
+  | "outEnd"
+  | "bestFit";
+
+/**
+ * Configuration for the small text annotations Excel paints next to
+ * each data point. Maps to the OOXML `<c:dLbls>` element.
+ *
+ * Apply at the chart level via {@link SheetChart.dataLabels} to label
+ * every series, or at the series level via
+ * {@link ChartSeries.dataLabels} to override a single series. A
+ * series-level `dataLabels` always wins over the chart-level default,
+ * including when the value is `false` (which suppresses the labels for
+ * that series alone).
+ *
+ * At least one of `showValue`, `showCategoryName`, `showSeriesName`,
+ * or `showPercent` should be `true` for the labels to render anything
+ * meaningful — Excel hides the label box when no toggle is on.
+ */
+export interface ChartDataLabels {
+  /** Show the numeric value of each data point. */
+  showValue?: boolean;
+  /** Show the category (X-axis) label. */
+  showCategoryName?: boolean;
+  /** Show the series name. Useful with multi-series legends collapsed. */
+  showSeriesName?: boolean;
+  /** Show the value as a percent of total. Pie / doughnut only. */
+  showPercent?: boolean;
+  /**
+   * Where the label sits relative to its point. See
+   * {@link ChartDataLabelPosition} for the valid set per chart kind.
+   * Omit to let Excel pick a default (`outEnd` for bar/column,
+   * `r` for line/scatter, `bestFit` for pie).
+   */
+  position?: ChartDataLabelPosition;
+  /**
+   * Separator between concatenated label parts when more than one
+   * `show*` toggle is on. Defaults to `", "`. Common alternatives:
+   * `" "`, `"; "`, `"\n"` (newline).
+   */
+  separator?: string;
+}
+
+/**
  * A single data series inside a chart.
  *
  * `values` and `categories` are A1-style cell range references.
@@ -567,6 +628,12 @@ export interface ChartSeries {
   categories?: string;
   /** Optional fill color as a 6-digit RGB hex string (e.g. "1F77B4"). */
   color?: string;
+  /**
+   * Per-series data label override. Pass `false` to suppress labels
+   * for this series even when the chart-level
+   * {@link SheetChart.dataLabels} enables them.
+   */
+  dataLabels?: ChartDataLabels | false;
 }
 
 /**
@@ -611,6 +678,13 @@ export interface SheetChart {
   altText?: string;
   /** Caption for the chart frame (lands in xdr:cNvPr/@title). */
   frameTitle?: string;
+  /**
+   * Chart-level data labels applied to every series that does not set
+   * its own {@link ChartSeries.dataLabels}. Pass a single
+   * {@link ChartDataLabels} object to enable Excel's small in-chart
+   * value/category annotations.
+   */
+  dataLabels?: ChartDataLabels;
 }
 
 // ── Accessibility ──────────────────────────────────────────────────
@@ -1245,6 +1319,27 @@ export interface ChartSeriesInfo {
   categoriesRef?: string;
   /** 6-digit RGB hex from `<c:spPr><a:solidFill><a:srgbClr val>`. */
   color?: string;
+  /**
+   * Series-level data labels parsed from the `<c:ser><c:dLbls>` block.
+   * Falls back to the chart-level {@link Chart.dataLabels} when this
+   * series carries no override of its own.
+   */
+  dataLabels?: ChartDataLabelsInfo;
+}
+
+/**
+ * Read-side mirror of {@link ChartDataLabels}. Exposes the same toggle
+ * fields parsed from `<c:dLbls>` so a `ChartSeriesInfo` returned by
+ * `parseChart` can be fed straight into {@link cloneChart} without
+ * transformation.
+ */
+export interface ChartDataLabelsInfo {
+  showValue?: boolean;
+  showCategoryName?: boolean;
+  showSeriesName?: boolean;
+  showPercent?: boolean;
+  position?: ChartDataLabelPosition;
+  separator?: string;
 }
 
 /**
@@ -1335,6 +1430,12 @@ export interface Chart {
    * {@link SheetChart.barGrouping} field.
    */
   barGrouping?: ChartBarGrouping;
+  /**
+   * Chart-level data label defaults parsed from the first chart-type
+   * element's `<c:dLbls>` block. Series-level overrides on
+   * {@link ChartSeriesInfo.dataLabels} take precedence.
+   */
+  dataLabels?: ChartDataLabelsInfo;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────

@@ -465,6 +465,204 @@ describe("parseChart — bar grouping", () => {
   });
 });
 
+// ── parseChart — data labels ──────────────────────────────────────
+
+describe("parseChart — data labels", () => {
+  it("surfaces chart-level dataLabels with showVal and position", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:dLblPos val="outEnd"/>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels).toEqual({
+      showValue: true,
+      position: "outEnd",
+    });
+  });
+
+  it("collects all show* toggles when set", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:pieChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:dLblPos val="bestFit"/>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="1"/>
+          <c:showSerName val="1"/>
+          <c:showPercent val="1"/>
+          <c:showBubbleSize val="0"/>
+          <c:separator>; </c:separator>
+        </c:dLbls>
+      </c:pieChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels).toEqual({
+      showValue: true,
+      showCategoryName: true,
+      showSeriesName: true,
+      showPercent: true,
+      position: "bestFit",
+      separator: "; ",
+    });
+  });
+
+  it("returns undefined dataLabels when <c:dLbls> only has delete=1", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:delete val="1"/>
+        </c:dLbls>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels).toBeUndefined();
+  });
+
+  it("returns undefined dataLabels when no toggle is on (all show*=0, no position)", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="0"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels).toBeUndefined();
+  });
+
+  it("ignores invalid dLblPos values", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:dLblPos val="moonbase"/>
+          <c:showVal val="1"/>
+        </c:dLbls>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.position).toBeUndefined();
+    expect(chart?.dataLabels?.showValue).toBe(true);
+  });
+
+  it("accepts true/false as well as 1/0 in show* attributes", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:showVal val="true"/>
+          <c:showCatName val="false"/>
+        </c:dLbls>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.showValue).toBe(true);
+    expect(chart?.dataLabels?.showCategoryName).toBeUndefined();
+  });
+
+  it("surfaces series-level dataLabels independently of chart-level", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx><c:v>Revenue</c:v></c:tx>
+          <c:dLbls>
+            <c:dLblPos val="ctr"/>
+            <c:showVal val="1"/>
+          </c:dLbls>
+          <c:val><c:numRef><c:f>S!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:ser>
+          <c:idx val="1"/>
+          <c:tx><c:v>Cost</c:v></c:tx>
+          <c:val><c:numRef><c:f>S!$C$2:$C$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].dataLabels).toEqual({
+      showValue: true,
+      position: "ctr",
+    });
+    expect(chart?.series?.[1].dataLabels).toBeUndefined();
+  });
+
+  it("captures only the first chart-type-level <c:dLbls> in combo charts", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:dLblPos val="outEnd"/>
+          <c:showVal val="1"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:lineChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:dLblPos val="t"/>
+          <c:showCatName val="1"/>
+        </c:dLbls>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    // First chart-type element wins for the chart-level summary.
+    expect(chart?.dataLabels).toEqual({
+      showValue: true,
+      position: "outEnd",
+    });
+  });
+});
+
 // ── End-to-end: full XLSX with a chart ────────────────────────────
 
 /**

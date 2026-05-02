@@ -15,6 +15,8 @@
 import type {
   Chart,
   ChartBarGrouping,
+  ChartDataLabelPosition,
+  ChartDataLabelsInfo,
   ChartKind,
   ChartLegendPosition,
   ChartSeriesInfo,
@@ -69,6 +71,7 @@ export function parseChart(xml: string): Chart | undefined {
     let seriesCount = 0;
     const series: ChartSeriesInfo[] = [];
     let barGrouping: ChartBarGrouping | undefined;
+    let chartLevelLabels: ChartDataLabelsInfo | undefined;
     for (const child of childElements(plotArea)) {
       const kind = CHART_KIND_TAGS.get(child.local);
       if (!kind) continue;
@@ -87,10 +90,22 @@ export function parseChart(xml: string): Chart | undefined {
         series.push(parseSeries(ser, kind, localIndex));
         localIndex++;
       }
+      // Chart-type-level <c:dLbls> sits as a sibling of <c:ser> inside
+      // the chart-type element. Surface the first one we find — combo
+      // charts can carry one per kind, but the common case is a single
+      // chart-type element so we keep the model flat.
+      if (chartLevelLabels === undefined) {
+        const dLbls = findChild(child, "dLbls");
+        if (dLbls) {
+          const parsed = parseDataLabels(dLbls);
+          if (parsed) chartLevelLabels = parsed;
+        }
+      }
     }
     out.seriesCount = seriesCount;
     if (series.length > 0) out.series = series;
     if (barGrouping !== undefined) out.barGrouping = barGrouping;
+    if (chartLevelLabels) out.dataLabels = chartLevelLabels;
   }
 
   const legend = parseLegend(chartEl);
@@ -125,7 +140,93 @@ function parseSeries(ser: XmlElement, kind: ChartKind, index: number): ChartSeri
   const color = parseSeriesColor(ser);
   if (color !== undefined) out.color = color;
 
+  const dLbls = findChild(ser, "dLbls");
+  if (dLbls) {
+    const parsed = parseDataLabels(dLbls);
+    if (parsed) out.dataLabels = parsed;
+  }
+
   return out;
+}
+
+// ── Data Labels ───────────────────────────────────────────────────
+
+const VALID_DLBL_POSITIONS: ReadonlySet<ChartDataLabelPosition> = new Set([
+  "t",
+  "b",
+  "l",
+  "r",
+  "ctr",
+  "inEnd",
+  "inBase",
+  "outEnd",
+  "bestFit",
+]);
+
+/**
+ * Read a `<c:dLbls>` block. Returns `undefined` when the block is
+ * empty or only contains a `<c:delete val="1">` (which suppresses
+ * labels rather than describing them). All toggles default to `false`
+ * when the matching `<c:show*>` element is absent.
+ */
+function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
+  // <c:delete val="1"> at the root of <c:dLbls> means "suppress for
+  // this scope". We don't surface a dataLabels record for that case —
+  // it's the absence of labels, not a configuration.
+  const deleteEl = findChild(el, "delete");
+  if (deleteEl && readBoolAttr(deleteEl) === true) return undefined;
+
+  const out: ChartDataLabelsInfo = {};
+
+  const pos = findChild(el, "dLblPos");
+  if (pos) {
+    const val = pos.attrs.val;
+    if (typeof val === "string" && VALID_DLBL_POSITIONS.has(val as ChartDataLabelPosition)) {
+      out.position = val as ChartDataLabelPosition;
+    }
+  }
+
+  const showVal = findChild(el, "showVal");
+  if (showVal && readBoolAttr(showVal) === true) out.showValue = true;
+
+  const showCat = findChild(el, "showCatName");
+  if (showCat && readBoolAttr(showCat) === true) out.showCategoryName = true;
+
+  const showSer = findChild(el, "showSerName");
+  if (showSer && readBoolAttr(showSer) === true) out.showSeriesName = true;
+
+  const showPct = findChild(el, "showPercent");
+  if (showPct && readBoolAttr(showPct) === true) out.showPercent = true;
+
+  const sep = findChild(el, "separator");
+  if (sep) {
+    const text = elementText(sep);
+    if (text.length > 0) out.separator = text;
+  }
+
+  // Empty record is meaningless to a consumer — collapse to undefined.
+  if (
+    out.position === undefined &&
+    !out.showValue &&
+    !out.showCategoryName &&
+    !out.showSeriesName &&
+    !out.showPercent &&
+    out.separator === undefined
+  ) {
+    return undefined;
+  }
+  return out;
+}
+
+/**
+ * Read a boolean-style `val` attribute. Excel emits `"1"` / `"0"` but
+ * the OOXML spec also blesses `"true"` / `"false"`. Returns `undefined`
+ * when the attribute is missing.
+ */
+function readBoolAttr(el: XmlElement): boolean | undefined {
+  const v = el.attrs.val;
+  if (typeof v !== "string") return undefined;
+  return v === "1" || v.toLowerCase() === "true";
 }
 
 /** Read the `<c:tx>` series-name element (literal or strRef cache). */

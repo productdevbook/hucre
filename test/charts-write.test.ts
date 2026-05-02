@@ -562,3 +562,160 @@ describe("writeXlsx with charts", () => {
     }
   });
 });
+
+// ── Data labels ──────────────────────────────────────────────────────
+
+describe("writeChart — data labels", () => {
+  it("emits no <c:dLbls> when neither chart nor series declare labels", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:dLbls>");
+  });
+
+  it("emits a chart-level <c:dLbls> with showVal=1 when configured", () => {
+    const result = writeChart(makeChart({ dataLabels: { showValue: true } }), "Sheet1");
+    expect(result.chartXml).toContain("<c:dLbls>");
+    expect(result.chartXml).toContain('c:showVal val="1"');
+    expect(result.chartXml).toContain('c:showCatName val="0"');
+    expect(result.chartXml).toContain('c:showSerName val="0"');
+    expect(result.chartXml).toContain('c:showPercent val="0"');
+  });
+
+  it("places the chart-level <c:dLbls> after series and before <c:axId>", () => {
+    const result = writeChart(makeChart({ dataLabels: { showValue: true } }), "Sheet1");
+    const xml = result.chartXml;
+    const lastSer = xml.lastIndexOf("</c:ser>");
+    const dLbls = xml.indexOf("<c:dLbls>");
+    const firstAxId = xml.indexOf("<c:axId");
+    expect(lastSer).toBeGreaterThan(0);
+    expect(dLbls).toBeGreaterThan(lastSer);
+    expect(firstAxId).toBeGreaterThan(dLbls);
+  });
+
+  it("emits the position element before the show* toggles", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, position: "outEnd" } }),
+      "Sheet1",
+    );
+    const xml = result.chartXml;
+    const pos = xml.indexOf("<c:dLblPos");
+    const showVal = xml.indexOf("<c:showVal");
+    expect(pos).toBeGreaterThan(0);
+    expect(showVal).toBeGreaterThan(pos);
+    expect(xml).toContain('c:dLblPos val="outEnd"');
+  });
+
+  it("emits the separator when set", () => {
+    const result = writeChart(
+      makeChart({
+        dataLabels: { showValue: true, showCategoryName: true, separator: " | " },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain("<c:separator> | </c:separator>");
+  });
+
+  it("escapes XML-special characters in the separator", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, separator: " <> & " } }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain("<c:separator> &lt;&gt; &amp; </c:separator>");
+  });
+
+  it("emits a series-level <c:dLbls> when set on a single series", () => {
+    const result = writeChart(
+      makeChart({
+        series: [
+          {
+            name: "S1",
+            values: "B2:B4",
+            dataLabels: { showValue: true, position: "outEnd" },
+          },
+        ],
+      }),
+      "Sheet1",
+    );
+    // The series-level block lives inside <c:ser>.
+    const xml = result.chartXml;
+    const serStart = xml.indexOf("<c:ser>");
+    const serEnd = xml.indexOf("</c:ser>");
+    const inner = xml.slice(serStart, serEnd);
+    expect(inner).toContain("<c:dLbls>");
+    expect(inner).toContain('c:showVal val="1"');
+  });
+
+  it("places the series <c:dLbls> after <c:spPr> and before <c:cat>/<c:val>", () => {
+    const result = writeChart(
+      makeChart({
+        series: [
+          {
+            name: "S1",
+            values: "B2:B4",
+            categories: "A2:A4",
+            color: "1F77B4",
+            dataLabels: { showValue: true },
+          },
+        ],
+      }),
+      "Sheet1",
+    );
+    const xml = result.chartXml;
+    const spPr = xml.indexOf("<c:spPr>");
+    const dLbls = xml.indexOf("<c:dLbls>");
+    const cat = xml.indexOf("<c:cat>");
+    const val = xml.indexOf("<c:val>");
+    expect(spPr).toBeGreaterThan(0);
+    expect(dLbls).toBeGreaterThan(spPr);
+    expect(cat).toBeGreaterThan(dLbls);
+    expect(val).toBeGreaterThan(cat);
+  });
+
+  it("suppresses a single series with dataLabels=false even when chart-level is on", () => {
+    const result = writeChart(
+      makeChart({
+        dataLabels: { showValue: true },
+        series: [
+          { name: "Visible", values: "B2:B4" },
+          { name: "Hidden", values: "C2:C4", dataLabels: false },
+        ],
+      }),
+      "Sheet1",
+    );
+    const xml = result.chartXml;
+    // Hidden series block is the second <c:ser>...</c:ser>.
+    const firstSerEnd = xml.indexOf("</c:ser>");
+    const secondSerStart = xml.indexOf("<c:ser>", firstSerEnd);
+    const secondSerEnd = xml.indexOf("</c:ser>", secondSerStart);
+    const hiddenInner = xml.slice(secondSerStart, secondSerEnd);
+    // Excel's "delete this series' labels" idiom: a <c:dLbls> with delete=1.
+    expect(hiddenInner).toContain('<c:delete val="1"/>');
+  });
+
+  it("supports pie chart with showPercent=true and bestFit position", () => {
+    const result = writeChart(
+      makeChart({
+        type: "pie",
+        dataLabels: { showPercent: true, position: "bestFit" },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain("<c:pieChart>");
+    expect(result.chartXml).toContain('c:dLblPos val="bestFit"');
+    expect(result.chartXml).toContain('c:showPercent val="1"');
+  });
+
+  it("supports line chart with chart-level data labels", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        dataLabels: { showValue: true, position: "t" },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain("<c:lineChart>");
+    expect(result.chartXml).toContain('c:dLblPos val="t"');
+    // Sanity: line chart's marker tag should still come after dLbls.
+    const xml = result.chartXml;
+    expect(xml.indexOf("<c:dLbls>")).toBeLessThan(xml.indexOf("<c:marker"));
+  });
+});
