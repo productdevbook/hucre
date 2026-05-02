@@ -249,6 +249,57 @@ describe("cloneChart", () => {
     expect(clone.type).toBe("line");
     expect(clone.barGrouping).toBeUndefined();
   });
+
+  it("inherits lineGrouping from the source line chart", () => {
+    const clone = cloneChart(source({ kinds: ["line"], lineGrouping: "stacked" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.type).toBe("line");
+    expect(clone.lineGrouping).toBe("stacked");
+  });
+
+  it("override lineGrouping wins over source lineGrouping", () => {
+    const clone = cloneChart(source({ kinds: ["line"], lineGrouping: "stacked" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      lineGrouping: "percentStacked",
+    });
+    expect(clone.lineGrouping).toBe("percentStacked");
+  });
+
+  it("drops inherited lineGrouping when the clone target is not line", () => {
+    const clone = cloneChart(source({ kinds: ["line"], lineGrouping: "stacked" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.lineGrouping).toBeUndefined();
+  });
+
+  it("inherits areaGrouping from the source area chart", () => {
+    const clone = cloneChart(source({ kinds: ["area"], areaGrouping: "percentStacked" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.type).toBe("area");
+    expect(clone.areaGrouping).toBe("percentStacked");
+  });
+
+  it("override areaGrouping wins over source areaGrouping", () => {
+    const clone = cloneChart(source({ kinds: ["area"], areaGrouping: "stacked" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      areaGrouping: "percentStacked",
+    });
+    expect(clone.areaGrouping).toBe("percentStacked");
+  });
+
+  it("drops inherited areaGrouping when the clone target is not area", () => {
+    const clone = cloneChart(source({ kinds: ["area"], areaGrouping: "stacked" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "line",
+      seriesOverrides: [{ values: "Sheet1!$B$2:$B$5" }],
+    });
+    expect(clone.type).toBe("line");
+    expect(clone.areaGrouping).toBeUndefined();
+  });
 });
 
 // ── cloneChart — series overrides ────────────────────────────────────
@@ -924,6 +975,114 @@ describe("cloneChart — integration", () => {
       x: { gridlines: { major: true } },
       y: { gridlines: { major: true, minor: true } },
     });
+  });
+
+  it("round-trips line grouping through parseChart → cloneChart → writeXlsx → parseChart", async () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:grouping val="percentStacked"/>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx><c:v>Revenue</c:v></c:tx>
+          <c:cat><c:strRef><c:f>Tpl!$A$2:$A$5</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:lineChart>
+      <c:catAx><c:axId val="111"/></c:catAx>
+      <c:valAx><c:axId val="222"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const source = parseChart(sourceXml)!;
+    expect(source.lineGrouping).toBe("percentStacked");
+
+    const sheetChart: SheetChart = cloneChart(source, {
+      anchor: { from: { row: 14, col: 0 } },
+      seriesOverrides: [{ values: "Dashboard!$B$2:$B$5" }],
+    });
+    expect(sheetChart.type).toBe("line");
+    expect(sheetChart.lineGrouping).toBe("percentStacked");
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Dashboard",
+          rows: [["Header"], [1], [2], [3], [4]],
+          charts: [sheetChart],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("c:lineChart");
+    expect(written).toContain('c:grouping val="percentStacked"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.lineGrouping).toBe("percentStacked");
+  });
+
+  it("round-trips area grouping through parseChart → cloneChart → writeXlsx → parseChart", async () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:areaChart>
+        <c:grouping val="stacked"/>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx><c:v>Cloud</c:v></c:tx>
+          <c:cat><c:strRef><c:f>Tpl!$A$2:$A$5</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:ser>
+          <c:idx val="1"/>
+          <c:tx><c:v>On-prem</c:v></c:tx>
+          <c:cat><c:strRef><c:f>Tpl!$A$2:$A$5</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Tpl!$C$2:$C$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:areaChart>
+      <c:catAx><c:axId val="111"/></c:catAx>
+      <c:valAx><c:axId val="222"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const source = parseChart(sourceXml)!;
+    expect(source.areaGrouping).toBe("stacked");
+
+    const sheetChart: SheetChart = cloneChart(source, {
+      anchor: { from: { row: 14, col: 0 } },
+      seriesOverrides: [{ values: "Dashboard!$B$2:$B$5" }, { values: "Dashboard!$C$2:$C$5" }],
+    });
+    expect(sheetChart.type).toBe("area");
+    expect(sheetChart.areaGrouping).toBe("stacked");
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Dashboard",
+          rows: [
+            ["A", "B", "C"],
+            [1, 2, 3],
+            [4, 5, 6],
+            [7, 8, 9],
+            [10, 11, 12],
+          ],
+          charts: [sheetChart],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("c:areaChart");
+    expect(written).toContain('c:grouping val="stacked"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.areaGrouping).toBe("stacked");
   });
 
   it("clones a doughnut template through writeChart and back through parseChart with hole size intact", async () => {

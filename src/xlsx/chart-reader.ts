@@ -21,6 +21,7 @@ import type {
   ChartDataLabelsInfo,
   ChartKind,
   ChartLegendPosition,
+  ChartLineAreaGrouping,
   ChartSeriesInfo,
 } from "../_types";
 import { parseXml } from "../xml/parser";
@@ -73,6 +74,8 @@ export function parseChart(xml: string): Chart | undefined {
     let seriesCount = 0;
     const series: ChartSeriesInfo[] = [];
     let barGrouping: ChartBarGrouping | undefined;
+    let lineGrouping: ChartLineAreaGrouping | undefined;
+    let areaGrouping: ChartLineAreaGrouping | undefined;
     let chartLevelLabels: ChartDataLabelsInfo | undefined;
     let holeSize: number | undefined;
     for (const child of childElements(plotArea)) {
@@ -85,6 +88,15 @@ export function parseChart(xml: string): Chart | undefined {
       // single `<c:barChart>` body this is the value Excel applies.
       if (barGrouping === undefined && (kind === "bar" || kind === "bar3D")) {
         barGrouping = parseBarGrouping(child);
+      }
+      // Same shape for line/area: surface the first stacked variant
+      // we encounter. `"standard"` collapses to undefined for symmetry
+      // with the writer's default.
+      if (lineGrouping === undefined && (kind === "line" || kind === "line3D")) {
+        lineGrouping = parseLineAreaGrouping(child);
+      }
+      if (areaGrouping === undefined && (kind === "area" || kind === "area3D")) {
+        areaGrouping = parseLineAreaGrouping(child);
       }
       // Pull `<c:holeSize>` off a doughnut chart so a parsed template
       // can round-trip its hole back through {@link cloneChart}.
@@ -113,6 +125,8 @@ export function parseChart(xml: string): Chart | undefined {
     out.seriesCount = seriesCount;
     if (series.length > 0) out.series = series;
     if (barGrouping !== undefined) out.barGrouping = barGrouping;
+    if (lineGrouping !== undefined) out.lineGrouping = lineGrouping;
+    if (areaGrouping !== undefined) out.areaGrouping = areaGrouping;
     if (chartLevelLabels) out.dataLabels = chartLevelLabels;
     if (holeSize !== undefined) out.holeSize = holeSize;
 
@@ -514,6 +528,30 @@ function parseHoleSize(doughnut: XmlElement): number | undefined {
   if (!Number.isFinite(parsed)) return undefined;
   if (parsed < 1 || parsed > 99) return undefined;
   return parsed;
+}
+
+/**
+ * Pull `<c:grouping val=".."/>` off a `<c:lineChart>` or `<c:areaChart>`
+ * element. Returns `undefined` when the grouping element is missing or
+ * carries the default `"standard"` value — the writer's
+ * {@link SheetChart.lineGrouping} / {@link SheetChart.areaGrouping}
+ * treat that as the absence of the field.
+ */
+function parseLineAreaGrouping(chartType: XmlElement): ChartLineAreaGrouping | undefined {
+  const grouping = findChild(chartType, "grouping");
+  if (!grouping) return undefined;
+  const val = grouping.attrs.val;
+  if (typeof val !== "string") return undefined;
+  switch (val) {
+    case "stacked":
+      return "stacked";
+    case "percentStacked":
+      return "percentStacked";
+    case "standard":
+      return undefined;
+    default:
+      return undefined;
+  }
 }
 
 /**
