@@ -944,6 +944,77 @@ export interface PivotCache {
   hasRecords?: boolean;
 }
 
+/**
+ * A data field placement on a {@link WritePivotTable}.
+ *
+ * `field` names a column in the source data; `function` selects the
+ * aggregation Excel applies (`sum` is the default). `displayName` becomes
+ * the column header on the rendered pivot — it defaults to
+ * `"<Function> of <field>"`, mirroring Excel's auto-label.
+ */
+export interface WritePivotDataField {
+  /** Source column name (must match an entry in the source header row). */
+  field: string;
+  /** Aggregation function. Default: `"sum"`. */
+  function?: PivotDataFieldFunction;
+  /** Optional display name override. Default: e.g. `"Sum of Revenue"`. */
+  displayName?: string;
+  /** Optional number format for aggregated values. Default: General. */
+  numberFormat?: string;
+}
+
+/**
+ * Author a pivot table on a sheet.
+ *
+ * Phase 1 covers the most common dashboard use case: a tabular source on
+ * one sheet, summarised onto another sheet with row / column / value
+ * fields. Hucre emits the pivot cache (definition + cached records), the
+ * pivot table layout, and all required relationships and content types.
+ *
+ * The actual numeric layout (row totals, grand totals, value cells) is
+ * left for Excel to compute on first open via `<calcPr fullCalcOnLoad="1"/>`
+ * — Phase 1 ships the structural skeleton, not pre-computed cells.
+ */
+export interface WritePivotTable {
+  /** Pivot table name shown in Excel's `Field List`. */
+  name: string;
+  /**
+   * Source sheet name. Defaults to the sheet the pivot is declared on
+   * when omitted — handy for pivots that summarise their own sheet's
+   * data.
+   */
+  sourceSheet?: string;
+  /**
+   * Source range covering the header row plus all data rows
+   * (e.g. `"A1:C100"`). Auto-detected from the source sheet's `rows`
+   * length when omitted.
+   */
+  sourceRange?: string;
+  /**
+   * Top-left anchor for the rendered pivot table on the host sheet
+   * (e.g. `"A3"`). Default: `"A1"`.
+   */
+  targetCell?: string;
+  /** Source columns laid out on the row axis, in order. */
+  rows?: string[];
+  /** Source columns laid out on the column axis, in order. */
+  columns?: string[];
+  /** Source columns laid out as page (filter) fields, in order. */
+  pages?: string[];
+  /** Aggregated value fields. Each entry becomes one data column. */
+  values: WritePivotDataField[];
+  /**
+   * Pivot table style name (e.g. `"PivotStyleLight16"`). Default:
+   * `"PivotStyleLight16"` — the modern Excel default.
+   */
+  styleName?: string;
+  /**
+   * Caption shown above the data fields when there is more than one.
+   * Default: `"Values"` (Excel's built-in caption).
+   */
+  dataCaption?: string;
+}
+
 // ── Slicers & Timelines ────────────────────────────────────────────
 
 /**
@@ -1265,6 +1336,12 @@ export interface WriteSheet {
   textBoxes?: SheetTextBox[];
   /** Excel 365 threaded comments for this sheet. */
   threadedComments?: ThreadedComment[];
+  /**
+   * Pivot tables anchored on this sheet. The source data is read from
+   * either the same sheet or a sibling sheet identified by
+   * {@link WritePivotTable.sourceSheet}.
+   */
+  pivotTables?: WritePivotTable[];
   /** Accessibility metadata for screen readers and the `audit` helper. */
   a11y?: SheetA11y;
 }

@@ -1,12 +1,20 @@
 // ── XLSX Writer ──────────────────────────────────────────────────────
 // Generates valid Office Open XML spreadsheet files (XLSX).
 
-import type { WriteOptions, WriteOutput, NamedRange, WorkbookProperties } from "../_types";
+import type {
+  CellValue,
+  NamedRange,
+  WorkbookProperties,
+  WriteOptions,
+  WriteOutput,
+  WriteSheet,
+} from "../_types";
 import { ZipWriter } from "../zip/writer";
 import { writeContentTypes } from "./content-types-writer";
 import { writeFeaturePropertyBagXml } from "./feature-property-bag";
 import type { ContentTypesOptions } from "./content-types-writer";
 import { writeRootRels, writeWorkbookXml, writeWorkbookRels } from "./workbook-writer";
+import type { PivotCacheRef, PivotCacheRel } from "./workbook-writer";
 import { createStylesCollector } from "./styles-writer";
 import { createSharedStrings, writeSharedStringsXml, writeWorksheetXml } from "./worksheet-writer";
 import type { WorksheetResult } from "./worksheet-writer";
@@ -16,6 +24,8 @@ import { writeComments } from "./comments-writer";
 import type { CommentsResult } from "./comments-writer";
 import { writeTable } from "./table-writer";
 import { colToLetter } from "./worksheet-writer";
+import { writePivotTable as writePivotTableParts, resolvePivotSource } from "./pivot-writer";
+import type { PivotWriteResult } from "./pivot-writer";
 import { xmlDocument, xmlSelfClose } from "../xml/writer";
 import { writeCoreProperties, writeAppProperties, writeCustomProperties } from "./doc-props-writer";
 import { writeThemeXml } from "./theme-writer";
@@ -31,6 +41,8 @@ const REL_VML_DRAWING =
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing";
 const REL_TABLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/table";
 const REL_IMAGE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
+const REL_PIVOT_TABLE =
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable";
 
 /**
  * Promote the first non-empty `sheet.a11y.summary` to
@@ -75,6 +87,21 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
     }
   }
 
+  // Pre-compute global pivot-table start indices per sheet. Pivot
+  // tables, cache definitions, and cache records all share the same
+  // global numbering because each pivot in Phase 1 owns exactly one
+  // cache.
+  let globalPivotCounter = 1;
+  const sheetPivotStartIndices: Array<number | undefined> = [];
+  for (const sheet of sheets) {
+    if (sheet.pivotTables && sheet.pivotTables.length > 0) {
+      sheetPivotStartIndices.push(globalPivotCounter);
+      globalPivotCounter += sheet.pivotTables.length;
+    } else {
+      sheetPivotStartIndices.push(undefined);
+    }
+  }
+
   // Generate worksheet XMLs (also populates styles and shared strings)
   const worksheetResults: WorksheetResult[] = [];
   for (let i = 0; i < sheets.length; i++) {
@@ -86,6 +113,7 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
       dateSystem,
       sheetTableStartIndices[i],
       options.stringMode === "inline",
+      sheetPivotStartIndices[i],
     );
     worksheetResults.push(result);
   }
@@ -162,6 +190,50 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
     }
   }
 
+  // ── Pivot Tables ──
+  // Build cache + table OOXML for every pivot declared on every sheet.
+  // Each pivot owns one cache (Phase 1 — multiple pivots cannot share a
+  // cache yet), so the indices line up 1:1.
+  interface PivotEntry {
+    parts: PivotWriteResult;
+    globalIndex: number;
+  }
+  const allPivotEntries: PivotEntry[] = [];
+  for (let i = 0; i < sheets.length; i++) {
+    const sheet = sheets[i];
+    if (!sheet.pivotTables || sheet.pivotTables.length === 0) continue;
+    const startIdx = sheetPivotStartIndices[i];
+    if (startIdx === undefined) continue;
+
+    for (let p = 0; p < sheet.pivotTables.length; p++) {
+      const pivot = sheet.pivotTables[p];
+      const sourceSheetName = pivot.sourceSheet ?? sheet.name;
+      const sourceSheet = sheets.find((s) => s.name === sourceSheetName);
+      if (!sourceSheet) {
+        throw new Error(
+          `Pivot "${pivot.name}" sourceSheet "${sourceSheetName}" not found in workbook`,
+        );
+      }
+      const sourceRows = collectSourceRows(sourceSheet);
+      const resolved = resolvePivotSource(pivot, sourceSheetName, sourceRows);
+      const globalIndex = startIdx + p;
+      // cacheId is workbook-wide and 0-based, mirroring Excel's own
+      // numbering. It also matches the pivot table's `cacheId` attr.
+      const cacheId = globalIndex - 1;
+      const parts = writePivotTableParts(pivot, resolved, cacheId);
+      allPivotEntries.push({ parts, globalIndex });
+    }
+  }
+  const allPivotIndices = allPivotEntries.map((e) => e.globalIndex);
+  const pivotCacheRels: PivotCacheRel[] = allPivotEntries.map((e) => ({
+    rId: `rIdPivot${e.globalIndex}`,
+    target: `pivotCache/pivotCacheDefinition${e.globalIndex}.xml`,
+  }));
+  const pivotCacheRefs: PivotCacheRef[] = allPivotEntries.map((e, i) => ({
+    cacheId: e.globalIndex - 1,
+    rId: pivotCacheRels[i].rId,
+  }));
+
   // Build ZIP archive
   const zip = new ZipWriter();
 
@@ -180,6 +252,9 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
     imageExtensions: imageExtensions.size > 0 ? imageExtensions : undefined,
     commentIndices: commentIndices.length > 0 ? commentIndices : undefined,
     tableIndices: allTableIndices.length > 0 ? allTableIndices : undefined,
+    pivotTableIndices: allPivotIndices.length > 0 ? allPivotIndices : undefined,
+    pivotCacheDefinitionIndices: allPivotIndices.length > 0 ? allPivotIndices : undefined,
+    pivotCacheRecordIndices: allPivotIndices.length > 0 ? allPivotIndices : undefined,
     hasCoreProps: true,
     hasAppProps: true,
     hasCustomProps,
@@ -216,6 +291,8 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
         dateSystem,
         activeSheet,
         workbookProtection,
+        undefined,
+        pivotCacheRefs.length > 0 ? pivotCacheRefs : undefined,
       ),
     ),
   );
@@ -224,7 +301,15 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
   zip.add(
     "xl/_rels/workbook.xml.rels",
     encoder.encode(
-      writeWorkbookRels(sheets.length, hasSharedStrings, hasMacros, hasFeaturePropertyBag),
+      writeWorkbookRels(
+        sheets.length,
+        hasSharedStrings,
+        hasMacros,
+        hasFeaturePropertyBag,
+        undefined,
+        undefined,
+        pivotCacheRels.length > 0 ? pivotCacheRels : undefined,
+      ),
     ),
   );
 
@@ -259,14 +344,15 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
 
     zip.add(`xl/worksheets/sheet${i + 1}.xml`, encoder.encode(result.xml));
 
-    // Generate worksheet .rels if there are hyperlinks, a drawing, comments, tables, or picture
+    // Generate worksheet .rels if there are hyperlinks, a drawing, comments, tables, picture, or pivots
     const hasHyperlinks = result.hyperlinkRelationships.length > 0;
     const hasDrawing = drawing !== null && result.drawingRId !== null;
     const hasComments = comments !== null && result.legacyDrawingRId !== null;
     const hasTables = result.tables.length > 0;
     const hasPicture = result.pictureRId !== null && backgroundImagePaths[i] !== null;
+    const hasPivots = result.pivotTables.length > 0;
 
-    if (hasHyperlinks || hasDrawing || hasComments || hasTables || hasPicture) {
+    if (hasHyperlinks || hasDrawing || hasComments || hasTables || hasPicture || hasPivots) {
       const relElements: string[] = [];
 
       // Hyperlink relationships
@@ -337,6 +423,17 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
         );
       }
 
+      // Pivot table relationships
+      for (const pivotEntry of result.pivotTables) {
+        relElements.push(
+          xmlSelfClose("Relationship", {
+            Id: pivotEntry.rId,
+            Type: REL_PIVOT_TABLE,
+            Target: `../pivotTables/pivotTable${pivotEntry.globalPivotIndex}.xml`,
+          }),
+        );
+      }
+
       const relsXml = xmlDocument("Relationships", { xmlns: NS_RELATIONSHIPS }, relElements);
       zip.add(`xl/worksheets/_rels/sheet${i + 1}.xml.rels`, encoder.encode(relsXml));
     }
@@ -385,7 +482,60 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
     }
   }
 
+  // ── Pivot table parts (cache definition + records + table) ──
+  for (const entry of allPivotEntries) {
+    const idx = entry.globalIndex;
+    zip.add(
+      `xl/pivotCache/pivotCacheDefinition${idx}.xml`,
+      encoder.encode(entry.parts.cacheDefinitionXml),
+    );
+    zip.add(
+      `xl/pivotCache/_rels/pivotCacheDefinition${idx}.xml.rels`,
+      encoder.encode(entry.parts.cacheDefinitionRels),
+    );
+    zip.add(
+      `xl/pivotCache/pivotCacheRecords${idx}.xml`,
+      encoder.encode(entry.parts.cacheRecordsXml),
+    );
+    zip.add(`xl/pivotTables/pivotTable${idx}.xml`, encoder.encode(entry.parts.pivotTableXml));
+    zip.add(
+      `xl/pivotTables/_rels/pivotTable${idx}.xml.rels`,
+      encoder.encode(entry.parts.pivotTableRels),
+    );
+  }
+
   return zip.build();
+}
+
+// ── Pivot Source Resolution ────────────────────────────────────────────
+
+/**
+ * Pull the source data out of a `WriteSheet`. Pivot tables can source
+ * from either `rows` (raw 2-D arrays) or `data` (objects keyed by
+ * `columns[].key`); we normalise both shapes into a single `CellValue[][]`.
+ *
+ * Returns `[]` when the sheet has no row-shaped data — `resolvePivotSource`
+ * will throw a clearer error in that case.
+ */
+function collectSourceRows(sheet: WriteSheet): CellValue[][] {
+  if (sheet.rows && sheet.rows.length > 0) {
+    return sheet.rows.map((row) => [...row]);
+  }
+  if (sheet.data && sheet.data.length > 0 && sheet.columns && sheet.columns.length > 0) {
+    const out: CellValue[][] = [];
+    const headerRow: CellValue[] = sheet.columns.map((c) => c.header ?? c.key ?? "");
+    out.push(headerRow);
+    for (const obj of sheet.data) {
+      const row: CellValue[] = sheet.columns.map((c) => {
+        if (!c.key) return null;
+        const v = obj[c.key];
+        return v === undefined ? null : (v as CellValue);
+      });
+      out.push(row);
+    }
+    return out;
+  }
+  return [];
 }
 
 // ── Named Range Builder ────────────────────────────────────────────────
