@@ -19,6 +19,16 @@ const REL_WORKBOOK =
 
 const NS_RELATIONSHIPS = "http://schemas.openxmlformats.org/package/2006/relationships";
 
+/**
+ * A pivotCache wiring entry emitted in workbook.xml. `cacheId` is the
+ * stable handle pivot tables reference; `rId` resolves through
+ * `xl/_rels/workbook.xml.rels` to the cache definition path.
+ */
+export interface PivotCacheRef {
+  cacheId: number;
+  rId: string;
+}
+
 /** Generate xl/workbook.xml */
 export function writeWorkbookXml(
   sheets: WriteSheet[],
@@ -27,6 +37,7 @@ export function writeWorkbookXml(
   activeSheet?: number,
   workbookProtection?: { lockStructure?: boolean; lockWindows?: boolean; password?: string },
   externalLinkRels?: ReadonlyArray<{ rId: string }>,
+  pivotCacheRefs?: ReadonlyArray<PivotCacheRef>,
 ): string {
   const sheetElements: string[] = [];
 
@@ -125,6 +136,16 @@ export function writeWorkbookXml(
   // ── calcPr — tells Excel to recalculate all formulas on open ──
   parts.push(xmlSelfClose("calcPr", { calcId: 0, fullCalcOnLoad: 1 }));
 
+  // ── pivotCaches — wires cacheId values to workbook-rel rIds. ECMA-376
+  // §18.2.18 puts this block after calcPr; Excel won't recognise pivot
+  // tables on roundtrip without it.
+  if (pivotCacheRefs && pivotCacheRefs.length > 0) {
+    const cacheChildren = pivotCacheRefs.map((c) =>
+      xmlSelfClose("pivotCache", { cacheId: c.cacheId, "r:id": c.rId }),
+    );
+    parts.push(xmlElement("pivotCaches", undefined, cacheChildren));
+  }
+
   return xmlDocument("workbook", { xmlns: NS_SPREADSHEET, "xmlns:r": NS_R }, parts);
 }
 
@@ -135,11 +156,24 @@ const REL_FEATURE_PROPERTY_BAG =
 const REL_PERSON = "http://schemas.microsoft.com/office/2017/10/relationships/person";
 const REL_EXTERNAL_LINK =
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink";
+const REL_PIVOT_CACHE_DEFINITION =
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition";
 
 /** A relationship description for an externalLink emitted in workbook.xml.rels. */
 export interface ExternalLinkRel {
   rId: string;
   /** Path relative to the workbook directory, e.g. "externalLinks/externalLink1.xml". */
+  target: string;
+}
+
+/**
+ * A workbook-level pivot cache definition relationship. The rId is
+ * shared with the matching `<pivotCache cacheId="..." r:id="..."/>` in
+ * workbook.xml so the two stay in lockstep.
+ */
+export interface PivotCacheRel {
+  rId: string;
+  /** Path relative to xl/, e.g. "pivotCache/pivotCacheDefinition1.xml". */
   target: string;
 }
 
@@ -151,6 +185,7 @@ export function writeWorkbookRels(
   hasFeaturePropertyBag?: boolean,
   hasPersons?: boolean,
   externalLinkRels?: ReadonlyArray<ExternalLinkRel>,
+  pivotCacheRels?: ReadonlyArray<PivotCacheRel>,
 ): string {
   const children: string[] = [];
 
@@ -242,6 +277,21 @@ export function writeWorkbookRels(
           Id: link.rId,
           Type: REL_EXTERNAL_LINK,
           Target: link.target,
+        }),
+      );
+    }
+  }
+
+  // Pivot cache definition relationships (caller supplies pre-assigned rIds
+  // — the rIds also appear in workbook.xml's <pivotCaches> block, so the
+  // two must agree).
+  if (pivotCacheRels) {
+    for (const cache of pivotCacheRels) {
+      children.push(
+        xmlSelfClose("Relationship", {
+          Id: cache.rId,
+          Type: REL_PIVOT_CACHE_DEFINITION,
+          Target: cache.target,
         }),
       );
     }

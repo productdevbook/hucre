@@ -9,7 +9,14 @@ import { ZipReader } from "../zip/reader";
 import { ZipWriter } from "../zip/writer";
 import { writeContentTypes } from "./content-types-writer";
 import type { ContentTypesOptions } from "./content-types-writer";
-import { writeRootRels, writeWorkbookXml, writeWorkbookRels } from "./workbook-writer";
+import {
+  writeRootRels,
+  writeWorkbookXml,
+  writeWorkbookRels,
+  type PivotCacheRef,
+  type PivotCacheRel,
+} from "./workbook-writer";
+import { parseRelationships } from "./relationships";
 import { createStylesCollector } from "./styles-writer";
 import { createSharedStrings, writeSharedStringsXml, writeWorksheetXml } from "./worksheet-writer";
 import type { WorksheetResult } from "./worksheet-writer";
@@ -57,6 +64,8 @@ const REL_TABLE = "http://schemas.openxmlformats.org/officeDocument/2006/relatio
 const REL_THREADED_COMMENT =
   "http://schemas.microsoft.com/office/2017/10/relationships/threadedComment";
 const REL_PERSON = "http://schemas.microsoft.com/office/2017/10/relationships/person";
+const REL_PIVOT_TABLE =
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable";
 
 /**
  * Parts that defter regenerates from parsed data.
@@ -303,6 +312,32 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     if (m) externalLinkIndices.push(parseInt(m[1], 10));
   }
   externalLinkIndices.sort((a, b) => a - b);
+
+  // Collect pivot cache definitions, pivot cache records, and per-sheet
+  // pivot tables that survived in raw entries. Each survives as a body
+  // file, but the references that wire them into the workbook get
+  // regenerated from scratch — so we must declare them here.
+  const pivotCacheDefinitionIndices: number[] = [];
+  const pivotCacheRecordIndices: number[] = [];
+  const pivotTableIndices: number[] = [];
+  for (const path of workbook._rawEntries.keys()) {
+    let m = path.match(/^xl\/pivotCache\/pivotCacheDefinition(\d+)\.xml$/i);
+    if (m) {
+      pivotCacheDefinitionIndices.push(parseInt(m[1], 10));
+      continue;
+    }
+    m = path.match(/^xl\/pivotCache\/pivotCacheRecords(\d+)\.xml$/i);
+    if (m) {
+      pivotCacheRecordIndices.push(parseInt(m[1], 10));
+      continue;
+    }
+    m = path.match(/^xl\/pivotTables\/pivotTable(\d+)\.xml$/i);
+    if (m) pivotTableIndices.push(parseInt(m[1], 10));
+  }
+  pivotCacheDefinitionIndices.sort((a, b) => a - b);
+  pivotCacheRecordIndices.sort((a, b) => a - b);
+  pivotTableIndices.sort((a, b) => a - b);
+
   // rIds for external link relationships: assigned after all
   // sheet/styles/sharedStrings/theme/macros/featurePropertyBag/persons rIds.
   const externalLinkRelStart = computeExternalLinkRelStart(
@@ -316,6 +351,30 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     rId: `rId${externalLinkRelStart + i}`,
     target: `externalLinks/externalLink${idx}.xml`,
   }));
+
+  // rIds for pivot cache definition relationships: continue numbering
+  // past the external link rIds. The same rIds also flow into the
+  // workbook.xml `<pivotCaches>` block so cache references stay sound.
+  const pivotCacheRelStart = externalLinkRelStart + externalLinkRels.length;
+  const pivotCacheRels: PivotCacheRel[] = pivotCacheDefinitionIndices.map((idx, i) => ({
+    rId: `rId${pivotCacheRelStart + i}`,
+    target: `pivotCache/pivotCacheDefinition${idx}.xml`,
+  }));
+  // Workbook-level pivotCaches block. cacheId is 0-based and must match
+  // the per-pivot-table `cacheId` attribute. We assign them in the
+  // order the cache definitions appear in the package — the original
+  // cacheIds aren't recoverable without parsing workbook.xml here, but
+  // Excel only requires cacheId/rId pairings to be self-consistent, so
+  // a 0..N-1 sequence is safe for roundtrip.
+  const pivotCacheRefs: PivotCacheRef[] = pivotCacheRels.map((rel, i) => ({
+    cacheId: i,
+    rId: rel.rId,
+  }));
+
+  // Map each pivot table to the sheet that hosts it. The mapping is
+  // recovered by walking each sheet's original _rels file — that's
+  // where Excel stored the pivotTable -> sheet wiring originally.
+  const sheetPivotTableTargets = collectSheetPivotTableTargets(workbook, sheets);
 
   // Build ZIP archive
   const zip = new ZipWriter();
@@ -365,6 +424,11 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
       threadedCommentSheetIndices.length > 0 ? threadedCommentSheetIndices : undefined,
     hasPersons: hasPersons || undefined,
     externalLinkIndices: externalLinkIndices.length > 0 ? externalLinkIndices : undefined,
+    pivotTableIndices: pivotTableIndices.length > 0 ? pivotTableIndices : undefined,
+    pivotCacheDefinitionIndices:
+      pivotCacheDefinitionIndices.length > 0 ? pivotCacheDefinitionIndices : undefined,
+    pivotCacheRecordIndices:
+      pivotCacheRecordIndices.length > 0 ? pivotCacheRecordIndices : undefined,
     hasCoreProps: true,
     hasAppProps: true,
     hasMacros: workbook.hasMacros,
@@ -390,6 +454,7 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
         activeSheet,
         undefined,
         externalLinkRels.length > 0 ? externalLinkRels : undefined,
+        pivotCacheRefs.length > 0 ? pivotCacheRefs : undefined,
       ),
     ),
   );
@@ -405,6 +470,7 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
         false, // hasFeaturePropertyBag — not yet roundtripped
         hasPersons,
         externalLinkRels.length > 0 ? externalLinkRels : undefined,
+        pivotCacheRels.length > 0 ? pivotCacheRels : undefined,
       ),
     ),
   );
@@ -431,8 +497,17 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     const hasComments = comments !== null && result.legacyDrawingRId !== null;
     const hasTables = result.tables.length > 0;
     const hasThreadedComments = threadedCommentSheetIndices.includes(i + 1);
+    const sheetPivotTargets = sheetPivotTableTargets[i] ?? [];
+    const hasSheetPivotTables = sheetPivotTargets.length > 0;
 
-    if (hasHyperlinks || hasDrawing || hasComments || hasTables || hasThreadedComments) {
+    if (
+      hasHyperlinks ||
+      hasDrawing ||
+      hasComments ||
+      hasTables ||
+      hasThreadedComments ||
+      hasSheetPivotTables
+    ) {
       const relElements: string[] = [];
 
       for (const rel of result.hyperlinkRelationships) {
@@ -483,23 +558,42 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
         );
       }
 
-      // Threaded comments (Excel 365). The rId only needs to be unique
-      // within this rels file — pick the next id past everything we've
-      // already emitted for this sheet.
-      if (hasThreadedComments) {
-        const usedIds = new Set<number>();
-        for (const r of result.hyperlinkRelationships) usedIds.add(relIdNum(r.id));
-        if (result.drawingRId) usedIds.add(relIdNum(result.drawingRId));
-        if (result.legacyDrawingRId) usedIds.add(relIdNum(result.legacyDrawingRId));
-        if (result.commentsRId) usedIds.add(relIdNum(result.commentsRId));
-        for (const t of result.tables) usedIds.add(relIdNum(t.rId));
+      // Track all rIds we've already used so threaded comment / pivot
+      // table rels pick non-colliding ids.
+      const usedIds = new Set<number>();
+      for (const r of result.hyperlinkRelationships) usedIds.add(relIdNum(r.id));
+      if (result.drawingRId) usedIds.add(relIdNum(result.drawingRId));
+      if (result.legacyDrawingRId) usedIds.add(relIdNum(result.legacyDrawingRId));
+      if (result.commentsRId) usedIds.add(relIdNum(result.commentsRId));
+      for (const t of result.tables) usedIds.add(relIdNum(t.rId));
+
+      const allocRid = (): string => {
         let next = 1;
         while (usedIds.has(next)) next++;
+        usedIds.add(next);
+        return `rId${next}`;
+      };
+
+      // Threaded comments (Excel 365).
+      if (hasThreadedComments) {
         relElements.push(
           xmlSelfClose("Relationship", {
-            Id: `rId${next}`,
+            Id: allocRid(),
             Type: REL_THREADED_COMMENT,
             Target: `../threadedComments/threadedComment${i + 1}.xml`,
+          }),
+        );
+      }
+
+      // Pivot tables hosted on this sheet. Re-emit each one we recovered
+      // from the original sheet rels — Excel needs the sheet -> pivot
+      // table wiring or it won't render the pivot at all.
+      for (const target of sheetPivotTargets) {
+        relElements.push(
+          xmlSelfClose("Relationship", {
+            Id: allocRid(),
+            Type: REL_PIVOT_TABLE,
+            Target: target,
           }),
         );
       }
@@ -552,6 +646,39 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
 function relIdNum(rId: string): number {
   const m = rId.match(/(\d+)$/);
   return m ? parseInt(m[1], 10) : 0;
+}
+
+/**
+ * Walk each preserved sheet rels file and pull out its pivot table
+ * targets so we can re-emit the sheet -> pivot wiring after the rels
+ * are regenerated. Returns one entry per sheet (in workbook order),
+ * each a list of relative `Target` paths suitable for plugging back
+ * into the regenerated rels.
+ */
+function collectSheetPivotTableTargets(
+  workbook: RoundtripWorkbook,
+  sheets: ReadonlyArray<{ name: string }>,
+): string[][] {
+  const decoder = new TextDecoder("utf-8");
+  const out: string[][] = sheets.map(() => []);
+  for (let i = 0; i < sheets.length; i++) {
+    const relsPath = `xl/worksheets/_rels/sheet${i + 1}.xml.rels`;
+    const data = workbook._rawEntries.get(relsPath);
+    if (!data) continue;
+    let rels;
+    try {
+      rels = parseRelationships(decoder.decode(data));
+    } catch {
+      continue;
+    }
+    for (const rel of rels) {
+      // Match by suffix to tolerate Strict/Transitional namespaces.
+      if (rel.type.endsWith("/pivotTable")) {
+        out[i].push(rel.target);
+      }
+    }
+  }
+  return out;
 }
 
 /**

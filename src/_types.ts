@@ -715,6 +715,12 @@ export interface Sheet {
   threadedComments?: ThreadedComment[];
   /** Accessibility metadata for screen readers and the `audit` helper. */
   a11y?: SheetA11y;
+  /**
+   * Pivot table instances hosted on this sheet. The body lives in
+   * `xl/pivotTables/pivotTableN.xml`; each instance points at a
+   * workbook-level cache via `cacheId`.
+   */
+  pivotTables?: PivotTable[];
 }
 
 // ── Workbook Properties ────────────────────────────────────────────
@@ -780,6 +786,123 @@ export interface ExternalLink {
   definedNames?: ExternalDefinedName[];
 }
 
+// ── Pivot Tables ───────────────────────────────────────────────────
+
+/**
+ * Aggregation function for a pivot table data field. Mirrors the
+ * `subtotal` attribute on `<c:dataField>` in OOXML.
+ */
+export type PivotDataFieldFunction =
+  | "sum"
+  | "count"
+  | "average"
+  | "max"
+  | "min"
+  | "product"
+  | "countNums"
+  | "stdDev"
+  | "stdDevp"
+  | "var"
+  | "varp";
+
+/**
+ * Field role in a pivot table layout. `row`, `col`, `page`, and `data`
+ * mirror the four standard axes; `hidden` means the field exists in the
+ * cache but is not currently placed on any axis.
+ */
+export type PivotFieldAxis = "row" | "col" | "page" | "data" | "hidden";
+
+export interface PivotField {
+  /**
+   * Display name. Reads from the `<cacheField name="...">` attribute on
+   * the matching field index in the pivot cache definition.
+   */
+  name: string;
+  /**
+   * Where the field appears in the pivot table. `hidden` covers cache
+   * fields that are present but not placed on any axis.
+   */
+  axis: PivotFieldAxis;
+  /** When `axis === "data"`, the aggregation applied to the values. */
+  function?: PivotDataFieldFunction;
+  /**
+   * Display name overlay for data fields (the `name` attribute on
+   * `<dataField>`). Falls back to `name` when absent.
+   */
+  displayName?: string;
+}
+
+/**
+ * A pivot table instance, attached to the sheet that hosts its layout.
+ * The `cacheId` references one of the workbook-level pivot caches that
+ * back this table.
+ */
+export interface PivotTable {
+  /** Pivot table name (`<pivotTableDefinition name="...">`). */
+  name: string;
+  /**
+   * Index into `Workbook.pivotCaches`. Mirrors the workbook-level
+   * `cacheId` attribute on `<pivotCache>` rather than the per-table
+   * relationship — that way a model author who reorders the cache
+   * array keeps the link sound.
+   */
+  cacheId: number;
+  /**
+   * Output range on the host sheet, e.g. `"A3:D20"`. Empty string when
+   * the source omits a `<location>` element.
+   */
+  location: string;
+  /** Number of header rows above the data rows. */
+  firstHeaderRow?: number;
+  /** Number of body rows reserved for column-axis labels. */
+  firstDataRow?: number;
+  /** Column index of the first data row (0-based). */
+  firstDataCol?: number;
+  /** Number of pages declared in `<pageFields>`. */
+  rowPageCount?: number;
+  /** Number of column-axis page-break positions. */
+  colPageCount?: number;
+  /**
+   * Pivot fields in declaration order. The position in this array is
+   * the field index used by `<rowItems>`, `<colItems>`, etc.
+   */
+  fields: PivotField[];
+  /** Pivot-table style name (`<pivotTableStyleInfo name="...">`). */
+  styleName?: string;
+  /** Whether the data field caption is shown. */
+  dataCaption?: string;
+}
+
+/**
+ * Workbook-level pivot cache: source range plus cached field metadata.
+ * Multiple pivot tables can share a cache so the same source data only
+ * gets indexed once.
+ */
+export interface PivotCache {
+  /**
+   * Cache id Excel uses to wire pivot tables to caches. Mirrors the
+   * `cacheId` attribute on `<workbook><pivotCaches><pivotCache>`.
+   */
+  cacheId: number;
+  /**
+   * Source range, e.g. `"Sheet1!$A$1:$C$100"` or a defined-name
+   * reference. Empty string for non-worksheet sources.
+   */
+  sourceRef?: string;
+  /** Source sheet name when the source is a worksheet range. */
+  sourceSheet?: string;
+  /**
+   * Source type: `worksheet` (range or table on a sheet), `external`
+   * (linked workbook / database), `consolidation`, or `scenario`. Most
+   * real workbooks use `worksheet`.
+   */
+  sourceType?: "worksheet" | "external" | "consolidation" | "scenario";
+  /** Cached field names in declaration order. */
+  fieldNames: string[];
+  /** Whether a `pivotCacheRecords{N}.xml` part is present. */
+  hasRecords?: boolean;
+}
+
 // ── Workbook ───────────────────────────────────────────────────────
 
 export interface Workbook {
@@ -810,6 +933,12 @@ export interface Workbook {
    * array matches the `[N]` prefix used in formulas like `[1]Sheet1!A1`.
    */
   externalLinks?: ExternalLink[];
+  /**
+   * Workbook-level pivot caches resolved from
+   * `xl/pivotCache/pivotCacheDefinitionN.xml`. Sheet-level
+   * `PivotTable.cacheId` references entries here.
+   */
+  pivotCaches?: PivotCache[];
 }
 
 // ── Read Options ───────────────────────────────────────────────────

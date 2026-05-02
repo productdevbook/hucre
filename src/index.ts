@@ -91,6 +91,20 @@ export type {
   ExternalDefinedName,
 } from "./_types";
 
+// ── Pivot Tables ───────────────────────────────────────────────────
+export {
+  parsePivotTable,
+  parsePivotCacheDefinition,
+  attachPivotCacheFields,
+} from "./xlsx/pivot-reader";
+export type {
+  PivotTable,
+  PivotCache,
+  PivotField,
+  PivotFieldAxis,
+  PivotDataFieldFunction,
+} from "./_types";
+
 // ── Date Utilities ─────────────────────────────────────────────────
 export {
   serialToDate,
