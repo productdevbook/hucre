@@ -135,6 +135,7 @@ const REL_FEATURE_PROPERTY_BAG =
 const REL_PERSON = "http://schemas.microsoft.com/office/2017/10/relationships/person";
 const REL_EXTERNAL_LINK =
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink";
+const REL_CELL_IMAGES = "http://www.wps.cn/officeDocument/2017/relationships/cellimage";
 
 /** A relationship description for an externalLink emitted in workbook.xml.rels. */
 export interface ExternalLinkRel {
@@ -151,6 +152,7 @@ export function writeWorkbookRels(
   hasFeaturePropertyBag?: boolean,
   hasPersons?: boolean,
   externalLinkRels?: ReadonlyArray<ExternalLinkRel>,
+  hasCellImages?: boolean,
 ): string {
   const children: string[] = [];
 
@@ -234,7 +236,9 @@ export function writeWorkbookRels(
     nextRid++;
   }
 
-  // External link relationships (caller supplies pre-assigned rIds)
+  // External link relationships (caller supplies pre-assigned rIds).
+  // Bump nextRid past them so anything emitted afterwards (cellImages
+  // and friends) keeps unique ids.
   if (externalLinkRels) {
     for (const link of externalLinkRels) {
       children.push(
@@ -245,6 +249,20 @@ export function writeWorkbookRels(
         }),
       );
     }
+    nextRid += externalLinkRels.length;
+  }
+
+  // WPS-style cell-images registry (xl/cellimages.xml). Always declared
+  // last so its rId follows everything else.
+  if (hasCellImages) {
+    children.push(
+      xmlSelfClose("Relationship", {
+        Id: `rId${nextRid}`,
+        Type: REL_CELL_IMAGES,
+        Target: "cellimages.xml",
+      }),
+    );
+    nextRid++;
   }
 
   return xmlDocument("Relationships", { xmlns: NS_RELATIONSHIPS }, children);

@@ -91,6 +91,11 @@ export type {
   ExternalDefinedName,
 } from "./_types";
 
+// ── Cell-Embedded Images (WPS DISPIMG) ────────────────────────────
+export { parseCellImages, assembleCellImages, REL_CELL_IMAGES } from "./xlsx/cell-images-reader";
+export type { ParsedCellImageRef } from "./xlsx/cell-images-reader";
+export type { CellImage } from "./_types";
+
 // ── Date Utilities ─────────────────────────────────────────────────
 export {
   serialToDate,

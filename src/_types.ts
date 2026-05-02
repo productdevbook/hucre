@@ -780,6 +780,30 @@ export interface ExternalLink {
   definedNames?: ExternalDefinedName[];
 }
 
+// ── Cell-Embedded Images (WPS DISPIMG / cellimages) ───────────────
+
+/**
+ * An image embedded inside a cell via the WPS Office cellimages mechanism
+ * (also recognized by recent Excel versions). The image is referenced from
+ * a cell formula `=_xlfn.DISPIMG("<id>", 1)` and the binary lives in the
+ * package as a regular media part. Unlike `SheetImage` (which is anchored
+ * to a drawing rectangle on a sheet), a `CellImage` is workbook-wide and
+ * can be referenced from any number of cells.
+ */
+export interface CellImage {
+  /**
+   * Stable image identifier as it appears inside the DISPIMG formula
+   * (`name` attribute on `xdr:cNvPr`). For example `"ID_2A8C..."`.
+   */
+  id: string;
+  /** Image binary, extracted from the package media folder. */
+  data: Uint8Array;
+  /** Image format inferred from the media file extension. */
+  type: SheetImage["type"];
+  /** Optional human-readable description (`descr` attribute). */
+  description?: string;
+}
+
 // ── Workbook ───────────────────────────────────────────────────────
 
 export interface Workbook {
@@ -810,6 +834,14 @@ export interface Workbook {
    * array matches the `[N]` prefix used in formulas like `[1]Sheet1!A1`.
    */
   externalLinks?: ExternalLink[];
+  /**
+   * Cell-embedded images (WPS DISPIMG mechanism).
+   *
+   * Resolved from `xl/cellimages.xml`. Cells reference these images via
+   * `=_xlfn.DISPIMG("<id>", 1)` formulas — match `CellImage.id` against
+   * the first argument to look up the binary.
+   */
+  cellImages?: CellImage[];
 }
 
 // ── Read Options ───────────────────────────────────────────────────
