@@ -8,6 +8,8 @@
 
 import type {
   ChartAxisGridlines,
+  ChartAxisNumberFormat,
+  ChartAxisScale,
   ChartDataLabels,
   ChartSeries,
   SheetChart,
@@ -125,29 +127,35 @@ function buildTitle(title: string): string {
 function buildPlotArea(chart: SheetChart, sheetName: string): string {
   const children: string[] = [xmlSelfClose("c:layout")];
 
-  // Axis titles and gridlines surface for every chart family except
-  // pie. Pull them once so each branch can hand them off to the
-  // matching axis builder.
-  const xAxisTitle = normalizeAxisTitle(chart.axes?.x?.title);
-  const yAxisTitle = normalizeAxisTitle(chart.axes?.y?.title);
-  const xGridlines = normalizeAxisGridlines(chart.axes?.x?.gridlines);
-  const yGridlines = normalizeAxisGridlines(chart.axes?.y?.gridlines);
+  // Axis titles, gridlines, scaling and number format surface for
+  // every chart family except pie/doughnut. Pull them once so each
+  // branch can hand them off to the matching axis builder.
+  const opts: AxisRenderOptions = {
+    xAxisTitle: normalizeAxisTitle(chart.axes?.x?.title),
+    yAxisTitle: normalizeAxisTitle(chart.axes?.y?.title),
+    xGridlines: normalizeAxisGridlines(chart.axes?.x?.gridlines),
+    yGridlines: normalizeAxisGridlines(chart.axes?.y?.gridlines),
+    xScale: normalizeAxisScale(chart.axes?.x?.scale),
+    yScale: normalizeAxisScale(chart.axes?.y?.scale),
+    xNumFmt: normalizeAxisNumberFormat(chart.axes?.x?.numberFormat),
+    yNumFmt: normalizeAxisNumberFormat(chart.axes?.y?.numberFormat),
+  };
 
   switch (chart.type) {
     case "bar":
     case "column": {
       children.push(buildBarChart(chart, sheetName));
-      children.push(...buildBarAxes(chart.type, xAxisTitle, yAxisTitle, xGridlines, yGridlines));
+      children.push(...buildBarAxes(chart.type, opts));
       break;
     }
     case "line": {
       children.push(buildLineChart(chart, sheetName));
-      children.push(...buildBarAxes("column", xAxisTitle, yAxisTitle, xGridlines, yGridlines));
+      children.push(...buildBarAxes("column", opts));
       break;
     }
     case "area": {
       children.push(buildAreaChart(chart, sheetName));
-      children.push(...buildBarAxes("column", xAxisTitle, yAxisTitle, xGridlines, yGridlines));
+      children.push(...buildBarAxes("column", opts));
       break;
     }
     case "pie": {
@@ -160,7 +168,7 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     }
     case "scatter": {
       children.push(buildScatterChart(chart, sheetName));
-      children.push(...buildScatterAxes(xAxisTitle, yAxisTitle, xGridlines, yGridlines));
+      children.push(...buildScatterAxes(opts));
       break;
     }
     default: {
@@ -171,6 +179,17 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
   }
 
   return xmlElement("c:plotArea", undefined, children);
+}
+
+interface AxisRenderOptions {
+  xAxisTitle: string | undefined;
+  yAxisTitle: string | undefined;
+  xGridlines: { major: boolean; minor: boolean } | undefined;
+  yGridlines: { major: boolean; minor: boolean } | undefined;
+  xScale: ChartAxisScale | undefined;
+  yScale: ChartAxisScale | undefined;
+  xNumFmt: ChartAxisNumberFormat | undefined;
+  yNumFmt: ChartAxisNumberFormat | undefined;
 }
 
 /**
@@ -215,6 +234,134 @@ function buildAxisGridlines(gridlines: { major: boolean; minor: boolean } | unde
   return out;
 }
 
+/**
+ * Drop fields that won't survive Excel's strict validator. Non-finite
+ * numbers, `min >= max`, and zero/negative tick spacings all collapse
+ * the corresponding entry to `undefined` so the writer never emits a
+ * `<c:min>`/`<c:max>`/`<c:majorUnit>`/`<c:minorUnit>` Excel would
+ * reject.
+ *
+ * Returns `undefined` when nothing usable remains so the writer can
+ * skip the entire `<c:scaling>` augmentation.
+ */
+function normalizeAxisScale(value: ChartAxisScale | undefined): ChartAxisScale | undefined {
+  if (!value) return undefined;
+  const out: ChartAxisScale = {};
+  if (typeof value.min === "number" && Number.isFinite(value.min)) out.min = value.min;
+  if (typeof value.max === "number" && Number.isFinite(value.max)) out.max = value.max;
+  if (out.min !== undefined && out.max !== undefined && out.min >= out.max) {
+    // min >= max is meaningless; preserve the user-supplied min only
+    // so validators don't choke on a flipped/empty axis range.
+    delete out.max;
+  }
+  if (
+    typeof value.majorUnit === "number" &&
+    Number.isFinite(value.majorUnit) &&
+    value.majorUnit > 0
+  ) {
+    out.majorUnit = value.majorUnit;
+  }
+  if (
+    typeof value.minorUnit === "number" &&
+    Number.isFinite(value.minorUnit) &&
+    value.minorUnit > 0
+  ) {
+    out.minorUnit = value.minorUnit;
+  }
+  if (
+    typeof value.logBase === "number" &&
+    Number.isFinite(value.logBase) &&
+    value.logBase >= 2 &&
+    value.logBase <= 1000
+  ) {
+    out.logBase = value.logBase;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * Normalize a tick-label number format to a value the writer can emit.
+ * An empty `formatCode` collapses the whole record — Excel rejects
+ * `<c:numFmt formatCode=""/>`.
+ */
+function normalizeAxisNumberFormat(
+  value: ChartAxisNumberFormat | undefined,
+): ChartAxisNumberFormat | undefined {
+  if (!value) return undefined;
+  const formatCode = typeof value.formatCode === "string" ? value.formatCode : "";
+  if (formatCode.length === 0) return undefined;
+  const out: ChartAxisNumberFormat = { formatCode };
+  if (value.sourceLinked === true) out.sourceLinked = true;
+  return out;
+}
+
+/**
+ * Build the children that augment a `<c:scaling>` element. Order is
+ * spec-enforced: `<c:logBase>` → `<c:orientation>` → `<c:max>` →
+ * `<c:min>`. The orientation child is always emitted by the caller
+ * (every axis declares `minMax`); this helper handles the rest.
+ *
+ * Returns the children to splice in after `<c:orientation>`.
+ */
+function buildAxisScalingExtras(scale: ChartAxisScale | undefined): {
+  before: string[];
+  after: string[];
+} {
+  if (!scale) return { before: [], after: [] };
+  const before: string[] = [];
+  const after: string[] = [];
+  // logBase comes before orientation per CT_Scaling.
+  if (scale.logBase !== undefined) {
+    before.push(xmlSelfClose("c:logBase", { val: scale.logBase }));
+  }
+  // max and min come after orientation, with max first (CT_Scaling).
+  if (scale.max !== undefined) after.push(xmlSelfClose("c:max", { val: scale.max }));
+  if (scale.min !== undefined) after.push(xmlSelfClose("c:min", { val: scale.min }));
+  return { before, after };
+}
+
+/**
+ * Build the `<c:scaling>` element. Always emits `<c:orientation>` so
+ * the axis renders correctly even when no extra scale fields are set.
+ */
+function buildAxisScaling(scale: ChartAxisScale | undefined): string {
+  const { before, after } = buildAxisScalingExtras(scale);
+  const children: string[] = [
+    ...before,
+    xmlSelfClose("c:orientation", { val: "minMax" }),
+    ...after,
+  ];
+  return xmlElement("c:scaling", undefined, children);
+}
+
+/**
+ * Build the optional `<c:majorUnit>` / `<c:minorUnit>` siblings that
+ * sit later in the axis-element child sequence (after `<c:numFmt>`,
+ * before `<c:crossAx>` per CT_CatAx / CT_ValAx).
+ */
+function buildAxisTickUnits(scale: ChartAxisScale | undefined): string[] {
+  if (!scale) return [];
+  const out: string[] = [];
+  if (scale.majorUnit !== undefined) {
+    out.push(xmlSelfClose("c:majorUnit", { val: scale.majorUnit }));
+  }
+  if (scale.minorUnit !== undefined) {
+    out.push(xmlSelfClose("c:minorUnit", { val: scale.minorUnit }));
+  }
+  return out;
+}
+
+/**
+ * Build the axis tick-label `<c:numFmt formatCode=".." sourceLinked=".."/>`.
+ * Returns an empty array when the axis declares no number format — the
+ * writer then leaves Excel's default linked behaviour untouched.
+ */
+function buildAxisNumFmt(numFmt: ChartAxisNumberFormat | undefined): string[] {
+  if (!numFmt) return [];
+  const sourceLinked = numFmt.sourceLinked === true ? 1 : 0;
+  return [xmlSelfClose("c:numFmt", { formatCode: numFmt.formatCode, sourceLinked })];
+}
+
 // ── Bar / Column ─────────────────────────────────────────────────────
 
 const AXIS_ID_CAT = 111111111;
@@ -255,13 +402,7 @@ function buildBarChart(chart: SheetChart, sheetName: string): string {
   return xmlElement("c:barChart", undefined, children);
 }
 
-function buildBarAxes(
-  orientation: "bar" | "column",
-  xAxisTitle: string | undefined,
-  yAxisTitle: string | undefined,
-  xGridlines: { major: boolean; minor: boolean } | undefined,
-  yGridlines: { major: boolean; minor: boolean } | undefined,
-): string[] {
+function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): string[] {
   // For a vertical column chart, categories sit on the bottom (catAx)
   // and values run vertically (valAx). For a horizontal bar chart the
   // axes swap orientation.
@@ -270,18 +411,21 @@ function buildBarAxes(
 
   // OOXML enforces a strict child order inside <c:catAx>/<c:valAx>:
   // axId → scaling → delete → axPos → majorGridlines → minorGridlines
-  // → title → numFmt → crossAx → ...
-  // Gridlines and title must therefore land before crossAx/crosses,
-  // and gridlines must come before the title or Excel ignores them.
+  // → title → numFmt → ... → crossAx → crosses → ... → majorUnit →
+  // minorUnit. Each block below mirrors that order.
+  // The category axis on bar/column rarely uses scaling, but Excel
+  // tolerates the augmentation either way; surface it whenever the
+  // caller pinned a value so write-side templates round-trip.
   const catAxChildren: string[] = [
     xmlSelfClose("c:axId", { val: AXIS_ID_CAT }),
-    xmlElement("c:scaling", undefined, [xmlSelfClose("c:orientation", { val: "minMax" })]),
+    buildAxisScaling(opts.xScale),
     xmlSelfClose("c:delete", { val: 0 }),
     xmlSelfClose("c:axPos", { val: catPos }),
-    ...buildAxisGridlines(xGridlines),
+    ...buildAxisGridlines(opts.xGridlines),
   ];
-  if (xAxisTitle) catAxChildren.push(buildAxisTitle(xAxisTitle));
+  if (opts.xAxisTitle) catAxChildren.push(buildAxisTitle(opts.xAxisTitle));
   catAxChildren.push(
+    ...buildAxisNumFmt(opts.xNumFmt),
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL }),
     xmlSelfClose("c:crosses", { val: "autoZero" }),
     xmlSelfClose("c:auto", { val: 1 }),
@@ -292,16 +436,18 @@ function buildBarAxes(
 
   const valAxChildren: string[] = [
     xmlSelfClose("c:axId", { val: AXIS_ID_VAL }),
-    xmlElement("c:scaling", undefined, [xmlSelfClose("c:orientation", { val: "minMax" })]),
+    buildAxisScaling(opts.yScale),
     xmlSelfClose("c:delete", { val: 0 }),
     xmlSelfClose("c:axPos", { val: valPos }),
-    ...buildAxisGridlines(yGridlines),
+    ...buildAxisGridlines(opts.yGridlines),
   ];
-  if (yAxisTitle) valAxChildren.push(buildAxisTitle(yAxisTitle));
+  if (opts.yAxisTitle) valAxChildren.push(buildAxisTitle(opts.yAxisTitle));
   valAxChildren.push(
+    ...buildAxisNumFmt(opts.yNumFmt),
     xmlSelfClose("c:crossAx", { val: AXIS_ID_CAT }),
     xmlSelfClose("c:crosses", { val: "autoZero" }),
     xmlSelfClose("c:crossBetween", { val: "between" }),
+    ...buildAxisTickUnits(opts.yScale),
   );
 
   return [
@@ -489,38 +635,37 @@ function buildScatterChart(chart: SheetChart, sheetName: string): string {
   return xmlElement("c:scatterChart", undefined, children);
 }
 
-function buildScatterAxes(
-  xAxisTitle: string | undefined,
-  yAxisTitle: string | undefined,
-  xGridlines: { major: boolean; minor: boolean } | undefined,
-  yGridlines: { major: boolean; minor: boolean } | undefined,
-): string[] {
+function buildScatterAxes(opts: AxisRenderOptions): string[] {
   const xAxChildren: string[] = [
     xmlSelfClose("c:axId", { val: AXIS_ID_VAL_X }),
-    xmlElement("c:scaling", undefined, [xmlSelfClose("c:orientation", { val: "minMax" })]),
+    buildAxisScaling(opts.xScale),
     xmlSelfClose("c:delete", { val: 0 }),
     xmlSelfClose("c:axPos", { val: "b" }),
-    ...buildAxisGridlines(xGridlines),
+    ...buildAxisGridlines(opts.xGridlines),
   ];
-  if (xAxisTitle) xAxChildren.push(buildAxisTitle(xAxisTitle));
+  if (opts.xAxisTitle) xAxChildren.push(buildAxisTitle(opts.xAxisTitle));
   xAxChildren.push(
+    ...buildAxisNumFmt(opts.xNumFmt),
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL_Y }),
     xmlSelfClose("c:crosses", { val: "autoZero" }),
     xmlSelfClose("c:crossBetween", { val: "midCat" }),
+    ...buildAxisTickUnits(opts.xScale),
   );
 
   const yAxChildren: string[] = [
     xmlSelfClose("c:axId", { val: AXIS_ID_VAL_Y }),
-    xmlElement("c:scaling", undefined, [xmlSelfClose("c:orientation", { val: "minMax" })]),
+    buildAxisScaling(opts.yScale),
     xmlSelfClose("c:delete", { val: 0 }),
     xmlSelfClose("c:axPos", { val: "l" }),
-    ...buildAxisGridlines(yGridlines),
+    ...buildAxisGridlines(opts.yGridlines),
   ];
-  if (yAxisTitle) yAxChildren.push(buildAxisTitle(yAxisTitle));
+  if (opts.yAxisTitle) yAxChildren.push(buildAxisTitle(opts.yAxisTitle));
   yAxChildren.push(
+    ...buildAxisNumFmt(opts.yNumFmt),
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL_X }),
     xmlSelfClose("c:crosses", { val: "autoZero" }),
     xmlSelfClose("c:crossBetween", { val: "midCat" }),
+    ...buildAxisTickUnits(opts.yScale),
   );
 
   return [

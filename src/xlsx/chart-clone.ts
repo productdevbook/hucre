@@ -13,6 +13,8 @@
 import type {
   Chart,
   ChartAxisGridlines,
+  ChartAxisNumberFormat,
+  ChartAxisScale,
   ChartDataLabels,
   ChartDataLabelsInfo,
   ChartKind,
@@ -126,8 +128,18 @@ export interface CloneChartOptions {
    * those cases.
    */
   axes?: {
-    x?: { title?: string | null; gridlines?: ChartAxisGridlines | null };
-    y?: { title?: string | null; gridlines?: ChartAxisGridlines | null };
+    x?: {
+      title?: string | null;
+      gridlines?: ChartAxisGridlines | null;
+      scale?: ChartAxisScale | null;
+      numberFormat?: ChartAxisNumberFormat | null;
+    };
+    y?: {
+      title?: string | null;
+      gridlines?: ChartAxisGridlines | null;
+      scale?: ChartAxisScale | null;
+      numberFormat?: ChartAxisNumberFormat | null;
+    };
   };
 }
 
@@ -438,17 +450,41 @@ function resolveAxes(
   const yTitle = applyOverride(sourceAxes?.y?.title, overrides?.y?.title);
   const xGridlines = applyGridlinesOverride(sourceAxes?.x?.gridlines, overrides?.x?.gridlines);
   const yGridlines = applyGridlinesOverride(sourceAxes?.y?.gridlines, overrides?.y?.gridlines);
+  const xScale = applyScaleOverride(sourceAxes?.x?.scale, overrides?.x?.scale);
+  const yScale = applyScaleOverride(sourceAxes?.y?.scale, overrides?.y?.scale);
+  const xNumFmt = applyNumberFormatOverride(
+    sourceAxes?.x?.numberFormat,
+    overrides?.x?.numberFormat,
+  );
+  const yNumFmt = applyNumberFormatOverride(
+    sourceAxes?.y?.numberFormat,
+    overrides?.y?.numberFormat,
+  );
 
   const out: NonNullable<SheetChart["axes"]> = {};
-  if (xTitle !== undefined || xGridlines !== undefined) {
+  if (
+    xTitle !== undefined ||
+    xGridlines !== undefined ||
+    xScale !== undefined ||
+    xNumFmt !== undefined
+  ) {
     out.x = {};
     if (xTitle !== undefined) out.x.title = xTitle;
     if (xGridlines !== undefined) out.x.gridlines = xGridlines;
+    if (xScale !== undefined) out.x.scale = xScale;
+    if (xNumFmt !== undefined) out.x.numberFormat = xNumFmt;
   }
-  if (yTitle !== undefined || yGridlines !== undefined) {
+  if (
+    yTitle !== undefined ||
+    yGridlines !== undefined ||
+    yScale !== undefined ||
+    yNumFmt !== undefined
+  ) {
     out.y = {};
     if (yTitle !== undefined) out.y.title = yTitle;
     if (yGridlines !== undefined) out.y.gridlines = yGridlines;
+    if (yScale !== undefined) out.y.scale = yScale;
+    if (yNumFmt !== undefined) out.y.numberFormat = yNumFmt;
   }
 
   return out.x || out.y ? out : undefined;
@@ -476,4 +512,73 @@ function applyGridlinesOverride(
   if (override.major === true) out.major = true;
   if (override.minor === true) out.minor = true;
   return out.major || out.minor ? out : undefined;
+}
+
+/**
+ * Resolve a scale override using the same `undefined` / `null` /
+ * object grammar as {@link applyGridlinesOverride}. The override
+ * replaces the source wholesale rather than merging field-by-field —
+ * a partial template scale `{ min: 0 }` plus an override
+ * `{ max: 100 }` yields `{ max: 100 }`, not `{ min: 0, max: 100 }`.
+ * Per-field merges proved confusing in the dashboard composition flow
+ * (callers expected the override to fully describe the target scale),
+ * so wholesale replacement is the simpler contract.
+ */
+function applyScaleOverride(
+  source: ChartAxisScale | undefined,
+  override: ChartAxisScale | null | undefined,
+): ChartAxisScale | undefined {
+  if (override === undefined) {
+    if (!source) return undefined;
+    return cloneScale(source);
+  }
+  if (override === null) return undefined;
+  return cloneScale(override);
+}
+
+function cloneScale(source: ChartAxisScale): ChartAxisScale | undefined {
+  const out: ChartAxisScale = {};
+  if (typeof source.min === "number" && Number.isFinite(source.min)) out.min = source.min;
+  if (typeof source.max === "number" && Number.isFinite(source.max)) out.max = source.max;
+  if (
+    typeof source.majorUnit === "number" &&
+    Number.isFinite(source.majorUnit) &&
+    source.majorUnit > 0
+  ) {
+    out.majorUnit = source.majorUnit;
+  }
+  if (
+    typeof source.minorUnit === "number" &&
+    Number.isFinite(source.minorUnit) &&
+    source.minorUnit > 0
+  ) {
+    out.minorUnit = source.minorUnit;
+  }
+  if (typeof source.logBase === "number" && Number.isFinite(source.logBase)) {
+    out.logBase = source.logBase;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * Resolve a number-format override. Same grammar as the other
+ * per-axis helpers: `undefined` inherits, `null` drops, an object
+ * replaces.
+ */
+function applyNumberFormatOverride(
+  source: ChartAxisNumberFormat | undefined,
+  override: ChartAxisNumberFormat | null | undefined,
+): ChartAxisNumberFormat | undefined {
+  if (override === undefined) {
+    if (!source) return undefined;
+    if (typeof source.formatCode !== "string" || source.formatCode.length === 0) return undefined;
+    const out: ChartAxisNumberFormat = { formatCode: source.formatCode };
+    if (source.sourceLinked === true) out.sourceLinked = true;
+    return out;
+  }
+  if (override === null) return undefined;
+  if (typeof override.formatCode !== "string" || override.formatCode.length === 0) return undefined;
+  const out: ChartAxisNumberFormat = { formatCode: override.formatCode };
+  if (override.sourceLinked === true) out.sourceLinked = true;
+  return out;
 }

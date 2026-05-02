@@ -16,6 +16,8 @@ import type {
   Chart,
   ChartAxisGridlines,
   ChartAxisInfo,
+  ChartAxisNumberFormat,
+  ChartAxisScale,
   ChartBarGrouping,
   ChartDataLabelPosition,
   ChartDataLabelsInfo,
@@ -203,11 +205,111 @@ function parseAxes(plotArea: XmlElement): { x?: ChartAxisInfo; y?: ChartAxisInfo
 function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   const title = parseAxisTitle(axis);
   const gridlines = parseAxisGridlines(axis);
-  if (title === undefined && gridlines === undefined) return undefined;
+  const scale = parseAxisScale(axis);
+  const numberFormat = parseAxisNumberFormat(axis);
+  if (
+    title === undefined &&
+    gridlines === undefined &&
+    scale === undefined &&
+    numberFormat === undefined
+  ) {
+    return undefined;
+  }
   const out: ChartAxisInfo = {};
   if (title !== undefined) out.title = title;
   if (gridlines !== undefined) out.gridlines = gridlines;
+  if (scale !== undefined) out.scale = scale;
+  if (numberFormat !== undefined) out.numberFormat = numberFormat;
   return out;
+}
+
+/**
+ * Read an axis's numeric scale block. The scale lives inside
+ * `<c:scaling>`, with one optional child per pinned bound:
+ *
+ *   <c:scaling>
+ *     <c:orientation val="minMax"/>
+ *     <c:logBase val="10"/>
+ *     <c:min val="0"/>
+ *     <c:max val="100"/>
+ *     <c:majorUnit val="20"/>
+ *     <c:minorUnit val="5"/>
+ *   </c:scaling>
+ *
+ * Returns `undefined` when none of the numeric children declare a
+ * usable value — the orientation child alone (Excel's autoscale
+ * baseline) does not surface a scale.
+ */
+function parseAxisScale(axis: XmlElement): ChartAxisScale | undefined {
+  const out: ChartAxisScale = {};
+
+  // <c:min>, <c:max>, and <c:logBase> live inside <c:scaling>; the
+  // tick-spacing children <c:majorUnit> / <c:minorUnit> sit directly
+  // under <c:catAx>/<c:valAx> per CT_CatAx / CT_ValAx in ECMA-376.
+  const scaling = findChild(axis, "scaling");
+  if (scaling) {
+    const min = parseNumericChildVal(scaling, "min");
+    if (min !== undefined) out.min = min;
+
+    const max = parseNumericChildVal(scaling, "max");
+    if (max !== undefined) out.max = max;
+
+    const logBase = parseNumericChildVal(scaling, "logBase");
+    if (logBase !== undefined) out.logBase = logBase;
+  }
+
+  const majorUnit = parseNumericChildVal(axis, "majorUnit");
+  if (majorUnit !== undefined && majorUnit > 0) out.majorUnit = majorUnit;
+
+  const minorUnit = parseNumericChildVal(axis, "minorUnit");
+  if (minorUnit !== undefined && minorUnit > 0) out.minorUnit = minorUnit;
+
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * Read an axis's `<c:numFmt formatCode=".." sourceLinked=".."/>`.
+ * Returns `undefined` when the element is absent or carries an empty
+ * `formatCode`. `sourceLinked` is normalized to a boolean — `0`/`1`
+ * and `"true"`/`"false"` are both accepted.
+ */
+function parseAxisNumberFormat(axis: XmlElement): ChartAxisNumberFormat | undefined {
+  const numFmt = findChild(axis, "numFmt");
+  if (!numFmt) return undefined;
+  const formatCode = numFmt.attrs.formatCode;
+  if (typeof formatCode !== "string" || formatCode.length === 0) return undefined;
+  const out: ChartAxisNumberFormat = { formatCode };
+  const sourceLinked = numFmt.attrs.sourceLinked;
+  if (sourceLinked !== undefined && parseBoolAttr(sourceLinked) === true) {
+    out.sourceLinked = true;
+  }
+  return out;
+}
+
+/**
+ * Pull a finite numeric `val=".."` attribute off a named child of
+ * `parent`. Tolerates whitespace and trailing zeros; returns
+ * `undefined` for missing children, missing attributes, and values
+ * that fail `Number.isFinite`.
+ */
+function parseNumericChildVal(parent: XmlElement, localName: string): number | undefined {
+  const child = findChild(parent, localName);
+  if (!child) return undefined;
+  const raw = child.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  const value = Number(trimmed);
+  return Number.isFinite(value) ? value : undefined;
+}
+
+/** Coerce an XML boolean attribute (`"0"`, `"1"`, `"true"`, `"false"`). */
+function parseBoolAttr(value: unknown): boolean | undefined {
+  if (typeof value !== "string") return undefined;
+  const v = value.trim().toLowerCase();
+  if (v === "1" || v === "true") return true;
+  if (v === "0" || v === "false") return false;
+  return undefined;
 }
 
 /**

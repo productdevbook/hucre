@@ -645,6 +645,190 @@ describe("cloneChart — axis gridlines", () => {
   });
 });
 
+// ── cloneChart — axis scale ─────────────────────────────────────────
+
+describe("cloneChart — axis scale", () => {
+  const sourceWithScale: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: {
+      y: { scale: { min: 0, max: 100, majorUnit: 25 } },
+    },
+  };
+
+  it("inherits the source's scale when no override is given", () => {
+    const clone = cloneChart(sourceWithScale, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y?.scale).toEqual({ min: 0, max: 100, majorUnit: 25 });
+  });
+
+  it("drops inherited scale when override is null", () => {
+    const clone = cloneChart(sourceWithScale, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { scale: null } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("replaces the inherited scale wholesale (does not merge field-by-field)", () => {
+    const clone = cloneChart(sourceWithScale, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { scale: { max: 50 } } },
+    });
+    // No min should leak through from the source — wholesale replace.
+    expect(clone.axes?.y?.scale).toEqual({ max: 50 });
+  });
+
+  it("adds a scale to an axis the source did not declare it on", () => {
+    const noScale: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(noScale, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { scale: { min: 0, max: 200 } } },
+    });
+    expect(clone.axes?.y?.scale).toEqual({ min: 0, max: 200 });
+  });
+
+  it("strips scale silently when the resolved chart type is pie", () => {
+    const pieSource: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [{ kind: "pie", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { scale: { min: 0, max: 100 } } },
+    };
+    const clone = cloneChart(pieSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("pie");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("filters out non-finite, zero, and negative tick spacings on inherit", () => {
+    const dirty: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: {
+        y: {
+          scale: {
+            min: 0,
+            max: 100,
+            majorUnit: Number.NaN,
+            minorUnit: 0,
+          } as never,
+        },
+      },
+    };
+    const clone = cloneChart(dirty, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y?.scale).toEqual({ min: 0, max: 100 });
+  });
+
+  it("co-inherits the title, gridlines and scale on the same axis", () => {
+    const all: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: {
+        y: { title: "Revenue", gridlines: { major: true }, scale: { min: 0, max: 100 } },
+      },
+    };
+    const clone = cloneChart(all, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y).toEqual({
+      title: "Revenue",
+      gridlines: { major: true },
+      scale: { min: 0, max: 100 },
+    });
+  });
+});
+
+// ── cloneChart — axis number format ─────────────────────────────────
+
+describe("cloneChart — axis number format", () => {
+  const sourceWithNumFmt: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: {
+      y: { numberFormat: { formatCode: "$#,##0" } },
+    },
+  };
+
+  it("inherits the source's number format when no override is given", () => {
+    const clone = cloneChart(sourceWithNumFmt, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y?.numberFormat).toEqual({ formatCode: "$#,##0" });
+  });
+
+  it("drops inherited number format when override is null", () => {
+    const clone = cloneChart(sourceWithNumFmt, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { numberFormat: null } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("replaces inherited format with the override", () => {
+    const clone = cloneChart(sourceWithNumFmt, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { numberFormat: { formatCode: "0.00%" } } },
+    });
+    expect(clone.axes?.y?.numberFormat).toEqual({ formatCode: "0.00%" });
+  });
+
+  it("adds a number format to an axis the source did not declare it on", () => {
+    const noFmt: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(noFmt, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { numberFormat: { formatCode: "#,##0" } } },
+    });
+    expect(clone.axes?.y?.numberFormat).toEqual({ formatCode: "#,##0" });
+  });
+
+  it("preserves sourceLinked on inherit", () => {
+    const linked: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { numberFormat: { formatCode: "0.0", sourceLinked: true } } },
+    };
+    const clone = cloneChart(linked, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y?.numberFormat).toEqual({ formatCode: "0.0", sourceLinked: true });
+  });
+
+  it("strips number format silently when the resolved chart type is pie", () => {
+    const pieSource: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [{ kind: "pie", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { numberFormat: { formatCode: "$#,##0" } } },
+    };
+    const clone = cloneChart(pieSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("pie");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("ignores empty formatCode strings on both inherit and override", () => {
+    const empty: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { numberFormat: { formatCode: "" } } },
+    };
+    const clone = cloneChart(empty, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes).toBeUndefined();
+
+    const cloneOverride = cloneChart(sourceWithNumFmt, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { numberFormat: { formatCode: "" } } },
+    });
+    expect(cloneOverride.axes).toBeUndefined();
+  });
+});
+
 // ── cloneChart — round-trip with parseChart and writeXlsx ────────────
 
 describe("cloneChart — integration", () => {
@@ -1193,6 +1377,69 @@ describe("cloneChart — integration", () => {
     expect(reparsed?.kinds).toEqual(["doughnut"]);
     expect(reparsed?.title).toBe("Distribution");
     expect(reparsed?.holeSize).toBe(65);
+  });
+
+  it("round-trips axis scale and number format through parseChart -> cloneChart -> writeXlsx", async () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:axId val="111111111"/>
+        <c:axId val="222222222"/>
+      </c:barChart>
+      <c:catAx><c:axId val="111111111"/></c:catAx>
+      <c:valAx>
+        <c:axId val="222222222"/>
+        <c:scaling>
+          <c:orientation val="minMax"/>
+          <c:max val="100"/>
+          <c:min val="0"/>
+        </c:scaling>
+        <c:numFmt formatCode="$#,##0" sourceLinked="0"/>
+        <c:majorUnit val="25"/>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const source = parseChart(sourceXml);
+    expect(source?.axes?.y?.scale).toEqual({ min: 0, max: 100, majorUnit: 25 });
+    expect(source?.axes?.y?.numberFormat).toEqual({ formatCode: "$#,##0" });
+
+    // Default clone inherits scale + numberFormat off the template.
+    const sheetChart: SheetChart = cloneChart(source!, {
+      anchor: { from: { row: 14, col: 0 } },
+      seriesOverrides: [{ values: "Dashboard!$B$2:$B$5" }],
+    });
+    expect(sheetChart.axes?.y?.scale).toEqual({ min: 0, max: 100, majorUnit: 25 });
+    expect(sheetChart.axes?.y?.numberFormat).toEqual({ formatCode: "$#,##0" });
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Dashboard",
+          rows: [["Header"], [10], [20], [30], [40]],
+          charts: [sheetChart],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('<c:max val="100"/>');
+    expect(written).toContain('<c:min val="0"/>');
+    expect(written).toContain('<c:majorUnit val="25"/>');
+    expect(written).toContain('formatCode="$#,##0"');
+
+    // Re-read the emitted chart and confirm everything survives.
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.y?.scale).toEqual({ min: 0, max: 100, majorUnit: 25 });
+    expect(reparsed?.axes?.y?.numberFormat).toEqual({ formatCode: "$#,##0" });
   });
 
   it("round-trips firstSliceAng through parseChart → cloneChart → writeXlsx → parseChart", async () => {
