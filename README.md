@@ -459,6 +459,57 @@ wb.sheets[0].cells?.get("1,0")?.checkbox; // true
 This is the first JS/TS implementation of native checkboxes — only `XlsxWriter`
 (Python) and `rust_xlsxwriter` had it before.
 
+### Accessibility (WCAG 2.1 AA)
+
+Generate screen-reader-friendly spreadsheets and audit them for common
+WCAG 2.1 AA issues. Alt text on images and text boxes round-trips
+through `xdr:cNvPr/@descr` and `@title` (the OOXML attributes Excel and
+assistive tech read), and per-sheet summaries can promote the first
+non-empty value into `docProps/core.xml` so screen readers announce it
+on file open.
+
+```ts
+import { writeXlsx, a11y, readXlsx } from "hucre";
+
+const xlsx = await writeXlsx({
+  sheets: [
+    {
+      name: "Q1 Sales",
+      rows: [
+        ["Region", "Revenue"],
+        ["EU", 12_400],
+      ],
+      a11y: { summary: "Quarterly sales by region", headerRow: 0 },
+      images: [
+        {
+          data: pngBytes,
+          type: "png",
+          anchor: { from: { row: 0, col: 3 } },
+          altText: "Bar chart showing 47% YoY growth",
+        },
+      ],
+    },
+  ],
+});
+
+// Audit a workbook for missing alt text, missing header rows,
+// merged headers, low contrast, and more.
+const wb = await readXlsx(xlsx);
+for (const issue of a11y.audit(wb)) {
+  console.log(issue.type, issue.code, issue.message, issue.location);
+}
+
+// Color contrast helpers (WCAG 2.1 sRGB)
+a11y.contrastRatio("0969DA", "FFFFFF"); // ≈ 4.93 (passes AA)
+a11y.relativeLuminance("808080");
+```
+
+Issue codes: `no-doc-title`, `no-doc-description`, `empty-sheet`,
+`no-header-row`, `merged-header-row`, `missing-alt-text` (error for
+images, warning for text boxes), `low-contrast`, `blank-row-in-data`.
+Tune the contrast pass with
+`audit(wb, { skipContrast, minContrast, contrastSampleLimit })`.
+
 ### Object Shorthand (XLSX / ODS)
 
 Skip the `wb.sheets[0].rows[0] as headers, slice(1) as data` boilerplate — return objects directly, mirror of `parseCsvObjects`:
@@ -819,6 +870,15 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `cellRef(row, col)`                          | `(14, 26)` → "AA15"                      |
 | `colToLetter(col)`                           | `26` → "AA"                              |
 | `rangeRef(r1, c1, r2, c2)`                   | `(0,0,9,3)` → "A1:D10"                   |
+
+### Accessibility (a11y)
+
+| Function                      | Description                                                |
+| ----------------------------- | ---------------------------------------------------------- |
+| `a11y.audit(wb, options?)`    | WCAG 2.1 AA audit; returns `A11yIssue[]`                   |
+| `a11y.contrastRatio(fg, bg)`  | sRGB contrast ratio (1–21) for two hex colors              |
+| `a11y.relativeLuminance(hex)` | WCAG relative luminance (0–1) for a hex color              |
+| `a11y.applyA11ySummary(wb)`   | Promote first sheet `a11y.summary` to workbook description |
 
 ### Web Worker Helpers
 

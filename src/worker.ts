@@ -41,6 +41,8 @@ export interface SerializedSheetImage {
   anchor: SheetImage["anchor"];
   width?: SheetImage["width"];
   height?: SheetImage["height"];
+  altText?: SheetImage["altText"];
+  title?: SheetImage["title"];
 }
 
 /** A Sheet with Maps converted to plain objects/arrays and Dates serialized. */
@@ -63,6 +65,7 @@ export interface SerializedSheet {
   hidden?: Sheet["hidden"];
   veryHidden?: Sheet["veryHidden"];
   tables?: Sheet["tables"];
+  a11y?: Sheet["a11y"];
 }
 
 /** Serialized WorkbookProperties with Dates as ISO markers. */
@@ -133,6 +136,8 @@ function serializeImage(img: SheetImage): SerializedSheetImage {
   };
   if (img.width !== undefined) out.width = img.width;
   if (img.height !== undefined) out.height = img.height;
+  if (img.altText !== undefined) out.altText = img.altText;
+  if (img.title !== undefined) out.title = img.title;
   return out;
 }
 
@@ -177,6 +182,7 @@ function serializeSheet(sheet: Sheet): SerializedSheet {
   if (sheet.hidden) out.hidden = sheet.hidden;
   if (sheet.veryHidden) out.veryHidden = sheet.veryHidden;
   if (sheet.tables) out.tables = sheet.tables;
+  if (sheet.a11y) out.a11y = sheet.a11y;
 
   return out;
 }
@@ -283,6 +289,8 @@ function deserializeImage(si: SerializedSheetImage): SheetImage {
   };
   if (si.width !== undefined) img.width = si.width;
   if (si.height !== undefined) img.height = si.height;
+  if (si.altText !== undefined) img.altText = si.altText;
+  if (si.title !== undefined) img.title = si.title;
   return img;
 }
 
@@ -326,6 +334,7 @@ function deserializeSheet(ss: SerializedSheet): Sheet {
   if (ss.hidden) sheet.hidden = ss.hidden;
   if (ss.veryHidden) sheet.veryHidden = ss.veryHidden;
   if (ss.tables) sheet.tables = ss.tables;
+  if (ss.a11y) sheet.a11y = ss.a11y;
 
   return sheet;
 }

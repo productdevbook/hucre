@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { ZipReader } from "../src/zip/reader";
 import { writeXlsx } from "../src/xlsx/writer";
+import { readXlsx } from "../src/xlsx/reader";
 import { audit, contrastRatio, relativeLuminance, applyA11ySummary } from "../src/a11y";
 import type { WriteOptions, Workbook } from "../src/_types";
 
@@ -409,5 +410,87 @@ describe("writeXlsx — a11y integration", () => {
     const core = await extractText(out, "docProps/core.xml");
     expect(core).toContain("from properties");
     expect(core).not.toContain("from sheet");
+  });
+});
+
+// ── Roundtrip: alt text / title survive read → re-read ─────────────
+
+describe("readXlsx — drawing alt text / title roundtrip", () => {
+  it("recovers altText and title from xdr:cNvPr on images", async () => {
+    const opts: WriteOptions = {
+      sheets: [
+        {
+          name: "S",
+          rows: [["x"]],
+          images: [
+            {
+              data: fakePng(),
+              type: "png",
+              anchor: { from: { row: 0, col: 0 } },
+              altText: "Bar chart of Q1 revenue",
+              title: "Q1 Revenue",
+            },
+          ],
+        },
+      ],
+    };
+    const out = await writeXlsx(opts);
+    const wb = await readXlsx(out);
+    const img = wb.sheets[0].images?.[0];
+    expect(img).toBeDefined();
+    expect(img?.altText).toBe("Bar chart of Q1 revenue");
+    expect(img?.title).toBe("Q1 Revenue");
+  });
+
+  it("recovers altText and title from xdr:cNvPr on text boxes", async () => {
+    const opts: WriteOptions = {
+      sheets: [
+        {
+          name: "S",
+          rows: [["x"]],
+          textBoxes: [
+            {
+              text: "Note",
+              anchor: {
+                from: { row: 0, col: 0 },
+                to: { row: 2, col: 2 },
+              },
+              altText: "Disclaimer about quarterly figures",
+              title: "Disclaimer",
+            },
+          ],
+        },
+      ],
+    };
+    const out = await writeXlsx(opts);
+    const wb = await readXlsx(out);
+    const tb = wb.sheets[0].textBoxes?.[0];
+    expect(tb).toBeDefined();
+    expect(tb?.altText).toBe("Disclaimer about quarterly figures");
+    expect(tb?.title).toBe("Disclaimer");
+  });
+
+  it("leaves altText/title undefined when the source XML has no descr/title", async () => {
+    // Image written without altText/title — both should remain absent on re-read.
+    const opts: WriteOptions = {
+      sheets: [
+        {
+          name: "S",
+          rows: [["x"]],
+          images: [
+            {
+              data: fakePng(),
+              type: "png",
+              anchor: { from: { row: 0, col: 0 } },
+            },
+          ],
+        },
+      ],
+    };
+    const out = await writeXlsx(opts);
+    const wb = await readXlsx(out);
+    const img = wb.sheets[0].images?.[0];
+    expect(img?.altText).toBeUndefined();
+    expect(img?.title).toBeUndefined();
   });
 });
