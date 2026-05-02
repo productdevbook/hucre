@@ -137,6 +137,7 @@ export type { ChartLocation } from "./xlsx/chart-helpers";
 export type {
   Chart,
   ChartAnchor,
+  ChartAxisGridlines,
   ChartAxisInfo,
   ChartBarGrouping,
   ChartDataLabelPosition,

@@ -692,21 +692,27 @@ export interface SheetChart {
    */
   dataLabels?: ChartDataLabels;
   /**
-   * Per-axis labels rendered alongside the plot area. The `x` axis is
-   * the category axis for bar/column/line/area (or the bottom value
-   * axis for scatter); the `y` axis is the value axis. Ignored for
-   * `pie` and `doughnut` charts because they have no axes in OOXML.
+   * Per-axis configuration rendered alongside the plot area. The `x`
+   * axis is the category axis for bar/column/line/area (or the bottom
+   * value axis for scatter); the `y` axis is the value axis. Ignored
+   * for `pie` and `doughnut` charts because they have no axes in
+   * OOXML.
    *
-   * Each entry maps to a `<c:title>` element nested inside the
-   * matching `<c:catAx>` / `<c:valAx>`. Pass an empty string or omit
-   * the entry to skip the title — Excel renders no axis label by
-   * default.
+   * `title` maps to a `<c:title>` element nested inside the matching
+   * `<c:catAx>` / `<c:valAx>`. Pass an empty string or omit the entry
+   * to skip the title — Excel renders no axis label by default.
+   *
+   * `gridlines` toggles `<c:majorGridlines>` / `<c:minorGridlines>`.
+   * Omitting the field skips both — useful when porting a clean look
+   * across cloned charts. Set `major: true` to draw the heavier
+   * reference lines that Excel shows by default on the value axis;
+   * `minor: true` adds the lighter half-step lines.
    */
   axes?: {
     /** Category axis (bar/column/line/area) or X value axis (scatter). */
-    x?: { title?: string };
+    x?: { title?: string; gridlines?: ChartAxisGridlines };
     /** Value axis. */
-    y?: { title?: string };
+    y?: { title?: string; gridlines?: ChartAxisGridlines };
   };
 }
 
@@ -1388,17 +1394,40 @@ export interface ChartAnchor {
 }
 
 /**
+ * Major / minor gridline visibility for a chart axis.
+ *
+ * Excel paints horizontal or vertical reference lines across the plot
+ * area, anchored to the major or minor tick marks of an axis. The
+ * presence of `<c:majorGridlines>` / `<c:minorGridlines>` inside an
+ * `<c:catAx>` or `<c:valAx>` toggles them on; absence of the element
+ * means the gridline is off (Excel's default for the value axis is
+ * major-on/minor-off, but the OOXML serialization is explicit either
+ * way — the writer mirrors what the model says).
+ */
+export interface ChartAxisGridlines {
+  /** Whether the axis declares `<c:majorGridlines>`. */
+  major?: boolean;
+  /** Whether the axis declares `<c:minorGridlines>`. */
+  minor?: boolean;
+}
+
+/**
  * Per-axis metadata pulled from the chart's `<c:catAx>` / `<c:valAx>`
  * elements.
  *
- * Currently only the axis title is surfaced — Excel stores it as a
- * `<c:title>` child element inside each axis, and it's the field that
- * dashboard cloning needs to preserve through a `parseChart` →
- * {@link cloneChart} → `writeXlsx` round-trip.
+ * Surfaces the structural pieces that dashboard cloning needs to
+ * preserve through a `parseChart` → {@link cloneChart} → `writeXlsx`
+ * round-trip — currently the axis title and the gridline visibility.
  */
 export interface ChartAxisInfo {
   /** Plain-text title from the axis's `<c:title>`. Omitted when absent. */
   title?: string;
+  /**
+   * Major / minor gridline visibility. Omitted when neither
+   * `<c:majorGridlines>` nor `<c:minorGridlines>` is declared on the
+   * axis (i.e. Excel's "no gridlines" state for both).
+   */
+  gridlines?: ChartAxisGridlines;
 }
 
 /**

@@ -14,6 +14,7 @@
 
 import type {
   Chart,
+  ChartAxisGridlines,
   ChartAxisInfo,
   ChartBarGrouping,
   ChartDataLabelPosition,
@@ -173,8 +174,33 @@ function parseAxes(plotArea: XmlElement): { x?: ChartAxisInfo; y?: ChartAxisInfo
 
 function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   const title = parseAxisTitle(axis);
-  if (title === undefined) return undefined;
-  return { title };
+  const gridlines = parseAxisGridlines(axis);
+  if (title === undefined && gridlines === undefined) return undefined;
+  const out: ChartAxisInfo = {};
+  if (title !== undefined) out.title = title;
+  if (gridlines !== undefined) out.gridlines = gridlines;
+  return out;
+}
+
+/**
+ * Detect `<c:majorGridlines>` / `<c:minorGridlines>` children on an
+ * axis element. The mere presence of either child element flips the
+ * corresponding flag on — Excel allows but does not require nested
+ * `<c:spPr>` styling, and the toggle survives even when the body is
+ * empty.
+ *
+ * Returns `undefined` when neither element is present so the consumer
+ * never sees a "{ major: false, minor: false }" record that
+ * round-trips into a redundant write.
+ */
+function parseAxisGridlines(axis: XmlElement): ChartAxisGridlines | undefined {
+  const major = findChild(axis, "majorGridlines") !== undefined;
+  const minor = findChild(axis, "minorGridlines") !== undefined;
+  if (!major && !minor) return undefined;
+  const out: ChartAxisGridlines = {};
+  if (major) out.major = true;
+  if (minor) out.minor = true;
+  return out;
 }
 
 /**

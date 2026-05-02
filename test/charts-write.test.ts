@@ -456,6 +456,130 @@ describe("writeChart — axis titles", () => {
   });
 });
 
+describe("writeChart — axis gridlines", () => {
+  it("emits <c:majorGridlines> inside the value axis when y.gridlines.major is true", () => {
+    const result = writeChart(makeChart({ axes: { y: { gridlines: { major: true } } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/);
+    expect(valAxBlock).not.toBeNull();
+    expect(valAxBlock![0]).toContain("c:majorGridlines");
+    // No minor gridlines should slip in.
+    expect(valAxBlock![0]).not.toContain("c:minorGridlines");
+  });
+
+  it("emits both <c:majorGridlines> and <c:minorGridlines> when both are true", () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { gridlines: { major: true, minor: true } } } }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain("c:majorGridlines");
+    expect(valAxBlock).toContain("c:minorGridlines");
+    // Major must precede minor per OOXML schema.
+    expect(valAxBlock.indexOf("c:majorGridlines")).toBeLessThan(
+      valAxBlock.indexOf("c:minorGridlines"),
+    );
+  });
+
+  it("places gridlines after axPos but before any axis title (OOXML order)", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          y: { title: "Revenue", gridlines: { major: true } },
+        },
+      }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    const axPosIdx = valAxBlock.indexOf("c:axPos");
+    const gridlinesIdx = valAxBlock.indexOf("c:majorGridlines");
+    const titleIdx = valAxBlock.indexOf("<c:title>");
+    const crossAxIdx = valAxBlock.indexOf("c:crossAx");
+    expect(axPosIdx).toBeGreaterThanOrEqual(0);
+    expect(gridlinesIdx).toBeGreaterThan(axPosIdx);
+    expect(titleIdx).toBeGreaterThan(gridlinesIdx);
+    expect(crossAxIdx).toBeGreaterThan(titleIdx);
+  });
+
+  it("emits gridlines on the category axis when x.gridlines is set", () => {
+    const result = writeChart(makeChart({ axes: { x: { gridlines: { major: true } } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain("c:majorGridlines");
+  });
+
+  it("emits no gridlines when both flags are false or omitted", () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { gridlines: { major: false, minor: false } } } }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:majorGridlines");
+    expect(result.chartXml).not.toContain("c:minorGridlines");
+  });
+
+  it("emits gridlines for line and area charts (sharing the bar axis builder)", () => {
+    for (const type of ["line", "area"] as const) {
+      const result = writeChart(
+        makeChart({
+          type,
+          axes: { y: { gridlines: { major: true } } },
+        }),
+        "Sheet1",
+      );
+      const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+      expect(valAxBlock).toContain("c:majorGridlines");
+    }
+  });
+
+  it("emits scatter gridlines on the X (b) and Y (l) value axes respectively", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: {
+          x: { gridlines: { major: true } },
+          y: { gridlines: { minor: true } },
+        },
+      }),
+      "Sheet1",
+    );
+    const valAxBlocks = [...result.chartXml.matchAll(/<c:valAx>[\s\S]*?<\/c:valAx>/g)].map(
+      (m) => m[0],
+    );
+    expect(valAxBlocks).toHaveLength(2);
+    expect(valAxBlocks[0]).toContain('c:axPos val="b"');
+    expect(valAxBlocks[0]).toContain("c:majorGridlines");
+    expect(valAxBlocks[0]).not.toContain("c:minorGridlines");
+    expect(valAxBlocks[1]).toContain('c:axPos val="l"');
+    expect(valAxBlocks[1]).toContain("c:minorGridlines");
+    expect(valAxBlocks[1]).not.toContain("c:majorGridlines");
+  });
+
+  it("skips gridlines on pie charts (pie has no axes)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "pie",
+        axes: { y: { gridlines: { major: true, minor: true } } },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:majorGridlines");
+    expect(result.chartXml).not.toContain("c:minorGridlines");
+  });
+
+  it("renders well-formed XML when titles and gridlines coexist", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: { title: "Quarter", gridlines: { major: true } },
+          y: { title: "Revenue", gridlines: { major: true, minor: true } },
+        },
+      }),
+      "Sheet1",
+    );
+    const doc = parseXml(result.chartXml);
+    expect(doc).toBeTruthy();
+  });
+});
+
 describe("chartKindElement", () => {
   it("maps each chart kind to the matching DrawingML element", () => {
     expect(chartKindElement("bar")).toBe("c:barChart");

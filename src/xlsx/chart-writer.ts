@@ -6,7 +6,13 @@
 // Chapter 21). Each chart is a self-contained <c:chartSpace> document
 // referenced from a drawing part via a `chart` relationship.
 
-import type { WriteChartKind, ChartDataLabels, ChartSeries, SheetChart } from "../_types";
+import type {
+  ChartAxisGridlines,
+  ChartDataLabels,
+  ChartSeries,
+  SheetChart,
+  WriteChartKind,
+} from "../_types";
 import { xmlDocument, xmlElement, xmlEscape, xmlSelfClose } from "../xml/writer";
 
 // ── Namespaces ───────────────────────────────────────────────────────
@@ -119,26 +125,29 @@ function buildTitle(title: string): string {
 function buildPlotArea(chart: SheetChart, sheetName: string): string {
   const children: string[] = [xmlSelfClose("c:layout")];
 
-  // Axis titles surface for every chart family except pie. Pull them
-  // once so each branch can hand them off to the matching axis builder.
+  // Axis titles and gridlines surface for every chart family except
+  // pie. Pull them once so each branch can hand them off to the
+  // matching axis builder.
   const xAxisTitle = normalizeAxisTitle(chart.axes?.x?.title);
   const yAxisTitle = normalizeAxisTitle(chart.axes?.y?.title);
+  const xGridlines = normalizeAxisGridlines(chart.axes?.x?.gridlines);
+  const yGridlines = normalizeAxisGridlines(chart.axes?.y?.gridlines);
 
   switch (chart.type) {
     case "bar":
     case "column": {
       children.push(buildBarChart(chart, sheetName));
-      children.push(...buildBarAxes(chart.type, xAxisTitle, yAxisTitle));
+      children.push(...buildBarAxes(chart.type, xAxisTitle, yAxisTitle, xGridlines, yGridlines));
       break;
     }
     case "line": {
       children.push(buildLineChart(chart, sheetName));
-      children.push(...buildBarAxes("column", xAxisTitle, yAxisTitle));
+      children.push(...buildBarAxes("column", xAxisTitle, yAxisTitle, xGridlines, yGridlines));
       break;
     }
     case "area": {
       children.push(buildAreaChart(chart, sheetName));
-      children.push(...buildBarAxes("column", xAxisTitle, yAxisTitle));
+      children.push(...buildBarAxes("column", xAxisTitle, yAxisTitle, xGridlines, yGridlines));
       break;
     }
     case "pie": {
@@ -151,7 +160,7 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     }
     case "scatter": {
       children.push(buildScatterChart(chart, sheetName));
-      children.push(...buildScatterAxes(xAxisTitle, yAxisTitle));
+      children.push(...buildScatterAxes(xAxisTitle, yAxisTitle, xGridlines, yGridlines));
       break;
     }
     default: {
@@ -174,6 +183,36 @@ function normalizeAxisTitle(value: string | undefined): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/**
+ * Resolve the gridline toggles to a stable record (or `undefined` when
+ * neither is on). Mirrors {@link normalizeAxisTitle} so the per-branch
+ * code in `buildPlotArea` only needs a single null check.
+ */
+function normalizeAxisGridlines(
+  value: ChartAxisGridlines | undefined,
+): { major: boolean; minor: boolean } | undefined {
+  if (!value) return undefined;
+  const major = value.major === true;
+  const minor = value.minor === true;
+  if (!major && !minor) return undefined;
+  return { major, minor };
+}
+
+/**
+ * Build the `<c:majorGridlines>` / `<c:minorGridlines>` block for an
+ * axis. The returned XML fragments must be appended in spec order
+ * (major before minor) and slot in immediately after `<c:axPos>`,
+ * before the optional `<c:title>`. Excel's strict-validator rejects
+ * any other position.
+ */
+function buildAxisGridlines(gridlines: { major: boolean; minor: boolean } | undefined): string[] {
+  if (!gridlines) return [];
+  const out: string[] = [];
+  if (gridlines.major) out.push(xmlElement("c:majorGridlines", undefined, []));
+  if (gridlines.minor) out.push(xmlElement("c:minorGridlines", undefined, []));
+  return out;
 }
 
 // ── Bar / Column ─────────────────────────────────────────────────────
@@ -220,6 +259,8 @@ function buildBarAxes(
   orientation: "bar" | "column",
   xAxisTitle: string | undefined,
   yAxisTitle: string | undefined,
+  xGridlines: { major: boolean; minor: boolean } | undefined,
+  yGridlines: { major: boolean; minor: boolean } | undefined,
 ): string[] {
   // For a vertical column chart, categories sit on the bottom (catAx)
   // and values run vertically (valAx). For a horizontal bar chart the
@@ -228,14 +269,16 @@ function buildBarAxes(
   const valPos = orientation === "column" ? "l" : "b";
 
   // OOXML enforces a strict child order inside <c:catAx>/<c:valAx>:
-  // axId → scaling → delete → axPos → (majorGridlines) → title → ...
-  // Title must therefore land before crossAx/crosses, otherwise Excel
-  // refuses to render the axis label.
+  // axId → scaling → delete → axPos → majorGridlines → minorGridlines
+  // → title → numFmt → crossAx → ...
+  // Gridlines and title must therefore land before crossAx/crosses,
+  // and gridlines must come before the title or Excel ignores them.
   const catAxChildren: string[] = [
     xmlSelfClose("c:axId", { val: AXIS_ID_CAT }),
     xmlElement("c:scaling", undefined, [xmlSelfClose("c:orientation", { val: "minMax" })]),
     xmlSelfClose("c:delete", { val: 0 }),
     xmlSelfClose("c:axPos", { val: catPos }),
+    ...buildAxisGridlines(xGridlines),
   ];
   if (xAxisTitle) catAxChildren.push(buildAxisTitle(xAxisTitle));
   catAxChildren.push(
@@ -252,6 +295,7 @@ function buildBarAxes(
     xmlElement("c:scaling", undefined, [xmlSelfClose("c:orientation", { val: "minMax" })]),
     xmlSelfClose("c:delete", { val: 0 }),
     xmlSelfClose("c:axPos", { val: valPos }),
+    ...buildAxisGridlines(yGridlines),
   ];
   if (yAxisTitle) valAxChildren.push(buildAxisTitle(yAxisTitle));
   valAxChildren.push(
@@ -408,12 +452,15 @@ function buildScatterChart(chart: SheetChart, sheetName: string): string {
 function buildScatterAxes(
   xAxisTitle: string | undefined,
   yAxisTitle: string | undefined,
+  xGridlines: { major: boolean; minor: boolean } | undefined,
+  yGridlines: { major: boolean; minor: boolean } | undefined,
 ): string[] {
   const xAxChildren: string[] = [
     xmlSelfClose("c:axId", { val: AXIS_ID_VAL_X }),
     xmlElement("c:scaling", undefined, [xmlSelfClose("c:orientation", { val: "minMax" })]),
     xmlSelfClose("c:delete", { val: 0 }),
     xmlSelfClose("c:axPos", { val: "b" }),
+    ...buildAxisGridlines(xGridlines),
   ];
   if (xAxisTitle) xAxChildren.push(buildAxisTitle(xAxisTitle));
   xAxChildren.push(
@@ -427,6 +474,7 @@ function buildScatterAxes(
     xmlElement("c:scaling", undefined, [xmlSelfClose("c:orientation", { val: "minMax" })]),
     xmlSelfClose("c:delete", { val: 0 }),
     xmlSelfClose("c:axPos", { val: "l" }),
+    ...buildAxisGridlines(yGridlines),
   ];
   if (yAxisTitle) yAxChildren.push(buildAxisTitle(yAxisTitle));
   yAxChildren.push(

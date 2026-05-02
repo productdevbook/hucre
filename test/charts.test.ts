@@ -819,6 +819,155 @@ describe("parseChart — axis titles", () => {
   });
 });
 
+// ── parseChart — axis gridlines ──────────────────────────────────
+
+describe("parseChart — axis gridlines", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  it("surfaces major gridlines on the value axis", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx>
+        <c:axId val="2"/>
+        <c:majorGridlines/>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toEqual({
+      y: { gridlines: { major: true } },
+    });
+  });
+
+  it("surfaces both major and minor gridlines when present", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx>
+        <c:axId val="2"/>
+        <c:majorGridlines/>
+        <c:minorGridlines/>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.gridlines).toEqual({ major: true, minor: true });
+  });
+
+  it("surfaces gridlines on both x and y axes simultaneously", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:majorGridlines/>
+      </c:catAx>
+      <c:valAx>
+        <c:axId val="2"/>
+        <c:minorGridlines/>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toEqual({
+      x: { gridlines: { major: true } },
+      y: { gridlines: { minor: true } },
+    });
+  });
+
+  it("does not surface axes when neither title nor gridlines are declared", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("co-surfaces gridlines and the axis title when both are present", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx>
+        <c:axId val="2"/>
+        <c:majorGridlines/>
+        <c:title><c:tx><c:rich><a:p><a:r><a:t>Revenue</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y).toEqual({
+      title: "Revenue",
+      gridlines: { major: true },
+    });
+  });
+
+  it("ignores nested styling inside the gridline elements", () => {
+    // Excel sometimes nests <c:spPr> inside <c:majorGridlines> for line
+    // styling. The presence of the outer element is what flips the toggle.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx>
+        <c:axId val="2"/>
+        <c:majorGridlines>
+          <c:spPr>
+            <a:ln w="9525"><a:solidFill><a:srgbClr val="D9D9D9"/></a:solidFill></a:ln>
+          </c:spPr>
+        </c:majorGridlines>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.gridlines).toEqual({ major: true });
+  });
+
+  it("maps scatter chart gridlines to x = first valAx, y = second valAx", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:scatterChart><c:ser><c:idx val="0"/></c:ser></c:scatterChart>
+      <c:valAx>
+        <c:axId val="1"/>
+        <c:axPos val="b"/>
+        <c:majorGridlines/>
+      </c:valAx>
+      <c:valAx>
+        <c:axId val="2"/>
+        <c:axPos val="l"/>
+        <c:minorGridlines/>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toEqual({
+      x: { gridlines: { major: true } },
+      y: { gridlines: { minor: true } },
+    });
+  });
+});
+
 // ── parseChart — doughnut hole size ───────────────────────────────
 
 describe("parseChart — doughnut hole size", () => {
