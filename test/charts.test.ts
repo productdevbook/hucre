@@ -333,6 +333,138 @@ describe("parseChart — series introspection", () => {
   });
 });
 
+// ── parseChart — legend & grouping ────────────────────────────────
+
+describe("parseChart — legend", () => {
+  function chartWithLegend(legendXml: string): string {
+    return `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart></c:plotArea>
+    ${legendXml}
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("maps legendPos val=r → right", () => {
+    const xml = chartWithLegend('<c:legend><c:legendPos val="r"/></c:legend>');
+    expect(parseChart(xml)?.legend).toBe("right");
+  });
+
+  it("maps every legendPos value to the writer-side label", () => {
+    for (const [val, expected] of [
+      ["t", "top"],
+      ["b", "bottom"],
+      ["l", "left"],
+      ["r", "right"],
+      ["tr", "topRight"],
+    ] as const) {
+      const xml = chartWithLegend(`<c:legend><c:legendPos val="${val}"/></c:legend>`);
+      expect(parseChart(xml)?.legend).toBe(expected);
+    }
+  });
+
+  it('returns false when <c:delete val="1"/> hides the legend', () => {
+    const xml = chartWithLegend('<c:legend><c:delete val="1"/></c:legend>');
+    expect(parseChart(xml)?.legend).toBe(false);
+  });
+
+  it("falls back to right when legend is declared without legendPos", () => {
+    // Legend element with no legendPos child is valid OOXML; Excel
+    // renders it on the right.
+    const xml = chartWithLegend("<c:legend/>");
+    expect(parseChart(xml)?.legend).toBe("right");
+  });
+
+  it("returns undefined when the chart has no <c:legend>", () => {
+    const xml = chartWithLegend("");
+    expect(parseChart(xml)?.legend).toBeUndefined();
+  });
+
+  it("ignores unknown legendPos values rather than fabricating a default", () => {
+    const xml = chartWithLegend('<c:legend><c:legendPos val="bogus"/></c:legend>');
+    expect(parseChart(xml)?.legend).toBeUndefined();
+  });
+
+  it('ignores <c:delete val="0"/> (visible legend with no position) and falls back to right', () => {
+    const xml = chartWithLegend('<c:legend><c:delete val="0"/></c:legend>');
+    expect(parseChart(xml)?.legend).toBe("right");
+  });
+});
+
+describe("parseChart — bar grouping", () => {
+  function barChartWithGrouping(groupingXml: string): string {
+    return `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        ${groupingXml}
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces stacked grouping", () => {
+    const xml = barChartWithGrouping('<c:grouping val="stacked"/>');
+    expect(parseChart(xml)?.barGrouping).toBe("stacked");
+  });
+
+  it("surfaces percentStacked grouping", () => {
+    const xml = barChartWithGrouping('<c:grouping val="percentStacked"/>');
+    expect(parseChart(xml)?.barGrouping).toBe("percentStacked");
+  });
+
+  it("surfaces explicit clustered grouping", () => {
+    const xml = barChartWithGrouping('<c:grouping val="clustered"/>');
+    expect(parseChart(xml)?.barGrouping).toBe("clustered");
+  });
+
+  it("collapses standard grouping to undefined (writer default)", () => {
+    // OOXML's `standard` value renders identical to `clustered` in
+    // Excel; we omit it so the cloned chart inherits the writer's
+    // default rather than carrying a redundant marker.
+    const xml = barChartWithGrouping('<c:grouping val="standard"/>');
+    expect(parseChart(xml)?.barGrouping).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:grouping> element", () => {
+    const xml = barChartWithGrouping("");
+    expect(parseChart(xml)?.barGrouping).toBeUndefined();
+  });
+
+  it("does not surface barGrouping for non-bar charts", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:grouping val="stacked"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.barGrouping).toBeUndefined();
+  });
+
+  it("uses the first bar chart's grouping in a combo workbook", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:grouping val="stacked"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+      <c:lineChart>
+        <c:ser><c:idx val="1"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.barGrouping).toBe("stacked");
+  });
+});
+
 // ── parseChart — axis titles ──────────────────────────────────────
 
 describe("parseChart — axis titles", () => {
