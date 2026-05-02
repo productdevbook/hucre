@@ -479,8 +479,52 @@ const chart = parseChart(xml);
 `["bar", "line"]`. Sheets that hucre actively regenerates because they
 also carry hucre-managed images currently keep the chart bodies but
 lose the in-drawing chart anchor — merging hucre's drawing output
-with the original chart graphicFrames is a follow-up. Synthesizing a
-chart from a fresh `writeXlsx` is a separate phase.
+with the original chart graphicFrames is a follow-up.
+
+#### Authoring charts with `writeXlsx`
+
+Phase 1 covers six chart families — bar, column, line, pie, scatter,
+and area — through the `WriteSheet.charts` field. Each chart is anchored
+to cells like an image and serialized as `xl/charts/chartN.xml`:
+
+```ts
+import { writeXlsx } from "hucre";
+
+const xlsx = await writeXlsx({
+  sheets: [
+    {
+      name: "Sales",
+      rows: [
+        ["Quarter", "Revenue", "Cost"],
+        ["Q1", 12000, 7000],
+        ["Q2", 15500, 8500],
+        ["Q3", 14000, 7800],
+      ],
+      charts: [
+        {
+          type: "column",
+          title: "Quarterly Performance",
+          series: [
+            { name: "Revenue", values: "B2:B4", categories: "A2:A4", color: "1F77B4" },
+            { name: "Cost", values: "C2:C4", categories: "A2:A4", color: "FF7F0E" },
+          ],
+          anchor: { from: { row: 6, col: 0 }, to: { row: 22, col: 8 } },
+          legend: "bottom",
+        },
+      ],
+    },
+  ],
+});
+```
+
+Bare `B2:B4` series ranges are auto-qualified with the owning sheet
+name (sheet names containing whitespace or punctuation are quoted and
+embedded apostrophes are doubled per the OOXML spec). `barGrouping`
+toggles `clustered` / `stacked` / `percentStacked`, `legend` accepts
+`top` / `bottom` / `left` / `right` / `topRight` / `false`, and
+`altText` / `frameTitle` flow through to the drawing's `xdr:cNvPr`
+attributes for screen readers. Doughnut, radar, stock, 3D variants,
+trendlines, and combo charts are out of scope for Phase 1.
 
 ### Unified API
 

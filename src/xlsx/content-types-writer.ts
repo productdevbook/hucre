@@ -15,6 +15,7 @@ const CT_STYLES = "application/vnd.openxmlformats-officedocument.spreadsheetml.s
 const CT_SHARED_STRINGS =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml";
 const CT_DRAWING = "application/vnd.openxmlformats-officedocument.drawing+xml";
+const CT_CHART = "application/vnd.openxmlformats-officedocument.drawingml.chart+xml";
 const CT_COMMENTS = "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml";
 const CT_VML = "application/vnd.openxmlformats-officedocument.vmlDrawing";
 const CT_TABLE = "application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml";
@@ -35,7 +36,6 @@ const CT_SLICER = "application/vnd.ms-excel.slicer+xml";
 const CT_SLICER_CACHE = "application/vnd.ms-excel.slicerCache+xml";
 const CT_TIMELINE = "application/vnd.ms-excel.timeline+xml";
 const CT_TIMELINE_CACHE = "application/vnd.ms-excel.timelineCache+xml";
-const CT_CHART = "application/vnd.openxmlformats-officedocument.drawingml.chart+xml";
 const CT_CHART_STYLE = "application/vnd.ms-office.chartstyle+xml";
 const CT_CHART_COLORS = "application/vnd.ms-office.chartcolorstyle+xml";
 
@@ -53,6 +53,12 @@ export interface ContentTypesOptions {
   hasSharedStrings: boolean;
   /** 1-based indices of drawings (e.g. [1, 3] means drawing1.xml and drawing3.xml exist) */
   drawingIndices?: number[];
+  /**
+   * 1-based indices of native chart parts (e.g. [1, 2] for chart1.xml
+   * and chart2.xml). One Override per chart is required so Excel can
+   * locate the part by content type.
+   */
+  chartIndices?: number[];
   /** Set of image extensions used (e.g. new Set(["png", "jpeg"])) */
   imageExtensions?: Set<string>;
   /** 1-based indices of comments (e.g. [1, 2] means comments1.xml and comments2.xml exist) */
@@ -111,11 +117,6 @@ export interface ContentTypesOptions {
    * adds an `Override` for `/xl/timelineCaches/timelineCacheN.xml`.
    */
   timelineCacheIndices?: number[];
-  /**
-   * 1-based indices of chart parts. Each entry adds an `Override` for
-   * `/xl/charts/chartN.xml`. Charts are referenced from drawings.
-   */
-  chartIndices?: number[];
   /**
    * 1-based indices of chart style parts (`/xl/charts/styleN.xml`).
    * Excel 2013+ writes one style file per chart. Older charts omit it.
@@ -226,6 +227,18 @@ export function writeContentTypes(
         xmlSelfClose("Override", {
           PartName: `/xl/drawings/drawing${idx}.xml`,
           ContentType: CT_DRAWING,
+        }),
+      );
+    }
+  }
+
+  // Override for each native chart part
+  if (opts.chartIndices) {
+    for (const idx of opts.chartIndices) {
+      children.push(
+        xmlSelfClose("Override", {
+          PartName: `/xl/charts/chart${idx}.xml`,
+          ContentType: CT_CHART,
         }),
       );
     }
@@ -383,18 +396,6 @@ export function writeContentTypes(
         xmlSelfClose("Override", {
           PartName: `/xl/timelineCaches/timelineCache${idx}.xml`,
           ContentType: CT_TIMELINE_CACHE,
-        }),
-      );
-    }
-  }
-
-  // Override for each chart
-  if (opts.chartIndices) {
-    for (const idx of opts.chartIndices) {
-      children.push(
-        xmlSelfClose("Override", {
-          PartName: `/xl/charts/chart${idx}.xml`,
-          ContentType: CT_CHART,
         }),
       );
     }

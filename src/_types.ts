@@ -536,6 +536,83 @@ export interface SheetImage {
   title?: string;
 }
 
+// ── Charts ─────────────────────────────────────────────────────────
+
+/**
+ * Chart kinds supported by {@link writeXlsx} when authoring charts via
+ * {@link WriteSheet.charts}. Phase 1 covers the four most common chart
+ * families — bar/column, line, pie, and scatter — plus area as a
+ * thin variant of `line`.
+ *
+ * Distinct from the read-side {@link ChartKind} (which mirrors the
+ * full set of OOXML chart-type element local names) — the write side
+ * exposes only the kinds the chart author can emit today.
+ */
+export type WriteChartKind = "bar" | "column" | "line" | "pie" | "scatter" | "area";
+
+/**
+ * A single data series inside a chart.
+ *
+ * `values` and `categories` are A1-style cell range references.
+ * Provide either a sheet-qualified reference (e.g. `"Sheet1!$B$2:$B$4"`)
+ * or a bare range (`"B2:B4"`). Bare ranges are auto-qualified with the
+ * sheet that owns the chart.
+ */
+export interface ChartSeries {
+  /** Series name shown in the legend (e.g. "Revenue"). */
+  name?: string;
+  /** A1-style range with the series numeric values (e.g. "B2:B10"). */
+  values: string;
+  /** A1-style range with the category labels (e.g. "A2:A10"). */
+  categories?: string;
+  /** Optional fill color as a 6-digit RGB hex string (e.g. "1F77B4"). */
+  color?: string;
+}
+
+/**
+ * A chart embedded into a worksheet via the drawing layer.
+ *
+ * Excel anchors charts to cells using the same `xdr:twoCellAnchor`
+ * mechanism it uses for images. The chart is stored in
+ * `xl/charts/chartN.xml` and wired into the worksheet through a
+ * drawing part.
+ */
+export interface SheetChart {
+  /**
+   * Chart family. `"bar"` is horizontal, `"column"` is vertical (the
+   * Excel default). Both map to `<c:barChart>` with different
+   * `<c:barDir>` values.
+   */
+  type: WriteChartKind;
+  /** Optional chart title rendered above the plot area. */
+  title?: string;
+  /** One or more data series. */
+  series: ChartSeries[];
+  /** Cell anchor — `to` defaults to a 6×15 area below `from`. */
+  anchor: {
+    from: { row: number; col: number };
+    to?: { row: number; col: number };
+  };
+  /**
+   * Bar/column subtype. Default: `"clustered"`. `"stacked"` and
+   * `"percentStacked"` group series end-to-end. Ignored for non-bar
+   * chart kinds.
+   */
+  barGrouping?: "clustered" | "stacked" | "percentStacked";
+  /**
+   * Whether the legend is shown and where. Default: `"right"` for
+   * pie/bar/line/area, `"bottom"` for scatter. Pass `false` to hide
+   * the legend.
+   */
+  legend?: false | "top" | "bottom" | "left" | "right" | "topRight";
+  /** Show the chart-level title element. Default: `true` when `title` is set. */
+  showTitle?: boolean;
+  /** Alternative text for screen readers (lands in xdr:cNvPr/@descr). */
+  altText?: string;
+  /** Caption for the chart frame (lands in xdr:cNvPr/@title). */
+  frameTitle?: string;
+}
+
 // ── Accessibility ──────────────────────────────────────────────────
 
 /**
@@ -1263,6 +1340,11 @@ export interface WriteSheet {
   sparklines?: Sparkline[];
   /** Text boxes (shapes with text) */
   textBoxes?: SheetTextBox[];
+  /**
+   * Native Excel charts (bar, column, line, pie, scatter, area). Charts
+   * share the worksheet's drawing part with images and text boxes.
+   */
+  charts?: SheetChart[];
   /** Excel 365 threaded comments for this sheet. */
   threadedComments?: ThreadedComment[];
   /** Accessibility metadata for screen readers and the `audit` helper. */

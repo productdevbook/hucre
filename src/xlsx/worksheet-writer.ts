@@ -503,12 +503,13 @@ export function writeWorksheetXml(
     );
   }
 
-  // ── Drawing (images and/or textboxes) ──
+  // ── Drawing (images, text boxes, and/or charts) ──
   let drawingRId: string | null = null;
   let nextRId = hyperlinkRelationships.length + 1;
   const hasImages = sheet.images && sheet.images.length > 0;
   const hasTextBoxes = sheet.textBoxes && sheet.textBoxes.length > 0;
-  if (hasImages || hasTextBoxes) {
+  const hasCharts = sheet.charts && sheet.charts.length > 0;
+  if (hasImages || hasTextBoxes || hasCharts) {
     // Drawing rId comes after all hyperlink rIds
     drawingRId = `rId${nextRId}`;
     nextRId++;
