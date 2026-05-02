@@ -14,10 +14,18 @@ import type {
   ExternalLink,
   PivotCache,
   PivotTable,
+  SlicerCache,
+  TimelineCache,
 } from "../_types";
 import { parsePersons, parseThreadedComments } from "./threaded-comments-reader";
 import { parseExternalLink } from "./external-link-reader";
 import { attachPivotCacheFields, parsePivotCacheDefinition, parsePivotTable } from "./pivot-reader";
+import {
+  parseSlicers,
+  parseSlicerCache,
+  parseTimelines,
+  parseTimelineCache,
+} from "./slicer-reader";
 import { ParseError, ZipError } from "../errors";
 import { ZipReader } from "../zip/reader";
 import { parseXml } from "../xml/parser";
@@ -258,6 +266,36 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
     .map((ref) => pivotCachesByCacheId.get(ref.cacheId))
     .filter((c): c is PivotCache => c !== undefined);
 
+  // 7f. Parse slicer caches (xl/slicerCaches/slicerCacheN.xml).
+  // Excel 2010+ slicers — declared from workbook.xml.rels with
+  // Type=".../slicerCache". Sort by trailing index so the array order is
+  // stable across files.
+  const slicerCacheRels = workbookRels
+    .filter((r) => matchesRelType(r.type, "slicerCache"))
+    .sort((a, b) => slicerNumFromTarget(a.target) - slicerNumFromTarget(b.target));
+  const slicerCaches: SlicerCache[] = [];
+  for (const rel of slicerCacheRels) {
+    const cachePath = resolvePath(workbookDir, rel.target);
+    if (!zip.has(cachePath)) continue;
+    const cacheXml = decodeUtf8(await zip.extract(cachePath));
+    const cache = parseSlicerCache(cacheXml);
+    if (cache) slicerCaches.push(cache);
+  }
+
+  // 7g. Parse timeline caches (xl/timelineCaches/timelineCacheN.xml).
+  // Excel 2013+ timeline slicers — Type=".../timelineCache".
+  const timelineCacheRels = workbookRels
+    .filter((r) => matchesRelType(r.type, "timelineCache"))
+    .sort((a, b) => slicerNumFromTarget(a.target) - slicerNumFromTarget(b.target));
+  const timelineCaches: TimelineCache[] = [];
+  for (const rel of timelineCacheRels) {
+    const cachePath = resolvePath(workbookDir, rel.target);
+    if (!zip.has(cachePath)) continue;
+    const cacheXml = decodeUtf8(await zip.extract(cachePath));
+    const cache = parseTimelineCache(cacheXml);
+    if (cache) timelineCaches.push(cache);
+  }
+
   // 8. Build a map of rId → sheet relationship for worksheet paths
   const sheetRelMap = new Map<string, string>();
   for (const rel of workbookRels) {
@@ -444,6 +482,33 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
         }
         if (pivotTables.length > 0) sheet.pivotTables = pivotTables;
       }
+
+      // Extract slicers attached to this sheet (Excel 2010+).
+      // The worksheet rels declare them with Type=".../slicer".
+      const slicerRels = worksheetRels.filter((r) => matchesRelType(r.type, "slicer"));
+      if (slicerRels.length > 0) {
+        const slicers: import("../_types").Slicer[] = [];
+        for (const rel of slicerRels) {
+          const path = resolvePath(wsDir, rel.target);
+          if (!zip.has(path)) continue;
+          const slicerXml = decodeUtf8(await zip.extract(path));
+          for (const s of parseSlicers(slicerXml)) slicers.push(s);
+        }
+        if (slicers.length > 0) sheet.slicers = slicers;
+      }
+
+      // Timeline slicers (Excel 2013+) — Type=".../timeline".
+      const timelineRels = worksheetRels.filter((r) => matchesRelType(r.type, "timeline"));
+      if (timelineRels.length > 0) {
+        const timelines: import("../_types").Timeline[] = [];
+        for (const rel of timelineRels) {
+          const path = resolvePath(wsDir, rel.target);
+          if (!zip.has(path)) continue;
+          const tlXml = decodeUtf8(await zip.extract(path));
+          for (const t of parseTimelines(tlXml)) timelines.push(t);
+        }
+        if (timelines.length > 0) sheet.timelines = timelines;
+      }
     }
 
     sheets.push(sheet);
@@ -511,7 +576,27 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
     workbook.pivotCaches = pivotCaches;
   }
 
+  if (slicerCaches.length > 0) {
+    workbook.slicerCaches = slicerCaches;
+  }
+
+  if (timelineCaches.length > 0) {
+    workbook.timelineCaches = timelineCaches;
+  }
+
   return workbook;
+}
+
+/**
+ * Trailing numeric suffix of a relationship target like
+ * `slicerCaches/slicerCache3.xml` or `timelines/timeline12.xml`. Used to
+ * sort caches in declaration order regardless of the rId order. Returns
+ * `+Infinity` for paths with no trailing number so malformed entries
+ * sort last instead of throwing.
+ */
+function slicerNumFromTarget(target: string): number {
+  const m = target.match(/(\d+)\.xml$/i);
+  return m ? parseInt(m[1], 10) : Number.POSITIVE_INFINITY;
 }
 
 /**

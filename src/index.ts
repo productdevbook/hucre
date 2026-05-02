@@ -105,6 +105,22 @@ export type {
   PivotDataFieldFunction,
 } from "./_types";
 
+// ── Slicers & Timelines ────────────────────────────────────────────
+export {
+  parseSlicers,
+  parseSlicerCache,
+  parseTimelines,
+  parseTimelineCache,
+} from "./xlsx/slicer-reader";
+export type {
+  Slicer,
+  SlicerCache,
+  SlicerCachePivotTable,
+  SlicerCacheTableSource,
+  Timeline,
+  TimelineCache,
+} from "./_types";
+
 // ── Date Utilities ─────────────────────────────────────────────────
 export {
   serialToDate,

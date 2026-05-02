@@ -28,6 +28,10 @@ const CT_PIVOT_CACHE_DEFINITION =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml";
 const CT_PIVOT_CACHE_RECORDS =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheRecords+xml";
+const CT_SLICER = "application/vnd.ms-excel.slicer+xml";
+const CT_SLICER_CACHE = "application/vnd.ms-excel.slicerCache+xml";
+const CT_TIMELINE = "application/vnd.ms-excel.timeline+xml";
+const CT_TIMELINE_CACHE = "application/vnd.ms-excel.timelineCache+xml";
 
 /** Image extension → content type mapping */
 const IMAGE_CONTENT_TYPES: Record<string, string> = {
@@ -76,6 +80,26 @@ export interface ContentTypesOptions {
    * `Override` for `/xl/pivotCache/pivotCacheRecordsN.xml`.
    */
   pivotCacheRecordIndices?: number[];
+  /**
+   * 1-based indices of per-sheet slicer parts. Each entry adds an
+   * `Override` for `/xl/slicers/slicerN.xml`.
+   */
+  slicerIndices?: number[];
+  /**
+   * 1-based indices of workbook-level slicer cache parts. Each entry
+   * adds an `Override` for `/xl/slicerCaches/slicerCacheN.xml`.
+   */
+  slicerCacheIndices?: number[];
+  /**
+   * 1-based indices of per-sheet timeline parts. Each entry adds an
+   * `Override` for `/xl/timelines/timelineN.xml`.
+   */
+  timelineIndices?: number[];
+  /**
+   * 1-based indices of workbook-level timeline cache parts. Each entry
+   * adds an `Override` for `/xl/timelineCaches/timelineCacheN.xml`.
+   */
+  timelineCacheIndices?: number[];
   /** Whether docProps/core.xml is present */
   hasCoreProps?: boolean;
   /** Whether docProps/app.xml is present */
@@ -275,6 +299,54 @@ export function writeContentTypes(
         xmlSelfClose("Override", {
           PartName: `/xl/pivotCache/pivotCacheRecords${idx}.xml`,
           ContentType: CT_PIVOT_CACHE_RECORDS,
+        }),
+      );
+    }
+  }
+
+  // Override for each slicer
+  if (opts.slicerIndices) {
+    for (const idx of opts.slicerIndices) {
+      children.push(
+        xmlSelfClose("Override", {
+          PartName: `/xl/slicers/slicer${idx}.xml`,
+          ContentType: CT_SLICER,
+        }),
+      );
+    }
+  }
+
+  // Override for each slicer cache
+  if (opts.slicerCacheIndices) {
+    for (const idx of opts.slicerCacheIndices) {
+      children.push(
+        xmlSelfClose("Override", {
+          PartName: `/xl/slicerCaches/slicerCache${idx}.xml`,
+          ContentType: CT_SLICER_CACHE,
+        }),
+      );
+    }
+  }
+
+  // Override for each timeline
+  if (opts.timelineIndices) {
+    for (const idx of opts.timelineIndices) {
+      children.push(
+        xmlSelfClose("Override", {
+          PartName: `/xl/timelines/timeline${idx}.xml`,
+          ContentType: CT_TIMELINE,
+        }),
+      );
+    }
+  }
+
+  // Override for each timeline cache
+  if (opts.timelineCacheIndices) {
+    for (const idx of opts.timelineCacheIndices) {
+      children.push(
+        xmlSelfClose("Override", {
+          PartName: `/xl/timelineCaches/timelineCache${idx}.xml`,
+          ContentType: CT_TIMELINE_CACHE,
         }),
       );
     }

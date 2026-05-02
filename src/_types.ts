@@ -721,6 +721,16 @@ export interface Sheet {
    * workbook-level cache via `cacheId`.
    */
   pivotTables?: PivotTable[];
+  /**
+   * Slicers attached to this sheet (Excel 2010+). Resolved from
+   * `xl/slicers/slicerN.xml` parts referenced via this sheet's rels.
+   */
+  slicers?: Slicer[];
+  /**
+   * Timeline slicers attached to this sheet (Excel 2013+). Resolved from
+   * `xl/timelines/timelineN.xml` parts referenced via this sheet's rels.
+   */
+  timelines?: Timeline[];
 }
 
 // ── Workbook Properties ────────────────────────────────────────────
@@ -903,6 +913,108 @@ export interface PivotCache {
   hasRecords?: boolean;
 }
 
+// ── Slicers & Timelines ────────────────────────────────────────────
+
+/**
+ * A slicer (Excel 2010+ visual filter). Slicers live on a worksheet and
+ * are backed by a {@link SlicerCache} that holds the actual filter state.
+ *
+ * Slicers come from `xl/slicers/slicerN.xml`. Each slicer entry inside
+ * a slicer file is exposed as one record in {@link Sheet.slicers}.
+ */
+export interface Slicer {
+  /** Programmatic name. Mirrors `slicer/@name`. */
+  name: string;
+  /** Slicer cache identifier this slicer references. Mirrors `slicer/@cache`. */
+  cache: string;
+  /** Display caption shown in the header. Mirrors `slicer/@caption`. */
+  caption?: string;
+  /** Number of columns in the slicer button grid. Mirrors `slicer/@columnCount`. */
+  columnCount?: number;
+  /** Built-in style id, e.g. `SlicerStyleLight1`. Mirrors `slicer/@style`. */
+  style?: string;
+  /** Sort order for items. Mirrors `slicer/@sortOrder` (e.g. `ascending`, `descending`). */
+  sortOrder?: string;
+  /** Row height in EMUs. Mirrors `slicer/@rowHeight`. */
+  rowHeight?: number;
+}
+
+/**
+ * Workbook-level slicer cache. Stores the filter source and selection
+ * state shared by one or more {@link Slicer} instances.
+ *
+ * Slicer caches come from `xl/slicerCaches/slicerCacheN.xml`.
+ */
+export interface SlicerCache {
+  /** Programmatic name. Mirrors `slicerCacheDefinition/@name`. */
+  name: string;
+  /** Source identifier — typically the cache definition's source ref. */
+  sourceName?: string;
+  /**
+   * Pivot tables this cache filters, when sourced from a pivot table.
+   * Each entry is the `tabId` (sheet index) + `name` of a pivot table.
+   */
+  pivotTables?: SlicerCachePivotTable[];
+  /** Excel Table this cache filters, when sourced from a table. */
+  tableSource?: SlicerCacheTableSource;
+}
+
+export interface SlicerCachePivotTable {
+  /** 0-based sheet tab id of the sheet hosting the pivot table. */
+  tabId: number;
+  /** Pivot table name. */
+  name: string;
+}
+
+export interface SlicerCacheTableSource {
+  /** Excel Table name. */
+  name: string;
+  /** Column referenced in the table. */
+  column?: string;
+}
+
+/**
+ * Timeline slicer (Excel 2013+ date-range filter). Like {@link Slicer}
+ * but constrained to date columns and rendered as a draggable date band.
+ *
+ * Timelines come from `xl/timelines/timelineN.xml`.
+ */
+export interface Timeline {
+  /** Programmatic name. */
+  name: string;
+  /** Cache identifier this timeline references. */
+  cache: string;
+  /** Display caption. */
+  caption?: string;
+  /** Built-in style id, e.g. `TimeSlicerStyleLight1`. */
+  style?: string;
+  /** Granularity: `years`, `quarters`, `months`, or `days`. */
+  level?: string;
+  /** Whether the time-level selector is shown. */
+  showHeader?: boolean;
+  /** Whether the selection-label band is shown. */
+  showSelectionLabel?: boolean;
+  /** Whether the time-level row is shown. */
+  showTimeLevel?: boolean;
+  /** Whether the horizontal scrollbar is shown. */
+  showHorizontalScrollbar?: boolean;
+}
+
+/**
+ * Workbook-level timeline cache. Stores the date column and selected
+ * range shared by one or more {@link Timeline} instances.
+ *
+ * Timeline caches come from `xl/timelineCaches/timelineCacheN.xml`.
+ */
+export interface TimelineCache {
+  /** Programmatic name. */
+  name: string;
+  /** Source identifier. */
+  sourceName?: string;
+  /** Pivot tables this cache filters. */
+  pivotTables?: SlicerCachePivotTable[];
+}
+
 // ── Workbook ───────────────────────────────────────────────────────
 
 export interface Workbook {
@@ -939,6 +1051,16 @@ export interface Workbook {
    * `PivotTable.cacheId` references entries here.
    */
   pivotCaches?: PivotCache[];
+  /**
+   * Slicer caches resolved from `xl/slicerCaches/slicerCacheN.xml`.
+   * The 1-based position in this array matches the `N` in the source path.
+   */
+  slicerCaches?: SlicerCache[];
+  /**
+   * Timeline caches resolved from `xl/timelineCaches/timelineCacheN.xml`.
+   * The 1-based position in this array matches the `N` in the source path.
+   */
+  timelineCaches?: TimelineCache[];
 }
 
 // ── Read Options ───────────────────────────────────────────────────
