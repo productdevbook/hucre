@@ -24,6 +24,8 @@ import type {
   ChartKind,
   ChartLegendPosition,
   ChartLineAreaGrouping,
+  ChartLineDashStyle,
+  ChartLineStroke,
   ChartSeriesInfo,
 } from "../_types";
 import { parseXml } from "../xml/parser";
@@ -423,6 +425,14 @@ function parseSeries(ser: XmlElement, kind: ChartKind, index: number): ChartSeri
   if (kind === "line" || kind === "line3D" || kind === "scatter") {
     const smooth = parseSmooth(ser);
     if (smooth !== undefined) out.smooth = smooth;
+
+    // Stroke (dash + width) lives in `<c:spPr><a:ln>`. The same
+    // schema-only-on-line/scatter rule applies — bar / pie / area
+    // never paint a connecting line, so surfacing a stroke field
+    // there would mislead a clone consumer about what the chart
+    // actually renders.
+    const stroke = parseSeriesStroke(ser);
+    if (stroke !== undefined) out.stroke = stroke;
   }
 
   return out;
@@ -589,6 +599,75 @@ function parseSeriesColor(ser: XmlElement): string | undefined {
   if (typeof val !== "string") return undefined;
   const normalized = val.replace(/^#/, "").toUpperCase();
   return /^[0-9A-F]{6}$/.test(normalized) ? normalized : undefined;
+}
+
+// ── Stroke ────────────────────────────────────────────────────────
+
+const VALID_DASH_STYLES: ReadonlySet<ChartLineDashStyle> = new Set([
+  "solid",
+  "dot",
+  "dash",
+  "lgDash",
+  "dashDot",
+  "lgDashDot",
+  "lgDashDotDot",
+  "sysDash",
+  "sysDot",
+  "sysDashDot",
+  "sysDashDotDot",
+]);
+
+const STROKE_WIDTH_MIN_PT = 0.25;
+const STROKE_WIDTH_MAX_PT = 13.5;
+const EMU_PER_PT = 12700;
+
+/**
+ * Pull `<c:spPr><a:ln>` off a series and surface its dash + width as
+ * a {@link ChartLineStroke}. Returns `undefined` when the block is
+ * absent or carries no meaningful settings — an empty `<a:ln/>`
+ * collapses identically to absence through the writer's elision
+ * logic, so omitting it keeps the parsed shape minimal.
+ *
+ * `<a:ln>` also nests the line color (`<a:solidFill>`) which mirrors
+ * the series fill — parseSeriesColor already surfaces that as
+ * {@link ChartSeriesInfo.color}, so the stroke object intentionally
+ * does not duplicate the field.
+ */
+function parseSeriesStroke(ser: XmlElement): ChartLineStroke | undefined {
+  const spPr = findChild(ser, "spPr");
+  if (!spPr) return undefined;
+  const ln = findChild(spPr, "ln");
+  if (!ln) return undefined;
+
+  const out: ChartLineStroke = {};
+
+  // Stroke width is on the `w` attribute of `<a:ln>` (EMU). Convert
+  // back to points and clamp to the band Excel's UI exposes so a
+  // template carrying an exotic width still round-trips through the
+  // writer's clamp.
+  const wAttr = ln.attrs.w;
+  if (typeof wAttr === "string") {
+    const emu = Number.parseFloat(wAttr);
+    if (Number.isFinite(emu) && emu > 0) {
+      // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
+      const pt = Math.round((emu / EMU_PER_PT) * 4) / 4;
+      if (pt < STROKE_WIDTH_MIN_PT) out.width = STROKE_WIDTH_MIN_PT;
+      else if (pt > STROKE_WIDTH_MAX_PT) out.width = STROKE_WIDTH_MAX_PT;
+      else out.width = pt;
+    }
+  }
+
+  // Dash style is `<a:prstDash val="..."/>` inside `<a:ln>`.
+  const dashEl = findChild(ln, "prstDash");
+  if (dashEl) {
+    const v = dashEl.attrs.val;
+    if (typeof v === "string" && VALID_DASH_STYLES.has(v as ChartLineDashStyle)) {
+      out.dash = v as ChartLineDashStyle;
+    }
+  }
+
+  if (out.dash === undefined && out.width === undefined) return undefined;
+  return out;
 }
 
 // ── Legend ────────────────────────────────────────────────────────

@@ -1713,6 +1713,224 @@ describe("parseChart — series smooth flag", () => {
   });
 });
 
+// ── parseChart — series line stroke ───────────────────────────────
+
+describe("parseChart — series line stroke", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  it('surfaces stroke.dash from <a:prstDash val="dash"/>', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:spPr>
+          <a:ln>
+            <a:prstDash val="dash"/>
+          </a:ln>
+        </c:spPr>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].stroke).toEqual({ dash: "dash" });
+  });
+
+  it('surfaces stroke.width from <a:ln w="..."/> by converting EMU back to points', () => {
+    // 31 750 EMU = 2.5 pt.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:spPr>
+          <a:ln w="31750"/>
+        </c:spPr>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].stroke).toEqual({ width: 2.5 });
+  });
+
+  it("surfaces both dash and width when both are present", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:scatterChart>
+      <c:scatterStyle val="lineMarker"/>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:spPr>
+          <a:ln w="9525">
+            <a:prstDash val="lgDash"/>
+          </a:ln>
+        </c:spPr>
+        <c:xVal><c:numRef><c:f>Sheet1!$A$2:$A$5</c:f></c:numRef></c:xVal>
+        <c:yVal><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:yVal>
+      </c:ser>
+    </c:scatterChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].stroke).toEqual({ dash: "lgDash", width: 0.75 });
+  });
+
+  it("returns stroke undefined when <a:ln> is absent", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].stroke).toBeUndefined();
+  });
+
+  it("collapses an empty <a:ln/> (no width, no prstDash) to undefined", () => {
+    // An empty <a:ln/> carries no meaningful settings; don't surface a
+    // record the writer will never re-emit.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:spPr><a:ln/></c:spPr>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].stroke).toBeUndefined();
+  });
+
+  it("drops an unknown dash value rather than surfacing a malformed token", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:spPr>
+          <a:ln>
+            <a:prstDash val="wiggle"/>
+          </a:ln>
+        </c:spPr>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].stroke).toBeUndefined();
+  });
+
+  it("clamps an absurdly wide <a:ln w=...> back into the 0.25..13.5 pt band", () => {
+    // 999 999 EMU ≈ 78.7 pt; clamp to 13.5 pt.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:spPr>
+          <a:ln w="999999"/>
+        </c:spPr>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].stroke).toEqual({ width: 13.5 });
+  });
+
+  it("ignores stroke on chart families whose schema does not paint a connecting line", () => {
+    // Even if a corrupt template carries <a:ln> on a bar/pie/area
+    // series, the read side should not surface the field — it would
+    // mislead a clone consumer about what the chart actually renders.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:spPr>
+          <a:ln w="31750">
+            <a:prstDash val="dash"/>
+          </a:ln>
+        </c:spPr>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].stroke).toBeUndefined();
+  });
+
+  it("surfaces stroke per-series independently across multi-series line charts", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:spPr><a:ln w="31750"><a:prstDash val="dash"/></a:ln></c:spPr>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+      <c:ser>
+        <c:idx val="1"/>
+        <c:val><c:numRef><c:f>Sheet1!$C$2:$C$5</c:f></c:numRef></c:val>
+      </c:ser>
+      <c:ser>
+        <c:idx val="2"/>
+        <c:spPr><a:ln><a:prstDash val="sysDot"/></a:ln></c:spPr>
+        <c:val><c:numRef><c:f>Sheet1!$D$2:$D$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series).toHaveLength(3);
+    expect(chart?.series?.[0].stroke).toEqual({ dash: "dash", width: 2.5 });
+    expect(chart?.series?.[1].stroke).toBeUndefined();
+    expect(chart?.series?.[2].stroke).toEqual({ dash: "sysDot" });
+  });
+
+  it("does not let stroke shadow the existing series.color (parseSeriesColor still wins)", () => {
+    // A series with both a fill color and a stroke should surface
+    // `color` and `stroke` independently — the stroke object never
+    // duplicates the color (parseSeriesColor already covers it).
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:spPr>
+          <a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill>
+          <a:ln w="19050">
+            <a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill>
+            <a:prstDash val="dashDot"/>
+          </a:ln>
+        </c:spPr>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].color).toBe("1F77B4");
+    // 19 050 EMU = 1.5 pt.
+    expect(chart?.series?.[0].stroke).toEqual({ dash: "dashDot", width: 1.5 });
+  });
+});
+
 // ── End-to-end: full XLSX with a chart ────────────────────────────
 
 /**

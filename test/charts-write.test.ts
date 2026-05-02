@@ -587,6 +587,221 @@ describe("writeChart — series smooth flag", () => {
   });
 });
 
+// ── Line stroke (dash + width) ───────────────────────────────────────
+
+describe("writeChart — series line stroke", () => {
+  it("emits <a:prstDash> on a line series stroke.dash", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [
+          { name: "Forecast", values: "B2:B4", categories: "A2:A4", stroke: { dash: "dash" } },
+        ],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('<a:prstDash val="dash"/>');
+  });
+
+  it("emits <a:ln w=...> in EMU for a line series stroke.width (1 pt = 12 700 EMU)", () => {
+    // 2.5 pt → 31 750 EMU.
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4", stroke: { width: 2.5 } }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('w="31750"');
+  });
+
+  it("snaps a stroke.width to the 0.25 pt grid before converting to EMU", () => {
+    // 1.13 pt should snap to 1.25 pt → 15 875 EMU (matching what Excel
+    // rounds to in its UI).
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4", stroke: { width: 1.13 } }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('w="15875"');
+  });
+
+  it("clamps stroke.width below 0.25 pt to 0.25 pt", () => {
+    // 0.1 pt clamps to 0.25 pt → 3 175 EMU.
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4", stroke: { width: 0.1 } }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('w="3175"');
+  });
+
+  it("clamps stroke.width above 13.5 pt to 13.5 pt", () => {
+    // 50 pt clamps to 13.5 pt → 171 450 EMU.
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4", stroke: { width: 50 } }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('w="171450"');
+  });
+
+  it("drops an unknown dash value and emits no <a:prstDash>", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [
+          // @ts-expect-error – exercising the runtime guard
+          { values: "B2:B4", categories: "A2:A4", stroke: { dash: "wiggle" } },
+        ],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("a:prstDash");
+  });
+
+  it("drops a non-finite stroke.width and emits no <a:ln w=...>", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4", stroke: { width: Number.NaN } }],
+      }),
+      "Sheet1",
+    );
+    // Line writer always emits the chart-type-level <c:marker val="1"/>;
+    // the regex below specifically targets the per-series <a:ln> attr.
+    expect(result.chartXml).not.toMatch(/<a:ln\s+w="/);
+  });
+
+  it("collapses an empty stroke {} to no <c:spPr> for a series without color", () => {
+    // Empty stroke + no fill color must not introduce a `<c:spPr>` block —
+    // an empty wrapper would override Excel's series-rotation default
+    // with no actual styling.
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4", stroke: {} }],
+      }),
+      "Sheet1",
+    );
+    const serBlock = result.chartXml.match(/<c:ser>[\s\S]*?<\/c:ser>/)![0];
+    expect(serBlock).not.toContain("<c:spPr>");
+  });
+
+  it("layers stroke.dash onto a series with an existing fill color", () => {
+    // Series.color emits both <a:solidFill> and a colored <a:ln>; adding
+    // stroke.dash should append <a:prstDash> inside the same <a:ln>.
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [
+          {
+            values: "B2:B4",
+            categories: "A2:A4",
+            color: "1F77B4",
+            stroke: { dash: "dashDot" },
+          },
+        ],
+      }),
+      "Sheet1",
+    );
+    const serBlock = result.chartXml.match(/<c:ser>[\s\S]*?<\/c:ser>/)![0];
+    expect(serBlock).toMatch(/<a:ln[\s\S]*?<a:srgbClr val="1F77B4"\/>[\s\S]*?<a:prstDash/);
+  });
+
+  it("emits <a:ln> on a colorless line series when stroke.dash is set", () => {
+    // No fill color, but a dash style — the writer must still emit
+    // `<c:spPr><a:ln>` to carry the prstDash, otherwise the dash
+    // setting silently drops at write time.
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4", stroke: { dash: "dot" } }],
+      }),
+      "Sheet1",
+    );
+    const serBlock = result.chartXml.match(/<c:ser>[\s\S]*?<\/c:ser>/)![0];
+    expect(serBlock).toContain("<c:spPr>");
+    expect(serBlock).toContain("<a:ln");
+    expect(serBlock).toContain('<a:prstDash val="dot"/>');
+    // No accidental fill block when only stroke is requested.
+    expect(serBlock).not.toContain("<a:solidFill>");
+  });
+
+  it("renders stroke per-series independently across a multi-series line chart", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [
+          { name: "S1", values: "B2:B4", stroke: { dash: "dash" } },
+          { name: "S2", values: "C2:C4" },
+          { name: "S3", values: "D2:D4", stroke: { dash: "dot", width: 1.5 } },
+        ],
+      }),
+      "Sheet1",
+    );
+    const matches = result.chartXml.match(/<a:prstDash val="[^"]+"\/>/g) ?? [];
+    expect(matches).toEqual(['<a:prstDash val="dash"/>', '<a:prstDash val="dot"/>']);
+  });
+
+  it("emits stroke on a scatter series", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4", stroke: { dash: "lgDash", width: 0.75 } }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('<a:prstDash val="lgDash"/>');
+    // 0.75 pt → 9 525 EMU.
+    expect(result.chartXml).toContain('w="9525"');
+  });
+
+  it("ignores stroke on chart kinds whose schema does not paint a connecting line", () => {
+    // Bar / column / pie / doughnut / area never render a per-series
+    // line stroke (each has its own per-data-point border instead). A
+    // stroke field on those series must drop at write time.
+    const cases: Array<["column" | "bar" | "pie" | "doughnut" | "area"]> = [
+      ["column"],
+      ["bar"],
+      ["pie"],
+      ["doughnut"],
+      ["area"],
+    ];
+    for (const [type] of cases) {
+      const result = writeChart(
+        makeChart({
+          type,
+          series: [{ values: "B2:B4", categories: "A2:A4", stroke: { dash: "dash", width: 2 } }],
+        }),
+        "Sheet1",
+      );
+      expect(result.chartXml).not.toContain("a:prstDash");
+      // The stroke width must not leak into a non-line family either.
+      expect(result.chartXml).not.toMatch(/<a:ln\s+w="/);
+    }
+  });
+
+  it("snaps a 9 525-EMU width back to 9 525 EMU on round-trip (idempotent)", () => {
+    // Half-EMU drift is the most common round-trip bug — ensure 0.75 pt
+    // (Excel default) is byte-stable.
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4", stroke: { width: 0.75 } }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('w="9525"');
+  });
+});
+
 // ── Axis titles ──────────────────────────────────────────────────────
 
 describe("writeChart — axis titles", () => {
