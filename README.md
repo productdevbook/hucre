@@ -615,6 +615,35 @@ writer can author collapse onto their write counterparts (`bar` /
 `surface`, `stock`, `ofPie`) require an explicit `options.type`
 override.
 
+#### Walking and adding charts with `getCharts` / `addChart`
+
+`getCharts(workbook)` flattens every chart anchored on the workbook's
+sheets into a single array, attaching the sheet name and indexes so
+callers don't have to walk `workbook.sheets[].charts` themselves.
+`addChart(sheet, chart)` is the symmetric writer-side helper that
+appends a `SheetChart` to a `WriteSheet`, lazily allocating the
+`charts` array on the first call:
+
+```ts
+import { addChart, getCharts, openXlsx, writeXlsx } from "hucre";
+
+// Read side — find every chart in a template workbook.
+const wb = await openXlsx(templateBytes);
+for (const { sheetName, chart } of getCharts(wb)) {
+  console.log(sheetName, chart.kinds, chart.title);
+}
+
+// Write side — declarative chart attachment.
+const dashboard = { name: "Dashboard", rows: dashboardRows };
+addChart(dashboard, {
+  type: "column",
+  title: "Q1 Revenue",
+  series: [{ name: "Revenue", values: "B2:B13", categories: "A2:A13" }],
+  anchor: { from: { row: 14, col: 0 } },
+});
+await writeXlsx({ sheets: [dashboard] });
+```
+
 ### Unified API
 
 Auto-detect format and work with simple helpers:
@@ -1092,6 +1121,8 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `parseChart(xml)`                  | Parse `xl/charts/chartN.xml` → `Chart \| undefined`                         |
 | `cloneChart(source, options)`      | Convert a parsed `Chart` into a writer-ready `SheetChart`                   |
 | `chartKindToWriteKind(kind)`       | Map a read-side `ChartKind` onto its writable counterpart, if any           |
+| `getCharts(workbook)`              | Enumerate every chart anchored on the workbook with its sheet context       |
+| `addChart(sheet, chart)`           | Append a `SheetChart` to a `WriteSheet`, lazily creating the array          |
 
 ### ODS
 
