@@ -494,8 +494,9 @@ or any sibling sheet, and accept either `rows` (raw 2-D arrays) or
 
 Charts (`xl/charts/chartN.xml` plus the optional `styleN.xml` /
 `colorsN.xml` companions) are read into a per-sheet `sheet.charts`
-array surfacing the chart kind(s), series count, and plain-text
-title. On `saveXlsx` the chart parts are re-declared in
+array surfacing the chart kind(s), series count, plain-text title,
+and per-series metadata (name, value/category ranges, fill color).
+On `saveXlsx` the chart parts are re-declared in
 `[Content_Types].xml`, the chart-bearing drawing and its rels are
 force-preserved, and the regenerated worksheet body gets a
 `<drawing r:id="..."/>` re-anchor — without these wirings Excel
@@ -511,6 +512,11 @@ for (const sheet of wb.sheets) {
   for (const chart of sheet.charts ?? []) {
     console.log(chart.kinds, chart.seriesCount, chart.title);
     // e.g. ["bar"], 2, "Quarterly Sales"
+
+    for (const s of chart.series ?? []) {
+      console.log(s.kind, s.index, s.name, s.valuesRef, s.categoriesRef, s.color);
+      // e.g. "bar" 0 "Revenue" "Sheet1!$B$2:$B$10" "Sheet1!$A$2:$A$10" "1F77B4"
+    }
   }
 }
 
@@ -520,7 +526,12 @@ const chart = parseChart(xml);
 
 `Chart.kinds` lists every chart-type element present under
 `<c:plotArea>` in declaration order, so combo charts surface as e.g.
-`["bar", "line"]`. Sheets that hucre actively regenerates because they
+`["bar", "line"]`. `Chart.series` mirrors the field shape that
+`ChartSeries` accepts on the write side — a parsed series can be
+fed back into `WriteSheet.charts` to clone or re-bind a chart.
+Bubble/scatter `<c:numLit>` series (literal embedded data, no
+formula) intentionally surface no `valuesRef`/`categoriesRef`.
+Sheets that hucre actively regenerates because they
 also carry hucre-managed images currently keep the chart bodies but
 lose the in-drawing chart anchor — merging hucre's drawing output
 with the original chart graphicFrames is a follow-up.
