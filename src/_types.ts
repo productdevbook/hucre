@@ -1248,6 +1248,28 @@ export interface ChartSeriesInfo {
 }
 
 /**
+ * Cell-anchored placement for a chart on its host sheet.
+ *
+ * Mirrors the `<xdr:from>` / `<xdr:to>` pair on the drawing-layer
+ * `xdr:twoCellAnchor` (or the `<xdr:from>` alone for a
+ * `xdr:oneCellAnchor`). Coordinates are 0-based row/col indices into
+ * the worksheet — identical to the convention used by
+ * {@link SheetImage.anchor} and {@link SheetChart.anchor}, so a parsed
+ * `ChartAnchor` slots straight back into the writer's shape.
+ *
+ * `to` is optional because Excel also supports `xdr:oneCellAnchor`
+ * (chart pinned to a single cell with intrinsic size).
+ * `xdr:absoluteAnchor` (EMU-positioned) does not surface here — those
+ * charts are reported with `anchor` undefined.
+ */
+export interface ChartAnchor {
+  /** Top-left cell (`<xdr:from>`). */
+  from: { row: number; col: number };
+  /** Bottom-right cell (`<xdr:to>`). Omitted for one-cell anchors. */
+  to?: { row: number; col: number };
+}
+
+/**
  * A chart anchored on a sheet via the sheet's drawing part.
  *
  * Charts come from `xl/charts/chartN.xml`. Hucre exposes the
@@ -1266,6 +1288,13 @@ export interface Chart {
    * declaration order. Empty when the chart has no `<c:ser>` children.
    */
   series?: ChartSeriesInfo[];
+  /**
+   * Cell anchor pulled from the host drawing's `<xdr:twoCellAnchor>` /
+   * `<xdr:oneCellAnchor>`. Undefined when the drawing positions the
+   * chart with `<xdr:absoluteAnchor>` (EMU-positioned, no cell anchor)
+   * or when the drawing's anchor element is missing the `from` block.
+   */
+  anchor?: ChartAnchor;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────

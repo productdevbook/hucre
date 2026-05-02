@@ -132,7 +132,7 @@ export type {
 export { parseChart } from "./xlsx/chart-reader";
 export { cloneChart, chartKindToWriteKind } from "./xlsx/chart-clone";
 export type { CloneChartOptions, CloneChartSeriesOverride } from "./xlsx/chart-clone";
-export type { Chart, ChartKind, ChartSeriesInfo } from "./_types";
+export type { Chart, ChartAnchor, ChartKind, ChartSeriesInfo } from "./_types";
 
 // ── Date Utilities ─────────────────────────────────────────────────
 export {

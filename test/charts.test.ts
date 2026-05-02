@@ -499,6 +499,10 @@ describe("readXlsx — chart integration", () => {
       seriesCount: 1,
       title: "Quarterly Sales",
       series: [{ kind: "bar", index: 0, valuesRef: "Data!$B$1:$B$2" }],
+      anchor: {
+        from: { row: 1, col: 3 },
+        to: { row: 16, col: 10 },
+      },
     });
   });
 
@@ -631,5 +635,316 @@ describe("roundtrip — chart preservation", () => {
     const reread = await readXlsx(out);
     expect(reread.sheets[0].rows[0][0]).toBe(99);
     expect(reread.sheets[0].charts).toHaveLength(1);
+  });
+});
+
+// ── readXlsx — chart cell anchor ─────────────────────────────────
+
+/**
+ * Build a minimal XLSX where Sheet1's drawing anchors a single chart
+ * with a custom anchor flavor (`twoCellAnchor`, `oneCellAnchor`, or
+ * `absoluteAnchor`). Used to verify {@link Chart.anchor} extraction.
+ */
+async function buildXlsxWithAnchor(anchorXml: string): Promise<Uint8Array> {
+  const z = new ZipWriter();
+
+  z.add(
+    "[Content_Types].xml",
+    encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>
+  <Override PartName="/xl/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>
+</Types>`),
+  );
+
+  z.add(
+    "_rels/.rels",
+    encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+  );
+
+  z.add(
+    "xl/workbook.xml",
+    encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`),
+  );
+
+  z.add(
+    "xl/_rels/workbook.xml.rels",
+    encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+  );
+
+  z.add(
+    "xl/worksheets/sheet1.xml",
+    encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+           xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetData/>
+  <drawing r:id="rId1"/>
+</worksheet>`),
+  );
+
+  z.add(
+    "xl/worksheets/_rels/sheet1.xml.rels",
+    encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
+</Relationships>`),
+  );
+
+  z.add(
+    "xl/drawings/drawing1.xml",
+    encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
+          xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+          xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+${anchorXml}
+</xdr:wsDr>`),
+  );
+
+  z.add(
+    "xl/drawings/_rels/drawing1.xml.rels",
+    encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/>
+</Relationships>`),
+  );
+
+  z.add(
+    "xl/charts/chart1.xml",
+    encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart><c:plotArea><c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart></c:plotArea></c:chart>
+</c:chartSpace>`),
+  );
+
+  return await z.build();
+}
+
+/**
+ * Builds a `<xdr:graphicFrame>` payload with a chart reference. Used
+ * inside the anchor builders below to keep the test data compact.
+ */
+const CHART_GRAPHIC_FRAME = `<xdr:graphicFrame>
+      <xdr:nvGraphicFramePr>
+        <xdr:cNvPr id="2" name="Chart 1"/>
+        <xdr:cNvGraphicFramePr/>
+      </xdr:nvGraphicFramePr>
+      <xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>
+      <a:graphic>
+        <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">
+          <c:chart r:id="rId1"/>
+        </a:graphicData>
+      </a:graphic>
+    </xdr:graphicFrame>`;
+
+describe("readXlsx — chart cell anchor", () => {
+  it("surfaces from/to from a twoCellAnchor", async () => {
+    const buf = await buildXlsxWithAnchor(`<xdr:twoCellAnchor>
+    <xdr:from><xdr:col>2</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>5</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
+    <xdr:to><xdr:col>9</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>20</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
+    ${CHART_GRAPHIC_FRAME}
+    <xdr:clientData/>
+  </xdr:twoCellAnchor>`);
+    const wb = await readXlsx(buf);
+    expect(wb.sheets[0].charts?.[0].anchor).toEqual({
+      from: { row: 5, col: 2 },
+      to: { row: 20, col: 9 },
+    });
+  });
+
+  it("surfaces from-only for a oneCellAnchor (intrinsic size lives in <xdr:ext>)", async () => {
+    const buf = await buildXlsxWithAnchor(`<xdr:oneCellAnchor>
+    <xdr:from><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>2</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
+    <xdr:ext cx="6000000" cy="3500000"/>
+    ${CHART_GRAPHIC_FRAME}
+    <xdr:clientData/>
+  </xdr:oneCellAnchor>`);
+    const wb = await readXlsx(buf);
+    const anchor = wb.sheets[0].charts?.[0].anchor;
+    expect(anchor).toEqual({ from: { row: 2, col: 1 } });
+    expect(anchor?.to).toBeUndefined();
+  });
+
+  it("omits anchor for an absoluteAnchor (EMU-positioned, no cell anchor)", async () => {
+    const buf = await buildXlsxWithAnchor(`<xdr:absoluteAnchor>
+    <xdr:pos x="914400" y="685800"/>
+    <xdr:ext cx="6000000" cy="3500000"/>
+    ${CHART_GRAPHIC_FRAME}
+    <xdr:clientData/>
+  </xdr:absoluteAnchor>`);
+    const wb = await readXlsx(buf);
+    expect(wb.sheets[0].charts?.[0].anchor).toBeUndefined();
+  });
+
+  it("omits anchor when the twoCellAnchor is missing its <xdr:from> block", async () => {
+    // Pathological — Excel always writes <xdr:from>, but defensive
+    // parsing should not invent a (0,0) anchor.
+    const buf = await buildXlsxWithAnchor(`<xdr:twoCellAnchor>
+    ${CHART_GRAPHIC_FRAME}
+    <xdr:clientData/>
+  </xdr:twoCellAnchor>`);
+    const wb = await readXlsx(buf);
+    expect(wb.sheets[0].charts?.[0].anchor).toBeUndefined();
+  });
+
+  it("falls back to from-only when the twoCellAnchor is missing its <xdr:to> block", async () => {
+    // Some authoring tools omit <xdr:to> for one-cell-style charts
+    // even though the anchor element is twoCellAnchor.
+    const buf = await buildXlsxWithAnchor(`<xdr:twoCellAnchor>
+    <xdr:from><xdr:col>4</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>7</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
+    ${CHART_GRAPHIC_FRAME}
+    <xdr:clientData/>
+  </xdr:twoCellAnchor>`);
+    const wb = await readXlsx(buf);
+    expect(wb.sheets[0].charts?.[0].anchor).toEqual({ from: { row: 7, col: 4 } });
+  });
+
+  it("attaches the correct anchor to each chart when the drawing carries multiple", async () => {
+    // Build a drawing with two anchors, each pointing at its own chart
+    // part. Verifies the per-anchor pairing rather than a coarse
+    // "any anchor" pickup.
+    const z = new ZipWriter();
+    z.add(
+      "[Content_Types].xml",
+      encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>
+  <Override PartName="/xl/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>
+  <Override PartName="/xl/charts/chart2.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>
+</Types>`),
+    );
+    z.add(
+      "_rels/.rels",
+      encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+    );
+    z.add(
+      "xl/workbook.xml",
+      encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`),
+    );
+    z.add(
+      "xl/_rels/workbook.xml.rels",
+      encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+    );
+    z.add(
+      "xl/worksheets/sheet1.xml",
+      encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+           xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetData/>
+  <drawing r:id="rId1"/>
+</worksheet>`),
+    );
+    z.add(
+      "xl/worksheets/_rels/sheet1.xml.rels",
+      encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
+</Relationships>`),
+    );
+    z.add(
+      "xl/drawings/drawing1.xml",
+      encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
+          xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+          xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <xdr:twoCellAnchor>
+    <xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
+    <xdr:to><xdr:col>5</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>10</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
+    <xdr:graphicFrame>
+      <xdr:nvGraphicFramePr><xdr:cNvPr id="2" name="A"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>
+      <xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>
+      <a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart r:id="rId1"/></a:graphicData></a:graphic>
+    </xdr:graphicFrame>
+    <xdr:clientData/>
+  </xdr:twoCellAnchor>
+  <xdr:twoCellAnchor>
+    <xdr:from><xdr:col>6</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>12</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
+    <xdr:to><xdr:col>13</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>30</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
+    <xdr:graphicFrame>
+      <xdr:nvGraphicFramePr><xdr:cNvPr id="3" name="B"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>
+      <xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>
+      <a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart r:id="rId2"/></a:graphicData></a:graphic>
+    </xdr:graphicFrame>
+    <xdr:clientData/>
+  </xdr:twoCellAnchor>
+</xdr:wsDr>`),
+    );
+    z.add(
+      "xl/drawings/_rels/drawing1.xml.rels",
+      encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart2.xml"/>
+</Relationships>`),
+    );
+    z.add(
+      "xl/charts/chart1.xml",
+      encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart><c:title><c:tx><c:rich><a:p xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:r><a:t>First</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart></c:plotArea></c:chart>
+</c:chartSpace>`),
+    );
+    z.add(
+      "xl/charts/chart2.xml",
+      encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart><c:title><c:tx><c:rich><a:p xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:r><a:t>Second</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart></c:plotArea></c:chart>
+</c:chartSpace>`),
+    );
+
+    const wb = await readXlsx(await z.build());
+    const charts = wb.sheets[0].charts;
+    expect(charts).toHaveLength(2);
+    // Order tracks the drawing's anchor sequence — the first
+    // graphicFrame becomes charts[0], the second becomes charts[1].
+    const byTitle = new Map(charts!.map((c) => [c.title, c]));
+    expect(byTitle.get("First")?.anchor).toEqual({
+      from: { row: 0, col: 0 },
+      to: { row: 10, col: 5 },
+    });
+    expect(byTitle.get("Second")?.anchor).toEqual({
+      from: { row: 12, col: 6 },
+      to: { row: 30, col: 13 },
+    });
+  });
+
+  it("survives roundtrip — re-reading the saved file still reports the anchor", async () => {
+    const buf = await buildXlsxWithChart();
+    const wb = await openXlsx(buf);
+    const out = await saveXlsx(wb);
+    const reread = await readXlsx(out);
+    expect(reread.sheets[0].charts?.[0].anchor).toEqual({
+      from: { row: 1, col: 3 },
+      to: { row: 16, col: 10 },
+    });
   });
 });

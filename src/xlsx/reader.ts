@@ -17,6 +17,7 @@ import type {
   PivotTable,
   SlicerCache,
   TimelineCache,
+  ChartAnchor,
 } from "../_types";
 import { parsePersons, parseThreadedComments } from "./threaded-comments-reader";
 import { parseExternalLink } from "./external-link-reader";
@@ -402,14 +403,17 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
         // Resolve chart parts referenced from the drawing. Each
         // graphicFrame's chart rel was resolved against the drawing's
         // package directory in extractSheetDrawing; here we simply
-        // parse the chart bodies.
-        if (drawing.chartPaths.length > 0) {
+        // parse the chart bodies and pin each chart back to the cell
+        // anchor reported by the drawing layer.
+        if (drawing.chartRefs.length > 0) {
           const charts: import("../_types").Chart[] = [];
-          for (const chartPath of drawing.chartPaths) {
-            if (!zip.has(chartPath)) continue;
-            const chartXml = decodeUtf8(await zip.extract(chartPath));
+          for (const chartRef of drawing.chartRefs) {
+            if (!zip.has(chartRef.path)) continue;
+            const chartXml = decodeUtf8(await zip.extract(chartRef.path));
             const chart = parseChart(chartXml);
-            if (chart) charts.push(chart);
+            if (!chart) continue;
+            if (chartRef.anchor) chart.anchor = chartRef.anchor;
+            charts.push(chart);
           }
           if (charts.length > 0) sheet.charts = charts;
         }
@@ -696,15 +700,32 @@ const EXT_TO_IMAGE_TYPE: Record<string, SheetImage["type"]> = {
   webp: "webp",
 };
 
+/**
+ * Pairing of a chart part path with the cell anchor that pins the
+ * chart to its host sheet. The anchor mirrors the drawing-layer
+ * `<xdr:from>` / `<xdr:to>` pair, dropped through to {@link Chart.anchor}
+ * by the reader.
+ *
+ * `anchor` is omitted when the drawing positions the chart via
+ * `<xdr:absoluteAnchor>` (EMU-positioned, no cell anchor) or when the
+ * `<xdr:from>` element itself is missing — both are rare but possible.
+ */
+interface DrawingChartRef {
+  /** Path to `xl/charts/chartN.xml`, resolved against the package root. */
+  path: string;
+  /** Cell anchor surfaced through {@link Chart.anchor}. */
+  anchor?: ChartAnchor;
+}
+
 interface DrawingExtraction {
   images: SheetImage[];
   textBoxes: SheetTextBox[];
   /**
-   * Paths to chart parts referenced by this drawing (resolved against
-   * the package root). Empty when the drawing has no `c:chart` graphic
-   * frames or the rels file is missing.
+   * Chart parts referenced by this drawing, paired with the cell
+   * anchor that pins each chart to its host sheet. Empty when the
+   * drawing has no `c:chart` graphic frames or the rels file is missing.
    */
-  chartPaths: string[];
+  chartRefs: DrawingChartRef[];
 }
 
 /**
@@ -716,7 +737,7 @@ async function extractSheetDrawing(
   zip: ZipReader,
   drawingPath: string,
 ): Promise<DrawingExtraction> {
-  if (!zip.has(drawingPath)) return { images: [], textBoxes: [], chartPaths: [] };
+  if (!zip.has(drawingPath)) return { images: [], textBoxes: [], chartRefs: [] };
 
   const drawingXml = decodeUtf8(await zip.extract(drawingPath));
 
@@ -748,7 +769,7 @@ async function extractSheetDrawing(
   const doc = parseXml(drawingXml);
   const images: SheetImage[] = [];
   const textBoxes: SheetTextBox[] = [];
-  const chartPaths: string[] = [];
+  const chartRefs: DrawingChartRef[] = [];
 
   for (const child of doc.children) {
     if (typeof child === "string") continue;
@@ -762,7 +783,16 @@ async function extractSheetDrawing(
       const chartRid = findChartRid(child);
       if (chartRid) {
         const chartPath = chartRelMap.get(chartRid);
-        if (chartPath && !chartPaths.includes(chartPath)) chartPaths.push(chartPath);
+        if (chartPath && !chartRefs.some((r) => r.path === chartPath)) {
+          // absoluteAnchor positions in EMU rather than cells — skip
+          // its anchor extraction so we don't fabricate a (0,0) cell
+          // anchor that doesn't match the underlying placement.
+          const anchor =
+            local === "absoluteAnchor" ? undefined : parseChartCellAnchor(child, local);
+          const ref: DrawingChartRef = { path: chartPath };
+          if (anchor) ref.anchor = anchor;
+          chartRefs.push(ref);
+        }
       }
     }
 
@@ -811,7 +841,39 @@ async function extractSheetDrawing(
     }
   }
 
-  return { images, textBoxes, chartPaths };
+  return { images, textBoxes, chartRefs };
+}
+
+/**
+ * Extract the cell anchor (`<xdr:from>` / `<xdr:to>`) from a drawing
+ * anchor element that wraps a chart graphic frame. Used by the reader
+ * to surface {@link Chart.anchor}.
+ *
+ * For `xdr:twoCellAnchor` we read both `<xdr:from>` and `<xdr:to>`.
+ * For `xdr:oneCellAnchor` we read `<xdr:from>` only — the chart is
+ * pinned to a single cell with intrinsic width/height stored in
+ * `<xdr:ext>`, so a `to` cell is not meaningful.
+ *
+ * Returns `undefined` when no `<xdr:from>` block is present.
+ */
+function parseChartCellAnchor(
+  el: { children: Array<unknown> },
+  anchorKind: string,
+): ChartAnchor | undefined {
+  let from: { row: number; col: number } | undefined;
+  let to: { row: number; col: number } | undefined;
+
+  for (const child of el.children) {
+    if (typeof child === "string") continue;
+    const c = child as { local?: string; tag: string; children: Array<unknown> };
+    const local = c.local || c.tag;
+    if (local === "from") from = parseAnchorPosition(c);
+    else if (local === "to") to = parseAnchorPosition(c);
+  }
+
+  if (!from) return undefined;
+  if (anchorKind === "twoCellAnchor" && to) return { from, to };
+  return { from };
 }
 
 /**
