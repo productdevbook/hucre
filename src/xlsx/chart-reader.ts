@@ -88,10 +88,20 @@ export function parseChart(xml: string): Chart | undefined {
     let gapWidth: number | undefined;
     let overlap: number | undefined;
     let firstSliceAng: number | undefined;
+    let varyColors: boolean | undefined;
     for (const child of childElements(plotArea)) {
       const kind = CHART_KIND_TAGS.get(child.local);
       if (!kind) continue;
       if (!out.kinds.includes(kind)) out.kinds.push(kind);
+      // Pull `<c:varyColors>` off the first chart-type element that
+      // carries one. The OOXML schema places `<c:varyColors>` on every
+      // chart-type element except `surface`, `surface3D`, and `stock`,
+      // so most templates surface a value here. The per-family default
+      // collapse (true on pie / doughnut / ofPie, false elsewhere)
+      // happens inside `parseVaryColors`.
+      if (varyColors === undefined) {
+        varyColors = parseVaryColors(child, kind);
+      }
       // Pull grouping off the first bar/column-flavored chart-type
       // element. Combo charts that mix bar with line/area would
       // otherwise need a per-series field; for the common case of a
@@ -167,6 +177,7 @@ export function parseChart(xml: string): Chart | undefined {
     if (gapWidth !== undefined) out.gapWidth = gapWidth;
     if (overlap !== undefined) out.overlap = overlap;
     if (firstSliceAng !== undefined) out.firstSliceAng = firstSliceAng;
+    if (varyColors !== undefined) out.varyColors = varyColors;
 
     const axes = parseAxes(plotArea);
     if (axes !== undefined) out.axes = axes;
@@ -851,6 +862,60 @@ function parseDispBlanksAs(chartEl: XmlElement): ChartDisplayBlanksAs | undefine
     default:
       return undefined;
   }
+}
+
+// ── Vary Colors ────────────────────────────────────────────────────
+
+/**
+ * Chart kinds that default `<c:varyColors>` to `1` in OOXML — every
+ * data point in the (single) series carries a unique color. Excel's
+ * pie / doughnut / ofPie templates emit `<c:varyColors val="1"/>` so
+ * absence and `1` collapse to `undefined` here; only an explicit `0`
+ * surfaces `false`.
+ */
+const VARY_COLORS_DEFAULT_TRUE: ReadonlySet<ChartKind> = new Set([
+  "pie",
+  "pie3D",
+  "doughnut",
+  "ofPie",
+]);
+
+/**
+ * Pull `<c:varyColors val=".."/>` off a chart-type element.
+ *
+ * Excel's per-family default flips the meaning: pie / doughnut /
+ * pie3D / ofPie default to `true` (every slice unique) while every
+ * other chart family defaults to `false` (one color per series).
+ * Matching values collapse to `undefined` so a roundtrip of a stock
+ * template stays minimal — only non-default values surface so
+ * {@link cloneChart} can carry them through. Unknown values and
+ * missing `val` attributes drop to `undefined`.
+ */
+function parseVaryColors(chartTypeEl: XmlElement, kind: ChartKind): boolean | undefined {
+  const el = findChild(chartTypeEl, "varyColors");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  const familyDefaultsTrue = VARY_COLORS_DEFAULT_TRUE.has(kind);
+  // Accept the OOXML truthy / falsy spellings. `1` / `true` map to true,
+  // `0` / `false` map to false, anything else drops.
+  let parsed: boolean;
+  switch (raw) {
+    case "1":
+    case "true":
+      parsed = true;
+      break;
+    case "0":
+    case "false":
+      parsed = false;
+      break;
+    default:
+      return undefined;
+  }
+  // Collapse the per-family default so absence and the default
+  // round-trip identically.
+  if (parsed === familyDefaultsTrue) return undefined;
+  return parsed;
 }
 
 // ── Bar Grouping ──────────────────────────────────────────────────

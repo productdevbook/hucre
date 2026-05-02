@@ -2208,6 +2208,159 @@ describe("parseChart — dispBlanksAs", () => {
   });
 });
 
+// ── parseChart — varyColors ───────────────────────────────────────
+
+describe("parseChart — varyColors", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces <c:varyColors val="1"/> on a column chart (non-default true)', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="clustered"/>
+        <c:varyColors val="1"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.varyColors).toBe(true);
+  });
+
+  it('surfaces <c:varyColors val="0"/> on a doughnut chart (non-default false)', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:doughnutChart>
+        <c:varyColors val="0"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:firstSliceAng val="0"/>
+        <c:holeSize val="50"/>
+      </c:doughnutChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.varyColors).toBe(false);
+  });
+
+  it("collapses the per-family default to undefined on a column chart (varyColors=0)", () => {
+    // Column / bar default is `false` — `<c:varyColors val="0"/>` and
+    // absence both round-trip identically.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="clustered"/>
+        <c:varyColors val="0"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.varyColors).toBeUndefined();
+  });
+
+  it("collapses the per-family default to undefined on a pie chart (varyColors=1)", () => {
+    // Pie default is `true` — `<c:varyColors val="1"/>` and absence both
+    // round-trip identically.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:pieChart>
+        <c:varyColors val="1"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:pieChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.varyColors).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:varyColors> element", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.varyColors).toBeUndefined();
+  });
+
+  it("accepts the OOXML true / false spellings on the val attribute", () => {
+    // The OOXML schema for `xsd:boolean` accepts `"true"` / `"false"`
+    // alongside the more common `"1"` / `"0"`. Hucre tolerates both
+    // shapes — a hand-edited template using `true` should round-trip.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="clustered"/>
+        <c:varyColors val="true"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.varyColors).toBe(true);
+  });
+
+  it("drops unknown varyColors values rather than fabricate one", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:varyColors val="bogus"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.varyColors).toBeUndefined();
+  });
+
+  it("ignores a missing val attribute on <c:varyColors>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:varyColors/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.varyColors).toBeUndefined();
+  });
+
+  it("surfaces varyColors from the first chart-type element on combo charts", () => {
+    // The reader latches onto the first chart-type element that carries
+    // a `<c:varyColors>` value, mirroring how it surfaces grouping /
+    // gapWidth on the first matching child.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="clustered"/>
+        <c:varyColors val="1"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+      <c:lineChart>
+        <c:varyColors val="0"/>
+        <c:ser><c:idx val="1"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.varyColors).toBe(true);
+  });
+});
+
 // ── End-to-end: full XLSX with a chart ────────────────────────────
 
 /**

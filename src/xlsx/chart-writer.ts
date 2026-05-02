@@ -382,7 +382,7 @@ function buildBarChart(chart: SheetChart, sheetName: string): string {
   const children: string[] = [
     xmlSelfClose("c:barDir", { val: barDir }),
     xmlSelfClose("c:grouping", { val: grouping }),
-    xmlSelfClose("c:varyColors", { val: 0 }),
+    xmlSelfClose("c:varyColors", { val: resolveVaryColors(chart) ? 1 : 0 }),
   ];
 
   for (let i = 0; i < chart.series.length; i++) {
@@ -525,7 +525,7 @@ function buildLineChart(chart: SheetChart, sheetName: string): string {
   const grouping = chart.lineGrouping ?? "standard";
   const children: string[] = [
     xmlSelfClose("c:grouping", { val: grouping }),
-    xmlSelfClose("c:varyColors", { val: 0 }),
+    xmlSelfClose("c:varyColors", { val: resolveVaryColors(chart) ? 1 : 0 }),
   ];
 
   for (let i = 0; i < chart.series.length; i++) {
@@ -557,7 +557,7 @@ function buildAreaChart(chart: SheetChart, sheetName: string): string {
   const grouping = chart.areaGrouping ?? "standard";
   const children: string[] = [
     xmlSelfClose("c:grouping", { val: grouping }),
-    xmlSelfClose("c:varyColors", { val: 0 }),
+    xmlSelfClose("c:varyColors", { val: resolveVaryColors(chart) ? 1 : 0 }),
   ];
 
   for (let i = 0; i < chart.series.length; i++) {
@@ -580,7 +580,9 @@ function buildAreaChart(chart: SheetChart, sheetName: string): string {
 // ── Pie ──────────────────────────────────────────────────────────────
 
 function buildPieChart(chart: SheetChart, sheetName: string): string {
-  const children: string[] = [xmlSelfClose("c:varyColors", { val: 1 })];
+  const children: string[] = [
+    xmlSelfClose("c:varyColors", { val: resolveVaryColors(chart) ? 1 : 0 }),
+  ];
 
   // A pie chart only paints the first series; additional ones are
   // valid OOXML but Excel ignores them.
@@ -613,7 +615,9 @@ const DOUGHNUT_HOLE_MIN = 10;
 const DOUGHNUT_HOLE_MAX = 90;
 
 function buildDoughnutChart(chart: SheetChart, sheetName: string): string {
-  const children: string[] = [xmlSelfClose("c:varyColors", { val: 1 })];
+  const children: string[] = [
+    xmlSelfClose("c:varyColors", { val: resolveVaryColors(chart) ? 1 : 0 }),
+  ];
 
   // Like pie, doughnut paints every declared series — Excel renders
   // each as a concentric ring (rare in practice; most templates have
@@ -683,7 +687,7 @@ function clampHoleSize(value: number | undefined): number {
 function buildScatterChart(chart: SheetChart, sheetName: string): string {
   const children: string[] = [
     xmlSelfClose("c:scatterStyle", { val: "lineMarker" }),
-    xmlSelfClose("c:varyColors", { val: 0 }),
+    xmlSelfClose("c:varyColors", { val: resolveVaryColors(chart) ? 1 : 0 }),
   ];
 
   for (let i = 0; i < chart.series.length; i++) {
@@ -1233,6 +1237,36 @@ function resolveDispBlanksAs(chart: SheetChart): ChartDisplayBlanksAs {
   const raw = chart.dispBlanksAs;
   if (raw && DISP_BLANKS_AS_VALUES.has(raw)) return raw;
   return "gap";
+}
+
+// ── Vary Colors ──────────────────────────────────────────────────────
+
+/**
+ * Chart families whose Excel-default `<c:varyColors>` value is `true`
+ * (each data point in the lone series renders in a unique color). Pie
+ * and doughnut both ship that way out of Excel's chart UI; every other
+ * authored family defaults to `false`.
+ */
+const VARY_COLORS_DEFAULT_TRUE_TYPES: ReadonlySet<WriteChartKind> = new Set(["pie", "doughnut"]);
+
+/**
+ * Resolve the `<c:varyColors>` value emitted on the chart-type element.
+ *
+ * Falls back to the per-family default when the chart does not pin the
+ * field, matching Excel's reference serialization (`true` for pie /
+ * doughnut, `false` everywhere else). An explicit `chart.varyColors`
+ * always wins, so a pie chart can collapse to a single color and a
+ * column chart can paint each bar a different color.
+ *
+ * The writer always emits the element — the OOXML schema lists it as
+ * required on every chart-type element except `surface` / `surface3D` /
+ * `stock`, none of which hucre's writer authors. Emitting the explicit
+ * value (matching Excel's reference output) keeps the rendered intent
+ * unambiguous on roundtrip.
+ */
+function resolveVaryColors(chart: SheetChart): boolean {
+  if (typeof chart.varyColors === "boolean") return chart.varyColors;
+  return VARY_COLORS_DEFAULT_TRUE_TYPES.has(chart.type);
 }
 
 // ── Reference qualification ──────────────────────────────────────────

@@ -171,6 +171,17 @@ export interface CloneChartOptions {
    */
   dispBlanksAs?: ChartDisplayBlanksAs | null;
   /**
+   * Override `<c:varyColors>` (the per-point unique-color toggle).
+   *
+   * `undefined` (or omitted) inherits the source's parsed
+   * `varyColors`. `null` drops the inherited value so the writer falls
+   * back to the per-family default (`true` for pie / doughnut, `false`
+   * everywhere else). A `boolean` replaces it — useful for collapsing
+   * a doughnut to a single color (`false`) or painting each bar of a
+   * single-series column chart in a different color (`true`).
+   */
+  varyColors?: boolean | null;
+  /**
    * Per-axis overrides. Each field accepts a value to replace the
    * source's, or `null` to drop the source value (the cloned chart
    * will render without that axis label / gridline even if the
@@ -331,6 +342,9 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
 
   const resolvedDispBlanks = resolveDispBlanksAs(source.dispBlanksAs, options.dispBlanksAs);
   if (resolvedDispBlanks !== undefined) out.dispBlanksAs = resolvedDispBlanks;
+
+  const resolvedVaryColors = resolveVaryColors(source.varyColors, options.varyColors);
+  if (resolvedVaryColors !== undefined) out.varyColors = resolvedVaryColors;
 
   // Pie and doughnut have no axes, so silently skip carrying over axis
   // titles even when the source declared them or the caller passed an
@@ -575,6 +589,27 @@ function resolveDispBlanksAs(
   sourceValue: ChartDisplayBlanksAs | undefined,
   override: ChartDisplayBlanksAs | null | undefined,
 ): ChartDisplayBlanksAs | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve a `varyColors` override.
+ *
+ * `undefined` → inherit the source's parsed `varyColors`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               per-family default — `true` for pie / doughnut, `false`
+ *               everywhere else).
+ * `boolean`   → replace.
+ *
+ * The override grammar mirrors `dispBlanksAs` so the two chart-level
+ * toggles compose the same way at the call site.
+ */
+function resolveVaryColors(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
   if (override === undefined) return sourceValue;
   if (override === null) return undefined;
   return override;

@@ -2286,3 +2286,123 @@ describe("writeChart — dispBlanksAs", () => {
     expect(scatter.chartXml).toContain('c:dispBlanksAs val="span"');
   });
 });
+
+// ── Vary colors ──────────────────────────────────────────────────────
+
+describe("writeChart — varyColors", () => {
+  it('emits <c:varyColors val="0"/> on a column chart by default', () => {
+    // Column / bar / line / area / scatter all default to false — each
+    // series renders in a single color.
+    const result = writeChart(makeChart({ type: "column" }), "Sheet1");
+    expect(result.chartXml).toContain('c:varyColors val="0"');
+    expect(result.chartXml).not.toContain('c:varyColors val="1"');
+  });
+
+  it('emits <c:varyColors val="1"/> on a pie chart by default', () => {
+    // Pie / doughnut default to true — each slice paints in its own color.
+    const result = writeChart(makeChart({ type: "pie" }), "Sheet1");
+    expect(result.chartXml).toContain('c:varyColors val="1"');
+    expect(result.chartXml).not.toContain('c:varyColors val="0"');
+  });
+
+  it('emits <c:varyColors val="1"/> on a doughnut chart by default', () => {
+    const result = writeChart(makeChart({ type: "doughnut" }), "Sheet1");
+    expect(result.chartXml).toContain('c:varyColors val="1"');
+    expect(result.chartXml).not.toContain('c:varyColors val="0"');
+  });
+
+  it("lets varyColors=true flip a column chart to per-point colors", () => {
+    const result = writeChart(makeChart({ type: "column", varyColors: true }), "Sheet1");
+    expect(result.chartXml).toContain('c:varyColors val="1"');
+    expect(result.chartXml).not.toContain('c:varyColors val="0"');
+  });
+
+  it("lets varyColors=false collapse a doughnut chart to a single color", () => {
+    const result = writeChart(makeChart({ type: "doughnut", varyColors: false }), "Sheet1");
+    expect(result.chartXml).toContain('c:varyColors val="0"');
+    expect(result.chartXml).not.toContain('c:varyColors val="1"');
+  });
+
+  it("lets varyColors=false on a pie chart override the per-family default", () => {
+    const result = writeChart(makeChart({ type: "pie", varyColors: false }), "Sheet1");
+    expect(result.chartXml).toContain('c:varyColors val="0"');
+    expect(result.chartXml).not.toContain('c:varyColors val="1"');
+  });
+
+  it("threads varyColors through every authored chart family", () => {
+    // Authoring true on every family flips the bar / column / line /
+    // area / scatter defaults from 0 to 1 and leaves pie / doughnut at
+    // 1. The element appears exactly once on each rendered chart.
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, varyColors: true }), "Sheet1");
+      expect(result.chartXml).toContain('c:varyColors val="1"');
+      const occurrences = result.chartXml.match(/c:varyColors/g) ?? [];
+      expect(occurrences).toHaveLength(1);
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        varyColors: true,
+      }),
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain('c:varyColors val="1"');
+  });
+
+  it("places <c:varyColors> after <c:grouping> inside <c:barChart> (OOXML order)", () => {
+    // CT_BarChart sequence: barDir → grouping → varyColors → ser*
+    const result = writeChart(makeChart({ type: "column" }), "Sheet1");
+    expect(result.chartXml.indexOf("c:grouping")).toBeLessThan(
+      result.chartXml.indexOf("c:varyColors"),
+    );
+    expect(result.chartXml.indexOf("c:varyColors")).toBeLessThan(result.chartXml.indexOf("c:ser"));
+  });
+
+  it("places <c:varyColors> after <c:scatterStyle> inside <c:scatterChart>", () => {
+    // CT_ScatterChart sequence: scatterStyle → varyColors → ser*
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml.indexOf("c:scatterStyle")).toBeLessThan(
+      result.chartXml.indexOf("c:varyColors"),
+    );
+  });
+
+  it("only emits <c:varyColors> once even when the chart pins the field", () => {
+    // Guard against any regression that would double-emit the element
+    // — both the default emission and a future explicit pass.
+    const result = writeChart(makeChart({ type: "column", varyColors: true }), "Sheet1");
+    const occurrences = result.chartXml.match(/c:varyColors/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("round-trips a non-default varyColors value through parseChart", () => {
+    // A column chart with varyColors=true should re-parse into a Chart
+    // whose `varyColors` field is `true` (not collapsed to undefined,
+    // since true is not the column-family default).
+    const written = writeChart(makeChart({ type: "column", varyColors: true }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.varyColors).toBe(true);
+  });
+
+  it("collapses a defaulted varyColors round-trip back to undefined", () => {
+    // A fresh column chart (varyColors omitted) writes `0` and re-parses
+    // to undefined — absence and the per-family default round-trip
+    // identically through parseChart.
+    const written = writeChart(makeChart({ type: "column" }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.varyColors).toBeUndefined();
+  });
+
+  it("collapses a defaulted varyColors on pie / doughnut back to undefined", () => {
+    const pie = writeChart(makeChart({ type: "pie" }), "Sheet1").chartXml;
+    expect(parseChart(pie)?.varyColors).toBeUndefined();
+    const dough = writeChart(makeChart({ type: "doughnut" }), "Sheet1").chartXml;
+    expect(parseChart(dough)?.varyColors).toBeUndefined();
+  });
+});

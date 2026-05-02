@@ -904,6 +904,34 @@ export interface SheetChart {
    */
   dispBlanksAs?: ChartDisplayBlanksAs;
   /**
+   * Vary the color of each data point within the same series. Maps to
+   * `<c:varyColors val=".."/>` on the chart-type element
+   * (`<c:barChart>`, `<c:lineChart>`, `<c:pieChart>`, ...). Excel
+   * exposes the same toggle under "Format Data Series → Fill →
+   * Vary colors by point".
+   *
+   * Excel's per-family defaults differ:
+   *   - `pie`, `doughnut`         → `true`  (each slice gets a unique color)
+   *   - `bar`, `column`, `line`,
+   *     `area`, `scatter`         → `false` (every point on a series
+   *                                  shares one color)
+   *
+   * The writer falls back to those per-family defaults when the field
+   * is omitted, so a fresh chart matches Excel's reference
+   * serialization. Pin `true` on a single-series bar / column chart to
+   * paint each bar a different color, or pin `false` on a doughnut to
+   * collapse every wedge to the same color (Excel's "single color"
+   * preset).
+   *
+   * The OOXML schema places `<c:varyColors>` on every chart-type
+   * element except `surfaceChart`, `surface3DChart`, and `stockChart`.
+   * Hucre's writer emits the element on every authored family, so
+   * `varyColors` round-trips on bar / column / line / pie / doughnut /
+   * area / scatter charts; surface / stock are not authored by hucre's
+   * writer.
+   */
+  varyColors?: boolean;
+  /**
    * Per-axis configuration rendered alongside the plot area. The `x`
    * axis is the category axis for bar/column/line/area (or the bottom
    * value axis for scatter); the `y` axis is the value axis. Ignored
@@ -1906,6 +1934,28 @@ export interface Chart {
    * than fabricated.
    */
   dispBlanksAs?: ChartDisplayBlanksAs;
+  /**
+   * Vary-colors-by-point flag pulled from the first chart-type
+   * element's `<c:varyColors val=".."/>`. Reflects Excel's
+   * per-family default by collapsing matching values to `undefined`:
+   *
+   *   - On `pie`, `pie3D`, `doughnut`, `ofPie` charts, the OOXML
+   *     default is `true` — `<c:varyColors val="1"/>` and absence both
+   *     collapse to `undefined`; only an explicit `<c:varyColors val="0"/>`
+   *     surfaces `false`.
+   *   - On every other chart family the OOXML default is `false` —
+   *     `<c:varyColors val="0"/>` and absence both collapse to
+   *     `undefined`; only an explicit `<c:varyColors val="1"/>`
+   *     surfaces `true`.
+   *
+   * The asymmetric collapse keeps the parsed shape minimal — a pure
+   * round-trip of a stock chart returns no `varyColors` field, while
+   * a template that overrides the per-family default surfaces the
+   * non-default value so {@link cloneChart} can carry it through.
+   * Omitted on chart families that have no `<c:varyColors>` slot
+   * (`surface`, `surface3D`, `stock`).
+   */
+  varyColors?: boolean;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────

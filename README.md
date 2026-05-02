@@ -647,6 +647,17 @@ Source → Hidden and Empty Cells" knob — and reports the literal
 `undefined` so absence and the default round-trip identically;
 unknown / malformed values (and a missing `val` attribute) drop to
 `undefined` rather than fabricate a token Excel rejects.
+`Chart.varyColors` surfaces the chart-type element's
+`<c:varyColors val=".."/>` flag — Excel's "Format Data Series → Fill →
+Vary colors by point" toggle — and reports the literal `true` or
+`false` value when it differs from the per-family OOXML default. Pie /
+doughnut / pie3D / ofPie default to `true` (every slice paints in a
+unique color), so absence and `<c:varyColors val="1"/>` both collapse
+to `undefined`; only an explicit `val="0"` surfaces `false` (the
+single-color override). Every other chart family defaults to `false`,
+so absence and `<c:varyColors val="0"/>` both collapse to `undefined`
+and only an explicit `val="1"` surfaces `true`. Unknown / malformed
+values and a missing `val` attribute drop to `undefined`.
 `ChartSeriesInfo.smooth` surfaces the per-series
 `<c:ser><c:smooth val=".."/>` flag — Excel's "Format Data Series →
 Line → Smoothed line" toggle — only on `line` / `line3D` / `scatter`
@@ -771,6 +782,15 @@ across the gap; line / scatter only). The writer always emits the
 element, defaulting to `"gap"` (the OOXML default Excel itself emits)
 and clamping unknown tokens back to `"gap"` so a malformed input
 cannot produce invalid OOXML.
+The chart-level `varyColors` field maps to `<c:varyColors val=".."/>`
+on the chart-type element — Excel's "Format Data Series → Fill → Vary
+colors by point" toggle. Absent it, the writer falls back to Excel's
+per-family defaults (`true` on pie / doughnut, `false` on bar / column
+/ line / area / scatter), so a fresh chart matches Excel's reference
+serialization. Pin `varyColors: true` on a single-series column or
+bar chart to paint each bar a different color, or pin `false` on a
+doughnut to collapse every wedge to one color (Excel's "single color"
+preset).
 For line and scatter charts, each `series[i].smooth` flag toggles
 Excel's curved-line variant (`<c:smooth val="..">` inside `<c:ser>`).
 Line series always emit the element — `smooth: true` writes `val="1"`,
@@ -888,6 +908,13 @@ back to the writer's `"gap"` default) / value (`"gap"` / `"zero"` /
 lives on `<c:chart>` and is valid on every chart family, so a
 coercion (line → column, doughnut → pie, etc.) preserves the
 inherited value rather than dropping it.
+The chart-level `varyColors` flag follows the same grammar: pass
+`undefined` to inherit the source's parsed value, `null` to drop it
+back to the writer's per-family default (`true` for pie / doughnut,
+`false` everywhere else), or a `boolean` to replace it. The OOXML
+schema places `<c:varyColors>` on every chart-type element hucre
+authors, so the inherited value carries through every coercion
+(column → pie, doughnut → line, etc.) without being silently dropped.
 
 #### Walking and adding charts with `getCharts` / `addChart`
 

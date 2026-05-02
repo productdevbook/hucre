@@ -2315,3 +2315,165 @@ describe("cloneChart — dispBlanksAs", () => {
     expect(reparsed?.dispBlanksAs).toBe("span");
   });
 });
+
+// ── cloneChart — varyColors ───────────────────────────────────────
+
+describe("cloneChart — varyColors", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's varyColors by default", () => {
+    const clone = cloneChart(source({ varyColors: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.varyColors).toBe(true);
+  });
+
+  it("inherits a false varyColors from the source (doughnut single-color)", () => {
+    const clone = cloneChart(
+      {
+        kinds: ["doughnut"],
+        seriesCount: 1,
+        series: [
+          {
+            kind: "doughnut",
+            index: 0,
+            valuesRef: "Sheet1!$B$2:$B$5",
+            categoriesRef: "Sheet1!$A$2:$A$5",
+          },
+        ],
+        varyColors: false,
+      },
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.type).toBe("doughnut");
+    expect(clone.varyColors).toBe(false);
+  });
+
+  it("lets options.varyColors override the source's value", () => {
+    const clone = cloneChart(source({ varyColors: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      varyColors: false,
+    });
+    expect(clone.varyColors).toBe(false);
+  });
+
+  it("drops the inherited varyColors when the override is null", () => {
+    // null collapses to the writer's per-family default — the field
+    // disappears from the resolved SheetChart so the writer emits the
+    // family-default value (`0` on column, `1` on pie/doughnut).
+    const clone = cloneChart(source({ varyColors: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      varyColors: null,
+    });
+    expect(clone.varyColors).toBeUndefined();
+  });
+
+  it("returns undefined varyColors when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.varyColors).toBeUndefined();
+  });
+
+  it("carries varyColors through a flatten (column → line)", () => {
+    // Unlike smooth/marker, varyColors is valid on every chart-type
+    // element hucre's writer authors, so a coercion does not drop it.
+    const clone = cloneChart(source({ varyColors: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "line",
+    });
+    expect(clone.type).toBe("line");
+    expect(clone.varyColors).toBe(true);
+  });
+
+  it("propagates varyColors into the rendered chart-type element on writeXlsx roundtrip", async () => {
+    // Round-trip: a parsed column template carrying varyColors=true
+    // clones into a SheetChart whose writer emits `<c:varyColors val="1"/>`
+    // on the `<c:barChart>` body. Re-parsing the rendered chart returns
+    // the same value.
+    const clone = cloneChart(source({ varyColors: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+      type: "column",
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:varyColors val="1"');
+    expect(written).not.toContain('c:varyColors val="0"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.varyColors).toBe(true);
+  });
+
+  it("collapses a doughnut single-color override through writeXlsx roundtrip", async () => {
+    // Cloning a doughnut template into a SheetChart with varyColors=false
+    // emits `<c:varyColors val="0"/>` — Excel renders every wedge in the
+    // same color. Re-parsing returns the explicit `false` because that
+    // is the non-default value for the doughnut family.
+    const clone = cloneChart(
+      {
+        kinds: ["doughnut"],
+        seriesCount: 1,
+        series: [
+          {
+            kind: "doughnut",
+            index: 0,
+            valuesRef: "Sheet1!$B$2:$B$5",
+            categoriesRef: "Sheet1!$A$2:$A$5",
+          },
+        ],
+      },
+      {
+        anchor: { from: { row: 5, col: 0 } },
+        varyColors: false,
+      },
+    );
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:varyColors val="0"');
+    expect(written).not.toContain('c:varyColors val="1"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.varyColors).toBe(false);
+  });
+});
