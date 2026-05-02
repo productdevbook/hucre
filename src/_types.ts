@@ -664,6 +664,66 @@ export interface ChartLineStroke {
 }
 
 /**
+ * Marker symbol shape rendered at each data point on a line / scatter
+ * series.
+ *
+ * Mirrors the OOXML `ST_MarkerStyle` enum exactly. `"none"` suppresses
+ * the marker (the Excel default for line charts beyond the first
+ * series); `"auto"` defers to Excel's series-rotation default; every
+ * other value pins a specific shape. `"picture"` is intentionally
+ * omitted — it requires a separately-embedded picture part that Phase 1
+ * native chart authoring does not support.
+ */
+export type ChartMarkerSymbol =
+  | "none"
+  | "auto"
+  | "circle"
+  | "square"
+  | "diamond"
+  | "triangle"
+  | "x"
+  | "star"
+  | "dot"
+  | "dash"
+  | "plus";
+
+/**
+ * Per-series marker styling for line / scatter charts.
+ *
+ * Maps to `<c:marker>` inside `<c:ser>`. Only meaningful on `line` and
+ * `scatter` series — the OOXML schema places `<c:marker>` exclusively
+ * on `CT_LineSer` and `CT_ScatterSer`, so the field is silently
+ * dropped on every other chart family at all three layers (read,
+ * write, clone).
+ *
+ * Every field is optional — a bare `{}` collapses to no marker
+ * configuration and leaves Excel's per-series default in place. Set
+ * `symbol: "none"` to explicitly hide the marker (useful for a
+ * scatter clone whose template uses markers but the dashboard wants
+ * a clean line).
+ */
+export interface ChartMarker {
+  /** Shape of the marker glyph. See {@link ChartMarkerSymbol}. */
+  symbol?: ChartMarkerSymbol;
+  /**
+   * Marker glyph size in points, in the OOXML range `2..72`. Excel's
+   * UI clamps values outside this band. Default (when omitted): Excel
+   * picks a series-rotation default (typically `5`).
+   */
+  size?: number;
+  /**
+   * Marker fill color as a 6-digit RGB hex string (e.g. `"1F77B4"`).
+   * Maps to `<c:marker><c:spPr><a:solidFill><a:srgbClr val="..">`.
+   */
+  fill?: string;
+  /**
+   * Marker outline color as a 6-digit RGB hex string. Maps to
+   * `<c:marker><c:spPr><a:ln><a:solidFill><a:srgbClr val="..">`.
+   */
+  line?: string;
+}
+
+/**
  * A single data series inside a chart.
  *
  * `values` and `categories` are A1-style cell range references.
@@ -706,6 +766,13 @@ export interface ChartSeries {
    * visible effect there. See {@link ChartLineStroke}.
    */
   stroke?: ChartLineStroke;
+  /**
+   * Per-series marker styling. Only meaningful for `line` and
+   * `scatter` charts — the OOXML schema places `<c:marker>` on
+   * `CT_LineSer` / `CT_ScatterSer` only. Ignored on every other
+   * chart family at write time.
+   */
+  marker?: ChartMarker;
 }
 
 /**
@@ -1512,6 +1579,16 @@ export interface ChartSeriesInfo {
    * fed straight into a clone without transformation.
    */
   stroke?: ChartLineStroke;
+  /**
+   * Marker styling parsed from `<c:ser><c:marker>`. Surfaces only on
+   * `line` / `scatter` series — the OOXML schema places `<c:marker>`
+   * exclusively on `CT_LineSer` and `CT_ScatterSer`. Empty marker
+   * blocks (no symbol, size, or color) collapse to `undefined` so a
+   * round-trip keeps the read-side shape minimal. Field semantics
+   * mirror the write-side {@link ChartMarker}, so the value can be
+   * fed straight into {@link cloneChart} without transformation.
+   */
+  marker?: ChartMarker;
 }
 
 /**

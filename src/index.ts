@@ -148,6 +148,8 @@ export type {
   ChartLineAreaGrouping,
   ChartLineDashStyle,
   ChartLineStroke,
+  ChartMarker,
+  ChartMarkerSymbol,
   ChartSeriesInfo,
 } from "./_types";
 

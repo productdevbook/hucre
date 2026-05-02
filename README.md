@@ -647,6 +647,24 @@ series (the OOXML schema places `<c:smooth>` exclusively on
 `CT_LineSer` and `CT_ScatterSer`). Absence and the OOXML default
 `val="0"` both collapse to `undefined`, so only an explicit
 `<c:smooth val="1"/>` round-trips as `smooth: true`.
+`ChartSeriesInfo.marker` surfaces the per-series `<c:ser><c:marker>`
+glyph configuration on `line` / `line3D` / `scatter` series (the
+schema places `<c:marker>` only on `CT_LineSer` and `CT_ScatterSer`).
+The reader pulls `symbol` (`circle` / `square` / `diamond` /
+`triangle` / `x` / `star` / `dot` / `dash` / `plus` / `auto` /
+`none`), `size` (clamped to the OOXML 2..72 band), and the marker's
+fill / outline colors out of `<c:spPr><a:solidFill>` and
+`<c:spPr><a:ln><a:solidFill>` — empty `<c:marker/>` elements collapse
+to `undefined` so absence and a bare element round-trip identically.
+`ChartSeriesInfo.stroke` surfaces the per-series
+`<c:ser><c:spPr><a:ln>` line styling on the same `line` / `line3D` /
+`scatter` series — `dash` mirrors the OOXML `ST_PresetLineDashVal`
+enum (`solid`, `dot`, `dash`, `lgDash`, `dashDot`, `lgDashDot`,
+`lgDashDotDot`, `sysDash`, `sysDot`, `sysDashDot`, `sysDashDotDot`)
+and `width` is reported in points after converting from EMU and
+clamping to Excel's 0.25 – 13.5 pt UI band. Empty `<a:ln/>` blocks,
+unknown dash tokens, and out-of-band widths collapse to `undefined`
+so the parsed shape stays minimal.
 Sheets that hucre actively regenerates because they
 also carry hucre-managed images currently keep the chart bodies but
 lose the in-drawing chart anchor — merging hucre's drawing output
@@ -745,6 +763,28 @@ absence or `false` writes the OOXML default `val="0"`; scatter series
 only emit `<c:smooth val="1"/>` when `smooth` is explicitly `true` so
 untouched scatter charts stay byte-clean. Bar / column / pie /
 doughnut / area kinds silently ignore the flag.
+For line and scatter charts, each `series[i].marker` block also
+controls the per-point glyph: `symbol`
+(`circle` / `square` / `diamond` / `triangle` / `x` / `star` / `dot` /
+`dash` / `plus` / `auto` / `none`) picks the shape, `size` (2 – 72)
+sets the diameter, and `fill` / `line` (6-digit RGB hex) tint the
+glyph fill and outline. Out-of-range sizes clamp to the schema band,
+unknown symbols and malformed hex values are dropped so Excel never
+receives an attribute it would reject, and an empty marker (`{}`)
+collapses to no `<c:marker>` at all. Bar / column / pie / doughnut /
+area kinds silently ignore the field.
+The same line / scatter series accept a `stroke` block that maps to
+`<c:ser><c:spPr><a:ln>`: `dash` selects a preset pattern (mirroring
+`ST_PresetLineDashVal`: `solid`, `dot`, `dash`, `lgDash`, `dashDot`,
+`lgDashDot`, `lgDashDotDot`, `sysDash`, `sysDot`, `sysDashDot`,
+`sysDashDotDot`) and `width` sets the stroke thickness in points
+(clamped to Excel's 0.25 – 13.5 pt UI band, snapped to the 0.25 pt
+grid, and converted to integer EMU on the wire). The writer layers
+the stroke onto the existing `<c:spPr>` that carries `series.color`
+so a `color + stroke` combo behaves like Excel's UI: the line picks
+up the fill color, and dash / width override visibility-only
+attributes. Bar / column / pie / doughnut / area kinds silently
+ignore the field.
 Radar, stock, 3D variants, trendlines, and combo charts are out of
 scope today.
 
@@ -813,7 +853,19 @@ a single series. Per-series smooth-line state inherits from the
 template by default; `seriesOverrides[i].smooth` accepts the same
 `undefined` (inherit) / `null` (drop) / `boolean` (replace) grammar,
 and the inherited flag is dropped automatically when the resolved
-clone target is anything other than `line` or `scatter`.
+clone target is anything other than `line` or `scatter`. Per-series
+markers carry over the same way: `seriesOverrides[i].marker` accepts
+`undefined` (inherit), `null` (drop the inherited block), or a
+`ChartMarker` object (replace wholesale — there is no per-field
+merge, so pass every field you want preserved). The inherited block
+is also dropped automatically when the resolved clone target is
+anything other than `line` or `scatter`.
+Per-series line strokes follow the same grammar:
+`seriesOverrides[i].stroke` accepts `undefined` (inherit), `null`
+(drop the inherited `<a:ln>` block), or a `ChartLineStroke` object
+(replace wholesale — `dash` and `width` together, no per-field
+merge). The inherited stroke is also dropped automatically when the
+resolved clone target is anything other than `line` or `scatter`.
 
 #### Walking and adding charts with `getCharts` / `addChart`
 

@@ -802,6 +802,268 @@ describe("writeChart — series line stroke", () => {
   });
 });
 
+// ── Series markers ───────────────────────────────────────────────────
+
+describe("writeChart — series marker", () => {
+  it("omits <c:marker> on a line series when marker is not set", () => {
+    // The line writer keeps the chart-type-level `<c:marker val="1"/>`
+    // toggle (Excel's per-series default) but does not emit a per-series
+    // marker block until the caller pins one.
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+      }),
+      "Sheet1",
+    );
+    // The chart-type-level toggle is still present.
+    expect(result.chartXml).toContain('c:marker val="1"');
+    // No per-series marker element though.
+    const serBlock = result.chartXml.match(/<c:ser>[\s\S]*?<\/c:ser>/)![0];
+    expect(serBlock).not.toContain("<c:marker>");
+  });
+
+  it("emits <c:marker> with <c:symbol> on a line series", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4", marker: { symbol: "diamond" } }],
+      }),
+      "Sheet1",
+    );
+    const serBlock = result.chartXml.match(/<c:ser>[\s\S]*?<\/c:ser>/)![0];
+    expect(serBlock).toContain("<c:marker>");
+    expect(serBlock).toContain('c:symbol val="diamond"');
+  });
+
+  it("emits <c:size> inside <c:marker>", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", marker: { symbol: "circle", size: 12 } }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:size val="12"');
+  });
+
+  it("clamps size into the OOXML 2..72 band", () => {
+    const lo = writeChart(
+      makeChart({ type: "line", series: [{ values: "B2:B4", marker: { size: 0 } }] }),
+      "Sheet1",
+    );
+    expect(lo.chartXml).toContain('c:size val="2"');
+    const hi = writeChart(
+      makeChart({ type: "line", series: [{ values: "B2:B4", marker: { size: 999 } }] }),
+      "Sheet1",
+    );
+    expect(hi.chartXml).toContain('c:size val="72"');
+  });
+
+  it("rounds non-integer size values", () => {
+    const result = writeChart(
+      makeChart({ type: "line", series: [{ values: "B2:B4", marker: { size: 7.6 } }] }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:size val="8"');
+  });
+
+  it("emits <c:spPr> with <a:solidFill> when marker.fill is set", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", marker: { symbol: "circle", fill: "1F77B4" } }],
+      }),
+      "Sheet1",
+    );
+    const markerBlock = result.chartXml.match(/<c:marker>[\s\S]*?<\/c:marker>/)![0];
+    expect(markerBlock).toContain("<c:spPr>");
+    expect(markerBlock).toContain("<a:solidFill>");
+    expect(markerBlock).toContain('a:srgbClr val="1F77B4"');
+  });
+
+  it("emits <a:ln> with a solidFill when marker.line is set", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", marker: { symbol: "circle", line: "FF0000" } }],
+      }),
+      "Sheet1",
+    );
+    const markerBlock = result.chartXml.match(/<c:marker>[\s\S]*?<\/c:marker>/)![0];
+    expect(markerBlock).toContain("<a:ln>");
+    expect(markerBlock).toMatch(/<a:ln>[\s\S]*a:srgbClr val="FF0000"/);
+  });
+
+  it("strips a leading '#' and uppercases hex color values", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", marker: { fill: "#1f77b4", line: "#aabbcc" } }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('a:srgbClr val="1F77B4"');
+    expect(result.chartXml).toContain('a:srgbClr val="AABBCC"');
+  });
+
+  it("drops malformed hex color values", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", marker: { fill: "not-a-color", symbol: "circle" } }],
+      }),
+      "Sheet1",
+    );
+    // Symbol still surfaces, but fill is dropped — no <a:solidFill>
+    // for the marker, since the hex was invalid.
+    const markerBlock = result.chartXml.match(/<c:marker>[\s\S]*?<\/c:marker>/)![0];
+    expect(markerBlock).toContain('c:symbol val="circle"');
+    expect(markerBlock).not.toContain("<a:solidFill>");
+  });
+
+  it("drops unknown marker symbols rather than emit invalid XML", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        // @ts-expect-error: deliberately pass an out-of-enum symbol.
+        series: [{ values: "B2:B4", marker: { symbol: "pentagon", size: 5 } }],
+      }),
+      "Sheet1",
+    );
+    // The size still surfaces but the bogus symbol is dropped.
+    expect(result.chartXml).toContain('c:size val="5"');
+    expect(result.chartXml).not.toContain("c:symbol");
+  });
+
+  it("collapses an empty marker block to no <c:marker> at all", () => {
+    // No symbol, size, or color → nothing meaningful to write, so the
+    // writer omits the element entirely (same shape as if marker was
+    // never set on the series).
+    const result = writeChart(
+      makeChart({ type: "line", series: [{ values: "B2:B4", marker: {} }] }),
+      "Sheet1",
+    );
+    const serBlock = result.chartXml.match(/<c:ser>[\s\S]*?<\/c:ser>/)![0];
+    expect(serBlock).not.toContain("<c:marker>");
+  });
+
+  it("emits <c:marker> on a scatter series", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4", marker: { symbol: "x", size: 8 } }],
+      }),
+      "Sheet1",
+    );
+    const serBlock = result.chartXml.match(/<c:ser>[\s\S]*?<\/c:ser>/)![0];
+    expect(serBlock).toContain('c:symbol val="x"');
+    expect(serBlock).toContain('c:size val="8"');
+  });
+
+  it("renders markers per-series independently on a multi-series line chart", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [
+          { name: "A", values: "B2:B4", marker: { symbol: "circle", size: 6 } },
+          { name: "B", values: "C2:C4", marker: { symbol: "square" } },
+          { name: "C", values: "D2:D4" },
+        ],
+      }),
+      "Sheet1",
+    );
+    const markers = result.chartXml.match(/<c:marker>[\s\S]*?<\/c:marker>/g) ?? [];
+    expect(markers).toHaveLength(2);
+    expect(markers[0]).toContain('c:symbol val="circle"');
+    expect(markers[1]).toContain('c:symbol val="square"');
+  });
+
+  it("ignores marker on chart families whose schema rejects <c:marker>", () => {
+    // The OOXML schema places <c:marker> on the series only on
+    // CT_LineSer and CT_ScatterSer. Setting marker on a bar / column /
+    // pie / doughnut / area series must not leak the element into the
+    // output.
+    for (const type of ["column", "bar", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(
+        makeChart({
+          type,
+          series: [{ values: "B2:B4", categories: "A2:A4", marker: { symbol: "circle" } }],
+        }),
+        "Sheet1",
+      );
+      // No per-series marker block on these chart families.
+      const serBlock = result.chartXml.match(/<c:ser>[\s\S]*?<\/c:ser>/)![0];
+      expect(serBlock).not.toContain("<c:marker>");
+    }
+  });
+
+  it("places <c:marker> between <c:spPr> and <c:dLbls> inside <c:ser> (OOXML order)", () => {
+    // CT_LineSer / CT_ScatterSer order: idx, order, tx, spPr, marker,
+    // dPt*, dLbls?, ..., cat?, val?, smooth?. Excel's strict validator
+    // rejects markers placed elsewhere.
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [
+          {
+            values: "B2:B4",
+            categories: "A2:A4",
+            color: "1F77B4",
+            marker: { symbol: "circle" },
+            dataLabels: { showValue: true },
+          },
+        ],
+      }),
+      "Sheet1",
+    );
+    const serBlock = result.chartXml.match(/<c:ser>[\s\S]*?<\/c:ser>/)![0];
+    expect(serBlock.indexOf("<c:spPr>")).toBeLessThan(serBlock.indexOf("<c:marker>"));
+    expect(serBlock.indexOf("<c:marker>")).toBeLessThan(serBlock.indexOf("<c:dLbls>"));
+    expect(serBlock.indexOf("<c:dLbls>")).toBeLessThan(serBlock.indexOf("<c:cat>"));
+    expect(serBlock.indexOf("<c:cat>")).toBeLessThan(serBlock.indexOf("<c:val>"));
+    expect(serBlock.indexOf("<c:val>")).toBeLessThan(serBlock.indexOf("<c:smooth"));
+  });
+
+  it("survives a writeXlsx → parseChart round-trip", async () => {
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Dashboard",
+          rows: [
+            ["Q", "Rev"],
+            ["Q1", 100],
+            ["Q2", 150],
+            ["Q3", 175],
+          ],
+          charts: [
+            {
+              type: "line",
+              series: [
+                {
+                  name: "Rev",
+                  values: "B2:B4",
+                  categories: "A2:A4",
+                  marker: { symbol: "diamond", size: 10, fill: "1F77B4", line: "0F3F60" },
+                },
+              ],
+              anchor: { from: { row: 5, col: 0 } },
+            },
+          ],
+        },
+      ],
+    });
+    const chartXml = await extractXml(xlsx, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.series?.[0].marker).toEqual({
+      symbol: "diamond",
+      size: 10,
+      fill: "1F77B4",
+      line: "0F3F60",
+    });
+  });
+});
+
 // ── Axis titles ──────────────────────────────────────────────────────
 
 describe("writeChart — axis titles", () => {

@@ -13,6 +13,8 @@ import type {
   ChartDataLabels,
   ChartLineDashStyle,
   ChartLineStroke,
+  ChartMarker,
+  ChartMarkerSymbol,
   ChartSeries,
   SheetChart,
   WriteChartKind,
@@ -533,6 +535,7 @@ function buildLineChart(chart: SheetChart, sheetName: string): string {
       smooth: chart.series[i].smooth === true,
       dataLabels: chart.dataLabels,
       stroke: chart.series[i].stroke,
+      marker: chart.series[i].marker,
     });
     children.push(seriesXml);
   }
@@ -691,6 +694,7 @@ function buildScatterChart(chart: SheetChart, sheetName: string): string {
         smooth: chart.series[i].smooth === true ? true : undefined,
         dataLabels: chart.dataLabels,
         stroke: chart.series[i].stroke,
+        marker: chart.series[i].marker,
       }),
     );
   }
@@ -797,6 +801,14 @@ interface SeriesOptions {
    * is set.
    */
   stroke?: ChartLineStroke;
+  /**
+   * Per-series marker styling. Only meaningful for line / scatter
+   * series — every other family ignores the field. The OOXML schema
+   * places `<c:marker>` between `<c:spPr>` and `<c:dLbls>` on
+   * `CT_LineSer` / `CT_ScatterSer`, so the writer slots it there
+   * regardless of which fields are populated.
+   */
+  marker?: ChartMarker;
 }
 
 function buildSeries(
@@ -826,6 +838,14 @@ function buildSeries(
   // every other chart family).
   const spPr = buildSeriesSpPr(series.color, options?.stroke);
   if (spPr) children.push(spPr);
+
+  // Marker — only line/scatter series honor `<c:marker>` per the OOXML
+  // schema (CT_LineSer / CT_ScatterSer). The element sits between
+  // `<c:spPr>` and `<c:dLbls>`; non-line/non-scatter callers leave
+  // `options.marker` undefined so the field is silently dropped on
+  // every other chart family.
+  const markerXml = buildSeriesMarker(options?.marker);
+  if (markerXml) children.push(markerXml);
 
   // Data labels — series-level override always wins over the chart-level
   // default. `<c:dLbls>` sits between <c:spPr> and <c:cat>/<c:val> per
@@ -984,6 +1004,104 @@ function buildSeriesSpPr(
   }
 
   return xmlElement("c:spPr", undefined, spPrChildren);
+}
+
+// ── Marker ───────────────────────────────────────────────────────────
+
+const VALID_MARKER_SYMBOLS: ReadonlySet<ChartMarkerSymbol> = new Set([
+  "none",
+  "auto",
+  "circle",
+  "square",
+  "diamond",
+  "triangle",
+  "x",
+  "star",
+  "dot",
+  "dash",
+  "plus",
+]);
+
+const MARKER_SIZE_MIN = 2;
+const MARKER_SIZE_MAX = 72;
+
+/**
+ * Normalize a marker size to the OOXML 2..72 band (`ST_MarkerSize`).
+ * Excel's UI clamps anything outside this range; we mirror that on the
+ * write side so an out-of-range hint never reaches the chart XML.
+ *
+ * Returns `undefined` for non-finite values so the writer can elide
+ * `<c:size>` (Excel falls back to its series-rotation default).
+ */
+function clampMarkerSize(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  const rounded = Math.round(value);
+  if (rounded < MARKER_SIZE_MIN) return MARKER_SIZE_MIN;
+  if (rounded > MARKER_SIZE_MAX) return MARKER_SIZE_MAX;
+  return rounded;
+}
+
+/**
+ * Validate a marker symbol against the OOXML `ST_MarkerStyle` enum.
+ * Returns `undefined` for unrecognized values so the writer can elide
+ * `<c:symbol>` rather than emit a token Excel will reject.
+ */
+function normalizeMarkerSymbol(
+  value: ChartMarkerSymbol | undefined,
+): ChartMarkerSymbol | undefined {
+  if (value === undefined) return undefined;
+  return VALID_MARKER_SYMBOLS.has(value) ? value : undefined;
+}
+
+/**
+ * Build a `<c:marker>` element for a series. Returns `undefined` when
+ * the marker block carries no meaningful settings — an empty marker
+ * element collapses to the inherited series-rotation default Excel
+ * picks anyway, so omitting it keeps untouched XML byte-clean.
+ */
+function buildSeriesMarker(marker: ChartMarker | undefined): string | undefined {
+  if (!marker) return undefined;
+  const symbol = normalizeMarkerSymbol(marker.symbol);
+  const size = clampMarkerSize(marker.size);
+  const fill = normalizeRgbHex(marker.fill);
+  const line = normalizeRgbHex(marker.line);
+
+  if (symbol === undefined && size === undefined && !fill && !line) return undefined;
+
+  const children: string[] = [];
+  if (symbol !== undefined) children.push(xmlSelfClose("c:symbol", { val: symbol }));
+  if (size !== undefined) children.push(xmlSelfClose("c:size", { val: size }));
+
+  if (fill || line) {
+    const spPrChildren: string[] = [];
+    if (fill) {
+      spPrChildren.push(
+        xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fill })]),
+      );
+    }
+    if (line) {
+      spPrChildren.push(
+        xmlElement("a:ln", undefined, [
+          xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: line })]),
+        ]),
+      );
+    }
+    children.push(xmlElement("c:spPr", undefined, spPrChildren));
+  }
+
+  return xmlElement("c:marker", undefined, children);
+}
+
+/**
+ * Validate a 6-digit RGB hex string and return the uppercase form.
+ * Strips a leading `#`. Returns `undefined` for missing or malformed
+ * values so the writer can elide colored sub-elements that would
+ * otherwise carry a token Excel rejects.
+ */
+function normalizeRgbHex(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const stripped = value.replace(/^#/, "").toUpperCase();
+  return /^[0-9A-F]{6}$/.test(stripped) ? stripped : undefined;
 }
 
 // ── Data Labels ──────────────────────────────────────────────────────

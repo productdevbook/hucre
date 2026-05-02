@@ -1931,6 +1931,200 @@ describe("parseChart — series line stroke", () => {
   });
 });
 
+// ── parseChart — series marker ────────────────────────────────────
+
+describe("parseChart — series marker", () => {
+  const NS_C = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS_A = `xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  it("surfaces symbol + size on a <c:lineChart> series", () => {
+    const xml = `<c:chartSpace ${NS_C} ${NS_A}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:marker>
+          <c:symbol val="diamond"/>
+          <c:size val="10"/>
+        </c:marker>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].marker).toEqual({ symbol: "diamond", size: 10 });
+  });
+
+  it("surfaces fill and outline colors from <c:spPr>", () => {
+    const xml = `<c:chartSpace ${NS_C} ${NS_A}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:marker>
+          <c:symbol val="circle"/>
+          <c:size val="6"/>
+          <c:spPr>
+            <a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill>
+            <a:ln><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:ln>
+          </c:spPr>
+        </c:marker>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].marker).toEqual({
+      symbol: "circle",
+      size: 6,
+      fill: "1F77B4",
+      line: "FF0000",
+    });
+  });
+
+  it("upper-cases hex color values pulled from the marker spPr", () => {
+    const xml = `<c:chartSpace ${NS_C} ${NS_A}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:marker>
+          <c:spPr><a:solidFill><a:srgbClr val="1f77b4"/></a:solidFill></c:spPr>
+        </c:marker>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].marker?.fill).toBe("1F77B4");
+  });
+
+  it("clamps marker size into the OOXML 2..72 band", () => {
+    const xml = `<c:chartSpace ${NS_C} ${NS_A}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:marker><c:size val="999"/></c:marker>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+      <c:ser>
+        <c:idx val="1"/>
+        <c:marker><c:size val="0"/></c:marker>
+        <c:val><c:numRef><c:f>Sheet1!$C$2:$C$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].marker?.size).toBe(72);
+    expect(chart?.series?.[1].marker?.size).toBe(2);
+  });
+
+  it("collapses an empty <c:marker/> to undefined", () => {
+    // No symbol, size, or color — there's nothing meaningful to surface.
+    const xml = `<c:chartSpace ${NS_C} ${NS_A}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:marker/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].marker).toBeUndefined();
+  });
+
+  it("drops unknown marker symbols rather than surface invalid values", () => {
+    const xml = `<c:chartSpace ${NS_C} ${NS_A}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:marker><c:symbol val="pentagon"/><c:size val="5"/></c:marker>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    // Size still surfaces; the bogus symbol is dropped.
+    expect(chart?.series?.[0].marker).toEqual({ size: 5 });
+  });
+
+  it("surfaces marker on a <c:scatterChart> series", () => {
+    const xml = `<c:chartSpace ${NS_C} ${NS_A}>
+  <c:chart><c:plotArea>
+    <c:scatterChart>
+      <c:scatterStyle val="lineMarker"/>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:marker><c:symbol val="x"/><c:size val="8"/></c:marker>
+        <c:xVal><c:numRef><c:f>Sheet1!$A$2:$A$5</c:f></c:numRef></c:xVal>
+        <c:yVal><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:yVal>
+      </c:ser>
+    </c:scatterChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].marker).toEqual({ symbol: "x", size: 8 });
+  });
+
+  it("ignores <c:marker> on chart families whose schema rejects it", () => {
+    // A bar / pie / area template carrying a stray <c:marker> on its
+    // series should not surface a marker that the writer would never
+    // emit on those families anyway.
+    const xml = `<c:chartSpace ${NS_C} ${NS_A}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:marker><c:symbol val="circle"/></c:marker>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].marker).toBeUndefined();
+  });
+
+  it("surfaces marker per-series independently across multi-series line charts", () => {
+    const xml = `<c:chartSpace ${NS_C} ${NS_A}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:marker><c:symbol val="circle"/><c:size val="6"/></c:marker>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+      <c:ser>
+        <c:idx val="1"/>
+        <c:marker><c:symbol val="square"/></c:marker>
+        <c:val><c:numRef><c:f>Sheet1!$C$2:$C$5</c:f></c:numRef></c:val>
+      </c:ser>
+      <c:ser>
+        <c:idx val="2"/>
+        <c:val><c:numRef><c:f>Sheet1!$D$2:$D$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series).toHaveLength(3);
+    expect(chart?.series?.[0].marker).toEqual({ symbol: "circle", size: 6 });
+    expect(chart?.series?.[1].marker).toEqual({ symbol: "square" });
+    expect(chart?.series?.[2].marker).toBeUndefined();
+  });
+});
+
 // ── End-to-end: full XLSX with a chart ────────────────────────────
 
 /**
