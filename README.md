@@ -528,6 +528,11 @@ for (const sheet of wb.sheets) {
     console.log(chart.kinds, chart.seriesCount, chart.title);
     // e.g. ["bar"], 2, "Quarterly Sales"
 
+    // chart.anchor surfaces the drawing-layer cell anchor that pins
+    // the chart to the host sheet (twoCellAnchor / oneCellAnchor).
+    console.log(chart.anchor);
+    // e.g. { from: { row: 1, col: 3 }, to: { row: 16, col: 10 } }
+
     for (const s of chart.series ?? []) {
       console.log(s.kind, s.index, s.name, s.valuesRef, s.categoriesRef, s.color);
       // e.g. "bar" 0 "Revenue" "Sheet1!$B$2:$B$10" "Sheet1!$A$2:$A$10" "1F77B4"
@@ -546,6 +551,11 @@ const chart = parseChart(xml);
 fed back into `WriteSheet.charts` to clone or re-bind a chart.
 Bubble/scatter `<c:numLit>` series (literal embedded data, no
 formula) intentionally surface no `valuesRef`/`categoriesRef`.
+`Chart.anchor` mirrors `SheetChart.anchor` on the writer side —
+`twoCellAnchor` charts surface both `from` and `to`,
+`oneCellAnchor` charts surface `from` only (intrinsic size lives in
+`<xdr:ext>`), and `absoluteAnchor` charts (EMU-positioned, no cell
+anchor) report `anchor` as `undefined`.
 Sheets that hucre actively regenerates because they
 also carry hucre-managed images currently keep the chart bodies but
 lose the in-drawing chart anchor — merging hucre's drawing output

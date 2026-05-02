@@ -136,6 +136,7 @@ export { addChart, getCharts } from "./xlsx/chart-helpers";
 export type { ChartLocation } from "./xlsx/chart-helpers";
 export type {
   Chart,
+  ChartAnchor,
   ChartBarGrouping,
   ChartKind,
   ChartLegendPosition,
