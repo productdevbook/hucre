@@ -27,6 +27,8 @@ export function writeWorkbookXml(
   activeSheet?: number,
   workbookProtection?: { lockStructure?: boolean; lockWindows?: boolean; password?: string },
   externalLinkRels?: ReadonlyArray<{ rId: string }>,
+  slicerCacheRels?: ReadonlyArray<{ rId: string }>,
+  timelineCacheRels?: ReadonlyArray<{ rId: string }>,
 ): string {
   const sheetElements: string[] = [];
 
@@ -125,6 +127,51 @@ export function writeWorkbookXml(
   // ── calcPr — tells Excel to recalculate all formulas on open ──
   parts.push(xmlSelfClose("calcPr", { calcId: 0, fullCalcOnLoad: 1 }));
 
+  // ── extLst — slicer caches (x14) and timeline caches (x15) ──
+  // These extension blocks point Excel at the slicerCacheN.xml and
+  // timelineCacheN.xml parts via rIds declared in workbook.xml.rels.
+  // Without them Excel treats the cache parts as orphans and drops the
+  // associated slicers / timelines on next open.
+  const extElements: string[] = [];
+
+  if (slicerCacheRels && slicerCacheRels.length > 0) {
+    const slicerRefs = slicerCacheRels.map((r) =>
+      xmlSelfClose("x14:slicerCache", { "r:id": r.rId }),
+    );
+    const slicerCachesEl = xmlElement("x14:slicerCaches", undefined, slicerRefs);
+    extElements.push(
+      xmlElement(
+        "ext",
+        {
+          uri: "{BBE1A952-AA13-448E-AADC-164F8A28A991}",
+          "xmlns:x14": "http://schemas.microsoft.com/office/spreadsheetml/2009/9/main",
+        },
+        [slicerCachesEl],
+      ),
+    );
+  }
+
+  if (timelineCacheRels && timelineCacheRels.length > 0) {
+    const timelineRefs = timelineCacheRels.map((r) =>
+      xmlSelfClose("x15:timelineCachePivotCache", { "r:id": r.rId }),
+    );
+    const timelineCachesEl = xmlElement("x15:timelineCachePivotCaches", undefined, timelineRefs);
+    extElements.push(
+      xmlElement(
+        "ext",
+        {
+          uri: "{7E03D99C-DC04-49D9-9315-930204A7B6E9}",
+          "xmlns:x15": "http://schemas.microsoft.com/office/spreadsheetml/2010/11/main",
+        },
+        [timelineCachesEl],
+      ),
+    );
+  }
+
+  if (extElements.length > 0) {
+    parts.push(xmlElement("extLst", undefined, extElements));
+  }
+
   return xmlDocument("workbook", { xmlns: NS_SPREADSHEET, "xmlns:r": NS_R }, parts);
 }
 
@@ -134,11 +181,20 @@ const REL_FEATURE_PROPERTY_BAG =
 
 const REL_EXTERNAL_LINK =
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink";
+const REL_SLICER_CACHE = "http://schemas.microsoft.com/office/2007/relationships/slicerCache";
+const REL_TIMELINE_CACHE = "http://schemas.microsoft.com/office/2011/relationships/timelineCache";
 
 /** A relationship description for an externalLink emitted in workbook.xml.rels. */
 export interface ExternalLinkRel {
   rId: string;
   /** Path relative to the workbook directory, e.g. "externalLinks/externalLink1.xml". */
+  target: string;
+}
+
+/** A workbook-level relationship to a slicerCache or timelineCache part. */
+export interface CacheRel {
+  rId: string;
+  /** Path relative to the workbook directory, e.g. "slicerCaches/slicerCache1.xml". */
   target: string;
 }
 
@@ -149,6 +205,8 @@ export function writeWorkbookRels(
   hasMacros?: boolean,
   hasFeaturePropertyBag?: boolean,
   externalLinkRels?: ReadonlyArray<ExternalLinkRel>,
+  slicerCacheRels?: ReadonlyArray<CacheRel>,
+  timelineCacheRels?: ReadonlyArray<CacheRel>,
 ): string {
   const children: string[] = [];
 
@@ -228,6 +286,32 @@ export function writeWorkbookRels(
           Id: link.rId,
           Type: REL_EXTERNAL_LINK,
           Target: link.target,
+        }),
+      );
+    }
+  }
+
+  // Slicer cache relationships (Excel 2010+)
+  if (slicerCacheRels) {
+    for (const r of slicerCacheRels) {
+      children.push(
+        xmlSelfClose("Relationship", {
+          Id: r.rId,
+          Type: REL_SLICER_CACHE,
+          Target: r.target,
+        }),
+      );
+    }
+  }
+
+  // Timeline cache relationships (Excel 2013+)
+  if (timelineCacheRels) {
+    for (const r of timelineCacheRels) {
+      children.push(
+        xmlSelfClose("Relationship", {
+          Id: r.rId,
+          Type: REL_TIMELINE_CACHE,
+          Target: r.target,
         }),
       );
     }

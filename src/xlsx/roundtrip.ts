@@ -3,7 +3,7 @@
 // images, macros, shapes, or other features that defter doesn't natively
 // understand.
 
-import type { Workbook, ReadOptions, WriteSheet, NamedRange } from "../_types";
+import type { Sheet, Workbook, ReadOptions, WriteSheet, NamedRange } from "../_types";
 import { readXlsx } from "./reader";
 import { ZipReader } from "../zip/reader";
 import { ZipWriter } from "../zip/writer";
@@ -21,6 +21,7 @@ import { writeTable } from "./table-writer";
 import { colToLetter } from "./worksheet-writer";
 import { xmlDocument, xmlSelfClose } from "../xml/writer";
 import { writeCoreProperties, writeAppProperties } from "./doc-props-writer";
+import { parseRelationships } from "./relationships";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -54,6 +55,8 @@ const REL_COMMENTS = "http://schemas.openxmlformats.org/officeDocument/2006/rela
 const REL_VML_DRAWING =
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing";
 const REL_TABLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/table";
+const REL_SLICER = "http://schemas.microsoft.com/office/2007/relationships/slicer";
+const REL_TIMELINE = "http://schemas.microsoft.com/office/2011/relationships/timeline";
 
 /**
  * Parts that defter regenerates from parsed data.
@@ -290,18 +293,68 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     if (m) externalLinkIndices.push(parseInt(m[1], 10));
   }
   externalLinkIndices.sort((a, b) => a - b);
+
+  // Collect slicer cache parts (xl/slicerCaches/slicerCacheN.xml) and
+  // timeline cache parts (xl/timelineCaches/timelineCacheN.xml). These
+  // live in the workbook rels and must be re-declared so Excel keeps
+  // them; workbook.xml also gains an extLst pointing at them.
+  const slicerCacheIndices: number[] = [];
+  const timelineCacheIndices: number[] = [];
+  // Per-sheet slicer / timeline parts. Indices are global across the
+  // workbook (xl/slicers/slicer3.xml may belong to sheet2, etc.).
+  const slicerIndices: number[] = [];
+  const timelineIndices: number[] = [];
+  for (const path of workbook._rawEntries.keys()) {
+    let m = path.match(/^xl\/slicerCaches\/slicerCache(\d+)\.xml$/i);
+    if (m) {
+      slicerCacheIndices.push(parseInt(m[1], 10));
+      continue;
+    }
+    m = path.match(/^xl\/timelineCaches\/timelineCache(\d+)\.xml$/i);
+    if (m) {
+      timelineCacheIndices.push(parseInt(m[1], 10));
+      continue;
+    }
+    m = path.match(/^xl\/slicers\/slicer(\d+)\.xml$/i);
+    if (m) {
+      slicerIndices.push(parseInt(m[1], 10));
+      continue;
+    }
+    m = path.match(/^xl\/timelines\/timeline(\d+)\.xml$/i);
+    if (m) timelineIndices.push(parseInt(m[1], 10));
+  }
+  slicerCacheIndices.sort((a, b) => a - b);
+  timelineCacheIndices.sort((a, b) => a - b);
+  slicerIndices.sort((a, b) => a - b);
+  timelineIndices.sort((a, b) => a - b);
+
   // rIds for external link relationships: assigned after all
   // sheet/styles/sharedStrings/theme/macros/featurePropertyBag rIds.
-  const externalLinkRelStart = computeExternalLinkRelStart(
+  let nextWorkbookRelId = computeExternalLinkRelStart(
     writeSheets.length,
     hasSharedStrings,
     !!workbook.hasMacros,
     false, // featurePropertyBag — not yet roundtripped
   );
-  const externalLinkRels = externalLinkIndices.map((idx, i) => ({
-    rId: `rId${externalLinkRelStart + i}`,
+  const externalLinkRels = externalLinkIndices.map((idx) => ({
+    rId: `rId${nextWorkbookRelId++}`,
     target: `externalLinks/externalLink${idx}.xml`,
   }));
+  const slicerCacheRels = slicerCacheIndices.map((idx) => ({
+    rId: `rId${nextWorkbookRelId++}`,
+    target: `slicerCaches/slicerCache${idx}.xml`,
+  }));
+  const timelineCacheRels = timelineCacheIndices.map((idx) => ({
+    rId: `rId${nextWorkbookRelId++}`,
+    target: `timelineCaches/timelineCache${idx}.xml`,
+  }));
+
+  // Per-sheet slicer / timeline relationships are recovered from each
+  // sheet's original rels (xl/worksheets/_rels/sheetN.xml.rels) so the
+  // regenerated rels can re-declare them. We only need the (sheetIndex
+  // → list of {target}) mapping; rIds are reassigned per sheet below.
+  const sheetSlicerTargets = collectSheetCacheTargets(workbook, sheets, "slicer");
+  const sheetTimelineTargets = collectSheetCacheTargets(workbook, sheets, "timeline");
 
   // Build ZIP archive
   const zip = new ZipWriter();
@@ -348,6 +401,10 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     commentIndices: commentIndices.length > 0 ? commentIndices : undefined,
     tableIndices: allTableIndices.length > 0 ? allTableIndices : undefined,
     externalLinkIndices: externalLinkIndices.length > 0 ? externalLinkIndices : undefined,
+    slicerIndices: slicerIndices.length > 0 ? slicerIndices : undefined,
+    slicerCacheIndices: slicerCacheIndices.length > 0 ? slicerCacheIndices : undefined,
+    timelineIndices: timelineIndices.length > 0 ? timelineIndices : undefined,
+    timelineCacheIndices: timelineCacheIndices.length > 0 ? timelineCacheIndices : undefined,
     hasCoreProps: true,
     hasAppProps: true,
     hasMacros: workbook.hasMacros,
@@ -373,6 +430,8 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
         activeSheet,
         undefined,
         externalLinkRels.length > 0 ? externalLinkRels : undefined,
+        slicerCacheRels.length > 0 ? slicerCacheRels : undefined,
+        timelineCacheRels.length > 0 ? timelineCacheRels : undefined,
       ),
     ),
   );
@@ -387,6 +446,8 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
         workbook.hasMacros,
         false,
         externalLinkRels.length > 0 ? externalLinkRels : undefined,
+        slicerCacheRels.length > 0 ? slicerCacheRels : undefined,
+        timelineCacheRels.length > 0 ? timelineCacheRels : undefined,
       ),
     ),
   );
@@ -412,9 +473,24 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     const hasDrawing = drawing !== null && result.drawingRId !== null;
     const hasComments = comments !== null && result.legacyDrawingRId !== null;
     const hasTables = result.tables.length > 0;
+    const slicerTargets = sheetSlicerTargets[i] ?? [];
+    const timelineTargets = sheetTimelineTargets[i] ?? [];
+    const hasSlicers = slicerTargets.length > 0;
+    const hasTimelines = timelineTargets.length > 0;
 
-    if (hasHyperlinks || hasDrawing || hasComments || hasTables) {
+    if (hasHyperlinks || hasDrawing || hasComments || hasTables || hasSlicers || hasTimelines) {
       const relElements: string[] = [];
+      // Track the highest existing rId so newly added slicer/timeline
+      // relationships pick a number that doesn't collide with anything
+      // the worksheet writer already assigned.
+      let nextSheetRid = 1;
+      const bumpToAfter = (rId: string): void => {
+        const m = rId.match(/(\d+)$/);
+        if (m) {
+          const n = parseInt(m[1], 10);
+          if (n + 1 > nextSheetRid) nextSheetRid = n + 1;
+        }
+      };
 
       for (const rel of result.hyperlinkRelationships) {
         relElements.push(
@@ -425,6 +501,7 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
             TargetMode: "External",
           }),
         );
+        bumpToAfter(rel.id);
       }
 
       if (hasDrawing && result.drawingRId) {
@@ -435,6 +512,7 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
             Target: `../drawings/drawing${i + 1}.xml`,
           }),
         );
+        bumpToAfter(result.drawingRId);
       }
 
       if (hasComments && result.legacyDrawingRId && result.commentsRId) {
@@ -452,6 +530,8 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
             Target: `../comments${i + 1}.xml`,
           }),
         );
+        bumpToAfter(result.legacyDrawingRId);
+        bumpToAfter(result.commentsRId);
       }
 
       for (const tableEntry of result.tables) {
@@ -460,6 +540,31 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
             Id: tableEntry.rId,
             Type: REL_TABLE,
             Target: `../tables/table${tableEntry.globalTableIndex}.xml`,
+          }),
+        );
+        bumpToAfter(tableEntry.rId);
+      }
+
+      // Re-emit slicer relationships read from the original sheet rels.
+      // The rIds shift to avoid collisions; they don't need to match the
+      // original because hucre regenerates the worksheet body without
+      // the `<x14:slicerList>` extension that referenced them.
+      for (const target of slicerTargets) {
+        relElements.push(
+          xmlSelfClose("Relationship", {
+            Id: `rId${nextSheetRid++}`,
+            Type: REL_SLICER,
+            Target: target,
+          }),
+        );
+      }
+
+      for (const target of timelineTargets) {
+        relElements.push(
+          xmlSelfClose("Relationship", {
+            Id: `rId${nextSheetRid++}`,
+            Type: REL_TIMELINE,
+            Target: target,
           }),
         );
       }
@@ -507,6 +612,52 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
+
+const REL_TYPE_SLICER = /\/relationships\/slicer$/;
+const REL_TYPE_TIMELINE = /\/relationships\/timeline$/;
+
+/**
+ * Walk each sheet's original `xl/worksheets/_rels/sheetN.xml.rels` (when
+ * present in the raw entries) and pull out the `Target` of every slicer
+ * or timeline relationship so the regenerated rels can re-emit them
+ * pointing at the same parts.
+ *
+ * Targets are returned relative to the sheet rels file (e.g.
+ * `"../slicers/slicer1.xml"`).
+ */
+function collectSheetCacheTargets(
+  workbook: { _rawEntries: Map<string, Uint8Array> },
+  sheets: Sheet[],
+  kind: "slicer" | "timeline",
+): string[][] {
+  const decoder = new TextDecoder("utf-8");
+  const out: string[][] = [];
+  const matcher = kind === "slicer" ? REL_TYPE_SLICER : REL_TYPE_TIMELINE;
+  for (let i = 0; i < sheets.length; i++) {
+    // Sheet rels are emitted as xl/worksheets/_rels/sheetN.xml.rels in
+    // the regenerated output, but the original file may use a different
+    // case — match case-insensitively.
+    const expected = `xl/worksheets/_rels/sheet${i + 1}.xml.rels`;
+    let bytes: Uint8Array | undefined;
+    for (const [path, data] of workbook._rawEntries) {
+      if (path.toLowerCase() === expected) {
+        bytes = data;
+        break;
+      }
+    }
+    if (!bytes) {
+      out.push([]);
+      continue;
+    }
+    const rels = parseRelationships(decoder.decode(bytes));
+    const targets: string[] = [];
+    for (const rel of rels) {
+      if (matcher.test(rel.type)) targets.push(rel.target);
+    }
+    out.push(targets);
+  }
+  return out;
+}
 
 /**
  * Mirror the `nextRid` counter inside `writeWorkbookRels` to determine
