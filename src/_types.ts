@@ -1311,6 +1311,7 @@ export interface Chart {
    * declaration order. Empty when the chart has no `<c:ser>` children.
    */
   series?: ChartSeriesInfo[];
+  /**
    * Cell anchor pulled from the host drawing's `<xdr:twoCellAnchor>` /
    * `<xdr:oneCellAnchor>`. Undefined when the drawing positions the
    * chart with `<xdr:absoluteAnchor>` (EMU-positioned, no cell anchor)
