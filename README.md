@@ -640,6 +640,13 @@ clockwise from 12 o'clock) on pie and doughnut charts. The OOXML
 default `0` (and the schema-equivalent `360`) collapses to
 `undefined` so absence and the default round-trip identically;
 non-pie / non-doughnut charts never report it.
+`Chart.dispBlanksAs` surfaces the chart-level
+`<c:chart><c:dispBlanksAs val=".."/>` element — Excel's "Select Data
+Source → Hidden and Empty Cells" knob — and reports the literal
+`"zero"` or `"span"` token. The OOXML default `"gap"` collapses to
+`undefined` so absence and the default round-trip identically;
+unknown / malformed values (and a missing `val` attribute) drop to
+`undefined` rather than fabricate a token Excel rejects.
 `ChartSeriesInfo.smooth` surfaces the per-series
 `<c:ser><c:smooth val=".."/>` flag — Excel's "Format Data Series →
 Line → Smoothed line" toggle — only on `line` / `line3D` / `scatter`
@@ -763,6 +770,14 @@ For pie and doughnut charts, `firstSliceAng` (0 – 360 degrees, default
 aligning paired charts in a dashboard. Out-of-band values wrap modulo
 360 (380 → 20, -90 → 270) the same way Excel's chart-formatting pane
 does, and non-pie / non-doughnut kinds silently ignore the field.
+The chart-level `dispBlanksAs` field maps to
+`<c:chart><c:dispBlanksAs val=".."/>` — Excel's "Select Data Source →
+Hidden and Empty Cells" toggle — and accepts `"gap"` (leave a break),
+`"zero"` (drop missing points to the X axis) or `"span"` (connect
+across the gap; line / scatter only). The writer always emits the
+element, defaulting to `"gap"` (the OOXML default Excel itself emits)
+and clamping unknown tokens back to `"gap"` so a malformed input
+cannot produce invalid OOXML.
 For line and scatter charts, each `series[i].smooth` flag toggles
 Excel's curved-line variant (`<c:smooth val="..">` inside `<c:ser>`).
 Line series always emit the element — `smooth: true` writes `val="1"`,
@@ -888,6 +903,13 @@ writer omits `<c:invertIfNegative>` either way. The inherited flag
 is also dropped automatically when the resolved clone target is
 anything other than `bar` or `column`, since the schema rejects the
 element on every other chart family.
+The chart-level `dispBlanksAs` follows the standard
+`undefined` (inherit) / `null` (drop the inherited value, falling
+back to the writer's `"gap"` default) / value (`"gap"` / `"zero"` /
+`"span"`) override grammar. Unlike smooth and marker, this field
+lives on `<c:chart>` and is valid on every chart family, so a
+coercion (line → column, doughnut → pie, etc.) preserves the
+inherited value rather than dropping it.
 
 #### Walking and adding charts with `getCharts` / `addChart`
 

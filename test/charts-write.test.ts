@@ -2369,3 +2369,68 @@ describe("writeChart — series invertIfNegative flag", () => {
     expect(parsed?.series?.[1].invertIfNegative).toBeUndefined();
   });
 });
+
+// ── Display blanks as ────────────────────────────────────────────────
+
+describe("writeChart — dispBlanksAs", () => {
+  it('emits <c:dispBlanksAs val="gap"/> when the field is unset (OOXML default)', () => {
+    // The writer always emits the element so the rendered intent is
+    // explicit on roundtrip — Excel itself includes it in every
+    // reference serialization.
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(result.chartXml).toContain('c:dispBlanksAs val="gap"');
+  });
+
+  it('threads dispBlanksAs="zero" through to <c:chart>', () => {
+    const result = writeChart(makeChart({ dispBlanksAs: "zero" }), "Sheet1");
+    expect(result.chartXml).toContain('c:dispBlanksAs val="zero"');
+  });
+
+  it('threads dispBlanksAs="span" through to <c:chart>', () => {
+    const result = writeChart(makeChart({ type: "line", dispBlanksAs: "span" }), "Sheet1");
+    expect(result.chartXml).toContain('c:dispBlanksAs val="span"');
+  });
+
+  it("falls back to gap on unknown dispBlanksAs values rather than emit one Excel rejects", () => {
+    const result = writeChart(
+      // @ts-expect-error — testing runtime guard for malformed input
+      makeChart({ dispBlanksAs: "bogus" }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:dispBlanksAs val="gap"');
+    expect(result.chartXml).not.toContain('c:dispBlanksAs val="bogus"');
+  });
+
+  it("places <c:dispBlanksAs> after <c:plotVisOnly> inside <c:chart> (OOXML order)", () => {
+    // CT_Chart sequence: ... plotArea, legend?, plotVisOnly?, dispBlanksAs?, ...
+    const result = writeChart(makeChart({ dispBlanksAs: "zero" }), "Sheet1");
+    expect(result.chartXml.indexOf("c:plotVisOnly")).toBeLessThan(
+      result.chartXml.indexOf("c:dispBlanksAs"),
+    );
+  });
+
+  it("only emits <c:dispBlanksAs> once even on a chart that overrides it", () => {
+    // Earlier writers emitted a hardcoded `gap` even when the chart
+    // requested a different value. Guard against any regression that
+    // would double-emit the element.
+    const result = writeChart(makeChart({ dispBlanksAs: "span" }), "Sheet1");
+    const occurrences = result.chartXml.match(/c:dispBlanksAs/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads dispBlanksAs through every chart family", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, dispBlanksAs: "zero" }), "Sheet1");
+      expect(result.chartXml).toContain('c:dispBlanksAs val="zero"');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        dispBlanksAs: "span",
+      }),
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain('c:dispBlanksAs val="span"');
+  });
+});
