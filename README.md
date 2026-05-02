@@ -91,7 +91,7 @@ import { readXml, writeXml } from "hucre/xml"; // Tabular XML
 | **Write XLSX**        | Yes          | Yes           | Yes             | Yes             | Yes               |
 | **Streaming**         | Read+Write   | Write-only    | No              | const_memory    | SXSSF (write)     |
 | **Charts**            | Round-trip   | 15+ types     | 9 types         | 12+ types       | Limited           |
-| **Pivot tables**      | No           | Read-only     | No              | No              | Limited           |
+| **Pivot tables**      | Read + Write | Read-only     | No              | No              | Limited           |
 | **Cond. formatting**  | Yes (all)    | Yes           | Yes             | Yes             | Yes               |
 | **Sparklines**        | Yes          | No            | Yes             | Yes             | No                |
 | **Formula eval**      | No           | No            | No              | No              | Yes               |
@@ -443,8 +443,52 @@ import { parsePivotTable, parsePivotCacheDefinition, attachPivotCacheFields } fr
 
 `PivotTable.cacheId` matches the workbook-level `cacheId` rather than a
 per-table relationship, so reordering `Workbook.pivotCaches` keeps the
-links sound. Synthesizing a pivot table or cache definition from a
-fresh `writeXlsx` is a follow-up — this is read + preserve only.
+links sound.
+
+`writeXlsx` can also author pivot tables from scratch via the per-sheet
+`pivotTables` field. Hucre emits the pivot cache (definition + cached
+records), the pivot layout, and every required relationship and content
+type. The numeric layout (row totals, grand totals, value cells) is left
+for Excel to compute on first open via the existing `fullCalcOnLoad`
+recompute — Phase 1 ships the structural skeleton, not pre-computed
+value cells.
+
+```ts
+import { writeXlsx } from "hucre";
+
+const xlsx = await writeXlsx({
+  sheets: [
+    {
+      name: "Data",
+      rows: [
+        ["Region", "Product", "Revenue"],
+        ["EU", "A", 100],
+        ["EU", "B", 50],
+        ["US", "A", 200],
+        ["US", "B", 75],
+      ],
+    },
+    {
+      name: "Pivot",
+      pivotTables: [
+        {
+          name: "SalesPivot",
+          sourceSheet: "Data",
+          rows: ["Region"],
+          columns: ["Product"],
+          values: [{ field: "Revenue", function: "sum" }],
+        },
+      ],
+    },
+  ],
+});
+```
+
+Supported aggregation functions: `sum` (default), `count`, `average`,
+`max`, `min`, `product`, `countNums`, `stdDev`, `stdDevp`, `var`,
+`varp`. Pivots can source from their own sheet (omit `sourceSheet`)
+or any sibling sheet, and accept either `rows` (raw 2-D arrays) or
+`columns` + `data` (object-style) source shapes.
 
 ### Charts
 
@@ -1139,7 +1183,6 @@ Contributions are welcome! Please [open an issue](https://github.com/productdevb
 - XLSB binary format read
 - Formula evaluation engine
 - File encryption/decryption (AES-256, MS-OFFCRYPTO)
-- Pivot table creation — synthesize from a fresh write (read + roundtrip already supported)
 - Threaded comments (Excel 365+) — synthesize from a fresh write (read + roundtrip already supported)
 - Checkboxes (Excel 2024+)
 - VBA/macro injection

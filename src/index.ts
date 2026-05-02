@@ -108,6 +108,8 @@ export type {
   PivotField,
   PivotFieldAxis,
   PivotDataFieldFunction,
+  WritePivotTable,
+  WritePivotDataField,
 } from "./_types";
 
 // ── Slicers & Timelines ────────────────────────────────────────────
