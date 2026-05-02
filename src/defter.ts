@@ -19,6 +19,7 @@ import { writeXlsx } from "./xlsx/writer";
 import { readOds } from "./ods/reader";
 import { writeOds } from "./ods/writer";
 import { UnsupportedFormatError } from "./errors";
+import { readInputToUint8Array } from "./_input";
 
 // ── Format Detection ────────────────────────────────────────────────
 
@@ -71,24 +72,17 @@ function detectFormat(data: Uint8Array): "xlsx" | "ods" {
   return "xlsx";
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────
-
-function toUint8Array(input: ReadInput): Uint8Array {
-  if (input instanceof Uint8Array) return input;
-  if (input instanceof ArrayBuffer) return new Uint8Array(input);
-  throw new UnsupportedFormatError(
-    "ReadableStream input is not supported by the unified read() API. Use readXlsx/readOds directly.",
-  );
-}
-
 // ── Public API ──────────────────────────────────────────────────────
 
 /**
  * Read any supported spreadsheet file. Auto-detects format from content.
  * Supports: XLSX, ODS (CSV uses parseCsv separately since it's string input).
+ *
+ * Input can be Uint8Array, ArrayBuffer, or ReadableStream&lt;Uint8Array&gt;.
+ * ReadableStream input is buffered fully before format detection runs.
  */
 export async function read(input: ReadInput, options?: ReadOptions): Promise<Workbook> {
-  const data = toUint8Array(input);
+  const data = await readInputToUint8Array(input);
   const format = detectFormat(data);
 
   if (format === "ods") {

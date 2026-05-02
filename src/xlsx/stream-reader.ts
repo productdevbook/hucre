@@ -8,6 +8,7 @@ import type { SharedString } from "./shared-strings";
 import type { ParsedStyles } from "./styles";
 import type { Relationship } from "./relationships";
 import { ParseError, ZipError } from "../errors";
+import { bufferReadableStream } from "../_input";
 import { ZipReader } from "../zip/reader";
 import { parseXml, parseSaxStream, decodeOoxmlEscapes } from "../xml/parser";
 import { parseContentTypes } from "./content-types";
@@ -451,31 +452,6 @@ function resolveStreamCellValue(
   }
 }
 
-// ── Helper: buffer a ReadableStream into Uint8Array ────────────────
-
-async function bufferStream(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let totalLen = 0;
-
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    totalLen += value.length;
-  }
-
-  if (chunks.length === 1) return chunks[0];
-
-  const result = new Uint8Array(totalLen);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return result;
-}
-
 // ── Main streaming reader ───────────────────────────────────────────
 
 /**
@@ -501,7 +477,7 @@ export async function* streamXlsxRows(
   } else if (input instanceof ArrayBuffer) {
     data = new Uint8Array(input);
   } else {
-    data = await bufferStream(input);
+    data = await bufferReadableStream(input);
   }
 
   // 1. Open ZIP archive
