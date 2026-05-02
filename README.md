@@ -581,6 +581,40 @@ toggles `clustered` / `stacked` / `percentStacked`, `legend` accepts
 attributes for screen readers. Doughnut, radar, stock, 3D variants,
 trendlines, and combo charts are out of scope for Phase 1.
 
+#### Cloning a parsed chart with `cloneChart`
+
+`cloneChart(source, options)` bridges the read-side `Chart` produced by
+`parseChart` to the write-side `SheetChart` consumed by `writeXlsx`, so
+a template workbook can supply the visual styling for a new export and
+the caller only needs to swap the data ranges:
+
+```ts
+import { parseChart, cloneChart, writeXlsx } from "hucre";
+
+const template = parseChart(templateChartXml)!;
+
+const chart = cloneChart(template, {
+  anchor: { from: { row: 14, col: 0 }, to: { row: 28, col: 8 } },
+  title: "Q1 Revenue",
+  seriesOverrides: [{ values: "Dashboard!$B$2:$B$13", color: "1070CA" }],
+});
+
+await writeXlsx({
+  sheets: [{ name: "Dashboard", rows: dashboardRows, charts: [chart] }],
+});
+```
+
+`anchor` is required (the read side has no placement metadata).
+Per-series overrides accept `null` to drop an inherited value (e.g.
+`color: null` strips the template tint), can append new series past
+the source length, and fall back to the source's `valuesRef` /
+`categoriesRef` / `name` / `color` when omitted. Source kinds the
+writer can author collapse onto their write counterparts (`bar` /
+`bar3D` → `column`, `doughnut` / `pie3D` → `pie`, `line3D` → `line`,
+`area3D` → `area`); kinds with no analog (`bubble`, `radar`,
+`surface`, `stock`, `ofPie`) require an explicit `options.type`
+override.
+
 ### Unified API
 
 Auto-detect format and work with simple helpers:
@@ -1056,6 +1090,8 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `parsePivotCacheDefinition(xml)`   | Parse `xl/pivotCache/pivotCacheDefinitionN.xml` → `PivotCache \| undefined` |
 | `attachPivotCacheFields(pt, c)`    | Overlay `PivotCache.fieldNames` onto a `PivotTable.fields[].name`           |
 | `parseChart(xml)`                  | Parse `xl/charts/chartN.xml` → `Chart \| undefined`                         |
+| `cloneChart(source, options)`      | Convert a parsed `Chart` into a writer-ready `SheetChart`                   |
+| `chartKindToWriteKind(kind)`       | Map a read-side `ChartKind` onto its writable counterpart, if any           |
 
 ### ODS
 
