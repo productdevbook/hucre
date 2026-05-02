@@ -343,6 +343,34 @@ used by formulas like `[1]Sheet1!A1`. Cached `t="s"` values stay as
 shared-string indices into the _external_ workbook (which hucre cannot
 dereference); resolved strings live in the linked file.
 
+### Cell-Embedded Images (WPS DISPIMG)
+
+WPS Office (and recent Excel versions) embed images inside cells via a
+workbook-level `xl/cellimages.xml` registry referenced from
+`=_xlfn.DISPIMG("<id>", 1)` formulas. hucre reads the registry into a
+typed `workbook.cellImages` array and re-declares the part on
+`saveXlsx` so the DISPIMG link survives round-trips — without this the
+relationship and content-type override are dropped and the formula
+loses its target.
+
+```ts
+import { readXlsx } from "hucre";
+
+const wb = await readXlsx(buf);
+for (const img of wb.cellImages ?? []) {
+  console.log(img.id, img.type, img.description, img.data.byteLength);
+}
+
+// Standalone parsers when you already have the XML strings.
+import { parseCellImages, assembleCellImages, REL_CELL_IMAGES } from "hucre";
+const refs = parseCellImages(cellImagesXml);
+const images = assembleCellImages(refs, mediaMap);
+```
+
+Synthesizing a `cellimages.xml` from a model on a fresh `writeXlsx`
+call (without an existing source file) is a follow-up — for now the
+read + roundtrip-preserve side is in place.
+
 ### Unified API
 
 Auto-detect format and work with simple helpers:
@@ -808,6 +836,8 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `XlsxStreamWriter`                 | Incremental row-by-row XLSX writing; auto-splits past `maxRowsPerSheet` |
 | `XLSX_MAX_ROWS_PER_SHEET`          | Excel hard row limit (1,048,576) — exported constant                    |
 | `parseExternalLink(xml, relsXml?)` | Parse `xl/externalLinks/externalLinkN.xml` → `ExternalLink`             |
+| `parseCellImages(xml)`             | Parse `xl/cellimages.xml` → `ParsedCellImageRef[]` (WPS DISPIMG)        |
+| `assembleCellImages(refs, media)`  | Combine parsed refs with resolved media bytes → `CellImage[]`           |
 
 ### ODS
 
@@ -951,6 +981,7 @@ Contributions are welcome! Please [open an issue](https://github.com/productdevb
 - Checkboxes (Excel 2024+)
 - VBA/macro injection
 - Slicers & timeline filters
+- WPS DISPIMG cell-embedded images — synthesize from a fresh write (read + roundtrip already supported)
 - R1C1 notation support
 - Accessibility helpers (WCAG 2.1 AA)
 
