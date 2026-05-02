@@ -136,6 +136,73 @@ describe("cloneChart", () => {
     expect(clone.holeSize).toBeUndefined();
   });
 
+  // ── gapWidth / overlap (bar / column only) ──────────────────────────
+
+  it("inherits the source's gapWidth on a column clone", () => {
+    const clone = cloneChart(source({ kinds: ["bar"], gapWidth: 75 }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.gapWidth).toBe(75);
+  });
+
+  it("inherits the source's overlap on a column clone", () => {
+    const clone = cloneChart(source({ kinds: ["bar"], overlap: -25 }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.overlap).toBe(-25);
+  });
+
+  it("inherits both gapWidth and overlap together on a bar clone", () => {
+    const clone = cloneChart(source({ kinds: ["bar"], gapWidth: 50, overlap: 100 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "bar",
+    });
+    expect(clone.type).toBe("bar");
+    expect(clone.gapWidth).toBe(50);
+    expect(clone.overlap).toBe(100);
+  });
+
+  it("lets options.gapWidth override the source's gapWidth", () => {
+    const clone = cloneChart(source({ kinds: ["bar"], gapWidth: 75 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      gapWidth: 200,
+    });
+    expect(clone.gapWidth).toBe(200);
+  });
+
+  it("lets options.overlap override the source's overlap", () => {
+    const clone = cloneChart(source({ kinds: ["bar"], overlap: -25 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      overlap: 50,
+    });
+    expect(clone.overlap).toBe(50);
+  });
+
+  it("drops options.gapWidth / overlap when the resolved type is not bar/column", () => {
+    const clone = cloneChart(source({ kinds: ["bar"] }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "line",
+      gapWidth: 75,
+      overlap: 50,
+    });
+    expect(clone.gapWidth).toBeUndefined();
+    expect(clone.overlap).toBeUndefined();
+  });
+
+  it("drops the inherited gapWidth / overlap when the resolved type is not bar/column", () => {
+    const clone = cloneChart(source({ kinds: ["bar"], gapWidth: 75, overlap: -25 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "line",
+      seriesOverrides: [{ values: "Sheet1!$B$2:$B$5" }],
+    });
+    expect(clone.type).toBe("line");
+    expect(clone.gapWidth).toBeUndefined();
+    expect(clone.overlap).toBeUndefined();
+  });
+
+  // ── firstSliceAng (pie / doughnut only) ──────────────────────────
+
   it("inherits the source's firstSliceAng on a pie clone", () => {
     const clone = cloneChart(source({ kinds: ["pie"], firstSliceAng: 90 }), {
       anchor: { from: { row: 0, col: 0 } },
@@ -1440,6 +1507,78 @@ describe("cloneChart — integration", () => {
     const reparsed = parseChart(written);
     expect(reparsed?.axes?.y?.scale).toEqual({ min: 0, max: 100, majorUnit: 25 });
     expect(reparsed?.axes?.y?.numberFormat).toEqual({ formatCode: "$#,##0" });
+  });
+
+  it("round-trips gapWidth & overlap through parseChart -> cloneChart -> writeXlsx -> parseChart", async () => {
+    // A pinned bar template with a tight 50% group gap and a small
+    // negative overlap (series slightly separated within each group).
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="clustered"/>
+        <c:varyColors val="0"/>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx><c:v>Revenue</c:v></c:tx>
+          <c:cat><c:strRef><c:f>Tpl!$A$2:$A$5</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:gapWidth val="50"/>
+        <c:overlap val="-25"/>
+        <c:axId val="111111111"/>
+        <c:axId val="222222222"/>
+      </c:barChart>
+      <c:catAx>
+        <c:axId val="111111111"/>
+        <c:scaling><c:orientation val="minMax"/></c:scaling>
+        <c:delete val="0"/>
+        <c:axPos val="b"/>
+        <c:crossAx val="222222222"/>
+      </c:catAx>
+      <c:valAx>
+        <c:axId val="222222222"/>
+        <c:scaling><c:orientation val="minMax"/></c:scaling>
+        <c:delete val="0"/>
+        <c:axPos val="l"/>
+        <c:crossAx val="111111111"/>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const source = parseChart(sourceXml);
+    expect(source?.gapWidth).toBe(50);
+    expect(source?.overlap).toBe(-25);
+
+    const sheetChart: SheetChart = cloneChart(source!, {
+      anchor: { from: { row: 14, col: 0 } },
+      seriesOverrides: [{ values: "Dashboard!$B$2:$B$5" }],
+    });
+    expect(sheetChart.type).toBe("column");
+    expect(sheetChart.gapWidth).toBe(50);
+    expect(sheetChart.overlap).toBe(-25);
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Dashboard",
+          rows: [["Header"], [10], [20], [30], [40]],
+          charts: [sheetChart],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:gapWidth val="50"');
+    expect(written).toContain('c:overlap val="-25"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.kinds).toEqual(["bar"]);
+    expect(reparsed?.gapWidth).toBe(50);
+    expect(reparsed?.overlap).toBe(-25);
   });
 
   it("round-trips firstSliceAng through parseChart → cloneChart → writeXlsx → parseChart", async () => {

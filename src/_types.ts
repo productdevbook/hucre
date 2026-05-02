@@ -666,6 +666,27 @@ export interface SheetChart {
    */
   barGrouping?: "clustered" | "stacked" | "percentStacked";
   /**
+   * Bar/column gap width as a percentage of the bar width — the empty
+   * space between adjacent category groups. Accepted range: `0` – `500`
+   * (the OOXML `ST_GapAmount` schema). Excel's default is `150` (each
+   * group's gap equals 1.5× the bar width). Smaller values pack groups
+   * tighter; `0` removes the gap entirely. Maps to
+   * `<c:barChart><c:gapWidth val=".."/></c:barChart>`. Ignored for
+   * non-bar / non-column chart kinds.
+   */
+  gapWidth?: number;
+  /**
+   * Bar/column series overlap as a percentage of the bar width.
+   * Accepted range: `-100` – `100` (the OOXML `ST_Overlap` schema).
+   * Negative values open a gap between series within a group, positive
+   * values stack them on top of each other. Excel's default is `0` for
+   * `clustered` (side-by-side) and `100` for `stacked` /
+   * `percentStacked` (fully overlapped). Maps to
+   * `<c:barChart><c:overlap val=".."/></c:barChart>`. Ignored for
+   * non-bar / non-column chart kinds.
+   */
+  overlap?: number;
+  /**
    * Line subtype. Default: `"standard"`. `"stacked"` accumulates
    * series end-to-end, `"percentStacked"` normalizes each category to
    * 100%. Ignored for non-line chart kinds. Maps to
@@ -1653,6 +1674,26 @@ export interface Chart {
    * charts that do not declare the element.
    */
   holeSize?: number;
+  /**
+   * Bar/column gap width pulled from the first `<c:barChart>` /
+   * `<c:bar3DChart>` element's `<c:gapWidth val=".."/>`, expressed as a
+   * percentage of the bar width. Range: 0–500. The OOXML default of
+   * `150` collapses to `undefined` so absence and the default
+   * round-trip identically — symmetric with how the writer's
+   * {@link SheetChart.gapWidth} treats the absence of the field.
+   * Omitted on non-bar / non-column charts.
+   */
+  gapWidth?: number;
+  /**
+   * Bar/column series overlap pulled from the first `<c:barChart>` /
+   * `<c:bar3DChart>` element's `<c:overlap val=".."/>`, expressed as a
+   * percentage of the bar width. Range: -100..100. The OOXML default of
+   * `0` collapses to `undefined` so absence and the default round-trip
+   * identically — symmetric with how the writer's
+   * {@link SheetChart.overlap} treats the absence of the field.
+   * Omitted on non-bar / non-column charts.
+   */
+  overlap?: number;
   /**
    * Pie / doughnut starting angle in degrees pulled from the first
    * `<c:pieChart>` / `<c:doughnutChart>` element's

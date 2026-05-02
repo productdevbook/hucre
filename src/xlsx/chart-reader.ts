@@ -80,6 +80,8 @@ export function parseChart(xml: string): Chart | undefined {
     let areaGrouping: ChartLineAreaGrouping | undefined;
     let chartLevelLabels: ChartDataLabelsInfo | undefined;
     let holeSize: number | undefined;
+    let gapWidth: number | undefined;
+    let overlap: number | undefined;
     let firstSliceAng: number | undefined;
     for (const child of childElements(plotArea)) {
       const kind = CHART_KIND_TAGS.get(child.local);
@@ -91,6 +93,19 @@ export function parseChart(xml: string): Chart | undefined {
       // single `<c:barChart>` body this is the value Excel applies.
       if (barGrouping === undefined && (kind === "bar" || kind === "bar3D")) {
         barGrouping = parseBarGrouping(child);
+      }
+      // Pull `<c:gapWidth>` / `<c:overlap>` off the first bar/column
+      // chart-type element. Both are CT_BarChart-only knobs — they sit
+      // alongside `<c:grouping>` inside `<c:barChart>` / `<c:bar3DChart>`
+      // and are ignored elsewhere by the OOXML schema. The OOXML default
+      // of `150` (gapWidth) and `0` (overlap) collapse to `undefined`
+      // here so absence and the default round-trip identically through
+      // {@link cloneChart}.
+      if (gapWidth === undefined && (kind === "bar" || kind === "bar3D")) {
+        gapWidth = parseGapWidth(child);
+      }
+      if (overlap === undefined && (kind === "bar" || kind === "bar3D")) {
+        overlap = parseOverlap(child);
       }
       // Same shape for line/area: surface the first stacked variant
       // we encounter. `"standard"` collapses to undefined for symmetry
@@ -144,6 +159,8 @@ export function parseChart(xml: string): Chart | undefined {
     if (areaGrouping !== undefined) out.areaGrouping = areaGrouping;
     if (chartLevelLabels) out.dataLabels = chartLevelLabels;
     if (holeSize !== undefined) out.holeSize = holeSize;
+    if (gapWidth !== undefined) out.gapWidth = gapWidth;
+    if (overlap !== undefined) out.overlap = overlap;
     if (firstSliceAng !== undefined) out.firstSliceAng = firstSliceAng;
 
     const axes = parseAxes(plotArea);
@@ -643,6 +660,57 @@ function parseHoleSize(doughnut: XmlElement): number | undefined {
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed)) return undefined;
   if (parsed < 1 || parsed > 99) return undefined;
+  return parsed;
+}
+
+// ── Bar / Column gap width & overlap ──────────────────────────────
+
+/**
+ * Pull `<c:gapWidth val=".."/>` off a `<c:barChart>` / `<c:bar3DChart>`
+ * element.
+ *
+ * The OOXML schema (`ST_GapAmount`) restricts the value to the
+ * inclusive `0..500` band; out-of-range values are dropped rather than
+ * clamped so a corrupt template does not silently rewrite as a
+ * different gap. The OOXML default of `150` collapses to `undefined`
+ * for symmetry with the writer's {@link SheetChart.gapWidth} default
+ * — absence and `150` mean the same thing.
+ */
+function parseGapWidth(barChart: XmlElement): number | undefined {
+  const el = findChild(barChart, "gapWidth");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  if (parsed < 0 || parsed > 500) return undefined;
+  if (parsed === 150) return undefined;
+  return parsed;
+}
+
+/**
+ * Pull `<c:overlap val=".."/>` off a `<c:barChart>` / `<c:bar3DChart>`
+ * element.
+ *
+ * The OOXML schema (`ST_Overlap`) restricts the value to the inclusive
+ * `-100..100` band; out-of-range values are dropped rather than
+ * clamped. The OOXML default of `0` collapses to `undefined` for
+ * symmetry with the writer's {@link SheetChart.overlap} default. Note
+ * that Excel's reference serialization emits `<c:overlap val="100"/>`
+ * for stacked charts even though the schema default is `0`; we surface
+ * the literal value carried by the file rather than try to invert
+ * Excel's per-grouping default — `100` on a stacked chart therefore
+ * round-trips as `100`.
+ */
+function parseOverlap(barChart: XmlElement): number | undefined {
+  const el = findChild(barChart, "overlap");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  if (parsed < -100 || parsed > 100) return undefined;
+  if (parsed === 0) return undefined;
   return parsed;
 }
 

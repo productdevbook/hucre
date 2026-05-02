@@ -1317,6 +1317,150 @@ describe("parseChart — doughnut hole size", () => {
   });
 });
 
+describe("parseChart — bar gapWidth & overlap", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces <c:gapWidth val="..."/> off a bar chart', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:grouping val="clustered"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:gapWidth val="75"/>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.kinds).toEqual(["bar"]);
+    expect(chart?.gapWidth).toBe(75);
+  });
+
+  it('surfaces <c:overlap val="..."/> off a bar chart', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:grouping val="clustered"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:overlap val="-25"/>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.kinds).toEqual(["bar"]);
+    expect(chart?.overlap).toBe(-25);
+  });
+
+  it("surfaces both gapWidth and overlap when both are declared", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:gapWidth val="75"/>
+      <c:overlap val="100"/>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.gapWidth).toBe(75);
+    expect(chart?.overlap).toBe(100);
+  });
+
+  it("collapses the OOXML default gapWidth (150) to undefined", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:gapWidth val="150"/></c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.gapWidth).toBeUndefined();
+  });
+
+  it("collapses the OOXML default overlap (0) to undefined", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:overlap val="0"/></c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.overlap).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:gapWidth> / <c:overlap>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.gapWidth).toBeUndefined();
+    expect(chart?.overlap).toBeUndefined();
+  });
+
+  it("rejects malformed or out-of-range gapWidth values", () => {
+    const out = (val: string): unknown =>
+      parseChart(`<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:gapWidth val="${val}"/></c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`)?.gapWidth;
+    expect(out("not-a-number")).toBeUndefined();
+    // Below schema minimum.
+    expect(out("-1")).toBeUndefined();
+    // Above schema maximum (ST_GapAmount is 0..500 inclusive).
+    expect(out("501")).toBeUndefined();
+    // Bounds inclusive.
+    expect(out("0")).toBe(0);
+    expect(out("500")).toBe(500);
+  });
+
+  it("rejects malformed or out-of-range overlap values", () => {
+    const out = (val: string): unknown =>
+      parseChart(`<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:overlap val="${val}"/></c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`)?.overlap;
+    expect(out("not-a-number")).toBeUndefined();
+    expect(out("-101")).toBeUndefined();
+    expect(out("101")).toBeUndefined();
+    // Bounds inclusive (-100..100), 0 collapses to undefined.
+    expect(out("-100")).toBe(-100);
+    expect(out("100")).toBe(100);
+    expect(out("-1")).toBe(-1);
+    expect(out("1")).toBe(1);
+  });
+
+  it("does not attach gapWidth / overlap to non-bar chart kinds", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:gapWidth val="75"/>
+      <c:overlap val="50"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.kinds).toEqual(["line"]);
+    expect(chart?.gapWidth).toBeUndefined();
+    expect(chart?.overlap).toBeUndefined();
+  });
+
+  it("surfaces gapWidth / overlap from <c:bar3DChart> as well", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:bar3DChart>
+      <c:gapWidth val="50"/>
+      <c:overlap val="25"/>
+    </c:bar3DChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.kinds).toEqual(["bar3D"]);
+    expect(chart?.gapWidth).toBe(50);
+    expect(chart?.overlap).toBe(25);
+  });
+});
+
 describe("parseChart — first slice angle", () => {
   const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
 
