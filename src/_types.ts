@@ -540,15 +540,14 @@ export interface SheetImage {
 
 /**
  * Chart kinds supported by {@link writeXlsx} when authoring charts via
- * {@link WriteSheet.charts}. Phase 1 covers the four most common chart
- * families — bar/column, line, pie, and scatter — plus area as a
- * thin variant of `line`.
+ * {@link WriteSheet.charts}. Covers the most common chart families —
+ * bar/column, line, pie, doughnut, scatter, and area.
  *
  * Distinct from the read-side {@link ChartKind} (which mirrors the
  * full set of OOXML chart-type element local names) — the write side
  * exposes only the kinds the chart author can emit today.
  */
-export type WriteChartKind = "bar" | "column" | "line" | "pie" | "scatter" | "area";
+export type WriteChartKind = "bar" | "column" | "line" | "pie" | "doughnut" | "scatter" | "area";
 
 /**
  * Where a data label is placed relative to its data point.
@@ -681,9 +680,16 @@ export interface SheetChart {
    */
   areaGrouping?: "standard" | "stacked" | "percentStacked";
   /**
+   * Doughnut hole size as a percentage of the outer radius. Accepted
+   * range: 10 – 90 (Excel's UI clamps values outside this band).
+   * Default: `50` — the Excel default. Ignored for non-doughnut chart
+   * kinds.
+   */
+  holeSize?: number;
+  /**
    * Whether the legend is shown and where. Default: `"right"` for
-   * pie/bar/line/area, `"bottom"` for scatter. Pass `false` to hide
-   * the legend.
+   * pie/doughnut/bar/line/area, `"bottom"` for scatter. Pass `false`
+   * to hide the legend.
    */
   legend?: false | "top" | "bottom" | "left" | "right" | "topRight";
   /** Show the chart-level title element. Default: `true` when `title` is set. */
@@ -703,7 +709,8 @@ export interface SheetChart {
    * Per-axis configuration rendered alongside the plot area. The `x`
    * axis is the category axis for bar/column/line/area (or the bottom
    * value axis for scatter); the `y` axis is the value axis. Ignored
-   * for `pie` charts because pie has no axes in OOXML.
+   * for `pie` and `doughnut` charts because they have no axes in
+   * OOXML.
    *
    * `title` maps to a `<c:title>` element nested inside the matching
    * `<c:catAx>` / `<c:valAx>`. Pass an empty string or omit the entry
@@ -1547,6 +1554,13 @@ export interface Chart {
     x?: ChartAxisInfo;
     y?: ChartAxisInfo;
   };
+  /**
+   * Doughnut hole size pulled from the chart's `<c:doughnutChart>
+   * <c:holeSize val=".."/>`, expressed as a percentage of the outer
+   * radius (1–99). Omitted on non-doughnut charts and on doughnut
+   * charts that do not declare the element.
+   */
+  holeSize?: number;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────

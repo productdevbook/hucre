@@ -66,7 +66,7 @@ export interface CloneChartOptions {
   /**
    * Override the chart family. When omitted, the source's first
    * write-compatible kind is used. An explicit value lets callers
-   * narrow a combo chart down to one renderable type or coerce a
+   * narrow a combo chart down to one renderable type or flatten a
    * `doughnut` template into a plain `pie`.
    */
   type?: WriteChartKind;
@@ -88,6 +88,13 @@ export interface CloneChartOptions {
   lineGrouping?: SheetChart["lineGrouping"];
   /** Override `SheetChart.areaGrouping`. */
   areaGrouping?: SheetChart["areaGrouping"];
+  /**
+   * Override `SheetChart.holeSize` (only meaningful for `doughnut`).
+   * When the resolved chart type is not `doughnut`, the field is
+   * dropped from the output so it does not leak into a cloned pie or
+   * column chart.
+   */
+  holeSize?: number;
   /** Override `SheetChart.showTitle`. */
   showTitle?: boolean;
   /** Override `SheetChart.altText`. */
@@ -106,8 +113,9 @@ export interface CloneChartOptions {
    * will render without that axis label / gridline even if the
    * template carried one). Omit a field to inherit the source.
    *
-   * Ignored when the resolved chart type is `pie` since pie has no
-   * axes; the writer drops the entire `axes` object in that case.
+   * Ignored when the resolved chart type is `pie` or `doughnut` since
+   * neither has axes; the writer drops the entire `axes` object in
+   * those cases.
    */
   axes?: {
     x?: { title?: string | null; gridlines?: ChartAxisGridlines | null };
@@ -195,6 +203,15 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     out.areaGrouping = areaGrouping;
   }
 
+  // Doughnut hole size only makes sense when the resolved type is
+  // doughnut; flattening to pie (or any other kind) drops the hint so
+  // the writer does not silently ignore it. The override wins over the
+  // source's parsed `holeSize`.
+  if (type === "doughnut") {
+    const holeSize = options.holeSize !== undefined ? options.holeSize : source.holeSize;
+    if (holeSize !== undefined) out.holeSize = holeSize;
+  }
+
   if (options.showTitle !== undefined) out.showTitle = options.showTitle;
   if (options.altText !== undefined) out.altText = options.altText;
   if (options.frameTitle !== undefined) out.frameTitle = options.frameTitle;
@@ -202,9 +219,10 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   const resolvedDataLabels = resolveChartDataLabels(source.dataLabels, options.dataLabels);
   if (resolvedDataLabels !== undefined) out.dataLabels = resolvedDataLabels;
 
-  // Pie has no axes, so silently skip carrying over axis titles even
-  // when the source declared them or the caller passed an override.
-  if (type !== "pie") {
+  // Pie and doughnut have no axes, so silently skip carrying over axis
+  // titles even when the source declared them or the caller passed an
+  // override.
+  if (type !== "pie" && type !== "doughnut") {
     const axes = resolveAxes(source.axes, options.axes);
     if (axes !== undefined) out.axes = axes;
   }
@@ -218,11 +236,11 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
  * Map a read-side {@link ChartKind} to the writer's
  * {@link WriteChartKind}, or `undefined` when no equivalent exists.
  *
- * The writer authors the six families covered in chart writer Phase 1
- * (issue #152). 3D variants collapse onto their 2D counterparts;
- * `doughnut` collapses to `pie`. Kinds with no analog (`bubble`,
- * `radar`, `surface`, `stock`, `ofPie`) return `undefined` and force
- * the caller to pass an explicit `type` override.
+ * 3D variants collapse onto their 2D counterparts; `doughnut` keeps
+ * its own write-side kind so a doughnut template round-trips with the
+ * hole intact. Kinds with no analog (`bubble`, `radar`, `surface`,
+ * `stock`, `ofPie`) return `undefined` and force the caller to pass
+ * an explicit `type` override.
  */
 export function chartKindToWriteKind(kind: ChartKind): WriteChartKind | undefined {
   switch (kind) {
@@ -238,8 +256,9 @@ export function chartKindToWriteKind(kind: ChartKind): WriteChartKind | undefine
       return "line";
     case "pie":
     case "pie3D":
-    case "doughnut":
       return "pie";
+    case "doughnut":
+      return "doughnut";
     case "area":
     case "area3D":
       return "area";

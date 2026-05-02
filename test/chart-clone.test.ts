@@ -18,7 +18,7 @@ describe("chartKindToWriteKind", () => {
     expect(chartKindToWriteKind("line3D")).toBe("line");
     expect(chartKindToWriteKind("pie")).toBe("pie");
     expect(chartKindToWriteKind("pie3D")).toBe("pie");
-    expect(chartKindToWriteKind("doughnut")).toBe("pie");
+    expect(chartKindToWriteKind("doughnut")).toBe("doughnut");
     expect(chartKindToWriteKind("area")).toBe("area");
     expect(chartKindToWriteKind("area3D")).toBe("area");
     expect(chartKindToWriteKind("scatter")).toBe("scatter");
@@ -82,18 +82,58 @@ describe("cloneChart", () => {
   });
 
   it("honors options.type to coerce kinds the writer cannot author", () => {
+    const clone = cloneChart(
+      source({
+        kinds: ["radar"],
+        series: [{ kind: "radar", index: 0, valuesRef: "Sheet1!$B$2:$B$5" }],
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        type: "line",
+      },
+    );
+    expect(clone.type).toBe("line");
+  });
+
+  it("preserves doughnut as the writable kind when no type override is given", () => {
     const clone = cloneChart(source({ kinds: ["doughnut"] }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.type).toBe("doughnut");
+  });
+
+  it("flattens doughnut to pie when type='pie' is requested", () => {
+    const clone = cloneChart(source({ kinds: ["doughnut"], holeSize: 60 }), {
       anchor: { from: { row: 0, col: 0 } },
       type: "pie",
     });
     expect(clone.type).toBe("pie");
+    expect(clone.holeSize).toBeUndefined();
   });
 
-  it("auto-collapses doughnut to pie when no type override is given", () => {
-    const clone = cloneChart(source({ kinds: ["doughnut"] }), {
+  it("inherits the source's holeSize on a doughnut clone", () => {
+    const clone = cloneChart(source({ kinds: ["doughnut"], holeSize: 65 }), {
       anchor: { from: { row: 0, col: 0 } },
     });
-    expect(clone.type).toBe("pie");
+    expect(clone.type).toBe("doughnut");
+    expect(clone.holeSize).toBe(65);
+  });
+
+  it("lets options.holeSize override the source's holeSize", () => {
+    const clone = cloneChart(source({ kinds: ["doughnut"], holeSize: 65 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      holeSize: 30,
+    });
+    expect(clone.holeSize).toBe(30);
+  });
+
+  it("drops options.holeSize when the resolved type is not doughnut", () => {
+    const clone = cloneChart(source({ kinds: ["doughnut"] }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "pie",
+      holeSize: 60,
+    });
+    expect(clone.holeSize).toBeUndefined();
   });
 
   it("throws when the source has no writable kind and no override is given", () => {
@@ -1043,5 +1083,60 @@ describe("cloneChart — integration", () => {
 
     const reparsed = parseChart(written);
     expect(reparsed?.areaGrouping).toBe("stacked");
+  });
+
+  it("clones a doughnut template through writeChart and back through parseChart with hole size intact", async () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:title><c:tx><c:rich><a:p><a:r><a:t>Distribution</a:t></a:r></a:p></c:rich></c:tx></c:title>
+    <c:plotArea>
+      <c:doughnutChart>
+        <c:varyColors val="1"/>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx><c:v>Mix</c:v></c:tx>
+          <c:cat><c:strRef><c:f>Tpl!$A$2:$A$5</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:firstSliceAng val="0"/>
+        <c:holeSize val="65"/>
+      </c:doughnutChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const source = parseChart(sourceXml);
+    expect(source?.kinds).toEqual(["doughnut"]);
+    expect(source?.holeSize).toBe(65);
+
+    // Default clone keeps the doughnut shape and inherits holeSize from
+    // the template.
+    const sheetChart: SheetChart = cloneChart(source!, {
+      anchor: { from: { row: 14, col: 0 } },
+      seriesOverrides: [{ values: "Dashboard!$B$2:$B$5" }],
+    });
+    expect(sheetChart.type).toBe("doughnut");
+    expect(sheetChart.holeSize).toBe(65);
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Dashboard",
+          rows: [["Header"], [10], [20], [30], [40]],
+          charts: [sheetChart],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:doughnutChart>");
+    expect(written).toContain('c:holeSize val="65"');
+
+    // Re-read the emitted chart and confirm doughnut + holeSize survive.
+    const reparsed = parseChart(written);
+    expect(reparsed?.kinds).toEqual(["doughnut"]);
+    expect(reparsed?.title).toBe("Distribution");
+    expect(reparsed?.holeSize).toBe(65);
   });
 });
