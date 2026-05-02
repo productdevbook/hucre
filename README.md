@@ -600,6 +600,10 @@ plus `position` and `separator`). Series-level overrides land on
 `ChartSeriesInfo.dataLabels`; a `<c:dLbls>` block that only contains
 `<c:delete val="1"/>` (Excel's "labels off" idiom) collapses to
 `undefined` rather than a record so callers see the absence cleanly.
+`Chart.holeSize` surfaces `<c:doughnutChart><c:holeSize val=".."/>`
+on doughnut charts so a parsed template can round-trip its hole back
+through `cloneChart`; non-doughnut charts (and doughnut charts that
+omit the element) never report it.
 Sheets that hucre actively regenerates because they
 also carry hucre-managed images currently keep the chart bodies but
 lose the in-drawing chart anchor — merging hucre's drawing output
@@ -607,9 +611,10 @@ with the original chart graphicFrames is a follow-up.
 
 #### Authoring charts with `writeXlsx`
 
-Phase 1 covers six chart families — bar, column, line, pie, scatter,
-and area — through the `WriteSheet.charts` field. Each chart is anchored
-to cells like an image and serialized as `xl/charts/chartN.xml`:
+The writer covers seven chart families — bar, column, line, pie,
+doughnut, scatter, and area — through the `WriteSheet.charts` field.
+Each chart is anchored to cells like an image and serialized as
+`xl/charts/chartN.xml`:
 
 ```ts
 import { writeXlsx } from "hucre";
@@ -653,14 +658,18 @@ attaches per-axis labels and gridlines — `x` lands inside `<c:catAx>`
 or whitespace-only titles are silently dropped, `gridlines: { major,
 minor }` emits `<c:majorGridlines>` / `<c:minorGridlines>` in the
 spec-required position (after `<c:axPos>`, before any `<c:title>`,
-major before minor), and pie charts ignore the entire `axes` field
-because OOXML defines no axes for them. `dataLabels: { showValue, showCategoryName, showSeriesName, showPercent, position, separator }`
+major before minor), and pie / doughnut charts ignore the entire
+`axes` field because OOXML defines no axes for them.
+`dataLabels: { showValue, showCategoryName, showSeriesName, showPercent, position, separator }`
 attaches Excel's small in-chart annotations: set at the chart level
 to label every series, or set on a single `series[i].dataLabels` to
 override (passing `false` suppresses labels for that series alone
-even when the chart-level default has them on). Doughnut, radar,
-stock, 3D variants, trendlines, and combo charts are out of scope
-for Phase 1.
+even when the chart-level default has them on). For doughnut charts,
+`holeSize` (10 – 90, Excel's UI band; default 50) controls the
+diameter of the inner hole — values outside the band are clamped to
+the closest end and non-doughnut kinds silently ignore the field.
+Radar, stock, 3D variants, trendlines, and combo charts are out of
+scope today.
 
 #### Cloning a parsed chart with `cloneChart`
 
@@ -691,20 +700,24 @@ Per-series overrides accept `null` to drop an inherited value (e.g.
 the source length, and fall back to the source's `valuesRef` /
 `categoriesRef` / `name` / `color` when omitted. Source kinds the
 writer can author collapse onto their write counterparts (`bar` /
-`bar3D` → `column`, `doughnut` / `pie3D` → `pie`, `line3D` → `line`,
-`area3D` → `area`); kinds with no analog (`bubble`, `radar`,
-`surface`, `stock`, `ofPie`) require an explicit `options.type`
-override. Axis titles and gridlines inherit from the source by default; pass
+`bar3D` → `column`, `pie3D` → `pie`, `doughnut` → `doughnut` (kept as
+its own kind so the hole survives), `line3D` → `line`, `area3D` →
+`area`); kinds with no analog (`bubble`, `radar`, `surface`, `stock`,
+`ofPie`) require an explicit `options.type` override. Axis titles
+and gridlines inherit from the source by default; pass
 `axes: { y: { title: "Revenue" } }` to replace one side, `null` to
 drop an inherited label, `axes: { y: { gridlines: { major: true,
 minor: true } } }` to replace inherited gridlines, or
 `axes: { y: { gridlines: null } }` to drop them. The writer drops
 the entire `axes` block automatically when the resolved type is
-`pie`. Data labels
-inherit too: omit `dataLabels` to carry the source's chart-level
-labels through, pass an object to replace, or `null` to drop them;
-per-series overrides accept the same `undefined`/`null`/object
-grammar plus `false` to suppress labels on a single series.
+`pie` or `doughnut`. Doughnut clones also inherit the parsed
+`holeSize` from the template; pass `holeSize: 60` to override or
+`type: "pie"` to flatten into a plain pie (the hole hint is dropped
+silently in that case). Data labels inherit too: omit `dataLabels`
+to carry the source's chart-level labels through, pass an object to
+replace, or `null` to drop them; per-series overrides accept the same
+`undefined`/`null`/object grammar plus `false` to suppress labels on
+a single series.
 
 #### Walking and adding charts with `getCharts` / `addChart`
 

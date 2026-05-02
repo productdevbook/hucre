@@ -968,6 +968,63 @@ describe("parseChart — axis gridlines", () => {
   });
 });
 
+// ── parseChart — doughnut hole size ───────────────────────────────
+
+describe("parseChart — doughnut hole size", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces <c:holeSize val="..."/> off a doughnut chart', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:doughnutChart>
+      <c:varyColors val="1"/>
+      <c:firstSliceAng val="0"/>
+      <c:holeSize val="65"/>
+    </c:doughnutChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.kinds).toEqual(["doughnut"]);
+    expect(chart?.holeSize).toBe(65);
+  });
+
+  it("omits holeSize when the doughnut chart does not declare one", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:doughnutChart><c:varyColors val="1"/></c:doughnutChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.holeSize).toBeUndefined();
+  });
+
+  it("rejects malformed or out-of-range holeSize values", () => {
+    const out = (val: string): unknown =>
+      parseChart(`<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:doughnutChart><c:holeSize val="${val}"/></c:doughnutChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`)?.holeSize;
+    expect(out("not-a-number")).toBeUndefined();
+    expect(out("0")).toBeUndefined();
+    expect(out("100")).toBeUndefined();
+    // 1–99 inclusive is what the OOXML schema allows.
+    expect(out("1")).toBe(1);
+    expect(out("99")).toBe(99);
+  });
+
+  it("does not attach holeSize to non-doughnut charts", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:pieChart><c:varyColors val="1"/></c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.kinds).toEqual(["pie"]);
+    expect(chart?.holeSize).toBeUndefined();
+  });
+});
+
 // ── End-to-end: full XLSX with a chart ────────────────────────────
 
 /**

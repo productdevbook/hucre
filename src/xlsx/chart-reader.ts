@@ -74,6 +74,7 @@ export function parseChart(xml: string): Chart | undefined {
     const series: ChartSeriesInfo[] = [];
     let barGrouping: ChartBarGrouping | undefined;
     let chartLevelLabels: ChartDataLabelsInfo | undefined;
+    let holeSize: number | undefined;
     for (const child of childElements(plotArea)) {
       const kind = CHART_KIND_TAGS.get(child.local);
       if (!kind) continue;
@@ -84,6 +85,11 @@ export function parseChart(xml: string): Chart | undefined {
       // single `<c:barChart>` body this is the value Excel applies.
       if (barGrouping === undefined && (kind === "bar" || kind === "bar3D")) {
         barGrouping = parseBarGrouping(child);
+      }
+      // Pull `<c:holeSize>` off a doughnut chart so a parsed template
+      // can round-trip its hole back through {@link cloneChart}.
+      if (holeSize === undefined && kind === "doughnut") {
+        holeSize = parseHoleSize(child);
       }
       let localIndex = 0;
       for (const ser of childElements(child)) {
@@ -108,6 +114,7 @@ export function parseChart(xml: string): Chart | undefined {
     if (series.length > 0) out.series = series;
     if (barGrouping !== undefined) out.barGrouping = barGrouping;
     if (chartLevelLabels) out.dataLabels = chartLevelLabels;
+    if (holeSize !== undefined) out.holeSize = holeSize;
 
     const axes = parseAxes(plotArea);
     if (axes !== undefined) out.axes = axes;
@@ -486,6 +493,27 @@ function parseBarGrouping(barChart: XmlElement): ChartBarGrouping | undefined {
     default:
       return undefined;
   }
+}
+
+// ── Doughnut Hole ─────────────────────────────────────────────────
+
+/**
+ * Pull `<c:holeSize val=".."/>` off a `<c:doughnutChart>` element.
+ * Returns `undefined` when the attribute is missing, malformed, or
+ * outside the 1–99 range OOXML allows. Excel itself only writes values
+ * in 10–90 (the UI clamps to that band) but the spec is wider, so we
+ * accept the full schema range and let the writer re-clamp on the way
+ * back out.
+ */
+function parseHoleSize(doughnut: XmlElement): number | undefined {
+  const el = findChild(doughnut, "holeSize");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  if (parsed < 1 || parsed > 99) return undefined;
+  return parsed;
 }
 
 /**

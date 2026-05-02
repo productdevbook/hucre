@@ -3,6 +3,7 @@ import { ZipReader } from "../src/zip/reader";
 import { parseXml } from "../src/xml/parser";
 import { writeXlsx } from "../src/xlsx/writer";
 import { writeChart, chartKindElement } from "../src/xlsx/chart-writer";
+import { parseChart } from "../src/xlsx/chart-reader";
 import { writeDrawing } from "../src/xlsx/drawing-writer";
 import type { WriteChartKind, SheetChart, WriteSheet } from "../src/_types";
 
@@ -221,7 +222,7 @@ describe("writeChart", () => {
     expect(result.chartXml).toMatch(/c:idx val="1"[\s\S]*c:order val="1"/);
   });
 
-  it.each<WriteChartKind>(["bar", "column", "line", "pie", "scatter", "area"])(
+  it.each<WriteChartKind>(["bar", "column", "line", "pie", "doughnut", "scatter", "area"])(
     "kind %s parses as well-formed XML",
     (kind) => {
       const result = writeChart(makeChart({ type: kind }), "Sheet1");
@@ -230,6 +231,96 @@ describe("writeChart", () => {
       expect(doc).toBeTruthy();
     },
   );
+});
+
+// ── Doughnut ─────────────────────────────────────────────────────────
+
+describe("writeChart — doughnut", () => {
+  it("emits c:doughnutChart with varyColors=1 and no axes", () => {
+    const result = writeChart(makeChart({ type: "doughnut" }), "Sheet1");
+    expect(result.chartXml).toContain("c:doughnutChart");
+    expect(result.chartXml).toContain('c:varyColors val="1"');
+    // Doughnut, like pie, has no axes
+    expect(result.chartXml).not.toContain("c:catAx");
+    expect(result.chartXml).not.toContain("c:valAx");
+  });
+
+  it("declares the schema-required holeSize element with the Excel default of 50", () => {
+    const result = writeChart(makeChart({ type: "doughnut" }), "Sheet1");
+    expect(result.chartXml).toContain('c:holeSize val="50"');
+    expect(result.chartXml).toContain('c:firstSliceAng val="0"');
+  });
+
+  it("threads an explicit holeSize through to the XML", () => {
+    const result = writeChart(makeChart({ type: "doughnut", holeSize: 75 }), "Sheet1");
+    expect(result.chartXml).toContain('c:holeSize val="75"');
+  });
+
+  it("clamps holeSize to the 10–90 band Excel's UI enforces", () => {
+    const lo = writeChart(makeChart({ type: "doughnut", holeSize: 5 }), "Sheet1");
+    expect(lo.chartXml).toContain('c:holeSize val="10"');
+    const hi = writeChart(makeChart({ type: "doughnut", holeSize: 120 }), "Sheet1");
+    expect(hi.chartXml).toContain('c:holeSize val="90"');
+  });
+
+  it("rounds non-integer holeSize values", () => {
+    const result = writeChart(makeChart({ type: "doughnut", holeSize: 42.7 }), "Sheet1");
+    expect(result.chartXml).toContain('c:holeSize val="43"');
+  });
+
+  it("falls back to the default when holeSize is NaN or Infinity", () => {
+    const nan = writeChart(makeChart({ type: "doughnut", holeSize: NaN }), "Sheet1");
+    expect(nan.chartXml).toContain('c:holeSize val="50"');
+    const inf = writeChart(
+      makeChart({ type: "doughnut", holeSize: Number.POSITIVE_INFINITY }),
+      "Sheet1",
+    );
+    expect(inf.chartXml).toContain('c:holeSize val="50"');
+  });
+
+  it("paints every series declared on a doughnut chart (concentric rings)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "doughnut",
+        series: [
+          { name: "Inner", values: "B2:B4", categories: "A2:A4" },
+          { name: "Outer", values: "C2:C4", categories: "A2:A4" },
+        ],
+      }),
+      "Sheet1",
+    );
+    // Two <c:ser> entries with sequential idx/order.
+    expect(result.chartXml).toMatch(/c:idx val="0"[\s\S]*c:order val="0"/);
+    expect(result.chartXml).toMatch(/c:idx val="1"[\s\S]*c:order val="1"/);
+    expect(result.chartXml).toContain("Inner");
+    expect(result.chartXml).toContain("Outer");
+  });
+
+  it("omits holeSize on non-doughnut kinds even when the field is set", () => {
+    // SheetChart.holeSize is silently ignored for pie / column / line / etc.
+    const pie = writeChart(makeChart({ type: "pie", holeSize: 75 }), "Sheet1");
+    expect(pie.chartXml).not.toContain("c:holeSize");
+    const col = writeChart(makeChart({ type: "column", holeSize: 75 }), "Sheet1");
+    expect(col.chartXml).not.toContain("c:holeSize");
+  });
+
+  it("places the legend on the right by default for doughnut, matching pie", () => {
+    const result = writeChart(makeChart({ type: "doughnut" }), "Sheet1");
+    expect(result.chartXml).toContain('c:legendPos val="r"');
+  });
+
+  it("ignores the axes block on doughnut charts", () => {
+    const result = writeChart(
+      makeChart({
+        type: "doughnut",
+        axes: { x: { title: "Should not render" }, y: { title: "Same" } },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:catAx");
+    expect(result.chartXml).not.toContain("c:valAx");
+    expect(result.chartXml).not.toContain("Should not render");
+  });
 });
 
 // ── Axis titles ──────────────────────────────────────────────────────
@@ -495,6 +586,7 @@ describe("chartKindElement", () => {
     expect(chartKindElement("column")).toBe("c:barChart");
     expect(chartKindElement("line")).toBe("c:lineChart");
     expect(chartKindElement("pie")).toBe("c:pieChart");
+    expect(chartKindElement("doughnut")).toBe("c:doughnutChart");
     expect(chartKindElement("scatter")).toBe("c:scatterChart");
     expect(chartKindElement("area")).toBe("c:areaChart");
   });
@@ -817,6 +909,41 @@ describe("writeXlsx with charts", () => {
       const root = chartSpace ?? doc;
       expect(root).toBeTruthy();
     }
+  });
+
+  it("packages a doughnut chart that parseChart can re-read end-to-end", async () => {
+    const sheet: WriteSheet = {
+      name: "Distribution",
+      rows: [
+        ["Category", "Share"],
+        ["Cloud", 42],
+        ["On-prem", 28],
+        ["Hybrid", 30],
+      ],
+      charts: [
+        makeChart({
+          type: "doughnut",
+          title: "Workload Mix",
+          holeSize: 60,
+          series: [{ name: "Share", values: "B2:B4", categories: "A2:A4", color: "1070CA" }],
+        }),
+      ],
+    };
+
+    const data = await writeXlsx({ sheets: [sheet] });
+    expect(zipHas(data, "xl/charts/chart1.xml")).toBe(true);
+
+    const chartXml = await extractXml(data, "xl/charts/chart1.xml");
+    expect(chartXml).toContain("c:doughnutChart");
+    expect(chartXml).toContain('c:holeSize val="60"');
+
+    const parsed = parseChart(chartXml);
+    expect(parsed?.kinds).toEqual(["doughnut"]);
+    expect(parsed?.title).toBe("Workload Mix");
+    expect(parsed?.holeSize).toBe(60);
+    expect(parsed?.seriesCount).toBe(1);
+    expect(parsed?.series?.[0]?.name).toBe("Share");
+    expect(parsed?.series?.[0]?.color).toBe("1070CA");
   });
 });
 

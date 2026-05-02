@@ -154,6 +154,10 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
       children.push(buildPieChart(chart, sheetName));
       break;
     }
+    case "doughnut": {
+      children.push(buildDoughnutChart(chart, sheetName));
+      break;
+    }
     case "scatter": {
       children.push(buildScatterChart(chart, sheetName));
       children.push(...buildScatterAxes(xAxisTitle, yAxisTitle, xGridlines, yGridlines));
@@ -376,6 +380,48 @@ function buildPieChart(chart: SheetChart, sheetName: string): string {
   if (chartLevelDLbls) children.push(chartLevelDLbls);
 
   return xmlElement("c:pieChart", undefined, children);
+}
+
+// ── Doughnut ─────────────────────────────────────────────────────────
+
+const DOUGHNUT_HOLE_DEFAULT = 50;
+const DOUGHNUT_HOLE_MIN = 10;
+const DOUGHNUT_HOLE_MAX = 90;
+
+function buildDoughnutChart(chart: SheetChart, sheetName: string): string {
+  const children: string[] = [xmlSelfClose("c:varyColors", { val: 1 })];
+
+  // Like pie, doughnut paints every declared series — Excel renders
+  // each as a concentric ring (rare in practice; most templates have
+  // one). Carry every series through so multi-ring templates round-trip.
+  for (let i = 0; i < chart.series.length; i++) {
+    children.push(
+      buildSeries(chart.series[i], i, sheetName, /* numericCategories */ false, {
+        dataLabels: chart.dataLabels,
+      }),
+    );
+  }
+
+  const chartLevelDLbls = buildChartLevelDataLabels(chart);
+  if (chartLevelDLbls) children.push(chartLevelDLbls);
+
+  // `<c:firstSliceAng>` and `<c:holeSize>` are the two doughnut-only
+  // knobs. firstSliceAng defaults to 0 (12 o'clock start); holeSize is
+  // required by OOXML — the schema rejects a `<c:doughnutChart>` without
+  // it. Clamp to the 10–90 band Excel's UI enforces; values outside
+  // this range render but trigger Excel's repair dialog.
+  children.push(xmlSelfClose("c:firstSliceAng", { val: 0 }));
+  children.push(xmlSelfClose("c:holeSize", { val: clampHoleSize(chart.holeSize) }));
+
+  return xmlElement("c:doughnutChart", undefined, children);
+}
+
+function clampHoleSize(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) return DOUGHNUT_HOLE_DEFAULT;
+  const rounded = Math.round(value);
+  if (rounded < DOUGHNUT_HOLE_MIN) return DOUGHNUT_HOLE_MIN;
+  if (rounded > DOUGHNUT_HOLE_MAX) return DOUGHNUT_HOLE_MAX;
+  return rounded;
 }
 
 // ── Scatter ──────────────────────────────────────────────────────────
@@ -724,6 +770,8 @@ export function chartKindElement(kind: WriteChartKind): string {
       return "c:lineChart";
     case "pie":
       return "c:pieChart";
+    case "doughnut":
+      return "c:doughnutChart";
     case "scatter":
       return "c:scatterChart";
     case "area":
