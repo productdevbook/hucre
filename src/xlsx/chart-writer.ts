@@ -11,6 +11,7 @@ import type {
   ChartAxisNumberFormat,
   ChartAxisScale,
   ChartDataLabels,
+  ChartDisplayBlanksAs,
   ChartMarker,
   ChartMarkerSymbol,
   ChartSeries,
@@ -69,7 +70,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
   }
 
   chartChildren.push(xmlSelfClose("c:plotVisOnly", { val: 1 }));
-  chartChildren.push(xmlSelfClose("c:dispBlanksAs", { val: "gap" }));
+  chartChildren.push(xmlSelfClose("c:dispBlanksAs", { val: resolveDispBlanksAs(chart) }));
 
   const chartElement = xmlElement("c:chart", undefined, chartChildren);
 
@@ -1096,6 +1097,25 @@ function buildLegend(pos: LegendPos): string {
     xmlSelfClose("c:legendPos", { val: pos }),
     xmlSelfClose("c:overlay", { val: 0 }),
   ]);
+}
+
+// ── Display Blanks As ────────────────────────────────────────────────
+
+const DISP_BLANKS_AS_VALUES: ReadonlySet<ChartDisplayBlanksAs> = new Set(["gap", "zero", "span"]);
+
+/**
+ * Resolve the `<c:dispBlanksAs>` value emitted on `<c:chart>`.
+ *
+ * Defaults to `"gap"` (the OOXML default) when the chart does not set
+ * the field. Unknown / unsupported tokens collapse to `"gap"` rather
+ * than emit an attribute Excel ignores. The writer always emits the
+ * element so the file's intent is explicit even on roundtrip — Excel
+ * itself includes it in every reference serialization.
+ */
+function resolveDispBlanksAs(chart: SheetChart): ChartDisplayBlanksAs {
+  const raw = chart.dispBlanksAs;
+  if (raw && DISP_BLANKS_AS_VALUES.has(raw)) return raw;
+  return "gap";
 }
 
 // ── Reference qualification ──────────────────────────────────────────

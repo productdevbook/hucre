@@ -143,6 +143,7 @@ export type {
   ChartDataLabelPosition,
   ChartDataLabels,
   ChartDataLabelsInfo,
+  ChartDisplayBlanksAs,
   ChartKind,
   ChartLegendPosition,
   ChartLineAreaGrouping,
