@@ -6,7 +6,7 @@
 // Chapter 21). Each chart is a self-contained <c:chartSpace> document
 // referenced from a drawing part via a `chart` relationship.
 
-import type { WriteChartKind, ChartSeries, SheetChart } from "../_types";
+import type { WriteChartKind, ChartDataLabels, ChartSeries, SheetChart } from "../_types";
 import { xmlDocument, xmlElement, xmlEscape, xmlSelfClose } from "../xml/writer";
 
 // ── Namespaces ───────────────────────────────────────────────────────
@@ -190,8 +190,15 @@ function buildBarChart(chart: SheetChart, sheetName: string): string {
   ];
 
   for (let i = 0; i < chart.series.length; i++) {
-    children.push(buildSeries(chart.series[i], i, sheetName, /* numericCategories */ false));
+    children.push(
+      buildSeries(chart.series[i], i, sheetName, /* numericCategories */ false, {
+        dataLabels: chart.dataLabels,
+      }),
+    );
   }
+
+  const chartLevelDLbls = buildChartLevelDataLabels(chart);
+  if (chartLevelDLbls) children.push(chartLevelDLbls);
 
   if (grouping === "percentStacked" || grouping === "stacked") {
     children.push(xmlSelfClose("c:overlap", { val: 100 }));
@@ -266,9 +273,13 @@ function buildLineChart(chart: SheetChart, sheetName: string): string {
   for (let i = 0; i < chart.series.length; i++) {
     const seriesXml = buildSeries(chart.series[i], i, sheetName, /* numericCategories */ false, {
       smooth: false,
+      dataLabels: chart.dataLabels,
     });
     children.push(seriesXml);
   }
+
+  const chartLevelDLbls = buildChartLevelDataLabels(chart);
+  if (chartLevelDLbls) children.push(chartLevelDLbls);
 
   children.push(xmlSelfClose("c:marker", { val: 1 }));
   children.push(xmlSelfClose("c:axId", { val: AXIS_ID_CAT }));
@@ -286,8 +297,15 @@ function buildAreaChart(chart: SheetChart, sheetName: string): string {
   ];
 
   for (let i = 0; i < chart.series.length; i++) {
-    children.push(buildSeries(chart.series[i], i, sheetName, /* numericCategories */ false));
+    children.push(
+      buildSeries(chart.series[i], i, sheetName, /* numericCategories */ false, {
+        dataLabels: chart.dataLabels,
+      }),
+    );
   }
+
+  const chartLevelDLbls = buildChartLevelDataLabels(chart);
+  if (chartLevelDLbls) children.push(chartLevelDLbls);
 
   children.push(xmlSelfClose("c:axId", { val: AXIS_ID_CAT }));
   children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL }));
@@ -303,8 +321,15 @@ function buildPieChart(chart: SheetChart, sheetName: string): string {
   // A pie chart only paints the first series; additional ones are
   // valid OOXML but Excel ignores them.
   if (chart.series.length > 0) {
-    children.push(buildSeries(chart.series[0], 0, sheetName, /* numericCategories */ false));
+    children.push(
+      buildSeries(chart.series[0], 0, sheetName, /* numericCategories */ false, {
+        dataLabels: chart.dataLabels,
+      }),
+    );
   }
+
+  const chartLevelDLbls = buildChartLevelDataLabels(chart);
+  if (chartLevelDLbls) children.push(chartLevelDLbls);
 
   return xmlElement("c:pieChart", undefined, children);
 }
@@ -318,8 +343,15 @@ function buildScatterChart(chart: SheetChart, sheetName: string): string {
   ];
 
   for (let i = 0; i < chart.series.length; i++) {
-    children.push(buildSeries(chart.series[i], i, sheetName, /* numericCategories */ true));
+    children.push(
+      buildSeries(chart.series[i], i, sheetName, /* numericCategories */ true, {
+        dataLabels: chart.dataLabels,
+      }),
+    );
   }
+
+  const chartLevelDLbls = buildChartLevelDataLabels(chart);
+  if (chartLevelDLbls) children.push(chartLevelDLbls);
 
   children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL_X }));
   children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL_Y }));
@@ -402,6 +434,12 @@ function buildAxisTitle(label: string): string {
 
 interface SeriesOptions {
   smooth?: boolean;
+  /**
+   * Chart-level data label defaults from {@link SheetChart.dataLabels}.
+   * Used when the series itself does not specify `dataLabels`. Series
+   * passing `dataLabels: false` always wins over this default.
+   */
+  dataLabels?: ChartDataLabels;
 }
 
 function buildSeries(
@@ -429,6 +467,12 @@ function buildSeries(
   if (series.color) {
     children.push(buildSpPr(series.color));
   }
+
+  // Data labels — series-level override always wins over the chart-level
+  // default. `<c:dLbls>` sits between <c:spPr> and <c:cat>/<c:val> per
+  // the OOXML series schema (CT_BarSer, CT_LineSer, ...).
+  const seriesDLblsXml = buildSeriesDataLabels(series.dataLabels, options?.dataLabels);
+  if (seriesDLblsXml) children.push(seriesDLblsXml);
 
   // Categories (skipped for pie when omitted; allowed for all)
   if (series.categories) {
@@ -479,6 +523,86 @@ function buildSpPr(rgbHex: string): string {
       xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: normalized })]),
     ]),
   ]);
+}
+
+// ── Data Labels ──────────────────────────────────────────────────────
+
+/**
+ * Resolve and emit the `<c:dLbls>` element for a single series.
+ *
+ * Series override semantics:
+ *
+ * - Series sets `dataLabels: false`  → emit a `delete=1` block to
+ *   suppress this series even when the chart-level default enables labels.
+ * - Series sets `dataLabels: <obj>`  → emit `<obj>`. Chart-level config is ignored.
+ * - Series omits `dataLabels`        → no per-series `<c:dLbls>`. Excel
+ *   inherits the chart-type-level `<c:dLbls>` block emitted by
+ *   `buildChartLevelDataLabels` instead.
+ *
+ * Returns `undefined` when nothing should be emitted at the series level.
+ */
+function buildSeriesDataLabels(
+  seriesDLbls: ChartDataLabels | false | undefined,
+  chartDLbls: ChartDataLabels | undefined,
+): string | undefined {
+  if (seriesDLbls === false) {
+    // Suppress this series even when chart-level labels are on.
+    return xmlElement("c:dLbls", undefined, [
+      xmlElement("c:dLbl", undefined, [
+        xmlSelfClose("c:idx", { val: 0 }),
+        xmlSelfClose("c:delete", { val: 1 }),
+      ]),
+      xmlSelfClose("c:delete", { val: 1 }),
+    ]);
+  }
+  if (seriesDLbls) {
+    return buildDataLabelsBody(seriesDLbls);
+  }
+  // Series doesn't override → fall through to chart-level. Returning
+  // undefined here keeps the chart-level <c:dLbls> as the single source
+  // of truth so we don't duplicate the same toggles N times.
+  void chartDLbls;
+  return undefined;
+}
+
+/**
+ * Build the chart-type-level `<c:dLbls>` block from
+ * {@link SheetChart.dataLabels}. Returns `undefined` when no chart-level
+ * labels are configured.
+ */
+function buildChartLevelDataLabels(chart: SheetChart): string | undefined {
+  if (!chart.dataLabels) return undefined;
+  return buildDataLabelsBody(chart.dataLabels);
+}
+
+/**
+ * Render the OOXML `<c:dLbls>` body. Element order follows CT_DLbls:
+ * delete? before numFmt? before spPr? before txPr? before dLblPos? before
+ * showLegendKey, showVal, showCatName, showSerName, showPercent,
+ * showBubbleSize, separator?, showLeaderLines? — toggles must appear
+ * in that exact order or Excel ignores the block.
+ */
+function buildDataLabelsBody(dl: ChartDataLabels): string {
+  const children: string[] = [];
+
+  if (dl.position) {
+    children.push(xmlSelfClose("c:dLblPos", { val: dl.position }));
+  }
+
+  // OOXML requires showLegendKey to appear first when any toggle is set.
+  // Always emit it explicitly so the rendered XML is deterministic.
+  children.push(xmlSelfClose("c:showLegendKey", { val: 0 }));
+  children.push(xmlSelfClose("c:showVal", { val: dl.showValue ? 1 : 0 }));
+  children.push(xmlSelfClose("c:showCatName", { val: dl.showCategoryName ? 1 : 0 }));
+  children.push(xmlSelfClose("c:showSerName", { val: dl.showSeriesName ? 1 : 0 }));
+  children.push(xmlSelfClose("c:showPercent", { val: dl.showPercent ? 1 : 0 }));
+  children.push(xmlSelfClose("c:showBubbleSize", { val: 0 }));
+
+  if (dl.separator !== undefined) {
+    children.push(xmlElement("c:separator", undefined, xmlEscape(dl.separator)));
+  }
+
+  return xmlElement("c:dLbls", undefined, children);
 }
 
 // ── Legend ───────────────────────────────────────────────────────────

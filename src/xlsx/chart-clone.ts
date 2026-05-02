@@ -12,6 +12,8 @@
 
 import type {
   Chart,
+  ChartDataLabels,
+  ChartDataLabelsInfo,
   ChartKind,
   ChartSeries,
   ChartSeriesInfo,
@@ -37,6 +39,14 @@ export interface CloneChartSeriesOverride {
   categories?: string | null;
   /** 6-digit RGB hex (e.g. `"1F77B4"`). */
   color?: string | null;
+  /**
+   * Per-series data label override. `undefined` (or omitted) inherits
+   * the source series' `dataLabels`; `null` drops the inherited block;
+   * `false` suppresses labels for this series alone (overriding any
+   * chart-level default); a `ChartDataLabels` object replaces the
+   * inherited block wholesale.
+   */
+  dataLabels?: ChartDataLabels | false | null;
 }
 
 /**
@@ -79,6 +89,12 @@ export interface CloneChartOptions {
   altText?: string;
   /** Override `SheetChart.frameTitle`. */
   frameTitle?: string;
+  /**
+   * Override the chart-level data labels. `undefined` (or omitted)
+   * inherits the source's `dataLabels`; `null` drops the inherited
+   * block; a `ChartDataLabels` object replaces it.
+   */
+  dataLabels?: ChartDataLabels | null;
   /**
    * Per-axis title overrides. Each field accepts a string to replace,
    * or `null` to drop the source value (the cloned chart will render
@@ -164,6 +180,9 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   if (options.showTitle !== undefined) out.showTitle = options.showTitle;
   if (options.altText !== undefined) out.altText = options.altText;
   if (options.frameTitle !== undefined) out.frameTitle = options.frameTitle;
+
+  const resolvedDataLabels = resolveChartDataLabels(source.dataLabels, options.dataLabels);
+  if (resolvedDataLabels !== undefined) out.dataLabels = resolvedDataLabels;
 
   // Pie has no axes, so silently skip carrying over axis titles even
   // when the source declared them or the caller passed an override.
@@ -288,7 +307,50 @@ function mergeSeries(
   const color = applyOverride(src?.color, ov?.color);
   if (color !== undefined) out.color = color;
 
+  const dataLabels = resolveSeriesDataLabels(src?.dataLabels, ov?.dataLabels);
+  if (dataLabels !== undefined) out.dataLabels = dataLabels;
+
   return out;
+}
+
+/**
+ * Resolve a chart-level data-labels override.
+ *
+ * `undefined` → inherit the source's parsed `dataLabels` (downcast from
+ * the read-side {@link ChartDataLabelsInfo} to the write-side
+ * {@link ChartDataLabels} shape — they share field semantics).
+ * `null`      → drop the inherited block.
+ * object      → replace.
+ */
+function resolveChartDataLabels(
+  sourceLabels: ChartDataLabelsInfo | undefined,
+  override: ChartDataLabels | null | undefined,
+): ChartDataLabels | undefined {
+  if (override === undefined) {
+    return sourceLabels ? { ...sourceLabels } : undefined;
+  }
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve a per-series data-labels override.
+ *
+ * `undefined` → inherit the source series' `dataLabels`.
+ * `null`      → drop the inherited block (series will fall back to
+ *               whatever the chart-level default is at write time).
+ * `false`     → suppress labels on this series alone.
+ * object      → replace.
+ */
+function resolveSeriesDataLabels(
+  sourceLabels: ChartDataLabelsInfo | undefined,
+  override: ChartDataLabels | false | null | undefined,
+): ChartDataLabels | false | undefined {
+  if (override === undefined) {
+    return sourceLabels ? { ...sourceLabels } : undefined;
+  }
+  if (override === null) return undefined;
+  return override;
 }
 
 /**

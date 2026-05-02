@@ -463,6 +463,127 @@ describe("cloneChart — integration", () => {
     expect(writtenChart).toContain("Dashboard!$B$2:$B$13");
   });
 
+  it("inherits the source chart's dataLabels block by default", () => {
+    const src: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          valuesRef: "Tpl!$B$2:$B$5",
+        },
+      ],
+      dataLabels: { showValue: true, position: "outEnd" },
+    };
+    const clone = cloneChart(src, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.dataLabels).toEqual({ showValue: true, position: "outEnd" });
+  });
+
+  it("replaces the chart-level dataLabels when an override object is given", () => {
+    const src: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      dataLabels: { showValue: true },
+    };
+    const clone = cloneChart(src, {
+      anchor: { from: { row: 0, col: 0 } },
+      dataLabels: { showCategoryName: true, position: "ctr" },
+    });
+    expect(clone.dataLabels).toEqual({ showCategoryName: true, position: "ctr" });
+  });
+
+  it("drops the chart-level dataLabels when override is null", () => {
+    const src: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      dataLabels: { showValue: true },
+    };
+    const clone = cloneChart(src, {
+      anchor: { from: { row: 0, col: 0 } },
+      dataLabels: null,
+    });
+    expect(clone.dataLabels).toBeUndefined();
+  });
+
+  it("inherits per-series dataLabels by default", () => {
+    const src: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          valuesRef: "Tpl!$B$2:$B$5",
+          dataLabels: { showValue: true, position: "ctr" },
+        },
+      ],
+    };
+    const clone = cloneChart(src, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.series[0].dataLabels).toEqual({ showValue: true, position: "ctr" });
+  });
+
+  it("replaces per-series dataLabels via seriesOverrides", () => {
+    const src: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          valuesRef: "Tpl!$B$2:$B$5",
+          dataLabels: { showValue: true },
+        },
+      ],
+    };
+    const clone = cloneChart(src, {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ dataLabels: { showCategoryName: true } }],
+    });
+    expect(clone.series[0].dataLabels).toEqual({ showCategoryName: true });
+  });
+
+  it("drops per-series dataLabels when override is null", () => {
+    const src: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          valuesRef: "Tpl!$B$2:$B$5",
+          dataLabels: { showValue: true },
+        },
+      ],
+    };
+    const clone = cloneChart(src, {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ dataLabels: null }],
+    });
+    expect(clone.series[0].dataLabels).toBeUndefined();
+  });
+
+  it("suppresses a single series via seriesOverrides[i].dataLabels = false", () => {
+    const src: Chart = {
+      kinds: ["bar"],
+      seriesCount: 2,
+      series: [
+        { kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" },
+        { kind: "bar", index: 1, valuesRef: "Tpl!$C$2:$C$5" },
+      ],
+      dataLabels: { showValue: true },
+    };
+    const clone = cloneChart(src, {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [undefined, { dataLabels: false }],
+    });
+    expect(clone.dataLabels).toEqual({ showValue: true });
+    expect(clone.series[0].dataLabels).toBeUndefined();
+    expect(clone.series[1].dataLabels).toBe(false);
+  });
+
   it("can clone the same template into multiple chart instances", () => {
     const template: Chart = {
       kinds: ["pie"],
@@ -499,6 +620,59 @@ describe("cloneChart — integration", () => {
     expect(clones[2].series[0].color).toBe("F76808");
     // Categories carry through unchanged.
     expect(clones.every((c) => c.series[0].categories === "Tpl!$A$2:$A$5")).toBe(true);
+  });
+
+  it("round-trips data labels: parseChart → cloneChart → writeXlsx → parseChart", async () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx><c:v>Revenue</c:v></c:tx>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:dLbls>
+          <c:dLblPos val="outEnd"/>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml)!;
+    expect(parsed.dataLabels).toEqual({ showValue: true, position: "outEnd" });
+
+    const sheetChart: SheetChart = cloneChart(parsed, {
+      anchor: { from: { row: 5, col: 0 } },
+      seriesOverrides: [{ values: "Dashboard!$B$2:$B$5" }],
+    });
+    expect(sheetChart.dataLabels).toEqual({ showValue: true, position: "outEnd" });
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Dashboard",
+          rows: [["Header"], [10], [20], [30], [40]],
+          charts: [sheetChart],
+        },
+      ],
+    });
+
+    const zip = new ZipReader(xlsx);
+    const writtenChart = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(writtenChart).toContain('c:dLblPos val="outEnd"');
+    expect(writtenChart).toContain('c:showVal val="1"');
+
+    const reparsed = parseChart(writtenChart)!;
+    expect(reparsed.dataLabels).toEqual({ showValue: true, position: "outEnd" });
   });
 
   it("round-trips axis titles through parseChart → cloneChart → writeXlsx → parseChart", async () => {
