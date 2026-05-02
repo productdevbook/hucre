@@ -1317,6 +1317,118 @@ describe("parseChart — doughnut hole size", () => {
   });
 });
 
+describe("parseChart — first slice angle", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces <c:firstSliceAng val="..."/> off a pie chart', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:pieChart>
+      <c:varyColors val="1"/>
+      <c:firstSliceAng val="90"/>
+    </c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.kinds).toEqual(["pie"]);
+    expect(chart?.firstSliceAng).toBe(90);
+  });
+
+  it('surfaces <c:firstSliceAng val="..."/> off a doughnut chart', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:doughnutChart>
+      <c:varyColors val="1"/>
+      <c:firstSliceAng val="180"/>
+      <c:holeSize val="50"/>
+    </c:doughnutChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.kinds).toEqual(["doughnut"]);
+    expect(chart?.firstSliceAng).toBe(180);
+  });
+
+  it("collapses the OOXML default 0 to undefined (writer absence)", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:pieChart><c:firstSliceAng val="0"/></c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.firstSliceAng).toBeUndefined();
+  });
+
+  it("collapses the schema-equivalent 360 to undefined (same as 0)", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:pieChart><c:firstSliceAng val="360"/></c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.firstSliceAng).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:firstSliceAng> element", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:pieChart><c:varyColors val="1"/></c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.firstSliceAng).toBeUndefined();
+  });
+
+  it("rejects malformed or out-of-range firstSliceAng values", () => {
+    const out = (val: string): unknown =>
+      parseChart(`<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:pieChart><c:firstSliceAng val="${val}"/></c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`)?.firstSliceAng;
+    expect(out("not-a-number")).toBeUndefined();
+    // Negative values fall outside the CT_FirstSliceAng band.
+    expect(out("-1")).toBeUndefined();
+    // 361 also falls outside the schema band (0..360 inclusive).
+    expect(out("361")).toBeUndefined();
+    // 1..359 are accepted verbatim.
+    expect(out("1")).toBe(1);
+    expect(out("270")).toBe(270);
+    expect(out("359")).toBe(359);
+  });
+
+  it("does not attach firstSliceAng to non-pie / non-doughnut charts", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:firstSliceAng val="90"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.kinds).toEqual(["bar"]);
+    expect(chart?.firstSliceAng).toBeUndefined();
+  });
+
+  it("ignores firstSliceAng outside of pie/doughnut even in combo charts", () => {
+    // A pie sibling in the same plotArea should win over a stray
+    // firstSliceAng that happens to sit on a non-pie chart-type
+    // element earlier in the document order.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:lineChart>
+    <c:pieChart>
+      <c:varyColors val="1"/>
+      <c:firstSliceAng val="45"/>
+    </c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.kinds).toEqual(["line", "pie"]);
+    expect(chart?.firstSliceAng).toBe(45);
+  });
+});
+
 // ── End-to-end: full XLSX with a chart ────────────────────────────
 
 /**

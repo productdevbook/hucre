@@ -385,6 +385,100 @@ describe("writeChart — doughnut", () => {
   });
 });
 
+// ── First slice angle ────────────────────────────────────────────────
+
+describe("writeChart — firstSliceAng", () => {
+  it("omits <c:firstSliceAng> on a pie chart with no rotation set", () => {
+    // The pie writer treats the OOXML default `0` as the absence of
+    // the element so untouched pie charts stay byte-clean.
+    const result = writeChart(makeChart({ type: "pie" }), "Sheet1");
+    expect(result.chartXml).not.toContain("c:firstSliceAng");
+  });
+
+  it("emits <c:firstSliceAng> on a pie chart when firstSliceAng is set", () => {
+    const result = writeChart(makeChart({ type: "pie", firstSliceAng: 90 }), "Sheet1");
+    expect(result.chartXml).toContain('c:firstSliceAng val="90"');
+  });
+
+  it("threads an explicit firstSliceAng through to a doughnut chart", () => {
+    const result = writeChart(makeChart({ type: "doughnut", firstSliceAng: 270 }), "Sheet1");
+    expect(result.chartXml).toContain('c:firstSliceAng val="270"');
+  });
+
+  it("falls back to the default 0 on doughnut when firstSliceAng is unset", () => {
+    // Doughnut always emits <c:firstSliceAng> — Excel's reference
+    // serialization includes it even at the default. Pie elides it.
+    const result = writeChart(makeChart({ type: "doughnut" }), "Sheet1");
+    expect(result.chartXml).toContain('c:firstSliceAng val="0"');
+  });
+
+  it("wraps angles into the 0..360 band by modulo (stays inside CT_FirstSliceAng)", () => {
+    // Excel itself normalizes wrap-arounds the same way when the user
+    // types e.g. 380 into the chart-formatting pane.
+    const wrap = writeChart(makeChart({ type: "pie", firstSliceAng: 380 }), "Sheet1");
+    expect(wrap.chartXml).toContain('c:firstSliceAng val="20"');
+    const neg = writeChart(makeChart({ type: "pie", firstSliceAng: -90 }), "Sheet1");
+    expect(neg.chartXml).toContain('c:firstSliceAng val="270"');
+  });
+
+  it("rounds non-integer firstSliceAng values", () => {
+    const result = writeChart(makeChart({ type: "pie", firstSliceAng: 47.6 }), "Sheet1");
+    expect(result.chartXml).toContain('c:firstSliceAng val="48"');
+  });
+
+  it("falls back to the default 0 when firstSliceAng is NaN or Infinity", () => {
+    // Pie elides on the default; doughnut still emits 0.
+    const pieNan = writeChart(makeChart({ type: "pie", firstSliceAng: NaN }), "Sheet1");
+    expect(pieNan.chartXml).not.toContain("c:firstSliceAng");
+    const ringNan = writeChart(makeChart({ type: "doughnut", firstSliceAng: NaN }), "Sheet1");
+    expect(ringNan.chartXml).toContain('c:firstSliceAng val="0"');
+    const ringInf = writeChart(
+      makeChart({ type: "doughnut", firstSliceAng: Number.POSITIVE_INFINITY }),
+      "Sheet1",
+    );
+    expect(ringInf.chartXml).toContain('c:firstSliceAng val="0"');
+  });
+
+  it("wraps the schema-equivalent 360 down to 0 (omitted on pie)", () => {
+    const result = writeChart(makeChart({ type: "pie", firstSliceAng: 360 }), "Sheet1");
+    expect(result.chartXml).not.toContain("c:firstSliceAng");
+  });
+
+  it("omits firstSliceAng on non-pie / non-doughnut kinds even when the field is set", () => {
+    const col = writeChart(makeChart({ type: "column", firstSliceAng: 90 }), "Sheet1");
+    expect(col.chartXml).not.toContain("c:firstSliceAng");
+    const line = writeChart(makeChart({ type: "line", firstSliceAng: 90 }), "Sheet1");
+    expect(line.chartXml).not.toContain("c:firstSliceAng");
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        firstSliceAng: 90,
+      }),
+      "Sheet1",
+    );
+    expect(scatter.chartXml).not.toContain("c:firstSliceAng");
+  });
+
+  it("places <c:firstSliceAng> inside <c:pieChart> (not at chart level)", () => {
+    const result = writeChart(makeChart({ type: "pie", firstSliceAng: 90 }), "Sheet1");
+    const pieBlock = result.chartXml.match(/<c:pieChart>[\s\S]*?<\/c:pieChart>/);
+    expect(pieBlock).not.toBeNull();
+    expect(pieBlock![0]).toContain('c:firstSliceAng val="90"');
+  });
+
+  it("places <c:firstSliceAng> before <c:holeSize> inside <c:doughnutChart> (OOXML order)", () => {
+    const result = writeChart(
+      makeChart({ type: "doughnut", firstSliceAng: 90, holeSize: 60 }),
+      "Sheet1",
+    );
+    // CT_DoughnutChart: varyColors, ser*, dLbls?, firstSliceAng?, holeSize?, extLst?
+    expect(result.chartXml.indexOf("c:firstSliceAng")).toBeLessThan(
+      result.chartXml.indexOf("c:holeSize"),
+    );
+  });
+});
+
 // ── Axis titles ──────────────────────────────────────────────────────
 
 describe("writeChart — axis titles", () => {

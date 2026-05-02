@@ -687,6 +687,18 @@ export interface SheetChart {
    */
   holeSize?: number;
   /**
+   * Pie / doughnut starting angle in degrees, measured clockwise from
+   * the 12 o'clock position. Accepted range: 0 – 360 (the OOXML schema
+   * range). Default: `0` — the Excel default (first slice begins at
+   * 12 o'clock). Maps to `<c:firstSliceAng val=".."/>`. Ignored for
+   * non-pie / non-doughnut chart kinds.
+   *
+   * Useful for rotating the first wedge into a specific quadrant when
+   * composing a dashboard whose pie / doughnut charts should align
+   * visually (e.g. `90` to start at 3 o'clock).
+   */
+  firstSliceAng?: number;
+  /**
    * Whether the legend is shown and where. Default: `"right"` for
    * pie/doughnut/bar/line/area, `"bottom"` for scatter. Pass `false`
    * to hide the legend.
@@ -1641,6 +1653,16 @@ export interface Chart {
    * charts that do not declare the element.
    */
   holeSize?: number;
+  /**
+   * Pie / doughnut starting angle in degrees pulled from the first
+   * `<c:pieChart>` / `<c:doughnutChart>` element's
+   * `<c:firstSliceAng val=".."/>`. Range: 0–360. `0` collapses to
+   * `undefined` because it is the OOXML default (first slice at the
+   * 12 o'clock position) — the writer's
+   * {@link SheetChart.firstSliceAng} treats the absence of the field
+   * the same way. Omitted on non-pie / non-doughnut charts.
+   */
+  firstSliceAng?: number;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────
