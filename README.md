@@ -1025,7 +1025,7 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 
 | Function                           | Description                                                                 |
 | ---------------------------------- | --------------------------------------------------------------------------- |
-| `readXlsx(input, options?)`        | Parse XLSX from `Uint8Array \| ArrayBuffer`                                 |
+| `readXlsx(input, options?)`        | Parse XLSX from `Uint8Array \| ArrayBuffer \| ReadableStream<Uint8Array>`   |
 | `writeXlsx(options)`               | Generate XLSX, returns `Uint8Array`                                         |
 | `readXlsxObjects(input, options?)` | Read sheet as `{ data, headers }` — mirror of CSV                           |
 | `writeXlsxObjects(data, options?)` | Write objects to XLSX (auto-derives headers from keys)                      |
@@ -1048,13 +1048,13 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 
 ### ODS
 
-| Function                          | Description                          |
-| --------------------------------- | ------------------------------------ |
-| `readOds(input, options?)`        | Parse ODS (OpenDocument Spreadsheet) |
-| `writeOds(options)`               | Generate ODS                         |
-| `readOdsObjects(input, options?)` | Read sheet as `{ data, headers }`    |
-| `writeOdsObjects(data, options?)` | Write objects to ODS                 |
-| `streamOdsRows(input)`            | AsyncGenerator yielding ODS rows     |
+| Function                          | Description                                                           |
+| --------------------------------- | --------------------------------------------------------------------- |
+| `readOds(input, options?)`        | Parse ODS (`Uint8Array \| ArrayBuffer \| ReadableStream<Uint8Array>`) |
+| `writeOds(options)`               | Generate ODS                                                          |
+| `readOdsObjects(input, options?)` | Read sheet as `{ data, headers }`                                     |
+| `writeOdsObjects(data, options?)` | Write objects to ODS                                                  |
+| `streamOdsRows(input)`            | AsyncGenerator yielding ODS rows                                      |
 
 ### CSV
 

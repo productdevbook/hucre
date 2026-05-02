@@ -30,6 +30,7 @@ import {
 } from "./slicer-reader";
 import { parseChart } from "./chart-reader";
 import { ParseError, ZipError } from "../errors";
+import { readInputToUint8Array } from "../_input";
 import { ZipReader } from "../zip/reader";
 import { parseXml } from "../xml/parser";
 import { parseContentTypes } from "./content-types";
@@ -65,12 +66,6 @@ function matchesRelType(rel: string, type: string): boolean {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
-
-function toUint8Array(input: ReadInput): Uint8Array {
-  if (input instanceof Uint8Array) return input;
-  if (input instanceof ArrayBuffer) return new Uint8Array(input);
-  throw new ParseError("Unsupported input type. Expected Uint8Array or ArrayBuffer.");
-}
 
 function decodeUtf8(data: Uint8Array): string {
   return new TextDecoder("utf-8").decode(data);
@@ -111,10 +106,15 @@ function dirname(path: string): string {
 
 /**
  * Read an XLSX file and return a Workbook.
- * Input can be Uint8Array or ArrayBuffer.
+ * Input can be Uint8Array, ArrayBuffer, or ReadableStream&lt;Uint8Array&gt;.
+ *
+ * For ReadableStream input, the stream is fully buffered before parsing
+ * because the ZIP central directory lives at the end of the archive —
+ * true streaming requires random access. Use {@link streamXlsxRows} when
+ * you need row-level streaming with low per-row memory.
  */
 export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise<Workbook> {
-  const data = toUint8Array(input);
+  const data = await readInputToUint8Array(input);
 
   // 1. Open ZIP archive
   let zip: ZipReader;

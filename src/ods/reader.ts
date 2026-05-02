@@ -14,17 +14,12 @@ import type {
   Hyperlink,
 } from "../_types";
 import { ParseError, ZipError } from "../errors";
+import { readInputToUint8Array } from "../_input";
 import { ZipReader } from "../zip/reader";
 import { parseXml } from "../xml/parser";
 import type { XmlElement } from "../xml/parser";
 
 // ── Helpers ─────────────────────────────────────────────────────────
-
-function toUint8Array(input: ReadInput): Uint8Array {
-  if (input instanceof Uint8Array) return input;
-  if (input instanceof ArrayBuffer) return new Uint8Array(input);
-  throw new ParseError("Unsupported input type. Expected Uint8Array or ArrayBuffer.");
-}
 
 function decodeUtf8(data: Uint8Array): string {
   return new TextDecoder("utf-8").decode(data);
@@ -568,10 +563,13 @@ function parseMetaXml(xml: string): Partial<WorkbookProperties> {
 
 /**
  * Read an ODS file and return a Workbook.
- * Input can be Uint8Array or ArrayBuffer.
+ * Input can be Uint8Array, ArrayBuffer, or ReadableStream&lt;Uint8Array&gt;.
+ *
+ * For ReadableStream input, the stream is fully buffered before parsing
+ * because the ZIP central directory lives at the end of the archive.
  */
 export async function readOds(input: ReadInput, options?: ReadOptions): Promise<Workbook> {
-  const data = toUint8Array(input);
+  const data = await readInputToUint8Array(input);
 
   // 1. Open ZIP archive
   let zip: ZipReader;
