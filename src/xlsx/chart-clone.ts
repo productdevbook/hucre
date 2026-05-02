@@ -1,0 +1,275 @@
+// ── Chart Clone ──────────────────────────────────────────────────────
+// Bridges the read-side `Chart` metadata produced by `parseChart` to the
+// write-side `SheetChart` shape consumed by `writeXlsx`.
+//
+// Use case (issue #136): a template workbook stores one of each chart
+// flavor; at export time the caller pulls a chart out, swaps its data
+// ranges and labels, and re-emits it (often several times) into a new
+// workbook. The two type families overlap — `ChartSeriesInfo` already
+// mirrors `ChartSeries` — but the read side has no anchor and supports
+// kinds the write side cannot author yet, so a dedicated converter
+// keeps the type-narrowing explicit.
+
+import type {
+  Chart,
+  ChartKind,
+  ChartSeries,
+  ChartSeriesInfo,
+  SheetChart,
+  WriteChartKind,
+} from "../_types";
+
+// ── Public API ───────────────────────────────────────────────────────
+
+/**
+ * Per-series override applied on top of the source chart's series.
+ *
+ * Each field defaults to the value carried by the source series at the
+ * matching position. Pass `null` to drop the source value entirely
+ * (e.g. `color: null` removes a series tint inherited from the
+ * template).
+ */
+export interface CloneChartSeriesOverride {
+  name?: string | null;
+  /** A1 range for `<c:val>` / `<c:yVal>`. Required when the source has none. */
+  values?: string;
+  /** A1 range for `<c:cat>` / `<c:xVal>`. */
+  categories?: string | null;
+  /** 6-digit RGB hex (e.g. `"1F77B4"`). */
+  color?: string | null;
+}
+
+/**
+ * Options accepted by {@link cloneChart}.
+ *
+ * `anchor` is required because the read-side `Chart` does not capture
+ * placement — drawings live in a separate part. Every other field
+ * defaults to the source chart.
+ */
+export interface CloneChartOptions {
+  /**
+   * Cell anchor for the cloned chart. `to` defaults to a 6×15 area
+   * below `from`, mirroring `SheetChart.anchor`.
+   */
+  anchor: SheetChart["anchor"];
+  /**
+   * Override the chart family. When omitted, the source's first
+   * write-compatible kind is used. An explicit value lets callers
+   * narrow a combo chart down to one renderable type or coerce a
+   * `doughnut` template into a plain `pie`.
+   */
+  type?: WriteChartKind;
+  /** Override the chart title. Pass `null` to drop the source title. */
+  title?: string | null;
+  /** Replace the entire series array (skips per-series merging). */
+  series?: ChartSeries[];
+  /**
+   * Per-series overrides. Indices line up with the source's
+   * {@link Chart.series}. Use this to remap data ranges without
+   * rewriting every other field.
+   */
+  seriesOverrides?: ReadonlyArray<CloneChartSeriesOverride | undefined>;
+  /** Override `SheetChart.legend`. */
+  legend?: SheetChart["legend"];
+  /** Override `SheetChart.barGrouping`. */
+  barGrouping?: SheetChart["barGrouping"];
+  /** Override `SheetChart.showTitle`. */
+  showTitle?: boolean;
+  /** Override `SheetChart.altText`. */
+  altText?: string;
+  /** Override `SheetChart.frameTitle`. */
+  frameTitle?: string;
+}
+
+/**
+ * Convert a parsed {@link Chart} into a {@link SheetChart} ready for
+ * `writeXlsx`. Series formula references (`valuesRef`, `categoriesRef`)
+ * become `values` / `categories` on the new chart; per-series colors
+ * carry over.
+ *
+ * @throws {Error} when the source chart kinds cannot be authored on
+ *   the write side and no `options.type` override is provided.
+ * @throws {Error} when a non-overridden series has no `valuesRef` —
+ *   `SheetChart.series[].values` is mandatory.
+ *
+ * @example
+ * ```ts
+ * import { parseChart, cloneChart } from "hucre";
+ *
+ * const source = parseChart(templateChartXml)!;
+ * const clone = cloneChart(source, {
+ *   anchor: { from: { row: 14, col: 0 } },
+ *   title: "Revenue",
+ *   seriesOverrides: [{ values: "Dashboard!$B$2:$B$13", color: "1070CA" }],
+ * });
+ * ```
+ */
+export function cloneChart(source: Chart, options: CloneChartOptions): SheetChart {
+  if (!options || !options.anchor) {
+    throw new Error("cloneChart: options.anchor is required");
+  }
+
+  const type = options.type ?? pickWritableKind(source);
+
+  // Pick a base title: explicit override (including `null` meaning drop)
+  // wins over the source's title.
+  const title = resolveTitle(source.title, options.title);
+
+  // Build the series array.
+  let series: ChartSeries[];
+  if (options.series) {
+    series = options.series.map((s) => ({ ...s }));
+  } else {
+    series = buildSeriesFromSource(source, options.seriesOverrides);
+  }
+
+  if (series.length === 0) {
+    throw new Error(
+      "cloneChart: produced 0 series; pass `series` or ensure the source has at least one series with a valuesRef",
+    );
+  }
+
+  const out: SheetChart = {
+    type,
+    series,
+    anchor: options.anchor,
+  };
+  if (title !== undefined) out.title = title;
+  if (options.legend !== undefined) out.legend = options.legend;
+  if (options.barGrouping !== undefined) out.barGrouping = options.barGrouping;
+  if (options.showTitle !== undefined) out.showTitle = options.showTitle;
+  if (options.altText !== undefined) out.altText = options.altText;
+  if (options.frameTitle !== undefined) out.frameTitle = options.frameTitle;
+
+  return out;
+}
+
+// ── Internals ────────────────────────────────────────────────────────
+
+/**
+ * Map a read-side {@link ChartKind} to the writer's
+ * {@link WriteChartKind}, or `undefined` when no equivalent exists.
+ *
+ * The writer authors the six families covered in chart writer Phase 1
+ * (issue #152). 3D variants collapse onto their 2D counterparts;
+ * `doughnut` collapses to `pie`. Kinds with no analog (`bubble`,
+ * `radar`, `surface`, `stock`, `ofPie`) return `undefined` and force
+ * the caller to pass an explicit `type` override.
+ */
+export function chartKindToWriteKind(kind: ChartKind): WriteChartKind | undefined {
+  switch (kind) {
+    case "bar":
+    case "bar3D":
+      // Read-side `bar` covers both `<c:barChart barDir="bar">` and
+      // `<c:barChart barDir="col">`; the parser does not split them.
+      // Default to the more common vertical orientation; callers who
+      // need horizontal pass `type: "bar"` explicitly.
+      return "column";
+    case "line":
+    case "line3D":
+      return "line";
+    case "pie":
+    case "pie3D":
+    case "doughnut":
+      return "pie";
+    case "area":
+    case "area3D":
+      return "area";
+    case "scatter":
+      return "scatter";
+    case "bubble":
+    case "radar":
+    case "surface":
+    case "surface3D":
+    case "stock":
+    case "ofPie":
+      return undefined;
+  }
+}
+
+function pickWritableKind(source: Chart): WriteChartKind {
+  if (source.kinds.length === 0) {
+    throw new Error("cloneChart: source chart has no kinds; pass `options.type` explicitly");
+  }
+  for (const k of source.kinds) {
+    const mapped = chartKindToWriteKind(k);
+    if (mapped) return mapped;
+  }
+  throw new Error(
+    `cloneChart: source kind${source.kinds.length > 1 ? "s" : ""} ${source.kinds
+      .map((k) => `"${k}"`)
+      .join(
+        ", ",
+      )} cannot be authored on the write side; pass \`options.type\` to coerce a renderable kind`,
+  );
+}
+
+function resolveTitle(
+  sourceTitle: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return sourceTitle;
+  if (override === null) return undefined;
+  return override;
+}
+
+function buildSeriesFromSource(
+  source: Chart,
+  overrides: ReadonlyArray<CloneChartSeriesOverride | undefined> | undefined,
+): ChartSeries[] {
+  const sourceSeries = source.series ?? [];
+  // The override array can be longer than the source (caller wants to
+  // append a fully-specified series). Walk the union of both lengths.
+  const length = Math.max(sourceSeries.length, overrides?.length ?? 0);
+  const out: ChartSeries[] = [];
+
+  for (let i = 0; i < length; i++) {
+    const src: ChartSeriesInfo | undefined = sourceSeries[i];
+    const ov = overrides?.[i];
+    const merged = mergeSeries(src, ov, i);
+    out.push(merged);
+  }
+
+  return out;
+}
+
+function mergeSeries(
+  src: ChartSeriesInfo | undefined,
+  ov: CloneChartSeriesOverride | undefined,
+  index: number,
+): ChartSeries {
+  // Resolve `values` first — it's the only mandatory field.
+  const values = ov?.values ?? src?.valuesRef;
+  if (!values) {
+    throw new Error(
+      `cloneChart: series #${index} has no values reference; provide \`seriesOverrides[${index}].values\``,
+    );
+  }
+
+  const out: ChartSeries = { values };
+
+  const name = applyOverride(src?.name, ov?.name);
+  if (name !== undefined) out.name = name;
+
+  const categories = applyOverride(src?.categoriesRef, ov?.categories);
+  if (categories !== undefined) out.categories = categories;
+
+  const color = applyOverride(src?.color, ov?.color);
+  if (color !== undefined) out.color = color;
+
+  return out;
+}
+
+/**
+ * Resolve a "source value + optional override" pair where the override
+ * may be `undefined` (no override), `null` (drop the source value), or
+ * a string (replace).
+ */
+function applyOverride(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}

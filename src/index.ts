@@ -130,6 +130,8 @@ export type {
 
 // ── Charts ─────────────────────────────────────────────────────────
 export { parseChart } from "./xlsx/chart-reader";
+export { cloneChart, chartKindToWriteKind } from "./xlsx/chart-clone";
+export type { CloneChartOptions, CloneChartSeriesOverride } from "./xlsx/chart-clone";
 export type { Chart, ChartKind, ChartSeriesInfo } from "./_types";
 
 // ── Date Utilities ─────────────────────────────────────────────────
