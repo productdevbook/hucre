@@ -1573,6 +1573,146 @@ describe("parseChart — first slice angle", () => {
   });
 });
 
+// ── parseChart — series smooth flag ───────────────────────────────
+
+describe("parseChart — series smooth flag", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces smooth=true on a <c:lineChart> series with <c:smooth val="1"/>', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+        <c:smooth val="1"/>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].smooth).toBe(true);
+  });
+
+  it("surfaces smooth=true on a <c:scatterChart> series", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:scatterChart>
+      <c:scatterStyle val="lineMarker"/>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:xVal><c:numRef><c:f>Sheet1!$A$2:$A$5</c:f></c:numRef></c:xVal>
+        <c:yVal><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:yVal>
+        <c:smooth val="1"/>
+      </c:ser>
+    </c:scatterChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].smooth).toBe(true);
+  });
+
+  it("collapses the OOXML default smooth=false to undefined", () => {
+    // Absence of <c:smooth> and `<c:smooth val="0"/>` round-trip
+    // identically through the writer's elision logic, so the parser
+    // collapses both to undefined to keep the read-side shape minimal.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+        <c:smooth val="0"/>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].smooth).toBeUndefined();
+  });
+
+  it("returns smooth undefined when <c:smooth> is absent", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].smooth).toBeUndefined();
+  });
+
+  it('also accepts the "true" / "false" boolean spelling', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+        <c:smooth val="true"/>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].smooth).toBe(true);
+  });
+
+  it("ignores <c:smooth> on chart families whose schema rejects the element", () => {
+    // The OOXML schema places <c:smooth> only on CT_LineSer and
+    // CT_ScatterSer. A bar/pie/area template carrying a stray smooth
+    // element should not surface a flag that the writer would never
+    // emit anyway.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+        <c:smooth val="1"/>
+      </c:ser>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].smooth).toBeUndefined();
+  });
+
+  it("surfaces smooth per-series independently across multi-series line charts", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+        <c:smooth val="1"/>
+      </c:ser>
+      <c:ser>
+        <c:idx val="1"/>
+        <c:val><c:numRef><c:f>Sheet1!$C$2:$C$5</c:f></c:numRef></c:val>
+        <c:smooth val="0"/>
+      </c:ser>
+      <c:ser>
+        <c:idx val="2"/>
+        <c:val><c:numRef><c:f>Sheet1!$D$2:$D$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series).toHaveLength(3);
+    expect(chart?.series?.[0].smooth).toBe(true);
+    expect(chart?.series?.[1].smooth).toBeUndefined();
+    expect(chart?.series?.[2].smooth).toBeUndefined();
+  });
+});
+
 // ── End-to-end: full XLSX with a chart ────────────────────────────
 
 /**

@@ -524,8 +524,11 @@ function buildLineChart(chart: SheetChart, sheetName: string): string {
   ];
 
   for (let i = 0; i < chart.series.length; i++) {
+    // `<c:smooth>` is required on `CT_LineSer` per the OOXML schema, so
+    // the line writer always emits the element — straight by default
+    // (`val="0"`), curved when the caller pinned `smooth: true`.
     const seriesXml = buildSeries(chart.series[i], i, sheetName, /* numericCategories */ false, {
-      smooth: false,
+      smooth: chart.series[i].smooth === true,
       dataLabels: chart.dataLabels,
     });
     children.push(seriesXml);
@@ -677,8 +680,12 @@ function buildScatterChart(chart: SheetChart, sheetName: string): string {
   ];
 
   for (let i = 0; i < chart.series.length; i++) {
+    // `<c:smooth>` is optional on `CT_ScatterSer`; emit only when the
+    // caller pinned `smooth: true`, falling back to the omit-by-default
+    // shape Excel writes for straight scatter series.
     children.push(
       buildSeries(chart.series[i], i, sheetName, /* numericCategories */ true, {
+        smooth: chart.series[i].smooth === true ? true : undefined,
         dataLabels: chart.dataLabels,
       }),
     );

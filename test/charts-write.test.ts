@@ -479,6 +479,114 @@ describe("writeChart — firstSliceAng", () => {
   });
 });
 
+// ── Smooth lines ─────────────────────────────────────────────────────
+
+describe("writeChart — series smooth flag", () => {
+  it('emits <c:smooth val="0"/> on a line series with smooth left unset (default)', () => {
+    // <c:smooth> is required on CT_LineSer per the schema, so the line
+    // writer always emits the element — straight by default.
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:smooth val="0"');
+  });
+
+  it('emits <c:smooth val="1"/> on a line series when smooth=true', () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4", smooth: true }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:smooth val="1"');
+  });
+
+  it("renders smooth per-series independently on a multi-series line chart", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [
+          { name: "Curved", values: "B2:B4", smooth: true },
+          { name: "Straight", values: "C2:C4" },
+          { name: "ExplicitFalse", values: "D2:D4", smooth: false },
+        ],
+      }),
+      "Sheet1",
+    );
+    // Three <c:smooth> elements, in series order.
+    const matches = result.chartXml.match(/c:smooth val="[01]"/g) ?? [];
+    expect(matches).toEqual(['c:smooth val="1"', 'c:smooth val="0"', 'c:smooth val="0"']);
+  });
+
+  it("omits <c:smooth> on a scatter series with smooth left unset", () => {
+    // Scatter's <c:smooth> is optional (CT_ScatterSer). Untouched
+    // scatter series stay byte-clean.
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:smooth");
+  });
+
+  it('emits <c:smooth val="1"/> on a scatter series when smooth=true', () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4", smooth: true }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:smooth val="1"');
+  });
+
+  it("ignores smooth on chart kinds whose schema rejects <c:smooth>", () => {
+    // The OOXML schema places <c:smooth> only on CT_LineSer and
+    // CT_ScatterSer. Setting smooth on a bar / column / pie / doughnut
+    // / area series must not leak the element into the output.
+    const cases: Array<["column" | "bar" | "pie" | "doughnut" | "area"]> = [
+      ["column"],
+      ["bar"],
+      ["pie"],
+      ["doughnut"],
+      ["area"],
+    ];
+    for (const [type] of cases) {
+      const result = writeChart(
+        makeChart({
+          type,
+          series: [{ values: "B2:B4", categories: "A2:A4", smooth: true }],
+        }),
+        "Sheet1",
+      );
+      expect(result.chartXml).not.toContain("c:smooth");
+    }
+  });
+
+  it("places <c:smooth> as the last child of <c:ser> (OOXML order)", () => {
+    // CT_LineSer puts <c:smooth> after <c:val>, which is itself after
+    // <c:cat>. The element must land at the tail of the series block so
+    // Excel's strict validator does not reject the file.
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ name: "Curved", values: "B2:B4", categories: "A2:A4", smooth: true }],
+      }),
+      "Sheet1",
+    );
+    const serBlock = result.chartXml.match(/<c:ser>[\s\S]*?<\/c:ser>/)![0];
+    expect(serBlock.indexOf("c:val")).toBeLessThan(serBlock.indexOf("c:smooth"));
+    expect(serBlock.indexOf("c:cat")).toBeLessThan(serBlock.indexOf("c:smooth"));
+  });
+});
+
 // ── Axis titles ──────────────────────────────────────────────────────
 
 describe("writeChart — axis titles", () => {

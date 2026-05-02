@@ -633,6 +633,18 @@ export interface ChartSeries {
    * {@link SheetChart.dataLabels} enables them.
    */
   dataLabels?: ChartDataLabels | false;
+  /**
+   * Smooth the line connecting data points using a Catmull-Rom-style
+   * spline. Maps to `<c:smooth val="..">` inside the `<c:ser>` element.
+   * Only meaningful for `line` and `scatter` charts — ignored for every
+   * other chart kind (the OOXML schema does not allow `<c:smooth>` on
+   * bar / column / pie / doughnut / area series).
+   *
+   * Default: `false` (straight-line segments). Set `true` to render the
+   * curved variant Excel offers under "Format Data Series → Line →
+   * Smoothed line".
+   */
+  smooth?: boolean;
 }
 
 /**
@@ -1422,6 +1434,14 @@ export interface ChartSeriesInfo {
    * series carries no override of its own.
    */
   dataLabels?: ChartDataLabelsInfo;
+  /**
+   * Smoothed-line flag pulled from `<c:ser><c:smooth val=".."/>`.
+   * Surfaces only on `line` / `scatter` series — the OOXML schema places
+   * `<c:smooth>` exclusively on `CT_LineSer` and `CT_ScatterSer`. `false`
+   * collapses to `undefined` because it matches the OOXML default and
+   * round-trips identically with absence of the field.
+   */
+  smooth?: boolean;
 }
 
 /**

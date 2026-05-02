@@ -1630,3 +1630,188 @@ describe("cloneChart — integration", () => {
     expect(reparsed?.holeSize).toBe(55);
   });
 });
+
+// ── cloneChart — series smooth flag ─────────────────────────────────
+
+describe("cloneChart — series smooth flag", () => {
+  function lineSource(smooth: boolean | undefined): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Tpl!$B$2:$B$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+          ...(smooth !== undefined ? { smooth } : {}),
+        },
+      ],
+    };
+  }
+
+  it("inherits smooth=true from a line series source", () => {
+    const clone = cloneChart(lineSource(true), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("line");
+    expect(clone.series[0].smooth).toBe(true);
+  });
+
+  it("does not surface smooth when the source series did not declare it", () => {
+    const clone = cloneChart(lineSource(undefined), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.series[0].smooth).toBeUndefined();
+  });
+
+  it("lets seriesOverrides[i].smooth=true override a source missing the flag", () => {
+    const clone = cloneChart(lineSource(undefined), {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ smooth: true }],
+    });
+    expect(clone.series[0].smooth).toBe(true);
+  });
+
+  it("lets seriesOverrides[i].smooth=null drop an inherited smooth flag", () => {
+    const clone = cloneChart(lineSource(true), {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ smooth: null }],
+    });
+    expect(clone.series[0].smooth).toBeUndefined();
+  });
+
+  it("lets seriesOverrides[i].smooth=false drop an inherited smooth flag", () => {
+    // `false` collapses to undefined for symmetry with the OOXML
+    // default — straight segments and absence round-trip identically.
+    const clone = cloneChart(lineSource(true), {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ smooth: false }],
+    });
+    expect(clone.series[0].smooth).toBeUndefined();
+  });
+
+  it("carries smooth onto a scatter clone", () => {
+    const scatterSource: Chart = {
+      kinds: ["scatter"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "scatter",
+          index: 0,
+          valuesRef: "Tpl!$B$2:$B$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+          smooth: true,
+        },
+      ],
+    };
+    const clone = cloneChart(scatterSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("scatter");
+    expect(clone.series[0].smooth).toBe(true);
+  });
+
+  it("drops inherited smooth when the resolved type is not line/scatter", () => {
+    // A line template flattened to area / column / pie / doughnut must
+    // not leak <c:smooth> — the OOXML schema rejects it on every other
+    // chart family.
+    for (const type of ["column", "bar", "pie", "doughnut", "area"] as const) {
+      const clone = cloneChart(lineSource(true), {
+        anchor: { from: { row: 0, col: 0 } },
+        type,
+        seriesOverrides: [{ values: "Sheet1!$B$2:$B$5" }],
+      });
+      expect(clone.type).toBe(type);
+      expect(clone.series[0].smooth).toBeUndefined();
+    }
+  });
+
+  it("drops smooth from explicit options.series when the resolved type is not line/scatter", () => {
+    // Replacing the entire series array via options.series still goes
+    // through the post-build smooth-strip, so a stray smooth flag does
+    // not leak into a non-line/scatter target.
+    const clone = cloneChart(lineSource(true), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+      series: [{ values: "Sheet1!$B$2:$B$5", smooth: true }],
+    });
+    expect(clone.series[0].smooth).toBeUndefined();
+  });
+
+  it("propagates smooth across a multi-series line clone", () => {
+    const multi: Chart = {
+      kinds: ["line"],
+      seriesCount: 3,
+      series: [
+        { kind: "line", index: 0, valuesRef: "Tpl!$B$2:$B$5", smooth: true },
+        { kind: "line", index: 1, valuesRef: "Tpl!$C$2:$C$5" },
+        { kind: "line", index: 2, valuesRef: "Tpl!$D$2:$D$5", smooth: true },
+      ],
+    };
+    const clone = cloneChart(multi, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.series[0].smooth).toBe(true);
+    expect(clone.series[1].smooth).toBeUndefined();
+    expect(clone.series[2].smooth).toBe(true);
+  });
+
+  it("round-trips smooth through parseChart → cloneChart → writeXlsx → parseChart", async () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:grouping val="standard"/>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx><c:v>Curved</c:v></c:tx>
+          <c:cat><c:strRef><c:f>Tpl!$A$2:$A$5</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+          <c:smooth val="1"/>
+        </c:ser>
+        <c:ser>
+          <c:idx val="1"/>
+          <c:tx><c:v>Straight</c:v></c:tx>
+          <c:cat><c:strRef><c:f>Tpl!$A$2:$A$5</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Tpl!$C$2:$C$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:lineChart>
+      <c:catAx><c:axId val="111"/></c:catAx>
+      <c:valAx><c:axId val="222"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const source = parseChart(sourceXml)!;
+    expect(source.series?.[0].smooth).toBe(true);
+    expect(source.series?.[1].smooth).toBeUndefined();
+
+    const sheetChart: SheetChart = cloneChart(source, {
+      anchor: { from: { row: 14, col: 0 } },
+      seriesOverrides: [{ values: "Dashboard!$B$2:$B$5" }, { values: "Dashboard!$C$2:$C$5" }],
+    });
+    expect(sheetChart.type).toBe("line");
+    expect(sheetChart.series[0].smooth).toBe(true);
+    expect(sheetChart.series[1].smooth).toBeUndefined();
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Dashboard",
+          rows: [
+            ["A", "B", "C"],
+            [1, 2, 3],
+            [4, 5, 6],
+            [7, 8, 9],
+            [10, 11, 12],
+          ],
+          charts: [sheetChart],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    // First series surfaces smooth=1, second falls back to the default 0.
+    const matches = written.match(/c:smooth val="[01]"/g) ?? [];
+    expect(matches).toEqual(['c:smooth val="1"', 'c:smooth val="0"']);
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.series?.[0].smooth).toBe(true);
+    expect(reparsed?.series?.[1].smooth).toBeUndefined();
+  });
+});

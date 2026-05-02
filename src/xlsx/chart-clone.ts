@@ -50,6 +50,14 @@ export interface CloneChartSeriesOverride {
    * inherited block wholesale.
    */
   dataLabels?: ChartDataLabels | false | null;
+  /**
+   * Smoothed-line override. `undefined` (or omitted) inherits the source
+   * series' `smooth`; `null` drops the inherited flag (the cloned series
+   * renders straight); a `boolean` replaces it wholesale. Only meaningful
+   * for `line` and `scatter` clones — silently dropped from the output
+   * when the resolved chart type is anything else.
+   */
+  smooth?: boolean | null;
 }
 
 /**
@@ -196,6 +204,16 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     series = options.series.map((s) => ({ ...s }));
   } else {
     series = buildSeriesFromSource(source, options.seriesOverrides);
+  }
+
+  // `<c:smooth>` only lives on line / scatter series; drop the flag from
+  // every other resolved type so a doughnut → column flatten (or any
+  // other coercion) does not leak `smooth` into a chart kind whose
+  // schema rejects the element.
+  if (type !== "line" && type !== "scatter") {
+    for (const s of series) {
+      if (s.smooth !== undefined) delete s.smooth;
+    }
   }
 
   if (series.length === 0) {
@@ -404,7 +422,32 @@ function mergeSeries(
   const dataLabels = resolveSeriesDataLabels(src?.dataLabels, ov?.dataLabels);
   if (dataLabels !== undefined) out.dataLabels = dataLabels;
 
+  const smooth = resolveSmooth(src?.smooth, ov?.smooth);
+  if (smooth !== undefined) out.smooth = smooth;
+
   return out;
+}
+
+/**
+ * Resolve a per-series smooth-line override.
+ *
+ * `undefined` → inherit the source series' `smooth`.
+ * `null`      → drop the inherited flag (the cloned series renders straight).
+ * `boolean`   → replace.
+ *
+ * Only the `true` outcome materializes on the result — `false` collapses
+ * to `undefined` so absence and the OOXML default round-trip identically
+ * (the writer emits straight segments either way).
+ */
+function resolveSmooth(
+  sourceSmooth: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) {
+    return sourceSmooth === true ? true : undefined;
+  }
+  if (override === null) return undefined;
+  return override === true ? true : undefined;
 }
 
 /**

@@ -415,7 +415,32 @@ function parseSeries(ser: XmlElement, kind: ChartKind, index: number): ChartSeri
     if (parsed) out.dataLabels = parsed;
   }
 
+  // `<c:smooth>` lives on `CT_LineSer` and `CT_ScatterSer` only — every
+  // other chart family rejects the element. Surface it just for those
+  // two kinds so a corrupt template carrying `<c:smooth>` on a bar/pie
+  // series does not silently flip a flag that the writer would never
+  // emit anyway.
+  if (kind === "line" || kind === "line3D" || kind === "scatter") {
+    const smooth = parseSmooth(ser);
+    if (smooth !== undefined) out.smooth = smooth;
+  }
+
   return out;
+}
+
+/**
+ * Pull `<c:smooth val=".."/>` off a series element. Returns `undefined`
+ * when the attribute is absent, malformed, or carries the OOXML default
+ * `false` — absence and `false` round-trip identically through the
+ * writer's elision logic, so collapsing them keeps the parsed shape
+ * minimal.
+ */
+function parseSmooth(ser: XmlElement): boolean | undefined {
+  const el = findChild(ser, "smooth");
+  if (!el) return undefined;
+  const v = readBoolAttr(el);
+  if (v !== true) return undefined;
+  return true;
 }
 
 // ── Data Labels ───────────────────────────────────────────────────
