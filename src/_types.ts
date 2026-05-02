@@ -461,6 +461,10 @@ export interface SheetTextBox {
     fillColor?: string;
     borderColor?: string;
   };
+  /** Alternative text for screen readers (lands in xdr:cNvPr/@descr). */
+  altText?: string;
+  /** Title/caption for the shape (lands in xdr:cNvPr/@title). */
+  title?: string;
 }
 
 // ── Threaded Comments (Excel 365+) ─────────────────────────────────
@@ -526,6 +530,64 @@ export interface SheetImage {
   };
   width?: number;
   height?: number;
+  /** Alternative text for screen readers (lands in xdr:cNvPr/@descr). */
+  altText?: string;
+  /** Title/caption for the image (lands in xdr:cNvPr/@title). */
+  title?: string;
+}
+
+// ── Accessibility ──────────────────────────────────────────────────
+
+/**
+ * Per-sheet accessibility metadata. Hints to screen readers and
+ * input to {@link audit} from the `hucre/a11y` entry point.
+ */
+export interface SheetA11y {
+  /**
+   * Short, human-readable summary of the sheet's purpose. If the
+   * workbook does not already declare a `properties.description`,
+   * the first non-empty summary across the workbook is copied there
+   * so screen readers announce it when the file is opened.
+   */
+  summary?: string;
+  /**
+   * 0-based row index that should be treated as the column-header
+   * row. Used by the audit to verify a header is present and to
+   * cross-check tables that span the same range.
+   */
+  headerRow?: number;
+}
+
+/** Severity of an accessibility finding. */
+export type A11ySeverity = "error" | "warning" | "info";
+
+/** Stable code identifying an accessibility issue. */
+export type A11yCode =
+  | "no-doc-title"
+  | "no-doc-description"
+  | "no-header-row"
+  | "missing-alt-text"
+  | "merged-header-row"
+  | "low-contrast"
+  | "empty-sheet"
+  | "blank-row-in-data";
+
+/** Pinpoint where an issue applies. */
+export interface A11yLocation {
+  sheet?: string;
+  /** Cell reference like "B5" or range like "A1:D1". */
+  ref?: string;
+  /** Image index inside `sheet.images`. */
+  image?: number;
+  /** Text-box index inside `sheet.textBoxes`. */
+  textBox?: number;
+}
+
+export interface A11yIssue {
+  type: A11ySeverity;
+  code: A11yCode;
+  message: string;
+  location?: A11yLocation;
 }
 
 // ── Sheet Protection ───────────────────────────────────────────────
@@ -651,6 +713,8 @@ export interface Sheet {
    * the workbook-wide person list (`Workbook.persons`).
    */
   threadedComments?: ThreadedComment[];
+  /** Accessibility metadata for screen readers and the `audit` helper. */
+  a11y?: SheetA11y;
 }
 
 // ── Workbook Properties ────────────────────────────────────────────
@@ -669,6 +733,51 @@ export interface WorkbookProperties {
   category?: string;
   /** Custom properties */
   custom?: Record<string, string | number | boolean | Date>;
+}
+
+// ── External Workbook Links ────────────────────────────────────────
+
+/** Cached cell type as encoded in `cell/@t`. Mirrors OOXML cell type codes. */
+export type ExternalCellType = "n" | "s" | "b" | "e" | "str";
+
+export interface ExternalCachedCell {
+  /** A1-style reference within the external sheet. */
+  ref: string;
+  type: ExternalCellType;
+  /** Cached value. Strings include error text for `t="e"`. */
+  value: string | number | boolean;
+}
+
+export interface ExternalSheetData {
+  /** 0-based index into the external workbook's sheet list. */
+  sheetId: number;
+  cells: ExternalCachedCell[];
+}
+
+export interface ExternalDefinedName {
+  name: string;
+  refersTo?: string;
+  /** Sheet-local index when present; omitted for workbook-level names. */
+  sheetId?: number;
+}
+
+/**
+ * A reference to another workbook resolved via
+ * `xl/externalLinks/externalLinkN.xml`. Cached values follow Excel's
+ * formula syntax `[N]Sheet!Ref`, where `N` is this entry's 1-based
+ * position in `Workbook.externalLinks`.
+ */
+export interface ExternalLink {
+  /** Target path of the linked workbook (URL, file path, or local entry). */
+  target: string;
+  /** Almost always `"External"`. Mirrors the `TargetMode` attribute. */
+  targetMode?: "External" | "Internal";
+  /** External workbook's sheets in declaration order. */
+  sheetNames: string[];
+  /** Cached cell values, keyed by external sheet id. */
+  sheetData: ExternalSheetData[];
+  /** Defined names declared in the external workbook. */
+  definedNames?: ExternalDefinedName[];
 }
 
 // ── Workbook ───────────────────────────────────────────────────────
@@ -695,6 +804,12 @@ export interface Workbook {
    * Each `ThreadedComment.personId` resolves against this list.
    */
   persons?: ThreadedCommentPerson[];
+  /**
+   * External workbook references, resolved from
+   * `xl/externalLinks/externalLinkN.xml`. The 1-based position in this
+   * array matches the `[N]` prefix used in formulas like `[1]Sheet1!A1`.
+   */
+  externalLinks?: ExternalLink[];
 }
 
 // ── Read Options ───────────────────────────────────────────────────
@@ -818,6 +933,8 @@ export interface WriteSheet {
   textBoxes?: SheetTextBox[];
   /** Excel 365 threaded comments for this sheet. */
   threadedComments?: ThreadedComment[];
+  /** Accessibility metadata for screen readers and the `audit` helper. */
+  a11y?: SheetA11y;
 }
 
 // ── Outline Properties ────────────────────────────────────────────

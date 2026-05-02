@@ -312,6 +312,37 @@ workbook.sheets[0].rows[0][0] = "Updated!";
 const output = await saveXlsx(workbook); // Charts, VBA, themes preserved
 ```
 
+### External Workbook References
+
+`[N]Sheet!Ref` references to other workbooks are read into a typed
+`workbook.externalLinks` model and re-declared on roundtrip — without
+this the `<externalReferences>` block and the matching relationship
+disappear from `xl/workbook.xml.rels`, leaving Excel with orphan
+`externalLinkN.xml` parts that it ignores.
+
+```ts
+import { readXlsx, parseExternalLink } from "hucre";
+
+const wb = await readXlsx(buf);
+for (const link of wb.externalLinks ?? []) {
+  console.log(link.target, link.targetMode, link.sheetNames);
+  for (const sheet of link.sheetData) {
+    for (const cell of sheet.cells) {
+      // cell.type ∈ "n" | "s" | "b" | "e" | "str"
+      console.log(cell.ref, cell.type, cell.value);
+    }
+  }
+}
+
+// Standalone parser when you already have the XML strings
+const link = parseExternalLink(externalLinkXml, externalLinkRelsXml);
+```
+
+The 1-based index in `workbook.externalLinks` matches the `[N]` prefix
+used by formulas like `[1]Sheet1!A1`. Cached `t="s"` values stay as
+shared-string indices into the _external_ workbook (which hucre cannot
+dereference); resolved strings live in the linked file.
+
 ### Unified API
 
 Auto-detect format and work with simple helpers:
@@ -458,6 +489,57 @@ wb.sheets[0].cells?.get("1,0")?.checkbox; // true
 
 This is the first JS/TS implementation of native checkboxes — only `XlsxWriter`
 (Python) and `rust_xlsxwriter` had it before.
+
+### Accessibility (WCAG 2.1 AA)
+
+Generate screen-reader-friendly spreadsheets and audit them for common
+WCAG 2.1 AA issues. Alt text on images and text boxes round-trips
+through `xdr:cNvPr/@descr` and `@title` (the OOXML attributes Excel and
+assistive tech read), and per-sheet summaries can promote the first
+non-empty value into `docProps/core.xml` so screen readers announce it
+on file open.
+
+```ts
+import { writeXlsx, a11y, readXlsx } from "hucre";
+
+const xlsx = await writeXlsx({
+  sheets: [
+    {
+      name: "Q1 Sales",
+      rows: [
+        ["Region", "Revenue"],
+        ["EU", 12_400],
+      ],
+      a11y: { summary: "Quarterly sales by region", headerRow: 0 },
+      images: [
+        {
+          data: pngBytes,
+          type: "png",
+          anchor: { from: { row: 0, col: 3 } },
+          altText: "Bar chart showing 47% YoY growth",
+        },
+      ],
+    },
+  ],
+});
+
+// Audit a workbook for missing alt text, missing header rows,
+// merged headers, low contrast, and more.
+const wb = await readXlsx(xlsx);
+for (const issue of a11y.audit(wb)) {
+  console.log(issue.type, issue.code, issue.message, issue.location);
+}
+
+// Color contrast helpers (WCAG 2.1 sRGB)
+a11y.contrastRatio("0969DA", "FFFFFF"); // ≈ 4.93 (passes AA)
+a11y.relativeLuminance("808080");
+```
+
+Issue codes: `no-doc-title`, `no-doc-description`, `empty-sheet`,
+`no-header-row`, `merged-header-row`, `missing-alt-text` (error for
+images, warning for text boxes), `low-contrast`, `blank-row-in-data`.
+Tune the contrast pass with
+`audit(wb, { skipContrast, minContrast, contrastSampleLimit })`.
 
 ### Object Shorthand (XLSX / ODS)
 
@@ -725,6 +807,7 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `streamXlsxRows(input, options?)`  | AsyncGenerator yielding rows one at a time                              |
 | `XlsxStreamWriter`                 | Incremental row-by-row XLSX writing; auto-splits past `maxRowsPerSheet` |
 | `XLSX_MAX_ROWS_PER_SHEET`          | Excel hard row limit (1,048,576) — exported constant                    |
+| `parseExternalLink(xml, relsXml?)` | Parse `xl/externalLinks/externalLinkN.xml` → `ExternalLink`             |
 
 ### ODS
 
@@ -820,6 +903,15 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `colToLetter(col)`                           | `26` → "AA"                              |
 | `rangeRef(r1, c1, r2, c2)`                   | `(0,0,9,3)` → "A1:D10"                   |
 
+### Accessibility (a11y)
+
+| Function                      | Description                                                |
+| ----------------------------- | ---------------------------------------------------------- |
+| `a11y.audit(wb, options?)`    | WCAG 2.1 AA audit; returns `A11yIssue[]`                   |
+| `a11y.contrastRatio(fg, bg)`  | sRGB contrast ratio (1–21) for two hex colors              |
+| `a11y.relativeLuminance(hex)` | WCAG relative luminance (0–1) for a hex color              |
+| `a11y.applyA11ySummary(wb)`   | Promote first sheet `a11y.summary` to workbook description |
+
 ### Web Worker Helpers
 
 | Function                    | Description                                                          |
@@ -855,7 +947,7 @@ Contributions are welcome! Please [open an issue](https://github.com/productdevb
 - Formula evaluation engine
 - File encryption/decryption (AES-256, MS-OFFCRYPTO)
 - Pivot table creation
-- Threaded comments (Excel 365+)
+- Threaded comments (Excel 365+) — synthesize from a fresh write (read + roundtrip already supported)
 - Checkboxes (Excel 2024+)
 - VBA/macro injection
 - Slicers & timeline filters

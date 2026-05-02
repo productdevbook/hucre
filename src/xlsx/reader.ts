@@ -11,8 +11,10 @@ import type {
   TableDefinition,
   TableColumn,
   ThreadedCommentPerson,
+  ExternalLink,
 } from "../_types";
 import { parsePersons, parseThreadedComments } from "./threaded-comments-reader";
+import { parseExternalLink } from "./external-link-reader";
 import { ParseError, ZipError } from "../errors";
 import { ZipReader } from "../zip/reader";
 import { parseXml } from "../xml/parser";
@@ -197,6 +199,25 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
       const personsXml = decodeUtf8(await zip.extract(personsPath));
       persons = parsePersons(personsXml);
     }
+  }
+
+  // 7d. Parse external workbook links (xl/externalLinks/externalLinkN.xml).
+  // The workbook.xml.rels file declares them with Type=".../externalLink";
+  // resolve each one in declaration order so the index lines up with
+  // the `[N]` prefix used in formulas.
+  const externalLinkRels = workbookRels
+    .filter((r) => matchesRelType(r.type, "externalLink"))
+    .sort((a, b) => relIdNum(a.id) - relIdNum(b.id));
+  const externalLinks: ExternalLink[] = [];
+  for (const rel of externalLinkRels) {
+    const linkPath = resolvePath(workbookDir, rel.target);
+    if (!zip.has(linkPath)) continue;
+    const linkXml = decodeUtf8(await zip.extract(linkPath));
+    const linkRelsPath = relsPathFor(linkPath);
+    const linkRelsXml = zip.has(linkRelsPath)
+      ? decodeUtf8(await zip.extract(linkRelsPath))
+      : undefined;
+    externalLinks.push(parseExternalLink(linkXml, linkRelsXml));
   }
 
   // 8. Build a map of rId → sheet relationship for worksheet paths
@@ -395,7 +416,33 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
     workbook.persons = persons;
   }
 
+  if (externalLinks.length > 0) {
+    workbook.externalLinks = externalLinks;
+  }
+
   return workbook;
+}
+
+/**
+ * Numeric value for the trailing digits of an `rIdNN` identifier so we
+ * can sort external link relationships in declaration order. Falls
+ * back to `Infinity` when the id has no digits — keeps malformed
+ * entries last instead of throwing.
+ */
+function relIdNum(rId: string): number {
+  const m = rId.match(/(\d+)$/);
+  return m ? parseInt(m[1], 10) : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Path of the `_rels` file belonging to `partPath`. Returns
+ * `xl/externalLinks/_rels/externalLink1.xml.rels` for input
+ * `xl/externalLinks/externalLink1.xml`.
+ */
+function relsPathFor(partPath: string): string {
+  const slash = partPath.lastIndexOf("/");
+  if (slash === -1) return `_rels/${partPath}.rels`;
+  return `${partPath.slice(0, slash)}/_rels/${partPath.slice(slash + 1)}.rels`;
 }
 
 // ── Drawing / Image Extraction ────────────────────────────────────────
@@ -469,11 +516,14 @@ async function extractSheetDrawing(
         const imagePath = imageInfo.mediaPath;
         if (zip.has(imagePath)) {
           const data = await zip.extract(imagePath);
-          images.push({
+          const img: SheetImage = {
             data,
             type: imageInfo.type,
             anchor: imageInfo.anchor,
-          });
+          };
+          if (imageInfo.altText !== undefined) img.altText = imageInfo.altText;
+          if (imageInfo.title !== undefined) img.title = imageInfo.title;
+          images.push(img);
         }
       }
     } else if (local === "oneCellAnchor") {
@@ -489,6 +539,8 @@ async function extractSheetDrawing(
           };
           if (imageInfo.width !== undefined) img.width = imageInfo.width;
           if (imageInfo.height !== undefined) img.height = imageInfo.height;
+          if (imageInfo.altText !== undefined) img.altText = imageInfo.altText;
+          if (imageInfo.title !== undefined) img.title = imageInfo.title;
           images.push(img);
         }
       }
@@ -506,12 +558,16 @@ function parseTwoCellAnchor(
   mediaPath: string;
   type: SheetImage["type"];
   anchor: SheetImage["anchor"];
+  altText?: string;
+  title?: string;
 } | null {
   let fromRow = 0;
   let fromCol = 0;
   let toRow = 0;
   let toCol = 0;
   let embedId: string | undefined;
+  let altText: string | undefined;
+  let title: string | undefined;
 
   for (const child of el.children) {
     if (typeof child === "string") continue;
@@ -533,6 +589,9 @@ function parseTwoCellAnchor(
       toCol = pos.col;
     } else if (local === "pic") {
       embedId = findBlipEmbed(c);
+      const meta = findCNvPrMeta(c, "nvPicPr");
+      altText = meta.altText;
+      title = meta.title;
     }
   }
 
@@ -545,7 +604,13 @@ function parseTwoCellAnchor(
   const ext = mediaPath.split(".").pop()?.toLowerCase() ?? "";
   const imageType = EXT_TO_IMAGE_TYPE[ext] ?? "png";
 
-  return {
+  const result: {
+    mediaPath: string;
+    type: SheetImage["type"];
+    anchor: SheetImage["anchor"];
+    altText?: string;
+    title?: string;
+  } = {
     mediaPath,
     type: imageType,
     anchor: {
@@ -553,6 +618,9 @@ function parseTwoCellAnchor(
       to: { row: toRow, col: toCol },
     },
   };
+  if (altText) result.altText = altText;
+  if (title) result.title = title;
+  return result;
 }
 
 /** Parse a twoCellAnchor element that contains a textbox shape (sp with txBox="1") */
@@ -653,6 +721,11 @@ function parseTwoCellAnchorTextBox(el: { children: Array<unknown> }): SheetTextB
       to: { row: toRow, col: toCol },
     },
   };
+
+  // Pull alt text / title off cNvPr so screen-reader metadata round-trips.
+  const meta = findCNvPrMeta(spElement, "nvSpPr");
+  if (meta.altText) tb.altText = meta.altText;
+  if (meta.title) tb.title = meta.title;
 
   const style: SheetTextBox["style"] = {};
   let hasStyle = false;
@@ -764,12 +837,16 @@ function parseOneCellAnchor(
   anchor: SheetImage["anchor"];
   width?: number;
   height?: number;
+  altText?: string;
+  title?: string;
 } | null {
   let fromRow = 0;
   let fromCol = 0;
   let widthEmu = 0;
   let heightEmu = 0;
   let embedId: string | undefined;
+  let altText: string | undefined;
+  let title: string | undefined;
 
   for (const child of el.children) {
     if (typeof child === "string") continue;
@@ -791,6 +868,9 @@ function parseOneCellAnchor(
       heightEmu = Number(c.attrs["cy"]) || 0;
     } else if (local === "pic") {
       embedId = findBlipEmbed(c);
+      const meta = findCNvPrMeta(c, "nvPicPr");
+      altText = meta.altText;
+      title = meta.title;
     }
   }
 
@@ -808,6 +888,8 @@ function parseOneCellAnchor(
     anchor: SheetImage["anchor"];
     width?: number;
     height?: number;
+    altText?: string;
+    title?: string;
   } = {
     mediaPath,
     type: imageType,
@@ -822,8 +904,30 @@ function parseOneCellAnchor(
   if (heightEmu > 0) {
     result.height = Math.round(heightEmu / EMU_PER_PIXEL);
   }
+  if (altText) result.altText = altText;
+  if (title) result.title = title;
 
   return result;
+}
+
+/**
+ * Walk a `<xdr:pic>` or `<xdr:sp>` element and extract `descr=`/`title=`
+ * from its `xdr:cNvPr`. The cNvPr element lives inside an `nv*Pr`
+ * wrapper named `nvPicPr` (pictures) or `nvSpPr` (shapes). Returns
+ * empty fields when neither attribute is present.
+ */
+function findCNvPrMeta(
+  parentEl: { children: Array<unknown> },
+  wrapperName: "nvPicPr" | "nvSpPr",
+): { altText?: string; title?: string } {
+  const wrapper = findChildEl(parentEl, wrapperName);
+  if (!wrapper) return {};
+  const cNvPr = findChildEl(wrapper, "cNvPr");
+  if (!cNvPr) return {};
+  const out: { altText?: string; title?: string } = {};
+  if (cNvPr.attrs["descr"]) out.altText = cNvPr.attrs["descr"];
+  if (cNvPr.attrs["title"]) out.title = cNvPr.attrs["title"];
+  return out;
 }
 
 /** Parse row/col from an anchor position element (from or to) */

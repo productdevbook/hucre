@@ -21,6 +21,8 @@ const CT_TABLE = "application/vnd.openxmlformats-officedocument.spreadsheetml.ta
 const CT_THEME = "application/vnd.openxmlformats-officedocument.theme+xml";
 const CT_THREADED_COMMENTS = "application/vnd.ms-excel.threadedcomments+xml";
 const CT_PERSON = "application/vnd.ms-excel.person+xml";
+const CT_EXTERNAL_LINK =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml";
 
 /** Image extension → content type mapping */
 const IMAGE_CONTENT_TYPES: Record<string, string> = {
@@ -49,6 +51,11 @@ export interface ContentTypesOptions {
   threadedCommentSheetIndices?: number[];
   /** Whether `xl/persons/person.xml` is present. */
   hasPersons?: boolean;
+  /**
+   * 1-based indices of external link parts. Each entry adds an
+   * `Override` for `/xl/externalLinks/externalLinkN.xml`.
+   */
+  externalLinkIndices?: number[];
   /** Whether docProps/core.xml is present */
   hasCoreProps?: boolean;
   /** Whether docProps/app.xml is present */
@@ -203,6 +210,18 @@ export function writeContentTypes(
         ContentType: CT_PERSON,
       }),
     );
+  }
+
+  // Override for each external link
+  if (opts.externalLinkIndices) {
+    for (const idx of opts.externalLinkIndices) {
+      children.push(
+        xmlSelfClose("Override", {
+          PartName: `/xl/externalLinks/externalLink${idx}.xml`,
+          ContentType: CT_EXTERNAL_LINK,
+        }),
+      );
+    }
   }
 
   // Override for FeaturePropertyBag (Excel 2024 checkboxes)
