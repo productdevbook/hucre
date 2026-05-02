@@ -255,6 +255,21 @@ for await (const row of streamXlsxRows(buffer)) {
   console.log(row.index, row.values);
 }
 
+// Cap the number of rows yielded (preview / sampling). The underlying
+// ZIP/SAX stream is cancelled once the cap is reached, so very large
+// sheets stay cheap.
+for await (const row of streamXlsxRows(buffer, { maxRows: 100 })) {
+  console.log(row.index, row.values);
+}
+
+// Filter to an A1 range. Rows outside the row span are skipped; cells
+// outside the column span are masked to `null` (column indexes stay
+// stable). Parsing stops once a row past the end-row is observed.
+for await (const row of streamXlsxRows(buffer, { range: "B2:D1000" })) {
+  // row.values[0] === null (column A is outside)
+  // row.values[1..3] carry B/C/D
+}
+
 // Stream write — add rows incrementally
 const writer = new XlsxStreamWriter({
   name: "BigData",

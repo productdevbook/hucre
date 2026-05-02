@@ -267,6 +267,162 @@ describe("streamXlsxRows", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
+// XLSX Stream Reader — ReadOptions: maxRows / range
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("streamXlsxRows — ReadOptions filters", () => {
+  it("respects maxRows: caps the yielded row count", async () => {
+    const rows: CellValue[][] = [];
+    for (let i = 0; i < 50; i++) {
+      rows.push([`Row${i + 1}`, i + 1]);
+    }
+    const xlsx = await createTestXlsx([{ name: "Sheet1", rows }]);
+
+    const out = await collectStreamRows(streamXlsxRows(xlsx, { maxRows: 5 }));
+    expect(out).toHaveLength(5);
+    expect(out[0].values[0]).toBe("Row1");
+    expect(out[4].values[0]).toBe("Row5");
+  });
+
+  it("maxRows: 0 / undefined / negative read everything", async () => {
+    const rows: CellValue[][] = Array.from({ length: 8 }, (_, i) => [`R${i}`]);
+    const xlsx = await createTestXlsx([{ name: "Sheet1", rows }]);
+
+    const a = await collectStreamRows(streamXlsxRows(xlsx, { maxRows: 0 }));
+    const b = await collectStreamRows(streamXlsxRows(xlsx));
+    const c = await collectStreamRows(streamXlsxRows(xlsx, { maxRows: -3 }));
+
+    expect(a).toHaveLength(8);
+    expect(b).toHaveLength(8);
+    expect(c).toHaveLength(8);
+  });
+
+  it("maxRows larger than the sheet returns the whole sheet", async () => {
+    const rows: CellValue[][] = Array.from({ length: 4 }, (_, i) => [`R${i}`]);
+    const xlsx = await createTestXlsx([{ name: "Sheet1", rows }]);
+
+    const out = await collectStreamRows(streamXlsxRows(xlsx, { maxRows: 100 }));
+    expect(out).toHaveLength(4);
+  });
+
+  it("range filters rows outside the row span and masks columns", async () => {
+    // 4×4 grid; range B2:C3 keeps rows 1..2 and cols 1..2
+    const rows: CellValue[][] = [
+      ["A1", "B1", "C1", "D1"],
+      ["A2", "B2", "C2", "D2"],
+      ["A3", "B3", "C3", "D3"],
+      ["A4", "B4", "C4", "D4"],
+    ];
+    const xlsx = await createTestXlsx([{ name: "S", rows }]);
+
+    const out = await collectStreamRows(streamXlsxRows(xlsx, { range: "B2:C3" }));
+
+    // Only rows 1 and 2 (0-based) should survive.
+    expect(out).toHaveLength(2);
+    expect(out[0].index).toBe(1);
+    expect(out[1].index).toBe(2);
+    // Column 0 (A) and column 3 (D) are masked to null; B and C survive.
+    expect(out[0].values[0]).toBeNull();
+    expect(out[0].values[1]).toBe("B2");
+    expect(out[0].values[2]).toBe("C2");
+    expect(out[0].values[3]).toBeNull();
+    expect(out[1].values[1]).toBe("B3");
+    expect(out[1].values[2]).toBe("C3");
+  });
+
+  it("range supports a single-cell ref", async () => {
+    const rows: CellValue[][] = [
+      ["A1", "B1"],
+      ["A2", "B2"],
+    ];
+    const xlsx = await createTestXlsx([{ name: "S", rows }]);
+
+    const out = await collectStreamRows(streamXlsxRows(xlsx, { range: "B2" }));
+    expect(out).toHaveLength(1);
+    expect(out[0].index).toBe(1);
+    expect(out[0].values[1]).toBe("B2");
+    expect(out[0].values[0]).toBeNull();
+  });
+
+  it("range stops parsing past the end-row (early termination)", async () => {
+    // Build a wide sheet with many rows below the range so that early
+    // termination is observable through the row count.
+    const rows: CellValue[][] = [];
+    for (let i = 0; i < 200; i++) {
+      rows.push([`R${i + 1}A`, `R${i + 1}B`]);
+    }
+    const xlsx = await createTestXlsx([{ name: "S", rows }]);
+
+    // Take rows 0..2 only. Whether the parser actually short-circuits is
+    // implementation detail, but the surfaced result must be 3 rows.
+    const out = await collectStreamRows(streamXlsxRows(xlsx, { range: "A1:B3" }));
+    expect(out).toHaveLength(3);
+    expect(out[0].index).toBe(0);
+    expect(out[2].index).toBe(2);
+  });
+
+  it("range and maxRows compose: range first, maxRows caps survivors", async () => {
+    const rows: CellValue[][] = [];
+    for (let i = 0; i < 20; i++) {
+      rows.push([`R${i + 1}A`, `R${i + 1}B`, `R${i + 1}C`]);
+    }
+    const xlsx = await createTestXlsx([{ name: "S", rows }]);
+
+    // Range is rows 5..15 (11 rows, 0-based 4..14); maxRows caps to 4.
+    const out = await collectStreamRows(streamXlsxRows(xlsx, { range: "A5:B15", maxRows: 4 }));
+    expect(out).toHaveLength(4);
+    expect(out[0].index).toBe(4); // 0-based row 4 == "R5..."
+    expect(out[0].values[0]).toBe("R5A");
+    expect(out[0].values[1]).toBe("R5B");
+    // Column C (index 2) is outside the range.
+    expect(out[0].values[2]).toBeNull();
+    expect(out[3].index).toBe(7);
+  });
+
+  it("rows entirely outside the range are skipped", async () => {
+    const rows: CellValue[][] = [
+      ["A1", "B1"],
+      ["A2", "B2"],
+      ["A3", "B3"],
+      ["A4", "B4"],
+      ["A5", "B5"],
+    ];
+    const xlsx = await createTestXlsx([{ name: "S", rows }]);
+
+    const out = await collectStreamRows(streamXlsxRows(xlsx, { range: "A3:A3" }));
+    expect(out).toHaveLength(1);
+    expect(out[0].index).toBe(2);
+    expect(out[0].values[0]).toBe("A3");
+    expect(out[0].values[1]).toBeNull();
+  });
+
+  it("invalid range string throws a ParseError", async () => {
+    const xlsx = await createTestXlsx([{ name: "S", rows: [["x"]] }]);
+    await expect(async () => {
+      // Drain the generator to surface the parse step.
+      for await (const _ of streamXlsxRows(xlsx, { range: "::not-a-range::" })) {
+        // unreachable
+      }
+    }).rejects.toThrow();
+  });
+
+  it("breaking out of the consumer loop early does not throw", async () => {
+    const rows: CellValue[][] = [];
+    for (let i = 0; i < 100; i++) {
+      rows.push([`R${i}`]);
+    }
+    const xlsx = await createTestXlsx([{ name: "S", rows }]);
+
+    let seen = 0;
+    for await (const row of streamXlsxRows(xlsx)) {
+      seen++;
+      if (row.index === 2) break;
+    }
+    expect(seen).toBe(3);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
 // XLSX Stream Reader — ReadableStream Input
 // ═══════════════════════════════════════════════════════════════════════
 

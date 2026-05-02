@@ -27,6 +27,34 @@ export interface StreamRow {
   values: CellValue[];
 }
 
+// ── Range filter ────────────────────────────────────────────────────
+
+interface RangeFilter {
+  startRow: number;
+  endRow: number;
+  startCol: number;
+  endCol: number;
+}
+
+/**
+ * Parse a range reference like "A1:D10" into 0-based row/col bounds.
+ * Single-cell refs like "B2" are also accepted (start == end).
+ */
+function parseRangeFilter(ref: string): RangeFilter {
+  const parts = ref.split(":");
+  if (parts.length === 0 || parts.length > 2) {
+    throw new ParseError(`Invalid range reference: "${ref}"`);
+  }
+  const start = parseCellRef(parts[0]!);
+  const end = parts.length > 1 ? parseCellRef(parts[1]!) : start;
+  return {
+    startRow: Math.min(start.row, end.row),
+    endRow: Math.max(start.row, end.row),
+    startCol: Math.min(start.col, end.col),
+    endCol: Math.max(start.col, end.col),
+  };
+}
+
 // ── OOXML Relationship Types ─────────────────────────────────────────
 
 const REL_WORKBOOK =
@@ -341,6 +369,29 @@ function handleCloseTag(
   return null;
 }
 
+// ── Filter application ─────────────────────────────────────────────
+
+/**
+ * Apply the range filter to a freshly-yielded row. Returns the row to emit
+ * (with cells outside the column range nulled out) or `null` if the row
+ * itself falls outside the row range.
+ *
+ * Mirrors the batch reader (`parseWorksheet`): values stay aligned to
+ * their original column index, and cells outside the column window are
+ * masked to `null` rather than removed, so callers can still address
+ * `row.values[colIndex]` for columns inside the range.
+ */
+function applyRangeFilter(row: StreamRow, range: RangeFilter): StreamRow | null {
+  if (row.index < range.startRow || row.index > range.endRow) return null;
+  const len = Math.max(row.values.length, range.endCol + 1);
+  const out: CellValue[] = Array.from({ length: len }, () => null);
+  const upper = Math.min(row.values.length - 1, range.endCol);
+  for (let c = range.startCol; c <= upper; c++) {
+    out[c] = row.values[c] ?? null;
+  }
+  return { index: row.index, values: out };
+}
+
 // ── Streaming row parser via SAX (async — ReadableStream) ──────────
 
 async function* parseWorksheetRowsStreaming(
@@ -348,26 +399,84 @@ async function* parseWorksheetRowsStreaming(
   sharedStrings: SharedString[],
   styles: ParsedStyles | null,
   dateSystem: "1900" | "1904",
+  filters: { range?: RangeFilter; maxRows?: number } = {},
 ): AsyncGenerator<StreamRow, void, undefined> {
   const s = createRowSaxState();
   const pendingRows: StreamRow[] = [];
   let resolve: (() => void) | null = null;
   let done = false;
+  let aborted = false;
 
-  const parsePromise = parseSaxStream(stream, {
+  // Wrap the source reader so we can short-circuit chunk pulls (and cancel
+  // the underlying ZIP/decompression stream) once a stop condition fires.
+  // We hold the source reader exclusively here so that calling
+  // `cancel(reason)` propagates without conflicting with locks.
+  const sourceReader = stream.getReader();
+  const cancelSource = (reason?: unknown): void => {
+    sourceReader.cancel(reason).catch(() => {});
+  };
+  const cancellable = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (aborted) {
+        controller.close();
+        return;
+      }
+      try {
+        const { done: rDone, value } = await sourceReader.read();
+        if (rDone) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(value);
+      } catch (err) {
+        controller.error(err);
+      }
+    },
+    cancel(reason) {
+      cancelSource(reason);
+    },
+  });
+
+  let emittedDataRows = 0;
+  const maxRows = filters.maxRows ?? 0;
+  const range = filters.range;
+
+  const parsePromise = parseSaxStream(cancellable, {
     onOpenTag(tag, attrs) {
+      if (aborted) return;
       handleOpenTag(tag, attrs, s);
     },
     onText(text) {
+      if (aborted) return;
       handleText(text, s);
     },
     onCloseTag(tag) {
+      if (aborted) return;
       const row = handleCloseTag(tag, s, sharedStrings, styles, dateSystem);
       if (row) {
-        pendingRows.push(row);
-        if (resolve) {
-          resolve();
-          resolve = null;
+        // If the SAX-emitted row is past the range end, we can stop now —
+        // worksheet rows are written in ascending order in valid OOXML.
+        if (range && row.index > range.endRow) {
+          aborted = true;
+          cancelSource();
+          if (resolve) {
+            resolve();
+            resolve = null;
+          }
+          return;
+        }
+        const filtered = range ? applyRangeFilter(row, range) : row;
+        if (filtered) {
+          pendingRows.push(filtered);
+          emittedDataRows++;
+          if (resolve) {
+            resolve();
+            resolve = null;
+          }
+          if (maxRows > 0 && emittedDataRows >= maxRows) {
+            aborted = true;
+            cancelSource();
+          }
         }
       }
     },
@@ -379,17 +488,25 @@ async function* parseWorksheetRowsStreaming(
     }
   });
 
-  while (!done || pendingRows.length > 0) {
-    if (pendingRows.length > 0) {
-      yield pendingRows.shift()!;
-    } else if (!done) {
-      await new Promise<void>((r) => {
-        resolve = r;
-      });
+  try {
+    while (!done || pendingRows.length > 0) {
+      if (pendingRows.length > 0) {
+        yield pendingRows.shift()!;
+      } else if (!done) {
+        await new Promise<void>((r) => {
+          resolve = r;
+        });
+      }
     }
+  } finally {
+    // Release the upstream reader if the consumer abandoned the generator
+    // before the stream finished. Cancellation is idempotent — if we've
+    // already cancelled because of maxRows/range, this is a no-op.
+    aborted = true;
+    cancelSource();
   }
 
-  await parsePromise;
+  await parsePromise.catch(() => {});
 }
 
 // ── Cell value resolution (streaming — no Cell objects) ──────────────
@@ -463,6 +580,15 @@ function resolveStreamCellValue(
  * For ReadableStream input, the stream is buffered to read the ZIP
  * central directory, then the worksheet entry is stream-decompressed
  * and piped through the SAX parser in chunks.
+ *
+ * Honored {@link ReadOptions} fields:
+ * - `sheet` — target sheet (number index or name). Default: first sheet.
+ * - `dateSystem` — `"1900"` / `"1904"` / `"auto"`. Default: auto-detect.
+ * - `range` — A1-style range filter (e.g. `"B2:D10"`). Rows outside the
+ *   row span are skipped; cells outside the column span are nulled out.
+ *   Parsing stops once a row past the end-row is observed.
+ * - `maxRows` — caps the number of rows yielded. Once the cap is hit the
+ *   underlying ZIP/SAX stream is cancelled so no further work is done.
  */
 export async function* streamXlsxRows(
   input: Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>,
@@ -578,9 +704,24 @@ export async function* streamXlsxRows(
     throw new ParseError(`Invalid XLSX: missing worksheet file for sheet "${targetSheet.name}"`);
   }
 
-  // 10. Stream worksheet rows
+  // 10. Build optional row/cell filters from ReadOptions.
+  // `range` and `maxRows` mirror the batch-reader semantics: range filters
+  // both rows (skip outside) and cells (mask outside columns), maxRows
+  // caps the number of yielded rows. Both stop pulling from the worksheet
+  // stream as soon as no more rows can be emitted.
+  let rangeFilter: RangeFilter | undefined;
+  if (options?.range) {
+    rangeFilter = parseRangeFilter(options.range);
+  }
+  const maxRowsLimit =
+    typeof options?.maxRows === "number" && options.maxRows > 0 ? options.maxRows : 0;
+
+  // 11. Stream worksheet rows
   // Use streaming decompression: pipe ZIP entry through DecompressionStream
   // directly into the SAX parser, yielding rows as they complete.
   const wsStream = zip.extractStream(wsPath);
-  yield* parseWorksheetRowsStreaming(wsStream, sharedStrings, parsedStyles, dateSystem);
+  yield* parseWorksheetRowsStreaming(wsStream, sharedStrings, parsedStyles, dateSystem, {
+    range: rangeFilter,
+    maxRows: maxRowsLimit > 0 ? maxRowsLimit : undefined,
+  });
 }
