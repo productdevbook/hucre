@@ -70,19 +70,26 @@ export interface PivotWriteResult {
  * @param source - Resolved source data (header row + data rows).
  * @param cacheId - Workbook-level cacheId. Mirrors the value emitted in
  *                  `<workbook><pivotCaches><pivotCache cacheId="..."/>`.
+ * @param partIndex - 1-based global pivot index used in the file paths
+ *                    `pivotCacheDefinition{N}.xml`, `pivotCacheRecords{N}.xml`,
+ *                    and `pivotTable{N}.xml`. Required so the inter-part
+ *                    relationship `Target` attributes resolve to the right
+ *                    sibling part when more than one pivot table exists.
+ *                    Defaults to `1` for backward compatibility.
  */
 export function writePivotTable(
   pivot: WritePivotTable,
   source: ResolvedPivotSource,
   cacheId: number,
+  partIndex: number = 1,
 ): PivotWriteResult {
   const fieldsMeta = buildFieldMetadata(pivot, source);
 
   const cacheDefinitionXml = buildCacheDefinition(source, fieldsMeta);
-  const cacheDefinitionRels = buildCacheDefinitionRels();
+  const cacheDefinitionRels = buildCacheDefinitionRels(partIndex);
   const cacheRecordsXml = buildCacheRecords(source, fieldsMeta);
   const pivotTableXml = buildPivotTable(pivot, fieldsMeta, cacheId);
-  const pivotTableRels = buildPivotTableRels();
+  const pivotTableRels = buildPivotTableRels(partIndex);
 
   return {
     cacheDefinitionXml,
@@ -360,12 +367,12 @@ function buildCacheField(
   ]);
 }
 
-function buildCacheDefinitionRels(): string {
+function buildCacheDefinitionRels(partIndex: number): string {
   return xmlDocument("Relationships", { xmlns: NS_RELATIONSHIPS }, [
     xmlSelfClose("Relationship", {
       Id: "rId1",
       Type: REL_PIVOT_CACHE_RECORDS,
-      Target: "pivotCacheRecords1.xml",
+      Target: `pivotCacheRecords${partIndex}.xml`,
     }),
   ]);
 }
@@ -593,12 +600,12 @@ function buildPivotFieldElement(field: FieldMeta): string {
   ]);
 }
 
-function buildPivotTableRels(): string {
+function buildPivotTableRels(partIndex: number): string {
   return xmlDocument("Relationships", { xmlns: NS_RELATIONSHIPS }, [
     xmlSelfClose("Relationship", {
       Id: "rId1",
       Type: REL_PIVOT_CACHE_DEFINITION,
-      Target: "../pivotCache/pivotCacheDefinition1.xml",
+      Target: `../pivotCache/pivotCacheDefinition${partIndex}.xml`,
     }),
   ]);
 }

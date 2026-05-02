@@ -561,6 +561,15 @@ describe("writeXlsx — pivot tables", () => {
     const wbXml = await extract(buf, "xl/workbook.xml");
     expect(wbXml).toMatch(/<pivotCache cacheId="0"[^>]*r:id="rIdPivot1"/);
     expect(wbXml).toMatch(/<pivotCache cacheId="1"[^>]*r:id="rIdPivot2"/);
+
+    // Each pivot's relationship parts must point to its own sibling
+    // cache definition / records part rather than always falling back
+    // to index "1". Without this every pivot beyond the first would
+    // resolve to the same source cache in Excel.
+    const pt2Rels = await extract(buf, "xl/pivotTables/_rels/pivotTable2.xml.rels");
+    expect(pt2Rels).toContain('Target="../pivotCache/pivotCacheDefinition2.xml"');
+    const cache2Rels = await extract(buf, "xl/pivotCache/_rels/pivotCacheDefinition2.xml.rels");
+    expect(cache2Rels).toContain('Target="pivotCacheRecords2.xml"');
   });
 
   it("supports object-style sheet data via columns + data", async () => {

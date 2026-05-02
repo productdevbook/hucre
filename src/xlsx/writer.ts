@@ -220,7 +220,7 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
       // cacheId is workbook-wide and 0-based, mirroring Excel's own
       // numbering. It also matches the pivot table's `cacheId` attr.
       const cacheId = globalIndex - 1;
-      const parts = writePivotTableParts(pivot, resolved, cacheId);
+      const parts = writePivotTableParts(pivot, resolved, cacheId, globalIndex);
       allPivotEntries.push({ parts, globalIndex });
     }
   }
