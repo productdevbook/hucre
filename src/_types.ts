@@ -678,6 +678,51 @@ export interface WorkbookProperties {
   custom?: Record<string, string | number | boolean | Date>;
 }
 
+// ── External Workbook Links ────────────────────────────────────────
+
+/** Cached cell type as encoded in `cell/@t`. Mirrors OOXML cell type codes. */
+export type ExternalCellType = "n" | "s" | "b" | "e" | "str";
+
+export interface ExternalCachedCell {
+  /** A1-style reference within the external sheet. */
+  ref: string;
+  type: ExternalCellType;
+  /** Cached value. Strings include error text for `t="e"`. */
+  value: string | number | boolean;
+}
+
+export interface ExternalSheetData {
+  /** 0-based index into the external workbook's sheet list. */
+  sheetId: number;
+  cells: ExternalCachedCell[];
+}
+
+export interface ExternalDefinedName {
+  name: string;
+  refersTo?: string;
+  /** Sheet-local index when present; omitted for workbook-level names. */
+  sheetId?: number;
+}
+
+/**
+ * A reference to another workbook resolved via
+ * `xl/externalLinks/externalLinkN.xml`. Cached values follow Excel's
+ * formula syntax `[N]Sheet!Ref`, where `N` is this entry's 1-based
+ * position in `Workbook.externalLinks`.
+ */
+export interface ExternalLink {
+  /** Target path of the linked workbook (URL, file path, or local entry). */
+  target: string;
+  /** Almost always `"External"`. Mirrors the `TargetMode` attribute. */
+  targetMode?: "External" | "Internal";
+  /** External workbook's sheets in declaration order. */
+  sheetNames: string[];
+  /** Cached cell values, keyed by external sheet id. */
+  sheetData: ExternalSheetData[];
+  /** Defined names declared in the external workbook. */
+  definedNames?: ExternalDefinedName[];
+}
+
 // ── Workbook ───────────────────────────────────────────────────────
 
 export interface Workbook {
@@ -697,6 +742,12 @@ export interface Workbook {
     lockStructure?: boolean;
     lockWindows?: boolean;
   };
+  /**
+   * External workbook references, resolved from
+   * `xl/externalLinks/externalLinkN.xml`. The 1-based position in this
+   * array matches the `[N]` prefix used in formulas like `[1]Sheet1!A1`.
+   */
+  externalLinks?: ExternalLink[];
 }
 
 // ── Read Options ───────────────────────────────────────────────────

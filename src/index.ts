@@ -77,6 +77,16 @@ export { validateWithSchema } from "./_schema";
 export * as a11y from "./a11y";
 export type { A11yIssue, A11ySeverity, A11yCode, A11yLocation, SheetA11y } from "./_types";
 
+// ── External Workbook Links ────────────────────────────────────────
+export { parseExternalLink } from "./xlsx/external-link-reader";
+export type {
+  ExternalLink,
+  ExternalCellType,
+  ExternalCachedCell,
+  ExternalSheetData,
+  ExternalDefinedName,
+} from "./_types";
+
 // ── Date Utilities ─────────────────────────────────────────────────
 export {
   serialToDate,

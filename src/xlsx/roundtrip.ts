@@ -280,6 +280,29 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     }
   }
 
+  // Collect external link parts that survived in the raw entries.
+  // Roundtrip preserves the externalLinkN.xml bodies and their _rels;
+  // the workbook.xml + workbook.xml.rels are regenerated and need to
+  // re-declare each link so Excel keeps the references.
+  const externalLinkIndices: number[] = [];
+  for (const path of workbook._rawEntries.keys()) {
+    const m = path.match(/^xl\/externalLinks\/externalLink(\d+)\.xml$/i);
+    if (m) externalLinkIndices.push(parseInt(m[1], 10));
+  }
+  externalLinkIndices.sort((a, b) => a - b);
+  // rIds for external link relationships: assigned after all
+  // sheet/styles/sharedStrings/theme/macros/featurePropertyBag rIds.
+  const externalLinkRelStart = computeExternalLinkRelStart(
+    writeSheets.length,
+    hasSharedStrings,
+    !!workbook.hasMacros,
+    false, // featurePropertyBag — not yet roundtripped
+  );
+  const externalLinkRels = externalLinkIndices.map((idx, i) => ({
+    rId: `rId${externalLinkRelStart + i}`,
+    target: `externalLinks/externalLink${idx}.xml`,
+  }));
+
   // Build ZIP archive
   const zip = new ZipWriter();
 
@@ -324,6 +347,7 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     imageExtensions: imageExtensions.size > 0 ? imageExtensions : undefined,
     commentIndices: commentIndices.length > 0 ? commentIndices : undefined,
     tableIndices: allTableIndices.length > 0 ? allTableIndices : undefined,
+    externalLinkIndices: externalLinkIndices.length > 0 ? externalLinkIndices : undefined,
     hasCoreProps: true,
     hasAppProps: true,
     hasMacros: workbook.hasMacros,
@@ -347,6 +371,8 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
         allNamedRanges.length > 0 ? allNamedRanges : undefined,
         dateSystem,
         activeSheet,
+        undefined,
+        externalLinkRels.length > 0 ? externalLinkRels : undefined,
       ),
     ),
   );
@@ -354,7 +380,15 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
   // xl/_rels/workbook.xml.rels
   zip.add(
     "xl/_rels/workbook.xml.rels",
-    encoder.encode(writeWorkbookRels(writeSheets.length, hasSharedStrings, workbook.hasMacros)),
+    encoder.encode(
+      writeWorkbookRels(
+        writeSheets.length,
+        hasSharedStrings,
+        workbook.hasMacros,
+        false,
+        externalLinkRels.length > 0 ? externalLinkRels : undefined,
+      ),
+    ),
   );
 
   // xl/styles.xml
@@ -473,6 +507,28 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Mirror the `nextRid` counter inside `writeWorkbookRels` to determine
+ * the starting rId for external link relationships. Keep this in sync
+ * with `writeWorkbookRels` — order is: worksheets, styles, optional
+ * sharedStrings, theme, optional vbaProject, optional FeaturePropertyBag,
+ * then externalLinks.
+ */
+function computeExternalLinkRelStart(
+  sheetCount: number,
+  hasSharedStrings: boolean,
+  hasMacros: boolean,
+  hasFeaturePropertyBag: boolean,
+): number {
+  let next = sheetCount + 1; // worksheets occupy rId1..rId{sheetCount}
+  next++; // styles
+  if (hasSharedStrings) next++;
+  next++; // theme
+  if (hasMacros) next++;
+  if (hasFeaturePropertyBag) next++;
+  return next;
+}
 
 /**
  * Build the full list of named ranges, merging user-defined ranges with
