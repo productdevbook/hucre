@@ -232,6 +232,139 @@ describe("writeChart", () => {
   );
 });
 
+// ── Axis titles ──────────────────────────────────────────────────────
+
+describe("writeChart — axis titles", () => {
+  it("emits a <c:title> inside <c:catAx> when axes.x.title is set", () => {
+    const result = writeChart(
+      makeChart({
+        axes: { x: { title: "Quarter" } },
+      }),
+      "Sheet1",
+    );
+    // The axis title lives inside c:catAx, not at chart level.
+    expect(result.chartXml).toContain("<c:catAx>");
+    // Either form is fine, but the literal label must be present.
+    expect(result.chartXml).toContain("Quarter");
+    // catAx must contain the title (between catAx open and its close).
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/);
+    expect(catAxBlock).not.toBeNull();
+    expect(catAxBlock![0]).toContain("c:title");
+    expect(catAxBlock![0]).toContain("Quarter");
+  });
+
+  it("emits a <c:title> inside <c:valAx> when axes.y.title is set", () => {
+    const result = writeChart(
+      makeChart({
+        axes: { y: { title: "Revenue (USD)" } },
+      }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/);
+    expect(valAxBlock).not.toBeNull();
+    expect(valAxBlock![0]).toContain("c:title");
+    expect(valAxBlock![0]).toContain("Revenue (USD)");
+  });
+
+  it("places axis titles after axPos but before crossAx (OOXML order)", () => {
+    const result = writeChart(
+      makeChart({
+        axes: { x: { title: "X" }, y: { title: "Y" } },
+      }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const axPosIdx = catAxBlock.indexOf("c:axPos");
+    const titleIdx = catAxBlock.indexOf("<c:title>");
+    const crossAxIdx = catAxBlock.indexOf("c:crossAx");
+    expect(axPosIdx).toBeGreaterThanOrEqual(0);
+    expect(titleIdx).toBeGreaterThan(axPosIdx);
+    expect(crossAxIdx).toBeGreaterThan(titleIdx);
+  });
+
+  it("escapes XML-special characters in axis titles", () => {
+    const result = writeChart(
+      makeChart({
+        axes: { x: { title: 'A & "B" <C>' } },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('A &amp; "B" &lt;C&gt;');
+    expect(result.chartXml).not.toContain("<C>");
+  });
+
+  it("drops empty / whitespace-only axis titles", () => {
+    const result = writeChart(
+      makeChart({
+        axes: { x: { title: "   " }, y: { title: "" } },
+      }),
+      "Sheet1",
+    );
+    // No title element should be emitted inside either axis.
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(catAxBlock).not.toContain("c:title");
+    expect(valAxBlock).not.toContain("c:title");
+  });
+
+  it("works for line and area charts (which share the bar axis builder)", () => {
+    for (const type of ["line", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, axes: { x: { title: "Date" }, y: { title: "Score" } } }),
+        "Sheet1",
+      );
+      expect(result.chartXml).toContain("Date");
+      expect(result.chartXml).toContain("Score");
+      const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+      const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+      expect(catAxBlock).toContain("c:title");
+      expect(valAxBlock).toContain("c:title");
+    }
+  });
+
+  it("emits scatter axis titles on the X (b) and Y (l) value axes respectively", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { x: { title: "X-Time" }, y: { title: "Y-Mag" } },
+      }),
+      "Sheet1",
+    );
+    const valAxBlocks = [...result.chartXml.matchAll(/<c:valAx>[\s\S]*?<\/c:valAx>/g)].map(
+      (m) => m[0],
+    );
+    expect(valAxBlocks).toHaveLength(2);
+    // First valAx is the X axis (axPos="b"), second is Y (axPos="l").
+    expect(valAxBlocks[0]).toContain('c:axPos val="b"');
+    expect(valAxBlocks[0]).toContain("X-Time");
+    expect(valAxBlocks[1]).toContain('c:axPos val="l"');
+    expect(valAxBlocks[1]).toContain("Y-Mag");
+  });
+
+  it("skips axes for pie charts even when axes.x is set", () => {
+    const result = writeChart(
+      makeChart({
+        type: "pie",
+        axes: { x: { title: "Ignored" } },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:catAx");
+    expect(result.chartXml).not.toContain("c:valAx");
+    expect(result.chartXml).not.toContain("Ignored");
+  });
+
+  it("renders well-formed XML when both axes are titled", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "X" }, y: { title: "Y" } } }),
+      "Sheet1",
+    );
+    const doc = parseXml(result.chartXml);
+    expect(doc).toBeTruthy();
+  });
+});
+
 describe("chartKindElement", () => {
   it("maps each chart kind to the matching DrawingML element", () => {
     expect(chartKindElement("bar")).toBe("c:barChart");

@@ -258,6 +258,94 @@ describe("cloneChart — series overrides", () => {
   });
 });
 
+// ── cloneChart — axis titles ────────────────────────────────────────
+
+describe("cloneChart — axis titles", () => {
+  const sourceWithAxes: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: { x: { title: "Quarter" }, y: { title: "Revenue" } },
+  };
+
+  it("inherits the source's axes when no override is given", () => {
+    const clone = cloneChart(sourceWithAxes, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes).toEqual({
+      x: { title: "Quarter" },
+      y: { title: "Revenue" },
+    });
+  });
+
+  it("does not set axes when the source has none", () => {
+    const noAxes: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(noAxes, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("replaces a single axis title via override", () => {
+    const clone = cloneChart(sourceWithAxes, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { title: "Period" } },
+    });
+    expect(clone.axes).toEqual({
+      x: { title: "Period" },
+      y: { title: "Revenue" },
+    });
+  });
+
+  it("drops a source axis title when override is null", () => {
+    const clone = cloneChart(sourceWithAxes, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { title: null } },
+    });
+    expect(clone.axes).toEqual({ x: { title: "Quarter" } });
+    expect(clone.axes?.y).toBeUndefined();
+  });
+
+  it("adds an axis title that the source did not declare", () => {
+    const partial: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { title: "Quarter" } },
+    };
+    const clone = cloneChart(partial, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { title: "Revenue" } },
+    });
+    expect(clone.axes).toEqual({
+      x: { title: "Quarter" },
+      y: { title: "Revenue" },
+    });
+  });
+
+  it("drops axes silently when the resolved chart type is pie", () => {
+    const pieSource: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [{ kind: "pie", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      // Pie charts shouldn't carry axes, but the parser cannot know
+      // ahead of time — make sure cloneChart strips them on output.
+      axes: { x: { title: "Spurious" }, y: { title: "Spurious Y" } },
+    };
+    const clone = cloneChart(pieSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("pie");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("returns axes undefined when both x and y resolve to undefined", () => {
+    const clone = cloneChart(sourceWithAxes, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { title: null }, y: { title: null } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+});
+
 // ── cloneChart — round-trip with parseChart and writeXlsx ────────────
 
 describe("cloneChart — integration", () => {
@@ -352,5 +440,60 @@ describe("cloneChart — integration", () => {
     expect(clones[2].series[0].color).toBe("F76808");
     // Categories carry through unchanged.
     expect(clones.every((c) => c.series[0].categories === "Tpl!$A$2:$A$5")).toBe(true);
+  });
+
+  it("round-trips axis titles through parseChart → cloneChart → writeXlsx → parseChart", async () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx><c:v>Revenue</c:v></c:tx>
+          <c:cat><c:strRef><c:f>Tpl!$A$2:$A$5</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+      <c:catAx>
+        <c:axId val="111"/>
+        <c:title><c:tx><c:rich><a:p><a:r><a:t>Quarter</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      </c:catAx>
+      <c:valAx>
+        <c:axId val="222"/>
+        <c:title><c:tx><c:rich><a:p><a:r><a:t>Revenue (USD)</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const source = parseChart(sourceXml)!;
+    expect(source.axes).toEqual({ x: { title: "Quarter" }, y: { title: "Revenue (USD)" } });
+
+    const sheetChart: SheetChart = cloneChart(source, {
+      anchor: { from: { row: 14, col: 0 } },
+      seriesOverrides: [{ values: "Dashboard!$B$2:$B$5" }],
+    });
+    expect(sheetChart.axes).toEqual({
+      x: { title: "Quarter" },
+      y: { title: "Revenue (USD)" },
+    });
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Dashboard",
+          rows: [["Header"], [1], [2], [3], [4]],
+          charts: [sheetChart],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes).toEqual({
+      x: { title: "Quarter" },
+      y: { title: "Revenue (USD)" },
+    });
   });
 });

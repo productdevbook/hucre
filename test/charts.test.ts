@@ -333,6 +333,162 @@ describe("parseChart — series introspection", () => {
   });
 });
 
+// ── parseChart — axis titles ──────────────────────────────────────
+
+describe("parseChart — axis titles", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  it("surfaces x and y axis titles from <c:catAx>/<c:valAx> rich text", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:title><c:tx><c:rich><a:p><a:r><a:t>Quarter</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      </c:catAx>
+      <c:valAx>
+        <c:axId val="2"/>
+        <c:title><c:tx><c:rich><a:p><a:r><a:t>Revenue (USD)</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toEqual({
+      x: { title: "Quarter" },
+      y: { title: "Revenue (USD)" },
+    });
+  });
+
+  it("does not surface axes when neither axis carries a title", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("surfaces only the populated axis when one side is titled", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx>
+        <c:axId val="2"/>
+        <c:title><c:tx><c:rich><a:p><a:r><a:t>Revenue</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toEqual({ y: { title: "Revenue" } });
+    expect(chart?.axes?.x).toBeUndefined();
+  });
+
+  it("falls back to a strRef cache when the title is a formula", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:valAx>
+        <c:axId val="2"/>
+        <c:title>
+          <c:tx>
+            <c:strRef>
+              <c:f>Sheet1!$A$1</c:f>
+              <c:strCache>
+                <c:ptCount val="1"/>
+                <c:pt idx="0"><c:v>Cached Y Label</c:v></c:pt>
+              </c:strCache>
+            </c:strRef>
+          </c:tx>
+        </c:title>
+      </c:valAx>
+      <c:catAx><c:axId val="1"/></c:catAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.title).toBe("Cached Y Label");
+  });
+
+  it("maps scatter axes to x = first valAx, y = second valAx", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:scatterChart><c:ser><c:idx val="0"/></c:ser></c:scatterChart>
+      <c:valAx>
+        <c:axId val="1"/>
+        <c:axPos val="b"/>
+        <c:title><c:tx><c:rich><a:p><a:r><a:t>Time</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      </c:valAx>
+      <c:valAx>
+        <c:axId val="2"/>
+        <c:axPos val="l"/>
+        <c:title><c:tx><c:rich><a:p><a:r><a:t>Magnitude</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toEqual({
+      x: { title: "Time" },
+      y: { title: "Magnitude" },
+    });
+  });
+
+  it("ignores empty/whitespace-only axis titles", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:title><c:tx><c:rich><a:p><a:r><a:t>   </a:t></a:r></a:p></c:rich></c:tx></c:title>
+      </c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("joins multi-run rich titles into a single string", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:title>
+          <c:tx>
+            <c:rich>
+              <a:p>
+                <a:r><a:t>Region </a:t></a:r>
+                <a:r><a:t>(2024)</a:t></a:r>
+              </a:p>
+            </c:rich>
+          </c:tx>
+        </c:title>
+      </c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.title).toBe("Region (2024)");
+  });
+});
+
 // ── End-to-end: full XLSX with a chart ────────────────────────────
 
 /**

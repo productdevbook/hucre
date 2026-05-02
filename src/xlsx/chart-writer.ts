@@ -119,21 +119,26 @@ function buildTitle(title: string): string {
 function buildPlotArea(chart: SheetChart, sheetName: string): string {
   const children: string[] = [xmlSelfClose("c:layout")];
 
+  // Axis titles surface for every chart family except pie. Pull them
+  // once so each branch can hand them off to the matching axis builder.
+  const xAxisTitle = normalizeAxisTitle(chart.axes?.x?.title);
+  const yAxisTitle = normalizeAxisTitle(chart.axes?.y?.title);
+
   switch (chart.type) {
     case "bar":
     case "column": {
       children.push(buildBarChart(chart, sheetName));
-      children.push(...buildBarAxes(chart.type));
+      children.push(...buildBarAxes(chart.type, xAxisTitle, yAxisTitle));
       break;
     }
     case "line": {
       children.push(buildLineChart(chart, sheetName));
-      children.push(...buildBarAxes("column"));
+      children.push(...buildBarAxes("column", xAxisTitle, yAxisTitle));
       break;
     }
     case "area": {
       children.push(buildAreaChart(chart, sheetName));
-      children.push(...buildBarAxes("column"));
+      children.push(...buildBarAxes("column", xAxisTitle, yAxisTitle));
       break;
     }
     case "pie": {
@@ -142,7 +147,7 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     }
     case "scatter": {
       children.push(buildScatterChart(chart, sheetName));
-      children.push(...buildScatterAxes());
+      children.push(...buildScatterAxes(xAxisTitle, yAxisTitle));
       break;
     }
     default: {
@@ -153,6 +158,18 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
   }
 
   return xmlElement("c:plotArea", undefined, children);
+}
+
+/**
+ * Normalize an axis title input to either a non-empty trimmed string
+ * or `undefined`. Empty strings are dropped so the writer never emits
+ * an empty `<c:title>` element (Excel renders that as an unintended
+ * blank label).
+ */
+function normalizeAxisTitle(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 // ── Bar / Column ─────────────────────────────────────────────────────
@@ -188,37 +205,54 @@ function buildBarChart(chart: SheetChart, sheetName: string): string {
   return xmlElement("c:barChart", undefined, children);
 }
 
-function buildBarAxes(orientation: "bar" | "column"): string[] {
+function buildBarAxes(
+  orientation: "bar" | "column",
+  xAxisTitle: string | undefined,
+  yAxisTitle: string | undefined,
+): string[] {
   // For a vertical column chart, categories sit on the bottom (catAx)
   // and values run vertically (valAx). For a horizontal bar chart the
   // axes swap orientation.
   const catPos = orientation === "column" ? "b" : "l";
   const valPos = orientation === "column" ? "l" : "b";
 
-  const catAx = xmlElement("c:catAx", undefined, [
+  // OOXML enforces a strict child order inside <c:catAx>/<c:valAx>:
+  // axId → scaling → delete → axPos → (majorGridlines) → title → ...
+  // Title must therefore land before crossAx/crosses, otherwise Excel
+  // refuses to render the axis label.
+  const catAxChildren: string[] = [
     xmlSelfClose("c:axId", { val: AXIS_ID_CAT }),
     xmlElement("c:scaling", undefined, [xmlSelfClose("c:orientation", { val: "minMax" })]),
     xmlSelfClose("c:delete", { val: 0 }),
     xmlSelfClose("c:axPos", { val: catPos }),
+  ];
+  if (xAxisTitle) catAxChildren.push(buildAxisTitle(xAxisTitle));
+  catAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL }),
     xmlSelfClose("c:crosses", { val: "autoZero" }),
     xmlSelfClose("c:auto", { val: 1 }),
     xmlSelfClose("c:lblAlgn", { val: "ctr" }),
     xmlSelfClose("c:lblOffset", { val: 100 }),
     xmlSelfClose("c:noMultiLvlLbl", { val: 0 }),
-  ]);
+  );
 
-  const valAx = xmlElement("c:valAx", undefined, [
+  const valAxChildren: string[] = [
     xmlSelfClose("c:axId", { val: AXIS_ID_VAL }),
     xmlElement("c:scaling", undefined, [xmlSelfClose("c:orientation", { val: "minMax" })]),
     xmlSelfClose("c:delete", { val: 0 }),
     xmlSelfClose("c:axPos", { val: valPos }),
+  ];
+  if (yAxisTitle) valAxChildren.push(buildAxisTitle(yAxisTitle));
+  valAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_CAT }),
     xmlSelfClose("c:crosses", { val: "autoZero" }),
     xmlSelfClose("c:crossBetween", { val: "between" }),
-  ]);
+  );
 
-  return [catAx, valAx];
+  return [
+    xmlElement("c:catAx", undefined, catAxChildren),
+    xmlElement("c:valAx", undefined, valAxChildren),
+  ];
 }
 
 // ── Line ─────────────────────────────────────────────────────────────
@@ -293,28 +327,75 @@ function buildScatterChart(chart: SheetChart, sheetName: string): string {
   return xmlElement("c:scatterChart", undefined, children);
 }
 
-function buildScatterAxes(): string[] {
-  const xAx = xmlElement("c:valAx", undefined, [
+function buildScatterAxes(
+  xAxisTitle: string | undefined,
+  yAxisTitle: string | undefined,
+): string[] {
+  const xAxChildren: string[] = [
     xmlSelfClose("c:axId", { val: AXIS_ID_VAL_X }),
     xmlElement("c:scaling", undefined, [xmlSelfClose("c:orientation", { val: "minMax" })]),
     xmlSelfClose("c:delete", { val: 0 }),
     xmlSelfClose("c:axPos", { val: "b" }),
+  ];
+  if (xAxisTitle) xAxChildren.push(buildAxisTitle(xAxisTitle));
+  xAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL_Y }),
     xmlSelfClose("c:crosses", { val: "autoZero" }),
     xmlSelfClose("c:crossBetween", { val: "midCat" }),
-  ]);
+  );
 
-  const yAx = xmlElement("c:valAx", undefined, [
+  const yAxChildren: string[] = [
     xmlSelfClose("c:axId", { val: AXIS_ID_VAL_Y }),
     xmlElement("c:scaling", undefined, [xmlSelfClose("c:orientation", { val: "minMax" })]),
     xmlSelfClose("c:delete", { val: 0 }),
     xmlSelfClose("c:axPos", { val: "l" }),
+  ];
+  if (yAxisTitle) yAxChildren.push(buildAxisTitle(yAxisTitle));
+  yAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL_X }),
     xmlSelfClose("c:crosses", { val: "autoZero" }),
     xmlSelfClose("c:crossBetween", { val: "midCat" }),
-  ]);
+  );
 
-  return [xAx, yAx];
+  return [
+    xmlElement("c:valAx", undefined, xAxChildren),
+    xmlElement("c:valAx", undefined, yAxChildren),
+  ];
+}
+
+/**
+ * Build a `<c:title>` for an axis. The structure mirrors the chart-
+ * level title but renders the label at a smaller default font (10pt vs
+ * 14pt) to match Excel's axis-title style.
+ */
+function buildAxisTitle(label: string): string {
+  return xmlElement("c:title", undefined, [
+    xmlElement("c:tx", undefined, [
+      xmlElement("c:rich", undefined, [
+        xmlElement(
+          "a:bodyPr",
+          {
+            rot: 0,
+            spcFirstLastPara: 1,
+            vertOverflow: "ellipsis",
+            wrap: "square",
+            anchor: "ctr",
+            anchorCtr: 1,
+          },
+          [],
+        ),
+        xmlSelfClose("a:lstStyle"),
+        xmlElement("a:p", undefined, [
+          xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz: 1000, b: 0 })]),
+          xmlElement("a:r", undefined, [
+            xmlSelfClose("a:rPr", { lang: "en-US", sz: 1000, b: 0 }),
+            xmlElement("a:t", undefined, xmlEscape(label)),
+          ]),
+        ]),
+      ]),
+    ]),
+    xmlSelfClose("c:overlay", { val: 0 }),
+  ]);
 }
 
 // ── Series ───────────────────────────────────────────────────────────
