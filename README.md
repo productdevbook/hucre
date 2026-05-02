@@ -378,6 +378,46 @@ Excel still sees the parts as wired up via rels and content-types so
 they survive the roundtrip, but synthesizing slicers from a fresh
 write is a follow-up.
 
+### Pivot Tables
+
+Pivot tables (`xl/pivotTables/pivotTableN.xml`) and their workbook-level
+cache definitions (`xl/pivotCache/pivotCacheDefinitionN.xml` plus the
+companion `pivotCacheRecordsN.xml`) are read into typed
+`workbook.pivotCaches` and per-sheet `sheet.pivotTables` arrays. On
+`saveXlsx` the pivot parts are re-declared in `[Content_Types].xml`,
+the workbook rels, the workbook `<pivotCaches>` block, and each host
+sheet's rels — Excel previously saw the pivot parts as orphans and
+dropped the tables on next open.
+
+```ts
+import { readXlsx } from "hucre";
+
+const wb = await readXlsx(buf);
+
+// Workbook-level cache definitions.
+for (const cache of wb.pivotCaches ?? []) {
+  console.log(cache.cacheId, cache.sourceSheet, cache.sourceRef, cache.fieldNames);
+}
+
+// Per-sheet pivot table instances.
+for (const sheet of wb.sheets) {
+  for (const pt of sheet.pivotTables ?? []) {
+    console.log(pt.name, pt.location, pt.cacheId);
+    for (const f of pt.fields) {
+      console.log("  ", f.name, f.axis, f.function);
+    }
+  }
+}
+
+// Standalone parsers when you already have the XML strings.
+import { parsePivotTable, parsePivotCacheDefinition, attachPivotCacheFields } from "hucre";
+```
+
+`PivotTable.cacheId` matches the workbook-level `cacheId` rather than a
+per-table relationship, so reordering `Workbook.pivotCaches` keeps the
+links sound. Synthesizing a pivot table or cache definition from a
+fresh `writeXlsx` is a follow-up — this is read + preserve only.
+
 ### Unified API
 
 Auto-detect format and work with simple helpers:
@@ -847,6 +887,9 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `parseSlicerCache(xml)`            | Parse `xl/slicerCaches/slicerCacheN.xml` → `SlicerCache \| undefined`       |
 | `parseTimelines(xml)`              | Parse `xl/timelines/timelineN.xml` → `Timeline[]`                           |
 | `parseTimelineCache(xml)`          | Parse `xl/timelineCaches/timelineCacheN.xml` → `TimelineCache \| undefined` |
+| `parsePivotTable(xml)`             | Parse `xl/pivotTables/pivotTableN.xml` → `PivotTable \| undefined`          |
+| `parsePivotCacheDefinition(xml)`   | Parse `xl/pivotCache/pivotCacheDefinitionN.xml` → `PivotCache \| undefined` |
+| `attachPivotCacheFields(pt, c)`    | Overlay `PivotCache.fieldNames` onto a `PivotTable.fields[].name`           |
 
 ### ODS
 

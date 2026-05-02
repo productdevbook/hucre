@@ -12,11 +12,14 @@ import type {
   TableColumn,
   ThreadedCommentPerson,
   ExternalLink,
+  PivotCache,
+  PivotTable,
   SlicerCache,
   TimelineCache,
 } from "../_types";
 import { parsePersons, parseThreadedComments } from "./threaded-comments-reader";
 import { parseExternalLink } from "./external-link-reader";
+import { attachPivotCacheFields, parsePivotCacheDefinition, parsePivotTable } from "./pivot-reader";
 import {
   parseSlicers,
   parseSlicerCache,
@@ -165,6 +168,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
     dateSystem,
     namedRanges,
     workbookProtection,
+    pivotCacheRefs,
   } = parseWorkbookXml(workbookXml, options);
 
   // 6. Parse shared strings if present
@@ -228,7 +232,41 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
     externalLinks.push(parseExternalLink(linkXml, linkRelsXml));
   }
 
-  // 7d. Parse slicer caches (xl/slicerCaches/slicerCacheN.xml).
+  // 7e. Parse pivot caches (xl/pivotCache/pivotCacheDefinitionN.xml).
+  // The workbook's <pivotCaches> block ties each cacheId to an rId in
+  // workbook.xml.rels; we walk that pairing and resolve each cache.
+  // The cache definitions also surface a `hasRecords` flag based on
+  // whether the sibling rels declare a pivotCacheRecords part.
+  const pivotCachesByCacheId = new Map<number, PivotCache>();
+  const pivotCachesByRId = new Map<string, PivotCache>();
+  for (const ref of pivotCacheRefs) {
+    const rel = workbookRels.find((r) => r.id === ref.rId);
+    if (!rel) continue;
+    const cachePath = resolvePath(workbookDir, rel.target);
+    if (!zip.has(cachePath)) continue;
+    const cacheXml = decodeUtf8(await zip.extract(cachePath));
+    const cache = parsePivotCacheDefinition(cacheXml);
+    if (!cache) continue;
+    cache.cacheId = ref.cacheId;
+    // Detect a sibling pivotCacheRecords part via the cache's _rels.
+    const cacheRelsPath = relsPathFor(cachePath);
+    if (zip.has(cacheRelsPath)) {
+      const cacheRelsXml = decodeUtf8(await zip.extract(cacheRelsPath));
+      const cacheRels = parseRelationships(cacheRelsXml);
+      if (cacheRels.some((r) => matchesRelType(r.type, "pivotCacheRecords"))) {
+        cache.hasRecords = true;
+      }
+    }
+    pivotCachesByCacheId.set(ref.cacheId, cache);
+    pivotCachesByRId.set(ref.rId, cache);
+  }
+  // Preserve the workbook's declaration order so caller-side cacheId
+  // lookups by array index match what Excel sees.
+  const pivotCaches: PivotCache[] = pivotCacheRefs
+    .map((ref) => pivotCachesByCacheId.get(ref.cacheId))
+    .filter((c): c is PivotCache => c !== undefined);
+
+  // 7f. Parse slicer caches (xl/slicerCaches/slicerCacheN.xml).
   // Excel 2010+ slicers — declared from workbook.xml.rels with
   // Type=".../slicerCache". Sort by trailing index so the array order is
   // stable across files.
@@ -244,7 +282,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
     if (cache) slicerCaches.push(cache);
   }
 
-  // 7e. Parse timeline caches (xl/timelineCaches/timelineCacheN.xml).
+  // 7g. Parse timeline caches (xl/timelineCaches/timelineCacheN.xml).
   // Excel 2013+ timeline slicers — Type=".../timelineCache".
   const timelineCacheRels = workbookRels
     .filter((r) => matchesRelType(r.type, "timelineCache"))
@@ -397,9 +435,56 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
       }
     }
 
-    // Extract slicers attached to this sheet (Excel 2010+).
-    // The worksheet rels declare them with Type=".../slicer".
+    // Extract pivot tables hosted on this sheet, if any. The sheet's
+    // _rels file declares `Type=".../pivotTable"` per instance; the
+    // body lives in xl/pivotTables/pivotTableN.xml and points at the
+    // owning cache through its sibling _rels file.
     if (worksheetRels) {
+      const pivotTableRels = worksheetRels.filter((r) => matchesRelType(r.type, "pivotTable"));
+      if (pivotTableRels.length > 0) {
+        const pivotTables: PivotTable[] = [];
+        for (const ptRel of pivotTableRels) {
+          const ptPath = resolvePath(wsDir, ptRel.target);
+          if (!zip.has(ptPath)) continue;
+          const ptXml = decodeUtf8(await zip.extract(ptPath));
+          const pivot = parsePivotTable(ptXml);
+          if (!pivot) continue;
+          // Resolve the pivot's owning cache via its sibling _rels —
+          // pivot tables don't carry the rId in the body, only in the
+          // companion .rels file. Match by relative target so we
+          // stay tolerant of caches living anywhere under xl/.
+          const ptRelsPath = relsPathFor(ptPath);
+          if (zip.has(ptRelsPath)) {
+            const ptRelsXml = decodeUtf8(await zip.extract(ptRelsPath));
+            const ptInternalRels = parseRelationships(ptRelsXml);
+            const cacheRel = ptInternalRels.find((r) =>
+              matchesRelType(r.type, "pivotCacheDefinition"),
+            );
+            if (cacheRel) {
+              const resolvedCachePath = resolvePath(dirname(ptPath), cacheRel.target);
+              for (const ref of pivotCacheRefs) {
+                const wbRel = workbookRels.find((r) => r.id === ref.rId);
+                if (!wbRel) continue;
+                const wbCachePath = resolvePath(workbookDir, wbRel.target);
+                if (wbCachePath === resolvedCachePath) {
+                  pivot.cacheId = ref.cacheId;
+                  break;
+                }
+              }
+            }
+          }
+          // Overlay the cache's field names so consumers see the real
+          // names instead of the synthetic field1/field2 placeholders
+          // emitted by parsePivotTable when it has no cache context.
+          const owningCache = pivotCachesByCacheId.get(pivot.cacheId);
+          if (owningCache) attachPivotCacheFields(pivot, owningCache);
+          pivotTables.push(pivot);
+        }
+        if (pivotTables.length > 0) sheet.pivotTables = pivotTables;
+      }
+
+      // Extract slicers attached to this sheet (Excel 2010+).
+      // The worksheet rels declare them with Type=".../slicer".
       const slicerRels = worksheetRels.filter((r) => matchesRelType(r.type, "slicer"));
       if (slicerRels.length > 0) {
         const slicers: import("../_types").Slicer[] = [];
@@ -485,6 +570,10 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
 
   if (externalLinks.length > 0) {
     workbook.externalLinks = externalLinks;
+  }
+
+  if (pivotCaches.length > 0) {
+    workbook.pivotCaches = pivotCaches;
   }
 
   if (slicerCaches.length > 0) {
@@ -1092,11 +1181,18 @@ function parseWorkbookXml(
   dateSystem: "1900" | "1904";
   namedRanges: NamedRange[];
   workbookProtection?: { lockStructure?: boolean; lockWindows?: boolean };
+  /**
+   * Pivot cache wiring read off the workbook's `<pivotCaches>` block.
+   * Each entry maps a cacheId (Excel's stable handle) to an rId in
+   * `xl/_rels/workbook.xml.rels`.
+   */
+  pivotCacheRefs: Array<{ cacheId: number; rId: string }>;
 } {
   const doc = parseXml(xml);
 
   const sheets: SheetInfo[] = [];
   const namedRanges: NamedRange[] = [];
+  const pivotCacheRefs: Array<{ cacheId: number; rId: string }> = [];
   let dateSystem: "1900" | "1904" = "1900";
 
   // Check date system override from options
@@ -1159,6 +1255,22 @@ function parseWorkbookXml(
         }
       }
     }
+
+    if (local === "pivotCaches") {
+      for (const pcChild of child.children) {
+        if (typeof pcChild === "string") continue;
+        const pcLocal = pcChild.local || pcChild.tag;
+        if (pcLocal === "pivotCache") {
+          const cacheIdRaw = pcChild.attrs["cacheId"];
+          const cacheId = cacheIdRaw === undefined ? NaN : Number(cacheIdRaw);
+          const rId =
+            pcChild.attrs["r:id"] ?? pcChild.attrs["R:id"] ?? findRIdAttr(pcChild.attrs) ?? "";
+          if (rId && !Number.isNaN(cacheId)) {
+            pivotCacheRefs.push({ cacheId, rId });
+          }
+        }
+      }
+    }
   }
 
   // Second pass: collect defined names (named ranges)
@@ -1198,7 +1310,13 @@ function parseWorkbookXml(
     }
   }
 
-  return { sheets, dateSystem, namedRanges, workbookProtection: wbProtection };
+  return {
+    sheets,
+    dateSystem,
+    namedRanges,
+    workbookProtection: wbProtection,
+    pivotCacheRefs,
+  };
 }
 
 /** Find an r:id attribute regardless of namespace prefix */
