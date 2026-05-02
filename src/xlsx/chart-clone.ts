@@ -18,6 +18,7 @@ import type {
   ChartDataLabels,
   ChartDataLabelsInfo,
   ChartKind,
+  ChartMarker,
   ChartSeries,
   ChartSeriesInfo,
   SheetChart,
@@ -58,6 +59,16 @@ export interface CloneChartSeriesOverride {
    * when the resolved chart type is anything else.
    */
   smooth?: boolean | null;
+  /**
+   * Marker override. `undefined` (or omitted) inherits the source
+   * series' `marker`; `null` drops the inherited block (the cloned
+   * series falls back to Excel's series-rotation default); a
+   * {@link ChartMarker} object replaces the inherited block wholesale
+   * (no per-field merging — pass every field you want preserved).
+   * Only meaningful for `line` and `scatter` clones — silently dropped
+   * from the output when the resolved chart type is anything else.
+   */
+  marker?: ChartMarker | null;
 }
 
 /**
@@ -206,13 +217,14 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     series = buildSeriesFromSource(source, options.seriesOverrides);
   }
 
-  // `<c:smooth>` only lives on line / scatter series; drop the flag from
-  // every other resolved type so a doughnut → column flatten (or any
-  // other coercion) does not leak `smooth` into a chart kind whose
-  // schema rejects the element.
+  // `<c:smooth>` and `<c:marker>` both live exclusively on line /
+  // scatter series; drop them from every other resolved type so a
+  // doughnut → column flatten (or any other coercion) does not leak
+  // either field into a chart kind whose schema rejects them.
   if (type !== "line" && type !== "scatter") {
     for (const s of series) {
       if (s.smooth !== undefined) delete s.smooth;
+      if (s.marker !== undefined) delete s.marker;
     }
   }
 
@@ -425,6 +437,9 @@ function mergeSeries(
   const smooth = resolveSmooth(src?.smooth, ov?.smooth);
   if (smooth !== undefined) out.smooth = smooth;
 
+  const marker = resolveMarker(src?.marker, ov?.marker);
+  if (marker !== undefined) out.marker = marker;
+
   return out;
 }
 
@@ -448,6 +463,40 @@ function resolveSmooth(
   }
   if (override === null) return undefined;
   return override === true ? true : undefined;
+}
+
+/**
+ * Resolve a per-series marker override.
+ *
+ * `undefined` → inherit the source series' `marker` (a fresh shallow
+ * copy so the caller cannot mutate the parsed source).
+ * `null`      → drop the inherited block (the cloned series falls back
+ *               to Excel's series-rotation default).
+ * object      → replace the inherited block wholesale.
+ *
+ * An empty marker block (no symbol, size, or color) collapses to
+ * `undefined` so the writer can elide the element rather than emit a
+ * bare `<c:marker/>` that Excel paints with the inherited default.
+ */
+function resolveMarker(
+  sourceMarker: ChartMarker | undefined,
+  override: ChartMarker | null | undefined,
+): ChartMarker | undefined {
+  if (override === undefined) {
+    if (!sourceMarker) return undefined;
+    return cloneMarker(sourceMarker);
+  }
+  if (override === null) return undefined;
+  return cloneMarker(override);
+}
+
+function cloneMarker(source: ChartMarker): ChartMarker | undefined {
+  const out: ChartMarker = {};
+  if (source.symbol !== undefined) out.symbol = source.symbol;
+  if (typeof source.size === "number" && Number.isFinite(source.size)) out.size = source.size;
+  if (typeof source.fill === "string" && source.fill.length > 0) out.fill = source.fill;
+  if (typeof source.line === "string" && source.line.length > 0) out.line = source.line;
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /**

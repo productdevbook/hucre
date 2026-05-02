@@ -4,7 +4,7 @@ import { parseChart } from "../src/xlsx/chart-reader";
 import { writeChart } from "../src/xlsx/chart-writer";
 import { writeXlsx } from "../src/xlsx/writer";
 import { ZipReader } from "../src/zip/reader";
-import type { Chart, SheetChart } from "../src/_types";
+import type { Chart, ChartMarker, SheetChart } from "../src/_types";
 
 const decoder = new TextDecoder("utf-8");
 
@@ -1813,5 +1813,254 @@ describe("cloneChart — series smooth flag", () => {
     const reparsed = parseChart(written);
     expect(reparsed?.series?.[0].smooth).toBe(true);
     expect(reparsed?.series?.[1].smooth).toBeUndefined();
+  });
+});
+
+// ── cloneChart — series marker ──────────────────────────────────────
+
+describe("cloneChart — series marker", () => {
+  function lineSource(marker?: ChartMarker): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Tpl!$B$2:$B$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+          ...(marker ? { marker } : {}),
+        },
+      ],
+    };
+  }
+
+  it("inherits the marker block from a line series source", () => {
+    const clone = cloneChart(
+      lineSource({ symbol: "diamond", size: 10, fill: "1F77B4", line: "0F3F60" }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.type).toBe("line");
+    expect(clone.series[0].marker).toEqual({
+      symbol: "diamond",
+      size: 10,
+      fill: "1F77B4",
+      line: "0F3F60",
+    });
+  });
+
+  it("does not surface marker when the source series did not declare one", () => {
+    const clone = cloneChart(lineSource(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.series[0].marker).toBeUndefined();
+  });
+
+  it("lets seriesOverrides[i].marker replace an inherited block wholesale", () => {
+    const clone = cloneChart(lineSource({ symbol: "circle", size: 6, fill: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ marker: { symbol: "square", size: 8 } }],
+    });
+    // No per-field merge — the override replaces the inherited block,
+    // so the inherited fill is dropped along with the inherited symbol.
+    expect(clone.series[0].marker).toEqual({ symbol: "square", size: 8 });
+  });
+
+  it("lets seriesOverrides[i].marker=null drop an inherited marker block", () => {
+    const clone = cloneChart(lineSource({ symbol: "diamond" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ marker: null }],
+    });
+    expect(clone.series[0].marker).toBeUndefined();
+  });
+
+  it("lets seriesOverrides[i].marker={} collapse to undefined", () => {
+    // An empty marker carries no meaningful settings; the writer will
+    // never emit a `<c:marker>` for it, so the resolver collapses it to
+    // undefined to keep the materialized SheetChart honest.
+    const clone = cloneChart(lineSource({ symbol: "diamond" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ marker: {} }],
+    });
+    expect(clone.series[0].marker).toBeUndefined();
+  });
+
+  it("carries marker onto a scatter clone", () => {
+    const scatterSource: Chart = {
+      kinds: ["scatter"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "scatter",
+          index: 0,
+          valuesRef: "Tpl!$B$2:$B$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+          marker: { symbol: "x", size: 8 },
+        },
+      ],
+    };
+    const clone = cloneChart(scatterSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("scatter");
+    expect(clone.series[0].marker).toEqual({ symbol: "x", size: 8 });
+  });
+
+  it("drops inherited marker when the resolved type is not line/scatter", () => {
+    // A line template flattened to area / column / pie / doughnut must
+    // not leak <c:marker> — the OOXML schema rejects it on every other
+    // chart family's series element.
+    for (const type of ["column", "bar", "pie", "doughnut", "area"] as const) {
+      const clone = cloneChart(lineSource({ symbol: "diamond", size: 10 }), {
+        anchor: { from: { row: 0, col: 0 } },
+        type,
+        seriesOverrides: [{ values: "Sheet1!$B$2:$B$5" }],
+      });
+      expect(clone.type).toBe(type);
+      expect(clone.series[0].marker).toBeUndefined();
+    }
+  });
+
+  it("drops marker from explicit options.series when the resolved type is not line/scatter", () => {
+    // Replacing the entire series array via options.series still goes
+    // through the post-build marker-strip, so a stray marker does not
+    // leak into a non-line/scatter target.
+    const clone = cloneChart(lineSource({ symbol: "diamond" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+      series: [{ values: "Sheet1!$B$2:$B$5", marker: { symbol: "circle" } }],
+    });
+    expect(clone.series[0].marker).toBeUndefined();
+  });
+
+  it("propagates marker across a multi-series line clone", () => {
+    const multi: Chart = {
+      kinds: ["line"],
+      seriesCount: 3,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          valuesRef: "Tpl!$B$2:$B$5",
+          marker: { symbol: "circle", size: 6 },
+        },
+        { kind: "line", index: 1, valuesRef: "Tpl!$C$2:$C$5" },
+        { kind: "line", index: 2, valuesRef: "Tpl!$D$2:$D$5", marker: { symbol: "square" } },
+      ],
+    };
+    const clone = cloneChart(multi, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.series[0].marker).toEqual({ symbol: "circle", size: 6 });
+    expect(clone.series[1].marker).toBeUndefined();
+    expect(clone.series[2].marker).toEqual({ symbol: "square" });
+  });
+
+  it("returns a fresh marker object so callers cannot mutate the parsed source", () => {
+    const sourceMarker = { symbol: "circle" as const, size: 6 };
+    const src: Chart = {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          valuesRef: "Tpl!$B$2:$B$5",
+          marker: sourceMarker,
+        },
+      ],
+    };
+    const clone = cloneChart(src, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.series[0].marker).not.toBe(sourceMarker);
+    // Mutating the clone does not bleed back into the parsed source.
+    if (clone.series[0].marker) clone.series[0].marker.size = 99;
+    expect(sourceMarker.size).toBe(6);
+  });
+
+  it("round-trips marker through parseChart → cloneChart → writeXlsx → parseChart", async () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:grouping val="standard"/>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx><c:v>Diamonds</c:v></c:tx>
+          <c:marker>
+            <c:symbol val="diamond"/>
+            <c:size val="10"/>
+            <c:spPr>
+              <a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill>
+              <a:ln><a:solidFill><a:srgbClr val="0F3F60"/></a:solidFill></a:ln>
+            </c:spPr>
+          </c:marker>
+          <c:cat><c:strRef><c:f>Tpl!$A$2:$A$5</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:ser>
+          <c:idx val="1"/>
+          <c:tx><c:v>Bare</c:v></c:tx>
+          <c:cat><c:strRef><c:f>Tpl!$A$2:$A$5</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Tpl!$C$2:$C$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:lineChart>
+      <c:catAx><c:axId val="111"/></c:catAx>
+      <c:valAx><c:axId val="222"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const source = parseChart(sourceXml)!;
+    expect(source.series?.[0].marker).toEqual({
+      symbol: "diamond",
+      size: 10,
+      fill: "1F77B4",
+      line: "0F3F60",
+    });
+    expect(source.series?.[1].marker).toBeUndefined();
+
+    const sheetChart: SheetChart = cloneChart(source, {
+      anchor: { from: { row: 14, col: 0 } },
+      seriesOverrides: [{ values: "Dashboard!$B$2:$B$5" }, { values: "Dashboard!$C$2:$C$5" }],
+    });
+    expect(sheetChart.type).toBe("line");
+    expect(sheetChart.series[0].marker).toEqual({
+      symbol: "diamond",
+      size: 10,
+      fill: "1F77B4",
+      line: "0F3F60",
+    });
+    expect(sheetChart.series[1].marker).toBeUndefined();
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Dashboard",
+          rows: [
+            ["A", "B", "C"],
+            [1, 2, 3],
+            [4, 5, 6],
+            [7, 8, 9],
+            [10, 11, 12],
+          ],
+          charts: [sheetChart],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    // First series gets a full marker block; second has none at the
+    // series level.
+    const markerBlocks = written.match(/<c:marker>[\s\S]*?<\/c:marker>/g) ?? [];
+    expect(markerBlocks).toHaveLength(1);
+    expect(markerBlocks[0]).toContain('c:symbol val="diamond"');
+    expect(markerBlocks[0]).toContain('c:size val="10"');
+    expect(markerBlocks[0]).toContain('a:srgbClr val="1F77B4"');
+    expect(markerBlocks[0]).toContain('a:srgbClr val="0F3F60"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.series?.[0].marker).toEqual({
+      symbol: "diamond",
+      size: 10,
+      fill: "1F77B4",
+      line: "0F3F60",
+    });
+    expect(reparsed?.series?.[1].marker).toBeUndefined();
   });
 });

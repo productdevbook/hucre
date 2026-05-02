@@ -24,6 +24,8 @@ import type {
   ChartKind,
   ChartLegendPosition,
   ChartLineAreaGrouping,
+  ChartMarker,
+  ChartMarkerSymbol,
   ChartSeriesInfo,
 } from "../_types";
 import { parseXml } from "../xml/parser";
@@ -425,6 +427,15 @@ function parseSeries(ser: XmlElement, kind: ChartKind, index: number): ChartSeri
     if (smooth !== undefined) out.smooth = smooth;
   }
 
+  // `<c:marker>` mirrors the same scope — CT_LineSer / CT_ScatterSer
+  // only. Skip the element on every other family so a stray
+  // `<c:marker>` on a bar / pie / area template does not surface a
+  // setting that the writer would never emit anyway.
+  if (kind === "line" || kind === "line3D" || kind === "scatter") {
+    const marker = parseMarker(ser);
+    if (marker !== undefined) out.marker = marker;
+  }
+
   return out;
 }
 
@@ -441,6 +452,101 @@ function parseSmooth(ser: XmlElement): boolean | undefined {
   const v = readBoolAttr(el);
   if (v !== true) return undefined;
   return true;
+}
+
+// ── Marker ────────────────────────────────────────────────────────
+
+const VALID_MARKER_SYMBOLS: ReadonlySet<ChartMarkerSymbol> = new Set([
+  "none",
+  "auto",
+  "circle",
+  "square",
+  "diamond",
+  "triangle",
+  "x",
+  "star",
+  "dot",
+  "dash",
+  "plus",
+]);
+
+/**
+ * Pull `<c:marker>` off a line / scatter series. Returns `undefined`
+ * when the marker block is absent or carries no meaningful settings —
+ * an empty `<c:marker/>` element collapses identically to absence
+ * through the writer's elision logic, so omitting it keeps the parsed
+ * shape minimal.
+ *
+ * Field semantics mirror {@link ChartMarker}: an unknown `<c:symbol>`
+ * value is dropped (rather than surfaced), `<c:size>` outside the
+ * 2..72 band is clamped, and the fill / outline colors come from
+ * `<c:spPr><a:solidFill>` and `<c:spPr><a:ln><a:solidFill>`
+ * respectively.
+ */
+function parseMarker(ser: XmlElement): ChartMarker | undefined {
+  const el = findChild(ser, "marker");
+  if (!el) return undefined;
+
+  const out: ChartMarker = {};
+
+  const sym = findChild(el, "symbol");
+  if (sym) {
+    const v = sym.attrs.val;
+    if (typeof v === "string" && VALID_MARKER_SYMBOLS.has(v as ChartMarkerSymbol)) {
+      out.symbol = v as ChartMarkerSymbol;
+    }
+  }
+
+  const sizeEl = findChild(el, "size");
+  if (sizeEl) {
+    const v = sizeEl.attrs.val;
+    if (typeof v === "string") {
+      const n = Number.parseInt(v, 10);
+      if (Number.isFinite(n)) {
+        // OOXML ST_MarkerSize is `xsd:unsignedByte` constrained to
+        // 2..72; clamp anything outside that band on the way in so a
+        // template with an out-of-range value still round-trips.
+        if (n < 2) out.size = 2;
+        else if (n > 72) out.size = 72;
+        else out.size = n;
+      }
+    }
+  }
+
+  const spPr = findChild(el, "spPr");
+  if (spPr) {
+    const fill = findChild(spPr, "solidFill");
+    if (fill) {
+      const srgb = findChild(fill, "srgbClr");
+      const v = srgb?.attrs.val;
+      if (typeof v === "string") {
+        const hex = v.replace(/^#/, "").toUpperCase();
+        if (/^[0-9A-F]{6}$/.test(hex)) out.fill = hex;
+      }
+    }
+    const ln = findChild(spPr, "ln");
+    if (ln) {
+      const lnFill = findChild(ln, "solidFill");
+      if (lnFill) {
+        const srgb = findChild(lnFill, "srgbClr");
+        const v = srgb?.attrs.val;
+        if (typeof v === "string") {
+          const hex = v.replace(/^#/, "").toUpperCase();
+          if (/^[0-9A-F]{6}$/.test(hex)) out.line = hex;
+        }
+      }
+    }
+  }
+
+  if (
+    out.symbol === undefined &&
+    out.size === undefined &&
+    out.fill === undefined &&
+    out.line === undefined
+  ) {
+    return undefined;
+  }
+  return out;
 }
 
 // ── Data Labels ───────────────────────────────────────────────────
