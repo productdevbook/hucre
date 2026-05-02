@@ -44,7 +44,7 @@ function effectiveProperties(options: WriteOptions): WorkbookProperties | undefi
   for (const sheet of options.sheets) {
     const summary = sheet.a11y?.summary;
     if (summary && summary.trim().length > 0) {
-      return { ...(props ?? {}), description: summary };
+      return { ...props, description: summary };
     }
   }
   return props;
