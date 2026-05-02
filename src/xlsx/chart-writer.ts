@@ -459,8 +459,9 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
 // ── Line ─────────────────────────────────────────────────────────────
 
 function buildLineChart(chart: SheetChart, sheetName: string): string {
+  const grouping = chart.lineGrouping ?? "standard";
   const children: string[] = [
-    xmlSelfClose("c:grouping", { val: "standard" }),
+    xmlSelfClose("c:grouping", { val: grouping }),
     xmlSelfClose("c:varyColors", { val: 0 }),
   ];
 
@@ -485,8 +486,9 @@ function buildLineChart(chart: SheetChart, sheetName: string): string {
 // ── Area ─────────────────────────────────────────────────────────────
 
 function buildAreaChart(chart: SheetChart, sheetName: string): string {
+  const grouping = chart.areaGrouping ?? "standard";
   const children: string[] = [
-    xmlSelfClose("c:grouping", { val: "standard" }),
+    xmlSelfClose("c:grouping", { val: grouping }),
     xmlSelfClose("c:varyColors", { val: 0 }),
   ];
 
