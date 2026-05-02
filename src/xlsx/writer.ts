@@ -12,6 +12,7 @@ import { createSharedStrings, writeSharedStringsXml, writeWorksheetXml } from ".
 import type { WorksheetResult } from "./worksheet-writer";
 import { writeDrawing } from "./drawing-writer";
 import type { DrawingResult } from "./drawing-writer";
+import { writeChart } from "./chart-writer";
 import { writeComments } from "./comments-writer";
 import type { CommentsResult } from "./comments-writer";
 import { writeTable } from "./table-writer";
@@ -92,18 +93,34 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
 
   const hasSharedStrings = sharedStrings.count() > 0;
 
-  // Generate drawing data for sheets that have images or text boxes
+  // Generate drawing data for sheets that have images, text boxes, or charts
   const drawingResults: Array<DrawingResult | null> = [];
   const drawingIndices: number[] = [];
   const imageExtensions = new Set<string>();
   let globalImageIndex = 1;
+  let globalChartIndex = 1;
+
+  // Per-sheet chart payloads, parallel to sheets[]. Each entry holds the
+  // serialized chart bodies the sheet contributes, keyed by global
+  // chart number so the ZIP layer can write
+  // `xl/charts/chart{n}.xml` and `xl/charts/_rels/chart{n}.xml.rels`.
+  type ChartFileEntry = { globalIndex: number; xml: string; rels: string };
+  const sheetChartFiles: Array<ChartFileEntry[]> = [];
+  const allChartIndices: number[] = [];
 
   for (let i = 0; i < sheets.length; i++) {
     const sheet = sheets[i];
     const hasImages = sheet.images && sheet.images.length > 0;
     const hasTextBoxes = sheet.textBoxes && sheet.textBoxes.length > 0;
-    if (hasImages || hasTextBoxes) {
-      const result = writeDrawing(sheet.images ?? [], globalImageIndex, sheet.textBoxes);
+    const hasCharts = sheet.charts && sheet.charts.length > 0;
+    if (hasImages || hasTextBoxes || hasCharts) {
+      const result = writeDrawing(
+        sheet.images ?? [],
+        globalImageIndex,
+        sheet.textBoxes,
+        sheet.charts,
+        globalChartIndex,
+      );
       drawingResults.push(result);
       drawingIndices.push(i + 1); // 1-based drawing index matches sheet index
 
@@ -115,8 +132,24 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
       if (sheet.images) {
         globalImageIndex += sheet.images.length;
       }
+
+      // Generate the chart XML bodies. We do this here rather than
+      // inside writeDrawing to keep the drawing layer free of
+      // chart-specific OOXML dependencies.
+      const chartFiles: ChartFileEntry[] = [];
+      if (sheet.charts) {
+        for (let c = 0; c < sheet.charts.length; c++) {
+          const written = writeChart(sheet.charts[c], sheet.name);
+          const idx = globalChartIndex + c;
+          chartFiles.push({ globalIndex: idx, xml: written.chartXml, rels: written.chartRels });
+          allChartIndices.push(idx);
+        }
+        globalChartIndex += sheet.charts.length;
+      }
+      sheetChartFiles.push(chartFiles);
     } else {
       drawingResults.push(null);
+      sheetChartFiles.push([]);
     }
   }
 
@@ -177,6 +210,7 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
     sheetCount: sheets.length,
     hasSharedStrings,
     drawingIndices: drawingIndices.length > 0 ? drawingIndices : undefined,
+    chartIndices: allChartIndices.length > 0 ? allChartIndices : undefined,
     imageExtensions: imageExtensions.size > 0 ? imageExtensions : undefined,
     commentIndices: commentIndices.length > 0 ? commentIndices : undefined,
     tableIndices: allTableIndices.length > 0 ? allTableIndices : undefined,
@@ -349,6 +383,15 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
       // Add image files to ZIP (store, don't compress — images are already compressed)
       for (const img of drawing.images) {
         zip.add(img.path, img.data, { compress: false });
+      }
+    }
+
+    // Add chart files for this sheet
+    const chartFiles = sheetChartFiles[i];
+    if (chartFiles && chartFiles.length > 0) {
+      for (const cf of chartFiles) {
+        zip.add(`xl/charts/chart${cf.globalIndex}.xml`, encoder.encode(cf.xml));
+        zip.add(`xl/charts/_rels/chart${cf.globalIndex}.xml.rels`, encoder.encode(cf.rels));
       }
     }
 

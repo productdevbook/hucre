@@ -1,8 +1,9 @@
 // ── Drawing Writer ────────────────────────────────────────────────────
 // Generates xl/drawings/drawingN.xml and related relationship files
-// for embedding images in XLSX worksheets.
+// for embedding images, text boxes, and native charts in XLSX
+// worksheets.
 
-import type { SheetImage, SheetTextBox } from "../_types";
+import type { SheetChart, SheetImage, SheetTextBox } from "../_types";
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer";
 
 // ── Namespaces ───────────────────────────────────────────────────────
@@ -10,8 +11,10 @@ import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
 const NS_XDR = "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing";
 const NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main";
 const NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const NS_C = "http://schemas.openxmlformats.org/drawingml/2006/chart";
 const NS_RELATIONSHIPS = "http://schemas.openxmlformats.org/package/2006/relationships";
 const REL_IMAGE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
+const REL_CHART = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart";
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -40,6 +43,14 @@ export interface DrawingResult {
   drawingRels: string;
   /** Image files to add to the ZIP */
   images: DrawingImage[];
+  /**
+   * Charts attached to this drawing, in declaration order. Each entry
+   * carries the global chart number Excel uses for the part name
+   * (`xl/charts/chart{n}.xml`). The drawing's rels file already
+   * references them — this list lets `writer.ts` register the parts
+   * in `[Content_Types].xml` and ZIP the chart bodies.
+   */
+  charts: { globalChartIndex: number }[];
 }
 
 // ── Extension / Content Type Mapping ─────────────────────────────────
@@ -69,17 +80,21 @@ const DEFAULT_TEXTBOX_HEIGHT_EMU = 500000; // ~0.55 inches
 
 /**
  * Generate drawing XML, drawing relationships, and image entries
- * for a worksheet's images and text boxes.
+ * for a worksheet's images, text boxes, and charts.
  *
  * @param images - Array of SheetImage objects to embed
  * @param imageStartIndex - Global image counter start (for unique image file names across sheets)
  * @param textBoxes - Optional array of SheetTextBox objects to embed
- * @returns DrawingResult with XML and image file data
+ * @param charts - Optional array of SheetChart objects to embed
+ * @param chartStartIndex - Global chart counter start (1-based, for unique chartN.xml names across sheets)
+ * @returns DrawingResult with XML, rels, image files, and chart registry
  */
 export function writeDrawing(
   images: SheetImage[],
   imageStartIndex: number,
   textBoxes?: SheetTextBox[],
+  charts?: SheetChart[],
+  chartStartIndex: number = 1,
 ): DrawingResult {
   const drawingImages: DrawingImage[] = [];
   const relElements: string[] = [];
@@ -281,6 +296,92 @@ export function writeDrawing(
     }
   }
 
+  // ── Chart Anchors ──
+  // Each chart becomes an <xdr:graphicFrame> with a <c:chart> reference
+  // pointing at a relationship in this drawing's rels file. Charts get
+  // their own rId namespace inside the drawing — we continue the rId
+  // counter past the image relationships.
+  const chartList: { globalChartIndex: number }[] = [];
+  if (charts && charts.length > 0) {
+    let shapeId = images.length + (textBoxes?.length ?? 0) + 2;
+
+    for (let c = 0; c < charts.length; c++) {
+      const chart = charts[c];
+      const globalChartIndex = chartStartIndex + c;
+      // Drawing-local rId. Image rIds are 1..images.length, so charts
+      // start at images.length + 1.
+      const rId = `rId${images.length + c + 1}`;
+
+      relElements.push(
+        xmlSelfClose("Relationship", {
+          Id: rId,
+          Type: REL_CHART,
+          Target: `../charts/chart${globalChartIndex}.xml`,
+        }),
+      );
+
+      const fromCol = chart.anchor.from.col;
+      const fromRow = chart.anchor.from.row;
+      const toCol = chart.anchor.to?.col ?? fromCol + 8;
+      const toRow = chart.anchor.to?.row ?? fromRow + 15;
+
+      const fromElement = xmlElement("xdr:from", undefined, [
+        xmlElement("xdr:col", undefined, String(fromCol)),
+        xmlElement("xdr:colOff", undefined, "0"),
+        xmlElement("xdr:row", undefined, String(fromRow)),
+        xmlElement("xdr:rowOff", undefined, "0"),
+      ]);
+
+      const toElement = xmlElement("xdr:to", undefined, [
+        xmlElement("xdr:col", undefined, String(toCol)),
+        xmlElement("xdr:colOff", undefined, "0"),
+        xmlElement("xdr:row", undefined, String(toRow)),
+        xmlElement("xdr:rowOff", undefined, "0"),
+      ]);
+
+      const cNvPrAttrs: Record<string, string | number> = {
+        id: shapeId++,
+        name: `Chart ${c + 1}`,
+      };
+      if (chart.frameTitle) cNvPrAttrs.title = chart.frameTitle;
+      if (chart.altText) cNvPrAttrs.descr = chart.altText;
+
+      const nvGraphicFramePr = xmlElement("xdr:nvGraphicFramePr", undefined, [
+        xmlSelfClose("xdr:cNvPr", cNvPrAttrs),
+        xmlElement("xdr:cNvGraphicFramePr", undefined, []),
+      ]);
+
+      const xfrm = xmlElement("xdr:xfrm", undefined, [
+        xmlSelfClose("a:off", { x: 0, y: 0 }),
+        xmlSelfClose("a:ext", { cx: 0, cy: 0 }),
+      ]);
+
+      const graphic = xmlElement(
+        "a:graphic",
+        undefined,
+        xmlElement("a:graphicData", { uri: NS_C }, [
+          xmlSelfClose("c:chart", { "xmlns:c": NS_C, "xmlns:r": NS_R, "r:id": rId }),
+        ]),
+      );
+
+      const graphicFrame = xmlElement("xdr:graphicFrame", { macro: "" }, [
+        nvGraphicFramePr,
+        xfrm,
+        graphic,
+      ]);
+
+      const anchor = xmlElement("xdr:twoCellAnchor", { editAs: "oneCell" }, [
+        fromElement,
+        toElement,
+        graphicFrame,
+        xmlSelfClose("xdr:clientData"),
+      ]);
+
+      anchorElements.push(anchor);
+      chartList.push({ globalChartIndex });
+    }
+  }
+
   // Build drawing XML
   const drawingXml = xmlDocument(
     "xdr:wsDr",
@@ -299,5 +400,6 @@ export function writeDrawing(
     drawingXml,
     drawingRels,
     images: drawingImages,
+    charts: chartList,
   };
 }

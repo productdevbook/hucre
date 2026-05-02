@@ -15,6 +15,7 @@ const CT_STYLES = "application/vnd.openxmlformats-officedocument.spreadsheetml.s
 const CT_SHARED_STRINGS =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml";
 const CT_DRAWING = "application/vnd.openxmlformats-officedocument.drawing+xml";
+const CT_CHART = "application/vnd.openxmlformats-officedocument.drawingml.chart+xml";
 const CT_COMMENTS = "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml";
 const CT_VML = "application/vnd.openxmlformats-officedocument.vmlDrawing";
 const CT_TABLE = "application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml";
@@ -50,6 +51,12 @@ export interface ContentTypesOptions {
   hasSharedStrings: boolean;
   /** 1-based indices of drawings (e.g. [1, 3] means drawing1.xml and drawing3.xml exist) */
   drawingIndices?: number[];
+  /**
+   * 1-based indices of native chart parts (e.g. [1, 2] for chart1.xml
+   * and chart2.xml). One Override per chart is required so Excel can
+   * locate the part by content type.
+   */
+  chartIndices?: number[];
   /** Set of image extensions used (e.g. new Set(["png", "jpeg"])) */
   imageExtensions?: Set<string>;
   /** 1-based indices of comments (e.g. [1, 2] means comments1.xml and comments2.xml exist) */
@@ -208,6 +215,18 @@ export function writeContentTypes(
         xmlSelfClose("Override", {
           PartName: `/xl/drawings/drawing${idx}.xml`,
           ContentType: CT_DRAWING,
+        }),
+      );
+    }
+  }
+
+  // Override for each native chart part
+  if (opts.chartIndices) {
+    for (const idx of opts.chartIndices) {
+      children.push(
+        xmlSelfClose("Override", {
+          PartName: `/xl/charts/chart${idx}.xml`,
+          ContentType: CT_CHART,
         }),
       );
     }
