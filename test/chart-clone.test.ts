@@ -150,6 +150,65 @@ describe("cloneChart", () => {
     expect(clone.altText).toBe("Revenue chart");
     expect(clone.frameTitle).toBe("Revenue");
   });
+
+  it("inherits legend from the source chart when no override is given", () => {
+    const clone = cloneChart(source({ legend: "bottom" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.legend).toBe("bottom");
+  });
+
+  it("inherits legend=false (hidden) from the source chart", () => {
+    const clone = cloneChart(source({ legend: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.legend).toBe(false);
+  });
+
+  it("override wins over source legend", () => {
+    const clone = cloneChart(source({ legend: "bottom" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: "top",
+    });
+    expect(clone.legend).toBe("top");
+  });
+
+  it("override legend=false hides a legend the source declared", () => {
+    const clone = cloneChart(source({ legend: "right" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+    });
+    expect(clone.legend).toBe(false);
+  });
+
+  it("inherits barGrouping from the source bar/column chart", () => {
+    const clone = cloneChart(source({ barGrouping: "stacked" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.barGrouping).toBe("stacked");
+  });
+
+  it("override barGrouping wins over source barGrouping", () => {
+    const clone = cloneChart(source({ barGrouping: "stacked" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      barGrouping: "percentStacked",
+    });
+    expect(clone.barGrouping).toBe("percentStacked");
+  });
+
+  it("drops inherited barGrouping when the clone target is not bar/column", () => {
+    // Source is a bar chart with stacked grouping; override coerces
+    // it to a line chart. Stacked grouping is meaningless for line so
+    // it should not survive on the clone.
+    const clone = cloneChart(source({ kinds: ["bar"], barGrouping: "stacked" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "line",
+      seriesOverrides: [{ values: "Sheet1!$B$2:$B$5" }],
+    });
+    expect(clone.type).toBe("line");
+    expect(clone.barGrouping).toBeUndefined();
+  });
 });
 
 // ── cloneChart — series overrides ────────────────────────────────────

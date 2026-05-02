@@ -1276,6 +1276,29 @@ export interface ChartAnchor {
  * structural metadata needed to recognize, introspect, and clone the
  * chart; the chart body is preserved verbatim through roundtrip.
  */
+/**
+ * Legend placement reported by {@link Chart.legend}.
+ *
+ * Values mirror the {@link SheetChart.legend} options on the writer
+ * side, so a parsed legend position slots straight back into a clone
+ * target. `false` is reported when the chart explicitly omits the
+ * legend element (Excel's "no legend" state); `undefined` means the
+ * chart did not declare a legend at all.
+ */
+export type ChartLegendPosition = "top" | "bottom" | "left" | "right" | "topRight";
+
+/**
+ * Bar/column grouping reported by {@link Chart.barGrouping}.
+ *
+ * Pulled from `<c:barChart><c:grouping val="..."/></c:barChart>`.
+ * `"standard"` is the OOXML value for non-stacked, non-percent layouts
+ * — it is excluded here because the writer's
+ * {@link SheetChart.barGrouping} models the same default as the
+ * absence of the field. Only the stacked variants surface, which is
+ * what callers need to detect when cloning a stacked template.
+ */
+export type ChartBarGrouping = "clustered" | "stacked" | "percentStacked";
+
 export interface Chart {
   /** Chart-type elements present in `<c:plotArea>`, in declaration order. */
   kinds: ChartKind[];
@@ -1295,6 +1318,23 @@ export interface Chart {
    * or when the drawing's anchor element is missing the `from` block.
    */
   anchor?: ChartAnchor;
+  /**
+   * Legend placement pulled from `<c:legend><c:legendPos val=".."/>`.
+   * Reported as `false` when the chart explicitly omits the legend
+   * element (Excel's "no legend" state). `undefined` means the chart
+   * did not declare a legend at all — Excel falls back to its default
+   * placement in that case.
+   */
+  legend?: false | ChartLegendPosition;
+  /**
+   * Grouping pulled from the first `<c:barChart>` element, when the
+   * chart has one. Surfaces only the stacked variants — the OOXML
+   * `"standard"` / `"clustered"` values both round-trip cleanly to
+   * the writer's `"clustered"` default, but only the explicit
+   * `clustered` value is reported here for symmetry with the writer's
+   * {@link SheetChart.barGrouping} field.
+   */
+  barGrouping?: ChartBarGrouping;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────

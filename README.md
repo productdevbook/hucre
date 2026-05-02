@@ -533,6 +533,13 @@ for (const sheet of wb.sheets) {
     console.log(chart.anchor);
     // e.g. { from: { row: 1, col: 3 }, to: { row: 16, col: 10 } }
 
+    // chart.legend / chart.barGrouping mirror the writer-side fields
+    // so a parsed chart slots straight back into cloneChart without
+    // remapping. `legend: false` means the source chart explicitly
+    // hid the legend; `barGrouping` only surfaces on bar/column charts.
+    console.log(chart.legend, chart.barGrouping);
+    // e.g. "bottom" "stacked"
+
     for (const s of chart.series ?? []) {
       console.log(s.kind, s.index, s.name, s.valuesRef, s.categoriesRef, s.color);
       // e.g. "bar" 0 "Revenue" "Sheet1!$B$2:$B$10" "Sheet1!$A$2:$A$10" "1F77B4"
@@ -555,7 +562,15 @@ formula) intentionally surface no `valuesRef`/`categoriesRef`.
 `twoCellAnchor` charts surface both `from` and `to`,
 `oneCellAnchor` charts surface `from` only (intrinsic size lives in
 `<xdr:ext>`), and `absoluteAnchor` charts (EMU-positioned, no cell
-anchor) report `anchor` as `undefined`.
+anchor) report `anchor` as `undefined`. `Chart.legend` and
+`Chart.barGrouping` mirror the writer-side fields of the same name:
+`legend` reports `false` when the chart explicitly suppresses the
+legend (`<c:delete val="1"/>`), `right` when `<c:legend>` is present
+without a `legendPos`, and the matching writer label otherwise;
+`barGrouping` is pulled from the first `<c:barChart>` and only
+surfaces the stacked variants (the OOXML `standard` value collapses
+to `undefined` since the writer treats it as the unspecified default,
+and non-bar charts never report a grouping).
 Sheets that hucre actively regenerates because they
 also carry hucre-managed images currently keep the chart bodies but
 lose the in-drawing chart anchor — merging hucre's drawing output

@@ -135,8 +135,19 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     anchor: options.anchor,
   };
   if (title !== undefined) out.title = title;
-  if (options.legend !== undefined) out.legend = options.legend;
-  if (options.barGrouping !== undefined) out.barGrouping = options.barGrouping;
+
+  // Legend / bar grouping carry over from the source when the caller
+  // does not supply an override. Bar grouping only round-trips for
+  // bar/column targets — applying a stacked grouping to a line/pie
+  // template clone would be silently ignored by the writer.
+  const legend = options.legend !== undefined ? options.legend : source.legend;
+  if (legend !== undefined) out.legend = legend;
+
+  const barGrouping = options.barGrouping !== undefined ? options.barGrouping : source.barGrouping;
+  if (barGrouping !== undefined && (type === "bar" || type === "column")) {
+    out.barGrouping = barGrouping;
+  }
+
   if (options.showTitle !== undefined) out.showTitle = options.showTitle;
   if (options.altText !== undefined) out.altText = options.altText;
   if (options.frameTitle !== undefined) out.frameTitle = options.frameTitle;
