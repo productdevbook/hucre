@@ -724,6 +724,22 @@ export interface ChartMarker {
 }
 
 /**
+ * How Excel paints a series across cells whose value is missing or
+ * blank. Mirrors the OOXML `ST_DispBlanksAs` enum exactly and matches
+ * the three options Excel exposes under "Select Data Source → Hidden
+ * and Empty Cells":
+ *
+ * - `"gap"` — leave a gap at the missing point (the OOXML default and
+ *   what Excel selects in fresh chart UI). A line chart shows a break,
+ *   a bar chart simply skips the bar.
+ * - `"zero"` — substitute `0` for the missing value, so a line chart
+ *   drops to the X axis and bar charts render a flush-zero bar.
+ * - `"span"` — connect adjacent points across the gap (line / scatter
+ *   only; Excel falls back to `"gap"` for bar / pie / area).
+ */
+export type ChartDisplayBlanksAs = "gap" | "zero" | "span";
+
+/**
  * A single data series inside a chart.
  *
  * `values` and `categories` are A1-style cell range references.
@@ -878,6 +894,15 @@ export interface SheetChart {
    * value/category annotations.
    */
   dataLabels?: ChartDataLabels;
+  /**
+   * How Excel renders missing / blank cells in the source data. Maps
+   * to `<c:dispBlanksAs val=".."/>` on `<c:chart>`. Default: `"gap"`
+   * (the OOXML default Excel itself emits). Set `"zero"` to anchor the
+   * line / bar to the X axis at missing points, or `"span"` to
+   * connect across the gap on line and scatter charts. See
+   * {@link ChartDisplayBlanksAs} for the accepted set.
+   */
+  dispBlanksAs?: ChartDisplayBlanksAs;
   /**
    * Per-axis configuration rendered alongside the plot area. The `x`
    * axis is the category axis for bar/column/line/area (or the bottom
@@ -1871,6 +1896,16 @@ export interface Chart {
    * the same way. Omitted on non-pie / non-doughnut charts.
    */
   firstSliceAng?: number;
+  /**
+   * How the chart renders missing / blank cells, pulled from
+   * `<c:chart><c:dispBlanksAs val=".."/>`. The OOXML default of
+   * `"gap"` collapses to `undefined` so absence and the default
+   * round-trip identically through {@link cloneChart} — symmetric with
+   * the writer's {@link SheetChart.dispBlanksAs} field. Surfaces
+   * `"zero"` and `"span"` literally; unknown values are dropped rather
+   * than fabricated.
+   */
+  dispBlanksAs?: ChartDisplayBlanksAs;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────

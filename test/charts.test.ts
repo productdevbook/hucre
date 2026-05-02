@@ -2125,6 +2125,89 @@ describe("parseChart — series marker", () => {
   });
 });
 
+// ── parseChart — dispBlanksAs ─────────────────────────────────────
+
+describe("parseChart — dispBlanksAs", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces <c:dispBlanksAs val="zero"/> off <c:chart>', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+    <c:dispBlanksAs val="zero"/>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dispBlanksAs).toBe("zero");
+  });
+
+  it('surfaces <c:dispBlanksAs val="span"/> off <c:chart>', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+    <c:dispBlanksAs val="span"/>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dispBlanksAs).toBe("span");
+  });
+
+  it("collapses the OOXML default 'gap' to undefined (writer absence)", () => {
+    // The default carried explicitly by Excel's reference serialization
+    // round-trips identically to absence of the field.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:dispBlanksAs val="gap"/>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dispBlanksAs).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:dispBlanksAs> element", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dispBlanksAs).toBeUndefined();
+  });
+
+  it("drops unknown dispBlanksAs values rather than fabricate one", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:dispBlanksAs val="bogus"/>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dispBlanksAs).toBeUndefined();
+  });
+
+  it("ignores a missing val attribute on <c:dispBlanksAs>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:dispBlanksAs/>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dispBlanksAs).toBeUndefined();
+  });
+});
+
 // ── End-to-end: full XLSX with a chart ────────────────────────────
 
 /**

@@ -17,6 +17,7 @@ import type {
   ChartAxisScale,
   ChartDataLabels,
   ChartDataLabelsInfo,
+  ChartDisplayBlanksAs,
   ChartKind,
   ChartLineStroke,
   ChartMarker,
@@ -160,6 +161,15 @@ export interface CloneChartOptions {
    * block; a `ChartDataLabels` object replaces it.
    */
   dataLabels?: ChartDataLabels | null;
+  /**
+   * Override how the chart renders missing / blank cells. `undefined`
+   * (or omitted) inherits the source's `dispBlanksAs`; `null` drops
+   * the inherited value (the writer falls back to the OOXML `"gap"`
+   * default); a {@link ChartDisplayBlanksAs} value replaces it. Useful
+   * when a template uses `"span"` to bridge gaps but the cloned
+   * dashboard chart should render the gaps explicitly (or vice versa).
+   */
+  dispBlanksAs?: ChartDisplayBlanksAs | null;
   /**
    * Per-axis overrides. Each field accepts a value to replace the
    * source's, or `null` to drop the source value (the cloned chart
@@ -318,6 +328,9 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
 
   const resolvedDataLabels = resolveChartDataLabels(source.dataLabels, options.dataLabels);
   if (resolvedDataLabels !== undefined) out.dataLabels = resolvedDataLabels;
+
+  const resolvedDispBlanks = resolveDispBlanksAs(source.dispBlanksAs, options.dispBlanksAs);
+  if (resolvedDispBlanks !== undefined) out.dispBlanksAs = resolvedDispBlanks;
 
   // Pie and doughnut have no axes, so silently skip carrying over axis
   // titles even when the source declared them or the caller passed an
@@ -545,6 +558,26 @@ function cloneMarker(source: ChartMarker): ChartMarker | undefined {
   if (typeof source.fill === "string" && source.fill.length > 0) out.fill = source.fill;
   if (typeof source.line === "string" && source.line.length > 0) out.line = source.line;
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * Resolve a `dispBlanksAs` override.
+ *
+ * `undefined` → inherit the source's parsed `dispBlanksAs`.
+ * `null`      → drop the inherited value (the writer falls back to
+ *               the OOXML `"gap"` default).
+ * value       → replace.
+ *
+ * Unknown strings are ignored (treated as `undefined`); only the three
+ * OOXML-defined tokens propagate through to the writer.
+ */
+function resolveDispBlanksAs(
+  sourceValue: ChartDisplayBlanksAs | undefined,
+  override: ChartDisplayBlanksAs | null | undefined,
+): ChartDisplayBlanksAs | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
 }
 
 /**

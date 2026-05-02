@@ -21,6 +21,7 @@ import type {
   ChartBarGrouping,
   ChartDataLabelPosition,
   ChartDataLabelsInfo,
+  ChartDisplayBlanksAs,
   ChartKind,
   ChartLegendPosition,
   ChartLineAreaGrouping,
@@ -173,6 +174,9 @@ export function parseChart(xml: string): Chart | undefined {
 
   const legend = parseLegend(chartEl);
   if (legend !== undefined) out.legend = legend;
+
+  const dispBlanksAs = parseDispBlanksAs(chartEl);
+  if (dispBlanksAs !== undefined) out.dispBlanksAs = dispBlanksAs;
 
   return out;
 }
@@ -815,6 +819,36 @@ function parseLegend(chartEl: XmlElement): false | ChartLegendPosition | undefin
       return "topRight";
     default:
       // Unknown legendPos values are dropped rather than fabricated.
+      return undefined;
+  }
+}
+
+// ── Display Blanks As ─────────────────────────────────────────────
+
+/**
+ * Pull `<c:dispBlanksAs val=".."/>` off `<c:chart>`. The OOXML default
+ * is `"gap"`, which collapses to `undefined` so absence and the
+ * default round-trip identically through {@link cloneChart}.
+ *
+ * Only the three values OOXML defines (`"gap"`, `"zero"`, `"span"`)
+ * surface; unknown or malformed values drop to `undefined` rather than
+ * fabricate a token Excel rejects.
+ */
+function parseDispBlanksAs(chartEl: XmlElement): ChartDisplayBlanksAs | undefined {
+  const el = findChild(chartEl, "dispBlanksAs");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  switch (raw) {
+    case "zero":
+      return "zero";
+    case "span":
+      return "span";
+    case "gap":
+      // OOXML default — collapse to undefined for symmetry with the
+      // writer's `dispBlanksAs` field.
+      return undefined;
+    default:
       return undefined;
   }
 }
