@@ -112,21 +112,18 @@ export function writeWorkbookXml(
     parts.push(xmlElement("definedNames", undefined, dnElements));
   }
 
-  // ── calcPr — tells Excel to recalculate all formulas on open ──
-  parts.push(xmlSelfClose("calcPr", { calcId: 0, fullCalcOnLoad: 1 }));
-
-  // ── externalReferences — must come AFTER calcPr per OOXML schema order
-  // is incorrect; the schema actually places it before. Excel however
-  // accepts both orders, and ECMA-376 §18.2.2 lists externalReferences
-  // before calcPr in the workbook content model, so emit it earlier.
-  // Move logic: rebuild parts with the block injected at the right spot.
+  // ── externalReferences — ECMA-376 §18.2.2 places the block after
+  // definedNames and before calcPr. Excel tolerates other orders, but
+  // the spec order is what we emit so generated files validate clean.
   if (externalLinkRels && externalLinkRels.length > 0) {
     const refChildren = externalLinkRels.map((r) =>
       xmlSelfClose("externalReference", { "r:id": r.rId }),
     );
-    // Insert just before the trailing calcPr we already pushed.
-    parts.splice(parts.length - 1, 0, xmlElement("externalReferences", undefined, refChildren));
+    parts.push(xmlElement("externalReferences", undefined, refChildren));
   }
+
+  // ── calcPr — tells Excel to recalculate all formulas on open ──
+  parts.push(xmlSelfClose("calcPr", { calcId: 0, fullCalcOnLoad: 1 }));
 
   return xmlDocument("workbook", { xmlns: NS_SPREADSHEET, "xmlns:r": NS_R }, parts);
 }

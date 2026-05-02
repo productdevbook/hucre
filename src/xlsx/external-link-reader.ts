@@ -43,15 +43,9 @@ export function parseExternalLink(xml: string, relsXml?: string): ExternalLink {
     const rel = rId ? rels.find((r) => r.id === rId) : undefined;
     if (rel) {
       target = rel.target;
-      // parseRelationships only surfaces id/type/target today, so we re-read
-      // TargetMode straight from the XML to avoid losing it.
-      // `[^>]*?` keeps the match scoped to a single Relationship element —
-      // relationship elements are always self-closed with `/>`, so we can
-      // safely anchor on `>` even when Target contains `/` (e.g. `../foo`).
-      const modeMatch = relsXml.match(
-        new RegExp(`Id="${escapeRegex(rId ?? "")}"[^>]*?TargetMode="([^"]+)"`),
-      );
-      if (modeMatch) targetMode = modeMatch[1] as "External" | "Internal";
+      if (rel.targetMode === "External" || rel.targetMode === "Internal") {
+        targetMode = rel.targetMode;
+      }
     }
   }
 
@@ -167,10 +161,6 @@ function parseIntSafe(s: string | undefined, fallback: number): number {
   if (s === undefined) return fallback;
   const n = parseInt(s, 10);
   return Number.isNaN(n) ? fallback : n;
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 // Deliberately exported but not used internally — exposed for callers

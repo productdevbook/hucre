@@ -312,6 +312,37 @@ workbook.sheets[0].rows[0][0] = "Updated!";
 const output = await saveXlsx(workbook); // Charts, VBA, themes preserved
 ```
 
+### External Workbook References
+
+`[N]Sheet!Ref` references to other workbooks are read into a typed
+`workbook.externalLinks` model and re-declared on roundtrip — without
+this the `<externalReferences>` block and the matching relationship
+disappear from `xl/workbook.xml.rels`, leaving Excel with orphan
+`externalLinkN.xml` parts that it ignores.
+
+```ts
+import { readXlsx, parseExternalLink } from "hucre";
+
+const wb = await readXlsx(buf);
+for (const link of wb.externalLinks ?? []) {
+  console.log(link.target, link.targetMode, link.sheetNames);
+  for (const sheet of link.sheetData) {
+    for (const cell of sheet.cells) {
+      // cell.type ∈ "n" | "s" | "b" | "e" | "str"
+      console.log(cell.ref, cell.type, cell.value);
+    }
+  }
+}
+
+// Standalone parser when you already have the XML strings
+const link = parseExternalLink(externalLinkXml, externalLinkRelsXml);
+```
+
+The 1-based index in `workbook.externalLinks` matches the `[N]` prefix
+used by formulas like `[1]Sheet1!A1`. Cached `t="s"` values stay as
+shared-string indices into the _external_ workbook (which hucre cannot
+dereference); resolved strings live in the linked file.
+
 ### Unified API
 
 Auto-detect format and work with simple helpers:
@@ -776,6 +807,7 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `streamXlsxRows(input, options?)`  | AsyncGenerator yielding rows one at a time                              |
 | `XlsxStreamWriter`                 | Incremental row-by-row XLSX writing; auto-splits past `maxRowsPerSheet` |
 | `XLSX_MAX_ROWS_PER_SHEET`          | Excel hard row limit (1,048,576) — exported constant                    |
+| `parseExternalLink(xml, relsXml?)` | Parse `xl/externalLinks/externalLinkN.xml` → `ExternalLink`             |
 
 ### ODS
 

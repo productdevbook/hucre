@@ -92,6 +92,7 @@ export interface SerializedWorkbook {
   dateSystem?: Workbook["dateSystem"];
   defaultFont?: Workbook["defaultFont"];
   activeSheet?: Workbook["activeSheet"];
+  externalLinks?: Workbook["externalLinks"];
 }
 
 // ── Serialize ───────────────────────────────────────────────────────
@@ -243,6 +244,7 @@ export function serializeWorkbook(wb: Workbook): SerializedWorkbook {
   if (wb.dateSystem) out.dateSystem = wb.dateSystem;
   if (wb.defaultFont) out.defaultFont = wb.defaultFont;
   if (wb.activeSheet !== undefined) out.activeSheet = wb.activeSheet;
+  if (wb.externalLinks) out.externalLinks = wb.externalLinks;
 
   return out;
 }
@@ -395,6 +397,7 @@ export function deserializeWorkbook(data: SerializedWorkbook): Workbook {
   if (data.dateSystem) wb.dateSystem = data.dateSystem;
   if (data.defaultFont) wb.defaultFont = data.defaultFont;
   if (data.activeSheet !== undefined) wb.activeSheet = data.activeSheet;
+  if (data.externalLinks) wb.externalLinks = data.externalLinks;
 
   return wb;
 }
