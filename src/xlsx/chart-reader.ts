@@ -12,7 +12,13 @@
 //
 // OOXML reference: ECMA-376 Part 1, §21.2 (DrawingML — Charts).
 
-import type { Chart, ChartKind, ChartSeriesInfo } from "../_types";
+import type {
+  Chart,
+  ChartBarGrouping,
+  ChartKind,
+  ChartLegendPosition,
+  ChartSeriesInfo,
+} from "../_types";
 import { parseXml } from "../xml/parser";
 import type { XmlElement } from "../xml/parser";
 
@@ -62,10 +68,18 @@ export function parseChart(xml: string): Chart | undefined {
   if (plotArea) {
     let seriesCount = 0;
     const series: ChartSeriesInfo[] = [];
+    let barGrouping: ChartBarGrouping | undefined;
     for (const child of childElements(plotArea)) {
       const kind = CHART_KIND_TAGS.get(child.local);
       if (!kind) continue;
       if (!out.kinds.includes(kind)) out.kinds.push(kind);
+      // Pull grouping off the first bar/column-flavored chart-type
+      // element. Combo charts that mix bar with line/area would
+      // otherwise need a per-series field; for the common case of a
+      // single `<c:barChart>` body this is the value Excel applies.
+      if (barGrouping === undefined && (kind === "bar" || kind === "bar3D")) {
+        barGrouping = parseBarGrouping(child);
+      }
       let localIndex = 0;
       for (const ser of childElements(child)) {
         if (ser.local !== "ser") continue;
@@ -76,7 +90,11 @@ export function parseChart(xml: string): Chart | undefined {
     }
     out.seriesCount = seriesCount;
     if (series.length > 0) out.series = series;
+    if (barGrouping !== undefined) out.barGrouping = barGrouping;
   }
+
+  const legend = parseLegend(chartEl);
+  if (legend !== undefined) out.legend = legend;
 
   return out;
 }
@@ -176,6 +194,93 @@ function parseSeriesColor(ser: XmlElement): string | undefined {
   if (typeof val !== "string") return undefined;
   const normalized = val.replace(/^#/, "").toUpperCase();
   return /^[0-9A-F]{6}$/.test(normalized) ? normalized : undefined;
+}
+
+// ── Legend ────────────────────────────────────────────────────────
+
+/**
+ * Map `<c:legend><c:legendPos val=".."/></c:legend>` to the writer-side
+ * {@link ChartLegendPosition}. Returns `false` when `<c:delete val="1"/>`
+ * is present (Excel's "no legend" state); returns `undefined` when the
+ * chart has no `<c:legend>` element at all.
+ */
+function parseLegend(chartEl: XmlElement): false | ChartLegendPosition | undefined {
+  const legend = findChild(chartEl, "legend");
+  if (!legend) return undefined;
+
+  // <c:delete val="1"/> means the chart explicitly suppresses the
+  // legend. Some Excel versions emit just an empty `<c:legend/>`
+  // followed by `<c:overlay/>` even when the legend is hidden, but
+  // `<c:delete val="1">` is the canonical "no legend" marker.
+  const del = findChild(legend, "delete");
+  if (del && readBoolVal(del.attrs.val) === true) return false;
+
+  const pos = findChild(legend, "legendPos");
+  if (!pos) {
+    // A legend element without legendPos is valid OOXML (Excel falls
+    // back to "right"). Surface "right" so the cloned chart preserves
+    // the visible-legend state.
+    return "right";
+  }
+  const val = pos.attrs.val;
+  if (typeof val !== "string") return "right";
+  switch (val) {
+    case "t":
+      return "top";
+    case "b":
+      return "bottom";
+    case "l":
+      return "left";
+    case "r":
+      return "right";
+    case "tr":
+      return "topRight";
+    default:
+      // Unknown legendPos values are dropped rather than fabricated.
+      return undefined;
+  }
+}
+
+// ── Bar Grouping ──────────────────────────────────────────────────
+
+/**
+ * Pull `<c:grouping val=".."/>` off a `<c:barChart>` element. Returns
+ * `undefined` when the grouping element is missing or carries the
+ * default `"standard"` / `"clustered"` value — the writer's
+ * {@link SheetChart.barGrouping} treats both as the unspecified
+ * default, so omitting them keeps the parsed shape minimal.
+ */
+function parseBarGrouping(barChart: XmlElement): ChartBarGrouping | undefined {
+  const grouping = findChild(barChart, "grouping");
+  if (!grouping) return undefined;
+  const val = grouping.attrs.val;
+  if (typeof val !== "string") return undefined;
+  switch (val) {
+    case "stacked":
+      return "stacked";
+    case "percentStacked":
+      return "percentStacked";
+    case "clustered":
+      return "clustered";
+    case "standard":
+      // OOXML's `standard` for barChart is functionally equivalent to
+      // `clustered` (Excel renders side-by-side). Surface neither so
+      // the cloned chart inherits the writer's default.
+      return undefined;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Parse an OOXML boolean attribute. The spec allows `"1"` / `"0"` /
+ * `"true"` / `"false"`.
+ */
+function readBoolVal(raw: string | undefined): boolean | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === "1" || raw === "true") return true;
+  if (raw === "0" || raw === "false") return false;
+  return undefined;
 }
 
 // ── Internals ─────────────────────────────────────────────────────

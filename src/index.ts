@@ -134,7 +134,13 @@ export { cloneChart, chartKindToWriteKind } from "./xlsx/chart-clone";
 export type { CloneChartOptions, CloneChartSeriesOverride } from "./xlsx/chart-clone";
 export { addChart, getCharts } from "./xlsx/chart-helpers";
 export type { ChartLocation } from "./xlsx/chart-helpers";
-export type { Chart, ChartKind, ChartSeriesInfo } from "./_types";
+export type {
+  Chart,
+  ChartBarGrouping,
+  ChartKind,
+  ChartLegendPosition,
+  ChartSeriesInfo,
+} from "./_types";
 
 // ── Date Utilities ─────────────────────────────────────────────────
 export {
