@@ -442,6 +442,9 @@ describe("writeWorkbookRels — hasCellImages", () => {
       false,
       false,
       [{ rId: "rId4", target: "externalLinks/externalLink1.xml" }],
+      undefined,
+      undefined,
+      undefined,
       true,
     );
     expect(rels).toContain(REL_CELL_IMAGES);

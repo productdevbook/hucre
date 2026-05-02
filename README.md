@@ -371,6 +371,81 @@ Synthesizing a `cellimages.xml` from a model on a fresh `writeXlsx`
 call (without an existing source file) is a follow-up — for now the
 read + roundtrip-preserve side is in place.
 
+### Slicers & Timeline Filters
+
+Slicers (Excel 2010+) and timeline slicers (Excel 2013+) are read into
+typed `workbook.slicerCaches` / `workbook.timelineCaches` plus per-sheet
+`sheet.slicers` / `sheet.timelines` arrays. On `saveXlsx` the slicer /
+timeline parts are re-declared in `[Content_Types].xml`, the workbook
+rels, the workbook `extLst`, and each sheet's rels — without this
+roundtrip Excel saw the cache parts as orphans and dropped the
+slicers / timelines on next open.
+
+```ts
+import { readXlsx } from "hucre";
+
+const wb = await readXlsx(buf);
+
+// Workbook-level cache definitions.
+console.log(wb.slicerCaches); // SlicerCache[] (pivot-table or table source)
+console.log(wb.timelineCaches); // TimelineCache[]
+
+// Per-sheet slicer / timeline instances.
+for (const sheet of wb.sheets) {
+  for (const s of sheet.slicers ?? []) console.log(s.name, s.cache, s.caption);
+  for (const t of sheet.timelines ?? []) console.log(t.name, t.cache, t.level);
+}
+
+// Standalone parsers when you already have the XML strings.
+import { parseSlicers, parseSlicerCache, parseTimelines, parseTimelineCache } from "hucre";
+```
+
+The worksheet body's `<x14:slicerList>` / `<x15:timelines>` extension
+blocks are not yet re-injected when the worksheet XML is regenerated —
+Excel still sees the parts as wired up via rels and content-types so
+they survive the roundtrip, but synthesizing slicers from a fresh
+write is a follow-up.
+
+### Pivot Tables
+
+Pivot tables (`xl/pivotTables/pivotTableN.xml`) and their workbook-level
+cache definitions (`xl/pivotCache/pivotCacheDefinitionN.xml` plus the
+companion `pivotCacheRecordsN.xml`) are read into typed
+`workbook.pivotCaches` and per-sheet `sheet.pivotTables` arrays. On
+`saveXlsx` the pivot parts are re-declared in `[Content_Types].xml`,
+the workbook rels, the workbook `<pivotCaches>` block, and each host
+sheet's rels — Excel previously saw the pivot parts as orphans and
+dropped the tables on next open.
+
+```ts
+import { readXlsx } from "hucre";
+
+const wb = await readXlsx(buf);
+
+// Workbook-level cache definitions.
+for (const cache of wb.pivotCaches ?? []) {
+  console.log(cache.cacheId, cache.sourceSheet, cache.sourceRef, cache.fieldNames);
+}
+
+// Per-sheet pivot table instances.
+for (const sheet of wb.sheets) {
+  for (const pt of sheet.pivotTables ?? []) {
+    console.log(pt.name, pt.location, pt.cacheId);
+    for (const f of pt.fields) {
+      console.log("  ", f.name, f.axis, f.function);
+    }
+  }
+}
+
+// Standalone parsers when you already have the XML strings.
+import { parsePivotTable, parsePivotCacheDefinition, attachPivotCacheFields } from "hucre";
+```
+
+`PivotTable.cacheId` matches the workbook-level `cacheId` rather than a
+per-table relationship, so reordering `Workbook.pivotCaches` keeps the
+links sound. Synthesizing a pivot table or cache definition from a
+fresh `writeXlsx` is a follow-up — this is read + preserve only.
+
 ### Unified API
 
 Auto-detect format and work with simple helpers:
@@ -824,20 +899,27 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 
 ### XLSX
 
-| Function                           | Description                                                             |
-| ---------------------------------- | ----------------------------------------------------------------------- |
-| `readXlsx(input, options?)`        | Parse XLSX from `Uint8Array \| ArrayBuffer`                             |
-| `writeXlsx(options)`               | Generate XLSX, returns `Uint8Array`                                     |
-| `readXlsxObjects(input, options?)` | Read sheet as `{ data, headers }` — mirror of CSV                       |
-| `writeXlsxObjects(data, options?)` | Write objects to XLSX (auto-derives headers from keys)                  |
-| `openXlsx(input, options?)`        | Open for round-trip (preserves unknown parts)                           |
-| `saveXlsx(workbook)`               | Save round-trip workbook back to XLSX                                   |
-| `streamXlsxRows(input, options?)`  | AsyncGenerator yielding rows one at a time                              |
-| `XlsxStreamWriter`                 | Incremental row-by-row XLSX writing; auto-splits past `maxRowsPerSheet` |
-| `XLSX_MAX_ROWS_PER_SHEET`          | Excel hard row limit (1,048,576) — exported constant                    |
-| `parseExternalLink(xml, relsXml?)` | Parse `xl/externalLinks/externalLinkN.xml` → `ExternalLink`             |
-| `parseCellImages(xml)`             | Parse `xl/cellimages.xml` → `ParsedCellImageRef[]` (WPS DISPIMG)        |
-| `assembleCellImages(refs, media)`  | Combine parsed refs with resolved media bytes → `CellImage[]`           |
+| Function                           | Description                                                                 |
+| ---------------------------------- | --------------------------------------------------------------------------- |
+| `readXlsx(input, options?)`        | Parse XLSX from `Uint8Array \| ArrayBuffer`                                 |
+| `writeXlsx(options)`               | Generate XLSX, returns `Uint8Array`                                         |
+| `readXlsxObjects(input, options?)` | Read sheet as `{ data, headers }` — mirror of CSV                           |
+| `writeXlsxObjects(data, options?)` | Write objects to XLSX (auto-derives headers from keys)                      |
+| `openXlsx(input, options?)`        | Open for round-trip (preserves unknown parts)                               |
+| `saveXlsx(workbook)`               | Save round-trip workbook back to XLSX                                       |
+| `streamXlsxRows(input, options?)`  | AsyncGenerator yielding rows one at a time                                  |
+| `XlsxStreamWriter`                 | Incremental row-by-row XLSX writing; auto-splits past `maxRowsPerSheet`     |
+| `XLSX_MAX_ROWS_PER_SHEET`          | Excel hard row limit (1,048,576) — exported constant                        |
+| `parseExternalLink(xml, relsXml?)` | Parse `xl/externalLinks/externalLinkN.xml` → `ExternalLink`                 |
+| `parseCellImages(xml)`             | Parse `xl/cellimages.xml` → `ParsedCellImageRef[]` (WPS DISPIMG)            |
+| `assembleCellImages(refs, media)`  | Combine parsed refs with resolved media bytes → `CellImage[]`               |
+| `parseSlicers(xml)`                | Parse `xl/slicers/slicerN.xml` → `Slicer[]`                                 |
+| `parseSlicerCache(xml)`            | Parse `xl/slicerCaches/slicerCacheN.xml` → `SlicerCache \| undefined`       |
+| `parseTimelines(xml)`              | Parse `xl/timelines/timelineN.xml` → `Timeline[]`                           |
+| `parseTimelineCache(xml)`          | Parse `xl/timelineCaches/timelineCacheN.xml` → `TimelineCache \| undefined` |
+| `parsePivotTable(xml)`             | Parse `xl/pivotTables/pivotTableN.xml` → `PivotTable \| undefined`          |
+| `parsePivotCacheDefinition(xml)`   | Parse `xl/pivotCache/pivotCacheDefinitionN.xml` → `PivotCache \| undefined` |
+| `attachPivotCacheFields(pt, c)`    | Overlay `PivotCache.fieldNames` onto a `PivotTable.fields[].name`           |
 
 ### ODS
 
@@ -976,11 +1058,11 @@ Contributions are welcome! Please [open an issue](https://github.com/productdevb
 - XLSB binary format read
 - Formula evaluation engine
 - File encryption/decryption (AES-256, MS-OFFCRYPTO)
-- Pivot table creation
+- Pivot table creation — synthesize from a fresh write (read + roundtrip already supported)
 - Threaded comments (Excel 365+) — synthesize from a fresh write (read + roundtrip already supported)
 - Checkboxes (Excel 2024+)
 - VBA/macro injection
-- Slicers & timeline filters
+- Slicers & timeline filters — synthesize from a fresh write (read + roundtrip already supported)
 - WPS DISPIMG cell-embedded images — synthesize from a fresh write (read + roundtrip already supported)
 - R1C1 notation support
 - Accessibility helpers (WCAG 2.1 AA)
