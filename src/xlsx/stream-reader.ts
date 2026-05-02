@@ -8,7 +8,7 @@ import type { SharedString } from "./shared-strings";
 import type { ParsedStyles } from "./styles";
 import type { Relationship } from "./relationships";
 import { ParseError, ZipError } from "../errors";
-import { bufferReadableStream } from "../_input";
+import { assertNotEncrypted, bufferReadableStream } from "../_input";
 import { ZipReader } from "../zip/reader";
 import { parseXml, parseSaxStream, decodeOoxmlEscapes } from "../xml/parser";
 import { parseContentTypes } from "./content-types";
@@ -479,6 +479,11 @@ export async function* streamXlsxRows(
   } else {
     data = await bufferReadableStream(input);
   }
+
+  // Detect password-protected workbooks (OLE2/CFB envelope) up front so
+  // streamers fail fast with a typed `EncryptedFileError` instead of a
+  // generic ZIP ParseError. Decryption is tracked in #156.
+  assertNotEncrypted(data, "xlsx");
 
   // 1. Open ZIP archive
   let zip: ZipReader;

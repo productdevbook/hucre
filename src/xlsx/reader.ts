@@ -30,7 +30,7 @@ import {
 } from "./slicer-reader";
 import { parseChart } from "./chart-reader";
 import { ParseError, ZipError } from "../errors";
-import { readInputToUint8Array } from "../_input";
+import { assertNotEncrypted, readInputToUint8Array } from "../_input";
 import { ZipReader } from "../zip/reader";
 import { parseXml } from "../xml/parser";
 import { parseContentTypes } from "./content-types";
@@ -115,6 +115,12 @@ function dirname(path: string): string {
  */
 export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise<Workbook> {
   const data = await readInputToUint8Array(input);
+
+  // Detect password-protected workbooks (OLE2/CFB envelope) and surface
+  // a typed `EncryptedFileError` instead of letting the ZIP reader fail
+  // with a generic "not a valid ZIP archive" ParseError. Decryption
+  // itself is tracked in #156.
+  assertNotEncrypted(data, "xlsx");
 
   // 1. Open ZIP archive
   let zip: ZipReader;

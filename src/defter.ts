@@ -18,8 +18,8 @@ import { readXlsx } from "./xlsx/reader";
 import { writeXlsx } from "./xlsx/writer";
 import { readOds } from "./ods/reader";
 import { writeOds } from "./ods/writer";
-import { UnsupportedFormatError } from "./errors";
-import { readInputToUint8Array } from "./_input";
+import { EncryptedFileError, UnsupportedFormatError } from "./errors";
+import { isOle2Container, readInputToUint8Array } from "./_input";
 
 // ── Format Detection ────────────────────────────────────────────────
 
@@ -83,6 +83,16 @@ function detectFormat(data: Uint8Array): "xlsx" | "ods" {
  */
 export async function read(input: ReadInput, options?: ReadOptions): Promise<Workbook> {
   const data = await readInputToUint8Array(input);
+
+  // Surface password-protected workbooks (OLE2/CFB envelope) before
+  // `detectFormat` rejects them as "not a ZIP archive". The container
+  // alone doesn't tell us whether the encrypted package inside is XLSX
+  // or ODS, so we leave `format` unset on the error. Decryption is
+  // tracked in #156.
+  if (isOle2Container(data)) {
+    throw new EncryptedFileError();
+  }
+
   const format = detectFormat(data);
 
   if (format === "ods") {

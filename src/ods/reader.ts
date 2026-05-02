@@ -14,7 +14,7 @@ import type {
   Hyperlink,
 } from "../_types";
 import { ParseError, ZipError } from "../errors";
-import { readInputToUint8Array } from "../_input";
+import { assertNotEncrypted, readInputToUint8Array } from "../_input";
 import { ZipReader } from "../zip/reader";
 import { parseXml } from "../xml/parser";
 import type { XmlElement } from "../xml/parser";
@@ -570,6 +570,12 @@ function parseMetaXml(xml: string): Partial<WorkbookProperties> {
  */
 export async function readOds(input: ReadInput, options?: ReadOptions): Promise<Workbook> {
   const data = await readInputToUint8Array(input);
+
+  // ODF supports password-encrypted documents via the same OLE2 / CFB
+  // envelope Office uses for XLSX. Catch it before the ZIP reader does
+  // so callers see a typed `EncryptedFileError` rather than a generic
+  // ZIP ParseError. Decryption is tracked in #156.
+  assertNotEncrypted(data, "ods");
 
   // 1. Open ZIP archive
   let zip: ZipReader;

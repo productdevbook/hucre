@@ -58,7 +58,22 @@ export class UnsupportedFormatError extends DefterError {
 export class EncryptedFileError extends DefterError {
   override name = "EncryptedFileError";
 
-  constructor() {
-    super("File is password-protected. Provide a password in options.");
+  /**
+   * Format hint for the encrypted container, when known. `"xlsx"` /
+   * `"ods"` mean the caller's reader detected the OLE2 / CFB envelope
+   * that Office uses for password-protected workbooks. Older callers
+   * that constructed `new EncryptedFileError()` without a hint still
+   * see `undefined` here.
+   */
+  readonly format?: "xlsx" | "ods";
+
+  constructor(format?: "xlsx" | "ods", message?: string) {
+    super(
+      message ??
+        (format
+          ? `File is password-protected (${format.toUpperCase()} encrypted with the OLE2/CFB container). Reading password-protected files is not yet supported.`
+          : "File is password-protected. Provide a password in options."),
+    );
+    this.format = format;
   }
 }

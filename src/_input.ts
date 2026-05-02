@@ -12,7 +12,52 @@
 // ──────────────────────────────────────────────────────────────────────
 
 import type { ReadInput } from "./_types";
-import { ParseError } from "./errors";
+import { EncryptedFileError, ParseError } from "./errors";
+
+// ── OLE2 / Compound File Binary container detection ──────────────────
+//
+// Office password-protected XLSX / XLSM / ODS files are not ZIP archives —
+// they are OLE2 (a.k.a. Compound File Binary, CFB) containers carrying
+// `\EncryptionInfo` and `\EncryptedPackage` streams (MS-OFFCRYPTO
+// §2.3.4.x). They start with a fixed 8-byte magic header that has no
+// overlap with the ZIP / OOXML / ODF signatures, so a quick byte sniff
+// is enough to tell an encrypted container apart from a plain workbook.
+//
+// We don't actually decrypt the package here — full encryption support
+// is tracked in #156. Surfacing the situation early as a typed
+// `EncryptedFileError` saves callers from a confusing
+// `"not a valid ZIP archive"` ParseError several layers down.
+
+/** OLE2 / CFB magic header: `D0 CF 11 E0 A1 B1 1A E1`. */
+const OLE2_MAGIC = Object.freeze([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1] as const);
+
+/**
+ * Whether `data` starts with the OLE2 / CFB compound-document magic
+ * bytes — the envelope Office uses for password-protected XLSX, XLSM,
+ * and ODS files. Returns `false` for shorter buffers and for any other
+ * leading bytes (plain ZIP archives, XML, etc.).
+ */
+export function isOle2Container(data: Uint8Array): boolean {
+  if (data.length < OLE2_MAGIC.length) return false;
+  for (let i = 0; i < OLE2_MAGIC.length; i++) {
+    if (data[i] !== OLE2_MAGIC[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * Throw {@link EncryptedFileError} when `data` is an OLE2 / CFB
+ * compound-document container — the envelope Office uses for
+ * password-protected XLSX / ODS workbooks. No-op for plain ZIP
+ * archives. `format` is recorded on the error so callers can
+ * distinguish XLSX vs. ODS encryption paths once decryption is wired
+ * up (see #156).
+ */
+export function assertNotEncrypted(data: Uint8Array, format: "xlsx" | "ods"): void {
+  if (isOle2Container(data)) {
+    throw new EncryptedFileError(format);
+  }
+}
 
 /**
  * Drain a {@link ReadableStream} of byte chunks into a single
