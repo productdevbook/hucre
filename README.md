@@ -528,6 +528,11 @@ for (const sheet of wb.sheets) {
     console.log(chart.kinds, chart.seriesCount, chart.title);
     // e.g. ["bar"], 2, "Quarterly Sales"
 
+    // chart.anchor surfaces the drawing-layer cell anchor that pins
+    // the chart to the host sheet (twoCellAnchor / oneCellAnchor).
+    console.log(chart.anchor);
+    // e.g. { from: { row: 1, col: 3 }, to: { row: 16, col: 10 } }
+
     for (const s of chart.series ?? []) {
       console.log(s.kind, s.index, s.name, s.valuesRef, s.categoriesRef, s.color);
       // e.g. "bar" 0 "Revenue" "Sheet1!$B$2:$B$10" "Sheet1!$A$2:$A$10" "1F77B4"
@@ -546,6 +551,11 @@ const chart = parseChart(xml);
 fed back into `WriteSheet.charts` to clone or re-bind a chart.
 Bubble/scatter `<c:numLit>` series (literal embedded data, no
 formula) intentionally surface no `valuesRef`/`categoriesRef`.
+`Chart.anchor` mirrors `SheetChart.anchor` on the writer side —
+`twoCellAnchor` charts surface both `from` and `to`,
+`oneCellAnchor` charts surface `from` only (intrinsic size lives in
+`<xdr:ext>`), and `absoluteAnchor` charts (EMU-positioned, no cell
+anchor) report `anchor` as `undefined`.
 Sheets that hucre actively regenerates because they
 also carry hucre-managed images currently keep the chart bodies but
 lose the in-drawing chart anchor — merging hucre's drawing output
@@ -629,6 +639,35 @@ writer can author collapse onto their write counterparts (`bar` /
 `area3D` → `area`); kinds with no analog (`bubble`, `radar`,
 `surface`, `stock`, `ofPie`) require an explicit `options.type`
 override.
+
+#### Walking and adding charts with `getCharts` / `addChart`
+
+`getCharts(workbook)` flattens every chart anchored on the workbook's
+sheets into a single array, attaching the sheet name and indexes so
+callers don't have to walk `workbook.sheets[].charts` themselves.
+`addChart(sheet, chart)` is the symmetric writer-side helper that
+appends a `SheetChart` to a `WriteSheet`, lazily allocating the
+`charts` array on the first call:
+
+```ts
+import { addChart, getCharts, openXlsx, writeXlsx } from "hucre";
+
+// Read side — find every chart in a template workbook.
+const wb = await openXlsx(templateBytes);
+for (const { sheetName, chart } of getCharts(wb)) {
+  console.log(sheetName, chart.kinds, chart.title);
+}
+
+// Write side — declarative chart attachment.
+const dashboard = { name: "Dashboard", rows: dashboardRows };
+addChart(dashboard, {
+  type: "column",
+  title: "Q1 Revenue",
+  series: [{ name: "Revenue", values: "B2:B13", categories: "A2:A13" }],
+  anchor: { from: { row: 14, col: 0 } },
+});
+await writeXlsx({ sheets: [dashboard] });
+```
 
 ### Unified API
 
@@ -1107,6 +1146,8 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `parseChart(xml)`                  | Parse `xl/charts/chartN.xml` → `Chart \| undefined`                         |
 | `cloneChart(source, options)`      | Convert a parsed `Chart` into a writer-ready `SheetChart`                   |
 | `chartKindToWriteKind(kind)`       | Map a read-side `ChartKind` onto its writable counterpart, if any           |
+| `getCharts(workbook)`              | Enumerate every chart anchored on the workbook with its sheet context       |
+| `addChart(sheet, chart)`           | Append a `SheetChart` to a `WriteSheet`, lazily creating the array          |
 
 ### ODS
 
