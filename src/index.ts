@@ -147,6 +147,8 @@ export type {
   ChartKind,
   ChartLegendPosition,
   ChartLineAreaGrouping,
+  ChartLineDashStyle,
+  ChartLineStroke,
   ChartMarker,
   ChartMarkerSymbol,
   ChartSeriesInfo,

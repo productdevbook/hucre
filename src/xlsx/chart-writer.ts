@@ -12,6 +12,8 @@ import type {
   ChartAxisScale,
   ChartDataLabels,
   ChartDisplayBlanksAs,
+  ChartLineDashStyle,
+  ChartLineStroke,
   ChartMarker,
   ChartMarkerSymbol,
   ChartSeries,
@@ -533,6 +535,7 @@ function buildLineChart(chart: SheetChart, sheetName: string): string {
     const seriesXml = buildSeries(chart.series[i], i, sheetName, /* numericCategories */ false, {
       smooth: chart.series[i].smooth === true,
       dataLabels: chart.dataLabels,
+      stroke: chart.series[i].stroke,
       marker: chart.series[i].marker,
     });
     children.push(seriesXml);
@@ -691,6 +694,7 @@ function buildScatterChart(chart: SheetChart, sheetName: string): string {
       buildSeries(chart.series[i], i, sheetName, /* numericCategories */ true, {
         smooth: chart.series[i].smooth === true ? true : undefined,
         dataLabels: chart.dataLabels,
+        stroke: chart.series[i].stroke,
         marker: chart.series[i].marker,
       }),
     );
@@ -790,6 +794,15 @@ interface SeriesOptions {
    */
   dataLabels?: ChartDataLabels;
   /**
+   * Per-series line stroke (dash pattern + width). Only meaningful for
+   * line / scatter series — every other family ignores the field. The
+   * OOXML schema places stroke styling inside `<c:spPr><a:ln>` which is
+   * shared with the series fill color, so the writer threads the
+   * stroke into the same `<c:spPr>` block whether or not a fill color
+   * is set.
+   */
+  stroke?: ChartLineStroke;
+  /**
    * Per-series marker styling. Only meaningful for line / scatter
    * series — every other family ignores the field. The OOXML schema
    * places `<c:marker>` between `<c:spPr>` and `<c:dLbls>` on
@@ -820,10 +833,12 @@ function buildSeries(
     );
   }
 
-  // Optional fill color
-  if (series.color) {
-    children.push(buildSpPr(series.color));
-  }
+  // Optional fill color and / or line stroke (line / scatter only emit
+  // `<a:ln>` width / dash from `options.stroke`; non-line callers leave
+  // `options.stroke` undefined so the field is silently dropped on
+  // every other chart family).
+  const spPr = buildSeriesSpPr(series.color, options?.stroke);
+  if (spPr) children.push(spPr);
 
   // Marker — only line/scatter series honor `<c:marker>` per the OOXML
   // schema (CT_LineSer / CT_ScatterSer). The element sits between
@@ -880,14 +895,116 @@ function buildSeries(
   return xmlElement("c:ser", undefined, children);
 }
 
-function buildSpPr(rgbHex: string): string {
-  const normalized = rgbHex.replace(/^#/, "").toUpperCase();
-  return xmlElement("c:spPr", undefined, [
-    xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: normalized })]),
-    xmlElement("a:ln", undefined, [
-      xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: normalized })]),
-    ]),
-  ]);
+// ── Stroke ───────────────────────────────────────────────────────────
+
+const VALID_DASH_STYLES: ReadonlySet<ChartLineDashStyle> = new Set([
+  "solid",
+  "dot",
+  "dash",
+  "lgDash",
+  "dashDot",
+  "lgDashDot",
+  "lgDashDotDot",
+  "sysDash",
+  "sysDot",
+  "sysDashDot",
+  "sysDashDotDot",
+]);
+
+const STROKE_WIDTH_MIN_PT = 0.25;
+const STROKE_WIDTH_MAX_PT = 13.5;
+const EMU_PER_PT = 12700;
+
+/**
+ * Validate a dash style against `ST_PresetLineDashVal`. Returns
+ * `undefined` for unrecognized values so the writer can elide
+ * `<a:prstDash>` rather than emit a token Excel will reject.
+ */
+function normalizeDashStyle(value: ChartLineDashStyle | undefined): ChartLineDashStyle | undefined {
+  if (value === undefined) return undefined;
+  return VALID_DASH_STYLES.has(value) ? value : undefined;
+}
+
+/**
+ * Convert a stroke width in points to the integer EMU value the OOXML
+ * `w` attribute requires. Excel's UI exposes 0.25..13.5 pt — values
+ * outside that band are clamped to keep round-trips inside the range
+ * Excel will render. Non-finite values collapse to `undefined` so the
+ * writer can omit the attribute entirely. The point value is also
+ * snapped to the nearest quarter-point so a parsed-then-written stroke
+ * does not drift across round-trips (Excel rounds in the UI anyway).
+ */
+function clampStrokeWidthPt(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
+  const snapped = Math.round(value * 4) / 4;
+  if (snapped < STROKE_WIDTH_MIN_PT) return STROKE_WIDTH_MIN_PT;
+  if (snapped > STROKE_WIDTH_MAX_PT) return STROKE_WIDTH_MAX_PT;
+  return snapped;
+}
+
+/**
+ * Build the `<c:spPr>` element shared by series fill color and series
+ * line stroke. Returns `undefined` when neither field carries any
+ * meaningful settings — an empty `<c:spPr/>` collapses to the
+ * inherited series-rotation default Excel picks anyway, so omitting it
+ * keeps untouched chart XML byte-clean.
+ *
+ * The OOXML `<a:ln>` element accepts both a `w` attribute (stroke
+ * width in EMU) and child elements `<a:solidFill>` / `<a:prstDash>` in
+ * a fixed order. When a fill color is set, the stroke also renders the
+ * same color (matching Excel's "Format Data Series → Fill" default
+ * which paints the line in the fill color). Stroke metadata (dash and
+ * width) layers on top without overriding the line color so a `color +
+ * stroke` combo behaves like Excel's UI: the line picks up the fill
+ * color and the dash / width override visibility-only attributes.
+ */
+function buildSeriesSpPr(
+  rgbHex: string | undefined,
+  stroke: ChartLineStroke | undefined,
+): string | undefined {
+  const fillHex = rgbHex ? rgbHex.replace(/^#/, "").toUpperCase() : undefined;
+  const dash = normalizeDashStyle(stroke?.dash);
+  const widthPt = clampStrokeWidthPt(stroke?.width);
+
+  if (!fillHex && dash === undefined && widthPt === undefined) {
+    return undefined;
+  }
+
+  const spPrChildren: string[] = [];
+  if (fillHex) {
+    spPrChildren.push(
+      xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillHex })]),
+    );
+  }
+
+  // `<a:ln>` carries stroke metadata. Emit it whenever a fill color is
+  // set (so the connecting line picks up the same color, matching the
+  // legacy behavior) or whenever stroke width / dash is configured.
+  if (fillHex || dash !== undefined || widthPt !== undefined) {
+    const lnAttrs: Record<string, string | number> = {};
+    if (widthPt !== undefined) {
+      // OOXML stores stroke width in EMU (1 pt = 12 700 EMU). Round to
+      // the nearest integer because the schema types `w` as `xsd:int`.
+      lnAttrs.w = Math.round(widthPt * EMU_PER_PT);
+    }
+    const lnChildren: string[] = [];
+    if (fillHex) {
+      lnChildren.push(
+        xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillHex })]),
+      );
+    }
+    if (dash !== undefined) {
+      lnChildren.push(xmlSelfClose("a:prstDash", { val: dash }));
+    }
+    spPrChildren.push(
+      lnChildren.length === 0
+        ? xmlSelfClose("a:ln", lnAttrs)
+        : xmlElement("a:ln", Object.keys(lnAttrs).length > 0 ? lnAttrs : undefined, lnChildren),
+    );
+  }
+
+  return xmlElement("c:spPr", undefined, spPrChildren);
 }
 
 // ── Marker ───────────────────────────────────────────────────────────

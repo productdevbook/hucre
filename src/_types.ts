@@ -611,6 +611,59 @@ export interface ChartDataLabels {
 }
 
 /**
+ * Preset dash pattern for a chart series line stroke.
+ *
+ * Mirrors the OOXML `ST_PresetLineDashVal` enum exactly. Each value
+ * names a stock pattern Excel paints without needing a custom dash
+ * array. The Excel "Format Data Series → Line → Dash type" UI exposes
+ * these stock patterns; Excel ignores any unrecognized value.
+ */
+export type ChartLineDashStyle =
+  | "solid"
+  | "dot"
+  | "dash"
+  | "lgDash"
+  | "dashDot"
+  | "lgDashDot"
+  | "lgDashDotDot"
+  | "sysDash"
+  | "sysDot"
+  | "sysDashDot"
+  | "sysDashDotDot";
+
+/**
+ * Per-series line stroke styling for line / scatter charts.
+ *
+ * Maps to the `<a:ln>` element nested inside `<c:ser><c:spPr>` — the
+ * same wrapper that already carries the series fill color. Only
+ * meaningful on `line` and `scatter` series; the field is silently
+ * dropped on every other chart family at all three layers (read,
+ * write, clone), since dashing and stroke width have no visible effect
+ * on bar / pie / doughnut / area renderings.
+ *
+ * Every field is optional — a bare `{}` collapses to no stroke
+ * configuration and leaves Excel's per-series default in place. Set
+ * `dash: "solid"` to explicitly reset a template's dashed stroke back
+ * to a continuous line.
+ */
+export interface ChartLineStroke {
+  /**
+   * Preset dash pattern. See {@link ChartLineDashStyle} for the
+   * accepted set.
+   */
+  dash?: ChartLineDashStyle;
+  /**
+   * Stroke width in points. Excel's UI exposes the 0.25 – 13.5 pt band;
+   * the writer clamps anything outside that range and rounds to the
+   * nearest quarter-point so a round-trip cannot drift. The OOXML
+   * attribute is in EMU (1 pt = 12 700 EMU); the writer performs the
+   * conversion and the reader inverts it. Non-finite values are
+   * dropped so the writer can elide the attribute entirely.
+   */
+  width?: number;
+}
+
+/**
  * Marker symbol shape rendered at each data point on a line / scatter
  * series.
  *
@@ -721,6 +774,14 @@ export interface ChartSeries {
    * Smoothed line".
    */
   smooth?: boolean;
+  /**
+   * Per-series line stroke (dash pattern + width) for line / scatter
+   * charts. Maps to `<a:ln>` inside `<c:ser><c:spPr>`. Ignored on every
+   * other chart family — bar / column / pie / doughnut / area never
+   * render a connecting line, so dashing and stroke width have no
+   * visible effect there. See {@link ChartLineStroke}.
+   */
+  stroke?: ChartLineStroke;
   /**
    * Per-series marker styling. Only meaningful for `line` and
    * `scatter` charts — the OOXML schema places `<c:marker>` on
@@ -1534,6 +1595,15 @@ export interface ChartSeriesInfo {
    * round-trips identically with absence of the field.
    */
   smooth?: boolean;
+  /**
+   * Line stroke pulled from `<c:ser><c:spPr><a:ln>` — preset dash
+   * pattern and width in points. Surfaces only on `line` / `scatter`
+   * series so a dashed-stroke template round-trips through
+   * `parseChart` → {@link cloneChart} → `writeXlsx`. Field semantics
+   * mirror the write-side {@link ChartLineStroke}, so the value can be
+   * fed straight into a clone without transformation.
+   */
+  stroke?: ChartLineStroke;
   /**
    * Marker styling parsed from `<c:ser><c:marker>`. Surfaces only on
    * `line` / `scatter` series — the OOXML schema places `<c:marker>`

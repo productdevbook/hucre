@@ -4,7 +4,7 @@ import { parseChart } from "../src/xlsx/chart-reader";
 import { writeChart } from "../src/xlsx/chart-writer";
 import { writeXlsx } from "../src/xlsx/writer";
 import { ZipReader } from "../src/zip/reader";
-import type { Chart, ChartMarker, SheetChart } from "../src/_types";
+import type { Chart, ChartLineStroke, ChartMarker, SheetChart } from "../src/_types";
 
 const decoder = new TextDecoder("utf-8");
 
@@ -1813,6 +1813,166 @@ describe("cloneChart — series smooth flag", () => {
     const reparsed = parseChart(written);
     expect(reparsed?.series?.[0].smooth).toBe(true);
     expect(reparsed?.series?.[1].smooth).toBeUndefined();
+  });
+});
+
+// ── cloneChart — series line stroke ─────────────────────────────────
+
+describe("cloneChart — series line stroke", () => {
+  function lineSource(stroke?: ChartLineStroke): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Tpl!$B$2:$B$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+          ...(stroke ? { stroke } : {}),
+        },
+      ],
+    };
+  }
+
+  it("inherits the stroke block from a line series source", () => {
+    const source = lineSource({ dash: "dash", width: 2.5 });
+    const clone = cloneChart(source, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("line");
+    expect(clone.series[0].stroke).toEqual({ dash: "dash", width: 2.5 });
+  });
+
+  it("does not surface stroke when the source series did not declare one", () => {
+    const clone = cloneChart(lineSource(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.series[0].stroke).toBeUndefined();
+  });
+
+  it("lets seriesOverrides[i].stroke replace an inherited block wholesale", () => {
+    const source = lineSource({ dash: "dash", width: 2.5 });
+    const clone = cloneChart(source, {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ stroke: { dash: "dot", width: 0.5 } }],
+    });
+    // Override replaces wholesale; old width does not leak through.
+    expect(clone.series[0].stroke).toEqual({ dash: "dot", width: 0.5 });
+  });
+
+  it("lets seriesOverrides[i].stroke=null drop an inherited stroke block", () => {
+    const source = lineSource({ dash: "dash", width: 2.5 });
+    const clone = cloneChart(source, {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ stroke: null }],
+    });
+    expect(clone.series[0].stroke).toBeUndefined();
+  });
+
+  it("lets seriesOverrides[i].stroke={} collapse to undefined", () => {
+    // An empty stroke carries no meaningful settings; the writer will
+    // never emit `<a:ln>` for it, so the resolver collapses it to
+    // undefined to keep the round-trip shape minimal.
+    const source = lineSource({ dash: "dash" });
+    const clone = cloneChart(source, {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ stroke: {} }],
+    });
+    expect(clone.series[0].stroke).toBeUndefined();
+  });
+
+  it("carries stroke onto a scatter clone", () => {
+    const source: Chart = {
+      kinds: ["scatter"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "scatter",
+          index: 0,
+          valuesRef: "Tpl!$B$2:$B$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+          stroke: { dash: "lgDashDot", width: 1 },
+        },
+      ],
+    };
+    const clone = cloneChart(source, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("scatter");
+    expect(clone.series[0].stroke).toEqual({ dash: "lgDashDot", width: 1 });
+  });
+
+  it("drops inherited stroke when the resolved type is not line/scatter", () => {
+    // A clone that flattens a line template into a column / pie / area
+    // chart must not leak <a:ln> styling — the OOXML schema rejects it
+    // on every other family that does not paint a connecting line.
+    const types: Array<"column" | "bar" | "pie" | "doughnut" | "area"> = [
+      "column",
+      "bar",
+      "pie",
+      "doughnut",
+      "area",
+    ];
+    for (const type of types) {
+      const clone = cloneChart(lineSource({ dash: "dash" }), {
+        anchor: { from: { row: 0, col: 0 } },
+        type,
+      });
+      expect(clone.series[0].stroke).toBeUndefined();
+    }
+  });
+
+  it("drops stroke from explicit options.series when the resolved type is not line/scatter", () => {
+    // Even when the caller bypasses seriesOverrides and passes a fully
+    // built `series` array, a stroke field must not leak into a chart
+    // family whose schema rejects the element. The post-build sweep
+    // strips it after the merge.
+    const clone = cloneChart(lineSource(), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+      series: [{ values: "Sheet1!$B$2:$B$5", stroke: { dash: "dot" } }],
+    });
+    expect(clone.series[0].stroke).toBeUndefined();
+  });
+
+  it("propagates stroke across a multi-series line clone", () => {
+    const source: Chart = {
+      kinds: ["line"],
+      seriesCount: 3,
+      series: [
+        { kind: "line", index: 0, valuesRef: "Tpl!$B$2:$B$5", stroke: { dash: "dash" } },
+        { kind: "line", index: 1, valuesRef: "Tpl!$C$2:$C$5" },
+        { kind: "line", index: 2, valuesRef: "Tpl!$D$2:$D$5", stroke: { width: 2.5 } },
+      ],
+    };
+    const clone = cloneChart(source, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.series).toHaveLength(3);
+    expect(clone.series[0].stroke).toEqual({ dash: "dash" });
+    expect(clone.series[1].stroke).toBeUndefined();
+    expect(clone.series[2].stroke).toEqual({ width: 2.5 });
+  });
+
+  it("survives a parseChart → cloneChart → writeChart → parseChart round-trip", () => {
+    const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+    const source = parseChart(`<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:spPr>
+          <a:ln w="31750">
+            <a:prstDash val="dashDot"/>
+          </a:ln>
+        </c:spPr>
+        <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`);
+    const clone = cloneChart(source!, { anchor: { from: { row: 0, col: 0 } } });
+    const written = writeChart(clone, "Sheet1").chartXml;
+    expect(written).toContain('<a:prstDash val="dashDot"/>');
+    expect(written).toContain('w="31750"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.series?.[0].stroke).toEqual({ dash: "dashDot", width: 2.5 });
   });
 });
 

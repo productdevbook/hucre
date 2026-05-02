@@ -19,6 +19,7 @@ import type {
   ChartDataLabelsInfo,
   ChartDisplayBlanksAs,
   ChartKind,
+  ChartLineStroke,
   ChartMarker,
   ChartSeries,
   ChartSeriesInfo,
@@ -60,6 +61,16 @@ export interface CloneChartSeriesOverride {
    * when the resolved chart type is anything else.
    */
   smooth?: boolean | null;
+  /**
+   * Line stroke override. `undefined` (or omitted) inherits the source
+   * series' `stroke`; `null` drops the inherited block (the cloned
+   * series falls back to Excel's per-series default); a
+   * {@link ChartLineStroke} object replaces the inherited block
+   * wholesale (no per-field merge — pass the full shape you want).
+   * Only meaningful for `line` and `scatter` clones — silently dropped
+   * from the output when the resolved chart type is anything else.
+   */
+  stroke?: ChartLineStroke | null;
   /**
    * Marker override. `undefined` (or omitted) inherits the source
    * series' `marker`; `null` drops the inherited block (the cloned
@@ -227,13 +238,15 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     series = buildSeriesFromSource(source, options.seriesOverrides);
   }
 
-  // `<c:smooth>` and `<c:marker>` both live exclusively on line /
-  // scatter series; drop them from every other resolved type so a
-  // doughnut → column flatten (or any other coercion) does not leak
-  // either field into a chart kind whose schema rejects them.
+  // `<c:smooth>`, `<a:ln>` (stroke), and `<c:marker>` all render
+  // meaningfully only on line / scatter series; drop them from every
+  // other resolved type so a doughnut → column flatten (or any other
+  // coercion) does not leak the fields into a chart kind whose schema
+  // rejects them.
   if (type !== "line" && type !== "scatter") {
     for (const s of series) {
       if (s.smooth !== undefined) delete s.smooth;
+      if (s.stroke !== undefined) delete s.stroke;
       if (s.marker !== undefined) delete s.marker;
     }
   }
@@ -450,10 +463,45 @@ function mergeSeries(
   const smooth = resolveSmooth(src?.smooth, ov?.smooth);
   if (smooth !== undefined) out.smooth = smooth;
 
+  const stroke = resolveStroke(src?.stroke, ov?.stroke);
+  if (stroke !== undefined) out.stroke = stroke;
+
   const marker = resolveMarker(src?.marker, ov?.marker);
   if (marker !== undefined) out.marker = marker;
 
   return out;
+}
+
+/**
+ * Resolve a per-series line-stroke override.
+ *
+ * `undefined` → inherit the source series' `stroke` (a fresh shallow
+ *               copy so the caller cannot mutate the parsed source).
+ * `null`      → drop the inherited block.
+ * object      → replace the inherited block wholesale (no per-field
+ *               merge; pass the full shape you want).
+ *
+ * An empty stroke block (no dash, no width) collapses to `undefined`
+ * so the writer can elide the element rather than emit a bare
+ * `<a:ln/>` that Excel paints with the inherited default.
+ */
+function resolveStroke(
+  sourceStroke: ChartLineStroke | undefined,
+  override: ChartLineStroke | null | undefined,
+): ChartLineStroke | undefined {
+  if (override === undefined) {
+    if (!sourceStroke) return undefined;
+    return cloneStroke(sourceStroke);
+  }
+  if (override === null) return undefined;
+  return cloneStroke(override);
+}
+
+function cloneStroke(source: ChartLineStroke): ChartLineStroke | undefined {
+  const out: ChartLineStroke = {};
+  if (source.dash !== undefined) out.dash = source.dash;
+  if (typeof source.width === "number" && Number.isFinite(source.width)) out.width = source.width;
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /**
