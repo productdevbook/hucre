@@ -405,6 +405,100 @@ describe("cloneChart — axis titles", () => {
   });
 });
 
+// ── cloneChart — axis gridlines ─────────────────────────────────────
+
+describe("cloneChart — axis gridlines", () => {
+  const sourceWithGridlines: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: {
+      y: { gridlines: { major: true } },
+    },
+  };
+
+  it("inherits the source's gridlines when no override is given", () => {
+    const clone = cloneChart(sourceWithGridlines, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes).toEqual({
+      y: { gridlines: { major: true } },
+    });
+  });
+
+  it("inherits both major and minor gridlines together", () => {
+    const both: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { gridlines: { major: true, minor: true } } },
+    };
+    const clone = cloneChart(both, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y?.gridlines).toEqual({ major: true, minor: true });
+  });
+
+  it("co-inherits the title and gridlines on the same axis", () => {
+    const both: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { title: "Revenue", gridlines: { major: true } } },
+    };
+    const clone = cloneChart(both, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y).toEqual({
+      title: "Revenue",
+      gridlines: { major: true },
+    });
+  });
+
+  it("drops inherited gridlines when override is null", () => {
+    const clone = cloneChart(sourceWithGridlines, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { gridlines: null } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("replaces inherited gridlines with the override", () => {
+    const clone = cloneChart(sourceWithGridlines, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { gridlines: { major: true, minor: true } } },
+    });
+    expect(clone.axes?.y?.gridlines).toEqual({ major: true, minor: true });
+  });
+
+  it("adds gridlines to an axis the source did not declare them on", () => {
+    const noGridlines: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(noGridlines, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { gridlines: { major: true } } },
+    });
+    expect(clone.axes?.y?.gridlines).toEqual({ major: true });
+  });
+
+  it("strips gridlines silently when the resolved chart type is pie", () => {
+    const pieSource: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [{ kind: "pie", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { gridlines: { major: true } } },
+    };
+    const clone = cloneChart(pieSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("pie");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("treats { major: false, minor: false } overrides as no gridlines", () => {
+    const clone = cloneChart(sourceWithGridlines, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { gridlines: { major: false, minor: false } } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+});
+
 // ── cloneChart — round-trip with parseChart and writeXlsx ────────────
 
 describe("cloneChart — integration", () => {
@@ -727,6 +821,68 @@ describe("cloneChart — integration", () => {
     expect(reparsed?.axes).toEqual({
       x: { title: "Quarter" },
       y: { title: "Revenue (USD)" },
+    });
+  });
+
+  it("round-trips axis gridlines through parseChart → cloneChart → writeXlsx → parseChart", async () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx><c:v>Revenue</c:v></c:tx>
+          <c:cat><c:strRef><c:f>Tpl!$A$2:$A$5</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+      <c:catAx>
+        <c:axId val="111"/>
+        <c:majorGridlines/>
+      </c:catAx>
+      <c:valAx>
+        <c:axId val="222"/>
+        <c:majorGridlines/>
+        <c:minorGridlines/>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const source = parseChart(sourceXml)!;
+    expect(source.axes).toEqual({
+      x: { gridlines: { major: true } },
+      y: { gridlines: { major: true, minor: true } },
+    });
+
+    const sheetChart: SheetChart = cloneChart(source, {
+      anchor: { from: { row: 14, col: 0 } },
+      seriesOverrides: [{ values: "Dashboard!$B$2:$B$5" }],
+    });
+    expect(sheetChart.axes).toEqual({
+      x: { gridlines: { major: true } },
+      y: { gridlines: { major: true, minor: true } },
+    });
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Dashboard",
+          rows: [["Header"], [1], [2], [3], [4]],
+          charts: [sheetChart],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("c:majorGridlines");
+    expect(written).toContain("c:minorGridlines");
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes).toEqual({
+      x: { gridlines: { major: true } },
+      y: { gridlines: { major: true, minor: true } },
     });
   });
 });

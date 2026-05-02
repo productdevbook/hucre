@@ -12,6 +12,7 @@
 
 import type {
   Chart,
+  ChartAxisGridlines,
   ChartDataLabels,
   ChartDataLabelsInfo,
   ChartKind,
@@ -96,17 +97,17 @@ export interface CloneChartOptions {
    */
   dataLabels?: ChartDataLabels | null;
   /**
-   * Per-axis title overrides. Each field accepts a string to replace,
-   * or `null` to drop the source value (the cloned chart will render
-   * without that axis label even if the template carried one). Omit a
-   * field to inherit the source.
+   * Per-axis overrides. Each field accepts a value to replace the
+   * source's, or `null` to drop the source value (the cloned chart
+   * will render without that axis label / gridline even if the
+   * template carried one). Omit a field to inherit the source.
    *
    * Ignored when the resolved chart type is `pie` since pie has no
    * axes; the writer drops the entire `axes` object in that case.
    */
   axes?: {
-    x?: { title?: string | null };
-    y?: { title?: string | null };
+    x?: { title?: string | null; gridlines?: ChartAxisGridlines | null };
+    y?: { title?: string | null; gridlines?: ChartAxisGridlines | null };
   };
 }
 
@@ -371,7 +372,7 @@ function applyOverride(
  * Merge the source chart's `axes` block with per-axis overrides. The
  * result mirrors the writer's {@link SheetChart.axes} shape — missing
  * fields are dropped so the writer doesn't emit empty `<c:title>`
- * elements.
+ * elements or redundant gridline blocks.
  */
 function resolveAxes(
   sourceAxes: Chart["axes"],
@@ -379,10 +380,44 @@ function resolveAxes(
 ): SheetChart["axes"] | undefined {
   const xTitle = applyOverride(sourceAxes?.x?.title, overrides?.x?.title);
   const yTitle = applyOverride(sourceAxes?.y?.title, overrides?.y?.title);
+  const xGridlines = applyGridlinesOverride(sourceAxes?.x?.gridlines, overrides?.x?.gridlines);
+  const yGridlines = applyGridlinesOverride(sourceAxes?.y?.gridlines, overrides?.y?.gridlines);
 
   const out: NonNullable<SheetChart["axes"]> = {};
-  if (xTitle !== undefined) out.x = { title: xTitle };
-  if (yTitle !== undefined) out.y = { title: yTitle };
+  if (xTitle !== undefined || xGridlines !== undefined) {
+    out.x = {};
+    if (xTitle !== undefined) out.x.title = xTitle;
+    if (xGridlines !== undefined) out.x.gridlines = xGridlines;
+  }
+  if (yTitle !== undefined || yGridlines !== undefined) {
+    out.y = {};
+    if (yTitle !== undefined) out.y.title = yTitle;
+    if (yGridlines !== undefined) out.y.gridlines = yGridlines;
+  }
 
   return out.x || out.y ? out : undefined;
+}
+
+/**
+ * Resolve gridlines using the same `undefined` (inherit) / `null`
+ * (drop) / object (replace) grammar as the other axis overrides.
+ * Returns `undefined` when neither source nor override declares a
+ * non-empty gridline configuration.
+ */
+function applyGridlinesOverride(
+  source: ChartAxisGridlines | undefined,
+  override: ChartAxisGridlines | null | undefined,
+): ChartAxisGridlines | undefined {
+  if (override === undefined) {
+    if (!source) return undefined;
+    const out: ChartAxisGridlines = {};
+    if (source.major) out.major = true;
+    if (source.minor) out.minor = true;
+    return out.major || out.minor ? out : undefined;
+  }
+  if (override === null) return undefined;
+  const out: ChartAxisGridlines = {};
+  if (override.major === true) out.major = true;
+  if (override.minor === true) out.minor = true;
+  return out.major || out.minor ? out : undefined;
 }
