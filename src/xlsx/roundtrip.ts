@@ -444,6 +444,111 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
   // where Excel stored the pivotTable -> sheet wiring originally.
   const sheetPivotTableTargets = collectSheetPivotTableTargets(workbook, sheets);
 
+  // ── Chart preservation ─────────────────────────────────────────
+  // Detect chart parts that survived in the raw entries. We need to:
+  //   1. declare Override entries in [Content_Types].xml so Excel
+  //      treats the part as a known type rather than an orphan,
+  //   2. force-preserve the original drawing XML (and its rels) for
+  //      sheets where hucre is *not* regenerating the drawing —
+  //      otherwise the drawing-level chart graphicFrame disappears
+  //      and Excel drops the chart on next open.
+  //
+  // For sheets that hucre *does* regenerate (because the sheet has
+  // hucre-managed images), the chart graphicFrame inside the drawing
+  // is currently rebuilt without the chart anchor; that's a Phase 2
+  // limitation — for now we still preserve the chart bodies so a
+  // future merge step can re-anchor them.
+  const chartIndices: number[] = [];
+  const chartStyleIndices: number[] = [];
+  const chartColorsIndices: number[] = [];
+  for (const path of workbook._rawEntries.keys()) {
+    let m = path.match(/^xl\/charts\/chart(\d+)\.xml$/i);
+    if (m) {
+      chartIndices.push(parseInt(m[1], 10));
+      continue;
+    }
+    m = path.match(/^xl\/charts\/style(\d+)\.xml$/i);
+    if (m) {
+      chartStyleIndices.push(parseInt(m[1], 10));
+      continue;
+    }
+    m = path.match(/^xl\/charts\/colors(\d+)\.xml$/i);
+    if (m) chartColorsIndices.push(parseInt(m[1], 10));
+  }
+  chartIndices.sort((a, b) => a - b);
+  chartStyleIndices.sort((a, b) => a - b);
+  chartColorsIndices.sort((a, b) => a - b);
+
+  // Build the set of drawing paths to force-preserve. A drawing is
+  // force-preserved when:
+  //   • its XML references at least one chart, AND
+  //   • hucre is not regenerating that exact drawing path (i.e. the
+  //     drawing's number does not match a sheet that hucre is
+  //     re-emitting drawings for).
+  //
+  // `preservedDrawingNumbers` mirrors the same set in numeric form so
+  // `[Content_Types].xml` can declare an Override for each preserved
+  // drawing (those wouldn't otherwise appear in `drawingIndices`).
+  //
+  // `sheetPreservedDrawingTargets[i]` is set to the rels-relative
+  // target (e.g. `"../drawings/drawing3.xml"`) for sheet `i` when the
+  // sheet's original rels pointed at a chart-only drawing. It tells
+  // the per-sheet rels emitter to declare a drawing relationship and
+  // the worksheet-body post-processor to inject `<drawing r:id="..."/>`.
+  const preservedDrawingPaths = new Set<string>();
+  const preservedDrawingNumbers: number[] = [];
+  const sheetPreservedDrawingTargets: Array<string | undefined> = sheets.map(() => undefined);
+  if (chartIndices.length > 0) {
+    const regeneratedDrawingNumbers = new Set<number>();
+    for (let i = 0; i < drawingResults.length; i++) {
+      if (drawingResults[i]) regeneratedDrawingNumbers.add(i + 1);
+    }
+    // First pass: discover which drawing files have chart references.
+    const chartDrawingNumbers = new Set<number>();
+    for (const [path, data] of workbook._rawEntries) {
+      const m = path.match(/^xl\/drawings\/drawing(\d+)\.xml$/i);
+      if (!m) continue;
+      const drawingNum = parseInt(m[1], 10);
+      if (regeneratedDrawingNumbers.has(drawingNum)) continue;
+      if (!hasChartReference(data)) continue;
+      chartDrawingNumbers.add(drawingNum);
+      preservedDrawingPaths.add(path.toLowerCase());
+      preservedDrawingNumbers.push(drawingNum);
+      const relsPath = `xl/drawings/_rels/drawing${drawingNum}.xml.rels`;
+      if (workbook._rawEntries.has(relsPath)) {
+        preservedDrawingPaths.add(relsPath.toLowerCase());
+      }
+    }
+    preservedDrawingNumbers.sort((a, b) => a - b);
+    // Second pass: map each sheet to the drawing target it originally
+    // pointed at (if any of those targets is a preserved chart drawing).
+    if (chartDrawingNumbers.size > 0) {
+      const decoder = new TextDecoder("utf-8");
+      for (let i = 0; i < sheets.length; i++) {
+        const expected = `xl/worksheets/_rels/sheet${i + 1}.xml.rels`;
+        let bytes: Uint8Array | undefined;
+        for (const [p, d] of workbook._rawEntries) {
+          if (p.toLowerCase() === expected) {
+            bytes = d;
+            break;
+          }
+        }
+        if (!bytes) continue;
+        const rels = parseRelationships(decoder.decode(bytes));
+        for (const rel of rels) {
+          if (!rel.type.endsWith("/relationships/drawing")) continue;
+          const drawingMatch = rel.target.match(/drawing(\d+)\.xml$/i);
+          if (!drawingMatch) continue;
+          const drawingNum = parseInt(drawingMatch[1], 10);
+          if (chartDrawingNumbers.has(drawingNum)) {
+            sheetPreservedDrawingTargets[i] = rel.target;
+          }
+          break;
+        }
+      }
+    }
+  }
+
   // Build ZIP archive
   const zip = new ZipWriter();
 
@@ -477,6 +582,12 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
       if (isRegenerated && cellImageMediaPaths.has(lowerPath)) {
         isRegenerated = false;
       }
+      // Drawings whose only contents are chart graphicFrames don't get
+      // re-emitted by hucre's drawing writer; force-preserve them so
+      // the chart references survive intact.
+      if (isRegenerated && preservedDrawingPaths.has(lowerPath)) {
+        isRegenerated = false;
+      }
       if (!isRegenerated) {
         // Preserve this entry as-is (don't compress, keep original bytes)
         zip.add(path, data, { compress: false });
@@ -487,10 +598,14 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
   // 2. Generate and add regenerated parts
 
   // [Content_Types].xml
+  // `drawingIndices` covers the drawings hucre regenerated; we also
+  // need to declare any drawings we force-preserved (chart-only) so
+  // Excel doesn't see the preserved bytes as orphan.
+  const allDrawingIndices = mergeSortedUnique(drawingIndices, preservedDrawingNumbers);
   const ctOpts: ContentTypesOptions = {
     sheetCount: writeSheets.length,
     hasSharedStrings,
-    drawingIndices: drawingIndices.length > 0 ? drawingIndices : undefined,
+    drawingIndices: allDrawingIndices.length > 0 ? allDrawingIndices : undefined,
     imageExtensions: imageExtensions.size > 0 ? imageExtensions : undefined,
     commentIndices: commentIndices.length > 0 ? commentIndices : undefined,
     tableIndices: allTableIndices.length > 0 ? allTableIndices : undefined,
@@ -508,6 +623,9 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     slicerCacheIndices: slicerCacheIndices.length > 0 ? slicerCacheIndices : undefined,
     timelineIndices: timelineIndices.length > 0 ? timelineIndices : undefined,
     timelineCacheIndices: timelineCacheIndices.length > 0 ? timelineCacheIndices : undefined,
+    chartIndices: chartIndices.length > 0 ? chartIndices : undefined,
+    chartStyleIndices: chartStyleIndices.length > 0 ? chartStyleIndices : undefined,
+    chartColorsIndices: chartColorsIndices.length > 0 ? chartColorsIndices : undefined,
     hasCoreProps: true,
     hasAppProps: true,
     hasMacros: workbook.hasMacros,
@@ -573,8 +691,6 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     const drawing = drawingResults[i];
     const comments = commentsResults[i];
 
-    zip.add(`xl/worksheets/sheet${i + 1}.xml`, encoder.encode(result.xml));
-
     // Generate worksheet .rels if needed
     const hasHyperlinks = result.hyperlinkRelationships.length > 0;
     const hasDrawing = drawing !== null && result.drawingRId !== null;
@@ -587,6 +703,14 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     const hasThreadedComments = threadedCommentSheetIndices.includes(i + 1);
     const sheetPivotTargets = sheetPivotTableTargets[i] ?? [];
     const hasSheetPivotTables = sheetPivotTargets.length > 0;
+    // When the sheet's original drawing held charts and hucre is not
+    // rebuilding the drawing for this sheet, we'll re-anchor the
+    // preserved drawing into the regenerated worksheet body. The rId
+    // is finalized below once we know how many other rels we emit.
+    const preservedDrawingTarget = sheetPreservedDrawingTargets[i];
+    const hasPreservedDrawing = preservedDrawingTarget !== undefined && !hasDrawing;
+    let preservedDrawingRId: string | undefined;
+    let worksheetXml = result.xml;
 
     if (
       hasHyperlinks ||
@@ -596,7 +720,8 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
       hasSlicers ||
       hasTimelines ||
       hasThreadedComments ||
-      hasSheetPivotTables
+      hasSheetPivotTables ||
+      hasPreservedDrawing
     ) {
       const relElements: string[] = [];
       // Track the highest existing rId so newly added slicer/timeline
@@ -688,6 +813,23 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
         );
       }
 
+      // Re-anchor the preserved chart-bearing drawing. The worksheet
+      // body's regenerated form has no `<drawing>` element (hucre only
+      // emits one when the sheet has hucre-managed images), so we
+      // inject one immediately below pointing at the rId we just
+      // assigned.
+      if (hasPreservedDrawing && preservedDrawingTarget) {
+        preservedDrawingRId = `rId${nextSheetRid++}`;
+        relElements.push(
+          xmlSelfClose("Relationship", {
+            Id: preservedDrawingRId,
+            Type: REL_DRAWING,
+            Target: preservedDrawingTarget,
+          }),
+        );
+        worksheetXml = injectWorksheetDrawing(worksheetXml, preservedDrawingRId);
+      }
+
       // Threaded comments (Excel 365). The rId only needs to be unique
       // within this rels file — `nextSheetRid` already tracks the next
       // free rId past every relationship emitted above (including the
@@ -718,6 +860,10 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
       const relsXml = xmlDocument("Relationships", { xmlns: NS_RELATIONSHIPS }, relElements);
       zip.add(`xl/worksheets/_rels/sheet${i + 1}.xml.rels`, encoder.encode(relsXml));
     }
+
+    // Worksheet body — added after rels processing so the chart
+    // re-anchor injection above can patch the XML before it's written.
+    zip.add(`xl/worksheets/sheet${i + 1}.xml`, encoder.encode(worksheetXml));
 
     // Add drawing files
     if (drawing) {
@@ -795,6 +941,83 @@ function collectCellImageMediaPaths(rawEntries: ReadonlyMap<string, Uint8Array>)
 
 const REL_TYPE_SLICER = /\/relationships\/slicer$/;
 const REL_TYPE_TIMELINE = /\/relationships\/timeline$/;
+
+/**
+ * Insert `<drawing r:id="rIdN"/>` into a worksheet body emitted by the
+ * worksheet writer. Per OOXML schema (CT_Worksheet) the element must
+ * appear after `cellWatches`/`ignoredErrors`/`smartTags` and before
+ * `legacyDrawing` / `legacyDrawingHF` / `picture` / `oleObjects` /
+ * `controls` / `webPublishItems` / `tableParts` / `extLst`.
+ *
+ * The writer never emits a `<drawing>` for chart-only sheets, so we
+ * splice one into the regenerated XML at the first valid insertion
+ * point. Falls back to inserting just before `</worksheet>` when none
+ * of the later-position siblings are present.
+ */
+function injectWorksheetDrawing(worksheetXml: string, rId: string): string {
+  if (worksheetXml.includes("<drawing ")) return worksheetXml; // already present
+  const tag = `<drawing r:id="${rId}"/>`;
+  const candidates = [
+    "<legacyDrawing ",
+    "<legacyDrawingHF ",
+    "<picture ",
+    "<oleObjects ",
+    "<oleObjects>",
+    "<controls ",
+    "<controls>",
+    "<webPublishItems ",
+    "<webPublishItems>",
+    "<tableParts ",
+    "<tableParts>",
+    "<extLst ",
+    "<extLst>",
+  ];
+  for (const c of candidates) {
+    const idx = worksheetXml.indexOf(c);
+    if (idx >= 0) return worksheetXml.slice(0, idx) + tag + worksheetXml.slice(idx);
+  }
+  const closeIdx = worksheetXml.lastIndexOf("</worksheet>");
+  if (closeIdx < 0) return worksheetXml;
+  return worksheetXml.slice(0, closeIdx) + tag + worksheetXml.slice(closeIdx);
+}
+
+/**
+ * Cheap detector for `<c:chart` references inside drawing XML. Tolerates
+ * any namespace prefix because the prefix is determined by the
+ * `xmlns:c` declaration; the local name is always `chart`. Avoids
+ * re-parsing the XML — drawings can be large and we only need a
+ * boolean "does this contain a chart anchor?" answer.
+ */
+function hasChartReference(data: Uint8Array): boolean {
+  const text = new TextDecoder("utf-8").decode(data);
+  const idx = text.indexOf(":chart");
+  if (idx < 0) return false;
+  // Make sure we matched a `:chart` element, not something like
+  // `:chartSpace` or `:chartstyle` that happens to share the prefix.
+  // Any of `< `, `\t`, `\n`, `\r`, `>`, `/` immediately after `:chart`
+  // unambiguously closes the local name.
+  let i = idx;
+  while ((i = text.indexOf(":chart", i)) !== -1) {
+    const end = text.charAt(i + ":chart".length);
+    if (end === " " || end === "\t" || end === "\n" || end === "\r" || end === ">" || end === "/") {
+      return true;
+    }
+    i++;
+  }
+  return false;
+}
+
+/**
+ * Merge two ascending number arrays into a sorted, de-duplicated list.
+ * Used to combine the indices of drawings hucre regenerated with the
+ * indices of drawings we force-preserved.
+ */
+function mergeSortedUnique(a: number[], b: number[]): number[] {
+  if (b.length === 0) return a.slice();
+  const out = new Set<number>(a);
+  for (const n of b) out.add(n);
+  return Array.from(out).sort((x, y) => x - y);
+}
 
 /**
  * Walk each sheet's original `xl/worksheets/_rels/sheetN.xml.rels` (when

@@ -28,6 +28,7 @@ import {
   parseTimelines,
   parseTimelineCache,
 } from "./slicer-reader";
+import { parseChart } from "./chart-reader";
 import { ParseError, ZipError } from "../errors";
 import { ZipReader } from "../zip/reader";
 import { parseXml } from "../xml/parser";
@@ -392,6 +393,20 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
         if (drawing.textBoxes.length > 0) {
           sheet.textBoxes = drawing.textBoxes;
         }
+        // Resolve chart parts referenced from the drawing. Each
+        // graphicFrame's chart rel was resolved against the drawing's
+        // package directory in extractSheetDrawing; here we simply
+        // parse the chart bodies.
+        if (drawing.chartPaths.length > 0) {
+          const charts: import("../_types").Chart[] = [];
+          for (const chartPath of drawing.chartPaths) {
+            if (!zip.has(chartPath)) continue;
+            const chartXml = decodeUtf8(await zip.extract(chartPath));
+            const chart = parseChart(chartXml);
+            if (chart) charts.push(chart);
+          }
+          if (charts.length > 0) sheet.charts = charts;
+        }
       }
     }
 
@@ -678,6 +693,12 @@ const EXT_TO_IMAGE_TYPE: Record<string, SheetImage["type"]> = {
 interface DrawingExtraction {
   images: SheetImage[];
   textBoxes: SheetTextBox[];
+  /**
+   * Paths to chart parts referenced by this drawing (resolved against
+   * the package root). Empty when the drawing has no `c:chart` graphic
+   * frames or the rels file is missing.
+   */
+  chartPaths: string[];
 }
 
 /**
@@ -689,7 +710,7 @@ async function extractSheetDrawing(
   zip: ZipReader,
   drawingPath: string,
 ): Promise<DrawingExtraction> {
-  if (!zip.has(drawingPath)) return { images: [], textBoxes: [] };
+  if (!zip.has(drawingPath)) return { images: [], textBoxes: [], chartPaths: [] };
 
   const drawingXml = decodeUtf8(await zip.extract(drawingPath));
 
@@ -701,12 +722,18 @@ async function extractSheetDrawing(
     : `_rels/${drawFileName}.rels`;
 
   const imageRelMap = new Map<string, string>();
+  // Chart relationships are resolved by the same .rels file. We collect
+  // them as `rId → resolved package path` so the drawing-level
+  // graphicFrame walk below can map each chart reference to a file.
+  const chartRelMap = new Map<string, string>();
   if (zip.has(drawRelsPath)) {
     const drawRelsXml = decodeUtf8(await zip.extract(drawRelsPath));
     const drawRels = parseRelationships(drawRelsXml);
     for (const rel of drawRels) {
       if (matchesRelType(rel.type, "image")) {
         imageRelMap.set(rel.id, resolvePath(drawDir, rel.target));
+      } else if (matchesRelType(rel.type, "chart")) {
+        chartRelMap.set(rel.id, resolvePath(drawDir, rel.target));
       }
     }
   }
@@ -715,10 +742,23 @@ async function extractSheetDrawing(
   const doc = parseXml(drawingXml);
   const images: SheetImage[] = [];
   const textBoxes: SheetTextBox[] = [];
+  const chartPaths: string[] = [];
 
   for (const child of doc.children) {
     if (typeof child === "string") continue;
     const local = child.local || child.tag;
+
+    if (local === "twoCellAnchor" || local === "oneCellAnchor" || local === "absoluteAnchor") {
+      // Charts are anchored via <xdr:graphicFrame> wrapping a
+      // <a:graphic>/<a:graphicData uri="...chart"><c:chart r:id="rIdN"/>
+      // — collect any chart references regardless of anchor flavor so
+      // the roundtrip can declare the chart parts later.
+      const chartRid = findChartRid(child);
+      if (chartRid) {
+        const chartPath = chartRelMap.get(chartRid);
+        if (chartPath && !chartPaths.includes(chartPath)) chartPaths.push(chartPath);
+      }
+    }
 
     if (local === "twoCellAnchor") {
       // Check if this anchor contains a textbox shape
@@ -765,7 +805,33 @@ async function extractSheetDrawing(
     }
   }
 
-  return { images, textBoxes };
+  return { images, textBoxes, chartPaths };
+}
+
+/**
+ * Walk an anchor element looking for `<c:chart r:id="...">` (the
+ * standard chart embed inside `<xdr:graphicFrame>/<a:graphic>/<a:graphicData>`).
+ * Returns the rId attribute or undefined if no chart is found.
+ */
+function findChartRid(el: { children: Array<unknown> }): string | undefined {
+  for (const child of el.children) {
+    if (typeof child === "string") continue;
+    const c = child as {
+      local?: string;
+      tag: string;
+      children: Array<unknown>;
+      attrs: Record<string, string>;
+    };
+    const local = c.local || c.tag;
+    if (local === "chart") {
+      // r:id is namespaced; try common attribute spellings.
+      const rid = c.attrs["r:id"] ?? c.attrs["id"];
+      if (rid) return rid;
+    }
+    const nested = findChartRid(c);
+    if (nested) return nested;
+  }
+  return undefined;
 }
 
 /** Parse a twoCellAnchor element to extract image position and reference */

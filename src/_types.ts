@@ -731,6 +731,13 @@ export interface Sheet {
    * `xl/timelines/timelineN.xml` parts referenced via this sheet's rels.
    */
   timelines?: Timeline[];
+  /**
+   * Charts anchored on this sheet, resolved from `xl/charts/chartN.xml`
+   * parts referenced via the sheet's drawing. Hucre does not yet author
+   * charts; the entries surface for inspection on read and survive
+   * roundtrip when the sheet has no hucre-managed images.
+   */
+  charts?: Chart[];
 }
 
 // ── Workbook Properties ────────────────────────────────────────────
@@ -1037,6 +1044,48 @@ export interface TimelineCache {
   sourceName?: string;
   /** Pivot tables this cache filters. */
   pivotTables?: SlicerCachePivotTable[];
+}
+
+// ── Charts ────────────────────────────────────────────────────────
+
+/**
+ * Chart kind reported by {@link Chart.kinds}. Mirrors the OOXML
+ * chart-type element local names (`c:barChart`, `c:lineChart`, ...).
+ * A single chart can mix multiple kinds (combo chart), in which case
+ * every kind appears in `kinds` in the order it's declared.
+ */
+export type ChartKind =
+  | "bar"
+  | "bar3D"
+  | "line"
+  | "line3D"
+  | "pie"
+  | "pie3D"
+  | "doughnut"
+  | "area"
+  | "area3D"
+  | "scatter"
+  | "bubble"
+  | "radar"
+  | "surface"
+  | "surface3D"
+  | "stock"
+  | "ofPie";
+
+/**
+ * A chart anchored on a sheet via the sheet's drawing part.
+ *
+ * Charts come from `xl/charts/chartN.xml`. Hucre exposes only the
+ * fields needed to recognize the chart on read; the chart body is
+ * preserved verbatim through roundtrip.
+ */
+export interface Chart {
+  /** Chart-type elements present in `<c:plotArea>`, in declaration order. */
+  kinds: ChartKind[];
+  /** Number of `<c:ser>` series across every chart-type element. */
+  seriesCount: number;
+  /** Plain-text title pulled from `<c:title>`, when present. */
+  title?: string;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────
