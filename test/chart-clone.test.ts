@@ -823,4 +823,66 @@ describe("cloneChart — integration", () => {
       y: { title: "Revenue (USD)" },
     });
   });
+
+  it("round-trips axis gridlines through parseChart → cloneChart → writeXlsx → parseChart", async () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx><c:v>Revenue</c:v></c:tx>
+          <c:cat><c:strRef><c:f>Tpl!$A$2:$A$5</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+      <c:catAx>
+        <c:axId val="111"/>
+        <c:majorGridlines/>
+      </c:catAx>
+      <c:valAx>
+        <c:axId val="222"/>
+        <c:majorGridlines/>
+        <c:minorGridlines/>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const source = parseChart(sourceXml)!;
+    expect(source.axes).toEqual({
+      x: { gridlines: { major: true } },
+      y: { gridlines: { major: true, minor: true } },
+    });
+
+    const sheetChart: SheetChart = cloneChart(source, {
+      anchor: { from: { row: 14, col: 0 } },
+      seriesOverrides: [{ values: "Dashboard!$B$2:$B$5" }],
+    });
+    expect(sheetChart.axes).toEqual({
+      x: { gridlines: { major: true } },
+      y: { gridlines: { major: true, minor: true } },
+    });
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Dashboard",
+          rows: [["Header"], [1], [2], [3], [4]],
+          charts: [sheetChart],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("c:majorGridlines");
+    expect(written).toContain("c:minorGridlines");
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes).toEqual({
+      x: { gridlines: { major: true } },
+      y: { gridlines: { major: true, minor: true } },
+    });
+  });
 });
