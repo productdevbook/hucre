@@ -707,12 +707,33 @@ export interface SheetChart {
    * across cloned charts. Set `major: true` to draw the heavier
    * reference lines that Excel shows by default on the value axis;
    * `minor: true` adds the lighter half-step lines.
+   *
+   * `scale` pins the value axis to explicit `<c:min>` / `<c:max>` /
+   * `<c:majorUnit>` / `<c:minorUnit>` / `<c:logBase>` bounds. Excel
+   * auto-computes any field omitted from the object. Bar/column/line/
+   * area charts apply scaling to the Y axis (`<c:valAx>`); scatter
+   * charts apply it to whichever axis the field is set on.
+   *
+   * `numberFormat` pins the tick-label format via `<c:numFmt>` —
+   * useful when the cloned chart needs a different format from the
+   * source data range (e.g. forcing `"0.00%"` on a percentage chart
+   * whose underlying cells are stored as decimals).
    */
   axes?: {
     /** Category axis (bar/column/line/area) or X value axis (scatter). */
-    x?: { title?: string; gridlines?: ChartAxisGridlines };
+    x?: {
+      title?: string;
+      gridlines?: ChartAxisGridlines;
+      scale?: ChartAxisScale;
+      numberFormat?: ChartAxisNumberFormat;
+    };
     /** Value axis. */
-    y?: { title?: string; gridlines?: ChartAxisGridlines };
+    y?: {
+      title?: string;
+      gridlines?: ChartAxisGridlines;
+      scale?: ChartAxisScale;
+      numberFormat?: ChartAxisNumberFormat;
+    };
   };
 }
 
@@ -1419,6 +1440,52 @@ export interface ChartAxisGridlines {
  * preserve through a `parseChart` → {@link cloneChart} → `writeXlsx`
  * round-trip — currently the axis title and the gridline visibility.
  */
+/**
+ * Value-axis scaling pulled from `<c:scaling>` — bounds plus tick
+ * spacing. Excel reports a numeric scale for any value-axis chart;
+ * absent on category axes (`<c:catAx>` tolerates `<c:scaling>` but
+ * populates only `<c:orientation>` there).
+ *
+ * All four numeric fields are optional — a chart may declare any
+ * subset and Excel auto-computes the rest. Hucre surfaces only the
+ * explicitly declared values, so a round-trip cannot accidentally pin
+ * an axis to numbers Excel would otherwise have inferred.
+ */
+export interface ChartAxisScale {
+  /** `<c:min>` — value where the axis starts. */
+  min?: number;
+  /** `<c:max>` — value where the axis ends. */
+  max?: number;
+  /** `<c:majorUnit>` — spacing between major tick marks. Must be > 0. */
+  majorUnit?: number;
+  /** `<c:minorUnit>` — spacing between minor tick marks. Must be > 0. */
+  minorUnit?: number;
+  /**
+   * `<c:logBase>` — log base for a logarithmic scale. Excel restricts
+   * this to 2–1000; the parser does not enforce that range, but the
+   * writer rejects values outside it.
+   */
+  logBase?: number;
+}
+
+/**
+ * Axis number-format spec pulled from `<c:numFmt>`. Mirrors what Excel
+ * emits for tick labels — an OOXML number-format code (e.g.
+ * `"#,##0"`, `"0.00%"`, `"$#,##0.00"`) and a `sourceLinked` flag that
+ * tells Excel whether to inherit the cell number format from the
+ * underlying data range.
+ */
+export interface ChartAxisNumberFormat {
+  /** OOXML format code (e.g. `"#,##0"`, `"0.00%"`). */
+  formatCode: string;
+  /**
+   * When `true`, Excel ignores `formatCode` and pulls the format
+   * straight from the source data range. Defaults to `false` when
+   * omitted — the pinned `formatCode` wins.
+   */
+  sourceLinked?: boolean;
+}
+
 export interface ChartAxisInfo {
   /** Plain-text title from the axis's `<c:title>`. Omitted when absent. */
   title?: string;
@@ -1428,6 +1495,19 @@ export interface ChartAxisInfo {
    * axis (i.e. Excel's "no gridlines" state for both).
    */
   gridlines?: ChartAxisGridlines;
+  /**
+   * Numeric scaling (`<c:min>` / `<c:max>` / `<c:majorUnit>` /
+   * `<c:minorUnit>` / `<c:logBase>`). Omitted when the axis declared
+   * none of those children — Excel auto-computes the bounds in that
+   * case and the reader leaves the inference up to the consumer.
+   */
+  scale?: ChartAxisScale;
+  /**
+   * Tick-label number format (`<c:numFmt>`). Omitted when the axis
+   * does not declare one. Mirrors `formatCode` / `sourceLinked` on
+   * the writer side.
+   */
+  numberFormat?: ChartAxisNumberFormat;
 }
 
 /**

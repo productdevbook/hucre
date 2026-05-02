@@ -580,6 +580,238 @@ describe("writeChart — axis gridlines", () => {
   });
 });
 
+// ── writeChart — axis scale (min/max/majorUnit/minorUnit/logBase) ────
+
+describe("writeChart — axis scale", () => {
+  it("emits <c:min> and <c:max> inside <c:scaling> on the value axis", () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { scale: { min: 0, max: 100 } } } }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    const scalingBlock = valAxBlock.match(/<c:scaling>[\s\S]*?<\/c:scaling>/)![0];
+    expect(scalingBlock).toContain('<c:max val="100"/>');
+    expect(scalingBlock).toContain('<c:min val="0"/>');
+    // Spec order: orientation must precede max which precedes min.
+    const orientationIdx = scalingBlock.indexOf("c:orientation");
+    const maxIdx = scalingBlock.indexOf("c:max");
+    const minIdx = scalingBlock.indexOf("c:min");
+    expect(orientationIdx).toBeLessThan(maxIdx);
+    expect(maxIdx).toBeLessThan(minIdx);
+  });
+
+  it("does not pollute the category axis scaling when only y.scale is set", () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { scale: { min: 0, max: 100 } } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).not.toContain("<c:min");
+    expect(catAxBlock).not.toContain("<c:max");
+  });
+
+  it("emits <c:majorUnit> and <c:minorUnit> as siblings of crossBetween (after)", () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { scale: { majorUnit: 25, minorUnit: 5 } } } }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<c:majorUnit val="25"/>');
+    expect(valAxBlock).toContain('<c:minorUnit val="5"/>');
+    // Tick units come AFTER crossBetween per CT_ValAx.
+    const crossBetweenIdx = valAxBlock.indexOf("c:crossBetween");
+    const majorUnitIdx = valAxBlock.indexOf("c:majorUnit");
+    const minorUnitIdx = valAxBlock.indexOf("c:minorUnit");
+    expect(crossBetweenIdx).toBeGreaterThan(0);
+    expect(majorUnitIdx).toBeGreaterThan(crossBetweenIdx);
+    expect(minorUnitIdx).toBeGreaterThan(majorUnitIdx);
+  });
+
+  it("emits <c:logBase> before <c:orientation> per CT_Scaling order", () => {
+    const result = writeChart(makeChart({ axes: { y: { scale: { logBase: 10 } } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    const scalingBlock = valAxBlock.match(/<c:scaling>[\s\S]*?<\/c:scaling>/)![0];
+    expect(scalingBlock).toContain('<c:logBase val="10"/>');
+    const logBaseIdx = scalingBlock.indexOf("c:logBase");
+    const orientationIdx = scalingBlock.indexOf("c:orientation");
+    expect(logBaseIdx).toBeLessThan(orientationIdx);
+  });
+
+  it("drops max when min >= max (degenerate range)", () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { scale: { min: 10, max: 10 } } } }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    const scalingBlock = valAxBlock.match(/<c:scaling>[\s\S]*?<\/c:scaling>/)![0];
+    expect(scalingBlock).toContain('<c:min val="10"/>');
+    expect(scalingBlock).not.toContain("<c:max");
+  });
+
+  it("ignores non-finite, zero, and negative tick spacings", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          y: {
+            scale: {
+              majorUnit: Number.NaN,
+              minorUnit: 0,
+            },
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:majorUnit");
+    expect(result.chartXml).not.toContain("c:minorUnit");
+  });
+
+  it("ignores log bases outside the spec-allowed 2..1000 band", () => {
+    const result = writeChart(makeChart({ axes: { y: { scale: { logBase: 1 } } } }), "Sheet1");
+    expect(result.chartXml).not.toContain("c:logBase");
+    const result2 = writeChart(makeChart({ axes: { y: { scale: { logBase: 5000 } } } }), "Sheet1");
+    expect(result2.chartXml).not.toContain("c:logBase");
+  });
+
+  it("emits scale on the scatter X axis when xScale is set", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { x: { scale: { min: 0, max: 50 } } },
+      }),
+      "Sheet1",
+    );
+    const valAxBlocks = [...result.chartXml.matchAll(/<c:valAx>[\s\S]*?<\/c:valAx>/g)].map(
+      (m) => m[0],
+    );
+    expect(valAxBlocks).toHaveLength(2);
+    // First valAx is the X axis (axPos="b").
+    expect(valAxBlocks[0]).toContain('c:axPos val="b"');
+    expect(valAxBlocks[0]).toContain('<c:max val="50"/>');
+    expect(valAxBlocks[0]).toContain('<c:min val="0"/>');
+    expect(valAxBlocks[1]).not.toContain('<c:max val="50"/>');
+  });
+
+  it("skips scaling extras on pie charts (pie has no axes)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "pie",
+        axes: { y: { scale: { min: 0, max: 100 } } },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:max");
+    expect(result.chartXml).not.toContain("<c:majorUnit");
+  });
+
+  it("renders well-formed XML when scale extras coexist with title and gridlines", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          y: {
+            title: "Revenue",
+            gridlines: { major: true },
+            scale: { min: 0, max: 100, majorUnit: 25 },
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    const doc = parseXml(result.chartXml);
+    expect(doc).toBeTruthy();
+  });
+});
+
+// ── writeChart — axis number format ──────────────────────────────────
+
+describe("writeChart — axis number format", () => {
+  it("emits <c:numFmt> with the formatCode and sourceLinked=0 by default", () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { numberFormat: { formatCode: "#,##0" } } } }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('formatCode="#,##0"');
+    expect(valAxBlock).toContain('sourceLinked="0"');
+  });
+
+  it("emits sourceLinked=1 when explicitly set", () => {
+    const result = writeChart(
+      makeChart({
+        axes: { y: { numberFormat: { formatCode: "0.00%", sourceLinked: true } } },
+      }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('formatCode="0.00%"');
+    expect(valAxBlock).toContain('sourceLinked="1"');
+  });
+
+  it("places <c:numFmt> after the optional <c:title> and before <c:crossAx>", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          y: { title: "Revenue", numberFormat: { formatCode: "$#,##0" } },
+        },
+      }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    const titleIdx = valAxBlock.indexOf("<c:title>");
+    const numFmtIdx = valAxBlock.indexOf("<c:numFmt");
+    const crossAxIdx = valAxBlock.indexOf("c:crossAx");
+    expect(titleIdx).toBeGreaterThan(0);
+    expect(numFmtIdx).toBeGreaterThan(titleIdx);
+    expect(crossAxIdx).toBeGreaterThan(numFmtIdx);
+  });
+
+  it("omits <c:numFmt> when formatCode is empty", () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { numberFormat: { formatCode: "" } } } }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:numFmt");
+  });
+
+  it("escapes XML-special characters in the formatCode", () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { numberFormat: { formatCode: '"<x>"&"y"' } } } }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('formatCode="&quot;&lt;x&gt;&quot;&amp;&quot;y&quot;"');
+  });
+
+  it("emits a number format on the scatter Y axis", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { y: { numberFormat: { formatCode: "0.00%" } } },
+      }),
+      "Sheet1",
+    );
+    const valAxBlocks = [...result.chartXml.matchAll(/<c:valAx>[\s\S]*?<\/c:valAx>/g)].map(
+      (m) => m[0],
+    );
+    // Y axis is the second valAx (axPos="l").
+    expect(valAxBlocks[1]).toContain('c:axPos val="l"');
+    expect(valAxBlocks[1]).toContain('formatCode="0.00%"');
+    expect(valAxBlocks[0]).not.toContain('formatCode="0.00%"');
+  });
+
+  it("skips number format on pie charts (pie has no axes)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "pie",
+        axes: { y: { numberFormat: { formatCode: "#,##0" } } },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:numFmt");
+  });
+});
+
 describe("chartKindElement", () => {
   it("maps each chart kind to the matching DrawingML element", () => {
     expect(chartKindElement("bar")).toBe("c:barChart");

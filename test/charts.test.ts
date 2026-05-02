@@ -968,6 +968,180 @@ describe("parseChart — axis gridlines", () => {
   });
 });
 
+// ── parseChart — axis scale ───────────────────────────────────────
+
+describe("parseChart — axis scale", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it("surfaces <c:min> / <c:max> / <c:majorUnit> / <c:minorUnit> off the value axis", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:scaling>
+        <c:orientation val="minMax"/>
+        <c:max val="100"/>
+        <c:min val="0"/>
+      </c:scaling>
+      <c:majorUnit val="25"/>
+      <c:minorUnit val="5"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.scale).toEqual({ min: 0, max: 100, majorUnit: 25, minorUnit: 5 });
+  });
+
+  it("surfaces <c:logBase> from inside <c:scaling>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:scaling>
+        <c:logBase val="10"/>
+        <c:orientation val="minMax"/>
+      </c:scaling>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.scale).toEqual({ logBase: 10 });
+  });
+
+  it("does not surface a scale when <c:scaling> only carries <c:orientation>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:scaling><c:orientation val="minMax"/></c:scaling>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("ignores non-finite, zero, and negative tick spacings", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:scaling><c:orientation val="minMax"/></c:scaling>
+      <c:majorUnit val="0"/>
+      <c:minorUnit val="-2"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("maps scatter axes to x = first valAx, y = second valAx", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:scatterChart><c:ser><c:idx val="0"/></c:ser></c:scatterChart>
+    <c:valAx>
+      <c:axId val="1"/>
+      <c:scaling><c:orientation val="minMax"/><c:max val="50"/><c:min val="0"/></c:scaling>
+      <c:axPos val="b"/>
+    </c:valAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:scaling><c:orientation val="minMax"/><c:max val="200"/><c:min val="-200"/></c:scaling>
+      <c:axPos val="l"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.scale).toEqual({ min: 0, max: 50 });
+    expect(chart?.axes?.y?.scale).toEqual({ min: -200, max: 200 });
+  });
+});
+
+// ── parseChart — axis number format ───────────────────────────────
+
+describe("parseChart — axis number format", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces <c:numFmt formatCode="..."/> off the value axis', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:numFmt formatCode="#,##0" sourceLinked="0"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.numberFormat).toEqual({ formatCode: "#,##0" });
+  });
+
+  it("surfaces sourceLinked when set to 1", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:numFmt formatCode="0.00%" sourceLinked="1"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.numberFormat).toEqual({ formatCode: "0.00%", sourceLinked: true });
+  });
+
+  it("ignores empty formatCode attributes", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:numFmt formatCode="" sourceLinked="1"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("co-surfaces axis title, gridlines, scale and number format together", () => {
+    const xml = `<c:chartSpace ${NS}
+                xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:scaling><c:orientation val="minMax"/><c:max val="100"/><c:min val="0"/></c:scaling>
+      <c:majorGridlines/>
+      <c:title><c:tx><c:rich><a:p><a:r><a:t>Revenue</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      <c:numFmt formatCode="$#,##0" sourceLinked="0"/>
+      <c:majorUnit val="25"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y).toEqual({
+      title: "Revenue",
+      gridlines: { major: true },
+      scale: { min: 0, max: 100, majorUnit: 25 },
+      numberFormat: { formatCode: "$#,##0" },
+    });
+  });
+});
+
 // ── parseChart — doughnut hole size ───────────────────────────────
 
 describe("parseChart — doughnut hole size", () => {
