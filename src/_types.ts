@@ -667,6 +667,20 @@ export interface SheetChart {
    */
   barGrouping?: "clustered" | "stacked" | "percentStacked";
   /**
+   * Line subtype. Default: `"standard"`. `"stacked"` accumulates
+   * series end-to-end, `"percentStacked"` normalizes each category to
+   * 100%. Ignored for non-line chart kinds. Maps to
+   * `<c:lineChart><c:grouping val="..."/></c:lineChart>`.
+   */
+  lineGrouping?: "standard" | "stacked" | "percentStacked";
+  /**
+   * Area subtype. Default: `"standard"`. `"stacked"` paints series on
+   * top of each other, `"percentStacked"` normalizes each category to
+   * 100%. Ignored for non-area chart kinds. Maps to
+   * `<c:areaChart><c:grouping val="..."/></c:areaChart>`.
+   */
+  areaGrouping?: "standard" | "stacked" | "percentStacked";
+  /**
    * Whether the legend is shown and where. Default: `"right"` for
    * pie/bar/line/area, `"bottom"` for scatter. Pass `false` to hide
    * the legend.
@@ -1453,6 +1467,19 @@ export type ChartLegendPosition = "top" | "bottom" | "left" | "right" | "topRigh
  */
 export type ChartBarGrouping = "clustered" | "stacked" | "percentStacked";
 
+/**
+ * Line/area grouping reported by {@link Chart.lineGrouping} and
+ * {@link Chart.areaGrouping}.
+ *
+ * Pulled from `<c:lineChart><c:grouping val="..."/></c:lineChart>` or
+ * `<c:areaChart><c:grouping val="..."/></c:areaChart>`. Only the
+ * stacked variants surface — `"standard"` is the OOXML default and
+ * is collapsed to `undefined` for symmetry with the writer's
+ * {@link SheetChart.lineGrouping} / {@link SheetChart.areaGrouping}
+ * defaults.
+ */
+export type ChartLineAreaGrouping = "stacked" | "percentStacked";
+
 export interface Chart {
   /** Chart-type elements present in `<c:plotArea>`, in declaration order. */
   kinds: ChartKind[];
@@ -1489,6 +1516,20 @@ export interface Chart {
    * {@link SheetChart.barGrouping} field.
    */
   barGrouping?: ChartBarGrouping;
+  /**
+   * Grouping pulled from the first `<c:lineChart>` element, when the
+   * chart has one. Surfaces only `"stacked"` / `"percentStacked"` —
+   * the OOXML `"standard"` value is the writer default and collapses
+   * to `undefined` here.
+   */
+  lineGrouping?: ChartLineAreaGrouping;
+  /**
+   * Grouping pulled from the first `<c:areaChart>` element, when the
+   * chart has one. Surfaces only `"stacked"` / `"percentStacked"` —
+   * the OOXML `"standard"` value is the writer default and collapses
+   * to `undefined` here.
+   */
+  areaGrouping?: ChartLineAreaGrouping;
   /**
    * Chart-level data label defaults parsed from the first chart-type
    * element's `<c:dLbls>` block. Series-level overrides on

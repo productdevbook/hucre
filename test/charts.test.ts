@@ -465,6 +465,124 @@ describe("parseChart — bar grouping", () => {
   });
 });
 
+describe("parseChart — line grouping", () => {
+  function lineChartWithGrouping(groupingXml: string): string {
+    return `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        ${groupingXml}
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces stacked grouping", () => {
+    const xml = lineChartWithGrouping('<c:grouping val="stacked"/>');
+    expect(parseChart(xml)?.lineGrouping).toBe("stacked");
+  });
+
+  it("surfaces percentStacked grouping", () => {
+    const xml = lineChartWithGrouping('<c:grouping val="percentStacked"/>');
+    expect(parseChart(xml)?.lineGrouping).toBe("percentStacked");
+  });
+
+  it("collapses standard grouping to undefined (writer default)", () => {
+    const xml = lineChartWithGrouping('<c:grouping val="standard"/>');
+    expect(parseChart(xml)?.lineGrouping).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:grouping> element", () => {
+    const xml = lineChartWithGrouping("");
+    expect(parseChart(xml)?.lineGrouping).toBeUndefined();
+  });
+
+  it("does not surface lineGrouping for non-line charts", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:areaChart>
+        <c:grouping val="stacked"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:areaChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.lineGrouping).toBeUndefined();
+  });
+});
+
+describe("parseChart — area grouping", () => {
+  function areaChartWithGrouping(groupingXml: string): string {
+    return `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:areaChart>
+        ${groupingXml}
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:areaChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces stacked grouping", () => {
+    const xml = areaChartWithGrouping('<c:grouping val="stacked"/>');
+    expect(parseChart(xml)?.areaGrouping).toBe("stacked");
+  });
+
+  it("surfaces percentStacked grouping", () => {
+    const xml = areaChartWithGrouping('<c:grouping val="percentStacked"/>');
+    expect(parseChart(xml)?.areaGrouping).toBe("percentStacked");
+  });
+
+  it("collapses standard grouping to undefined (writer default)", () => {
+    const xml = areaChartWithGrouping('<c:grouping val="standard"/>');
+    expect(parseChart(xml)?.areaGrouping).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:grouping> element", () => {
+    const xml = areaChartWithGrouping("");
+    expect(parseChart(xml)?.areaGrouping).toBeUndefined();
+  });
+
+  it("does not surface areaGrouping for non-area charts", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:grouping val="percentStacked"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.areaGrouping).toBeUndefined();
+  });
+
+  it("surfaces both line and area grouping in a combo workbook", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:grouping val="percentStacked"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:lineChart>
+      <c:areaChart>
+        <c:grouping val="stacked"/>
+        <c:ser><c:idx val="1"/></c:ser>
+      </c:areaChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(xml);
+    expect(parsed?.lineGrouping).toBe("percentStacked");
+    expect(parsed?.areaGrouping).toBe("stacked");
+  });
+});
+
 // ── parseChart — data labels ──────────────────────────────────────
 
 describe("parseChart — data labels", () => {

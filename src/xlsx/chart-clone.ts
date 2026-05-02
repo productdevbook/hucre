@@ -84,6 +84,10 @@ export interface CloneChartOptions {
   legend?: SheetChart["legend"];
   /** Override `SheetChart.barGrouping`. */
   barGrouping?: SheetChart["barGrouping"];
+  /** Override `SheetChart.lineGrouping`. */
+  lineGrouping?: SheetChart["lineGrouping"];
+  /** Override `SheetChart.areaGrouping`. */
+  areaGrouping?: SheetChart["areaGrouping"];
   /** Override `SheetChart.showTitle`. */
   showTitle?: boolean;
   /** Override `SheetChart.altText`. */
@@ -166,16 +170,29 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   };
   if (title !== undefined) out.title = title;
 
-  // Legend / bar grouping carry over from the source when the caller
-  // does not supply an override. Bar grouping only round-trips for
-  // bar/column targets — applying a stacked grouping to a line/pie
-  // template clone would be silently ignored by the writer.
+  // Legend / per-family grouping carry over from the source when the
+  // caller does not supply an override. Each grouping only round-trips
+  // for the matching target family — applying a stacked grouping to a
+  // family that does not support it would be silently ignored by the
+  // writer, so we drop the inherited value to keep the model honest.
   const legend = options.legend !== undefined ? options.legend : source.legend;
   if (legend !== undefined) out.legend = legend;
 
   const barGrouping = options.barGrouping !== undefined ? options.barGrouping : source.barGrouping;
   if (barGrouping !== undefined && (type === "bar" || type === "column")) {
     out.barGrouping = barGrouping;
+  }
+
+  const lineGrouping =
+    options.lineGrouping !== undefined ? options.lineGrouping : source.lineGrouping;
+  if (lineGrouping !== undefined && type === "line") {
+    out.lineGrouping = lineGrouping;
+  }
+
+  const areaGrouping =
+    options.areaGrouping !== undefined ? options.areaGrouping : source.areaGrouping;
+  if (areaGrouping !== undefined && type === "area") {
+    out.areaGrouping = areaGrouping;
   }
 
   if (options.showTitle !== undefined) out.showTitle = options.showTitle;

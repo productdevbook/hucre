@@ -170,6 +170,68 @@ describe("writeChart", () => {
     expect(result.chartXml).toContain("c:areaChart");
   });
 
+  it("emits stacked grouping for type=line with lineGrouping=stacked", () => {
+    const result = writeChart(makeChart({ type: "line", lineGrouping: "stacked" }), "Sheet1");
+    expect(result.chartXml).toContain("c:lineChart");
+    expect(result.chartXml).toContain('c:grouping val="stacked"');
+  });
+
+  it("emits percentStacked grouping for type=line with lineGrouping=percentStacked", () => {
+    const result = writeChart(
+      makeChart({ type: "line", lineGrouping: "percentStacked" }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:grouping val="percentStacked"');
+  });
+
+  it("falls back to standard grouping when lineGrouping is unset", () => {
+    const result = writeChart(makeChart({ type: "line" }), "Sheet1");
+    expect(result.chartXml).toContain('c:grouping val="standard"');
+  });
+
+  it("ignores lineGrouping on non-line chart kinds", () => {
+    // Setting lineGrouping on a column chart should not affect its
+    // grouping element — the column writer reads barGrouping, not
+    // lineGrouping.
+    const result = writeChart(
+      makeChart({ type: "column", lineGrouping: "stacked" } as SheetChart),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:grouping val="clustered"');
+    expect(result.chartXml).not.toContain('c:grouping val="stacked"');
+  });
+
+  it("emits stacked grouping for type=area with areaGrouping=stacked", () => {
+    const result = writeChart(makeChart({ type: "area", areaGrouping: "stacked" }), "Sheet1");
+    expect(result.chartXml).toContain("c:areaChart");
+    expect(result.chartXml).toContain('c:grouping val="stacked"');
+  });
+
+  it("emits percentStacked grouping for type=area with areaGrouping=percentStacked", () => {
+    const result = writeChart(
+      makeChart({ type: "area", areaGrouping: "percentStacked" }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:grouping val="percentStacked"');
+  });
+
+  it("falls back to standard grouping when areaGrouping is unset", () => {
+    const result = writeChart(makeChart({ type: "area" }), "Sheet1");
+    expect(result.chartXml).toContain('c:grouping val="standard"');
+  });
+
+  it("ignores areaGrouping on non-area chart kinds", () => {
+    const result = writeChart(
+      makeChart({ type: "line", areaGrouping: "stacked" } as SheetChart),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain("c:lineChart");
+    // The line writer reads lineGrouping, so the stacked areaGrouping
+    // should be ignored and the line falls back to its standard default.
+    expect(result.chartXml).toContain('c:grouping val="standard"');
+    expect(result.chartXml).not.toContain('c:grouping val="stacked"');
+  });
+
   it("emits a series fill spPr when color is set", () => {
     const result = writeChart(
       makeChart({
