@@ -2224,3 +2224,182 @@ describe("cloneChart — series marker", () => {
     expect(reparsed?.series?.[1].marker).toBeUndefined();
   });
 });
+
+// ── cloneChart — series invertIfNegative flag ───────────────────────
+
+describe("cloneChart — series invertIfNegative flag", () => {
+  function barSource(invertIfNegative: boolean | undefined): Chart {
+    return {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Tpl!$B$2:$B$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+          ...(invertIfNegative !== undefined ? { invertIfNegative } : {}),
+        },
+      ],
+    };
+  }
+
+  it("inherits invertIfNegative=true from a bar series source", () => {
+    const clone = cloneChart(barSource(true), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("column");
+    expect(clone.series[0].invertIfNegative).toBe(true);
+  });
+
+  it("does not surface invertIfNegative when the source series did not declare it", () => {
+    const clone = cloneChart(barSource(undefined), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.series[0].invertIfNegative).toBeUndefined();
+  });
+
+  it("lets seriesOverrides[i].invertIfNegative=true override a source missing the flag", () => {
+    const clone = cloneChart(barSource(undefined), {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ invertIfNegative: true }],
+    });
+    expect(clone.series[0].invertIfNegative).toBe(true);
+  });
+
+  it("lets seriesOverrides[i].invertIfNegative=null drop an inherited flag", () => {
+    const clone = cloneChart(barSource(true), {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ invertIfNegative: null }],
+    });
+    expect(clone.series[0].invertIfNegative).toBeUndefined();
+  });
+
+  it("lets seriesOverrides[i].invertIfNegative=false drop an inherited flag", () => {
+    // `false` collapses to undefined for symmetry with the OOXML
+    // default — non-inverted bars and absence round-trip identically.
+    const clone = cloneChart(barSource(true), {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ invertIfNegative: false }],
+    });
+    expect(clone.series[0].invertIfNegative).toBeUndefined();
+  });
+
+  it("carries invertIfNegative onto a horizontal bar clone", () => {
+    const clone = cloneChart(barSource(true), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "bar",
+    });
+    expect(clone.type).toBe("bar");
+    expect(clone.series[0].invertIfNegative).toBe(true);
+  });
+
+  it("drops inherited invertIfNegative when the resolved type is not bar/column", () => {
+    // A bar template flattened to line / pie / doughnut / area /
+    // scatter must not leak <c:invertIfNegative> — the OOXML schema
+    // rejects it on every other chart family.
+    for (const type of ["line", "pie", "doughnut", "area", "scatter"] as const) {
+      const clone = cloneChart(barSource(true), {
+        anchor: { from: { row: 0, col: 0 } },
+        type,
+        seriesOverrides: [{ values: "Sheet1!$B$2:$B$5" }],
+      });
+      expect(clone.type).toBe(type);
+      expect(clone.series[0].invertIfNegative).toBeUndefined();
+    }
+  });
+
+  it("drops invertIfNegative from explicit options.series when the resolved type is not bar/column", () => {
+    // Replacing the entire series array via options.series still goes
+    // through the post-build invert-strip, so a stray flag does not
+    // leak into a non-bar/column target.
+    const clone = cloneChart(barSource(true), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "line",
+      series: [{ values: "Sheet1!$B$2:$B$5", invertIfNegative: true }],
+    });
+    expect(clone.series[0].invertIfNegative).toBeUndefined();
+  });
+
+  it("propagates invertIfNegative across a multi-series column clone", () => {
+    const multi: Chart = {
+      kinds: ["bar"],
+      seriesCount: 3,
+      series: [
+        { kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5", invertIfNegative: true },
+        { kind: "bar", index: 1, valuesRef: "Tpl!$C$2:$C$5" },
+        { kind: "bar", index: 2, valuesRef: "Tpl!$D$2:$D$5", invertIfNegative: true },
+      ],
+    };
+    const clone = cloneChart(multi, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.series[0].invertIfNegative).toBe(true);
+    expect(clone.series[1].invertIfNegative).toBeUndefined();
+    expect(clone.series[2].invertIfNegative).toBe(true);
+  });
+
+  it("round-trips invertIfNegative through parseChart → cloneChart → writeXlsx → parseChart", async () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="clustered"/>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx><c:v>Inverted</c:v></c:tx>
+          <c:invertIfNegative val="1"/>
+          <c:cat><c:strRef><c:f>Tpl!$A$2:$A$5</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:ser>
+          <c:idx val="1"/>
+          <c:tx><c:v>Default</c:v></c:tx>
+          <c:cat><c:strRef><c:f>Tpl!$A$2:$A$5</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Tpl!$C$2:$C$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:axId val="111"/>
+        <c:axId val="222"/>
+      </c:barChart>
+      <c:catAx><c:axId val="111"/></c:catAx>
+      <c:valAx><c:axId val="222"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const source = parseChart(sourceXml)!;
+    expect(source.series?.[0].invertIfNegative).toBe(true);
+    expect(source.series?.[1].invertIfNegative).toBeUndefined();
+
+    const sheetChart: SheetChart = cloneChart(source, {
+      anchor: { from: { row: 14, col: 0 } },
+      seriesOverrides: [{ values: "Dashboard!$B$2:$B$5" }, { values: "Dashboard!$C$2:$C$5" }],
+    });
+    expect(sheetChart.type).toBe("column");
+    expect(sheetChart.series[0].invertIfNegative).toBe(true);
+    expect(sheetChart.series[1].invertIfNegative).toBeUndefined();
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Dashboard",
+          rows: [
+            ["A", "B", "C"],
+            [1, 2, 3],
+            [4, 5, 6],
+            [7, 8, 9],
+            [10, 11, 12],
+          ],
+          charts: [sheetChart],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    // Only the inverted series carries <c:invertIfNegative>; the
+    // second falls back to the OOXML default (absence of the element).
+    const matches = written.match(/c:invertIfNegative val="[01]"/g) ?? [];
+    expect(matches).toEqual(['c:invertIfNegative val="1"']);
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.series?.[0].invertIfNegative).toBe(true);
+    expect(reparsed?.series?.[1].invertIfNegative).toBeUndefined();
+  });
+});

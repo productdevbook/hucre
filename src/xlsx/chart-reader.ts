@@ -444,6 +444,16 @@ function parseSeries(ser: XmlElement, kind: ChartKind, index: number): ChartSeri
     if (marker !== undefined) out.marker = marker;
   }
 
+  // `<c:invertIfNegative>` lives on `CT_BarSer` / `CT_Bar3DSer` only —
+  // every other chart family rejects the element. Surface the flag
+  // just for those two kinds so a corrupt template carrying
+  // `<c:invertIfNegative>` on a line/pie/area/scatter series does not
+  // silently flip a flag that the writer would never emit anyway.
+  if (kind === "bar" || kind === "bar3D") {
+    const invertIfNegative = parseInvertIfNegative(ser);
+    if (invertIfNegative !== undefined) out.invertIfNegative = invertIfNegative;
+  }
+
   return out;
 }
 
@@ -456,6 +466,21 @@ function parseSeries(ser: XmlElement, kind: ChartKind, index: number): ChartSeri
  */
 function parseSmooth(ser: XmlElement): boolean | undefined {
   const el = findChild(ser, "smooth");
+  if (!el) return undefined;
+  const v = readBoolAttr(el);
+  if (v !== true) return undefined;
+  return true;
+}
+
+/**
+ * Pull `<c:invertIfNegative val=".."/>` off a bar/column series
+ * element. Returns `undefined` when the attribute is absent,
+ * malformed, or carries the OOXML default `false` — absence and
+ * `false` round-trip identically through the writer's elision logic,
+ * so collapsing them keeps the parsed shape minimal.
+ */
+function parseInvertIfNegative(ser: XmlElement): boolean | undefined {
+  const el = findChild(ser, "invertIfNegative");
   if (!el) return undefined;
   const v = readBoolAttr(el);
   if (v !== true) return undefined;

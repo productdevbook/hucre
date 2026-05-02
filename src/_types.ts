@@ -773,6 +773,20 @@ export interface ChartSeries {
    * chart family at write time.
    */
   marker?: ChartMarker;
+  /**
+   * Invert the fill color when the value is negative. Maps to
+   * `<c:invertIfNegative val=".."/>` inside the `<c:ser>` element.
+   * Only meaningful for `bar` and `column` charts — the OOXML schema
+   * places `<c:invertIfNegative>` exclusively on `CT_BarSer` and
+   * `CT_Bar3DSer`, so the field is silently dropped on every other
+   * chart family at write time.
+   *
+   * Default: `false` (negative bars share the series fill color).
+   * Set `true` to mirror Excel's "Format Data Series → Fill → Invert
+   * if negative" toggle, which paints negative bars with white (or
+   * the inverted color when the spreadsheet supplies one).
+   */
+  invertIfNegative?: boolean;
 }
 
 /**
@@ -1589,6 +1603,15 @@ export interface ChartSeriesInfo {
    * fed straight into {@link cloneChart} without transformation.
    */
   marker?: ChartMarker;
+  /**
+   * Invert-if-negative flag pulled from
+   * `<c:ser><c:invertIfNegative val=".."/>`. Surfaces only on `bar`
+   * (and `bar3D`) series — the OOXML schema places
+   * `<c:invertIfNegative>` exclusively on `CT_BarSer` / `CT_Bar3DSer`.
+   * `false` collapses to `undefined` because it matches the OOXML
+   * default and round-trips identically with absence of the field.
+   */
+  invertIfNegative?: boolean;
 }
 
 /**

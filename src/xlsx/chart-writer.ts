@@ -388,6 +388,7 @@ function buildBarChart(chart: SheetChart, sheetName: string): string {
     children.push(
       buildSeries(chart.series[i], i, sheetName, /* numericCategories */ false, {
         dataLabels: chart.dataLabels,
+        invertIfNegative: chart.series[i].invertIfNegative === true,
       }),
     );
   }
@@ -809,6 +810,16 @@ interface SeriesOptions {
    * regardless of which fields are populated.
    */
   marker?: ChartMarker;
+  /**
+   * Per-series invert-if-negative flag. Only meaningful for bar /
+   * column series — every other family ignores the field. The OOXML
+   * schema places `<c:invertIfNegative>` between `<c:spPr>` and
+   * `<c:dLbls>` on `CT_BarSer` / `CT_Bar3DSer`, so the writer slots
+   * it there. The element is only emitted when the field resolves to
+   * `true` — `false` is the OOXML default and absence round-trips
+   * identically.
+   */
+  invertIfNegative?: boolean;
 }
 
 function buildSeries(
@@ -846,6 +857,18 @@ function buildSeries(
   // every other chart family.
   const markerXml = buildSeriesMarker(options?.marker);
   if (markerXml) children.push(markerXml);
+
+  // `<c:invertIfNegative>` — only bar / column (CT_BarSer /
+  // CT_Bar3DSer) series carry the element per the OOXML schema. It
+  // sits between `<c:spPr>` (and the bar-irrelevant `<c:marker>`
+  // slot, which is never populated for bar/column callers anyway)
+  // and `<c:dLbls>`. Non-bar callers leave `options.invertIfNegative`
+  // undefined so the field is silently dropped on every other chart
+  // family. Emit only when the resolved value is `true` — `false`
+  // matches the OOXML default and absence round-trips identically.
+  if (options?.invertIfNegative === true) {
+    children.push(xmlSelfClose("c:invertIfNegative", { val: 1 }));
+  }
 
   // Data labels — series-level override always wins over the chart-level
   // default. `<c:dLbls>` sits between <c:spPr> and <c:cat>/<c:val> per

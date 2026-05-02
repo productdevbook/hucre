@@ -2740,3 +2740,163 @@ describe("readXlsx — chart cell anchor", () => {
     });
   });
 });
+
+// ── parseChart — series invertIfNegative flag ─────────────────────
+
+describe("parseChart — series invertIfNegative flag", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces invertIfNegative=true on a <c:barChart> series with <c:invertIfNegative val="1"/>', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:invertIfNegative val="1"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].invertIfNegative).toBe(true);
+  });
+
+  it("surfaces invertIfNegative=true on a horizontal bar chart series", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="bar"/>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:invertIfNegative val="1"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].invertIfNegative).toBe(true);
+  });
+
+  it("collapses the OOXML default invertIfNegative=false to undefined", () => {
+    // Absence of <c:invertIfNegative> and `<c:invertIfNegative val="0"/>`
+    // round-trip identically through the writer's elision logic, so the
+    // parser collapses both to undefined to keep the read-side shape
+    // minimal.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:invertIfNegative val="0"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].invertIfNegative).toBeUndefined();
+  });
+
+  it("returns invertIfNegative undefined when <c:invertIfNegative> is absent", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].invertIfNegative).toBeUndefined();
+  });
+
+  it('also accepts the "true" / "false" boolean spelling', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:invertIfNegative val="true"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].invertIfNegative).toBe(true);
+  });
+
+  it("ignores <c:invertIfNegative> on chart families whose schema rejects the element", () => {
+    // The OOXML schema places <c:invertIfNegative> only on CT_BarSer
+    // and CT_Bar3DSer. A line/pie/area/scatter template carrying a
+    // stray invert element should not surface a flag that the writer
+    // would never emit anyway.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:invertIfNegative val="1"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:lineChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].invertIfNegative).toBeUndefined();
+  });
+
+  it("surfaces invertIfNegative per-series independently across multi-series bar charts", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:invertIfNegative val="1"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+      <c:ser>
+        <c:idx val="1"/>
+        <c:invertIfNegative val="0"/>
+        <c:val><c:numRef><c:f>Sheet1!$C$2:$C$5</c:f></c:numRef></c:val>
+      </c:ser>
+      <c:ser>
+        <c:idx val="2"/>
+        <c:val><c:numRef><c:f>Sheet1!$D$2:$D$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series).toHaveLength(3);
+    expect(chart?.series?.[0].invertIfNegative).toBe(true);
+    expect(chart?.series?.[1].invertIfNegative).toBeUndefined();
+    expect(chart?.series?.[2].invertIfNegative).toBeUndefined();
+  });
+
+  it("returns invertIfNegative undefined when val attribute is missing", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:invertIfNegative/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].invertIfNegative).toBeUndefined();
+  });
+});

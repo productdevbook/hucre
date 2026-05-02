@@ -665,6 +665,13 @@ and `width` is reported in points after converting from EMU and
 clamping to Excel's 0.25 – 13.5 pt UI band. Empty `<a:ln/>` blocks,
 unknown dash tokens, and out-of-band widths collapse to `undefined`
 so the parsed shape stays minimal.
+`ChartSeriesInfo.invertIfNegative` surfaces the per-series
+`<c:ser><c:invertIfNegative val=".."/>` flag — Excel's "Format Data
+Series → Fill → Invert if negative" toggle — only on `bar` / `bar3D`
+series (the OOXML schema places `<c:invertIfNegative>` exclusively on
+`CT_BarSer` / `CT_Bar3DSer`). Absence and the OOXML default
+`val="0"` both collapse to `undefined`, so only an explicit
+`<c:invertIfNegative val="1"/>` round-trips as `invertIfNegative: true`.
 Sheets that hucre actively regenerates because they
 also carry hucre-managed images currently keep the chart bodies but
 lose the in-drawing chart anchor — merging hucre's drawing output
@@ -785,6 +792,13 @@ so a `color + stroke` combo behaves like Excel's UI: the line picks
 up the fill color, and dash / width override visibility-only
 attributes. Bar / column / pie / doughnut / area kinds silently
 ignore the field.
+For bar and column charts, each `series[i].invertIfNegative` flag
+mirrors Excel's "Format Data Series → Fill → Invert if negative"
+toggle (`<c:invertIfNegative val=".."/>` inside `<c:ser>`). The
+writer only emits the element when `invertIfNegative` is explicitly
+`true` — `false` and absence both round-trip as the OOXML default
+(omission), so untouched bar charts stay byte-clean. Line / pie /
+doughnut / area / scatter kinds silently ignore the flag.
 Radar, stock, 3D variants, trendlines, and combo charts are out of
 scope today.
 
@@ -866,6 +880,14 @@ Per-series line strokes follow the same grammar:
 (replace wholesale — `dash` and `width` together, no per-field
 merge). The inherited stroke is also dropped automatically when the
 resolved clone target is anything other than `line` or `scatter`.
+Per-series `invertIfNegative` follows the same grammar:
+`seriesOverrides[i].invertIfNegative` accepts `undefined` (inherit),
+`null` (drop the inherited flag), or a `boolean` (replace). `false`
+collapses to `undefined` for symmetry with the OOXML default — the
+writer omits `<c:invertIfNegative>` either way. The inherited flag
+is also dropped automatically when the resolved clone target is
+anything other than `bar` or `column`, since the schema rejects the
+element on every other chart family.
 
 #### Walking and adding charts with `getCharts` / `addChart`
 

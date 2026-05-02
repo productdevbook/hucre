@@ -2221,3 +2221,151 @@ describe("writeChart — overlap", () => {
     expect(barBlock![0].indexOf("c:overlap")).toBeLessThan(barBlock![0].indexOf("c:axId"));
   });
 });
+
+// ── invertIfNegative (per-series flag, bar / column only) ────────────
+
+describe("writeChart — series invertIfNegative flag", () => {
+  it("omits <c:invertIfNegative> on a bar series with the flag left unset", () => {
+    // Absence of <c:invertIfNegative> matches the OOXML default
+    // (`val="0"`); the writer keeps untouched series byte-clean.
+    const result = writeChart(
+      makeChart({
+        type: "column",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:invertIfNegative");
+  });
+
+  it('emits <c:invertIfNegative val="1"/> on a column series when invertIfNegative=true', () => {
+    const result = writeChart(
+      makeChart({
+        type: "column",
+        series: [{ values: "B2:B4", categories: "A2:A4", invertIfNegative: true }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:invertIfNegative val="1"');
+  });
+
+  it('emits <c:invertIfNegative val="1"/> on a horizontal bar series when invertIfNegative=true', () => {
+    const result = writeChart(
+      makeChart({
+        type: "bar",
+        series: [{ values: "B2:B4", categories: "A2:A4", invertIfNegative: true }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:invertIfNegative val="1"');
+  });
+
+  it("renders invertIfNegative per-series independently on a multi-series column chart", () => {
+    const result = writeChart(
+      makeChart({
+        type: "column",
+        series: [
+          { name: "Inverted", values: "B2:B4", invertIfNegative: true },
+          { name: "Default", values: "C2:C4" },
+          { name: "ExplicitFalse", values: "D2:D4", invertIfNegative: false },
+        ],
+      }),
+      "Sheet1",
+    );
+    // Only the first series carries <c:invertIfNegative>. Series with
+    // the flag explicitly false collapse to absence (the OOXML default).
+    const matches = result.chartXml.match(/c:invertIfNegative val="[01]"/g) ?? [];
+    expect(matches).toEqual(['c:invertIfNegative val="1"']);
+  });
+
+  it("ignores invertIfNegative on chart kinds whose schema rejects <c:invertIfNegative>", () => {
+    // The OOXML schema places <c:invertIfNegative> only on CT_BarSer
+    // and CT_Bar3DSer. Setting the flag on a line / pie / doughnut /
+    // area / scatter series must not leak the element into the output.
+    const cases: Array<["line" | "pie" | "doughnut" | "area" | "scatter"]> = [
+      ["line"],
+      ["pie"],
+      ["doughnut"],
+      ["area"],
+      ["scatter"],
+    ];
+    for (const [type] of cases) {
+      const result = writeChart(
+        makeChart({
+          type,
+          series: [{ values: "B2:B4", categories: "A2:A4", invertIfNegative: true }],
+        }),
+        "Sheet1",
+      );
+      expect(result.chartXml).not.toContain("c:invertIfNegative");
+    }
+  });
+
+  it("places <c:invertIfNegative> between <c:spPr> and <c:cat>/<c:val> (OOXML order)", () => {
+    // CT_BarSer puts <c:invertIfNegative> after <c:spPr> and before
+    // <c:dLbls> / <c:cat> / <c:val>. The element must land between the
+    // styling block and the data references so Excel's strict validator
+    // does not reject the file.
+    const result = writeChart(
+      makeChart({
+        type: "column",
+        series: [
+          {
+            name: "Inverted",
+            values: "B2:B4",
+            categories: "A2:A4",
+            color: "FF0000",
+            invertIfNegative: true,
+          },
+        ],
+      }),
+      "Sheet1",
+    );
+    const serBlock = result.chartXml.match(/<c:ser>[\s\S]*?<\/c:ser>/)![0];
+    const spPrIdx = serBlock.indexOf("c:spPr");
+    const invertIdx = serBlock.indexOf("c:invertIfNegative");
+    const catIdx = serBlock.indexOf("c:cat");
+    const valIdx = serBlock.indexOf("c:val");
+    expect(spPrIdx).toBeLessThan(invertIdx);
+    expect(invertIdx).toBeLessThan(catIdx);
+    expect(invertIdx).toBeLessThan(valIdx);
+  });
+
+  it("emits <c:invertIfNegative> alongside other bar-only fields without disturbing them", () => {
+    // The barChart-level fields (<c:gapWidth>, <c:overlap>) are
+    // independent of the per-series invertIfNegative flag. Both must
+    // emit cleanly without interfering.
+    const result = writeChart(
+      makeChart({
+        type: "column",
+        gapWidth: 50,
+        overlap: -10,
+        series: [{ values: "B2:B4", categories: "A2:A4", invertIfNegative: true }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:invertIfNegative val="1"');
+    expect(result.chartXml).toContain('c:gapWidth val="50"');
+    expect(result.chartXml).toContain('c:overlap val="-10"');
+  });
+
+  it("survives a parseChart round-trip with invertIfNegative preserved", async () => {
+    // writeChart → parseChart pulls the flag straight back. Confirms the
+    // reader and writer agree on the element and that the value is
+    // surfaced on the resulting ChartSeriesInfo.
+    const written = writeChart(
+      makeChart({
+        type: "column",
+        series: [
+          { name: "Inverted", values: "B2:B4", invertIfNegative: true },
+          { name: "Default", values: "C2:C4" },
+        ],
+      }),
+      "Sheet1",
+    );
+    const parsed = parseChart(written.chartXml);
+    expect(parsed?.series).toHaveLength(2);
+    expect(parsed?.series?.[0].invertIfNegative).toBe(true);
+    expect(parsed?.series?.[1].invertIfNegative).toBeUndefined();
+  });
+});

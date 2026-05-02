@@ -80,6 +80,15 @@ export interface CloneChartSeriesOverride {
    * from the output when the resolved chart type is anything else.
    */
   marker?: ChartMarker | null;
+  /**
+   * Invert-if-negative override. `undefined` (or omitted) inherits the
+   * source series' `invertIfNegative`; `null` drops the inherited flag
+   * (the cloned series renders negatives in the series fill color);
+   * a `boolean` replaces it wholesale. Only meaningful for `bar` and
+   * `column` clones — silently dropped from the output when the
+   * resolved chart type is anything else.
+   */
+  invertIfNegative?: boolean | null;
 }
 
 /**
@@ -238,6 +247,16 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
       if (s.smooth !== undefined) delete s.smooth;
       if (s.stroke !== undefined) delete s.stroke;
       if (s.marker !== undefined) delete s.marker;
+    }
+  }
+
+  // `<c:invertIfNegative>` lives exclusively on bar / column series
+  // (CT_BarSer / CT_Bar3DSer); drop the field from every other
+  // resolved type so a column → line flatten (or any other coercion)
+  // does not leak the flag into a chart kind whose schema rejects it.
+  if (type !== "bar" && type !== "column") {
+    for (const s of series) {
+      if (s.invertIfNegative !== undefined) delete s.invertIfNegative;
     }
   }
 
@@ -456,6 +475,9 @@ function mergeSeries(
   const marker = resolveMarker(src?.marker, ov?.marker);
   if (marker !== undefined) out.marker = marker;
 
+  const invertIfNegative = resolveInvertIfNegative(src?.invertIfNegative, ov?.invertIfNegative);
+  if (invertIfNegative !== undefined) out.invertIfNegative = invertIfNegative;
+
   return out;
 }
 
@@ -508,6 +530,29 @@ function resolveSmooth(
 ): boolean | undefined {
   if (override === undefined) {
     return sourceSmooth === true ? true : undefined;
+  }
+  if (override === null) return undefined;
+  return override === true ? true : undefined;
+}
+
+/**
+ * Resolve a per-series invert-if-negative override.
+ *
+ * `undefined` → inherit the source series' `invertIfNegative`.
+ * `null`      → drop the inherited flag (the cloned series renders
+ *               negatives in the series fill color).
+ * `boolean`   → replace.
+ *
+ * Only the `true` outcome materializes on the result — `false` collapses
+ * to `undefined` so absence and the OOXML default round-trip identically
+ * (the writer omits `<c:invertIfNegative>` either way).
+ */
+function resolveInvertIfNegative(
+  sourceFlag: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) {
+    return sourceFlag === true ? true : undefined;
   }
   if (override === null) return undefined;
   return override === true ? true : undefined;
