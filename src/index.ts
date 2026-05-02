@@ -107,6 +107,10 @@ export type {
   TimelineCache,
 } from "./_types";
 
+// ── Charts ─────────────────────────────────────────────────────────
+export { parseChart } from "./xlsx/chart-reader";
+export type { Chart, ChartKind } from "./_types";
+
 // ── Date Utilities ─────────────────────────────────────────────────
 export {
   serialToDate,

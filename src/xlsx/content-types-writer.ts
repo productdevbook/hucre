@@ -27,6 +27,9 @@ const CT_SLICER = "application/vnd.ms-excel.slicer+xml";
 const CT_SLICER_CACHE = "application/vnd.ms-excel.slicerCache+xml";
 const CT_TIMELINE = "application/vnd.ms-excel.timeline+xml";
 const CT_TIMELINE_CACHE = "application/vnd.ms-excel.timelineCache+xml";
+const CT_CHART = "application/vnd.openxmlformats-officedocument.drawingml.chart+xml";
+const CT_CHART_STYLE = "application/vnd.ms-office.chartstyle+xml";
+const CT_CHART_COLORS = "application/vnd.ms-office.chartcolorstyle+xml";
 
 /** Image extension → content type mapping */
 const IMAGE_CONTENT_TYPES: Record<string, string> = {
@@ -80,6 +83,21 @@ export interface ContentTypesOptions {
    * adds an `Override` for `/xl/timelineCaches/timelineCacheN.xml`.
    */
   timelineCacheIndices?: number[];
+  /**
+   * 1-based indices of chart parts. Each entry adds an `Override` for
+   * `/xl/charts/chartN.xml`. Charts are referenced from drawings.
+   */
+  chartIndices?: number[];
+  /**
+   * 1-based indices of chart style parts (`/xl/charts/styleN.xml`).
+   * Excel 2013+ writes one style file per chart. Older charts omit it.
+   */
+  chartStyleIndices?: number[];
+  /**
+   * 1-based indices of chart color parts (`/xl/charts/colorsN.xml`).
+   * Excel 2013+ writes one colors file per chart. Older charts omit it.
+   */
+  chartColorsIndices?: number[];
   /** Whether docProps/core.xml is present */
   hasCoreProps?: boolean;
   /** Whether docProps/app.xml is present */
@@ -291,6 +309,42 @@ export function writeContentTypes(
         xmlSelfClose("Override", {
           PartName: `/xl/timelineCaches/timelineCache${idx}.xml`,
           ContentType: CT_TIMELINE_CACHE,
+        }),
+      );
+    }
+  }
+
+  // Override for each chart
+  if (opts.chartIndices) {
+    for (const idx of opts.chartIndices) {
+      children.push(
+        xmlSelfClose("Override", {
+          PartName: `/xl/charts/chart${idx}.xml`,
+          ContentType: CT_CHART,
+        }),
+      );
+    }
+  }
+
+  // Override for each chart style (Excel 2013+)
+  if (opts.chartStyleIndices) {
+    for (const idx of opts.chartStyleIndices) {
+      children.push(
+        xmlSelfClose("Override", {
+          PartName: `/xl/charts/style${idx}.xml`,
+          ContentType: CT_CHART_STYLE,
+        }),
+      );
+    }
+  }
+
+  // Override for each chart colors part (Excel 2013+)
+  if (opts.chartColorsIndices) {
+    for (const idx of opts.chartColorsIndices) {
+      children.push(
+        xmlSelfClose("Override", {
+          PartName: `/xl/charts/colors${idx}.xml`,
+          ContentType: CT_CHART_COLORS,
         }),
       );
     }
