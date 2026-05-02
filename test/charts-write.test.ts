@@ -4,7 +4,7 @@ import { parseXml } from "../src/xml/parser";
 import { writeXlsx } from "../src/xlsx/writer";
 import { writeChart, chartKindElement } from "../src/xlsx/chart-writer";
 import { writeDrawing } from "../src/xlsx/drawing-writer";
-import type { ChartKind, SheetChart, WriteSheet } from "../src/_types";
+import type { WriteChartKind, SheetChart, WriteSheet } from "../src/_types";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -221,7 +221,7 @@ describe("writeChart", () => {
     expect(result.chartXml).toMatch(/c:idx val="1"[\s\S]*c:order val="1"/);
   });
 
-  it.each<ChartKind>(["bar", "column", "line", "pie", "scatter", "area"])(
+  it.each<WriteChartKind>(["bar", "column", "line", "pie", "scatter", "area"])(
     "kind %s parses as well-formed XML",
     (kind) => {
       const result = writeChart(makeChart({ type: kind }), "Sheet1");

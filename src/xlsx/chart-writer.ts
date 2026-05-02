@@ -6,7 +6,7 @@
 // Chapter 21). Each chart is a self-contained <c:chartSpace> document
 // referenced from a drawing part via a `chart` relationship.
 
-import type { ChartKind, ChartSeries, SheetChart } from "../_types";
+import type { WriteChartKind, ChartSeries, SheetChart } from "../_types";
 import { xmlDocument, xmlElement, xmlEscape, xmlSelfClose } from "../xml/writer";
 
 // ── Namespaces ───────────────────────────────────────────────────────
@@ -462,7 +462,7 @@ function quoteSheetName(name: string): string {
  * tests that need to assert the rendered XML carries the expected
  * `<c:barChart>` / `<c:lineChart>` element.
  */
-export function chartKindElement(kind: ChartKind): string {
+export function chartKindElement(kind: WriteChartKind): string {
   switch (kind) {
     case "bar":
     case "column":

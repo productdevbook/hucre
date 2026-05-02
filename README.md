@@ -446,6 +446,86 @@ per-table relationship, so reordering `Workbook.pivotCaches` keeps the
 links sound. Synthesizing a pivot table or cache definition from a
 fresh `writeXlsx` is a follow-up — this is read + preserve only.
 
+### Charts
+
+Charts (`xl/charts/chartN.xml` plus the optional `styleN.xml` /
+`colorsN.xml` companions) are read into a per-sheet `sheet.charts`
+array surfacing the chart kind(s), series count, and plain-text
+title. On `saveXlsx` the chart parts are re-declared in
+`[Content_Types].xml`, the chart-bearing drawing and its rels are
+force-preserved, and the regenerated worksheet body gets a
+`<drawing r:id="..."/>` re-anchor — without these wirings Excel
+previously saw the chart parts as orphans and dropped them on next
+open.
+
+```ts
+import { readXlsx, parseChart } from "hucre";
+
+const wb = await readXlsx(buf);
+
+for (const sheet of wb.sheets) {
+  for (const chart of sheet.charts ?? []) {
+    console.log(chart.kinds, chart.seriesCount, chart.title);
+    // e.g. ["bar"], 2, "Quarterly Sales"
+  }
+}
+
+// Standalone parser when you already have the chart XML.
+const chart = parseChart(xml);
+```
+
+`Chart.kinds` lists every chart-type element present under
+`<c:plotArea>` in declaration order, so combo charts surface as e.g.
+`["bar", "line"]`. Sheets that hucre actively regenerates because they
+also carry hucre-managed images currently keep the chart bodies but
+lose the in-drawing chart anchor — merging hucre's drawing output
+with the original chart graphicFrames is a follow-up.
+
+#### Authoring charts with `writeXlsx`
+
+Phase 1 covers six chart families — bar, column, line, pie, scatter,
+and area — through the `WriteSheet.charts` field. Each chart is anchored
+to cells like an image and serialized as `xl/charts/chartN.xml`:
+
+```ts
+import { writeXlsx } from "hucre";
+
+const xlsx = await writeXlsx({
+  sheets: [
+    {
+      name: "Sales",
+      rows: [
+        ["Quarter", "Revenue", "Cost"],
+        ["Q1", 12000, 7000],
+        ["Q2", 15500, 8500],
+        ["Q3", 14000, 7800],
+      ],
+      charts: [
+        {
+          type: "column",
+          title: "Quarterly Performance",
+          series: [
+            { name: "Revenue", values: "B2:B4", categories: "A2:A4", color: "1F77B4" },
+            { name: "Cost", values: "C2:C4", categories: "A2:A4", color: "FF7F0E" },
+          ],
+          anchor: { from: { row: 6, col: 0 }, to: { row: 22, col: 8 } },
+          legend: "bottom",
+        },
+      ],
+    },
+  ],
+});
+```
+
+Bare `B2:B4` series ranges are auto-qualified with the owning sheet
+name (sheet names containing whitespace or punctuation are quoted and
+embedded apostrophes are doubled per the OOXML spec). `barGrouping`
+toggles `clustered` / `stacked` / `percentStacked`, `legend` accepts
+`top` / `bottom` / `left` / `right` / `topRight` / `false`, and
+`altText` / `frameTitle` flow through to the drawing's `xdr:cNvPr`
+attributes for screen readers. Doughnut, radar, stock, 3D variants,
+trendlines, and combo charts are out of scope for Phase 1.
+
 ### Unified API
 
 Auto-detect format and work with simple helpers:
@@ -920,6 +1000,7 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `parsePivotTable(xml)`             | Parse `xl/pivotTables/pivotTableN.xml` → `PivotTable \| undefined`          |
 | `parsePivotCacheDefinition(xml)`   | Parse `xl/pivotCache/pivotCacheDefinitionN.xml` → `PivotCache \| undefined` |
 | `attachPivotCacheFields(pt, c)`    | Overlay `PivotCache.fieldNames` onto a `PivotTable.fields[].name`           |
+| `parseChart(xml)`                  | Parse `xl/charts/chartN.xml` → `Chart \| undefined`                         |
 
 ### ODS
 
@@ -1053,7 +1134,7 @@ Contributions are welcome! Please [open an issue](https://github.com/productdevb
 
 **Upcoming Engine Features:**
 
-- Chart creation (bar, line, pie, scatter, area + subtypes)
+- Chart creation (bar, line, pie, scatter, area + subtypes) — synthesize from a fresh write (read + roundtrip already supported)
 - XLS BIFF8 read (legacy Excel 97-2003)
 - XLSB binary format read
 - Formula evaluation engine
