@@ -626,6 +626,13 @@ plus `position` and `separator`). Series-level overrides land on
 on doughnut charts so a parsed template can round-trip its hole back
 through `cloneChart`; non-doughnut charts (and doughnut charts that
 omit the element) never report it.
+`Chart.gapWidth` and `Chart.overlap` surface the bar / column
+spacing knobs (`<c:barChart><c:gapWidth val=".."/>` and
+`<c:overlap val=".."/>`). `gapWidth` (0 – 500 % of the bar width)
+controls the gap between category groups and `overlap` (-100..100 %)
+controls how much series within a group separate or stack. The OOXML
+defaults (`gapWidth=150`, `overlap=0`) collapse to `undefined`;
+non-bar / non-column charts never report either.
 Sheets that hucre actively regenerates because they
 also carry hucre-managed images currently keep the chart bodies but
 lose the in-drawing chart anchor — merging hucre's drawing output
@@ -706,6 +713,12 @@ even when the chart-level default has them on). For doughnut charts,
 `holeSize` (10 – 90, Excel's UI band; default 50) controls the
 diameter of the inner hole — values outside the band are clamped to
 the closest end and non-doughnut kinds silently ignore the field.
+For bar and column charts, `gapWidth` (0 – 500 % of the bar width;
+default `150` for unstacked, omitted for stacked) controls the empty
+space between adjacent category groups and `overlap` (-100..100 %;
+default `0` for clustered, `100` for stacked) controls how series
+within a group separate or stack. Out-of-band values clamp to the
+schema bounds, and non-bar / non-column kinds silently ignore both.
 Radar, stock, 3D variants, trendlines, and combo charts are out of
 scope today.
 

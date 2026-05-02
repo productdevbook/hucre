@@ -1397,3 +1397,148 @@ describe("writeChart — data labels", () => {
     expect(xml.indexOf("<c:dLbls>")).toBeLessThan(xml.indexOf("<c:marker"));
   });
 });
+
+// ── Bar/column gapWidth & overlap ────────────────────────────────────
+
+describe("writeChart — gapWidth", () => {
+  it("emits <c:gapWidth val='150'/> on a clustered column chart by default", () => {
+    // Excel's reference serialization for an unstacked bar/column chart
+    // pins gapWidth at 150% of the bar width, so untouched charts stay
+    // byte-identical with what Excel writes.
+    const result = writeChart(makeChart({ type: "column" }), "Sheet1");
+    expect(result.chartXml).toContain('c:gapWidth val="150"');
+  });
+
+  it("threads an explicit gapWidth through to the XML", () => {
+    const result = writeChart(makeChart({ type: "column", gapWidth: 50 }), "Sheet1");
+    expect(result.chartXml).toContain('c:gapWidth val="50"');
+    expect(result.chartXml).not.toContain('c:gapWidth val="150"');
+  });
+
+  it("clamps gapWidth into the 0..500 band the OOXML schema allows", () => {
+    const lo = writeChart(makeChart({ type: "column", gapWidth: -25 }), "Sheet1");
+    expect(lo.chartXml).toContain('c:gapWidth val="0"');
+    const hi = writeChart(makeChart({ type: "column", gapWidth: 999 }), "Sheet1");
+    expect(hi.chartXml).toContain('c:gapWidth val="500"');
+  });
+
+  it("rounds non-integer gapWidth values", () => {
+    const result = writeChart(makeChart({ type: "column", gapWidth: 175.6 }), "Sheet1");
+    expect(result.chartXml).toContain('c:gapWidth val="176"');
+  });
+
+  it("falls back to the default when gapWidth is NaN or Infinity", () => {
+    const nan = writeChart(makeChart({ type: "column", gapWidth: NaN }), "Sheet1");
+    expect(nan.chartXml).toContain('c:gapWidth val="150"');
+    const inf = writeChart(
+      makeChart({ type: "column", gapWidth: Number.POSITIVE_INFINITY }),
+      "Sheet1",
+    );
+    expect(inf.chartXml).toContain('c:gapWidth val="150"');
+  });
+
+  it("emits <c:gapWidth> on a stacked chart only when explicitly set", () => {
+    // Stacked charts default to gapWidth omitted (Excel's reference),
+    // but pinning a value forces emission.
+    const def = writeChart(makeChart({ type: "column", barGrouping: "stacked" }), "Sheet1");
+    expect(def.chartXml).not.toContain("c:gapWidth");
+    const explicit = writeChart(
+      makeChart({ type: "column", barGrouping: "stacked", gapWidth: 75 }),
+      "Sheet1",
+    );
+    expect(explicit.chartXml).toContain('c:gapWidth val="75"');
+  });
+
+  it("emits <c:gapWidth> on a horizontal bar chart too", () => {
+    const result = writeChart(makeChart({ type: "bar", gapWidth: 200 }), "Sheet1");
+    expect(result.chartXml).toContain('c:barDir val="bar"');
+    expect(result.chartXml).toContain('c:gapWidth val="200"');
+  });
+
+  it("omits gapWidth on non-bar chart kinds even when the field is set", () => {
+    // SheetChart.gapWidth is silently ignored for line / pie / area / scatter / doughnut.
+    const line = writeChart(makeChart({ type: "line", gapWidth: 75 }), "Sheet1");
+    expect(line.chartXml).not.toContain("c:gapWidth");
+    const pie = writeChart(makeChart({ type: "pie", gapWidth: 75 }), "Sheet1");
+    expect(pie.chartXml).not.toContain("c:gapWidth");
+    const area = writeChart(makeChart({ type: "area", gapWidth: 75 }), "Sheet1");
+    expect(area.chartXml).not.toContain("c:gapWidth");
+  });
+});
+
+describe("writeChart — overlap", () => {
+  it("emits <c:overlap val='100'/> on a stacked bar chart by default", () => {
+    // Stacked bar charts pin overlap at 100% (series fully overlapped)
+    // so series stack on top of each other rather than render
+    // side-by-side.
+    const result = writeChart(makeChart({ type: "column", barGrouping: "stacked" }), "Sheet1");
+    expect(result.chartXml).toContain('c:overlap val="100"');
+  });
+
+  it("emits <c:overlap val='100'/> on a percentStacked bar chart by default", () => {
+    const result = writeChart(
+      makeChart({ type: "column", barGrouping: "percentStacked" }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:overlap val="100"');
+  });
+
+  it("threads an explicit overlap through to the XML", () => {
+    const result = writeChart(makeChart({ type: "column", overlap: -25 }), "Sheet1");
+    expect(result.chartXml).toContain('c:overlap val="-25"');
+  });
+
+  it("clamps overlap into the -100..100 band the OOXML schema allows", () => {
+    const lo = writeChart(makeChart({ type: "column", overlap: -250 }), "Sheet1");
+    expect(lo.chartXml).toContain('c:overlap val="-100"');
+    const hi = writeChart(makeChart({ type: "column", overlap: 200 }), "Sheet1");
+    expect(hi.chartXml).toContain('c:overlap val="100"');
+  });
+
+  it("rounds non-integer overlap values", () => {
+    const result = writeChart(makeChart({ type: "column", overlap: -33.4 }), "Sheet1");
+    expect(result.chartXml).toContain('c:overlap val="-33"');
+  });
+
+  it("falls back to the per-grouping default when overlap is NaN or Infinity", () => {
+    // Clustered: omitted; stacked: 100.
+    const nanClustered = writeChart(makeChart({ type: "column", overlap: NaN }), "Sheet1");
+    expect(nanClustered.chartXml).not.toContain("c:overlap");
+    const nanStacked = writeChart(
+      makeChart({ type: "column", barGrouping: "stacked", overlap: NaN }),
+      "Sheet1",
+    );
+    expect(nanStacked.chartXml).toContain('c:overlap val="100"');
+  });
+
+  it("forces overlap emission on a clustered chart when explicitly set", () => {
+    // Clustered defaults to no <c:overlap> element; an explicit value
+    // overrides that and ships the element through.
+    const def = writeChart(makeChart({ type: "column" }), "Sheet1");
+    expect(def.chartXml).not.toContain("c:overlap");
+    const explicit = writeChart(makeChart({ type: "column", overlap: -50 }), "Sheet1");
+    expect(explicit.chartXml).toContain('c:overlap val="-50"');
+  });
+
+  it("omits overlap on non-bar chart kinds even when the field is set", () => {
+    const line = writeChart(makeChart({ type: "line", overlap: 50 }), "Sheet1");
+    expect(line.chartXml).not.toContain("c:overlap");
+    const pie = writeChart(makeChart({ type: "pie", overlap: 50 }), "Sheet1");
+    expect(pie.chartXml).not.toContain("c:overlap");
+  });
+
+  it("places <c:gapWidth> before <c:overlap> inside <c:barChart> (OOXML order)", () => {
+    // CT_BarChart sequence: ... dLbls? → gapWidth? → overlap? → serLines* → axId+
+    const result = writeChart(makeChart({ type: "column", gapWidth: 50, overlap: -25 }), "Sheet1");
+    expect(result.chartXml.indexOf("c:gapWidth")).toBeLessThan(
+      result.chartXml.indexOf("c:overlap"),
+    );
+  });
+
+  it("places <c:gapWidth> / <c:overlap> before <c:axId> inside <c:barChart>", () => {
+    const result = writeChart(makeChart({ type: "column", gapWidth: 50, overlap: 25 }), "Sheet1");
+    const barBlock = result.chartXml.match(/<c:barChart>[\s\S]*?<\/c:barChart>/);
+    expect(barBlock).not.toBeNull();
+    expect(barBlock![0].indexOf("c:overlap")).toBeLessThan(barBlock![0].indexOf("c:axId"));
+  });
+});

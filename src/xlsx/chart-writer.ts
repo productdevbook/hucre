@@ -372,6 +372,7 @@ const AXIS_ID_VAL_Y = 444444444;
 function buildBarChart(chart: SheetChart, sheetName: string): string {
   const grouping = chart.barGrouping ?? "clustered";
   const barDir = chart.type === "bar" ? "bar" : "col";
+  const isStacked = grouping === "percentStacked" || grouping === "stacked";
 
   const children: string[] = [
     xmlSelfClose("c:barDir", { val: barDir }),
@@ -390,16 +391,73 @@ function buildBarChart(chart: SheetChart, sheetName: string): string {
   const chartLevelDLbls = buildChartLevelDataLabels(chart);
   if (chartLevelDLbls) children.push(chartLevelDLbls);
 
-  if (grouping === "percentStacked" || grouping === "stacked") {
-    children.push(xmlSelfClose("c:overlap", { val: 100 }));
-  } else {
-    children.push(xmlSelfClose("c:gapWidth", { val: 150 }));
+  // OOXML CT_BarChart enforces a strict child order:
+  // barDir → grouping → varyColors → ser* → dLbls? → gapWidth? →
+  // overlap? → serLines* → axId+. `gapWidth` therefore lands before
+  // `overlap` regardless of the chosen grouping.
+  //
+  // The defaults preserve Excel's reference serialization:
+  //   - clustered                  → emit gapWidth=150, omit overlap
+  //   - stacked / percentStacked   → emit overlap=100, omit gapWidth
+  // An explicit `chart.gapWidth` / `chart.overlap` always emits the
+  // matching element (even when the value happens to equal the default
+  // for that grouping), so callers can pin both knobs on a stacked
+  // chart or relax overlap on a clustered one.
+  const explicitGapWidth = clampGapWidth(chart.gapWidth);
+  const explicitOverlap = clampOverlap(chart.overlap);
+
+  const emitGapWidth = explicitGapWidth ?? (isStacked ? undefined : 150);
+  if (emitGapWidth !== undefined) {
+    children.push(xmlSelfClose("c:gapWidth", { val: emitGapWidth }));
+  }
+
+  const emitOverlap = explicitOverlap ?? (isStacked ? 100 : undefined);
+  if (emitOverlap !== undefined) {
+    children.push(xmlSelfClose("c:overlap", { val: emitOverlap }));
   }
 
   children.push(xmlSelfClose("c:axId", { val: AXIS_ID_CAT }));
   children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL }));
 
   return xmlElement("c:barChart", undefined, children);
+}
+
+/**
+ * Normalize {@link SheetChart.gapWidth} to an integer in the inclusive
+ * `0..500` band the OOXML schema (`ST_GapAmount`) allows.
+ *
+ * Returns `undefined` when the input is missing or non-finite so the
+ * caller can fall through to the per-grouping default. Non-integer
+ * values round to the nearest integer; out-of-range values clamp to
+ * the schema bounds rather than wrap — `gapWidth` is a percentage of
+ * the bar width with no natural wrap-around (a `600` group spacing is
+ * not the same as `100`).
+ */
+function clampGapWidth(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  const rounded = Math.round(value);
+  if (rounded < 0) return 0;
+  if (rounded > 500) return 500;
+  return rounded;
+}
+
+/**
+ * Normalize {@link SheetChart.overlap} to an integer in the inclusive
+ * `-100..100` band the OOXML schema (`ST_Overlap`) allows.
+ *
+ * Returns `undefined` when the input is missing or non-finite so the
+ * caller can fall through to the per-grouping default. Non-integer
+ * values round to the nearest integer; out-of-range values clamp to
+ * the schema bounds (`-100` and `100` are the geometric extremes —
+ * series fully separated and series fully overlapped — wrapping makes
+ * no physical sense).
+ */
+function clampOverlap(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  const rounded = Math.round(value);
+  if (rounded < -100) return -100;
+  if (rounded > 100) return 100;
+  return rounded;
 }
 
 function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): string[] {

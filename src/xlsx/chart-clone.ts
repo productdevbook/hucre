@@ -86,6 +86,19 @@ export interface CloneChartOptions {
   legend?: SheetChart["legend"];
   /** Override `SheetChart.barGrouping`. */
   barGrouping?: SheetChart["barGrouping"];
+  /**
+   * Override `SheetChart.gapWidth` (only meaningful for `bar` /
+   * `column`). Dropped silently when the resolved chart type is
+   * neither — a gap-width hint inherited from a column template never
+   * leaks into a line / pie clone.
+   */
+  gapWidth?: number;
+  /**
+   * Override `SheetChart.overlap` (only meaningful for `bar` /
+   * `column`). Dropped silently when the resolved chart type is
+   * neither.
+   */
+  overlap?: number;
   /** Override `SheetChart.lineGrouping`. */
   lineGrouping?: SheetChart["lineGrouping"];
   /** Override `SheetChart.areaGrouping`. */
@@ -201,6 +214,18 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   const barGrouping = options.barGrouping !== undefined ? options.barGrouping : source.barGrouping;
   if (barGrouping !== undefined && (type === "bar" || type === "column")) {
     out.barGrouping = barGrouping;
+  }
+
+  // Bar / column gap width and overlap only make sense on bar-family
+  // targets — flattening a column template into a line clone drops
+  // the inherited values so they do not leak into a chart kind that
+  // has no `<c:barChart>` element to host them. The override wins over
+  // the source's parsed value.
+  if (type === "bar" || type === "column") {
+    const gapWidth = options.gapWidth !== undefined ? options.gapWidth : source.gapWidth;
+    if (gapWidth !== undefined) out.gapWidth = gapWidth;
+    const overlap = options.overlap !== undefined ? options.overlap : source.overlap;
+    if (overlap !== undefined) out.overlap = overlap;
   }
 
   const lineGrouping =
