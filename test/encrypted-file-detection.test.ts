@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import { readXlsx } from "../src/xlsx/reader";
 import { streamXlsxRows } from "../src/xlsx/stream-reader";
 import { readOds } from "../src/ods/reader";
+import { streamOdsRows } from "../src/ods/stream";
 import { read, readObjects } from "../src/defter";
 import { readXlsxObjects } from "../src/xlsx/objects";
 import { readOdsObjects } from "../src/ods/objects";
@@ -159,6 +160,30 @@ describe("readOds — encrypted ODS detection", () => {
     const data = makeOle2Container();
 
     await expect(readOds(toReadableStream(data))).rejects.toBeInstanceOf(EncryptedFileError);
+  });
+});
+
+// ── streamOdsRows ───────────────────────────────────────────────────
+
+describe("streamOdsRows — encrypted ODS detection", () => {
+  it("rejects the generator with EncryptedFileError before ZIP parsing runs", async () => {
+    const data = makeOle2Container();
+
+    const gen = streamOdsRows(data);
+    await expect(gen.next()).rejects.toBeInstanceOf(EncryptedFileError);
+  });
+
+  it('attaches format="ods" to the error', async () => {
+    const data = makeOle2Container();
+
+    const gen = streamOdsRows(data);
+    try {
+      await gen.next();
+      throw new Error("streamOdsRows should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(EncryptedFileError);
+      expect((err as EncryptedFileError).format).toBe("ods");
+    }
   });
 });
 

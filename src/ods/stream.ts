@@ -3,6 +3,7 @@
 
 import type { CellValue } from "../_types";
 import { ParseError, ZipError } from "../errors";
+import { assertNotEncrypted } from "../_input";
 import { ZipReader } from "../zip/reader";
 import { parseSax } from "../xml/parser";
 
@@ -204,6 +205,11 @@ export async function* streamOdsRows(
   input: Uint8Array | ArrayBuffer,
 ): AsyncGenerator<OdsStreamRow, void, undefined> {
   const data = toUint8Array(input);
+
+  // Detect password-protected ODF workbooks (OLE2/CFB envelope) up
+  // front so streamers fail fast with a typed `EncryptedFileError`
+  // instead of a generic ZIP ParseError. Decryption is tracked in #156.
+  assertNotEncrypted(data, "ods");
 
   // 1. Open ZIP archive
   let zip: ZipReader;
