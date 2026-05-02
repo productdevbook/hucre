@@ -45,6 +45,12 @@ export interface WorksheetResult {
   tables: Array<{ rId: string; globalTableIndex: number }>;
   /** The rId used for the background image (picture) reference */
   pictureRId: string | null;
+  /**
+   * Pivot table relationships emitted in the host sheet's rels file.
+   * `globalPivotIndex` is the 1-based number used in the
+   * `xl/pivotTables/pivotTableN.xml` path.
+   */
+  pivotTables: Array<{ rId: string; globalPivotIndex: number }>;
 }
 
 const NS_SPREADSHEET = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -179,6 +185,7 @@ export function writeWorksheetXml(
   dateSystem?: "1900" | "1904",
   globalTableStartIndex?: number,
   inlineStrings?: boolean,
+  globalPivotStartIndex?: number,
 ): WorksheetResult {
   const is1904 = dateSystem === "1904";
 
@@ -563,6 +570,18 @@ export function writeWorksheetXml(
     parts.push(xmlSelfClose("picture", { "r:id": pictureRId }));
   }
 
+  // ── Pivot Tables ── relationship-only; the worksheet body has no
+  // corresponding element. We allocate rIds here so writer.ts can wire
+  // them into `xl/worksheets/_rels/sheetN.xml.rels`.
+  const pivotEntries: Array<{ rId: string; globalPivotIndex: number }> = [];
+  if (sheet.pivotTables && sheet.pivotTables.length > 0 && globalPivotStartIndex !== undefined) {
+    for (let p = 0; p < sheet.pivotTables.length; p++) {
+      const rId = `rId${nextRId}`;
+      nextRId++;
+      pivotEntries.push({ rId, globalPivotIndex: globalPivotStartIndex + p });
+    }
+  }
+
   return {
     xml: xmlDocument("worksheet", { xmlns: NS_SPREADSHEET, "xmlns:r": NS_R }, parts),
     hyperlinkRelationships,
@@ -572,6 +591,7 @@ export function writeWorksheetXml(
     hasComments,
     tables: tableEntries,
     pictureRId,
+    pivotTables: pivotEntries,
   };
 }
 
