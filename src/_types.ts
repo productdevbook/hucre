@@ -685,6 +685,23 @@ export interface SheetChart {
    * value/category annotations.
    */
   dataLabels?: ChartDataLabels;
+  /**
+   * Per-axis labels rendered alongside the plot area. The `x` axis is
+   * the category axis for bar/column/line/area (or the bottom value
+   * axis for scatter); the `y` axis is the value axis. Ignored for
+   * `pie` charts because pie has no axes in OOXML.
+   *
+   * Each entry maps to a `<c:title>` element nested inside the
+   * matching `<c:catAx>` / `<c:valAx>`. Pass an empty string or omit
+   * the entry to skip the title — Excel renders no axis label by
+   * default.
+   */
+  axes?: {
+    /** Category axis (bar/column/line/area) or X value axis (scatter). */
+    x?: { title?: string };
+    /** Value axis. */
+    y?: { title?: string };
+  };
 }
 
 // ── Accessibility ──────────────────────────────────────────────────
@@ -1365,6 +1382,20 @@ export interface ChartAnchor {
 }
 
 /**
+ * Per-axis metadata pulled from the chart's `<c:catAx>` / `<c:valAx>`
+ * elements.
+ *
+ * Currently only the axis title is surfaced — Excel stores it as a
+ * `<c:title>` child element inside each axis, and it's the field that
+ * dashboard cloning needs to preserve through a `parseChart` →
+ * {@link cloneChart} → `writeXlsx` round-trip.
+ */
+export interface ChartAxisInfo {
+  /** Plain-text title from the axis's `<c:title>`. Omitted when absent. */
+  title?: string;
+}
+
+/**
  * A chart anchored on a sheet via the sheet's drawing part.
  *
  * Charts come from `xl/charts/chartN.xml`. Hucre exposes the
@@ -1436,6 +1467,17 @@ export interface Chart {
    * {@link ChartSeriesInfo.dataLabels} take precedence.
    */
   dataLabels?: ChartDataLabelsInfo;
+  /**
+   * Per-axis metadata. `x` corresponds to the chart's `<c:catAx>`
+   * (category axis on bar/column/line/area) or the first `<c:valAx>`
+   * on scatter. `y` corresponds to the value axis. Both fields are
+   * omitted on charts that have no axes (e.g. pie/doughnut) or when
+   * neither axis carries a title.
+   */
+  axes?: {
+    x?: ChartAxisInfo;
+    y?: ChartAxisInfo;
+  };
 }
 
 // ── Workbook ───────────────────────────────────────────────────────

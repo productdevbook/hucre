@@ -14,6 +14,7 @@
 
 import type {
   Chart,
+  ChartAxisInfo,
   ChartBarGrouping,
   ChartDataLabelPosition,
   ChartDataLabelsInfo,
@@ -106,12 +107,100 @@ export function parseChart(xml: string): Chart | undefined {
     if (series.length > 0) out.series = series;
     if (barGrouping !== undefined) out.barGrouping = barGrouping;
     if (chartLevelLabels) out.dataLabels = chartLevelLabels;
+
+    const axes = parseAxes(plotArea);
+    if (axes !== undefined) out.axes = axes;
   }
 
   const legend = parseLegend(chartEl);
   if (legend !== undefined) out.legend = legend;
 
   return out;
+}
+
+// ── Axes ──────────────────────────────────────────────────────────
+
+/**
+ * Pull per-axis metadata from the plot area's `<c:catAx>` / `<c:valAx>`
+ * children.
+ *
+ * The mapping mirrors the writer side:
+ *   - bar / column / line / area: `x` = `<c:catAx>`, `y` = first `<c:valAx>`.
+ *   - scatter / bubble:           `x` = first `<c:valAx>`, `y` = second `<c:valAx>`.
+ *
+ * Returns `undefined` when neither axis surfaces a title — keeps the
+ * default `Chart` shape lean.
+ */
+function parseAxes(plotArea: XmlElement): { x?: ChartAxisInfo; y?: ChartAxisInfo } | undefined {
+  let catAx: XmlElement | undefined;
+  const valAxes: XmlElement[] = [];
+  for (const child of childElements(plotArea)) {
+    if (child.local === "catAx") {
+      catAx ??= child;
+    } else if (child.local === "valAx") {
+      valAxes.push(child);
+    }
+  }
+
+  let xAxis: XmlElement | undefined;
+  let yAxis: XmlElement | undefined;
+  if (catAx) {
+    xAxis = catAx;
+    yAxis = valAxes[0];
+  } else {
+    // Scatter / bubble: both axes are valAx. The first declared one is
+    // the X axis (`axPos="b"`), the second is the Y axis (`axPos="l"`).
+    xAxis = valAxes[0];
+    yAxis = valAxes[1];
+  }
+
+  const x = xAxis ? parseAxisInfo(xAxis) : undefined;
+  const y = yAxis ? parseAxisInfo(yAxis) : undefined;
+
+  if (!x && !y) return undefined;
+  const out: { x?: ChartAxisInfo; y?: ChartAxisInfo } = {};
+  if (x) out.x = x;
+  if (y) out.y = y;
+  return out;
+}
+
+function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
+  const title = parseAxisTitle(axis);
+  if (title === undefined) return undefined;
+  return { title };
+}
+
+/**
+ * Read an axis's `<c:title>` text. Mirrors {@link parseTitle} but
+ * scoped to a single axis element rather than the chart root.
+ */
+function parseAxisTitle(axis: XmlElement): string | undefined {
+  const title = findChild(axis, "title");
+  if (!title) return undefined;
+  const tx = findChild(title, "tx");
+  if (!tx) return undefined;
+  const rich = findChild(tx, "rich");
+  if (rich) {
+    const parts: string[] = [];
+    collectTextRuns(rich, parts);
+    const joined = parts.join("").trim();
+    return joined.length > 0 ? joined : undefined;
+  }
+  const strRef = findChild(tx, "strRef");
+  if (strRef) {
+    const cache = findChild(strRef, "strCache");
+    if (cache) {
+      for (const pt of childElements(cache)) {
+        if (pt.local !== "pt") continue;
+        const v = findChild(pt, "v");
+        if (v) {
+          const text = elementText(v).trim();
+          if (text.length > 0) return text;
+        }
+      }
+    }
+  }
+  return undefined;
 }
 
 // ── Series ────────────────────────────────────────────────────────

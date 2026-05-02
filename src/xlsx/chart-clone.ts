@@ -95,6 +95,19 @@ export interface CloneChartOptions {
    * block; a `ChartDataLabels` object replaces it.
    */
   dataLabels?: ChartDataLabels | null;
+  /**
+   * Per-axis title overrides. Each field accepts a string to replace,
+   * or `null` to drop the source value (the cloned chart will render
+   * without that axis label even if the template carried one). Omit a
+   * field to inherit the source.
+   *
+   * Ignored when the resolved chart type is `pie` since pie has no
+   * axes; the writer drops the entire `axes` object in that case.
+   */
+  axes?: {
+    x?: { title?: string | null };
+    y?: { title?: string | null };
+  };
 }
 
 /**
@@ -170,6 +183,13 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
 
   const resolvedDataLabels = resolveChartDataLabels(source.dataLabels, options.dataLabels);
   if (resolvedDataLabels !== undefined) out.dataLabels = resolvedDataLabels;
+
+  // Pie has no axes, so silently skip carrying over axis titles even
+  // when the source declared them or the caller passed an override.
+  if (type !== "pie") {
+    const axes = resolveAxes(source.axes, options.axes);
+    if (axes !== undefined) out.axes = axes;
+  }
 
   return out;
 }
@@ -345,4 +365,24 @@ function applyOverride(
   if (override === undefined) return sourceValue;
   if (override === null) return undefined;
   return override;
+}
+
+/**
+ * Merge the source chart's `axes` block with per-axis overrides. The
+ * result mirrors the writer's {@link SheetChart.axes} shape — missing
+ * fields are dropped so the writer doesn't emit empty `<c:title>`
+ * elements.
+ */
+function resolveAxes(
+  sourceAxes: Chart["axes"],
+  overrides: CloneChartOptions["axes"],
+): SheetChart["axes"] | undefined {
+  const xTitle = applyOverride(sourceAxes?.x?.title, overrides?.x?.title);
+  const yTitle = applyOverride(sourceAxes?.y?.title, overrides?.y?.title);
+
+  const out: NonNullable<SheetChart["axes"]> = {};
+  if (xTitle !== undefined) out.x = { title: xTitle };
+  if (yTitle !== undefined) out.y = { title: yTitle };
+
+  return out.x || out.y ? out : undefined;
 }
