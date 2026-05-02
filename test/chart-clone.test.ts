@@ -136,6 +136,61 @@ describe("cloneChart", () => {
     expect(clone.holeSize).toBeUndefined();
   });
 
+  it("inherits the source's firstSliceAng on a pie clone", () => {
+    const clone = cloneChart(source({ kinds: ["pie"], firstSliceAng: 90 }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.type).toBe("pie");
+    expect(clone.firstSliceAng).toBe(90);
+  });
+
+  it("inherits the source's firstSliceAng on a doughnut clone", () => {
+    const clone = cloneChart(source({ kinds: ["doughnut"], firstSliceAng: 180 }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.firstSliceAng).toBe(180);
+  });
+
+  it("carries firstSliceAng through when flattening doughnut to pie", () => {
+    // The element lives on both <c:pieChart> and <c:doughnutChart>, so
+    // a doughnut template flattened to pie keeps its rotation.
+    const clone = cloneChart(source({ kinds: ["doughnut"], firstSliceAng: 270 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "pie",
+    });
+    expect(clone.type).toBe("pie");
+    expect(clone.firstSliceAng).toBe(270);
+  });
+
+  it("lets options.firstSliceAng override the source's firstSliceAng", () => {
+    const clone = cloneChart(source({ kinds: ["pie"], firstSliceAng: 45 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      firstSliceAng: 180,
+    });
+    expect(clone.firstSliceAng).toBe(180);
+  });
+
+  it("drops options.firstSliceAng when the resolved type is neither pie nor doughnut", () => {
+    const clone = cloneChart(source({ kinds: ["doughnut"] }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+      firstSliceAng: 90,
+      seriesOverrides: [{ values: "Sheet1!$B$2:$B$5" }],
+    });
+    expect(clone.firstSliceAng).toBeUndefined();
+  });
+
+  it("drops the inherited firstSliceAng when the resolved type is not pie/doughnut", () => {
+    const clone = cloneChart(source({ kinds: ["pie"], firstSliceAng: 90 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "line",
+      seriesOverrides: [{ values: "Sheet1!$B$2:$B$5" }],
+    });
+    expect(clone.type).toBe("line");
+    expect(clone.firstSliceAng).toBeUndefined();
+  });
+
   it("throws when the source has no writable kind and no override is given", () => {
     expect(() =>
       cloneChart(source({ kinds: ["bubble", "radar"] }), {
@@ -1138,5 +1193,54 @@ describe("cloneChart — integration", () => {
     expect(reparsed?.kinds).toEqual(["doughnut"]);
     expect(reparsed?.title).toBe("Distribution");
     expect(reparsed?.holeSize).toBe(65);
+  });
+
+  it("round-trips firstSliceAng through parseChart → cloneChart → writeXlsx → parseChart", async () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:doughnutChart>
+        <c:varyColors val="1"/>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx><c:v>Mix</c:v></c:tx>
+          <c:cat><c:strRef><c:f>Tpl!$A$2:$A$5</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:firstSliceAng val="135"/>
+        <c:holeSize val="55"/>
+      </c:doughnutChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const source = parseChart(sourceXml);
+    expect(source?.firstSliceAng).toBe(135);
+
+    const sheetChart: SheetChart = cloneChart(source!, {
+      anchor: { from: { row: 14, col: 0 } },
+      seriesOverrides: [{ values: "Dashboard!$B$2:$B$5" }],
+    });
+    expect(sheetChart.type).toBe("doughnut");
+    expect(sheetChart.firstSliceAng).toBe(135);
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Dashboard",
+          rows: [["Header"], [10], [20], [30], [40]],
+          charts: [sheetChart],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:firstSliceAng val="135"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.kinds).toEqual(["doughnut"]);
+    expect(reparsed?.firstSliceAng).toBe(135);
+    expect(reparsed?.holeSize).toBe(55);
   });
 });

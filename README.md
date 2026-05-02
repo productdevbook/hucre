@@ -610,6 +610,13 @@ plus `position` and `separator`). Series-level overrides land on
 on doughnut charts so a parsed template can round-trip its hole back
 through `cloneChart`; non-doughnut charts (and doughnut charts that
 omit the element) never report it.
+`Chart.firstSliceAng` surfaces the
+`<c:pieChart><c:firstSliceAng val=".."/>` /
+`<c:doughnutChart><c:firstSliceAng val=".."/>` rotation (degrees
+clockwise from 12 o'clock) on pie and doughnut charts. The OOXML
+default `0` (and the schema-equivalent `360`) collapses to
+`undefined` so absence and the default round-trip identically;
+non-pie / non-doughnut charts never report it.
 Sheets that hucre actively regenerates because they
 also carry hucre-managed images currently keep the chart bodies but
 lose the in-drawing chart anchor — merging hucre's drawing output
@@ -678,6 +685,11 @@ even when the chart-level default has them on). For doughnut charts,
 `holeSize` (10 – 90, Excel's UI band; default 50) controls the
 diameter of the inner hole — values outside the band are clamped to
 the closest end and non-doughnut kinds silently ignore the field.
+For pie and doughnut charts, `firstSliceAng` (0 – 360 degrees, default
+0 = 12 o'clock) rotates the first wedge clockwise — useful for
+aligning paired charts in a dashboard. Out-of-band values wrap modulo
+360 (380 → 20, -90 → 270) the same way Excel's chart-formatting pane
+does, and non-pie / non-doughnut kinds silently ignore the field.
 Radar, stock, 3D variants, trendlines, and combo charts are out of
 scope today.
 
@@ -727,7 +739,11 @@ into a column drops the inherited grouping rather than silently
 emitting a value the writer would ignore. Doughnut clones also inherit
 the parsed `holeSize` from the template; pass `holeSize: 60` to
 override or `type: "pie"` to flatten into a plain pie (the hole hint
-is dropped silently in that case). Data labels inherit too: omit `dataLabels`
+is dropped silently in that case). Pie and doughnut clones inherit the
+parsed `firstSliceAng` from the template; the rotation also survives a
+`type: "pie"` flattening of a doughnut source (the element lives on
+both pie and doughnut), but is dropped when the resolved clone target
+is anything else. Data labels inherit too: omit `dataLabels`
 to carry the source's chart-level labels through, pass an object to
 replace, or `null` to drop them; per-series overrides accept the same
 `undefined`/`null`/object grammar plus `false` to suppress labels on

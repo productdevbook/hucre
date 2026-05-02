@@ -78,6 +78,7 @@ export function parseChart(xml: string): Chart | undefined {
     let areaGrouping: ChartLineAreaGrouping | undefined;
     let chartLevelLabels: ChartDataLabelsInfo | undefined;
     let holeSize: number | undefined;
+    let firstSliceAng: number | undefined;
     for (const child of childElements(plotArea)) {
       const kind = CHART_KIND_TAGS.get(child.local);
       if (!kind) continue;
@@ -102,6 +103,18 @@ export function parseChart(xml: string): Chart | undefined {
       // can round-trip its hole back through {@link cloneChart}.
       if (holeSize === undefined && kind === "doughnut") {
         holeSize = parseHoleSize(child);
+      }
+      // `<c:firstSliceAng>` lives on `<c:pieChart>` and
+      // `<c:doughnutChart>` (also pie3D / ofPie which we lump in here
+      // for symmetry — the writer never emits those, but a parsed
+      // template carrying one round-trips cleanly into a pie/doughnut
+      // clone). `0` collapses to undefined because it is the OOXML
+      // default that the writer also treats as absence of the field.
+      if (
+        firstSliceAng === undefined &&
+        (kind === "pie" || kind === "pie3D" || kind === "doughnut" || kind === "ofPie")
+      ) {
+        firstSliceAng = parseFirstSliceAng(child);
       }
       let localIndex = 0;
       for (const ser of childElements(child)) {
@@ -129,6 +142,7 @@ export function parseChart(xml: string): Chart | undefined {
     if (areaGrouping !== undefined) out.areaGrouping = areaGrouping;
     if (chartLevelLabels) out.dataLabels = chartLevelLabels;
     if (holeSize !== undefined) out.holeSize = holeSize;
+    if (firstSliceAng !== undefined) out.firstSliceAng = firstSliceAng;
 
     const axes = parseAxes(plotArea);
     if (axes !== undefined) out.axes = axes;
@@ -527,6 +541,34 @@ function parseHoleSize(doughnut: XmlElement): number | undefined {
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed)) return undefined;
   if (parsed < 1 || parsed > 99) return undefined;
+  return parsed;
+}
+
+// ── First Slice Angle ─────────────────────────────────────────────
+
+/**
+ * Pull `<c:firstSliceAng val=".."/>` off a `<c:pieChart>` /
+ * `<c:doughnutChart>` element. Returns `undefined` when the attribute
+ * is missing, malformed, or carries the OOXML default of `0` — the
+ * writer's {@link SheetChart.firstSliceAng} treats absence and `0`
+ * identically, so collapsing here keeps the round-trip stable.
+ *
+ * The OOXML schema (CT_FirstSliceAng) restricts the value to the
+ * inclusive range `0..360`; out-of-range values are dropped rather
+ * than clamped so a corrupt template does not silently rewrite as a
+ * different angle.
+ */
+function parseFirstSliceAng(chartType: XmlElement): number | undefined {
+  const el = findChild(chartType, "firstSliceAng");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  if (parsed < 0 || parsed > 360) return undefined;
+  // Collapse `0` and the schema-equivalent `360` to undefined — both
+  // mean "first slice at 12 o'clock", which is the writer's default.
+  if (parsed === 0 || parsed === 360) return undefined;
   return parsed;
 }
 

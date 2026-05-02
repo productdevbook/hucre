@@ -381,6 +381,14 @@ function buildPieChart(chart: SheetChart, sheetName: string): string {
   const chartLevelDLbls = buildChartLevelDataLabels(chart);
   if (chartLevelDLbls) children.push(chartLevelDLbls);
 
+  // `<c:firstSliceAng>` is optional on `<c:pieChart>` (CT_PieChart);
+  // omit it when the angle is the default `0` (12 o'clock start) so
+  // we do not bloat untouched chart XML.
+  const sliceAng = clampFirstSliceAng(chart.firstSliceAng);
+  if (sliceAng !== undefined) {
+    children.push(xmlSelfClose("c:firstSliceAng", { val: sliceAng }));
+  }
+
   return xmlElement("c:pieChart", undefined, children);
 }
 
@@ -412,10 +420,40 @@ function buildDoughnutChart(chart: SheetChart, sheetName: string): string {
   // required by OOXML — the schema rejects a `<c:doughnutChart>` without
   // it. Clamp to the 10–90 band Excel's UI enforces; values outside
   // this range render but trigger Excel's repair dialog.
-  children.push(xmlSelfClose("c:firstSliceAng", { val: 0 }));
+  //
+  // The doughnut writer always emits `<c:firstSliceAng>`, falling back
+  // to the default `0` when the caller did not request a rotation —
+  // that mirrors the spec's reference serialization Excel produces.
+  children.push(
+    xmlSelfClose("c:firstSliceAng", { val: clampFirstSliceAng(chart.firstSliceAng) ?? 0 }),
+  );
   children.push(xmlSelfClose("c:holeSize", { val: clampHoleSize(chart.holeSize) }));
 
   return xmlElement("c:doughnutChart", undefined, children);
+}
+
+/**
+ * Normalize {@link SheetChart.firstSliceAng} to an integer in the
+ * inclusive 0..360 band the OOXML schema (CT_FirstSliceAng) allows.
+ *
+ * Returns `undefined` for the default `0` so the pie writer can elide
+ * the element entirely (Excel treats absence and `0` identically). The
+ * doughnut writer must always emit the element, so it explicitly
+ * substitutes `0` when the helper returns `undefined`.
+ *
+ * Out-of-range values are wrapped modulo 360 — `380` becomes `20`,
+ * `-90` becomes `270` — which matches how Excel itself renders an
+ * out-of-band value the user types into the chart-formatting pane.
+ */
+function clampFirstSliceAng(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  const rounded = Math.round(value);
+  // Wrap into 0..360 (inclusive). The OOXML schema actually allows
+  // 360 as a value, so we keep it distinct from 0.
+  let normalized = rounded % 360;
+  if (normalized < 0) normalized += 360;
+  if (normalized === 0) return undefined;
+  return normalized;
 }
 
 function clampHoleSize(value: number | undefined): number {

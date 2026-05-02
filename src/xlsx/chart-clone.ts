@@ -95,6 +95,14 @@ export interface CloneChartOptions {
    * column chart.
    */
   holeSize?: number;
+  /**
+   * Override `SheetChart.firstSliceAng` (the pie / doughnut starting
+   * angle in degrees, clockwise from 12 o'clock). Only meaningful for
+   * `pie` and `doughnut`; dropped silently when the resolved chart
+   * type is anything else, so a rotation hint inherited from a
+   * doughnut template never leaks into a column or scatter clone.
+   */
+  firstSliceAng?: number;
   /** Override `SheetChart.showTitle`. */
   showTitle?: boolean;
   /** Override `SheetChart.altText`. */
@@ -210,6 +218,18 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   if (type === "doughnut") {
     const holeSize = options.holeSize !== undefined ? options.holeSize : source.holeSize;
     if (holeSize !== undefined) out.holeSize = holeSize;
+  }
+
+  // First slice angle round-trips for both pie and doughnut — the
+  // OOXML schema places the element on `<c:pieChart>` and
+  // `<c:doughnutChart>` alike. A doughnut template flattened to pie
+  // therefore keeps its rotation; coercion into a non-pie family drops
+  // the inherited value so it never leaks into a chart kind that has
+  // no rotation knob.
+  if (type === "pie" || type === "doughnut") {
+    const firstSliceAng =
+      options.firstSliceAng !== undefined ? options.firstSliceAng : source.firstSliceAng;
+    if (firstSliceAng !== undefined) out.firstSliceAng = firstSliceAng;
   }
 
   if (options.showTitle !== undefined) out.showTitle = options.showTitle;
