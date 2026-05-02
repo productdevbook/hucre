@@ -1221,11 +1221,38 @@ export type ChartKind =
   | "ofPie";
 
 /**
+ * A single series surfaced from a parsed chart.
+ *
+ * Field semantics mirror what {@link ChartSeries} accepts on the write
+ * side, so a `ChartSeriesInfo` returned by {@link Chart.series} can be
+ * used as the basis for cloning a chart with new bindings.
+ *
+ * `valuesRef` and `categoriesRef` are the raw `<c:f>` formula strings
+ * extracted from the chart XML — typically sheet-qualified A1 ranges
+ * like `"Sheet1!$B$2:$B$10"`. They may be `undefined` when the series
+ * embeds literal numbers (`<c:numLit>`) instead of referencing a range.
+ */
+export interface ChartSeriesInfo {
+  /** Chart kind that owns this series (matches {@link Chart.kinds}). */
+  kind: ChartKind;
+  /** 0-based position inside the chart-type element. */
+  index: number;
+  /** Series name pulled from `<c:tx>` (literal `<c:v>` or strRef cache). */
+  name?: string;
+  /** Raw `<c:f>` for `<c:val>` / `<c:yVal>`. */
+  valuesRef?: string;
+  /** Raw `<c:f>` for `<c:cat>` / `<c:xVal>`. */
+  categoriesRef?: string;
+  /** 6-digit RGB hex from `<c:spPr><a:solidFill><a:srgbClr val>`. */
+  color?: string;
+}
+
+/**
  * A chart anchored on a sheet via the sheet's drawing part.
  *
- * Charts come from `xl/charts/chartN.xml`. Hucre exposes only the
- * fields needed to recognize the chart on read; the chart body is
- * preserved verbatim through roundtrip.
+ * Charts come from `xl/charts/chartN.xml`. Hucre exposes the
+ * structural metadata needed to recognize, introspect, and clone the
+ * chart; the chart body is preserved verbatim through roundtrip.
  */
 export interface Chart {
   /** Chart-type elements present in `<c:plotArea>`, in declaration order. */
@@ -1234,6 +1261,11 @@ export interface Chart {
   seriesCount: number;
   /** Plain-text title pulled from `<c:title>`, when present. */
   title?: string;
+  /**
+   * Per-series metadata across every chart-type element, in
+   * declaration order. Empty when the chart has no `<c:ser>` children.
+   */
+  series?: ChartSeriesInfo[];
 }
 
 // ── Workbook ───────────────────────────────────────────────────────

@@ -12,7 +12,7 @@
 //
 // OOXML reference: ECMA-376 Part 1, §21.2 (DrawingML — Charts).
 
-import type { Chart, ChartKind } from "../_types";
+import type { Chart, ChartKind, ChartSeriesInfo } from "../_types";
 import { parseXml } from "../xml/parser";
 import type { XmlElement } from "../xml/parser";
 
@@ -61,18 +61,121 @@ export function parseChart(xml: string): Chart | undefined {
   const plotArea = findChild(chartEl, "plotArea");
   if (plotArea) {
     let seriesCount = 0;
+    const series: ChartSeriesInfo[] = [];
     for (const child of childElements(plotArea)) {
       const kind = CHART_KIND_TAGS.get(child.local);
       if (!kind) continue;
       if (!out.kinds.includes(kind)) out.kinds.push(kind);
+      let localIndex = 0;
       for (const ser of childElements(child)) {
-        if (ser.local === "ser") seriesCount++;
+        if (ser.local !== "ser") continue;
+        seriesCount++;
+        series.push(parseSeries(ser, kind, localIndex));
+        localIndex++;
       }
     }
     out.seriesCount = seriesCount;
+    if (series.length > 0) out.series = series;
   }
 
   return out;
+}
+
+// ── Series ────────────────────────────────────────────────────────
+
+/**
+ * Pull the metadata fields {@link ChartSeriesInfo} surfaces out of a
+ * single `<c:ser>` element. Missing pieces (no name, no categories,
+ * literal numbers instead of a range) are simply omitted.
+ */
+function parseSeries(ser: XmlElement, kind: ChartKind, index: number): ChartSeriesInfo {
+  const out: ChartSeriesInfo = { kind, index };
+
+  const name = parseSeriesName(ser);
+  if (name !== undefined) out.name = name;
+
+  // Numeric values land in <c:val> for most chart types; scatter and
+  // bubble use <c:yVal> instead.
+  const valuesRef = formulaText(findChild(ser, "val")) ?? formulaText(findChild(ser, "yVal"));
+  if (valuesRef !== undefined) out.valuesRef = valuesRef;
+
+  // Categories live in <c:cat> for category-axis charts and in
+  // <c:xVal> for scatter/bubble.
+  const catRef = formulaText(findChild(ser, "cat")) ?? formulaText(findChild(ser, "xVal"));
+  if (catRef !== undefined) out.categoriesRef = catRef;
+
+  const color = parseSeriesColor(ser);
+  if (color !== undefined) out.color = color;
+
+  return out;
+}
+
+/** Read the `<c:tx>` series-name element (literal or strRef cache). */
+function parseSeriesName(ser: XmlElement): string | undefined {
+  const tx = findChild(ser, "tx");
+  if (!tx) return undefined;
+  const literal = findChild(tx, "v");
+  if (literal) {
+    const text = elementText(literal).trim();
+    if (text.length > 0) return text;
+  }
+  const strRef = findChild(tx, "strRef");
+  if (strRef) {
+    const cache = findChild(strRef, "strCache");
+    if (cache) {
+      for (const pt of childElements(cache)) {
+        if (pt.local !== "pt") continue;
+        const v = findChild(pt, "v");
+        if (v) {
+          const text = elementText(v).trim();
+          if (text.length > 0) return text;
+        }
+      }
+    }
+    // Fall back to the formula reference itself when no cached value.
+    const f = formulaText(strRef);
+    if (f) return f;
+  }
+  return undefined;
+}
+
+/**
+ * Walk `<c:val>` / `<c:cat>` / `<c:xVal>` / `<c:yVal>` to its inner
+ * `<c:f>` formula text. Returns `undefined` for embedded `<c:numLit>`
+ * literal data (no formula) or when the element is absent.
+ */
+function formulaText(wrapper: XmlElement | undefined): string | undefined {
+  if (!wrapper) return undefined;
+  const numRef = findChild(wrapper, "numRef") ?? findChild(wrapper, "strRef");
+  if (numRef) {
+    const f = findChild(numRef, "f");
+    if (f) {
+      const text = elementText(f).trim();
+      if (text.length > 0) return text;
+    }
+  }
+  // Some writers put <c:f> directly under <c:strRef> (already handled
+  // above via numRef fallback) or under the wrapper itself.
+  const direct = findChild(wrapper, "f");
+  if (direct) {
+    const text = elementText(direct).trim();
+    if (text.length > 0) return text;
+  }
+  return undefined;
+}
+
+/** Pull the first `<a:srgbClr val="RRGGBB">` under `<c:spPr>`. */
+function parseSeriesColor(ser: XmlElement): string | undefined {
+  const spPr = findChild(ser, "spPr");
+  if (!spPr) return undefined;
+  const fill = findChild(spPr, "solidFill");
+  if (!fill) return undefined;
+  const srgb = findChild(fill, "srgbClr");
+  if (!srgb) return undefined;
+  const val = srgb.attrs.val;
+  if (typeof val !== "string") return undefined;
+  const normalized = val.replace(/^#/, "").toUpperCase();
+  return /^[0-9A-F]{6}$/.test(normalized) ? normalized : undefined;
 }
 
 // ── Internals ─────────────────────────────────────────────────────

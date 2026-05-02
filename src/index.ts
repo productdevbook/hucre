@@ -130,7 +130,7 @@ export type {
 
 // ── Charts ─────────────────────────────────────────────────────────
 export { parseChart } from "./xlsx/chart-reader";
-export type { Chart, ChartKind } from "./_types";
+export type { Chart, ChartKind, ChartSeriesInfo } from "./_types";
 
 // ── Date Utilities ─────────────────────────────────────────────────
 export {

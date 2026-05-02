@@ -42,6 +42,10 @@ describe("parseChart", () => {
       kinds: ["bar"],
       seriesCount: 2,
       title: "Sales",
+      series: [
+        { kind: "bar", index: 0 },
+        { kind: "bar", index: 1 },
+      ],
     });
   });
 
@@ -63,6 +67,11 @@ describe("parseChart", () => {
     expect(parseChart(xml)).toEqual({
       kinds: ["bar", "line"],
       seriesCount: 3,
+      series: [
+        { kind: "bar", index: 0 },
+        { kind: "line", index: 0 },
+        { kind: "line", index: 1 },
+      ],
     });
   });
 
@@ -108,6 +117,219 @@ describe("parseChart", () => {
 </c:chartSpace>`;
     const chart = parseChart(xml);
     expect(chart?.title).toBe("Quarterly Revenue");
+  });
+});
+
+// ── parseChart — series introspection ─────────────────────────────
+
+describe("parseChart — series introspection", () => {
+  it("surfaces series name, value range, category range, and color", () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx><c:v>Revenue</c:v></c:tx>
+          <c:spPr><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></c:spPr>
+          <c:cat><c:strRef><c:f>Sheet1!$A$2:$A$10</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Sheet1!$B$2:$B$10</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:ser>
+          <c:idx val="1"/>
+          <c:tx><c:v>Cost</c:v></c:tx>
+          <c:val><c:numRef><c:f>Sheet1!$C$2:$C$10</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series).toEqual([
+      {
+        kind: "bar",
+        index: 0,
+        name: "Revenue",
+        valuesRef: "Sheet1!$B$2:$B$10",
+        categoriesRef: "Sheet1!$A$2:$A$10",
+        color: "1F77B4",
+      },
+      {
+        kind: "bar",
+        index: 1,
+        name: "Cost",
+        valuesRef: "Sheet1!$C$2:$C$10",
+      },
+    ]);
+  });
+
+  it("decodes scatter xVal / yVal series wiring", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:scatterChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx><c:v>Trend</c:v></c:tx>
+          <c:xVal><c:numRef><c:f>S!$A$2:$A$5</c:f></c:numRef></c:xVal>
+          <c:yVal><c:numRef><c:f>S!$B$2:$B$5</c:f></c:numRef></c:yVal>
+        </c:ser>
+      </c:scatterChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.series).toEqual([
+      {
+        kind: "scatter",
+        index: 0,
+        name: "Trend",
+        valuesRef: "S!$B$2:$B$5",
+        categoriesRef: "S!$A$2:$A$5",
+      },
+    ]);
+  });
+
+  it("falls back to strRef cache for the series name", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx>
+            <c:strRef>
+              <c:f>Sheet1!$B$1</c:f>
+              <c:strCache>
+                <c:ptCount val="1"/>
+                <c:pt idx="0"><c:v>From Cache</c:v></c:pt>
+              </c:strCache>
+            </c:strRef>
+          </c:tx>
+          <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.series?.[0].name).toBe("From Cache");
+  });
+
+  it("uses the strRef formula text when no cache is present", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx>
+            <c:strRef><c:f>Sheet1!$B$1</c:f></c:strRef>
+          </c:tx>
+        </c:ser>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.series?.[0].name).toBe("Sheet1!$B$1");
+  });
+
+  it("omits valuesRef and categoriesRef for literal numLit series", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val>
+            <c:numLit>
+              <c:formatCode>General</c:formatCode>
+              <c:ptCount val="2"/>
+              <c:pt idx="0"><c:v>1</c:v></c:pt>
+              <c:pt idx="1"><c:v>2</c:v></c:pt>
+            </c:numLit>
+          </c:val>
+        </c:ser>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const series = parseChart(xml)?.series;
+    expect(series).toEqual([{ kind: "bar", index: 0 }]);
+  });
+
+  it("ignores malformed srgbClr values", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+                              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:spPr><a:solidFill><a:srgbClr val="not-a-color"/></a:solidFill></c:spPr>
+        </c:ser>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.series?.[0].color).toBeUndefined();
+  });
+
+  it("strips a leading '#' from srgbClr values and uppercases the result", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+                              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:spPr><a:solidFill><a:srgbClr val="#aabbcc"/></a:solidFill></c:spPr>
+        </c:ser>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.series?.[0].color).toBe("AABBCC");
+  });
+
+  it("indexes series independently per chart-type element in combo charts", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx><c:v>Bar A</c:v></c:tx>
+        </c:ser>
+        <c:ser>
+          <c:idx val="1"/>
+          <c:tx><c:v>Bar B</c:v></c:tx>
+        </c:ser>
+      </c:barChart>
+      <c:lineChart>
+        <c:ser>
+          <c:idx val="2"/>
+          <c:tx><c:v>Line A</c:v></c:tx>
+        </c:ser>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.series).toEqual([
+      { kind: "bar", index: 0, name: "Bar A" },
+      { kind: "bar", index: 1, name: "Bar B" },
+      { kind: "line", index: 0, name: "Line A" },
+    ]);
+  });
+
+  it("does not set series when the chart has no <c:ser> children", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart><c:plotArea><c:barChart/></c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.kinds).toEqual(["bar"]);
+    expect(chart?.seriesCount).toBe(0);
+    expect(chart?.series).toBeUndefined();
   });
 });
 
@@ -276,6 +498,7 @@ describe("readXlsx — chart integration", () => {
       kinds: ["bar"],
       seriesCount: 1,
       title: "Quarterly Sales",
+      series: [{ kind: "bar", index: 0, valuesRef: "Data!$B$1:$B$2" }],
     });
   });
 
