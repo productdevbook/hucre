@@ -640,6 +640,13 @@ clockwise from 12 o'clock) on pie and doughnut charts. The OOXML
 default `0` (and the schema-equivalent `360`) collapses to
 `undefined` so absence and the default round-trip identically;
 non-pie / non-doughnut charts never report it.
+`ChartSeriesInfo.smooth` surfaces the per-series
+`<c:ser><c:smooth val=".."/>` flag — Excel's "Format Data Series →
+Line → Smoothed line" toggle — only on `line` / `line3D` / `scatter`
+series (the OOXML schema places `<c:smooth>` exclusively on
+`CT_LineSer` and `CT_ScatterSer`). Absence and the OOXML default
+`val="0"` both collapse to `undefined`, so only an explicit
+`<c:smooth val="1"/>` round-trips as `smooth: true`.
 Sheets that hucre actively regenerates because they
 also carry hucre-managed images currently keep the chart bodies but
 lose the in-drawing chart anchor — merging hucre's drawing output
@@ -731,6 +738,13 @@ For pie and doughnut charts, `firstSliceAng` (0 – 360 degrees, default
 aligning paired charts in a dashboard. Out-of-band values wrap modulo
 360 (380 → 20, -90 → 270) the same way Excel's chart-formatting pane
 does, and non-pie / non-doughnut kinds silently ignore the field.
+For line and scatter charts, each `series[i].smooth` flag toggles
+Excel's curved-line variant (`<c:smooth val="..">` inside `<c:ser>`).
+Line series always emit the element — `smooth: true` writes `val="1"`,
+absence or `false` writes the OOXML default `val="0"`; scatter series
+only emit `<c:smooth val="1"/>` when `smooth` is explicitly `true` so
+untouched scatter charts stay byte-clean. Bar / column / pie /
+doughnut / area kinds silently ignore the flag.
 Radar, stock, 3D variants, trendlines, and combo charts are out of
 scope today.
 
@@ -795,7 +809,11 @@ too: omit `dataLabels`
 to carry the source's chart-level labels through, pass an object to
 replace, or `null` to drop them; per-series overrides accept the same
 `undefined`/`null`/object grammar plus `false` to suppress labels on
-a single series.
+a single series. Per-series smooth-line state inherits from the
+template by default; `seriesOverrides[i].smooth` accepts the same
+`undefined` (inherit) / `null` (drop) / `boolean` (replace) grammar,
+and the inherited flag is dropped automatically when the resolved
+clone target is anything other than `line` or `scatter`.
 
 #### Walking and adding charts with `getCharts` / `addChart`
 
