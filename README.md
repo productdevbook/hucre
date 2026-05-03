@@ -695,6 +695,16 @@ non-default that keeps hidden cells in the chart). The reader accepts
 the OOXML truthy / falsy spellings (`"1"` / `"true"` / `"0"` /
 `"false"`); unknown values and missing `val` attributes drop to
 `undefined`.
+`Chart.showDLblsOverMax` surfaces the chart-level
+`<c:chart><c:showDLblsOverMax val=".."/>` flag — Excel's "Format Axis
+→ Labels → Show data labels for values over maximum scale" checkbox.
+The OOXML default `true` (labels render for every point) collapses to
+`undefined` so absence and `<c:showDLblsOverMax val="1"/>` round-trip
+identically; only an explicit `val="0"` surfaces `false` (the
+non-default that strips labels off any point whose value exceeds the
+pinned `<c:max>`). The reader accepts the OOXML truthy / falsy
+spellings (`"1"` / `"true"` / `"0"` / `"false"`); unknown values and
+missing `val` attributes drop to `undefined`.
 `ChartAxisInfo.tickLblSkip` and `ChartAxisInfo.tickMarkSkip` surface
 the category-axis tick-thinning knobs (`<c:catAx><c:tickLblSkip val=".."/>`
 and `<c:catAx><c:tickMarkSkip val=".."/>`). Both elements live on
@@ -1040,6 +1050,17 @@ the chart), matching Excel's reference serialization. Pin
 chart (`val="0"`). The writer always emits the element so the
 rendered intent is explicit on roundtrip — no chart family is special-
 cased.
+The chart-level `showDLblsOverMax` field maps to
+`<c:showDLblsOverMax val=".."/>` on `<c:chart>` — Excel's "Format
+Axis → Labels → Show data labels for values over maximum scale"
+checkbox. Absent it, the writer emits the OOXML default `val="1"`
+(labels render for every point regardless of the axis ceiling),
+matching Excel's reference serialization. Pin `showDLblsOverMax: false`
+to strip labels off any point whose value exceeds the pinned `<c:max>`
+(`val="0"`). The writer always emits the element so the rendered
+intent is explicit on roundtrip — no chart family is special-cased,
+since the toggle lives on `<c:chart>` and is valid on every chart
+family.
 The chart-level `roundedCorners` field maps to
 `<c:roundedCorners val=".."/>` on `<c:chartSpace>` (a sibling of
 `<c:chart>`, not a child) — Excel's "Format Chart Area → Border →
@@ -1394,6 +1415,13 @@ a `boolean` to replace it. Like `dispBlanksAs` and `varyColors`, the
 field lives on `<c:chart>` and is valid on every chart family, so a
 coercion (line → column, doughnut → pie, etc.) preserves the
 inherited value rather than dropping it.
+The chart-level `showDLblsOverMax` flag follows the same grammar:
+pass `undefined` to inherit the source's parsed value, `null` to drop
+it back to the writer's OOXML `true` default (labels render for every
+point regardless of axis ceiling), or a `boolean` to replace it. Like
+`plotVisOnly` / `dispBlanksAs`, the field lives on `<c:chart>` and is
+valid on every chart family, so a coercion (line → column, doughnut →
+pie, etc.) preserves the inherited value rather than dropping it.
 The chart-level `roundedCorners` flag follows the same grammar: pass
 `undefined` to inherit the source's parsed value, `null` to drop it
 back to the writer's OOXML `false` default (square chart frame), or a
