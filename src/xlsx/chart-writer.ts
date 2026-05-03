@@ -7,6 +7,7 @@
 // referenced from a drawing part via a `chart` relationship.
 
 import type {
+  ChartAxisCrosses,
   ChartAxisGridlines,
   ChartAxisLabelAlign,
   ChartAxisNumberFormat,
@@ -211,6 +212,14 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // collapse to `false` to keep the on-the-wire output stable.
     xHidden: normalizeAxisHidden(chart.axes?.x?.hidden),
     yHidden: normalizeAxisHidden(chart.axes?.y?.hidden),
+    // `<c:crosses>` and `<c:crossesAt>` sit on every axis flavour
+    // (CT_CatAx / CT_ValAx / CT_DateAx / CT_SerAx) but live in an XSD
+    // choice — only one of them may appear at a time. The normalizer
+    // resolves that choice once here so the per-family axis builders
+    // can emit whichever element the caller pinned without duplicating
+    // the precedence rule.
+    xCrosses: normalizeAxisCrosses(chart.axes?.x?.crosses, chart.axes?.x?.crossesAt),
+    yCrosses: normalizeAxisCrosses(chart.axes?.y?.crosses, chart.axes?.y?.crossesAt),
   };
 
   switch (chart.type) {
@@ -312,7 +321,31 @@ interface AxisRenderOptions {
   xHidden: boolean;
   /** Whether the Y axis should render hidden. Same shape as {@link xHidden}. */
   yHidden: boolean;
+  /**
+   * Resolved axis-crosses pin for the X axis. The XSD choice between
+   * `<c:crosses>` and `<c:crossesAt>` is collapsed to a single tagged
+   * union: `kind: "default"` emits the OOXML default `<c:crosses
+   * val="autoZero"/>`, `kind: "semantic"` emits the resolved
+   * {@link ChartAxisCrosses} token, and `kind: "numeric"` emits
+   * `<c:crossesAt>` with the literal value the caller pinned.
+   */
+  xCrosses: ResolvedAxisCrosses;
+  /** Resolved axis-crosses pin for the Y axis. Same shape as {@link xCrosses}. */
+  yCrosses: ResolvedAxisCrosses;
 }
+
+/**
+ * Resolved per-axis crossing pin. The OOXML schema places `<c:crosses>`
+ * and `<c:crossesAt>` in an XSD choice — only one may appear at a time.
+ * `normalizeAxisCrosses` collapses the writer's two input fields
+ * (`crosses` and `crossesAt`) into this tagged union so the per-family
+ * axis builders can emit the right element without re-implementing the
+ * precedence rule.
+ */
+type ResolvedAxisCrosses =
+  | { kind: "default" }
+  | { kind: "semantic"; value: ChartAxisCrosses }
+  | { kind: "numeric"; value: number };
 
 /**
  * Normalize an axis title input to either a non-empty trimmed string
@@ -497,6 +530,61 @@ function normalizeAxisLblAlgn(
  */
 function normalizeAxisHidden(value: boolean | undefined): boolean {
   return value === true;
+}
+
+/** Recognized values of `<c:crosses>` per the OOXML `ST_Crosses` enum. */
+const VALID_AXIS_CROSSES: ReadonlySet<ChartAxisCrosses> = new Set(["autoZero", "min", "max"]);
+
+/**
+ * Resolve the writer's `axes.x.crosses` / `axes.x.crossesAt` pair into
+ * the {@link ResolvedAxisCrosses} tagged union the per-family axis
+ * builders emit. The OOXML schema places `<c:crosses>` and
+ * `<c:crossesAt>` in an XSD choice — only one may legally appear at a
+ * time per ECMA-376 Part 1, §21.2.2 — so the normalizer collapses the
+ * caller's two fields to a single resolved shape:
+ *
+ *   - A finite numeric `crossesAt` always wins, mirroring how Excel
+ *     treats the choice (the explicit numeric pin overrides the
+ *     semantic default). Non-finite inputs (NaN / Infinity) drop so the
+ *     writer never emits an attribute Excel would reject.
+ *   - When only `crosses` is set, the resolved kind is `"semantic"` for
+ *     `"min"` / `"max"`. The OOXML default `"autoZero"` collapses to
+ *     `kind: "default"` so absence and the default emit the same
+ *     `<c:crosses val="autoZero"/>` byte-for-byte. Unknown tokens drop
+ *     to `kind: "default"` for the same reason.
+ *   - When neither is set, the resolved kind is `"default"` (the writer
+ *     still emits `<c:crosses val="autoZero"/>` to match Excel's
+ *     reference serialization on every freshly-drawn axis).
+ */
+function normalizeAxisCrosses(
+  semantic: ChartAxisCrosses | undefined,
+  numeric: number | undefined,
+): ResolvedAxisCrosses {
+  if (typeof numeric === "number" && Number.isFinite(numeric)) {
+    return { kind: "numeric", value: numeric };
+  }
+  if (semantic !== undefined && VALID_AXIS_CROSSES.has(semantic) && semantic !== "autoZero") {
+    return { kind: "semantic", value: semantic };
+  }
+  return { kind: "default" };
+}
+
+/**
+ * Render the resolved axis crossing pin as the matching child element.
+ * `kind: "numeric"` emits `<c:crossesAt val=".."/>`; every other kind
+ * emits `<c:crosses val=".."/>` so Excel's reference serialization
+ * (which always pins `<c:crosses val="autoZero"/>` on every axis) is
+ * preserved on freshly-drawn charts.
+ */
+function buildAxisCrosses(resolved: ResolvedAxisCrosses): string {
+  switch (resolved.kind) {
+    case "numeric":
+      return xmlSelfClose("c:crossesAt", { val: resolved.value });
+    case "semantic":
+      return xmlSelfClose("c:crosses", { val: resolved.value });
+    case "default":
+      return xmlSelfClose("c:crosses", { val: "autoZero" });
+  }
 }
 
 /**
@@ -780,7 +868,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
     ...buildAxisNumFmt(opts.xNumFmt),
     ...buildAxisTickRendering(opts.xMajorTickMark, opts.xMinorTickMark, opts.xTickLblPos),
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL }),
-    xmlSelfClose("c:crosses", { val: "autoZero" }),
+    buildAxisCrosses(opts.xCrosses),
     xmlSelfClose("c:auto", { val: 1 }),
     // `<c:lblAlgn>` is always emitted because Excel's reference
     // serialization includes it on every category axis. The writer
@@ -820,7 +908,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
     ...buildAxisNumFmt(opts.yNumFmt),
     ...buildAxisTickRendering(opts.yMajorTickMark, opts.yMinorTickMark, opts.yTickLblPos),
     xmlSelfClose("c:crossAx", { val: AXIS_ID_CAT }),
-    xmlSelfClose("c:crosses", { val: "autoZero" }),
+    buildAxisCrosses(opts.yCrosses),
     xmlSelfClose("c:crossBetween", { val: "between" }),
     ...buildAxisTickUnits(opts.yScale),
   );
@@ -1085,7 +1173,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
     ...buildAxisNumFmt(opts.xNumFmt),
     ...buildAxisTickRendering(opts.xMajorTickMark, opts.xMinorTickMark, opts.xTickLblPos),
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL_Y }),
-    xmlSelfClose("c:crosses", { val: "autoZero" }),
+    buildAxisCrosses(opts.xCrosses),
     xmlSelfClose("c:crossBetween", { val: "midCat" }),
     ...buildAxisTickUnits(opts.xScale),
   );
@@ -1102,7 +1190,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
     ...buildAxisNumFmt(opts.yNumFmt),
     ...buildAxisTickRendering(opts.yMajorTickMark, opts.yMinorTickMark, opts.yTickLblPos),
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL_X }),
-    xmlSelfClose("c:crosses", { val: "autoZero" }),
+    buildAxisCrosses(opts.yCrosses),
     xmlSelfClose("c:crossBetween", { val: "midCat" }),
     ...buildAxisTickUnits(opts.yScale),
   );

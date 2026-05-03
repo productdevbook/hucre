@@ -1294,6 +1294,37 @@ export interface SheetChart {
        * because the OOXML schema places no axes on those families.
        */
       hidden?: boolean;
+      /**
+       * Where the perpendicular axis crosses this axis along its own
+       * range. Maps to `<c:catAx><c:crosses val=".."/></c:catAx>` (or
+       * `<c:valAx>` for scatter). Default: `"autoZero"` — Excel's
+       * reference serialization, the perpendicular axis crosses at zero
+       * on a value axis or at the first category on a category axis.
+       *
+       * Set `"min"` / `"max"` to pin the perpendicular axis to the low
+       * / high end of this axis (Excel's "Format Axis -> Axis Options
+       * -> Vertical axis crosses" toggle). Mutually exclusive with
+       * {@link crossesAt} — when both are set the writer favours
+       * `crossesAt`. Silently ignored on `pie` / `doughnut` charts
+       * because the OOXML schema places no axes on those families. See
+       * {@link ChartAxisCrosses}.
+       */
+      crosses?: ChartAxisCrosses;
+      /**
+       * Numeric crossing position. Maps to
+       * `<c:catAx><c:crossesAt val=".."/></c:catAx>` (or `<c:valAx>` for
+       * scatter). When set, takes precedence over {@link crosses}
+       * because the OOXML schema (`CT_CatAx` / `CT_ValAx`) places the
+       * two elements in an XSD choice — only one may appear at a time.
+       *
+       * The literal value is preserved (including `0`, which is
+       * distinct from the `"autoZero"` default — `crossesAt: 0` pins
+       * the crossing point to the numeric value zero, while `crosses:
+       * "autoZero"` defers to Excel's auto-placement). Non-finite
+       * inputs (`NaN`, `Infinity`) drop at write time. Silently ignored
+       * on `pie` / `doughnut` charts.
+       */
+      crossesAt?: number;
     };
     /** Value axis. */
     y?: {
@@ -1336,6 +1367,22 @@ export interface SheetChart {
        * at the origin and the minimum at the far end.
        */
       reverse?: boolean;
+      /**
+       * Where the perpendicular axis crosses the value axis along its
+       * own range. Maps to `<c:valAx><c:crosses val=".."/></c:valAx>`.
+       * Default: `"autoZero"`. Mirrors
+       * {@link SheetChart.axes.x.crosses} for the value axis. Mutually
+       * exclusive with {@link crossesAt} — when both are set the writer
+       * favours `crossesAt`. See {@link ChartAxisCrosses}.
+       */
+      crosses?: ChartAxisCrosses;
+      /**
+       * Numeric crossing position for the value axis. Maps to
+       * `<c:valAx><c:crossesAt val=".."/></c:valAx>`. Mirrors
+       * {@link SheetChart.axes.x.crossesAt} — when set, takes
+       * precedence over {@link crosses}.
+       */
+      crossesAt?: number;
     };
   };
 }
@@ -2207,6 +2254,28 @@ export type ChartAxisTickLabelPosition = "nextTo" | "low" | "high" | "none";
  */
 export type ChartAxisLabelAlign = "ctr" | "l" | "r";
 
+/**
+ * Axis crossing position — where the perpendicular axis crosses this
+ * axis along its own range. Maps to the OOXML `ST_Crosses` enumeration
+ * which sits inside `<c:catAx>` / `<c:valAx>` / `<c:dateAx>` /
+ * `<c:serAx>` as `<c:crosses val=".."/>`:
+ *
+ * - `"autoZero"` — the perpendicular axis crosses at zero on a value
+ *                  axis (or at the first category on a category axis).
+ *                  OOXML default and Excel's reference serialization on
+ *                  every freshly-drawn axis.
+ * - `"min"`      — the perpendicular axis crosses at the low end of
+ *                  this axis (Excel's "Format Axis -> Vertical axis
+ *                  crosses -> Automatic / At minimum value" toggle).
+ * - `"max"`      — the perpendicular axis crosses at the high end.
+ *
+ * `<c:crosses>` and `<c:crossesAt>` are mutually exclusive in the OOXML
+ * schema (CT_Crosses sits in an XSD choice with CT_Double). The writer
+ * favours `crossesAt` whenever the caller pins it; `crosses` is the
+ * fallback when only the semantic toggle is set.
+ */
+export type ChartAxisCrosses = "autoZero" | "min" | "max";
+
 export interface ChartAxisInfo {
   /** Plain-text title from the axis's `<c:title>`. Omitted when absent. */
   title?: string;
@@ -2328,6 +2397,33 @@ export interface ChartAxisInfo {
    * drop to `undefined`.
    */
   hidden?: boolean;
+  /**
+   * Semantic crossing position pulled from `<c:crosses val=".."/>`.
+   * Surfaces only when the axis pinned a non-default token — the OOXML
+   * default `"autoZero"` collapses to `undefined` so absence and the
+   * default round-trip identically through {@link cloneChart}. Unknown
+   * tokens drop rather than fabricate a value the writer would never
+   * emit. See {@link ChartAxisCrosses}.
+   *
+   * Mutually exclusive with {@link crossesAt} in the OOXML schema —
+   * when both elements appear on the same axis (a malformed template),
+   * the reader keeps `crossesAt` and drops `crosses` to mirror the
+   * writer's preference.
+   */
+  crosses?: ChartAxisCrosses;
+  /**
+   * Numeric crossing position pulled from `<c:crossesAt val=".."/>`.
+   * Surfaces the literal value Excel paints — `0` is preserved (it is a
+   * valid pin, distinct from the `"autoZero"` default). Non-numeric
+   * `val` attributes drop to `undefined` rather than fabricate a value
+   * the writer would never emit.
+   *
+   * Mutually exclusive with {@link crosses} in the OOXML schema (CT_Double
+   * sits in an XSD choice with CT_Crosses). When both elements appear on
+   * the same axis (a malformed template) the reader keeps `crossesAt`
+   * and drops `crosses` to mirror the writer's preference.
+   */
+  crossesAt?: number;
 }
 
 /**

@@ -5118,6 +5118,279 @@ describe("cloneChart — titleOverlay", () => {
   });
 });
 
+// ── cloneChart — axis crosses / crossesAt ───────────────────────────
+
+describe("cloneChart — axis crosses / crossesAt", () => {
+  const sourceWithSemantic: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: { y: { crosses: "max" } },
+  };
+
+  const sourceWithNumeric: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: { y: { crossesAt: 42 } },
+  };
+
+  it("inherits axes.y.crosses from the source when no override is given", () => {
+    const clone = cloneChart(sourceWithSemantic, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y?.crosses).toBe("max");
+    expect(clone.axes?.y?.crossesAt).toBeUndefined();
+  });
+
+  it("inherits axes.y.crossesAt from the source when no override is given", () => {
+    const clone = cloneChart(sourceWithNumeric, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y?.crossesAt).toBe(42);
+    expect(clone.axes?.y?.crosses).toBeUndefined();
+  });
+
+  it("preserves crossesAt=0 through inherit (distinct from autoZero default)", () => {
+    const source: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { crossesAt: 0 } },
+    };
+    const clone = cloneChart(source, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y?.crossesAt).toBe(0);
+  });
+
+  it("drops the inherited semantic crosses when override is null", () => {
+    const clone = cloneChart(sourceWithSemantic, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { crosses: null } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("drops the inherited numeric crossesAt when override is null", () => {
+    const clone = cloneChart(sourceWithNumeric, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { crossesAt: null } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("replaces the inherited semantic crosses with a new value", () => {
+    const clone = cloneChart(sourceWithSemantic, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { crosses: "min" } },
+    });
+    expect(clone.axes?.y?.crosses).toBe("min");
+  });
+
+  it("replaces the inherited numeric crossesAt with a new value", () => {
+    const clone = cloneChart(sourceWithNumeric, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { crossesAt: -7.5 } },
+    });
+    expect(clone.axes?.y?.crossesAt).toBe(-7.5);
+  });
+
+  it("collapses an autoZero override to undefined (the OOXML default)", () => {
+    const clone = cloneChart(sourceWithSemantic, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { crosses: "autoZero" } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("collapses non-finite numeric overrides to undefined", () => {
+    const clone = cloneChart(sourceWithNumeric, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { crossesAt: Number.POSITIVE_INFINITY } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("collapses unknown semantic tokens to undefined", () => {
+    const clone = cloneChart(sourceWithSemantic, {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      axes: { y: { crosses: "middle" as any } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("inherits crosses on a source that did not declare crossesAt (and vice versa)", () => {
+    // Override with one shape leaves the inherited shape on the other
+    // field unaffected — the two are resolved independently.
+    const source: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { crosses: "min", crossesAt: 5 } },
+    };
+    // Drop only the numeric pin — the semantic should still surface.
+    const clone = cloneChart(source, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { crossesAt: null } },
+    });
+    expect(clone.axes?.y?.crosses).toBe("min");
+    expect(clone.axes?.y?.crossesAt).toBeUndefined();
+  });
+
+  it("strips the pin silently when the resolved chart type is pie", () => {
+    const pieSource: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [{ kind: "pie", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { crosses: "max" } },
+    };
+    const clone = cloneChart(pieSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("pie");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("strips the pin silently when the resolved chart type is doughnut", () => {
+    const doughnutSource: Chart = {
+      kinds: ["doughnut"],
+      seriesCount: 1,
+      series: [{ kind: "doughnut", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { crossesAt: 5 } },
+    };
+    const clone = cloneChart(doughnutSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("carries the pin through scatter (both axes are valAx)", () => {
+    const scatterSource: Chart = {
+      kinds: ["scatter"],
+      seriesCount: 1,
+      series: [{ kind: "scatter", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { crossesAt: 1.5 }, y: { crosses: "min" } },
+    };
+    const clone = cloneChart(scatterSource, {
+      anchor: { from: { row: 0, col: 0 } },
+      series: [{ values: "Sheet1!$B$2:$B$5", categories: "Sheet1!$A$2:$A$5" }],
+    });
+    expect(clone.type).toBe("scatter");
+    expect(clone.axes?.x?.crossesAt).toBe(1.5);
+    expect(clone.axes?.y?.crosses).toBe("min");
+  });
+
+  it("carries the pin through a chart-type coercion (bar -> column)", () => {
+    const clone = cloneChart(sourceWithSemantic, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.axes?.y?.crosses).toBe("max");
+  });
+
+  it("composes the pin alongside other axis overrides", () => {
+    const clone = cloneChart(sourceWithNumeric, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: {
+        y: {
+          title: "Revenue",
+          gridlines: { major: true },
+        },
+      },
+    });
+    expect(clone.axes?.y?.title).toBe("Revenue");
+    expect(clone.axes?.y?.gridlines).toEqual({ major: true });
+    expect(clone.axes?.y?.crossesAt).toBe(42);
+  });
+
+  it("end-to-end: parseChart -> cloneChart -> writeChart preserves a semantic pin", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx>
+        <c:axId val="2"/>
+        <c:crosses val="max"/>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.axes?.y?.crosses).toBe("max");
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(sheetChart.axes?.y?.crosses).toBe("max");
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    const valAxBlock = written.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('c:crosses val="max"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.y?.crosses).toBe("max");
+  });
+
+  it("end-to-end: parseChart -> cloneChart -> writeChart preserves a numeric pin", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx>
+        <c:axId val="2"/>
+        <c:crossesAt val="-12.25"/>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.axes?.y?.crossesAt).toBe(-12.25);
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(sheetChart.axes?.y?.crossesAt).toBe(-12.25);
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    const valAxBlock = written.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('c:crossesAt val="-12.25"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.y?.crossesAt).toBe(-12.25);
+  });
+
+  it("end-to-end: writeXlsx packages a cloned chart with the pin intact", async () => {
+    const clone = cloneChart(sourceWithNumeric, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:crossesAt val="42"');
+  });
+});
+
 // ── cloneChart — drop / hi-low lines ────────────────────────────────
 
 describe("cloneChart — dropLines", () => {

@@ -14,6 +14,7 @@
 
 import type {
   Chart,
+  ChartAxisCrosses,
   ChartAxisGridlines,
   ChartAxisInfo,
   ChartAxisLabelAlign,
@@ -350,6 +351,16 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   // default `val="0"` (axis visible) collapses to `undefined` so
   // absence and the default round-trip identically.
   const hidden = parseAxisHidden(axis);
+  // `<c:crosses>` and `<c:crossesAt>` sit on every axis flavour and live
+  // in an XSD choice (CT_Crosses ⊕ CT_Double) — only one may legally
+  // appear at a time per ECMA-376 Part 1, §21.2.2. The reader honours
+  // the schema by preferring `crossesAt` when both elements show up
+  // together (a malformed template); the writer mirrors that order so a
+  // round-trip surfaces the numeric pin and drops the redundant
+  // semantic toggle.
+  const crossesPair = parseAxisCrosses(axis);
+  const crosses = crossesPair.crosses;
+  const crossesAt = crossesPair.crossesAt;
   if (
     title === undefined &&
     gridlines === undefined &&
@@ -364,7 +375,9 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
     lblOffset === undefined &&
     lblAlgn === undefined &&
     noMultiLvlLbl === undefined &&
-    hidden === undefined
+    hidden === undefined &&
+    crosses === undefined &&
+    crossesAt === undefined
   ) {
     return undefined;
   }
@@ -383,6 +396,8 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   if (lblAlgn !== undefined) out.lblAlgn = lblAlgn;
   if (noMultiLvlLbl !== undefined) out.noMultiLvlLbl = noMultiLvlLbl;
   if (hidden !== undefined) out.hidden = hidden;
+  if (crosses !== undefined) out.crosses = crosses;
+  if (crossesAt !== undefined) out.crossesAt = crossesAt;
   return out;
 }
 
@@ -609,6 +624,58 @@ function parseAxisHidden(axis: XmlElement): boolean | undefined {
     default:
       return undefined;
   }
+}
+
+/** Recognized values of `<c:crosses>` per the OOXML `ST_Crosses` enum. */
+const VALID_CROSSES: ReadonlySet<ChartAxisCrosses> = new Set(["autoZero", "min", "max"]);
+
+/**
+ * Pull the axis crossing pin off `<c:crosses>` / `<c:crossesAt>`. The
+ * OOXML schema (`CT_CatAx`, `CT_ValAx`, `CT_DateAx`, `CT_SerAx`) places
+ * the two elements in an XSD choice — only one may legally appear at a
+ * time per ECMA-376 Part 1, §21.2.2. The reader still handles both
+ * appearing on the same axis (a malformed template) by preferring
+ * `crossesAt` and dropping the redundant `crosses` value, mirroring the
+ * writer's emit order.
+ *
+ * Returns:
+ *   - `crosses`   — set when only `<c:crosses>` is present and the value
+ *                   is a non-default token. The OOXML default `"autoZero"`
+ *                   collapses to `undefined` so absence and the default
+ *                   round-trip identically. Unknown tokens drop rather
+ *                   than fabricate a value the writer would never emit.
+ *   - `crossesAt` — set when `<c:crossesAt>` is present with a
+ *                   parseable numeric `val`. Non-numeric / missing
+ *                   `val` attributes drop to `undefined`. `0` is
+ *                   preserved (it is a valid pin, distinct from the
+ *                   `"autoZero"` default).
+ */
+function parseAxisCrosses(axis: XmlElement): {
+  crosses?: ChartAxisCrosses;
+  crossesAt?: number;
+} {
+  const crossesAtEl = findChild(axis, "crossesAt");
+  if (crossesAtEl) {
+    const raw = crossesAtEl.attrs.val;
+    if (typeof raw === "string") {
+      const trimmed = raw.trim();
+      if (trimmed.length > 0) {
+        const parsed = Number.parseFloat(trimmed);
+        if (Number.isFinite(parsed)) {
+          return { crossesAt: parsed };
+        }
+      }
+    }
+  }
+
+  const crossesEl = findChild(axis, "crosses");
+  if (!crossesEl) return {};
+  const raw = crossesEl.attrs.val;
+  if (typeof raw !== "string") return {};
+  const value = raw.trim() as ChartAxisCrosses;
+  if (!VALID_CROSSES.has(value)) return {};
+  if (value === "autoZero") return {};
+  return { crosses: value };
 }
 
 /**

@@ -749,6 +749,19 @@ collapse to `undefined` so absence and the default round-trip
 identically through `cloneChart`. Reverse can fire on either or both
 axes independently — bar / column / line / area / scatter all support
 it; pie / doughnut never report it because they have no axes.
+`ChartAxisInfo.crosses` and `ChartAxisInfo.crossesAt` surface the
+per-axis crossing pin — where the perpendicular axis crosses this axis
+along its own range. `crosses` mirrors the OOXML `ST_Crosses`
+enumeration (`"autoZero"` / `"min"` / `"max"`) on `<c:crosses>`;
+`crossesAt` carries the literal numeric pin from `<c:crossesAt>`. The
+two elements live in an XSD choice (only one may legally appear at a
+time), and the reader honours that schema by preferring `crossesAt`
+when both surface on a malformed template — mirroring the writer's
+emit order. The OOXML default `crosses: "autoZero"` collapses to
+`undefined`, but `crossesAt: 0` is preserved (a numeric pin at zero is
+distinct from the `"autoZero"` default which defers to Excel's
+auto-placement). Unknown semantic tokens and non-numeric `val`
+attributes drop rather than fabricate values the writer would reject.
 `Chart.roundedCorners` surfaces the chart-frame
 `<c:chartSpace><c:roundedCorners val=".."/>` flag — Excel's "Format
 Chart Area → Border → Rounded corners" toggle. The element sits on
@@ -886,7 +899,7 @@ charts; `lineGrouping` and `areaGrouping` accept
 `top` / `bottom` / `left` / `right` / `topRight` / `false`, and
 `altText` / `frameTitle` flow through to the drawing's `xdr:cNvPr`
 attributes for screen readers.
-`axes: { x: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, reverse }, y: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, reverse } }`
+`axes: { x: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, reverse, crosses, crossesAt }, y: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, reverse, crosses, crossesAt } }`
 attaches per-axis labels, gridlines, numeric scaling, the tick-label
 number format and the tick-rendering trio — `x` lands inside
 `<c:catAx>` (or the X value axis for scatter), `y` inside the value
@@ -1108,6 +1121,21 @@ collapse to the forward `"minMax"` default. Each axis carries its own
 flag so reversing X never propagates to Y. Bar / column / line / area /
 scatter all honour both axes; pie / doughnut silently ignore the entire
 `axes` block since OOXML defines no axes for them.
+The `axes.x.crosses` / `axes.x.crossesAt` (and the matching `axes.y.*`)
+fields control where the perpendicular axis crosses this axis along its
+own range. `crosses` accepts the OOXML `ST_Crosses` tokens
+(`"autoZero"` / `"min"` / `"max"`) — Excel's "Format Axis -> Vertical
+axis crosses" toggle — and `crossesAt` accepts a literal numeric pin
+(useful when the perpendicular axis should cross at a specific value
+like `crossesAt: 100`). The two fields share an XSD choice in the
+schema (only `<c:crosses>` or `<c:crossesAt>` may legally appear at a
+time), so the writer favours `crossesAt` whenever it is set to a
+finite number — including `crossesAt: 0`, which pins the crossing
+point to the numeric value zero, distinct from the `"autoZero"`
+default. Non-finite numeric inputs and unknown semantic tokens drop
+silently to the `"autoZero"` default. The pin threads through bar /
+column / line / area / scatter; pie / doughnut silently ignore it
+because OOXML defines no axes for those families.
 For line and scatter charts, each `series[i].smooth` flag toggles
 Excel's curved-line variant (`<c:smooth val="..">` inside `<c:ser>`).
 Line series always emit the element — `smooth: true` writes `val="1"`,
@@ -1368,6 +1396,20 @@ identically to `null` because the OOXML default and an explicit
 The inherited flag is dropped silently when the resolved clone target
 is `pie` or `doughnut` so flattening a bar template into a pie clone
 never leaks a stale orientation into the output.
+The per-axis `axes.x.crosses` / `axes.x.crossesAt` (and the matching
+`axes.y.*`) overrides follow the same `undefined` (inherit) / `null`
+(drop) / value (replace) grammar as the other axis fields, applied
+independently to each side of the XSD choice between `<c:crosses>` and
+`<c:crossesAt>`. The writer enforces the schema's mutual exclusion
+downstream by preferring the numeric pin when both fields are set —
+inheriting `crosses: "max"` and overriding only `crossesAt: 50`
+therefore leaves the numeric pin in the cloned shape and surfaces the
+inherited semantic value alongside it; the writer picks `crossesAt`,
+matching how the parser handles the same pair on a malformed input.
+Drop only one side by passing `null`; the other side then inherits
+normally. The inherited pin is dropped silently when the resolved
+clone target is `pie` or `doughnut` because OOXML defines no axes for
+those families.
 
 #### Walking and adding charts with `getCharts` / `addChart`
 
