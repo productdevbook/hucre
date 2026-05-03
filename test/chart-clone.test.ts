@@ -2792,3 +2792,194 @@ describe("cloneChart — scatterStyle", () => {
     expect(reparsed?.scatterStyle).toBe("marker");
   });
 });
+
+// ── cloneChart — axis tick marks and tick label position ─────────────
+
+describe("cloneChart — axis tick marks and tick label position", () => {
+  const sourceWithTicks: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: {
+      y: {
+        majorTickMark: "cross",
+        minorTickMark: "in",
+        tickLblPos: "low",
+      },
+    },
+  };
+
+  it("inherits the source's tick rendering when no override is given", () => {
+    const clone = cloneChart(sourceWithTicks, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y?.majorTickMark).toBe("cross");
+    expect(clone.axes?.y?.minorTickMark).toBe("in");
+    expect(clone.axes?.y?.tickLblPos).toBe("low");
+  });
+
+  it("drops inherited values when the override is null", () => {
+    const clone = cloneChart(sourceWithTicks, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: {
+        y: { majorTickMark: null, minorTickMark: null, tickLblPos: null },
+      },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("replaces inherited tick rendering with explicit overrides", () => {
+    const clone = cloneChart(sourceWithTicks, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: {
+        y: { majorTickMark: "out", minorTickMark: "out", tickLblPos: "high" },
+      },
+    });
+    expect(clone.axes?.y?.majorTickMark).toBe("out");
+    expect(clone.axes?.y?.minorTickMark).toBe("out");
+    expect(clone.axes?.y?.tickLblPos).toBe("high");
+  });
+
+  it("adds tick rendering to an axis the source did not declare it on", () => {
+    const noTicks: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(noTicks, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { majorTickMark: "cross", tickLblPos: "low" } },
+    });
+    expect(clone.axes?.y?.majorTickMark).toBe("cross");
+    expect(clone.axes?.y?.tickLblPos).toBe("low");
+    expect(clone.axes?.y?.minorTickMark).toBeUndefined();
+  });
+
+  it("strips tick rendering silently when the resolved chart type is pie", () => {
+    const pieSource: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [{ kind: "pie", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: {
+        y: { majorTickMark: "cross", tickLblPos: "low" },
+      },
+    };
+    const clone = cloneChart(pieSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("pie");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("strips tick rendering silently when the resolved chart type is doughnut", () => {
+    const doughnutSource: Chart = {
+      kinds: ["doughnut"],
+      seriesCount: 1,
+      series: [{ kind: "doughnut", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: {
+        y: { majorTickMark: "cross" },
+      },
+    };
+    const clone = cloneChart(doughnutSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("supports tick rendering on the X (category) axis", () => {
+    const xSource: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: {
+        x: { majorTickMark: "in", tickLblPos: "high" },
+      },
+    };
+    const clone = cloneChart(xSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.majorTickMark).toBe("in");
+    expect(clone.axes?.x?.tickLblPos).toBe("high");
+  });
+
+  it("ignores invalid tick-mark values on inherit", () => {
+    const bogus: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: {
+        // Cast to bypass the type guard so we can simulate a bad parse.
+        y: { majorTickMark: "zigzag" as unknown as "in" },
+      },
+    };
+    const clone = cloneChart(bogus, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("drops the field when an invalid tick-label-position override is supplied", () => {
+    // An invalid override is treated as "no usable value" — the writer
+    // never receives a token the OOXML `ST_TickLblPos` enum rejects.
+    // The behavior mirrors `applyNumberFormatOverride` where an empty
+    // formatCode collapses the entire entry rather than silently
+    // falling back to the inherited value.
+    const clone = cloneChart(sourceWithTicks, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: {
+        // Cast to bypass the type guard so we can simulate a typo'd input.
+        y: { tickLblPos: "diagonal" as unknown as "high" },
+      },
+    });
+    expect(clone.axes?.y?.tickLblPos).toBeUndefined();
+    // The other inherited fields stay intact since their overrides were
+    // not supplied (undefined).
+    expect(clone.axes?.y?.majorTickMark).toBe("cross");
+    expect(clone.axes?.y?.minorTickMark).toBe("in");
+  });
+
+  it("round-trips through writeChart and parseChart", async () => {
+    const clone = cloneChart(sourceWithTicks, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    const written = writeChart(clone, "Sheet1").chartXml;
+    expect(written).toContain('c:majorTickMark val="cross"');
+    expect(written).toContain('c:minorTickMark val="in"');
+    expect(written).toContain('c:tickLblPos val="low"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.y?.majorTickMark).toBe("cross");
+    expect(reparsed?.axes?.y?.minorTickMark).toBe("in");
+    expect(reparsed?.axes?.y?.tickLblPos).toBe("low");
+
+    // End-to-end: writeXlsx packages the clone into a valid OOXML file
+    // whose chart part round-trips its tick rendering.
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const packaged = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(packaged).toContain('c:majorTickMark val="cross"');
+    expect(packaged).toContain('c:minorTickMark val="in"');
+    expect(packaged).toContain('c:tickLblPos val="low"');
+  });
+
+  it("drops inherited tick rendering when the resolved type flattens to pie", () => {
+    const barSource: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: {
+        y: { majorTickMark: "cross", tickLblPos: "low" },
+      },
+    };
+    const clone = cloneChart(barSource, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "pie",
+    });
+    expect(clone.type).toBe("pie");
+    expect(clone.axes).toBeUndefined();
+  });
+});

@@ -139,6 +139,8 @@ export type {
   ChartAnchor,
   ChartAxisGridlines,
   ChartAxisInfo,
+  ChartAxisTickLabelPosition,
+  ChartAxisTickMark,
   ChartBarGrouping,
   ChartDataLabelPosition,
   ChartDataLabels,

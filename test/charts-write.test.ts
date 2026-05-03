@@ -2646,3 +2646,240 @@ describe("writeChart — scatterStyle", () => {
     expect(parseChart(written)?.scatterStyle).toBe("lineMarker");
   });
 });
+
+// ── writeChart — axis tick marks and tick label position ─────────────
+
+describe("writeChart — axis tick marks and tick label position", () => {
+  it("emits <c:majorTickMark> on the value axis when y.majorTickMark is set", () => {
+    const result = writeChart(makeChart({ axes: { y: { majorTickMark: "cross" } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<c:majorTickMark val="cross"/>');
+  });
+
+  it("emits <c:minorTickMark> on the value axis when y.minorTickMark is set", () => {
+    const result = writeChart(makeChart({ axes: { y: { minorTickMark: "out" } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<c:minorTickMark val="out"/>');
+  });
+
+  it("emits <c:tickLblPos> on the value axis when y.tickLblPos is set", () => {
+    const result = writeChart(makeChart({ axes: { y: { tickLblPos: "low" } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<c:tickLblPos val="low"/>');
+  });
+
+  it("omits all three elements when none of the fields are set", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(result.chartXml).not.toContain("c:majorTickMark");
+    expect(result.chartXml).not.toContain("c:minorTickMark");
+    expect(result.chartXml).not.toContain("c:tickLblPos");
+  });
+
+  it("places tick rendering after <c:numFmt> but before <c:crossAx> (OOXML order)", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          y: {
+            numberFormat: { formatCode: "$#,##0" },
+            majorTickMark: "cross",
+            minorTickMark: "in",
+            tickLblPos: "low",
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    const numFmtIdx = valAxBlock.indexOf("<c:numFmt");
+    const majorIdx = valAxBlock.indexOf("<c:majorTickMark");
+    const minorIdx = valAxBlock.indexOf("<c:minorTickMark");
+    const tickLblIdx = valAxBlock.indexOf("<c:tickLblPos");
+    const crossAxIdx = valAxBlock.indexOf("c:crossAx");
+    expect(numFmtIdx).toBeGreaterThan(0);
+    expect(majorIdx).toBeGreaterThan(numFmtIdx);
+    expect(minorIdx).toBeGreaterThan(majorIdx);
+    expect(tickLblIdx).toBeGreaterThan(minorIdx);
+    expect(crossAxIdx).toBeGreaterThan(tickLblIdx);
+  });
+
+  it("emits tick rendering on the category axis when x.* is set", () => {
+    const result = writeChart(
+      makeChart({
+        axes: { x: { majorTickMark: "in", tickLblPos: "high" } },
+      }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('<c:majorTickMark val="in"/>');
+    expect(catAxBlock).toContain('<c:tickLblPos val="high"/>');
+    // The value axis should not pick up the X-axis settings.
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).not.toContain("c:majorTickMark");
+    expect(valAxBlock).not.toContain("c:tickLblPos");
+  });
+
+  it("works for line and area charts (which share the bar axis builder)", () => {
+    for (const type of ["line", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, axes: { y: { majorTickMark: "cross" } } }),
+        "Sheet1",
+      );
+      const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+      expect(valAxBlock).toContain('<c:majorTickMark val="cross"/>');
+    }
+  });
+
+  it("emits tick rendering on scatter X (axPos=b) and Y (axPos=l) value axes", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: {
+          x: { majorTickMark: "cross" },
+          y: { tickLblPos: "high" },
+        },
+      }),
+      "Sheet1",
+    );
+    const valAxBlocks = [...result.chartXml.matchAll(/<c:valAx>[\s\S]*?<\/c:valAx>/g)].map(
+      (m) => m[0],
+    );
+    // First valAx is the X axis (axPos="b"), second is Y (axPos="l").
+    expect(valAxBlocks[0]).toContain('c:axPos val="b"');
+    expect(valAxBlocks[0]).toContain('<c:majorTickMark val="cross"/>');
+    expect(valAxBlocks[0]).not.toContain("c:tickLblPos");
+    expect(valAxBlocks[1]).toContain('c:axPos val="l"');
+    expect(valAxBlocks[1]).toContain('<c:tickLblPos val="high"/>');
+    expect(valAxBlocks[1]).not.toContain("c:majorTickMark");
+  });
+
+  it("skips tick rendering on pie charts (pie has no axes)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "pie",
+        axes: {
+          y: { majorTickMark: "cross", minorTickMark: "in", tickLblPos: "low" },
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:majorTickMark");
+    expect(result.chartXml).not.toContain("c:minorTickMark");
+    expect(result.chartXml).not.toContain("c:tickLblPos");
+  });
+
+  it("skips tick rendering on doughnut charts (doughnut has no axes either)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "doughnut",
+        axes: { y: { majorTickMark: "cross" } },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:majorTickMark");
+  });
+
+  it("only emits the major element when minor and tickLblPos are unset", () => {
+    const result = writeChart(makeChart({ axes: { y: { majorTickMark: "in" } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<c:majorTickMark val="in"/>');
+    expect(valAxBlock).not.toContain("c:minorTickMark");
+    expect(valAxBlock).not.toContain("c:tickLblPos");
+  });
+
+  it("drops invalid tick-mark values silently", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          // @ts-expect-error — testing runtime guard against typo'd inputs.
+          y: { majorTickMark: "zigzag", minorTickMark: "diagonal" },
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:majorTickMark");
+    expect(result.chartXml).not.toContain("c:minorTickMark");
+  });
+
+  it("drops invalid tick-label-position values silently", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          // @ts-expect-error — testing runtime guard against typo'd inputs.
+          y: { tickLblPos: "diagonal" },
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:tickLblPos");
+  });
+
+  it("round-trips a non-default majorTickMark / tickLblPos through parseChart", () => {
+    const written = writeChart(
+      makeChart({
+        axes: {
+          y: { majorTickMark: "cross", minorTickMark: "in", tickLblPos: "low" },
+        },
+      }),
+      "Sheet1",
+    ).chartXml;
+    const parsed = parseChart(written);
+    expect(parsed?.axes?.y?.majorTickMark).toBe("cross");
+    expect(parsed?.axes?.y?.minorTickMark).toBe("in");
+    expect(parsed?.axes?.y?.tickLblPos).toBe("low");
+  });
+
+  it("emits all four tick-mark presets on the value axis", () => {
+    for (const value of ["none", "in", "out", "cross"] as const) {
+      const result = writeChart(makeChart({ axes: { y: { majorTickMark: value } } }), "Sheet1");
+      const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+      expect(valAxBlock).toContain(`<c:majorTickMark val="${value}"/>`);
+    }
+  });
+
+  it("emits all four tick-label-position presets on the value axis", () => {
+    for (const value of ["nextTo", "low", "high", "none"] as const) {
+      const result = writeChart(makeChart({ axes: { y: { tickLblPos: value } } }), "Sheet1");
+      const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+      expect(valAxBlock).toContain(`<c:tickLblPos val="${value}"/>`);
+    }
+  });
+
+  it("co-emits tick rendering with title, gridlines, scale, and number format", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          y: {
+            title: "Revenue",
+            gridlines: { major: true },
+            scale: { min: 0, max: 100 },
+            numberFormat: { formatCode: "$#,##0" },
+            majorTickMark: "cross",
+            minorTickMark: "in",
+            tickLblPos: "low",
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    // Spec order: scaling → axPos → majorGridlines → title → numFmt →
+    // majorTickMark → minorTickMark → tickLblPos → crossAx → ...
+    const scalingIdx = valAxBlock.indexOf("<c:scaling>");
+    const gridlinesIdx = valAxBlock.indexOf("<c:majorGridlines");
+    const titleIdx = valAxBlock.indexOf("<c:title>");
+    const numFmtIdx = valAxBlock.indexOf("<c:numFmt");
+    const majorIdx = valAxBlock.indexOf("<c:majorTickMark");
+    const minorIdx = valAxBlock.indexOf("<c:minorTickMark");
+    const tickLblIdx = valAxBlock.indexOf("<c:tickLblPos");
+    const crossAxIdx = valAxBlock.indexOf("c:crossAx");
+    expect(scalingIdx).toBeGreaterThan(0);
+    expect(gridlinesIdx).toBeGreaterThan(scalingIdx);
+    expect(titleIdx).toBeGreaterThan(gridlinesIdx);
+    expect(numFmtIdx).toBeGreaterThan(titleIdx);
+    expect(majorIdx).toBeGreaterThan(numFmtIdx);
+    expect(minorIdx).toBeGreaterThan(majorIdx);
+    expect(tickLblIdx).toBeGreaterThan(minorIdx);
+    expect(crossAxIdx).toBeGreaterThan(tickLblIdx);
+  });
+});

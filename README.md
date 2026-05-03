@@ -543,8 +543,11 @@ for (const sheet of wb.sheets) {
     // e.g. "bottom" "stacked" undefined undefined
 
     // chart.axes carries per-axis labels, gridline visibility, numeric
-    // scaling, and tick-label number format pulled from <c:catAx>/<c:valAx>.
-    // Only populated axes show up — pie/doughnut never do.
+    // scaling, tick-label number format and tick rendering (major /
+    // minor tick mark style and tick-label position) pulled from
+    // <c:catAx>/<c:valAx>. Only populated axes show up — pie/doughnut
+    // never do, and OOXML defaults collapse to undefined so absence
+    // and the default round-trip identically.
     console.log(chart.axes);
     // e.g. {
     //   x: { title: "Quarter" },
@@ -553,6 +556,8 @@ for (const sheet of wb.sheets) {
     //     gridlines: { major: true },
     //     scale: { min: 0, max: 100, majorUnit: 25 },
     //     numberFormat: { formatCode: "$#,##0" },
+    //     majorTickMark: "cross",
+    //     tickLblPos: "low",
     //   },
     // }
 
@@ -600,21 +605,28 @@ and non-bar charts never report a grouping). `lineGrouping` and
 `percentStacked` so combo workbooks can declare both alongside a bar
 grouping without colliding. `Chart.axes` mirrors
 the writer-side `SheetChart.axes` and surfaces per-axis labels,
-gridline visibility, numeric scaling and tick-label number format:
-`x` is the category axis (or, for scatter, the first value axis)
-and `y` is the value axis. Empty / whitespace-only `<c:title>` text
-is dropped, `gridlines: { major, minor }` flips on when the matching
-`<c:majorGridlines>` / `<c:minorGridlines>` element is present (any
-nested styling is tolerated), `scale: { min, max, majorUnit, minorUnit, logBase }`
-captures the explicit `<c:min>` / `<c:max>` / `<c:logBase>` (under
-`<c:scaling>`) and `<c:majorUnit>` / `<c:minorUnit>` (direct axis
-children) — fields Excel auto-computes are left off so the round
-trip never accidentally pins a value, and zero or negative tick
-spacings are filtered out — and `numberFormat: { formatCode, sourceLinked }`
+gridline visibility, numeric scaling, tick-label number format and
+tick rendering: `x` is the category axis (or, for scatter, the first
+value axis) and `y` is the value axis. Empty / whitespace-only
+`<c:title>` text is dropped, `gridlines: { major, minor }` flips on
+when the matching `<c:majorGridlines>` / `<c:minorGridlines>`
+element is present (any nested styling is tolerated),
+`scale: { min, max, majorUnit, minorUnit, logBase }` captures the
+explicit `<c:min>` / `<c:max>` / `<c:logBase>` (under `<c:scaling>`)
+and `<c:majorUnit>` / `<c:minorUnit>` (direct axis children) —
+fields Excel auto-computes are left off so the round trip never
+accidentally pins a value, and zero or negative tick spacings are
+filtered out — and `numberFormat: { formatCode, sourceLinked }`
 mirrors `<c:numFmt>` (an empty `formatCode` collapses the record).
-Charts without any axis label, gridline, scale, or number format
-leave `axes` undefined, and pie/doughnut charts (which have no axes
-in OOXML) never report one.
+`majorTickMark` / `minorTickMark` / `tickLblPos` mirror the
+matching axis children, surfacing only non-default values: the
+OOXML defaults `"out"` (major) / `"none"` (minor) / `"nextTo"` (tick
+labels) collapse to `undefined` so absence and the default
+round-trip identically through `cloneChart`. Unknown enum tokens
+are dropped rather than fabricated. Charts without any axis label,
+gridline, scale, number format, or tick override leave `axes`
+undefined, and pie/doughnut charts (which have no axes in OOXML)
+never report one.
 `Chart.dataLabels` mirrors the writer-side `SheetChart.dataLabels`
 and surfaces the toggles Excel carries inside `<c:dLbls>`
 (`showValue`, `showCategoryName`, `showSeriesName`, `showPercent`,
@@ -752,23 +764,36 @@ charts; `lineGrouping` and `areaGrouping` accept
 `top` / `bottom` / `left` / `right` / `topRight` / `false`, and
 `altText` / `frameTitle` flow through to the drawing's `xdr:cNvPr`
 attributes for screen readers.
-`axes: { x: { title, gridlines, scale, numberFormat }, y: { title, gridlines, scale, numberFormat } }`
-attaches per-axis labels, gridlines, numeric scaling, and the
-tick-label number format — `x` lands inside `<c:catAx>` (or the X
-value axis for scatter), `y` inside the value axis. Empty or
-whitespace-only titles are silently dropped, `gridlines: { major,
-minor }` emits `<c:majorGridlines>` / `<c:minorGridlines>` in the
-spec-required position (after `<c:axPos>`, before any `<c:title>`,
-major before minor),
-`scale: { min, max, majorUnit, minorUnit, logBase }` pins explicit
-axis bounds (`<c:min>` / `<c:max>` / `<c:logBase>` go inside
+`axes: { x: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos }, y: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos } }`
+attaches per-axis labels, gridlines, numeric scaling, the tick-label
+number format and the tick-rendering trio — `x` lands inside
+`<c:catAx>` (or the X value axis for scatter), `y` inside the value
+axis. Empty or whitespace-only titles are silently dropped,
+`gridlines: { major, minor }` emits
+`<c:majorGridlines>` / `<c:minorGridlines>` in the spec-required
+position (after `<c:axPos>`, before any `<c:title>`, major before
+minor), `scale: { min, max, majorUnit, minorUnit, logBase }` pins
+explicit axis bounds (`<c:min>` / `<c:max>` / `<c:logBase>` go inside
 `<c:scaling>`; `<c:majorUnit>` / `<c:minorUnit>` are emitted after
 `<c:crossBetween>` per CT_ValAx) — non-finite numbers, zero/negative
 tick spacings, log bases outside `2..1000`, and `min >= max` ranges
-are filtered out so Excel never sees a value it would reject —
-and `numberFormat: { formatCode, sourceLinked }` emits
+are filtered out so Excel never sees a value it would reject — and
+`numberFormat: { formatCode, sourceLinked }` emits
 `<c:numFmt formatCode=".." sourceLinked="0|1"/>` between the axis
 title and `<c:crossAx>` (an empty `formatCode` skips emission).
+`majorTickMark` / `minorTickMark` accept `"none"` / `"in"` / `"out"`
+/ `"cross"` (the OOXML `ST_TickMark` enum) and emit
+`<c:majorTickMark val=".."/>` / `<c:minorTickMark val=".."/>` right
+after `<c:numFmt>`; absent fields fall back to Excel's reference
+defaults (`"out"` for major, `"none"` for minor) so a chart that
+omits both renders identically to one a freshly-drawn Excel chart
+would emit. `tickLblPos` accepts `"nextTo"` / `"low"` / `"high"` /
+`"none"` and lands in `<c:tickLblPos val=".."/>` immediately after
+the tick-mark elements — useful for pinning numeric axis labels to
+the chart edge when the value axis crosses elsewhere
+(`tickLblPos: "low"`) or hiding labels entirely
+(`tickLblPos: "none"`). Unknown enum values on either field are
+dropped silently so the writer never emits a token Excel rejects.
 Pie / doughnut charts ignore the entire `axes` field because OOXML
 defines no axes for them.
 `dataLabels: { showValue, showCategoryName, showSeriesName, showPercent, position, separator }`
@@ -891,19 +916,24 @@ writer can author collapse onto their write counterparts (`bar` /
 its own kind so the hole survives), `line3D` → `line`, `area3D` →
 `area`); kinds with no analog (`bubble`, `radar`, `surface`, `stock`,
 `ofPie`) require an explicit `options.type` override. Axis titles,
-gridlines, scaling and tick-label number format inherit from the
-source by default; pass `axes: { y: { title: "Revenue" } }` to
-replace one side, `null` to drop an inherited label,
+gridlines, scaling, tick-label number format and the tick-rendering
+trio (`majorTickMark` / `minorTickMark` / `tickLblPos`) inherit
+from the source by default; pass `axes: { y: { title: "Revenue" } }`
+to replace one side, `null` to drop an inherited label,
 `axes: { y: { gridlines: { major: true, minor: true } } }` to
 replace inherited gridlines, `axes: { y: { scale: { min: 0, max: 50 } } }`
 to replace the inherited scale wholesale (overrides do **not** merge
 field-by-field — `{ min: 0 }` plus `{ max: 50 }` yields `{ max: 50 }`,
 not `{ min: 0, max: 50 }`), `axes: { y: { numberFormat: { formatCode: "0.00%" } } }`
-to replace the format, or `null` on any of the four to drop the
-inherited value. The writer drops the entire `axes` block
-automatically when the resolved type is `pie` or `doughnut`, so a
-template that happened to carry stray scale or numberFormat values
-does not poison a pie/doughnut clone. Per-family stacking
+to replace the format,
+`axes: { y: { majorTickMark: "cross", tickLblPos: "low" } }` to
+pin the tick-mark style or anchor labels to the chart edge, or
+`null` on any of the seven to drop the inherited value (the writer
+falls back to the OOXML default — `"out"` for major, `"none"` for
+minor, `"nextTo"` for tick labels). The writer drops the entire
+`axes` block automatically when the resolved type is `pie` or
+`doughnut`, so a template that happened to carry stray scale,
+numberFormat or tick values does not poison a pie/doughnut clone. Per-family stacking
 (`barGrouping`, `lineGrouping`, `areaGrouping`) is carried over only
 when the resolved clone target matches that family — flattening a
 stacked line template into a column drops the inherited grouping

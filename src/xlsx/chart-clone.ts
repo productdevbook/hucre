@@ -15,6 +15,8 @@ import type {
   ChartAxisGridlines,
   ChartAxisNumberFormat,
   ChartAxisScale,
+  ChartAxisTickLabelPosition,
+  ChartAxisTickMark,
   ChartDataLabels,
   ChartDataLabelsInfo,
   ChartDisplayBlanksAs,
@@ -222,12 +224,39 @@ export interface CloneChartOptions {
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
+      /**
+       * Override the major tick-mark style. `undefined` (or omitted)
+       * inherits the source axis' parsed value; `null` drops it (the
+       * writer falls back to the OOXML default `"out"`); a value
+       * replaces it.
+       */
+      majorTickMark?: ChartAxisTickMark | null;
+      /**
+       * Override the minor tick-mark style. `undefined` (or omitted)
+       * inherits the source axis' parsed value; `null` drops it (the
+       * writer falls back to the OOXML default `"none"`); a value
+       * replaces it.
+       */
+      minorTickMark?: ChartAxisTickMark | null;
+      /**
+       * Override the tick-label position. `undefined` (or omitted)
+       * inherits the source axis' parsed value; `null` drops it (the
+       * writer falls back to the OOXML default `"nextTo"`); a value
+       * replaces it.
+       */
+      tickLblPos?: ChartAxisTickLabelPosition | null;
     };
     y?: {
       title?: string | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
+      /** See {@link CloneChartOptions.axes.x.majorTickMark}. */
+      majorTickMark?: ChartAxisTickMark | null;
+      /** See {@link CloneChartOptions.axes.x.minorTickMark}. */
+      minorTickMark?: ChartAxisTickMark | null;
+      /** See {@link CloneChartOptions.axes.x.tickLblPos}. */
+      tickLblPos?: ChartAxisTickLabelPosition | null;
     };
   };
 }
@@ -783,31 +812,61 @@ function resolveAxes(
     sourceAxes?.y?.numberFormat,
     overrides?.y?.numberFormat,
   );
+  const xMajorTickMark = applyTickMarkOverride(
+    sourceAxes?.x?.majorTickMark,
+    overrides?.x?.majorTickMark,
+  );
+  const yMajorTickMark = applyTickMarkOverride(
+    sourceAxes?.y?.majorTickMark,
+    overrides?.y?.majorTickMark,
+  );
+  const xMinorTickMark = applyTickMarkOverride(
+    sourceAxes?.x?.minorTickMark,
+    overrides?.x?.minorTickMark,
+  );
+  const yMinorTickMark = applyTickMarkOverride(
+    sourceAxes?.y?.minorTickMark,
+    overrides?.y?.minorTickMark,
+  );
+  const xTickLblPos = applyTickLblPosOverride(sourceAxes?.x?.tickLblPos, overrides?.x?.tickLblPos);
+  const yTickLblPos = applyTickLblPosOverride(sourceAxes?.y?.tickLblPos, overrides?.y?.tickLblPos);
 
   const out: NonNullable<SheetChart["axes"]> = {};
   if (
     xTitle !== undefined ||
     xGridlines !== undefined ||
     xScale !== undefined ||
-    xNumFmt !== undefined
+    xNumFmt !== undefined ||
+    xMajorTickMark !== undefined ||
+    xMinorTickMark !== undefined ||
+    xTickLblPos !== undefined
   ) {
     out.x = {};
     if (xTitle !== undefined) out.x.title = xTitle;
     if (xGridlines !== undefined) out.x.gridlines = xGridlines;
     if (xScale !== undefined) out.x.scale = xScale;
     if (xNumFmt !== undefined) out.x.numberFormat = xNumFmt;
+    if (xMajorTickMark !== undefined) out.x.majorTickMark = xMajorTickMark;
+    if (xMinorTickMark !== undefined) out.x.minorTickMark = xMinorTickMark;
+    if (xTickLblPos !== undefined) out.x.tickLblPos = xTickLblPos;
   }
   if (
     yTitle !== undefined ||
     yGridlines !== undefined ||
     yScale !== undefined ||
-    yNumFmt !== undefined
+    yNumFmt !== undefined ||
+    yMajorTickMark !== undefined ||
+    yMinorTickMark !== undefined ||
+    yTickLblPos !== undefined
   ) {
     out.y = {};
     if (yTitle !== undefined) out.y.title = yTitle;
     if (yGridlines !== undefined) out.y.gridlines = yGridlines;
     if (yScale !== undefined) out.y.scale = yScale;
     if (yNumFmt !== undefined) out.y.numberFormat = yNumFmt;
+    if (yMajorTickMark !== undefined) out.y.majorTickMark = yMajorTickMark;
+    if (yMinorTickMark !== undefined) out.y.minorTickMark = yMinorTickMark;
+    if (yTickLblPos !== undefined) out.y.tickLblPos = yTickLblPos;
   }
 
   return out.x || out.y ? out : undefined;
@@ -904,4 +963,57 @@ function applyNumberFormatOverride(
   const out: ChartAxisNumberFormat = { formatCode: override.formatCode };
   if (override.sourceLinked === true) out.sourceLinked = true;
   return out;
+}
+
+/** Recognized values of `<c:majorTickMark>` / `<c:minorTickMark>`. */
+const VALID_TICK_MARK_VALUES: ReadonlySet<ChartAxisTickMark> = new Set([
+  "none",
+  "in",
+  "out",
+  "cross",
+]);
+
+/**
+ * Resolve a tick-mark override using the same `undefined` (inherit) /
+ * `null` (drop) / value (replace) grammar as the other axis helpers.
+ * Unknown / typo'd inputs collapse to `undefined` so the writer never
+ * emits a value the OOXML `ST_TickMark` enum rejects.
+ */
+function applyTickMarkOverride(
+  source: ChartAxisTickMark | undefined,
+  override: ChartAxisTickMark | null | undefined,
+): ChartAxisTickMark | undefined {
+  if (override === undefined) {
+    if (source === undefined) return undefined;
+    return VALID_TICK_MARK_VALUES.has(source) ? source : undefined;
+  }
+  if (override === null) return undefined;
+  return VALID_TICK_MARK_VALUES.has(override) ? override : undefined;
+}
+
+/** Recognized values of `<c:tickLblPos>`. */
+const VALID_TICK_LBL_POS_VALUES: ReadonlySet<ChartAxisTickLabelPosition> = new Set([
+  "nextTo",
+  "low",
+  "high",
+  "none",
+]);
+
+/**
+ * Resolve a tick-label-position override using the same `undefined`
+ * (inherit) / `null` (drop) / value (replace) grammar as the other
+ * axis helpers. Unknown / typo'd inputs collapse to `undefined` so
+ * the writer never emits a value the OOXML `ST_TickLblPos` enum
+ * rejects.
+ */
+function applyTickLblPosOverride(
+  source: ChartAxisTickLabelPosition | undefined,
+  override: ChartAxisTickLabelPosition | null | undefined,
+): ChartAxisTickLabelPosition | undefined {
+  if (override === undefined) {
+    if (source === undefined) return undefined;
+    return VALID_TICK_LBL_POS_VALUES.has(source) ? source : undefined;
+  }
+  if (override === null) return undefined;
+  return VALID_TICK_LBL_POS_VALUES.has(override) ? override : undefined;
 }
