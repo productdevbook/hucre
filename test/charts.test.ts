@@ -3611,6 +3611,283 @@ describe("parseChart — plotVisOnly", () => {
   });
 });
 
+// ── parseChart — roundedCorners ───────────────────────────────────
+
+describe("parseChart — roundedCorners", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces <c:roundedCorners val="1"/> on <c:chartSpace> as true (non-default)', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:roundedCorners val="1"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.roundedCorners).toBe(true);
+  });
+
+  it("collapses the OOXML default false to undefined (writer absence)", () => {
+    // The default carried explicitly by Excel's reference serialization
+    // round-trips identically to absence of the field.
+    const xml = `<c:chartSpace ${NS}>
+  <c:roundedCorners val="0"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.roundedCorners).toBeUndefined();
+  });
+
+  it("returns undefined when the chartSpace has no <c:roundedCorners> element", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.roundedCorners).toBeUndefined();
+  });
+
+  it("accepts the OOXML true / false spellings on the val attribute", () => {
+    // The OOXML schema for `xsd:boolean` accepts `"true"` / `"false"`
+    // alongside the more common `"1"` / `"0"`. Hucre tolerates both
+    // shapes — a hand-edited template using `true` should round-trip.
+    const xml = `<c:chartSpace ${NS}>
+  <c:roundedCorners val="true"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.roundedCorners).toBe(true);
+  });
+
+  it("collapses the 'false' spelling to undefined as well", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:roundedCorners val="false"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.roundedCorners).toBeUndefined();
+  });
+
+  it("drops unknown roundedCorners values rather than fabricate one", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:roundedCorners val="bogus"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.roundedCorners).toBeUndefined();
+  });
+
+  it("ignores a missing val attribute on <c:roundedCorners>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:roundedCorners/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.roundedCorners).toBeUndefined();
+  });
+
+  it("surfaces roundedCorners alongside other chart-level toggles", () => {
+    // Co-existing with plotVisOnly / dispBlanksAs / varyColors should
+    // not interfere — roundedCorners parses off <c:chartSpace> while
+    // the others sit on <c:chart>.
+    const xml = `<c:chartSpace ${NS}>
+  <c:roundedCorners val="1"/>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="clustered"/>
+        <c:varyColors val="1"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+    <c:plotVisOnly val="0"/>
+    <c:dispBlanksAs val="zero"/>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.roundedCorners).toBe(true);
+    expect(chart?.plotVisOnly).toBe(false);
+    expect(chart?.dispBlanksAs).toBe("zero");
+    expect(chart?.varyColors).toBe(true);
+  });
+});
+
+// ── parseChart — axis reverse (orientation) ──────────────────────────
+
+describe("parseChart — axis reverse (orientation)", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  it('surfaces reverse=true off <c:scaling><c:orientation val="maxMin"/>', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:scaling><c:orientation val="maxMin"/></c:scaling>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.reverse).toBe(true);
+  });
+
+  it('collapses the OOXML default orientation="minMax" to undefined', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:scaling><c:orientation val="minMax"/></c:scaling>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    // Neither axis has any other surfaced field, so the whole axes block drops.
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("collapses an axis with no <c:scaling> at all to undefined", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("ignores unknown orientation tokens", () => {
+    // A typo'd template (e.g. "diagonal", "reverse", empty string) drops
+    // to undefined rather than fabricate a reverse flag the writer would
+    // pick up.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:scaling><c:orientation val="diagonal"/></c:scaling>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("ignores <c:orientation/> with no val attribute", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:scaling><c:orientation/></c:scaling>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("surfaces reverse on the category axis (catAx) too", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:scaling><c:orientation val="maxMin"/></c:scaling>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.reverse).toBe(true);
+    expect(chart?.axes?.y?.reverse).toBeUndefined();
+  });
+
+  it("surfaces reverse on both scatter X (axPos=b) and Y (axPos=l) axes", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:scatterChart>
+      <c:scatterStyle val="lineMarker"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:scatterChart>
+    <c:valAx>
+      <c:axId val="1"/>
+      <c:axPos val="b"/>
+      <c:scaling><c:orientation val="maxMin"/></c:scaling>
+    </c:valAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:axPos val="l"/>
+      <c:scaling><c:orientation val="maxMin"/></c:scaling>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.reverse).toBe(true);
+    expect(chart?.axes?.y?.reverse).toBe(true);
+  });
+
+  it("surfaces reverse alongside other axis fields without interfering", () => {
+    // Co-existing with min/max scaling, gridlines, numFmt, and tick rendering
+    // exercises the parseAxisInfo merge — reverse pulls from <c:scaling>,
+    // the others from sibling elements, so they should slot independently.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:scaling>
+        <c:orientation val="maxMin"/>
+        <c:max val="100"/>
+        <c:min val="0"/>
+      </c:scaling>
+      <c:majorGridlines/>
+      <c:title><c:tx><c:rich><a:p><a:r><a:t>Revenue</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      <c:numFmt formatCode="$#,##0" sourceLinked="0"/>
+      <c:majorTickMark val="cross"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y).toEqual({
+      title: "Revenue",
+      gridlines: { major: true },
+      scale: { min: 0, max: 100 },
+      numberFormat: { formatCode: "$#,##0" },
+      majorTickMark: "cross",
+      reverse: true,
+    });
+  });
+});
+
 // ── parseChart — axis tick label / mark skip ──────────────────────
 
 describe("parseChart — axis tickLblSkip / tickMarkSkip", () => {

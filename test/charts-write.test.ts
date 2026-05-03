@@ -2971,6 +2971,244 @@ describe("writeChart — plotVisOnly", () => {
   });
 });
 
+// ── writeChart — roundedCorners ──────────────────────────────────────
+
+describe("writeChart — roundedCorners", () => {
+  it('emits <c:roundedCorners val="0"/> when the field is unset (OOXML default)', () => {
+    // The writer always emits the element so the rendered intent is
+    // explicit on roundtrip — Excel itself includes it in every
+    // reference serialization.
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(result.chartXml).toContain('c:roundedCorners val="0"');
+    expect(result.chartXml).not.toContain('c:roundedCorners val="1"');
+  });
+
+  it("threads roundedCorners=true through to <c:chartSpace>", () => {
+    // true is the non-default — Excel's "Format Chart Area → Border →
+    // Rounded corners" toggle on.
+    const result = writeChart(makeChart({ roundedCorners: true }), "Sheet1");
+    expect(result.chartXml).toContain('c:roundedCorners val="1"');
+    expect(result.chartXml).not.toContain('c:roundedCorners val="0"');
+  });
+
+  it("threads roundedCorners=false through to <c:chartSpace>", () => {
+    // Setting the OOXML default explicitly produces the same wire
+    // shape as omitting the field — the element is always emitted.
+    const result = writeChart(makeChart({ roundedCorners: false }), "Sheet1");
+    expect(result.chartXml).toContain('c:roundedCorners val="0"');
+  });
+
+  it("places <c:roundedCorners> before <c:chart> inside <c:chartSpace> (OOXML order)", () => {
+    // CT_ChartSpace sequence: ... roundedCorners?, style?, ... chart, ...
+    // — the toggle must precede the chart element so a strict validator
+    // (Excel itself rejects out-of-order children) sees the schema
+    // sequence respected.
+    const result = writeChart(makeChart({ roundedCorners: true }), "Sheet1");
+    expect(result.chartXml.indexOf("c:roundedCorners")).toBeLessThan(
+      result.chartXml.indexOf("<c:chart>"),
+    );
+  });
+
+  it("only emits <c:roundedCorners> once even on a chart that overrides it", () => {
+    // Guard against any regression that would double-emit the element
+    // (e.g. one hardcoded copy plus a dynamic one).
+    const result = writeChart(makeChart({ roundedCorners: true }), "Sheet1");
+    const occurrences = result.chartXml.match(/c:roundedCorners/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads roundedCorners through every chart family", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, roundedCorners: true }), "Sheet1");
+      expect(result.chartXml).toContain('c:roundedCorners val="1"');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        roundedCorners: true,
+      }),
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain('c:roundedCorners val="1"');
+  });
+
+  it("round-trips a non-default roundedCorners value through parseChart", () => {
+    // A chart with roundedCorners=true should re-parse into a Chart
+    // whose `roundedCorners` field is `true` (not collapsed to undefined,
+    // since true is not the OOXML default).
+    const written = writeChart(makeChart({ roundedCorners: true }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.roundedCorners).toBe(true);
+  });
+
+  it("collapses a defaulted roundedCorners round-trip back to undefined", () => {
+    // A fresh chart (roundedCorners omitted) writes `0` and re-parses to
+    // undefined — absence and the OOXML default round-trip identically.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.roundedCorners).toBeUndefined();
+  });
+
+  it("collapses an explicit roundedCorners=false round-trip back to undefined", () => {
+    // Pinning the OOXML default also collapses on read, so a template
+    // that explicitly emits `<c:roundedCorners val="0"/>` is treated the
+    // same as one that omits the field.
+    const written = writeChart(makeChart({ roundedCorners: false }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.roundedCorners).toBeUndefined();
+  });
+});
+
+// ── writeChart — axis reverse (orientation) ──────────────────────────
+
+describe("writeChart — axis reverse (orientation)", () => {
+  it('emits <c:orientation val="maxMin"/> on the value axis when y.reverse is true', () => {
+    const result = writeChart(makeChart({ axes: { y: { reverse: true } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<c:orientation val="maxMin"/>');
+    expect(valAxBlock).not.toContain('val="minMax"');
+  });
+
+  it('emits <c:orientation val="maxMin"/> on the category axis when x.reverse is true', () => {
+    const result = writeChart(makeChart({ axes: { x: { reverse: true } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('<c:orientation val="maxMin"/>');
+    // The value axis keeps the forward minMax default.
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<c:orientation val="minMax"/>');
+  });
+
+  it("falls back to minMax when reverse is unset, false, or absent", () => {
+    // A fresh chart (no axes block at all) emits the OOXML default on
+    // both axes — the writer never omits <c:orientation> because Excel
+    // requires it inside <c:scaling>.
+    const noAxes = writeChart(makeChart(), "Sheet1").chartXml;
+    expect(noAxes.match(/<c:orientation val="minMax"\/>/g)?.length).toBe(2);
+    expect(noAxes).not.toContain('val="maxMin"');
+
+    const explicitFalse = writeChart(
+      makeChart({ axes: { x: { reverse: false }, y: { reverse: false } } }),
+      "Sheet1",
+    ).chartXml;
+    expect(explicitFalse.match(/<c:orientation val="minMax"\/>/g)?.length).toBe(2);
+    expect(explicitFalse).not.toContain('val="maxMin"');
+  });
+
+  it("places <c:orientation> in the spec-required slot inside <c:scaling>", () => {
+    // CT_Scaling sequence: logBase → orientation → max → min. The
+    // writer relies on this order for the OOXML schema validator to
+    // accept the chart.
+    const result = writeChart(
+      makeChart({
+        axes: {
+          y: { reverse: true, scale: { min: 0, max: 100, logBase: 10 } },
+        },
+      }),
+      "Sheet1",
+    );
+    const scaling = result.chartXml.match(/<c:scaling>[\s\S]*?<\/c:scaling>/g)!;
+    // Two scaling elements (catAx and valAx) — pick the one with logBase
+    // / max / min, that's the value axis.
+    const valScaling = scaling.find((s) => s.includes("logBase"))!;
+    const logIdx = valScaling.indexOf("c:logBase");
+    const orientIdx = valScaling.indexOf("c:orientation");
+    const maxIdx = valScaling.indexOf("c:max");
+    const minIdx = valScaling.indexOf("c:min");
+    expect(logIdx).toBeGreaterThan(0);
+    expect(orientIdx).toBeGreaterThan(logIdx);
+    expect(maxIdx).toBeGreaterThan(orientIdx);
+    expect(minIdx).toBeGreaterThan(maxIdx);
+  });
+
+  it("works for line and area charts (which share the bar axis builder)", () => {
+    for (const type of ["line", "area"] as const) {
+      const result = writeChart(makeChart({ type, axes: { y: { reverse: true } } }), "Sheet1");
+      const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+      expect(valAxBlock).toContain('<c:orientation val="maxMin"/>');
+    }
+  });
+
+  it("emits reverse on scatter X (axPos=b) and Y (axPos=l) value axes independently", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { x: { reverse: true }, y: { reverse: false } },
+      }),
+      "Sheet1",
+    );
+    const valAxBlocks = [...result.chartXml.matchAll(/<c:valAx>[\s\S]*?<\/c:valAx>/g)].map(
+      (m) => m[0],
+    );
+    // First valAx is scatter X axis (axPos="b"), second is Y (axPos="l").
+    expect(valAxBlocks[0]).toContain('c:axPos val="b"');
+    expect(valAxBlocks[0]).toContain('<c:orientation val="maxMin"/>');
+    expect(valAxBlocks[1]).toContain('c:axPos val="l"');
+    expect(valAxBlocks[1]).toContain('<c:orientation val="minMax"/>');
+  });
+
+  it("skips orientation reverse on pie charts (pie has no axes)", () => {
+    const result = writeChart(makeChart({ type: "pie", axes: { y: { reverse: true } } }), "Sheet1");
+    // Pie writes no <c:catAx> / <c:valAx> at all, so no <c:scaling>
+    // / <c:orientation> elements appear.
+    expect(result.chartXml).not.toContain("c:orientation");
+    expect(result.chartXml).not.toContain("c:scaling");
+  });
+
+  it("skips orientation reverse on doughnut charts (doughnut has no axes either)", () => {
+    const result = writeChart(
+      makeChart({ type: "doughnut", axes: { y: { reverse: true } } }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:orientation");
+  });
+
+  it("only flips the targeted axis — the other stays at the forward default", () => {
+    // Reversing X must not propagate to Y (and vice versa) — each axis
+    // pulls its own reverse flag off chart.axes.{x,y}.reverse.
+    const result = writeChart(makeChart({ axes: { x: { reverse: true } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(catAxBlock).toContain('<c:orientation val="maxMin"/>');
+    expect(valAxBlock).toContain('<c:orientation val="minMax"/>');
+  });
+
+  it("treats truthy non-boolean values as forward (reverse only fires for `=== true`)", () => {
+    // A defensively-typed source (e.g. "yes" leaking past the type
+    // guard) should not silently flip orientation — only the literal
+    // boolean `true` triggers reverse.
+    const result = writeChart(
+      makeChart({
+        axes: {
+          // @ts-expect-error — testing runtime guard against typo'd inputs.
+          y: { reverse: "yes" },
+        },
+      }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<c:orientation val="minMax"/>');
+  });
+
+  it("round-trips reverse=true through parseChart", () => {
+    const written = writeChart(makeChart({ axes: { y: { reverse: true } } }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.y?.reverse).toBe(true);
+  });
+
+  it("round-trips reverse=false / absent back to undefined", () => {
+    // An unset reverse writes the forward minMax default; on re-parse
+    // that default collapses to undefined so absence and the default
+    // round-trip identically.
+    for (const chart of [makeChart(), makeChart({ axes: { y: { reverse: false } } })]) {
+      const written = writeChart(chart, "Sheet1").chartXml;
+      const reparsed = parseChart(written);
+      expect(reparsed?.axes?.y?.reverse).toBeUndefined();
+    }
+  });
+});
+
 // ── Axis tick label / mark skip ──────────────────────────────────────
 
 describe("writeChart — axis tickLblSkip / tickMarkSkip", () => {

@@ -1013,6 +1013,22 @@ export interface SheetChart {
    */
   plotVisOnly?: boolean;
   /**
+   * Whether the chart frame is drawn with rounded corners. Maps to
+   * `<c:roundedCorners val=".."/>` on `<c:chartSpace>` (a sibling of
+   * `<c:chart>`, not a child). Mirrors Excel's "Format Chart Area →
+   * Border → Rounded corners" toggle.
+   *
+   * Default: `false` — the OOXML schema default and what every fresh
+   * Excel chart emits. Set `true` to soften the chart frame's outer
+   * edge, useful when matching a dashboard whose other charts already
+   * carry the rounded look from a template.
+   *
+   * The writer always emits the element so the rendered intent is
+   * explicit on roundtrip — Excel itself includes it in every reference
+   * serialization.
+   */
+  roundedCorners?: boolean;
+  /**
    * Per-axis configuration rendered alongside the plot area. The `x`
    * axis is the category axis for bar/column/line/area (or the bottom
    * value axis for scatter); the `y` axis is the value axis. Ignored
@@ -1081,6 +1097,21 @@ export interface SheetChart {
        * reference serialization. See {@link ChartAxisTickLabelPosition}.
        */
       tickLblPos?: ChartAxisTickLabelPosition;
+      /**
+       * Reverse the axis plotting order. Maps to
+       * `<c:scaling><c:orientation val="maxMin"/></c:scaling>` —
+       * Excel's "Categories in reverse order" / "Values in reverse
+       * order" toggle. Default: `false` (the OOXML `"minMax"` default).
+       *
+       * On a category axis, reversing flips the order in which
+       * categories are drawn (right-to-left on a column chart, top-to-
+       * bottom on a bar chart). On a value axis, reversing flips the
+       * numeric direction so the maximum sits at the origin and the
+       * minimum at the far end. Useful when porting templates that
+       * pin a specific reading direction (e.g. dates on a horizontal
+       * bar chart with the most recent at the top).
+       */
+      reverse?: boolean;
       /**
        * Show every Nth tick label on a category axis. `1` (the OOXML
        * default) shows every label; `2` shows every other one; `3`
@@ -1153,6 +1184,16 @@ export interface SheetChart {
        * semantics — the value-axis flag mirrors the X-axis flag.
        */
       hidden?: boolean;
+      /**
+       * Reverse the value axis plotting order. Maps to
+       * `<c:valAx><c:scaling><c:orientation val="maxMin"/></c:scaling></c:valAx>`.
+       * Default: `false` (the OOXML `"minMax"` default).
+       *
+       * Mirrors {@link SheetChart.axes.x.reverse} for the value axis —
+       * setting `true` flips the numeric direction so the maximum sits
+       * at the origin and the minimum at the far end.
+       */
+      reverse?: boolean;
     };
   };
 }
@@ -2028,6 +2069,17 @@ export interface ChartAxisInfo {
    */
   tickLblPos?: ChartAxisTickLabelPosition;
   /**
+   * Reverse-axis flag pulled from
+   * `<c:scaling><c:orientation val=".."/></c:scaling>`. Surfaces `true`
+   * only when the axis pinned `"maxMin"` (Excel's "Categories /
+   * Values in reverse order" toggle); the OOXML default `"minMax"`
+   * collapses to `undefined` so absence and the default round-trip
+   * identically through {@link cloneChart}. Mirrors the writer-side
+   * {@link SheetChart.axes.x.reverse} field, so a parsed value slots
+   * straight back into a clone target without transformation.
+   */
+  reverse?: boolean;
+  /**
    * Tick-label skip interval pulled from `<c:tickLblSkip val=".."/>`.
    * Surfaces only on category axes (`<c:catAx>` / `<c:dateAx>`) — the
    * OOXML schema does not place this element on `<c:valAx>`. The
@@ -2265,6 +2317,24 @@ export interface Chart {
    * drop to `undefined`.
    */
   plotVisOnly?: boolean;
+  /**
+   * Rounded-corners flag pulled from
+   * `<c:chartSpace><c:roundedCorners val=".."/>`. Reflects Excel's
+   * "Format Chart Area → Border → Rounded corners" toggle, which paints
+   * the chart frame with rounded edges instead of the default square
+   * border.
+   *
+   * The OOXML default `false` collapses to `undefined` so absence and
+   * the default round-trip identically through {@link cloneChart} —
+   * only an explicit `<c:roundedCorners val="1"/>` surfaces `true`.
+   * The reader accepts the OOXML truthy / falsy spellings (`"1"` /
+   * `"true"` / `"0"` / `"false"`); unknown values and missing `val`
+   * attributes drop to `undefined`.
+   *
+   * Note: `<c:roundedCorners>` lives on `<c:chartSpace>`, not inside
+   * `<c:chart>` — the toggle styles the outer frame, not the plot area.
+   */
+  roundedCorners?: boolean;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────

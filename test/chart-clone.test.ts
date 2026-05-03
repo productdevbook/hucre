@@ -3102,6 +3102,334 @@ describe("cloneChart — plotVisOnly", () => {
   });
 });
 
+// ── cloneChart — roundedCorners ───────────────────────────────────
+
+describe("cloneChart — roundedCorners", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's roundedCorners by default", () => {
+    const clone = cloneChart(source({ roundedCorners: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.roundedCorners).toBe(true);
+  });
+
+  it("lets options.roundedCorners override the source's value", () => {
+    const clone = cloneChart(source({ roundedCorners: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      roundedCorners: false,
+    });
+    expect(clone.roundedCorners).toBe(false);
+  });
+
+  it("drops the inherited roundedCorners when the override is null", () => {
+    // null collapses to the writer's OOXML default — the field
+    // disappears from the resolved SheetChart so the writer emits the
+    // default `0` (square chart frame).
+    const clone = cloneChart(source({ roundedCorners: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      roundedCorners: null,
+    });
+    expect(clone.roundedCorners).toBeUndefined();
+  });
+
+  it("returns undefined roundedCorners when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.roundedCorners).toBeUndefined();
+  });
+
+  it("carries roundedCorners through a flatten (line → column)", () => {
+    // roundedCorners lives on `<c:chartSpace>` and is valid on every
+    // chart family, so a coercion does not drop it.
+    const clone = cloneChart(source({ roundedCorners: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.roundedCorners).toBe(true);
+  });
+
+  it("carries roundedCorners through a doughnut flatten (line → doughnut)", () => {
+    // The toggle has no chart-family restriction — even a coercion to
+    // doughnut, which has no axes, must preserve the rounded frame.
+    const clone = cloneChart(source({ roundedCorners: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.roundedCorners).toBe(true);
+  });
+
+  it("propagates roundedCorners into the rendered <c:chartSpace> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ roundedCorners: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:roundedCorners val="1"');
+    expect(written).not.toContain('c:roundedCorners val="0"');
+
+    // Re-parsing the rendered chart returns the same value — closes the
+    // template → clone → write → read loop.
+    const reparsed = parseChart(written);
+    expect(reparsed?.roundedCorners).toBe(true);
+  });
+
+  it("emits the OOXML default roundedCorners=0 when both source and override are absent", async () => {
+    // A bare clone with no roundedCorners hint rolls into a SheetChart
+    // whose writer emits the default `0` and re-parses to undefined.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:roundedCorners val="0"');
+    expect(parseChart(written)?.roundedCorners).toBeUndefined();
+  });
+
+  it("an explicit override beats the source value through writeXlsx", async () => {
+    // Source pins `true`, clone overrides to `false` — the rendered
+    // chart should carry the override and re-parse to undefined (since
+    // `false` is the OOXML default and collapses on read).
+    const clone = cloneChart(source({ roundedCorners: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+      roundedCorners: false,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:roundedCorners val="0"');
+    expect(written).not.toContain('c:roundedCorners val="1"');
+    expect(parseChart(written)?.roundedCorners).toBeUndefined();
+  });
+});
+
+// ── cloneChart — axis reverse (orientation) ──────────────────────────
+
+describe("cloneChart — axis reverse (orientation)", () => {
+  const sourceWithReverse: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: {
+      y: { reverse: true },
+    },
+  };
+
+  it("inherits the source's reverse flag when no override is given", () => {
+    const clone = cloneChart(sourceWithReverse, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y?.reverse).toBe(true);
+  });
+
+  it("drops the inherited reverse flag when override is null", () => {
+    const clone = cloneChart(sourceWithReverse, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { reverse: null } },
+    });
+    // The source had only `reverse: true`, so dropping it leaves the
+    // axis empty — which collapses the whole axes block.
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("drops the inherited reverse flag when override is false", () => {
+    // Mirrors `null` — false is the OOXML default and the writer never
+    // emits a non-default orientation for it.
+    const clone = cloneChart(sourceWithReverse, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { reverse: false } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("replaces the inherited reverse flag with an explicit true", () => {
+    const noReverse: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(noReverse, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { reverse: true } },
+    });
+    expect(clone.axes?.y?.reverse).toBe(true);
+  });
+
+  it("supports reverse on the X (category) axis", () => {
+    const xSource: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { reverse: true } },
+    };
+    const clone = cloneChart(xSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.reverse).toBe(true);
+    expect(clone.axes?.y?.reverse).toBeUndefined();
+  });
+
+  it("strips reverse silently when the resolved chart type is pie", () => {
+    const pieSource: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [{ kind: "pie", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { reverse: true } },
+    };
+    const clone = cloneChart(pieSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("pie");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("strips reverse silently when the resolved chart type is doughnut", () => {
+    const doughnutSource: Chart = {
+      kinds: ["doughnut"],
+      seriesCount: 1,
+      series: [{ kind: "doughnut", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { reverse: true } },
+    };
+    const clone = cloneChart(doughnutSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("preserves other axis fields when the reverse override is null", () => {
+    // A source carrying both gridlines and reverse — dropping just
+    // reverse should keep the gridlines slot intact.
+    const richSource: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { reverse: true, gridlines: { major: true } } },
+    };
+    const clone = cloneChart(richSource, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { reverse: null } },
+    });
+    expect(clone.axes?.y?.reverse).toBeUndefined();
+    expect(clone.axes?.y?.gridlines).toEqual({ major: true });
+  });
+
+  it("ignores a literal source `reverse: false` (OOXML default)", () => {
+    // A defensively-typed source (e.g. an over-eager parser that
+    // surfaced the default) should collapse on inherit so the writer
+    // never emits the redundant forward orientation as if it were
+    // pinned.
+    const bogus: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { reverse: false } },
+    };
+    const clone = cloneChart(bogus, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("round-trips through writeChart and parseChart", async () => {
+    const clone = cloneChart(sourceWithReverse, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    const written = writeChart(clone, "Sheet1").chartXml;
+    expect(written).toContain('c:orientation val="maxMin"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.y?.reverse).toBe(true);
+
+    // End-to-end: writeXlsx packages the clone into a valid OOXML file
+    // whose chart part round-trips its reverse-axis flag.
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const fromZip = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(fromZip).toContain('c:orientation val="maxMin"');
+    expect(parseChart(fromZip)?.axes?.y?.reverse).toBe(true);
+  });
+
+  it("plays nicely alongside other axis overrides on the same axis", () => {
+    // Mixing reverse with a tick-mark / scale override should keep
+    // every field independent — the resolveAxes merge should not drop
+    // either one when both source and override are populated.
+    const richSource: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { majorTickMark: "cross", scale: { min: 0, max: 100 } } },
+    };
+    const clone = cloneChart(richSource, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { reverse: true } },
+    });
+    expect(clone.axes?.y?.majorTickMark).toBe("cross");
+    expect(clone.axes?.y?.scale).toEqual({ min: 0, max: 100 });
+    expect(clone.axes?.y?.reverse).toBe(true);
+  });
+});
+
 // ── cloneChart — axis tickLblSkip / tickMarkSkip ────────────────────
 
 describe("cloneChart — axis tickLblSkip / tickMarkSkip", () => {

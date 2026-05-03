@@ -208,6 +208,20 @@ export interface CloneChartOptions {
    */
   plotVisOnly?: boolean | null;
   /**
+   * Override `<c:roundedCorners>` (the chart-frame rounded-edge toggle).
+   *
+   * `undefined` (or omitted) inherits the source's parsed
+   * `roundedCorners`. `null` drops the inherited value so the writer
+   * falls back to the OOXML `false` default (square chart frame). A
+   * `boolean` replaces it — useful for matching a dashboard whose
+   * other charts already carry the rounded look from a template, or
+   * for squaring off a clone whose template was rounded.
+   *
+   * The grammar mirrors `plotVisOnly` / `varyColors` so the
+   * chart-frame toggles compose the same way at the call site.
+   */
+  roundedCorners?: boolean | null;
+  /**
    * Override `<c:scatterStyle>` (the chart-level XY-scatter preset).
    *
    * `undefined` (or omitted) inherits the source's parsed
@@ -260,6 +274,13 @@ export interface CloneChartOptions {
        */
       tickLblPos?: ChartAxisTickLabelPosition | null;
       /**
+       * Override the reverse-axis flag. `undefined` (or omitted)
+       * inherits the source axis' parsed value; `null` drops it (the
+       * writer falls back to the OOXML default `"minMax"` — forward
+       * orientation); `true` reverses, `false` forces forward.
+       */
+      reverse?: boolean | null;
+      /**
        * Override `SheetChart.axes.x.tickLblSkip`. `undefined` (or
        * omitted) inherits the source axis's skip; `null` drops the
        * inherited value (Excel falls back to showing every label); a
@@ -299,6 +320,8 @@ export interface CloneChartOptions {
       tickLblPos?: ChartAxisTickLabelPosition | null;
       /** See {@link CloneChartOptions.axes.x.hidden}. */
       hidden?: boolean | null;
+      /** See {@link CloneChartOptions.axes.x.reverse}. */
+      reverse?: boolean | null;
     };
   };
 }
@@ -454,6 +477,12 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
 
   const resolvedPlotVisOnly = resolvePlotVisOnly(source.plotVisOnly, options.plotVisOnly);
   if (resolvedPlotVisOnly !== undefined) out.plotVisOnly = resolvedPlotVisOnly;
+
+  const resolvedRoundedCorners = resolveRoundedCorners(
+    source.roundedCorners,
+    options.roundedCorners,
+  );
+  if (resolvedRoundedCorners !== undefined) out.roundedCorners = resolvedRoundedCorners;
 
   // `<c:scatterStyle>` only renders inside `<c:scatterChart>`. Drop the
   // field on every other resolved type so a scatter template flattened
@@ -780,6 +809,26 @@ function resolvePlotVisOnly(
 }
 
 /**
+ * Resolve a `roundedCorners` override.
+ *
+ * `undefined` → inherit the source's parsed `roundedCorners`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               OOXML `false` default — square chart frame).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `plotVisOnly` / `varyColors` so the chart-frame
+ * toggles compose the same way at the call site.
+ */
+function resolveRoundedCorners(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
  * Resolve a `scatterStyle` override.
  *
  * `undefined` → inherit the source's parsed `scatterStyle`.
@@ -896,6 +945,8 @@ function resolveAxes(
   );
   const xTickLblPos = applyTickLblPosOverride(sourceAxes?.x?.tickLblPos, overrides?.x?.tickLblPos);
   const yTickLblPos = applyTickLblPosOverride(sourceAxes?.y?.tickLblPos, overrides?.y?.tickLblPos);
+  const xReverse = applyReverseOverride(sourceAxes?.x?.reverse, overrides?.x?.reverse);
+  const yReverse = applyReverseOverride(sourceAxes?.y?.reverse, overrides?.y?.reverse);
   // `tickLblSkip` / `tickMarkSkip` only render on category axes
   // (`<c:catAx>`). Scatter charts use two value axes, so the X axis
   // skip would be silently dropped by the writer anyway — collapse it
@@ -924,6 +975,7 @@ function resolveAxes(
     xMajorTickMark !== undefined ||
     xMinorTickMark !== undefined ||
     xTickLblPos !== undefined ||
+    xReverse !== undefined ||
     xTickLblSkip !== undefined ||
     xTickMarkSkip !== undefined ||
     xHidden !== undefined
@@ -936,6 +988,7 @@ function resolveAxes(
     if (xMajorTickMark !== undefined) out.x.majorTickMark = xMajorTickMark;
     if (xMinorTickMark !== undefined) out.x.minorTickMark = xMinorTickMark;
     if (xTickLblPos !== undefined) out.x.tickLblPos = xTickLblPos;
+    if (xReverse !== undefined) out.x.reverse = xReverse;
     if (xTickLblSkip !== undefined) out.x.tickLblSkip = xTickLblSkip;
     if (xTickMarkSkip !== undefined) out.x.tickMarkSkip = xTickMarkSkip;
     if (xHidden !== undefined) out.x.hidden = xHidden;
@@ -948,7 +1001,8 @@ function resolveAxes(
     yMajorTickMark !== undefined ||
     yMinorTickMark !== undefined ||
     yTickLblPos !== undefined ||
-    yHidden !== undefined
+    yHidden !== undefined ||
+    yReverse !== undefined
   ) {
     out.y = {};
     if (yTitle !== undefined) out.y.title = yTitle;
@@ -959,6 +1013,7 @@ function resolveAxes(
     if (yMinorTickMark !== undefined) out.y.minorTickMark = yMinorTickMark;
     if (yTickLblPos !== undefined) out.y.tickLblPos = yTickLblPos;
     if (yHidden !== undefined) out.y.hidden = yHidden;
+    if (yReverse !== undefined) out.y.reverse = yReverse;
   }
 
   return out.x || out.y ? out : undefined;
@@ -1152,4 +1207,28 @@ function applyTickLblPosOverride(
   }
   if (override === null) return undefined;
   return VALID_TICK_LBL_POS_VALUES.has(override) ? override : undefined;
+}
+
+/**
+ * Resolve a reverse-axis override using the same `undefined` (inherit) /
+ * `null` (drop) / value (replace) grammar as the other axis helpers.
+ *
+ * Only `true` round-trips meaningfully — `false` is the OOXML default
+ * (`orientation="minMax"`) so it collapses to `undefined` to keep the
+ * cloned shape minimal. A source carrying `false` (e.g. an over-eager
+ * parser that surfaced the default) collapses to `undefined` on
+ * inherit; an explicit `false` override likewise drops the field. The
+ * writer's per-axis `reverse: false` default already produces a forward
+ * orientation, so the dropped state is indistinguishable from a literal
+ * `false`.
+ */
+function applyReverseOverride(
+  source: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) {
+    return source === true ? true : undefined;
+  }
+  if (override === null) return undefined;
+  return override === true ? true : undefined;
 }
