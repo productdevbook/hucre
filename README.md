@@ -705,6 +705,13 @@ default-collapse semantics: the OOXML default `100` (Excel's
 reference label spacing) collapses to `undefined` so absence and the
 default round-trip identically; out-of-range values (negative or
 greater than 1000) drop rather than clamp.
+`ChartAxisInfo.hidden` surfaces the per-axis `<c:delete val=".."/>`
+flag — Excel's "Format Axis -> Show axis" toggle. Only an explicit
+`val="1"` (axis hidden) surfaces `true`; the OOXML default `val="0"`,
+absence, missing `val`, and unknown tokens all collapse to `undefined`
+so absence and the default round-trip identically. The reader accepts
+the OOXML truthy / falsy spellings (`"1"` / `"true"` / `"0"` /
+`"false"`).
 `ChartAxisInfo.reverse` surfaces the per-axis
 `<c:scaling><c:orientation val="maxMin"/></c:scaling>` flag — Excel's
 "Categories / Values in reverse order" toggle. Only `"maxMin"` surfaces
@@ -927,11 +934,21 @@ or push them out. The writer always emits `<c:lblOffset>` because
 Excel's reference serialization includes it on every category axis;
 absence (and the OOXML default `100`) emit `val="100"` so untouched
 charts match the reference output byte-for-byte. Out-of-range values
-(negative or > 1000) drop silently rather than clamp — the writer
-falls back to the default `100`. Same scope as the tick skips above:
-bar / column / line / area honour the override; scatter and pie /
-doughnut silently ignore it. Non-integer inputs round to the nearest
-integer.
+(negative or greater than 1000) drop silently rather than clamp — the
+writer falls back to the default `100`. Same scope as the tick skips
+above: bar / column / line / area honour the override; scatter and
+pie / doughnut silently ignore it. Non-integer inputs round to the
+nearest integer.
+The per-axis `axes.x.hidden` and `axes.y.hidden` flags toggle
+`<c:catAx><c:delete val=".."/>` / `<c:valAx><c:delete val=".."/>` —
+Excel's "Format Axis -> Show axis" toggle. Set `true` to collapse the
+axis line, tick marks, and tick labels off the rendered chart (handy
+for sparkline-style dashboard tiles). The writer always emits the
+element because Excel's reference serialization includes
+`<c:delete val="0"/>` on every axis; `false` and absence both produce
+that default, while only an explicit `true` emits `val="1"`. The flag
+threads through bar / column / line / area / scatter; pie / doughnut
+silently ignore it because OOXML defines no axes for those families.
 The `axes.x.reverse` and `axes.y.reverse` flags map to
 `<c:scaling><c:orientation val="maxMin"/></c:scaling>` — Excel's
 "Categories / Values in reverse order" toggle. On a category axis,
@@ -1128,6 +1145,15 @@ skips: the inherited offset is dropped silently when the resolved
 clone target is `scatter` or `pie` / `doughnut`, so flattening a
 column template into a scatter clone never leaks a stale catAx offset
 into the output.
+The per-axis `axes.x.hidden` and `axes.y.hidden` overrides follow the
+same `undefined` (inherit) / `null` (drop) / `boolean` (replace)
+grammar. Because `<c:delete>` lives on every axis flavour, the flag
+threads through every coercion that has axes (bar / column / line /
+area / scatter); pie / doughnut clones drop the entire `axes` block
+because OOXML defines no axes for them. An override of `false` is
+equivalent to `null` — the writer treats both as the OOXML default
+`val="0"`, so the cloned `SheetChart` collapses both shapes to
+`undefined`.
 The per-axis `axes.x.reverse` / `axes.y.reverse` overrides follow the
 same `undefined` (inherit) / `null` (drop) / boolean (replace) grammar
 as the other axis fields. A literal `false` override behaves

@@ -1061,6 +1061,13 @@ export interface SheetChart {
    * `<c:tickMarkSkip>` on `CT_CatAx` / `CT_DateAx`); they have no slot
    * on `<c:valAx>` and are silently ignored on the value axis or on
    * scatter charts (whose two axes are both value axes).
+   *
+   * `hidden` collapses the axis line, tick marks, and tick labels off
+   * the rendered chart by emitting `<c:delete val="1"/>`. Maps to
+   * Excel's "Format Axis -> Axis Options -> Labels -> Show axis" toggle
+   * (and the matching context-menu "Delete" action). Useful for
+   * minimal "sparkline-style" dashboard tiles where only the data
+   * series should remain visible.
    */
   axes?: {
     /** Category axis (bar/column/line/area) or X value axis (scatter). */
@@ -1140,6 +1147,25 @@ export interface SheetChart {
        * Values outside the range are dropped at write time.
        */
       lblOffset?: number;
+      /**
+       * Hide the entire axis (line, tick marks, tick labels). Maps to
+       * `<c:catAx><c:delete val="1"/></c:catAx>` (or the matching
+       * `<c:valAx>` element on scatter). Default: `false` — Excel
+       * paints the axis. Set `true` to collapse a noisy axis off a
+       * sparkline-style dashboard tile.
+       *
+       * Excel still reserves the layout slot the axis would have
+       * occupied, so a hidden category axis on a column chart leaves a
+       * thin gap at the bottom of the plot area where the labels would
+       * have rendered — pair with `<c:layout>` overrides on the parent
+       * `<c:plotArea>` if you need to reclaim that space (hucre does
+       * not surface a layout knob today; the writer falls back to
+       * Excel's auto-layout in either case).
+       *
+       * The flag is silently ignored on `pie` / `doughnut` charts
+       * because the OOXML schema places no axes on those families.
+       */
+      hidden?: boolean;
     };
     /** Value axis. */
     y?: {
@@ -1165,6 +1191,13 @@ export interface SheetChart {
        * `"nextTo"`. See {@link ChartAxisTickLabelPosition}.
        */
       tickLblPos?: ChartAxisTickLabelPosition;
+      /**
+       * Hide the entire value axis (line, tick marks, tick labels).
+       * Maps to `<c:valAx><c:delete val="1"/></c:valAx>`. Default:
+       * `false`. See {@link SheetChart.axes.x.hidden} for the full
+       * semantics — the value-axis flag mirrors the X-axis flag.
+       */
+      hidden?: boolean;
       /**
        * Reverse the value axis plotting order. Maps to
        * `<c:valAx><c:scaling><c:orientation val="maxMin"/></c:scaling></c:valAx>`.
@@ -2087,6 +2120,17 @@ export interface ChartAxisInfo {
    * out-of-range values are dropped rather than fabricated.
    */
   lblOffset?: number;
+  /**
+   * Axis hidden flag pulled from `<c:delete val=".."/>`. Surfaces
+   * `true` when the axis pinned `val="1"` (Excel's "Format Axis ->
+   * Show axis = off" toggle). The OOXML default `val="0"` (and absence
+   * of the element) collapse to `undefined` so absence and the default
+   * round-trip identically through {@link cloneChart}. The reader
+   * accepts the OOXML truthy / falsy spellings (`"1"` / `"true"` /
+   * `"0"` / `"false"`); unknown values and missing `val` attributes
+   * drop to `undefined`.
+   */
+  hidden?: boolean;
 }
 
 /**

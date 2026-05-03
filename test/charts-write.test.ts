@@ -3508,3 +3508,176 @@ describe("writeChart — axis lblOffset", () => {
     expect(reparsed?.axes).toBeUndefined();
   });
 });
+
+// ── writeChart — axis hidden flag (<c:delete>) ──────────────────────
+
+describe("writeChart — axis hidden", () => {
+  it('emits <c:delete val="0"/> on both axes by default (Excel reference shape)', () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(catAxBlock).toContain('<c:delete val="0"/>');
+    expect(valAxBlock).toContain('<c:delete val="0"/>');
+  });
+
+  it('emits <c:delete val="1"/> on the category axis when axes.x.hidden=true', () => {
+    const result = writeChart(makeChart({ axes: { x: { hidden: true } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(catAxBlock).toContain('<c:delete val="1"/>');
+    // The Y axis stays visible — the flag is per-axis.
+    expect(valAxBlock).toContain('<c:delete val="0"/>');
+  });
+
+  it('emits <c:delete val="1"/> on the value axis when axes.y.hidden=true', () => {
+    const result = writeChart(makeChart({ axes: { y: { hidden: true } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(catAxBlock).toContain('<c:delete val="0"/>');
+    expect(valAxBlock).toContain('<c:delete val="1"/>');
+  });
+
+  it("hides both axes when axes.x.hidden and axes.y.hidden are both true", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { hidden: true }, y: { hidden: true } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(catAxBlock).toContain('<c:delete val="1"/>');
+    expect(valAxBlock).toContain('<c:delete val="1"/>');
+  });
+
+  it("treats axes.x.hidden=false the same as omitting the field", () => {
+    const explicit = writeChart(makeChart({ axes: { x: { hidden: false } } }), "Sheet1").chartXml;
+    const implicit = writeChart(makeChart(), "Sheet1").chartXml;
+    expect(explicit).toEqual(implicit);
+  });
+
+  it('collapses non-boolean inputs to the default val="0"', () => {
+    // A stray non-boolean leaking past the type guard (e.g. `0` / `1` /
+    // `"true"` / `null`) must collapse to the default rather than emit
+    // an attribute Excel would reject.
+    const result = writeChart(
+      makeChart({ axes: { x: { hidden: 1 as unknown as boolean } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('<c:delete val="0"/>');
+  });
+
+  it("threads the flag through bar, column, line, and area chart families", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(makeChart({ type, axes: { x: { hidden: true } } }), "Sheet1");
+      const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+      expect(catAxBlock).toContain('<c:delete val="1"/>');
+    }
+  });
+
+  it("emits the flag on scatter X (axPos=b) and Y (axPos=l) value axes", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { x: { hidden: true } },
+      }),
+      "Sheet1",
+    );
+    const valAxBlocks = [...result.chartXml.matchAll(/<c:valAx>[\s\S]*?<\/c:valAx>/g)].map(
+      (m) => m[0],
+    );
+    // First valAx is the X axis (axPos="b"), second is Y (axPos="l").
+    expect(valAxBlocks[0]).toContain('c:axPos val="b"');
+    expect(valAxBlocks[0]).toContain('<c:delete val="1"/>');
+    expect(valAxBlocks[1]).toContain('c:axPos val="l"');
+    expect(valAxBlocks[1]).toContain('<c:delete val="0"/>');
+  });
+
+  it("ignores the flag on pie charts (no axes at all)", () => {
+    const result = writeChart(makeChart({ type: "pie", axes: { x: { hidden: true } } }), "Sheet1");
+    // Pie chart emits no <c:catAx> / <c:valAx> at all, so there is no
+    // <c:delete> to find. The flag must not leak elsewhere.
+    expect(result.chartXml).not.toContain("c:catAx");
+    expect(result.chartXml).not.toContain("c:valAx");
+  });
+
+  it("ignores the flag on doughnut charts (no axes at all)", () => {
+    const result = writeChart(
+      makeChart({ type: "doughnut", axes: { y: { hidden: true } } }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:catAx");
+    expect(result.chartXml).not.toContain("c:valAx");
+  });
+
+  it("places <c:delete> after <c:scaling> and before <c:axPos> (OOXML order)", () => {
+    const result = writeChart(makeChart({ axes: { x: { hidden: true } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const scalingIdx = catAxBlock.indexOf("<c:scaling");
+    const deleteIdx = catAxBlock.indexOf("<c:delete");
+    const axPosIdx = catAxBlock.indexOf("<c:axPos");
+    expect(scalingIdx).toBeGreaterThan(0);
+    expect(deleteIdx).toBeGreaterThan(scalingIdx);
+    expect(axPosIdx).toBeGreaterThan(deleteIdx);
+  });
+
+  it("emits exactly one <c:delete> per axis", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { hidden: true }, y: { hidden: true } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect((catAxBlock.match(/<c:delete /g) ?? []).length).toBe(1);
+    expect((valAxBlock.match(/<c:delete /g) ?? []).length).toBe(1);
+  });
+
+  it("composes alongside other axis fields without breaking spec ordering", () => {
+    // Combine title, gridlines, scale, number format, tick rendering and
+    // hidden on the X axis to verify the catAx still renders in spec order.
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: {
+            title: "Region",
+            gridlines: { major: true },
+            numberFormat: { formatCode: "@" },
+            majorTickMark: "cross",
+            tickLblPos: "low",
+            hidden: true,
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const idx = (needle: string): number => catAxBlock.indexOf(needle);
+    expect(idx("c:axId")).toBeLessThan(idx("c:scaling"));
+    expect(idx("c:scaling")).toBeLessThan(idx("c:delete"));
+    expect(idx("c:delete")).toBeLessThan(idx("c:axPos"));
+    expect(idx("c:axPos")).toBeLessThan(idx("c:majorGridlines"));
+    expect(idx("c:majorGridlines")).toBeLessThan(idx("c:title"));
+    expect(idx("c:title")).toBeLessThan(idx("c:numFmt"));
+    expect(idx("c:numFmt")).toBeLessThan(idx("c:majorTickMark"));
+    expect(idx("c:majorTickMark")).toBeLessThan(idx("c:tickLblPos"));
+    expect(idx("c:tickLblPos")).toBeLessThan(idx("c:crossAx"));
+    expect(catAxBlock).toContain('<c:delete val="1"/>');
+  });
+
+  it("round-trips axes.x.hidden=true through parseChart", () => {
+    const written = writeChart(makeChart({ axes: { x: { hidden: true } } }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.hidden).toBe(true);
+    // The Y axis pinned val="0" so it collapses to undefined.
+    expect(reparsed?.axes?.y?.hidden).toBeUndefined();
+  });
+
+  it('collapses a default round-trip back to undefined axes (val="0" alone is the default)', () => {
+    // No axis fields set at all → the writer still emits <c:delete val="0"/>
+    // on every axis but the reader collapses both axes to no info, leaving
+    // `axes` undefined.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes).toBeUndefined();
+  });
+});
