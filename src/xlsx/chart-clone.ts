@@ -27,6 +27,7 @@ import type {
   ChartDataTable,
   ChartDisplayBlanksAs,
   ChartKind,
+  ChartLegendEntry,
   ChartLineStroke,
   ChartMarker,
   ChartProtection,
@@ -158,6 +159,25 @@ export interface CloneChartOptions {
    * the value into the output would carry a toggle Excel never reads.
    */
   legendOverlay?: boolean | null;
+  /**
+   * Override the chart-level per-series legend-entry overrides.
+   * `undefined` (or omitted) inherits the source's parsed list; `null`
+   * drops every inherited entry (the writer emits no `<c:legendEntry>`
+   * children); a `ChartLegendEntry[]` replaces the inherited list
+   * outright.
+   *
+   * The override is silently dropped from the cloned `SheetChart` when
+   * the resolved legend is `false` (no `<c:legend>` element will be
+   * emitted) — there is no slot to host the entries on a hidden legend,
+   * so leaking the value into the output would carry a list Excel never
+   * reads.
+   *
+   * Replacement semantics matter when the cloned chart's series count
+   * differs from the source's: an entry whose `idx` no longer points
+   * at a real series still emits — Excel renders it harmlessly — but a
+   * caller can pass `null` (or an empty array) to start fresh.
+   */
+  legendEntries?: ChartLegendEntry[] | null;
   /** Override `SheetChart.barGrouping`. */
   barGrouping?: SheetChart["barGrouping"];
   /**
@@ -829,6 +849,15 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   if (legend !== false) {
     const resolvedLegendOverlay = resolveLegendOverlay(source.legendOverlay, options.legendOverlay);
     if (resolvedLegendOverlay !== undefined) out.legendOverlay = resolvedLegendOverlay;
+
+    // `<c:legendEntry>` lives inside `<c:legend>`, so the same hidden /
+    // missing-legend scoping that drops `legendOverlay` also drops the
+    // inherited entry list. Mirrors the legendOverlay grammar:
+    // `undefined` inherits the parsed value, `null` drops it (the writer
+    // emits no `<c:legendEntry>` children), a `ChartLegendEntry[]`
+    // replaces it outright.
+    const resolvedLegendEntries = resolveLegendEntries(source.legendEntries, options.legendEntries);
+    if (resolvedLegendEntries !== undefined) out.legendEntries = resolvedLegendEntries;
   }
 
   const barGrouping = options.barGrouping !== undefined ? options.barGrouping : source.barGrouping;
@@ -1738,6 +1767,41 @@ function resolveLegendOverlay(
   if (override === undefined) return sourceValue;
   if (override === null) return undefined;
   return override;
+}
+
+/**
+ * Resolve a `legendEntries` override.
+ *
+ * `undefined` → inherit the source's parsed `legendEntries`.
+ * `null`      → drop the inherited list (the writer emits no
+ *               `<c:legendEntry>` children).
+ * `array`     → replace the inherited list outright. Empty arrays
+ *               collapse to `undefined` so the writer never emits an
+ *               empty selector block — Excel's reference serialization
+ *               omits the children entirely when no entry is hidden.
+ *
+ * Callers should gate the result on the resolved legend visibility —
+ * when no legend is emitted, the entry list has no slot in the rendered
+ * chart. Mirrors the `legendOverlay` grammar so the legend-scoped
+ * fields compose the same way at the call site.
+ *
+ * The returned array is always a fresh copy of the source / override
+ * (never a shared reference) so a downstream mutation to the cloned
+ * `SheetChart` never leaks back into the parsed `Chart` the caller
+ * passed in. Each entry is also copied to keep the writer's resolution
+ * pass free to dedupe / sort without touching the inputs.
+ */
+function resolveLegendEntries(
+  sourceValue: ChartLegendEntry[] | undefined,
+  override: ChartLegendEntry[] | null | undefined,
+): ChartLegendEntry[] | undefined {
+  if (override === undefined) {
+    if (!sourceValue || sourceValue.length === 0) return undefined;
+    return sourceValue.map((entry) => ({ ...entry }));
+  }
+  if (override === null) return undefined;
+  if (!Array.isArray(override) || override.length === 0) return undefined;
+  return override.map((entry) => ({ ...entry }));
 }
 
 /**

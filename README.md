@@ -881,6 +881,18 @@ missing `val` attributes drop to `undefined`. The flag is dropped
 whenever `Chart.legend` is `false` or the chart omits the legend
 element entirely — there is no overlay slot on a hidden legend, so the
 parsed shape stays minimal.
+`Chart.legendEntries` surfaces the per-series legend-entry overrides
+pulled from `<c:legend><c:legendEntry>` children — Excel's "Format
+Legend Entries → Hide" action surfaces the same elements. Each entry
+exposes the 0-based series `idx` selector and the `delete` flag (the
+hide-bit pulled from `<c:delete val=".."/>`); per-entry text styling
+(`<c:txPr>`) is intentionally not modelled at this layer. Entries
+without a valid `<c:idx>` selector drop on parse rather than surface a
+fabricated index, and duplicate `<c:idx>` values keep only the first
+occurrence so a re-emit stays canonical. Absence collapses to
+`undefined` so a chart with no overrides round-trips minimally — the
+field is dropped whenever `Chart.legend` is `false` or the chart omits
+the legend element entirely.
 `Chart.titleOverlay` surfaces the title-overlay flag pulled from
 `<c:title><c:overlay val=".."/></c:title>` — Excel's "Format Chart
 Title → Show the title without overlapping the chart" toggle (the
@@ -1223,6 +1235,21 @@ on top of the plot area so the chart series get the full frame
 (`val="1"`). The flag is silently ignored when `legend: false`
 suppresses the entire legend element — there is no overlay slot on a
 hidden legend, so the writer skips emitting any orphaned `<c:overlay>`.
+The chart-level `legendEntries` field maps to `<c:legendEntry>` children
+inside `<c:legend>` — Excel's "Format Legend Entries → Hide" action
+surfaces the same elements. Each entry pins a 0-based series `idx` and
+a `delete` flag (defaults to `false` — the entry renders); the writer
+emits both `<c:idx>` and `<c:delete>` children explicitly so a re-parse
+sees the canonical CT_LegendEntry shape. Entries whose `idx` is
+non-finite, negative, or non-integer drop at write time rather than emit
+a token Excel rejects, and duplicate `idx` values are deduplicated with
+last-wins semantics so a clone-through that appends an override naturally
+beats the source's parsed value. The writer slots `<c:legendEntry>`
+between `<c:legendPos>` and `<c:overlay>` (CT_Legend sequence) and
+emits entries in ascending `idx` order so the file matches Excel's
+reference serialization. The list is silently ignored when `legend:
+false` suppresses the entire legend element — there is no slot for
+entries on a hidden legend, so the writer skips emission entirely.
 The chart-level `titleOverlay` field maps to `<c:overlay val=".."/>`
 inside `<c:title>` — Excel's "Format Chart Title → Show the title
 without overlapping the chart" toggle (the checkbox is the inverse of
@@ -1668,6 +1695,20 @@ inherited `true` would carry no on-screen effect. Re-enabling a hidden
 source legend through `legend: "top"` (or any visible position) on the
 override re-opens the slot, and an explicit `legendOverlay: true`
 override threads through.
+The chart-level `legendEntries` list follows the same `undefined`
+(inherit) / `null` (drop) / `array` (replace) grammar as the other
+list-shaped overrides. An empty-array override collapses to `undefined`
+just like `null` because the writer skips emission for empty lists,
+matching Excel's omit-default serialization. The list lives on
+`<c:legend>` so the field is valid on every chart family, but it is
+silently dropped from the cloned `SheetChart` whenever the resolved
+`legend` is `false` — a hidden legend has no slot for entries in the
+rendered chart, so inherited overrides would carry no on-screen effect.
+Each inherited entry is defensively copied so a downstream mutation to
+the cloned `SheetChart` never leaks back into the parsed `Chart` the
+caller passed in. Re-enabling a hidden source legend through `legend:
+"top"` (or any visible position) on the override re-opens the slot, and
+an explicit `legendEntries: [...]` override threads through.
 The chart-level `titleOverlay` flag follows the same grammar: pass
 `undefined` to inherit the source's parsed value, `null` to drop it
 back to the writer's OOXML `false` default (no overlap with the plot

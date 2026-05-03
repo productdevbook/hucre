@@ -1044,6 +1044,48 @@ export interface ChartSeries {
 }
 
 /**
+ * Per-series legend-entry override. Maps to `<c:legendEntry>` inside
+ * `<c:legend>` — Excel's "Format Legend Entries -> Hide" action surfaces
+ * the same element. The OOXML schema (CT_LegendEntry) carries an
+ * `<c:idx val="N"/>` selector and an optional `<c:delete val=".."/>`
+ * flag; hucre exposes only the hide bit because per-entry text styling
+ * (`<c:txPr>`) is not modelled at this layer.
+ *
+ * The {@link idx} value is the **0-based series index** as it appears
+ * in the chart's flattened series list (the same index the writer emits
+ * on `<c:ser><c:idx val="N"/></c:ser>`). Pinning `delete: true` hides
+ * that entry from the legend; the chart still renders the underlying
+ * series, only its swatch / name disappears from the legend block.
+ *
+ * Useful when a templated dashboard chart carries a helper series whose
+ * data should plot but whose name should not crowd the legend (e.g. a
+ * trend baseline rendered as a faint area behind the real data).
+ *
+ * @see {@link SheetChart.legendEntries}
+ * @see {@link Chart.legendEntries}
+ */
+export interface ChartLegendEntry {
+  /**
+   * 0-based series index the entry refers to. Must be a non-negative
+   * integer (matches the OOXML `xsd:unsignedInt` schema on
+   * `<c:idx val=".."/>`); non-finite, negative, or non-integer values
+   * are dropped at write time rather than emit a token Excel rejects.
+   */
+  idx: number;
+  /**
+   * Whether the legend entry is hidden. Maps to
+   * `<c:legendEntry><c:delete val=".."/></c:legendEntry>`. Defaults to
+   * `false` (the OOXML default — the entry renders); set `true` to
+   * mirror Excel's "Format Legend Entries -> Hide" action.
+   *
+   * The writer emits an entry only when at least one of {@link idx} /
+   * {@link delete} carries a meaningful value, and it always emits the
+   * `<c:delete>` child explicitly so a re-parse sees the same flag.
+   */
+  delete?: boolean;
+}
+
+/**
  * A chart embedded into a worksheet via the drawing layer.
  *
  * Excel anchors charts to cells using the same `xdr:twoCellAnchor`
@@ -1204,6 +1246,29 @@ export interface SheetChart {
    * emitted) — there is no overlay flag to set on a hidden legend.
    */
   legendOverlay?: boolean;
+  /**
+   * Per-series legend-entry overrides. Maps to
+   * `<c:legend><c:legendEntry>...</c:legendEntry></c:legend>` — Excel's
+   * "Format Legend Entries -> Hide" action surfaces the same element.
+   * Useful for hiding individual series from the legend without removing
+   * them from the plot (a templated dashboard's helper series whose
+   * data should plot but whose name should not crowd the legend).
+   *
+   * Each entry references a series by 0-based {@link ChartLegendEntry.idx}
+   * and pins {@link ChartLegendEntry.delete} `true` to hide it. Entries
+   * whose `idx` is non-integer / non-finite / negative are silently
+   * dropped at write time rather than emit a token Excel would reject.
+   * Duplicate `idx` values are deduplicated — the last entry wins so a
+   * caller can override an inherited override without manually pruning
+   * the list.
+   *
+   * Silently ignored when `legend === false` (no `<c:legend>` element
+   * is emitted) — there is no slot to host the entries on a hidden
+   * legend. The OOXML schema (CT_Legend) places `<c:legendEntry>` after
+   * `<c:legendPos>` and before `<c:layout>` / `<c:overlay>`; the writer
+   * emits in that order so a re-parse sees the canonical sequence.
+   */
+  legendEntries?: ChartLegendEntry[];
   /** Show the chart-level title element. Default: `true` when `title` is set. */
   showTitle?: boolean;
   /**
@@ -3182,6 +3247,24 @@ export interface Chart {
    * overlay flag to surface in either case.
    */
   legendOverlay?: boolean;
+  /**
+   * Per-series legend-entry overrides pulled from
+   * `<c:legend><c:legendEntry>` children. Each entry surfaces the
+   * 0-based series {@link ChartLegendEntry.idx} the chart targeted and
+   * the {@link ChartLegendEntry.delete} flag.
+   *
+   * The reader emits an entry only when the source chart actually
+   * declares a `<c:legendEntry>` block — absence collapses to
+   * `undefined` (the field is omitted entirely) so a chart with no
+   * overrides round-trips minimally through {@link cloneChart}. Entries
+   * whose `<c:idx>` is missing or invalid are dropped rather than
+   * surface a fabricated index.
+   *
+   * Reported as `undefined` whenever {@link legend} is `false` or the
+   * source chart has no `<c:legend>` element at all — there are no
+   * legend entries to surface in either case.
+   */
+  legendEntries?: ChartLegendEntry[];
   /**
    * Title-overlay flag pulled from `<c:title><c:overlay val=".."/>`.
    * Reflects Excel's "Format Chart Title -> Show the title without
