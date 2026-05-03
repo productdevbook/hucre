@@ -3970,3 +3970,149 @@ describe("cloneChart — axis hidden", () => {
     expect(valAxBlock).toContain('<c:delete val="1"/>');
   });
 });
+
+// ── cloneChart — axis lblAlgn ───────────────────────────────────────
+
+describe("cloneChart — axis lblAlgn", () => {
+  const sourceWithAlgn: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: { x: { lblAlgn: "l" } },
+  };
+
+  it("inherits the lblAlgn from the source when no override is given", () => {
+    const clone = cloneChart(sourceWithAlgn, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.lblAlgn).toBe("l");
+  });
+
+  it("drops the inherited alignment when the override is null", () => {
+    const clone = cloneChart(sourceWithAlgn, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { lblAlgn: null } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("replaces the inherited alignment with the override value", () => {
+    const clone = cloneChart(sourceWithAlgn, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { lblAlgn: "r" } },
+    });
+    expect(clone.axes?.x?.lblAlgn).toBe("r");
+  });
+
+  it("adds an alignment to a source axis that did not declare one", () => {
+    const noAlgn: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(noAlgn, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { lblAlgn: "l" } },
+    });
+    expect(clone.axes?.x?.lblAlgn).toBe("l");
+  });
+
+  it("drops unknown overrides without falling through (no leak into writer)", () => {
+    const clone = cloneChart(sourceWithAlgn, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { lblAlgn: "left" as never } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it('collapses an explicit override of "ctr" (the OOXML default) to undefined', () => {
+    // Pinning the default has the same effect as `null` — the cloned
+    // chart inherits Excel's default centered alignment either way.
+    const clone = cloneChart(sourceWithAlgn, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { lblAlgn: "ctr" } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("strips the alignment silently when the resolved chart type is pie", () => {
+    const pieSource: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [{ kind: "pie", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { lblAlgn: "l" } },
+    };
+    const clone = cloneChart(pieSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("pie");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("strips the alignment silently when the resolved chart type is scatter", () => {
+    // Scatter uses two value axes, so the X axis is no longer a category
+    // axis. Drop inherited lblAlgn so the cloned model accurately
+    // reflects what the chart will paint.
+    const clone = cloneChart(sourceWithAlgn, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "scatter",
+      series: [{ values: "Sheet1!$B$2:$B$5", categories: "Sheet1!$A$2:$A$5" }],
+    });
+    expect(clone.type).toBe("scatter");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("end-to-end: parseChart -> cloneChart -> writeChart preserves the alignment", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:lblAlgn val="r"/>
+      </c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.axes?.x?.lblAlgn).toBe("r");
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(sheetChart.axes?.x?.lblAlgn).toBe("r");
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    expect(written).toContain('c:lblAlgn val="r"');
+
+    // Re-parse to confirm the round-trip.
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.lblAlgn).toBe("r");
+  });
+
+  it("end-to-end: writeXlsx packages the cloned chart with the alignment intact", async () => {
+    const clone = cloneChart(sourceWithAlgn, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:lblAlgn val="l"');
+  });
+});

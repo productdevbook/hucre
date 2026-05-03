@@ -8,6 +8,7 @@
 
 import type {
   ChartAxisGridlines,
+  ChartAxisLabelAlign,
   ChartAxisNumberFormat,
   ChartAxisScale,
   ChartAxisTickLabelPosition,
@@ -166,6 +167,11 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // scatter has no category axis, so the catAx builder is the only
     // consumer of this knob.
     xLblOffset: normalizeAxisLblOffset(chart.axes?.x?.lblOffset),
+    // `lblAlgn` also lives exclusively on `CT_CatAx` / `CT_DateAx`
+    // (`ST_LblAlgn`) — `<c:valAx>` and `<c:serAx>` reject it. Same
+    // scope rule as `lblOffset`; the catAx builder is the sole
+    // consumer.
+    xLblAlgn: normalizeAxisLblAlgn(chart.axes?.x?.lblAlgn),
     // `<c:delete>` lives on every axis flavour (CT_CatAx / CT_ValAx /
     // CT_DateAx / CT_SerAx). The writer always emits the element —
     // Excel's reference serialization includes `<c:delete val="0"/>`
@@ -250,6 +256,13 @@ interface AxisRenderOptions {
    * have no category axis, so the value is dropped silently.
    */
   xLblOffset: number | undefined;
+  /**
+   * Tick-label horizontal alignment emitted on the X axis only when
+   * the axis is `<c:catAx>`. Scatter charts have no category axis, so
+   * the value is dropped silently. `undefined` means absent (the
+   * writer falls back to the OOXML default `"ctr"`).
+   */
+  xLblAlgn: ChartAxisLabelAlign | undefined;
   /**
    * Whether the X axis should render its `<c:delete>` element with
    * `val="1"` (axis hidden). Always defined — `false` keeps Excel's
@@ -408,6 +421,30 @@ function normalizeAxisLblOffset(value: number | undefined): number | undefined {
   if (rounded < 0 || rounded > 1000) return undefined;
   if (rounded === 100) return undefined;
   return rounded;
+}
+
+/**
+ * Normalize a category-axis `lblAlgn` value to one of the three OOXML
+ * `ST_LblAlgn` tokens (`"ctr"` / `"l"` / `"r"`).
+ *
+ * Returns `undefined` when:
+ *   - the input is missing,
+ *   - the value is not in the `ST_LblAlgn` enumeration,
+ *   - the value is `"ctr"` (the OOXML default — Excel's reference
+ *     centered alignment — and what absence already means).
+ *
+ * Unknown tokens drop rather than fall back to the default so a
+ * malformed override surfaces as "no alignment emitted" instead of
+ * silently snapping to `"ctr"` (which would mask the configuration
+ * error in the caller).
+ */
+function normalizeAxisLblAlgn(
+  value: ChartAxisLabelAlign | undefined,
+): ChartAxisLabelAlign | undefined {
+  if (value === undefined) return undefined;
+  if (value !== "ctr" && value !== "l" && value !== "r") return undefined;
+  if (value === "ctr") return undefined;
+  return value;
 }
 
 /**
@@ -705,7 +742,12 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL }),
     xmlSelfClose("c:crosses", { val: "autoZero" }),
     xmlSelfClose("c:auto", { val: 1 }),
-    xmlSelfClose("c:lblAlgn", { val: "ctr" }),
+    // `<c:lblAlgn>` is always emitted because Excel's reference
+    // serialization includes it on every category axis. The writer
+    // pins the caller's override when set; absence (or the OOXML
+    // default `"ctr"` collapsed by `normalizeAxisLblAlgn`) emits the
+    // default so untouched charts match Excel's output byte-for-byte.
+    xmlSelfClose("c:lblAlgn", { val: opts.xLblAlgn ?? "ctr" }),
     // `<c:lblOffset>` is always emitted because Excel's reference
     // serialization includes it on every category axis. The writer
     // pins the caller's override when set; absence (or the OOXML

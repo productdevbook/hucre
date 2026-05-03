@@ -1148,6 +1148,24 @@ export interface SheetChart {
        */
       lblOffset?: number;
       /**
+       * Horizontal alignment of the tick labels on a category axis —
+       * `"ctr"` (center, the OOXML default), `"l"` (left), or `"r"`
+       * (right). Maps to `<c:catAx><c:lblAlgn val=".."/></c:catAx>`.
+       * Useful when category labels are wrapped onto multiple lines
+       * and the default centered alignment looks ragged against a
+       * column chart's left-aligned bars. Excel's UI exposes the
+       * three presets under "Format Axis -> Alignment" on a category
+       * axis only.
+       *
+       * Only meaningful for bar / column / line / area charts (whose X
+       * axis is `<c:catAx>`); silently ignored for scatter (both axes
+       * are value axes) and pie / doughnut (no axes at all). The OOXML
+       * schema (`ST_LblAlgn`) restricts the value to the three tokens
+       * above; unknown tokens are dropped at write time. See
+       * {@link ChartAxisLabelAlign}.
+       */
+      lblAlgn?: ChartAxisLabelAlign;
+      /**
        * Hide the entire axis (line, tick marks, tick labels). Maps to
        * `<c:catAx><c:delete val="1"/></c:catAx>` (or the matching
        * `<c:valAx>` element on scatter). Default: `false` — Excel
@@ -2038,6 +2056,28 @@ export type ChartAxisTickMark = "none" | "in" | "out" | "cross";
  */
 export type ChartAxisTickLabelPosition = "nextTo" | "low" | "high" | "none";
 
+/**
+ * Horizontal alignment for category-axis tick labels — where Excel
+ * anchors each label inside its allocated cell along the axis.
+ *
+ * Maps to the OOXML `ST_LblAlgn` enumeration which sits inside
+ * `<c:catAx>` / `<c:dateAx>` as `<c:lblAlgn val=".."/>`. The element
+ * does not exist on `<c:valAx>` / `<c:serAx>`:
+ *
+ * - `"ctr"` — labels centered along the axis. OOXML default and what
+ *             Excel paints on a freshly-drawn category axis.
+ * - `"l"`   — labels pinned to the left edge of their slot. Useful for
+ *             multi-line wrapped labels on a column chart that should
+ *             align flush with the leftmost gridline.
+ * - `"r"`   — labels pinned to the right edge of their slot.
+ *
+ * Excel's UI exposes the three presets under "Format Axis ->
+ * Alignment -> Text alignment" on a category axis. Pie / doughnut and
+ * scatter charts have no category axis, so the field is dropped on
+ * those families.
+ */
+export type ChartAxisLabelAlign = "ctr" | "l" | "r";
+
 export interface ChartAxisInfo {
   /** Plain-text title from the axis's `<c:title>`. Omitted when absent. */
   title?: string;
@@ -2120,6 +2160,17 @@ export interface ChartAxisInfo {
    * out-of-range values are dropped rather than fabricated.
    */
   lblOffset?: number;
+  /**
+   * Tick-label horizontal alignment pulled from `<c:lblAlgn val=".."/>`.
+   * Surfaces only on category axes (`<c:catAx>` / `<c:dateAx>`) — the
+   * OOXML schema (`ST_LblAlgn`) does not place this element on
+   * `<c:valAx>` or `<c:serAx>`. The default `"ctr"` (Excel's reference
+   * centered alignment) collapses to `undefined` so absence and the
+   * default round-trip identically through {@link cloneChart}. Unknown
+   * tokens drop to `undefined` rather than fabricate a value the
+   * writer would never emit. See {@link ChartAxisLabelAlign}.
+   */
+  lblAlgn?: ChartAxisLabelAlign;
   /**
    * Axis hidden flag pulled from `<c:delete val=".."/>`. Surfaces
    * `true` when the axis pinned `val="1"` (Excel's "Format Axis ->

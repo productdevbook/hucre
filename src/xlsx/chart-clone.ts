@@ -13,6 +13,7 @@
 import type {
   Chart,
   ChartAxisGridlines,
+  ChartAxisLabelAlign,
   ChartAxisNumberFormat,
   ChartAxisScale,
   ChartAxisTickLabelPosition,
@@ -304,6 +305,18 @@ export interface CloneChartOptions {
        * on scatter and pie / doughnut.
        */
       lblOffset?: number | null;
+      /**
+       * Override `SheetChart.axes.x.lblAlgn`. `undefined` (or
+       * omitted) inherits the source axis's label alignment; `null`
+       * drops the inherited value (the writer falls back to Excel's
+       * default `"ctr"`); a {@link ChartAxisLabelAlign} token replaces
+       * it. Unknown tokens collapse to `undefined` rather than
+       * fabricate a value the writer would never emit. Only
+       * meaningful for resolved chart types whose X axis is
+       * `<c:catAx>` (bar / column / line / area); silently dropped
+       * on scatter and pie / doughnut.
+       */
+      lblAlgn?: ChartAxisLabelAlign | null;
       /**
        * Override `SheetChart.axes.x.hidden`. `undefined` (or omitted)
        * inherits the source axis's flag; `null` drops the inherited
@@ -974,6 +987,11 @@ function resolveAxes(
   const xLblOffset = isCatAxisX
     ? applyLblOffsetOverride(sourceAxes?.x?.lblOffset, overrides?.x?.lblOffset)
     : undefined;
+  // `lblAlgn` is category-axis-only as well (CT_CatAx / CT_DateAx
+  // per ECMA-376 §21.2.2). Same scope as `lblOffset`.
+  const xLblAlgn = isCatAxisX
+    ? applyLblAlgnOverride(sourceAxes?.x?.lblAlgn, overrides?.x?.lblAlgn)
+    : undefined;
   // `<c:delete>` lives on every axis flavour — both `<c:catAx>` and
   // `<c:valAx>` accept it — so the hidden flag carries through every
   // chart family that has axes. Pie / doughnut have no axes at all
@@ -994,6 +1012,7 @@ function resolveAxes(
     xTickLblSkip !== undefined ||
     xTickMarkSkip !== undefined ||
     xLblOffset !== undefined ||
+    xLblAlgn !== undefined ||
     xHidden !== undefined
   ) {
     out.x = {};
@@ -1008,6 +1027,7 @@ function resolveAxes(
     if (xTickLblSkip !== undefined) out.x.tickLblSkip = xTickLblSkip;
     if (xTickMarkSkip !== undefined) out.x.tickMarkSkip = xTickMarkSkip;
     if (xLblOffset !== undefined) out.x.lblOffset = xLblOffset;
+    if (xLblAlgn !== undefined) out.x.lblAlgn = xLblAlgn;
     if (xHidden !== undefined) out.x.hidden = xHidden;
   }
   if (
@@ -1084,6 +1104,28 @@ function applyLblOffsetOverride(
   const rounded = Math.round(override);
   if (rounded < 0 || rounded > 1000 || rounded === 100) return undefined;
   return rounded;
+}
+
+/**
+ * Resolve an `lblAlgn` override using the same `undefined` (inherit)
+ * / `null` (drop) / value (replace) grammar as the other axis helpers.
+ * Unknown tokens collapse to `undefined` so they cannot leak into the
+ * writer (which would silently drop them anyway via
+ * {@link normalizeAxisLblAlgn}). The OOXML default `"ctr"` also
+ * collapses to `undefined` so absence and the default round-trip
+ * identically — symmetric with the parser-side default-collapse.
+ */
+function applyLblAlgnOverride(
+  source: ChartAxisLabelAlign | undefined,
+  override: ChartAxisLabelAlign | null | undefined,
+): ChartAxisLabelAlign | undefined {
+  if (override === undefined) {
+    if (source !== "l" && source !== "r" && source !== "ctr") return undefined;
+    return source === "ctr" ? undefined : source;
+  }
+  if (override === null) return undefined;
+  if (override !== "l" && override !== "r" && override !== "ctr") return undefined;
+  return override === "ctr" ? undefined : override;
 }
 
 /**

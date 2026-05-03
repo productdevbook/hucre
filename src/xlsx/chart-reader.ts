@@ -16,6 +16,7 @@ import type {
   Chart,
   ChartAxisGridlines,
   ChartAxisInfo,
+  ChartAxisLabelAlign,
   ChartAxisNumberFormat,
   ChartAxisScale,
   ChartAxisTickLabelPosition,
@@ -293,6 +294,10 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   // reject it. Skip the parse on value axes for the same reason as
   // the skip elements above.
   const lblOffset = isCategoryAxis ? parseAxisLblOffset(axis) : undefined;
+  // `<c:lblAlgn>` is also category-axis-only per ECMA-376 Part 1,
+  // §21.2.2 — the OOXML `ST_LblAlgn` schema places the element on
+  // `CT_CatAx` / `CT_DateAx` only. Same scope rule as `lblOffset`.
+  const lblAlgn = isCategoryAxis ? parseAxisLblAlgn(axis) : undefined;
   // `<c:delete>` sits on every axis flavour (CT_CatAx / CT_ValAx /
   // CT_DateAx / CT_SerAx) per ECMA-376 Part 1, §21.2.2. The OOXML
   // default `val="0"` (axis visible) collapses to `undefined` so
@@ -310,6 +315,7 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
     tickLblSkip === undefined &&
     tickMarkSkip === undefined &&
     lblOffset === undefined &&
+    lblAlgn === undefined &&
     hidden === undefined
   ) {
     return undefined;
@@ -326,6 +332,7 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   if (tickLblSkip !== undefined) out.tickLblSkip = tickLblSkip;
   if (tickMarkSkip !== undefined) out.tickMarkSkip = tickMarkSkip;
   if (lblOffset !== undefined) out.lblOffset = lblOffset;
+  if (lblAlgn !== undefined) out.lblAlgn = lblAlgn;
   if (hidden !== undefined) out.hidden = hidden;
   return out;
 }
@@ -463,6 +470,34 @@ function parseAxisLblOffset(axis: XmlElement): number | undefined {
   if (parsed < 0 || parsed > 1000) return undefined;
   if (parsed === 100) return undefined;
   return parsed;
+}
+
+/**
+ * Recognized values of `<c:lblAlgn>` per the OOXML `ST_LblAlgn`
+ * enumeration.
+ */
+const VALID_LBL_ALIGNS: ReadonlySet<ChartAxisLabelAlign> = new Set(["ctr", "l", "r"]);
+
+/**
+ * Pull `<c:lblAlgn val=".."/>` off a category axis element. Returns
+ * `undefined` when:
+ *   - the element is absent,
+ *   - the `val` attribute is missing or blank,
+ *   - the value is not in {@link VALID_LBL_ALIGNS},
+ *   - the value is `"ctr"` (the OOXML default — Excel's reference
+ *     centered alignment).
+ *
+ * Unknown tokens drop rather than fall through to the default so a
+ * corrupt template cannot leak an alignment Excel would reject.
+ */
+function parseAxisLblAlgn(axis: XmlElement): ChartAxisLabelAlign | undefined {
+  const el = findChild(axis, "lblAlgn");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  const value = raw.trim() as ChartAxisLabelAlign;
+  if (!VALID_LBL_ALIGNS.has(value)) return undefined;
+  return value === "ctr" ? undefined : value;
 }
 
 /**

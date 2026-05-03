@@ -3681,3 +3681,139 @@ describe("writeChart — axis hidden", () => {
     expect(reparsed?.axes).toBeUndefined();
   });
 });
+
+describe("writeChart — axis lblAlgn", () => {
+  it("emits the override value on the category axis when set", () => {
+    const result = writeChart(makeChart({ axes: { x: { lblAlgn: "l" } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:lblAlgn val="l"');
+  });
+
+  it('emits the OOXML default "ctr" when the field is unset', () => {
+    // Excel's reference serialization always emits `<c:lblAlgn val="ctr"/>`,
+    // so the writer keeps that contract on a stock chart even though the
+    // parser collapses `ctr` to undefined on the read side.
+    const result = writeChart(makeChart(), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:lblAlgn val="ctr"');
+  });
+
+  it('collapses an explicit "ctr" (the default) back to the default emit', () => {
+    // Pinning the default has the same effect as omitting the field —
+    // the OOXML default `"ctr"` round-trips identically with absence.
+    const result = writeChart(makeChart({ axes: { x: { lblAlgn: "ctr" } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:lblAlgn val="ctr"');
+  });
+
+  it('emits "r" alignment when the override pins it', () => {
+    const result = writeChart(makeChart({ axes: { x: { lblAlgn: "r" } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:lblAlgn val="r"');
+  });
+
+  it('drops unknown overrides without falling through (falls back to default "ctr")', () => {
+    // ST_LblAlgn restricts the value to ctr / l / r. Unknown tokens like
+    // "left" or "center" collapse to undefined inside `normalizeAxisLblAlgn`,
+    // so the writer falls back to the default `"ctr"` rather than fabricating
+    // a value Excel would reject.
+    const result = writeChart(makeChart({ axes: { x: { lblAlgn: "left" as never } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:lblAlgn val="ctr"');
+  });
+
+  it("emits exactly one <c:lblAlgn> element per category axis", () => {
+    const result = writeChart(makeChart({ axes: { x: { lblAlgn: "l" } } }), "Sheet1");
+    expect((result.chartXml.match(/c:lblAlgn/g) ?? []).length).toBe(1);
+  });
+
+  it("threads the override through bar, column, line, and area chart families", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(makeChart({ type, axes: { x: { lblAlgn: "r" } } }), "Sheet1");
+      expect(result.chartXml).toContain('c:lblAlgn val="r"');
+    }
+  });
+
+  it("ignores the override on scatter charts (both axes are value axes)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { x: { lblAlgn: "l" } },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:lblAlgn");
+  });
+
+  it("ignores the override on pie / doughnut charts (no axes at all)", () => {
+    const pie = writeChart(makeChart({ type: "pie", axes: { x: { lblAlgn: "l" } } }), "Sheet1");
+    expect(pie.chartXml).not.toContain("c:lblAlgn");
+    const dough = writeChart(
+      makeChart({ type: "doughnut", axes: { x: { lblAlgn: "l" } } }),
+      "Sheet1",
+    );
+    expect(dough.chartXml).not.toContain("c:lblAlgn");
+  });
+
+  it("does not emit lblAlgn on the value axis", () => {
+    // The model surfaces the alignment only on `axes.x`; setting it via
+    // `axes.y` is impossible at the type level. This test pins the
+    // negative case for the writer: a valAx never carries lblAlgn.
+    const result = writeChart(makeChart({ axes: { x: { lblAlgn: "l" } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).not.toContain("c:lblAlgn");
+  });
+
+  it("places lblAlgn between auto and lblOffset per the OOXML schema", () => {
+    // CT_CatAx: ... auto -> lblAlgn -> lblOffset -> tickLblSkip -> tickMarkSkip -> noMultiLvlLbl.
+    const result = writeChart(
+      makeChart({ axes: { x: { lblAlgn: "l", lblOffset: 200 } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const autoIdx = catAxBlock.indexOf("c:auto");
+    const lblAlgnIdx = catAxBlock.indexOf("c:lblAlgn");
+    const lblOffsetIdx = catAxBlock.indexOf("c:lblOffset");
+    expect(autoIdx).toBeGreaterThan(0);
+    expect(lblAlgnIdx).toBeGreaterThan(autoIdx);
+    expect(lblOffsetIdx).toBeGreaterThan(lblAlgnIdx);
+  });
+
+  it("round-trips a non-default alignment through parseChart", () => {
+    const written = writeChart(makeChart({ axes: { x: { lblAlgn: "l" } } }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.lblAlgn).toBe("l");
+  });
+
+  it("collapses a defaulted alignment round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes).toBeUndefined();
+  });
+
+  it("end-to-end: writeXlsx packages the alignment into chart1.xml", async () => {
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+          ],
+          charts: [
+            {
+              type: "column",
+              series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+              anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+              axes: { x: { lblAlgn: "r" } },
+            },
+          ],
+        },
+      ],
+    });
+    const written = await extractXml(xlsx, "xl/charts/chart1.xml");
+    expect(written).toContain('c:lblAlgn val="r"');
+  });
+});

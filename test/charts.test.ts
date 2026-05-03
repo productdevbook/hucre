@@ -4367,3 +4367,144 @@ describe("parseChart — axis hidden", () => {
     expect(chart?.axes?.y?.hidden).toBeUndefined();
   });
 });
+
+// ── parseChart — axis lblAlgn ──────────────────────────────────────
+
+describe("parseChart — axis lblAlgn", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it("surfaces a non-default lblAlgn on the category axis", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:lblAlgn val="l"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.lblAlgn).toBe("l");
+  });
+
+  it("collapses the OOXML default lblAlgn=ctr to undefined", () => {
+    // Excel's reference serialization always emits `<c:lblAlgn val="ctr"/>`,
+    // but absence and the default round-trip identically — the writer's
+    // elision logic re-emits `ctr` when the field is undefined, so the
+    // parser collapses `ctr` to undefined to keep the parsed shape minimal.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:lblAlgn val="ctr"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("accepts the ST_LblAlgn tokens 'l' and 'r'", () => {
+    const out = (val: string): unknown => {
+      const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:lblAlgn val="${val}"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+      return parseChart(xml)?.axes?.x?.lblAlgn;
+    };
+    expect(out("l")).toBe("l");
+    expect(out("r")).toBe("r");
+  });
+
+  it("ignores unknown lblAlgn tokens (drops rather than fabricates)", () => {
+    // ST_LblAlgn restricts the value to ctr / l / r. Unknown tokens like
+    // "left" or empty / whitespace strings should drop rather than fall
+    // through to a default — a corrupt template cannot leak a value the
+    // writer would never emit.
+    const out = (val: string): unknown => {
+      const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:lblAlgn val="${val}"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+      return parseChart(xml)?.axes?.x?.lblAlgn;
+    };
+    expect(out("left")).toBeUndefined();
+    expect(out("center")).toBeUndefined();
+    expect(out("LEFT")).toBeUndefined();
+    expect(out("")).toBeUndefined();
+  });
+
+  it("returns undefined when lblAlgn val attribute is missing", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:lblAlgn/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("does not surface lblAlgn on a value axis", () => {
+    // The OOXML schema places `<c:lblAlgn>` on CT_CatAx / CT_DateAx
+    // only — `<c:valAx>` rejects it entirely. A corrupt template carrying
+    // a stray alignment on a value axis should not surface a field the
+    // writer would never emit anyway.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:lblAlgn val="r"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.lblAlgn).toBeUndefined();
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("co-surfaces lblAlgn alongside title, gridlines, and lblOffset", () => {
+    const xml = `<c:chartSpace ${NS}
+                xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:majorGridlines/>
+      <c:title><c:tx><c:rich><a:p><a:r><a:t>Region</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      <c:lblAlgn val="l"/>
+      <c:lblOffset val="200"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x).toEqual({
+      title: "Region",
+      gridlines: { major: true },
+      lblOffset: 200,
+      lblAlgn: "l",
+    });
+  });
+});
