@@ -705,6 +705,16 @@ default-collapse semantics: the OOXML default `100` (Excel's
 reference label spacing) collapses to `undefined` so absence and the
 default round-trip identically; out-of-range values (negative or
 greater than 1000) drop rather than clamp.
+`ChartAxisInfo.lblAlgn` surfaces the category-axis tick-label
+horizontal alignment (`<c:catAx><c:lblAlgn val=".."/>`) — Excel's
+"Format Axis → Alignment → Text alignment" preset. Same scope as
+`lblOffset` (`CT_CatAx` / `CT_DateAx` only — `<c:valAx>` /
+`<c:serAx>` reject the element) and the same default-collapse
+semantics: the OOXML default `"ctr"` (centered) collapses to
+`undefined` so absence and the default round-trip identically.
+Unknown tokens (anything outside the `ST_LblAlgn` enumeration of
+`"ctr"` / `"l"` / `"r"`) drop rather than fabricate a value the
+writer would never emit.
 `ChartAxisInfo.hidden` surfaces the per-axis `<c:delete val=".."/>`
 flag — Excel's "Format Axis -> Show axis" toggle. Only an explicit
 `val="1"` (axis hidden) surfaces `true`; the OOXML default `val="0"`,
@@ -731,6 +741,18 @@ round-trip identically; only an explicit `val="1"` surfaces `true`.
 The reader accepts the OOXML truthy / falsy spellings (`"1"` / `"true"`
 / `"0"` / `"false"`); unknown values and missing `val` attributes drop
 to `undefined`.
+`Chart.legendOverlay` surfaces the legend-overlay flag pulled from
+`<c:legend><c:overlay val=".."/></c:legend>` — Excel's "Format Legend →
+Show the legend without overlapping the chart" toggle (the checkbox is
+the inverse of this flag — checked means `false`, unchecked means
+`true`). The OOXML default `false` collapses to `undefined` so absence
+and `<c:overlay val="0"/>` round-trip identically; only an explicit
+`val="1"` surfaces `true`. The reader accepts the OOXML truthy / falsy
+spellings (`"1"` / `"true"` / `"0"` / `"false"`); unknown values and
+missing `val` attributes drop to `undefined`. The flag is dropped
+whenever `Chart.legend` is `false` or the chart omits the legend
+element entirely — there is no overlay slot on a hidden legend, so the
+parsed shape stays minimal.
 `ChartSeriesInfo.smooth` surfaces the per-series
 `<c:ser><c:smooth val=".."/>` flag — Excel's "Format Data Series →
 Line → Smoothed line" toggle — only on `line` / `line3D` / `scatter`
@@ -915,6 +937,17 @@ outer edge (`val="1"`). The writer always emits the element so the
 rendered intent is explicit on roundtrip — no chart family is
 special-cased, since the toggle styles the outer wrapper rather than
 any chart-family-specific markup.
+The chart-level `legendOverlay` field maps to `<c:overlay val=".."/>`
+inside `<c:legend>` — Excel's "Format Legend → Show the legend without
+overlapping the chart" toggle (the checkbox is the inverse of this
+flag — checked means `false`, unchecked means `true`). Absent it, the
+writer emits the OOXML default `val="0"` (the legend reserves its own
+slot and the plot area shrinks to make room), matching Excel's
+reference serialization. Pin `legendOverlay: true` to draw the legend
+on top of the plot area so the chart series get the full frame
+(`val="1"`). The flag is silently ignored when `legend: false`
+suppresses the entire legend element — there is no overlay slot on a
+hidden legend, so the writer skips emitting any orphaned `<c:overlay>`.
 The `axes.x.tickLblSkip` and `axes.x.tickMarkSkip` fields thin out a
 crowded category axis (`<c:catAx><c:tickLblSkip val=".."/>` and
 `<c:catAx><c:tickMarkSkip val=".."/>`). Pass a positive integer to
@@ -939,6 +972,19 @@ writer falls back to the default `100`. Same scope as the tick skips
 above: bar / column / line / area honour the override; scatter and
 pie / doughnut silently ignore it. Non-integer inputs round to the
 nearest integer.
+The `axes.x.lblAlgn` field pins the horizontal alignment of the tick
+labels along a category axis (`<c:catAx><c:lblAlgn val=".."/>`) —
+Excel's "Format Axis → Alignment → Text alignment" preset. Pass
+`"l"` (flush left), `"r"` (flush right), or `"ctr"` (centered, the
+OOXML default) to override the default; useful when wrapped multi-line
+labels look ragged against a column chart's left-aligned bars. The
+writer always emits `<c:lblAlgn>` because Excel's reference
+serialization includes it on every category axis; absence (and the
+default `"ctr"`) emit `val="ctr"` so untouched charts match the
+reference output byte-for-byte. Unknown tokens (anything outside the
+`ST_LblAlgn` enumeration) drop silently — the writer falls back to
+the default. Same scope as `lblOffset`: bar / column / line / area
+honour the override; scatter and pie / doughnut silently ignore it.
 The per-axis `axes.x.hidden` and `axes.y.hidden` flags toggle
 `<c:catAx><c:delete val=".."/>` / `<c:valAx><c:delete val=".."/>` —
 Excel's "Format Axis -> Show axis" toggle. Set `true` to collapse the
@@ -1127,6 +1173,17 @@ back to the writer's OOXML `false` default (square chart frame), or a
 lives on `<c:chartSpace>` and is valid on every chart family, so a
 coercion (line → column, doughnut → pie, etc.) preserves the
 inherited value rather than dropping it.
+The chart-level `legendOverlay` flag follows the same grammar: pass
+`undefined` to inherit the source's parsed value, `null` to drop it
+back to the writer's OOXML `false` default (no overlap with the plot
+area), or a `boolean` to replace it. The flag lives on `<c:legend>` so
+the field is valid on every chart family, but it is silently dropped
+from the cloned `SheetChart` whenever the resolved `legend` is `false`
+— a hidden legend has no overlay slot in the rendered chart, so an
+inherited `true` would carry no on-screen effect. Re-enabling a hidden
+source legend through `legend: "top"` (or any visible position) on the
+override re-opens the slot, and an explicit `legendOverlay: true`
+override threads through.
 The per-axis `axes.x.tickLblSkip` and `axes.x.tickMarkSkip` overrides
 follow the same `undefined` (inherit) / `null` (drop) / number
 (replace) grammar as `gridlines` / `scale` / `numberFormat`. The
@@ -1145,6 +1202,17 @@ skips: the inherited offset is dropped silently when the resolved
 clone target is `scatter` or `pie` / `doughnut`, so flattening a
 column template into a scatter clone never leaks a stale catAx offset
 into the output.
+The per-axis `axes.x.lblAlgn` override follows the same `undefined`
+(inherit) / `null` (drop) / token (replace) grammar. An explicit
+override of `"ctr"` (the OOXML default) collapses to `undefined` so
+it behaves identically to `null` — both leave the cloned chart with
+Excel's default centered alignment. Unknown tokens drop rather than
+fall through, so a malformed override surfaces as "no alignment
+emitted" instead of silently snapping to the default. Same scope-
+restriction as `lblOffset`: the inherited alignment is dropped
+silently when the resolved clone target is `scatter` or `pie` /
+`doughnut`, so flattening a column template into a scatter clone
+never leaks a stale catAx alignment into the output.
 The per-axis `axes.x.hidden` and `axes.y.hidden` overrides follow the
 same `undefined` (inherit) / `null` (drop) / `boolean` (replace)
 grammar. Because `<c:delete>` lives on every axis flavour, the flag

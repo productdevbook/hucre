@@ -3817,3 +3817,143 @@ describe("writeChart — axis lblAlgn", () => {
     expect(written).toContain('c:lblAlgn val="r"');
   });
 });
+
+// ── writeChart — legend overlay ──────────────────────────────────────
+
+describe("writeChart — legendOverlay", () => {
+  it('emits <c:overlay val="0"/> when the field is unset (OOXML default)', () => {
+    // The writer always emits the element so the rendered intent is
+    // explicit on roundtrip — Excel itself includes it in every
+    // reference legend serialization.
+    const result = writeChart(makeChart(), "Sheet1");
+    const legend = result.chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain('c:overlay val="0"');
+    expect(legend).not.toContain('c:overlay val="1"');
+  });
+
+  it("threads legendOverlay=true through to <c:legend>", () => {
+    // true is the non-default — Excel's "Show the legend without
+    // overlapping the chart" toggle off (the legend is drawn on top of
+    // the plot area).
+    const result = writeChart(makeChart({ legendOverlay: true }), "Sheet1");
+    const legend = result.chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain('c:overlay val="1"');
+    expect(legend).not.toContain('c:overlay val="0"');
+  });
+
+  it("threads legendOverlay=false through to <c:legend>", () => {
+    // Setting the OOXML default explicitly produces the same wire shape
+    // as omitting the field — the element is always emitted.
+    const result = writeChart(makeChart({ legendOverlay: false }), "Sheet1");
+    const legend = result.chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain('c:overlay val="0"');
+  });
+
+  it("places <c:overlay> after <c:legendPos> inside <c:legend> (OOXML order)", () => {
+    // CT_Legend sequence: legendPos?, legendEntry*, layout?, overlay?, ...
+    const result = writeChart(makeChart({ legendOverlay: true }), "Sheet1");
+    const legend = result.chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend.indexOf("c:legendPos")).toBeLessThan(legend.indexOf("c:overlay"));
+  });
+
+  it("only emits <c:overlay> once inside <c:legend> even on a chart that overrides it", () => {
+    // Guard against any regression that would double-emit the element
+    // (e.g. one hardcoded copy plus a dynamic one). The title also
+    // carries its own `<c:overlay>` so we scope the count to the legend.
+    const result = writeChart(makeChart({ legendOverlay: true }), "Sheet1");
+    const legend = result.chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    const occurrences = legend.match(/c:overlay/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("does not emit any <c:legend> when legend=false", () => {
+    // A hidden legend has no slot for an overlay flag — the writer
+    // suppresses the entire legend element rather than emit a stray
+    // overlay child Excel would never read.
+    const result = writeChart(makeChart({ legend: false, legendOverlay: true }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:legend>");
+    // The title still carries its own <c:overlay>; ensure no legend
+    // element exists so we know no legend-overlay snuck in.
+    expect(result.chartXml.match(/<c:legend\b/g)).toBeNull();
+  });
+
+  it("threads legendOverlay through every chart family", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, legendOverlay: true }), "Sheet1");
+      const legend = result.chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+      expect(legend).toContain('c:overlay val="1"');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        legendOverlay: true,
+      }),
+      "Sheet1",
+    );
+    const legend = scatter.chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain('c:overlay val="1"');
+  });
+
+  it("round-trips a non-default legendOverlay value through parseChart", () => {
+    // A chart with legendOverlay=true should re-parse into a Chart whose
+    // `legendOverlay` field is `true` (not collapsed to undefined since
+    // true is not the OOXML default).
+    const written = writeChart(makeChart({ legendOverlay: true }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.legendOverlay).toBe(true);
+  });
+
+  it("collapses a defaulted legendOverlay round-trip back to undefined", () => {
+    // A fresh chart (legendOverlay omitted) writes `0` and re-parses to
+    // undefined — absence and the OOXML default round-trip identically.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.legendOverlay).toBeUndefined();
+  });
+
+  it("collapses an explicit legendOverlay=false round-trip back to undefined", () => {
+    // Pinning the OOXML default also collapses on read, so a template
+    // that explicitly emits `<c:overlay val="0"/>` is treated the same
+    // as one that omits the field.
+    const written = writeChart(makeChart({ legendOverlay: false }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.legendOverlay).toBeUndefined();
+  });
+
+  it("ignores non-boolean legendOverlay values", () => {
+    // Match how `roundedCorners` / `plotVisOnly` / axis hidden treat
+    // their inputs: only literal `true` produces the non-default. A
+    // stray non-boolean (e.g. truthy string) collapses to the default.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = writeChart(makeChart({ legendOverlay: "yes" as any }), "Sheet1");
+    const legend = result.chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain('c:overlay val="0"');
+  });
+
+  it("survives a writeXlsx round trip — legendOverlay lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            legendOverlay: true,
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const legend = chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain('c:overlay val="1"');
+  });
+});

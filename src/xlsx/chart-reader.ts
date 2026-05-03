@@ -200,6 +200,17 @@ export function parseChart(xml: string): Chart | undefined {
   const legend = parseLegend(chartEl);
   if (legend !== undefined) out.legend = legend;
 
+  // `<c:overlay>` is a child of `<c:legend>`, so a chart that hides the
+  // legend (legend === false) or omits the element entirely (legend ===
+  // undefined) has no overlay flag to surface — pulling the value off a
+  // `<c:legend>` that is not part of the chart's render would leak a
+  // toggle that has no effect. Only attempt the parse when the chart
+  // declares a visible legend.
+  if (legend !== undefined && legend !== false) {
+    const legendOverlay = parseLegendOverlay(chartEl);
+    if (legendOverlay !== undefined) out.legendOverlay = legendOverlay;
+  }
+
   const dispBlanksAs = parseDispBlanksAs(chartEl);
   if (dispBlanksAs !== undefined) out.dispBlanksAs = dispBlanksAs;
 
@@ -1127,6 +1138,44 @@ function parseLegend(chartEl: XmlElement): false | ChartLegendPosition | undefin
       return "topRight";
     default:
       // Unknown legendPos values are dropped rather than fabricated.
+      return undefined;
+  }
+}
+
+/**
+ * Pull `<c:legend><c:overlay val=".."/></c:legend>` off the chart. The
+ * OOXML default `false` (the legend reserves its own slot, no overlap
+ * with the plot area) collapses to `undefined` so absence and
+ * `<c:overlay val="0"/>` round-trip identically through
+ * {@link cloneChart} — only an explicit `<c:overlay val="1"/>` surfaces
+ * `true`.
+ *
+ * The caller is expected to confirm a visible legend exists before
+ * invoking this — `<c:overlay>` only renders when the legend is part of
+ * the chart, so reading it from a chart that hides or omits the legend
+ * would surface a flag with no on-screen effect.
+ *
+ * Accepts the OOXML truthy / falsy spellings (`"1"` / `"true"` / `"0"`
+ * / `"false"`); unknown values and missing `val` attributes drop to
+ * `undefined` rather than fabricate a flag Excel would not emit.
+ */
+function parseLegendOverlay(chartEl: XmlElement): boolean | undefined {
+  const legend = findChild(chartEl, "legend");
+  if (!legend) return undefined;
+  const overlay = findChild(legend, "overlay");
+  if (!overlay) return undefined;
+  const raw = overlay.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  switch (raw) {
+    case "1":
+    case "true":
+      return true;
+    case "0":
+    case "false":
+      // OOXML default — collapse to undefined for symmetry with the
+      // writer's `legendOverlay` field.
+      return undefined;
+    default:
       return undefined;
   }
 }

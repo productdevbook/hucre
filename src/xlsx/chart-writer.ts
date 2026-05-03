@@ -72,7 +72,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
 
   // ── Legend ──
   if (legendPos) {
-    chartChildren.push(buildLegend(legendPos));
+    chartChildren.push(buildLegend(legendPos, resolveLegendOverlay(chart)));
   }
 
   chartChildren.push(xmlSelfClose("c:plotVisOnly", { val: resolvePlotVisOnly(chart) ? 1 : 0 }));
@@ -1504,11 +1504,31 @@ function resolveLegendPosition(chart: SheetChart): LegendPos | null {
   }
 }
 
-function buildLegend(pos: LegendPos): string {
+function buildLegend(pos: LegendPos, overlay: boolean): string {
   return xmlElement("c:legend", undefined, [
     xmlSelfClose("c:legendPos", { val: pos }),
-    xmlSelfClose("c:overlay", { val: 0 }),
+    xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }),
   ]);
+}
+
+/**
+ * Resolve `<c:legend><c:overlay val=".."/></c:legend>` from
+ * {@link SheetChart.legendOverlay}.
+ *
+ * Defaults to `false` (the OOXML default Excel itself emits — the
+ * legend reserves its own slot and the plot area shrinks to make room).
+ * Anything other than literal `true` collapses to `false` so a stray
+ * non-boolean leaking through the type guard (e.g. `0` / `1` / `"true"`
+ * / `null`) never produces `<c:overlay val="1"/>`. This matches how
+ * `roundedCorners` / `plotVisOnly` / axis `hidden` treat their inputs:
+ * a literal boolean is the only path to a non-default value.
+ *
+ * The writer always emits `<c:overlay>` because Excel's reference
+ * serialization includes the element on every visible legend; only the
+ * `val` flips when the caller pins `legendOverlay: true`.
+ */
+function resolveLegendOverlay(chart: SheetChart): boolean {
+  return chart.legendOverlay === true;
 }
 
 // ── Display Blanks As ────────────────────────────────────────────────
