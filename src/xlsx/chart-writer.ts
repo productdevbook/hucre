@@ -1355,7 +1355,17 @@ function buildLineChart(chart: SheetChart, sheetName: string): string {
     children.push(buildUpDownBars());
   }
 
-  children.push(xmlSelfClose("c:marker", { val: 1 }));
+  // `<c:marker>` (the chart-level CT_Boolean variant) gates per-series
+  // marker rendering across the entire line chart. Excel's reference
+  // serialization always emits the element on every authored line chart
+  // — `val="1"` for the default "Line with Markers" look, `val="0"`
+  // for the bare "Line" preset. The writer mirrors that always-emit
+  // contract so a roundtrip preserves Excel's reference shape; only an
+  // explicit `showLineMarkers: false` flips the value to `0` to suppress
+  // the per-point dots chart-wide. `undefined` and `true` both emit
+  // `val="1"` so a fresh chart matches Excel's default render and a
+  // back-compat caller that never set the flag keeps the same output.
+  children.push(xmlSelfClose("c:marker", { val: chart.showLineMarkers === false ? 0 : 1 }));
   children.push(xmlSelfClose("c:axId", { val: AXIS_ID_CAT }));
   children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL }));
 

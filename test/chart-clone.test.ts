@@ -7625,3 +7625,262 @@ describe("cloneChart — chart-space protection", () => {
     });
   });
 });
+
+// ── cloneChart — chart-level line marker visibility ─────────────────
+
+describe("cloneChart — showLineMarkers", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Tpl!$B$2:$B$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's showLineMarkers by default", () => {
+    const clone = cloneChart(source({ showLineMarkers: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.showLineMarkers).toBe(false);
+  });
+
+  it("lets options.showLineMarkers override the source's value", () => {
+    // Source pins markers off; clone restores them with an explicit
+    // `true` (which the writer collapses to the default <c:marker val="1"/>).
+    const clone = cloneChart(source({ showLineMarkers: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      showLineMarkers: true,
+    });
+    expect(clone.showLineMarkers).toBe(true);
+  });
+
+  it("drops the inherited showLineMarkers when the override is null", () => {
+    // null collapses to the writer's default — the field disappears
+    // from the resolved SheetChart so the writer falls back to
+    // <c:marker val="1"/>.
+    const clone = cloneChart(source({ showLineMarkers: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      showLineMarkers: null,
+    });
+    expect(clone.showLineMarkers).toBeUndefined();
+  });
+
+  it("returns undefined showLineMarkers when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.showLineMarkers).toBeUndefined();
+  });
+
+  it("lets the caller flip markers off on a source that did not carry the flag", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      showLineMarkers: false,
+    });
+    expect(clone.showLineMarkers).toBe(false);
+  });
+
+  it("drops showLineMarkers on a flatten to a non-line family (line → column)", () => {
+    // The chart-level <c:marker> (CT_Boolean) only renders inside
+    // <c:lineChart>. A column clone must not surface the flag so the
+    // writer does not author it on a chart-type element whose schema
+    // rejects it.
+    const clone = cloneChart(source({ showLineMarkers: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.showLineMarkers).toBeUndefined();
+  });
+
+  it("drops showLineMarkers on a flatten to area (CT_AreaChart has no slot)", () => {
+    const clone = cloneChart(source({ showLineMarkers: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "area",
+    });
+    expect(clone.type).toBe("area");
+    expect(clone.showLineMarkers).toBeUndefined();
+  });
+
+  it("drops showLineMarkers on a flatten to pie / doughnut / scatter", () => {
+    const pie = cloneChart(source({ showLineMarkers: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "pie",
+    });
+    expect(pie.showLineMarkers).toBeUndefined();
+
+    const doughnut = cloneChart(source({ showLineMarkers: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(doughnut.showLineMarkers).toBeUndefined();
+
+    const scatter = cloneChart(source({ showLineMarkers: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "scatter",
+      // scatter expects numeric ranges; pin a fresh series shape.
+      series: [{ values: "Sheet1!$B$2:$B$5", categories: "Sheet1!$A$2:$A$5" }],
+    });
+    expect(scatter.showLineMarkers).toBeUndefined();
+  });
+
+  it("ignores a stock template's stray showLineMarkers on flatten to line (read-side already drops it)", () => {
+    // The reader scopes the lookup to <c:lineChart>, so a stock
+    // template never surfaces a `showLineMarkers` field. Even if a
+    // caller fabricates one on the parsed Chart, the resolver still
+    // honours it on a line clone — confirm the line scope accepts it.
+    const stockSource: Chart = {
+      kinds: ["stock"],
+      seriesCount: 1,
+      series: [{ kind: "stock", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      // Synthetic — the reader would never emit this on a stock chart,
+      // but the resolver's contract is to honour the field on the
+      // resolved write-side family.
+      showLineMarkers: false,
+    };
+    const clone = cloneChart(stockSource, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "line",
+      series: [{ values: "Tpl!$B$2:$B$5", categories: "Tpl!$A$2:$A$5" }],
+    });
+    expect(clone.type).toBe("line");
+    expect(clone.showLineMarkers).toBe(false);
+  });
+
+  it("composes alongside other line-only chart-level toggles", () => {
+    const clone = cloneChart(
+      source({
+        dropLines: true,
+        hiLowLines: true,
+        upDownBars: true,
+        showLineMarkers: false,
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.dropLines).toBe(true);
+    expect(clone.hiLowLines).toBe(true);
+    expect(clone.upDownBars).toBe(true);
+    expect(clone.showLineMarkers).toBe(false);
+  });
+
+  it("propagates showLineMarkers=false into the rendered <c:lineChart> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ showLineMarkers: false }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Quarter", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+            ["Q3", 150],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('<c:marker val="0"/>');
+
+    // Re-parsing closes the template → clone → write → read loop.
+    const reparsed = parseChart(written);
+    expect(reparsed?.showLineMarkers).toBe(false);
+  });
+
+  it('emits the default <c:marker val="1"/> when both source and override are absent', async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Quarter", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('<c:marker val="1"/>');
+    // Re-parse collapses the default back to undefined for symmetry.
+    expect(parseChart(written)?.showLineMarkers).toBeUndefined();
+  });
+
+  it("an explicit override beats the source value through writeXlsx", async () => {
+    // Source pins `false` (markers off); clone overrides to `null` —
+    // the rendered chart should fall back to <c:marker val="1"/> and
+    // re-parse to undefined.
+    const clone = cloneChart(source({ showLineMarkers: false }), {
+      anchor: { from: { row: 5, col: 0 } },
+      showLineMarkers: null,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Quarter", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('<c:marker val="1"/>');
+    expect(written).not.toContain('<c:marker val="0"/>');
+    expect(parseChart(written)?.showLineMarkers).toBeUndefined();
+  });
+
+  it("round-trips through parseChart -> cloneChart -> writeChart -> parseChart", async () => {
+    const sourceWrite: SheetChart = {
+      type: "line",
+      series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+      anchor: { from: { row: 0, col: 0 } },
+      showLineMarkers: false,
+    };
+    const xml = writeChart(sourceWrite, "Sheet1").chartXml;
+    const parsed = parseChart(xml)!;
+    expect(parsed.showLineMarkers).toBe(false);
+
+    const clone = cloneChart(parsed, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    expect(clone.showLineMarkers).toBe(false);
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Quarter", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('<c:marker val="0"/>');
+    expect(parseChart(written)?.showLineMarkers).toBe(false);
+  });
+});

@@ -1257,6 +1257,37 @@ export interface SheetChart {
    */
   upDownBars?: boolean;
   /**
+   * Whether the line chart paints markers at each data point. Maps to
+   * `<c:lineChart><c:marker val=".."/></c:lineChart>` — Excel's
+   * "Line vs. Line with Markers" chart-type distinction at the
+   * chart level. The flag is the chart-level visibility gate; per-
+   * series {@link ChartSeries.marker} still picks the symbol / size /
+   * color when this gate lets markers render.
+   *
+   * Default: `true` (the Excel reference behavior — every authored
+   * line chart emits `<c:marker val="1"/>`, and hucre's writer mirrors
+   * that for back-compat with existing renders). Set `false` to
+   * suppress markers chart-wide (the "Line" preset look) — useful when
+   * a templated dashboard line chart should render as a clean stroke
+   * without the per-point dots.
+   *
+   * Only meaningful for `line` charts — the OOXML schema places
+   * `<c:marker>` (the chart-level CT_Boolean variant) exclusively on
+   * `CT_LineChart`. The `line3D` and `stock` chart-type elements have
+   * no slot for it; the writer never authors those families, so the
+   * field is silently dropped on every other chart kind (`bar` /
+   * `column` / `pie` / `doughnut` / `area` / `scatter`).
+   *
+   * The writer always emits the element so the rendered intent is
+   * explicit on roundtrip — Excel's reference serialization includes
+   * `<c:marker>` on every line chart, and matching that contract keeps
+   * the rendered shape stable. The reader collapses the default
+   * `val="1"` (and absence) to `undefined` so a fresh chart and a
+   * marker-on chart round-trip identically through {@link cloneChart};
+   * only an explicit `val="0"` surfaces `false`.
+   */
+  showLineMarkers?: boolean;
+  /**
    * Built-in chart style preset. Maps to `<c:style val=".."/>` on
    * `<c:chartSpace>` (a sibling of `<c:chart>`, not a child). Mirrors
    * Excel's "Chart Design -> Chart Styles" gallery — each integer
@@ -3214,6 +3245,33 @@ export interface Chart {
    * / area / scatter chart-type elements.
    */
   upDownBars?: boolean;
+  /**
+   * Chart-level marker visibility flag pulled from
+   * `<c:lineChart><c:marker val=".."/></c:lineChart>`. Reflects Excel's
+   * "Line vs. Line with Markers" chart-type distinction — the flag
+   * gates whether per-series markers paint at all on a line chart.
+   *
+   * Surfaces `false` only when the chart pinned `<c:marker val="0"/>`
+   * (the non-default state — the "Line" preset, no per-point dots).
+   * The Excel-default `val="1"` and absence both collapse to
+   * `undefined` so absence and the default round-trip identically
+   * through {@link cloneChart}. The reader accepts the OOXML truthy /
+   * falsy spellings (`"1"` / `"true"` / `"0"` / `"false"`); unknown
+   * values and missing `val` attributes drop to `undefined`.
+   *
+   * Only line-flavored chart types surface the field — the OOXML
+   * schema places the chart-level `<c:marker>` (CT_Boolean) exclusively
+   * on `CT_LineChart`. `CT_Line3DChart` / `CT_StockChart` have no
+   * slot for it, and a stray `<c:marker>` on bar / column / pie /
+   * doughnut / area / scatter chart-type elements is ignored — the
+   * reader only inspects the line-flavored body.
+   *
+   * Note: this flag is independent of per-series
+   * {@link ChartSeriesInfo.marker} — the chart-level toggle gates
+   * marker rendering across every series, while the per-series block
+   * picks the symbol / size / fill that paints when the gate is open.
+   */
+  showLineMarkers?: boolean;
   /**
    * Built-in chart style preset pulled from `<c:chartSpace><c:style
    * val=".."/>`. Reflects Excel's "Chart Design -> Chart Styles"
