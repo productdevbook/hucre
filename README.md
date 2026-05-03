@@ -667,6 +667,16 @@ preset; missing elements, missing `val` attributes, and tokens
 outside the OOXML enum drop to `undefined`. Only `scatter` charts
 report the field — the schema places the element exclusively on
 `<c:scatterChart>`.
+`Chart.plotVisOnly` surfaces the chart-level
+`<c:chart><c:plotVisOnly val=".."/>` flag — the inverse of Excel's
+"Hidden and Empty Cells → Show data in hidden rows and columns"
+checkbox. The OOXML default `true` (hidden cells drop out) collapses
+to `undefined` so absence and `<c:plotVisOnly val="1"/>` round-trip
+identically; only an explicit `val="0"` surfaces `false` (the
+non-default that keeps hidden cells in the chart). The reader accepts
+the OOXML truthy / falsy spellings (`"1"` / `"true"` / `"0"` /
+`"false"`); unknown values and missing `val` attributes drop to
+`undefined`.
 `ChartSeriesInfo.smooth` surfaces the per-series
 `<c:ser><c:smooth val=".."/>` flag — Excel's "Format Data Series →
 Line → Smoothed line" toggle — only on `line` / `line3D` / `scatter`
@@ -819,6 +829,15 @@ outside the enum fall back to `"lineMarker"` so a malformed input
 cannot produce invalid OOXML. Other chart kinds silently ignore the
 field — the schema places `<c:scatterStyle>` exclusively on
 `<c:scatterChart>`.
+The chart-level `plotVisOnly` field maps to `<c:plotVisOnly val=".."/>`
+on `<c:chart>` — the inverse of Excel's "Hidden and Empty Cells →
+Show data in hidden rows and columns" checkbox. Absent it, the writer
+emits the OOXML default `val="1"` (hidden rows / columns drop out of
+the chart), matching Excel's reference serialization. Pin
+`plotVisOnly: false` to keep hidden helper cells in the rendered
+chart (`val="0"`). The writer always emits the element so the
+rendered intent is explicit on roundtrip — no chart family is special-
+cased.
 For line and scatter charts, each `series[i].smooth` flag toggles
 Excel's curved-line variant (`<c:smooth val="..">` inside `<c:ser>`).
 Line series always emit the element — `smooth: true` writes `val="1"`,
@@ -965,6 +984,13 @@ ChartScatterStyle} value to replace it. The inherited value is also
 dropped automatically when the resolved clone target is anything
 other than `scatter`, since the schema rejects `<c:scatterStyle>` on
 every other chart family.
+The chart-level `plotVisOnly` flag follows the same grammar: pass
+`undefined` to inherit the source's parsed value, `null` to drop it
+back to the writer's OOXML `true` default (hidden cells drop out), or
+a `boolean` to replace it. Like `dispBlanksAs` and `varyColors`, the
+field lives on `<c:chart>` and is valid on every chart family, so a
+coercion (line → column, doughnut → pie, etc.) preserves the
+inherited value rather than dropping it.
 
 #### Walking and adding charts with `getCharts` / `addChart`
 

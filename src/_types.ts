@@ -995,6 +995,24 @@ export interface SheetChart {
    */
   scatterStyle?: ChartScatterStyle;
   /**
+   * Whether the chart only plots data from visible cells. Maps to
+   * `<c:plotVisOnly val=".."/>` on `<c:chart>`. Mirrors Excel's
+   * "Hidden and Empty Cells → Show data in hidden rows and columns"
+   * checkbox: when the box is checked, hidden cells stay in the chart
+   * and `plotVisOnly` is `false`; when unchecked (the Excel UI
+   * default), hidden cells drop out and `plotVisOnly` is `true`.
+   *
+   * Default: `true` — the OOXML schema default and what every fresh
+   * Excel chart emits. Set `false` to keep hidden rows / columns in
+   * the rendered chart, useful when the source data range hides helper
+   * cells or the dashboard's filter view should not affect the chart.
+   *
+   * The writer always emits the element so the rendered intent is
+   * explicit on roundtrip — Excel itself includes it in every reference
+   * serialization.
+   */
+  plotVisOnly?: boolean;
+  /**
    * Per-axis configuration rendered alongside the plot area. The `x`
    * axis is the category axis for bar/column/line/area (or the bottom
    * value axis for scatter); the `y` axis is the value axis. Ignored
@@ -2043,6 +2061,21 @@ export interface Chart {
    * places `<c:scatterStyle>` exclusively on `<c:scatterChart>`.
    */
   scatterStyle?: ChartScatterStyle;
+  /**
+   * Plot-visible-only flag pulled from
+   * `<c:chart><c:plotVisOnly val=".."/>`. Reflects Excel's "Hidden and
+   * Empty Cells → Show data in hidden rows and columns" toggle (the
+   * checkbox is the inverse of this flag — checked means `false`,
+   * unchecked means `true`).
+   *
+   * The OOXML default `true` collapses to `undefined` so absence and
+   * the default round-trip identically through {@link cloneChart} —
+   * only an explicit `<c:plotVisOnly val="0"/>` surfaces `false`. The
+   * reader accepts the OOXML truthy / falsy spellings (`"1"` / `"true"`
+   * / `"0"` / `"false"`); unknown values and missing `val` attributes
+   * drop to `undefined`.
+   */
+  plotVisOnly?: boolean;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────

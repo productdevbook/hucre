@@ -3276,3 +3276,122 @@ describe("parseChart — series invertIfNegative flag", () => {
     expect(chart?.series?.[0].invertIfNegative).toBeUndefined();
   });
 });
+
+// ── parseChart — plotVisOnly ──────────────────────────────────────
+
+describe("parseChart — plotVisOnly", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces <c:plotVisOnly val="0"/> on <c:chart> as false (non-default)', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+    <c:plotVisOnly val="0"/>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.plotVisOnly).toBe(false);
+  });
+
+  it("collapses the OOXML default true to undefined (writer absence)", () => {
+    // The default carried explicitly by Excel's reference serialization
+    // round-trips identically to absence of the field.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:plotVisOnly val="1"/>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.plotVisOnly).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:plotVisOnly> element", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.plotVisOnly).toBeUndefined();
+  });
+
+  it("accepts the OOXML true / false spellings on the val attribute", () => {
+    // The OOXML schema for `xsd:boolean` accepts `"true"` / `"false"`
+    // alongside the more common `"1"` / `"0"`. Hucre tolerates both
+    // shapes — a hand-edited template using `false` should round-trip.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:plotVisOnly val="false"/>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.plotVisOnly).toBe(false);
+  });
+
+  it("collapses the 'true' spelling to undefined as well", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:plotVisOnly val="true"/>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.plotVisOnly).toBeUndefined();
+  });
+
+  it("drops unknown plotVisOnly values rather than fabricate one", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:plotVisOnly val="bogus"/>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.plotVisOnly).toBeUndefined();
+  });
+
+  it("ignores a missing val attribute on <c:plotVisOnly>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:plotVisOnly/>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.plotVisOnly).toBeUndefined();
+  });
+
+  it("surfaces plotVisOnly alongside other chart-level toggles", () => {
+    // Co-existing with dispBlanksAs / varyColors should not interfere
+    // — each toggle parses independently off <c:chart>.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="clustered"/>
+        <c:varyColors val="1"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+    <c:plotVisOnly val="0"/>
+    <c:dispBlanksAs val="zero"/>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.plotVisOnly).toBe(false);
+    expect(chart?.dispBlanksAs).toBe("zero");
+    expect(chart?.varyColors).toBe(true);
+  });
+});

@@ -2792,3 +2792,121 @@ describe("cloneChart — scatterStyle", () => {
     expect(reparsed?.scatterStyle).toBe("marker");
   });
 });
+
+// ── cloneChart — plotVisOnly ──────────────────────────────────────
+
+describe("cloneChart — plotVisOnly", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's plotVisOnly by default", () => {
+    const clone = cloneChart(source({ plotVisOnly: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.plotVisOnly).toBe(false);
+  });
+
+  it("lets options.plotVisOnly override the source's value", () => {
+    const clone = cloneChart(source({ plotVisOnly: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotVisOnly: true,
+    });
+    expect(clone.plotVisOnly).toBe(true);
+  });
+
+  it("drops the inherited plotVisOnly when the override is null", () => {
+    // null collapses to the writer's OOXML default — the field
+    // disappears from the resolved SheetChart so the writer emits the
+    // default `1` (hidden cells drop out of the chart).
+    const clone = cloneChart(source({ plotVisOnly: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotVisOnly: null,
+    });
+    expect(clone.plotVisOnly).toBeUndefined();
+  });
+
+  it("returns undefined plotVisOnly when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.plotVisOnly).toBeUndefined();
+  });
+
+  it("carries plotVisOnly through a flatten (line → column)", () => {
+    // plotVisOnly lives on `<c:chart>` and is valid on every chart
+    // family, so a coercion does not drop it.
+    const clone = cloneChart(source({ plotVisOnly: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.plotVisOnly).toBe(false);
+  });
+
+  it("propagates plotVisOnly into the rendered <c:chart> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ plotVisOnly: false }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:plotVisOnly val="0"');
+    expect(written).not.toContain('c:plotVisOnly val="1"');
+
+    // Re-parsing the rendered chart returns the same value — closes the
+    // template → clone → write → read loop.
+    const reparsed = parseChart(written);
+    expect(reparsed?.plotVisOnly).toBe(false);
+  });
+
+  it("emits the OOXML default plotVisOnly=1 when both source and override are absent", async () => {
+    // A bare clone with no plotVisOnly hint rolls into a SheetChart
+    // whose writer emits the default `1` and re-parses to undefined.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:plotVisOnly val="1"');
+    expect(parseChart(written)?.plotVisOnly).toBeUndefined();
+  });
+});

@@ -72,7 +72,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
     chartChildren.push(buildLegend(legendPos));
   }
 
-  chartChildren.push(xmlSelfClose("c:plotVisOnly", { val: 1 }));
+  chartChildren.push(xmlSelfClose("c:plotVisOnly", { val: resolvePlotVisOnly(chart) ? 1 : 0 }));
   chartChildren.push(xmlSelfClose("c:dispBlanksAs", { val: resolveDispBlanksAs(chart) }));
 
   const chartElement = xmlElement("c:chart", undefined, chartChildren);
@@ -1261,6 +1261,23 @@ function resolveDispBlanksAs(chart: SheetChart): ChartDisplayBlanksAs {
   const raw = chart.dispBlanksAs;
   if (raw && DISP_BLANKS_AS_VALUES.has(raw)) return raw;
   return "gap";
+}
+
+// ── Plot Visible Only ────────────────────────────────────────────────
+
+/**
+ * Resolve the `<c:plotVisOnly>` value emitted on `<c:chart>`.
+ *
+ * Defaults to `true` (the OOXML schema default — hidden rows/columns
+ * drop out of the chart). An explicit `chart.plotVisOnly === false`
+ * flips the toggle to mirror Excel's "Show data in hidden rows and
+ * columns" preference. The writer always emits the element so the
+ * file's intent is explicit even on roundtrip — Excel itself includes
+ * it in every reference serialization.
+ */
+function resolvePlotVisOnly(chart: SheetChart): boolean {
+  if (typeof chart.plotVisOnly === "boolean") return chart.plotVisOnly;
+  return true;
 }
 
 // ── Vary Colors ──────────────────────────────────────────────────────
