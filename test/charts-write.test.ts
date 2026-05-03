@@ -5771,3 +5771,140 @@ describe("writeChart — chart editing locale", () => {
     expect(reparsed?.lang).toBe("tr-TR");
   });
 });
+
+// ── writeChart — chart date system (date1904) ────────────────────────
+
+describe("writeChart — chart date system", () => {
+  it("skips <c:date1904> entirely when the field is unset (writer default)", () => {
+    // Excel's reference serialization always emits <c:date1904 val="0"/>,
+    // but the writer skips emission when the chart leaves `date1904`
+    // unset so the file does not silently fabricate a flag Excel
+    // falls back to anyway. Absence and the OOXML default round-trip
+    // identically through cloneChart.
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:date1904 ");
+    expect(result.chartXml).not.toContain("<c:date1904/>");
+  });
+
+  it("skips <c:date1904> when date1904 is false (matches OOXML default)", () => {
+    // `false` and absence both map to the default `val="0"` — the
+    // writer skips the element so re-parse collapses back to the
+    // same `undefined` that absence would produce.
+    const result = writeChart(makeChart({ date1904: false }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:date1904 ");
+    expect(result.chartXml).not.toContain("<c:date1904/>");
+  });
+
+  it('emits <c:date1904 val="1"/> when the chart pins date1904: true', () => {
+    const result = writeChart(makeChart({ date1904: true }), "Sheet1");
+    expect(result.chartXml).toContain('c:date1904 val="1"');
+  });
+
+  it("places <c:date1904> before <c:roundedCorners> on <c:chartSpace>", () => {
+    // CT_ChartSpace sequence: date1904?, lang?, roundedCorners?, ...
+    // — the date-system flag must precede <c:roundedCorners> so a
+    // strict validator (Excel itself rejects out-of-order children)
+    // sees the schema sequence respected.
+    const result = writeChart(makeChart({ date1904: true }), "Sheet1");
+    const dateIdx = result.chartXml.indexOf("c:date1904 ");
+    const roundedIdx = result.chartXml.indexOf("c:roundedCorners");
+    const chartIdx = result.chartXml.indexOf("<c:chart>");
+    expect(dateIdx).toBeGreaterThan(-1);
+    expect(roundedIdx).toBeGreaterThan(dateIdx);
+    expect(chartIdx).toBeGreaterThan(roundedIdx);
+  });
+
+  it("places <c:date1904> before <c:lang> when both are pinned", () => {
+    // <c:date1904> sits at the head of CT_ChartSpace, before <c:lang>
+    // which sits before <c:roundedCorners> which sits before
+    // <c:style> — the writer threads all four in the right order so
+    // a validator never sees them transposed.
+    const result = writeChart(
+      makeChart({ date1904: true, lang: "tr-TR", style: 27, roundedCorners: true }),
+      "Sheet1",
+    );
+    const dateIdx = result.chartXml.indexOf("c:date1904 ");
+    const langIdx = result.chartXml.indexOf("c:lang ");
+    const roundedIdx = result.chartXml.indexOf("c:roundedCorners");
+    const styleIdx = result.chartXml.indexOf("c:style ");
+    expect(dateIdx).toBeGreaterThan(-1);
+    expect(langIdx).toBeGreaterThan(dateIdx);
+    expect(roundedIdx).toBeGreaterThan(langIdx);
+    expect(styleIdx).toBeGreaterThan(roundedIdx);
+  });
+
+  it("only emits <c:date1904> once on a chart that pins it", () => {
+    // Guard against any regression that would double-emit the element.
+    const result = writeChart(makeChart({ date1904: true }), "Sheet1");
+    const occurrences = result.chartXml.match(/<c:date1904 /g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads date1904 through every chart family", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, date1904: true }), "Sheet1");
+      expect(result.chartXml).toContain('c:date1904 val="1"');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        date1904: true,
+      }),
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain('c:date1904 val="1"');
+  });
+
+  it("round-trips a pinned date1904 through parseChart", () => {
+    const written = writeChart(makeChart({ date1904: true }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.date1904).toBe(true);
+  });
+
+  it("collapses an unset date1904 round-trip back to undefined", () => {
+    // A fresh chart writes no element, which re-parses to undefined —
+    // absence and the unset default round-trip identically.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.date1904).toBeUndefined();
+  });
+
+  it("collapses date1904: false round-trip back to undefined", () => {
+    // `false` writes nothing (matches OOXML default), so re-parse
+    // also returns undefined — there is no asymmetry between the
+    // pinned-default and unset states.
+    const written = writeChart(makeChart({ date1904: false }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.date1904).toBeUndefined();
+  });
+
+  it("threads date1904 end-to-end through writeXlsx packaging", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Dashboard",
+        rows: [
+          ["Quarter", "Revenue"],
+          ["Q1", 10],
+          ["Q2", 20],
+          ["Q3", 30],
+        ],
+        charts: [
+          {
+            type: "column",
+            series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            date1904: true,
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('c:date1904 val="1"');
+    // Re-parse the rendered chart to confirm the date-system flag
+    // survives the packaging path.
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.date1904).toBe(true);
+  });
+});

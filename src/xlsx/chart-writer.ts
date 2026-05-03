@@ -86,13 +86,23 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
   // `<c:chartSpace>` element ordering per CT_ChartSpace
   // (ECMA-376 Part 1, §21.2.2.29): date1904?, lang?, roundedCorners?,
   // AlternateContent?, clrMapOvr?, style?, ... chart, ...
-  // — `<c:lang>` sits between `<c:date1904>` and `<c:roundedCorners>`,
-  // and `<c:style>` sits after `<c:roundedCorners>` and before
-  // `<c:chart>`. The writer skips emission for any element the chart
-  // leaves unset so a fresh chart stays minimal; Excel itself falls
-  // back to the workbook's editing language and the application's
-  // default look respectively.
+  // — `<c:date1904>` sits at the head of the sequence, `<c:lang>` next
+  // (between `<c:date1904>` and `<c:roundedCorners>`), and `<c:style>`
+  // after `<c:roundedCorners>` and before `<c:chart>`. The writer
+  // skips emission for any element the chart leaves unset so a fresh
+  // chart stays minimal; Excel itself falls back to the workbook's
+  // date system / editing language / application default look
+  // respectively.
   const chartSpaceChildren: string[] = [];
+  if (resolveDate1904(chart)) {
+    // `<c:date1904 val="0"/>` is the OOXML default — skip emission so
+    // the rendered shape matches absence (every other chart-space
+    // toggle follows the same minimal-emission contract). Only the
+    // non-default `val="1"` surfaces so a re-parse of the writer's
+    // output collapses back to the same `undefined` an unmarked
+    // chart parses to.
+    chartSpaceChildren.push(xmlSelfClose("c:date1904", { val: 1 }));
+  }
   const langVal = resolveLang(chart);
   if (langVal !== undefined) {
     chartSpaceChildren.push(xmlSelfClose("c:lang", { val: langVal }));
@@ -1967,6 +1977,34 @@ function resolveStyle(chart: SheetChart): number | undefined {
   if (!Number.isInteger(raw)) return undefined;
   if (raw < 1 || raw > 48) return undefined;
   return raw;
+}
+
+// ── Date System ──────────────────────────────────────────────────────
+
+/**
+ * Resolve the `<c:date1904 val=".."/>` value emitted on
+ * `<c:chartSpace>`.
+ *
+ * Returns `true` when the chart pins `date1904: true` (the
+ * non-default state), `false` otherwise. The caller decides whether
+ * to emit the element — the writer skips it whenever the resolved
+ * value is `false` so absence and the OOXML default `val="0"`
+ * round-trip identically through {@link parseChart}. Non-boolean
+ * values collapse to `false` so a stray runtime value never reaches
+ * the rendered XML.
+ *
+ * `<c:date1904>` mirrors the host workbook's
+ * `<workbookPr date1904="1"/>` toggle — `true` interprets date-axis
+ * values under the 1904 base (Excel for Mac's legacy epoch where day
+ * 0 falls on 1904-01-01) and `false` under the 1900 base. The
+ * element governs the whole chart document, not just the plot area.
+ *
+ * `<c:date1904>` sits at the head of `<c:chartSpace>` per
+ * CT_ChartSpace — before `<c:lang>` and `<c:roundedCorners>` — so
+ * the writer threads it first when the chart pins it.
+ */
+function resolveDate1904(chart: SheetChart): boolean {
+  return chart.date1904 === true;
 }
 
 // ── Editing Locale ──────────────────────────────────────────────────

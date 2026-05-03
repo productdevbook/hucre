@@ -6589,3 +6589,152 @@ describe("parseChart — chart editing locale", () => {
     expect(chart?.varyColors).toBe(true);
   });
 });
+
+// ── parseChart — chart date system (date1904) ──────────────────────
+
+describe("parseChart — chart date system", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces <c:date1904 val="1"/> as true', () => {
+    // The non-default state — chart date references use the 1904 base
+    // (Excel for Mac's legacy epoch). Surfaces verbatim because a
+    // chart that pinned the flag carries the override Excel would
+    // otherwise inherit from the host workbook.
+    const xml = `<c:chartSpace ${NS}>
+  <c:date1904 val="1"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.date1904).toBe(true);
+  });
+
+  it('surfaces <c:date1904 val="true"/> as true', () => {
+    // OOXML accepts the textual `xsd:boolean` spellings.
+    const xml = `<c:chartSpace ${NS}>
+  <c:date1904 val="true"/>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.date1904).toBe(true);
+  });
+
+  it('collapses <c:date1904 val="0"/> to undefined (OOXML default)', () => {
+    // The OOXML default — chart uses the 1900 base. Absence and the
+    // default round-trip identically through cloneChart, so the
+    // reader collapses the explicit default to undefined for symmetry
+    // with every other chart-space toggle.
+    const xml = `<c:chartSpace ${NS}>
+  <c:date1904 val="0"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.date1904).toBeUndefined();
+  });
+
+  it('collapses <c:date1904 val="false"/> to undefined', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:date1904 val="false"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.date1904).toBeUndefined();
+  });
+
+  it("returns undefined when the chartSpace has no <c:date1904>", () => {
+    // Absence is the writer's default — the reader surfaces nothing
+    // so a fresh chart and a chart that omits the element round-trip
+    // identically through cloneChart.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.date1904).toBeUndefined();
+  });
+
+  it("ignores a missing val attribute on <c:date1904>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:date1904/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.date1904).toBeUndefined();
+  });
+
+  it("drops unknown val tokens rather than fabricate a flag", () => {
+    // <c:date1904> is xsd:boolean per CT_Boolean. Anything outside
+    // `1` / `true` / `0` / `false` collapses to undefined so the
+    // parsed chart never carries a token Excel itself would not emit.
+    for (const bad of ["yes", "no", "2", "T", "F", " ", ""]) {
+      const xml = `<c:chartSpace ${NS}>
+  <c:date1904 val="${bad}"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+      expect(parseChart(xml)?.date1904).toBeUndefined();
+    }
+  });
+
+  it("surfaces date1904 alongside lang and other chart-space toggles", () => {
+    // <c:date1904> sits at the head of the CT_ChartSpace sequence,
+    // before <c:lang> and <c:roundedCorners> — co-existing chart-
+    // space children should not interfere with each other's parsing.
+    const xml = `<c:chartSpace ${NS}>
+  <c:date1904 val="1"/>
+  <c:lang val="en-US"/>
+  <c:roundedCorners val="1"/>
+  <c:style val="34"/>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:varyColors val="1"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+    <c:plotVisOnly val="0"/>
+    <c:dispBlanksAs val="zero"/>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.date1904).toBe(true);
+    expect(chart?.lang).toBe("en-US");
+    expect(chart?.roundedCorners).toBe(true);
+    expect(chart?.style).toBe(34);
+    expect(chart?.plotVisOnly).toBe(false);
+    expect(chart?.dispBlanksAs).toBe("zero");
+    expect(chart?.varyColors).toBe(true);
+  });
+});

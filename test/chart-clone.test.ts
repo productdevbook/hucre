@@ -6562,3 +6562,240 @@ describe("cloneChart — chart editing locale", () => {
     expect(reparsed?.style).toBe(34);
   });
 });
+
+// ── cloneChart — chart date system (date1904) ────────────────────────
+
+describe("cloneChart — chart date system", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's date1904 by default", () => {
+    const clone = cloneChart(source({ date1904: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.date1904).toBe(true);
+  });
+
+  it("lets options.date1904 override the source's value", () => {
+    // Source has no flag, override pins true — the clone carries the
+    // override.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      date1904: true,
+    });
+    expect(clone.date1904).toBe(true);
+  });
+
+  it("drops the inherited date1904 when the override is null", () => {
+    // null collapses to absence — the cloned SheetChart drops the
+    // field so the writer skips <c:date1904> entirely on emit and
+    // Excel falls back to the host workbook's date system.
+    const clone = cloneChart(source({ date1904: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      date1904: null,
+    });
+    expect(clone.date1904).toBeUndefined();
+  });
+
+  it("collapses an explicit false override to absence", () => {
+    // `<c:date1904 val="0"/>` is the OOXML default — the writer
+    // would skip it on emit anyway, so the clone layer collapses
+    // false back to undefined to keep the resolved shape minimal.
+    const clone = cloneChart(source({ date1904: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      date1904: false,
+    });
+    expect(clone.date1904).toBeUndefined();
+  });
+
+  it("returns undefined date1904 when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.date1904).toBeUndefined();
+  });
+
+  it("carries date1904 through a flatten (line → column)", () => {
+    // <c:date1904> lives on <c:chartSpace> and is valid on every
+    // chart family, so a coercion does not drop it.
+    const clone = cloneChart(source({ date1904: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.date1904).toBe(true);
+  });
+
+  it("carries date1904 through a doughnut flatten (line → doughnut)", () => {
+    // The date-system flag has no chart-family restriction — even a
+    // coercion to doughnut, which has no axes, must preserve the
+    // pinned value because chart-space children sit above the plot
+    // area.
+    const clone = cloneChart(source({ date1904: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.date1904).toBe(true);
+  });
+
+  it("propagates date1904 into the rendered <c:chartSpace> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ date1904: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:date1904 val="1"');
+
+    // Re-parsing the rendered chart returns the same value — closes
+    // the template → clone → write → read loop.
+    const reparsed = parseChart(written);
+    expect(reparsed?.date1904).toBe(true);
+  });
+
+  it("emits no <c:date1904> when both source and override are absent", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).not.toContain("<c:date1904 ");
+    expect(parseChart(written)?.date1904).toBeUndefined();
+  });
+
+  it("an explicit null override beats the source value through writeXlsx", async () => {
+    // Source pins date1904 true, clone overrides to null — the
+    // rendered chart should carry no element and re-parse to
+    // undefined.
+    const clone = cloneChart(source({ date1904: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+      date1904: null,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).not.toContain("<c:date1904 ");
+    expect(parseChart(written)?.date1904).toBeUndefined();
+  });
+
+  it("composes date1904 with other chart-space toggles through writeXlsx", async () => {
+    // date1904 / lang / roundedCorners / style all live on
+    // <c:chartSpace> and must round-trip together without interfering
+    // with each other.
+    const clone = cloneChart(
+      source({ date1904: true, lang: "tr-TR", roundedCorners: true, style: 34 }),
+      {
+        anchor: { from: { row: 5, col: 0 } },
+      },
+    );
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:date1904 val="1"');
+    expect(written).toContain('c:lang val="tr-TR"');
+    expect(written).toContain('c:roundedCorners val="1"');
+    expect(written).toContain('c:style val="34"');
+    const reparsed = parseChart(written);
+    expect(reparsed?.date1904).toBe(true);
+    expect(reparsed?.lang).toBe("tr-TR");
+    expect(reparsed?.roundedCorners).toBe(true);
+    expect(reparsed?.style).toBe(34);
+  });
+
+  it("places <c:date1904> ahead of <c:lang> and <c:roundedCorners> in the rendered chart-space", async () => {
+    // Verify the schema sequence end-to-end through writeXlsx —
+    // CT_ChartSpace expects date1904? / lang? / roundedCorners? /
+    // style? in that order.
+    const clone = cloneChart(source({ date1904: true, lang: "en-US", roundedCorners: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const dateIdx = written.indexOf("c:date1904 ");
+    const langIdx = written.indexOf("c:lang ");
+    const roundedIdx = written.indexOf("c:roundedCorners");
+    expect(dateIdx).toBeGreaterThan(-1);
+    expect(langIdx).toBeGreaterThan(dateIdx);
+    expect(roundedIdx).toBeGreaterThan(langIdx);
+  });
+});

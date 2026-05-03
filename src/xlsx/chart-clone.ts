@@ -333,6 +333,26 @@ export interface CloneChartOptions {
    */
   lang?: string | null;
   /**
+   * Override `<c:date1904>` (the chart-space date-system toggle).
+   *
+   * `undefined` (or omitted) inherits the source's parsed `date1904`.
+   * `null` drops the inherited value so the writer skips the element
+   * entirely — Excel falls back to the host workbook's date system.
+   * `true` pins the chart to the 1904 base (Excel for Mac's legacy
+   * epoch) and `false` collapses to absence on the writer side
+   * because `<c:date1904 val="0"/>` is the OOXML default and the
+   * writer follows the minimal-shape contract every other chart-space
+   * toggle uses.
+   *
+   * Useful when restamping a chart from a 1904-based template into a
+   * 1900-based workbook (or vice versa) — pinning the field keeps the
+   * chart's date references anchored to the source's epoch even after
+   * the host changes. The grammar mirrors `roundedCorners` /
+   * `plotVisOnly` so the chart-space toggles compose the same way at
+   * the call site.
+   */
+  date1904?: boolean | null;
+  /**
    * Override `<c:scatterStyle>` (the chart-level XY-scatter preset).
    *
    * `undefined` (or omitted) inherits the source's parsed
@@ -747,6 +767,9 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
 
   const resolvedLang = resolveLang(source.lang, options.lang);
   if (resolvedLang !== undefined) out.lang = resolvedLang;
+
+  const resolvedDate1904 = resolveDate1904(source.date1904, options.date1904);
+  if (resolvedDate1904 !== undefined) out.date1904 = resolvedDate1904;
 
   // `<c:scatterStyle>` only renders inside `<c:scatterChart>`. Drop the
   // field on every other resolved type so a scatter template flattened
@@ -1184,6 +1207,39 @@ function resolveLang(
   if (override === undefined) return sourceValue;
   if (override === null) return undefined;
   return override;
+}
+
+/**
+ * Resolve a `date1904` (chart-space date-system) override.
+ *
+ * `undefined` → inherit the source's parsed `date1904`.
+ * `null`      → drop the inherited value (the writer skips
+ *               `<c:date1904>` so Excel falls back to the host
+ *               workbook's date system).
+ * `boolean`   → replace. `false` collapses to absence on the writer
+ *               side because `<c:date1904 val="0"/>` is the OOXML
+ *               default and the writer follows the minimal-shape
+ *               contract every other chart-space toggle uses.
+ *
+ * The grammar mirrors `roundedCorners` / `plotVisOnly` so the
+ * chart-space toggles compose the same way at the call site. `false`
+ * here means "explicitly pin the 1900 base" — but because absence
+ * and `val="0"` round-trip identically the resolved value still
+ * collapses to `undefined` (the writer would emit nothing either
+ * way).
+ */
+function resolveDate1904(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  const merged = override === undefined ? sourceValue : override === null ? undefined : override;
+  if (merged === true) return true;
+  // `false` and `undefined` both collapse to `undefined` — absence
+  // and the OOXML default `<c:date1904 val="0"/>` round-trip the
+  // same way through parseChart -> cloneChart -> writeChart, so the
+  // resolved chart drops the field rather than carry a value the
+  // writer would skip on emit anyway.
+  return undefined;
 }
 
 /**
