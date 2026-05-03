@@ -4502,3 +4502,208 @@ describe("cloneChart — axis lblAlgn", () => {
     expect(written).toContain('c:lblAlgn val="l"');
   });
 });
+
+// ── cloneChart — data labels showLegendKey ──────────────────────────
+
+describe("cloneChart — data labels showLegendKey", () => {
+  const sourceWithLegendKey: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    dataLabels: { showValue: true, showLegendKey: true },
+  };
+
+  it("inherits chart-level showLegendKey from the source by default", () => {
+    const clone = cloneChart(sourceWithLegendKey, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.dataLabels?.showLegendKey).toBe(true);
+    expect(clone.dataLabels?.showValue).toBe(true);
+  });
+
+  it("drops the inherited showLegendKey when chart-level dataLabels override is null", () => {
+    const clone = cloneChart(sourceWithLegendKey, {
+      anchor: { from: { row: 0, col: 0 } },
+      dataLabels: null,
+    });
+    expect(clone.dataLabels).toBeUndefined();
+  });
+
+  it("replaces the dataLabels block wholesale, dropping the inherited showLegendKey", () => {
+    const clone = cloneChart(sourceWithLegendKey, {
+      anchor: { from: { row: 0, col: 0 } },
+      dataLabels: { showCategoryName: true },
+    });
+    // The override is wholesale — the inherited showLegendKey does not
+    // bleed through.
+    expect(clone.dataLabels).toEqual({ showCategoryName: true });
+  });
+
+  it("can pin showLegendKey via a chart-level dataLabels override", () => {
+    const noLegendKey: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      dataLabels: { showValue: true },
+    };
+    const clone = cloneChart(noLegendKey, {
+      anchor: { from: { row: 0, col: 0 } },
+      dataLabels: { showValue: true, showLegendKey: true },
+    });
+    expect(clone.dataLabels).toEqual({ showValue: true, showLegendKey: true });
+  });
+
+  it("inherits showLegendKey on per-series dataLabels by default", () => {
+    const src: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          valuesRef: "Tpl!$B$2:$B$5",
+          dataLabels: { showValue: true, showLegendKey: true, position: "ctr" },
+        },
+      ],
+    };
+    const clone = cloneChart(src, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.series[0].dataLabels).toEqual({
+      showValue: true,
+      showLegendKey: true,
+      position: "ctr",
+    });
+  });
+
+  it("drops the per-series showLegendKey when the override is null", () => {
+    const src: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          valuesRef: "Tpl!$B$2:$B$5",
+          dataLabels: { showValue: true, showLegendKey: true },
+        },
+      ],
+    };
+    const clone = cloneChart(src, {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ dataLabels: null }],
+    });
+    expect(clone.series[0].dataLabels).toBeUndefined();
+  });
+
+  it("replaces per-series dataLabels via seriesOverrides, dropping the inherited showLegendKey", () => {
+    const src: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          valuesRef: "Tpl!$B$2:$B$5",
+          dataLabels: { showValue: true, showLegendKey: true },
+        },
+      ],
+    };
+    const clone = cloneChart(src, {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ dataLabels: { showCategoryName: true } }],
+    });
+    // Wholesale replacement — the inherited showLegendKey does not bleed
+    // through.
+    expect(clone.series[0].dataLabels).toEqual({ showCategoryName: true });
+  });
+
+  it("composes showLegendKey alongside other show* toggles and a position", () => {
+    const src: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      dataLabels: {
+        showValue: true,
+        showCategoryName: true,
+        showLegendKey: true,
+        position: "outEnd",
+        separator: " | ",
+      },
+    };
+    const clone = cloneChart(src, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.dataLabels).toEqual({
+      showValue: true,
+      showCategoryName: true,
+      showLegendKey: true,
+      position: "outEnd",
+      separator: " | ",
+    });
+  });
+
+  it("carries showLegendKey through a chart-type coercion (bar -> line)", () => {
+    const lineClone = cloneChart(sourceWithLegendKey, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "line",
+    });
+    expect(lineClone.type).toBe("line");
+    expect(lineClone.dataLabels?.showLegendKey).toBe(true);
+  });
+
+  it("end-to-end: parseChart -> cloneChart -> writeChart preserves showLegendKey", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:dLbls>
+          <c:dLblPos val="outEnd"/>
+          <c:showLegendKey val="1"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.dataLabels?.showLegendKey).toBe(true);
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(sheetChart.dataLabels?.showLegendKey).toBe(true);
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    const dLbls = written.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/)![0];
+    expect(dLbls).toContain('<c:showLegendKey val="1"/>');
+
+    // Re-parse to confirm the round-trip.
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataLabels?.showLegendKey).toBe(true);
+  });
+
+  it("end-to-end: writeXlsx packages the cloned chart with showLegendKey intact", async () => {
+    const clone = cloneChart(sourceWithLegendKey, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [["Header"], [10], [20], [30], [40]],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const dLbls = written.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/)![0];
+    expect(dLbls).toContain('<c:showLegendKey val="1"/>');
+  });
+});

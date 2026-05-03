@@ -596,6 +596,16 @@ export interface ChartDataLabels {
   /** Show the value as a percent of total. Pie / doughnut only. */
   showPercent?: boolean;
   /**
+   * Render the legend's color swatch (the small marker / bar Excel
+   * paints in the chart legend) inline with each data label. Mirrors
+   * Excel's "Format Data Labels -> Legend Key" checkbox.
+   *
+   * Maps to `<c:showLegendKey val=".."/>` inside `<c:dLbls>`. The OOXML
+   * default is `false` (no legend key); set to `true` to repeat the
+   * legend swatch alongside every label.
+   */
+  showLegendKey?: boolean;
+  /**
    * Where the label sits relative to its point. See
    * {@link ChartDataLabelPosition} for the valid set per chart kind.
    * Omit to let Excel pick a default (`outEnd` for bar/column,
@@ -1957,6 +1967,15 @@ export interface ChartDataLabelsInfo {
   showCategoryName?: boolean;
   showSeriesName?: boolean;
   showPercent?: boolean;
+  /**
+   * Mirror of {@link ChartDataLabels.showLegendKey}. Surfaces `true`
+   * only when the source `<c:dLbls>` block pinned
+   * `<c:showLegendKey val="1"/>` (Excel's "Format Data Labels ->
+   * Legend Key" checkbox). The OOXML default `false` collapses to
+   * `undefined` so absence and the default round-trip identically
+   * through {@link cloneChart}.
+   */
+  showLegendKey?: boolean;
   position?: ChartDataLabelPosition;
   separator?: string;
 }

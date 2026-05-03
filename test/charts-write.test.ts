@@ -4167,3 +4167,158 @@ describe("writeChart — legendOverlay", () => {
     expect(legend).toContain('c:overlay val="1"');
   });
 });
+
+// ── writeChart — data labels showLegendKey ──────────────────────────
+
+describe("writeChart — data labels showLegendKey", () => {
+  function dLblsOf(xml: string): string {
+    const m = xml.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/);
+    if (!m) throw new Error("No <c:dLbls> block found in chart XML");
+    return m[0];
+  }
+
+  it('emits <c:showLegendKey val="0"/> by default when chart-level dataLabels is set', () => {
+    const result = writeChart(makeChart({ dataLabels: { showValue: true } }), "Sheet1");
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain('<c:showLegendKey val="0"/>');
+  });
+
+  it('emits <c:showLegendKey val="1"/> when chart-level showLegendKey=true', () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, showLegendKey: true } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain('<c:showLegendKey val="1"/>');
+  });
+
+  it('treats showLegendKey=false the same as omitting the field (val="0")', () => {
+    const explicit = writeChart(
+      makeChart({ dataLabels: { showValue: true, showLegendKey: false } }),
+      "Sheet1",
+    ).chartXml;
+    const implicit = writeChart(makeChart({ dataLabels: { showValue: true } }), "Sheet1").chartXml;
+    expect(explicit).toEqual(implicit);
+  });
+
+  it('collapses non-boolean inputs to the default val="0"', () => {
+    // A stray non-boolean leaking past the type guard (e.g. 1 / "true" /
+    // null) must collapse to the default rather than emit something Excel
+    // would reject.
+    const result = writeChart(
+      makeChart({
+        dataLabels: { showValue: true, showLegendKey: 1 as unknown as boolean },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain('<c:showLegendKey val="0"/>');
+  });
+
+  it("emits showLegendKey first among the show* toggles (CT_DLbls order)", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, showLegendKey: true } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    const idxLk = dLbls.indexOf("<c:showLegendKey");
+    const idxVal = dLbls.indexOf("<c:showVal");
+    const idxCat = dLbls.indexOf("<c:showCatName");
+    const idxSer = dLbls.indexOf("<c:showSerName");
+    const idxPct = dLbls.indexOf("<c:showPercent");
+    const idxBub = dLbls.indexOf("<c:showBubbleSize");
+    expect(idxLk).toBeGreaterThan(0);
+    expect(idxLk).toBeLessThan(idxVal);
+    expect(idxVal).toBeLessThan(idxCat);
+    expect(idxCat).toBeLessThan(idxSer);
+    expect(idxSer).toBeLessThan(idxPct);
+    expect(idxPct).toBeLessThan(idxBub);
+  });
+
+  it("emits exactly one <c:showLegendKey> per <c:dLbls> block", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, showLegendKey: true } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect((dLbls.match(/<c:showLegendKey /g) ?? []).length).toBe(1);
+  });
+
+  it("places <c:showLegendKey> after <c:dLblPos> when the position is set", () => {
+    const result = writeChart(
+      makeChart({
+        dataLabels: { showValue: true, position: "outEnd", showLegendKey: true },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls.indexOf("<c:dLblPos")).toBeLessThan(dLbls.indexOf("<c:showLegendKey"));
+  });
+
+  it("threads showLegendKey through a series-level <c:dLbls>", () => {
+    const result = writeChart(
+      makeChart({
+        series: [
+          {
+            name: "S1",
+            values: "B2:B4",
+            dataLabels: { showValue: true, showLegendKey: true },
+          },
+        ],
+      }),
+      "Sheet1",
+    );
+    const xml = result.chartXml;
+    const serStart = xml.indexOf("<c:ser>");
+    const serEnd = xml.indexOf("</c:ser>");
+    const inner = xml.slice(serStart, serEnd);
+    expect(inner).toContain('<c:showLegendKey val="1"/>');
+  });
+
+  it("threads showLegendKey through pie / line / scatter chart families", () => {
+    for (const type of ["pie", "line", "scatter"] as const) {
+      const result = writeChart(
+        makeChart({ type, dataLabels: { showValue: true, showLegendKey: true } }),
+        "Sheet1",
+      );
+      const dLbls = dLblsOf(result.chartXml);
+      expect(dLbls).toContain('<c:showLegendKey val="1"/>');
+    }
+  });
+
+  it("round-trips a chart with showLegendKey=true through parseChart", () => {
+    const written = writeChart(
+      makeChart({ dataLabels: { showValue: true, showLegendKey: true } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataLabels?.showLegendKey).toBe(true);
+    expect(reparsed?.dataLabels?.showValue).toBe(true);
+  });
+
+  it("end-to-end: writeXlsx packages a chart with showLegendKey=true", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            dataLabels: { showValue: true, showLegendKey: true },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const dLbls = chartXml.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/)![0];
+    expect(dLbls).toContain('<c:showLegendKey val="1"/>');
+  });
+});

@@ -1512,7 +1512,9 @@ function buildDataLabelsBody(dl: ChartDataLabels): string {
 
   // OOXML requires showLegendKey to appear first when any toggle is set.
   // Always emit it explicitly so the rendered XML is deterministic.
-  children.push(xmlSelfClose("c:showLegendKey", { val: 0 }));
+  // Non-boolean inputs collapse to `false` to keep the on-the-wire output
+  // stable, mirroring how the other `show*` toggles treat their inputs.
+  children.push(xmlSelfClose("c:showLegendKey", { val: dl.showLegendKey === true ? 1 : 0 }));
   children.push(xmlSelfClose("c:showVal", { val: dl.showValue ? 1 : 0 }));
   children.push(xmlSelfClose("c:showCatName", { val: dl.showCategoryName ? 1 : 0 }));
   children.push(xmlSelfClose("c:showSerName", { val: dl.showSeriesName ? 1 : 0 }));

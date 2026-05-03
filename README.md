@@ -562,10 +562,11 @@ for (const sheet of wb.sheets) {
     // }
 
     // chart.dataLabels surfaces the chart-type-level <c:dLbls> block.
-    // showValue / showCategoryName / showSeriesName / showPercent and
-    // position / separator round-trip through cloneChart unchanged.
+    // showValue / showCategoryName / showSeriesName / showPercent /
+    // showLegendKey and position / separator round-trip through
+    // cloneChart unchanged.
     console.log(chart.dataLabels);
-    // e.g. { showValue: true, position: "outEnd" }
+    // e.g. { showValue: true, showLegendKey: true, position: "outEnd" }
 
     for (const s of chart.series ?? []) {
       console.log(s.kind, s.index, s.name, s.valuesRef, s.categoriesRef, s.color);
@@ -630,10 +631,15 @@ never report one.
 `Chart.dataLabels` mirrors the writer-side `SheetChart.dataLabels`
 and surfaces the toggles Excel carries inside `<c:dLbls>`
 (`showValue`, `showCategoryName`, `showSeriesName`, `showPercent`,
-plus `position` and `separator`). Series-level overrides land on
-`ChartSeriesInfo.dataLabels`; a `<c:dLbls>` block that only contains
-`<c:delete val="1"/>` (Excel's "labels off" idiom) collapses to
-`undefined` rather than a record so callers see the absence cleanly.
+`showLegendKey`, plus `position` and `separator`). Series-level
+overrides land on `ChartSeriesInfo.dataLabels`; a `<c:dLbls>` block
+that only contains `<c:delete val="1"/>` (Excel's "labels off" idiom)
+collapses to `undefined` rather than a record so callers see the
+absence cleanly. `showLegendKey` mirrors Excel's "Format Data Labels
+-> Legend Key" checkbox: pin it `true` to paint the legend's color
+swatch beside every label. The OOXML default `false` collapses to
+`undefined` on the read side so absence and `<c:showLegendKey val="0"/>`
+round-trip identically through `cloneChart`.
 `Chart.holeSize` surfaces `<c:doughnutChart><c:holeSize val=".."/>`
 on doughnut charts so a parsed template can round-trip its hole back
 through `cloneChart`; non-doughnut charts (and doughnut charts that
@@ -870,11 +876,14 @@ the chart edge when the value axis crosses elsewhere
 dropped silently so the writer never emits a token Excel rejects.
 Pie / doughnut charts ignore the entire `axes` field because OOXML
 defines no axes for them.
-`dataLabels: { showValue, showCategoryName, showSeriesName, showPercent, position, separator }`
+`dataLabels: { showValue, showCategoryName, showSeriesName, showPercent, showLegendKey, position, separator }`
 attaches Excel's small in-chart annotations: set at the chart level
 to label every series, or set on a single `series[i].dataLabels` to
 override (passing `false` suppresses labels for that series alone
-even when the chart-level default has them on). For doughnut charts,
+even when the chart-level default has them on). `showLegendKey` repeats
+the legend's color swatch inside each label slot (Excel's "Format
+Data Labels -> Legend Key" checkbox); the OOXML default is `false`
+so omit the field for the standard label shape. For doughnut charts,
 `holeSize` (10 – 90, Excel's UI band; default 50) controls the
 diameter of the inner hole — values outside the band are clamped to
 the closest end and non-doughnut kinds silently ignore the field.

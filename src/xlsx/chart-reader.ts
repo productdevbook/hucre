@@ -951,6 +951,15 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
     }
   }
 
+  // `<c:showLegendKey val=".."/>` mirrors Excel's "Format Data Labels
+  // -> Legend Key" checkbox. The OOXML default is `false`, so absence
+  // and an explicit `val="0"` collapse to `undefined` — only an
+  // explicit `val="1"` (or `"true"`) surfaces `true`. Same shape as the
+  // other `show*` toggles so the parsed record can be fed straight back
+  // into {@link cloneChart}.
+  const showLeg = findChild(el, "showLegendKey");
+  if (showLeg && readBoolAttr(showLeg) === true) out.showLegendKey = true;
+
   const showVal = findChild(el, "showVal");
   if (showVal && readBoolAttr(showVal) === true) out.showValue = true;
 
@@ -976,6 +985,7 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
     !out.showCategoryName &&
     !out.showSeriesName &&
     !out.showPercent &&
+    !out.showLegendKey &&
     out.separator === undefined
   ) {
     return undefined;

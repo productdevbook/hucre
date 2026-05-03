@@ -4910,3 +4910,208 @@ describe("parseChart — legendOverlay", () => {
     expect(chart?.varyColors).toBe(true);
   });
 });
+
+// ── parseChart — data labels showLegendKey ──────────────────────────
+
+describe("parseChart — data labels showLegendKey", () => {
+  const NS_LK = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces showLegendKey=true on chart-level dLbls when val="1"', () => {
+    const xml = `<c:chartSpace ${NS_LK}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:dLblPos val="outEnd"/>
+        <c:showLegendKey val="1"/>
+        <c:showVal val="1"/>
+        <c:showCatName val="0"/>
+        <c:showSerName val="0"/>
+        <c:showPercent val="0"/>
+        <c:showBubbleSize val="0"/>
+      </c:dLbls>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels).toEqual({
+      position: "outEnd",
+      showLegendKey: true,
+      showValue: true,
+    });
+  });
+
+  it('collapses the OOXML default val="0" to undefined', () => {
+    const xml = `<c:chartSpace ${NS_LK}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:showLegendKey val="0"/>
+        <c:showVal val="1"/>
+      </c:dLbls>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.showLegendKey).toBeUndefined();
+    expect(chart?.dataLabels?.showValue).toBe(true);
+  });
+
+  it("collapses absence of <c:showLegendKey> to undefined", () => {
+    const xml = `<c:chartSpace ${NS_LK}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:showVal val="1"/>
+      </c:dLbls>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.showLegendKey).toBeUndefined();
+  });
+
+  it('accepts the OOXML truthy spelling val="true"', () => {
+    const xml = `<c:chartSpace ${NS_LK}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:showLegendKey val="true"/>
+        <c:showVal val="1"/>
+      </c:dLbls>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.showLegendKey).toBe(true);
+  });
+
+  it('accepts the OOXML falsy spelling val="false" and collapses to undefined', () => {
+    const xml = `<c:chartSpace ${NS_LK}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:showLegendKey val="false"/>
+        <c:showVal val="1"/>
+      </c:dLbls>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.showLegendKey).toBeUndefined();
+  });
+
+  it("ignores unknown val tokens", () => {
+    const xml = `<c:chartSpace ${NS_LK}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:showLegendKey val="yes"/>
+        <c:showVal val="1"/>
+      </c:dLbls>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.showLegendKey).toBeUndefined();
+  });
+
+  it("returns undefined when <c:showLegendKey> is missing the val attribute", () => {
+    const xml = `<c:chartSpace ${NS_LK}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:showLegendKey/>
+        <c:showVal val="1"/>
+      </c:dLbls>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.showLegendKey).toBeUndefined();
+  });
+
+  it("makes showLegendKey alone enough to surface a dataLabels record", () => {
+    // Even when no value/category/series/percent toggle is on, a pinned
+    // showLegendKey=true is still meaningful — Excel renders the legend
+    // swatch beside each (otherwise empty) label slot. The reader must
+    // not collapse the block to undefined in that case.
+    const xml = `<c:chartSpace ${NS_LK}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:showLegendKey val="1"/>
+        <c:showVal val="0"/>
+        <c:showCatName val="0"/>
+        <c:showSerName val="0"/>
+        <c:showPercent val="0"/>
+        <c:showBubbleSize val="0"/>
+      </c:dLbls>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels).toEqual({ showLegendKey: true });
+  });
+
+  it("surfaces showLegendKey on a series-level <c:dLbls>", () => {
+    const xml = `<c:chartSpace ${NS_LK}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:tx><c:v>Revenue</c:v></c:tx>
+        <c:dLbls>
+          <c:dLblPos val="ctr"/>
+          <c:showLegendKey val="1"/>
+          <c:showVal val="1"/>
+        </c:dLbls>
+        <c:val><c:numRef><c:f>S!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].dataLabels).toEqual({
+      position: "ctr",
+      showLegendKey: true,
+      showValue: true,
+    });
+  });
+
+  it("co-surfaces showLegendKey alongside other show toggles and separator", () => {
+    const xml = `<c:chartSpace ${NS_LK}>
+  <c:chart><c:plotArea>
+    <c:pieChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:dLblPos val="bestFit"/>
+        <c:showLegendKey val="1"/>
+        <c:showVal val="1"/>
+        <c:showCatName val="1"/>
+        <c:showSerName val="0"/>
+        <c:showPercent val="1"/>
+        <c:showBubbleSize val="0"/>
+        <c:separator>; </c:separator>
+      </c:dLbls>
+    </c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels).toEqual({
+      position: "bestFit",
+      showLegendKey: true,
+      showValue: true,
+      showCategoryName: true,
+      showPercent: true,
+      separator: "; ",
+    });
+  });
+});
