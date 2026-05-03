@@ -705,6 +705,20 @@ non-default that strips labels off any point whose value exceeds the
 pinned `<c:max>`). The reader accepts the OOXML truthy / falsy
 spellings (`"1"` / `"true"` / `"0"` / `"false"`); unknown values and
 missing `val` attributes drop to `undefined`.
+`Chart.dataTable` surfaces the chart-level
+`<c:plotArea><c:dTable>...</c:dTable></c:plotArea>` block — Excel's
+"Add Chart Element → Data Table" toggle (the small grid of underlying
+series values painted beneath the plot area). The reader returns a
+`ChartDataTable` object with up to four boolean children
+(`showHorzBorder`, `showVertBorder`, `showOutline`, `showKeys`); each
+flag round-trips literally because all four are required on
+`CT_DTable` and Excel always emits every one. Children with missing or
+unknown `val` attributes drop to `undefined` rather than fabricate a
+flag the file did not pin, and absence of the `<c:dTable>` element
+collapses the whole field to `undefined`. Only chart families with
+axes (`bar`, `column`, `line`, `area`, `scatter`) carry a slot for the
+element — the OOXML schema places `<c:dTable>` inside `<c:plotArea>`
+alongside the axes, so pie / doughnut surface `undefined`.
 `ChartAxisInfo.tickLblSkip` and `ChartAxisInfo.tickMarkSkip` surface
 the category-axis tick-thinning knobs (`<c:catAx><c:tickLblSkip val=".."/>`
 and `<c:catAx><c:tickMarkSkip val=".."/>`). Both elements live on
@@ -1061,6 +1075,21 @@ to strip labels off any point whose value exceeds the pinned `<c:max>`
 intent is explicit on roundtrip — no chart family is special-cased,
 since the toggle lives on `<c:chart>` and is valid on every chart
 family.
+The chart-level `dataTable` field maps to
+`<c:plotArea><c:dTable>...</c:dTable></c:plotArea>` — Excel's "Add
+Chart Element → Data Table" toggle. The field accepts a
+`boolean | ChartDataTable` discriminated union: pass `true` for
+Excel's reference defaults (every border drawn, the outline frame on,
+and the legend keys shown next to each series row), pass an object to
+opt individual children in or out (each field maps to the matching
+`<c:dTable>` boolean child — `showHorzBorder`, `showVertBorder`,
+`showOutline`, `showKeys`), or omit it (or pass `false`) to suppress
+the element entirely. When emitted, the writer always serializes all
+four children in `CT_DTable` schema order, falling back to the OOXML
+reference default `true` for any flag the caller leaves unset. The
+field is silently dropped on `pie` / `doughnut` charts because those
+families have no axes and the OOXML schema places no slot for
+`<c:dTable>` on their plot areas.
 The chart-level `roundedCorners` field maps to
 `<c:roundedCorners val=".."/>` on `<c:chartSpace>` (a sibling of
 `<c:chart>`, not a child) — Excel's "Format Chart Area → Border →
@@ -1422,6 +1451,20 @@ point regardless of axis ceiling), or a `boolean` to replace it. Like
 `plotVisOnly` / `dispBlanksAs`, the field lives on `<c:chart>` and is
 valid on every chart family, so a coercion (line → column, doughnut →
 pie, etc.) preserves the inherited value rather than dropping it.
+The chart-level `dataTable` field follows the standard
+`object | boolean | null` override grammar: pass `undefined` (or omit
+it) to inherit the source's parsed `ChartDataTable`, `null` (or
+`false`) to drop the inherited block so the writer skips `<c:dTable>`
+entirely, `true` to pin every flag to its OOXML default `true`, or a
+`ChartDataTable` object to replace the block wholesale (no per-field
+merge with the source — pass every flag the cloned table should
+render). Unlike the chart-level toggles that live on `<c:chart>`, the
+data-table block lives inside `<c:plotArea>` alongside the axes, so
+the field is silently dropped from the cloned `SheetChart` whenever
+the resolved chart type is `pie` or `doughnut` — those families have
+no axes and the OOXML schema places no slot for the element on their
+plot areas. Coercions between axis-bearing families (line → column,
+scatter → area, etc.) preserve the inherited block.
 The chart-level `roundedCorners` flag follows the same grammar: pass
 `undefined` to inherit the source's parsed value, `null` to drop it
 back to the writer's OOXML `false` default (square chart frame), or a
