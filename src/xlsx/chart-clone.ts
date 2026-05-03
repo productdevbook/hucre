@@ -297,6 +297,23 @@ export interface CloneChartOptions {
    */
   upDownBars?: boolean | null;
   /**
+   * Override `<c:style>` (the built-in chart style preset, 1–48).
+   *
+   * `undefined` (or omitted) inherits the source's parsed `style`.
+   * `null` drops the inherited value so the writer skips the element
+   * entirely — Excel falls back to its application default look. A
+   * number replaces the preset; out-of-range / non-integer values are
+   * dropped at the writer side rather than emit a token Excel would
+   * reject.
+   *
+   * Useful when restyling a cloned chart to a different gallery
+   * preset, or stripping a template's pinned style so the clone picks
+   * up the host workbook's default. The grammar mirrors
+   * `roundedCorners` / `plotVisOnly` so the chart-frame toggles
+   * compose the same way at the call site.
+   */
+  style?: number | null;
+  /**
    * Override `<c:scatterStyle>` (the chart-level XY-scatter preset).
    *
    * `undefined` (or omitted) inherits the source's parsed
@@ -706,6 +723,9 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   );
   if (resolvedRoundedCorners !== undefined) out.roundedCorners = resolvedRoundedCorners;
 
+  const resolvedStyle = resolveStyle(source.style, options.style);
+  if (resolvedStyle !== undefined) out.style = resolvedStyle;
+
   // `<c:scatterStyle>` only renders inside `<c:scatterChart>`. Drop the
   // field on every other resolved type so a scatter template flattened
   // to line / column does not leak the preset into a chart kind whose
@@ -1090,6 +1110,30 @@ function resolveRoundedCorners(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve a `style` (built-in chart preset) override.
+ *
+ * `undefined` → inherit the source's parsed `style`.
+ * `null`      → drop the inherited value (the writer skips `<c:style>`
+ *               so Excel falls back to its application default look).
+ * `number`    → replace. Out-of-range / non-integer values are not
+ *               filtered here — the writer's `resolveStyle` performs
+ *               the same shape check on emit, so a stray value never
+ *               reaches the rendered XML regardless of the path it
+ *               took through clone.
+ *
+ * The grammar mirrors `roundedCorners` / `plotVisOnly` so the chart-
+ * frame toggles compose the same way at the call site.
+ */
+function resolveStyle(
+  sourceValue: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
   if (override === undefined) return sourceValue;
   if (override === null) return undefined;
   return override;

@@ -272,6 +272,13 @@ export function parseChart(xml: string): Chart | undefined {
   const roundedCorners = parseRoundedCorners(chartSpace);
   if (roundedCorners !== undefined) out.roundedCorners = roundedCorners;
 
+  // `<c:style>` also sits on `<c:chartSpace>` — it picks one of the 48
+  // built-in chart-style presets that style the entire chart space
+  // (frame fill, plot area look, default text font), not just the
+  // plot area.
+  const style = parseStyle(chartSpace);
+  if (style !== undefined) out.style = style;
+
   return out;
 }
 
@@ -1567,6 +1574,41 @@ function parseRoundedCorners(chartSpace: XmlElement): boolean | undefined {
     default:
       return undefined;
   }
+}
+
+// ── Chart Style Preset ────────────────────────────────────────────
+
+/**
+ * Pull `<c:style val=".."/>` off `<c:chartSpace>`. Surfaces the
+ * integer value verbatim when `val` parses as an integer in the OOXML
+ * range (1–48); absence and out-of-range / non-integer values drop to
+ * `undefined`.
+ *
+ * The reader does not pin a default — Excel's reference serialization
+ * for a fresh chart emits `<c:style val="2"/>`, but a chart that omits
+ * the element renders identically (Excel falls back to its application
+ * default). Surfacing only the values that round-trip preserves the
+ * minimal-shape contract the rest of {@link Chart} follows.
+ *
+ * Note: `<c:style>` lives on `<c:chartSpace>`, not inside `<c:chart>`
+ * — the preset styles the outer chart space (frame fill, plot area
+ * look, default text font), not just the plot area. Per the
+ * CT_ChartSpace sequence the element sits after `<c:roundedCorners>`
+ * and before `<c:chart>`.
+ */
+function parseStyle(chartSpace: XmlElement): number | undefined {
+  const el = findChild(chartSpace, "style");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  // Strict integer parse — `parseInt` would accept `"3px"` / `"3.5"`,
+  // either of which is outside the `xsd:unsignedByte` shape `<c:style>`
+  // expects per CT_Style.
+  if (!/^\d+$/.test(raw)) return undefined;
+  const n = Number(raw);
+  if (!Number.isInteger(n)) return undefined;
+  if (n < 1 || n > 48) return undefined;
+  return n;
 }
 
 // ── Vary Colors ────────────────────────────────────────────────────
