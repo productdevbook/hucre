@@ -6896,3 +6896,252 @@ describe("parseChart — axis crossBetween", () => {
     expect(chart?.axes?.y?.crossBetween).toBeUndefined();
   });
 });
+
+// ── parseChart — data table ──────────────────────────────────────────
+
+describe("parseChart — data table", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it("surfaces a fully-defaulted <c:dTable> with every flag true", () => {
+    // Excel's reference serialization for a freshly-enabled data table
+    // pins all four boolean children to `1`. The reader surfaces every
+    // field literally — `<c:dTable>` is required-children-only on
+    // CT_DTable so a clone can replay the exact shape the file carried.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: true,
+      showOutline: true,
+      showKeys: true,
+    });
+  });
+
+  it("surfaces non-default false flags literally", () => {
+    // Each boolean child round-trips literally — `false` is just as
+    // important as `true` because the writer always emits all four
+    // children and a clone must preserve the exact pattern.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="0"/>
+      <c:showVertBorder val="0"/>
+      <c:showOutline val="0"/>
+      <c:showKeys val="0"/>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable).toEqual({
+      showHorzBorder: false,
+      showVertBorder: false,
+      showOutline: false,
+      showKeys: false,
+    });
+  });
+
+  it("surfaces a mixed shape (keys hidden, borders shown)", () => {
+    // A common pattern — paint the table grid but hide the legend
+    // swatches because the chart already has a separate legend.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="0"/>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: true,
+      showOutline: true,
+      showKeys: false,
+    });
+  });
+
+  it("accepts the OOXML textual <xsd:boolean> spellings", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="true"/>
+      <c:showVertBorder val="false"/>
+      <c:showOutline val="true"/>
+      <c:showKeys val="false"/>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+    });
+  });
+
+  it("returns undefined when the plot area has no <c:dTable> element", () => {
+    // Absence is the writer's default — Excel renders no data table.
+    // The reader surfaces nothing so a fresh chart and a chart that
+    // omits the element round-trip identically through cloneChart.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable).toBeUndefined();
+  });
+
+  it("drops a missing val attribute on a <c:dTable> child rather than fabricate a flag", () => {
+    // A child without `val` is malformed per CT_Boolean; the reader
+    // drops the field rather than fabricate a value the file did not
+    // pin. The other children still round-trip.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable).toEqual({
+      showHorzBorder: true,
+      showOutline: true,
+      showKeys: true,
+    });
+  });
+
+  it("drops unknown val tokens rather than fabricate flags", () => {
+    // Anything outside the OOXML truthy / falsy spellings collapses
+    // to undefined for that field. The other children still surface.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="yes"/>
+      <c:showVertBorder val="2"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="0"/>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable).toEqual({
+      showOutline: true,
+      showKeys: false,
+    });
+  });
+
+  it("surfaces an empty object when <c:dTable> is present but every child is malformed", () => {
+    // The element itself is the gating signal — when it appears, the
+    // chart is requesting a data table even if every child carries a
+    // malformed `val`. The shape stays minimal (an empty object) so a
+    // round-trip through the writer falls back to the OOXML defaults
+    // (every flag `true`) which Excel would render anyway.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder/>
+      <c:showVertBorder/>
+      <c:showOutline/>
+      <c:showKeys/>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable).toEqual({});
+  });
+
+  it("surfaces dataTable on a column chart", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: true,
+      showOutline: true,
+      showKeys: true,
+    });
+  });
+
+  it("surfaces dataTable on a scatter chart (both axes are valAx)", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:scatterChart>
+      <c:scatterStyle val="lineMarker"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:scatterChart>
+    <c:valAx><c:axId val="1"/></c:valAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="0"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="0"/>
+      <c:showKeys val="1"/>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable).toEqual({
+      showHorzBorder: false,
+      showVertBorder: true,
+      showOutline: false,
+      showKeys: true,
+    });
+  });
+
+  it("returns undefined when the chart has no plotArea", () => {
+    // Defensive — a chart with no plotArea has no slot for <c:dTable>
+    // either. Surfaces nothing so the parsed shape stays minimal.
+    const xml = `<c:chartSpace ${NS}><c:chart></c:chart></c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable).toBeUndefined();
+  });
+});

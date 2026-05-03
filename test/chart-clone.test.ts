@@ -6951,3 +6951,305 @@ describe("cloneChart — axis crossBetween", () => {
     expect(parseChart(written)?.axes?.y?.crossBetween).toBe("midCat");
   });
 });
+
+// ── cloneChart — data table ──────────────────────────────────────────
+
+describe("cloneChart — data table", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's dataTable by default", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+    });
+  });
+
+  it("lets options.dataTable: true replace the inherited block wholesale", () => {
+    // Source has a partial table, override pins every flag to default true.
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, showOutline: false },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        dataTable: true,
+      },
+    );
+    expect(clone.dataTable).toBe(true);
+  });
+
+  it("lets options.dataTable: object replace the inherited block wholesale", () => {
+    // No per-field merge — the override block replaces the source's.
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, showOutline: false },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        dataTable: { showVertBorder: false },
+      },
+    );
+    expect(clone.dataTable).toEqual({ showVertBorder: false });
+  });
+
+  it("drops the inherited dataTable when the override is null", () => {
+    // null collapses to absence — the cloned SheetChart drops the
+    // field so the writer skips <c:dTable> entirely on emit.
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: true,
+          showOutline: true,
+          showKeys: true,
+        },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        dataTable: null,
+      },
+    );
+    expect(clone.dataTable).toBeUndefined();
+  });
+
+  it("drops the inherited dataTable when the override is false", () => {
+    // `false` is the suppression alias — symmetric with null on the
+    // on-the-wire result (no <c:dTable> emitted).
+    const clone = cloneChart(
+      source({
+        dataTable: { showHorzBorder: true },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        dataTable: false,
+      },
+    );
+    expect(clone.dataTable).toBeUndefined();
+  });
+
+  it("returns undefined dataTable when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.dataTable).toBeUndefined();
+  });
+
+  it("carries dataTable through a flatten (line → column)", () => {
+    // <c:dTable> lives inside <c:plotArea> alongside the axes — both
+    // bar / column and line have axes, so a coercion preserves the
+    // pinned table.
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        type: "column",
+      },
+    );
+    expect(clone.type).toBe("column");
+    expect(clone.dataTable).toEqual({ showKeys: false });
+  });
+
+  it("drops dataTable when flattening into a doughnut clone (no axes, no slot)", () => {
+    // Pie / doughnut have no axes — the OOXML schema places no slot
+    // for <c:dTable> inside their plot areas, so the clone layer
+    // strips the inherited block.
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        type: "doughnut",
+      },
+    );
+    expect(clone.type).toBe("doughnut");
+    expect(clone.dataTable).toBeUndefined();
+  });
+
+  it("drops dataTable when flattening into a pie clone", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: { showHorzBorder: true },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        type: "pie",
+      },
+    );
+    expect(clone.type).toBe("pie");
+    expect(clone.dataTable).toBeUndefined();
+  });
+
+  it("propagates dataTable into the rendered <c:dTable> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+        },
+      }),
+      { anchor: { from: { row: 5, col: 0 } } },
+    );
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:dTable>");
+    expect(written).toContain('<c:showHorzBorder val="1"/>');
+    expect(written).toContain('<c:showVertBorder val="0"/>');
+    expect(written).toContain('<c:showOutline val="1"/>');
+    expect(written).toContain('<c:showKeys val="0"/>');
+
+    // Re-parsing the rendered chart returns the same shape — closes
+    // the template → clone → write → read loop.
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+    });
+  });
+
+  it("emits no <c:dTable> when both source and override are absent", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).not.toContain("<c:dTable");
+    expect(parseChart(written)?.dataTable).toBeUndefined();
+  });
+
+  it("an explicit null override beats the source value through writeXlsx", async () => {
+    // Source pins a data table, clone overrides to null — the
+    // rendered chart should carry no element and re-parse to undefined.
+    const clone = cloneChart(
+      source({
+        dataTable: { showHorzBorder: true },
+      }),
+      {
+        anchor: { from: { row: 5, col: 0 } },
+        dataTable: null,
+      },
+    );
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).not.toContain("<c:dTable");
+    expect(parseChart(written)?.dataTable).toBeUndefined();
+  });
+
+  it("a parsed dataTable round-trips through parseChart -> cloneChart -> writeChart -> parseChart", async () => {
+    // Build a source by writing a chart with a partial dataTable, then
+    // parse it back to a Chart, then clone-through, then write again.
+    const seed: SheetChart = {
+      type: "column",
+      series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+      anchor: { from: { row: 0, col: 0 } },
+      dataTable: { showKeys: false, showOutline: false },
+    };
+    const xml = writeChart(seed, "Sheet1").chartXml;
+    const parsed = parseChart(xml)!;
+    expect(parsed.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: true,
+      showOutline: false,
+      showKeys: false,
+    });
+    const clone = cloneChart(parsed, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Q", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: true,
+      showOutline: false,
+      showKeys: false,
+    });
+  });
+});

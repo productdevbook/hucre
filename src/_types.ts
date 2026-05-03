@@ -750,6 +750,39 @@ export interface ChartMarker {
 export type ChartDisplayBlanksAs = "gap" | "zero" | "span";
 
 /**
+ * Granular data-table configuration for {@link SheetChart.dataTable}.
+ * Maps to the four boolean children of `<c:plotArea><c:dTable>`:
+ * `<c:showHorzBorder>`, `<c:showVertBorder>`, `<c:showOutline>`, and
+ * `<c:showKeys>`. Each toggle flips one of Excel's "Format Data Table"
+ * checkboxes:
+ *
+ * - {@link showHorzBorder} — paint the horizontal lines between table
+ *   rows. Default: `true` (Excel's reference serialization).
+ * - {@link showVertBorder} — paint the vertical lines between category
+ *   columns. Default: `true`.
+ * - {@link showOutline}    — paint the outer border around the table.
+ *   Default: `true`.
+ * - {@link showKeys}       — render the legend swatch next to each
+ *   series row so the table doubles as the chart legend. Default:
+ *   `true`.
+ *
+ * The writer always emits all four children — the OOXML schema marks
+ * them required on `CT_DTable` — falling back to the per-field defaults
+ * for any field the caller leaves unset. Pass an empty object (`{}`) to
+ * accept every default, equivalent to `dataTable: true`.
+ */
+export interface ChartDataTable {
+  /** Paint horizontal lines between rows. Default: `true`. */
+  showHorzBorder?: boolean;
+  /** Paint vertical lines between category columns. Default: `true`. */
+  showVertBorder?: boolean;
+  /** Paint the outer border around the table. Default: `true`. */
+  showOutline?: boolean;
+  /** Render the legend swatch next to each series row. Default: `true`. */
+  showKeys?: boolean;
+}
+
+/**
  * Scatter sub-style applied at the chart level. Maps to the OOXML
  * `ST_ScatterStyle` enum which sits inside `<c:scatterChart>` as
  * `<c:scatterStyle val=".."/>`. Excel exposes the same six presets
@@ -1217,6 +1250,29 @@ export interface SheetChart {
    * just the plot area.
    */
   date1904?: boolean;
+  /**
+   * Whether the chart paints a data table beneath the plot area. Maps
+   * to `<c:plotArea><c:dTable>...</c:dTable></c:plotArea>` — Excel's
+   * "Add Chart Element -> Data Table" toggle, which renders a small
+   * table of the underlying series values alongside the plotted shape
+   * for a quick read of the numbers behind the picture.
+   *
+   * Pass `true` to enable the table with Excel's reference defaults
+   * (every border drawn, the outline frame on, and the legend keys
+   * shown next to each series row). Pass an object to opt individual
+   * children in or out — each field maps to the matching `<c:dTable>`
+   * boolean child. Pass `false` (or omit the field) to suppress the
+   * element entirely so the writer skips emission.
+   *
+   * Default: omitted — Excel renders no data table on a fresh chart.
+   *
+   * Only meaningful for chart families that have axes — `bar`, `column`,
+   * `line`, `area`, and `scatter`. The OOXML schema places `<c:dTable>`
+   * inside `<c:plotArea>` after the axes, and pie / doughnut have no
+   * axes at all, so the field is silently dropped on those families.
+   * See {@link ChartDataTable}.
+   */
+  dataTable?: boolean | ChartDataTable;
   /**
    * Per-axis configuration rendered alongside the plot area. The `x`
    * axis is the category axis for bar/column/line/area (or the bottom
@@ -3100,6 +3156,28 @@ export interface Chart {
    * just the plot area.
    */
   date1904?: boolean;
+  /**
+   * Data-table configuration pulled from
+   * `<c:plotArea><c:dTable>...</c:dTable></c:plotArea>`. Reflects
+   * Excel's "Add Chart Element -> Data Table" toggle, which paints a
+   * small table of the underlying series values beneath the plot area.
+   *
+   * Surfaces a {@link ChartDataTable} object whenever the source chart
+   * declares the element. Each of the four boolean children
+   * (`<c:showHorzBorder>`, `<c:showVertBorder>`, `<c:showOutline>`,
+   * `<c:showKeys>`) round-trips literally — the reader does not collapse
+   * any per-field default because every field is required on
+   * `CT_DTable` and Excel always emits all four. Absent / unknown
+   * `val` attributes drop the matching field to `undefined` rather than
+   * fabricate a flag the file did not pin.
+   *
+   * Surfaces `undefined` when the chart has no `<c:dTable>` element at
+   * all. Only chart families with axes (`bar`, `column`, `line`,
+   * `area`, `scatter`) carry a data table because the OOXML schema
+   * places `<c:dTable>` inside `<c:plotArea>` after the axes — pie /
+   * doughnut have no axes and surface `undefined`.
+   */
+  dataTable?: ChartDataTable;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────
