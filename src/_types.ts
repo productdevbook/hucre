@@ -1075,6 +1075,21 @@ export interface SheetChart {
        */
       tickLblPos?: ChartAxisTickLabelPosition;
       /**
+       * Reverse the axis plotting order. Maps to
+       * `<c:scaling><c:orientation val="maxMin"/></c:scaling>` —
+       * Excel's "Categories in reverse order" / "Values in reverse
+       * order" toggle. Default: `false` (the OOXML `"minMax"` default).
+       *
+       * On a category axis, reversing flips the order in which
+       * categories are drawn (right-to-left on a column chart, top-to-
+       * bottom on a bar chart). On a value axis, reversing flips the
+       * numeric direction so the maximum sits at the origin and the
+       * minimum at the far end. Useful when porting templates that
+       * pin a specific reading direction (e.g. dates on a horizontal
+       * bar chart with the most recent at the top).
+       */
+      reverse?: boolean;
+      /**
        * Show every Nth tick label on a category axis. `1` (the OOXML
        * default) shows every label; `2` shows every other one; `3`
        * shows every third, and so on. Maps to
@@ -1120,6 +1135,16 @@ export interface SheetChart {
        * `"nextTo"`. See {@link ChartAxisTickLabelPosition}.
        */
       tickLblPos?: ChartAxisTickLabelPosition;
+      /**
+       * Reverse the value axis plotting order. Maps to
+       * `<c:valAx><c:scaling><c:orientation val="maxMin"/></c:scaling></c:valAx>`.
+       * Default: `false` (the OOXML `"minMax"` default).
+       *
+       * Mirrors {@link SheetChart.axes.x.reverse} for the value axis —
+       * setting `true` flips the numeric direction so the maximum sits
+       * at the origin and the minimum at the far end.
+       */
+      reverse?: boolean;
     };
   };
 }
@@ -1994,6 +2019,17 @@ export interface ChartAxisInfo {
    * shape minimal. See {@link ChartAxisTickLabelPosition}.
    */
   tickLblPos?: ChartAxisTickLabelPosition;
+  /**
+   * Reverse-axis flag pulled from
+   * `<c:scaling><c:orientation val=".."/></c:scaling>`. Surfaces `true`
+   * only when the axis pinned `"maxMin"` (Excel's "Categories /
+   * Values in reverse order" toggle); the OOXML default `"minMax"`
+   * collapses to `undefined` so absence and the default round-trip
+   * identically through {@link cloneChart}. Mirrors the writer-side
+   * {@link SheetChart.axes.x.reverse} field, so a parsed value slots
+   * straight back into a clone target without transformation.
+   */
+  reverse?: boolean;
   /**
    * Tick-label skip interval pulled from `<c:tickLblSkip val=".."/>`.
    * Surfaces only on category axes (`<c:catAx>` / `<c:dateAx>`) — the

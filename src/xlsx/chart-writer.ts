@@ -153,6 +153,8 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     yMinorTickMark: normalizeTickMark(chart.axes?.y?.minorTickMark),
     xTickLblPos: normalizeTickLblPos(chart.axes?.x?.tickLblPos),
     yTickLblPos: normalizeTickLblPos(chart.axes?.y?.tickLblPos),
+    xReverse: chart.axes?.x?.reverse === true,
+    yReverse: chart.axes?.y?.reverse === true,
     // `tickLblSkip` / `tickMarkSkip` only round-trip on category axes
     // (`<c:catAx>` / `<c:dateAx>`). The scatter writer never emits
     // them — both axes are value axes — so the bar/column/line/area
@@ -216,6 +218,8 @@ interface AxisRenderOptions {
   yMinorTickMark: ChartAxisTickMark | undefined;
   xTickLblPos: ChartAxisTickLabelPosition | undefined;
   yTickLblPos: ChartAxisTickLabelPosition | undefined;
+  xReverse: boolean;
+  yReverse: boolean;
   /**
    * Tick-label skip interval emitted on the X axis only when the axis
    * is `<c:catAx>` (i.e. bar / column / line / area). Scatter charts
@@ -382,13 +386,15 @@ function buildAxisScalingExtras(scale: ChartAxisScale | undefined): {
 
 /**
  * Build the `<c:scaling>` element. Always emits `<c:orientation>` so
- * the axis renders correctly even when no extra scale fields are set.
+ * the axis renders correctly even when no extra scale fields are set —
+ * `"minMax"` (the OOXML default) for a forward axis, `"maxMin"` when
+ * the caller pinned `reverse: true` to flip the plotting order.
  */
-function buildAxisScaling(scale: ChartAxisScale | undefined): string {
+function buildAxisScaling(scale: ChartAxisScale | undefined, reverse: boolean = false): string {
   const { before, after } = buildAxisScalingExtras(scale);
   const children: string[] = [
     ...before,
-    xmlSelfClose("c:orientation", { val: "minMax" }),
+    xmlSelfClose("c:orientation", { val: reverse ? "maxMin" : "minMax" }),
     ...after,
   ];
   return xmlElement("c:scaling", undefined, children);
@@ -624,7 +630,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
   // caller pinned a value so write-side templates round-trip.
   const catAxChildren: string[] = [
     xmlSelfClose("c:axId", { val: AXIS_ID_CAT }),
-    buildAxisScaling(opts.xScale),
+    buildAxisScaling(opts.xScale, opts.xReverse),
     xmlSelfClose("c:delete", { val: 0 }),
     xmlSelfClose("c:axPos", { val: catPos }),
     ...buildAxisGridlines(opts.xGridlines),
@@ -649,7 +655,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
 
   const valAxChildren: string[] = [
     xmlSelfClose("c:axId", { val: AXIS_ID_VAL }),
-    buildAxisScaling(opts.yScale),
+    buildAxisScaling(opts.yScale, opts.yReverse),
     xmlSelfClose("c:delete", { val: 0 }),
     xmlSelfClose("c:axPos", { val: valPos }),
     ...buildAxisGridlines(opts.yGridlines),
@@ -867,7 +873,7 @@ function buildScatterChart(chart: SheetChart, sheetName: string): string {
 function buildScatterAxes(opts: AxisRenderOptions): string[] {
   const xAxChildren: string[] = [
     xmlSelfClose("c:axId", { val: AXIS_ID_VAL_X }),
-    buildAxisScaling(opts.xScale),
+    buildAxisScaling(opts.xScale, opts.xReverse),
     xmlSelfClose("c:delete", { val: 0 }),
     xmlSelfClose("c:axPos", { val: "b" }),
     ...buildAxisGridlines(opts.xGridlines),
@@ -884,7 +890,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
 
   const yAxChildren: string[] = [
     xmlSelfClose("c:axId", { val: AXIS_ID_VAL_Y }),
-    buildAxisScaling(opts.yScale),
+    buildAxisScaling(opts.yScale, opts.yReverse),
     xmlSelfClose("c:delete", { val: 0 }),
     xmlSelfClose("c:axPos", { val: "l" }),
     ...buildAxisGridlines(opts.yGridlines),

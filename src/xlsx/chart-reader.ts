@@ -268,6 +268,11 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   const majorTickMark = parseAxisTickMark(axis, "majorTickMark", "out");
   const minorTickMark = parseAxisTickMark(axis, "minorTickMark", "none");
   const tickLblPos = parseAxisTickLblPos(axis);
+  // <c:scaling><c:orientation val=".."/></c:scaling> — ST_Orientation
+  // accepts "minMax" (default, low → high) and "maxMin" (reversed).
+  // The default collapses to undefined so a fresh chart and a chart
+  // that explicitly pins "minMax" round-trip identically.
+  const reverse = parseAxisReverse(axis);
   // `<c:tickLblSkip>` / `<c:tickMarkSkip>` live exclusively on
   // `CT_CatAx` / `CT_DateAx` per ECMA-376 Part 1, §21.2.2 — the
   // `<c:valAx>` schema rejects them entirely. Skip the parse on
@@ -285,6 +290,7 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
     majorTickMark === undefined &&
     minorTickMark === undefined &&
     tickLblPos === undefined &&
+    reverse === undefined &&
     tickLblSkip === undefined &&
     tickMarkSkip === undefined
   ) {
@@ -298,6 +304,7 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   if (majorTickMark !== undefined) out.majorTickMark = majorTickMark;
   if (minorTickMark !== undefined) out.minorTickMark = minorTickMark;
   if (tickLblPos !== undefined) out.tickLblPos = tickLblPos;
+  if (reverse !== undefined) out.reverse = reverse;
   if (tickLblSkip !== undefined) out.tickLblSkip = tickLblSkip;
   if (tickMarkSkip !== undefined) out.tickMarkSkip = tickMarkSkip;
   return out;
@@ -356,6 +363,28 @@ function parseAxisTickLblPos(axis: XmlElement): ChartAxisTickLabelPosition | und
   const value = raw.trim() as ChartAxisTickLabelPosition;
   if (!VALID_TICK_LBL_POSITIONS.has(value)) return undefined;
   return value === "nextTo" ? undefined : value;
+}
+
+/**
+ * Pull the `ST_Orientation` value off `<c:scaling><c:orientation/></c:scaling>`.
+ * Returns `true` only when the axis pinned `"maxMin"` (Excel's
+ * "Categories / Values in reverse order" toggle); the OOXML default
+ * `"minMax"` collapses to `undefined` so absence and the default
+ * round-trip identically. Unknown tokens (e.g. typo'd templates) drop
+ * to `undefined` rather than fabricate a flag.
+ */
+function parseAxisReverse(axis: XmlElement): boolean | undefined {
+  const scaling = findChild(axis, "scaling");
+  if (!scaling) return undefined;
+  const orientation = findChild(scaling, "orientation");
+  if (!orientation) return undefined;
+  const raw = orientation.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  const value = raw.trim();
+  if (value === "maxMin") return true;
+  // "minMax" and unknown tokens both fall through to undefined — only
+  // an explicit reversed orientation surfaces.
+  return undefined;
 }
 
 /**

@@ -3611,6 +3611,161 @@ describe("parseChart — plotVisOnly", () => {
   });
 });
 
+// ── parseChart — axis reverse (orientation) ──────────────────────────
+
+describe("parseChart — axis reverse (orientation)", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  it('surfaces reverse=true off <c:scaling><c:orientation val="maxMin"/>', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:scaling><c:orientation val="maxMin"/></c:scaling>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.reverse).toBe(true);
+  });
+
+  it('collapses the OOXML default orientation="minMax" to undefined', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:scaling><c:orientation val="minMax"/></c:scaling>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    // Neither axis has any other surfaced field, so the whole axes block drops.
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("collapses an axis with no <c:scaling> at all to undefined", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("ignores unknown orientation tokens", () => {
+    // A typo'd template (e.g. "diagonal", "reverse", empty string) drops
+    // to undefined rather than fabricate a reverse flag the writer would
+    // pick up.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:scaling><c:orientation val="diagonal"/></c:scaling>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("ignores <c:orientation/> with no val attribute", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:scaling><c:orientation/></c:scaling>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("surfaces reverse on the category axis (catAx) too", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:scaling><c:orientation val="maxMin"/></c:scaling>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.reverse).toBe(true);
+    expect(chart?.axes?.y?.reverse).toBeUndefined();
+  });
+
+  it("surfaces reverse on both scatter X (axPos=b) and Y (axPos=l) axes", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:scatterChart>
+      <c:scatterStyle val="lineMarker"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:scatterChart>
+    <c:valAx>
+      <c:axId val="1"/>
+      <c:axPos val="b"/>
+      <c:scaling><c:orientation val="maxMin"/></c:scaling>
+    </c:valAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:axPos val="l"/>
+      <c:scaling><c:orientation val="maxMin"/></c:scaling>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.reverse).toBe(true);
+    expect(chart?.axes?.y?.reverse).toBe(true);
+  });
+
+  it("surfaces reverse alongside other axis fields without interfering", () => {
+    // Co-existing with min/max scaling, gridlines, numFmt, and tick rendering
+    // exercises the parseAxisInfo merge — reverse pulls from <c:scaling>,
+    // the others from sibling elements, so they should slot independently.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:scaling>
+        <c:orientation val="maxMin"/>
+        <c:max val="100"/>
+        <c:min val="0"/>
+      </c:scaling>
+      <c:majorGridlines/>
+      <c:title><c:tx><c:rich><a:p><a:r><a:t>Revenue</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      <c:numFmt formatCode="$#,##0" sourceLinked="0"/>
+      <c:majorTickMark val="cross"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y).toEqual({
+      title: "Revenue",
+      gridlines: { major: true },
+      scale: { min: 0, max: 100 },
+      numberFormat: { formatCode: "$#,##0" },
+      majorTickMark: "cross",
+      reverse: true,
+    });
+  });
+});
+
 // ── parseChart — axis tick label / mark skip ──────────────────────
 
 describe("parseChart — axis tickLblSkip / tickMarkSkip", () => {
