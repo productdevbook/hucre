@@ -6184,3 +6184,140 @@ describe("parseChart — upDownBars", () => {
     expect(chart?.dispBlanksAs).toBe("zero");
   });
 });
+
+// ── parseChart — chart style preset ────────────────────────────────
+
+describe("parseChart — chart style preset", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces <c:style val="2"/> on <c:chartSpace> as the integer 2', () => {
+    // Excel's reference serialization for a fresh chart pins style 2 —
+    // it surfaces verbatim because the reader does not collapse a
+    // default (a chart that omits the element renders identically).
+    const xml = `<c:chartSpace ${NS}>
+  <c:style val="2"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.style).toBe(2);
+  });
+
+  it("surfaces a templated mid-range preset (style 27)", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:style val="27"/>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.style).toBe(27);
+  });
+
+  it("surfaces the OOXML range bounds (1 and 48)", () => {
+    for (const val of [1, 48]) {
+      const xml = `<c:chartSpace ${NS}>
+  <c:style val="${val}"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+      expect(parseChart(xml)?.style).toBe(val);
+    }
+  });
+
+  it("returns undefined when the chartSpace has no <c:style> element", () => {
+    // Absence is the writer's default — the reader surfaces nothing
+    // so a fresh chart and a chart that omits the element round-trip
+    // identically through cloneChart.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.style).toBeUndefined();
+  });
+
+  it("drops out-of-range style values (0 / 49)", () => {
+    // CT_Style declares `val` as `xsd:unsignedByte` in the gallery
+    // range 1–48; values outside collapse to undefined rather than
+    // surface a token Excel would not emit.
+    for (const val of ["0", "49", "255"]) {
+      const xml = `<c:chartSpace ${NS}>
+  <c:style val="${val}"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+      expect(parseChart(xml)?.style).toBeUndefined();
+    }
+  });
+
+  it("drops non-integer style values rather than fabricate one", () => {
+    // The OOXML schema forbids fractional / negative / alpha values.
+    for (const val of ["3.5", "-1", "two", "3px"]) {
+      const xml = `<c:chartSpace ${NS}>
+  <c:style val="${val}"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+      expect(parseChart(xml)?.style).toBeUndefined();
+    }
+  });
+
+  it("ignores a missing val attribute on <c:style>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:style/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.style).toBeUndefined();
+  });
+
+  it("surfaces style alongside roundedCorners and other chart-level toggles", () => {
+    // <c:style> sits on <c:chartSpace> (after <c:roundedCorners>) per
+    // the CT_ChartSpace sequence. Co-existing with chart-level toggles
+    // that live on <c:chart> should not interfere.
+    const xml = `<c:chartSpace ${NS}>
+  <c:roundedCorners val="1"/>
+  <c:style val="34"/>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:varyColors val="1"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+    <c:plotVisOnly val="0"/>
+    <c:dispBlanksAs val="zero"/>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.style).toBe(34);
+    expect(chart?.roundedCorners).toBe(true);
+    expect(chart?.plotVisOnly).toBe(false);
+    expect(chart?.dispBlanksAs).toBe("zero");
+    expect(chart?.varyColors).toBe(true);
+  });
+});
