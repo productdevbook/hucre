@@ -4243,3 +4243,212 @@ describe("parseChart — axis hidden", () => {
     expect(chart?.axes?.y?.hidden).toBeUndefined();
   });
 });
+
+// ── parseChart — legend overlay ──────────────────────────────────────
+
+describe("parseChart — legendOverlay", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces <c:legend><c:overlay val="1"/></c:legend> as true (non-default)', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="1"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe("right");
+    expect(chart?.legendOverlay).toBe(true);
+  });
+
+  it("collapses the OOXML default false to undefined (writer absence)", () => {
+    // The default carried explicitly by Excel's reference serialization
+    // round-trips identically to absence of the field.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="b"/>
+      <c:overlay val="0"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe("bottom");
+    expect(chart?.legendOverlay).toBeUndefined();
+  });
+
+  it("returns undefined when the legend element omits <c:overlay>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="t"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe("top");
+    expect(chart?.legendOverlay).toBeUndefined();
+  });
+
+  it("accepts the OOXML true / false spellings on the val attribute", () => {
+    // The OOXML schema for `xsd:boolean` accepts `"true"` / `"false"`
+    // alongside `"1"` / `"0"`. Hucre tolerates both shapes — a hand-
+    // edited template using `true` should round-trip.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="l"/>
+      <c:overlay val="true"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendOverlay).toBe(true);
+  });
+
+  it("collapses the 'false' spelling to undefined as well", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="false"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendOverlay).toBeUndefined();
+  });
+
+  it("drops unknown overlay values rather than fabricate one", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="bogus"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendOverlay).toBeUndefined();
+  });
+
+  it("ignores a missing val attribute on <c:overlay>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendOverlay).toBeUndefined();
+  });
+
+  it('drops the overlay flag when the legend is hidden via <c:delete val="1"/>', () => {
+    // A hidden legend (legend === false) has no <c:overlay> slot in the
+    // rendered chart, so the reader does not surface a flag that would
+    // carry no on-screen effect through cloneChart.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:delete val="1"/>
+      <c:overlay val="1"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe(false);
+    expect(chart?.legendOverlay).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:legend> element at all", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBeUndefined();
+    expect(chart?.legendOverlay).toBeUndefined();
+  });
+
+  it("surfaces overlay on every chart family that emits a legend", () => {
+    // The element lives on <c:legend>, which is a sibling of
+    // <c:plotArea> on every chart-family <c:chart>; the toggle should
+    // round-trip identically across families. Pie / doughnut / line /
+    // bar all emit legends by default.
+    for (const kind of ["lineChart", "barChart", "pieChart", "doughnutChart"]) {
+      const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:${kind}><c:ser><c:idx val="0"/></c:ser></c:${kind}>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="b"/>
+      <c:overlay val="1"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+      const chart = parseChart(xml);
+      expect(chart?.legendOverlay).toBe(true);
+    }
+  });
+
+  it("co-exists with other chart-level toggles", () => {
+    // The legend overlay flag should not interfere with sibling chart-
+    // level fields parsed off <c:chart> (plotVisOnly, dispBlanksAs,
+    // varyColors).
+    const xml = `<c:chartSpace ${NS}>
+  <c:roundedCorners val="1"/>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="clustered"/>
+        <c:varyColors val="1"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="t"/>
+      <c:overlay val="1"/>
+    </c:legend>
+    <c:plotVisOnly val="0"/>
+    <c:dispBlanksAs val="zero"/>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe("top");
+    expect(chart?.legendOverlay).toBe(true);
+    expect(chart?.roundedCorners).toBe(true);
+    expect(chart?.plotVisOnly).toBe(false);
+    expect(chart?.dispBlanksAs).toBe("zero");
+    expect(chart?.varyColors).toBe(true);
+  });
+});

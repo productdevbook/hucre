@@ -724,6 +724,18 @@ round-trip identically; only an explicit `val="1"` surfaces `true`.
 The reader accepts the OOXML truthy / falsy spellings (`"1"` / `"true"`
 / `"0"` / `"false"`); unknown values and missing `val` attributes drop
 to `undefined`.
+`Chart.legendOverlay` surfaces the legend-overlay flag pulled from
+`<c:legend><c:overlay val=".."/></c:legend>` — Excel's "Format Legend →
+Show the legend without overlapping the chart" toggle (the checkbox is
+the inverse of this flag — checked means `false`, unchecked means
+`true`). The OOXML default `false` collapses to `undefined` so absence
+and `<c:overlay val="0"/>` round-trip identically; only an explicit
+`val="1"` surfaces `true`. The reader accepts the OOXML truthy / falsy
+spellings (`"1"` / `"true"` / `"0"` / `"false"`); unknown values and
+missing `val` attributes drop to `undefined`. The flag is dropped
+whenever `Chart.legend` is `false` or the chart omits the legend
+element entirely — there is no overlay slot on a hidden legend, so the
+parsed shape stays minimal.
 `ChartSeriesInfo.smooth` surfaces the per-series
 `<c:ser><c:smooth val=".."/>` flag — Excel's "Format Data Series →
 Line → Smoothed line" toggle — only on `line` / `line3D` / `scatter`
@@ -908,6 +920,17 @@ outer edge (`val="1"`). The writer always emits the element so the
 rendered intent is explicit on roundtrip — no chart family is
 special-cased, since the toggle styles the outer wrapper rather than
 any chart-family-specific markup.
+The chart-level `legendOverlay` field maps to `<c:overlay val=".."/>`
+inside `<c:legend>` — Excel's "Format Legend → Show the legend without
+overlapping the chart" toggle (the checkbox is the inverse of this
+flag — checked means `false`, unchecked means `true`). Absent it, the
+writer emits the OOXML default `val="0"` (the legend reserves its own
+slot and the plot area shrinks to make room), matching Excel's
+reference serialization. Pin `legendOverlay: true` to draw the legend
+on top of the plot area so the chart series get the full frame
+(`val="1"`). The flag is silently ignored when `legend: false`
+suppresses the entire legend element — there is no overlay slot on a
+hidden legend, so the writer skips emitting any orphaned `<c:overlay>`.
 The `axes.x.tickLblSkip` and `axes.x.tickMarkSkip` fields thin out a
 crowded category axis (`<c:catAx><c:tickLblSkip val=".."/>` and
 `<c:catAx><c:tickMarkSkip val=".."/>`). Pass a positive integer to
@@ -1107,6 +1130,17 @@ back to the writer's OOXML `false` default (square chart frame), or a
 lives on `<c:chartSpace>` and is valid on every chart family, so a
 coercion (line → column, doughnut → pie, etc.) preserves the
 inherited value rather than dropping it.
+The chart-level `legendOverlay` flag follows the same grammar: pass
+`undefined` to inherit the source's parsed value, `null` to drop it
+back to the writer's OOXML `false` default (no overlap with the plot
+area), or a `boolean` to replace it. The flag lives on `<c:legend>` so
+the field is valid on every chart family, but it is silently dropped
+from the cloned `SheetChart` whenever the resolved `legend` is `false`
+— a hidden legend has no overlay slot in the rendered chart, so an
+inherited `true` would carry no on-screen effect. Re-enabling a hidden
+source legend through `legend: "top"` (or any visible position) on the
+override re-opens the slot, and an explicit `legendOverlay: true`
+override threads through.
 The per-axis `axes.x.tickLblSkip` and `axes.x.tickMarkSkip` overrides
 follow the same `undefined` (inherit) / `null` (drop) / number
 (replace) grammar as `gridlines` / `scale` / `numberFormat`. The

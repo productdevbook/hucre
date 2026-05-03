@@ -928,6 +928,20 @@ export interface SheetChart {
    * to hide the legend.
    */
   legend?: false | "top" | "bottom" | "left" | "right" | "topRight";
+  /**
+   * Whether the legend overlaps the plot area. Maps to
+   * `<c:legend><c:overlay val=".."/></c:legend>` — Excel's "Format
+   * Legend -> Show the legend without overlapping the chart" toggle
+   * (the checkbox is the inverse of this flag — checked means `false`,
+   * unchecked means `true`). Default: `false` (the OOXML default Excel
+   * itself emits) — the legend reserves its own slot and the plot area
+   * shrinks to accommodate it. Set `true` to draw the legend on top of
+   * the plot area so the chart series get the full frame.
+   *
+   * Silently ignored when `legend === false` (no legend element is
+   * emitted) — there is no overlay flag to set on a hidden legend.
+   */
+  legendOverlay?: boolean;
   /** Show the chart-level title element. Default: `true` when `title` is set. */
   showTitle?: boolean;
   /** Alternative text for screen readers (lands in xdr:cNvPr/@descr). */
@@ -2178,6 +2192,24 @@ export interface Chart {
    * placement in that case.
    */
   legend?: false | ChartLegendPosition;
+  /**
+   * Legend-overlay flag pulled from `<c:legend><c:overlay val=".."/>`.
+   * Reflects Excel's "Format Legend -> Show the legend without
+   * overlapping the chart" toggle (the checkbox is the inverse — checked
+   * means `false`, unchecked means `true`).
+   *
+   * The OOXML default `false` collapses to `undefined` so absence and
+   * `<c:overlay val="0"/>` round-trip identically through
+   * {@link cloneChart} — only an explicit `<c:overlay val="1"/>` surfaces
+   * `true`. The reader accepts the OOXML truthy / falsy spellings (`"1"`
+   * / `"true"` / `"0"` / `"false"`); unknown values and missing `val`
+   * attributes drop to `undefined`.
+   *
+   * Reported as `undefined` whenever {@link legend} is `false` or the
+   * source chart has no `<c:legend>` element at all — there is no
+   * overlay flag to surface in either case.
+   */
+  legendOverlay?: boolean;
   /**
    * Grouping pulled from the first `<c:barChart>` element, when the
    * chart has one. Surfaces only the stacked variants — the OOXML

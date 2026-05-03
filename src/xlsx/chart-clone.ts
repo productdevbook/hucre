@@ -127,6 +127,19 @@ export interface CloneChartOptions {
   seriesOverrides?: ReadonlyArray<CloneChartSeriesOverride | undefined>;
   /** Override `SheetChart.legend`. */
   legend?: SheetChart["legend"];
+  /**
+   * Override the chart-level legend-overlay flag. `undefined` (or
+   * omitted) inherits the source's parsed value; `null` drops the
+   * inherited value (the writer falls back to the OOXML `false` default
+   * — the legend reserves its own slot, no overlap with the plot area);
+   * a `boolean` replaces it.
+   *
+   * The override is silently dropped from the cloned `SheetChart` when
+   * the resolved legend is `false` (no legend element will be emitted)
+   * — there is no overlay flag to set on a hidden legend, so leaking
+   * the value into the output would carry a toggle Excel never reads.
+   */
+  legendOverlay?: boolean | null;
   /** Override `SheetChart.barGrouping`. */
   barGrouping?: SheetChart["barGrouping"];
   /**
@@ -411,6 +424,16 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // writer, so we drop the inherited value to keep the model honest.
   const legend = options.legend !== undefined ? options.legend : source.legend;
   if (legend !== undefined) out.legend = legend;
+
+  // `legendOverlay` only renders inside `<c:legend>`, so a clone whose
+  // resolved legend is `false` (legend hidden) drops the inherited
+  // overlay flag — there is no `<c:overlay>` slot on a hidden legend
+  // for the writer to populate. The override wins over the source's
+  // parsed value; absence inherits, `null` drops, a `boolean` replaces.
+  if (legend !== false) {
+    const resolvedLegendOverlay = resolveLegendOverlay(source.legendOverlay, options.legendOverlay);
+    if (resolvedLegendOverlay !== undefined) out.legendOverlay = resolvedLegendOverlay;
+  }
 
   const barGrouping = options.barGrouping !== undefined ? options.barGrouping : source.barGrouping;
   if (barGrouping !== undefined && (type === "bar" || type === "column")) {
@@ -820,6 +843,29 @@ function resolvePlotVisOnly(
  * toggles compose the same way at the call site.
  */
 function resolveRoundedCorners(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve a `legendOverlay` override.
+ *
+ * `undefined` → inherit the source's parsed `legendOverlay`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               OOXML `false` default — the legend reserves its own
+ *               slot, no overlap with the plot area).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `plotVisOnly` / `roundedCorners` so the chart-
+ * level toggles compose the same way at the call site. Callers should
+ * gate the result on the resolved legend visibility — when no legend
+ * is emitted, the overlay flag has no slot in the rendered chart.
+ */
+function resolveLegendOverlay(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {

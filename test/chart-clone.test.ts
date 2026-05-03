@@ -3824,3 +3824,202 @@ describe("cloneChart — axis hidden", () => {
     expect(valAxBlock).toContain('<c:delete val="1"/>');
   });
 });
+
+// ── cloneChart — legendOverlay ───────────────────────────────────────
+
+describe("cloneChart — legendOverlay", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      legend: "right",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's legendOverlay by default", () => {
+    const clone = cloneChart(source({ legendOverlay: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.legendOverlay).toBe(true);
+  });
+
+  it("lets options.legendOverlay override the source's value", () => {
+    const clone = cloneChart(source({ legendOverlay: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendOverlay: false,
+    });
+    expect(clone.legendOverlay).toBe(false);
+  });
+
+  it("drops the inherited legendOverlay when the override is null", () => {
+    // null collapses to the writer's OOXML default — the field
+    // disappears from the resolved SheetChart so the writer emits the
+    // default `0` (no overlap with the plot area).
+    const clone = cloneChart(source({ legendOverlay: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendOverlay: null,
+    });
+    expect(clone.legendOverlay).toBeUndefined();
+  });
+
+  it("returns undefined legendOverlay when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.legendOverlay).toBeUndefined();
+  });
+
+  it("carries legendOverlay through a flatten (line → column)", () => {
+    // legendOverlay lives on `<c:legend>` and is valid on every chart
+    // family, so a coercion does not drop it.
+    const clone = cloneChart(source({ legendOverlay: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.legendOverlay).toBe(true);
+  });
+
+  it("carries legendOverlay through a doughnut flatten (line → doughnut)", () => {
+    // The flag has no chart-family restriction — even a coercion to
+    // doughnut, which has no axes, must preserve the legend overlay.
+    const clone = cloneChart(source({ legendOverlay: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.legendOverlay).toBe(true);
+  });
+
+  it("drops the inherited legendOverlay when the resolved legend is hidden", () => {
+    // legend === false suppresses the entire <c:legend> element on the
+    // writer side, so an inherited overlay flag would never render.
+    // The clone collapses the field to keep the SheetChart honest.
+    const clone = cloneChart(source({ legendOverlay: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendOverlay).toBeUndefined();
+  });
+
+  it("drops the legendOverlay override when the resolved legend is hidden", () => {
+    // Same guard, this time on the override path — pinning legend:false
+    // wins over an explicit overlay override too.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+      legendOverlay: true,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendOverlay).toBeUndefined();
+  });
+
+  it("retains the legendOverlay override when the override re-enables a hidden source legend", () => {
+    // Source pinned legend:false (so legendOverlay would normally be
+    // undefined), but the override re-enables a visible legend — the
+    // overlay flag the override carries must thread through.
+    const clone = cloneChart(source({ legend: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: "top",
+      legendOverlay: true,
+    });
+    expect(clone.legend).toBe("top");
+    expect(clone.legendOverlay).toBe(true);
+  });
+
+  it("propagates legendOverlay into the rendered <c:legend> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ legendOverlay: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain('c:overlay val="1"');
+    expect(legend).not.toContain('c:overlay val="0"');
+
+    // Re-parsing the rendered chart returns the same value — closes the
+    // template → clone → write → read loop.
+    const reparsed = parseChart(written);
+    expect(reparsed?.legendOverlay).toBe(true);
+  });
+
+  it("emits the OOXML default legendOverlay=0 when both source and override are absent", async () => {
+    // A bare clone with no overlay hint rolls into a SheetChart whose
+    // writer emits the default `0` and re-parses to undefined.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain('c:overlay val="0"');
+    expect(parseChart(written)?.legendOverlay).toBeUndefined();
+  });
+
+  it("an explicit override beats the source value through writeXlsx", async () => {
+    // Source pins `true`, clone overrides to `false` — the rendered
+    // chart should carry the override and re-parse to undefined (since
+    // `false` is the OOXML default and collapses on read).
+    const clone = cloneChart(source({ legendOverlay: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+      legendOverlay: false,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain('c:overlay val="0"');
+    expect(legend).not.toContain('c:overlay val="1"');
+    expect(parseChart(written)?.legendOverlay).toBeUndefined();
+  });
+});
