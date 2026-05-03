@@ -5315,3 +5315,127 @@ describe("writeChart — upDownBars", () => {
     expect(reparsed?.upDownBars).toBe(true);
   });
 });
+
+// ── writeChart — chart style preset ──────────────────────────────────
+
+describe("writeChart — chart style preset", () => {
+  it("skips <c:style> entirely when the field is unset (writer default)", () => {
+    // Excel's reference serialization for a fresh chart pins style 2,
+    // but the writer skips emission so an unstyled chart stays minimal
+    // — Excel falls back to its application default look.
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:style ");
+    expect(result.chartXml).not.toContain("<c:style/>");
+  });
+
+  it('emits <c:style val="N"/> on <c:chartSpace> when the field is pinned', () => {
+    const result = writeChart(makeChart({ style: 27 }), "Sheet1");
+    expect(result.chartXml).toContain('c:style val="27"');
+  });
+
+  it("emits the OOXML range bounds (1 and 48)", () => {
+    for (const val of [1, 48]) {
+      const result = writeChart(makeChart({ style: val }), "Sheet1");
+      expect(result.chartXml).toContain(`c:style val="${val}"`);
+    }
+  });
+
+  it("places <c:style> after <c:roundedCorners> and before <c:chart>", () => {
+    // CT_ChartSpace sequence: ... roundedCorners?, AlternateContent?,
+    // clrMapOvr?, style?, ... chart, ... — the preset must follow
+    // <c:roundedCorners> and precede <c:chart> so a strict validator
+    // (Excel itself rejects out-of-order children) sees the schema
+    // sequence respected.
+    const result = writeChart(makeChart({ style: 12, roundedCorners: true }), "Sheet1");
+    const roundedIdx = result.chartXml.indexOf("c:roundedCorners");
+    const styleIdx = result.chartXml.indexOf("c:style ");
+    const chartIdx = result.chartXml.indexOf("<c:chart>");
+    expect(roundedIdx).toBeGreaterThan(-1);
+    expect(styleIdx).toBeGreaterThan(roundedIdx);
+    expect(styleIdx).toBeLessThan(chartIdx);
+  });
+
+  it("only emits <c:style> once on a chart that pins it", () => {
+    // Guard against any regression that would double-emit the element.
+    const result = writeChart(makeChart({ style: 27 }), "Sheet1");
+    const occurrences = result.chartXml.match(/<c:style /g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("drops out-of-range style values (0 / 49 / 255) rather than emit them", () => {
+    // CT_Style declares val as xsd:unsignedByte in the gallery range
+    // 1–48. Out-of-range values collapse to absence so the writer
+    // never emits a token Excel would reject.
+    for (const val of [0, 49, 100, 255, -3]) {
+      const result = writeChart(makeChart({ style: val }), "Sheet1");
+      expect(result.chartXml).not.toContain("<c:style ");
+      expect(result.chartXml).not.toContain("<c:style/>");
+    }
+  });
+
+  it("drops non-integer style values (3.5 / NaN / Infinity)", () => {
+    for (const val of [3.5, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const result = writeChart(makeChart({ style: val }), "Sheet1");
+      expect(result.chartXml).not.toContain("<c:style ");
+    }
+  });
+
+  it("threads style through every chart family", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, style: 18 }), "Sheet1");
+      expect(result.chartXml).toContain('c:style val="18"');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        style: 18,
+      }),
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain('c:style val="18"');
+  });
+
+  it("round-trips a pinned style through parseChart", () => {
+    const written = writeChart(makeChart({ style: 27 }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.style).toBe(27);
+  });
+
+  it("collapses an unset style round-trip back to undefined", () => {
+    // A fresh chart writes no element, which re-parses to undefined —
+    // absence and the unstyled default round-trip identically.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.style).toBeUndefined();
+  });
+
+  it("threads style end-to-end through writeXlsx packaging", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Dashboard",
+        rows: [
+          ["Quarter", "Revenue"],
+          ["Q1", 10],
+          ["Q2", 20],
+          ["Q3", 30],
+        ],
+        charts: [
+          {
+            type: "column",
+            series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            style: 34,
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('c:style val="34"');
+    // Re-parse the rendered chart to confirm the preset survives the
+    // packaging path.
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.style).toBe(34);
+  });
+});

@@ -1143,6 +1143,26 @@ export interface SheetChart {
    */
   upDownBars?: boolean;
   /**
+   * Built-in chart style preset. Maps to `<c:style val=".."/>` on
+   * `<c:chartSpace>` (a sibling of `<c:chart>`, not a child). Mirrors
+   * Excel's "Chart Design -> Chart Styles" gallery — each integer
+   * picks one of the 48 numbered presets that cycle a colored
+   * background, gridline density, border, and label styling across
+   * the chart.
+   *
+   * Default: omitted — when the field is absent the writer skips the
+   * element and Excel renders the chart with its application default
+   * look. Set an integer in the OOXML range (1–48) to pin a preset;
+   * out-of-range and non-integer values are silently dropped rather
+   * than emit a token Excel would reject.
+   *
+   * Useful when matching a dashboard whose other charts already
+   * carry a particular preset look from a template — clone-through
+   * preserves the parsed value so a fresh chart and a templated chart
+   * compose side by side without manual re-styling.
+   */
+  style?: number;
+  /**
    * Per-axis configuration rendered alongside the plot area. The `x`
    * axis is the category axis for bar/column/line/area (or the bottom
    * value axis for scatter); the `y` axis is the value axis. Ignored
@@ -2754,6 +2774,28 @@ export interface Chart {
    * / area / scatter chart-type elements.
    */
   upDownBars?: boolean;
+  /**
+   * Built-in chart style preset pulled from `<c:chartSpace><c:style
+   * val=".."/>`. Reflects Excel's "Chart Design -> Chart Styles"
+   * gallery — each value picks one of the 48 numbered presets that
+   * cycle a colored background, gridline density, border, and label
+   * styling across the chart.
+   *
+   * Surfaces the integer value verbatim when `val` is an integer in
+   * the OOXML range (1–48); absence and out-of-range / non-integer
+   * values drop to `undefined`. The reader does not pin a default —
+   * Excel's reference serialization for a fresh chart emits `<c:style
+   * val="2"/>`, but a chart that omits the element renders identically
+   * (Excel falls back to its application default). Surfacing only the
+   * non-default values keeps the parsed shape minimal and lets a
+   * roundtrip of a templated chart preserve its preset while a fresh
+   * chart stays unmarked.
+   *
+   * Note: `<c:style>` lives on `<c:chartSpace>`, not inside
+   * `<c:chart>` — the preset styles the outer chart space (frame
+   * fill, plot area look, default text font), not just the plot area.
+   */
+  style?: number;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────

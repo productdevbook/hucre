@@ -81,6 +81,22 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
 
   const chartElement = xmlElement("c:chart", undefined, chartChildren);
 
+  // `<c:chartSpace>` element ordering per CT_ChartSpace
+  // (ECMA-376 Part 1, §21.2.2.29): date1904?, lang?, roundedCorners?,
+  // AlternateContent?, clrMapOvr?, style?, ... chart, ...
+  // — the `<c:style>` element sits after `<c:roundedCorners>` and
+  // before `<c:chart>`. The writer skips emission entirely when the
+  // chart leaves `style` unset so a fresh chart matches Excel's
+  // implicit default rather than pinning the application's `2` preset.
+  const chartSpaceChildren: string[] = [
+    xmlSelfClose("c:roundedCorners", { val: resolveRoundedCorners(chart) ? 1 : 0 }),
+  ];
+  const styleVal = resolveStyle(chart);
+  if (styleVal !== undefined) {
+    chartSpaceChildren.push(xmlSelfClose("c:style", { val: styleVal }));
+  }
+  chartSpaceChildren.push(chartElement);
+
   const chartXml = xmlDocument(
     "c:chartSpace",
     {
@@ -88,7 +104,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
       "xmlns:a": NS_A,
       "xmlns:r": NS_R,
     },
-    [xmlSelfClose("c:roundedCorners", { val: resolveRoundedCorners(chart) ? 1 : 0 }), chartElement],
+    chartSpaceChildren,
   );
 
   // Always emit an empty rels file. Phase 1 charts do not depend on
@@ -1816,6 +1832,30 @@ function resolvePlotVisOnly(chart: SheetChart): boolean {
 function resolveRoundedCorners(chart: SheetChart): boolean {
   if (typeof chart.roundedCorners === "boolean") return chart.roundedCorners;
   return false;
+}
+
+// ── Chart Style Preset ──────────────────────────────────────────────
+
+/**
+ * Resolve the `<c:style val=".."/>` value emitted on `<c:chartSpace>`.
+ *
+ * Returns `undefined` when the chart leaves `style` unset (the writer
+ * skips the element entirely so a fresh chart matches Excel's implicit
+ * default rather than pinning the application's `2` preset). Out-of-
+ * range and non-integer values also collapse to `undefined` rather
+ * than emit a token Excel would reject — `<c:style>` is `xsd:unsigned
+ * Byte` in the OOXML schema with the gallery range of 1–48.
+ *
+ * `<c:style>` sits on `<c:chartSpace>` (a sibling of `<c:chart>`, not
+ * a child) per CT_ChartSpace. The element follows `<c:roundedCorners>`
+ * and precedes `<c:chart>` in the schema sequence.
+ */
+function resolveStyle(chart: SheetChart): number | undefined {
+  const raw = chart.style;
+  if (typeof raw !== "number") return undefined;
+  if (!Number.isInteger(raw)) return undefined;
+  if (raw < 1 || raw > 48) return undefined;
+  return raw;
 }
 
 // ── Vary Colors ──────────────────────────────────────────────────────
