@@ -6185,6 +6185,148 @@ describe("parseChart — upDownBars", () => {
   });
 });
 
+// ── parseChart — axis dispUnits ──────────────────────────────────────
+
+describe("parseChart — axis dispUnits", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it("surfaces a built-in unit preset on the value axis", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:dispUnits><c:builtInUnit val="millions"/></c:dispUnits>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.dispUnits).toEqual({ unit: "millions" });
+    expect(chart?.axes?.x?.dispUnits).toBeUndefined();
+  });
+
+  it("surfaces showLabel when <c:dispUnitsLbl> is present", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:dispUnits>
+        <c:builtInUnit val="thousands"/>
+        <c:dispUnitsLbl/>
+      </c:dispUnits>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.dispUnits).toEqual({ unit: "thousands", showLabel: true });
+  });
+
+  it("collapses dispUnits to undefined on a category axis (catAx rejects the element)", () => {
+    // The OOXML schema places <c:dispUnits> exclusively on CT_ValAx, so a
+    // stray element on <c:catAx> from a corrupt template should never
+    // surface — the reader explicitly skips the parse on every non-valAx
+    // flavour.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:dispUnits><c:builtInUnit val="millions"/></c:dispUnits>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.dispUnits).toBeUndefined();
+  });
+
+  it("drops an unknown ST_BuiltInUnit token rather than fabricating a value", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:dispUnits><c:builtInUnit val="quintillions"/></c:dispUnits>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.dispUnits).toBeUndefined();
+  });
+
+  it("drops the parsed value when <c:builtInUnit> is missing or malformed", () => {
+    // <c:dispUnits> has a choice between <c:builtInUnit> and
+    // <c:custUnit>; the reader only surfaces the built-in path. A
+    // bare <c:dispUnits> (or one with only <c:custUnit>) should drop.
+    const bare = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/><c:dispUnits/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(bare)?.axes?.y?.dispUnits).toBeUndefined();
+
+    const noVal = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/><c:dispUnits><c:builtInUnit/></c:dispUnits></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(noVal)?.axes?.y?.dispUnits).toBeUndefined();
+
+    const custUnit = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/><c:dispUnits><c:custUnit val="500"/></c:dispUnits></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(custUnit)?.axes?.y?.dispUnits).toBeUndefined();
+  });
+
+  it("surfaces dispUnits on both scatter axes (both are valAx)", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:scatterChart>
+      <c:scatterStyle val="lineMarker"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:scatterChart>
+    <c:valAx>
+      <c:axId val="1"/>
+      <c:axPos val="b"/>
+      <c:dispUnits><c:builtInUnit val="hundreds"/></c:dispUnits>
+    </c:valAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:axPos val="l"/>
+      <c:dispUnits><c:builtInUnit val="billions"/><c:dispUnitsLbl/></c:dispUnits>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.dispUnits).toEqual({ unit: "hundreds" });
+    expect(chart?.axes?.y?.dispUnits).toEqual({ unit: "billions", showLabel: true });
+  });
+
+  it("collapses dispUnits to undefined when the chart has no <c:dispUnits>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.dispUnits).toBeUndefined();
+  });
+});
+
 // ── parseChart — chart style preset ────────────────────────────────
 
 describe("parseChart — chart style preset", () => {

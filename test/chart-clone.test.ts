@@ -5998,6 +5998,160 @@ describe("cloneChart — upDownBars", () => {
   });
 });
 
+// ── cloneChart — axis dispUnits ──────────────────────────────────────
+
+describe("cloneChart — axis dispUnits", () => {
+  const sourceWithUnit: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: { y: { dispUnits: { unit: "millions" } } },
+  };
+
+  const sourceWithLabel: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: { y: { dispUnits: { unit: "thousands", showLabel: true } } },
+  };
+
+  it("inherits axes.y.dispUnits from the source when no override is given", () => {
+    const clone = cloneChart(sourceWithUnit, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y?.dispUnits).toEqual({ unit: "millions" });
+  });
+
+  it("inherits the showLabel flag from the source", () => {
+    const clone = cloneChart(sourceWithLabel, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y?.dispUnits).toEqual({ unit: "thousands", showLabel: true });
+  });
+
+  it("drops the inherited preset when the override is null", () => {
+    const clone = cloneChart(sourceWithUnit, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { dispUnits: null } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("replaces the inherited preset with a new value", () => {
+    const clone = cloneChart(sourceWithUnit, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { dispUnits: { unit: "billions", showLabel: true } } },
+    });
+    expect(clone.axes?.y?.dispUnits).toEqual({ unit: "billions", showLabel: true });
+  });
+
+  it("accepts the ChartAxisDispUnit shorthand string as an override", () => {
+    const clone = cloneChart(sourceWithUnit, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { dispUnits: "trillions" } },
+    });
+    expect(clone.axes?.y?.dispUnits).toEqual({ unit: "trillions" });
+  });
+
+  it("adds dispUnits to a source that lacked the field", () => {
+    const bare: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(bare, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { dispUnits: "hundreds" } },
+    });
+    expect(clone.axes?.y?.dispUnits).toEqual({ unit: "hundreds" });
+  });
+
+  it("collapses unknown ST_BuiltInUnit tokens to undefined", () => {
+    const clone = cloneChart(sourceWithUnit, {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      axes: { y: { dispUnits: { unit: "quintillions" as any } } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("drops the inherited unit when flattening to pie (no axes)", () => {
+    // Pie / doughnut have no axes at all in the OOXML schema — the
+    // resolver short-circuits on those families so dispUnits cannot
+    // leak into the writer.
+    const clone = cloneChart(sourceWithUnit, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "pie",
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("drops the inherited X-axis dispUnits when flattening to bar (catAx X)", () => {
+    // The X axis on bar / column / line / area is a category axis,
+    // which rejects <c:dispUnits>. A clone from scatter (where both
+    // axes are valAx) into a column chart should drop the X-axis
+    // preset so the writer never sees it.
+    const scatterSource: Chart = {
+      kinds: ["scatter"],
+      seriesCount: 1,
+      series: [{ kind: "scatter", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { dispUnits: { unit: "thousands" } }, y: { dispUnits: { unit: "millions" } } },
+    };
+    const clone = cloneChart(scatterSource, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.axes?.x?.dispUnits).toBeUndefined();
+    // Y axis is valAx on column too — the inherited preset survives.
+    expect(clone.axes?.y?.dispUnits).toEqual({ unit: "millions" });
+  });
+
+  it("carries the X-axis dispUnits through a scatter -> scatter clone", () => {
+    const scatterSource: Chart = {
+      kinds: ["scatter"],
+      seriesCount: 1,
+      series: [{ kind: "scatter", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { dispUnits: { unit: "thousands" } }, y: { dispUnits: { unit: "millions" } } },
+    };
+    const clone = cloneChart(scatterSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.dispUnits).toEqual({ unit: "thousands" });
+    expect(clone.axes?.y?.dispUnits).toEqual({ unit: "millions" });
+  });
+
+  it("round-trips through parseChart -> cloneChart -> writeChart", async () => {
+    const source: SheetChart = {
+      type: "column",
+      series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { dispUnits: { unit: "millions", showLabel: true } } },
+    };
+    const xml = writeChart(source, "Sheet1").chartXml;
+    const parsed = parseChart(xml)!;
+    const clone = cloneChart(parsed, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    expect(clone.axes?.y?.dispUnits).toEqual({ unit: "millions", showLabel: true });
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Q", "Revenue"],
+            ["Q1", 1_500_000],
+            ["Q2", 2_300_000],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('<c:builtInUnit val="millions"/>');
+    expect(written).toContain("<c:dispUnitsLbl/>");
+    expect(parseChart(written)?.axes?.y?.dispUnits).toEqual({
+      unit: "millions",
+      showLabel: true,
+    });
+  });
+});
+
 // ── cloneChart — chart style preset ──────────────────────────────────
 
 describe("cloneChart — chart style preset", () => {

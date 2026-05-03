@@ -15,6 +15,8 @@
 import type {
   Chart,
   ChartAxisCrosses,
+  ChartAxisDispUnit,
+  ChartAxisDispUnits,
   ChartAxisGridlines,
   ChartAxisInfo,
   ChartAxisLabelAlign,
@@ -384,6 +386,11 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   const crossesPair = parseAxisCrosses(axis);
   const crosses = crossesPair.crosses;
   const crossesAt = crossesPair.crossesAt;
+  // `<c:dispUnits>` lives exclusively on `<c:valAx>` per ECMA-376 Part 1,
+  // §21.2.2.32 (CT_ValAx → CT_DispUnits). Skip the parse on every other
+  // axis flavour so a corrupt template carrying a stray element does
+  // not surface a value the writer would never emit anyway.
+  const dispUnits = axis.local === "valAx" ? parseAxisDispUnits(axis) : undefined;
   if (
     title === undefined &&
     gridlines === undefined &&
@@ -400,7 +407,8 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
     noMultiLvlLbl === undefined &&
     hidden === undefined &&
     crosses === undefined &&
-    crossesAt === undefined
+    crossesAt === undefined &&
+    dispUnits === undefined
   ) {
     return undefined;
   }
@@ -421,6 +429,7 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   if (hidden !== undefined) out.hidden = hidden;
   if (crosses !== undefined) out.crosses = crosses;
   if (crossesAt !== undefined) out.crossesAt = crossesAt;
+  if (dispUnits !== undefined) out.dispUnits = dispUnits;
   return out;
 }
 
@@ -699,6 +708,54 @@ function parseAxisCrosses(axis: XmlElement): {
   if (!VALID_CROSSES.has(value)) return {};
   if (value === "autoZero") return {};
   return { crosses: value };
+}
+
+/** Recognized values of `<c:builtInUnit>` per the OOXML `ST_BuiltInUnit` enum. */
+const VALID_DISP_UNITS: ReadonlySet<ChartAxisDispUnit> = new Set([
+  "hundreds",
+  "thousands",
+  "tenThousands",
+  "hundredThousands",
+  "millions",
+  "tenMillions",
+  "hundredMillions",
+  "billions",
+  "trillions",
+]);
+
+/**
+ * Read a value axis's `<c:dispUnits>` block. The element holds a choice
+ * between `<c:builtInUnit val=".."/>` and `<c:custUnit val=".."/>`,
+ * optionally followed by `<c:dispUnitsLbl>`. The reader only surfaces
+ * the built-in path — the `<c:custUnit>` variant (custom numeric
+ * divisor) and any rich-text `<c:dispUnitsLbl>` body are ignored.
+ *
+ * Returns `undefined` when:
+ *   - the axis declares no `<c:dispUnits>` at all,
+ *   - `<c:dispUnits>` is present but has no `<c:builtInUnit>` child
+ *     (the schema also tolerates `<c:custUnit>` but we don't surface it),
+ *   - `<c:builtInUnit val>` is missing, malformed, or not in
+ *     {@link VALID_DISP_UNITS}.
+ *
+ * `showLabel` is set `true` only when `<c:dispUnitsLbl>` is present
+ * inside `<c:dispUnits>` (Excel paints its automatic annotation in
+ * that case). Absence collapses to absence on the surfaced object so
+ * a round-trip stays minimal.
+ */
+function parseAxisDispUnits(axis: XmlElement): ChartAxisDispUnits | undefined {
+  const dispUnits = findChild(axis, "dispUnits");
+  if (!dispUnits) return undefined;
+  const builtInUnit = findChild(dispUnits, "builtInUnit");
+  if (!builtInUnit) return undefined;
+  const raw = builtInUnit.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim() as ChartAxisDispUnit;
+  if (!VALID_DISP_UNITS.has(trimmed)) return undefined;
+  const out: ChartAxisDispUnits = { unit: trimmed };
+  if (findChild(dispUnits, "dispUnitsLbl")) {
+    out.showLabel = true;
+  }
+  return out;
 }
 
 /**

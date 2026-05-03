@@ -8,6 +8,8 @@
 
 import type {
   ChartAxisCrosses,
+  ChartAxisDispUnit,
+  ChartAxisDispUnits,
   ChartAxisGridlines,
   ChartAxisLabelAlign,
   ChartAxisNumberFormat,
@@ -236,6 +238,16 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // the precedence rule.
     xCrosses: normalizeAxisCrosses(chart.axes?.x?.crosses, chart.axes?.x?.crossesAt),
     yCrosses: normalizeAxisCrosses(chart.axes?.y?.crosses, chart.axes?.y?.crossesAt),
+    // `<c:dispUnits>` lives exclusively on `<c:valAx>` per ECMA-376
+    // §21.2.2.32 (CT_ValAx → CT_DispUnits). The category-axis builder
+    // ignores `xDispUnits`; only the scatter X-axis (a value axis) and
+    // every Y axis pick the field up. The normalizer collapses the
+    // `ChartAxisDispUnit` shorthand to the full {@link ChartAxisDispUnits}
+    // shape and rejects unknown tokens so the writer never emits a
+    // `<c:builtInUnit>` value the OOXML `ST_BuiltInUnit` enum would
+    // refuse.
+    xDispUnits: normalizeAxisDispUnits(chart.axes?.x?.dispUnits),
+    yDispUnits: normalizeAxisDispUnits(chart.axes?.y?.dispUnits),
   };
 
   switch (chart.type) {
@@ -348,6 +360,22 @@ interface AxisRenderOptions {
   xCrosses: ResolvedAxisCrosses;
   /** Resolved axis-crosses pin for the Y axis. Same shape as {@link xCrosses}. */
   yCrosses: ResolvedAxisCrosses;
+  /**
+   * Display-unit preset emitted on the X axis only when the axis is
+   * `<c:valAx>` (i.e. scatter charts). Bar / column / line / area route
+   * the X axis through `<c:catAx>` which rejects `<c:dispUnits>`, so
+   * the catAx builder ignores this field.
+   */
+  xDispUnits: ChartAxisDispUnits | undefined;
+  /**
+   * Display-unit preset emitted on the value axis. The catAx builder
+   * (bar / column / line / area) routes the Y axis through `<c:valAx>`,
+   * and the scatter builder routes both axes through `<c:valAx>` — so
+   * this field surfaces on every chart family that has a value axis.
+   * Pie / doughnut have no axes at all and the caller already
+   * short-circuits those branches.
+   */
+  yDispUnits: ChartAxisDispUnits | undefined;
 }
 
 /**
@@ -661,6 +689,69 @@ function buildAxisTickUnits(scale: ChartAxisScale | undefined): string[] {
   return out;
 }
 
+/** Recognized values of `<c:builtInUnit>` per the OOXML `ST_BuiltInUnit` enum. */
+const VALID_DISP_UNITS: ReadonlySet<ChartAxisDispUnit> = new Set([
+  "hundreds",
+  "thousands",
+  "tenThousands",
+  "hundredThousands",
+  "millions",
+  "tenMillions",
+  "hundredMillions",
+  "billions",
+  "trillions",
+]);
+
+/**
+ * Normalize the {@link SheetChart.axes.x.dispUnits} /
+ * {@link SheetChart.axes.y.dispUnits} input — accept either the
+ * `ChartAxisDispUnit` shorthand (e.g. `"millions"`) or the full
+ * {@link ChartAxisDispUnits} object — into a single canonical shape the
+ * writer can hand off to {@link buildAxisDispUnits}. Unknown / typo'd
+ * tokens collapse to `undefined` so the writer never emits a value the
+ * OOXML `ST_BuiltInUnit` enum rejects. Non-object / non-string inputs
+ * (e.g. `null`, numbers, arrays) also collapse to `undefined`.
+ */
+function normalizeAxisDispUnits(
+  value: ChartAxisDispUnits | ChartAxisDispUnit | undefined,
+): ChartAxisDispUnits | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "string") {
+    return VALID_DISP_UNITS.has(value as ChartAxisDispUnit)
+      ? { unit: value as ChartAxisDispUnit }
+      : undefined;
+  }
+  if (typeof value !== "object" || value === null) return undefined;
+  const unit = value.unit;
+  if (typeof unit !== "string" || !VALID_DISP_UNITS.has(unit as ChartAxisDispUnit)) {
+    return undefined;
+  }
+  const out: ChartAxisDispUnits = { unit: unit as ChartAxisDispUnit };
+  if (value.showLabel === true) out.showLabel = true;
+  return out;
+}
+
+/**
+ * Build the optional `<c:dispUnits>` block that sits at the very end of
+ * `<c:valAx>` per CT_ValAx (after `<c:minorUnit>`). The element itself
+ * holds the choice between `<c:builtInUnit>` and `<c:custUnit>`; the
+ * writer only emits the built-in variant. When `showLabel` is `true`
+ * the writer emits a bare `<c:dispUnitsLbl/>` so Excel paints its
+ * default automatic annotation; the rich-text label customization is
+ * intentionally not surfaced.
+ *
+ * Returns an empty array when the caller did not pin a preset so the
+ * writer leaves Excel's default "no display unit" state untouched.
+ */
+function buildAxisDispUnits(dispUnits: ChartAxisDispUnits | undefined): string[] {
+  if (!dispUnits) return [];
+  const children: string[] = [xmlSelfClose("c:builtInUnit", { val: dispUnits.unit })];
+  if (dispUnits.showLabel === true) {
+    children.push(xmlSelfClose("c:dispUnitsLbl"));
+  }
+  return [xmlElement("c:dispUnits", undefined, children)];
+}
+
 /**
  * Build the axis tick-label `<c:numFmt formatCode=".." sourceLinked=".."/>`.
  * Returns an empty array when the axis declares no number format — the
@@ -927,6 +1018,11 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
     buildAxisCrosses(opts.yCrosses),
     xmlSelfClose("c:crossBetween", { val: "between" }),
     ...buildAxisTickUnits(opts.yScale),
+    // `<c:dispUnits>` is the last child slot on `<c:valAx>` per
+    // CT_ValAx (after `<c:minorUnit>`). Bar / column / line / area
+    // charts route the X axis through `<c:catAx>` (which rejects the
+    // element), so only the Y axis picks up the writer-side input.
+    ...buildAxisDispUnits(opts.yDispUnits),
   );
 
   return [
@@ -1219,6 +1315,10 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
     buildAxisCrosses(opts.xCrosses),
     xmlSelfClose("c:crossBetween", { val: "midCat" }),
     ...buildAxisTickUnits(opts.xScale),
+    // `<c:dispUnits>` slots onto `<c:valAx>` per CT_ValAx (after
+    // `<c:minorUnit>`). Scatter charts route both axes through
+    // `<c:valAx>`, so the X-axis builder picks up `xDispUnits` here.
+    ...buildAxisDispUnits(opts.xDispUnits),
   );
 
   const yAxChildren: string[] = [
@@ -1236,6 +1336,10 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
     buildAxisCrosses(opts.yCrosses),
     xmlSelfClose("c:crossBetween", { val: "midCat" }),
     ...buildAxisTickUnits(opts.yScale),
+    // `<c:dispUnits>` on the Y axis. Scatter Y is also a value axis,
+    // so the same builder applies. See `buildBarAxes` for the broader
+    // scope notes.
+    ...buildAxisDispUnits(opts.yDispUnits),
   );
 
   return [

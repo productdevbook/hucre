@@ -5316,6 +5316,183 @@ describe("writeChart — upDownBars", () => {
   });
 });
 
+// ── writeChart — axis dispUnits ──────────────────────────────────────
+
+describe("writeChart — axis dispUnits", () => {
+  it("omits <c:dispUnits> on a stock chart whose axes pin no preset", () => {
+    // Excel's reference serialization for a fresh chart does not emit
+    // the element at all — absence collapses to Excel's default
+    // "no display unit" state.
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:dispUnits");
+  });
+
+  it('emits <c:dispUnits><c:builtInUnit val="millions"/></c:dispUnits> on the value axis', () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { dispUnits: { unit: "millions" } } } }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<c:builtInUnit val="millions"/>');
+    expect(valAxBlock).toContain("<c:dispUnits>");
+    // No <c:dispUnitsLbl> on the default (showLabel omitted).
+    expect(valAxBlock).not.toContain("c:dispUnitsLbl");
+  });
+
+  it("accepts the ChartAxisDispUnit shorthand string", () => {
+    const result = writeChart(makeChart({ axes: { y: { dispUnits: "thousands" } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<c:builtInUnit val="thousands"/>');
+  });
+
+  it("emits a bare <c:dispUnitsLbl/> when showLabel is true", () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { dispUnits: { unit: "billions", showLabel: true } } } }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<c:builtInUnit val="billions"/>');
+    expect(valAxBlock).toContain("<c:dispUnitsLbl/>");
+  });
+
+  it("omits <c:dispUnitsLbl> when showLabel is false / undefined", () => {
+    const noFlag = writeChart(
+      makeChart({ axes: { y: { dispUnits: { unit: "thousands" } } } }),
+      "Sheet1",
+    );
+    expect(noFlag.chartXml).not.toContain("c:dispUnitsLbl");
+
+    const explicitFalse = writeChart(
+      makeChart({ axes: { y: { dispUnits: { unit: "thousands", showLabel: false } } } }),
+      "Sheet1",
+    );
+    expect(explicitFalse.chartXml).not.toContain("c:dispUnitsLbl");
+  });
+
+  it("drops an unknown ST_BuiltInUnit token rather than fabricating a value", () => {
+    const result = writeChart(
+      makeChart({
+        // Force the unsafe string past the type guard.
+        axes: { y: { dispUnits: { unit: "quintillions" as never } } },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:dispUnits");
+    expect(result.chartXml).not.toContain("c:builtInUnit");
+  });
+
+  it("places <c:dispUnits> after <c:minorUnit> inside <c:valAx> (CT_ValAx order)", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          y: {
+            scale: { min: 0, max: 1_000_000, majorUnit: 250_000, minorUnit: 50_000 },
+            dispUnits: "millions",
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    const minorUnitIdx = valAxBlock.indexOf("c:minorUnit");
+    const dispUnitsIdx = valAxBlock.indexOf("c:dispUnits");
+    expect(minorUnitIdx).toBeGreaterThan(-1);
+    expect(dispUnitsIdx).toBeGreaterThan(minorUnitIdx);
+  });
+
+  it("does not emit <c:dispUnits> on the X axis of a bar / column chart (catAx rejects it)", () => {
+    // The OOXML schema places <c:dispUnits> exclusively on CT_ValAx, so
+    // a stale hint on the X axis of a column chart should silently
+    // drop at the writer.
+    const result = writeChart(
+      makeChart({ type: "column", axes: { x: { dispUnits: "millions" } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).not.toContain("c:dispUnits");
+  });
+
+  it("emits <c:dispUnits> on both scatter axes (both are valAx)", () => {
+    const scatter: SheetChart = {
+      type: "scatter",
+      series: [{ name: "S1", values: "B2:B5", categories: "A2:A5" }],
+      anchor: { from: { row: 0, col: 0 } },
+      axes: {
+        x: { dispUnits: "thousands" },
+        y: { dispUnits: { unit: "millions", showLabel: true } },
+      },
+    };
+    const result = writeChart(scatter, "Sheet1");
+    const valAxBlocks = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/g)!;
+    expect(valAxBlocks).toHaveLength(2);
+    expect(valAxBlocks[0]).toContain('<c:builtInUnit val="thousands"/>');
+    expect(valAxBlocks[0]).not.toContain("c:dispUnitsLbl");
+    expect(valAxBlocks[1]).toContain('<c:builtInUnit val="millions"/>');
+    expect(valAxBlocks[1]).toContain("<c:dispUnitsLbl/>");
+  });
+
+  it("survives a parseChart round-trip on the value axis", () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { dispUnits: { unit: "millions", showLabel: true } } } }),
+      "Sheet1",
+    );
+    const reparsed = parseChart(result.chartXml);
+    expect(reparsed?.axes?.y?.dispUnits).toEqual({ unit: "millions", showLabel: true });
+  });
+
+  it("does not emit <c:dispUnits> on a pie chart (no axes at all)", () => {
+    // The writer never builds <c:valAx> for pie / doughnut, so even
+    // when the caller pins a value the element should not surface.
+    const result = writeChart(
+      makeChart({
+        type: "pie",
+        // Pie charts have no axes; the field is simply ignored.
+        axes: { y: { dispUnits: "millions" } },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:dispUnits");
+  });
+
+  it("only emits <c:dispUnits> once on the value axis", () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { dispUnits: { unit: "thousands", showLabel: true } } } }),
+      "Sheet1",
+    );
+    const occurrences = result.chartXml.match(/c:dispUnits>/g) ?? [];
+    // Two matches: opening + closing tag of <c:dispUnits>.
+    expect(occurrences).toHaveLength(2);
+  });
+
+  it("packages the chart end-to-end through writeXlsx", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Quarter", "Revenue"],
+          ["Q1", 1_500_000],
+          ["Q2", 2_300_000],
+          ["Q3", 3_100_000],
+        ],
+        charts: [
+          {
+            type: "column",
+            series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            axes: { y: { dispUnits: { unit: "millions", showLabel: true } } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('<c:builtInUnit val="millions"/>');
+    expect(chartXml).toContain("<c:dispUnitsLbl/>");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.y?.dispUnits).toEqual({ unit: "millions", showLabel: true });
+  });
+});
+
 // ── writeChart — chart style preset ──────────────────────────────────
 
 describe("writeChart — chart style preset", () => {

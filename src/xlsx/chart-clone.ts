@@ -13,6 +13,8 @@
 import type {
   Chart,
   ChartAxisCrosses,
+  ChartAxisDispUnit,
+  ChartAxisDispUnits,
   ChartAxisGridlines,
   ChartAxisLabelAlign,
   ChartAxisNumberFormat,
@@ -454,6 +456,23 @@ export interface CloneChartOptions {
        * choice — only one may legally appear at a time.
        */
       crossesAt?: number | null;
+      /**
+       * Override `SheetChart.axes.x.dispUnits`. `undefined` (or omitted)
+       * inherits the source axis's parsed display-unit preset; `null`
+       * drops the inherited value (the writer leaves Excel's default
+       * "no display unit" state untouched); a {@link ChartAxisDispUnit}
+       * shorthand or a {@link ChartAxisDispUnits} object replaces it.
+       *
+       * `<c:dispUnits>` lives exclusively on `<c:valAx>` per the OOXML
+       * schema, so the override only takes effect when the resolved
+       * chart type routes the X axis through `<c:valAx>` — that is the
+       * scatter family. Bar / column / line / area route the X axis
+       * through `<c:catAx>` (which rejects `<c:dispUnits>`); the
+       * resolver collapses the field to `undefined` on those families
+       * so a stale hint never leaks into the writer. Pie / doughnut
+       * have no axes at all.
+       */
+      dispUnits?: ChartAxisDispUnits | ChartAxisDispUnit | null;
     };
     y?: {
       title?: string | null;
@@ -474,6 +493,18 @@ export interface CloneChartOptions {
       crosses?: ChartAxisCrosses | null;
       /** See {@link CloneChartOptions.axes.x.crossesAt}. */
       crossesAt?: number | null;
+      /**
+       * Override `SheetChart.axes.y.dispUnits`. Same `undefined` /
+       * `null` / replace grammar as
+       * {@link CloneChartOptions.axes.x.dispUnits}.
+       *
+       * The Y axis is a value axis on every chart family that has axes
+       * — bar / column / line / area / scatter — so the override
+       * always takes effect on those families. Pie / doughnut have no
+       * axes at all and the resolver collapses the field to `undefined`
+       * on those types.
+       */
+      dispUnits?: ChartAxisDispUnits | ChartAxisDispUnit | null;
     };
   };
 }
@@ -1389,6 +1420,18 @@ function resolveAxes(
     { crosses: sourceAxes?.y?.crosses, crossesAt: sourceAxes?.y?.crossesAt },
     { crosses: overrides?.y?.crosses, crossesAt: overrides?.y?.crossesAt },
   );
+  // `<c:dispUnits>` lives exclusively on `<c:valAx>` per ECMA-376
+  // §21.2.2.32 (CT_ValAx → CT_DispUnits). Bar / column / line / area
+  // route the X axis through `<c:catAx>`, so the X-axis override is
+  // only honoured when the resolved chart type is `scatter` (both axes
+  // are value axes). Pie / doughnut were already short-circuited
+  // upstream — they have no axes at all. The Y axis is a value axis on
+  // every remaining family, so the Y override always carries through.
+  const xDispUnits =
+    type === "scatter"
+      ? applyDispUnitsOverride(sourceAxes?.x?.dispUnits, overrides?.x?.dispUnits)
+      : undefined;
+  const yDispUnits = applyDispUnitsOverride(sourceAxes?.y?.dispUnits, overrides?.y?.dispUnits);
 
   const out: NonNullable<SheetChart["axes"]> = {};
   if (
@@ -1407,7 +1450,8 @@ function resolveAxes(
     xNoMultiLvlLbl !== undefined ||
     xHidden !== undefined ||
     xCrossesPair.crosses !== undefined ||
-    xCrossesPair.crossesAt !== undefined
+    xCrossesPair.crossesAt !== undefined ||
+    xDispUnits !== undefined
   ) {
     out.x = {};
     if (xTitle !== undefined) out.x.title = xTitle;
@@ -1426,6 +1470,7 @@ function resolveAxes(
     if (xHidden !== undefined) out.x.hidden = xHidden;
     if (xCrossesPair.crosses !== undefined) out.x.crosses = xCrossesPair.crosses;
     if (xCrossesPair.crossesAt !== undefined) out.x.crossesAt = xCrossesPair.crossesAt;
+    if (xDispUnits !== undefined) out.x.dispUnits = xDispUnits;
   }
   if (
     yTitle !== undefined ||
@@ -1438,7 +1483,8 @@ function resolveAxes(
     yHidden !== undefined ||
     yReverse !== undefined ||
     yCrossesPair.crosses !== undefined ||
-    yCrossesPair.crossesAt !== undefined
+    yCrossesPair.crossesAt !== undefined ||
+    yDispUnits !== undefined
   ) {
     out.y = {};
     if (yTitle !== undefined) out.y.title = yTitle;
@@ -1452,6 +1498,7 @@ function resolveAxes(
     if (yReverse !== undefined) out.y.reverse = yReverse;
     if (yCrossesPair.crosses !== undefined) out.y.crosses = yCrossesPair.crosses;
     if (yCrossesPair.crossesAt !== undefined) out.y.crossesAt = yCrossesPair.crossesAt;
+    if (yDispUnits !== undefined) out.y.dispUnits = yDispUnits;
   }
 
   return out.x || out.y ? out : undefined;
@@ -1806,4 +1853,61 @@ function applyCrossesOverride(
   }
 
   return out;
+}
+
+/** Recognized values of `<c:builtInUnit>` per the OOXML `ST_BuiltInUnit` enum. */
+const VALID_DISP_UNIT_VALUES: ReadonlySet<ChartAxisDispUnit> = new Set([
+  "hundreds",
+  "thousands",
+  "tenThousands",
+  "hundredThousands",
+  "millions",
+  "tenMillions",
+  "hundredMillions",
+  "billions",
+  "trillions",
+]);
+
+/**
+ * Normalize a {@link ChartAxisDispUnit} shorthand or full
+ * {@link ChartAxisDispUnits} object into a stable shape the resolver
+ * can hand back to the writer-side `SheetChart.axes.{x,y}.dispUnits`
+ * field. Unknown / typo'd tokens collapse to `undefined` so they cannot
+ * leak past the clone layer.
+ */
+function normalizeDispUnits(
+  value: ChartAxisDispUnits | ChartAxisDispUnit | undefined,
+): ChartAxisDispUnits | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "string") {
+    return VALID_DISP_UNIT_VALUES.has(value as ChartAxisDispUnit)
+      ? { unit: value as ChartAxisDispUnit }
+      : undefined;
+  }
+  if (typeof value !== "object" || value === null) return undefined;
+  const unit = value.unit;
+  if (typeof unit !== "string" || !VALID_DISP_UNIT_VALUES.has(unit as ChartAxisDispUnit)) {
+    return undefined;
+  }
+  const out: ChartAxisDispUnits = { unit: unit as ChartAxisDispUnit };
+  if (value.showLabel === true) out.showLabel = true;
+  return out;
+}
+
+/**
+ * Resolve a `dispUnits` override using the standard `undefined`
+ * (inherit) / `null` (drop) / value (replace) grammar. Both inputs go
+ * through {@link normalizeDispUnits} so unknown tokens collapse to
+ * `undefined` rather than fabricate a value the writer would never
+ * emit. The reader and writer mirror this normalizer so a parsed
+ * source value slots straight back into a clone target without
+ * transformation.
+ */
+function applyDispUnitsOverride(
+  source: ChartAxisDispUnits | undefined,
+  override: ChartAxisDispUnits | ChartAxisDispUnit | null | undefined,
+): ChartAxisDispUnits | undefined {
+  if (override === undefined) return normalizeDispUnits(source);
+  if (override === null) return undefined;
+  return normalizeDispUnits(override);
 }
