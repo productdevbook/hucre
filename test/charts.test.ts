@@ -5672,6 +5672,186 @@ describe("parseChart — axis noMultiLvlLbl", () => {
   });
 });
 
+// ── parseChart — axis auto ─────────────────────────────────────────
+
+describe("parseChart — axis auto", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces auto=false on the category axis when val="0"', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:auto val="0"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.auto).toBe(false);
+    expect(chart?.axes?.y?.auto).toBeUndefined();
+  });
+
+  it('collapses the OOXML default val="1" to undefined', () => {
+    // Excel's reference serialization always emits `<c:auto val="1"/>`
+    // on every category axis even though the schema default is `true`.
+    // The parser collapses the default so absence and the default
+    // round-trip identically through the writer's elision logic.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:auto val="1"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("collapses absence of <c:auto> to undefined", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it('accepts the OOXML falsy spelling val="false"', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:auto val="false"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.auto).toBe(false);
+  });
+
+  it('accepts the OOXML truthy spelling val="true" and collapses to undefined', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:auto val="true"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when <c:auto> is missing the val attribute", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:auto/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("returns undefined for unknown val tokens", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:auto val="maybe"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("does not surface auto on a value axis", () => {
+    // The OOXML schema places `<c:auto>` on CT_CatAx exclusively —
+    // `<c:valAx>` rejects it entirely. A corrupt template carrying a
+    // stray flag on a value axis should not surface a field the writer
+    // would never emit anyway.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:auto val="0"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.auto).toBeUndefined();
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("does not surface auto on a scatter chart's value axes", () => {
+    // Scatter has two valAx — the schema rejects `<c:auto>` on both, so
+    // a stray flag on either axis must not bleed through into the
+    // parsed shape.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:scatterChart><c:ser><c:idx val="0"/></c:ser></c:scatterChart>
+    <c:valAx>
+      <c:axId val="1"/>
+      <c:axPos val="b"/>
+      <c:auto val="0"/>
+    </c:valAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:axPos val="l"/>
+      <c:auto val="0"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.auto).toBeUndefined();
+    expect(chart?.axes?.y?.auto).toBeUndefined();
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("co-surfaces auto alongside other catAx fields", () => {
+    const xml = `<c:chartSpace ${NS}
+                xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title><c:tx><c:rich><a:p><a:r><a:t>Period</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      <c:auto val="0"/>
+      <c:noMultiLvlLbl val="1"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x).toEqual({
+      title: "Period",
+      auto: false,
+      noMultiLvlLbl: true,
+    });
+  });
+});
+
 // ── parseChart — titleOverlay ───────────────────────────────────────
 
 describe("parseChart — titleOverlay", () => {

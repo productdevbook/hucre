@@ -1785,6 +1785,30 @@ export interface SheetChart {
        */
       noMultiLvlLbl?: boolean;
       /**
+       * Automatic axis-type detection on a category axis. Maps to
+       * `<c:catAx><c:auto val=".."/></c:catAx>` (CT_CatAx, ECMA-376
+       * Part 1, §21.2.2.7). The OOXML default `true` lets Excel inspect
+       * the axis labels and decide at render time whether to treat the
+       * axis as a discrete category axis or a chronological date axis.
+       *
+       * Set `false` to pin the axis as a literal category axis — Excel
+       * keeps every label as-is regardless of whether the cells parse as
+       * dates or numerics. Useful when porting a template that pins the
+       * "Text axis" radio button under "Format Axis -> Axis Options ->
+       * Axis Type" so a date-shaped category range still renders as a
+       * flat category axis without any chronological grouping.
+       *
+       * Only meaningful for bar / column / line / area charts (whose X
+       * axis is `<c:catAx>`); silently ignored for scatter (both axes
+       * are value axes) and pie / doughnut (no axes at all). The OOXML
+       * schema places the element on `CT_CatAx` only — `CT_ValAx`,
+       * `CT_DateAx`, and `CT_SerAx` reject it. Mirrors how the writer
+       * always emits Excel's reference `<c:auto val="1"/>` on a stock
+       * chart and only flips the value when the caller explicitly
+       * pins `auto: false`.
+       */
+      auto?: boolean;
+      /**
        * Horizontal alignment of the tick labels on a category axis —
        * `"ctr"` (center, the OOXML default), `"l"` (left), or `"r"`
        * (right). Maps to `<c:catAx><c:lblAlgn val=".."/></c:catAx>`.
@@ -3118,6 +3142,23 @@ export interface ChartAxisInfo {
    * `undefined`.
    */
   noMultiLvlLbl?: boolean;
+  /**
+   * Automatic axis-type detection flag pulled from
+   * `<c:auto val=".."/>`. Surfaces `false` only when the axis pinned
+   * `val="0"` (Excel's "Text axis" radio under "Format Axis -> Axis
+   * Options -> Axis Type" — Excel keeps every label as-is regardless
+   * of whether the cells parse as dates / numerics). The OOXML default
+   * `val="1"` (and absence of the element) collapse to `undefined` so
+   * absence and the default round-trip identically through
+   * {@link cloneChart}.
+   *
+   * Surfaces only on category axes (`<c:catAx>`) — the OOXML schema
+   * places the element on `CT_CatAx` exclusively. The reader accepts
+   * the OOXML truthy / falsy spellings (`"1"` / `"true"` / `"0"` /
+   * `"false"`); unknown values and missing `val` attributes drop to
+   * `undefined`.
+   */
+  auto?: boolean;
   /**
    * Axis hidden flag pulled from `<c:delete val=".."/>`. Surfaces
    * `true` when the axis pinned `val="1"` (Excel's "Format Axis ->

@@ -490,6 +490,13 @@ function parseAxisInfo(
   // a corrupt template carrying a stray flag does not surface a value
   // the writer would never emit anyway.
   const noMultiLvlLbl = axis.local === "catAx" ? parseAxisNoMultiLvlLbl(axis) : undefined;
+  // `<c:auto>` lives exclusively on `CT_CatAx` per ECMA-376 Part 1,
+  // §21.2.2.7 — `<c:dateAx>`, `<c:valAx>`, and `<c:serAx>` reject the
+  // element. Skip the parse on every other axis flavour for symmetry
+  // with the writer's catAx-only emit path. Only `false` surfaces; the
+  // OOXML default `true` (Excel inspects the data and decides whether
+  // to treat the axis as a date axis) collapses to `undefined`.
+  const auto = axis.local === "catAx" ? parseAxisAuto(axis) : undefined;
   // `<c:delete>` sits on every axis flavour (CT_CatAx / CT_ValAx /
   // CT_DateAx / CT_SerAx) per ECMA-376 Part 1, §21.2.2. The OOXML
   // default `val="0"` (axis visible) collapses to `undefined` so
@@ -535,6 +542,7 @@ function parseAxisInfo(
     lblOffset === undefined &&
     lblAlgn === undefined &&
     noMultiLvlLbl === undefined &&
+    auto === undefined &&
     hidden === undefined &&
     crosses === undefined &&
     crossesAt === undefined &&
@@ -557,6 +565,7 @@ function parseAxisInfo(
   if (lblOffset !== undefined) out.lblOffset = lblOffset;
   if (lblAlgn !== undefined) out.lblAlgn = lblAlgn;
   if (noMultiLvlLbl !== undefined) out.noMultiLvlLbl = noMultiLvlLbl;
+  if (auto !== undefined) out.auto = auto;
   if (hidden !== undefined) out.hidden = hidden;
   if (crosses !== undefined) out.crosses = crosses;
   if (crossesAt !== undefined) out.crossesAt = crossesAt;
@@ -753,6 +762,44 @@ function parseAxisNoMultiLvlLbl(axis: XmlElement): boolean | undefined {
       return true;
     case "0":
     case "false":
+      return undefined;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Pull `<c:auto val=".."/>` off a category axis element. Returns
+ * `false` only when the axis pinned `val="0"` / `val="false"` (Excel's
+ * "Text axis" radio button under "Format Axis -> Axis Options -> Axis
+ * Type" — Excel keeps every label as-is regardless of whether the
+ * cells parse as dates / numerics). The OOXML default `val="1"` /
+ * `val="true"` (Excel inspects the data and decides whether to treat
+ * the axis as a discrete category axis or a chronological date axis),
+ * absence, missing `val`, and unknown tokens all collapse to
+ * `undefined` so absence and the default round-trip identically
+ * through {@link cloneChart}.
+ *
+ * Mirrors the truthy / falsy parsing in {@link parseAxisNoMultiLvlLbl}
+ * — the OOXML schema (`xsd:boolean`) accepts `0` / `1` / `false` /
+ * `true` for `<c:auto>` just as it does for every other Boolean-valued
+ * chart attribute. The element's default is the OOXML inverse of
+ * `noMultiLvlLbl` (auto defaults to `true`, noMultiLvlLbl defaults to
+ * `false`), so this parser collapses `true` rather than `false`.
+ */
+function parseAxisAuto(axis: XmlElement): boolean | undefined {
+  const el = findChild(axis, "auto");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  switch (raw.trim()) {
+    case "0":
+    case "false":
+      return false;
+    case "1":
+    case "true":
+      // OOXML default — collapse to undefined so absence and the
+      // default round-trip identically.
       return undefined;
     default:
       return undefined;
