@@ -10,6 +10,8 @@ import type {
   ChartAxisGridlines,
   ChartAxisNumberFormat,
   ChartAxisScale,
+  ChartAxisTickLabelPosition,
+  ChartAxisTickMark,
   ChartDataLabels,
   ChartDisplayBlanksAs,
   ChartLineDashStyle,
@@ -133,9 +135,9 @@ function buildTitle(title: string): string {
 function buildPlotArea(chart: SheetChart, sheetName: string): string {
   const children: string[] = [xmlSelfClose("c:layout")];
 
-  // Axis titles, gridlines, scaling and number format surface for
-  // every chart family except pie/doughnut. Pull them once so each
-  // branch can hand them off to the matching axis builder.
+  // Axis titles, gridlines, scaling, number format and tick rendering
+  // surface for every chart family except pie/doughnut. Pull them once
+  // so each branch can hand them off to the matching axis builder.
   const opts: AxisRenderOptions = {
     xAxisTitle: normalizeAxisTitle(chart.axes?.x?.title),
     yAxisTitle: normalizeAxisTitle(chart.axes?.y?.title),
@@ -145,6 +147,12 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     yScale: normalizeAxisScale(chart.axes?.y?.scale),
     xNumFmt: normalizeAxisNumberFormat(chart.axes?.x?.numberFormat),
     yNumFmt: normalizeAxisNumberFormat(chart.axes?.y?.numberFormat),
+    xMajorTickMark: normalizeTickMark(chart.axes?.x?.majorTickMark),
+    yMajorTickMark: normalizeTickMark(chart.axes?.y?.majorTickMark),
+    xMinorTickMark: normalizeTickMark(chart.axes?.x?.minorTickMark),
+    yMinorTickMark: normalizeTickMark(chart.axes?.y?.minorTickMark),
+    xTickLblPos: normalizeTickLblPos(chart.axes?.x?.tickLblPos),
+    yTickLblPos: normalizeTickLblPos(chart.axes?.y?.tickLblPos),
     // `tickLblSkip` / `tickMarkSkip` only round-trip on category axes
     // (`<c:catAx>` / `<c:dateAx>`). The scatter writer never emits
     // them — both axes are value axes — so the bar/column/line/area
@@ -202,6 +210,12 @@ interface AxisRenderOptions {
   yScale: ChartAxisScale | undefined;
   xNumFmt: ChartAxisNumberFormat | undefined;
   yNumFmt: ChartAxisNumberFormat | undefined;
+  xMajorTickMark: ChartAxisTickMark | undefined;
+  yMajorTickMark: ChartAxisTickMark | undefined;
+  xMinorTickMark: ChartAxisTickMark | undefined;
+  yMinorTickMark: ChartAxisTickMark | undefined;
+  xTickLblPos: ChartAxisTickLabelPosition | undefined;
+  yTickLblPos: ChartAxisTickLabelPosition | undefined;
   /**
    * Tick-label skip interval emitted on the X axis only when the axis
    * is `<c:catAx>` (i.e. bar / column / line / area). Scatter charts
@@ -408,6 +422,69 @@ function buildAxisNumFmt(numFmt: ChartAxisNumberFormat | undefined): string[] {
   return [xmlSelfClose("c:numFmt", { formatCode: numFmt.formatCode, sourceLinked })];
 }
 
+/** Recognized values of `<c:majorTickMark>` / `<c:minorTickMark>`. */
+const TICK_MARK_VALUES: ReadonlySet<ChartAxisTickMark> = new Set(["none", "in", "out", "cross"]);
+
+/**
+ * Normalize a tick-mark value to a token Excel accepts. Unknown / typo'd
+ * inputs collapse to `undefined` so the writer never emits a value the
+ * OOXML `ST_TickMark` enum rejects.
+ */
+function normalizeTickMark(value: ChartAxisTickMark | undefined): ChartAxisTickMark | undefined {
+  if (value === undefined) return undefined;
+  return TICK_MARK_VALUES.has(value) ? value : undefined;
+}
+
+/** Recognized values of `<c:tickLblPos>`. */
+const TICK_LBL_POS_VALUES: ReadonlySet<ChartAxisTickLabelPosition> = new Set([
+  "nextTo",
+  "low",
+  "high",
+  "none",
+]);
+
+/**
+ * Normalize a tick-label-position value to a token Excel accepts.
+ * Unknown / typo'd inputs collapse to `undefined` so the writer never
+ * emits a value the OOXML `ST_TickLblPos` enum rejects.
+ */
+function normalizeTickLblPos(
+  value: ChartAxisTickLabelPosition | undefined,
+): ChartAxisTickLabelPosition | undefined {
+  if (value === undefined) return undefined;
+  return TICK_LBL_POS_VALUES.has(value) ? value : undefined;
+}
+
+/**
+ * Build the `<c:majorTickMark>` / `<c:minorTickMark>` / `<c:tickLblPos>`
+ * children for an axis. The OOXML schema (CT_CatAx / CT_ValAx /
+ * CT_DateAx / CT_SerAx) places the three elements together right after
+ * `<c:numFmt>` and before `<c:crossAx>`. Excel's strict validator
+ * rejects any other ordering — keep the tuple together.
+ *
+ * Each value is omitted when the caller did not pin it; the OOXML
+ * defaults (`majorTickMark="out"`, `minorTickMark="none"`,
+ * `tickLblPos="nextTo"`) match Excel's reference serialization, so
+ * absence and the default round-trip identically through the reader.
+ */
+function buildAxisTickRendering(
+  majorTickMark: ChartAxisTickMark | undefined,
+  minorTickMark: ChartAxisTickMark | undefined,
+  tickLblPos: ChartAxisTickLabelPosition | undefined,
+): string[] {
+  const out: string[] = [];
+  if (majorTickMark !== undefined) {
+    out.push(xmlSelfClose("c:majorTickMark", { val: majorTickMark }));
+  }
+  if (minorTickMark !== undefined) {
+    out.push(xmlSelfClose("c:minorTickMark", { val: minorTickMark }));
+  }
+  if (tickLblPos !== undefined) {
+    out.push(xmlSelfClose("c:tickLblPos", { val: tickLblPos }));
+  }
+  return out;
+}
+
 /**
  * Build the `<c:tickLblSkip>` / `<c:tickMarkSkip>` siblings that sit
  * between `<c:lblOffset>` and `<c:noMultiLvlLbl>` inside `<c:catAx>`
@@ -539,8 +616,9 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
 
   // OOXML enforces a strict child order inside <c:catAx>/<c:valAx>:
   // axId → scaling → delete → axPos → majorGridlines → minorGridlines
-  // → title → numFmt → ... → crossAx → crosses → ... → majorUnit →
-  // minorUnit. Each block below mirrors that order.
+  // → title → numFmt → majorTickMark → minorTickMark → tickLblPos →
+  // crossAx → crosses → ... → majorUnit → minorUnit. Each block below
+  // mirrors that order.
   // The category axis on bar/column rarely uses scaling, but Excel
   // tolerates the augmentation either way; surface it whenever the
   // caller pinned a value so write-side templates round-trip.
@@ -554,6 +632,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
   if (opts.xAxisTitle) catAxChildren.push(buildAxisTitle(opts.xAxisTitle));
   catAxChildren.push(
     ...buildAxisNumFmt(opts.xNumFmt),
+    ...buildAxisTickRendering(opts.xMajorTickMark, opts.xMinorTickMark, opts.xTickLblPos),
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL }),
     xmlSelfClose("c:crosses", { val: "autoZero" }),
     xmlSelfClose("c:auto", { val: 1 }),
@@ -578,6 +657,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
   if (opts.yAxisTitle) valAxChildren.push(buildAxisTitle(opts.yAxisTitle));
   valAxChildren.push(
     ...buildAxisNumFmt(opts.yNumFmt),
+    ...buildAxisTickRendering(opts.yMajorTickMark, opts.yMinorTickMark, opts.yTickLblPos),
     xmlSelfClose("c:crossAx", { val: AXIS_ID_CAT }),
     xmlSelfClose("c:crosses", { val: "autoZero" }),
     xmlSelfClose("c:crossBetween", { val: "between" }),
@@ -795,6 +875,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
   if (opts.xAxisTitle) xAxChildren.push(buildAxisTitle(opts.xAxisTitle));
   xAxChildren.push(
     ...buildAxisNumFmt(opts.xNumFmt),
+    ...buildAxisTickRendering(opts.xMajorTickMark, opts.xMinorTickMark, opts.xTickLblPos),
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL_Y }),
     xmlSelfClose("c:crosses", { val: "autoZero" }),
     xmlSelfClose("c:crossBetween", { val: "midCat" }),
@@ -811,6 +892,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
   if (opts.yAxisTitle) yAxChildren.push(buildAxisTitle(opts.yAxisTitle));
   yAxChildren.push(
     ...buildAxisNumFmt(opts.yNumFmt),
+    ...buildAxisTickRendering(opts.yMajorTickMark, opts.yMinorTickMark, opts.yTickLblPos),
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL_X }),
     xmlSelfClose("c:crosses", { val: "autoZero" }),
     xmlSelfClose("c:crossBetween", { val: "midCat" }),

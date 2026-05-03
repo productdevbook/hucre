@@ -1054,6 +1054,27 @@ export interface SheetChart {
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
       /**
+       * Major tick-mark style. Maps to
+       * `<c:catAx><c:majorTickMark val=".."/></c:catAx>` (or
+       * `<c:valAx>` for scatter). Default: `"out"` — Excel's reference
+       * serialization. See {@link ChartAxisTickMark}.
+       */
+      majorTickMark?: ChartAxisTickMark;
+      /**
+       * Minor tick-mark style. Maps to
+       * `<c:catAx><c:minorTickMark val=".."/></c:catAx>` (or
+       * `<c:valAx>` for scatter). Default: `"none"` — Excel's
+       * reference serialization. See {@link ChartAxisTickMark}.
+       */
+      minorTickMark?: ChartAxisTickMark;
+      /**
+       * Tick-label position. Maps to
+       * `<c:catAx><c:tickLblPos val=".."/></c:catAx>` (or
+       * `<c:valAx>` for scatter). Default: `"nextTo"` — Excel's
+       * reference serialization. See {@link ChartAxisTickLabelPosition}.
+       */
+      tickLblPos?: ChartAxisTickLabelPosition;
+      /**
        * Show every Nth tick label on a category axis. `1` (the OOXML
        * default) shows every label; `2` shows every other one; `3`
        * shows every third, and so on. Maps to
@@ -1081,6 +1102,24 @@ export interface SheetChart {
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
+      /**
+       * Major tick-mark style for the value axis. Maps to
+       * `<c:valAx><c:majorTickMark val=".."/></c:valAx>`. Default:
+       * `"out"`. See {@link ChartAxisTickMark}.
+       */
+      majorTickMark?: ChartAxisTickMark;
+      /**
+       * Minor tick-mark style for the value axis. Maps to
+       * `<c:valAx><c:minorTickMark val=".."/></c:valAx>`. Default:
+       * `"none"`. See {@link ChartAxisTickMark}.
+       */
+      minorTickMark?: ChartAxisTickMark;
+      /**
+       * Tick-label position for the value axis. Maps to
+       * `<c:valAx><c:tickLblPos val=".."/></c:valAx>`. Default:
+       * `"nextTo"`. See {@link ChartAxisTickLabelPosition}.
+       */
+      tickLblPos?: ChartAxisTickLabelPosition;
     };
   };
 }
@@ -1870,6 +1909,47 @@ export interface ChartAxisNumberFormat {
   sourceLinked?: boolean;
 }
 
+/**
+ * Axis tick-mark style — where Excel paints the short tick lines that
+ * mark major or minor unit boundaries on a category or value axis.
+ *
+ * Maps to the OOXML `ST_TickMark` enumeration which sits inside
+ * `<c:catAx>` / `<c:valAx>` / `<c:dateAx>` / `<c:serAx>` as
+ * `<c:majorTickMark val=".."/>` and `<c:minorTickMark val=".."/>`:
+ *
+ * - `"none"`  — no tick marks rendered at all.
+ * - `"in"`    — tick marks point inward (toward the plot area).
+ * - `"out"`   — tick marks point outward (away from the plot area).
+ *               OOXML default for `<c:majorTickMark>`.
+ * - `"cross"` — tick marks straddle the axis line.
+ *
+ * Excel's UI exposes the same four presets under "Format Axis →
+ * Tick Marks → Major type / Minor type". The OOXML default for
+ * `<c:minorTickMark>` is `"none"` (Excel's UI also defaults to "None"
+ * for the minor type on a freshly-drawn axis).
+ */
+export type ChartAxisTickMark = "none" | "in" | "out" | "cross";
+
+/**
+ * Axis tick-label position — where Excel paints the numeric / category
+ * labels relative to the axis line.
+ *
+ * Maps to the OOXML `ST_TickLblPos` enumeration which sits inside
+ * `<c:catAx>` / `<c:valAx>` / `<c:dateAx>` / `<c:serAx>` as
+ * `<c:tickLblPos val=".."/>`:
+ *
+ * - `"nextTo"` — labels sit alongside the axis line at the closest
+ *                edge of the plot area. OOXML default.
+ * - `"low"`    — labels pinned to the low end of the perpendicular
+ *                axis (left for value axes, bottom for category axes).
+ *                Useful when the axis crosses elsewhere but labels
+ *                should stay anchored to the chart edge.
+ * - `"high"`   — mirror of `"low"`; labels pinned to the high end.
+ * - `"none"`   — no labels rendered. Excel's UI exposes this as
+ *                "Format Axis → Labels → Label Position → None".
+ */
+export type ChartAxisTickLabelPosition = "nextTo" | "low" | "high" | "none";
+
 export interface ChartAxisInfo {
   /** Plain-text title from the axis's `<c:title>`. Omitted when absent. */
   title?: string;
@@ -1892,6 +1972,28 @@ export interface ChartAxisInfo {
    * the writer side.
    */
   numberFormat?: ChartAxisNumberFormat;
+  /**
+   * Major tick-mark style pulled from `<c:majorTickMark>`. Omitted
+   * when absent or when the axis declared the OOXML default `"out"` —
+   * absence and the default round-trip identically through
+   * {@link cloneChart}, so collapsing the default keeps the parsed
+   * shape minimal. See {@link ChartAxisTickMark}.
+   */
+  majorTickMark?: ChartAxisTickMark;
+  /**
+   * Minor tick-mark style pulled from `<c:minorTickMark>`. Omitted
+   * when absent or when the axis declared the OOXML default `"none"`.
+   * See {@link ChartAxisTickMark}.
+   */
+  minorTickMark?: ChartAxisTickMark;
+  /**
+   * Tick-label position pulled from `<c:tickLblPos>`. Omitted when
+   * absent or when the axis declared the OOXML default `"nextTo"` —
+   * absence and the default round-trip identically through
+   * {@link cloneChart}, so collapsing the default keeps the parsed
+   * shape minimal. See {@link ChartAxisTickLabelPosition}.
+   */
+  tickLblPos?: ChartAxisTickLabelPosition;
   /**
    * Tick-label skip interval pulled from `<c:tickLblSkip val=".."/>`.
    * Surfaces only on category axes (`<c:catAx>` / `<c:dateAx>`) — the

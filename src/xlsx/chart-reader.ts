@@ -18,6 +18,8 @@ import type {
   ChartAxisInfo,
   ChartAxisNumberFormat,
   ChartAxisScale,
+  ChartAxisTickLabelPosition,
+  ChartAxisTickMark,
   ChartBarGrouping,
   ChartDataLabelPosition,
   ChartDataLabelsInfo,
@@ -257,6 +259,15 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   const gridlines = parseAxisGridlines(axis);
   const scale = parseAxisScale(axis);
   const numberFormat = parseAxisNumberFormat(axis);
+  // Tick-mark and tick-label-position children sit alongside the
+  // gridlines / numFmt on every CT_CatAx / CT_ValAx / CT_DateAx /
+  // CT_SerAx — see CT_TickMark, ST_TickMark, ST_TickLblPos in
+  // ECMA-376 Part 1, §21.2.2. The reader collapses each value to
+  // `undefined` when it matches the OOXML default so absence and the
+  // default round-trip identically through {@link cloneChart}.
+  const majorTickMark = parseAxisTickMark(axis, "majorTickMark", "out");
+  const minorTickMark = parseAxisTickMark(axis, "minorTickMark", "none");
+  const tickLblPos = parseAxisTickLblPos(axis);
   // `<c:tickLblSkip>` / `<c:tickMarkSkip>` live exclusively on
   // `CT_CatAx` / `CT_DateAx` per ECMA-376 Part 1, §21.2.2 — the
   // `<c:valAx>` schema rejects them entirely. Skip the parse on
@@ -271,6 +282,9 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
     gridlines === undefined &&
     scale === undefined &&
     numberFormat === undefined &&
+    majorTickMark === undefined &&
+    minorTickMark === undefined &&
+    tickLblPos === undefined &&
     tickLblSkip === undefined &&
     tickMarkSkip === undefined
   ) {
@@ -281,9 +295,67 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   if (gridlines !== undefined) out.gridlines = gridlines;
   if (scale !== undefined) out.scale = scale;
   if (numberFormat !== undefined) out.numberFormat = numberFormat;
+  if (majorTickMark !== undefined) out.majorTickMark = majorTickMark;
+  if (minorTickMark !== undefined) out.minorTickMark = minorTickMark;
+  if (tickLblPos !== undefined) out.tickLblPos = tickLblPos;
   if (tickLblSkip !== undefined) out.tickLblSkip = tickLblSkip;
   if (tickMarkSkip !== undefined) out.tickMarkSkip = tickMarkSkip;
   return out;
+}
+
+/**
+ * Recognized values of `<c:majorTickMark>` / `<c:minorTickMark>` per
+ * the OOXML `ST_TickMark` enumeration.
+ */
+const VALID_TICK_MARKS: ReadonlySet<ChartAxisTickMark> = new Set(["none", "in", "out", "cross"]);
+
+/**
+ * Pull `<c:majorTickMark val=".."/>` (or `<c:minorTickMark>`) off an
+ * axis element. Returns `undefined` when the element is absent, the
+ * `val` attribute is missing, the value is not in
+ * {@link VALID_TICK_MARKS}, or the value matches the per-element
+ * OOXML default — `"out"` for major, `"none"` for minor — so absence
+ * and the default round-trip identically.
+ */
+function parseAxisTickMark(
+  axis: XmlElement,
+  localName: "majorTickMark" | "minorTickMark",
+  defaultValue: ChartAxisTickMark,
+): ChartAxisTickMark | undefined {
+  const el = findChild(axis, localName);
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  const value = raw.trim() as ChartAxisTickMark;
+  if (!VALID_TICK_MARKS.has(value)) return undefined;
+  return value === defaultValue ? undefined : value;
+}
+
+/**
+ * Recognized values of `<c:tickLblPos>` per the OOXML
+ * `ST_TickLblPos` enumeration.
+ */
+const VALID_TICK_LBL_POSITIONS: ReadonlySet<ChartAxisTickLabelPosition> = new Set([
+  "nextTo",
+  "low",
+  "high",
+  "none",
+]);
+
+/**
+ * Pull `<c:tickLblPos val=".."/>` off an axis element. Returns
+ * `undefined` when the element is absent, the `val` attribute is
+ * missing or unrecognized, or the value matches the OOXML default
+ * `"nextTo"` so absence and the default round-trip identically.
+ */
+function parseAxisTickLblPos(axis: XmlElement): ChartAxisTickLabelPosition | undefined {
+  const el = findChild(axis, "tickLblPos");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  const value = raw.trim() as ChartAxisTickLabelPosition;
+  if (!VALID_TICK_LBL_POSITIONS.has(value)) return undefined;
+  return value === "nextTo" ? undefined : value;
 }
 
 /**
