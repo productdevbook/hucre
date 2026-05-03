@@ -2883,3 +2883,90 @@ describe("writeChart — axis tick marks and tick label position", () => {
     expect(crossAxIdx).toBeGreaterThan(tickLblIdx);
   });
 });
+
+// ── Plot Visible Only ────────────────────────────────────────────────
+
+describe("writeChart — plotVisOnly", () => {
+  it('emits <c:plotVisOnly val="1"/> when the field is unset (OOXML default)', () => {
+    // The writer always emits the element so the rendered intent is
+    // explicit on roundtrip — Excel itself includes it in every
+    // reference serialization.
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(result.chartXml).toContain('c:plotVisOnly val="1"');
+    expect(result.chartXml).not.toContain('c:plotVisOnly val="0"');
+  });
+
+  it("threads plotVisOnly=false through to <c:chart>", () => {
+    // false is the non-default — Excel's "Show data in hidden rows
+    // and columns" checkbox checked.
+    const result = writeChart(makeChart({ plotVisOnly: false }), "Sheet1");
+    expect(result.chartXml).toContain('c:plotVisOnly val="0"');
+    expect(result.chartXml).not.toContain('c:plotVisOnly val="1"');
+  });
+
+  it("threads plotVisOnly=true through to <c:chart>", () => {
+    // Setting the OOXML default explicitly produces the same wire
+    // shape as omitting the field — the element is always emitted.
+    const result = writeChart(makeChart({ plotVisOnly: true }), "Sheet1");
+    expect(result.chartXml).toContain('c:plotVisOnly val="1"');
+  });
+
+  it("places <c:plotVisOnly> before <c:dispBlanksAs> inside <c:chart> (OOXML order)", () => {
+    // CT_Chart sequence: ... plotArea, legend?, plotVisOnly?, dispBlanksAs?, ...
+    const result = writeChart(makeChart({ plotVisOnly: false }), "Sheet1");
+    expect(result.chartXml.indexOf("c:plotVisOnly")).toBeLessThan(
+      result.chartXml.indexOf("c:dispBlanksAs"),
+    );
+  });
+
+  it("only emits <c:plotVisOnly> once even on a chart that overrides it", () => {
+    // Earlier writers emitted a hardcoded `1` even when the chart
+    // requested a different value. Guard against any regression that
+    // would double-emit the element.
+    const result = writeChart(makeChart({ plotVisOnly: false }), "Sheet1");
+    const occurrences = result.chartXml.match(/c:plotVisOnly/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads plotVisOnly through every chart family", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, plotVisOnly: false }), "Sheet1");
+      expect(result.chartXml).toContain('c:plotVisOnly val="0"');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        plotVisOnly: false,
+      }),
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain('c:plotVisOnly val="0"');
+  });
+
+  it("round-trips a non-default plotVisOnly value through parseChart", () => {
+    // A chart with plotVisOnly=false should re-parse into a Chart
+    // whose `plotVisOnly` field is `false` (not collapsed to undefined,
+    // since false is not the OOXML default).
+    const written = writeChart(makeChart({ plotVisOnly: false }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.plotVisOnly).toBe(false);
+  });
+
+  it("collapses a defaulted plotVisOnly round-trip back to undefined", () => {
+    // A fresh chart (plotVisOnly omitted) writes `1` and re-parses to
+    // undefined — absence and the OOXML default round-trip identically.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.plotVisOnly).toBeUndefined();
+  });
+
+  it("collapses an explicit plotVisOnly=true round-trip back to undefined", () => {
+    // Pinning the OOXML default also collapses on read, so a template
+    // that explicitly emits `<c:plotVisOnly val="1"/>` is treated the
+    // same as one that omits the field.
+    const written = writeChart(makeChart({ plotVisOnly: true }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.plotVisOnly).toBeUndefined();
+  });
+});

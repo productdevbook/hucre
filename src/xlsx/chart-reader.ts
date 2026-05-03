@@ -202,6 +202,9 @@ export function parseChart(xml: string): Chart | undefined {
   const dispBlanksAs = parseDispBlanksAs(chartEl);
   if (dispBlanksAs !== undefined) out.dispBlanksAs = dispBlanksAs;
 
+  const plotVisOnly = parsePlotVisOnly(chartEl);
+  if (plotVisOnly !== undefined) out.plotVisOnly = plotVisOnly;
+
   return out;
 }
 
@@ -966,6 +969,38 @@ function parseDispBlanksAs(chartEl: XmlElement): ChartDisplayBlanksAs | undefine
     case "gap":
       // OOXML default — collapse to undefined for symmetry with the
       // writer's `dispBlanksAs` field.
+      return undefined;
+    default:
+      return undefined;
+  }
+}
+
+// ── Plot Visible Only ─────────────────────────────────────────────
+
+/**
+ * Pull `<c:plotVisOnly val=".."/>` off `<c:chart>`. The OOXML default
+ * is `true` (hidden cells drop out of the chart), which collapses to
+ * `undefined` so absence and the default round-trip identically
+ * through {@link cloneChart} — only an explicit `<c:plotVisOnly val="0"/>`
+ * surfaces `false`.
+ *
+ * Accepts the OOXML truthy / falsy spellings (`"1"` / `"true"` /
+ * `"0"` / `"false"`); unknown values and missing `val` attributes drop
+ * to `undefined` rather than fabricate a flag Excel would not emit.
+ */
+function parsePlotVisOnly(chartEl: XmlElement): boolean | undefined {
+  const el = findChild(chartEl, "plotVisOnly");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  switch (raw) {
+    case "0":
+    case "false":
+      return false;
+    case "1":
+    case "true":
+      // OOXML default — collapse to undefined for symmetry with the
+      // writer's `plotVisOnly` field.
       return undefined;
     default:
       return undefined;

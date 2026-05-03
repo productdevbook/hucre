@@ -194,6 +194,20 @@ export interface CloneChartOptions {
    */
   varyColors?: boolean | null;
   /**
+   * Override `<c:plotVisOnly>` (the "hide hidden cells" toggle).
+   *
+   * `undefined` (or omitted) inherits the source's parsed
+   * `plotVisOnly`. `null` drops the inherited value so the writer
+   * falls back to the OOXML `true` default (hidden cells drop out of
+   * the chart). A `boolean` replaces it — useful for keeping hidden
+   * helper rows in the rendered chart (`false`) or restoring the
+   * default behavior on a clone whose template overrode it (`true`).
+   *
+   * The grammar mirrors `dispBlanksAs` / `varyColors` so the
+   * chart-level toggles compose the same way at the call site.
+   */
+  plotVisOnly?: boolean | null;
+  /**
    * Override `<c:scatterStyle>` (the chart-level XY-scatter preset).
    *
    * `undefined` (or omitted) inherits the source's parsed
@@ -409,6 +423,9 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
 
   const resolvedVaryColors = resolveVaryColors(source.varyColors, options.varyColors);
   if (resolvedVaryColors !== undefined) out.varyColors = resolvedVaryColors;
+
+  const resolvedPlotVisOnly = resolvePlotVisOnly(source.plotVisOnly, options.plotVisOnly);
+  if (resolvedPlotVisOnly !== undefined) out.plotVisOnly = resolvedPlotVisOnly;
 
   // `<c:scatterStyle>` only renders inside `<c:scatterChart>`. Drop the
   // field on every other resolved type so a scatter template flattened
@@ -706,6 +723,26 @@ function resolveDispBlanksAs(
  * toggles compose the same way at the call site.
  */
 function resolveVaryColors(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve a `plotVisOnly` override.
+ *
+ * `undefined` → inherit the source's parsed `plotVisOnly`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               OOXML `true` default — hidden cells drop out of the chart).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `dispBlanksAs` / `varyColors` so the chart-level
+ * toggles compose the same way at the call site.
+ */
+function resolvePlotVisOnly(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
