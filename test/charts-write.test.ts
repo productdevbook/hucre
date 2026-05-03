@@ -4472,3 +4472,211 @@ describe("writeChart — axis noMultiLvlLbl", () => {
     expect(chartXml).toContain('c:noMultiLvlLbl val="1"');
   });
 });
+
+// ── writeChart — axis crosses / crossesAt ────────────────────────────
+
+describe("writeChart — axis crosses / crossesAt", () => {
+  it('emits the OOXML default <c:crosses val="autoZero"/> on every axis when unset', () => {
+    // Excel's reference serialization always pins `<c:crosses val="autoZero"/>`
+    // on every axis, so the writer keeps that contract on a stock chart even
+    // though the parser collapses the default to undefined on read.
+    const result = writeChart(makeChart(), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(catAxBlock).toContain('c:crosses val="autoZero"');
+    expect(valAxBlock).toContain('c:crosses val="autoZero"');
+    expect(catAxBlock).not.toContain("c:crossesAt");
+    expect(valAxBlock).not.toContain("c:crossesAt");
+  });
+
+  it('emits a non-default semantic crosses="min" on the category axis', () => {
+    const result = writeChart(makeChart({ axes: { x: { crosses: "min" } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:crosses val="min"');
+    expect(catAxBlock).not.toContain('c:crosses val="autoZero"');
+  });
+
+  it('emits semantic crosses="max" on the value axis', () => {
+    const result = writeChart(makeChart({ axes: { y: { crosses: "max" } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('c:crosses val="max"');
+  });
+
+  it('falls back to the default when crosses="autoZero" is set explicitly', () => {
+    // Pinning the default has the same wire effect as omitting the field.
+    const result = writeChart(makeChart({ axes: { x: { crosses: "autoZero" } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:crosses val="autoZero"');
+  });
+
+  it("emits <c:crossesAt> in place of <c:crosses> when the numeric pin is set", () => {
+    const result = writeChart(makeChart({ axes: { y: { crossesAt: 50 } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('c:crossesAt val="50"');
+    expect(valAxBlock).not.toContain("c:crosses ");
+    expect(valAxBlock).not.toContain("<c:crosses/>");
+  });
+
+  it("preserves crossesAt=0 (distinct from the autoZero default)", () => {
+    // `crossesAt: 0` pins the crossing point to the numeric value zero,
+    // distinct from `crosses: "autoZero"` which defers to Excel's
+    // auto-placement. The writer must emit `<c:crossesAt val="0"/>`,
+    // not collapse to the semantic default.
+    const result = writeChart(makeChart({ axes: { y: { crossesAt: 0 } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('c:crossesAt val="0"');
+    expect(valAxBlock).not.toContain("c:crosses ");
+  });
+
+  it("emits a negative crossesAt verbatim", () => {
+    const result = writeChart(makeChart({ axes: { y: { crossesAt: -25.5 } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('c:crossesAt val="-25.5"');
+  });
+
+  it("prefers crossesAt over crosses when both are set (XSD choice)", () => {
+    // The OOXML schema places <c:crosses> and <c:crossesAt> in an XSD
+    // choice — only one may legally appear. The writer favours the
+    // numeric pin, mirroring the reader's preference on malformed input.
+    const result = writeChart(
+      makeChart({ axes: { y: { crosses: "max", crossesAt: 7 } } }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('c:crossesAt val="7"');
+    expect(valAxBlock).not.toContain("c:crosses ");
+    expect(valAxBlock).not.toContain('c:crosses val="max"');
+  });
+
+  it("falls back to crosses when crossesAt is non-finite", () => {
+    // NaN / Infinity inputs drop through to the semantic crosses
+    // (or to the autoZero default when crosses is also unset).
+    const result = writeChart(
+      makeChart({
+        axes: { y: { crosses: "min", crossesAt: Number.NaN } },
+      }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('c:crosses val="min"');
+    expect(valAxBlock).not.toContain("c:crossesAt");
+  });
+
+  it("ignores unknown semantic tokens (falls back to autoZero default)", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { y: { crosses: "middle" as any } } }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('c:crosses val="autoZero"');
+  });
+
+  it("emits exactly one crosses-or-crossesAt element per axis", () => {
+    const result = writeChart(
+      makeChart({
+        axes: { x: { crosses: "min" }, y: { crossesAt: 10 } },
+      }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect((catAxBlock.match(/c:crosses\b/g) ?? []).length).toBe(1);
+    expect((catAxBlock.match(/c:crossesAt\b/g) ?? []).length).toBe(0);
+    expect((valAxBlock.match(/c:crosses\b/g) ?? []).length).toBe(0);
+    expect((valAxBlock.match(/c:crossesAt\b/g) ?? []).length).toBe(1);
+  });
+
+  it("threads the override through bar, column, line, and area chart families", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(makeChart({ type, axes: { y: { crosses: "max" } } }), "Sheet1");
+      expect(result.chartXml).toContain('c:crosses val="max"');
+    }
+  });
+
+  it("threads the override through scatter charts (both axes are valAx)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { x: { crossesAt: 3.14 }, y: { crosses: "min" } },
+      }),
+      "Sheet1",
+    );
+    // Scatter emits two <c:valAx> elements — first is the X axis, second
+    // is the Y axis.
+    const valAxes = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/g)!;
+    expect(valAxes).toHaveLength(2);
+    expect(valAxes[0]).toContain('c:crossesAt val="3.14"');
+    expect(valAxes[1]).toContain('c:crosses val="min"');
+  });
+
+  it("ignores the override on pie / doughnut charts (no axes at all)", () => {
+    const pie = writeChart(makeChart({ type: "pie", axes: { y: { crosses: "min" } } }), "Sheet1");
+    expect(pie.chartXml).not.toContain("c:crosses");
+    expect(pie.chartXml).not.toContain("c:crossesAt");
+    const dough = writeChart(
+      makeChart({ type: "doughnut", axes: { y: { crossesAt: 5 } } }),
+      "Sheet1",
+    );
+    expect(dough.chartXml).not.toContain("c:crosses");
+    expect(dough.chartXml).not.toContain("c:crossesAt");
+  });
+
+  it("places crosses after crossAx per the OOXML schema (CT_CatAx / CT_ValAx)", () => {
+    // OOXML CT_CatAx / CT_ValAx: ... → tickLblPos → crossAx → (crosses
+    // | crossesAt) → ... The writer's emit order pins crossAx first.
+    const result = writeChart(makeChart({ axes: { y: { crossesAt: 42 } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    const crossAxIdx = valAxBlock.indexOf("c:crossAx");
+    const crossesAtIdx = valAxBlock.indexOf("c:crossesAt");
+    expect(crossAxIdx).toBeGreaterThan(0);
+    expect(crossesAtIdx).toBeGreaterThan(crossAxIdx);
+  });
+
+  it("round-trips a non-default semantic crosses through parseChart", () => {
+    const written = writeChart(makeChart({ axes: { y: { crosses: "max" } } }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.y?.crosses).toBe("max");
+    expect(reparsed?.axes?.y?.crossesAt).toBeUndefined();
+  });
+
+  it("round-trips a numeric crossesAt through parseChart", () => {
+    const written = writeChart(makeChart({ axes: { y: { crossesAt: -3.5 } } }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.y?.crossesAt).toBe(-3.5);
+    expect(reparsed?.axes?.y?.crosses).toBeUndefined();
+  });
+
+  it("collapses a defaulted crosses round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes).toBeUndefined();
+  });
+
+  it("end-to-end: writeXlsx packages the crosses pin into chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            axes: { x: { crosses: "min" }, y: { crossesAt: 0 } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('c:crosses val="min"');
+    expect(chartXml).toContain('c:crossesAt val="0"');
+  });
+});

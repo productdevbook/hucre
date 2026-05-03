@@ -5299,3 +5299,267 @@ describe("parseChart — axis noMultiLvlLbl", () => {
     });
   });
 });
+
+// ── parseChart — axis crosses / crossesAt ──────────────────────────
+
+describe("parseChart — axis crosses / crossesAt", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces crosses="min" on the category axis', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:crosses val="min"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.crosses).toBe("min");
+    expect(chart?.axes?.x?.crossesAt).toBeUndefined();
+    expect(chart?.axes?.y?.crosses).toBeUndefined();
+  });
+
+  it('surfaces crosses="max" on the value axis', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:crosses val="max"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.crosses).toBeUndefined();
+    expect(chart?.axes?.y?.crosses).toBe("max");
+  });
+
+  it('collapses the OOXML default crosses="autoZero" to undefined', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:crosses val="autoZero"/>
+    </c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:crosses val="autoZero"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("collapses absence of <c:crosses> to undefined", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("returns undefined for unknown crosses tokens", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:crosses val="middle"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when <c:crosses> is missing the val attribute", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:crosses/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("surfaces a positive crossesAt on the value axis", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:crossesAt val="50"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.crossesAt).toBe(50);
+    expect(chart?.axes?.y?.crosses).toBeUndefined();
+  });
+
+  it("surfaces a negative crossesAt", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:crossesAt val="-25.5"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.crossesAt).toBe(-25.5);
+  });
+
+  it("preserves crossesAt=0 (distinct from autoZero)", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:crossesAt val="0"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.crossesAt).toBe(0);
+    expect(chart?.axes?.y?.crosses).toBeUndefined();
+  });
+
+  it("returns undefined when <c:crossesAt> is missing the val attribute", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:crossesAt/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when <c:crossesAt val> is non-numeric", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:crossesAt val="middle"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("prefers crossesAt over crosses when both are present (XSD choice)", () => {
+    // The OOXML schema places <c:crosses> and <c:crossesAt> in an XSD
+    // choice — only one may legally appear. The reader handles
+    // malformed templates that emit both by keeping the numeric pin
+    // (mirroring the writer's emit order).
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:crosses val="max"/>
+      <c:crossesAt val="42"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.crosses).toBeUndefined();
+    expect(chart?.axes?.x?.crossesAt).toBe(42);
+  });
+
+  it("falls back to crosses when crossesAt is unparseable", () => {
+    // Same malformed-template guard, the other direction: when
+    // crossesAt is present but unparseable, the semantic crosses still
+    // surfaces.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:crosses val="min"/>
+      <c:crossesAt/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.crosses).toBe("min");
+    expect(chart?.axes?.x?.crossesAt).toBeUndefined();
+  });
+
+  it("surfaces crosses on a scatter chart's value-axis pair", () => {
+    // Scatter has two valAx — the first (axPos="b") is the X axis, the
+    // second (axPos="l") is the Y axis. The reader maps them back to
+    // axes.x / axes.y the same way it does for the rest of the
+    // metadata.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:scatterChart><c:ser><c:idx val="0"/></c:ser></c:scatterChart>
+    <c:valAx>
+      <c:axId val="1"/>
+      <c:axPos val="b"/>
+      <c:crossesAt val="3.14"/>
+    </c:valAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:axPos val="l"/>
+      <c:crosses val="max"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.crossesAt).toBe(3.14);
+    expect(chart?.axes?.y?.crosses).toBe("max");
+  });
+
+  it("co-surfaces crosses alongside title and tick rendering", () => {
+    const xml = `<c:chartSpace ${NS}
+                xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title><c:tx><c:rich><a:p><a:r><a:t>Region</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      <c:tickLblPos val="low"/>
+      <c:crosses val="min"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x).toEqual({
+      title: "Region",
+      tickLblPos: "low",
+      crosses: "min",
+    });
+  });
+});

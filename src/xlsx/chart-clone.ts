@@ -12,6 +12,7 @@
 
 import type {
   Chart,
+  ChartAxisCrosses,
   ChartAxisGridlines,
   ChartAxisLabelAlign,
   ChartAxisNumberFormat,
@@ -362,6 +363,32 @@ export interface CloneChartOptions {
        * `doughnut` since neither has axes.
        */
       hidden?: boolean | null;
+      /**
+       * Override `SheetChart.axes.x.crosses`. `undefined` (or omitted)
+       * inherits the source axis's semantic crossing pin; `null` drops
+       * the inherited value (the writer falls back to the OOXML default
+       * `"autoZero"`); a {@link ChartAxisCrosses} token replaces it.
+       *
+       * Mutually exclusive with {@link crossesAt} — when both are set
+       * (here or on the source chart) the writer favours `crossesAt`,
+       * mirroring how the OOXML schema places the two elements in an
+       * XSD choice. Silently dropped on `pie` / `doughnut` charts since
+       * neither has axes.
+       */
+      crosses?: ChartAxisCrosses | null;
+      /**
+       * Override `SheetChart.axes.x.crossesAt`. `undefined` (or omitted)
+       * inherits the source axis's numeric crossing pin; `null` drops
+       * the inherited value (the writer falls back to the semantic
+       * crossing pin from {@link crosses}, or to the OOXML default
+       * `"autoZero"`); a finite number replaces it. `0` is preserved —
+       * it is a valid pin, distinct from the `"autoZero"` default.
+       *
+       * When set, takes precedence over {@link crosses} because the
+       * OOXML schema places `<c:crosses>` and `<c:crossesAt>` in an XSD
+       * choice — only one may legally appear at a time.
+       */
+      crossesAt?: number | null;
     };
     y?: {
       title?: string | null;
@@ -378,6 +405,10 @@ export interface CloneChartOptions {
       hidden?: boolean | null;
       /** See {@link CloneChartOptions.axes.x.reverse}. */
       reverse?: boolean | null;
+      /** See {@link CloneChartOptions.axes.x.crosses}. */
+      crosses?: ChartAxisCrosses | null;
+      /** See {@link CloneChartOptions.axes.x.crossesAt}. */
+      crossesAt?: number | null;
     };
   };
 }
@@ -1115,6 +1146,19 @@ function resolveAxes(
   // and the caller already short-circuited those above.
   const xHidden = applyHiddenOverride(sourceAxes?.x?.hidden, overrides?.x?.hidden);
   const yHidden = applyHiddenOverride(sourceAxes?.y?.hidden, overrides?.y?.hidden);
+  // `<c:crosses>` and `<c:crossesAt>` live in an XSD choice on every
+  // axis flavour. Resolve the pair together so the precedence rule
+  // (numeric pin wins over semantic token) survives the inherit / null
+  // / replace grammar — a `crossesAt` override of `null` falls through
+  // to the (possibly inherited) semantic `crosses`, and vice versa.
+  const xCrossesPair = applyCrossesOverride(
+    { crosses: sourceAxes?.x?.crosses, crossesAt: sourceAxes?.x?.crossesAt },
+    { crosses: overrides?.x?.crosses, crossesAt: overrides?.x?.crossesAt },
+  );
+  const yCrossesPair = applyCrossesOverride(
+    { crosses: sourceAxes?.y?.crosses, crossesAt: sourceAxes?.y?.crossesAt },
+    { crosses: overrides?.y?.crosses, crossesAt: overrides?.y?.crossesAt },
+  );
 
   const out: NonNullable<SheetChart["axes"]> = {};
   if (
@@ -1131,7 +1175,9 @@ function resolveAxes(
     xLblOffset !== undefined ||
     xLblAlgn !== undefined ||
     xNoMultiLvlLbl !== undefined ||
-    xHidden !== undefined
+    xHidden !== undefined ||
+    xCrossesPair.crosses !== undefined ||
+    xCrossesPair.crossesAt !== undefined
   ) {
     out.x = {};
     if (xTitle !== undefined) out.x.title = xTitle;
@@ -1148,6 +1194,8 @@ function resolveAxes(
     if (xLblAlgn !== undefined) out.x.lblAlgn = xLblAlgn;
     if (xNoMultiLvlLbl !== undefined) out.x.noMultiLvlLbl = xNoMultiLvlLbl;
     if (xHidden !== undefined) out.x.hidden = xHidden;
+    if (xCrossesPair.crosses !== undefined) out.x.crosses = xCrossesPair.crosses;
+    if (xCrossesPair.crossesAt !== undefined) out.x.crossesAt = xCrossesPair.crossesAt;
   }
   if (
     yTitle !== undefined ||
@@ -1158,7 +1206,9 @@ function resolveAxes(
     yMinorTickMark !== undefined ||
     yTickLblPos !== undefined ||
     yHidden !== undefined ||
-    yReverse !== undefined
+    yReverse !== undefined ||
+    yCrossesPair.crosses !== undefined ||
+    yCrossesPair.crossesAt !== undefined
   ) {
     out.y = {};
     if (yTitle !== undefined) out.y.title = yTitle;
@@ -1170,6 +1220,8 @@ function resolveAxes(
     if (yTickLblPos !== undefined) out.y.tickLblPos = yTickLblPos;
     if (yHidden !== undefined) out.y.hidden = yHidden;
     if (yReverse !== undefined) out.y.reverse = yReverse;
+    if (yCrossesPair.crosses !== undefined) out.y.crosses = yCrossesPair.crosses;
+    if (yCrossesPair.crossesAt !== undefined) out.y.crossesAt = yCrossesPair.crossesAt;
   }
 
   return out.x || out.y ? out : undefined;
@@ -1455,4 +1507,73 @@ function applyReverseOverride(
   }
   if (override === null) return undefined;
   return override === true ? true : undefined;
+}
+
+/** Recognized values of `<c:crosses>` per the OOXML `ST_Crosses` enum. */
+const VALID_CROSSES_VALUES: ReadonlySet<ChartAxisCrosses> = new Set(["autoZero", "min", "max"]);
+
+interface CrossesPairSource {
+  crosses?: ChartAxisCrosses;
+  crossesAt?: number;
+}
+
+interface CrossesPairOverride {
+  crosses?: ChartAxisCrosses | null;
+  crossesAt?: number | null;
+}
+
+interface CrossesPair {
+  crosses?: ChartAxisCrosses;
+  crossesAt?: number;
+}
+
+/**
+ * Resolve the `crosses` / `crossesAt` pair using the same `undefined`
+ * (inherit) / `null` (drop) / value (replace) grammar as the other
+ * axis helpers — but applied to the XSD choice between `<c:crosses>`
+ * and `<c:crossesAt>`. The two fields are resolved independently
+ * (each follows the standard inherit / null / replace contract); the
+ * writer's normalizer enforces the choice rule downstream by
+ * preferring the numeric pin when both are set.
+ *
+ * The OOXML default `crosses: "autoZero"` collapses to `undefined` so
+ * the cloned shape stays minimal. `crossesAt: 0` is preserved (it is
+ * a valid pin, distinct from the `"autoZero"` default). Non-finite
+ * inputs and unknown semantic tokens drop to `undefined` so they
+ * cannot leak into the writer.
+ */
+function applyCrossesOverride(
+  source: CrossesPairSource,
+  override: CrossesPairOverride,
+): CrossesPair {
+  const out: CrossesPair = {};
+
+  if (override.crosses !== undefined) {
+    if (override.crosses !== null) {
+      const value = override.crosses;
+      if (VALID_CROSSES_VALUES.has(value) && value !== "autoZero") {
+        out.crosses = value;
+      }
+    }
+    // override.crosses === null drops the field entirely.
+  } else if (source.crosses !== undefined) {
+    if (VALID_CROSSES_VALUES.has(source.crosses) && source.crosses !== "autoZero") {
+      out.crosses = source.crosses;
+    }
+  }
+
+  if (override.crossesAt !== undefined) {
+    if (
+      override.crossesAt !== null &&
+      typeof override.crossesAt === "number" &&
+      Number.isFinite(override.crossesAt)
+    ) {
+      out.crossesAt = override.crossesAt;
+    }
+    // override.crossesAt === null drops the field entirely.
+  } else if (typeof source.crossesAt === "number" && Number.isFinite(source.crossesAt)) {
+    out.crossesAt = source.crossesAt;
+  }
+
+  return out;
 }
