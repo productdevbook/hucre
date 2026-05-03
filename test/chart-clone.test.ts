@@ -8564,3 +8564,229 @@ describe("cloneChart — legendEntries", () => {
     expect(written).toContain('<c:legendEntry><c:idx val="1"/><c:delete val="1"/></c:legendEntry>');
   });
 });
+
+// ── cloneChart — autoTitleDeleted ───────────────────────────────────
+
+describe("cloneChart — autoTitleDeleted", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Sales",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's autoTitleDeleted by default", () => {
+    const clone = cloneChart(source({ autoTitleDeleted: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.autoTitleDeleted).toBe(true);
+  });
+
+  it("lets options.autoTitleDeleted override the source's value", () => {
+    const clone = cloneChart(source({ autoTitleDeleted: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      autoTitleDeleted: false,
+    });
+    expect(clone.autoTitleDeleted).toBe(false);
+  });
+
+  it("drops the inherited autoTitleDeleted when the override is null", () => {
+    // null collapses to the writer's title-presence-derived default —
+    // the field disappears from the resolved SheetChart so the writer
+    // emits the value derived from the title presence on the cloned
+    // chart.
+    const clone = cloneChart(source({ autoTitleDeleted: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      autoTitleDeleted: null,
+    });
+    expect(clone.autoTitleDeleted).toBeUndefined();
+  });
+
+  it("returns undefined autoTitleDeleted when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.autoTitleDeleted).toBeUndefined();
+  });
+
+  it("carries autoTitleDeleted through a flatten (line → column)", () => {
+    // The flag lives on `<c:chart>` (not inside any chart-type
+    // element), so it round-trips identically across families.
+    const clone = cloneChart(source({ autoTitleDeleted: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.autoTitleDeleted).toBe(true);
+  });
+
+  it("carries autoTitleDeleted through a doughnut flatten (line → doughnut)", () => {
+    const clone = cloneChart(source({ autoTitleDeleted: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.autoTitleDeleted).toBe(true);
+  });
+
+  it("retains autoTitleDeleted even when the title is dropped", () => {
+    // Independent of the resolved title presence — `<c:autoTitleDeleted>`
+    // sits on `<c:chart>`, not nested inside `<c:title>`. A clone with
+    // no literal title can still pin the flag to suppress (or keep)
+    // Excel's auto-title synthesis.
+    const clone = cloneChart(source({ autoTitleDeleted: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      title: null,
+    });
+    expect(clone.title).toBeUndefined();
+    expect(clone.autoTitleDeleted).toBe(true);
+  });
+
+  it("retains autoTitleDeleted even when showTitle is set to false", () => {
+    // Same scope rule — the flag persists across `showTitle: false`
+    // because it does not live inside the title block.
+    const clone = cloneChart(source({ autoTitleDeleted: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      showTitle: false,
+    });
+    expect(clone.showTitle).toBe(false);
+    expect(clone.autoTitleDeleted).toBe(true);
+  });
+
+  it("composes independently with the titleOverlay clone-through (different parents)", () => {
+    // `<c:autoTitleDeleted>` lives on `<c:chart>`; `<c:overlay>` lives
+    // on `<c:title>`. The two flags must resolve independently on the
+    // clone-through.
+    const clone = cloneChart(source({ autoTitleDeleted: true, titleOverlay: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.autoTitleDeleted).toBe(true);
+    expect(clone.titleOverlay).toBe(true);
+  });
+
+  it("propagates autoTitleDeleted into the rendered <c:autoTitleDeleted> on writeXlsx roundtrip", async () => {
+    // Pin the flag on a titled chart — re-parse should surface the
+    // override even though a literal title is also rendered.
+    const clone = cloneChart(source({ autoTitleDeleted: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('<c:autoTitleDeleted val="1"/>');
+    expect(written).not.toContain('<c:autoTitleDeleted val="0"/>');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.autoTitleDeleted).toBe(true);
+  });
+
+  it("emits the title-presence-derived default when both source and override are absent", async () => {
+    // A bare clone with no autoTitleDeleted hint rolls into a
+    // SheetChart whose writer derives the value from the resolved
+    // title presence — `val="0"` here because the source has a literal
+    // title that survives cloning.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('<c:autoTitleDeleted val="0"/>');
+    expect(parseChart(written)?.autoTitleDeleted).toBeUndefined();
+  });
+
+  it("an explicit override beats the source value through writeXlsx", async () => {
+    // Source pins `true`, clone overrides to `false` — the rendered
+    // chart should carry the override and re-parse to undefined (since
+    // `false` is the OOXML default and collapses on read).
+    const clone = cloneChart(source({ autoTitleDeleted: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+      autoTitleDeleted: false,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('<c:autoTitleDeleted val="0"/>');
+    expect(written).not.toContain('<c:autoTitleDeleted val="1"/>');
+    expect(parseChart(written)?.autoTitleDeleted).toBeUndefined();
+  });
+
+  it("carries a titleless source's autoTitleDeleted=false through to the writer", async () => {
+    // Source has no literal title and pinned `false` — the writer's
+    // derived default would emit `val="1"` for a titleless chart, so
+    // the override is what makes the clone land on `val="0"`.
+    const clone = cloneChart(source({ title: undefined, autoTitleDeleted: false }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    expect(clone.title).toBeUndefined();
+    expect(clone.autoTitleDeleted).toBe(false);
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).not.toContain("<c:title>");
+    expect(written).toContain('<c:autoTitleDeleted val="0"/>');
+    expect(parseChart(written)?.autoTitleDeleted).toBeUndefined();
+  });
+});
