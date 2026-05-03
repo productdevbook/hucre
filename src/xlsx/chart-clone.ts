@@ -331,6 +331,16 @@ export interface CloneChartOptions {
        */
       lblAlgn?: ChartAxisLabelAlign | null;
       /**
+       * Override `SheetChart.axes.x.noMultiLvlLbl`. `undefined` (or
+       * omitted) inherits the source axis's flag; `null` drops the
+       * inherited value (the writer falls back to the OOXML `false`
+       * default — multi-level labels enabled); a `boolean` replaces
+       * it. Only meaningful for resolved chart types whose X axis is
+       * `<c:catAx>` (bar / column / line / area); silently dropped on
+       * scatter and pie / doughnut.
+       */
+      noMultiLvlLbl?: boolean | null;
+      /**
        * Override `SheetChart.axes.x.hidden`. `undefined` (or omitted)
        * inherits the source axis's flag; `null` drops the inherited
        * value (the writer falls back to the OOXML `false` default —
@@ -1038,6 +1048,13 @@ function resolveAxes(
   const xLblAlgn = isCatAxisX
     ? applyLblAlgnOverride(sourceAxes?.x?.lblAlgn, overrides?.x?.lblAlgn)
     : undefined;
+  // `noMultiLvlLbl` is even tighter — `CT_CatAx` only (no `<c:dateAx>`
+  // slot per ECMA-376 §21.2.2). Reuse the catAx scope rule above; the
+  // resolved chart type still funnels through `<c:catAx>` for every
+  // bar / column / line / area family the writer supports.
+  const xNoMultiLvlLbl = isCatAxisX
+    ? applyNoMultiLvlLblOverride(sourceAxes?.x?.noMultiLvlLbl, overrides?.x?.noMultiLvlLbl)
+    : undefined;
   // `<c:delete>` lives on every axis flavour — both `<c:catAx>` and
   // `<c:valAx>` accept it — so the hidden flag carries through every
   // chart family that has axes. Pie / doughnut have no axes at all
@@ -1059,6 +1076,7 @@ function resolveAxes(
     xTickMarkSkip !== undefined ||
     xLblOffset !== undefined ||
     xLblAlgn !== undefined ||
+    xNoMultiLvlLbl !== undefined ||
     xHidden !== undefined
   ) {
     out.x = {};
@@ -1074,6 +1092,7 @@ function resolveAxes(
     if (xTickMarkSkip !== undefined) out.x.tickMarkSkip = xTickMarkSkip;
     if (xLblOffset !== undefined) out.x.lblOffset = xLblOffset;
     if (xLblAlgn !== undefined) out.x.lblAlgn = xLblAlgn;
+    if (xNoMultiLvlLbl !== undefined) out.x.noMultiLvlLbl = xNoMultiLvlLbl;
     if (xHidden !== undefined) out.x.hidden = xHidden;
   }
   if (
@@ -1172,6 +1191,26 @@ function applyLblAlgnOverride(
   if (override === null) return undefined;
   if (override !== "l" && override !== "r" && override !== "ctr") return undefined;
   return override === "ctr" ? undefined : override;
+}
+
+/**
+ * Resolve a `noMultiLvlLbl` override using the same `undefined`
+ * (inherit) / `null` (drop) / `boolean` (replace) grammar as the
+ * other axis helpers. Only `true` surfaces (the writer treats `false`
+ * and absence identically — both produce `<c:noMultiLvlLbl val="0"/>`),
+ * so an override of `false` collapses to `undefined` to keep the
+ * cloned `SheetChart` shape minimal. Non-boolean inputs fall through
+ * the type guard to `undefined`.
+ */
+function applyNoMultiLvlLblOverride(
+  source: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) {
+    return source === true ? true : undefined;
+  }
+  if (override === null) return undefined;
+  return override === true ? true : undefined;
 }
 
 /**

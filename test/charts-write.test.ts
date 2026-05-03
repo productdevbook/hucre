@@ -3957,3 +3957,153 @@ describe("writeChart — legendOverlay", () => {
     expect(legend).toContain('c:overlay val="1"');
   });
 });
+
+// ── writeChart — axis noMultiLvlLbl ──────────────────────────────────
+
+describe("writeChart — axis noMultiLvlLbl", () => {
+  it('emits <c:noMultiLvlLbl val="1"/> on the category axis when the override is true', () => {
+    const result = writeChart(makeChart({ axes: { x: { noMultiLvlLbl: true } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:noMultiLvlLbl val="1"');
+    expect(catAxBlock).not.toContain('c:noMultiLvlLbl val="0"');
+  });
+
+  it('emits the OOXML default <c:noMultiLvlLbl val="0"/> when the field is unset', () => {
+    // Excel's reference serialization always emits `<c:noMultiLvlLbl val="0"/>`,
+    // so the writer keeps that contract on a stock chart even though the
+    // parser collapses `0` to undefined on the read side.
+    const result = writeChart(makeChart(), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:noMultiLvlLbl val="0"');
+  });
+
+  it("emits the default when the override is explicitly false", () => {
+    // Pinning the default has the same wire effect as omitting the
+    // field — the OOXML default `false` round-trips identically with
+    // absence.
+    const result = writeChart(makeChart({ axes: { x: { noMultiLvlLbl: false } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:noMultiLvlLbl val="0"');
+  });
+
+  it("emits exactly one <c:noMultiLvlLbl> element per category axis", () => {
+    const result = writeChart(makeChart({ axes: { x: { noMultiLvlLbl: true } } }), "Sheet1");
+    expect((result.chartXml.match(/c:noMultiLvlLbl/g) ?? []).length).toBe(1);
+  });
+
+  it("threads the override through bar, column, line, and area chart families", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, axes: { x: { noMultiLvlLbl: true } } }),
+        "Sheet1",
+      );
+      expect(result.chartXml).toContain('c:noMultiLvlLbl val="1"');
+    }
+  });
+
+  it("ignores the override on scatter charts (both axes are value axes)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { x: { noMultiLvlLbl: true } },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:noMultiLvlLbl");
+  });
+
+  it("ignores the override on pie / doughnut charts (no axes at all)", () => {
+    const pie = writeChart(
+      makeChart({ type: "pie", axes: { x: { noMultiLvlLbl: true } } }),
+      "Sheet1",
+    );
+    expect(pie.chartXml).not.toContain("c:noMultiLvlLbl");
+    const dough = writeChart(
+      makeChart({ type: "doughnut", axes: { x: { noMultiLvlLbl: true } } }),
+      "Sheet1",
+    );
+    expect(dough.chartXml).not.toContain("c:noMultiLvlLbl");
+  });
+
+  it("does not emit noMultiLvlLbl on the value axis", () => {
+    // The model surfaces the flag only on `axes.x`; setting it via
+    // `axes.y` is impossible at the type level. This test pins the
+    // negative case for the writer: a valAx never carries the element.
+    const result = writeChart(makeChart({ axes: { x: { noMultiLvlLbl: true } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).not.toContain("c:noMultiLvlLbl");
+  });
+
+  it("places noMultiLvlLbl after lblOffset / tickLblSkip / tickMarkSkip per the OOXML schema", () => {
+    // CT_CatAx: ... lblOffset -> tickLblSkip? -> tickMarkSkip? -> noMultiLvlLbl.
+    const result = writeChart(
+      makeChart({
+        axes: { x: { tickLblSkip: 3, tickMarkSkip: 5, noMultiLvlLbl: true } },
+      }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const lblOffsetIdx = catAxBlock.indexOf("c:lblOffset");
+    const tickLblSkipIdx = catAxBlock.indexOf("c:tickLblSkip");
+    const tickMarkSkipIdx = catAxBlock.indexOf("c:tickMarkSkip");
+    const noMultiLvlLblIdx = catAxBlock.indexOf("c:noMultiLvlLbl");
+    expect(lblOffsetIdx).toBeGreaterThan(0);
+    expect(tickLblSkipIdx).toBeGreaterThan(lblOffsetIdx);
+    expect(tickMarkSkipIdx).toBeGreaterThan(tickLblSkipIdx);
+    expect(noMultiLvlLblIdx).toBeGreaterThan(tickMarkSkipIdx);
+  });
+
+  it("ignores non-boolean noMultiLvlLbl values (falls back to default 0)", () => {
+    // Match how `legendOverlay` / `roundedCorners` / axis `hidden` treat
+    // their inputs: only literal `true` produces the non-default. A
+    // stray non-boolean collapses to the default.
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { noMultiLvlLbl: "yes" as any } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:noMultiLvlLbl val="0"');
+  });
+
+  it("round-trips a non-default noMultiLvlLbl through parseChart", () => {
+    const written = writeChart(
+      makeChart({ axes: { x: { noMultiLvlLbl: true } } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.noMultiLvlLbl).toBe(true);
+  });
+
+  it("collapses a defaulted noMultiLvlLbl round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes).toBeUndefined();
+  });
+
+  it("end-to-end: writeXlsx packages the flag into chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            axes: { x: { noMultiLvlLbl: true } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('c:noMultiLvlLbl val="1"');
+  });
+});
