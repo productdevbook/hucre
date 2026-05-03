@@ -2474,6 +2474,16 @@ const VALID_DISP_UNIT_VALUES: ReadonlySet<ChartAxisDispUnit> = new Set([
  * can hand back to the writer-side `SheetChart.axes.{x,y}.dispUnits`
  * field. Unknown / typo'd tokens collapse to `undefined` so they cannot
  * leak past the clone layer.
+ *
+ * Both `unit` (built-in preset) and `custUnit` (custom numeric divisor)
+ * pass through when valid. The OOXML schema's `xsd:choice` between
+ * `<c:builtInUnit>` and `<c:custUnit>` is enforced at emit time by the
+ * writer (which prefers `custUnit` when both are pinned); the
+ * normalizer keeps both fields so the clone layer can append a
+ * `custUnit` override to a source whose parsed value pinned `unit`
+ * without manually pruning the inherited preset. Returns `undefined`
+ * when neither field resolves to a valid value — a stray
+ * `ChartAxisDispUnits` with no usable child has nothing to emit.
  */
 function normalizeDispUnits(
   value: ChartAxisDispUnits | ChartAxisDispUnit | undefined,
@@ -2485,11 +2495,16 @@ function normalizeDispUnits(
       : undefined;
   }
   if (typeof value !== "object" || value === null) return undefined;
+  const out: ChartAxisDispUnits = {};
   const unit = value.unit;
-  if (typeof unit !== "string" || !VALID_DISP_UNIT_VALUES.has(unit as ChartAxisDispUnit)) {
-    return undefined;
+  if (typeof unit === "string" && VALID_DISP_UNIT_VALUES.has(unit as ChartAxisDispUnit)) {
+    out.unit = unit as ChartAxisDispUnit;
   }
-  const out: ChartAxisDispUnits = { unit: unit as ChartAxisDispUnit };
+  const custUnit = value.custUnit;
+  if (typeof custUnit === "number" && Number.isFinite(custUnit) && custUnit > 0) {
+    out.custUnit = custUnit;
+  }
+  if (out.unit === undefined && out.custUnit === undefined) return undefined;
   if (value.showLabel === true) out.showLabel = true;
   return out;
 }

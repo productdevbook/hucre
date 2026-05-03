@@ -2856,10 +2856,16 @@ export type ChartAxisDispUnit =
  * labels by the chosen preset (e.g. `"millions"` divides every label by
  * 1e6) and optionally prints the unit annotation on the chart.
  *
- * The reader and writer model only the built-in preset path
- * (`<c:builtInUnit val=".."/>`); the alternative `<c:custUnit
- * val=".."/>` (custom numeric divisor) is intentionally out of scope —
- * pass a {@link ChartAxisDispUnit} preset instead.
+ * The OOXML schema places `<c:builtInUnit>` and `<c:custUnit>` in an
+ * `xsd:choice` — exactly one of the two may appear inside `<c:dispUnits>`.
+ * Hucre exposes both: pin {@link unit} to pick one of the named OOXML
+ * presets (the common path — Excel's "Display units → Hundreds /
+ * Thousands / ..." dropdown), or pin {@link custUnit} to declare an
+ * arbitrary numeric divisor (Excel's "Display units → Other" path).
+ * When both fields are pinned, `custUnit` wins on emit because the
+ * OOXML schema forbids emitting both children — the more specific
+ * numeric divisor takes precedence so a caller can append a custom unit
+ * to a cloned source without manually pruning the inherited preset.
  *
  * `<c:dispUnitsLbl>` is also intentionally minimal: when `showLabel` is
  * `true` the writer emits a bare `<c:dispUnitsLbl/>` so Excel paints its
@@ -2869,8 +2875,29 @@ export type ChartAxisDispUnit =
  * string can layer it on later.
  */
 export interface ChartAxisDispUnits {
-  /** OOXML `ST_BuiltInUnit` token — the preset divisor. */
-  unit: ChartAxisDispUnit;
+  /**
+   * OOXML `ST_BuiltInUnit` token — the preset divisor. Maps to
+   * `<c:dispUnits><c:builtInUnit val=".."/></c:dispUnits>`. Mutually
+   * exclusive with {@link custUnit} per the OOXML schema; when both are
+   * pinned, `custUnit` wins on emit. Required when `custUnit` is
+   * absent — a `ChartAxisDispUnits` object with neither field pinned
+   * collapses to no element on emit.
+   */
+  unit?: ChartAxisDispUnit;
+  /**
+   * Custom numeric divisor — Excel's "Display units → Other" path.
+   * Maps to `<c:dispUnits><c:custUnit val=".."/></c:dispUnits>` (CT_Double
+   * per the OOXML schema). The divisor rescales every tick label by the
+   * given factor (e.g. `1000` divides labels by 1 000, the same as the
+   * `"thousands"` preset; `86400` converts seconds to days).
+   *
+   * Mutually exclusive with {@link unit} per the OOXML `xsd:choice` —
+   * when both are pinned, `custUnit` wins on emit. Must be a finite
+   * positive number; `0`, negative, non-finite (`NaN`, `Infinity`), and
+   * non-number inputs drop silently rather than emit a token Excel
+   * would refuse.
+   */
+  custUnit?: number;
   /**
    * Whether to print Excel's automatic display-unit annotation
    * alongside the axis (e.g. "Millions" for `unit: "millions"`). Maps

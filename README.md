@@ -803,25 +803,32 @@ distinct from the `"autoZero"` default which defers to Excel's
 auto-placement). Unknown semantic tokens and non-numeric `val`
 attributes drop rather than fabricate values the writer would reject.
 `ChartAxisInfo.dispUnits` surfaces the per-value-axis display-unit
-preset pulled from `<c:valAx><c:dispUnits><c:builtInUnit val=".."/></c:dispUnits></c:valAx>`
+configuration pulled from `<c:valAx><c:dispUnits>...</c:dispUnits></c:valAx>`
 — Excel's "Format Axis -> Display units" dropdown. The element rescales
-the numeric tick labels by the chosen preset (e.g. `"millions"` divides
+the numeric tick labels by the chosen divisor (e.g. `"millions"` divides
 every label by 1e6) so a chart whose source range stores raw amounts
 can show compact tick labels without modifying the underlying cells.
 The OOXML schema places the element exclusively on `CT_ValAx`, so
 `dispUnits` only surfaces on the value-axis side of bar / column / line
 / area charts (the Y axis) and on both axes of scatter charts (both are
 value axes); category axes (`<c:catAx>`) and pie / doughnut never
-surface the field. The reader keeps the parsed `unit` token and the
-presence of `<c:dispUnitsLbl>` (`showLabel: true` when Excel paints its
-automatic annotation alongside the axis); the alternative
-`<c:custUnit val=".."/>` (custom numeric divisor) and any rich-text
-`<c:dispUnitsLbl>` body are intentionally not surfaced. The OOXML
+surface the field. The reader keeps both choices the OOXML schema
+allows: the named `unit` token from `<c:builtInUnit val=".."/>` and the
+arbitrary numeric divisor from `<c:custUnit val=".."/>` (Excel's
+"Display units → Other" path — e.g. `86400` to convert seconds to
+days). The OOXML schema places the two children in an `xsd:choice`
+(exactly one may appear); on emit hucre prefers `custUnit` when both
+fields are pinned so a clone can layer a custom divisor on top of an
+inherited preset without manually pruning the original. The
+`showLabel: true` flag tracks the presence of `<c:dispUnitsLbl>`
+(Excel paints its automatic annotation alongside the axis); the rich-
+text `<c:dispUnitsLbl>` body is intentionally not surfaced. The OOXML
 schema accepts the nine `ST_BuiltInUnit` tokens (`"hundreds"`,
 `"thousands"`, `"tenThousands"`, `"hundredThousands"`, `"millions"`,
 `"tenMillions"`, `"hundredMillions"`, `"billions"`, `"trillions"`);
 unknown tokens drop to `undefined` rather than fabricate a value the
-writer would never emit.
+writer would never emit. Non-positive / non-finite `custUnit` values
+drop at the same boundary.
 `ChartAxisInfo.crossBetween` surfaces the per-value-axis cross-between
 mode pulled from `<c:valAx><c:crossBetween val=".."/></c:valAx>` — the
 OOXML `ST_CrossBetween` enum (`"between"` / `"midCat"`) that controls
@@ -1302,26 +1309,33 @@ per-series marker styling: this gate sits at the chart level and
 decides whether markers paint, while the per-series block picks the
 symbol / size / fill that paints when the gate is open.
 The `axes.{x,y}.dispUnits` field controls the per-value-axis
-display-unit preset (`<c:valAx><c:dispUnits><c:builtInUnit val=".."/></c:dispUnits></c:valAx>`)
+display-unit configuration (`<c:valAx><c:dispUnits>...</c:dispUnits></c:valAx>`)
 — Excel's "Format Axis -> Display units" dropdown. Each numeric tick
-label is divided by the chosen preset before rendering, so a chart
+label is divided by the chosen divisor before rendering, so a chart
 whose source range stores raw amounts (e.g. `1_500_000`) can show
 compact tick labels (`1.5` with an optional "Millions" annotation)
 without modifying the underlying cells. Pass a `ChartAxisDispUnit`
-shorthand (e.g. `"millions"`) or a `{ unit, showLabel? }` object to
-opt into the automatic unit annotation by setting `showLabel: true`
-(the writer emits a bare `<c:dispUnitsLbl/>` so Excel paints its
-default label alongside the axis). Accepted unit tokens: `"hundreds"`,
-`"thousands"`, `"tenThousands"`, `"hundredThousands"`, `"millions"`,
-`"tenMillions"`, `"hundredMillions"`, `"billions"`, `"trillions"`. The
-OOXML schema places `<c:dispUnits>` exclusively on `CT_ValAx`, so the
-field only takes effect on the value-axis side of bar / column / line
-/ area charts (the Y axis) and on both axes of scatter charts (both
-are value axes); category axes (`<c:catAx>`) silently drop the field
-and pie / doughnut have no axes at all. Unknown tokens drop silently
-rather than fabricate a value the OOXML `ST_BuiltInUnit` enum would
-reject. The custom-divisor variant (`<c:custUnit>`) and rich-text
-`<c:dispUnitsLbl>` body are intentionally not surfaced.
+shorthand (e.g. `"millions"`) or a `{ unit?, custUnit?, showLabel? }`
+object: pin `unit` for one of the named OOXML presets, or pin
+`custUnit` for an arbitrary positive divisor (Excel's "Display units →
+Other" path — e.g. `86400` to convert seconds to days). The two
+fields are mutually exclusive in the OOXML schema's `xsd:choice`; when
+both are set, `custUnit` wins on emit so a clone can layer a custom
+divisor on top of an inherited preset without manually pruning the
+original. Set `showLabel: true` to opt into the automatic unit
+annotation (the writer emits a bare `<c:dispUnitsLbl/>` so Excel
+paints its default label alongside the axis). Accepted unit tokens:
+`"hundreds"`, `"thousands"`, `"tenThousands"`, `"hundredThousands"`,
+`"millions"`, `"tenMillions"`, `"hundredMillions"`, `"billions"`,
+`"trillions"`. The OOXML schema places `<c:dispUnits>` exclusively on
+`CT_ValAx`, so the field only takes effect on the value-axis side of
+bar / column / line / area charts (the Y axis) and on both axes of
+scatter charts (both are value axes); category axes (`<c:catAx>`)
+silently drop the field and pie / doughnut have no axes at all.
+Unknown tokens drop silently rather than fabricate a value the OOXML
+`ST_BuiltInUnit` enum would reject; non-positive / non-finite
+`custUnit` values drop at the same boundary. The rich-text
+`<c:dispUnitsLbl>` body is intentionally not surfaced.
 The `axes.{x,y}.crossBetween` field controls the per-value-axis
 cross-between mode (`<c:valAx><c:crossBetween val=".."/></c:valAx>`) —
 the OOXML `ST_CrossBetween` enum that picks between `"between"` (the
