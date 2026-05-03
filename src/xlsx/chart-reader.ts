@@ -14,6 +14,7 @@
 
 import type {
   Chart,
+  ChartAxisCrossBetween,
   ChartAxisCrosses,
   ChartAxisDispUnit,
   ChartAxisDispUnits,
@@ -326,8 +327,19 @@ function parseAxes(plotArea: XmlElement): { x?: ChartAxisInfo; y?: ChartAxisInfo
     yAxis = valAxes[1];
   }
 
-  const x = xAxis ? parseAxisInfo(xAxis) : undefined;
-  const y = yAxis ? parseAxisInfo(yAxis) : undefined;
+  // `<c:crossBetween>` is required on every `<c:valAx>` — Excel always
+  // emits the element — so the reader needs a per-family default to
+  // collapse against. The catAx-anchored families (bar / column / line
+  // / area) emit `"between"` on the value axis; scatter (catAx-less,
+  // both axes are valAx) emits `"midCat"` on both axes. Pass the
+  // expected default to `parseAxisInfo` so a chart that inherited the
+  // default round-trips identically through {@link cloneChart} —
+  // absence on the parsed shape and the writer-emitted default produce
+  // the same `<c:crossBetween val=".."/>` byte-for-byte.
+  const familyDefaultCrossBetween: ChartAxisCrossBetween = catAx ? "between" : "midCat";
+
+  const x = xAxis ? parseAxisInfo(xAxis, familyDefaultCrossBetween) : undefined;
+  const y = yAxis ? parseAxisInfo(yAxis, familyDefaultCrossBetween) : undefined;
 
   if (!x && !y) return undefined;
   const out: { x?: ChartAxisInfo; y?: ChartAxisInfo } = {};
@@ -336,7 +348,10 @@ function parseAxes(plotArea: XmlElement): { x?: ChartAxisInfo; y?: ChartAxisInfo
   return out;
 }
 
-function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
+function parseAxisInfo(
+  axis: XmlElement,
+  familyDefaultCrossBetween: ChartAxisCrossBetween,
+): ChartAxisInfo | undefined {
   const title = parseAxisTitle(axis);
   const gridlines = parseAxisGridlines(axis);
   const scale = parseAxisScale(axis);
@@ -399,6 +414,17 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   // axis flavour so a corrupt template carrying a stray element does
   // not surface a value the writer would never emit anyway.
   const dispUnits = axis.local === "valAx" ? parseAxisDispUnits(axis) : undefined;
+  // `<c:crossBetween>` is also value-axis-only per ECMA-376 Part 1,
+  // §21.2.2.10 (CT_ValAx → CT_CrossBetween). The OOXML schema rejects
+  // the element on `<c:catAx>` / `<c:dateAx>` / `<c:serAx>`, so the
+  // reader skips the parse on every other axis flavour to mirror the
+  // writer's scope rule. The element is required on every `<c:valAx>`
+  // and Excel always emits the family default — collapse the parsed
+  // value when it matches the family default so absence and the
+  // default round-trip identically through {@link cloneChart}.
+  const parsedCrossBetween = axis.local === "valAx" ? parseAxisCrossBetween(axis) : undefined;
+  const crossBetween =
+    parsedCrossBetween === familyDefaultCrossBetween ? undefined : parsedCrossBetween;
   if (
     title === undefined &&
     gridlines === undefined &&
@@ -416,7 +442,8 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
     hidden === undefined &&
     crosses === undefined &&
     crossesAt === undefined &&
-    dispUnits === undefined
+    dispUnits === undefined &&
+    crossBetween === undefined
   ) {
     return undefined;
   }
@@ -438,6 +465,7 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   if (crosses !== undefined) out.crosses = crosses;
   if (crossesAt !== undefined) out.crossesAt = crossesAt;
   if (dispUnits !== undefined) out.dispUnits = dispUnits;
+  if (crossBetween !== undefined) out.crossBetween = crossBetween;
   return out;
 }
 
@@ -764,6 +792,36 @@ function parseAxisDispUnits(axis: XmlElement): ChartAxisDispUnits | undefined {
     out.showLabel = true;
   }
   return out;
+}
+
+/** Recognized values of `<c:crossBetween>` per the OOXML `ST_CrossBetween` enum. */
+const VALID_CROSS_BETWEEN: ReadonlySet<ChartAxisCrossBetween> = new Set(["between", "midCat"]);
+
+/**
+ * Read a value axis's `<c:crossBetween val=".."/>`. The OOXML schema
+ * places the element exclusively on `CT_ValAx` per ECMA-376 Part 1,
+ * §21.2.2.10 — `<c:catAx>`, `<c:dateAx>`, and `<c:serAx>` reject it —
+ * so the caller is expected to gate the parse on `axis.local === "valAx"`
+ * before calling this helper.
+ *
+ * Returns `undefined` when:
+ *   - the axis declares no `<c:crossBetween>` at all,
+ *   - the `val` attribute is missing, empty, or not a string,
+ *   - the `val` attribute is not one of the OOXML `ST_CrossBetween`
+ *     tokens (`"between"` / `"midCat"`).
+ *
+ * Unknown tokens drop rather than fabricate a value the writer would
+ * never emit — the caller cannot tell absence from a corrupt template
+ * without the parser's help.
+ */
+function parseAxisCrossBetween(axis: XmlElement): ChartAxisCrossBetween | undefined {
+  const el = findChild(axis, "crossBetween");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim() as ChartAxisCrossBetween;
+  if (!VALID_CROSS_BETWEEN.has(trimmed)) return undefined;
+  return trimmed;
 }
 
 /**

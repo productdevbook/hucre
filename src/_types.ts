@@ -1410,6 +1410,19 @@ export interface SheetChart {
        * {@link ChartAxisDispUnit} for the accepted preset tokens.
        */
       dispUnits?: ChartAxisDispUnits | ChartAxisDispUnit;
+      /**
+       * Cross-between mode for the X axis. Maps to
+       * `<c:valAx><c:crossBetween val=".."/></c:valAx>`.
+       *
+       * Only meaningful for `scatter` charts — both axes there are
+       * value axes (`<c:valAx>`), so `<c:crossBetween>` slots onto the
+       * X axis as well. The OOXML schema places the element exclusively
+       * on `CT_ValAx`, so the writer drops the field on every other
+       * family (the X axis on bar / column / line / area is a category
+       * axis, which rejects `<c:crossBetween>`; pie / doughnut have no
+       * axes at all). See {@link ChartAxisCrossBetween}.
+       */
+      crossBetween?: ChartAxisCrossBetween;
     };
     /** Value axis. */
     y?: {
@@ -1488,6 +1501,17 @@ export interface SheetChart {
        * {@link ChartAxisDispUnit} for the accepted preset tokens.
        */
       dispUnits?: ChartAxisDispUnits | ChartAxisDispUnit;
+      /**
+       * Cross-between mode for the value axis. Maps to
+       * `<c:valAx><c:crossBetween val=".."/></c:valAx>`.
+       *
+       * The Y axis is a value axis on every chart family that has axes —
+       * bar / column / line / area / scatter — so the override always
+       * takes effect on those families. Pie / doughnut have no axes at
+       * all, so the field is silently dropped on those families. See
+       * {@link ChartAxisCrossBetween}.
+       */
+      crossBetween?: ChartAxisCrossBetween;
     };
   };
 }
@@ -2382,6 +2406,37 @@ export type ChartAxisLabelAlign = "ctr" | "l" | "r";
 export type ChartAxisCrosses = "autoZero" | "min" | "max";
 
 /**
+ * Whether the perpendicular axis crosses BETWEEN data points or AT the
+ * midpoint of each category on a value axis. Maps to the OOXML
+ * `ST_CrossBetween` enumeration which sits inside `<c:valAx>` as
+ * `<c:crossBetween val=".."/>`. The element is value-axis-only — the
+ * OOXML schema places `<c:crossBetween>` exclusively on `CT_ValAx`, so
+ * `<c:catAx>` / `<c:dateAx>` / `<c:serAx>` reject it:
+ *
+ * - `"between"` — the perpendicular axis crosses between data points,
+ *                 leaving a half-category gap on each end of the plot
+ *                 area. Excel's reference serialization on bar / column
+ *                 charts (so bars sit inside their category slot rather
+ *                 than straddling the value-axis line) and the writer's
+ *                 default on bar / column / line / area today.
+ * - `"midCat"`  — the perpendicular axis crosses at the midpoint of
+ *                 each category, so data points (line markers / area
+ *                 fill anchors / scatter points) sit ON the
+ *                 perpendicular-axis ticks rather than between them.
+ *                 Excel's reference serialization on scatter charts —
+ *                 useful when porting line / area templates whose first
+ *                 / last data point should land flush with the value
+ *                 axis instead of inside the plot area.
+ *
+ * Excel's UI does not expose the toggle as a checkbox — Excel computes
+ * it from the chart family on insertion — but Excel preserves the
+ * element on round-trip, and a template that pins a non-default value
+ * should round-trip through `parseChart -> cloneChart -> writeXlsx`
+ * without flattening.
+ */
+export type ChartAxisCrossBetween = "between" | "midCat";
+
+/**
  * Built-in display-unit preset on a value axis — Excel's "Format Axis ->
  * Display units" dropdown. Every numeric tick label is divided by the
  * preset's scale before being rendered, so a chart whose source range
@@ -2619,6 +2674,17 @@ export interface ChartAxisInfo {
    * round-trip leaves Excel's default "no display unit" state untouched.
    */
   dispUnits?: ChartAxisDispUnits;
+  /**
+   * Cross-between mode pulled from `<c:crossBetween val=".."/>`.
+   * Surfaces only on value axes — the OOXML schema places the element
+   * exclusively on `CT_ValAx`, so `<c:catAx>` / `<c:dateAx>` /
+   * `<c:serAx>` never carry one. Unknown / typo'd tokens drop to
+   * `undefined` rather than fabricate a value the writer would never
+   * emit; absence likewise collapses to `undefined` so a chart that
+   * inherited Excel's default still round-trips minimally through
+   * {@link cloneChart}. See {@link ChartAxisCrossBetween}.
+   */
+  crossBetween?: ChartAxisCrossBetween;
 }
 
 /**

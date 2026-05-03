@@ -6589,3 +6589,161 @@ describe("parseChart — chart editing locale", () => {
     expect(chart?.varyColors).toBe(true);
   });
 });
+
+// ── parseChart — axis crossBetween ───────────────────────────────────
+
+describe("parseChart — axis crossBetween", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces a non-default <c:crossBetween val="midCat"/> on the value axis of a column chart', () => {
+    // Bar / column / line / area's family default is `"between"`; pinning
+    // `"midCat"` is a non-default override and the reader should surface it.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:crossBetween val="midCat"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.crossBetween).toBe("midCat");
+    expect(chart?.axes?.x?.crossBetween).toBeUndefined();
+  });
+
+  it('collapses the family-default <c:crossBetween val="between"/> on a column chart to undefined', () => {
+    // Excel always emits `<c:crossBetween>` on every `<c:valAx>` because
+    // the element is required by the schema. The reader must collapse the
+    // value when it matches the family default so absence and the default
+    // round-trip identically through cloneChart.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:crossBetween val="between"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.crossBetween).toBeUndefined();
+  });
+
+  it('collapses the family-default <c:crossBetween val="midCat"/> on a scatter chart to undefined', () => {
+    // Scatter's family default is `"midCat"` because both axes are value
+    // axes and Excel emits `<c:crossBetween val="midCat"/>` on each of
+    // them. The reader collapses the default so a clone of an untouched
+    // scatter chart stays minimal.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:scatterChart>
+      <c:scatterStyle val="lineMarker"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:scatterChart>
+    <c:valAx>
+      <c:axId val="1"/>
+      <c:axPos val="b"/>
+      <c:crossBetween val="midCat"/>
+    </c:valAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:axPos val="l"/>
+      <c:crossBetween val="midCat"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.crossBetween).toBeUndefined();
+    expect(chart?.axes?.y?.crossBetween).toBeUndefined();
+  });
+
+  it('surfaces a non-default <c:crossBetween val="between"/> on a scatter chart', () => {
+    // Scatter's family default is `"midCat"`; pinning `"between"` is a
+    // non-default override and the reader surfaces it on whichever axis
+    // it was pinned.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:scatterChart>
+      <c:scatterStyle val="lineMarker"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:scatterChart>
+    <c:valAx>
+      <c:axId val="1"/>
+      <c:axPos val="b"/>
+      <c:crossBetween val="between"/>
+    </c:valAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:axPos val="l"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.crossBetween).toBe("between");
+    expect(chart?.axes?.y?.crossBetween).toBeUndefined();
+  });
+
+  it("collapses crossBetween to undefined on a category axis (catAx rejects the element)", () => {
+    // The OOXML schema places <c:crossBetween> exclusively on CT_ValAx,
+    // so a stray element on <c:catAx> from a corrupt template should
+    // never surface — the reader explicitly skips the parse on every
+    // non-valAx flavour.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:crossBetween val="midCat"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.crossBetween).toBeUndefined();
+  });
+
+  it("drops an unknown ST_CrossBetween token rather than fabricating a value", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:crossBetween val="diagonal"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.crossBetween).toBeUndefined();
+  });
+
+  it("drops a missing val attribute rather than fabricating a value", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:crossBetween/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.crossBetween).toBeUndefined();
+  });
+
+  it("collapses crossBetween to undefined when the chart has no <c:crossBetween>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.crossBetween).toBeUndefined();
+  });
+});

@@ -6562,3 +6562,155 @@ describe("cloneChart — chart editing locale", () => {
     expect(reparsed?.style).toBe(34);
   });
 });
+
+// ── cloneChart — axis crossBetween ───────────────────────────────────
+
+describe("cloneChart — axis crossBetween", () => {
+  const sourceWithMidCat: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: { y: { crossBetween: "midCat" } },
+  };
+
+  it("inherits axes.y.crossBetween from the source when no override is given", () => {
+    const clone = cloneChart(sourceWithMidCat, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y?.crossBetween).toBe("midCat");
+  });
+
+  it("drops the inherited mode when the override is null", () => {
+    const clone = cloneChart(sourceWithMidCat, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { crossBetween: null } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("replaces the inherited mode with a new value", () => {
+    const clone = cloneChart(sourceWithMidCat, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { crossBetween: "between" } },
+    });
+    expect(clone.axes?.y?.crossBetween).toBe("between");
+  });
+
+  it("adds crossBetween to a source that lacked the field", () => {
+    const bare: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(bare, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { crossBetween: "midCat" } },
+    });
+    expect(clone.axes?.y?.crossBetween).toBe("midCat");
+  });
+
+  it("collapses unknown ST_CrossBetween tokens to undefined", () => {
+    const clone = cloneChart(sourceWithMidCat, {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      axes: { y: { crossBetween: "diagonal" as any } },
+    });
+    expect(clone.axes?.y?.crossBetween).toBeUndefined();
+  });
+
+  it("drops the inherited crossBetween when flattening to pie (no axes)", () => {
+    // Pie / doughnut have no axes at all in the OOXML schema — the
+    // resolver short-circuits on those families so crossBetween cannot
+    // leak into the writer.
+    const clone = cloneChart(sourceWithMidCat, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "pie",
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("drops the inherited X-axis crossBetween when flattening to bar (catAx X)", () => {
+    // The X axis on bar / column / line / area is a category axis,
+    // which rejects <c:crossBetween>. A clone from scatter (where both
+    // axes are valAx) into a column chart should drop the X-axis
+    // mode so the writer never sees it.
+    const scatterSource: Chart = {
+      kinds: ["scatter"],
+      seriesCount: 1,
+      series: [{ kind: "scatter", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { crossBetween: "between" }, y: { crossBetween: "between" } },
+    };
+    const clone = cloneChart(scatterSource, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.axes?.x?.crossBetween).toBeUndefined();
+    // Y axis is valAx on column too — the inherited mode survives.
+    expect(clone.axes?.y?.crossBetween).toBe("between");
+  });
+
+  it("carries the X-axis crossBetween through a scatter -> scatter clone", () => {
+    const scatterSource: Chart = {
+      kinds: ["scatter"],
+      seriesCount: 1,
+      series: [{ kind: "scatter", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { crossBetween: "between" }, y: { crossBetween: "between" } },
+    };
+    const clone = cloneChart(scatterSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.crossBetween).toBe("between");
+    expect(clone.axes?.y?.crossBetween).toBe("between");
+  });
+
+  it("composes with other axis overrides without dropping unrelated state", () => {
+    // The resolver bundles every axis field into a single `out.y`
+    // object — make sure adding crossBetween next to crosses / crossesAt
+    // / dispUnits doesn't accidentally drop the other fields.
+    const source: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: {
+        y: {
+          crossBetween: "midCat",
+          crosses: "max",
+          dispUnits: { unit: "millions" },
+        },
+      },
+    };
+    const clone = cloneChart(source, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y?.crossBetween).toBe("midCat");
+    expect(clone.axes?.y?.crosses).toBe("max");
+    expect(clone.axes?.y?.dispUnits).toEqual({ unit: "millions" });
+  });
+
+  it("round-trips through parseChart -> cloneChart -> writeChart", async () => {
+    const source: SheetChart = {
+      type: "column",
+      series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { crossBetween: "midCat" } },
+    };
+    const xml = writeChart(source, "Sheet1").chartXml;
+    const parsed = parseChart(xml)!;
+    const clone = cloneChart(parsed, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    expect(clone.axes?.y?.crossBetween).toBe("midCat");
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Q", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('<c:crossBetween val="midCat"/>');
+    expect(parseChart(written)?.axes?.y?.crossBetween).toBe("midCat");
+  });
+});

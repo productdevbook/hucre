@@ -5771,3 +5771,194 @@ describe("writeChart — chart editing locale", () => {
     expect(reparsed?.lang).toBe("tr-TR");
   });
 });
+
+// ── writeChart — axis crossBetween ───────────────────────────────────
+
+describe("writeChart — axis crossBetween", () => {
+  it('emits the family default <c:crossBetween val="between"/> on a column chart with no override', () => {
+    // The writer always emits `<c:crossBetween>` on the value axis
+    // because the OOXML schema requires it. The default for bar /
+    // column / line / area is `"between"` — Excel's reference
+    // serialization on every freshly-drawn column chart pins exactly
+    // that value.
+    const result = writeChart(makeChart(), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<c:crossBetween val="between"/>');
+  });
+
+  it("honours a value-axis override on a column chart", () => {
+    const result = writeChart(makeChart({ axes: { y: { crossBetween: "midCat" } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<c:crossBetween val="midCat"/>');
+  });
+
+  it('emits the family default <c:crossBetween val="midCat"/> on both scatter axes', () => {
+    // Scatter charts route both axes through `<c:valAx>`; the writer
+    // pins `"midCat"` on each by default to mirror Excel's reference
+    // serialization on a freshly-drawn scatter chart.
+    const scatter: SheetChart = {
+      type: "scatter",
+      series: [{ name: "S1", values: "B2:B5", categories: "A2:A5" }],
+      anchor: { from: { row: 0, col: 0 } },
+    };
+    const result = writeChart(scatter, "Sheet1");
+    const valAxBlocks = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/g)!;
+    expect(valAxBlocks).toHaveLength(2);
+    expect(valAxBlocks[0]).toContain('<c:crossBetween val="midCat"/>');
+    expect(valAxBlocks[1]).toContain('<c:crossBetween val="midCat"/>');
+  });
+
+  it("honours independent overrides on both scatter axes", () => {
+    const scatter: SheetChart = {
+      type: "scatter",
+      series: [{ name: "S1", values: "B2:B5", categories: "A2:A5" }],
+      anchor: { from: { row: 0, col: 0 } },
+      axes: {
+        x: { crossBetween: "between" },
+        y: { crossBetween: "between" },
+      },
+    };
+    const result = writeChart(scatter, "Sheet1");
+    const valAxBlocks = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/g)!;
+    expect(valAxBlocks).toHaveLength(2);
+    expect(valAxBlocks[0]).toContain('<c:crossBetween val="between"/>');
+    expect(valAxBlocks[1]).toContain('<c:crossBetween val="between"/>');
+  });
+
+  it("drops an unknown ST_CrossBetween token rather than fabricating a value", () => {
+    const result = writeChart(
+      makeChart({
+        axes: { y: { crossBetween: "diagonal" as never } },
+      }),
+      "Sheet1",
+    );
+    // Falls back to the family default rather than emitting the bad token.
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<c:crossBetween val="between"/>');
+    expect(result.chartXml).not.toContain('val="diagonal"');
+  });
+
+  it("does not emit <c:crossBetween> on the X axis of a column chart (catAx rejects it)", () => {
+    // The OOXML schema places <c:crossBetween> exclusively on CT_ValAx,
+    // so even though the user pinned a value on the X axis, the catAx
+    // builder should silently drop the field.
+    const result = writeChart(
+      makeChart({ type: "column", axes: { x: { crossBetween: "midCat" } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).not.toContain("c:crossBetween");
+  });
+
+  it("does not emit <c:crossBetween> on a pie chart (no axes at all)", () => {
+    // The writer never builds <c:valAx> for pie / doughnut, so even
+    // when the caller pins a value the element should not surface.
+    const result = writeChart(
+      makeChart({
+        type: "pie",
+        axes: { y: { crossBetween: "midCat" } },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:crossBetween");
+  });
+
+  it("places <c:crossBetween> after <c:crosses> inside <c:valAx> (CT_ValAx order)", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          y: {
+            crosses: "max",
+            crossBetween: "midCat",
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    const crossesIdx = valAxBlock.indexOf("c:crosses");
+    const crossBetweenIdx = valAxBlock.indexOf("c:crossBetween");
+    expect(crossesIdx).toBeGreaterThan(-1);
+    expect(crossBetweenIdx).toBeGreaterThan(crossesIdx);
+  });
+
+  it("places <c:crossBetween> before <c:majorUnit> inside <c:valAx> (CT_ValAx order)", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          y: {
+            scale: { min: 0, max: 100, majorUnit: 25 },
+            crossBetween: "midCat",
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    const crossBetweenIdx = valAxBlock.indexOf("c:crossBetween");
+    const majorUnitIdx = valAxBlock.indexOf("c:majorUnit");
+    expect(crossBetweenIdx).toBeGreaterThan(-1);
+    expect(majorUnitIdx).toBeGreaterThan(crossBetweenIdx);
+  });
+
+  it("only emits <c:crossBetween> once on the value axis", () => {
+    const result = writeChart(makeChart({ axes: { y: { crossBetween: "midCat" } } }), "Sheet1");
+    const occurrences = result.chartXml.match(/c:crossBetween/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("survives a parseChart round-trip on the value axis", () => {
+    const result = writeChart(makeChart({ axes: { y: { crossBetween: "midCat" } } }), "Sheet1");
+    const reparsed = parseChart(result.chartXml);
+    expect(reparsed?.axes?.y?.crossBetween).toBe("midCat");
+  });
+
+  it("survives a parseChart round-trip on a scatter chart with an X-axis override", () => {
+    const scatter: SheetChart = {
+      type: "scatter",
+      series: [{ name: "S1", values: "B2:B5", categories: "A2:A5" }],
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { crossBetween: "between" } },
+    };
+    const result = writeChart(scatter, "Sheet1");
+    const reparsed = parseChart(result.chartXml);
+    expect(reparsed?.axes?.x?.crossBetween).toBe("between");
+    // Y axis stayed at the scatter family default — collapses on read.
+    expect(reparsed?.axes?.y?.crossBetween).toBeUndefined();
+  });
+
+  it("collapses a defaulted crossBetween round-trip back to undefined", () => {
+    // A chart that left crossBetween unset emits the family default,
+    // and the reader should collapse that default back to undefined.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.y?.crossBetween).toBeUndefined();
+  });
+
+  it("packages the chart end-to-end through writeXlsx", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Quarter", "Revenue"],
+          ["Q1", 100],
+          ["Q2", 200],
+          ["Q3", 150],
+        ],
+        charts: [
+          {
+            type: "line",
+            series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            axes: { y: { crossBetween: "midCat" } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('<c:crossBetween val="midCat"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.y?.crossBetween).toBe("midCat");
+  });
+});
