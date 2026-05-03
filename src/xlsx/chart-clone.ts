@@ -171,6 +171,23 @@ export interface CloneChartOptions {
   /** Override `SheetChart.areaGrouping`. */
   areaGrouping?: SheetChart["areaGrouping"];
   /**
+   * Override `SheetChart.dropLines`. `undefined` (or omitted) inherits
+   * the source's parsed flag; `null` drops the inherited value (the
+   * writer falls back to the OOXML default of no `<c:dropLines>`); a
+   * `boolean` replaces it. Only meaningful when the resolved chart type
+   * is `line` or `area`; silently dropped on every other family.
+   */
+  dropLines?: boolean | null;
+  /**
+   * Override `SheetChart.hiLowLines`. `undefined` (or omitted) inherits
+   * the source's parsed flag; `null` drops the inherited value (the
+   * writer falls back to the OOXML default of no `<c:hiLowLines>`); a
+   * `boolean` replaces it. Only meaningful when the resolved chart type
+   * is `line`; silently dropped on every other family (`<c:hiLowLines>`
+   * has no slot on `<c:areaChart>` per OOXML).
+   */
+  hiLowLines?: boolean | null;
+  /**
    * Override `SheetChart.holeSize` (only meaningful for `doughnut`).
    * When the resolved chart type is not `doughnut`, the field is
    * dropped from the output so it does not leak into a cloned pie or
@@ -529,6 +546,29 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     options.areaGrouping !== undefined ? options.areaGrouping : source.areaGrouping;
   if (areaGrouping !== undefined && type === "area") {
     out.areaGrouping = areaGrouping;
+  }
+
+  // `<c:dropLines>` lives on `<c:lineChart>` / `<c:line3DChart>` /
+  // `<c:areaChart>` / `<c:area3DChart>` per the OOXML schema. Hucre's
+  // writer authors `<c:lineChart>` and `<c:areaChart>` only, so the
+  // flag carries through line / area resolutions and is dropped on
+  // every other family — coercing a line template into a column clone
+  // therefore never leaks the connector lines into a chart kind whose
+  // schema rejects the element.
+  if (type === "line" || type === "area") {
+    const dropLines = resolveDropLines(source.dropLines, options.dropLines);
+    if (dropLines !== undefined) out.dropLines = dropLines;
+  }
+
+  // `<c:hiLowLines>` lives on `<c:lineChart>` / `<c:line3DChart>` /
+  // `<c:stockChart>` per the OOXML schema. Hucre's writer authors
+  // `<c:lineChart>` only, so the flag carries through line resolutions
+  // and is dropped on every other family — coercing a line template
+  // into an area clone therefore never leaks the connector lines into
+  // a chart kind whose schema rejects the element.
+  if (type === "line") {
+    const hiLowLines = resolveHiLowLines(source.hiLowLines, options.hiLowLines);
+    if (hiLowLines !== undefined) out.hiLowLines = hiLowLines;
   }
 
   // Doughnut hole size only makes sense when the resolved type is
@@ -1007,6 +1047,49 @@ function resolveTitleOverlay(
   if (override === undefined) return sourceValue;
   if (override === null) return undefined;
   return override;
+}
+
+/**
+ * Resolve a `dropLines` override.
+ *
+ * `undefined` → inherit the source's parsed `dropLines`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               OOXML default — no `<c:dropLines>` element).
+ * `boolean`   → replace. Only `true` round-trips into the cloned
+ *               `SheetChart`; `false` collapses to `undefined` because
+ *               the writer treats absence and `false` identically (no
+ *               element emitted).
+ *
+ * The grammar mirrors `plotVisOnly` / `roundedCorners` so the chart-
+ * level toggles compose the same way at the call site. Callers should
+ * gate the result on the resolved chart family — `<c:dropLines>` has
+ * no slot on `<c:barChart>` / `<c:pieChart>` / `<c:scatterChart>`.
+ */
+function resolveDropLines(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) {
+    return sourceValue === true ? true : undefined;
+  }
+  if (override === null) return undefined;
+  return override === true ? true : undefined;
+}
+
+/**
+ * Resolve a `hiLowLines` override. Mirrors {@link resolveDropLines};
+ * the only difference is the per-family scope — `<c:hiLowLines>` has
+ * no slot on `<c:areaChart>`.
+ */
+function resolveHiLowLines(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) {
+    return sourceValue === true ? true : undefined;
+  }
+  if (override === null) return undefined;
+  return override === true ? true : undefined;
 }
 
 /**

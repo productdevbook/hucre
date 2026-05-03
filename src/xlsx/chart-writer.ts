@@ -856,6 +856,19 @@ function buildLineChart(chart: SheetChart, sheetName: string): string {
   const chartLevelDLbls = buildChartLevelDataLabels(chart);
   if (chartLevelDLbls) children.push(chartLevelDLbls);
 
+  // CT_LineChart sequence places `<c:dropLines>` and `<c:hiLowLines>`
+  // between `<c:dLbls>` and `<c:marker>` (in that order). Both
+  // elements are bare — their mere presence paints the connector lines,
+  // so we only emit when the caller explicitly opted in (`true`).
+  // Absence and an explicit `false` both collapse to no element so
+  // untouched line charts match Excel's reference serialization.
+  if (chart.dropLines === true) {
+    children.push(xmlElement("c:dropLines", undefined, []));
+  }
+  if (chart.hiLowLines === true) {
+    children.push(xmlElement("c:hiLowLines", undefined, []));
+  }
+
   children.push(xmlSelfClose("c:marker", { val: 1 }));
   children.push(xmlSelfClose("c:axId", { val: AXIS_ID_CAT }));
   children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL }));
@@ -882,6 +895,15 @@ function buildAreaChart(chart: SheetChart, sheetName: string): string {
 
   const chartLevelDLbls = buildChartLevelDataLabels(chart);
   if (chartLevelDLbls) children.push(chartLevelDLbls);
+
+  // CT_AreaChart sequence places `<c:dropLines>` between `<c:dLbls>`
+  // and `<c:axId>`. The element is bare — its mere presence paints
+  // the connectors — so we only emit when the caller explicitly opted
+  // in. `<c:hiLowLines>` has no slot on `<c:areaChart>` per the OOXML
+  // schema, so the area writer ignores `chart.hiLowLines` entirely.
+  if (chart.dropLines === true) {
+    children.push(xmlElement("c:dropLines", undefined, []));
+  }
 
   children.push(xmlSelfClose("c:axId", { val: AXIS_ID_CAT }));
   children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL }));

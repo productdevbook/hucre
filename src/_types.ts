@@ -930,6 +930,41 @@ export interface SheetChart {
    */
   areaGrouping?: "standard" | "stacked" | "percentStacked";
   /**
+   * Whether the chart paints `<c:dropLines>` — vertical reference lines
+   * that drop from each data point down to the category axis. Mirrors
+   * Excel's "Add Chart Element -> Lines -> Drop Lines" toggle.
+   *
+   * Default: `false` (no drop lines, Excel's reference serialization).
+   * Set `true` to emit `<c:dropLines/>` on the chart-type element so
+   * Excel paints the connector lines.
+   *
+   * The OOXML schema places `<c:dropLines>` exclusively on
+   * `<c:lineChart>`, `<c:line3DChart>`, `<c:areaChart>`, and
+   * `<c:area3DChart>`. Hucre's writer authors `<c:lineChart>` and
+   * `<c:areaChart>` only, so the flag is silently ignored on every
+   * other chart kind (`bar` / `column` / `pie` / `doughnut` /
+   * `scatter`).
+   */
+  dropLines?: boolean;
+  /**
+   * Whether the chart paints `<c:hiLowLines>` — vertical reference
+   * lines that connect the highest and lowest series values at each
+   * category position. Mirrors Excel's "Add Chart Element -> Lines ->
+   * High-Low Lines" toggle (the same connector painted on stock
+   * charts).
+   *
+   * Default: `false` (no high-low lines, Excel's reference
+   * serialization). Set `true` to emit `<c:hiLowLines/>` on the
+   * chart-type element so Excel paints the connectors.
+   *
+   * The OOXML schema places `<c:hiLowLines>` exclusively on
+   * `<c:lineChart>`, `<c:line3DChart>`, and `<c:stockChart>`. Hucre's
+   * writer authors `<c:lineChart>` only, so the flag is silently
+   * ignored on every other chart kind (`bar` / `column` / `pie` /
+   * `doughnut` / `area` / `scatter`).
+   */
+  hiLowLines?: boolean;
+  /**
    * Doughnut hole size as a percentage of the outer radius. Accepted
    * range: 10 – 90 (Excel's UI clamps values outside this band).
    * Default: `50` — the Excel default. Ignored for non-doughnut chart
@@ -2423,6 +2458,33 @@ export interface Chart {
    * to `undefined` here.
    */
   areaGrouping?: ChartLineAreaGrouping;
+  /**
+   * Drop-lines flag pulled from the first `<c:lineChart>` /
+   * `<c:areaChart>` element's `<c:dropLines/>` child. Reflects
+   * Excel's "Add Chart Element -> Lines -> Drop Lines" toggle. The
+   * element is bare (it has no `val` attribute) — its mere presence
+   * paints the connector lines, so this field surfaces `true` when the
+   * element is present and `undefined` when it is absent.
+   *
+   * The OOXML schema places `<c:dropLines>` exclusively on
+   * `<c:lineChart>`, `<c:line3DChart>`, `<c:areaChart>`, and
+   * `<c:area3DChart>`. Surfaces `undefined` on every other chart
+   * family.
+   */
+  dropLines?: boolean;
+  /**
+   * High-low-lines flag pulled from the first `<c:lineChart>`
+   * element's `<c:hiLowLines/>` child. Reflects Excel's "Add Chart
+   * Element -> Lines -> High-Low Lines" toggle. Like `<c:dropLines>`,
+   * the element is bare — its mere presence paints the connectors, so
+   * this field surfaces `true` when the element is present and
+   * `undefined` when it is absent.
+   *
+   * The OOXML schema places `<c:hiLowLines>` exclusively on
+   * `<c:lineChart>`, `<c:line3DChart>`, and `<c:stockChart>`. Surfaces
+   * `undefined` on every other chart family.
+   */
+  hiLowLines?: boolean;
   /**
    * Chart-level data label defaults parsed from the first chart-type
    * element's `<c:dLbls>` block. Series-level overrides on
