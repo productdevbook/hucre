@@ -735,6 +735,27 @@ surfaces as an empty `{}`, and absence of the element collapses the
 field to `undefined`. Every chart family carries a slot — the element
 lives on `<c:chartSpace>` (a sibling of `<c:chart>`), not inside
 `<c:plotArea>`, so pie / doughnut still surface the block.
+`Chart.view3D` surfaces the chart-level `<c:chart><c:view3D>` block
+(CT_View3D, ECMA-376 Part 1, §21.2.2.228) — Excel's "3-D Rotation"
+pane on 3D chart families. The reader returns a `ChartView3D` object
+with up to six independently optional fields (`rotX`, `hPercent`,
+`rotY`, `depthPercent`, `rAngAx`, `perspective`); each child is
+independently optional on `CT_View3D`, so the reader only surfaces
+the fields the file actually pinned. Numeric fields are validated
+against the matching OOXML simple-type range
+(`ST_RotX` / `ST_HPercent` / `ST_RotY` / `ST_DepthPercent` /
+`ST_Perspective`) — out-of-range, fractional, and non-numeric `val`
+attributes drop rather than fabricate a clamped value. The boolean
+`<c:rAngAx>` accepts the OOXML truthy / falsy spellings (`"1"` /
+`"true"` / `"0"` / `"false"`); unknown tokens drop to `undefined`.
+The element itself is the gating signal — a `<c:view3D>` block with
+no resolvable children surfaces as an empty `{}`, and absence of the
+element collapses the field to `undefined`. The element lives on
+`<c:chart>` (between `<c:autoTitleDeleted>` and `<c:plotArea>`), so
+the OOXML schema accepts it on every chart family — though it is
+only meaningful on 3D families (`bar3D`, `line3D`, `pie3D`, `area3D`,
+`surface3D`); a stray element on a 2D chart still surfaces here so
+the round-trip through `cloneChart` stays lossless.
 `ChartAxisInfo.tickLblSkip` and `ChartAxisInfo.tickMarkSkip` surface
 the category-axis tick-thinning knobs (`<c:catAx><c:tickLblSkip val=".."/>`
 and `<c:catAx><c:tickMarkSkip val=".."/>`). Both elements live on
@@ -1160,6 +1181,27 @@ doughnut — carries a slot for it. Excel only enforces these flags
 when the host worksheet is itself protected; on an unprotected sheet
 the element round-trips literally but has no observable runtime
 effect.
+The chart-level `view3D` field maps to `<c:chart><c:view3D>` (CT_View3D,
+ECMA-376 Part 1, §21.2.2.228) — Excel's "3-D Rotation" pane on 3D
+chart families. The field accepts a `ChartView3D` object with up to
+six independently optional fields (`rotX`, `hPercent`, `rotY`,
+`depthPercent`, `rAngAx`, `perspective`); pass an object to pin any
+subset of the children, pass `{}` to declare a bare `<c:view3D/>`
+shell (useful for round-trip parity with templates that author the
+empty element), or omit the field to suppress the element entirely so
+the writer skips emission and Excel falls back to the per-family
+default. Each numeric field is clamped against the matching OOXML
+simple-type range (`rotX` -90..90, `hPercent` 5..500, `rotY` 0..360,
+`depthPercent` 20..2000, `perspective` 0..240); out-of-range,
+fractional, and non-finite inputs drop silently rather than emit a
+token Excel's strict validator would reject. The writer emits the
+six children in `CT_View3D` schema order, slots the block between
+`<c:autoTitleDeleted>` and `<c:plotArea>` per `CT_Chart`, and accepts
+the element on every chart family — though it is only meaningful on
+3D families (`bar3D`, `line3D`, `pie3D`, `area3D`, `surface3D`); on
+2D families the element round-trips literally but Excel ignores it.
+Useful primarily for round-tripping a 3D template chart through
+`cloneChart`.
 The chart-level `roundedCorners` field maps to
 `<c:roundedCorners val=".."/>` on `<c:chartSpace>` (a sibling of
 `<c:chart>`, not a child) — Excel's "Format Chart Area → Border →
@@ -1594,6 +1636,20 @@ pin). Unlike `dataTable`, the field lives on `<c:chartSpace>` (not
 inside `<c:plotArea>`), so every chart family — pie / doughnut
 included — carries a slot for it. Coercions between any chart
 families preserve the inherited block.
+The chart-level `view3D` field follows the standard `object | null`
+override grammar: pass `undefined` (or omit it) to inherit the
+source's parsed `ChartView3D` (defensively shallow-copied so a clone
+mutation never leaks back into the parsed `Chart`), `null` to drop
+the inherited block so the writer skips `<c:view3D>` entirely, or a
+`ChartView3D` object to replace the block wholesale (no per-field
+merge with the source — pass every field the cloned 3D view should
+pin). An empty object (`{}`) collapses to a bare `<c:view3D/>` shell
+on emit. Unlike `dataTable`, the field lives on `<c:chart>` (not
+inside `<c:plotArea>`), so every chart family — pie / doughnut
+included — carries a slot for it. Coercions between any chart
+families (line → column, doughnut → pie, etc.) preserve the inherited
+block, mirroring how `protection` composes across the type-coercion
+flow.
 The chart-level `roundedCorners` flag follows the same grammar: pass
 `undefined` to inherit the source's parsed value, `null` to drop it
 back to the writer's OOXML `false` default (square chart frame), or a

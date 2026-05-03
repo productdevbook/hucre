@@ -4,7 +4,7 @@ import { parseChart } from "../src/xlsx/chart-reader";
 import { writeChart } from "../src/xlsx/chart-writer";
 import { writeXlsx } from "../src/xlsx/writer";
 import { ZipReader } from "../src/zip/reader";
-import type { Chart, ChartLineStroke, ChartMarker, SheetChart } from "../src/_types";
+import type { Chart, ChartLineStroke, ChartMarker, ChartView3D, SheetChart } from "../src/_types";
 
 const decoder = new TextDecoder("utf-8");
 
@@ -8546,5 +8546,231 @@ describe("cloneChart — autoTitleDeleted", () => {
     expect(written).not.toContain("<c:title>");
     expect(written).toContain('<c:autoTitleDeleted val="0"/>');
     expect(parseChart(written)?.autoTitleDeleted).toBeUndefined();
+  });
+});
+
+// ── cloneChart — view3D ──────────────────────────────────────────────
+
+describe("cloneChart — view3D", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's view3D by default", () => {
+    const view: ChartView3D = {
+      rotX: 15,
+      hPercent: 100,
+      rotY: 20,
+      depthPercent: 100,
+      rAngAx: true,
+      perspective: 30,
+    };
+    const clone = cloneChart(source({ view3D: view }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.view3D).toEqual(view);
+  });
+
+  it("defensively copies the inherited view3D so a clone mutation does not leak back", () => {
+    // The resolver shallow-copies the source so a downstream
+    // mutation to the cloned SheetChart never leaks back into the
+    // parsed Chart. Mirrors how `legendEntries` defensively copies
+    // its inherited array.
+    const sourceChart = source({ view3D: { rotX: 15, rotY: 20 } });
+    const clone = cloneChart(sourceChart, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    clone.view3D!.rotX = 90;
+    expect(sourceChart.view3D).toEqual({ rotX: 15, rotY: 20 });
+  });
+
+  it("lets options.view3D replace the inherited block wholesale", () => {
+    // No per-field merge — the override block replaces the source's.
+    const clone = cloneChart(source({ view3D: { rotX: 15, rotY: 20, perspective: 30 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      view3D: { rotX: 45 },
+    });
+    expect(clone.view3D).toEqual({ rotX: 45 });
+  });
+
+  it("lets options.view3D: {} declare a bare <c:view3D/> shell", () => {
+    // An empty override accepts every per-family default — useful for
+    // round-trip parity with a templated bare element.
+    const clone = cloneChart(source({ view3D: { rotX: 15 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      view3D: {},
+    });
+    expect(clone.view3D).toEqual({});
+  });
+
+  it("drops the inherited view3D when the override is null", () => {
+    // null collapses to absence — the cloned SheetChart drops the
+    // field so the writer skips <c:view3D> entirely on emit.
+    const clone = cloneChart(
+      source({
+        view3D: { rotX: 15, rotY: 20, perspective: 30 },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        view3D: null,
+      },
+    );
+    expect(clone.view3D).toBeUndefined();
+  });
+
+  it("returns undefined view3D when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.view3D).toBeUndefined();
+  });
+
+  it("carries view3D through a flatten (line → column)", () => {
+    // <c:view3D> lives on <c:chart>, so a chart-type coercion
+    // preserves the pinned block — the element has no axis dependency.
+    const clone = cloneChart(source({ view3D: { rotX: 25 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.view3D).toEqual({ rotX: 25 });
+  });
+
+  it("preserves view3D when flattening into a doughnut clone", () => {
+    // Unlike <c:dTable>, <c:view3D> has no axis dependency — it lives
+    // on <c:chart> so pie / doughnut still carry the slot.
+    const clone = cloneChart(source({ view3D: { rotY: 60 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.view3D).toEqual({ rotY: 60 });
+  });
+
+  it("preserves view3D when flattening into a pie clone", () => {
+    const clone = cloneChart(source({ view3D: { perspective: 45 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "pie",
+    });
+    expect(clone.type).toBe("pie");
+    expect(clone.view3D).toEqual({ perspective: 45 });
+  });
+
+  it("propagates view3D into the rendered <c:view3D> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(
+      source({
+        view3D: {
+          rotX: 15,
+          hPercent: 100,
+          rotY: 20,
+          depthPercent: 100,
+          rAngAx: true,
+          perspective: 30,
+        },
+      }),
+      { anchor: { from: { row: 5, col: 0 } } },
+    );
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:view3D>");
+    expect(written).toContain('<c:rotX val="15"/>');
+    expect(written).toContain('<c:hPercent val="100"/>');
+    expect(written).toContain('<c:rotY val="20"/>');
+    expect(written).toContain('<c:depthPercent val="100"/>');
+    expect(written).toContain('<c:rAngAx val="1"/>');
+    expect(written).toContain('<c:perspective val="30"/>');
+
+    // Re-parsing the rendered chart returns the same shape — closes
+    // the template → clone → write → read loop.
+    const reparsed = parseChart(written);
+    expect(reparsed?.view3D).toEqual({
+      rotX: 15,
+      hPercent: 100,
+      rotY: 20,
+      depthPercent: 100,
+      rAngAx: true,
+      perspective: 30,
+    });
+  });
+
+  it("propagates an empty view3D into a bare <c:view3D/> shell on roundtrip", async () => {
+    // The empty-object input collapses to the bare self-closing
+    // element on emit, and the reader surfaces it as an empty object
+    // — closes the round-trip loop on the gating-element shape.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+      view3D: {},
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Q", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:view3D/>");
+    const reparsed = parseChart(written);
+    expect(reparsed?.view3D).toEqual({});
+  });
+
+  it("propagates the override-drop (null) into absence on roundtrip", async () => {
+    // null on the override drops the inherited block so the writer
+    // skips the element entirely — Excel falls back to its per-family
+    // default rotation / perspective. The round-trip closes with no
+    // <c:view3D> present in the rendered file.
+    const clone = cloneChart(source({ view3D: { rotX: 15, perspective: 30 } }), {
+      anchor: { from: { row: 5, col: 0 } },
+      view3D: null,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Q", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).not.toContain("<c:view3D");
+    expect(parseChart(written)?.view3D).toBeUndefined();
   });
 });

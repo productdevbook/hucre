@@ -26,6 +26,7 @@ import type {
   ChartProtection,
   ChartScatterStyle,
   ChartSeries,
+  ChartView3D,
   SheetChart,
   WriteChartKind,
 } from "../_types";
@@ -89,6 +90,21 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
   chartChildren.push(
     xmlSelfClose("c:autoTitleDeleted", { val: resolveAutoTitleDeleted(chart) ? 1 : 0 }),
   );
+
+  // `<c:view3D>` (CT_View3D, ECMA-376 Part 1, §21.2.2.228) sits on
+  // `<c:chart>` between `<c:autoTitleDeleted>` / `<c:pivotFmts>` and
+  // `<c:floor>` / `<c:plotArea>`. The element is only meaningful on
+  // 3D chart families but the OOXML schema accepts it on every
+  // CT_Chart, so the writer emits it whenever the caller pins a
+  // non-empty configuration — Excel silently ignores it on 2D
+  // families. Useful primarily for round-tripping a 3D template chart
+  // through cloneChart. The writer skips emission entirely when the
+  // caller leaves `view3D` unset so a fresh chart matches Excel's
+  // reference serialization byte-for-byte.
+  const view3DXml = buildView3D(chart.view3D);
+  if (view3DXml !== undefined) {
+    chartChildren.push(view3DXml);
+  }
 
   // ── Plot Area ──
   chartChildren.push(buildPlotArea(chart, sheetName));
@@ -574,6 +590,82 @@ function buildProtection(protection: {
     xmlSelfClose("c:selection", { val: protection.selection ? 1 : 0 }),
     xmlSelfClose("c:userInterface", { val: protection.userInterface ? 1 : 0 }),
   ]);
+}
+
+// ── 3-D View ─────────────────────────────────────────────────────────
+
+/**
+ * Serialize a {@link ChartView3D} into `<c:view3D>` with one self-
+ * closing child per pinned field, in the order CT_View3D mandates:
+ * `<c:rotX>`, `<c:hPercent>`, `<c:rotY>`, `<c:depthPercent>`,
+ * `<c:rAngAx>`, `<c:perspective>`. Returns `undefined` when the
+ * caller did not opt in (`view3D` is `undefined`) so the writer can
+ * skip the element entirely; returns the bare `<c:view3D/>` shell
+ * when an empty object is passed (round-trips a template that
+ * authored the element with no children pinned).
+ *
+ * Each numeric field is clamped against the matching OOXML simple-
+ * type range — out-of-range and non-finite inputs drop silently
+ * rather than emit a token Excel's strict validator would reject.
+ * The boolean field surfaces only as a literal `0` / `1` `val`
+ * attribute; non-boolean inputs collapse to `false` (the OOXML
+ * default), mirroring how every other chart-level boolean writer
+ * treats its input.
+ */
+function buildView3D(view3D: ChartView3D | undefined): string | undefined {
+  if (view3D === undefined) return undefined;
+  const children: string[] = [];
+  // CT_View3D children sequence per ECMA-376 §21.2.2.228:
+  // rotX?, hPercent?, rotY?, depthPercent?, rAngAx?, perspective?,
+  // extLst?
+  const rotX = clampView3DInt(view3D.rotX, -90, 90);
+  if (rotX !== undefined) children.push(xmlSelfClose("c:rotX", { val: rotX }));
+  const hPercent = clampView3DInt(view3D.hPercent, 5, 500);
+  if (hPercent !== undefined) {
+    // `<c:hPercent>` accepts the bare integer per ST_HPercent — Excel
+    // emits a plain percent value with no `%` suffix.
+    children.push(xmlSelfClose("c:hPercent", { val: hPercent }));
+  }
+  const rotY = clampView3DInt(view3D.rotY, 0, 360);
+  if (rotY !== undefined) children.push(xmlSelfClose("c:rotY", { val: rotY }));
+  const depthPercent = clampView3DInt(view3D.depthPercent, 20, 2000);
+  if (depthPercent !== undefined) {
+    children.push(xmlSelfClose("c:depthPercent", { val: depthPercent }));
+  }
+  if (view3D.rAngAx === true) {
+    children.push(xmlSelfClose("c:rAngAx", { val: 1 }));
+  } else if (view3D.rAngAx === false) {
+    // Explicit `false` round-trips as `<c:rAngAx val="0"/>` so the
+    // caller can pin the OOXML default literally — useful for parity
+    // with templates that author the explicit value.
+    children.push(xmlSelfClose("c:rAngAx", { val: 0 }));
+  }
+  const perspective = clampView3DInt(view3D.perspective, 0, 240);
+  if (perspective !== undefined) {
+    children.push(xmlSelfClose("c:perspective", { val: perspective }));
+  }
+  // Empty object (`{}`) collapses to a bare `<c:view3D/>` shell —
+  // `xmlElement` with an empty child array emits the self-closing form.
+  return xmlElement("c:view3D", undefined, children);
+}
+
+/**
+ * Clamp a `<c:view3D>` numeric field against the matching OOXML
+ * simple-type range. Returns `undefined` when the input is non-finite,
+ * non-integer, or out-of-range — the writer drops the matching child
+ * rather than emit a token Excel's strict validator would reject.
+ *
+ * The strict integer check rejects fractional inputs (`15.5`) so the
+ * round-trip stays lossless — `parseView3DInt` on the reader side
+ * also rejects fractional `val` attributes, and a fractional input
+ * here would silently mismatch on the next parse.
+ */
+function clampView3DInt(value: number | undefined, min: number, max: number): number | undefined {
+  if (typeof value !== "number") return undefined;
+  if (!Number.isFinite(value)) return undefined;
+  if (!Number.isInteger(value)) return undefined;
+  if (value < min || value > max) return undefined;
+  return value;
 }
 
 interface AxisRenderOptions {

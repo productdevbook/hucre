@@ -858,6 +858,77 @@ export interface ChartProtection {
 }
 
 /**
+ * Granular 3D-view configuration for {@link SheetChart.view3D}.
+ *
+ * Maps to the six optional `CT_View3D` children of `<c:chart><c:view3D>`
+ * (ECMA-376 Part 1, §21.2.2.228) — Excel's "3-D Rotation" pane on
+ * 3D chart families (`bar3D`, `line3D`, `pie3D`, `area3D`, `surface3D`).
+ * The element itself is optional; each child is independently optional
+ * and Excel falls back to the per-family default for any field the
+ * template leaves unset.
+ *
+ * Every field is independent — pass any subset to override the matching
+ * per-family default. Pin a field to a value at the matching boundary
+ * of the OOXML simple type and the writer round-trips it as the literal
+ * `val` attribute; out-of-range and non-finite numeric inputs drop at
+ * write time rather than emit a token Excel would reject.
+ *
+ * Although `<c:view3D>` is only meaningful on 3D chart families, the
+ * OOXML schema accepts it on every CT_Chart, so the writer pins the
+ * element whenever the caller provides a non-empty configuration —
+ * Excel silently ignores it on 2D families. Useful primarily for
+ * round-tripping a 3D template chart through {@link cloneChart}.
+ */
+export interface ChartView3D {
+  /**
+   * Rotation around the X axis in degrees. Maps to
+   * `<c:rotX val=".."/>` (`ST_RotX`, signed byte). Accepted range:
+   * `-90` – `90`. Excel's default is `15` for most 3D families and
+   * `0` for `pie3D`. Values outside the range drop at write time.
+   */
+  rotX?: number;
+  /**
+   * Height as a percent of the chart width. Maps to
+   * `<c:hPercent val=".."/>` (`ST_HPercent`, percent). Accepted range:
+   * `5` – `500`. Excel's default is `100`. Values outside the range
+   * drop at write time.
+   */
+  hPercent?: number;
+  /**
+   * Rotation around the Y axis in degrees. Maps to
+   * `<c:rotY val=".."/>` (`ST_RotY`, unsigned short). Accepted range:
+   * `0` – `360`. Excel's default is `20` for most 3D families and
+   * `0` for `pie3D` / `bar3D` (column orientation). Values outside the
+   * range drop at write time.
+   */
+  rotY?: number;
+  /**
+   * Depth as a percent of the chart width. Maps to
+   * `<c:depthPercent val=".."/>` (`ST_DepthPercent`, percent). Accepted
+   * range: `20` – `2000`. Excel's default is `100`. Values outside the
+   * range drop at write time.
+   */
+  depthPercent?: number;
+  /**
+   * Right-angle-axes flag. Maps to `<c:rAngAx val=".."/>` (CT_Boolean).
+   * Default: `false` — perspective foreshortening is applied to the
+   * 3D box. Set `true` to draw the chart with axes at right angles
+   * (Excel's "Right angle axes" checkbox), which suppresses perspective
+   * even when {@link perspective} is non-zero.
+   */
+  rAngAx?: boolean;
+  /**
+   * Perspective factor. Maps to `<c:perspective val=".."/>`
+   * (`ST_Perspective`, percent). Accepted range: `0` – `240`. Excel's
+   * default is `30`. Higher values exaggerate the foreshortening; `0`
+   * is the orthographic projection. Silently ignored by Excel when
+   * {@link rAngAx} is `true`. Values outside the range drop at write
+   * time.
+   */
+  perspective?: number;
+}
+
+/**
  * Scatter sub-style applied at the chart level. Maps to the OOXML
  * `ST_ScatterStyle` enum which sits inside `<c:scatterChart>` as
  * `<c:scatterStyle val=".."/>`. Excel exposes the same six presets
@@ -1481,6 +1552,36 @@ export interface SheetChart {
    * {@link ChartProtection}.
    */
   protection?: boolean | ChartProtection;
+  /**
+   * 3-D view configuration. Maps to `<c:chart><c:view3D>` (CT_View3D,
+   * ECMA-376 Part 1, §21.2.2.228) — Excel's "3-D Rotation" pane,
+   * which controls the X / Y rotation, height and depth percentages,
+   * the right-angle-axes flag, and the perspective foreshortening
+   * factor on 3D chart families.
+   *
+   * Pass an object to pin one or more of the six `CT_View3D` children;
+   * each unspecified field falls back to Excel's per-family default
+   * (the writer skips emission of any child the object leaves unset
+   * so the rendered shape matches absence). Pass an empty object
+   * (`{}`) to declare a bare `<c:view3D>` shell, useful for
+   * round-trip parity with templates that author the element with no
+   * children pinned. Omit the field to suppress the element entirely
+   * so the writer skips emission.
+   *
+   * Default: omitted — Excel renders no `<c:view3D>` element on a
+   * fresh chart and falls back to the per-family default rotation /
+   * perspective.
+   *
+   * Although `<c:view3D>` is only meaningful on 3D chart families
+   * (`bar3D`, `line3D`, `pie3D`, `area3D`, `surface3D`) and hucre's
+   * writer authors only 2D families, the OOXML schema accepts the
+   * element on every CT_Chart, so the writer pins it whenever the
+   * caller provides a non-empty configuration — Excel silently
+   * ignores it on 2D families. Useful primarily for round-tripping a
+   * 3D template chart through {@link cloneChart}. See
+   * {@link ChartView3D}.
+   */
+  view3D?: ChartView3D;
   /**
    * Per-axis configuration rendered alongside the plot area. The `x`
    * axis is the category axis for bar/column/line/area (or the bottom
@@ -3511,6 +3612,35 @@ export interface Chart {
    * pie / doughnut — can carry it.
    */
   protection?: ChartProtection;
+  /**
+   * 3-D view configuration pulled from `<c:chart><c:view3D>` (CT_View3D,
+   * ECMA-376 Part 1, §21.2.2.228). Reflects Excel's "3-D Rotation"
+   * pane on 3D chart families — the X / Y rotation, height and depth
+   * percentages, the right-angle-axes flag, and the perspective
+   * foreshortening factor.
+   *
+   * Surfaces a {@link ChartView3D} object whenever the source chart
+   * declares the element. Each of the six children (`<c:rotX>`,
+   * `<c:hPercent>`, `<c:rotY>`, `<c:depthPercent>`, `<c:rAngAx>`,
+   * `<c:perspective>`) is independently optional on CT_View3D, so the
+   * reader only surfaces the fields the file actually pinned. A child
+   * that is missing or carries an out-of-range / unparseable `val`
+   * attribute drops to `undefined` for that field rather than fabricate
+   * a value the file did not declare. The element itself is the gating
+   * signal — a `<c:view3D>` block with no resolvable children surfaces
+   * as an empty `{}`, mirroring how `dataTable` / `protection` handle
+   * a malformed inner block.
+   *
+   * Surfaces `undefined` when the chart has no `<c:view3D>` element at
+   * all. The element lives on `<c:chart>` (between `<c:autoTitleDeleted>`
+   * / `<c:pivotFmts>` and `<c:floor>` / `<c:plotArea>` per CT_Chart),
+   * so the OOXML schema accepts it on every chart family — though it
+   * is only meaningful on 3D families (`bar3D`, `line3D`, `pie3D`,
+   * `area3D`, `surface3D`); a stray element on a 2D chart still
+   * surfaces here so the round-trip through {@link cloneChart} stays
+   * lossless.
+   */
+  view3D?: ChartView3D;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────

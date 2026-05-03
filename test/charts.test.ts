@@ -8298,3 +8298,372 @@ describe("parseChart — showLineMarkers", () => {
     expect(chart?.upDownBars).toBe(true);
   });
 });
+
+// ── parseChart — view3D ────────────────────────────────────────────
+
+describe("parseChart — view3D", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it("surfaces every CT_View3D field a fully-pinned <c:view3D> declares", () => {
+    // Excel's "3-D Rotation" pane writes every field on a fresh 3D
+    // chart. The reader surfaces every pinned value literally so a
+    // clone can replay the exact rotation / perspective shape.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:view3D>
+      <c:rotX val="15"/>
+      <c:hPercent val="100"/>
+      <c:rotY val="20"/>
+      <c:depthPercent val="100"/>
+      <c:rAngAx val="1"/>
+      <c:perspective val="30"/>
+    </c:view3D>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.view3D).toEqual({
+      rotX: 15,
+      hPercent: 100,
+      rotY: 20,
+      depthPercent: 100,
+      rAngAx: true,
+      perspective: 30,
+    });
+  });
+
+  it("surfaces a partial shape with only the fields the file pinned", () => {
+    // Common pattern — pin rotation only, leave height / depth /
+    // perspective at the per-family default. CT_View3D lists every
+    // child as optional so the parser surfaces only the present
+    // fields rather than fabricate defaults the file did not declare.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:view3D>
+      <c:rotX val="20"/>
+      <c:rotY val="40"/>
+    </c:view3D>
+    <c:plotArea>
+      <c:line3DChart><c:ser><c:idx val="0"/></c:ser></c:line3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.view3D).toEqual({ rotX: 20, rotY: 40 });
+  });
+
+  it("surfaces signed rotX values (the OOXML ST_RotX type accepts -90..90)", () => {
+    // ST_RotX is a signed byte — Excel writes negative values for
+    // back-tilts. The parser must accept the leading `-` so a tilted
+    // template round-trips.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:view3D>
+      <c:rotX val="-30"/>
+    </c:view3D>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.view3D).toEqual({ rotX: -30 });
+  });
+
+  it("surfaces the boundary values of every range (min and max)", () => {
+    // Verify the inclusive bounds of every child's simple type.
+    const xmlMin = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:view3D>
+      <c:rotX val="-90"/>
+      <c:hPercent val="5"/>
+      <c:rotY val="0"/>
+      <c:depthPercent val="20"/>
+      <c:perspective val="0"/>
+    </c:view3D>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xmlMin)?.view3D).toEqual({
+      rotX: -90,
+      hPercent: 5,
+      rotY: 0,
+      depthPercent: 20,
+      perspective: 0,
+    });
+
+    const xmlMax = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:view3D>
+      <c:rotX val="90"/>
+      <c:hPercent val="500"/>
+      <c:rotY val="360"/>
+      <c:depthPercent val="2000"/>
+      <c:perspective val="240"/>
+    </c:view3D>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xmlMax)?.view3D).toEqual({
+      rotX: 90,
+      hPercent: 500,
+      rotY: 360,
+      depthPercent: 2000,
+      perspective: 240,
+    });
+  });
+
+  it("drops out-of-range numeric fields rather than fabricate clamped values", () => {
+    // Each numeric field is bound by an OOXML simple type (ST_RotX,
+    // ST_HPercent, ...). Out-of-range values drop silently rather
+    // than silently clamp — Excel itself would reject the token.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:view3D>
+      <c:rotX val="180"/>
+      <c:hPercent val="3"/>
+      <c:rotY val="-10"/>
+      <c:depthPercent val="10"/>
+      <c:perspective val="500"/>
+    </c:view3D>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    // Every field is out of its simple-type range — nothing surfaces,
+    // but the empty `<c:view3D>` shell still gates the field as `{}`.
+    expect(parseChart(xml)?.view3D).toEqual({});
+  });
+
+  it("drops fractional / non-integer values rather than fabricate floats", () => {
+    // Every CT_View3D numeric child is an integer simple type.
+    // `parseInt` would coerce "15.5" → 15, but Excel never emits the
+    // fractional spelling. Drop the field so a hand-edited file with
+    // a fractional `val` stays unrecognised rather than silently
+    // round-trip a value Excel would not author.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:view3D>
+      <c:rotX val="15.5"/>
+      <c:hPercent val="100abc"/>
+    </c:view3D>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.view3D).toEqual({});
+  });
+
+  it("accepts the OOXML textual <xsd:boolean> spellings on rAngAx", () => {
+    // CT_Boolean accepts "1" / "true" / "0" / "false".
+    const xmlTrue = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:view3D><c:rAngAx val="true"/></c:view3D>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xmlTrue)?.view3D).toEqual({ rAngAx: true });
+
+    const xmlFalse = xmlTrue.replace('val="true"', 'val="false"');
+    expect(parseChart(xmlFalse)?.view3D).toEqual({ rAngAx: false });
+  });
+
+  it("drops a missing val attribute on a <c:view3D> child rather than fabricate a value", () => {
+    // A child without `val` is malformed per its CT type; the reader
+    // drops the field rather than fabricate a value the file did not
+    // pin. The other children still round-trip.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:view3D>
+      <c:rotX/>
+      <c:rotY val="20"/>
+      <c:rAngAx/>
+    </c:view3D>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.view3D).toEqual({ rotY: 20 });
+  });
+
+  it("drops unknown rAngAx tokens rather than fabricate flags", () => {
+    // Anything outside the OOXML truthy / falsy spellings collapses
+    // to undefined for the rAngAx field. Other fields still surface.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:view3D>
+      <c:rotX val="15"/>
+      <c:rAngAx val="yes"/>
+    </c:view3D>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.view3D).toEqual({ rotX: 15 });
+  });
+
+  it("surfaces an empty object when <c:view3D> is present but every child is malformed", () => {
+    // The element itself is the gating signal — when it appears, the
+    // chart is requesting a 3D view even if every child carries a
+    // malformed `val`. The shape stays minimal (an empty object) so
+    // a round-trip through the writer falls back to absence.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:view3D>
+      <c:rotX/>
+      <c:hPercent/>
+      <c:rotY/>
+      <c:depthPercent/>
+      <c:rAngAx/>
+      <c:perspective/>
+    </c:view3D>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.view3D).toEqual({});
+  });
+
+  it("surfaces an empty object on a bare <c:view3D/> element", () => {
+    // A self-closing element with no children — same minimal-shape
+    // result as a malformed-children block.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:view3D/>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.view3D).toEqual({});
+  });
+
+  it("returns undefined when the chart has no <c:view3D> element", () => {
+    // Absence is the writer's default — Excel falls back to the
+    // per-family default rotation / perspective. The reader surfaces
+    // nothing so a fresh chart and a chart that omits the element
+    // round-trip identically through cloneChart.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.view3D).toBeUndefined();
+  });
+
+  it("surfaces view3D on a 2D chart family (the OOXML schema accepts it on every CT_Chart)", () => {
+    // <c:view3D> is only meaningful on 3D families but the schema
+    // accepts it on every CT_Chart. A stray element on a 2D chart
+    // surfaces here so the round-trip through cloneChart stays
+    // lossless even when the template authors a no-op.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:view3D>
+      <c:rotX val="15"/>
+    </c:view3D>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.view3D).toEqual({ rotX: 15 });
+  });
+
+  it("surfaces view3D on a pie chart (no axes, but the element lives on <c:chart>)", () => {
+    // <c:view3D> lives on <c:chart>, not inside <c:plotArea>, so
+    // axis-shape has no bearing on whether the slot exists. Pie /
+    // doughnut still carry the element when the file pins it.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:view3D>
+      <c:rotY val="180"/>
+    </c:view3D>
+    <c:plotArea>
+      <c:pieChart>
+        <c:varyColors val="1"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:pieChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.view3D).toEqual({ rotY: 180 });
+  });
+
+  it("co-exists with sibling chart-level toggles", () => {
+    // The view3D reader should not interfere with sibling fields
+    // parsed off <c:chart> / <c:chartSpace>.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:autoTitleDeleted val="1"/>
+    <c:view3D>
+      <c:rotX val="20"/>
+      <c:rotY val="30"/>
+    </c:view3D>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+    <c:plotVisOnly val="0"/>
+    <c:dispBlanksAs val="zero"/>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.autoTitleDeleted).toBe(true);
+    expect(chart?.view3D).toEqual({ rotX: 20, rotY: 30 });
+    expect(chart?.plotVisOnly).toBe(false);
+    expect(chart?.dispBlanksAs).toBe("zero");
+  });
+});

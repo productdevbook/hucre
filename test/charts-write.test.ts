@@ -7623,3 +7623,324 @@ describe("writeChart — autoTitleDeleted", () => {
     expect(reparsed?.autoTitleDeleted).toBe(true);
   });
 });
+
+// ── writeChart — view3D ──────────────────────────────────────────────
+
+describe("writeChart — view3D", () => {
+  it("skips <c:view3D> entirely when the field is unset (writer default)", () => {
+    // Excel falls back to the per-family default rotation / perspective
+    // on a fresh chart — the writer skips the element so the file
+    // stays minimal. Absence and the unset default round-trip
+    // identically through cloneChart.
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:view3D");
+  });
+
+  it("emits a bare <c:view3D/> shell when view3D is an empty object", () => {
+    // An empty override accepts every per-family default — useful for
+    // round-trip parity with templates that author the bare element
+    // without pinning any field. The writer emits a self-closing
+    // shell so the bytes stay minimal.
+    const result = writeChart(makeChart({ view3D: {} }), "Sheet1");
+    expect(result.chartXml).toContain("<c:view3D/>");
+  });
+
+  it("emits every pinned field as a self-closing child", () => {
+    const result = writeChart(
+      makeChart({
+        view3D: {
+          rotX: 15,
+          hPercent: 100,
+          rotY: 20,
+          depthPercent: 100,
+          rAngAx: true,
+          perspective: 30,
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('<c:rotX val="15"/>');
+    expect(result.chartXml).toContain('<c:hPercent val="100"/>');
+    expect(result.chartXml).toContain('<c:rotY val="20"/>');
+    expect(result.chartXml).toContain('<c:depthPercent val="100"/>');
+    expect(result.chartXml).toContain('<c:rAngAx val="1"/>');
+    expect(result.chartXml).toContain('<c:perspective val="30"/>');
+  });
+
+  it("emits signed rotX values literally (ST_RotX accepts -90..90)", () => {
+    // Negative tilts must round-trip — ST_RotX is a signed byte so
+    // Excel emits the leading `-` and the writer must too.
+    const result = writeChart(makeChart({ view3D: { rotX: -45 } }), "Sheet1");
+    expect(result.chartXml).toContain('<c:rotX val="-45"/>');
+  });
+
+  it("emits the boundary values of every range (min and max)", () => {
+    const min = writeChart(
+      makeChart({
+        view3D: {
+          rotX: -90,
+          hPercent: 5,
+          rotY: 0,
+          depthPercent: 20,
+          perspective: 0,
+        },
+      }),
+      "Sheet1",
+    );
+    expect(min.chartXml).toContain('<c:rotX val="-90"/>');
+    expect(min.chartXml).toContain('<c:hPercent val="5"/>');
+    expect(min.chartXml).toContain('<c:rotY val="0"/>');
+    expect(min.chartXml).toContain('<c:depthPercent val="20"/>');
+    expect(min.chartXml).toContain('<c:perspective val="0"/>');
+
+    const max = writeChart(
+      makeChart({
+        view3D: {
+          rotX: 90,
+          hPercent: 500,
+          rotY: 360,
+          depthPercent: 2000,
+          perspective: 240,
+        },
+      }),
+      "Sheet1",
+    );
+    expect(max.chartXml).toContain('<c:rotX val="90"/>');
+    expect(max.chartXml).toContain('<c:hPercent val="500"/>');
+    expect(max.chartXml).toContain('<c:rotY val="360"/>');
+    expect(max.chartXml).toContain('<c:depthPercent val="2000"/>');
+    expect(max.chartXml).toContain('<c:perspective val="240"/>');
+  });
+
+  it("drops out-of-range numeric fields rather than emit a token Excel rejects", () => {
+    // Each numeric field is bound by an OOXML simple type. Out-of-
+    // range inputs drop silently rather than emit a token Excel's
+    // strict validator would reject. The other pinned fields still
+    // emit.
+    const result = writeChart(
+      makeChart({
+        view3D: {
+          rotX: 180,
+          hPercent: 3,
+          rotY: 400,
+          depthPercent: 10,
+          perspective: 500,
+          rAngAx: true,
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:rotX");
+    expect(result.chartXml).not.toContain("<c:hPercent");
+    expect(result.chartXml).not.toContain("<c:rotY");
+    expect(result.chartXml).not.toContain("<c:depthPercent");
+    expect(result.chartXml).not.toContain("<c:perspective");
+    // rAngAx still emits — only the numeric children dropped.
+    expect(result.chartXml).toContain('<c:rAngAx val="1"/>');
+  });
+
+  it("drops fractional values rather than truncate", () => {
+    // Every CT_View3D numeric child is an integer simple type. A
+    // fractional input drops rather than silently truncate — `parseInt`
+    // would coerce 15.5 → 15 and the round-trip would silently lose
+    // the fractional value the caller passed.
+    const result = writeChart(makeChart({ view3D: { rotX: 15.5, hPercent: 100 } }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:rotX");
+    expect(result.chartXml).toContain('<c:hPercent val="100"/>');
+  });
+
+  it("drops non-finite values (NaN, Infinity, -Infinity)", () => {
+    const result = writeChart(
+      makeChart({
+        view3D: {
+          rotX: NaN,
+          hPercent: Infinity,
+          rotY: -Infinity,
+          depthPercent: 100,
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:rotX");
+    expect(result.chartXml).not.toContain("<c:hPercent");
+    expect(result.chartXml).not.toContain("<c:rotY");
+    expect(result.chartXml).toContain('<c:depthPercent val="100"/>');
+  });
+
+  it('emits rAngAx=false literally (val="0") for round-trip parity', () => {
+    // Explicit `false` round-trips as `<c:rAngAx val="0"/>` so the
+    // caller can pin the OOXML default literally — useful for parity
+    // with templates that author the explicit value.
+    const result = writeChart(makeChart({ view3D: { rAngAx: false } }), "Sheet1");
+    expect(result.chartXml).toContain('<c:rAngAx val="0"/>');
+  });
+
+  it("ignores a non-boolean rAngAx (drops the child rather than emit invalid token)", () => {
+    // A non-boolean leaking through the type guard drops the child —
+    // mirrors how every other chart-level boolean writer treats its
+    // input.
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ view3D: { rAngAx: 1 as any, rotX: 15 } }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:rAngAx");
+    expect(result.chartXml).toContain('<c:rotX val="15"/>');
+  });
+
+  it("emits the six CT_View3D children in schema order", () => {
+    // CT_View3D sequence per ECMA-376 Part 1, §21.2.2.228:
+    //   rotX?, hPercent?, rotY?, depthPercent?, rAngAx?, perspective?
+    const result = writeChart(
+      makeChart({
+        view3D: {
+          rotX: 15,
+          hPercent: 100,
+          rotY: 20,
+          depthPercent: 100,
+          rAngAx: true,
+          perspective: 30,
+        },
+      }),
+      "Sheet1",
+    );
+    const rotXIdx = result.chartXml.indexOf("<c:rotX");
+    const hPercentIdx = result.chartXml.indexOf("<c:hPercent");
+    const rotYIdx = result.chartXml.indexOf("<c:rotY");
+    const depthPercentIdx = result.chartXml.indexOf("<c:depthPercent");
+    const rAngAxIdx = result.chartXml.indexOf("<c:rAngAx");
+    const perspectiveIdx = result.chartXml.indexOf("<c:perspective");
+    expect(rotXIdx).toBeGreaterThan(-1);
+    expect(hPercentIdx).toBeGreaterThan(rotXIdx);
+    expect(rotYIdx).toBeGreaterThan(hPercentIdx);
+    expect(depthPercentIdx).toBeGreaterThan(rotYIdx);
+    expect(rAngAxIdx).toBeGreaterThan(depthPercentIdx);
+    expect(perspectiveIdx).toBeGreaterThan(rAngAxIdx);
+  });
+
+  it("places <c:view3D> after <c:autoTitleDeleted> and before <c:plotArea> per CT_Chart", () => {
+    // CT_Chart sequence (ECMA-376 Part 1, §21.2.2.4):
+    //   title?, autoTitleDeleted?, pivotFmts?, view3D?, ..., plotArea, ...
+    const result = writeChart(makeChart({ view3D: { rotX: 15 } }), "Sheet1");
+    const autoIdx = result.chartXml.indexOf("<c:autoTitleDeleted");
+    const view3DIdx = result.chartXml.indexOf("<c:view3D");
+    const plotAreaIdx = result.chartXml.indexOf("<c:plotArea>");
+    expect(autoIdx).toBeGreaterThan(-1);
+    expect(view3DIdx).toBeGreaterThan(autoIdx);
+    expect(view3DIdx).toBeLessThan(plotAreaIdx);
+  });
+
+  it("only emits <c:view3D> once on a chart that pins it", () => {
+    // Guard against any regression that would double-emit the element.
+    const result = writeChart(makeChart({ view3D: { rotX: 15 } }), "Sheet1");
+    const occurrences = result.chartXml.match(/<c:view3D[\s/>]/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads view3D through every chart family (the schema accepts it on every CT_Chart)", () => {
+    // <c:view3D> is only meaningful on 3D families but the OOXML
+    // schema accepts it on every CT_Chart. The writer emits it on
+    // every family the caller pins it on — Excel silently ignores it
+    // on 2D families.
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(makeChart({ type, view3D: { rotX: 10 } }), "Sheet1");
+      expect(result.chartXml).toContain('<c:rotX val="10"/>');
+    }
+    for (const type of ["pie", "doughnut"] as const) {
+      const result = writeChart(
+        {
+          type,
+          series: [{ values: "B2:B4", categories: "A2:A4" }],
+          anchor: { from: { row: 5, col: 0 } },
+          view3D: { rotX: 10 },
+        },
+        "Sheet1",
+      );
+      expect(result.chartXml).toContain('<c:rotX val="10"/>');
+    }
+    const scatter = writeChart(
+      {
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        view3D: { rotX: 10 },
+      },
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain('<c:rotX val="10"/>');
+  });
+
+  it("round-trips a fully-pinned view3D through parseChart", () => {
+    const written = writeChart(
+      makeChart({
+        view3D: {
+          rotX: 15,
+          hPercent: 100,
+          rotY: 20,
+          depthPercent: 100,
+          rAngAx: true,
+          perspective: 30,
+        },
+      }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.view3D).toEqual({
+      rotX: 15,
+      hPercent: 100,
+      rotY: 20,
+      depthPercent: 100,
+      rAngAx: true,
+      perspective: 30,
+    });
+  });
+
+  it("round-trips a partial view3D (only rotation pinned)", () => {
+    // Common pattern — pin the rotation only, leave height / depth /
+    // perspective at the per-family default. The reader surfaces the
+    // exact partial shape the writer emitted.
+    const written = writeChart(makeChart({ view3D: { rotX: 20, rotY: 40 } }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.view3D).toEqual({ rotX: 20, rotY: 40 });
+  });
+
+  it("round-trips a bare <c:view3D/> shell as an empty object", () => {
+    // The empty-object input collapses to the bare self-closing
+    // element on emit, and the reader surfaces it as an empty object
+    // — closes the round-trip loop on the gating-element shape.
+    const written = writeChart(makeChart({ view3D: {} }), "Sheet1").chartXml;
+    expect(written).toContain("<c:view3D/>");
+    const reparsed = parseChart(written);
+    expect(reparsed?.view3D).toEqual({});
+  });
+
+  it("threads view3D through writeXlsx into xl/charts/chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "3D Look",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            view3D: { rotX: 15, rotY: 20, perspective: 30 },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain("<c:view3D>");
+    expect(chartXml).toContain('<c:rotX val="15"/>');
+    expect(chartXml).toContain('<c:rotY val="20"/>');
+    expect(chartXml).toContain('<c:perspective val="30"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.view3D).toEqual({ rotX: 15, rotY: 20, perspective: 30 });
+  });
+});

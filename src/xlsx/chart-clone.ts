@@ -33,6 +33,7 @@ import type {
   ChartScatterStyle,
   ChartSeries,
   ChartSeriesInfo,
+  ChartView3D,
   SheetChart,
   WriteChartKind,
 } from "../_types";
@@ -472,6 +473,32 @@ export interface CloneChartOptions {
    * toggles compose the same way at the call site.
    */
   protection?: ChartProtection | boolean | null;
+  /**
+   * Override `<c:chart><c:view3D>` (the 3-D rotation / perspective
+   * block).
+   *
+   * `undefined` (or omitted) inherits the source's parsed
+   * {@link Chart.view3D}. `null` drops the inherited block so the
+   * writer skips the element entirely — Excel falls back to its
+   * per-family default rotation / perspective. A {@link ChartView3D}
+   * object replaces the inherited block wholesale (no per-field merge;
+   * pass every field you want preserved). Pass an empty object (`{}`)
+   * to declare a bare `<c:view3D/>` shell — useful for round-trip
+   * parity with templates that author the element with no children
+   * pinned. Each unspecified field falls back to absence at the writer
+   * side because every CT_View3D child is independently optional and
+   * Excel treats a missing child as the per-family default.
+   *
+   * Applies to every chart family — `<c:view3D>` lives on `<c:chart>`
+   * (between `<c:autoTitleDeleted>` and `<c:plotArea>`), so the OOXML
+   * schema accepts the element on both 2D and 3D families. The toggle
+   * is only meaningful on 3D families (`bar3D`, `line3D`, `pie3D`,
+   * `area3D`, `surface3D`), but the writer carries a templated value
+   * through every clone so a 3D template chart round-trips losslessly.
+   * The grammar mirrors {@link CloneChartOptions.protection} so the
+   * chart-level block toggles compose the same way at the call site.
+   */
+  view3D?: ChartView3D | null;
   /**
    * Override `<c:scatterStyle>` (the chart-level XY-scatter preset).
    *
@@ -973,6 +1000,18 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // identically at the call site.
   const resolvedProtection = resolveProtection(source.protection, options.protection);
   if (resolvedProtection !== undefined) out.protection = resolvedProtection;
+
+  // `<c:view3D>` lives on `<c:chart>` directly, so the OOXML schema
+  // accepts it on every chart family — both 2D and 3D. The toggle is
+  // only meaningful on 3D families, but the resolver applies to every
+  // type so a 3D template chart round-trips losslessly through a clone
+  // (and a 2D clone of a 3D template that happens to inherit the
+  // value silently keeps the element — Excel ignores it on 2D).
+  // Override wins over the source's parsed value, and the grammar
+  // follows the standard `object | null` shape so the chart-level
+  // block toggles compose the same way at the call site.
+  const resolvedView3D = resolveView3D(source.view3D, options.view3D);
+  if (resolvedView3D !== undefined) out.view3D = resolvedView3D;
 
   // `<c:scatterStyle>` only renders inside `<c:scatterChart>`. Drop the
   // field on every other resolved type so a scatter template flattened
@@ -1584,6 +1623,49 @@ function resolveProtection(
   // the OOXML reference default `false` for any field the object
   // leaves unset.
   return override;
+}
+
+/**
+ * Resolve a `view3D` override.
+ *
+ * `undefined` → inherit the source's parsed {@link Chart.view3D}. The
+ *               source's parsed object is defensively shallow-copied
+ *               so a downstream mutation to the cloned SheetChart
+ *               never leaks back into the parsed Chart.
+ * `null`      → drop the inherited block so the writer skips
+ *               `<c:view3D>` entirely (no chart-level 3D pin).
+ * `object`    → replace the inherited block wholesale (no per-field
+ *               merge with the source — pass every field the cloned
+ *               view3D should pin). An empty object emits a bare
+ *               `<c:view3D/>` shell at the writer side.
+ *
+ * The grammar mirrors {@link resolveProtection} / {@link resolveDataTable}
+ * so the chart-level block toggles compose the same way at the call
+ * site. Unlike `dataTable`, `<c:view3D>` lives on `<c:chart>` (not
+ * inside `<c:plotArea>`) so the resolver applies to every chart family
+ * — pie / doughnut included.
+ */
+function resolveView3D(
+  sourceValue: ChartView3D | undefined,
+  override: ChartView3D | null | undefined,
+): ChartView3D | undefined {
+  if (override === undefined) {
+    // Inherit — defensively shallow-copy the source so a downstream
+    // mutation to the cloned SheetChart never leaks back into the
+    // parsed Chart. The CT_View3D children are all scalars (numbers
+    // and a boolean), so a single-level spread is enough.
+    if (sourceValue === undefined) return undefined;
+    return { ...sourceValue };
+  }
+  if (override === null) {
+    // Drop the inherited block. The writer treats `undefined` as
+    // suppression and skips `<c:view3D>` entirely.
+    return undefined;
+  }
+  // Replace the inherited block wholesale. The writer accepts the
+  // empty-object shape and emits a bare `<c:view3D/>` shell, mirroring
+  // how `resolveProtection` handles the `true` / `{}` forms.
+  return { ...override };
 }
 
 /**
