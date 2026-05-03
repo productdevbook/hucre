@@ -960,6 +960,23 @@ export interface SheetChart {
   legendOverlay?: boolean;
   /** Show the chart-level title element. Default: `true` when `title` is set. */
   showTitle?: boolean;
+  /**
+   * Whether the chart title overlaps the plot area. Maps to
+   * `<c:title><c:overlay val=".."/></c:title>` — Excel's "Format Chart
+   * Title -> Show the title without overlapping the chart" toggle (the
+   * checkbox is the inverse of this flag — checked means `false`,
+   * unchecked means `true`). Default: `false` (the OOXML default Excel
+   * itself emits) — the title reserves its own slot above the plot area
+   * and the plot area shrinks to accommodate it. Set `true` to draw the
+   * title on top of the plot area so the chart series get the full frame.
+   *
+   * Silently ignored when no title is rendered (`showTitle === false` or
+   * `title` is absent) — there is no `<c:title>` element to host the
+   * overlay flag in either case. Independent of {@link legendOverlay}:
+   * the legend's `<c:overlay>` lives on `<c:legend>`, while this one
+   * lives on `<c:title>`, so the two flags compose freely.
+   */
+  titleOverlay?: boolean;
   /** Alternative text for screen readers (lands in xdr:cNvPr/@descr). */
   altText?: string;
   /** Caption for the chart frame (lands in xdr:cNvPr/@title). */
@@ -2347,6 +2364,23 @@ export interface Chart {
    * overlay flag to surface in either case.
    */
   legendOverlay?: boolean;
+  /**
+   * Title-overlay flag pulled from `<c:title><c:overlay val=".."/>`.
+   * Reflects Excel's "Format Chart Title -> Show the title without
+   * overlapping the chart" toggle (the checkbox is the inverse — checked
+   * means `false`, unchecked means `true`).
+   *
+   * The OOXML default `false` collapses to `undefined` so absence and
+   * `<c:overlay val="0"/>` round-trip identically through
+   * {@link cloneChart} — only an explicit `<c:overlay val="1"/>` surfaces
+   * `true`. The reader accepts the OOXML truthy / falsy spellings (`"1"`
+   * / `"true"` / `"0"` / `"false"`); unknown values and missing `val`
+   * attributes drop to `undefined`.
+   *
+   * Reported as `undefined` whenever the source chart has no `<c:title>`
+   * element at all — there is no overlay flag to surface in that case.
+   */
+  titleOverlay?: boolean;
   /**
    * Grouping pulled from the first `<c:barChart>` element, when the
    * chart has one. Surfaces only the stacked variants — the OOXML

@@ -765,6 +765,17 @@ missing `val` attributes drop to `undefined`. The flag is dropped
 whenever `Chart.legend` is `false` or the chart omits the legend
 element entirely — there is no overlay slot on a hidden legend, so the
 parsed shape stays minimal.
+`Chart.titleOverlay` surfaces the title-overlay flag pulled from
+`<c:title><c:overlay val=".."/></c:title>` — Excel's "Format Chart
+Title → Show the title without overlapping the chart" toggle (the
+checkbox is the inverse of this flag — checked means `false`, unchecked
+means `true`). The OOXML default `false` collapses to `undefined` so
+absence and `<c:overlay val="0"/>` round-trip identically; only an
+explicit `val="1"` surfaces `true`. The reader accepts the OOXML
+truthy / falsy spellings (`"1"` / `"true"` / `"0"` / `"false"`);
+unknown values and missing `val` attributes drop to `undefined`. The
+flag is dropped whenever the chart omits the `<c:title>` element
+entirely — there is no overlay slot to surface in that case.
 `ChartSeriesInfo.smooth` surfaces the per-series
 `<c:ser><c:smooth val=".."/>` flag — Excel's "Format Data Series →
 Line → Smoothed line" toggle — only on `line` / `line3D` / `scatter`
@@ -960,6 +971,19 @@ on top of the plot area so the chart series get the full frame
 (`val="1"`). The flag is silently ignored when `legend: false`
 suppresses the entire legend element — there is no overlay slot on a
 hidden legend, so the writer skips emitting any orphaned `<c:overlay>`.
+The chart-level `titleOverlay` field maps to `<c:overlay val=".."/>`
+inside `<c:title>` — Excel's "Format Chart Title → Show the title
+without overlapping the chart" toggle (the checkbox is the inverse of
+this flag — checked means `false`, unchecked means `true`). Absent it,
+the writer emits the OOXML default `val="0"` (the title reserves its
+own slot above the plot area and the plot area shrinks to make room),
+matching Excel's reference serialization. Pin `titleOverlay: true` to
+draw the title on top of the plot area so the chart series get the
+full frame (`val="1"`). The flag is silently ignored when no title is
+emitted (no `title` set or `showTitle: false`) — there is no `<c:title>`
+block to host the overlay child in either case. Independent of
+`legendOverlay`: the legend and title `<c:overlay>` elements live on
+different parents, so the two flags compose freely.
 The `axes.x.tickLblSkip` and `axes.x.tickMarkSkip` fields thin out a
 crowded category axis (`<c:catAx><c:tickLblSkip val=".."/>` and
 `<c:catAx><c:tickMarkSkip val=".."/>`). Pass a positive integer to
@@ -1210,6 +1234,17 @@ from the cloned `SheetChart` whenever the resolved `legend` is `false`
 inherited `true` would carry no on-screen effect. Re-enabling a hidden
 source legend through `legend: "top"` (or any visible position) on the
 override re-opens the slot, and an explicit `legendOverlay: true`
+override threads through.
+The chart-level `titleOverlay` flag follows the same grammar: pass
+`undefined` to inherit the source's parsed value, `null` to drop it
+back to the writer's OOXML `false` default (no overlap with the plot
+area), or a `boolean` to replace it. The flag lives on `<c:title>` so
+the field is valid on every chart family, but it is silently dropped
+from the cloned `SheetChart` whenever the resolved chart renders no
+title (`title` resolved to `undefined` or `showTitle: false`) — there
+is no `<c:title>` block to host the overlay flag in either case.
+Re-introducing a missing source title through an explicit `title:
+"..."` override re-opens the slot, and an explicit `titleOverlay: true`
 override threads through.
 The per-axis `axes.x.tickLblSkip` and `axes.x.tickMarkSkip` overrides
 follow the same `undefined` (inherit) / `null` (drop) / number
