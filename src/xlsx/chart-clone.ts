@@ -259,6 +259,13 @@ export interface CloneChartOptions {
        * replaces it.
        */
       tickLblPos?: ChartAxisTickLabelPosition | null;
+      /**
+       * Override the reverse-axis flag. `undefined` (or omitted)
+       * inherits the source axis' parsed value; `null` drops it (the
+       * writer falls back to the OOXML default `"minMax"` — forward
+       * orientation); `true` reverses, `false` forces forward.
+       */
+      reverse?: boolean | null;
     };
     y?: {
       title?: string | null;
@@ -271,6 +278,8 @@ export interface CloneChartOptions {
       minorTickMark?: ChartAxisTickMark | null;
       /** See {@link CloneChartOptions.axes.x.tickLblPos}. */
       tickLblPos?: ChartAxisTickLabelPosition | null;
+      /** See {@link CloneChartOptions.axes.x.reverse}. */
+      reverse?: boolean | null;
     };
   };
 }
@@ -867,6 +876,8 @@ function resolveAxes(
   );
   const xTickLblPos = applyTickLblPosOverride(sourceAxes?.x?.tickLblPos, overrides?.x?.tickLblPos);
   const yTickLblPos = applyTickLblPosOverride(sourceAxes?.y?.tickLblPos, overrides?.y?.tickLblPos);
+  const xReverse = applyReverseOverride(sourceAxes?.x?.reverse, overrides?.x?.reverse);
+  const yReverse = applyReverseOverride(sourceAxes?.y?.reverse, overrides?.y?.reverse);
 
   const out: NonNullable<SheetChart["axes"]> = {};
   if (
@@ -876,7 +887,8 @@ function resolveAxes(
     xNumFmt !== undefined ||
     xMajorTickMark !== undefined ||
     xMinorTickMark !== undefined ||
-    xTickLblPos !== undefined
+    xTickLblPos !== undefined ||
+    xReverse !== undefined
   ) {
     out.x = {};
     if (xTitle !== undefined) out.x.title = xTitle;
@@ -886,6 +898,7 @@ function resolveAxes(
     if (xMajorTickMark !== undefined) out.x.majorTickMark = xMajorTickMark;
     if (xMinorTickMark !== undefined) out.x.minorTickMark = xMinorTickMark;
     if (xTickLblPos !== undefined) out.x.tickLblPos = xTickLblPos;
+    if (xReverse !== undefined) out.x.reverse = xReverse;
   }
   if (
     yTitle !== undefined ||
@@ -894,7 +907,8 @@ function resolveAxes(
     yNumFmt !== undefined ||
     yMajorTickMark !== undefined ||
     yMinorTickMark !== undefined ||
-    yTickLblPos !== undefined
+    yTickLblPos !== undefined ||
+    yReverse !== undefined
   ) {
     out.y = {};
     if (yTitle !== undefined) out.y.title = yTitle;
@@ -904,6 +918,7 @@ function resolveAxes(
     if (yMajorTickMark !== undefined) out.y.majorTickMark = yMajorTickMark;
     if (yMinorTickMark !== undefined) out.y.minorTickMark = yMinorTickMark;
     if (yTickLblPos !== undefined) out.y.tickLblPos = yTickLblPos;
+    if (yReverse !== undefined) out.y.reverse = yReverse;
   }
 
   return out.x || out.y ? out : undefined;
@@ -1053,4 +1068,28 @@ function applyTickLblPosOverride(
   }
   if (override === null) return undefined;
   return VALID_TICK_LBL_POS_VALUES.has(override) ? override : undefined;
+}
+
+/**
+ * Resolve a reverse-axis override using the same `undefined` (inherit) /
+ * `null` (drop) / value (replace) grammar as the other axis helpers.
+ *
+ * Only `true` round-trips meaningfully — `false` is the OOXML default
+ * (`orientation="minMax"`) so it collapses to `undefined` to keep the
+ * cloned shape minimal. A source carrying `false` (e.g. an over-eager
+ * parser that surfaced the default) collapses to `undefined` on
+ * inherit; an explicit `false` override likewise drops the field. The
+ * writer's per-axis `reverse: false` default already produces a forward
+ * orientation, so the dropped state is indistinguishable from a literal
+ * `false`.
+ */
+function applyReverseOverride(
+  source: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) {
+    return source === true ? true : undefined;
+  }
+  if (override === null) return undefined;
+  return override === true ? true : undefined;
 }
