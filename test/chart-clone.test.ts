@@ -3259,3 +3259,336 @@ describe("cloneChart — roundedCorners", () => {
     expect(parseChart(written)?.roundedCorners).toBeUndefined();
   });
 });
+
+// ── cloneChart — axis reverse (orientation) ──────────────────────────
+
+describe("cloneChart — axis reverse (orientation)", () => {
+  const sourceWithReverse: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: {
+      y: { reverse: true },
+    },
+  };
+
+  it("inherits the source's reverse flag when no override is given", () => {
+    const clone = cloneChart(sourceWithReverse, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y?.reverse).toBe(true);
+  });
+
+  it("drops the inherited reverse flag when override is null", () => {
+    const clone = cloneChart(sourceWithReverse, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { reverse: null } },
+    });
+    // The source had only `reverse: true`, so dropping it leaves the
+    // axis empty — which collapses the whole axes block.
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("drops the inherited reverse flag when override is false", () => {
+    // Mirrors `null` — false is the OOXML default and the writer never
+    // emits a non-default orientation for it.
+    const clone = cloneChart(sourceWithReverse, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { reverse: false } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("replaces the inherited reverse flag with an explicit true", () => {
+    const noReverse: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(noReverse, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { reverse: true } },
+    });
+    expect(clone.axes?.y?.reverse).toBe(true);
+  });
+
+  it("supports reverse on the X (category) axis", () => {
+    const xSource: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { reverse: true } },
+    };
+    const clone = cloneChart(xSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.reverse).toBe(true);
+    expect(clone.axes?.y?.reverse).toBeUndefined();
+  });
+
+  it("strips reverse silently when the resolved chart type is pie", () => {
+    const pieSource: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [{ kind: "pie", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { reverse: true } },
+    };
+    const clone = cloneChart(pieSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("pie");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("strips reverse silently when the resolved chart type is doughnut", () => {
+    const doughnutSource: Chart = {
+      kinds: ["doughnut"],
+      seriesCount: 1,
+      series: [{ kind: "doughnut", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { reverse: true } },
+    };
+    const clone = cloneChart(doughnutSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("preserves other axis fields when the reverse override is null", () => {
+    // A source carrying both gridlines and reverse — dropping just
+    // reverse should keep the gridlines slot intact.
+    const richSource: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { reverse: true, gridlines: { major: true } } },
+    };
+    const clone = cloneChart(richSource, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { reverse: null } },
+    });
+    expect(clone.axes?.y?.reverse).toBeUndefined();
+    expect(clone.axes?.y?.gridlines).toEqual({ major: true });
+  });
+
+  it("ignores a literal source `reverse: false` (OOXML default)", () => {
+    // A defensively-typed source (e.g. an over-eager parser that
+    // surfaced the default) should collapse on inherit so the writer
+    // never emits the redundant forward orientation as if it were
+    // pinned.
+    const bogus: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { reverse: false } },
+    };
+    const clone = cloneChart(bogus, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("round-trips through writeChart and parseChart", async () => {
+    const clone = cloneChart(sourceWithReverse, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    const written = writeChart(clone, "Sheet1").chartXml;
+    expect(written).toContain('c:orientation val="maxMin"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.y?.reverse).toBe(true);
+
+    // End-to-end: writeXlsx packages the clone into a valid OOXML file
+    // whose chart part round-trips its reverse-axis flag.
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const fromZip = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(fromZip).toContain('c:orientation val="maxMin"');
+    expect(parseChart(fromZip)?.axes?.y?.reverse).toBe(true);
+  });
+
+  it("plays nicely alongside other axis overrides on the same axis", () => {
+    // Mixing reverse with a tick-mark / scale override should keep
+    // every field independent — the resolveAxes merge should not drop
+    // either one when both source and override are populated.
+    const richSource: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { majorTickMark: "cross", scale: { min: 0, max: 100 } } },
+    };
+    const clone = cloneChart(richSource, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { reverse: true } },
+    });
+    expect(clone.axes?.y?.majorTickMark).toBe("cross");
+    expect(clone.axes?.y?.scale).toEqual({ min: 0, max: 100 });
+    expect(clone.axes?.y?.reverse).toBe(true);
+  });
+});
+
+// ── cloneChart — axis tickLblSkip / tickMarkSkip ────────────────────
+
+describe("cloneChart — axis tickLblSkip / tickMarkSkip", () => {
+  const sourceWithSkips: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: { x: { tickLblSkip: 3, tickMarkSkip: 5 } },
+  };
+
+  it("inherits both skips from the source when no override is given", () => {
+    const clone = cloneChart(sourceWithSkips, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.tickLblSkip).toBe(3);
+    expect(clone.axes?.x?.tickMarkSkip).toBe(5);
+  });
+
+  it("drops both inherited skips when the override is null", () => {
+    const clone = cloneChart(sourceWithSkips, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { tickLblSkip: null, tickMarkSkip: null } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("replaces inherited skips with the override values", () => {
+    const clone = cloneChart(sourceWithSkips, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { tickLblSkip: 7, tickMarkSkip: 2 } },
+    });
+    expect(clone.axes?.x?.tickLblSkip).toBe(7);
+    expect(clone.axes?.x?.tickMarkSkip).toBe(2);
+  });
+
+  it("adds a skip to an axis the source did not declare it on", () => {
+    const noSkip: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(noSkip, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { tickLblSkip: 4 } },
+    });
+    expect(clone.axes?.x?.tickLblSkip).toBe(4);
+  });
+
+  it("inherits one skip while letting the override drop the other", () => {
+    const clone = cloneChart(sourceWithSkips, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { tickMarkSkip: null } },
+    });
+    expect(clone.axes?.x?.tickLblSkip).toBe(3);
+    expect(clone.axes?.x?.tickMarkSkip).toBeUndefined();
+  });
+
+  it("drops out-of-range overrides without clamping", () => {
+    const clone = cloneChart(sourceWithSkips, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { tickLblSkip: 0, tickMarkSkip: 99999 } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("collapses an explicit override of 1 (the OOXML default) to undefined", () => {
+    // Pinning the default has the same effect as `null` — the cloned
+    // chart inherits Excel's "show every tick" behaviour either way.
+    const clone = cloneChart(sourceWithSkips, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { tickLblSkip: 1, tickMarkSkip: 1 } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("strips skips silently when the resolved chart type is pie", () => {
+    const pieSource: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [{ kind: "pie", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { tickLblSkip: 3 } },
+    };
+    const clone = cloneChart(pieSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("pie");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("strips skips silently when the resolved chart type is scatter", () => {
+    // Scatter uses two value axes, so the X axis is no longer a
+    // category axis. Drop inherited skips so the cloned model
+    // accurately reflects what the chart will paint.
+    const clone = cloneChart(sourceWithSkips, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "scatter",
+      series: [{ values: "Sheet1!$B$2:$B$5", categories: "Sheet1!$A$2:$A$5" }],
+    });
+    expect(clone.type).toBe("scatter");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("end-to-end: parseChart -> cloneChart -> writeChart preserves both skips", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:tickLblSkip val="3"/>
+        <c:tickMarkSkip val="6"/>
+      </c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.axes?.x?.tickLblSkip).toBe(3);
+    expect(parsed?.axes?.x?.tickMarkSkip).toBe(6);
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(sheetChart.axes?.x?.tickLblSkip).toBe(3);
+    expect(sheetChart.axes?.x?.tickMarkSkip).toBe(6);
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    expect(written).toContain('c:tickLblSkip val="3"');
+    expect(written).toContain('c:tickMarkSkip val="6"');
+
+    // Re-parse to confirm the round-trip.
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.tickLblSkip).toBe(3);
+    expect(reparsed?.axes?.x?.tickMarkSkip).toBe(6);
+  });
+
+  it("end-to-end: writeXlsx packages the cloned chart with skips intact", async () => {
+    const clone = cloneChart(sourceWithSkips, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:tickLblSkip val="3"');
+    expect(written).toContain('c:tickMarkSkip val="5"');
+  });
+});

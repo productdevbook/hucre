@@ -1055,6 +1055,12 @@ export interface SheetChart {
    * useful when the cloned chart needs a different format from the
    * source data range (e.g. forcing `"0.00%"` on a percentage chart
    * whose underlying cells are stored as decimals).
+   *
+   * `tickLblSkip` and `tickMarkSkip` thin out a crowded category axis.
+   * Both map to category-axis-only OOXML elements (`<c:tickLblSkip>` /
+   * `<c:tickMarkSkip>` on `CT_CatAx` / `CT_DateAx`); they have no slot
+   * on `<c:valAx>` and are silently ignored on the value axis or on
+   * scatter charts (whose two axes are both value axes).
    */
   axes?: {
     /** Category axis (bar/column/line/area) or X value axis (scatter). */
@@ -1084,6 +1090,42 @@ export interface SheetChart {
        * reference serialization. See {@link ChartAxisTickLabelPosition}.
        */
       tickLblPos?: ChartAxisTickLabelPosition;
+      /**
+       * Reverse the axis plotting order. Maps to
+       * `<c:scaling><c:orientation val="maxMin"/></c:scaling>` —
+       * Excel's "Categories in reverse order" / "Values in reverse
+       * order" toggle. Default: `false` (the OOXML `"minMax"` default).
+       *
+       * On a category axis, reversing flips the order in which
+       * categories are drawn (right-to-left on a column chart, top-to-
+       * bottom on a bar chart). On a value axis, reversing flips the
+       * numeric direction so the maximum sits at the origin and the
+       * minimum at the far end. Useful when porting templates that
+       * pin a specific reading direction (e.g. dates on a horizontal
+       * bar chart with the most recent at the top).
+       */
+      reverse?: boolean;
+      /**
+       * Show every Nth tick label on a category axis. `1` (the OOXML
+       * default) shows every label; `2` shows every other one; `3`
+       * shows every third, and so on. Maps to
+       * `<c:catAx><c:tickLblSkip val="N"/></c:catAx>`. Only meaningful
+       * for bar / column / line / area charts (whose X axis is
+       * `<c:catAx>`); silently ignored for scatter (both axes are
+       * value axes) and pie / doughnut (no axes at all). Accepted
+       * range: positive integers 1..32767 (the OOXML
+       * `ST_SkipIntervals` schema). Values outside the range or
+       * non-positive are dropped at write time.
+       */
+      tickLblSkip?: number;
+      /**
+       * Show every Nth tick mark on a category axis. Same `1`-default
+       * semantics as {@link tickLblSkip} but for the short tick lines
+       * Excel paints alongside each label. Maps to
+       * `<c:catAx><c:tickMarkSkip val="N"/></c:catAx>`. Same
+       * scope-restriction as `tickLblSkip` — category axes only.
+       */
+      tickMarkSkip?: number;
     };
     /** Value axis. */
     y?: {
@@ -1109,6 +1151,16 @@ export interface SheetChart {
        * `"nextTo"`. See {@link ChartAxisTickLabelPosition}.
        */
       tickLblPos?: ChartAxisTickLabelPosition;
+      /**
+       * Reverse the value axis plotting order. Maps to
+       * `<c:valAx><c:scaling><c:orientation val="maxMin"/></c:scaling></c:valAx>`.
+       * Default: `false` (the OOXML `"minMax"` default).
+       *
+       * Mirrors {@link SheetChart.axes.x.reverse} for the value axis —
+       * setting `true` flips the numeric direction so the maximum sits
+       * at the origin and the minimum at the far end.
+       */
+      reverse?: boolean;
     };
   };
 }
@@ -1983,6 +2035,33 @@ export interface ChartAxisInfo {
    * shape minimal. See {@link ChartAxisTickLabelPosition}.
    */
   tickLblPos?: ChartAxisTickLabelPosition;
+  /**
+   * Reverse-axis flag pulled from
+   * `<c:scaling><c:orientation val=".."/></c:scaling>`. Surfaces `true`
+   * only when the axis pinned `"maxMin"` (Excel's "Categories /
+   * Values in reverse order" toggle); the OOXML default `"minMax"`
+   * collapses to `undefined` so absence and the default round-trip
+   * identically through {@link cloneChart}. Mirrors the writer-side
+   * {@link SheetChart.axes.x.reverse} field, so a parsed value slots
+   * straight back into a clone target without transformation.
+   */
+  reverse?: boolean;
+  /**
+   * Tick-label skip interval pulled from `<c:tickLblSkip val=".."/>`.
+   * Surfaces only on category axes (`<c:catAx>` / `<c:dateAx>`) — the
+   * OOXML schema does not place this element on `<c:valAx>`. The
+   * default `1` (show every label) collapses to `undefined` so absence
+   * and the default round-trip identically through {@link cloneChart}.
+   * Out-of-range values (non-positive or > 32767) are dropped rather
+   * than fabricated.
+   */
+  tickLblSkip?: number;
+  /**
+   * Tick-mark skip interval pulled from `<c:tickMarkSkip val=".."/>`.
+   * Same scope (category axes only) and default-collapse semantics as
+   * {@link tickLblSkip}.
+   */
+  tickMarkSkip?: number;
 }
 
 /**

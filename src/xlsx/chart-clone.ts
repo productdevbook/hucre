@@ -273,6 +273,27 @@ export interface CloneChartOptions {
        * replaces it.
        */
       tickLblPos?: ChartAxisTickLabelPosition | null;
+      /**
+       * Override the reverse-axis flag. `undefined` (or omitted)
+       * inherits the source axis' parsed value; `null` drops it (the
+       * writer falls back to the OOXML default `"minMax"` — forward
+       * orientation); `true` reverses, `false` forces forward.
+       */
+      reverse?: boolean | null;
+      /**
+       * Override `SheetChart.axes.x.tickLblSkip`. `undefined` (or
+       * omitted) inherits the source axis's skip; `null` drops the
+       * inherited value (Excel falls back to showing every label); a
+       * positive integer replaces it. Only meaningful for resolved
+       * chart types whose X axis is `<c:catAx>` (bar / column / line
+       * / area); silently dropped on scatter and pie / doughnut.
+       */
+      tickLblSkip?: number | null;
+      /**
+       * Override `SheetChart.axes.x.tickMarkSkip`. Same grammar and
+       * scope rules as {@link tickLblSkip}.
+       */
+      tickMarkSkip?: number | null;
     };
     y?: {
       title?: string | null;
@@ -285,6 +306,8 @@ export interface CloneChartOptions {
       minorTickMark?: ChartAxisTickMark | null;
       /** See {@link CloneChartOptions.axes.x.tickLblPos}. */
       tickLblPos?: ChartAxisTickLabelPosition | null;
+      /** See {@link CloneChartOptions.axes.x.reverse}. */
+      reverse?: boolean | null;
     };
   };
 }
@@ -460,7 +483,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // titles even when the source declared them or the caller passed an
   // override.
   if (type !== "pie" && type !== "doughnut") {
-    const axes = resolveAxes(source.axes, options.axes);
+    const axes = resolveAxes(source.axes, options.axes, type);
     if (axes !== undefined) out.axes = axes;
   }
 
@@ -874,6 +897,7 @@ function applyOverride(
 function resolveAxes(
   sourceAxes: Chart["axes"],
   overrides: CloneChartOptions["axes"],
+  type: WriteChartKind,
 ): SheetChart["axes"] | undefined {
   const xTitle = applyOverride(sourceAxes?.x?.title, overrides?.x?.title);
   const yTitle = applyOverride(sourceAxes?.y?.title, overrides?.y?.title);
@@ -907,6 +931,20 @@ function resolveAxes(
   );
   const xTickLblPos = applyTickLblPosOverride(sourceAxes?.x?.tickLblPos, overrides?.x?.tickLblPos);
   const yTickLblPos = applyTickLblPosOverride(sourceAxes?.y?.tickLblPos, overrides?.y?.tickLblPos);
+  const xReverse = applyReverseOverride(sourceAxes?.x?.reverse, overrides?.x?.reverse);
+  const yReverse = applyReverseOverride(sourceAxes?.y?.reverse, overrides?.y?.reverse);
+  // `tickLblSkip` / `tickMarkSkip` only render on category axes
+  // (`<c:catAx>`). Scatter charts use two value axes, so the X axis
+  // skip would be silently dropped by the writer anyway — collapse it
+  // to undefined here so the cloned `SheetChart` accurately reflects
+  // what the chart will paint.
+  const isCatAxisX = type !== "scatter";
+  const xTickLblSkip = isCatAxisX
+    ? applySkipOverride(sourceAxes?.x?.tickLblSkip, overrides?.x?.tickLblSkip)
+    : undefined;
+  const xTickMarkSkip = isCatAxisX
+    ? applySkipOverride(sourceAxes?.x?.tickMarkSkip, overrides?.x?.tickMarkSkip)
+    : undefined;
 
   const out: NonNullable<SheetChart["axes"]> = {};
   if (
@@ -916,7 +954,10 @@ function resolveAxes(
     xNumFmt !== undefined ||
     xMajorTickMark !== undefined ||
     xMinorTickMark !== undefined ||
-    xTickLblPos !== undefined
+    xTickLblPos !== undefined ||
+    xReverse !== undefined ||
+    xTickLblSkip !== undefined ||
+    xTickMarkSkip !== undefined
   ) {
     out.x = {};
     if (xTitle !== undefined) out.x.title = xTitle;
@@ -926,6 +967,9 @@ function resolveAxes(
     if (xMajorTickMark !== undefined) out.x.majorTickMark = xMajorTickMark;
     if (xMinorTickMark !== undefined) out.x.minorTickMark = xMinorTickMark;
     if (xTickLblPos !== undefined) out.x.tickLblPos = xTickLblPos;
+    if (xReverse !== undefined) out.x.reverse = xReverse;
+    if (xTickLblSkip !== undefined) out.x.tickLblSkip = xTickLblSkip;
+    if (xTickMarkSkip !== undefined) out.x.tickMarkSkip = xTickMarkSkip;
   }
   if (
     yTitle !== undefined ||
@@ -934,7 +978,8 @@ function resolveAxes(
     yNumFmt !== undefined ||
     yMajorTickMark !== undefined ||
     yMinorTickMark !== undefined ||
-    yTickLblPos !== undefined
+    yTickLblPos !== undefined ||
+    yReverse !== undefined
   ) {
     out.y = {};
     if (yTitle !== undefined) out.y.title = yTitle;
@@ -944,9 +989,34 @@ function resolveAxes(
     if (yMajorTickMark !== undefined) out.y.majorTickMark = yMajorTickMark;
     if (yMinorTickMark !== undefined) out.y.minorTickMark = yMinorTickMark;
     if (yTickLblPos !== undefined) out.y.tickLblPos = yTickLblPos;
+    if (yReverse !== undefined) out.y.reverse = yReverse;
   }
 
   return out.x || out.y ? out : undefined;
+}
+
+/**
+ * Resolve a `tickLblSkip` / `tickMarkSkip` override using the same
+ * `undefined` (inherit) / `null` (drop) / value (replace) grammar as
+ * the other axis helpers. Out-of-range / non-positive values collapse
+ * to `undefined` so they cannot leak into the writer (which would
+ * silently drop them anyway via {@link normalizeAxisSkip}).
+ */
+function applySkipOverride(
+  source: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) {
+    if (typeof source !== "number" || !Number.isFinite(source)) return undefined;
+    const rounded = Math.round(source);
+    if (rounded < 1 || rounded > 32767 || rounded === 1) return undefined;
+    return rounded;
+  }
+  if (override === null) return undefined;
+  if (typeof override !== "number" || !Number.isFinite(override)) return undefined;
+  const rounded = Math.round(override);
+  if (rounded < 1 || rounded > 32767 || rounded === 1) return undefined;
+  return rounded;
 }
 
 /**
@@ -1093,4 +1163,28 @@ function applyTickLblPosOverride(
   }
   if (override === null) return undefined;
   return VALID_TICK_LBL_POS_VALUES.has(override) ? override : undefined;
+}
+
+/**
+ * Resolve a reverse-axis override using the same `undefined` (inherit) /
+ * `null` (drop) / value (replace) grammar as the other axis helpers.
+ *
+ * Only `true` round-trips meaningfully — `false` is the OOXML default
+ * (`orientation="minMax"`) so it collapses to `undefined` to keep the
+ * cloned shape minimal. A source carrying `false` (e.g. an over-eager
+ * parser that surfaced the default) collapses to `undefined` on
+ * inherit; an explicit `false` override likewise drops the field. The
+ * writer's per-axis `reverse: false` default already produces a forward
+ * orientation, so the dropped state is indistinguishable from a literal
+ * `false`.
+ */
+function applyReverseOverride(
+  source: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) {
+    return source === true ? true : undefined;
+  }
+  if (override === null) return undefined;
+  return override === true ? true : undefined;
 }
