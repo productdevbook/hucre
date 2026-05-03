@@ -1138,6 +1138,28 @@ export interface SheetChart {
    */
   plotVisOnly?: boolean;
   /**
+   * Whether data labels are shown for points whose values exceed the
+   * chart's maximum axis bound. Maps to `<c:showDLblsOverMax val=".."/>`
+   * on `<c:chart>`. The element sits at the tail of CT_Chart (after
+   * `<c:dispBlanksAs>` and before `<c:extLst>`).
+   *
+   * Default: `true` — the OOXML schema default. When the value axis
+   * is auto-scaled the flag has no observable effect because no point
+   * exceeds the max; the toggle only matters when the caller pinned a
+   * tight `<c:max>` via {@link ChartAxisScale.max} and a series carries
+   * values above it. Setting `false` matches Excel's "Format Axis →
+   * Labels → Show data labels for values over maximum scale" checkbox
+   * unchecked — the labels for the over-max points disappear while the
+   * connector / line still draws above the plot area.
+   *
+   * The writer always emits the element so the rendered intent is
+   * explicit on roundtrip — Excel itself includes it in every reference
+   * serialization. Mirrors {@link plotVisOnly} / {@link dispBlanksAs}
+   * (the other always-emitted chart-level toggles); a value pinned by
+   * the caller round-trips identically through {@link cloneChart}.
+   */
+  showDLblsOverMax?: boolean;
+  /**
    * Whether the chart frame is drawn with rounded corners. Maps to
    * `<c:roundedCorners val=".."/>` on `<c:chartSpace>` (a sibling of
    * `<c:chart>`, not a child). Mirrors Excel's "Format Chart Area →
@@ -3044,6 +3066,29 @@ export interface Chart {
    * drop to `undefined`.
    */
   plotVisOnly?: boolean;
+  /**
+   * Show-data-labels-over-max flag pulled from
+   * `<c:chart><c:showDLblsOverMax val=".."/>`. Reflects Excel's "Format
+   * Axis → Labels → Show data labels for values over maximum scale"
+   * checkbox — when the box is unchecked, labels are suppressed for any
+   * point whose value exceeds the pinned `<c:max>` axis bound and the
+   * field surfaces `false`.
+   *
+   * The OOXML default `true` collapses to `undefined` so absence and
+   * the default round-trip identically through {@link cloneChart} —
+   * only an explicit `<c:showDLblsOverMax val="0"/>` surfaces `false`.
+   * The reader accepts the OOXML truthy / falsy spellings (`"1"` /
+   * `"true"` / `"0"` / `"false"`); unknown values and missing `val`
+   * attributes drop to `undefined`. Mirrors the parsing semantics of
+   * {@link plotVisOnly}.
+   *
+   * `<c:showDLblsOverMax>` lives on `<c:chart>` at the tail of CT_Chart
+   * (after `<c:dispBlanksAs>` and before `<c:extLst>`). The toggle has
+   * no observable effect on a chart whose value axis auto-scales (no
+   * point exceeds the auto-computed max); it only matters when the
+   * caller pinned a tighter axis ceiling.
+   */
+  showDLblsOverMax?: boolean;
   /**
    * Rounded-corners flag pulled from
    * `<c:chartSpace><c:roundedCorners val=".."/>`. Reflects Excel's

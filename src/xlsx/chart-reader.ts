@@ -276,6 +276,14 @@ export function parseChart(xml: string): Chart | undefined {
   const plotVisOnly = parsePlotVisOnly(chartEl);
   if (plotVisOnly !== undefined) out.plotVisOnly = plotVisOnly;
 
+  // `<c:showDLblsOverMax>` sits at the tail of CT_Chart (after
+  // `<c:dispBlanksAs>` and before `<c:extLst>`). Mirrors the writer
+  // side, which always emits the element — only the non-default
+  // `val="0"` surfaces here (`true` collapses to `undefined` for the
+  // standard minimal-shape contract).
+  const showDLblsOverMax = parseShowDLblsOverMax(chartEl);
+  if (showDLblsOverMax !== undefined) out.showDLblsOverMax = showDLblsOverMax;
+
   // `<c:roundedCorners>` lives on `<c:chartSpace>` (the chart's outer
   // wrapper), not inside `<c:chart>` — the toggle styles the chart
   // frame's outer border rather than the plot area.
@@ -1617,6 +1625,44 @@ function parsePlotVisOnly(chartEl: XmlElement): boolean | undefined {
     case "true":
       // OOXML default — collapse to undefined for symmetry with the
       // writer's `plotVisOnly` field.
+      return undefined;
+    default:
+      return undefined;
+  }
+}
+
+// ── Show Data Labels Over Max ─────────────────────────────────────
+
+/**
+ * Pull `<c:showDLblsOverMax val=".."/>` off `<c:chart>`. The OOXML
+ * default is `true` (data labels render for every point regardless of
+ * whether the value exceeds the pinned axis ceiling), which collapses
+ * to `undefined` so absence and the default round-trip identically
+ * through {@link cloneChart} — only an explicit `<c:showDLblsOverMax val="0"/>`
+ * surfaces `false`.
+ *
+ * Accepts the OOXML truthy / falsy spellings (`"1"` / `"true"` /
+ * `"0"` / `"false"`); unknown values and missing `val` attributes drop
+ * to `undefined` rather than fabricate a flag Excel would not emit.
+ *
+ * `<c:showDLblsOverMax>` sits at the tail of CT_Chart (after
+ * `<c:dispBlanksAs>` and before `<c:extLst>`); the parser pulls it off
+ * `<c:chart>` directly, so the toggle's order relative to its sibling
+ * elements does not matter.
+ */
+function parseShowDLblsOverMax(chartEl: XmlElement): boolean | undefined {
+  const el = findChild(chartEl, "showDLblsOverMax");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  switch (raw) {
+    case "0":
+    case "false":
+      return false;
+    case "1":
+    case "true":
+      // OOXML default — collapse to undefined for symmetry with the
+      // writer's `showDLblsOverMax` field.
       return undefined;
     default:
       return undefined;

@@ -3804,6 +3804,127 @@ describe("parseChart — plotVisOnly", () => {
   });
 });
 
+// ── parseChart — showDLblsOverMax ─────────────────────────────────
+
+describe("parseChart — showDLblsOverMax", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces <c:showDLblsOverMax val="0"/> on <c:chart> as false (non-default)', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+    <c:showDLblsOverMax val="0"/>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.showDLblsOverMax).toBe(false);
+  });
+
+  it("collapses the OOXML default true to undefined (writer absence)", () => {
+    // The default carried explicitly by the writer's reference shape
+    // round-trips identically to absence of the field.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:showDLblsOverMax val="1"/>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.showDLblsOverMax).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:showDLblsOverMax> element", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.showDLblsOverMax).toBeUndefined();
+  });
+
+  it("accepts the OOXML true / false spellings on the val attribute", () => {
+    // The OOXML schema for `xsd:boolean` accepts `"true"` / `"false"`
+    // alongside the more common `"1"` / `"0"`. Hucre tolerates both
+    // shapes — a hand-edited template using `false` should round-trip.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:showDLblsOverMax val="false"/>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.showDLblsOverMax).toBe(false);
+  });
+
+  it("collapses the 'true' spelling to undefined as well", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:showDLblsOverMax val="true"/>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.showDLblsOverMax).toBeUndefined();
+  });
+
+  it("drops unknown showDLblsOverMax values rather than fabricate one", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:showDLblsOverMax val="bogus"/>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.showDLblsOverMax).toBeUndefined();
+  });
+
+  it("ignores a missing val attribute on <c:showDLblsOverMax>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+    <c:showDLblsOverMax/>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.showDLblsOverMax).toBeUndefined();
+  });
+
+  it("surfaces showDLblsOverMax alongside other chart-level toggles", () => {
+    // Co-existing with plotVisOnly / dispBlanksAs / varyColors should
+    // not interfere — each toggle parses independently off <c:chart>.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="clustered"/>
+        <c:varyColors val="1"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+    <c:plotVisOnly val="0"/>
+    <c:dispBlanksAs val="zero"/>
+    <c:showDLblsOverMax val="0"/>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.showDLblsOverMax).toBe(false);
+    expect(chart?.plotVisOnly).toBe(false);
+    expect(chart?.dispBlanksAs).toBe("zero");
+    expect(chart?.varyColors).toBe(true);
+  });
+});
+
 // ── parseChart — roundedCorners ───────────────────────────────────
 
 describe("parseChart — roundedCorners", () => {

@@ -267,6 +267,22 @@ export interface CloneChartOptions {
    */
   plotVisOnly?: boolean | null;
   /**
+   * Override `<c:showDLblsOverMax>` (the "show data labels for values
+   * over maximum scale" toggle).
+   *
+   * `undefined` (or omitted) inherits the source's parsed
+   * `showDLblsOverMax`. `null` drops the inherited value so the writer
+   * falls back to the OOXML `true` default (labels render for every
+   * point regardless of the axis ceiling). A `boolean` replaces it —
+   * useful for stripping labels off over-max points on a clone whose
+   * value axis pins a tight `<c:max>` (`false`), or for restoring the
+   * default behavior on a clone whose template overrode it (`true`).
+   *
+   * The grammar mirrors `plotVisOnly` / `dispBlanksAs` so the
+   * chart-level toggles compose the same way at the call site.
+   */
+  showDLblsOverMax?: boolean | null;
+  /**
    * Override `<c:roundedCorners>` (the chart-frame rounded-edge toggle).
    *
    * `undefined` (or omitted) inherits the source's parsed
@@ -809,6 +825,12 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   const resolvedPlotVisOnly = resolvePlotVisOnly(source.plotVisOnly, options.plotVisOnly);
   if (resolvedPlotVisOnly !== undefined) out.plotVisOnly = resolvedPlotVisOnly;
 
+  const resolvedShowDLblsOverMax = resolveShowDLblsOverMax(
+    source.showDLblsOverMax,
+    options.showDLblsOverMax,
+  );
+  if (resolvedShowDLblsOverMax !== undefined) out.showDLblsOverMax = resolvedShowDLblsOverMax;
+
   const resolvedRoundedCorners = resolveRoundedCorners(
     source.roundedCorners,
     options.roundedCorners,
@@ -1197,6 +1219,27 @@ function resolveVaryColors(
  * toggles compose the same way at the call site.
  */
 function resolvePlotVisOnly(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve a `showDLblsOverMax` override.
+ *
+ * `undefined` → inherit the source's parsed `showDLblsOverMax`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               OOXML `true` default — labels render for every point
+ *               regardless of the pinned axis ceiling).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `plotVisOnly` / `dispBlanksAs` so the chart-level
+ * toggles compose the same way at the call site.
+ */
+function resolveShowDLblsOverMax(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
