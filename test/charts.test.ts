@@ -7266,3 +7266,231 @@ describe("parseChart — data table", () => {
     expect(parseChart(xml)?.dataTable).toBeUndefined();
   });
 });
+
+// ── parseChart — chart-space protection ──────────────────────────────
+
+describe("parseChart — chart-space protection", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it("surfaces every flag a fully-pinned <c:protection> declares", () => {
+    // CT_Protection lists every child as optional, but a "lock
+    // everything" preset emits all five. The reader surfaces every
+    // pinned flag literally so a clone can replay the exact shape.
+    const xml = `<c:chartSpace ${NS}>
+  <c:protection>
+    <c:chartObject val="1"/>
+    <c:data val="1"/>
+    <c:formatting val="1"/>
+    <c:selection val="1"/>
+    <c:userInterface val="1"/>
+  </c:protection>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.protection).toEqual({
+      chartObject: true,
+      data: true,
+      formatting: true,
+      selection: true,
+      userInterface: true,
+    });
+  });
+
+  it("surfaces non-default false flags literally", () => {
+    // Each boolean child round-trips literally — `false` is just as
+    // important as `true` because the writer always emits all five
+    // children and a clone must preserve the exact pattern.
+    const xml = `<c:chartSpace ${NS}>
+  <c:protection>
+    <c:chartObject val="0"/>
+    <c:data val="0"/>
+    <c:formatting val="0"/>
+    <c:selection val="0"/>
+    <c:userInterface val="0"/>
+  </c:protection>
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.protection).toEqual({
+      chartObject: false,
+      data: false,
+      formatting: false,
+      selection: false,
+      userInterface: false,
+    });
+  });
+
+  it("surfaces a partial shape with only the flags the file pinned", () => {
+    // Common pattern — lock data and selection but leave the rest
+    // unpinned. CT_Protection lists every child as optional so the
+    // parser surfaces only the present flags rather than fabricate
+    // defaults the file did not declare.
+    const xml = `<c:chartSpace ${NS}>
+  <c:protection>
+    <c:data val="1"/>
+    <c:selection val="1"/>
+  </c:protection>
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.protection).toEqual({
+      data: true,
+      selection: true,
+    });
+  });
+
+  it("accepts the OOXML textual <xsd:boolean> spellings", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:protection>
+    <c:chartObject val="true"/>
+    <c:data val="false"/>
+    <c:formatting val="true"/>
+    <c:selection val="false"/>
+    <c:userInterface val="true"/>
+  </c:protection>
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.protection).toEqual({
+      chartObject: true,
+      data: false,
+      formatting: true,
+      selection: false,
+      userInterface: true,
+    });
+  });
+
+  it("returns undefined when the chart has no <c:protection> element", () => {
+    // Absence is the writer's default — Excel applies no chart-level
+    // protection. The reader surfaces nothing so a fresh chart and a
+    // chart that omits the element round-trip identically through
+    // cloneChart.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.protection).toBeUndefined();
+  });
+
+  it("drops a missing val attribute on a <c:protection> child rather than fabricate a flag", () => {
+    // A child without `val` is malformed per CT_Boolean; the reader
+    // drops the field rather than fabricate a value the file did not
+    // pin. The other children still round-trip.
+    const xml = `<c:chartSpace ${NS}>
+  <c:protection>
+    <c:chartObject val="1"/>
+    <c:data/>
+    <c:formatting val="1"/>
+  </c:protection>
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.protection).toEqual({
+      chartObject: true,
+      formatting: true,
+    });
+  });
+
+  it("drops unknown val tokens rather than fabricate flags", () => {
+    // Anything outside the OOXML truthy / falsy spellings collapses
+    // to undefined for that field. The other children still surface.
+    const xml = `<c:chartSpace ${NS}>
+  <c:protection>
+    <c:chartObject val="yes"/>
+    <c:data val="2"/>
+    <c:selection val="1"/>
+  </c:protection>
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.protection).toEqual({
+      selection: true,
+    });
+  });
+
+  it("surfaces an empty object when <c:protection> is present but every child is malformed", () => {
+    // The element itself is the gating signal — when it appears, the
+    // chart is requesting protection even if every child carries a
+    // malformed `val`. The shape stays minimal (an empty object) so a
+    // round-trip through the writer falls back to the OOXML defaults
+    // (every flag `false`) which Excel would apply anyway.
+    const xml = `<c:chartSpace ${NS}>
+  <c:protection>
+    <c:chartObject/>
+    <c:data/>
+    <c:formatting/>
+    <c:selection/>
+    <c:userInterface/>
+  </c:protection>
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.protection).toEqual({});
+  });
+
+  it("surfaces an empty object on a bare <c:protection/> element", () => {
+    // A self-closing element with no children — same minimal-shape
+    // result as a malformed-children block. Round-trips through the
+    // writer which falls back to every-flag `false` for emit.
+    const xml = `<c:chartSpace ${NS}>
+  <c:protection/>
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.protection).toEqual({});
+  });
+
+  it("surfaces protection on a pie chart (no axes, but the element lives on chartSpace)", () => {
+    // <c:protection> lives on <c:chartSpace>, not inside <c:plotArea>,
+    // so axis-shape has no bearing on whether the slot exists. Pie /
+    // doughnut still carry the element when the file pins it.
+    const xml = `<c:chartSpace ${NS}>
+  <c:protection>
+    <c:formatting val="1"/>
+  </c:protection>
+  <c:chart><c:plotArea>
+    <c:pieChart>
+      <c:varyColors val="1"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.protection).toEqual({
+      formatting: true,
+    });
+  });
+});

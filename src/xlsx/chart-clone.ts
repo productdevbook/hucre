@@ -29,6 +29,7 @@ import type {
   ChartKind,
   ChartLineStroke,
   ChartMarker,
+  ChartProtection,
   ChartScatterStyle,
   ChartSeries,
   ChartSeriesInfo,
@@ -392,6 +393,29 @@ export interface CloneChartOptions {
    * doughnut have no axes and no slot for the element.
    */
   dataTable?: ChartDataTable | boolean | null;
+  /**
+   * Override `<c:chartSpace><c:protection>` (the chart-space
+   * protection block).
+   *
+   * `undefined` (or omitted) inherits the source's parsed
+   * {@link Chart.protection}. `null` drops the inherited block so the
+   * writer skips the element entirely — Excel applies no chart-level
+   * protection. `false` is equivalent to `null` (suppression). `true`
+   * pins every flag to its OOXML default `false` so the writer emits
+   * the bare `<c:protection>` shell. A {@link ChartProtection} object
+   * replaces the block wholesale (no per-field merge; pass every flag
+   * you want preserved). Each unspecified flag inside the object falls
+   * back to `false` at the writer side — `<c:protection>` accepts
+   * every child as optional and Excel treats a missing child as the
+   * unlocked default.
+   *
+   * Applies to every chart family — `<c:protection>` lives on
+   * `<c:chartSpace>` (not inside `<c:plotArea>`), so the element has
+   * a slot on pie / doughnut charts too. The grammar mirrors
+   * {@link CloneChartOptions.dataTable} so the chart-level block
+   * toggles compose the same way at the call site.
+   */
+  protection?: ChartProtection | boolean | null;
   /**
    * Override `<c:scatterStyle>` (the chart-level XY-scatter preset).
    *
@@ -857,6 +881,15 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     const resolvedDataTable = resolveDataTable(source.dataTable, options.dataTable);
     if (resolvedDataTable !== undefined) out.dataTable = resolvedDataTable;
   }
+
+  // `<c:protection>` lives on `<c:chartSpace>` (not inside
+  // `<c:plotArea>`), so every chart family — including pie / doughnut
+  // — carries a slot for it. Override wins over the source's parsed
+  // value, and the grammar follows the same `object | boolean | null`
+  // shape as `dataTable` so the chart-level block toggles compose
+  // identically at the call site.
+  const resolvedProtection = resolveProtection(source.protection, options.protection);
+  if (resolvedProtection !== undefined) out.protection = resolvedProtection;
 
   // `<c:scatterStyle>` only renders inside `<c:scatterChart>`. Drop the
   // field on every other resolved type so a scatter template flattened
@@ -1400,6 +1433,60 @@ function resolveDataTable(
   // `true` or a {@link ChartDataTable} object — replace the inherited
   // block wholesale. The writer accepts both forms and falls back to
   // the OOXML reference defaults for any field the object leaves unset.
+  return override;
+}
+
+/**
+ * Resolve a `protection` (chart-space protection) override.
+ *
+ * `undefined` → inherit the source's parsed {@link Chart.protection}.
+ * `null`      → drop the inherited block so the writer skips
+ *               `<c:protection>` entirely (no chart-level lock).
+ * `false`     → equivalent to `null` (suppression); kept distinct in
+ *               the API surface so callers can write `protection:
+ *               false` for symmetry with the writer's `boolean |
+ *               object` shape.
+ * `true`      → enable with the OOXML reference defaults (every flag
+ *               `false` — the bare `<c:protection>` shell).
+ * `object`    → replace the inherited block wholesale (no per-field
+ *               merge with the source — pass every flag the cloned
+ *               protection should pin). Each unspecified field falls
+ *               back to `false` at the writer side because every
+ *               `<c:protection>` boolean child is independently
+ *               optional and Excel treats a missing child as
+ *               `false`.
+ *
+ * The grammar mirrors {@link resolveDataTable} so the chart-level
+ * block toggles compose the same way at the call site. Unlike
+ * `dataTable`, `<c:protection>` lives on `<c:chartSpace>` (not inside
+ * `<c:plotArea>`) so the resolver applies to every chart family —
+ * pie / doughnut included.
+ */
+function resolveProtection(
+  sourceValue: ChartProtection | undefined,
+  override: ChartProtection | boolean | null | undefined,
+): ChartProtection | boolean | undefined {
+  if (override === undefined) {
+    // Inherit — pass the source through verbatim. The writer accepts
+    // both the boolean and object shapes, so a parsed
+    // {@link ChartProtection} round-trips directly.
+    return sourceValue;
+  }
+  if (override === null) {
+    // Drop the inherited block. The writer treats `undefined` as
+    // suppression and skips `<c:protection>` entirely.
+    return undefined;
+  }
+  if (override === false) {
+    // Symmetric with `null` — kept distinct in the API surface for
+    // ergonomic alignment with the writer's `boolean | object` shape,
+    // but emits the same on-the-wire result (no `<c:protection>`).
+    return undefined;
+  }
+  // `true` or a {@link ChartProtection} object — replace the inherited
+  // block wholesale. The writer accepts both forms and falls back to
+  // the OOXML reference default `false` for any field the object
+  // leaves unset.
   return override;
 }
 

@@ -37,6 +37,7 @@ import type {
   ChartLineStroke,
   ChartMarker,
   ChartMarkerSymbol,
+  ChartProtection,
   ChartScatterStyle,
   ChartSeriesInfo,
 } from "../_types";
@@ -312,6 +313,17 @@ export function parseChart(xml: string): Chart | undefined {
   // date interpretation across the whole chart document.
   const date1904 = parseDate1904(chartSpace);
   if (date1904 !== undefined) out.date1904 = date1904;
+
+  // `<c:protection>` (CT_Protection, ECMA-376 Part 1, §21.2.2.142)
+  // sits on `<c:chartSpace>` between `<c:style>` / `<c:pivotSource>`
+  // and `<c:chart>`. The element holds five optional `<xsd:boolean>`
+  // children (`<c:chartObject>`, `<c:data>`, `<c:formatting>`,
+  // `<c:selection>`, `<c:userInterface>`). Unlike `<c:dTable>` (whose
+  // children are required) every protection flag is independently
+  // optional, so the reader only surfaces the ones the file actually
+  // pinned.
+  const protection = parseProtection(chartSpace);
+  if (protection !== undefined) out.protection = protection;
 
   return out;
 }
@@ -1856,6 +1868,70 @@ function parseDataTable(plotArea: XmlElement): ChartDataTable | undefined {
  */
 function parseDataTableFlag(dTable: XmlElement, local: string): boolean | undefined {
   const el = findChild(dTable, local);
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  switch (raw) {
+    case "1":
+    case "true":
+      return true;
+    case "0":
+    case "false":
+      return false;
+    default:
+      return undefined;
+  }
+}
+
+// ── Protection ────────────────────────────────────────────────────
+
+/**
+ * Pull `<c:protection>...</c:protection>` off `<c:chartSpace>`.
+ * Surfaces a {@link ChartProtection} object whenever the source chart
+ * declares the element; absence collapses to `undefined`.
+ *
+ * Each of the five boolean children (`<c:chartObject>`, `<c:data>`,
+ * `<c:formatting>`, `<c:selection>`, `<c:userInterface>`) is optional
+ * on `CT_Protection`, so the reader only surfaces the flags the file
+ * actually pinned. Children that are missing or carry an unknown
+ * `val` attribute drop to `undefined` rather than fabricate a flag
+ * the file did not pin; the writer falls back to the OOXML default
+ * `false` for any field the object omits, mirroring how Excel's
+ * reader treats a missing child.
+ *
+ * The element itself is the gating signal — a `<c:protection>` block
+ * with no resolvable children surfaces as an empty `{}` rather than
+ * `undefined`, so a chart that authors the bare element (Excel's
+ * "Protect Chart" preset with every flag at the default) round-trips
+ * literally instead of silently disappearing through the parse loop.
+ */
+function parseProtection(chartSpace: XmlElement): ChartProtection | undefined {
+  const el = findChild(chartSpace, "protection");
+  if (!el) return undefined;
+  const out: ChartProtection = {};
+  const chartObject = parseProtectionFlag(el, "chartObject");
+  if (chartObject !== undefined) out.chartObject = chartObject;
+  const data = parseProtectionFlag(el, "data");
+  if (data !== undefined) out.data = data;
+  const formatting = parseProtectionFlag(el, "formatting");
+  if (formatting !== undefined) out.formatting = formatting;
+  const selection = parseProtectionFlag(el, "selection");
+  if (selection !== undefined) out.selection = selection;
+  const userInterface = parseProtectionFlag(el, "userInterface");
+  if (userInterface !== undefined) out.userInterface = userInterface;
+  return out;
+}
+
+/**
+ * Pull a single boolean child off `<c:protection>`. Accepts the OOXML
+ * truthy / falsy spellings (`"1"` / `"true"` / `"0"` / `"false"`);
+ * unknown tokens, missing `val` attributes, and missing elements all
+ * collapse to `undefined` rather than fabricate a flag the file did
+ * not pin. Mirrors {@link parseDataTableFlag} — the same OOXML
+ * `<xsd:boolean>` lexical-space rule.
+ */
+function parseProtectionFlag(protection: XmlElement, local: string): boolean | undefined {
+  const el = findChild(protection, local);
   if (!el) return undefined;
   const raw = el.attrs.val;
   if (typeof raw !== "string") return undefined;

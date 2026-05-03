@@ -783,6 +783,65 @@ export interface ChartDataTable {
 }
 
 /**
+ * Granular chart-protection configuration for {@link SheetChart.protection}.
+ *
+ * Each flag mirrors a `CT_Boolean` child of `<c:chartSpace><c:protection>`
+ * (CT_Protection, ECMA-376 Part 1, §21.2.2.142) — the chart-space-level
+ * lock that pairs with the host worksheet's `<sheetProtection>` to
+ * decide which interactions Excel still allows when the parent sheet is
+ * protected. The element only takes effect when the worksheet that
+ * embeds the chart is itself protected; on an unprotected sheet the
+ * flags are silently ignored by Excel.
+ *
+ * Every field defaults to `false` (the OOXML default Excel itself
+ * emits) — `false` means the action is permitted, `true` means the
+ * action is locked. Each field is independent; pass any combination of
+ * the five flags to lock individual interactions.
+ *
+ * Pass an empty object (`{}`) to declare an empty `<c:protection>`
+ * shell with every flag at the OOXML default — equivalent to passing
+ * `protection: true` and useful for round-trip parity with templates
+ * that author the bare element without pinning any flags.
+ */
+export interface ChartProtection {
+  /**
+   * Lock the chart object (its frame, anchor, and contents) against
+   * direct manipulation. Maps to `<c:chartObject val=".."/>`.
+   * Default: `false` — the chart is movable / resizable on a protected
+   * worksheet. Set `true` to freeze the chart's position and contents.
+   */
+  chartObject?: boolean;
+  /**
+   * Lock the underlying data references the chart points at. Maps to
+   * `<c:data val=".."/>`. Default: `false` — Excel allows the user to
+   * re-pick data ranges via "Select Data Source" even when the parent
+   * sheet is protected. Set `true` to keep the series ranges pinned.
+   */
+  data?: boolean;
+  /**
+   * Lock chart formatting (colors, fills, fonts, layout). Maps to
+   * `<c:formatting val=".."/>`. Default: `false` — the user may still
+   * tweak Format-Chart-Element panes on a protected sheet. Set `true`
+   * to lock down the rendered look.
+   */
+  formatting?: boolean;
+  /**
+   * Lock click-to-select on chart elements. Maps to
+   * `<c:selection val=".."/>`. Default: `false` — the user can still
+   * click into series, legend entries, or labels to inspect them. Set
+   * `true` to disable element selection entirely.
+   */
+  selection?: boolean;
+  /**
+   * Lock chart-level UI affordances such as the floating "+ Chart
+   * Elements" button and the right-click context menu. Maps to
+   * `<c:userInterface val=".."/>`. Default: `false` — Excel still
+   * surfaces the on-canvas affordances. Set `true` to suppress them.
+   */
+  userInterface?: boolean;
+}
+
+/**
  * Scatter sub-style applied at the chart level. Maps to the OOXML
  * `ST_ScatterStyle` enum which sits inside `<c:scatterChart>` as
  * `<c:scatterStyle val=".."/>`. Excel exposes the same six presets
@@ -1295,6 +1354,37 @@ export interface SheetChart {
    * See {@link ChartDataTable}.
    */
   dataTable?: boolean | ChartDataTable;
+  /**
+   * Chart-space protection. Maps to `<c:chartSpace><c:protection>...
+   * </c:protection>` (CT_Protection, ECMA-376 Part 1, §21.2.2.142) —
+   * the chart-level lock that Excel honors when the parent worksheet
+   * is itself protected via `<sheetProtection>`. Each of the five
+   * `CT_Boolean` children (`<c:chartObject>`, `<c:data>`,
+   * `<c:formatting>`, `<c:selection>`, `<c:userInterface>`) toggles a
+   * separate interaction; `false` (the OOXML default) leaves the
+   * action permitted and `true` locks it.
+   *
+   * Pass `true` to declare the bare `<c:protection/>` element with
+   * every flag at its OOXML default `false` — equivalent to passing
+   * `protection: {}`. Pass an object to opt individual flags in. Pass
+   * `false` (or omit the field) to suppress the element entirely so
+   * the writer skips emission.
+   *
+   * Default: omitted — Excel renders no `<c:protection>` element on
+   * a fresh chart.
+   *
+   * Note: Excel only enforces these flags when the host worksheet is
+   * itself protected (the chart inherits the sheet's protection
+   * boundary). On an unprotected sheet the element round-trips
+   * literally but has no observable runtime effect.
+   *
+   * The element sits on every chart family — pie / doughnut / bar /
+   * column / line / area / scatter — because `<c:protection>` lives
+   * on `<c:chartSpace>`, not inside `<c:plotArea>`, so axis-shape
+   * has no bearing on whether the slot exists. See
+   * {@link ChartProtection}.
+   */
+  protection?: boolean | ChartProtection;
   /**
    * Per-axis configuration rendered alongside the plot area. The `x`
    * axis is the category axis for bar/column/line/area (or the bottom
@@ -3223,6 +3313,30 @@ export interface Chart {
    * doughnut have no axes and surface `undefined`.
    */
   dataTable?: ChartDataTable;
+  /**
+   * Chart-space protection pulled from
+   * `<c:chartSpace><c:protection>...</c:protection>`. Reflects the
+   * chart-level lock Excel honors when the parent worksheet is
+   * protected via `<sheetProtection>`.
+   *
+   * Surfaces a {@link ChartProtection} object whenever the source
+   * chart declares the element. Each of the five boolean children
+   * (`<c:chartObject>`, `<c:data>`, `<c:formatting>`, `<c:selection>`,
+   * `<c:userInterface>`) is independently optional on `CT_Protection`,
+   * so the reader only surfaces the flags the file actually pinned.
+   * A child that is missing or carries an unknown `val` attribute drops
+   * to `undefined` for that field rather than fabricate a value the
+   * file did not declare. The element itself is the gating signal — a
+   * `<c:protection>` block with no resolvable children surfaces as an
+   * empty `{}`, mirroring how `dataTable` handles a malformed `<c:dTable>`.
+   *
+   * Surfaces `undefined` when the chart has no `<c:protection>` element
+   * at all. The element lives on `<c:chartSpace>` (a sibling of
+   * `<c:chart>`, between `<c:style>` / `<c:pivotSource>` and
+   * `<c:chart>` per CT_ChartSpace), so every chart family — including
+   * pie / doughnut — can carry it.
+   */
+  protection?: ChartProtection;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────
