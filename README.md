@@ -762,6 +762,26 @@ emit order. The OOXML default `crosses: "autoZero"` collapses to
 distinct from the `"autoZero"` default which defers to Excel's
 auto-placement). Unknown semantic tokens and non-numeric `val`
 attributes drop rather than fabricate values the writer would reject.
+`ChartAxisInfo.dispUnits` surfaces the per-value-axis display-unit
+preset pulled from `<c:valAx><c:dispUnits><c:builtInUnit val=".."/></c:dispUnits></c:valAx>`
+— Excel's "Format Axis -> Display units" dropdown. The element rescales
+the numeric tick labels by the chosen preset (e.g. `"millions"` divides
+every label by 1e6) so a chart whose source range stores raw amounts
+can show compact tick labels without modifying the underlying cells.
+The OOXML schema places the element exclusively on `CT_ValAx`, so
+`dispUnits` only surfaces on the value-axis side of bar / column / line
+/ area charts (the Y axis) and on both axes of scatter charts (both are
+value axes); category axes (`<c:catAx>`) and pie / doughnut never
+surface the field. The reader keeps the parsed `unit` token and the
+presence of `<c:dispUnitsLbl>` (`showLabel: true` when Excel paints its
+automatic annotation alongside the axis); the alternative
+`<c:custUnit val=".."/>` (custom numeric divisor) and any rich-text
+`<c:dispUnitsLbl>` body are intentionally not surfaced. The OOXML
+schema accepts the nine `ST_BuiltInUnit` tokens (`"hundreds"`,
+`"thousands"`, `"tenThousands"`, `"hundredThousands"`, `"millions"`,
+`"tenMillions"`, `"hundredMillions"`, `"billions"`, `"trillions"`);
+unknown tokens drop to `undefined` rather than fabricate a value the
+writer would never emit.
 `Chart.roundedCorners` surfaces the chart-frame
 `<c:chartSpace><c:roundedCorners val=".."/>` flag — Excel's "Format
 Chart Area → Border → Rounded corners" toggle. The element sits on
@@ -912,7 +932,7 @@ charts; `lineGrouping` and `areaGrouping` accept
 `top` / `bottom` / `left` / `right` / `topRight` / `false`, and
 `altText` / `frameTitle` flow through to the drawing's `xdr:cNvPr`
 attributes for screen readers.
-`axes: { x: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, reverse, crosses, crossesAt }, y: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, reverse, crosses, crossesAt } }`
+`axes: { x: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, reverse, crosses, crossesAt, dispUnits }, y: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, reverse, crosses, crossesAt, dispUnits } }`
 attaches per-axis labels, gridlines, numeric scaling, the tick-label
 number format and the tick-rendering trio — `x` lands inside
 `<c:catAx>` (or the X value axis for scatter), `y` inside the value
@@ -1071,6 +1091,27 @@ omits the element on a fresh chart. Pin `upDownBars: true` on a
 every other chart family — `<c:upDownBars>` lives exclusively on
 `CT_LineChart` / `CT_Line3DChart` / `CT_StockChart` per the OOXML
 schema, and the writer never authors the 3D / stock variants.
+The `axes.{x,y}.dispUnits` field controls the per-value-axis
+display-unit preset (`<c:valAx><c:dispUnits><c:builtInUnit val=".."/></c:dispUnits></c:valAx>`)
+— Excel's "Format Axis -> Display units" dropdown. Each numeric tick
+label is divided by the chosen preset before rendering, so a chart
+whose source range stores raw amounts (e.g. `1_500_000`) can show
+compact tick labels (`1.5` with an optional "Millions" annotation)
+without modifying the underlying cells. Pass a `ChartAxisDispUnit`
+shorthand (e.g. `"millions"`) or a `{ unit, showLabel? }` object to
+opt into the automatic unit annotation by setting `showLabel: true`
+(the writer emits a bare `<c:dispUnitsLbl/>` so Excel paints its
+default label alongside the axis). Accepted unit tokens: `"hundreds"`,
+`"thousands"`, `"tenThousands"`, `"hundredThousands"`, `"millions"`,
+`"tenMillions"`, `"hundredMillions"`, `"billions"`, `"trillions"`. The
+OOXML schema places `<c:dispUnits>` exclusively on `CT_ValAx`, so the
+field only takes effect on the value-axis side of bar / column / line
+/ area charts (the Y axis) and on both axes of scatter charts (both
+are value axes); category axes (`<c:catAx>`) silently drop the field
+and pie / doughnut have no axes at all. Unknown tokens drop silently
+rather than fabricate a value the OOXML `ST_BuiltInUnit` enum would
+reject. The custom-divisor variant (`<c:custUnit>`) and rich-text
+`<c:dispUnitsLbl>` body are intentionally not surfaced.
 The `axes.x.tickLblSkip` and `axes.x.tickMarkSkip` fields thin out a
 crowded category axis (`<c:catAx><c:tickLblSkip val=".."/>` and
 `<c:catAx><c:tickMarkSkip val=".."/>`). Pass a positive integer to

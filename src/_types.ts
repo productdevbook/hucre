@@ -1347,6 +1347,24 @@ export interface SheetChart {
        * on `pie` / `doughnut` charts.
        */
       crossesAt?: number;
+      /**
+       * Built-in display-unit preset for the X axis. Maps to
+       * `<c:valAx><c:dispUnits><c:builtInUnit val=".."/></c:dispUnits></c:valAx>`.
+       *
+       * Only meaningful for `scatter` charts — both axes there are value
+       * axes (`<c:valAx>`), so `<c:dispUnits>` slots onto the X axis as
+       * well. The OOXML schema places the element exclusively on
+       * `CT_ValAx`, so the writer drops the field on every other family
+       * (the X axis on bar / column / line / area is a category axis,
+       * which rejects `<c:dispUnits>`; pie / doughnut have no axes at
+       * all). Pass a {@link ChartAxisDispUnit} preset directly as a
+       * shorthand for `{ unit: ".." }`; pass an object to opt into the
+       * automatic unit annotation via `showLabel: true`.
+       *
+       * See {@link ChartAxisDispUnits} for the surfaced shape and
+       * {@link ChartAxisDispUnit} for the accepted preset tokens.
+       */
+      dispUnits?: ChartAxisDispUnits | ChartAxisDispUnit;
     };
     /** Value axis. */
     y?: {
@@ -1405,6 +1423,26 @@ export interface SheetChart {
        * precedence over {@link crosses}.
        */
       crossesAt?: number;
+      /**
+       * Built-in display-unit preset for the value axis. Maps to
+       * `<c:valAx><c:dispUnits><c:builtInUnit val=".."/></c:dispUnits></c:valAx>`.
+       *
+       * Excel exposes the same dropdown under "Format Axis -> Display
+       * units" — every numeric tick label is divided by the preset's
+       * scale before being rendered, so a chart whose source range
+       * stores raw amounts (e.g. `1_500_000`) can show compact tick
+       * labels (`1.5` with an optional "Millions" annotation) without
+       * modifying the underlying cells. The OOXML schema places the
+       * element exclusively on `CT_ValAx`, so the writer drops the
+       * field on `pie` / `doughnut` charts (no axes at all). Pass a
+       * {@link ChartAxisDispUnit} preset directly as a shorthand for
+       * `{ unit: ".." }`; pass an object to opt into the automatic
+       * unit annotation via `showLabel: true`.
+       *
+       * See {@link ChartAxisDispUnits} for the surfaced shape and
+       * {@link ChartAxisDispUnit} for the accepted preset tokens.
+       */
+      dispUnits?: ChartAxisDispUnits | ChartAxisDispUnit;
     };
   };
 }
@@ -2298,6 +2336,79 @@ export type ChartAxisLabelAlign = "ctr" | "l" | "r";
  */
 export type ChartAxisCrosses = "autoZero" | "min" | "max";
 
+/**
+ * Built-in display-unit preset on a value axis — Excel's "Format Axis ->
+ * Display units" dropdown. Every numeric tick label is divided by the
+ * preset's scale before being rendered, so a chart whose source range
+ * stores raw amounts (e.g. `1_500_000`) can display compact tick labels
+ * (`1.5` with a "Millions" annotation) without modifying the underlying
+ * cells.
+ *
+ * Maps to the OOXML `ST_BuiltInUnit` enumeration which sits inside
+ * `<c:dispUnits>` on `<c:valAx>` as `<c:builtInUnit val=".."/>`. The
+ * tokens mirror Excel's UI labels:
+ *
+ * - `"hundreds"`         — divide by 1e2.
+ * - `"thousands"`        — divide by 1e3.
+ * - `"tenThousands"`     — divide by 1e4.
+ * - `"hundredThousands"` — divide by 1e5.
+ * - `"millions"`         — divide by 1e6.
+ * - `"tenMillions"`      — divide by 1e7.
+ * - `"hundredMillions"`  — divide by 1e8.
+ * - `"billions"`         — divide by 1e9.
+ * - `"trillions"`        — divide by 1e12.
+ *
+ * The OOXML schema also allows a custom numeric divisor via
+ * `<c:custUnit val=".."/>`; that variant is not surfaced here — pass a
+ * built-in preset instead. Pie / doughnut charts have no value axes, so
+ * the field is silently dropped on those families. Category axes
+ * (`<c:catAx>`) reject `<c:dispUnits>` entirely, so `dispUnits` only
+ * surfaces on the value-axis side of bar / column / line / area
+ * charts (the Y axis) and on both axes of scatter charts (both are
+ * value axes).
+ */
+export type ChartAxisDispUnit =
+  | "hundreds"
+  | "thousands"
+  | "tenThousands"
+  | "hundredThousands"
+  | "millions"
+  | "tenMillions"
+  | "hundredMillions"
+  | "billions"
+  | "trillions";
+
+/**
+ * Display-unit configuration for a value axis. Maps to the
+ * `<c:dispUnits>` element on `<c:valAx>` per ECMA-376 Part 1, §21.2.2.32
+ * (CT_ValAx → CT_DispUnits). The element rescales the numeric tick
+ * labels by the chosen preset (e.g. `"millions"` divides every label by
+ * 1e6) and optionally prints the unit annotation on the chart.
+ *
+ * The reader and writer model only the built-in preset path
+ * (`<c:builtInUnit val=".."/>`); the alternative `<c:custUnit
+ * val=".."/>` (custom numeric divisor) is intentionally out of scope —
+ * pass a {@link ChartAxisDispUnit} preset instead.
+ *
+ * `<c:dispUnitsLbl>` is also intentionally minimal: when `showLabel` is
+ * `true` the writer emits a bare `<c:dispUnitsLbl/>` so Excel paints its
+ * default "Millions" / "Thousands" / ... annotation alongside the axis;
+ * the rich-text label customization (`<a:p>` / `<a:r>` inside
+ * `<c:dispUnitsLbl>`) is not surfaced. Callers needing a custom label
+ * string can layer it on later.
+ */
+export interface ChartAxisDispUnits {
+  /** OOXML `ST_BuiltInUnit` token — the preset divisor. */
+  unit: ChartAxisDispUnit;
+  /**
+   * Whether to print Excel's automatic display-unit annotation
+   * alongside the axis (e.g. "Millions" for `unit: "millions"`). Maps
+   * to the presence of `<c:dispUnitsLbl/>` inside `<c:dispUnits>`.
+   * Default: `false` (no label rendered, the divisor still applies).
+   */
+  showLabel?: boolean;
+}
+
 export interface ChartAxisInfo {
   /** Plain-text title from the axis's `<c:title>`. Omitted when absent. */
   title?: string;
@@ -2446,6 +2557,23 @@ export interface ChartAxisInfo {
    * and drops `crosses` to mirror the writer's preference.
    */
   crossesAt?: number;
+  /**
+   * Built-in display-unit preset pulled from
+   * `<c:dispUnits><c:builtInUnit val=".."/><c:dispUnitsLbl?/></c:dispUnits>`.
+   * Surfaces only on value axes — the OOXML schema places `<c:dispUnits>`
+   * exclusively on `CT_ValAx`, so `<c:catAx>` / `<c:dateAx>` / `<c:serAx>`
+   * never carry one. The reader keeps the parsed `unit` token and the
+   * presence of `<c:dispUnitsLbl>` (`showLabel`); the OOXML alternative
+   * `<c:custUnit val=".."/>` (custom numeric divisor) and any rich-text
+   * `<c:dispUnitsLbl>` body are intentionally not surfaced.
+   *
+   * The OOXML schema accepts the nine `ST_BuiltInUnit` tokens listed in
+   * {@link ChartAxisDispUnit}; unknown tokens drop to `undefined` rather
+   * than fabricate a value the writer would never emit. Absence
+   * (and any unrecognized payload) collapses to `undefined` so a
+   * round-trip leaves Excel's default "no display unit" state untouched.
+   */
+  dispUnits?: ChartAxisDispUnits;
 }
 
 /**
