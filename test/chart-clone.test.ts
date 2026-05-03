@@ -6115,6 +6115,241 @@ describe("cloneChart — hiLowLines", () => {
   });
 });
 
+// ── cloneChart — series lines ────────────────────────────────────────
+
+describe("cloneChart — serLines", () => {
+  function barSource(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["bar"],
+      seriesCount: 2,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          name: "Q1",
+          valuesRef: "Tpl!$B$2:$B$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+        },
+        {
+          kind: "bar",
+          index: 1,
+          name: "Q2",
+          valuesRef: "Tpl!$C$2:$C$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+        },
+      ],
+      barGrouping: "clustered",
+      ...extra,
+    };
+  }
+
+  it("inherits serLines=true from a bar source by default", () => {
+    const clone = cloneChart(barSource({ serLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.serLines).toBe(true);
+  });
+
+  it("inherits serLines=true on the default bar -> column coercion (no type override)", () => {
+    // Read-side `bar` covers both `<c:barChart barDir="bar">` and
+    // `<c:barChart barDir="col">`; the default coercion lands on
+    // `column` (the more common vertical orientation). The flag must
+    // still carry through because both `bar` and `column` route to
+    // `<c:barChart>` on the writer side.
+    const clone = cloneChart(barSource({ serLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.serLines).toBe(true);
+  });
+
+  it("returns undefined serLines when neither source nor override sets it", () => {
+    const clone = cloneChart(barSource(), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.serLines).toBeUndefined();
+  });
+
+  it("drops the inherited serLines when the override is null", () => {
+    const clone = cloneChart(barSource({ serLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+      serLines: null,
+    });
+    expect(clone.serLines).toBeUndefined();
+  });
+
+  it("drops the inherited serLines when the override is false", () => {
+    // `false` collapses to undefined just like `null` because the writer
+    // treats absence and `false` identically (no element emitted).
+    const clone = cloneChart(barSource({ serLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+      serLines: false,
+    });
+    expect(clone.serLines).toBeUndefined();
+  });
+
+  it("lets the override pin serLines=true when the source did not declare it", () => {
+    const clone = cloneChart(barSource(), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+      serLines: true,
+    });
+    expect(clone.serLines).toBe(true);
+  });
+
+  it("collapses non-boolean overrides to undefined", () => {
+    const clone = cloneChart(barSource({ serLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+      serLines: 1 as unknown as boolean,
+    });
+    // The non-boolean override drops, falling back to undefined (not the
+    // inherited true) because the override path treats non-boolean as
+    // "explicitly unset".
+    expect(clone.serLines).toBeUndefined();
+  });
+
+  it("strips the flag when the resolved chart type is line", () => {
+    // CT_LineChart has no `<c:serLines>` slot. Coercing into line must
+    // drop the inherited flag so the writer never tries to emit an
+    // element on a host that rejects it.
+    const clone = cloneChart(barSource({ serLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "line",
+    });
+    expect(clone.type).toBe("line");
+    expect(clone.serLines).toBeUndefined();
+  });
+
+  it("strips the flag when the resolved chart type is area", () => {
+    const clone = cloneChart(barSource({ serLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "area",
+    });
+    expect(clone.type).toBe("area");
+    expect(clone.serLines).toBeUndefined();
+  });
+
+  it("strips the flag when the resolved chart type is pie / doughnut", () => {
+    const pie = cloneChart(barSource({ serLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "pie",
+    });
+    expect(pie.serLines).toBeUndefined();
+
+    const doughnut = cloneChart(barSource({ serLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(doughnut.serLines).toBeUndefined();
+  });
+
+  it("strips the flag when the resolved chart type is scatter", () => {
+    const clone = cloneChart(barSource({ serLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "scatter",
+      series: [{ values: "Sheet1!$B$2:$B$5", categories: "Sheet1!$A$2:$A$5" }],
+    });
+    expect(clone.type).toBe("scatter");
+    expect(clone.serLines).toBeUndefined();
+  });
+
+  it("carries the flag across the bar <-> column coercion (both map to <c:barChart>)", () => {
+    const barToColumn = cloneChart(barSource({ serLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(barToColumn.type).toBe("column");
+    expect(barToColumn.serLines).toBe(true);
+  });
+
+  it("composes serLines alongside barGrouping / dataLabels overrides", () => {
+    const clone = cloneChart(barSource({ serLines: true, barGrouping: "stacked" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+      dataLabels: { showValue: true },
+    });
+    expect(clone.serLines).toBe(true);
+    expect(clone.barGrouping).toBe("stacked");
+    expect(clone.dataLabels).toEqual({ showValue: true });
+  });
+
+  it("end-to-end: parseChart -> cloneChart -> writeChart preserves the flag", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="stacked"/>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:ser>
+          <c:idx val="1"/>
+          <c:val><c:numRef><c:f>Tpl!$C$2:$C$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:overlap val="100"/>
+        <c:serLines/>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.serLines).toBe(true);
+    expect(parsed?.barGrouping).toBe("stacked");
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(sheetChart.serLines).toBe(true);
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    const barBlock = written.match(/<c:barChart>[\s\S]*?<\/c:barChart>/)![0];
+    expect(barBlock).toContain("<c:serLines/>");
+
+    // Re-parse to confirm the round-trip.
+    const reparsed = parseChart(written);
+    expect(reparsed?.serLines).toBe(true);
+  });
+
+  it("end-to-end: writeXlsx packages the cloned chart with the flag intact", async () => {
+    const clone = cloneChart(barSource({ serLines: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+      type: "column",
+      barGrouping: "stacked",
+      series: [
+        { name: "Q1", values: "Sheet1!$B$2:$B$3", categories: "Sheet1!$A$2:$A$3" },
+        { name: "Q2", values: "Sheet1!$C$2:$C$3", categories: "Sheet1!$A$2:$A$3" },
+      ],
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Region", "Q1", "Q2"],
+            ["North", 100, 120],
+            ["South", 200, 180],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:serLines/>");
+  });
+});
+
 // ── cloneChart — upDownBars ──────────────────────────────────────────
 
 describe("cloneChart — upDownBars", () => {
