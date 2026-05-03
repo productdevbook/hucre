@@ -625,6 +625,21 @@ export interface CloneChartOptions {
        */
       noMultiLvlLbl?: boolean | null;
       /**
+       * Override `SheetChart.axes.x.auto`. `undefined` (or omitted)
+       * inherits the source axis's flag; `null` drops the inherited
+       * value (the writer falls back to the OOXML `true` default —
+       * Excel auto-detects whether to render the axis as a date or
+       * category axis); a `boolean` replaces it. Only `false` actually
+       * surfaces on the cloned `SheetChart` (the writer treats `true`
+       * and absence identically — both produce `<c:auto val="1"/>`),
+       * so an override of `true` collapses to `undefined`.
+       *
+       * Only meaningful for resolved chart types whose X axis is
+       * `<c:catAx>` (bar / column / line / area); silently dropped on
+       * scatter and pie / doughnut.
+       */
+      auto?: boolean | null;
+      /**
        * Override `SheetChart.axes.x.hidden`. `undefined` (or omitted)
        * inherits the source axis's flag; `null` drops the inherited
        * value (the writer falls back to the OOXML `false` default —
@@ -2065,6 +2080,12 @@ function resolveAxes(
   const xNoMultiLvlLbl = isCatAxisX
     ? applyNoMultiLvlLblOverride(sourceAxes?.x?.noMultiLvlLbl, overrides?.x?.noMultiLvlLbl)
     : undefined;
+  // `<c:auto>` is also `CT_CatAx`-only per ECMA-376 §21.2.2.7 — same
+  // scope rule as `noMultiLvlLbl`. The flag defaults to `true` in the
+  // OOXML schema (Excel auto-detects whether to render the axis as a
+  // date or category axis), so the resolver collapses `true` to
+  // `undefined` and only surfaces an explicit `false`.
+  const xAuto = isCatAxisX ? applyAutoOverride(sourceAxes?.x?.auto, overrides?.x?.auto) : undefined;
   // `<c:delete>` lives on every axis flavour — both `<c:catAx>` and
   // `<c:valAx>` accept it — so the hidden flag carries through every
   // chart family that has axes. Pie / doughnut have no axes at all
@@ -2126,6 +2147,7 @@ function resolveAxes(
     xLblOffset !== undefined ||
     xLblAlgn !== undefined ||
     xNoMultiLvlLbl !== undefined ||
+    xAuto !== undefined ||
     xHidden !== undefined ||
     xCrossesPair.crosses !== undefined ||
     xCrossesPair.crossesAt !== undefined ||
@@ -2146,6 +2168,7 @@ function resolveAxes(
     if (xLblOffset !== undefined) out.x.lblOffset = xLblOffset;
     if (xLblAlgn !== undefined) out.x.lblAlgn = xLblAlgn;
     if (xNoMultiLvlLbl !== undefined) out.x.noMultiLvlLbl = xNoMultiLvlLbl;
+    if (xAuto !== undefined) out.x.auto = xAuto;
     if (xHidden !== undefined) out.x.hidden = xHidden;
     if (xCrossesPair.crosses !== undefined) out.x.crosses = xCrossesPair.crosses;
     if (xCrossesPair.crossesAt !== undefined) out.x.crossesAt = xCrossesPair.crossesAt;
@@ -2276,6 +2299,31 @@ function applyNoMultiLvlLblOverride(
   }
   if (override === null) return undefined;
   return override === true ? true : undefined;
+}
+
+/**
+ * Resolve an `auto` override using the same `undefined` (inherit) /
+ * `null` (drop) / `boolean` (replace) grammar as the other axis
+ * helpers. Only `false` surfaces (the writer treats `true` and absence
+ * identically — both produce `<c:auto val="1"/>`), so an override of
+ * `true` collapses to `undefined` to keep the cloned `SheetChart`
+ * shape minimal. Non-boolean inputs fall through the type guard to
+ * `undefined`.
+ *
+ * Inverse of {@link applyNoMultiLvlLblOverride}: `<c:auto>` defaults to
+ * `true` in the OOXML schema, so the helper collapses `true` rather
+ * than `false` — symmetric with the parser-side default-collapse on
+ * the read layer.
+ */
+function applyAutoOverride(
+  source: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) {
+    return source === false ? false : undefined;
+  }
+  if (override === null) return undefined;
+  return override === false ? false : undefined;
 }
 
 /**

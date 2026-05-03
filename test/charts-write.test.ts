@@ -4795,6 +4795,151 @@ describe("writeChart — axis noMultiLvlLbl", () => {
   });
 });
 
+// ── writeChart — axis auto ───────────────────────────────────────────
+
+describe("writeChart — axis auto", () => {
+  it('emits the OOXML default <c:auto val="1"/> on the category axis when the field is unset', () => {
+    // Excel's reference serialization always emits `<c:auto val="1"/>` on
+    // every category axis, so the writer keeps that contract on a stock
+    // chart even though the parser collapses `1` to undefined on the
+    // read side.
+    const result = writeChart(makeChart(), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:auto val="1"');
+    expect(catAxBlock).not.toContain('c:auto val="0"');
+  });
+
+  it('emits <c:auto val="0"/> on the category axis when the override is false', () => {
+    const result = writeChart(makeChart({ axes: { x: { auto: false } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:auto val="0"');
+    expect(catAxBlock).not.toContain('c:auto val="1"');
+  });
+
+  it("emits the default when the override is explicitly true", () => {
+    // Pinning the default has the same wire effect as omitting the field —
+    // the OOXML default `true` round-trips identically with absence.
+    const result = writeChart(makeChart({ axes: { x: { auto: true } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:auto val="1"');
+  });
+
+  it("emits exactly one <c:auto> element per category axis", () => {
+    const result = writeChart(makeChart({ axes: { x: { auto: false } } }), "Sheet1");
+    // Use a precise pattern so `<c:autoTitleDeleted>` does not collide
+    // with the catAx `<c:auto val=".."/>` element.
+    expect((result.chartXml.match(/<c:auto val="/g) ?? []).length).toBe(1);
+  });
+
+  it("threads the override through bar, column, line, and area chart families", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(makeChart({ type, axes: { x: { auto: false } } }), "Sheet1");
+      expect(result.chartXml).toContain('c:auto val="0"');
+    }
+  });
+
+  it("ignores the override on scatter charts (both axes are value axes)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { x: { auto: false } },
+      }),
+      "Sheet1",
+    );
+    // `<c:autoTitleDeleted>` is always emitted on `<c:chart>`, so check
+    // the precise CT_CatAx form to confirm the catAx element never
+    // surfaces on a chart whose axes are both `<c:valAx>`.
+    expect(result.chartXml).not.toContain("<c:auto val=");
+  });
+
+  it("ignores the override on pie / doughnut charts (no axes at all)", () => {
+    const pie = writeChart(makeChart({ type: "pie", axes: { x: { auto: false } } }), "Sheet1");
+    expect(pie.chartXml).not.toContain("<c:auto val=");
+    const dough = writeChart(
+      makeChart({ type: "doughnut", axes: { x: { auto: false } } }),
+      "Sheet1",
+    );
+    expect(dough.chartXml).not.toContain("<c:auto val=");
+  });
+
+  it("does not emit auto on the value axis", () => {
+    // The model surfaces the flag only on `axes.x`; setting it via
+    // `axes.y` is impossible at the type level. This test pins the
+    // negative case for the writer: a valAx never carries the element.
+    const result = writeChart(makeChart({ axes: { x: { auto: false } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).not.toContain("<c:auto");
+  });
+
+  it("places auto between crosses and lblAlgn per the OOXML schema", () => {
+    // CT_CatAx: ... crossAx -> crosses? -> auto -> lblAlgn -> lblOffset.
+    const result = writeChart(
+      makeChart({
+        axes: { x: { crosses: "max", auto: false, lblAlgn: "l" } },
+      }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const crossesIdx = catAxBlock.indexOf("c:crosses");
+    const autoIdx = catAxBlock.indexOf("c:auto");
+    const lblAlgnIdx = catAxBlock.indexOf("c:lblAlgn");
+    expect(crossesIdx).toBeGreaterThan(0);
+    expect(autoIdx).toBeGreaterThan(crossesIdx);
+    expect(lblAlgnIdx).toBeGreaterThan(autoIdx);
+  });
+
+  it("ignores non-boolean auto values (falls back to default 1)", () => {
+    // Match how `legendOverlay` / `roundedCorners` / axis `hidden` treat
+    // their inputs: only literal `false` produces the non-default `0`. A
+    // stray non-boolean collapses to the default.
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { auto: "no" as any } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:auto val="1"');
+  });
+
+  it("round-trips a non-default auto through parseChart", () => {
+    const written = writeChart(makeChart({ axes: { x: { auto: false } } }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.auto).toBe(false);
+  });
+
+  it("collapses a defaulted auto round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes).toBeUndefined();
+  });
+
+  it("end-to-end: writeXlsx packages the flag into chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            axes: { x: { auto: false } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('c:auto val="0"');
+  });
+});
+
 // ── writeChart — title overlay ───────────────────────────────────────
 
 describe("writeChart — titleOverlay", () => {

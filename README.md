@@ -801,6 +801,20 @@ ignores the element on every other axis flavour. Only an explicit
 unknown tokens all collapse to `undefined` so absence and the default
 round-trip identically. The reader accepts the OOXML truthy / falsy
 spellings (`"1"` / `"true"` / `"0"` / `"false"`).
+`ChartAxisInfo.auto` surfaces the per-axis `<c:auto val=".."/>` flag
+— Excel's "Format Axis -> Axis Options -> Axis Type" radio (the
+"Text axis" choice flips the value to `0`). The OOXML default `true`
+lets Excel inspect the axis labels and decide at render time whether
+to treat the axis as a discrete category axis or a chronological
+date axis; `false` pins the axis as a literal category axis so a
+date-shaped category range still renders as a flat category axis
+without any chronological grouping. The OOXML schema places the
+element on `CT_CatAx` exclusively, so the parser ignores it on every
+other axis flavour. Only an explicit `val="0"` surfaces `false`; the
+OOXML default `val="1"`, absence, missing `val`, and unknown tokens
+all collapse to `undefined` so absence and the default round-trip
+identically. The reader accepts the OOXML truthy / falsy spellings
+(`"1"` / `"true"` / `"0"` / `"false"`).
 `ChartAxisInfo.reverse` surfaces the per-axis
 `<c:scaling><c:orientation val="maxMin"/></c:scaling>` flag — Excel's
 "Categories / Values in reverse order" toggle. Only `"maxMin"` surfaces
@@ -1444,6 +1458,22 @@ only an explicit `true` emits `val="1"`. The element lives on
 `<c:serAx>` reject it), so the flag threads through bar / column /
 line / area but is silently dropped on scatter (both axes are value
 axes) and pie / doughnut (no axes at all).
+The `axes.x.auto` flag maps to `<c:catAx><c:auto val=".."/>` — Excel's
+"Format Axis -> Axis Options -> Axis Type" radio (the "Text axis"
+choice flips the value to `0`). Excel's default `true` lets the
+renderer inspect the axis labels and decide at render time whether to
+treat the axis as a discrete category axis or a chronological date
+axis; `false` pins the axis as a literal category axis so a
+date-shaped category range still renders as a flat category axis
+without any chronological grouping. The writer always emits the
+element because Excel's reference serialization includes
+`<c:auto val="1"/>` on every category axis; `true`, absence, and
+non-boolean inputs all collapse to the default `val="1"`, while only
+an explicit `false` emits `val="0"`. The element lives on `CT_CatAx`
+exclusively (even `<c:dateAx>`, `<c:valAx>`, and `<c:serAx>` reject
+it), so the flag threads through bar / column / line / area but is
+silently dropped on scatter (both axes are value axes) and pie /
+doughnut (no axes at all).
 The `axes.x.reverse` and `axes.y.reverse` flags map to
 `<c:scaling><c:orientation val="maxMin"/></c:scaling>` — Excel's
 "Categories / Values in reverse order" toggle. On a category axis,

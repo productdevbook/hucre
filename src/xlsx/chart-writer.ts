@@ -332,6 +332,14 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // catAx-only scope rule as the surrounding category-axis knobs;
     // the catAx builder is the sole consumer.
     xNoMultiLvlLbl: chart.axes?.x?.noMultiLvlLbl === true,
+    // `<c:auto>` lives exclusively on `CT_CatAx` per ECMA-376 Part 1,
+    // §21.2.2.7 — `<c:dateAx>`, `<c:valAx>`, and `<c:serAx>` reject the
+    // element. Same catAx-only scope rule as `noMultiLvlLbl`. Only an
+    // explicit `axes.x.auto === false` flips the toggle off; absence
+    // (and any non-boolean) falls back to the OOXML default `true` so
+    // the writer always emits Excel's reference `<c:auto val="1"/>`
+    // shape on a stock chart.
+    xAuto: chart.axes?.x?.auto !== false,
     // `<c:delete>` lives on every axis flavour (CT_CatAx / CT_ValAx /
     // CT_DateAx / CT_SerAx). The writer always emits the element —
     // Excel's reference serialization includes `<c:delete val="0"/>`
@@ -720,6 +728,17 @@ interface AxisRenderOptions {
    * dropped at the per-chart-type branch.
    */
   xNoMultiLvlLbl: boolean;
+  /**
+   * Whether the X axis should render its `<c:auto>` element with
+   * `val="1"` (Excel's default — auto-detect whether the axis is a
+   * date axis or category axis). Always defined — `true` keeps Excel's
+   * reference `val="1"` while `false` pins the axis as a literal
+   * category axis (Excel's "Text axis" radio under "Format Axis -> Axis
+   * Options"). Only meaningful for the catAx builder; scatter has no
+   * category axis, so the value is silently dropped at the per-chart-
+   * type branch.
+   */
+  xAuto: boolean;
   /**
    * Whether the X axis should render its `<c:delete>` element with
    * `val="1"` (axis hidden). Always defined — `false` keeps Excel's
@@ -1411,7 +1430,12 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
     ...buildAxisTickRendering(opts.xMajorTickMark, opts.xMinorTickMark, opts.xTickLblPos),
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL }),
     buildAxisCrosses(opts.xCrosses),
-    xmlSelfClose("c:auto", { val: 1 }),
+    // `<c:auto>` is always emitted because Excel's reference
+    // serialization includes it on every category axis. The writer
+    // pins the caller's override when `false`; absence (and any non-
+    // boolean) collapses to the OOXML default `true` so untouched
+    // charts match Excel's output byte-for-byte.
+    xmlSelfClose("c:auto", { val: opts.xAuto ? 1 : 0 }),
     // `<c:lblAlgn>` is always emitted because Excel's reference
     // serialization includes it on every category axis. The writer
     // pins the caller's override when set; absence (or the OOXML

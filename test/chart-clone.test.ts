@@ -5230,6 +5230,194 @@ describe("cloneChart — axis noMultiLvlLbl", () => {
   });
 });
 
+// ── cloneChart — axis auto ──────────────────────────────────────────
+
+describe("cloneChart — axis auto", () => {
+  const sourceWithFlag: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: { x: { auto: false } },
+  };
+
+  it("inherits axes.x.auto=false from the source when no override is given", () => {
+    const clone = cloneChart(sourceWithFlag, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.auto).toBe(false);
+  });
+
+  it("drops the inherited flag when override is null", () => {
+    const clone = cloneChart(sourceWithFlag, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { auto: null } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("drops the inherited flag when override is true", () => {
+    // `true` collapses to undefined the same way `null` does because the
+    // writer treats both shapes identically (val="1" is the default).
+    const clone = cloneChart(sourceWithFlag, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { auto: true } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("replaces the inherited false with override false (no-op)", () => {
+    const clone = cloneChart(sourceWithFlag, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { auto: false } },
+    });
+    expect(clone.axes?.x?.auto).toBe(false);
+  });
+
+  it("adds auto=false to a source axis that did not declare it", () => {
+    const noFlag: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(noFlag, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { auto: false } },
+    });
+    expect(clone.axes?.x?.auto).toBe(false);
+  });
+
+  it("collapses non-boolean overrides to undefined", () => {
+    const clone = cloneChart(sourceWithFlag, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { auto: 0 as unknown as boolean } },
+    });
+    // The non-boolean override drops, falling back to undefined (not the
+    // inherited false) since the override was non-undefined.
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("strips the flag silently when the resolved chart type is pie", () => {
+    const pieSource: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [{ kind: "pie", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { auto: false } },
+    };
+    const clone = cloneChart(pieSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("pie");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("strips the flag silently when the resolved chart type is doughnut", () => {
+    const doughnutSource: Chart = {
+      kinds: ["doughnut"],
+      seriesCount: 1,
+      series: [{ kind: "doughnut", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { auto: false } },
+    };
+    const clone = cloneChart(doughnutSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("strips the flag silently when the resolved chart type is scatter", () => {
+    // Scatter uses two value axes, so the X axis is no longer a category
+    // axis. Drop inherited auto so the cloned model accurately reflects
+    // what the chart will paint — the schema rejects the element on every
+    // value-axis flavour.
+    const clone = cloneChart(sourceWithFlag, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "scatter",
+      series: [{ values: "Sheet1!$B$2:$B$5", categories: "Sheet1!$A$2:$A$5" }],
+    });
+    expect(clone.type).toBe("scatter");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("carries the flag through a chart-type coercion (bar -> column)", () => {
+    const clone = cloneChart(sourceWithFlag, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.axes?.x?.auto).toBe(false);
+  });
+
+  it("composes the flag alongside other axis overrides", () => {
+    const clone = cloneChart(sourceWithFlag, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: {
+        x: {
+          title: "Period",
+          gridlines: { major: true },
+          noMultiLvlLbl: true,
+        },
+      },
+    });
+    expect(clone.axes?.x?.title).toBe("Period");
+    expect(clone.axes?.x?.gridlines).toEqual({ major: true });
+    expect(clone.axes?.x?.noMultiLvlLbl).toBe(true);
+    expect(clone.axes?.x?.auto).toBe(false);
+  });
+
+  it("end-to-end: parseChart -> cloneChart -> writeChart preserves the flag", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:auto val="0"/>
+      </c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.axes?.x?.auto).toBe(false);
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(sheetChart.axes?.x?.auto).toBe(false);
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    const catAxBlock = written.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:auto val="0"');
+
+    // Re-parse to confirm the round-trip.
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.auto).toBe(false);
+  });
+
+  it("end-to-end: writeXlsx packages the cloned chart with the flag intact", async () => {
+    const clone = cloneChart(sourceWithFlag, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:auto val="0"');
+  });
+});
+
 // ── cloneChart — titleOverlay ────────────────────────────────────────
 
 describe("cloneChart — titleOverlay", () => {
