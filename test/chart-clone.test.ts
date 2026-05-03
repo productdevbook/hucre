@@ -3592,3 +3592,149 @@ describe("cloneChart — axis tickLblSkip / tickMarkSkip", () => {
     expect(written).toContain('c:tickMarkSkip val="5"');
   });
 });
+
+// ── cloneChart — axis lblOffset ─────────────────────────────────────
+
+describe("cloneChart — axis lblOffset", () => {
+  const sourceWithOffset: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: { x: { lblOffset: 250 } },
+  };
+
+  it("inherits the lblOffset from the source when no override is given", () => {
+    const clone = cloneChart(sourceWithOffset, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.lblOffset).toBe(250);
+  });
+
+  it("drops the inherited offset when the override is null", () => {
+    const clone = cloneChart(sourceWithOffset, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { lblOffset: null } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("replaces the inherited offset with the override value", () => {
+    const clone = cloneChart(sourceWithOffset, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { lblOffset: 400 } },
+    });
+    expect(clone.axes?.x?.lblOffset).toBe(400);
+  });
+
+  it("adds an offset to a source axis that did not declare one", () => {
+    const noOffset: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(noOffset, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { lblOffset: 200 } },
+    });
+    expect(clone.axes?.x?.lblOffset).toBe(200);
+  });
+
+  it("drops out-of-range overrides without clamping", () => {
+    const clone = cloneChart(sourceWithOffset, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { lblOffset: 9999 } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("collapses an explicit override of 100 (the OOXML default) to undefined", () => {
+    // Pinning the default has the same effect as `null` — the cloned
+    // chart inherits Excel's default label spacing either way.
+    const clone = cloneChart(sourceWithOffset, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { lblOffset: 100 } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("strips the offset silently when the resolved chart type is pie", () => {
+    const pieSource: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [{ kind: "pie", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { lblOffset: 250 } },
+    };
+    const clone = cloneChart(pieSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("pie");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("strips the offset silently when the resolved chart type is scatter", () => {
+    // Scatter uses two value axes, so the X axis is no longer a category
+    // axis. Drop inherited lblOffset so the cloned model accurately
+    // reflects what the chart will paint.
+    const clone = cloneChart(sourceWithOffset, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "scatter",
+      series: [{ values: "Sheet1!$B$2:$B$5", categories: "Sheet1!$A$2:$A$5" }],
+    });
+    expect(clone.type).toBe("scatter");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("end-to-end: parseChart -> cloneChart -> writeChart preserves the offset", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:lblOffset val="300"/>
+      </c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.axes?.x?.lblOffset).toBe(300);
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(sheetChart.axes?.x?.lblOffset).toBe(300);
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    expect(written).toContain('c:lblOffset val="300"');
+
+    // Re-parse to confirm the round-trip.
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.lblOffset).toBe(300);
+  });
+
+  it("end-to-end: writeXlsx packages the cloned chart with the offset intact", async () => {
+    const clone = cloneChart(sourceWithOffset, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:lblOffset val="250"');
+  });
+});

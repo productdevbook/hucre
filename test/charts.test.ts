@@ -4048,3 +4048,127 @@ describe("parseChart — axis tickLblSkip / tickMarkSkip", () => {
     });
   });
 });
+
+// ── parseChart — axis lblOffset ────────────────────────────────────
+
+describe("parseChart — axis lblOffset", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it("surfaces a non-default lblOffset on the category axis", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:lblOffset val="250"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.lblOffset).toBe(250);
+  });
+
+  it("collapses the OOXML default lblOffset=100 to undefined", () => {
+    // Excel's reference serialization always emits `<c:lblOffset val="100"/>`,
+    // but absence and the default round-trip identically — the writer's
+    // elision logic re-emits `100` when the field is undefined, so the
+    // parser collapses `100` to undefined to keep the parsed shape minimal.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:lblOffset val="100"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("ignores out-of-range lblOffset values (drops rather than clamps)", () => {
+    // ST_LblOffsetPercent restricts the value to 0..1000. Out-of-range
+    // values like -5, 9999 should drop rather than clamp because a silent
+    // clamp would mask a configuration error in the source template.
+    const out = (val: string): unknown => {
+      const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:lblOffset val="${val}"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+      return parseChart(xml)?.axes?.x?.lblOffset;
+    };
+    expect(out("-5")).toBeUndefined();
+    expect(out("9999")).toBeUndefined();
+    expect(out("not-a-number")).toBeUndefined();
+    // Boundaries 0 and 1000 are accepted.
+    expect(out("0")).toBe(0);
+    expect(out("1000")).toBe(1000);
+  });
+
+  it("returns undefined when lblOffset val attribute is missing", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:lblOffset/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("does not surface lblOffset on a value axis", () => {
+    // The OOXML schema places `<c:lblOffset>` on CT_CatAx / CT_DateAx
+    // only — `<c:valAx>` rejects it entirely. A corrupt template carrying
+    // a stray offset on a value axis should not surface a field the writer
+    // would never emit anyway.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:lblOffset val="250"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.lblOffset).toBeUndefined();
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("co-surfaces lblOffset alongside title, gridlines, and tick skips", () => {
+    const xml = `<c:chartSpace ${NS}
+                xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:majorGridlines/>
+      <c:title><c:tx><c:rich><a:p><a:r><a:t>Region</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      <c:lblOffset val="200"/>
+      <c:tickLblSkip val="3"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x).toEqual({
+      title: "Region",
+      gridlines: { major: true },
+      lblOffset: 200,
+      tickLblSkip: 3,
+    });
+  });
+});

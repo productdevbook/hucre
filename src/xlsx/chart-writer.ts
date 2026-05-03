@@ -161,6 +161,11 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // catAx builder is the only consumer of these knobs.
     xTickLblSkip: normalizeAxisSkip(chart.axes?.x?.tickLblSkip),
     xTickMarkSkip: normalizeAxisSkip(chart.axes?.x?.tickMarkSkip),
+    // `lblOffset` lives exclusively on `CT_CatAx` / `CT_DateAx` per
+    // the OOXML schema. Same scope rule as the skip elements above —
+    // scatter has no category axis, so the catAx builder is the only
+    // consumer of this knob.
+    xLblOffset: normalizeAxisLblOffset(chart.axes?.x?.lblOffset),
   };
 
   switch (chart.type) {
@@ -231,6 +236,12 @@ interface AxisRenderOptions {
    * is `<c:catAx>`. Same scope rule as {@link xTickLblSkip}.
    */
   xTickMarkSkip: number | undefined;
+  /**
+   * Label offset percentage emitted on the X axis only when the axis
+   * is `<c:catAx>` (i.e. bar / column / line / area). Scatter charts
+   * have no category axis, so the value is dropped silently.
+   */
+  xLblOffset: number | undefined;
 }
 
 /**
@@ -356,6 +367,29 @@ function normalizeAxisSkip(value: number | undefined): number | undefined {
   const rounded = Math.round(value);
   if (rounded < 1 || rounded > 32767) return undefined;
   if (rounded === 1) return undefined;
+  return rounded;
+}
+
+/**
+ * Normalize a category-axis `lblOffset` percentage to an integer in
+ * the OOXML `ST_LblOffsetPercent` band (`0..1000`).
+ *
+ * Returns `undefined` when:
+ *   - the input is missing or non-finite,
+ *   - the rounded value is `100` (the OOXML default — Excel's
+ *     reference label spacing — and what absence already means),
+ *   - the rounded value falls outside the `0..1000` range.
+ *
+ * Out-of-range values drop rather than clamp so a malformed override
+ * surfaces as "no offset emitted" instead of silently snapping to the
+ * extreme — a clamp from `9999` to `1000` would mask a programming
+ * error in the caller.
+ */
+function normalizeAxisLblOffset(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  const rounded = Math.round(value);
+  if (rounded < 0 || rounded > 1000) return undefined;
+  if (rounded === 100) return undefined;
   return rounded;
 }
 
@@ -643,7 +677,12 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
     xmlSelfClose("c:crosses", { val: "autoZero" }),
     xmlSelfClose("c:auto", { val: 1 }),
     xmlSelfClose("c:lblAlgn", { val: "ctr" }),
-    xmlSelfClose("c:lblOffset", { val: 100 }),
+    // `<c:lblOffset>` is always emitted because Excel's reference
+    // serialization includes it on every category axis. The writer
+    // pins the caller's override when set; absence (or the OOXML
+    // default `100` collapsed by `normalizeAxisLblOffset`) emits the
+    // default so untouched charts match Excel's output byte-for-byte.
+    xmlSelfClose("c:lblOffset", { val: opts.xLblOffset ?? 100 }),
     // OOXML CT_CatAx places `<c:tickLblSkip>` / `<c:tickMarkSkip>`
     // after `<c:lblOffset>` and before `<c:noMultiLvlLbl>`. Only
     // emit each element when the caller pinned a non-default value

@@ -288,6 +288,11 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   const isCategoryAxis = axis.local === "catAx" || axis.local === "dateAx";
   const tickLblSkip = isCategoryAxis ? parseAxisSkip(axis, "tickLblSkip") : undefined;
   const tickMarkSkip = isCategoryAxis ? parseAxisSkip(axis, "tickMarkSkip") : undefined;
+  // `<c:lblOffset>` lives exclusively on `CT_CatAx` / `CT_DateAx` per
+  // ECMA-376 Part 1, §21.2.2 — the `<c:valAx>` and `<c:serAx>` schemas
+  // reject it. Skip the parse on value axes for the same reason as
+  // the skip elements above.
+  const lblOffset = isCategoryAxis ? parseAxisLblOffset(axis) : undefined;
   if (
     title === undefined &&
     gridlines === undefined &&
@@ -298,7 +303,8 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
     tickLblPos === undefined &&
     reverse === undefined &&
     tickLblSkip === undefined &&
-    tickMarkSkip === undefined
+    tickMarkSkip === undefined &&
+    lblOffset === undefined
   ) {
     return undefined;
   }
@@ -313,6 +319,7 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   if (reverse !== undefined) out.reverse = reverse;
   if (tickLblSkip !== undefined) out.tickLblSkip = tickLblSkip;
   if (tickMarkSkip !== undefined) out.tickMarkSkip = tickMarkSkip;
+  if (lblOffset !== undefined) out.lblOffset = lblOffset;
   return out;
 }
 
@@ -421,6 +428,33 @@ function parseAxisSkip(
   if (!Number.isFinite(parsed)) return undefined;
   if (parsed < 1 || parsed > 32767) return undefined;
   if (parsed === 1) return undefined;
+  return parsed;
+}
+
+/**
+ * Pull `<c:lblOffset val=".."/>` off a category axis element. Returns
+ * `undefined` when:
+ *   - the element is absent,
+ *   - the `val` attribute is missing or non-numeric,
+ *   - the parsed value is `100` (the OOXML default — Excel's
+ *     reference label spacing),
+ *   - the parsed value falls outside the OOXML
+ *     `ST_LblOffsetPercent` range (`0..1000`).
+ *
+ * Out-of-range / non-numeric inputs are dropped rather than clamped
+ * so a corrupt template cannot leak an offset Excel would reject.
+ */
+function parseAxisLblOffset(axis: XmlElement): number | undefined {
+  const el = findChild(axis, "lblOffset");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  if (parsed < 0 || parsed > 1000) return undefined;
+  if (parsed === 100) return undefined;
   return parsed;
 }
 

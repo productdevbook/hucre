@@ -294,6 +294,16 @@ export interface CloneChartOptions {
        * scope rules as {@link tickLblSkip}.
        */
       tickMarkSkip?: number | null;
+      /**
+       * Override `SheetChart.axes.x.lblOffset`. `undefined` (or
+       * omitted) inherits the source axis's label offset; `null`
+       * drops the inherited value (the writer falls back to Excel's
+       * default `100`); a number in the `0..1000` band replaces it.
+       * Only meaningful for resolved chart types whose X axis is
+       * `<c:catAx>` (bar / column / line / area); silently dropped
+       * on scatter and pie / doughnut.
+       */
+      lblOffset?: number | null;
     };
     y?: {
       title?: string | null;
@@ -945,6 +955,11 @@ function resolveAxes(
   const xTickMarkSkip = isCatAxisX
     ? applySkipOverride(sourceAxes?.x?.tickMarkSkip, overrides?.x?.tickMarkSkip)
     : undefined;
+  // `lblOffset` is also category-axis-only (CT_CatAx / CT_DateAx) per
+  // the OOXML schema. Same scope rule as the skip elements above.
+  const xLblOffset = isCatAxisX
+    ? applyLblOffsetOverride(sourceAxes?.x?.lblOffset, overrides?.x?.lblOffset)
+    : undefined;
 
   const out: NonNullable<SheetChart["axes"]> = {};
   if (
@@ -957,7 +972,8 @@ function resolveAxes(
     xTickLblPos !== undefined ||
     xReverse !== undefined ||
     xTickLblSkip !== undefined ||
-    xTickMarkSkip !== undefined
+    xTickMarkSkip !== undefined ||
+    xLblOffset !== undefined
   ) {
     out.x = {};
     if (xTitle !== undefined) out.x.title = xTitle;
@@ -970,6 +986,7 @@ function resolveAxes(
     if (xReverse !== undefined) out.x.reverse = xReverse;
     if (xTickLblSkip !== undefined) out.x.tickLblSkip = xTickLblSkip;
     if (xTickMarkSkip !== undefined) out.x.tickMarkSkip = xTickMarkSkip;
+    if (xLblOffset !== undefined) out.x.lblOffset = xLblOffset;
   }
   if (
     yTitle !== undefined ||
@@ -1016,6 +1033,32 @@ function applySkipOverride(
   if (typeof override !== "number" || !Number.isFinite(override)) return undefined;
   const rounded = Math.round(override);
   if (rounded < 1 || rounded > 32767 || rounded === 1) return undefined;
+  return rounded;
+}
+
+/**
+ * Resolve an `lblOffset` override using the same `undefined` (inherit)
+ * / `null` (drop) / value (replace) grammar as the other axis helpers.
+ * Out-of-range / non-numeric values collapse to `undefined` so they
+ * cannot leak into the writer (which would silently drop them anyway
+ * via {@link normalizeAxisLblOffset}). The OOXML default `100` also
+ * collapses to `undefined` so absence and the default round-trip
+ * identically — symmetric with the parser-side default-collapse.
+ */
+function applyLblOffsetOverride(
+  source: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) {
+    if (typeof source !== "number" || !Number.isFinite(source)) return undefined;
+    const rounded = Math.round(source);
+    if (rounded < 0 || rounded > 1000 || rounded === 100) return undefined;
+    return rounded;
+  }
+  if (override === null) return undefined;
+  if (typeof override !== "number" || !Number.isFinite(override)) return undefined;
+  const rounded = Math.round(override);
+  if (rounded < 0 || rounded > 1000 || rounded === 100) return undefined;
   return rounded;
 }
 

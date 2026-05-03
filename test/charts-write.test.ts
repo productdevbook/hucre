@@ -3387,3 +3387,124 @@ describe("writeChart — axis tickLblSkip / tickMarkSkip", () => {
     expect(idx("c:tickMarkSkip")).toBeLessThan(idx("c:noMultiLvlLbl"));
   });
 });
+
+describe("writeChart — axis lblOffset", () => {
+  it("emits the override value on the category axis when set", () => {
+    const result = writeChart(makeChart({ axes: { x: { lblOffset: 250 } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:lblOffset val="250"');
+  });
+
+  it("emits the OOXML default 100 when the field is unset", () => {
+    // Excel's reference serialization always emits `<c:lblOffset val="100"/>`,
+    // so the writer keeps that contract on a stock chart even though the
+    // parser collapses `100` to undefined on the read side.
+    const result = writeChart(makeChart(), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:lblOffset val="100"');
+  });
+
+  it("collapses an explicit 100 (the default) back to the default emit", () => {
+    // Pinning the default has the same effect as omitting the field —
+    // the OOXML default `100` round-trips identically with absence.
+    const result = writeChart(makeChart({ axes: { x: { lblOffset: 100 } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:lblOffset val="100"');
+  });
+
+  it("drops out-of-range overrides without clamping (falls back to default 100)", () => {
+    // ST_LblOffsetPercent restricts the value to 0..1000. Passing -5 or
+    // 9999 collapses to undefined inside `normalizeAxisLblOffset`, so the
+    // writer falls back to the default `100` rather than clamping.
+    const lo = writeChart(makeChart({ axes: { x: { lblOffset: -5 } } }), "Sheet1");
+    const loCatAx = lo.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(loCatAx).toContain('c:lblOffset val="100"');
+
+    const hi = writeChart(makeChart({ axes: { x: { lblOffset: 9999 } } }), "Sheet1");
+    const hiCatAx = hi.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(hiCatAx).toContain('c:lblOffset val="100"');
+  });
+
+  it("rounds non-integer values to the nearest integer", () => {
+    const result = writeChart(makeChart({ axes: { x: { lblOffset: 247.6 } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:lblOffset val="248"');
+  });
+
+  it("accepts the schema boundaries 0 and 1000", () => {
+    const lo = writeChart(makeChart({ axes: { x: { lblOffset: 0 } } }), "Sheet1");
+    expect(lo.chartXml).toContain('c:lblOffset val="0"');
+    const hi = writeChart(makeChart({ axes: { x: { lblOffset: 1000 } } }), "Sheet1");
+    expect(hi.chartXml).toContain('c:lblOffset val="1000"');
+  });
+
+  it("emits exactly one <c:lblOffset> element per category axis", () => {
+    const result = writeChart(makeChart({ axes: { x: { lblOffset: 250 } } }), "Sheet1");
+    expect((result.chartXml.match(/c:lblOffset/g) ?? []).length).toBe(1);
+  });
+
+  it("threads the override through bar, column, line, and area chart families", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(makeChart({ type, axes: { x: { lblOffset: 200 } } }), "Sheet1");
+      expect(result.chartXml).toContain('c:lblOffset val="200"');
+    }
+  });
+
+  it("ignores the override on scatter charts (both axes are value axes)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { x: { lblOffset: 250 } },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:lblOffset");
+  });
+
+  it("ignores the override on pie / doughnut charts (no axes at all)", () => {
+    const pie = writeChart(makeChart({ type: "pie", axes: { x: { lblOffset: 250 } } }), "Sheet1");
+    expect(pie.chartXml).not.toContain("c:lblOffset");
+    const dough = writeChart(
+      makeChart({ type: "doughnut", axes: { x: { lblOffset: 250 } } }),
+      "Sheet1",
+    );
+    expect(dough.chartXml).not.toContain("c:lblOffset");
+  });
+
+  it("does not emit lblOffset on the value axis", () => {
+    // The model surfaces the offset only on `axes.x`; setting it via
+    // `axes.y` is impossible at the type level. This test pins the
+    // negative case for the writer: a valAx never carries lblOffset.
+    const result = writeChart(makeChart({ axes: { x: { lblOffset: 250 } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).not.toContain("c:lblOffset");
+  });
+
+  it("places lblOffset between lblAlgn and tickLblSkip per the OOXML schema", () => {
+    // CT_CatAx: ... lblAlgn → lblOffset → tickLblSkip → tickMarkSkip → noMultiLvlLbl.
+    const result = writeChart(
+      makeChart({ axes: { x: { lblOffset: 250, tickLblSkip: 3 } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const lblAlgnIdx = catAxBlock.indexOf("c:lblAlgn");
+    const lblOffsetIdx = catAxBlock.indexOf("c:lblOffset");
+    const tickLblSkipIdx = catAxBlock.indexOf("c:tickLblSkip");
+    expect(lblAlgnIdx).toBeGreaterThan(0);
+    expect(lblOffsetIdx).toBeGreaterThan(lblAlgnIdx);
+    expect(tickLblSkipIdx).toBeGreaterThan(lblOffsetIdx);
+  });
+
+  it("round-trips a non-default offset through parseChart", () => {
+    const written = writeChart(makeChart({ axes: { x: { lblOffset: 200 } } }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.lblOffset).toBe(200);
+  });
+
+  it("collapses a defaulted offset round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes).toBeUndefined();
+  });
+});

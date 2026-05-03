@@ -1126,6 +1126,20 @@ export interface SheetChart {
        * scope-restriction as `tickLblSkip` — category axes only.
        */
       tickMarkSkip?: number;
+      /**
+       * Distance between the tick labels and the axis line on a
+       * category axis, expressed as a percentage of the default
+       * spacing. `100` (the OOXML default) renders Excel's reference
+       * spacing; lower values pull the labels in towards the axis,
+       * higher values push them out. Maps to
+       * `<c:catAx><c:lblOffset val="N"/></c:catAx>`. Only meaningful
+       * for bar / column / line / area charts (whose X axis is
+       * `<c:catAx>`); silently ignored for scatter (both axes are
+       * value axes) and pie / doughnut (no axes at all). Accepted
+       * range: `0..1000` (the OOXML `ST_LblOffsetPercent` schema).
+       * Values outside the range are dropped at write time.
+       */
+      lblOffset?: number;
     };
     /** Value axis. */
     y?: {
@@ -2062,6 +2076,17 @@ export interface ChartAxisInfo {
    * {@link tickLblSkip}.
    */
   tickMarkSkip?: number;
+  /**
+   * Label offset pulled from `<c:lblOffset val=".."/>`, expressed as a
+   * percentage of the default axis-label spacing. Surfaces only on
+   * category axes (`<c:catAx>` / `<c:dateAx>`) — the OOXML schema
+   * (`ST_LblOffsetPercent`) does not place this element on `<c:valAx>`
+   * or `<c:serAx>`. The default `100` (Excel's reference spacing)
+   * collapses to `undefined` so absence and the default round-trip
+   * identically through {@link cloneChart}. Accepted range is `0..1000`;
+   * out-of-range values are dropped rather than fabricated.
+   */
+  lblOffset?: number;
 }
 
 /**
