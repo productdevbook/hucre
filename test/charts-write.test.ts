@@ -6417,3 +6417,260 @@ describe("writeChart — data table", () => {
     });
   });
 });
+
+// ── writeChart — chart-space protection ──────────────────────────────
+
+describe("writeChart — chart-space protection", () => {
+  it("skips <c:protection> entirely when the field is unset (writer default)", () => {
+    // Excel applies no chart-level protection on a fresh chart — the
+    // writer skips the element so the file stays minimal. Absence and
+    // the unset default round-trip identically through cloneChart.
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:protection");
+  });
+
+  it("skips <c:protection> when protection is false", () => {
+    // `false` mirrors the unset default — the writer skips the element.
+    const result = writeChart(makeChart({ protection: false }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:protection");
+  });
+
+  it("emits a fully-defaulted <c:protection> when protection is true", () => {
+    // `true` declares the bare <c:protection> shell with every flag at
+    // its OOXML default `false` — useful for round-trip parity with
+    // templates that pin the bare element without locking any flag.
+    const result = writeChart(makeChart({ protection: true }), "Sheet1");
+    expect(result.chartXml).toContain("<c:protection>");
+    expect(result.chartXml).toContain('<c:chartObject val="0"/>');
+    expect(result.chartXml).toContain('<c:data val="0"/>');
+    expect(result.chartXml).toContain('<c:formatting val="0"/>');
+    expect(result.chartXml).toContain('<c:selection val="0"/>');
+    expect(result.chartXml).toContain('<c:userInterface val="0"/>');
+  });
+
+  it("emits a fully-defaulted <c:protection> when protection is an empty object", () => {
+    // An empty override accepts every default — equivalent to passing
+    // `protection: true`. Each unspecified field falls back to the
+    // OOXML reference value `false`.
+    const result = writeChart(makeChart({ protection: {} }), "Sheet1");
+    expect(result.chartXml).toContain("<c:protection>");
+    expect(result.chartXml).toContain('<c:chartObject val="0"/>');
+    expect(result.chartXml).toContain('<c:data val="0"/>');
+    expect(result.chartXml).toContain('<c:formatting val="0"/>');
+    expect(result.chartXml).toContain('<c:selection val="0"/>');
+    expect(result.chartXml).toContain('<c:userInterface val="0"/>');
+  });
+
+  it("honours per-field overrides (true for formatting + selection)", () => {
+    // A common pattern — lock the look (formatting + selection) but
+    // leave the underlying data references and the on-canvas UI
+    // affordances unlocked.
+    const result = writeChart(
+      makeChart({
+        protection: { formatting: true, selection: true },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('<c:chartObject val="0"/>');
+    expect(result.chartXml).toContain('<c:data val="0"/>');
+    expect(result.chartXml).toContain('<c:formatting val="1"/>');
+    expect(result.chartXml).toContain('<c:selection val="1"/>');
+    expect(result.chartXml).toContain('<c:userInterface val="0"/>');
+  });
+
+  it("flips every flag true when the caller pins each true", () => {
+    const result = writeChart(
+      makeChart({
+        protection: {
+          chartObject: true,
+          data: true,
+          formatting: true,
+          selection: true,
+          userInterface: true,
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('<c:chartObject val="1"/>');
+    expect(result.chartXml).toContain('<c:data val="1"/>');
+    expect(result.chartXml).toContain('<c:formatting val="1"/>');
+    expect(result.chartXml).toContain('<c:selection val="1"/>');
+    expect(result.chartXml).toContain('<c:userInterface val="1"/>');
+  });
+
+  it("emits the five <c:protection> children in CT_Protection schema order", () => {
+    // CT_Protection: chartObject?, data?, formatting?, selection?,
+    // userInterface? — order matters for strict validators (Excel
+    // itself rejects out-of-order children).
+    const result = writeChart(makeChart({ protection: true }), "Sheet1");
+    const chartObjectIdx = result.chartXml.indexOf("c:chartObject");
+    const dataIdx = result.chartXml.indexOf("c:data ");
+    const formattingIdx = result.chartXml.indexOf("c:formatting");
+    const selectionIdx = result.chartXml.indexOf("c:selection");
+    const userInterfaceIdx = result.chartXml.indexOf("c:userInterface");
+    expect(chartObjectIdx).toBeGreaterThan(-1);
+    expect(dataIdx).toBeGreaterThan(chartObjectIdx);
+    expect(formattingIdx).toBeGreaterThan(dataIdx);
+    expect(selectionIdx).toBeGreaterThan(formattingIdx);
+    expect(userInterfaceIdx).toBeGreaterThan(selectionIdx);
+  });
+
+  it("places <c:protection> after <c:style> and before <c:chart> on <c:chartSpace>", () => {
+    // CT_ChartSpace sequence: date1904?, lang?, roundedCorners?,
+    // AlternateContent?, style?, clrMapOvr?, pivotSource?, protection?,
+    // chart, ... — protection sits after style and before the visible
+    // <c:chart>.
+    const result = writeChart(makeChart({ style: 12, protection: true }), "Sheet1");
+    const styleIdx = result.chartXml.indexOf("<c:style");
+    const protectionIdx = result.chartXml.indexOf("<c:protection>");
+    const chartIdx = result.chartXml.indexOf("<c:chart>");
+    expect(styleIdx).toBeGreaterThan(-1);
+    expect(protectionIdx).toBeGreaterThan(styleIdx);
+    expect(chartIdx).toBeGreaterThan(protectionIdx);
+  });
+
+  it("places <c:protection> before <c:chart> even without a <c:style>", () => {
+    // The element should still slot directly before <c:chart> when
+    // no style preset is set — the writer must not require a sibling
+    // to anchor the position.
+    const result = writeChart(makeChart({ protection: true }), "Sheet1");
+    const protectionIdx = result.chartXml.indexOf("<c:protection>");
+    const chartIdx = result.chartXml.indexOf("<c:chart>");
+    expect(protectionIdx).toBeGreaterThan(-1);
+    expect(chartIdx).toBeGreaterThan(protectionIdx);
+  });
+
+  it("only emits <c:protection> once on a chart that pins it", () => {
+    // Guard against any regression that would double-emit the element.
+    const result = writeChart(makeChart({ protection: true }), "Sheet1");
+    const occurrences = result.chartXml.match(/<c:protection>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads protection through every chart family", () => {
+    // <c:protection> lives on <c:chartSpace>, not inside <c:plotArea>
+    // — every chart family carries a slot, including pie / doughnut.
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(makeChart({ type, protection: { formatting: true } }), "Sheet1");
+      expect(result.chartXml).toContain("<c:protection>");
+      expect(result.chartXml).toContain('<c:formatting val="1"/>');
+    }
+    for (const type of ["pie", "doughnut"] as const) {
+      const result = writeChart(
+        {
+          type,
+          series: [{ values: "B2:B4", categories: "A2:A4" }],
+          anchor: { from: { row: 5, col: 0 } },
+          protection: { formatting: true },
+        },
+        "Sheet1",
+      );
+      expect(result.chartXml).toContain("<c:protection>");
+      expect(result.chartXml).toContain('<c:formatting val="1"/>');
+    }
+    const scatter = writeChart(
+      {
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        protection: { formatting: true },
+      },
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain("<c:protection>");
+  });
+
+  it("ignores stray non-boolean overrides rather than emit invalid tokens", () => {
+    // A non-boolean leaking through the type guard collapses to the
+    // OOXML default `false` rather than emit a token Excel rejects.
+    const result = writeChart(
+      makeChart({
+        protection: {
+          // @ts-expect-error — defensive: stray non-boolean leaking through
+          chartObject: 1,
+          // @ts-expect-error — defensive: stray non-boolean leaking through
+          data: "true",
+          formatting: true,
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('<c:chartObject val="0"/>');
+    expect(result.chartXml).toContain('<c:data val="0"/>');
+    expect(result.chartXml).toContain('<c:formatting val="1"/>');
+  });
+
+  it("round-trips a pinned protection through parseChart", () => {
+    const written = writeChart(
+      makeChart({
+        protection: {
+          chartObject: true,
+          data: false,
+          formatting: true,
+          selection: false,
+          userInterface: true,
+        },
+      }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.protection).toEqual({
+      chartObject: true,
+      data: false,
+      formatting: true,
+      selection: false,
+      userInterface: true,
+    });
+  });
+
+  it("round-trips protection: true as the fully-defaulted shape", () => {
+    // The writer emits all five flags as `false` — a re-parse surfaces
+    // the same shape (every flag literal `false`) so the cloned
+    // protection is byte-for-byte stable.
+    const written = writeChart(makeChart({ protection: true }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.protection).toEqual({
+      chartObject: false,
+      data: false,
+      formatting: false,
+      selection: false,
+      userInterface: false,
+    });
+  });
+
+  it("threads protection through writeXlsx into xl/charts/chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Month", "Revenue"],
+          ["Jan", 100],
+          ["Feb", 200],
+          ["Mar", 300],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Quarterly",
+            series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            protection: { formatting: true, selection: true },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain("<c:protection>");
+    expect(chartXml).toContain('<c:formatting val="1"/>');
+    expect(chartXml).toContain('<c:selection val="1"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.protection).toEqual({
+      chartObject: false,
+      data: false,
+      formatting: true,
+      selection: true,
+      userInterface: false,
+    });
+  });
+});

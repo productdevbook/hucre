@@ -154,6 +154,7 @@ export type {
   ChartLineStroke,
   ChartMarker,
   ChartMarkerSymbol,
+  ChartProtection,
   ChartSeriesInfo,
 } from "./_types";
 

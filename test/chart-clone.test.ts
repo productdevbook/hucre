@@ -7384,3 +7384,244 @@ describe("cloneChart — data table", () => {
     });
   });
 });
+
+// ── cloneChart — chart-space protection ──────────────────────────────
+
+describe("cloneChart — chart-space protection", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's protection by default", () => {
+    const clone = cloneChart(
+      source({
+        protection: {
+          chartObject: true,
+          data: false,
+          formatting: true,
+          selection: false,
+          userInterface: true,
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.protection).toEqual({
+      chartObject: true,
+      data: false,
+      formatting: true,
+      selection: false,
+      userInterface: true,
+    });
+  });
+
+  it("lets options.protection: true replace the inherited block wholesale", () => {
+    // Source has a partial protection, override pins every flag to default false.
+    const clone = cloneChart(
+      source({
+        protection: { formatting: true, selection: true },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        protection: true,
+      },
+    );
+    expect(clone.protection).toBe(true);
+  });
+
+  it("lets options.protection: object replace the inherited block wholesale", () => {
+    // No per-field merge — the override block replaces the source's.
+    const clone = cloneChart(
+      source({
+        protection: { formatting: true, selection: true },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        protection: { data: true },
+      },
+    );
+    expect(clone.protection).toEqual({ data: true });
+  });
+
+  it("drops the inherited protection when the override is null", () => {
+    // null collapses to absence — the cloned SheetChart drops the
+    // field so the writer skips <c:protection> entirely on emit.
+    const clone = cloneChart(
+      source({
+        protection: {
+          chartObject: true,
+          data: true,
+          formatting: true,
+          selection: true,
+          userInterface: true,
+        },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        protection: null,
+      },
+    );
+    expect(clone.protection).toBeUndefined();
+  });
+
+  it("drops the inherited protection when the override is false", () => {
+    // `false` is the suppression alias — symmetric with null on the
+    // on-the-wire result (no <c:protection> emitted).
+    const clone = cloneChart(
+      source({
+        protection: { formatting: true },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        protection: false,
+      },
+    );
+    expect(clone.protection).toBeUndefined();
+  });
+
+  it("returns undefined protection when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.protection).toBeUndefined();
+  });
+
+  it("carries protection through a flatten (line → column)", () => {
+    // <c:protection> lives on <c:chartSpace>, so a chart-type
+    // coercion preserves the pinned block — the element has no axis
+    // dependency.
+    const clone = cloneChart(
+      source({
+        protection: { selection: true },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        type: "column",
+      },
+    );
+    expect(clone.type).toBe("column");
+    expect(clone.protection).toEqual({ selection: true });
+  });
+
+  it("preserves protection when flattening into a doughnut clone", () => {
+    // Unlike <c:dTable>, <c:protection> has no axis dependency — it
+    // lives on <c:chartSpace> so pie / doughnut still carry the slot.
+    // The clone layer keeps the inherited block on those families.
+    const clone = cloneChart(
+      source({
+        protection: { selection: true },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        type: "doughnut",
+      },
+    );
+    expect(clone.type).toBe("doughnut");
+    expect(clone.protection).toEqual({ selection: true });
+  });
+
+  it("preserves protection when flattening into a pie clone", () => {
+    const clone = cloneChart(
+      source({
+        protection: { formatting: true },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        type: "pie",
+      },
+    );
+    expect(clone.type).toBe("pie");
+    expect(clone.protection).toEqual({ formatting: true });
+  });
+
+  it("propagates protection into the rendered <c:protection> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(
+      source({
+        protection: {
+          chartObject: true,
+          data: false,
+          formatting: true,
+          selection: false,
+          userInterface: true,
+        },
+      }),
+      { anchor: { from: { row: 5, col: 0 } } },
+    );
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:protection>");
+    expect(written).toContain('<c:chartObject val="1"/>');
+    expect(written).toContain('<c:data val="0"/>');
+    expect(written).toContain('<c:formatting val="1"/>');
+    expect(written).toContain('<c:selection val="0"/>');
+    expect(written).toContain('<c:userInterface val="1"/>');
+
+    // Re-parsing the rendered chart returns the same shape — closes
+    // the template → clone → write → read loop.
+    const reparsed = parseChart(written);
+    expect(reparsed?.protection).toEqual({
+      chartObject: true,
+      data: false,
+      formatting: true,
+      selection: false,
+      userInterface: true,
+    });
+  });
+
+  it("propagates protection: true into a fully-defaulted block on roundtrip", async () => {
+    // `protection: true` declares the bare element with every flag at
+    // its OOXML default `false`. The writer emits all five children
+    // (always-emit contract) so a re-parse surfaces the literal shape.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+      protection: true,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Q", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const reparsed = parseChart(written);
+    expect(reparsed?.protection).toEqual({
+      chartObject: false,
+      data: false,
+      formatting: false,
+      selection: false,
+      userInterface: false,
+    });
+  });
+});

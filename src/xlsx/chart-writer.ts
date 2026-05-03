@@ -23,6 +23,7 @@ import type {
   ChartLineStroke,
   ChartMarker,
   ChartMarkerSymbol,
+  ChartProtection,
   ChartScatterStyle,
   ChartSeries,
   SheetChart,
@@ -123,6 +124,18 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
   const styleVal = resolveStyle(chart);
   if (styleVal !== undefined) {
     chartSpaceChildren.push(xmlSelfClose("c:style", { val: styleVal }));
+  }
+  // `<c:protection>` (CT_Protection, ECMA-376 Part 1, §21.2.2.142)
+  // sits on `<c:chartSpace>` between `<c:style>` / `<c:clrMapOvr>` /
+  // `<c:pivotSource>` and `<c:chart>`. The writer skips the element
+  // when the caller did not opt in (`undefined` / `false`) and emits
+  // it whenever the chart pins `true` or an object — the bare element
+  // round-trips when the override is `true` / `{}` because every
+  // child is `<xsd:boolean>`-typed and absence of a child is itself
+  // valid OOXML (CT_Protection lists every flag as optional).
+  const protection = resolveProtection(chart);
+  if (protection !== undefined) {
+    chartSpaceChildren.push(buildProtection(protection));
   }
   chartSpaceChildren.push(chartElement);
 
@@ -418,6 +431,96 @@ function buildDataTable(table: {
     xmlSelfClose("c:showVertBorder", { val: table.showVertBorder ? 1 : 0 }),
     xmlSelfClose("c:showOutline", { val: table.showOutline ? 1 : 0 }),
     xmlSelfClose("c:showKeys", { val: table.showKeys ? 1 : 0 }),
+  ]);
+}
+
+// ── Protection ───────────────────────────────────────────────────────
+
+/**
+ * Resolve the {@link SheetChart.protection} field into the per-flag
+ * shape `<c:protection>` emits, or `undefined` to signal that the
+ * writer should skip the element entirely.
+ *
+ * Returns `undefined` when the caller did not opt in (`protection` is
+ * `undefined` or `false`).
+ *
+ * Returns the resolved per-flag block when the caller passed `true`
+ * (every flag at the OOXML default `false` — equivalent to a bare
+ * `<c:protection/>` shell) or an object (per-field overrides). Stray
+ * non-boolean inputs collapse to `false` (the OOXML default) rather
+ * than emit a token Excel rejects, mirroring how every other
+ * chart-level boolean writer treats its input.
+ *
+ * Unlike {@link resolveDataTable}, this resolver applies to every
+ * chart family — `<c:protection>` lives on `<c:chartSpace>`, not
+ * inside `<c:plotArea>`, so the element has a slot on pie / doughnut
+ * charts too.
+ */
+function resolveProtection(chart: SheetChart):
+  | {
+      chartObject: boolean;
+      data: boolean;
+      formatting: boolean;
+      selection: boolean;
+      userInterface: boolean;
+    }
+  | undefined {
+  const raw = chart.protection;
+  if (raw === undefined || raw === false) return undefined;
+
+  if (raw === true) {
+    return {
+      chartObject: false,
+      data: false,
+      formatting: false,
+      selection: false,
+      userInterface: false,
+    };
+  }
+
+  // Per-field overrides on top of the `false` defaults. Only literal
+  // `true` flips a flag — anything else (including stray `undefined`,
+  // `null`, or a non-boolean) falls back to the default `false` so the
+  // writer never emits a token the OOXML schema would refuse. The
+  // empty-object case (`{}`) collapses to a bare `<c:protection/>` with
+  // every flag at its default, so Excel still records the chart-level
+  // protection block on roundtrip.
+  return {
+    chartObject: raw.chartObject === true,
+    data: raw.data === true,
+    formatting: raw.formatting === true,
+    selection: raw.selection === true,
+    userInterface: raw.userInterface === true,
+  };
+}
+
+/**
+ * Serialize a resolved protection block into `<c:protection>` with its
+ * five optional boolean children, in the order CT_Protection mandates:
+ * `chartObject`, `data`, `formatting`, `selection`, `userInterface`.
+ *
+ * Unlike `<c:dTable>` (whose four children are required on
+ * CT_DTable), every CT_Protection child is optional — but the writer
+ * always emits all five so the rendered intent is explicit on
+ * roundtrip. Default-valued (`false`) children still surface as
+ * `<c:chartObject val="0"/>` to match the always-emit contract every
+ * other chart-level boolean writer follows (compare `<c:plotVisOnly>`
+ * and `<c:dispBlanksAs>`). Excel's reader treats a missing child as
+ * `false` either way.
+ */
+function buildProtection(protection: {
+  chartObject: boolean;
+  data: boolean;
+  formatting: boolean;
+  selection: boolean;
+  userInterface: boolean;
+}): string {
+  return xmlElement("c:protection", undefined, [
+    xmlSelfClose("c:chartObject", { val: protection.chartObject ? 1 : 0 }),
+    xmlSelfClose("c:data", { val: protection.data ? 1 : 0 }),
+    xmlSelfClose("c:formatting", { val: protection.formatting ? 1 : 0 }),
+    xmlSelfClose("c:selection", { val: protection.selection ? 1 : 0 }),
+    xmlSelfClose("c:userInterface", { val: protection.userInterface ? 1 : 0 }),
   ]);
 }
 
