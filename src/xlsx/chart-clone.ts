@@ -312,6 +312,25 @@ export interface CloneChartOptions {
    */
   style?: number | null;
   /**
+   * Override `<c:lang>` (the chart-space editing-locale hint).
+   *
+   * `undefined` (or omitted) inherits the source's parsed `lang`.
+   * `null` drops the inherited value so the writer skips the element
+   * entirely — Excel falls back to the host workbook's editing
+   * language. A string replaces the locale; malformed culture names
+   * are dropped at the writer side rather than emit a token Excel
+   * would reject (`<c:lang>` is `xsd:language` per the OOXML schema,
+   * the BCP-47 shape `[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*`, e.g.
+   * `en-US`, `tr-TR`, `zh-Hant-TW`).
+   *
+   * Useful when restamping a templated chart for a different locale,
+   * or stripping a template's pinned `en-US` so a translated
+   * dashboard inherits the host workbook's locale. The grammar
+   * mirrors `style` so the chart-space toggles compose the same way
+   * at the call site.
+   */
+  lang?: string | null;
+  /**
    * Override `<c:scatterStyle>` (the chart-level XY-scatter preset).
    *
    * `undefined` (or omitted) inherits the source's parsed
@@ -694,6 +713,9 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
 
   const resolvedStyle = resolveStyle(source.style, options.style);
   if (resolvedStyle !== undefined) out.style = resolvedStyle;
+
+  const resolvedLang = resolveLang(source.lang, options.lang);
+  if (resolvedLang !== undefined) out.lang = resolvedLang;
 
   // `<c:scatterStyle>` only renders inside `<c:scatterChart>`. Drop the
   // field on every other resolved type so a scatter template flattened
@@ -1103,6 +1125,31 @@ function resolveStyle(
   sourceValue: number | undefined,
   override: number | null | undefined,
 ): number | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve a `lang` (chart-space editing-locale hint) override.
+ *
+ * `undefined` → inherit the source's parsed `lang`.
+ * `null`      → drop the inherited value (the writer skips `<c:lang>`
+ *               so Excel falls back to the host workbook's editing
+ *               language).
+ * `string`    → replace. Malformed culture names are not filtered
+ *               here — the writer's `resolveLang` performs the same
+ *               BCP-47 shape check on emit, so a stray value never
+ *               reaches the rendered XML regardless of the path it
+ *               took through clone.
+ *
+ * The grammar mirrors `style` / `roundedCorners` / `plotVisOnly` so
+ * the chart-space toggles compose the same way at the call site.
+ */
+function resolveLang(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
   if (override === undefined) return sourceValue;
   if (override === null) return undefined;
   return override;

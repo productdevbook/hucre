@@ -1163,6 +1163,31 @@ export interface SheetChart {
    */
   style?: number;
   /**
+   * Editing-locale hint. Maps to `<c:lang val=".."/>` on
+   * `<c:chartSpace>` (a sibling of `<c:chart>`, not a child). The
+   * value is an RFC-1766 / IETF BCP-47 culture name such as `en-US`,
+   * `tr-TR`, or `de-DE` — Excel uses it to drive locale-sensitive
+   * defaults within the chart (decimal / group separators on
+   * unformatted axis ticks, default text font fallback, and the
+   * locale recorded for any in-chart text runs).
+   *
+   * Default: omitted — when the field is absent the writer skips the
+   * element and Excel falls back to the workbook's editing language.
+   * Excel's reference serialization for a fresh chart authored on an
+   * English locale emits `<c:lang val="en-US"/>`; the writer does
+   * not pin a default so an unmarked chart and an `en-US` chart do
+   * not silently diverge on roundtrip.
+   *
+   * Useful when restamping a templated chart for a different locale,
+   * or carrying a translated dashboard's `tr-TR` / `de-DE` hint
+   * through the parse → clone → write loop. Only well-formed culture
+   * names are emitted — unrecognized shapes are silently dropped
+   * rather than emit a token Excel would reject. The token has to
+   * match `[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*` (the IETF language tag
+   * subset `<c:lang>` accepts under `xsd:language`).
+   */
+  lang?: string;
+  /**
    * Per-axis configuration rendered alongside the plot area. The `x`
    * axis is the category axis for bar/column/line/area (or the bottom
    * value axis for scatter); the `y` axis is the value axis. Ignored
@@ -2796,6 +2821,28 @@ export interface Chart {
    * fill, plot area look, default text font), not just the plot area.
    */
   style?: number;
+  /**
+   * Editing-locale hint pulled from `<c:chartSpace><c:lang val=".."/>`.
+   * The value is an IETF BCP-47 culture name such as `en-US`, `tr-TR`,
+   * or `de-DE` — Excel records the editing locale on every authored
+   * chart and uses it to drive locale-sensitive defaults (decimal /
+   * group separators on unformatted axis ticks, default text font
+   * fallback, and the locale recorded for any in-chart text runs).
+   *
+   * Surfaces the value verbatim when `val` matches the IETF subset
+   * Excel emits (`[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*`); absence and
+   * malformed tokens drop to `undefined` rather than fabricate a
+   * default. Excel's reference serialization for a fresh chart
+   * authored on an English locale emits `<c:lang val="en-US"/>`,
+   * but the reader does not pin that — only the value the file
+   * actually carries surfaces, so the round-trip stays minimal.
+   *
+   * Note: `<c:lang>` lives on `<c:chartSpace>` (per CT_ChartSpace
+   * the element sits between `<c:date1904>` and `<c:roundedCorners>`),
+   * not inside `<c:chart>` — the locale governs the entire chart
+   * document, not just the plot area.
+   */
+  lang?: string;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────

@@ -84,13 +84,20 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
   // `<c:chartSpace>` element ordering per CT_ChartSpace
   // (ECMA-376 Part 1, §21.2.2.29): date1904?, lang?, roundedCorners?,
   // AlternateContent?, clrMapOvr?, style?, ... chart, ...
-  // — the `<c:style>` element sits after `<c:roundedCorners>` and
-  // before `<c:chart>`. The writer skips emission entirely when the
-  // chart leaves `style` unset so a fresh chart matches Excel's
-  // implicit default rather than pinning the application's `2` preset.
-  const chartSpaceChildren: string[] = [
+  // — `<c:lang>` sits between `<c:date1904>` and `<c:roundedCorners>`,
+  // and `<c:style>` sits after `<c:roundedCorners>` and before
+  // `<c:chart>`. The writer skips emission for any element the chart
+  // leaves unset so a fresh chart stays minimal; Excel itself falls
+  // back to the workbook's editing language and the application's
+  // default look respectively.
+  const chartSpaceChildren: string[] = [];
+  const langVal = resolveLang(chart);
+  if (langVal !== undefined) {
+    chartSpaceChildren.push(xmlSelfClose("c:lang", { val: langVal }));
+  }
+  chartSpaceChildren.push(
     xmlSelfClose("c:roundedCorners", { val: resolveRoundedCorners(chart) ? 1 : 0 }),
-  ];
+  );
   const styleVal = resolveStyle(chart);
   if (styleVal !== undefined) {
     chartSpaceChildren.push(xmlSelfClose("c:style", { val: styleVal }));
@@ -1855,6 +1862,34 @@ function resolveStyle(chart: SheetChart): number | undefined {
   if (typeof raw !== "number") return undefined;
   if (!Number.isInteger(raw)) return undefined;
   if (raw < 1 || raw > 48) return undefined;
+  return raw;
+}
+
+// ── Editing Locale ──────────────────────────────────────────────────
+
+/**
+ * Resolve the `<c:lang val=".."/>` value emitted on `<c:chartSpace>`.
+ *
+ * Returns `undefined` when the chart leaves `lang` unset (the writer
+ * skips the element entirely so a fresh chart falls back to Excel's
+ * workbook-level editing language rather than fabricating a token
+ * neither the caller nor a re-parse would carry). Malformed and
+ * non-string values also collapse to `undefined` — `<c:lang>` is
+ * `xsd:language` in the OOXML schema, the IETF BCP-47 culture-name
+ * shape `[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*` (e.g. `en-US`, `tr-TR`,
+ * `zh-Hant-TW`).
+ *
+ * `<c:lang>` sits on `<c:chartSpace>` (a sibling of `<c:chart>`, not
+ * a child) per CT_ChartSpace. The element follows `<c:date1904>` and
+ * precedes `<c:roundedCorners>` in the schema sequence — the locale
+ * governs the entire chart document (locale-sensitive separators on
+ * unformatted axis ticks, default text font fallback, the locale
+ * recorded for in-chart text runs), not just the plot area.
+ */
+function resolveLang(chart: SheetChart): string | undefined {
+  const raw = chart.lang;
+  if (typeof raw !== "string") return undefined;
+  if (!/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(raw)) return undefined;
   return raw;
 }
 
