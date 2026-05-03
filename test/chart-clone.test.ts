@@ -3289,6 +3289,137 @@ describe("cloneChart — plotVisOnly", () => {
   });
 });
 
+// ── cloneChart — showDLblsOverMax ─────────────────────────────────
+
+describe("cloneChart — showDLblsOverMax", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's showDLblsOverMax by default", () => {
+    const clone = cloneChart(source({ showDLblsOverMax: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.showDLblsOverMax).toBe(false);
+  });
+
+  it("lets options.showDLblsOverMax override the source's value", () => {
+    const clone = cloneChart(source({ showDLblsOverMax: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      showDLblsOverMax: true,
+    });
+    expect(clone.showDLblsOverMax).toBe(true);
+  });
+
+  it("drops the inherited showDLblsOverMax when the override is null", () => {
+    // null collapses to the writer's OOXML default — the field
+    // disappears from the resolved SheetChart so the writer emits the
+    // default `1` (labels render for every point regardless of axis
+    // ceiling).
+    const clone = cloneChart(source({ showDLblsOverMax: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      showDLblsOverMax: null,
+    });
+    expect(clone.showDLblsOverMax).toBeUndefined();
+  });
+
+  it("returns undefined showDLblsOverMax when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.showDLblsOverMax).toBeUndefined();
+  });
+
+  it("carries showDLblsOverMax through a flatten (line → column)", () => {
+    // showDLblsOverMax lives on `<c:chart>` and is valid on every chart
+    // family, so a coercion does not drop it.
+    const clone = cloneChart(source({ showDLblsOverMax: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.showDLblsOverMax).toBe(false);
+  });
+
+  it("carries showDLblsOverMax through a doughnut flatten (line → doughnut)", () => {
+    // The toggle has no chart-family restriction in the OOXML schema —
+    // even a coercion to doughnut, which has no axes, must preserve
+    // the pinned value.
+    const clone = cloneChart(source({ showDLblsOverMax: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.showDLblsOverMax).toBe(false);
+  });
+
+  it("propagates showDLblsOverMax into the rendered <c:chart> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ showDLblsOverMax: false }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:showDLblsOverMax val="0"');
+    expect(written).not.toContain('c:showDLblsOverMax val="1"');
+
+    // Re-parsing the rendered chart returns the same value — closes the
+    // template → clone → write → read loop.
+    const reparsed = parseChart(written);
+    expect(reparsed?.showDLblsOverMax).toBe(false);
+  });
+
+  it("emits the OOXML default showDLblsOverMax=1 when both source and override are absent", async () => {
+    // A bare clone with no showDLblsOverMax hint rolls into a SheetChart
+    // whose writer emits the default `1` and re-parses to undefined.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:showDLblsOverMax val="1"');
+    expect(parseChart(written)?.showDLblsOverMax).toBeUndefined();
+  });
+});
+
 // ── cloneChart — roundedCorners ───────────────────────────────────
 
 describe("cloneChart — roundedCorners", () => {

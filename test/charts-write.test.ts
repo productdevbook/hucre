@@ -3181,6 +3181,91 @@ describe("writeChart — plotVisOnly", () => {
   });
 });
 
+// ── writeChart — showDLblsOverMax ────────────────────────────────────
+
+describe("writeChart — showDLblsOverMax", () => {
+  it('emits <c:showDLblsOverMax val="1"/> when the field is unset (OOXML default)', () => {
+    // The writer always emits the element so the rendered intent is
+    // explicit on roundtrip — mirrors the always-emit contract that
+    // <c:plotVisOnly> and <c:dispBlanksAs> follow.
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(result.chartXml).toContain('c:showDLblsOverMax val="1"');
+    expect(result.chartXml).not.toContain('c:showDLblsOverMax val="0"');
+  });
+
+  it("threads showDLblsOverMax=false through to <c:chart>", () => {
+    // false is the non-default — Excel's "Format Axis -> Labels ->
+    // Show data labels for values over maximum scale" checkbox unchecked.
+    const result = writeChart(makeChart({ showDLblsOverMax: false }), "Sheet1");
+    expect(result.chartXml).toContain('c:showDLblsOverMax val="0"');
+    expect(result.chartXml).not.toContain('c:showDLblsOverMax val="1"');
+  });
+
+  it("threads showDLblsOverMax=true through to <c:chart>", () => {
+    // Setting the OOXML default explicitly produces the same wire
+    // shape as omitting the field — the element is always emitted.
+    const result = writeChart(makeChart({ showDLblsOverMax: true }), "Sheet1");
+    expect(result.chartXml).toContain('c:showDLblsOverMax val="1"');
+  });
+
+  it("places <c:showDLblsOverMax> after <c:dispBlanksAs> inside <c:chart> (OOXML order)", () => {
+    // CT_Chart sequence: ... plotArea, legend?, plotVisOnly?, dispBlanksAs?,
+    // showDLblsOverMax?, extLst? — the new toggle sits at the tail.
+    const result = writeChart(makeChart({ showDLblsOverMax: false }), "Sheet1");
+    expect(result.chartXml.indexOf("c:dispBlanksAs")).toBeLessThan(
+      result.chartXml.indexOf("c:showDLblsOverMax"),
+    );
+  });
+
+  it("only emits <c:showDLblsOverMax> once even on a chart that overrides it", () => {
+    const result = writeChart(makeChart({ showDLblsOverMax: false }), "Sheet1");
+    const occurrences = result.chartXml.match(/c:showDLblsOverMax/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads showDLblsOverMax through every chart family", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, showDLblsOverMax: false }), "Sheet1");
+      expect(result.chartXml).toContain('c:showDLblsOverMax val="0"');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        showDLblsOverMax: false,
+      }),
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain('c:showDLblsOverMax val="0"');
+  });
+
+  it("round-trips a non-default showDLblsOverMax value through parseChart", () => {
+    // A chart with showDLblsOverMax=false should re-parse into a Chart
+    // whose `showDLblsOverMax` field is `false` (not collapsed to undefined,
+    // since false is not the OOXML default).
+    const written = writeChart(makeChart({ showDLblsOverMax: false }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.showDLblsOverMax).toBe(false);
+  });
+
+  it("collapses a defaulted showDLblsOverMax round-trip back to undefined", () => {
+    // A fresh chart (showDLblsOverMax omitted) writes `1` and re-parses to
+    // undefined — absence and the OOXML default round-trip identically.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.showDLblsOverMax).toBeUndefined();
+  });
+
+  it("collapses an explicit showDLblsOverMax=true round-trip back to undefined", () => {
+    // Pinning the OOXML default also collapses on read, so a template
+    // that explicitly emits `<c:showDLblsOverMax val="1"/>` is treated the
+    // same as one that omits the field.
+    const written = writeChart(makeChart({ showDLblsOverMax: true }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.showDLblsOverMax).toBeUndefined();
+  });
+});
+
 // ── writeChart — roundedCorners ──────────────────────────────────────
 
 describe("writeChart — roundedCorners", () => {

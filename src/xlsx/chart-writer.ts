@@ -81,6 +81,15 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
 
   chartChildren.push(xmlSelfClose("c:plotVisOnly", { val: resolvePlotVisOnly(chart) ? 1 : 0 }));
   chartChildren.push(xmlSelfClose("c:dispBlanksAs", { val: resolveDispBlanksAs(chart) }));
+  // `<c:showDLblsOverMax>` sits at the tail of CT_Chart per ECMA-376
+  // Part 1, §21.2.2.29 (after `<c:dispBlanksAs>` and before
+  // `<c:extLst>`). The writer always emits the element so the rendered
+  // intent is explicit on roundtrip — Excel itself includes it in every
+  // reference serialization. Mirrors the always-emit contract `<c:plotVisOnly>`
+  // and `<c:dispBlanksAs>` follow.
+  chartChildren.push(
+    xmlSelfClose("c:showDLblsOverMax", { val: resolveShowDLblsOverMax(chart) ? 1 : 0 }),
+  );
 
   const chartElement = xmlElement("c:chart", undefined, chartChildren);
 
@@ -1994,6 +2003,29 @@ function resolveDispBlanksAs(chart: SheetChart): ChartDisplayBlanksAs {
  */
 function resolvePlotVisOnly(chart: SheetChart): boolean {
   if (typeof chart.plotVisOnly === "boolean") return chart.plotVisOnly;
+  return true;
+}
+
+// ── Show Data Labels Over Max ────────────────────────────────────────
+
+/**
+ * Resolve the `<c:showDLblsOverMax>` value emitted on `<c:chart>`.
+ *
+ * Defaults to `true` (the OOXML schema default — labels render for
+ * every data point regardless of whether the value exceeds the pinned
+ * axis maximum). An explicit `chart.showDLblsOverMax === false` flips
+ * the toggle to mirror Excel's "Format Axis → Labels → Show data labels
+ * for values over maximum scale" checkbox unchecked. The writer always
+ * emits the element so the file's intent is explicit even on roundtrip
+ * — Excel itself includes it in every reference serialization.
+ *
+ * `<c:showDLblsOverMax>` sits at the tail of CT_Chart per ECMA-376
+ * Part 1, §21.2.2.29 (after `<c:dispBlanksAs>` and before `<c:extLst>`).
+ * Mirrors the always-emit contract of {@link resolvePlotVisOnly} and
+ * {@link resolveDispBlanksAs}.
+ */
+function resolveShowDLblsOverMax(chart: SheetChart): boolean {
+  if (typeof chart.showDLblsOverMax === "boolean") return chart.showDLblsOverMax;
   return true;
 }
 
