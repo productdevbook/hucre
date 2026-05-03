@@ -103,6 +103,8 @@ export function parseChart(xml: string): Chart | undefined {
     let firstSliceAng: number | undefined;
     let varyColors: boolean | undefined;
     let scatterStyle: ChartScatterStyle | undefined;
+    let dropLines: boolean | undefined;
+    let hiLowLines: boolean | undefined;
     for (const child of childElements(plotArea)) {
       const kind = CHART_KIND_TAGS.get(child.local);
       if (!kind) continue;
@@ -170,6 +172,24 @@ export function parseChart(xml: string): Chart | undefined {
       if (scatterStyle === undefined && kind === "scatter") {
         scatterStyle = parseScatterStyle(child);
       }
+      // `<c:dropLines>` lives on `<c:lineChart>` / `<c:line3DChart>` /
+      // `<c:areaChart>` / `<c:area3DChart>`. The element is bare — its
+      // mere presence paints the connectors — so absence collapses to
+      // `undefined`.
+      if (
+        dropLines === undefined &&
+        (kind === "line" || kind === "line3D" || kind === "area" || kind === "area3D")
+      ) {
+        dropLines = parseDropLines(child);
+      }
+      // `<c:hiLowLines>` lives on `<c:lineChart>` / `<c:line3DChart>` /
+      // `<c:stockChart>`. Hucre's writer authors `<c:lineChart>` only,
+      // but a stock-chart template that round-trips through hucre will
+      // surface the flag here too. Same bare-element shape as
+      // `<c:dropLines>`.
+      if (hiLowLines === undefined && (kind === "line" || kind === "line3D" || kind === "stock")) {
+        hiLowLines = parseHiLowLines(child);
+      }
       let localIndex = 0;
       for (const ser of childElements(child)) {
         if (ser.local !== "ser") continue;
@@ -201,6 +221,8 @@ export function parseChart(xml: string): Chart | undefined {
     if (firstSliceAng !== undefined) out.firstSliceAng = firstSliceAng;
     if (varyColors !== undefined) out.varyColors = varyColors;
     if (scatterStyle !== undefined) out.scatterStyle = scatterStyle;
+    if (dropLines !== undefined) out.dropLines = dropLines;
+    if (hiLowLines !== undefined) out.hiLowLines = hiLowLines;
 
     const axes = parseAxes(plotArea);
     if (axes !== undefined) out.axes = axes;
@@ -1569,6 +1591,36 @@ function parseScatterStyle(scatterChart: XmlElement): ChartScatterStyle | undefi
   if (typeof raw !== "string") return undefined;
   if (!VALID_SCATTER_STYLES.has(raw as ChartScatterStyle)) return undefined;
   return raw as ChartScatterStyle;
+}
+
+// ── Drop Lines / Hi-Low Lines ─────────────────────────────────────
+
+/**
+ * Pull `<c:dropLines/>` off a `<c:lineChart>` / `<c:line3DChart>` /
+ * `<c:areaChart>` / `<c:area3DChart>` element. Returns `true` when
+ * the element is present (its mere presence paints the connector
+ * lines per OOXML CT_ChartLines), `undefined` otherwise so absence
+ * collapses to the writer's default.
+ *
+ * `<c:dropLines>` is structurally a `CT_ChartLines` and may carry a
+ * nested `<c:spPr>` for stroke styling, but hucre's reader only
+ * surfaces the on/off bit — the shape properties are not modelled in
+ * this phase. A template that pins custom drop-line colors / widths
+ * therefore round-trips as a default-styled line; the on/off intent
+ * still survives, which is what {@link cloneChart} needs.
+ */
+function parseDropLines(chartTypeEl: XmlElement): boolean | undefined {
+  return findChild(chartTypeEl, "dropLines") ? true : undefined;
+}
+
+/**
+ * Pull `<c:hiLowLines/>` off a `<c:lineChart>` / `<c:line3DChart>` /
+ * `<c:stockChart>` element. Same on/off shape as
+ * {@link parseDropLines}; the element is bare so its mere presence
+ * surfaces `true`, absence collapses to `undefined`.
+ */
+function parseHiLowLines(chartTypeEl: XmlElement): boolean | undefined {
+  return findChild(chartTypeEl, "hiLowLines") ? true : undefined;
 }
 
 // ── Bar Grouping ──────────────────────────────────────────────────

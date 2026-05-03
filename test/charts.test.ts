@@ -5771,3 +5771,190 @@ describe("parseChart — axis crosses / crossesAt", () => {
     });
   });
 });
+
+// ── parseChart — drop / hi-low lines ──────────────────────────────
+
+describe("parseChart — drop lines", () => {
+  function lineChartWithExtras(extras: string): string {
+    return `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:grouping val="standard"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        ${extras}
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  function areaChartWithExtras(extras: string): string {
+    return `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:areaChart>
+        <c:grouping val="standard"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        ${extras}
+      </c:areaChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces dropLines=true on a line chart that declares <c:dropLines/>", () => {
+    const xml = lineChartWithExtras("<c:dropLines/>");
+    expect(parseChart(xml)?.dropLines).toBe(true);
+  });
+
+  it("surfaces dropLines=true on a line chart that declares <c:dropLines> with a nested <c:spPr>", () => {
+    // CT_ChartLines may carry `<c:spPr>` for stroke styling. The
+    // reader only surfaces the on/off bit — the shape properties are
+    // not modelled in this phase but the presence of the element still
+    // surfaces `true` so the clone bridge can carry the intent.
+    const xml = lineChartWithExtras(
+      `<c:dropLines><c:spPr><a:ln w="9525"><a:solidFill><a:srgbClr val="808080"/></a:solidFill></a:ln></c:spPr></c:dropLines>`,
+    );
+    expect(parseChart(xml)?.dropLines).toBe(true);
+  });
+
+  it("returns undefined when the line chart omits <c:dropLines>", () => {
+    const xml = lineChartWithExtras("");
+    expect(parseChart(xml)?.dropLines).toBeUndefined();
+  });
+
+  it("surfaces dropLines=true on an area chart that declares <c:dropLines/>", () => {
+    const xml = areaChartWithExtras("<c:dropLines/>");
+    expect(parseChart(xml)?.dropLines).toBe(true);
+  });
+
+  it("returns undefined when the area chart omits <c:dropLines>", () => {
+    const xml = areaChartWithExtras("");
+    expect(parseChart(xml)?.dropLines).toBeUndefined();
+  });
+
+  it("does not surface dropLines for chart kinds that have no <c:dropLines> slot (bar)", () => {
+    // The reader only inspects line / line3D / area / area3D children;
+    // a stray `<c:dropLines>` on a bar chart (which the OOXML schema
+    // rejects) must not surface a value.
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dropLines/>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dropLines).toBeUndefined();
+  });
+
+  it("surfaces dropLines on the first line/area chart-type element only (combo workbook)", () => {
+    // Combo charts (multi-kind plot area) surface the first matching
+    // value just like the existing grouping helpers.
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dropLines/>
+      </c:lineChart>
+      <c:areaChart>
+        <c:ser><c:idx val="1"/></c:ser>
+      </c:areaChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dropLines).toBe(true);
+  });
+});
+
+describe("parseChart — high-low lines", () => {
+  function lineChartWithExtras(extras: string): string {
+    return `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:grouping val="standard"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        ${extras}
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces hiLowLines=true on a line chart that declares <c:hiLowLines/>", () => {
+    const xml = lineChartWithExtras("<c:hiLowLines/>");
+    expect(parseChart(xml)?.hiLowLines).toBe(true);
+  });
+
+  it("surfaces hiLowLines=true on a line chart that declares <c:hiLowLines> with a nested <c:spPr>", () => {
+    const xml = lineChartWithExtras(
+      `<c:hiLowLines><c:spPr><a:ln w="9525"><a:solidFill><a:srgbClr val="808080"/></a:solidFill></a:ln></c:spPr></c:hiLowLines>`,
+    );
+    expect(parseChart(xml)?.hiLowLines).toBe(true);
+  });
+
+  it("returns undefined when the line chart omits <c:hiLowLines>", () => {
+    const xml = lineChartWithExtras("");
+    expect(parseChart(xml)?.hiLowLines).toBeUndefined();
+  });
+
+  it("does not surface hiLowLines on an area chart (no slot in the OOXML schema)", () => {
+    // The reader's per-kind gate excludes `area` / `area3D` from the
+    // hiLowLines lookup — `<c:hiLowLines>` lives only on lineChart /
+    // line3DChart / stockChart per CT_AreaChart rejecting the element.
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:areaChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:hiLowLines/>
+      </c:areaChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.hiLowLines).toBeUndefined();
+  });
+
+  it("does not surface hiLowLines for chart kinds that have no slot (bar)", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:hiLowLines/>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.hiLowLines).toBeUndefined();
+  });
+
+  it("surfaces both dropLines and hiLowLines together on a line chart", () => {
+    const xml = lineChartWithExtras("<c:dropLines/><c:hiLowLines/>");
+    const parsed = parseChart(xml);
+    expect(parsed?.dropLines).toBe(true);
+    expect(parsed?.hiLowLines).toBe(true);
+  });
+
+  it("surfaces hiLowLines on a stockChart (the third OOXML host for the element)", () => {
+    // hucre's writer never authors `<c:stockChart>`, but a parsed
+    // stock-chart template should round-trip the flag so a downstream
+    // tool that introspects it gets the right answer.
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:stockChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:hiLowLines/>
+      </c:stockChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.hiLowLines).toBe(true);
+  });
+});

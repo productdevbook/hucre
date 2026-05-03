@@ -4839,3 +4839,351 @@ describe("writeChart — axis crosses / crossesAt", () => {
     expect(chartXml).toContain('c:crossesAt val="0"');
   });
 });
+
+// ── Drop / hi-low lines ──────────────────────────────────────────────
+
+describe("writeChart — drop lines", () => {
+  it("omits <c:dropLines> on a line chart with dropLines unset (default)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:dropLines");
+  });
+
+  it("omits <c:dropLines> on a line chart when dropLines is explicitly false", () => {
+    // The writer treats absence and `false` identically — both produce
+    // no element, matching Excel's reference serialization.
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        dropLines: false,
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:dropLines");
+  });
+
+  it("emits <c:dropLines/> on a line chart when dropLines is true", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        dropLines: true,
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain("<c:dropLines/>");
+  });
+
+  it("emits <c:dropLines/> on an area chart when dropLines is true", () => {
+    const result = writeChart(
+      makeChart({
+        type: "area",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        dropLines: true,
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain("<c:dropLines/>");
+  });
+
+  it("ignores dropLines on chart kinds whose schema rejects the element", () => {
+    // CT_BarChart / CT_PieChart / CT_DoughnutChart / CT_ScatterChart
+    // all reject `<c:dropLines>` per OOXML. Setting the flag on these
+    // families must not leak the element into the output.
+    const cases: Array<["column" | "bar" | "pie" | "doughnut" | "scatter"]> = [
+      ["column"],
+      ["bar"],
+      ["pie"],
+      ["doughnut"],
+      ["scatter"],
+    ];
+    for (const [type] of cases) {
+      const result = writeChart(
+        makeChart({
+          type,
+          series: [{ values: "B2:B4", categories: "A2:A4" }],
+          dropLines: true,
+        }),
+        "Sheet1",
+      );
+      expect(result.chartXml).not.toContain("c:dropLines");
+    }
+  });
+
+  it("non-boolean dropLines values collapse to absence (only literal true emits)", () => {
+    // Mirrors the title/legend overlay writers — the resolver does not
+    // coerce its inputs. Truthy strings, numbers, etc. drop to the
+    // default of no element.
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        dropLines: 1 as any,
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:dropLines");
+  });
+
+  it("places <c:dropLines> after <c:dLbls> and before <c:marker> inside <c:lineChart>", () => {
+    // CT_LineChart sequence: grouping, varyColors?, ser*, dLbls?,
+    // dropLines?, hiLowLines?, upDownBars?, marker?, axId, axId. We
+    // assert the `<c:dropLines>` slot lands after `<c:dLbls>` (when
+    // any data labels are emitted) and before `<c:marker>`.
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        dataLabels: { showValue: true },
+        dropLines: true,
+      }),
+      "Sheet1",
+    );
+    const lineBlock = result.chartXml.match(/<c:lineChart>[\s\S]*?<\/c:lineChart>/)![0];
+    const dLblsIdx = lineBlock.indexOf("<c:dLbls>");
+    const dropIdx = lineBlock.indexOf("<c:dropLines/>");
+    const markerIdx = lineBlock.indexOf("<c:marker ");
+    expect(dLblsIdx).toBeGreaterThan(-1);
+    expect(dropIdx).toBeGreaterThan(dLblsIdx);
+    expect(markerIdx).toBeGreaterThan(dropIdx);
+  });
+
+  it("places <c:dropLines> before <c:axId> inside <c:areaChart>", () => {
+    // CT_AreaChart sequence: grouping?, varyColors?, ser*, dLbls?,
+    // dropLines?, axId, axId. The `<c:dropLines>` slot lands right
+    // before the first `<c:axId>`.
+    const result = writeChart(
+      makeChart({
+        type: "area",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        dropLines: true,
+      }),
+      "Sheet1",
+    );
+    const areaBlock = result.chartXml.match(/<c:areaChart>[\s\S]*?<\/c:areaChart>/)![0];
+    const dropIdx = areaBlock.indexOf("<c:dropLines/>");
+    const axIdx = areaBlock.indexOf("<c:axId ");
+    expect(dropIdx).toBeGreaterThan(-1);
+    expect(axIdx).toBeGreaterThan(dropIdx);
+  });
+
+  it("round-trips dropLines through parseChart (line)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        dropLines: true,
+      }),
+      "Sheet1",
+    );
+    expect(parseChart(result.chartXml)?.dropLines).toBe(true);
+  });
+
+  it("round-trips dropLines through parseChart (area)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "area",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        dropLines: true,
+      }),
+      "Sheet1",
+    );
+    expect(parseChart(result.chartXml)?.dropLines).toBe(true);
+  });
+
+  it("survives a writeXlsx round trip — dropLines lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "line",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            dropLines: true,
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain("<c:dropLines/>");
+  });
+});
+
+describe("writeChart — high-low lines", () => {
+  it("omits <c:hiLowLines> on a line chart with hiLowLines unset (default)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:hiLowLines");
+  });
+
+  it("emits <c:hiLowLines/> on a line chart when hiLowLines is true", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        hiLowLines: true,
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain("<c:hiLowLines/>");
+  });
+
+  it("ignores hiLowLines on an area chart (no slot in the OOXML schema)", () => {
+    // CT_AreaChart rejects <c:hiLowLines>. The area writer must not
+    // emit the element even when the caller pins the flag.
+    const result = writeChart(
+      makeChart({
+        type: "area",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        hiLowLines: true,
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:hiLowLines");
+  });
+
+  it("ignores hiLowLines on bar / column / pie / doughnut / scatter charts", () => {
+    const cases: Array<["column" | "bar" | "pie" | "doughnut" | "scatter"]> = [
+      ["column"],
+      ["bar"],
+      ["pie"],
+      ["doughnut"],
+      ["scatter"],
+    ];
+    for (const [type] of cases) {
+      const result = writeChart(
+        makeChart({
+          type,
+          series: [{ values: "B2:B4", categories: "A2:A4" }],
+          hiLowLines: true,
+        }),
+        "Sheet1",
+      );
+      expect(result.chartXml).not.toContain("c:hiLowLines");
+    }
+  });
+
+  it("non-boolean hiLowLines values collapse to absence (only literal true emits)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        hiLowLines: 1 as any,
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:hiLowLines");
+  });
+
+  it("places <c:hiLowLines> after <c:dropLines> and before <c:marker> inside <c:lineChart>", () => {
+    // CT_LineChart sequence places dropLines before hiLowLines; both
+    // appear before the chart-level <c:marker> toggle. Verify the slot
+    // ordering on a chart that pins both.
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        dropLines: true,
+        hiLowLines: true,
+      }),
+      "Sheet1",
+    );
+    const lineBlock = result.chartXml.match(/<c:lineChart>[\s\S]*?<\/c:lineChart>/)![0];
+    const dropIdx = lineBlock.indexOf("<c:dropLines/>");
+    const hiLowIdx = lineBlock.indexOf("<c:hiLowLines/>");
+    const markerIdx = lineBlock.indexOf("<c:marker ");
+    expect(dropIdx).toBeGreaterThan(-1);
+    expect(hiLowIdx).toBeGreaterThan(dropIdx);
+    expect(markerIdx).toBeGreaterThan(hiLowIdx);
+  });
+
+  it("places <c:hiLowLines> before <c:marker> when <c:dropLines> is absent", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        hiLowLines: true,
+      }),
+      "Sheet1",
+    );
+    const lineBlock = result.chartXml.match(/<c:lineChart>[\s\S]*?<\/c:lineChart>/)![0];
+    const hiLowIdx = lineBlock.indexOf("<c:hiLowLines/>");
+    const markerIdx = lineBlock.indexOf("<c:marker ");
+    expect(hiLowIdx).toBeGreaterThan(-1);
+    expect(markerIdx).toBeGreaterThan(hiLowIdx);
+  });
+
+  it("round-trips hiLowLines through parseChart", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        hiLowLines: true,
+      }),
+      "Sheet1",
+    );
+    expect(parseChart(result.chartXml)?.hiLowLines).toBe(true);
+  });
+
+  it("survives a writeXlsx round trip — hiLowLines lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "line",
+            series: [
+              { name: "High", values: "B2:B3", categories: "A2:A3" },
+              { name: "Low", values: "C2:C3", categories: "A2:A3" },
+            ],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            hiLowLines: true,
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain("<c:hiLowLines/>");
+  });
+
+  it("round-trips both dropLines and hiLowLines together via parseChart", () => {
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        dropLines: true,
+        hiLowLines: true,
+      }),
+      "Sheet1",
+    );
+    const parsed = parseChart(result.chartXml);
+    expect(parsed?.dropLines).toBe(true);
+    expect(parsed?.hiLowLines).toBe(true);
+  });
+});
