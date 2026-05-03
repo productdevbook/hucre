@@ -1073,6 +1073,28 @@ export interface SheetChart {
    */
   hiLowLines?: boolean;
   /**
+   * Whether the chart paints `<c:serLines>` — connector lines drawn
+   * between paired data points across consecutive series in a stacked
+   * bar / column chart. Mirrors Excel's "Add Chart Element -> Lines ->
+   * Series Lines" toggle (visible only on stacked / 100% stacked bar
+   * and column charts).
+   *
+   * Default: `false` (no series lines, Excel's reference serialization).
+   * Set `true` to emit `<c:serLines/>` on the chart-type element so
+   * Excel paints the connectors.
+   *
+   * The OOXML schema places `<c:serLines>` exclusively on
+   * `<c:barChart>` and `<c:ofPieChart>`. Hucre's writer authors
+   * `<c:barChart>` only, so the flag is silently ignored on every
+   * other chart kind (`line` / `pie` / `doughnut` / `area` /
+   * `scatter`). Excel only renders the connectors on the
+   * `stacked` / `percentStacked` groupings — a clustered chart with
+   * `serLines: true` still pins the element but Excel paints nothing
+   * (matches Excel's own behavior when the toggle is flipped on a
+   * clustered chart).
+   */
+  serLines?: boolean;
+  /**
    * Doughnut hole size as a percentage of the outer radius. Accepted
    * range: 10 – 90 (Excel's UI clamps values outside this band).
    * Default: `50` — the Excel default. Ignored for non-doughnut chart
@@ -1299,6 +1321,37 @@ export interface SheetChart {
    * caller needs to thin or widen the bars.
    */
   upDownBars?: boolean;
+  /**
+   * Whether the line chart paints markers at each data point. Maps to
+   * `<c:lineChart><c:marker val=".."/></c:lineChart>` — Excel's
+   * "Line vs. Line with Markers" chart-type distinction at the
+   * chart level. The flag is the chart-level visibility gate; per-
+   * series {@link ChartSeries.marker} still picks the symbol / size /
+   * color when this gate lets markers render.
+   *
+   * Default: `true` (the Excel reference behavior — every authored
+   * line chart emits `<c:marker val="1"/>`, and hucre's writer mirrors
+   * that for back-compat with existing renders). Set `false` to
+   * suppress markers chart-wide (the "Line" preset look) — useful when
+   * a templated dashboard line chart should render as a clean stroke
+   * without the per-point dots.
+   *
+   * Only meaningful for `line` charts — the OOXML schema places
+   * `<c:marker>` (the chart-level CT_Boolean variant) exclusively on
+   * `CT_LineChart`. The `line3D` and `stock` chart-type elements have
+   * no slot for it; the writer never authors those families, so the
+   * field is silently dropped on every other chart kind (`bar` /
+   * `column` / `pie` / `doughnut` / `area` / `scatter`).
+   *
+   * The writer always emits the element so the rendered intent is
+   * explicit on roundtrip — Excel's reference serialization includes
+   * `<c:marker>` on every line chart, and matching that contract keeps
+   * the rendered shape stable. The reader collapses the default
+   * `val="1"` (and absence) to `undefined` so a fresh chart and a
+   * marker-on chart round-trip identically through {@link cloneChart};
+   * only an explicit `val="0"` surfaces `false`.
+   */
+  showLineMarkers?: boolean;
   /**
    * Built-in chart style preset. Maps to `<c:style val=".."/>` on
    * `<c:chartSpace>` (a sibling of `<c:chart>`, not a child). Mirrors
@@ -3120,6 +3173,21 @@ export interface Chart {
    */
   hiLowLines?: boolean;
   /**
+   * Series-lines flag pulled from the first `<c:barChart>` /
+   * `<c:ofPieChart>` element's `<c:serLines/>` child. Reflects Excel's
+   * "Add Chart Element -> Lines -> Series Lines" toggle — connector
+   * lines drawn between paired data points across consecutive series in
+   * a stacked bar / column chart. Like `<c:dropLines>` /
+   * `<c:hiLowLines>`, the element is bare — its mere presence paints
+   * the connectors, so this field surfaces `true` when the element is
+   * present and `undefined` when it is absent.
+   *
+   * The OOXML schema places `<c:serLines>` exclusively on
+   * `<c:barChart>` and `<c:ofPieChart>`. Surfaces `undefined` on every
+   * other chart family.
+   */
+  serLines?: boolean;
+  /**
    * Chart-level data label defaults parsed from the first chart-type
    * element's `<c:dLbls>` block. Series-level overrides on
    * {@link ChartSeriesInfo.dataLabels} take precedence.
@@ -3293,6 +3361,33 @@ export interface Chart {
    * / area / scatter chart-type elements.
    */
   upDownBars?: boolean;
+  /**
+   * Chart-level marker visibility flag pulled from
+   * `<c:lineChart><c:marker val=".."/></c:lineChart>`. Reflects Excel's
+   * "Line vs. Line with Markers" chart-type distinction — the flag
+   * gates whether per-series markers paint at all on a line chart.
+   *
+   * Surfaces `false` only when the chart pinned `<c:marker val="0"/>`
+   * (the non-default state — the "Line" preset, no per-point dots).
+   * The Excel-default `val="1"` and absence both collapse to
+   * `undefined` so absence and the default round-trip identically
+   * through {@link cloneChart}. The reader accepts the OOXML truthy /
+   * falsy spellings (`"1"` / `"true"` / `"0"` / `"false"`); unknown
+   * values and missing `val` attributes drop to `undefined`.
+   *
+   * Only line-flavored chart types surface the field — the OOXML
+   * schema places the chart-level `<c:marker>` (CT_Boolean) exclusively
+   * on `CT_LineChart`. `CT_Line3DChart` / `CT_StockChart` have no
+   * slot for it, and a stray `<c:marker>` on bar / column / pie /
+   * doughnut / area / scatter chart-type elements is ignored — the
+   * reader only inspects the line-flavored body.
+   *
+   * Note: this flag is independent of per-series
+   * {@link ChartSeriesInfo.marker} — the chart-level toggle gates
+   * marker rendering across every series, while the per-series block
+   * picks the symbol / size / fill that paints when the gate is open.
+   */
+  showLineMarkers?: boolean;
   /**
    * Built-in chart style preset pulled from `<c:chartSpace><c:style
    * val=".."/>`. Reflects Excel's "Chart Design -> Chart Styles"

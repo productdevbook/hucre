@@ -6330,6 +6330,155 @@ describe("parseChart — high-low lines", () => {
     expect(parseChart(xml)?.hiLowLines).toBe(true);
   });
 });
+
+// ── parseChart — series lines ──────────────────────────────────────
+
+describe("parseChart — series lines", () => {
+  function barChartWithExtras(extras: string): string {
+    return `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="stacked"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:ser><c:idx val="1"/></c:ser>
+        ${extras}
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces serLines=true on a bar chart that declares <c:serLines/>", () => {
+    const xml = barChartWithExtras("<c:serLines/>");
+    expect(parseChart(xml)?.serLines).toBe(true);
+  });
+
+  it("surfaces serLines=true on a bar chart that declares <c:serLines> with a nested <c:spPr>", () => {
+    // CT_ChartLines may carry `<c:spPr>` for stroke styling. The
+    // reader only surfaces the on/off bit — the shape properties are
+    // not modelled in this phase but the presence of the element still
+    // surfaces `true` so the clone bridge can carry the intent.
+    const xml = barChartWithExtras(
+      `<c:serLines><c:spPr><a:ln w="9525"><a:solidFill><a:srgbClr val="808080"/></a:solidFill></a:ln></c:spPr></c:serLines>`,
+    );
+    expect(parseChart(xml)?.serLines).toBe(true);
+  });
+
+  it("returns undefined when the bar chart omits <c:serLines>", () => {
+    const xml = barChartWithExtras("");
+    expect(parseChart(xml)?.serLines).toBeUndefined();
+  });
+
+  it("does not surface serLines for chart kinds that have no <c:serLines> slot (line)", () => {
+    // The reader only inspects bar / ofPie children; a stray
+    // `<c:serLines>` on a line chart (which the OOXML schema rejects)
+    // must not surface a value.
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:grouping val="standard"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:serLines/>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.serLines).toBeUndefined();
+  });
+
+  it("does not surface serLines for chart kinds that have no slot (pie)", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:pieChart>
+        <c:varyColors val="1"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:serLines/>
+      </c:pieChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.serLines).toBeUndefined();
+  });
+
+  it("does not surface serLines for chart kinds that have no slot (area)", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:areaChart>
+        <c:grouping val="stacked"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:serLines/>
+      </c:areaChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.serLines).toBeUndefined();
+  });
+
+  it("surfaces serLines on an ofPieChart (the second OOXML host for the element)", () => {
+    // hucre's writer never authors `<c:ofPieChart>`, but a parsed
+    // ofPie template carrying the element should round-trip the flag
+    // so a downstream tool that introspects it gets the right answer.
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:ofPieChart>
+        <c:ofPieType val="pie"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:serLines/>
+      </c:ofPieChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.serLines).toBe(true);
+  });
+
+  it("surfaces serLines on the first bar/ofPie chart-type element only (combo workbook)", () => {
+    // Combo charts (multi-kind plot area) surface the first matching
+    // value just like the existing connector-line helpers.
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="stacked"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:serLines/>
+      </c:barChart>
+      <c:lineChart>
+        <c:grouping val="standard"/>
+        <c:ser><c:idx val="1"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.serLines).toBe(true);
+  });
+
+  it("surfaces serLines on a clustered bar chart even though Excel paints nothing", () => {
+    // The OOXML element pins regardless of the grouping; Excel only
+    // renders the connectors on stacked groupings, but the model is a
+    // plain presence flag so the reader should not gate on grouping.
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="clustered"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:serLines/>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.serLines).toBe(true);
+  });
+});
+
 // ── parseChart — upDownBars ────────────────────────────────────────
 
 describe("parseChart — upDownBars", () => {
@@ -7897,5 +8046,255 @@ describe("parseChart — autoTitleDeleted", () => {
 </c:chartSpace>`;
       expect(parseChart(xml)?.autoTitleDeleted).toBe(true);
     }
+  });
+});
+
+// ── parseChart — chart-level line marker visibility ────────────────
+
+describe("parseChart — showLineMarkers", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces showLineMarkers=false when the line chart pins <c:marker val="0"/>', () => {
+    // The non-default state — flips the chart-level gate off so
+    // per-series marker definitions stop rendering chart-wide.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:marker val="0"/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.showLineMarkers).toBe(false);
+  });
+
+  it('collapses <c:marker val="1"/> (the Excel / OOXML default) to undefined', () => {
+    // Excel's reference serialization for every authored line chart
+    // emits <c:marker val="1"/>. Surfacing only the non-default value
+    // keeps the parsed shape minimal — a fresh chart and a marker-on
+    // chart round-trip identically through cloneChart.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:marker val="1"/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.showLineMarkers).toBeUndefined();
+  });
+
+  it("collapses absence of <c:marker> to undefined on a line chart", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.showLineMarkers).toBeUndefined();
+  });
+
+  it('accepts the OOXML truthy / falsy spellings ("true" / "false")', () => {
+    const xmlFalse = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:marker val="false"/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xmlFalse)?.showLineMarkers).toBe(false);
+
+    const xmlTrue = xmlFalse.replace('val="false"', 'val="true"');
+    expect(parseChart(xmlTrue)?.showLineMarkers).toBeUndefined();
+  });
+
+  it("drops a missing val attribute (CT_Boolean default would be true)", () => {
+    // A bare <c:marker/> carries no `val`; per CT_Boolean the schema
+    // default would be true, but the reader collapses ambiguous shapes
+    // to undefined rather than fabricate the default state — the
+    // writer's always-emit contract means a real chart never emits a
+    // bare element.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:marker/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.showLineMarkers).toBeUndefined();
+  });
+
+  it("drops an unknown val token rather than fabricating a value", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:marker val="maybe"/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.showLineMarkers).toBeUndefined();
+  });
+
+  it("ignores chart-level <c:marker> on a 3D line chart (CT_Line3DChart has no slot)", () => {
+    // The OOXML schema places the chart-level <c:marker> (CT_Boolean)
+    // exclusively on CT_LineChart — CT_Line3DChart has no slot. A
+    // stray element on a 3D line chart-type body should not surface
+    // through `showLineMarkers`.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:line3DChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:marker val="0"/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+      <c:axId val="3"/>
+    </c:line3DChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:serAx><c:axId val="3"/></c:serAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.showLineMarkers).toBeUndefined();
+  });
+
+  it("ignores chart-level <c:marker> on a stock chart (CT_StockChart has no slot)", () => {
+    // CT_StockChart has hiLowLines / upDownBars but no chart-level
+    // marker per the OOXML schema. A stray element should not surface.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:stockChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:marker val="0"/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:stockChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.showLineMarkers).toBeUndefined();
+  });
+
+  it("ignores <c:marker> on bar / column / pie / doughnut / area / scatter charts", () => {
+    // The chart-level <c:marker> (CT_Boolean) only lives on
+    // CT_LineChart. The reader scopes the lookup to the matching kind
+    // — every other family falls through. Note that scatter has its
+    // own per-series <c:marker> (CT_Marker) handling, but no
+    // chart-level CT_Boolean variant.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:grouping val="clustered"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:marker val="0"/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.showLineMarkers).toBeUndefined();
+  });
+
+  it("does not confuse the chart-level <c:marker> with the per-series <c:marker> block", () => {
+    // The per-series <c:marker> sits inside <c:ser> and carries
+    // CT_Marker children (<c:symbol>, <c:size>, ...). The chart-level
+    // gate sits as a sibling of <c:ser> and carries CT_Boolean's `val`
+    // attribute. The reader must not surface a per-series marker as
+    // `showLineMarkers`.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:marker><c:symbol val="circle"/><c:size val="6"/></c:marker>
+      </c:ser>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    // No chart-level <c:marker> is present — only the per-series
+    // block — so showLineMarkers must be undefined.
+    expect(chart?.showLineMarkers).toBeUndefined();
+    // Per-series marker still surfaces on the series side.
+    expect(chart?.series?.[0].marker).toMatchObject({ symbol: "circle", size: 6 });
+  });
+
+  it("co-surfaces showLineMarkers alongside other line-only chart-level fields", () => {
+    // The chart-level <c:marker> sits at the tail of CT_LineChart
+    // (after dropLines / hiLowLines / upDownBars, before axId+).
+    // Composing every line-only block on the same chart should not
+    // disturb the surfaced marker flag.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:varyColors val="0"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dropLines/>
+      <c:hiLowLines/>
+      <c:upDownBars><c:gapWidth val="150"/></c:upDownBars>
+      <c:marker val="0"/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.showLineMarkers).toBe(false);
+    expect(chart?.dropLines).toBe(true);
+    expect(chart?.hiLowLines).toBe(true);
+    expect(chart?.upDownBars).toBe(true);
   });
 });
