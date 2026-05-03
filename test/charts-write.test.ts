@@ -7190,3 +7190,255 @@ describe("writeChart — chart-space protection", () => {
     });
   });
 });
+
+// ── writeChart — chart-level line marker visibility ───────────────────
+
+describe("writeChart — showLineMarkers", () => {
+  it('emits <c:marker val="1"/> by default on a line chart (Excel reference)', () => {
+    // Excel's reference serialization for every authored line chart
+    // emits <c:marker val="1"/> — markers shown at each data point.
+    // The writer mirrors that on `showLineMarkers` undefined so a
+    // back-compat caller that never set the field keeps the same output.
+    const result = writeChart(makeChart({ type: "line" }), "Sheet1");
+    expect(result.chartXml).toContain('<c:marker val="1"/>');
+  });
+
+  it('emits <c:marker val="1"/> when showLineMarkers=true', () => {
+    const result = writeChart(makeChart({ type: "line", showLineMarkers: true }), "Sheet1");
+    expect(result.chartXml).toContain('<c:marker val="1"/>');
+  });
+
+  it('emits <c:marker val="0"/> when showLineMarkers=false', () => {
+    // The non-default state — flips the chart-level gate off so
+    // per-series marker definitions stop rendering chart-wide.
+    const result = writeChart(makeChart({ type: "line", showLineMarkers: false }), "Sheet1");
+    expect(result.chartXml).toContain('<c:marker val="0"/>');
+  });
+
+  it("emits <c:marker> exactly once on a line chart", () => {
+    // Guard against any regression that would double-emit the element.
+    // The chart-level <c:marker> sits in CT_LineChart, not CT_LineSer —
+    // per-series <c:marker> blocks (line / scatter) live elsewhere.
+    const result = writeChart(makeChart({ type: "line", showLineMarkers: false }), "Sheet1");
+    // Filter to the chart-level <c:marker val=".."/> shape — per-series
+    // <c:marker> blocks are never authored without a child element.
+    const occurrences = result.chartXml.match(/<c:marker val="[01]"\s*\/>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("places <c:marker> after <c:upDownBars> inside <c:lineChart> (OOXML order)", () => {
+    // CT_LineChart sequence: ... ser*, dLbls?, dropLines?, hiLowLines?,
+    // upDownBars?, marker?, axId+. The schema rejects an out-of-order
+    // <c:marker> before <c:upDownBars>, so the writer must place
+    // <c:marker> after the up/down bars block when both are present.
+    const result = writeChart(
+      makeChart({ type: "line", upDownBars: true, showLineMarkers: false }),
+      "Sheet1",
+    );
+    const upDownBarsIdx = result.chartXml.indexOf("c:upDownBars");
+    const markerIdx = result.chartXml.indexOf('c:marker val="0"');
+    expect(upDownBarsIdx).toBeGreaterThan(0);
+    expect(markerIdx).toBeGreaterThan(0);
+    expect(upDownBarsIdx).toBeLessThan(markerIdx);
+  });
+
+  it("places <c:marker> before <c:axId> inside <c:lineChart> (OOXML order)", () => {
+    // The axId pair sits at the tail of CT_LineChart — every optional
+    // chart-level child must precede them.
+    const result = writeChart(makeChart({ type: "line", showLineMarkers: false }), "Sheet1");
+    const markerIdx = result.chartXml.indexOf('c:marker val="0"');
+    const firstAxIdIdx = result.chartXml.indexOf("c:axId");
+    expect(markerIdx).toBeLessThan(firstAxIdIdx);
+  });
+
+  it("places <c:marker> after <c:dropLines> / <c:hiLowLines> inside <c:lineChart>", () => {
+    // CT_LineChart: ... dLbls?, dropLines?, hiLowLines?, upDownBars?,
+    // marker?, axId+. <c:marker> must sit after every line-only
+    // optional block.
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        dropLines: true,
+        hiLowLines: true,
+        showLineMarkers: false,
+      }),
+      "Sheet1",
+    );
+    const dropLinesIdx = result.chartXml.indexOf("c:dropLines");
+    const hiLowLinesIdx = result.chartXml.indexOf("c:hiLowLines");
+    const markerIdx = result.chartXml.indexOf('c:marker val="0"');
+    expect(dropLinesIdx).toBeLessThan(markerIdx);
+    expect(hiLowLinesIdx).toBeLessThan(markerIdx);
+  });
+
+  it("ignores showLineMarkers on bar / column / pie / doughnut / area / scatter chart kinds", () => {
+    // The OOXML schema places the chart-level <c:marker> (CT_Boolean)
+    // exclusively on CT_LineChart. Every other family must drop the
+    // flag silently — the writer never authors a <c:marker> child on
+    // <c:barChart> / <c:pieChart> / <c:doughnutChart> / <c:areaChart>
+    // / <c:scatterChart> regardless of the flag.
+    for (const type of ["bar", "column", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, showLineMarkers: false }), "Sheet1");
+      // Only per-series <c:marker> (with style/size children, used on
+      // scatter) should ever appear on these families — and column /
+      // bar / pie / doughnut / area never emit <c:marker> at all. Confirm
+      // the chart-level <c:marker val="0"/> shape never leaks here.
+      expect(result.chartXml).not.toContain('<c:marker val="0"/>');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        showLineMarkers: false,
+      }),
+      "Sheet1",
+    );
+    // Scatter charts emit per-series <c:marker> blocks (CT_Marker with
+    // child elements), but never the chart-level CT_Boolean variant.
+    expect(scatter.chartXml).not.toContain('<c:marker val="0"/>');
+    expect(scatter.chartXml).not.toContain('<c:marker val="1"/>');
+  });
+
+  it("collapses non-boolean showLineMarkers values to the default", () => {
+    // A stray non-boolean leaking through the type guard should fall
+    // back to the default <c:marker val="1"/> rather than emit a token
+    // Excel rejects.
+    const result = writeChart(
+      makeChart({ type: "line", showLineMarkers: "off" as never }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('<c:marker val="1"/>');
+    expect(result.chartXml).not.toContain('<c:marker val="0"/>');
+  });
+
+  it("round-trips showLineMarkers=false through parseChart", () => {
+    const written = writeChart(
+      makeChart({ type: "line", showLineMarkers: false }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.showLineMarkers).toBe(false);
+  });
+
+  it("collapses an unset showLineMarkers round-trip back to undefined", () => {
+    // A fresh line chart writes <c:marker val="1"/> (the Excel default)
+    // and re-parses to undefined — absence and the default round-trip
+    // identically per the asymmetric collapse contract.
+    const written = writeChart(makeChart({ type: "line" }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.showLineMarkers).toBeUndefined();
+  });
+
+  it("collapses showLineMarkers=true round-trip back to undefined (default-state)", () => {
+    // An explicit `true` writes the same <c:marker val="1"/> the
+    // default emits, so the re-parsed value collapses to undefined for
+    // symmetry — only the non-default `false` survives the round-trip.
+    const written = writeChart(
+      makeChart({ type: "line", showLineMarkers: true }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.showLineMarkers).toBeUndefined();
+  });
+
+  it("composes with per-series marker blocks (gate vs. styling)", () => {
+    // Chart-level <c:marker val="0"/> gates rendering across every
+    // series; per-series <c:marker> still picks the symbol / size /
+    // fill. Both blocks should coexist in the output — the chart-level
+    // gate sits inside <c:lineChart>, per-series markers sit inside
+    // <c:ser>.
+    const result = writeChart(
+      makeChart({
+        type: "line",
+        series: [
+          {
+            name: "Revenue",
+            values: "B2:B4",
+            categories: "A2:A4",
+            marker: { symbol: "circle", size: 6 },
+          },
+        ],
+        showLineMarkers: false,
+      }),
+      "Sheet1",
+    );
+    // Chart-level gate.
+    expect(result.chartXml).toContain('<c:marker val="0"/>');
+    // Per-series marker block (CT_Marker with children, not CT_Boolean).
+    expect(result.chartXml).toContain('<c:symbol val="circle"/>');
+    expect(result.chartXml).toContain('<c:size val="6"/>');
+  });
+
+  it("threads showLineMarkers=false through writeXlsx end-to-end packaging", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Quarter", "Revenue"],
+          ["Q1", 100],
+          ["Q2", 200],
+          ["Q3", 150],
+        ],
+        charts: [
+          {
+            type: "line",
+            series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            showLineMarkers: false,
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('<c:marker val="0"/>');
+    // Re-parse the rendered chart to confirm the flag survives the
+    // packaging path.
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.showLineMarkers).toBe(false);
+  });
+
+  it("threads showLineMarkers alongside upDownBars / dropLines / hiLowLines", async () => {
+    // Compose every line-only optional block on the same chart to
+    // guard the schema-order contract end-to-end (writer → re-parse).
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Day", "High", "Low"],
+          ["Mon", 12, 5],
+          ["Tue", 14, 6],
+          ["Wed", 10, 4],
+        ],
+        charts: [
+          {
+            type: "line",
+            series: [
+              { name: "High", values: "B2:B4", categories: "A2:A4" },
+              { name: "Low", values: "C2:C4", categories: "A2:A4" },
+            ],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            dropLines: true,
+            hiLowLines: true,
+            upDownBars: true,
+            showLineMarkers: false,
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    // <c:dropLines> / <c:hiLowLines> are emitted bare (self-closing
+    // when XML serialization collapses an empty element); accept both
+    // shapes via a regex that does not pin the closing token.
+    expect(chartXml).toMatch(/<c:dropLines\s*\/>|<c:dropLines>/);
+    expect(chartXml).toMatch(/<c:hiLowLines\s*\/>|<c:hiLowLines>/);
+    expect(chartXml).toContain("<c:upDownBars>");
+    expect(chartXml).toContain('<c:marker val="0"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.dropLines).toBe(true);
+    expect(reparsed?.hiLowLines).toBe(true);
+    expect(reparsed?.upDownBars).toBe(true);
+    expect(reparsed?.showLineMarkers).toBe(false);
+  });
+});

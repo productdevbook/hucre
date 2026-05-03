@@ -945,6 +945,19 @@ model is a plain presence flag at this layer); absence collapses to
 `CT_LineChart` / `CT_Line3DChart` / `CT_StockChart` per the OOXML
 schema; a stray `<c:upDownBars>` on a bar / column / pie / doughnut /
 area / scatter chart is ignored.
+`Chart.showLineMarkers` surfaces the chart-level marker visibility
+flag pulled from `<c:lineChart><c:marker val=".."/></c:lineChart>` —
+Excel's "Line vs. Line with Markers" chart-type distinction. The flag
+gates whether per-series markers paint at all on a line chart;
+per-series `<c:marker>` blocks (CT_Marker, with `<c:symbol>` /
+`<c:size>`) still pick the symbol / size / fill that paints when the
+gate is open. The Excel-default `val="1"` and absence both collapse to
+`undefined` so absence and the default round-trip identically through
+{@link cloneChart} — only an explicit `val="0"` surfaces `false`. The
+chart-level slot lives exclusively on `CT_LineChart` per the OOXML
+schema; `CT_Line3DChart` / `CT_StockChart` and every non-line family
+have no slot for the chart-level CT_Boolean variant, so a stray
+`<c:marker val=".."/>` on those bodies is ignored.
 Sheets that hucre actively regenerates because they
 also carry hucre-managed images currently keep the chart bodies but
 lose the in-drawing chart anchor — merging hucre's drawing output
@@ -1217,6 +1230,21 @@ omits the element on a fresh chart. Pin `upDownBars: true` on a
 every other chart family — `<c:upDownBars>` lives exclusively on
 `CT_LineChart` / `CT_Line3DChart` / `CT_StockChart` per the OOXML
 schema, and the writer never authors the 3D / stock variants.
+The chart-level `showLineMarkers` field maps to `<c:marker val=".."/>`
+inside `<c:lineChart>` — the chart-level CT_Boolean variant that gates
+whether per-series markers paint at all on a line chart (Excel's
+"Line vs. Line with Markers" chart-type distinction). The writer
+always emits the element (Excel's reference behavior — every authored
+line chart includes one), defaulting to `val="1"` when the field is
+unset or `true`. Pin `showLineMarkers: false` to suppress markers
+chart-wide so the line renders as a clean stroke without the
+per-point dots. The flag is silently ignored on every other chart
+family — the OOXML schema places the chart-level `<c:marker>`
+exclusively on `CT_LineChart`, and `CT_Line3DChart` / `CT_StockChart`
+and every non-line family have no slot for it. Independent of any
+per-series marker styling: this gate sits at the chart level and
+decides whether markers paint, while the per-series block picks the
+symbol / size / fill that paints when the gate is open.
 The `axes.{x,y}.dispUnits` field controls the per-value-axis
 display-unit preset (`<c:valAx><c:dispUnits><c:builtInUnit val=".."/></c:dispUnits></c:valAx>`)
 — Excel's "Format Axis -> Display units" dropdown. Each numeric tick
@@ -1601,6 +1629,15 @@ line / area / pie / doughnut / scatter clone therefore never leaks the
 series-line connectors into a chart-type element whose schema rejects
 the element. The flag does carry through the bar ↔ column coercion
 unchanged (both write to `<c:barChart>` with a different `barDir`).
+The chart-level `showLineMarkers` flag follows the same grammar:
+`undefined` inherits, `null` drops the inherited value (the writer
+falls back to Excel's default `<c:marker val="1"/>`), and a `boolean`
+replaces it. Like `upDownBars`, the element renders exclusively
+inside `<c:lineChart>` per the OOXML schema, so the field is silently
+dropped from the cloned `SheetChart` whenever the resolved chart
+type is anything but `line` — flattening a line template into a
+column / pie / doughnut / area / scatter clone never leaks the
+chart-level marker gate into a host that cannot carry it.
 The per-axis `axes.x.tickLblSkip` and `axes.x.tickMarkSkip` overrides
 follow the same `undefined` (inherit) / `null` (drop) / number
 (replace) grammar as `gridlines` / `scale` / `numberFormat`. The

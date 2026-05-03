@@ -7894,3 +7894,253 @@ describe("parseChart — chart-space protection", () => {
     });
   });
 });
+
+// ── parseChart — chart-level line marker visibility ────────────────
+
+describe("parseChart — showLineMarkers", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces showLineMarkers=false when the line chart pins <c:marker val="0"/>', () => {
+    // The non-default state — flips the chart-level gate off so
+    // per-series marker definitions stop rendering chart-wide.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:marker val="0"/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.showLineMarkers).toBe(false);
+  });
+
+  it('collapses <c:marker val="1"/> (the Excel / OOXML default) to undefined', () => {
+    // Excel's reference serialization for every authored line chart
+    // emits <c:marker val="1"/>. Surfacing only the non-default value
+    // keeps the parsed shape minimal — a fresh chart and a marker-on
+    // chart round-trip identically through cloneChart.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:marker val="1"/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.showLineMarkers).toBeUndefined();
+  });
+
+  it("collapses absence of <c:marker> to undefined on a line chart", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.showLineMarkers).toBeUndefined();
+  });
+
+  it('accepts the OOXML truthy / falsy spellings ("true" / "false")', () => {
+    const xmlFalse = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:marker val="false"/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xmlFalse)?.showLineMarkers).toBe(false);
+
+    const xmlTrue = xmlFalse.replace('val="false"', 'val="true"');
+    expect(parseChart(xmlTrue)?.showLineMarkers).toBeUndefined();
+  });
+
+  it("drops a missing val attribute (CT_Boolean default would be true)", () => {
+    // A bare <c:marker/> carries no `val`; per CT_Boolean the schema
+    // default would be true, but the reader collapses ambiguous shapes
+    // to undefined rather than fabricate the default state — the
+    // writer's always-emit contract means a real chart never emits a
+    // bare element.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:marker/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.showLineMarkers).toBeUndefined();
+  });
+
+  it("drops an unknown val token rather than fabricating a value", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:marker val="maybe"/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.showLineMarkers).toBeUndefined();
+  });
+
+  it("ignores chart-level <c:marker> on a 3D line chart (CT_Line3DChart has no slot)", () => {
+    // The OOXML schema places the chart-level <c:marker> (CT_Boolean)
+    // exclusively on CT_LineChart — CT_Line3DChart has no slot. A
+    // stray element on a 3D line chart-type body should not surface
+    // through `showLineMarkers`.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:line3DChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:marker val="0"/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+      <c:axId val="3"/>
+    </c:line3DChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:serAx><c:axId val="3"/></c:serAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.showLineMarkers).toBeUndefined();
+  });
+
+  it("ignores chart-level <c:marker> on a stock chart (CT_StockChart has no slot)", () => {
+    // CT_StockChart has hiLowLines / upDownBars but no chart-level
+    // marker per the OOXML schema. A stray element should not surface.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:stockChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:marker val="0"/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:stockChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.showLineMarkers).toBeUndefined();
+  });
+
+  it("ignores <c:marker> on bar / column / pie / doughnut / area / scatter charts", () => {
+    // The chart-level <c:marker> (CT_Boolean) only lives on
+    // CT_LineChart. The reader scopes the lookup to the matching kind
+    // — every other family falls through. Note that scatter has its
+    // own per-series <c:marker> (CT_Marker) handling, but no
+    // chart-level CT_Boolean variant.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:grouping val="clustered"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:marker val="0"/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.showLineMarkers).toBeUndefined();
+  });
+
+  it("does not confuse the chart-level <c:marker> with the per-series <c:marker> block", () => {
+    // The per-series <c:marker> sits inside <c:ser> and carries
+    // CT_Marker children (<c:symbol>, <c:size>, ...). The chart-level
+    // gate sits as a sibling of <c:ser> and carries CT_Boolean's `val`
+    // attribute. The reader must not surface a per-series marker as
+    // `showLineMarkers`.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:marker><c:symbol val="circle"/><c:size val="6"/></c:marker>
+      </c:ser>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    // No chart-level <c:marker> is present — only the per-series
+    // block — so showLineMarkers must be undefined.
+    expect(chart?.showLineMarkers).toBeUndefined();
+    // Per-series marker still surfaces on the series side.
+    expect(chart?.series?.[0].marker).toMatchObject({ symbol: "circle", size: 6 });
+  });
+
+  it("co-surfaces showLineMarkers alongside other line-only chart-level fields", () => {
+    // The chart-level <c:marker> sits at the tail of CT_LineChart
+    // (after dropLines / hiLowLines / upDownBars, before axId+).
+    // Composing every line-only block on the same chart should not
+    // disturb the surfaced marker flag.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:varyColors val="0"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dropLines/>
+      <c:hiLowLines/>
+      <c:upDownBars><c:gapWidth val="150"/></c:upDownBars>
+      <c:marker val="0"/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.showLineMarkers).toBe(false);
+    expect(chart?.dropLines).toBe(true);
+    expect(chart?.hiLowLines).toBe(true);
+    expect(chart?.upDownBars).toBe(true);
+  });
+});

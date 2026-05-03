@@ -112,6 +112,7 @@ export function parseChart(xml: string): Chart | undefined {
     let hiLowLines: boolean | undefined;
     let serLines: boolean | undefined;
     let upDownBars: boolean | undefined;
+    let showLineMarkers: boolean | undefined;
     for (const child of childElements(plotArea)) {
       const kind = CHART_KIND_TAGS.get(child.local);
       if (!kind) continue;
@@ -219,6 +220,18 @@ export function parseChart(xml: string): Chart | undefined {
       ) {
         upDownBars = true;
       }
+      // `<c:marker>` (the chart-level CT_Boolean variant) lives on
+      // `CT_LineChart` only — `CT_Line3DChart` and `CT_StockChart` have
+      // no slot for it per the OOXML schema. Surface the value from the
+      // first `<c:lineChart>` element so a combo chart that mixes line
+      // with another family still carries the line side's flag. The
+      // OOXML / Excel default `val="1"` collapses to `undefined` so
+      // absence and the default round-trip identically through
+      // {@link cloneChart} — only an explicit `val="0"` surfaces
+      // `false`.
+      if (showLineMarkers === undefined && kind === "line") {
+        showLineMarkers = parseShowLineMarkers(child);
+      }
       let localIndex = 0;
       for (const ser of childElements(child)) {
         if (ser.local !== "ser") continue;
@@ -254,6 +267,7 @@ export function parseChart(xml: string): Chart | undefined {
     if (hiLowLines !== undefined) out.hiLowLines = hiLowLines;
     if (serLines !== undefined) out.serLines = serLines;
     if (upDownBars !== undefined) out.upDownBars = upDownBars;
+    if (showLineMarkers !== undefined) out.showLineMarkers = showLineMarkers;
 
     const axes = parseAxes(plotArea);
     if (axes !== undefined) out.axes = axes;
@@ -2141,6 +2155,47 @@ function parseHiLowLines(chartTypeEl: XmlElement): boolean | undefined {
  */
 function parseSerLines(chartTypeEl: XmlElement): boolean | undefined {
   return findChild(chartTypeEl, "serLines") ? true : undefined;
+}
+
+// ── Chart-level Marker Visibility ─────────────────────────────────
+
+/**
+ * Pull `<c:marker val=".."/>` off a `<c:lineChart>` element. This is
+ * the chart-level CT_Boolean variant of `<c:marker>` — distinct from
+ * the per-series `<c:marker>` (CT_Marker, with style / size / fill).
+ * The element gates whether per-series markers paint at all on the
+ * line chart.
+ *
+ * The OOXML / Excel default `val="1"` (markers shown) collapses to
+ * `undefined` so absence and the default round-trip identically
+ * through {@link cloneChart}; only an explicit `val="0"` surfaces
+ * `false`. Accepts the OOXML truthy / falsy spellings (`"1"` /
+ * `"true"` / `"0"` / `"false"`); unknown values, missing `val`
+ * attributes, and a missing element all drop to `undefined`.
+ *
+ * The chart-level slot lives exclusively on `CT_LineChart` per the
+ * OOXML schema — `CT_Line3DChart` and `CT_StockChart` have no
+ * chart-level marker toggle. Caller is expected to gate the lookup
+ * on the matching chart-type kind.
+ */
+function parseShowLineMarkers(lineChart: XmlElement): boolean | undefined {
+  const el = findChild(lineChart, "marker");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  switch (raw) {
+    case "0":
+    case "false":
+      return false;
+    case "1":
+    case "true":
+      // OOXML / Excel default — collapse to undefined for symmetry
+      // with the writer's `showLineMarkers` field, so a fresh chart
+      // and a marker-on chart round-trip identically.
+      return undefined;
+    default:
+      return undefined;
+  }
 }
 
 // ── Bar Grouping ──────────────────────────────────────────────────

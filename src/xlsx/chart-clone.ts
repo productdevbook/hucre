@@ -326,6 +326,30 @@ export interface CloneChartOptions {
    */
   upDownBars?: boolean | null;
   /**
+   * Override `<c:lineChart><c:marker val=".."/>` (the chart-level
+   * line-marker visibility toggle).
+   *
+   * `undefined` (or omitted) inherits the source's parsed
+   * `showLineMarkers`. `null` drops the inherited value so the writer
+   * falls back to the Excel default (`<c:marker val="1"/>` — markers
+   * shown). A `boolean` replaces it — `true` keeps markers on (matches
+   * the default), `false` flips the chart-level gate off and emits
+   * `<c:marker val="0"/>` so per-series marker definitions stop
+   * rendering chart-wide.
+   *
+   * Only meaningful when the resolved chart type is `line` — the OOXML
+   * schema places the chart-level `<c:marker>` (CT_Boolean) exclusively
+   * on `CT_LineChart`. The field is silently dropped when the clone
+   * targets any other family (so a line-template marker-off hint never
+   * leaks into a column / pie / doughnut / area / scatter clone).
+   *
+   * Independent of any per-series marker overrides — this gate sits at
+   * the chart level and decides whether markers paint at all; the
+   * per-series block then picks the symbol / size / fill that paints
+   * when the gate is open.
+   */
+  showLineMarkers?: boolean | null;
+  /**
    * Override `<c:style>` (the built-in chart style preset, 1–48).
    *
    * `undefined` (or omitted) inherits the source's parsed `style`.
@@ -935,6 +959,19 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     if (resolvedUpDownBars !== undefined) out.upDownBars = resolvedUpDownBars;
   }
 
+  // `<c:marker>` (the chart-level CT_Boolean variant) lives exclusively
+  // on `<c:lineChart>` per the OOXML schema. Drop the flag on every
+  // other resolved type so a line-template marker-off hint never leaks
+  // into a column / pie / doughnut / area / scatter clone. Override
+  // wins over the source's parsed value.
+  if (type === "line") {
+    const resolvedShowLineMarkers = resolveShowLineMarkers(
+      source.showLineMarkers,
+      options.showLineMarkers,
+    );
+    if (resolvedShowLineMarkers !== undefined) out.showLineMarkers = resolvedShowLineMarkers;
+  }
+
   // Pie and doughnut have no axes, so silently skip carrying over axis
   // titles even when the source declared them or the caller passed an
   // override.
@@ -1530,6 +1567,30 @@ function resolveProtection(
  * it during emit.
  */
 function resolveUpDownBars(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve a `showLineMarkers` override.
+ *
+ * `undefined` → inherit the source's parsed `showLineMarkers`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               Excel default — `<c:marker val="1"/>`, markers shown).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `upDownBars` / `dropLines` / `hiLowLines` so the
+ * chart-level line-only toggles compose the same way at the call site.
+ * `true` collapses to `undefined` on the writer side because the writer
+ * already emits `val="1"` by default; the `true` value still surfaces
+ * in the cloned `SheetChart` for symmetry with other resolve helpers,
+ * leaving the renderer to fold it back into the default during emit.
+ */
+function resolveShowLineMarkers(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
