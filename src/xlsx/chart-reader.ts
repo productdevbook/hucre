@@ -28,6 +28,7 @@ import type {
   ChartBarGrouping,
   ChartDataLabelPosition,
   ChartDataLabelsInfo,
+  ChartDataTable,
   ChartDisplayBlanksAs,
   ChartKind,
   ChartLegendPosition,
@@ -245,6 +246,14 @@ export function parseChart(xml: string): Chart | undefined {
 
     const axes = parseAxes(plotArea);
     if (axes !== undefined) out.axes = axes;
+
+    // `<c:dTable>` lives inside `<c:plotArea>` after the axes per
+    // CT_PlotArea — the data table renders the underlying series values
+    // as a small grid beneath the plot. Only chart families with axes
+    // (bar / column / line / area / scatter / surface / stock) carry
+    // a slot for it; pie / doughnut have no axes at all.
+    const dataTable = parseDataTable(plotArea);
+    if (dataTable !== undefined) out.dataTable = dataTable;
   }
 
   const legend = parseLegend(chartEl);
@@ -1802,6 +1811,61 @@ function parseDate1904(chartSpace: XmlElement): boolean | undefined {
       // OOXML default — collapse to undefined for symmetry with the
       // writer's `date1904` field.
       return undefined;
+    default:
+      return undefined;
+  }
+}
+
+// ── Data Table ─────────────────────────────────────────────────────
+
+/**
+ * Pull `<c:dTable>...</c:dTable>` off `<c:plotArea>`. Surfaces a
+ * {@link ChartDataTable} whenever the source chart declares the
+ * element; absence collapses to `undefined`.
+ *
+ * Each of the four boolean children (`<c:showHorzBorder>`,
+ * `<c:showVertBorder>`, `<c:showOutline>`, `<c:showKeys>`) round-trips
+ * literally — the reader does not collapse any per-field default
+ * because all four are required on `CT_DTable` and Excel always emits
+ * every one. Children that are missing or carry an unknown `val`
+ * attribute drop to `undefined` rather than fabricate a flag the file
+ * did not pin; the writer falls back to the OOXML reference defaults
+ * (`true` for every child) on round-trip.
+ */
+function parseDataTable(plotArea: XmlElement): ChartDataTable | undefined {
+  const el = findChild(plotArea, "dTable");
+  if (!el) return undefined;
+  const out: ChartDataTable = {};
+  const showHorzBorder = parseDataTableFlag(el, "showHorzBorder");
+  if (showHorzBorder !== undefined) out.showHorzBorder = showHorzBorder;
+  const showVertBorder = parseDataTableFlag(el, "showVertBorder");
+  if (showVertBorder !== undefined) out.showVertBorder = showVertBorder;
+  const showOutline = parseDataTableFlag(el, "showOutline");
+  if (showOutline !== undefined) out.showOutline = showOutline;
+  const showKeys = parseDataTableFlag(el, "showKeys");
+  if (showKeys !== undefined) out.showKeys = showKeys;
+  return out;
+}
+
+/**
+ * Pull a single boolean child off `<c:dTable>`. Accepts the OOXML
+ * truthy / falsy spellings (`"1"` / `"true"` / `"0"` / `"false"`);
+ * unknown tokens, missing `val` attributes, and missing elements all
+ * collapse to `undefined` rather than fabricate a flag the file did
+ * not pin.
+ */
+function parseDataTableFlag(dTable: XmlElement, local: string): boolean | undefined {
+  const el = findChild(dTable, local);
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  switch (raw) {
+    case "1":
+    case "true":
+      return true;
+    case "0":
+    case "false":
+      return false;
     default:
       return undefined;
   }

@@ -24,6 +24,7 @@ import type {
   ChartAxisTickMark,
   ChartDataLabels,
   ChartDataLabelsInfo,
+  ChartDataTable,
   ChartDisplayBlanksAs,
   ChartKind,
   ChartLineStroke,
@@ -369,6 +370,28 @@ export interface CloneChartOptions {
    * the call site.
    */
   date1904?: boolean | null;
+  /**
+   * Override `<c:plotArea><c:dTable>` (the data-table beneath the plot
+   * area).
+   *
+   * `undefined` (or omitted) inherits the source's parsed
+   * {@link Chart.dataTable}. `null` drops the inherited block so the
+   * writer skips the element entirely — Excel renders no data table.
+   * `false` is equivalent to `null` (suppression). `true` pins every
+   * border / outline / key flag to its OOXML default `true`. A
+   * {@link ChartDataTable} object replaces the block wholesale (no
+   * per-field merge; pass every flag you want preserved). Each
+   * unspecified flag inside the object falls back to `true` at the
+   * writer side because every `<c:dTable>` boolean child is required
+   * on `CT_DTable` and Excel emits all four.
+   *
+   * Only meaningful when the resolved chart type has axes — `bar`,
+   * `column`, `line`, `area`, `scatter`. The field is silently dropped
+   * when the clone targets `pie` / `doughnut` because the OOXML schema
+   * places `<c:dTable>` inside `<c:plotArea>` alongside the axes; pie /
+   * doughnut have no axes and no slot for the element.
+   */
+  dataTable?: ChartDataTable | boolean | null;
   /**
    * Override `<c:scatterStyle>` (the chart-level XY-scatter preset).
    *
@@ -822,6 +845,18 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
 
   const resolvedDate1904 = resolveDate1904(source.date1904, options.date1904);
   if (resolvedDate1904 !== undefined) out.date1904 = resolvedDate1904;
+
+  // `<c:dTable>` only renders inside `<c:plotArea>` alongside the axes
+  // — pie / doughnut have no axes at all, so the OOXML schema places no
+  // slot for the element on those families. Drop the field on those
+  // resolved types so a templated bar / line / scatter chart with a
+  // pinned data table does not leak the element into a doughnut clone
+  // whose schema rejects it. Override wins over the source's parsed
+  // value.
+  if (type !== "pie" && type !== "doughnut") {
+    const resolvedDataTable = resolveDataTable(source.dataTable, options.dataTable);
+    if (resolvedDataTable !== undefined) out.dataTable = resolvedDataTable;
+  }
 
   // `<c:scatterStyle>` only renders inside `<c:scatterChart>`. Drop the
   // field on every other resolved type so a scatter template flattened
@@ -1313,6 +1348,59 @@ function resolveDate1904(
   // resolved chart drops the field rather than carry a value the
   // writer would skip on emit anyway.
   return undefined;
+}
+
+/**
+ * Resolve a `dataTable` (plot-area data-table) override.
+ *
+ * `undefined` → inherit the source's parsed {@link Chart.dataTable}.
+ * `null`      → drop the inherited block so the writer skips
+ *               `<c:dTable>` entirely (no data table rendered).
+ * `false`     → equivalent to `null` (suppression); kept distinct in
+ *               the API surface so callers can write `dataTable: false`
+ *               for symmetry with the writer's `boolean | object` shape.
+ * `true`      → enable with the OOXML reference defaults (every flag
+ *               `true`).
+ * `object`    → replace the inherited block wholesale (no per-field
+ *               merge with the source — pass every flag the cloned
+ *               table should render). Each unspecified field falls back
+ *               to `true` at the writer side because every `<c:dTable>`
+ *               boolean child is required on `CT_DTable` and Excel
+ *               always emits all four.
+ *
+ * The grammar mirrors {@link CloneChartSeriesOverride.marker} (and the
+ * other `object | null` / wholesale-replace patterns) so the
+ * chart-level block toggles compose the same way at the call site.
+ *
+ * The caller already short-circuits this for pie / doughnut clones
+ * because the OOXML schema places `<c:dTable>` inside `<c:plotArea>`
+ * alongside the axes, and pie / doughnut have no axes at all.
+ */
+function resolveDataTable(
+  sourceValue: ChartDataTable | undefined,
+  override: ChartDataTable | boolean | null | undefined,
+): ChartDataTable | boolean | undefined {
+  if (override === undefined) {
+    // Inherit — pass the source through verbatim. The writer accepts
+    // both the boolean and object shapes, so a parsed `ChartDataTable`
+    // round-trips directly.
+    return sourceValue;
+  }
+  if (override === null) {
+    // Drop the inherited block. The writer treats `undefined` as
+    // suppression and skips `<c:dTable>` entirely.
+    return undefined;
+  }
+  if (override === false) {
+    // Symmetric with `null` — kept distinct in the API surface for
+    // ergonomic alignment with the writer's `boolean | object` shape,
+    // but emits the same on-the-wire result (no `<c:dTable>`).
+    return undefined;
+  }
+  // `true` or a {@link ChartDataTable} object — replace the inherited
+  // block wholesale. The writer accepts both forms and falls back to
+  // the OOXML reference defaults for any field the object leaves unset.
+  return override;
 }
 
 /**

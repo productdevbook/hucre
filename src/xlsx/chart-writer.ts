@@ -324,7 +324,101 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     }
   }
 
+  // `<c:dTable>` sits inside `<c:plotArea>` after the axes per
+  // CT_PlotArea (ECMA-376 Part 1, §21.2.2.145) — between the last
+  // `<c:valAx>` / `<c:catAx>` and the optional `<c:spPr>` that the
+  // writer never emits. Pie / doughnut have no axes at all, so the
+  // OOXML schema places no slot for `<c:dTable>` on those families;
+  // `resolveDataTable` short-circuits them by returning `undefined`.
+  const dTable = resolveDataTable(chart);
+  if (dTable !== undefined) {
+    children.push(buildDataTable(dTable));
+  }
+
   return xmlElement("c:plotArea", undefined, children);
+}
+
+// ── Data Table ───────────────────────────────────────────────────────
+
+/**
+ * Resolve the {@link SheetChart.dataTable} field into the four boolean
+ * children `<c:dTable>` requires, or `undefined` to signal that the
+ * writer should skip emission of the element.
+ *
+ * Returns `undefined` when:
+ *  - The chart's family has no axes (pie / doughnut). The OOXML schema
+ *    places `<c:dTable>` inside `<c:plotArea>` alongside the axes, so
+ *    no axes means no slot to host the element.
+ *  - The caller did not opt in (`dataTable` is `undefined` or `false`).
+ *
+ * Returns the four resolved booleans when the caller passed `true`
+ * (every default `true`) or an object (per-field overrides on top of the
+ * `true` defaults). Stray non-boolean inputs collapse to the matching
+ * default rather than emit a token Excel rejects, mirroring how every
+ * other chart-level boolean writer treats its input.
+ */
+function resolveDataTable(chart: SheetChart):
+  | {
+      showHorzBorder: boolean;
+      showVertBorder: boolean;
+      showOutline: boolean;
+      showKeys: boolean;
+    }
+  | undefined {
+  // Pie / doughnut have no axes — the OOXML schema places `<c:dTable>`
+  // alongside `<c:catAx>` / `<c:valAx>`, so there is no slot for it on
+  // those families. Drop the field silently rather than emit an element
+  // Excel's strict validator would reject.
+  if (chart.type === "pie" || chart.type === "doughnut") return undefined;
+
+  const raw = chart.dataTable;
+  if (raw === undefined || raw === false) return undefined;
+
+  if (raw === true) {
+    return {
+      showHorzBorder: true,
+      showVertBorder: true,
+      showOutline: true,
+      showKeys: true,
+    };
+  }
+
+  // Per-field overrides on top of the `true` defaults. Only literal
+  // `false` flips a flag — anything else (including stray `undefined`,
+  // `null`, or a non-boolean) falls back to the default `true` so the
+  // writer never emits a value the OOXML schema would refuse.
+  return {
+    showHorzBorder: raw.showHorzBorder !== false,
+    showVertBorder: raw.showVertBorder !== false,
+    showOutline: raw.showOutline !== false,
+    showKeys: raw.showKeys !== false,
+  };
+}
+
+/**
+ * Serialize a resolved data-table into `<c:dTable>` with its four
+ * required boolean children, in the order CT_DTable mandates:
+ * `showHorzBorder`, `showVertBorder`, `showOutline`, `showKeys`.
+ *
+ * The writer always emits all four children — the OOXML schema marks
+ * them required on `CT_DTable`, and Excel's reference serialization
+ * includes every one even when the caller leaves it at the default. The
+ * optional `<c:spPr>` / `<c:txPr>` / `<c:extLst>` children are skipped
+ * because hucre's data-table model does not surface fill / text styling
+ * yet.
+ */
+function buildDataTable(table: {
+  showHorzBorder: boolean;
+  showVertBorder: boolean;
+  showOutline: boolean;
+  showKeys: boolean;
+}): string {
+  return xmlElement("c:dTable", undefined, [
+    xmlSelfClose("c:showHorzBorder", { val: table.showHorzBorder ? 1 : 0 }),
+    xmlSelfClose("c:showVertBorder", { val: table.showVertBorder ? 1 : 0 }),
+    xmlSelfClose("c:showOutline", { val: table.showOutline ? 1 : 0 }),
+    xmlSelfClose("c:showKeys", { val: table.showKeys ? 1 : 0 }),
+  ]);
 }
 
 interface AxisRenderOptions {

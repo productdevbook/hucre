@@ -6184,3 +6184,236 @@ describe("writeChart — axis crossBetween", () => {
     expect(reparsed?.axes?.y?.crossBetween).toBe("midCat");
   });
 });
+
+// ── writeChart — data table ──────────────────────────────────────────
+
+describe("writeChart — data table", () => {
+  it("skips <c:dTable> entirely when the field is unset (writer default)", () => {
+    // Excel renders no data table on a fresh chart — the writer skips
+    // the element so the file stays minimal. Absence and the unset
+    // default round-trip identically through cloneChart.
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:dTable");
+  });
+
+  it("skips <c:dTable> when dataTable is false", () => {
+    // `false` mirrors the unset default — the writer skips the element.
+    const result = writeChart(makeChart({ dataTable: false }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:dTable");
+  });
+
+  it("emits a fully-defaulted <c:dTable> when dataTable is true", () => {
+    // `true` enables the table with Excel's reference defaults — every
+    // border drawn, the outline frame on, and the legend keys shown.
+    const result = writeChart(makeChart({ dataTable: true }), "Sheet1");
+    expect(result.chartXml).toContain("<c:dTable>");
+    expect(result.chartXml).toContain('<c:showHorzBorder val="1"/>');
+    expect(result.chartXml).toContain('<c:showVertBorder val="1"/>');
+    expect(result.chartXml).toContain('<c:showOutline val="1"/>');
+    expect(result.chartXml).toContain('<c:showKeys val="1"/>');
+  });
+
+  it("emits a fully-defaulted <c:dTable> when dataTable is an empty object", () => {
+    // An empty override accepts every default — equivalent to passing
+    // `dataTable: true`. Each unspecified field falls back to the OOXML
+    // reference value `true`.
+    const result = writeChart(makeChart({ dataTable: {} }), "Sheet1");
+    expect(result.chartXml).toContain("<c:dTable>");
+    expect(result.chartXml).toContain('<c:showHorzBorder val="1"/>');
+    expect(result.chartXml).toContain('<c:showVertBorder val="1"/>');
+    expect(result.chartXml).toContain('<c:showOutline val="1"/>');
+    expect(result.chartXml).toContain('<c:showKeys val="1"/>');
+  });
+
+  it("honours per-field overrides (false for showKeys)", () => {
+    // A common pattern — paint the table grid but hide the legend
+    // swatches because the chart already carries a separate legend.
+    const result = writeChart(makeChart({ dataTable: { showKeys: false } }), "Sheet1");
+    expect(result.chartXml).toContain('<c:showHorzBorder val="1"/>');
+    expect(result.chartXml).toContain('<c:showVertBorder val="1"/>');
+    expect(result.chartXml).toContain('<c:showOutline val="1"/>');
+    expect(result.chartXml).toContain('<c:showKeys val="0"/>');
+  });
+
+  it("flips every flag false when the caller pins each false", () => {
+    const result = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: false,
+          showVertBorder: false,
+          showOutline: false,
+          showKeys: false,
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('<c:showHorzBorder val="0"/>');
+    expect(result.chartXml).toContain('<c:showVertBorder val="0"/>');
+    expect(result.chartXml).toContain('<c:showOutline val="0"/>');
+    expect(result.chartXml).toContain('<c:showKeys val="0"/>');
+  });
+
+  it("emits the four <c:dTable> children in CT_DTable schema order", () => {
+    // CT_DTable: showHorzBorder?, showVertBorder?, showOutline?, showKeys?,
+    // spPr?, txPr?, extLst? — though all four boolean children are
+    // always emitted, the order matters for strict validators (Excel
+    // itself rejects out-of-order children).
+    const result = writeChart(makeChart({ dataTable: true }), "Sheet1");
+    const horzIdx = result.chartXml.indexOf("c:showHorzBorder");
+    const vertIdx = result.chartXml.indexOf("c:showVertBorder");
+    const outlineIdx = result.chartXml.indexOf("c:showOutline");
+    const keysIdx = result.chartXml.indexOf("c:showKeys");
+    expect(horzIdx).toBeGreaterThan(-1);
+    expect(vertIdx).toBeGreaterThan(horzIdx);
+    expect(outlineIdx).toBeGreaterThan(vertIdx);
+    expect(keysIdx).toBeGreaterThan(outlineIdx);
+  });
+
+  it("places <c:dTable> after the axes inside <c:plotArea>", () => {
+    // CT_PlotArea sequence: layout?, [chart-types], catAx*/valAx*/dateAx*/
+    // serAx*, dTable?, spPr? — the table sits after the axes.
+    const result = writeChart(makeChart({ dataTable: true }), "Sheet1");
+    const lastValAxClose = result.chartXml.lastIndexOf("</c:valAx>");
+    const dTableIdx = result.chartXml.indexOf("<c:dTable>");
+    const plotAreaCloseIdx = result.chartXml.indexOf("</c:plotArea>");
+    expect(lastValAxClose).toBeGreaterThan(-1);
+    expect(dTableIdx).toBeGreaterThan(lastValAxClose);
+    expect(plotAreaCloseIdx).toBeGreaterThan(dTableIdx);
+  });
+
+  it("only emits <c:dTable> once on a chart that pins it", () => {
+    // Guard against any regression that would double-emit the element.
+    const result = writeChart(makeChart({ dataTable: true }), "Sheet1");
+    const occurrences = result.chartXml.match(/<c:dTable>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads dataTable through every chart family with axes", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(makeChart({ type, dataTable: true }), "Sheet1");
+      expect(result.chartXml).toContain("<c:dTable>");
+    }
+    const scatter = writeChart(
+      {
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        dataTable: true,
+      },
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain("<c:dTable>");
+  });
+
+  it("silently drops dataTable on pie charts (no axes, no slot for the element)", () => {
+    // The OOXML schema places <c:dTable> inside <c:plotArea> alongside
+    // the axes, but pie charts have no axes at all. The writer drops
+    // the field rather than emit an element Excel's strict validator
+    // would reject.
+    const result = writeChart(
+      {
+        type: "pie",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        dataTable: true,
+      },
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:dTable");
+  });
+
+  it("silently drops dataTable on doughnut charts (no axes either)", () => {
+    const result = writeChart(
+      {
+        type: "doughnut",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        dataTable: true,
+      },
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:dTable");
+  });
+
+  it("round-trips a pinned dataTable through parseChart", () => {
+    const written = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+        },
+      }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+    });
+  });
+
+  it("round-trips dataTable: true as the fully-defaulted shape", () => {
+    // The writer emits all four flags as `true` — a re-parse surfaces
+    // every one literally because every child is required on
+    // CT_DTable.
+    const written = writeChart(makeChart({ dataTable: true }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: true,
+      showOutline: true,
+      showKeys: true,
+    });
+  });
+
+  it("collapses an unset dataTable round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toBeUndefined();
+  });
+
+  it("collapses dataTable: false round-trip back to undefined", () => {
+    // `false` writes nothing (matches the unset default), so re-parse
+    // also returns undefined.
+    const written = writeChart(makeChart({ dataTable: false }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toBeUndefined();
+  });
+
+  it("threads dataTable end-to-end through writeXlsx packaging", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Dashboard",
+        rows: [
+          ["Quarter", "Revenue"],
+          ["Q1", 10],
+          ["Q2", 20],
+          ["Q3", 30],
+        ],
+        charts: [
+          {
+            type: "column",
+            series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            dataTable: { showKeys: false },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain("<c:dTable>");
+    expect(chartXml).toContain('<c:showKeys val="0"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: true,
+      showOutline: true,
+      showKeys: false,
+    });
+  });
+});
