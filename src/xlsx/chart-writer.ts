@@ -77,7 +77,9 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
 
   // ── Legend ──
   if (legendPos) {
-    chartChildren.push(buildLegend(legendPos, resolveLegendOverlay(chart)));
+    chartChildren.push(
+      buildLegend(legendPos, resolveLegendOverlay(chart), resolveLegendEntries(chart)),
+    );
   }
 
   chartChildren.push(xmlSelfClose("c:plotVisOnly", { val: resolvePlotVisOnly(chart) ? 1 : 0 }));
@@ -2205,11 +2207,79 @@ function resolveLegendPosition(chart: SheetChart): LegendPos | null {
   }
 }
 
-function buildLegend(pos: LegendPos, overlay: boolean): string {
-  return xmlElement("c:legend", undefined, [
-    xmlSelfClose("c:legendPos", { val: pos }),
-    xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }),
-  ]);
+function buildLegend(
+  pos: LegendPos,
+  overlay: boolean,
+  entries: readonly ResolvedLegendEntry[],
+): string {
+  const children: string[] = [xmlSelfClose("c:legendPos", { val: pos })];
+
+  // CT_Legend sequence places `<c:legendEntry>` after `<c:legendPos>`
+  // and before `<c:layout>` / `<c:overlay>` (ECMA-376 Part 1,
+  // §21.2.2.114). The writer never emits `<c:layout>` here, so the
+  // entries collapse straight onto `<c:overlay>`. Each entry is emitted
+  // with both `<c:idx>` and `<c:delete>` so a re-parse sees the
+  // canonical shape — Excel itself emits `<c:delete val="1"/>` whenever
+  // the action is "Hide legend entry", and the writer mirrors that even
+  // for the OOXML default `false` value (an explicit `<c:delete val="0"/>`
+  // round-trips cleanly through `parseChart`).
+  for (const entry of entries) {
+    children.push(
+      xmlElement("c:legendEntry", undefined, [
+        xmlSelfClose("c:idx", { val: entry.idx }),
+        xmlSelfClose("c:delete", { val: entry.delete ? 1 : 0 }),
+      ]),
+    );
+  }
+
+  children.push(xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }));
+  return xmlElement("c:legend", undefined, children);
+}
+
+interface ResolvedLegendEntry {
+  idx: number;
+  delete: boolean;
+}
+
+/**
+ * Normalize {@link SheetChart.legendEntries} into an emit-ready list.
+ *
+ * The OOXML schema (`CT_LegendEntry`) places `<c:idx val="N"/>` as the
+ * required selector and `<c:delete val=".."/>` as the hide flag. Hucre
+ * accepts a free-form `ChartLegendEntry[]` from callers; this helper
+ * strips entries whose `idx` cannot land on a real series and
+ * deduplicates duplicate `idx` values so the writer never emits the
+ * same selector twice (the last entry wins so a clone-through that
+ * appends an override naturally beats the source's parsed value).
+ *
+ * Validation rules:
+ *   - `idx` must be a non-negative integer (matches `xsd:unsignedInt`
+ *     on `<c:idx val=".."/>`); non-finite, negative, or non-integer
+ *     values drop entirely rather than emit a token Excel rejects.
+ *   - `delete` collapses to a strict boolean — anything other than
+ *     literal `true` resolves to `false`. Mirrors how `legendOverlay`
+ *     / `roundedCorners` / `plotVisOnly` treat their inputs.
+ *
+ * Entries are emitted in ascending `idx` order so the rendered chart
+ * matches Excel's reference serialization (Excel sorts by `<c:idx>` on
+ * write even when the in-memory list arrived unsorted). Returns an
+ * empty array when the chart has no entries to emit so the caller can
+ * avoid touching the legend block.
+ */
+function resolveLegendEntries(chart: SheetChart): ResolvedLegendEntry[] {
+  const raw = chart.legendEntries;
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+
+  const byIdx = new Map<number, ResolvedLegendEntry>();
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const idx = entry.idx;
+    if (typeof idx !== "number" || !Number.isFinite(idx)) continue;
+    if (!Number.isInteger(idx) || idx < 0) continue;
+    byIdx.set(idx, { idx, delete: entry.delete === true });
+  }
+
+  return Array.from(byIdx.values()).sort((a, b) => a.idx - b.idx);
 }
 
 /**

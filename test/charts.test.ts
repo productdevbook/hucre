@@ -8144,3 +8144,134 @@ describe("parseChart — showLineMarkers", () => {
     expect(chart?.upDownBars).toBe(true);
   });
 });
+
+// ── parseChart — legend entries ────────────────────────────────────
+
+describe("parseChart — legend entries", () => {
+  function chartWithLegend(legendXml: string): string {
+    return `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:ser><c:idx val="1"/></c:ser>
+        <c:ser><c:idx val="2"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+    ${legendXml}
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces a single hidden entry", () => {
+    const xml = chartWithLegend(
+      '<c:legend><c:legendPos val="r"/><c:legendEntry><c:idx val="1"/><c:delete val="1"/></c:legendEntry></c:legend>',
+    );
+    expect(parseChart(xml)?.legendEntries).toEqual([{ idx: 1, delete: true }]);
+  });
+
+  it("surfaces multiple entries in <c:idx> declaration order", () => {
+    const xml = chartWithLegend(
+      `<c:legend>
+        <c:legendPos val="r"/>
+        <c:legendEntry><c:idx val="2"/><c:delete val="1"/></c:legendEntry>
+        <c:legendEntry><c:idx val="0"/><c:delete val="1"/></c:legendEntry>
+      </c:legend>`,
+    );
+    // The reader preserves the source order — the writer reorders by
+    // ascending idx on emit, but parseChart surfaces the file-order list
+    // so a roundtrip can be observed without normalization.
+    expect(parseChart(xml)?.legendEntries).toEqual([
+      { idx: 2, delete: true },
+      { idx: 0, delete: true },
+    ]);
+  });
+
+  it("treats a missing <c:delete> as delete=false (the OOXML default)", () => {
+    // CT_LegendEntry's <c:delete> is optional. Some templates (and
+    // older Excel versions) emit a bare <c:legendEntry><c:idx/></c:legendEntry>
+    // with the entry left visible; the reader still surfaces the index
+    // override with `delete: false` so a clone-through carries the
+    // selector forward.
+    const xml = chartWithLegend(
+      '<c:legend><c:legendPos val="r"/><c:legendEntry><c:idx val="1"/></c:legendEntry></c:legend>',
+    );
+    expect(parseChart(xml)?.legendEntries).toEqual([{ idx: 1, delete: false }]);
+  });
+
+  it('parses <c:delete val="0"/> as delete=false', () => {
+    const xml = chartWithLegend(
+      '<c:legend><c:legendPos val="r"/><c:legendEntry><c:idx val="0"/><c:delete val="0"/></c:legendEntry></c:legend>',
+    );
+    expect(parseChart(xml)?.legendEntries).toEqual([{ idx: 0, delete: false }]);
+  });
+
+  it('accepts the truthy / falsy <c:delete> spellings ("true" / "false")', () => {
+    const xml = chartWithLegend(
+      `<c:legend>
+        <c:legendPos val="r"/>
+        <c:legendEntry><c:idx val="0"/><c:delete val="true"/></c:legendEntry>
+        <c:legendEntry><c:idx val="1"/><c:delete val="false"/></c:legendEntry>
+      </c:legend>`,
+    );
+    expect(parseChart(xml)?.legendEntries).toEqual([
+      { idx: 0, delete: true },
+      { idx: 1, delete: false },
+    ]);
+  });
+
+  it("returns undefined when the chart declares no <c:legendEntry>", () => {
+    const xml = chartWithLegend('<c:legend><c:legendPos val="r"/></c:legend>');
+    expect(parseChart(xml)?.legendEntries).toBeUndefined();
+  });
+
+  it("returns undefined when the chart hides the legend (delete=1)", () => {
+    // A hidden legend has no slot for entry overrides — even a stray
+    // `<c:legendEntry>` inside it must not surface (the rendered chart
+    // would never show those entries anyway).
+    const xml = chartWithLegend(
+      '<c:legend><c:delete val="1"/><c:legendEntry><c:idx val="0"/><c:delete val="1"/></c:legendEntry></c:legend>',
+    );
+    expect(parseChart(xml)?.legendEntries).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:legend> at all", () => {
+    const xml = chartWithLegend("");
+    expect(parseChart(xml)?.legendEntries).toBeUndefined();
+  });
+
+  it("drops entries whose <c:idx> is missing", () => {
+    const xml = chartWithLegend(
+      `<c:legend>
+        <c:legendPos val="r"/>
+        <c:legendEntry><c:delete val="1"/></c:legendEntry>
+        <c:legendEntry><c:idx val="2"/><c:delete val="1"/></c:legendEntry>
+      </c:legend>`,
+    );
+    expect(parseChart(xml)?.legendEntries).toEqual([{ idx: 2, delete: true }]);
+  });
+
+  it("drops entries whose <c:idx val=..> is malformed", () => {
+    const xml = chartWithLegend(
+      `<c:legend>
+        <c:legendPos val="r"/>
+        <c:legendEntry><c:idx val="abc"/><c:delete val="1"/></c:legendEntry>
+        <c:legendEntry><c:idx val="-1"/><c:delete val="1"/></c:legendEntry>
+        <c:legendEntry><c:idx val="0"/><c:delete val="1"/></c:legendEntry>
+      </c:legend>`,
+    );
+    expect(parseChart(xml)?.legendEntries).toEqual([{ idx: 0, delete: true }]);
+  });
+
+  it("deduplicates duplicate <c:idx> entries (first wins)", () => {
+    const xml = chartWithLegend(
+      `<c:legend>
+        <c:legendPos val="r"/>
+        <c:legendEntry><c:idx val="1"/><c:delete val="1"/></c:legendEntry>
+        <c:legendEntry><c:idx val="1"/><c:delete val="0"/></c:legendEntry>
+      </c:legend>`,
+    );
+    expect(parseChart(xml)?.legendEntries).toEqual([{ idx: 1, delete: true }]);
+  });
+});

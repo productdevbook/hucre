@@ -7442,3 +7442,238 @@ describe("writeChart — showLineMarkers", () => {
     expect(reparsed?.showLineMarkers).toBe(false);
   });
 });
+
+// ── writeChart — legend entries ──────────────────────────────────────
+
+describe("writeChart — legend entries", () => {
+  it("omits <c:legendEntry> when the field is unset (default)", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(result.chartXml).not.toContain("c:legendEntry");
+  });
+
+  it("omits <c:legendEntry> when the field is an empty array", () => {
+    // Empty arrays collapse to no element so an opt-out via `[]` produces
+    // the same wire shape as omitting the field entirely.
+    const result = writeChart(makeChart({ legendEntries: [] }), "Sheet1");
+    expect(result.chartXml).not.toContain("c:legendEntry");
+  });
+
+  it("emits a single hidden entry with both <c:idx> and <c:delete> children", () => {
+    // The writer always emits both children so a re-parse sees the
+    // canonical CT_LegendEntry shape (matches Excel's reference
+    // serialization on the "Hide legend entry" action).
+    const result = writeChart(
+      makeChart({
+        series: [
+          { name: "A", values: "B2:B4", categories: "A2:A4" },
+          { name: "B", values: "C2:C4", categories: "A2:A4" },
+        ],
+        legendEntries: [{ idx: 1, delete: true }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain(
+      '<c:legendEntry><c:idx val="1"/><c:delete val="1"/></c:legendEntry>',
+    );
+  });
+
+  it("emits multiple entries in ascending idx order", () => {
+    // Excel's reference serialization sorts by `<c:idx>` on write even
+    // when the in-memory list arrived unsorted; the writer mirrors that
+    // so the rendered file is canonical.
+    const result = writeChart(
+      makeChart({
+        series: [
+          { name: "A", values: "B2:B4", categories: "A2:A4" },
+          { name: "B", values: "C2:C4", categories: "A2:A4" },
+          { name: "C", values: "D2:D4", categories: "A2:A4" },
+        ],
+        legendEntries: [
+          { idx: 2, delete: true },
+          { idx: 0, delete: true },
+        ],
+      }),
+      "Sheet1",
+    );
+    const legend = result.chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    const first = legend.indexOf('<c:idx val="0"/>');
+    const second = legend.indexOf('<c:idx val="2"/>');
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(second).toBeGreaterThanOrEqual(0);
+    expect(first).toBeLessThan(second);
+  });
+
+  it('emits an explicit <c:delete val="0"/> when delete is false (round-trip carries the selector)', () => {
+    // A "selector-only" entry with `delete: false` still emits both
+    // children so a re-parse sees the same shape — the writer never
+    // collapses the <c:delete> to an absent element.
+    const result = writeChart(makeChart({ legendEntries: [{ idx: 0, delete: false }] }), "Sheet1");
+    expect(result.chartXml).toContain(
+      '<c:legendEntry><c:idx val="0"/><c:delete val="0"/></c:legendEntry>',
+    );
+  });
+
+  it('emits <c:delete val="0"/> when delete is omitted (defaults to false)', () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ legendEntries: [{ idx: 0 } as any] }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain(
+      '<c:legendEntry><c:idx val="0"/><c:delete val="0"/></c:legendEntry>',
+    );
+  });
+
+  it("places <c:legendEntry> between <c:legendPos> and <c:overlay> (CT_Legend order)", () => {
+    // CT_Legend sequence: legendPos?, legendEntry*, layout?, overlay?, ...
+    const result = writeChart(makeChart({ legendEntries: [{ idx: 0, delete: true }] }), "Sheet1");
+    const legend = result.chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend.indexOf("c:legendPos")).toBeLessThan(legend.indexOf("c:legendEntry"));
+    expect(legend.indexOf("c:legendEntry")).toBeLessThan(legend.indexOf("c:overlay"));
+  });
+
+  it("does not emit any <c:legend> when legend=false (entries dropped)", () => {
+    // A hidden legend has no slot for entries — the writer suppresses
+    // the entire legend element rather than emit stray entries Excel
+    // would never read.
+    const result = writeChart(
+      makeChart({ legend: false, legendEntries: [{ idx: 0, delete: true }] }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:legend");
+    expect(result.chartXml).not.toContain("c:legendEntry");
+  });
+
+  it("drops entries whose idx is non-finite / negative / non-integer", () => {
+    const result = writeChart(
+      makeChart({
+        legendEntries: [
+          { idx: Number.NaN, delete: true },
+          { idx: Number.POSITIVE_INFINITY, delete: true },
+          { idx: -1, delete: true },
+          { idx: 1.5, delete: true },
+          { idx: 0, delete: true },
+        ],
+      }),
+      "Sheet1",
+    );
+    const legend = result.chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    const occurrences = legend.match(/<c:legendEntry/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+    expect(legend).toContain('<c:idx val="0"/>');
+  });
+
+  it("deduplicates duplicate idx values (last wins on write)", () => {
+    // The writer's resolve pass dedupes with last-wins semantics so a
+    // clone-through that appends an override naturally beats the
+    // source's parsed value.
+    const result = writeChart(
+      makeChart({
+        legendEntries: [
+          { idx: 0, delete: true },
+          { idx: 0, delete: false },
+        ],
+      }),
+      "Sheet1",
+    );
+    const legend = result.chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend.match(/<c:legendEntry/g) ?? []).toHaveLength(1);
+    expect(legend).toContain('<c:delete val="0"/>');
+  });
+
+  it("treats non-boolean delete values as false", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ legendEntries: [{ idx: 0, delete: "yes" as any }] }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain(
+      '<c:legendEntry><c:idx val="0"/><c:delete val="0"/></c:legendEntry>',
+    );
+  });
+
+  it("threads legendEntries through every chart family", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, legendEntries: [{ idx: 0, delete: true }] }),
+        "Sheet1",
+      );
+      const legend = result.chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+      expect(legend).toContain(
+        '<c:legendEntry><c:idx val="0"/><c:delete val="1"/></c:legendEntry>',
+      );
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        legendEntries: [{ idx: 0, delete: true }],
+      }),
+      "Sheet1",
+    );
+    const legend = scatter.chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain('<c:legendEntry><c:idx val="0"/><c:delete val="1"/></c:legendEntry>');
+  });
+
+  it("round-trips a non-empty legendEntries list through parseChart", () => {
+    const written = writeChart(
+      makeChart({
+        series: [
+          { name: "A", values: "B2:B4", categories: "A2:A4" },
+          { name: "B", values: "C2:C4", categories: "A2:A4" },
+        ],
+        legendEntries: [
+          { idx: 1, delete: true },
+          { idx: 0, delete: false },
+        ],
+      }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    // The writer emits in ascending idx order, so the re-parsed list is
+    // sorted regardless of the input order.
+    expect(reparsed?.legendEntries).toEqual([
+      { idx: 0, delete: false },
+      { idx: 1, delete: true },
+    ]);
+  });
+
+  it("collapses an unset legendEntries field to undefined on round-trip", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    expect(parseChart(written)?.legendEntries).toBeUndefined();
+  });
+
+  it("survives a writeXlsx round trip — legendEntries lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales", "Forecast"],
+          ["North", 100, 120],
+          ["South", 200, 180],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales vs Forecast",
+            series: [
+              { name: "Sales", values: "B2:B3", categories: "A2:A3" },
+              { name: "Forecast", values: "C2:C3", categories: "A2:A3" },
+            ],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            // Hide the forecast helper series from the legend without
+            // dropping it from the plot.
+            legendEntries: [{ idx: 1, delete: true }],
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain(
+      '<c:legendEntry><c:idx val="1"/><c:delete val="1"/></c:legendEntry>',
+    );
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.legendEntries).toEqual([{ idx: 1, delete: true }]);
+  });
+});

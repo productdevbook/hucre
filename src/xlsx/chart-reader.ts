@@ -31,6 +31,7 @@ import type {
   ChartDataTable,
   ChartDisplayBlanksAs,
   ChartKind,
+  ChartLegendEntry,
   ChartLegendPosition,
   ChartLineAreaGrouping,
   ChartLineDashStyle,
@@ -293,6 +294,15 @@ export function parseChart(xml: string): Chart | undefined {
   if (legend !== undefined && legend !== false) {
     const legendOverlay = parseLegendOverlay(chartEl);
     if (legendOverlay !== undefined) out.legendOverlay = legendOverlay;
+
+    // `<c:legendEntry>` lives inside `<c:legend>` per CT_Legend
+    // (ECMA-376 Part 1, §21.2.2.114) — the element block sits between
+    // `<c:legendPos>` and `<c:layout>` / `<c:overlay>`. A hidden or
+    // missing legend has no slot for entry overrides, so the parser
+    // only inspects the children when the chart actually declares a
+    // visible legend. Same scoping rule as `legendOverlay`.
+    const legendEntries = parseLegendEntries(chartEl);
+    if (legendEntries !== undefined) out.legendEntries = legendEntries;
   }
 
   const dispBlanksAs = parseDispBlanksAs(chartEl);
@@ -1607,6 +1617,59 @@ function parseLegendOverlay(chartEl: XmlElement): boolean | undefined {
     default:
       return undefined;
   }
+}
+
+/**
+ * Pull `<c:legend><c:legendEntry>` overrides off the chart. Returns
+ * `undefined` when the chart declares no entries so the field is
+ * elided entirely on a clean parse — absence and an empty array
+ * round-trip identically through {@link cloneChart} (the writer skips
+ * emission when the resolved list is empty).
+ *
+ * Each entry is admitted only when its `<c:idx val=".."/>` selector
+ * parses to a non-negative integer (matches the OOXML
+ * `xsd:unsignedInt` schema). Entries without an `<c:idx>` child or with
+ * a malformed `val` attribute are dropped rather than surface a
+ * fabricated index. The `<c:delete>` flag accepts the OOXML truthy /
+ * falsy spellings (`"1"` / `"true"` / `"0"` / `"false"`); absence
+ * collapses to `false` (the OOXML default — the entry renders).
+ *
+ * The caller is expected to confirm a visible legend exists before
+ * invoking this — `<c:legendEntry>` only renders inside `<c:legend>`,
+ * so reading from a chart that hides or omits the legend would surface
+ * overrides with no on-screen effect.
+ *
+ * Duplicate `idx` values keep the first occurrence — Excel's renderer
+ * treats later duplicates as overrides on the same series, but the
+ * writer's `resolveLegendEntries` deduplicates with last-wins semantics
+ * to give clone-through callers a way to override without manually
+ * pruning. Reading "first wins" pairs naturally with that behaviour:
+ * a parsed list re-emits cleanly, and an explicit clone override that
+ * appends an entry still beats the parsed value.
+ */
+function parseLegendEntries(chartEl: XmlElement): ChartLegendEntry[] | undefined {
+  const legend = findChild(chartEl, "legend");
+  if (!legend) return undefined;
+
+  const seen = new Set<number>();
+  const out: ChartLegendEntry[] = [];
+  for (const child of childElements(legend)) {
+    if (child.local !== "legendEntry") continue;
+    const idxEl = findChild(child, "idx");
+    if (!idxEl) continue;
+    const raw = idxEl.attrs.val;
+    if (typeof raw !== "string") continue;
+    const idx = Number.parseInt(raw, 10);
+    if (!Number.isFinite(idx) || idx < 0) continue;
+    if (seen.has(idx)) continue;
+    seen.add(idx);
+
+    const deleteEl = findChild(child, "delete");
+    const deleteFlag = deleteEl !== undefined ? readBoolVal(deleteEl.attrs.val) === true : false;
+    out.push({ idx, delete: deleteFlag });
+  }
+
+  return out.length > 0 ? out : undefined;
 }
 
 /**

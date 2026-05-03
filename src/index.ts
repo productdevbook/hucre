@@ -148,6 +148,7 @@ export type {
   ChartDataTable,
   ChartDisplayBlanksAs,
   ChartKind,
+  ChartLegendEntry,
   ChartLegendPosition,
   ChartLineAreaGrouping,
   ChartLineDashStyle,
