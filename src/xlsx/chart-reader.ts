@@ -110,6 +110,7 @@ export function parseChart(xml: string): Chart | undefined {
     let scatterStyle: ChartScatterStyle | undefined;
     let dropLines: boolean | undefined;
     let hiLowLines: boolean | undefined;
+    let serLines: boolean | undefined;
     let upDownBars: boolean | undefined;
     let showLineMarkers: boolean | undefined;
     for (const child of childElements(plotArea)) {
@@ -197,6 +198,14 @@ export function parseChart(xml: string): Chart | undefined {
       if (hiLowLines === undefined && (kind === "line" || kind === "line3D" || kind === "stock")) {
         hiLowLines = parseHiLowLines(child);
       }
+      // `<c:serLines>` lives on `<c:barChart>` / `<c:ofPieChart>` per
+      // the OOXML schema. Hucre's writer authors `<c:barChart>` only,
+      // but a parsed of-pie template carrying the element should
+      // round-trip the flag too. Same bare-element shape as
+      // `<c:dropLines>` / `<c:hiLowLines>`.
+      if (serLines === undefined && (kind === "bar" || kind === "ofPie")) {
+        serLines = parseSerLines(child);
+      }
       // `<c:upDownBars>` lives on `CT_LineChart`, `CT_Line3DChart`, and
       // `CT_StockChart` per the OOXML schema. Surface the flag from the
       // first line-flavored chart-type element that carries one — the
@@ -256,6 +265,7 @@ export function parseChart(xml: string): Chart | undefined {
     if (scatterStyle !== undefined) out.scatterStyle = scatterStyle;
     if (dropLines !== undefined) out.dropLines = dropLines;
     if (hiLowLines !== undefined) out.hiLowLines = hiLowLines;
+    if (serLines !== undefined) out.serLines = serLines;
     if (upDownBars !== undefined) out.upDownBars = upDownBars;
     if (showLineMarkers !== undefined) out.showLineMarkers = showLineMarkers;
 
@@ -2128,6 +2138,23 @@ function parseDropLines(chartTypeEl: XmlElement): boolean | undefined {
  */
 function parseHiLowLines(chartTypeEl: XmlElement): boolean | undefined {
   return findChild(chartTypeEl, "hiLowLines") ? true : undefined;
+}
+
+/**
+ * Pull `<c:serLines/>` off a `<c:barChart>` / `<c:ofPieChart>` element.
+ * Same on/off shape as {@link parseDropLines} / {@link parseHiLowLines};
+ * the element is bare so its mere presence surfaces `true`, absence
+ * collapses to `undefined`.
+ *
+ * `<c:serLines>` is structurally a `CT_ChartLines` and may carry a
+ * nested `<c:spPr>` for stroke styling, but hucre's reader only
+ * surfaces the on/off bit at this layer (mirrors how `parseDropLines`
+ * handles the same shape on its hosts). Even when the nested `<c:spPr>`
+ * is the only child, the presence flag still survives, which is what
+ * {@link cloneChart} needs.
+ */
+function parseSerLines(chartTypeEl: XmlElement): boolean | undefined {
+  return findChild(chartTypeEl, "serLines") ? true : undefined;
 }
 
 // ── Chart-level Marker Visibility ─────────────────────────────────

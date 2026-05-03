@@ -1073,6 +1073,28 @@ export interface SheetChart {
    */
   hiLowLines?: boolean;
   /**
+   * Whether the chart paints `<c:serLines>` — connector lines drawn
+   * between paired data points across consecutive series in a stacked
+   * bar / column chart. Mirrors Excel's "Add Chart Element -> Lines ->
+   * Series Lines" toggle (visible only on stacked / 100% stacked bar
+   * and column charts).
+   *
+   * Default: `false` (no series lines, Excel's reference serialization).
+   * Set `true` to emit `<c:serLines/>` on the chart-type element so
+   * Excel paints the connectors.
+   *
+   * The OOXML schema places `<c:serLines>` exclusively on
+   * `<c:barChart>` and `<c:ofPieChart>`. Hucre's writer authors
+   * `<c:barChart>` only, so the flag is silently ignored on every
+   * other chart kind (`line` / `pie` / `doughnut` / `area` /
+   * `scatter`). Excel only renders the connectors on the
+   * `stacked` / `percentStacked` groupings — a clustered chart with
+   * `serLines: true` still pins the element but Excel paints nothing
+   * (matches Excel's own behavior when the toggle is flipped on a
+   * clustered chart).
+   */
+  serLines?: boolean;
+  /**
    * Doughnut hole size as a percentage of the outer radius. Accepted
    * range: 10 – 90 (Excel's UI clamps values outside this band).
    * Default: `50` — the Excel default. Ignored for non-doughnut chart
@@ -3099,6 +3121,21 @@ export interface Chart {
    * `undefined` on every other chart family.
    */
   hiLowLines?: boolean;
+  /**
+   * Series-lines flag pulled from the first `<c:barChart>` /
+   * `<c:ofPieChart>` element's `<c:serLines/>` child. Reflects Excel's
+   * "Add Chart Element -> Lines -> Series Lines" toggle — connector
+   * lines drawn between paired data points across consecutive series in
+   * a stacked bar / column chart. Like `<c:dropLines>` /
+   * `<c:hiLowLines>`, the element is bare — its mere presence paints
+   * the connectors, so this field surfaces `true` when the element is
+   * present and `undefined` when it is absent.
+   *
+   * The OOXML schema places `<c:serLines>` exclusively on
+   * `<c:barChart>` and `<c:ofPieChart>`. Surfaces `undefined` on every
+   * other chart family.
+   */
+  serLines?: boolean;
   /**
    * Chart-level data label defaults parsed from the first chart-type
    * element's `<c:dLbls>` block. Series-level overrides on

@@ -6330,6 +6330,155 @@ describe("parseChart — high-low lines", () => {
     expect(parseChart(xml)?.hiLowLines).toBe(true);
   });
 });
+
+// ── parseChart — series lines ──────────────────────────────────────
+
+describe("parseChart — series lines", () => {
+  function barChartWithExtras(extras: string): string {
+    return `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="stacked"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:ser><c:idx val="1"/></c:ser>
+        ${extras}
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces serLines=true on a bar chart that declares <c:serLines/>", () => {
+    const xml = barChartWithExtras("<c:serLines/>");
+    expect(parseChart(xml)?.serLines).toBe(true);
+  });
+
+  it("surfaces serLines=true on a bar chart that declares <c:serLines> with a nested <c:spPr>", () => {
+    // CT_ChartLines may carry `<c:spPr>` for stroke styling. The
+    // reader only surfaces the on/off bit — the shape properties are
+    // not modelled in this phase but the presence of the element still
+    // surfaces `true` so the clone bridge can carry the intent.
+    const xml = barChartWithExtras(
+      `<c:serLines><c:spPr><a:ln w="9525"><a:solidFill><a:srgbClr val="808080"/></a:solidFill></a:ln></c:spPr></c:serLines>`,
+    );
+    expect(parseChart(xml)?.serLines).toBe(true);
+  });
+
+  it("returns undefined when the bar chart omits <c:serLines>", () => {
+    const xml = barChartWithExtras("");
+    expect(parseChart(xml)?.serLines).toBeUndefined();
+  });
+
+  it("does not surface serLines for chart kinds that have no <c:serLines> slot (line)", () => {
+    // The reader only inspects bar / ofPie children; a stray
+    // `<c:serLines>` on a line chart (which the OOXML schema rejects)
+    // must not surface a value.
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:grouping val="standard"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:serLines/>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.serLines).toBeUndefined();
+  });
+
+  it("does not surface serLines for chart kinds that have no slot (pie)", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:pieChart>
+        <c:varyColors val="1"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:serLines/>
+      </c:pieChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.serLines).toBeUndefined();
+  });
+
+  it("does not surface serLines for chart kinds that have no slot (area)", () => {
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:areaChart>
+        <c:grouping val="stacked"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:serLines/>
+      </c:areaChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.serLines).toBeUndefined();
+  });
+
+  it("surfaces serLines on an ofPieChart (the second OOXML host for the element)", () => {
+    // hucre's writer never authors `<c:ofPieChart>`, but a parsed
+    // ofPie template carrying the element should round-trip the flag
+    // so a downstream tool that introspects it gets the right answer.
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:ofPieChart>
+        <c:ofPieType val="pie"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:serLines/>
+      </c:ofPieChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.serLines).toBe(true);
+  });
+
+  it("surfaces serLines on the first bar/ofPie chart-type element only (combo workbook)", () => {
+    // Combo charts (multi-kind plot area) surface the first matching
+    // value just like the existing connector-line helpers.
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="stacked"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:serLines/>
+      </c:barChart>
+      <c:lineChart>
+        <c:grouping val="standard"/>
+        <c:ser><c:idx val="1"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.serLines).toBe(true);
+  });
+
+  it("surfaces serLines on a clustered bar chart even though Excel paints nothing", () => {
+    // The OOXML element pins regardless of the grouping; Excel only
+    // renders the connectors on stacked groupings, but the model is a
+    // plain presence flag so the reader should not gate on grouping.
+    const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="clustered"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:serLines/>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.serLines).toBe(true);
+  });
+});
+
 // ── parseChart — upDownBars ────────────────────────────────────────
 
 describe("parseChart — upDownBars", () => {

@@ -1179,6 +1179,20 @@ function buildBarChart(chart: SheetChart, sheetName: string): string {
     children.push(xmlSelfClose("c:overlap", { val: emitOverlap }));
   }
 
+  // CT_BarChart sequence places `<c:serLines>` between `<c:overlap>`
+  // and `<c:axId>`. The element is bare — its mere presence paints the
+  // connectors between paired data points across consecutive series on
+  // a stacked bar / column chart — so we only emit when the caller
+  // explicitly opted in. Absence and an explicit `false` both collapse
+  // to no element so untouched bar charts match Excel's reference
+  // serialization. Excel only renders the connectors on stacked /
+  // percentStacked groupings, but the writer still honours the toggle
+  // on a clustered chart (matches Excel's own behavior — the element
+  // pins, the renderer paints nothing).
+  if (chart.serLines === true) {
+    children.push(xmlElement("c:serLines", undefined, []));
+  }
+
   children.push(xmlSelfClose("c:axId", { val: AXIS_ID_CAT }));
   children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL }));
 

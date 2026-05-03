@@ -194,6 +194,16 @@ export interface CloneChartOptions {
    */
   hiLowLines?: boolean | null;
   /**
+   * Override `SheetChart.serLines`. `undefined` (or omitted) inherits
+   * the source's parsed flag; `null` drops the inherited value (the
+   * writer falls back to the OOXML default of no `<c:serLines>`); a
+   * `boolean` replaces it. Only meaningful when the resolved chart type
+   * is `bar` or `column`; silently dropped on every other family
+   * (`<c:serLines>` has no slot on `<c:lineChart>` / `<c:areaChart>` /
+   * `<c:pieChart>` / `<c:scatterChart>` per OOXML).
+   */
+  serLines?: boolean | null;
+  /**
    * Override `SheetChart.holeSize` (only meaningful for `doughnut`).
    * When the resolved chart type is not `doughnut`, the field is
    * dropped from the output so it does not leak into a cloned pie or
@@ -822,6 +832,19 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   if (type === "line") {
     const hiLowLines = resolveHiLowLines(source.hiLowLines, options.hiLowLines);
     if (hiLowLines !== undefined) out.hiLowLines = hiLowLines;
+  }
+
+  // `<c:serLines>` lives on `<c:barChart>` / `<c:ofPieChart>` per the
+  // OOXML schema. Hucre's writer authors `<c:barChart>` only (`bar` /
+  // `column` from the public `SheetChart.type` enum both resolve to
+  // `<c:barChart>`), so the flag carries through bar / column
+  // resolutions and is dropped on every other family — coercing a
+  // stacked-bar template into a line / pie / area clone therefore
+  // never leaks the connector lines into a chart kind whose schema
+  // rejects the element.
+  if (type === "bar" || type === "column") {
+    const serLines = resolveSerLines(source.serLines, options.serLines);
+    if (serLines !== undefined) out.serLines = serLines;
   }
 
   // Doughnut hole size only makes sense when the resolved type is
@@ -1655,6 +1678,24 @@ function resolveDropLines(
  * no slot on `<c:areaChart>`.
  */
 function resolveHiLowLines(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) {
+    return sourceValue === true ? true : undefined;
+  }
+  if (override === null) return undefined;
+  return override === true ? true : undefined;
+}
+
+/**
+ * Resolve a `serLines` override. Mirrors {@link resolveDropLines} /
+ * {@link resolveHiLowLines}; the only difference is the per-family
+ * scope — `<c:serLines>` has no slot on `<c:lineChart>` /
+ * `<c:areaChart>` / `<c:pieChart>` / `<c:doughnutChart>` /
+ * `<c:scatterChart>`.
+ */
+function resolveSerLines(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {

@@ -5509,6 +5509,285 @@ describe("writeChart — high-low lines", () => {
     expect(parsed?.hiLowLines).toBe(true);
   });
 });
+
+// ── writeChart — series lines ────────────────────────────────────────
+
+describe("writeChart — series lines", () => {
+  it("omits <c:serLines> on a column chart with serLines unset (default)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "column",
+        barGrouping: "stacked",
+        series: [
+          { values: "B2:B4", categories: "A2:A4" },
+          { values: "C2:C4", categories: "A2:A4" },
+        ],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:serLines");
+  });
+
+  it("omits <c:serLines> on a column chart when serLines is explicitly false", () => {
+    // The writer treats absence and `false` identically — both produce
+    // no element, matching Excel's reference serialization.
+    const result = writeChart(
+      makeChart({
+        type: "column",
+        barGrouping: "stacked",
+        series: [
+          { values: "B2:B4", categories: "A2:A4" },
+          { values: "C2:C4", categories: "A2:A4" },
+        ],
+        serLines: false,
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:serLines");
+  });
+
+  it("emits <c:serLines/> on a stacked column chart when serLines is true", () => {
+    const result = writeChart(
+      makeChart({
+        type: "column",
+        barGrouping: "stacked",
+        series: [
+          { values: "B2:B4", categories: "A2:A4" },
+          { values: "C2:C4", categories: "A2:A4" },
+        ],
+        serLines: true,
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain("<c:serLines/>");
+  });
+
+  it("emits <c:serLines/> on a stacked bar chart when serLines is true", () => {
+    const result = writeChart(
+      makeChart({
+        type: "bar",
+        barGrouping: "stacked",
+        series: [
+          { values: "B2:B4", categories: "A2:A4" },
+          { values: "C2:C4", categories: "A2:A4" },
+        ],
+        serLines: true,
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain("<c:serLines/>");
+  });
+
+  it("emits <c:serLines/> on a percentStacked bar chart when serLines is true", () => {
+    const result = writeChart(
+      makeChart({
+        type: "bar",
+        barGrouping: "percentStacked",
+        series: [
+          { values: "B2:B4", categories: "A2:A4" },
+          { values: "C2:C4", categories: "A2:A4" },
+        ],
+        serLines: true,
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain("<c:serLines/>");
+  });
+
+  it("emits <c:serLines/> on a clustered bar chart when serLines is true", () => {
+    // The OOXML element pins regardless of grouping; Excel only renders
+    // the connectors on stacked groupings, but the writer honours the
+    // toggle on a clustered chart (matches Excel's own behavior — the
+    // element pins, the renderer paints nothing).
+    const result = writeChart(
+      makeChart({
+        type: "column",
+        series: [
+          { values: "B2:B4", categories: "A2:A4" },
+          { values: "C2:C4", categories: "A2:A4" },
+        ],
+        serLines: true,
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain("<c:serLines/>");
+  });
+
+  it("ignores serLines on chart kinds whose schema rejects the element", () => {
+    // CT_LineChart / CT_AreaChart / CT_PieChart / CT_DoughnutChart /
+    // CT_ScatterChart all reject `<c:serLines>` per OOXML. Setting the
+    // flag on these families must not leak the element into the output.
+    const cases: Array<["line" | "area" | "pie" | "doughnut" | "scatter"]> = [
+      ["line"],
+      ["area"],
+      ["pie"],
+      ["doughnut"],
+      ["scatter"],
+    ];
+    for (const [type] of cases) {
+      const result = writeChart(
+        makeChart({
+          type,
+          series: [{ values: "B2:B4", categories: "A2:A4" }],
+          serLines: true,
+        }),
+        "Sheet1",
+      );
+      expect(result.chartXml).not.toContain("c:serLines");
+    }
+  });
+
+  it("non-boolean serLines values collapse to absence (only literal true emits)", () => {
+    // Mirrors the dropLines / hiLowLines writers — the resolver does
+    // not coerce its inputs. Truthy strings, numbers, etc. drop to the
+    // default of no element.
+    const result = writeChart(
+      makeChart({
+        type: "column",
+        barGrouping: "stacked",
+        series: [
+          { values: "B2:B4", categories: "A2:A4" },
+          { values: "C2:C4", categories: "A2:A4" },
+        ],
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        serLines: 1 as any,
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:serLines");
+  });
+
+  it("places <c:serLines> after <c:overlap> and before <c:axId> inside <c:barChart>", () => {
+    // CT_BarChart sequence: barDir, grouping, varyColors?, ser*,
+    // dLbls?, gapWidth?, overlap?, serLines*, axId+. The
+    // `<c:serLines>` slot lands after `<c:overlap>` (when emitted on a
+    // stacked chart) and before the first `<c:axId>`.
+    const result = writeChart(
+      makeChart({
+        type: "column",
+        barGrouping: "stacked",
+        series: [
+          { values: "B2:B4", categories: "A2:A4" },
+          { values: "C2:C4", categories: "A2:A4" },
+        ],
+        serLines: true,
+      }),
+      "Sheet1",
+    );
+    const barBlock = result.chartXml.match(/<c:barChart>[\s\S]*?<\/c:barChart>/)![0];
+    const overlapIdx = barBlock.indexOf("<c:overlap ");
+    const serIdx = barBlock.indexOf("<c:serLines/>");
+    const axIdx = barBlock.indexOf("<c:axId ");
+    expect(overlapIdx).toBeGreaterThan(-1);
+    expect(serIdx).toBeGreaterThan(overlapIdx);
+    expect(axIdx).toBeGreaterThan(serIdx);
+  });
+
+  it("places <c:serLines> after <c:gapWidth> on a clustered bar chart", () => {
+    // On a clustered bar / column chart, the writer emits
+    // `<c:gapWidth val="150"/>` and skips `<c:overlap>`; `<c:serLines>`
+    // must still land after `<c:gapWidth>` and before the first
+    // `<c:axId>`.
+    const result = writeChart(
+      makeChart({
+        type: "column",
+        series: [
+          { values: "B2:B4", categories: "A2:A4" },
+          { values: "C2:C4", categories: "A2:A4" },
+        ],
+        serLines: true,
+      }),
+      "Sheet1",
+    );
+    const barBlock = result.chartXml.match(/<c:barChart>[\s\S]*?<\/c:barChart>/)![0];
+    const gapWidthIdx = barBlock.indexOf("<c:gapWidth ");
+    const serIdx = barBlock.indexOf("<c:serLines/>");
+    const axIdx = barBlock.indexOf("<c:axId ");
+    expect(gapWidthIdx).toBeGreaterThan(-1);
+    expect(serIdx).toBeGreaterThan(gapWidthIdx);
+    expect(axIdx).toBeGreaterThan(serIdx);
+  });
+
+  it("emits <c:serLines/> exactly once even when called repeatedly", () => {
+    // Sanity check that the writer does not duplicate the element on a
+    // chart with multiple series.
+    const result = writeChart(
+      makeChart({
+        type: "column",
+        barGrouping: "stacked",
+        series: [
+          { values: "B2:B4", categories: "A2:A4" },
+          { values: "C2:C4", categories: "A2:A4" },
+          { values: "D2:D4", categories: "A2:A4" },
+        ],
+        serLines: true,
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml.match(/<c:serLines\/>/g)?.length).toBe(1);
+  });
+
+  it("round-trips serLines through parseChart (column)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "column",
+        barGrouping: "stacked",
+        series: [
+          { values: "B2:B4", categories: "A2:A4" },
+          { values: "C2:C4", categories: "A2:A4" },
+        ],
+        serLines: true,
+      }),
+      "Sheet1",
+    );
+    expect(parseChart(result.chartXml)?.serLines).toBe(true);
+  });
+
+  it("round-trips serLines through parseChart (bar)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "bar",
+        barGrouping: "stacked",
+        series: [
+          { values: "B2:B4", categories: "A2:A4" },
+          { values: "C2:C4", categories: "A2:A4" },
+        ],
+        serLines: true,
+      }),
+      "Sheet1",
+    );
+    expect(parseChart(result.chartXml)?.serLines).toBe(true);
+  });
+
+  it("survives a writeXlsx round trip — serLines lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Q1", "Q2"],
+          ["North", 100, 120],
+          ["South", 200, 180],
+        ],
+        charts: [
+          {
+            type: "column",
+            barGrouping: "stacked",
+            series: [
+              { name: "Q1", values: "B2:B3", categories: "A2:A3" },
+              { name: "Q2", values: "C2:C3", categories: "A2:A3" },
+            ],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            serLines: true,
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain("<c:serLines/>");
+  });
+});
+
 // ── writeChart — upDownBars ──────────────────────────────────────────
 
 describe("writeChart — upDownBars", () => {

@@ -890,6 +890,16 @@ presence surfaces `true`, absence collapses to `undefined`. The
 element has no slot on `<c:areaChart>` / `<c:area3DChart>` per the
 OOXML schema, so the reader ignores it on those parents and on every
 non-line / non-stock family.
+`Chart.serLines` surfaces the chart-type-level `<c:serLines/>` flag on
+the first `<c:barChart>` / `<c:ofPieChart>` element — Excel's "Add
+Chart Element → Lines → Series Lines" toggle (connector lines drawn
+between paired data points across consecutive series in a stacked bar
+/ column chart). Same bare-element shape as `dropLines` / `hiLowLines`:
+presence surfaces `true`, absence collapses to `undefined`. The reader
+does not surface `serLines` for chart families whose OOXML schema
+rejects the element (line / pie / doughnut / area / scatter / stock /
+radar / surface / bubble) — a stray element on those parents is
+ignored.
 `ChartSeriesInfo.smooth` surfaces the per-series
 `<c:ser><c:smooth val=".."/>` flag — Excel's "Format Data Series →
 Line → Smoothed line" toggle — only on `line` / `line3D` / `scatter`
@@ -1193,6 +1203,21 @@ schema, so the area writer ignores `hiLowLines` entirely; same for
 bar / column / pie / doughnut / scatter. The two flags compose freely
 on a line chart and the writer pins `<c:dropLines>` before
 `<c:hiLowLines>` to honour the CT_LineChart sequence.
+The chart-level `serLines` field maps to a bare `<c:serLines/>` inside
+`<c:barChart>` — Excel's "Add Chart Element → Lines → Series Lines"
+toggle (connector lines between paired data points across consecutive
+series in a stacked bar / column chart). Same default and emit grammar
+as `dropLines` / `hiLowLines`: only literal `true` emits the element;
+`false`, absence, and non-boolean inputs all drop to the default. The
+flag is silently ignored on chart families whose schema rejects
+`<c:serLines>` (line / pie / doughnut / area / scatter). Excel only
+renders the connectors on the `stacked` / `percentStacked` groupings,
+but the writer honours the toggle on a clustered chart too — the
+element pins, the renderer paints nothing (matches Excel's own
+behavior when the toggle is flipped on a clustered chart). The writer
+slots `<c:serLines>` after `<c:overlap>` (when emitted on a stacked
+chart) and before the first `<c:axId>` to honour the CT_BarChart
+sequence.
 The chart-level `upDownBars` field maps to `<c:upDownBars>` inside
 `<c:lineChart>` — Excel's "Add Chart Element -> Up/Down Bars" toggle
 on a line chart. The element paints a vertical bar at each category
@@ -1593,6 +1618,17 @@ whenever the resolved chart type is anything but `line` — flattening
 a stock or line template into a column / pie / doughnut / area /
 scatter clone therefore never leaks a stale up / down bars block into
 a chart-type element whose schema rejects the element.
+The chart-level `serLines` flag follows the same `undefined` (inherit)
+/ `null` (drop) / `boolean` (replace) grammar as the other connector-
+line toggles. An override of `false` is equivalent to `null` — the
+writer treats both as the OOXML default of no element. The element
+renders inside `<c:barChart>` so the field is silently dropped from
+the cloned `SheetChart` whenever the resolved chart type is anything
+other than `bar` / `column` — flattening a stacked-bar template into a
+line / area / pie / doughnut / scatter clone therefore never leaks the
+series-line connectors into a chart-type element whose schema rejects
+the element. The flag does carry through the bar ↔ column coercion
+unchanged (both write to `<c:barChart>` with a different `barDir`).
 The chart-level `showLineMarkers` flag follows the same grammar:
 `undefined` inherits, `null` drops the inherited value (the writer
 falls back to Excel's default `<c:marker val="1"/>`), and a `boolean`
