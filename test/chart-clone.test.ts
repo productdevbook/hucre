@@ -3264,3 +3264,235 @@ describe("cloneChart — axis tickLblSkip / tickMarkSkip", () => {
     expect(written).toContain('c:tickMarkSkip val="5"');
   });
 });
+
+// ── cloneChart — axis hidden flag ───────────────────────────────────
+
+describe("cloneChart — axis hidden", () => {
+  const sourceWithHiddenX: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: { x: { hidden: true } },
+  };
+
+  it("inherits axes.x.hidden=true from the source when no override is given", () => {
+    const clone = cloneChart(sourceWithHiddenX, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.hidden).toBe(true);
+    expect(clone.axes?.y?.hidden).toBeUndefined();
+  });
+
+  it("inherits axes.y.hidden=true from the source when no override is given", () => {
+    const sourceWithHiddenY: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { hidden: true } },
+    };
+    const clone = cloneChart(sourceWithHiddenY, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y?.hidden).toBe(true);
+    expect(clone.axes?.x?.hidden).toBeUndefined();
+  });
+
+  it("drops the inherited flag when override is null", () => {
+    const clone = cloneChart(sourceWithHiddenX, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { hidden: null } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("drops the inherited flag when override is false", () => {
+    // `false` collapses to undefined the same way `null` does because the
+    // writer treats both shapes identically (val="0" is the default).
+    const clone = cloneChart(sourceWithHiddenX, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { hidden: false } },
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("replaces an inherited true with override true (no-op)", () => {
+    const clone = cloneChart(sourceWithHiddenX, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { hidden: true } },
+    });
+    expect(clone.axes?.x?.hidden).toBe(true);
+  });
+
+  it("adds hidden=true to a source that did not declare it", () => {
+    const noHidden: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(noHidden, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { hidden: true } },
+    });
+    expect(clone.axes?.y?.hidden).toBe(true);
+    expect(clone.axes?.x?.hidden).toBeUndefined();
+  });
+
+  it("inherits one axis while letting the override drop the other", () => {
+    const sourceBoth: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { hidden: true }, y: { hidden: true } },
+    };
+    const clone = cloneChart(sourceBoth, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { hidden: null } },
+    });
+    expect(clone.axes?.x?.hidden).toBe(true);
+    expect(clone.axes?.y?.hidden).toBeUndefined();
+  });
+
+  it("collapses non-boolean overrides to undefined", () => {
+    const clone = cloneChart(sourceWithHiddenX, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { hidden: 1 as unknown as boolean } },
+    });
+    // The non-boolean override drops, falling back to undefined (not the
+    // inherited true) since the override was non-undefined.
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("strips hidden silently when the resolved chart type is pie", () => {
+    const pieSource: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [{ kind: "pie", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { hidden: true } },
+    };
+    const clone = cloneChart(pieSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("pie");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("strips hidden silently when the resolved chart type is doughnut", () => {
+    const doughnutSource: Chart = {
+      kinds: ["doughnut"],
+      seriesCount: 1,
+      series: [{ kind: "doughnut", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { hidden: true } },
+    };
+    const clone = cloneChart(doughnutSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("carries hidden through a chart-type coercion (line -> column)", () => {
+    const lineSource: Chart = {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [{ kind: "line", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { hidden: true } },
+    };
+    const clone = cloneChart(lineSource, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.axes?.y?.hidden).toBe(true);
+  });
+
+  it("carries hidden through a chart-type coercion (bar -> scatter)", () => {
+    // Scatter has two value axes — the hidden flag still applies because
+    // <c:delete> is a member of every axis flavour.
+    const clone = cloneChart(sourceWithHiddenX, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "scatter",
+      series: [{ values: "Sheet1!$B$2:$B$5", categories: "Sheet1!$A$2:$A$5" }],
+    });
+    expect(clone.type).toBe("scatter");
+    expect(clone.axes?.x?.hidden).toBe(true);
+  });
+
+  it("composes hidden alongside other axis overrides", () => {
+    const clone = cloneChart(sourceWithHiddenX, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: {
+        x: {
+          title: "Region",
+          gridlines: { major: true },
+        },
+        y: {
+          hidden: true,
+        },
+      },
+    });
+    expect(clone.axes?.x?.title).toBe("Region");
+    expect(clone.axes?.x?.gridlines).toEqual({ major: true });
+    expect(clone.axes?.x?.hidden).toBe(true);
+    expect(clone.axes?.y?.hidden).toBe(true);
+  });
+
+  it("end-to-end: parseChart -> cloneChart -> writeChart preserves hidden", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:delete val="1"/>
+      </c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.axes?.x?.hidden).toBe(true);
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(sheetChart.axes?.x?.hidden).toBe(true);
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    const catAxBlock = written.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('<c:delete val="1"/>');
+
+    // Re-parse to confirm the round-trip.
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.hidden).toBe(true);
+  });
+
+  it("end-to-end: writeXlsx packages the cloned chart with hidden axes intact", async () => {
+    const sourceBoth: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { hidden: true }, y: { hidden: true } },
+    };
+    const clone = cloneChart(sourceBoth, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const catAxBlock = written.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const valAxBlock = written.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(catAxBlock).toContain('<c:delete val="1"/>');
+    expect(valAxBlock).toContain('<c:delete val="1"/>');
+  });
+});

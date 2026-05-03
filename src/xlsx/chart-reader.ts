@@ -277,6 +277,11 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   const isCategoryAxis = axis.local === "catAx" || axis.local === "dateAx";
   const tickLblSkip = isCategoryAxis ? parseAxisSkip(axis, "tickLblSkip") : undefined;
   const tickMarkSkip = isCategoryAxis ? parseAxisSkip(axis, "tickMarkSkip") : undefined;
+  // `<c:delete>` sits on every axis flavour (CT_CatAx / CT_ValAx /
+  // CT_DateAx / CT_SerAx) per ECMA-376 Part 1, §21.2.2. The OOXML
+  // default `val="0"` (axis visible) collapses to `undefined` so
+  // absence and the default round-trip identically.
+  const hidden = parseAxisHidden(axis);
   if (
     title === undefined &&
     gridlines === undefined &&
@@ -286,7 +291,8 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
     minorTickMark === undefined &&
     tickLblPos === undefined &&
     tickLblSkip === undefined &&
-    tickMarkSkip === undefined
+    tickMarkSkip === undefined &&
+    hidden === undefined
   ) {
     return undefined;
   }
@@ -300,6 +306,7 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   if (tickLblPos !== undefined) out.tickLblPos = tickLblPos;
   if (tickLblSkip !== undefined) out.tickLblSkip = tickLblSkip;
   if (tickMarkSkip !== undefined) out.tickMarkSkip = tickMarkSkip;
+  if (hidden !== undefined) out.hidden = hidden;
   return out;
 }
 
@@ -387,6 +394,37 @@ function parseAxisSkip(
   if (parsed < 1 || parsed > 32767) return undefined;
   if (parsed === 1) return undefined;
   return parsed;
+}
+
+/**
+ * Pull `<c:delete val=".."/>` off an axis element. Returns `true`
+ * only when the axis pinned `val="1"` / `val="true"` (Excel's "hide
+ * axis" toggle). The OOXML default `val="0"` / `val="false"`,
+ * absence, missing `val`, and unknown tokens all collapse to
+ * `undefined` so absence and the default round-trip identically.
+ *
+ * Mirrors the truthy / falsy parsing in {@link parsePlotVisOnly} —
+ * the OOXML schema (`xsd:boolean`) accepts `0` / `1` / `false` /
+ * `true` for `<c:delete>` just as it does for every other Boolean-
+ * valued chart attribute.
+ */
+function parseAxisHidden(axis: XmlElement): boolean | undefined {
+  const el = findChild(axis, "delete");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  switch (raw.trim()) {
+    case "1":
+    case "true":
+      return true;
+    case "0":
+    case "false":
+      // OOXML default — collapse to undefined so absence and the
+      // default round-trip identically.
+      return undefined;
+    default:
+      return undefined;
+  }
 }
 
 /**

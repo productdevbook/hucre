@@ -3771,3 +3771,198 @@ describe("parseChart — axis tickLblSkip / tickMarkSkip", () => {
     });
   });
 });
+
+// ── parseChart — axis hidden flag (<c:delete>) ──────────────────────
+
+describe("parseChart — axis hidden", () => {
+  const NS_HIDDEN = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces hidden=true on the category axis when val="1"', () => {
+    const xml = `<c:chartSpace ${NS_HIDDEN}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:delete val="1"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.hidden).toBe(true);
+    expect(chart?.axes?.y?.hidden).toBeUndefined();
+  });
+
+  it('surfaces hidden=true on the value axis when val="1"', () => {
+    const xml = `<c:chartSpace ${NS_HIDDEN}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:delete val="1"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.hidden).toBeUndefined();
+    expect(chart?.axes?.y?.hidden).toBe(true);
+  });
+
+  it('surfaces hidden=true on both axes when both pin val="1"', () => {
+    const xml = `<c:chartSpace ${NS_HIDDEN}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:delete val="1"/>
+    </c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:delete val="1"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.hidden).toBe(true);
+    expect(chart?.axes?.y?.hidden).toBe(true);
+  });
+
+  it('collapses the OOXML default val="0" to undefined', () => {
+    const xml = `<c:chartSpace ${NS_HIDDEN}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:delete val="0"/>
+    </c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:delete val="0"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("collapses absence of <c:delete> to undefined", () => {
+    const xml = `<c:chartSpace ${NS_HIDDEN}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it('accepts the OOXML truthy spelling val="true"', () => {
+    const xml = `<c:chartSpace ${NS_HIDDEN}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:delete val="true"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.hidden).toBe(true);
+  });
+
+  it('accepts the OOXML falsy spelling val="false" and collapses to undefined', () => {
+    const xml = `<c:chartSpace ${NS_HIDDEN}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:delete val="false"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when <c:delete> is missing the val attribute", () => {
+    const xml = `<c:chartSpace ${NS_HIDDEN}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:delete/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("returns undefined for unknown val tokens", () => {
+    const xml = `<c:chartSpace ${NS_HIDDEN}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:delete val="yes"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("co-surfaces hidden alongside title, gridlines, and tick rendering", () => {
+    const xml = `<c:chartSpace ${NS_HIDDEN}
+                xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:delete val="1"/>
+      <c:majorGridlines/>
+      <c:title><c:tx><c:rich><a:p><a:r><a:t>Region</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      <c:tickLblPos val="low"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x).toEqual({
+      title: "Region",
+      gridlines: { major: true },
+      tickLblPos: "low",
+      hidden: true,
+    });
+  });
+
+  it("surfaces hidden on a scatter chart's value-axis pair", () => {
+    // Scatter has two valAx — the first (axPos="b") is the X axis, the
+    // second (axPos="l") is the Y axis. The reader should map them back
+    // to axes.x / axes.y the same way it does for the rest of the
+    // metadata.
+    const xml = `<c:chartSpace ${NS_HIDDEN}>
+  <c:chart><c:plotArea>
+    <c:scatterChart><c:ser><c:idx val="0"/></c:ser></c:scatterChart>
+    <c:valAx>
+      <c:axId val="1"/>
+      <c:delete val="1"/>
+      <c:axPos val="b"/>
+    </c:valAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:axPos val="l"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.hidden).toBe(true);
+    expect(chart?.axes?.y?.hidden).toBeUndefined();
+  });
+});

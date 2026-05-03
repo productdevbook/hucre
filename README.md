@@ -698,6 +698,13 @@ axis does not surface a field the writer would never emit anyway. The
 OOXML default `1` (show every label / mark) collapses to `undefined`;
 out-of-range values (non-positive or > 32767) drop rather than clamp
 so a malformed input cannot leak into the writer.
+`ChartAxisInfo.hidden` surfaces the per-axis `<c:delete val=".."/>`
+flag — Excel's "Format Axis -> Show axis" toggle. Only an explicit
+`val="1"` (axis hidden) surfaces `true`; the OOXML default `val="0"`,
+absence, missing `val`, and unknown tokens all collapse to `undefined`
+so absence and the default round-trip identically. The reader accepts
+the OOXML truthy / falsy spellings (`"1"` / `"true"` / `"0"` /
+`"false"`).
 `ChartSeriesInfo.smooth` surfaces the per-series
 `<c:ser><c:smooth val=".."/>` flag — Excel's "Format Data Series →
 Line → Smoothed line" toggle — only on `line` / `line3D` / `scatter`
@@ -883,6 +890,16 @@ fields live on category axes only — bar / column / line / area
 honour them; scatter (whose two axes are value axes) and pie /
 doughnut (no axes at all) silently ignore them. Non-integer inputs
 round to the nearest integer.
+The per-axis `axes.x.hidden` and `axes.y.hidden` flags toggle
+`<c:catAx><c:delete val=".."/>` / `<c:valAx><c:delete val=".."/>` —
+Excel's "Format Axis -> Show axis" toggle. Set `true` to collapse the
+axis line, tick marks, and tick labels off the rendered chart (handy
+for sparkline-style dashboard tiles). The writer always emits the
+element because Excel's reference serialization includes
+`<c:delete val="0"/>` on every axis; `false` and absence both produce
+that default, while only an explicit `true` emits `val="1"`. The flag
+threads through bar / column / line / area / scatter; pie / doughnut
+silently ignore it because OOXML defines no axes for those families.
 For line and scatter charts, each `series[i].smooth` flag toggles
 Excel's curved-line variant (`<c:smooth val="..">` inside `<c:ser>`).
 Line series always emit the element — `smooth: true` writes `val="1"`,
@@ -1050,6 +1067,15 @@ slot in the rendered chart) and when the target is `pie` or
 `doughnut` (no axes at all) — flattening a column template into a
 scatter clone therefore never leaks a stale catAx skip into the
 output.
+The per-axis `axes.x.hidden` and `axes.y.hidden` overrides follow the
+same `undefined` (inherit) / `null` (drop) / `boolean` (replace)
+grammar. Because `<c:delete>` lives on every axis flavour, the flag
+threads through every coercion that has axes (bar / column / line /
+area / scatter); pie / doughnut clones drop the entire `axes` block
+because OOXML defines no axes for them. An override of `false` is
+equivalent to `null` — the writer treats both as the OOXML default
+`val="0"`, so the cloned `SheetChart` collapses both shapes to
+`undefined`.
 
 #### Walking and adding charts with `getCharts` / `addChart`
 
