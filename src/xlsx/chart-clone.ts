@@ -208,6 +208,20 @@ export interface CloneChartOptions {
    */
   plotVisOnly?: boolean | null;
   /**
+   * Override `<c:roundedCorners>` (the chart-frame rounded-edge toggle).
+   *
+   * `undefined` (or omitted) inherits the source's parsed
+   * `roundedCorners`. `null` drops the inherited value so the writer
+   * falls back to the OOXML `false` default (square chart frame). A
+   * `boolean` replaces it — useful for matching a dashboard whose
+   * other charts already carry the rounded look from a template, or
+   * for squaring off a clone whose template was rounded.
+   *
+   * The grammar mirrors `plotVisOnly` / `varyColors` so the
+   * chart-frame toggles compose the same way at the call site.
+   */
+  roundedCorners?: boolean | null;
+  /**
    * Override `<c:scatterStyle>` (the chart-level XY-scatter preset).
    *
    * `undefined` (or omitted) inherits the source's parsed
@@ -426,6 +440,12 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
 
   const resolvedPlotVisOnly = resolvePlotVisOnly(source.plotVisOnly, options.plotVisOnly);
   if (resolvedPlotVisOnly !== undefined) out.plotVisOnly = resolvedPlotVisOnly;
+
+  const resolvedRoundedCorners = resolveRoundedCorners(
+    source.roundedCorners,
+    options.roundedCorners,
+  );
+  if (resolvedRoundedCorners !== undefined) out.roundedCorners = resolvedRoundedCorners;
 
   // `<c:scatterStyle>` only renders inside `<c:scatterChart>`. Drop the
   // field on every other resolved type so a scatter template flattened
@@ -743,6 +763,26 @@ function resolveVaryColors(
  * toggles compose the same way at the call site.
  */
 function resolvePlotVisOnly(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve a `roundedCorners` override.
+ *
+ * `undefined` → inherit the source's parsed `roundedCorners`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               OOXML `false` default — square chart frame).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `plotVisOnly` / `varyColors` so the chart-frame
+ * toggles compose the same way at the call site.
+ */
+function resolveRoundedCorners(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {

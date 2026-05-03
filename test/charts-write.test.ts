@@ -2970,3 +2970,92 @@ describe("writeChart — plotVisOnly", () => {
     expect(reparsed?.plotVisOnly).toBeUndefined();
   });
 });
+
+// ── writeChart — roundedCorners ──────────────────────────────────────
+
+describe("writeChart — roundedCorners", () => {
+  it('emits <c:roundedCorners val="0"/> when the field is unset (OOXML default)', () => {
+    // The writer always emits the element so the rendered intent is
+    // explicit on roundtrip — Excel itself includes it in every
+    // reference serialization.
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(result.chartXml).toContain('c:roundedCorners val="0"');
+    expect(result.chartXml).not.toContain('c:roundedCorners val="1"');
+  });
+
+  it("threads roundedCorners=true through to <c:chartSpace>", () => {
+    // true is the non-default — Excel's "Format Chart Area → Border →
+    // Rounded corners" toggle on.
+    const result = writeChart(makeChart({ roundedCorners: true }), "Sheet1");
+    expect(result.chartXml).toContain('c:roundedCorners val="1"');
+    expect(result.chartXml).not.toContain('c:roundedCorners val="0"');
+  });
+
+  it("threads roundedCorners=false through to <c:chartSpace>", () => {
+    // Setting the OOXML default explicitly produces the same wire
+    // shape as omitting the field — the element is always emitted.
+    const result = writeChart(makeChart({ roundedCorners: false }), "Sheet1");
+    expect(result.chartXml).toContain('c:roundedCorners val="0"');
+  });
+
+  it("places <c:roundedCorners> before <c:chart> inside <c:chartSpace> (OOXML order)", () => {
+    // CT_ChartSpace sequence: ... roundedCorners?, style?, ... chart, ...
+    // — the toggle must precede the chart element so a strict validator
+    // (Excel itself rejects out-of-order children) sees the schema
+    // sequence respected.
+    const result = writeChart(makeChart({ roundedCorners: true }), "Sheet1");
+    expect(result.chartXml.indexOf("c:roundedCorners")).toBeLessThan(
+      result.chartXml.indexOf("<c:chart>"),
+    );
+  });
+
+  it("only emits <c:roundedCorners> once even on a chart that overrides it", () => {
+    // Guard against any regression that would double-emit the element
+    // (e.g. one hardcoded copy plus a dynamic one).
+    const result = writeChart(makeChart({ roundedCorners: true }), "Sheet1");
+    const occurrences = result.chartXml.match(/c:roundedCorners/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads roundedCorners through every chart family", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, roundedCorners: true }), "Sheet1");
+      expect(result.chartXml).toContain('c:roundedCorners val="1"');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        roundedCorners: true,
+      }),
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain('c:roundedCorners val="1"');
+  });
+
+  it("round-trips a non-default roundedCorners value through parseChart", () => {
+    // A chart with roundedCorners=true should re-parse into a Chart
+    // whose `roundedCorners` field is `true` (not collapsed to undefined,
+    // since true is not the OOXML default).
+    const written = writeChart(makeChart({ roundedCorners: true }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.roundedCorners).toBe(true);
+  });
+
+  it("collapses a defaulted roundedCorners round-trip back to undefined", () => {
+    // A fresh chart (roundedCorners omitted) writes `0` and re-parses to
+    // undefined — absence and the OOXML default round-trip identically.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.roundedCorners).toBeUndefined();
+  });
+
+  it("collapses an explicit roundedCorners=false round-trip back to undefined", () => {
+    // Pinning the OOXML default also collapses on read, so a template
+    // that explicitly emits `<c:roundedCorners val="0"/>` is treated the
+    // same as one that omits the field.
+    const written = writeChart(makeChart({ roundedCorners: false }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.roundedCorners).toBeUndefined();
+  });
+});

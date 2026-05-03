@@ -3610,3 +3610,125 @@ describe("parseChart — plotVisOnly", () => {
     expect(chart?.varyColors).toBe(true);
   });
 });
+
+// ── parseChart — roundedCorners ───────────────────────────────────
+
+describe("parseChart — roundedCorners", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces <c:roundedCorners val="1"/> on <c:chartSpace> as true (non-default)', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:roundedCorners val="1"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.roundedCorners).toBe(true);
+  });
+
+  it("collapses the OOXML default false to undefined (writer absence)", () => {
+    // The default carried explicitly by Excel's reference serialization
+    // round-trips identically to absence of the field.
+    const xml = `<c:chartSpace ${NS}>
+  <c:roundedCorners val="0"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.roundedCorners).toBeUndefined();
+  });
+
+  it("returns undefined when the chartSpace has no <c:roundedCorners> element", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.roundedCorners).toBeUndefined();
+  });
+
+  it("accepts the OOXML true / false spellings on the val attribute", () => {
+    // The OOXML schema for `xsd:boolean` accepts `"true"` / `"false"`
+    // alongside the more common `"1"` / `"0"`. Hucre tolerates both
+    // shapes — a hand-edited template using `true` should round-trip.
+    const xml = `<c:chartSpace ${NS}>
+  <c:roundedCorners val="true"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.roundedCorners).toBe(true);
+  });
+
+  it("collapses the 'false' spelling to undefined as well", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:roundedCorners val="false"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.roundedCorners).toBeUndefined();
+  });
+
+  it("drops unknown roundedCorners values rather than fabricate one", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:roundedCorners val="bogus"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.roundedCorners).toBeUndefined();
+  });
+
+  it("ignores a missing val attribute on <c:roundedCorners>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:roundedCorners/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.roundedCorners).toBeUndefined();
+  });
+
+  it("surfaces roundedCorners alongside other chart-level toggles", () => {
+    // Co-existing with plotVisOnly / dispBlanksAs / varyColors should
+    // not interfere — roundedCorners parses off <c:chartSpace> while
+    // the others sit on <c:chart>.
+    const xml = `<c:chartSpace ${NS}>
+  <c:roundedCorners val="1"/>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="clustered"/>
+        <c:varyColors val="1"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+    <c:plotVisOnly val="0"/>
+    <c:dispBlanksAs val="zero"/>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.roundedCorners).toBe(true);
+    expect(chart?.plotVisOnly).toBe(false);
+    expect(chart?.dispBlanksAs).toBe("zero");
+    expect(chart?.varyColors).toBe(true);
+  });
+});

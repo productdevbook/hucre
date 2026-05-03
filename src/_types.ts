@@ -1013,6 +1013,22 @@ export interface SheetChart {
    */
   plotVisOnly?: boolean;
   /**
+   * Whether the chart frame is drawn with rounded corners. Maps to
+   * `<c:roundedCorners val=".."/>` on `<c:chartSpace>` (a sibling of
+   * `<c:chart>`, not a child). Mirrors Excel's "Format Chart Area →
+   * Border → Rounded corners" toggle.
+   *
+   * Default: `false` — the OOXML schema default and what every fresh
+   * Excel chart emits. Set `true` to soften the chart frame's outer
+   * edge, useful when matching a dashboard whose other charts already
+   * carry the rounded look from a template.
+   *
+   * The writer always emits the element so the rendered intent is
+   * explicit on roundtrip — Excel itself includes it in every reference
+   * serialization.
+   */
+  roundedCorners?: boolean;
+  /**
    * Per-axis configuration rendered alongside the plot area. The `x`
    * axis is the category axis for bar/column/line/area (or the bottom
    * value axis for scatter); the `y` axis is the value axis. Ignored
@@ -2178,6 +2194,24 @@ export interface Chart {
    * drop to `undefined`.
    */
   plotVisOnly?: boolean;
+  /**
+   * Rounded-corners flag pulled from
+   * `<c:chartSpace><c:roundedCorners val=".."/>`. Reflects Excel's
+   * "Format Chart Area → Border → Rounded corners" toggle, which paints
+   * the chart frame with rounded edges instead of the default square
+   * border.
+   *
+   * The OOXML default `false` collapses to `undefined` so absence and
+   * the default round-trip identically through {@link cloneChart} —
+   * only an explicit `<c:roundedCorners val="1"/>` surfaces `true`.
+   * The reader accepts the OOXML truthy / falsy spellings (`"1"` /
+   * `"true"` / `"0"` / `"false"`); unknown values and missing `val`
+   * attributes drop to `undefined`.
+   *
+   * Note: `<c:roundedCorners>` lives on `<c:chartSpace>`, not inside
+   * `<c:chart>` — the toggle styles the outer frame, not the plot area.
+   */
+  roundedCorners?: boolean;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────

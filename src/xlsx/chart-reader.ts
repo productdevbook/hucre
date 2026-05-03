@@ -205,6 +205,12 @@ export function parseChart(xml: string): Chart | undefined {
   const plotVisOnly = parsePlotVisOnly(chartEl);
   if (plotVisOnly !== undefined) out.plotVisOnly = plotVisOnly;
 
+  // `<c:roundedCorners>` lives on `<c:chartSpace>` (the chart's outer
+  // wrapper), not inside `<c:chart>` — the toggle styles the chart
+  // frame's outer border rather than the plot area.
+  const roundedCorners = parseRoundedCorners(chartSpace);
+  if (roundedCorners !== undefined) out.roundedCorners = roundedCorners;
+
   return out;
 }
 
@@ -1001,6 +1007,42 @@ function parsePlotVisOnly(chartEl: XmlElement): boolean | undefined {
     case "true":
       // OOXML default — collapse to undefined for symmetry with the
       // writer's `plotVisOnly` field.
+      return undefined;
+    default:
+      return undefined;
+  }
+}
+
+// ── Rounded Corners ───────────────────────────────────────────────
+
+/**
+ * Pull `<c:roundedCorners val=".."/>` off `<c:chartSpace>`. The OOXML
+ * default is `false` (square chart frame), which collapses to
+ * `undefined` so absence and the default round-trip identically through
+ * {@link cloneChart} — only an explicit `<c:roundedCorners val="1"/>`
+ * surfaces `true`.
+ *
+ * Accepts the OOXML truthy / falsy spellings (`"1"` / `"true"` / `"0"`
+ * / `"false"`); unknown values and missing `val` attributes drop to
+ * `undefined` rather than fabricate a flag Excel would not emit.
+ *
+ * Note: `<c:roundedCorners>` sits on `<c:chartSpace>`, not inside
+ * `<c:chart>` — the toggle styles the chart frame's outer border, not
+ * the plot area, and the OOXML schema reflects that with the placement.
+ */
+function parseRoundedCorners(chartSpace: XmlElement): boolean | undefined {
+  const el = findChild(chartSpace, "roundedCorners");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  switch (raw) {
+    case "1":
+    case "true":
+      return true;
+    case "0":
+    case "false":
+      // OOXML default — collapse to undefined for symmetry with the
+      // writer's `roundedCorners` field.
       return undefined;
     default:
       return undefined;

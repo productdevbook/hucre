@@ -86,7 +86,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
       "xmlns:a": NS_A,
       "xmlns:r": NS_R,
     },
-    [xmlSelfClose("c:roundedCorners", { val: 0 }), chartElement],
+    [xmlSelfClose("c:roundedCorners", { val: resolveRoundedCorners(chart) ? 1 : 0 }), chartElement],
   );
 
   // Always emit an empty rels file. Phase 1 charts do not depend on
@@ -1360,6 +1360,27 @@ function resolveDispBlanksAs(chart: SheetChart): ChartDisplayBlanksAs {
 function resolvePlotVisOnly(chart: SheetChart): boolean {
   if (typeof chart.plotVisOnly === "boolean") return chart.plotVisOnly;
   return true;
+}
+
+// ── Rounded Corners ──────────────────────────────────────────────────
+
+/**
+ * Resolve the `<c:roundedCorners>` value emitted on `<c:chartSpace>`.
+ *
+ * Defaults to `false` (the OOXML schema default — square chart frame).
+ * An explicit `chart.roundedCorners === true` flips the toggle to mirror
+ * Excel's "Format Chart Area → Border → Rounded corners" preference.
+ * The writer always emits the element so the file's intent is explicit
+ * even on roundtrip — Excel itself includes it in every reference
+ * serialization.
+ *
+ * `<c:roundedCorners>` is the first child of `<c:chartSpace>` per the
+ * `CT_ChartSpace` sequence, sitting before `<c:chart>` rather than
+ * inside it (the toggle styles the outer frame, not the plot area).
+ */
+function resolveRoundedCorners(chart: SheetChart): boolean {
+  if (typeof chart.roundedCorners === "boolean") return chart.roundedCorners;
+  return false;
 }
 
 // ── Vary Colors ──────────────────────────────────────────────────────
