@@ -1991,6 +1991,21 @@ function buildChartLevelDataLabels(chart: SheetChart): string | undefined {
 function buildDataLabelsBody(dl: ChartDataLabels): string {
   const children: string[] = [];
 
+  // `<c:numFmt>` sits at the head of the CT_DLbls sequence (before
+  // `<c:spPr>` / `<c:txPr>` / `<c:dLblPos>` / the show* toggles). The
+  // writer skips emission entirely when the caller leaves `numberFormat`
+  // unset so a fresh chart matches Excel's reference shape (no number
+  // override means Excel inherits from the source cells).
+  const numFmt = resolveDataLabelsNumberFormat(dl.numberFormat);
+  if (numFmt) {
+    children.push(
+      xmlSelfClose("c:numFmt", {
+        formatCode: numFmt.formatCode,
+        sourceLinked: numFmt.sourceLinked === true ? 1 : 0,
+      }),
+    );
+  }
+
   if (dl.position) {
     children.push(xmlSelfClose("c:dLblPos", { val: dl.position }));
   }
@@ -2011,6 +2026,32 @@ function buildDataLabelsBody(dl: ChartDataLabels): string {
   }
 
   return xmlElement("c:dLbls", undefined, children);
+}
+
+/**
+ * Resolve the `<c:numFmt>` value emitted inside `<c:dLbls>`.
+ *
+ * Returns `undefined` when the caller leaves `numberFormat` unset or
+ * when `formatCode` is missing / non-string / empty — the OOXML schema
+ * requires `formatCode` on every emitted `<c:numFmt>` so a malformed
+ * record is dropped rather than fabricate a placeholder Excel rejects.
+ * Mirrors how the axis-side number-format pipeline shapes its output
+ * so a parsed value can flow straight from the read side back into the
+ * write side without transformation.
+ *
+ * `sourceLinked` is normalized to a literal boolean — only `true`
+ * survives, every other shape (`undefined` / `false` / non-boolean)
+ * collapses so the writer's `val` attribute defaults to `0`.
+ */
+function resolveDataLabelsNumberFormat(
+  value: ChartAxisNumberFormat | undefined,
+): ChartAxisNumberFormat | undefined {
+  if (!value) return undefined;
+  const formatCode = value.formatCode;
+  if (typeof formatCode !== "string" || formatCode.length === 0) return undefined;
+  const out: ChartAxisNumberFormat = { formatCode };
+  if (value.sourceLinked === true) out.sourceLinked = true;
+  return out;
 }
 
 // ── Legend ───────────────────────────────────────────────────────────

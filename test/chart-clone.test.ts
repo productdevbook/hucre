@@ -4839,6 +4839,209 @@ describe("cloneChart — data labels showLegendKey", () => {
   });
 });
 
+// ── cloneChart — data labels numberFormat ───────────────────────────
+
+describe("cloneChart — data labels numberFormat", () => {
+  const sourceWithNumFmt: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    dataLabels: { showValue: true, numberFormat: { formatCode: "0.00%" } },
+  };
+
+  it("inherits chart-level numberFormat from the source by default", () => {
+    const clone = cloneChart(sourceWithNumFmt, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.dataLabels?.numberFormat).toEqual({ formatCode: "0.00%" });
+  });
+
+  it("drops the inherited numberFormat when chart-level dataLabels override is null", () => {
+    const clone = cloneChart(sourceWithNumFmt, {
+      anchor: { from: { row: 0, col: 0 } },
+      dataLabels: null,
+    });
+    expect(clone.dataLabels).toBeUndefined();
+  });
+
+  it("replaces the dataLabels block wholesale, dropping the inherited numberFormat", () => {
+    const clone = cloneChart(sourceWithNumFmt, {
+      anchor: { from: { row: 0, col: 0 } },
+      dataLabels: { showCategoryName: true },
+    });
+    // Wholesale replacement — the inherited numberFormat does not bleed
+    // through the override.
+    expect(clone.dataLabels).toEqual({ showCategoryName: true });
+  });
+
+  it("can pin numberFormat via a chart-level dataLabels override", () => {
+    const noFmt: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(noFmt, {
+      anchor: { from: { row: 0, col: 0 } },
+      dataLabels: { showValue: true, numberFormat: { formatCode: "$#,##0" } },
+    });
+    expect(clone.dataLabels?.numberFormat).toEqual({ formatCode: "$#,##0" });
+  });
+
+  it("inherits per-series numberFormat from the source series", () => {
+    const src: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          valuesRef: "Tpl!$B$2:$B$5",
+          dataLabels: { showValue: true, numberFormat: { formatCode: "0.00" } },
+        },
+      ],
+    };
+    const clone = cloneChart(src, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.series[0].dataLabels).toEqual({
+      showValue: true,
+      numberFormat: { formatCode: "0.00" },
+    });
+  });
+
+  it("drops the per-series numberFormat when the override is null", () => {
+    const src: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          valuesRef: "Tpl!$B$2:$B$5",
+          dataLabels: { showValue: true, numberFormat: { formatCode: "0.00" } },
+        },
+      ],
+    };
+    const clone = cloneChart(src, {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ dataLabels: null }],
+    });
+    expect(clone.series[0].dataLabels).toBeUndefined();
+  });
+
+  it("replaces per-series dataLabels via seriesOverrides, dropping the inherited numberFormat", () => {
+    const src: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          valuesRef: "Tpl!$B$2:$B$5",
+          dataLabels: { showValue: true, numberFormat: { formatCode: "0.00" } },
+        },
+      ],
+    };
+    const clone = cloneChart(src, {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ dataLabels: { showCategoryName: true } }],
+    });
+    // Wholesale replacement — the inherited numberFormat does not bleed
+    // through.
+    expect(clone.series[0].dataLabels).toEqual({ showCategoryName: true });
+  });
+
+  it("composes numberFormat alongside other dataLabels fields", () => {
+    const src: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      dataLabels: {
+        showValue: true,
+        showCategoryName: true,
+        position: "outEnd",
+        separator: " | ",
+        numberFormat: { formatCode: "0.00%", sourceLinked: true },
+      },
+    };
+    const clone = cloneChart(src, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.dataLabels).toEqual({
+      showValue: true,
+      showCategoryName: true,
+      position: "outEnd",
+      separator: " | ",
+      numberFormat: { formatCode: "0.00%", sourceLinked: true },
+    });
+  });
+
+  it("carries numberFormat through a chart-type coercion (bar -> line)", () => {
+    const lineClone = cloneChart(sourceWithNumFmt, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "line",
+    });
+    expect(lineClone.type).toBe("line");
+    expect(lineClone.dataLabels?.numberFormat).toEqual({ formatCode: "0.00%" });
+  });
+
+  it("end-to-end: parseChart -> cloneChart -> writeChart preserves numberFormat", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:dLbls>
+          <c:numFmt formatCode="0.00%" sourceLinked="0"/>
+          <c:dLblPos val="outEnd"/>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00%" });
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(sheetChart.dataLabels?.numberFormat).toEqual({ formatCode: "0.00%" });
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    const dLbls = written.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/)![0];
+    expect(dLbls).toContain('<c:numFmt formatCode="0.00%" sourceLinked="0"/>');
+
+    // Re-parse to confirm the round-trip.
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00%" });
+  });
+
+  it("end-to-end: writeXlsx packages the cloned chart with numberFormat intact", async () => {
+    const clone = cloneChart(sourceWithNumFmt, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [["Header"], [10], [20], [30], [40]],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const dLbls = written.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/)![0];
+    expect(dLbls).toContain('<c:numFmt formatCode="0.00%" sourceLinked="0"/>');
+  });
+});
+
 // ── cloneChart — axis noMultiLvlLbl ─────────────────────────────────
 
 describe("cloneChart — axis noMultiLvlLbl", () => {

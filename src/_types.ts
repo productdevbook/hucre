@@ -618,6 +618,22 @@ export interface ChartDataLabels {
    * `" "`, `"; "`, `"\n"` (newline).
    */
   separator?: string;
+  /**
+   * Number format applied to the value rendered inside each data label.
+   * Mirrors Excel's "Format Data Labels -> Number" panel — pinning a
+   * `formatCode` such as `"0.00%"`, `"$#,##0.00"`, or `"#,##0"` lets a
+   * dashboard chart show currency / percent labels without the source
+   * cells carrying the format. Same shape as
+   * {@link ChartAxisNumberFormat} so a single number-format helper can
+   * thread through both the axis and the data-labels code paths.
+   *
+   * Maps to `<c:numFmt formatCode=".." sourceLinked=".."/>` inside
+   * `<c:dLbls>`. The element sits right after `<c:dLbl>` (per the
+   * `CT_DLbls` schema sequence — `dLbl* -> numFmt? -> spPr? -> txPr? ->
+   * dLblPos? -> show*`). Omit to fall back to whatever Excel inherits
+   * from the source cell formatting.
+   */
+  numberFormat?: ChartAxisNumberFormat;
 }
 
 /**
@@ -2332,6 +2348,18 @@ export interface ChartDataLabelsInfo {
   showLegendKey?: boolean;
   position?: ChartDataLabelPosition;
   separator?: string;
+  /**
+   * Mirror of {@link ChartDataLabels.numberFormat}. Surfaces the
+   * `<c:numFmt formatCode=".." sourceLinked=".."/>` parsed from the
+   * source `<c:dLbls>` block — Excel's "Format Data Labels -> Number"
+   * panel pin. Same shape as the axis-side
+   * {@link ChartAxisNumberFormat} so the parsed value can be fed
+   * straight back into {@link cloneChart} or {@link writeXlsx} without
+   * transformation. Absent when the source data-labels block has no
+   * `<c:numFmt>` element or when the parsed `formatCode` is missing /
+   * empty.
+   */
+  numberFormat?: ChartAxisNumberFormat;
 }
 
 /**

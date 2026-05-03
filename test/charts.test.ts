@@ -5237,6 +5237,257 @@ describe("parseChart — data labels showLegendKey", () => {
   });
 });
 
+// ── parseChart — data labels numberFormat ──────────────────────────
+
+describe("parseChart — data labels numberFormat", () => {
+  const NS_NF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it("surfaces numberFormat from a chart-level <c:dLbls><c:numFmt>", () => {
+    const xml = `<c:chartSpace ${NS_NF}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:numFmt formatCode="0.00%" sourceLinked="0"/>
+        <c:showVal val="1"/>
+      </c:dLbls>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00%" });
+  });
+
+  it("surfaces sourceLinked=true when the OOXML attribute is pinned to 1", () => {
+    const xml = `<c:chartSpace ${NS_NF}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:numFmt formatCode="General" sourceLinked="1"/>
+        <c:showVal val="1"/>
+      </c:dLbls>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.numberFormat).toEqual({
+      formatCode: "General",
+      sourceLinked: true,
+    });
+  });
+
+  it('accepts the OOXML truthy spelling sourceLinked="true"', () => {
+    const xml = `<c:chartSpace ${NS_NF}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:numFmt formatCode="0.0" sourceLinked="true"/>
+        <c:showVal val="1"/>
+      </c:dLbls>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.numberFormat).toEqual({
+      formatCode: "0.0",
+      sourceLinked: true,
+    });
+  });
+
+  it('collapses the OOXML default sourceLinked="0" to undefined', () => {
+    const xml = `<c:chartSpace ${NS_NF}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:numFmt formatCode="$#,##0.00" sourceLinked="0"/>
+        <c:showVal val="1"/>
+      </c:dLbls>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "$#,##0.00" });
+  });
+
+  it("collapses absence of <c:numFmt> to undefined", () => {
+    const xml = `<c:chartSpace ${NS_NF}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:showVal val="1"/>
+      </c:dLbls>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.numberFormat).toBeUndefined();
+  });
+
+  it("returns undefined when <c:numFmt> is missing the formatCode attribute", () => {
+    const xml = `<c:chartSpace ${NS_NF}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:numFmt sourceLinked="0"/>
+        <c:showVal val="1"/>
+      </c:dLbls>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.numberFormat).toBeUndefined();
+  });
+
+  it("returns undefined for empty formatCode strings", () => {
+    const xml = `<c:chartSpace ${NS_NF}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:numFmt formatCode="" sourceLinked="0"/>
+        <c:showVal val="1"/>
+      </c:dLbls>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.numberFormat).toBeUndefined();
+  });
+
+  it("makes numberFormat alone enough to surface a dataLabels record", () => {
+    // The number format pin is meaningful even without any show* toggle —
+    // Excel still applies it to a per-series label override that turns
+    // the labels on. The reader must not collapse the block to undefined
+    // when the only pinned field is the numFmt.
+    const xml = `<c:chartSpace ${NS_NF}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:numFmt formatCode="0.00%" sourceLinked="0"/>
+        <c:showLegendKey val="0"/>
+        <c:showVal val="0"/>
+        <c:showCatName val="0"/>
+        <c:showSerName val="0"/>
+        <c:showPercent val="0"/>
+        <c:showBubbleSize val="0"/>
+      </c:dLbls>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels).toEqual({ numberFormat: { formatCode: "0.00%" } });
+  });
+
+  it("surfaces numberFormat on a series-level <c:dLbls>", () => {
+    const xml = `<c:chartSpace ${NS_NF}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:tx><c:v>Revenue</c:v></c:tx>
+        <c:dLbls>
+          <c:numFmt formatCode="$#,##0" sourceLinked="0"/>
+          <c:dLblPos val="ctr"/>
+          <c:showVal val="1"/>
+        </c:dLbls>
+        <c:val><c:numRef><c:f>S!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].dataLabels).toEqual({
+      position: "ctr",
+      showValue: true,
+      numberFormat: { formatCode: "$#,##0" },
+    });
+  });
+
+  it("co-surfaces numberFormat alongside other dataLabels fields", () => {
+    const xml = `<c:chartSpace ${NS_NF}>
+  <c:chart><c:plotArea>
+    <c:pieChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:numFmt formatCode="0.00%" sourceLinked="0"/>
+        <c:dLblPos val="bestFit"/>
+        <c:showLegendKey val="1"/>
+        <c:showVal val="0"/>
+        <c:showCatName val="1"/>
+        <c:showSerName val="0"/>
+        <c:showPercent val="1"/>
+        <c:showBubbleSize val="0"/>
+        <c:separator>; </c:separator>
+      </c:dLbls>
+    </c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels).toEqual({
+      position: "bestFit",
+      showLegendKey: true,
+      showCategoryName: true,
+      showPercent: true,
+      separator: "; ",
+      numberFormat: { formatCode: "0.00%" },
+    });
+  });
+
+  it("does not leak a per-point <c:dLbl><c:numFmt> into the block-level record", () => {
+    // The CT_DLbls schema allows a `<c:numFmt>` to live inside a
+    // per-point `<c:dLbl>` as well as at the block level. The reader
+    // scopes its lookup to direct `<c:dLbls>` children so only the
+    // block-level pin surfaces — a per-point override on a single data
+    // point cannot pollute the chart-level record.
+    const xml = `<c:chartSpace ${NS_NF}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:dLbl>
+          <c:idx val="0"/>
+          <c:numFmt formatCode="0.00" sourceLinked="0"/>
+          <c:showVal val="1"/>
+        </c:dLbl>
+        <c:showVal val="1"/>
+      </c:dLbls>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.numberFormat).toBeUndefined();
+  });
+
+  it("threads numberFormat through line / pie / scatter chart families", () => {
+    const families = [
+      ["lineChart", "line"],
+      ["pieChart", "pie"],
+      ["scatterChart", "scatter"],
+    ] as const;
+    for (const [tag] of families) {
+      const xml = `<c:chartSpace ${NS_NF}>
+  <c:chart><c:plotArea>
+    <c:${tag}>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:numFmt formatCode="0.00%" sourceLinked="0"/>
+        <c:showVal val="1"/>
+      </c:dLbls>
+    </c:${tag}>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+      const chart = parseChart(xml);
+      expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00%" });
+    }
+  });
+});
+
 // ── parseChart — axis noMultiLvlLbl ────────────────────────────────
 
 describe("parseChart — axis noMultiLvlLbl", () => {

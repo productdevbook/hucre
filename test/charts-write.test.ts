@@ -4408,6 +4408,243 @@ describe("writeChart — data labels showLegendKey", () => {
   });
 });
 
+// ── writeChart — data labels numberFormat ────────────────────────────
+
+describe("writeChart — data labels numberFormat", () => {
+  function dLblsOf(xml: string): string {
+    const m = xml.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/);
+    if (!m) throw new Error("No <c:dLbls> block found in chart XML");
+    return m[0];
+  }
+
+  it("emits <c:numFmt> inside <c:dLbls> when chart-level numberFormat is set", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, numberFormat: { formatCode: "0.00%" } } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain('<c:numFmt formatCode="0.00%" sourceLinked="0"/>');
+  });
+
+  it('emits sourceLinked="1" when sourceLinked=true is pinned', () => {
+    const result = writeChart(
+      makeChart({
+        dataLabels: {
+          showValue: true,
+          numberFormat: { formatCode: "General", sourceLinked: true },
+        },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain('<c:numFmt formatCode="General" sourceLinked="1"/>');
+  });
+
+  it('defaults sourceLinked to "0" when the field is omitted', () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, numberFormat: { formatCode: "$#,##0.00" } } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain('<c:numFmt formatCode="$#,##0.00" sourceLinked="0"/>');
+  });
+
+  it("skips emitting <c:numFmt> when numberFormat is unset", () => {
+    const result = writeChart(makeChart({ dataLabels: { showValue: true } }), "Sheet1");
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).not.toContain("<c:numFmt");
+  });
+
+  it("skips emitting <c:numFmt> when formatCode is missing or empty", () => {
+    const noCode = writeChart(
+      makeChart({
+        dataLabels: {
+          showValue: true,
+          numberFormat: { formatCode: undefined as unknown as string },
+        },
+      }),
+      "Sheet1",
+    );
+    expect(dLblsOf(noCode.chartXml)).not.toContain("<c:numFmt");
+    const empty = writeChart(
+      makeChart({ dataLabels: { showValue: true, numberFormat: { formatCode: "" } } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(empty.chartXml)).not.toContain("<c:numFmt");
+  });
+
+  it("places <c:numFmt> at the head of the CT_DLbls sequence (before <c:dLblPos> and the show* toggles)", () => {
+    // CT_DLbls schema sequence: dLbl* -> numFmt? -> spPr? -> txPr? ->
+    // dLblPos? -> showLegendKey -> showVal -> ...
+    const result = writeChart(
+      makeChart({
+        dataLabels: {
+          showValue: true,
+          position: "outEnd",
+          showLegendKey: true,
+          numberFormat: { formatCode: "0.00%" },
+        },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    const numFmtIdx = dLbls.indexOf("<c:numFmt");
+    const dLblPosIdx = dLbls.indexOf("<c:dLblPos");
+    const showLegKeyIdx = dLbls.indexOf("<c:showLegendKey");
+    const showValIdx = dLbls.indexOf("<c:showVal");
+    expect(numFmtIdx).toBeGreaterThan(0);
+    expect(numFmtIdx).toBeLessThan(dLblPosIdx);
+    expect(dLblPosIdx).toBeLessThan(showLegKeyIdx);
+    expect(showLegKeyIdx).toBeLessThan(showValIdx);
+  });
+
+  it("threads numberFormat through a series-level <c:dLbls>", () => {
+    const result = writeChart(
+      makeChart({
+        series: [
+          {
+            name: "S1",
+            values: "B2:B4",
+            dataLabels: { showValue: true, numberFormat: { formatCode: "0.0" } },
+          },
+        ],
+      }),
+      "Sheet1",
+    );
+    const xml = result.chartXml;
+    const serStart = xml.indexOf("<c:ser>");
+    const serEnd = xml.indexOf("</c:ser>");
+    const inner = xml.slice(serStart, serEnd);
+    expect(inner).toContain('<c:numFmt formatCode="0.0" sourceLinked="0"/>');
+  });
+
+  it("threads numberFormat through pie / line / scatter chart families", () => {
+    for (const type of ["pie", "line", "scatter"] as const) {
+      const result = writeChart(
+        makeChart({
+          type,
+          dataLabels: { showValue: true, numberFormat: { formatCode: "0.00%" } },
+        }),
+        "Sheet1",
+      );
+      const dLbls = dLblsOf(result.chartXml);
+      expect(dLbls).toContain('<c:numFmt formatCode="0.00%" sourceLinked="0"/>');
+    }
+  });
+
+  it("emits exactly one <c:numFmt> per data-labels block", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, numberFormat: { formatCode: "0.00" } } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect((dLbls.match(/<c:numFmt/g) ?? []).length).toBe(1);
+  });
+
+  it("escapes XML-special characters in the formatCode attribute", () => {
+    // Format codes legitimately contain `<`, `>`, `&`, `"` — e.g.
+    // accounting formats and conditional brackets like
+    // `[<=9999999]###-####;(###) ###-####`. The writer must emit
+    // them through the standard XML attribute escape path.
+    const result = writeChart(
+      makeChart({
+        dataLabels: {
+          showValue: true,
+          numberFormat: { formatCode: '[<=9999999]"$"#,##0' },
+        },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain("&lt;");
+    expect(dLbls).toContain("&quot;");
+  });
+
+  it("collapses non-string formatCode inputs to no emission", () => {
+    const result = writeChart(
+      makeChart({
+        dataLabels: {
+          showValue: true,
+          numberFormat: { formatCode: 42 as unknown as string },
+        },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).not.toContain("<c:numFmt");
+  });
+
+  it("collapses non-boolean sourceLinked inputs to the default 0", () => {
+    const result = writeChart(
+      makeChart({
+        dataLabels: {
+          showValue: true,
+          numberFormat: {
+            formatCode: "0.00",
+            sourceLinked: "yes" as unknown as boolean,
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain('<c:numFmt formatCode="0.00" sourceLinked="0"/>');
+  });
+
+  it("round-trips a chart with numberFormat through parseChart", () => {
+    const written = writeChart(
+      makeChart({ dataLabels: { showValue: true, numberFormat: { formatCode: "0.00%" } } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00%" });
+    expect(reparsed?.dataLabels?.showValue).toBe(true);
+  });
+
+  it("round-trips numberFormat with sourceLinked=true through parseChart", () => {
+    const written = writeChart(
+      makeChart({
+        dataLabels: {
+          showValue: true,
+          numberFormat: { formatCode: "General", sourceLinked: true },
+        },
+      }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataLabels?.numberFormat).toEqual({
+      formatCode: "General",
+      sourceLinked: true,
+    });
+  });
+
+  it("end-to-end: writeXlsx packages a chart with numberFormat into chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            dataLabels: { showValue: true, numberFormat: { formatCode: "$#,##0" } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const dLbls = chartXml.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/)![0];
+    expect(dLbls).toContain('<c:numFmt formatCode="$#,##0" sourceLinked="0"/>');
+  });
+});
+
 // ── writeChart — axis noMultiLvlLbl ──────────────────────────────────
 
 describe("writeChart — axis noMultiLvlLbl", () => {

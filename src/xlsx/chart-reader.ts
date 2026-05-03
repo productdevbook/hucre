@@ -1285,6 +1285,18 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
     if (text.length > 0) out.separator = text;
   }
 
+  // `<c:numFmt formatCode=".." sourceLinked=".."/>` mirrors Excel's
+  // "Format Data Labels -> Number" panel — pinning a custom number
+  // format on the rendered label values. Same shape as the axis-side
+  // `<c:numFmt>` so the parsed value can be fed straight back into
+  // {@link cloneChart}. The element sits early in the CT_DLbls
+  // sequence (after the optional `<c:dLbl>` instances), so the lookup
+  // is scoped to direct `<c:dLbls>` children — a `<c:numFmt>` nested
+  // inside a per-point `<c:dLbl>` does not leak into the block-level
+  // record.
+  const numFmt = parseDataLabelsNumberFormat(el);
+  if (numFmt) out.numberFormat = numFmt;
+
   // Empty record is meaningless to a consumer — collapse to undefined.
   if (
     out.position === undefined &&
@@ -1293,9 +1305,39 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
     !out.showSeriesName &&
     !out.showPercent &&
     !out.showLegendKey &&
-    out.separator === undefined
+    out.separator === undefined &&
+    out.numberFormat === undefined
   ) {
     return undefined;
+  }
+  return out;
+}
+
+/**
+ * Pull `<c:numFmt formatCode=".." sourceLinked=".."/>` off a
+ * `<c:dLbls>` block. Returns `undefined` when the element is absent or
+ * when `formatCode` is missing / empty (the OOXML schema requires the
+ * attribute on every emitted `<c:numFmt>` so a fabricated empty record
+ * cannot round-trip cleanly).
+ *
+ * `sourceLinked` accepts the same OOXML truthy / falsy spellings the
+ * other boolean attributes do (`"1"` / `"true"` / `"0"` / `"false"`);
+ * absence and the OOXML default `"0"` collapse to `undefined` so the
+ * parsed shape stays minimal — only an explicit `"1"` / `"true"`
+ * surfaces `true`. Mirrors how the axis-side numFmt parser shapes its
+ * output.
+ */
+function parseDataLabelsNumberFormat(el: XmlElement): ChartAxisNumberFormat | undefined {
+  const numFmt = findChild(el, "numFmt");
+  if (!numFmt) return undefined;
+  const formatCode = numFmt.attrs.formatCode;
+  if (typeof formatCode !== "string" || formatCode.length === 0) return undefined;
+  const out: ChartAxisNumberFormat = { formatCode };
+  const sourceLinked = numFmt.attrs.sourceLinked;
+  if (typeof sourceLinked === "string") {
+    if (sourceLinked === "1" || sourceLinked.toLowerCase() === "true") {
+      out.sourceLinked = true;
+    }
   }
   return out;
 }
