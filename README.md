@@ -719,6 +719,22 @@ collapses the whole field to `undefined`. Only chart families with
 axes (`bar`, `column`, `line`, `area`, `scatter`) carry a slot for the
 element — the OOXML schema places `<c:dTable>` inside `<c:plotArea>`
 alongside the axes, so pie / doughnut surface `undefined`.
+`Chart.protection` surfaces the chart-space-level
+`<c:chartSpace><c:protection>...</c:protection>` block — Excel's
+chart-level lock that pairs with the host worksheet's
+`<sheetProtection>` to decide which interactions remain allowed when
+the parent sheet is protected. The reader returns a `ChartProtection`
+object with up to five independently optional boolean children
+(`chartObject`, `data`, `formatting`, `selection`, `userInterface`);
+each flag is independently optional on `CT_Protection`, so the reader
+only surfaces the flags the file actually pinned. Children with
+missing or unknown `val` attributes drop to `undefined` rather than
+fabricate a flag the file did not pin. The element itself is the
+gating signal — a `<c:protection>` block with no resolvable children
+surfaces as an empty `{}`, and absence of the element collapses the
+field to `undefined`. Every chart family carries a slot — the element
+lives on `<c:chartSpace>` (a sibling of `<c:chart>`), not inside
+`<c:plotArea>`, so pie / doughnut still surface the block.
 `ChartAxisInfo.tickLblSkip` and `ChartAxisInfo.tickMarkSkip` surface
 the category-axis tick-thinning knobs (`<c:catAx><c:tickLblSkip val=".."/>`
 and `<c:catAx><c:tickMarkSkip val=".."/>`). Both elements live on
@@ -1090,6 +1106,25 @@ reference default `true` for any flag the caller leaves unset. The
 field is silently dropped on `pie` / `doughnut` charts because those
 families have no axes and the OOXML schema places no slot for
 `<c:dTable>` on their plot areas.
+The chart-level `protection` field maps to
+`<c:chartSpace><c:protection>...</c:protection>` — Excel's chart-level
+lock that pairs with the host worksheet's `<sheetProtection>` to
+decide which interactions remain allowed when the parent sheet is
+protected. The field accepts a `boolean | ChartProtection`
+discriminated union: pass `true` for the bare `<c:protection>` shell
+with every flag at the OOXML default `false` (action permitted), pass
+an object to opt individual children in (each field maps to the
+matching `<c:protection>` boolean child — `chartObject`, `data`,
+`formatting`, `selection`, `userInterface`), or omit it (or pass
+`false`) to suppress the element entirely. When emitted, the writer
+always serializes all five children in `CT_Protection` schema order,
+falling back to the OOXML default `false` (action permitted) for any
+flag the caller leaves unset. The element sits on `<c:chartSpace>`
+(not inside `<c:plotArea>`), so every chart family — including pie /
+doughnut — carries a slot for it. Excel only enforces these flags
+when the host worksheet is itself protected; on an unprotected sheet
+the element round-trips literally but has no observable runtime
+effect.
 The chart-level `roundedCorners` field maps to
 `<c:roundedCorners val=".."/>` on `<c:chartSpace>` (a sibling of
 `<c:chart>`, not a child) — Excel's "Format Chart Area → Border →
@@ -1465,6 +1500,18 @@ the resolved chart type is `pie` or `doughnut` — those families have
 no axes and the OOXML schema places no slot for the element on their
 plot areas. Coercions between axis-bearing families (line → column,
 scatter → area, etc.) preserve the inherited block.
+The chart-level `protection` field follows the standard
+`object | boolean | null` override grammar: pass `undefined` (or omit
+it) to inherit the source's parsed `ChartProtection`, `null` (or
+`false`) to drop the inherited block so the writer skips
+`<c:protection>` entirely, `true` to pin every flag to its OOXML
+default `false` (the bare `<c:protection>` shell), or a
+`ChartProtection` object to replace the block wholesale (no per-field
+merge with the source — pass every flag the cloned protection should
+pin). Unlike `dataTable`, the field lives on `<c:chartSpace>` (not
+inside `<c:plotArea>`), so every chart family — pie / doughnut
+included — carries a slot for it. Coercions between any chart
+families preserve the inherited block.
 The chart-level `roundedCorners` flag follows the same grammar: pass
 `undefined` to inherit the source's parsed value, `null` to drop it
 back to the writer's OOXML `false` default (square chart frame), or a
