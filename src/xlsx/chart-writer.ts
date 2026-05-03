@@ -7,6 +7,7 @@
 // referenced from a drawing part via a `chart` relationship.
 
 import type {
+  ChartAxisCrossBetween,
   ChartAxisCrosses,
   ChartAxisDispUnit,
   ChartAxisDispUnits,
@@ -265,6 +266,16 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // refuse.
     xDispUnits: normalizeAxisDispUnits(chart.axes?.x?.dispUnits),
     yDispUnits: normalizeAxisDispUnits(chart.axes?.y?.dispUnits),
+    // `<c:crossBetween>` is value-axis-only per ECMA-376 §21.2.2.10
+    // (CT_ValAx → CT_CrossBetween). The category-axis builder ignores
+    // `xCrossBetween`; only the scatter X-axis (a value axis) and every
+    // Y axis pick the field up. The normalizer rejects unknown tokens
+    // so the writer never emits a value the OOXML `ST_CrossBetween`
+    // enum would refuse — absence falls back to the per-family default
+    // each axis builder pins today (`"between"` on bar / column / line
+    // / area Y axes; `"midCat"` on both scatter axes).
+    xCrossBetween: normalizeAxisCrossBetween(chart.axes?.x?.crossBetween),
+    yCrossBetween: normalizeAxisCrossBetween(chart.axes?.y?.crossBetween),
   };
 
   switch (chart.type) {
@@ -393,6 +404,23 @@ interface AxisRenderOptions {
    * short-circuits those branches.
    */
   yDispUnits: ChartAxisDispUnits | undefined;
+  /**
+   * Cross-between override for the X axis. Only honoured on scatter
+   * (the X axis is a value axis there); the catAx builder ignores it
+   * because `<c:crossBetween>` is value-axis-only per ECMA-376
+   * §21.2.2.10. `undefined` falls back to the per-family default each
+   * axis builder pins today.
+   */
+  xCrossBetween: ChartAxisCrossBetween | undefined;
+  /**
+   * Cross-between override for the value axis. The catAx builder (bar
+   * / column / line / area) routes the Y axis through `<c:valAx>`, and
+   * the scatter builder routes both axes through `<c:valAx>` — so this
+   * field surfaces on every chart family that has a value axis. Pie /
+   * doughnut have no axes at all and the caller already short-circuits
+   * those branches.
+   */
+  yCrossBetween: ChartAxisCrossBetween | undefined;
 }
 
 /**
@@ -769,6 +797,30 @@ function buildAxisDispUnits(dispUnits: ChartAxisDispUnits | undefined): string[]
   return [xmlElement("c:dispUnits", undefined, children)];
 }
 
+/** Recognized values of `<c:crossBetween>` per the OOXML `ST_CrossBetween` enum. */
+const VALID_CROSS_BETWEEN: ReadonlySet<ChartAxisCrossBetween> = new Set(["between", "midCat"]);
+
+/**
+ * Normalize the {@link SheetChart.axes.x.crossBetween} /
+ * {@link SheetChart.axes.y.crossBetween} input. Unknown / typo'd tokens
+ * collapse to `undefined` so the writer never emits a value the OOXML
+ * `ST_CrossBetween` enum rejects — the caller's per-family default
+ * (`"between"` on bar / column / line / area Y axes; `"midCat"` on
+ * scatter axes) takes over instead.
+ *
+ * Non-string inputs (e.g. `null`, numbers, arrays) likewise collapse to
+ * `undefined` so a stray runtime value leaking through the type guard
+ * cannot poison the output.
+ */
+function normalizeAxisCrossBetween(
+  value: ChartAxisCrossBetween | undefined,
+): ChartAxisCrossBetween | undefined {
+  if (typeof value !== "string") return undefined;
+  return VALID_CROSS_BETWEEN.has(value as ChartAxisCrossBetween)
+    ? (value as ChartAxisCrossBetween)
+    : undefined;
+}
+
 /**
  * Build the axis tick-label `<c:numFmt formatCode=".." sourceLinked=".."/>`.
  * Returns an empty array when the axis declares no number format — the
@@ -1033,7 +1085,12 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
     ...buildAxisTickRendering(opts.yMajorTickMark, opts.yMinorTickMark, opts.yTickLblPos),
     xmlSelfClose("c:crossAx", { val: AXIS_ID_CAT }),
     buildAxisCrosses(opts.yCrosses),
-    xmlSelfClose("c:crossBetween", { val: "between" }),
+    // `<c:crossBetween>` sits between `<c:crosses>`/`<c:crossesAt>` and
+    // `<c:majorUnit>` per CT_ValAx (ECMA-376 §21.2.2.32). The default
+    // for bar / column / line / area is `"between"` — the writer
+    // honours an override when the caller pinned `"midCat"` and falls
+    // back to the family default otherwise.
+    xmlSelfClose("c:crossBetween", { val: opts.yCrossBetween ?? "between" }),
     ...buildAxisTickUnits(opts.yScale),
     // `<c:dispUnits>` is the last child slot on `<c:valAx>` per
     // CT_ValAx (after `<c:minorUnit>`). Bar / column / line / area
@@ -1330,7 +1387,11 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
     ...buildAxisTickRendering(opts.xMajorTickMark, opts.xMinorTickMark, opts.xTickLblPos),
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL_Y }),
     buildAxisCrosses(opts.xCrosses),
-    xmlSelfClose("c:crossBetween", { val: "midCat" }),
+    // Scatter charts default to `"midCat"` (data points sit ON the
+    // perpendicular-axis ticks rather than between them). The writer
+    // honours an override when the caller pinned `"between"` and falls
+    // back to the family default otherwise.
+    xmlSelfClose("c:crossBetween", { val: opts.xCrossBetween ?? "midCat" }),
     ...buildAxisTickUnits(opts.xScale),
     // `<c:dispUnits>` slots onto `<c:valAx>` per CT_ValAx (after
     // `<c:minorUnit>`). Scatter charts route both axes through
@@ -1351,7 +1412,9 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
     ...buildAxisTickRendering(opts.yMajorTickMark, opts.yMinorTickMark, opts.yTickLblPos),
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL_X }),
     buildAxisCrosses(opts.yCrosses),
-    xmlSelfClose("c:crossBetween", { val: "midCat" }),
+    // Scatter Y axis defaults to `"midCat"`. Same override grammar as
+    // the X axis above.
+    xmlSelfClose("c:crossBetween", { val: opts.yCrossBetween ?? "midCat" }),
     ...buildAxisTickUnits(opts.yScale),
     // `<c:dispUnits>` on the Y axis. Scatter Y is also a value axis,
     // so the same builder applies. See `buildBarAxes` for the broader

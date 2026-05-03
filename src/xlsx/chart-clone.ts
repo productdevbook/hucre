@@ -12,6 +12,7 @@
 
 import type {
   Chart,
+  ChartAxisCrossBetween,
   ChartAxisCrosses,
   ChartAxisDispUnit,
   ChartAxisDispUnits,
@@ -512,6 +513,23 @@ export interface CloneChartOptions {
        * have no axes at all.
        */
       dispUnits?: ChartAxisDispUnits | ChartAxisDispUnit | null;
+      /**
+       * Override `SheetChart.axes.x.crossBetween`. `undefined` (or
+       * omitted) inherits the source axis's parsed cross-between mode;
+       * `null` drops the inherited value (the writer falls back to the
+       * per-family default each axis builder pins today); a
+       * {@link ChartAxisCrossBetween} token replaces it.
+       *
+       * `<c:crossBetween>` lives exclusively on `<c:valAx>` per the
+       * OOXML schema, so the override only takes effect when the
+       * resolved chart type routes the X axis through `<c:valAx>` —
+       * that is the scatter family. Bar / column / line / area route
+       * the X axis through `<c:catAx>` (which rejects
+       * `<c:crossBetween>`); the resolver collapses the field to
+       * `undefined` on those families so a stale hint never leaks into
+       * the writer. Pie / doughnut have no axes at all.
+       */
+      crossBetween?: ChartAxisCrossBetween | null;
     };
     y?: {
       title?: string | null;
@@ -544,6 +562,18 @@ export interface CloneChartOptions {
        * on those types.
        */
       dispUnits?: ChartAxisDispUnits | ChartAxisDispUnit | null;
+      /**
+       * Override `SheetChart.axes.y.crossBetween`. Same `undefined`
+       * (inherit) / `null` (drop) / replace grammar as
+       * {@link CloneChartOptions.axes.x.crossBetween}.
+       *
+       * The Y axis is a value axis on every chart family that has axes
+       * — bar / column / line / area / scatter — so the override always
+       * takes effect on those families. Pie / doughnut have no axes at
+       * all and the resolver collapses the field to `undefined` on
+       * those types.
+       */
+      crossBetween?: ChartAxisCrossBetween | null;
     };
   };
 }
@@ -1535,6 +1565,20 @@ function resolveAxes(
       ? applyDispUnitsOverride(sourceAxes?.x?.dispUnits, overrides?.x?.dispUnits)
       : undefined;
   const yDispUnits = applyDispUnitsOverride(sourceAxes?.y?.dispUnits, overrides?.y?.dispUnits);
+  // `<c:crossBetween>` is also value-axis-only per ECMA-376 §21.2.2.10
+  // (CT_ValAx → CT_CrossBetween). Same scope rule as `dispUnits` — the
+  // X-axis override is only honoured on scatter (both axes are value
+  // axes); bar / column / line / area route X through `<c:catAx>` which
+  // rejects `<c:crossBetween>`. The Y axis is a value axis on every
+  // family that has axes, so the Y override always carries through.
+  const xCrossBetween =
+    type === "scatter"
+      ? applyCrossBetweenOverride(sourceAxes?.x?.crossBetween, overrides?.x?.crossBetween)
+      : undefined;
+  const yCrossBetween = applyCrossBetweenOverride(
+    sourceAxes?.y?.crossBetween,
+    overrides?.y?.crossBetween,
+  );
 
   const out: NonNullable<SheetChart["axes"]> = {};
   if (
@@ -1554,7 +1598,8 @@ function resolveAxes(
     xHidden !== undefined ||
     xCrossesPair.crosses !== undefined ||
     xCrossesPair.crossesAt !== undefined ||
-    xDispUnits !== undefined
+    xDispUnits !== undefined ||
+    xCrossBetween !== undefined
   ) {
     out.x = {};
     if (xTitle !== undefined) out.x.title = xTitle;
@@ -1574,6 +1619,7 @@ function resolveAxes(
     if (xCrossesPair.crosses !== undefined) out.x.crosses = xCrossesPair.crosses;
     if (xCrossesPair.crossesAt !== undefined) out.x.crossesAt = xCrossesPair.crossesAt;
     if (xDispUnits !== undefined) out.x.dispUnits = xDispUnits;
+    if (xCrossBetween !== undefined) out.x.crossBetween = xCrossBetween;
   }
   if (
     yTitle !== undefined ||
@@ -1587,7 +1633,8 @@ function resolveAxes(
     yReverse !== undefined ||
     yCrossesPair.crosses !== undefined ||
     yCrossesPair.crossesAt !== undefined ||
-    yDispUnits !== undefined
+    yDispUnits !== undefined ||
+    yCrossBetween !== undefined
   ) {
     out.y = {};
     if (yTitle !== undefined) out.y.title = yTitle;
@@ -1602,6 +1649,7 @@ function resolveAxes(
     if (yCrossesPair.crosses !== undefined) out.y.crosses = yCrossesPair.crosses;
     if (yCrossesPair.crossesAt !== undefined) out.y.crossesAt = yCrossesPair.crossesAt;
     if (yDispUnits !== undefined) out.y.dispUnits = yDispUnits;
+    if (yCrossBetween !== undefined) out.y.crossBetween = yCrossBetween;
   }
 
   return out.x || out.y ? out : undefined;
@@ -2013,4 +2061,32 @@ function applyDispUnitsOverride(
   if (override === undefined) return normalizeDispUnits(source);
   if (override === null) return undefined;
   return normalizeDispUnits(override);
+}
+
+/** Recognized values of `<c:crossBetween>` per the OOXML `ST_CrossBetween` enum. */
+const VALID_CROSS_BETWEEN_VALUES: ReadonlySet<ChartAxisCrossBetween> = new Set([
+  "between",
+  "midCat",
+]);
+
+/**
+ * Resolve a `crossBetween` override using the standard `undefined`
+ * (inherit) / `null` (drop) / value (replace) grammar. Unknown / typo'd
+ * tokens collapse to `undefined` rather than fabricate a value the
+ * writer would never emit — the writer's per-family default
+ * (`"between"` on bar / column / line / area Y axes; `"midCat"` on
+ * scatter axes) takes over instead. The reader and writer mirror this
+ * normalizer so a parsed source value slots straight back into a clone
+ * target without transformation.
+ */
+function applyCrossBetweenOverride(
+  source: ChartAxisCrossBetween | undefined,
+  override: ChartAxisCrossBetween | null | undefined,
+): ChartAxisCrossBetween | undefined {
+  if (override === undefined) {
+    if (source === undefined) return undefined;
+    return VALID_CROSS_BETWEEN_VALUES.has(source) ? source : undefined;
+  }
+  if (override === null) return undefined;
+  return VALID_CROSS_BETWEEN_VALUES.has(override) ? override : undefined;
 }

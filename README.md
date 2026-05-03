@@ -782,6 +782,22 @@ schema accepts the nine `ST_BuiltInUnit` tokens (`"hundreds"`,
 `"tenMillions"`, `"hundredMillions"`, `"billions"`, `"trillions"`);
 unknown tokens drop to `undefined` rather than fabricate a value the
 writer would never emit.
+`ChartAxisInfo.crossBetween` surfaces the per-value-axis cross-between
+mode pulled from `<c:valAx><c:crossBetween val=".."/></c:valAx>` — the
+OOXML `ST_CrossBetween` enum (`"between"` / `"midCat"`) that controls
+whether the perpendicular axis crosses BETWEEN data points (a half-
+category gap on each end of the plot area) or AT the midpoint of each
+category (data points sit ON the perpendicular-axis ticks). The element
+is required on every `<c:valAx>` and Excel emits a per-family default
+on every freshly-drawn chart — `"between"` on bar / column / line /
+area Y axes; `"midCat"` on both scatter axes — so the reader collapses
+the family-default value to `undefined` and only surfaces a non-default
+override (e.g. a template that pinned `"midCat"` on a line chart's Y
+axis to land the first / last data point flush with the value-axis
+line). The OOXML schema places the element exclusively on `CT_ValAx`,
+so `crossBetween` only surfaces on value-axis sides; category axes
+(`<c:catAx>`) and pie / doughnut never carry one. Unknown tokens drop
+to `undefined`.
 `Chart.roundedCorners` surfaces the chart-frame
 `<c:chartSpace><c:roundedCorners val=".."/>` flag — Excel's "Format
 Chart Area → Border → Rounded corners" toggle. The element sits on
@@ -932,7 +948,7 @@ charts; `lineGrouping` and `areaGrouping` accept
 `top` / `bottom` / `left` / `right` / `topRight` / `false`, and
 `altText` / `frameTitle` flow through to the drawing's `xdr:cNvPr`
 attributes for screen readers.
-`axes: { x: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, reverse, crosses, crossesAt, dispUnits }, y: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, reverse, crosses, crossesAt, dispUnits } }`
+`axes: { x: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, reverse, crosses, crossesAt, dispUnits, crossBetween }, y: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, reverse, crosses, crossesAt, dispUnits, crossBetween } }`
 attaches per-axis labels, gridlines, numeric scaling, the tick-label
 number format and the tick-rendering trio — `x` lands inside
 `<c:catAx>` (or the X value axis for scatter), `y` inside the value
@@ -1112,6 +1128,24 @@ and pie / doughnut have no axes at all. Unknown tokens drop silently
 rather than fabricate a value the OOXML `ST_BuiltInUnit` enum would
 reject. The custom-divisor variant (`<c:custUnit>`) and rich-text
 `<c:dispUnitsLbl>` body are intentionally not surfaced.
+The `axes.{x,y}.crossBetween` field controls the per-value-axis
+cross-between mode (`<c:valAx><c:crossBetween val=".."/></c:valAx>`) —
+the OOXML `ST_CrossBetween` enum that picks between `"between"` (the
+perpendicular axis crosses BETWEEN data points, leaving a half-category
+gap on each end of the plot area; Excel's default on bar / column /
+line / area Y axes) and `"midCat"` (the perpendicular axis crosses AT
+the midpoint of each category, so data points sit ON the
+perpendicular-axis ticks; Excel's default on both scatter axes). The
+writer pins the per-family default when no override is set so untouched
+charts match Excel's reference serialization byte-for-byte; pass
+`crossBetween: "midCat"` on a line / area Y axis to land the first /
+last data point flush with the value-axis line, or `crossBetween:
+"between"` on a scatter axis to leave a margin around the outermost
+points. The OOXML schema places `<c:crossBetween>` exclusively on
+`CT_ValAx`, so category axes (`<c:catAx>`) silently drop the field and
+pie / doughnut have no axes at all. Unknown tokens drop silently rather
+than fabricate a value the enum would reject — the writer falls back to
+the family default in that case.
 The `axes.x.tickLblSkip` and `axes.x.tickMarkSkip` fields thin out a
 crowded category axis (`<c:catAx><c:tickLblSkip val=".."/>` and
 `<c:catAx><c:tickMarkSkip val=".."/>`). Pass a positive integer to
