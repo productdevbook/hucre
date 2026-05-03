@@ -16,6 +16,7 @@ import type {
   ChartLineStroke,
   ChartMarker,
   ChartMarkerSymbol,
+  ChartScatterStyle,
   ChartSeries,
   SheetChart,
   WriteChartKind,
@@ -687,7 +688,7 @@ function clampHoleSize(value: number | undefined): number {
 
 function buildScatterChart(chart: SheetChart, sheetName: string): string {
   const children: string[] = [
-    xmlSelfClose("c:scatterStyle", { val: "lineMarker" }),
+    xmlSelfClose("c:scatterStyle", { val: resolveScatterStyle(chart) }),
     xmlSelfClose("c:varyColors", { val: resolveVaryColors(chart) ? 1 : 0 }),
   ];
 
@@ -1290,6 +1291,40 @@ const VARY_COLORS_DEFAULT_TRUE_TYPES: ReadonlySet<WriteChartKind> = new Set(["pi
 function resolveVaryColors(chart: SheetChart): boolean {
   if (typeof chart.varyColors === "boolean") return chart.varyColors;
   return VARY_COLORS_DEFAULT_TRUE_TYPES.has(chart.type);
+}
+
+// ── Scatter Style ────────────────────────────────────────────────────
+
+/**
+ * Recognized values of `<c:scatterStyle>` per the OOXML
+ * `ST_ScatterStyle` enumeration. Used to validate
+ * `chart.scatterStyle` before it lands in the rendered XML.
+ */
+const SCATTER_STYLE_VALUES: ReadonlySet<ChartScatterStyle> = new Set([
+  "none",
+  "line",
+  "lineMarker",
+  "marker",
+  "smooth",
+  "smoothMarker",
+]);
+
+/**
+ * Resolve the `<c:scatterStyle>` value emitted on `<c:scatterChart>`.
+ *
+ * Defaults to `"lineMarker"` — Excel's chart-picker default and the
+ * shape every existing scatter chart hucre writes uses. An explicit
+ * `chart.scatterStyle` always wins; values outside the OOXML enum drop
+ * back to the default rather than emit a token Excel would reject.
+ *
+ * The element is always emitted on `<c:scatterChart>` because the
+ * OOXML schema lists it as required there — omitting it would produce
+ * an invalid chart document Excel refuses to open.
+ */
+function resolveScatterStyle(chart: SheetChart): ChartScatterStyle {
+  const raw = chart.scatterStyle;
+  if (raw && SCATTER_STYLE_VALUES.has(raw)) return raw;
+  return "lineMarker";
 }
 
 // ── Reference qualification ──────────────────────────────────────────

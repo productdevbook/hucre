@@ -29,6 +29,7 @@ import type {
   ChartLineStroke,
   ChartMarker,
   ChartMarkerSymbol,
+  ChartScatterStyle,
   ChartSeriesInfo,
 } from "../_types";
 import { parseXml } from "../xml/parser";
@@ -89,6 +90,7 @@ export function parseChart(xml: string): Chart | undefined {
     let overlap: number | undefined;
     let firstSliceAng: number | undefined;
     let varyColors: boolean | undefined;
+    let scatterStyle: ChartScatterStyle | undefined;
     for (const child of childElements(plotArea)) {
       const kind = CHART_KIND_TAGS.get(child.local);
       if (!kind) continue;
@@ -148,6 +150,14 @@ export function parseChart(xml: string): Chart | undefined {
       ) {
         firstSliceAng = parseFirstSliceAng(child);
       }
+      // `<c:scatterStyle>` lives exclusively on `<c:scatterChart>` per
+      // the OOXML schema, so the lookup is gated on the matching kind.
+      // The element is required there, but a corrupt template may omit
+      // it or carry a token outside the enum — `parseScatterStyle`
+      // returns `undefined` in both cases.
+      if (scatterStyle === undefined && kind === "scatter") {
+        scatterStyle = parseScatterStyle(child);
+      }
       let localIndex = 0;
       for (const ser of childElements(child)) {
         if (ser.local !== "ser") continue;
@@ -178,6 +188,7 @@ export function parseChart(xml: string): Chart | undefined {
     if (overlap !== undefined) out.overlap = overlap;
     if (firstSliceAng !== undefined) out.firstSliceAng = firstSliceAng;
     if (varyColors !== undefined) out.varyColors = varyColors;
+    if (scatterStyle !== undefined) out.scatterStyle = scatterStyle;
 
     const axes = parseAxes(plotArea);
     if (axes !== undefined) out.axes = axes;
@@ -941,6 +952,49 @@ function parseVaryColors(chartTypeEl: XmlElement, kind: ChartKind): boolean | un
   // round-trip identically.
   if (parsed === familyDefaultsTrue) return undefined;
   return parsed;
+}
+
+// ── Scatter Style ─────────────────────────────────────────────────
+
+/**
+ * Recognized values of `<c:scatterStyle>` per the OOXML
+ * `ST_ScatterStyle` enumeration. Tokens outside the set drop to
+ * `undefined` so a corrupt template does not surface a string Excel
+ * would not emit.
+ */
+const VALID_SCATTER_STYLES: ReadonlySet<ChartScatterStyle> = new Set([
+  "none",
+  "line",
+  "lineMarker",
+  "marker",
+  "smooth",
+  "smoothMarker",
+]);
+
+/**
+ * Pull `<c:scatterStyle val=".."/>` off a `<c:scatterChart>` element.
+ *
+ * The OOXML schema lists the element as required on `<c:scatterChart>`
+ * but tolerates absence in practice — Excel falls back to `"marker"`
+ * (the schema default per CT_ScatterStyle) when the file omits it.
+ * The reader does not pin a default of its own: every literal value
+ * in {@link VALID_SCATTER_STYLES} surfaces as-is so a clone preserves
+ * the exact preset the template authored. Missing elements, missing
+ * `val` attributes, and tokens outside the enum drop to `undefined`.
+ *
+ * Note that the writer's default is `"lineMarker"` (Excel's chart-
+ * picker default and what every fresh hucre scatter chart emits today),
+ * which differs from the OOXML schema default of `"marker"`. The
+ * asymmetry is intentional — writing `"lineMarker"` matches Excel's
+ * UI default; not collapsing it on read keeps the round-trip exact.
+ */
+function parseScatterStyle(scatterChart: XmlElement): ChartScatterStyle | undefined {
+  const el = findChild(scatterChart, "scatterStyle");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  if (!VALID_SCATTER_STYLES.has(raw as ChartScatterStyle)) return undefined;
+  return raw as ChartScatterStyle;
 }
 
 // ── Bar Grouping ──────────────────────────────────────────────────

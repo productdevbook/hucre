@@ -740,6 +740,39 @@ export interface ChartMarker {
 export type ChartDisplayBlanksAs = "gap" | "zero" | "span";
 
 /**
+ * Scatter sub-style applied at the chart level. Maps to the OOXML
+ * `ST_ScatterStyle` enum which sits inside `<c:scatterChart>` as
+ * `<c:scatterStyle val=".."/>`. Excel exposes the same six presets
+ * under "Change Chart Type → XY (Scatter)":
+ *
+ * - `"none"`         — markers only, no connecting line and no curves.
+ *                      Equivalent to `"marker"` in modern Excel UI.
+ * - `"line"`         — straight-line segments between points, no markers.
+ * - `"lineMarker"`   — straight-line segments with markers (Excel's
+ *                      reference default and the writer's fallback).
+ * - `"marker"`       — markers only, no line. Same render as `"none"`;
+ *                      OOXML lists both for legacy compatibility.
+ * - `"smooth"`       — smoothed (Catmull-Rom-style) curves between
+ *                      points, no markers.
+ * - `"smoothMarker"` — smoothed curves with markers.
+ *
+ * Distinct from the per-series {@link ChartSeries.smooth} flag — the
+ * series-level toggle paints individual points, while `scatterStyle`
+ * is the chart-wide preset Excel selects in the chart-type picker.
+ * When both are set, the OOXML schema lets Excel render the union
+ * (smooth chart with the series-level smooth still emitted), but
+ * Excel's UI normally pairs them: `scatterStyle: "smooth"` implies
+ * smoothed series, `scatterStyle: "lineMarker"` implies straight ones.
+ */
+export type ChartScatterStyle =
+  | "none"
+  | "line"
+  | "lineMarker"
+  | "marker"
+  | "smooth"
+  | "smoothMarker";
+
+/**
  * A single data series inside a chart.
  *
  * `values` and `categories` are A1-style cell range references.
@@ -945,6 +978,22 @@ export interface SheetChart {
    * writer.
    */
   varyColors?: boolean;
+  /**
+   * Scatter sub-style for `scatter` charts. Maps to
+   * `<c:scatterChart><c:scatterStyle val=".."/></c:scatterChart>`.
+   * Default: `"lineMarker"` (Excel's chart-picker default — straight
+   * lines with markers). Pass `"smooth"` for Excel's "Scatter with
+   * Smooth Lines", `"marker"` / `"none"` for "Scatter with Only
+   * Markers", `"line"` for "Scatter with Straight Lines", and
+   * `"smoothMarker"` for "Scatter with Smooth Lines and Markers". See
+   * {@link ChartScatterStyle} for the full preset list.
+   *
+   * Ignored for every other chart kind — the OOXML schema places
+   * `<c:scatterStyle>` exclusively on `<c:scatterChart>`. Use the
+   * per-series {@link ChartSeries.smooth} flag to pick a curve on a
+   * line chart or pin smoothing on individual scatter series.
+   */
+  scatterStyle?: ChartScatterStyle;
   /**
    * Per-axis configuration rendered alongside the plot area. The `x`
    * axis is the category axis for bar/column/line/area (or the bottom
@@ -1979,6 +2028,21 @@ export interface Chart {
    * (`surface`, `surface3D`, `stock`).
    */
   varyColors?: boolean;
+  /**
+   * Scatter sub-style pulled from `<c:scatterChart><c:scatterStyle
+   * val=".."/></c:scatterChart>`. Reflects which of Excel's six XY
+   * scatter presets the chart was authored with — `"none"`, `"line"`,
+   * `"lineMarker"`, `"marker"`, `"smooth"`, or `"smoothMarker"`. The
+   * OOXML default `"marker"` collapses to `undefined` (Excel's reference
+   * serialization actually emits `"lineMarker"` even at the UI default,
+   * so the reader does not pin a default of its own — both `"marker"`
+   * and `"lineMarker"` surface literally so a clone preserves what the
+   * template said).
+   *
+   * Omitted on every chart family except `scatter`; the OOXML schema
+   * places `<c:scatterStyle>` exclusively on `<c:scatterChart>`.
+   */
+  scatterStyle?: ChartScatterStyle;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────

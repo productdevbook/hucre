@@ -2656,3 +2656,139 @@ describe("cloneChart — varyColors", () => {
     expect(reparsed?.varyColors).toBe(false);
   });
 });
+
+// ── cloneChart — scatterStyle ─────────────────────────────────────
+
+describe("cloneChart — scatterStyle", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["scatter"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "scatter",
+          index: 0,
+          name: "Trend",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's scatterStyle by default", () => {
+    const clone = cloneChart(source({ scatterStyle: "smooth" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.type).toBe("scatter");
+    expect(clone.scatterStyle).toBe("smooth");
+  });
+
+  it("lets options.scatterStyle override the source's value", () => {
+    const clone = cloneChart(source({ scatterStyle: "smooth" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      scatterStyle: "lineMarker",
+    });
+    expect(clone.scatterStyle).toBe("lineMarker");
+  });
+
+  it("drops the inherited scatterStyle when the override is null", () => {
+    // null collapses to the writer's default (`lineMarker`) — the
+    // field disappears from the resolved SheetChart so the writer
+    // emits the family default rather than the inherited preset.
+    const clone = cloneChart(source({ scatterStyle: "smooth" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      scatterStyle: null,
+    });
+    expect(clone.scatterStyle).toBeUndefined();
+  });
+
+  it("returns undefined scatterStyle when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.scatterStyle).toBeUndefined();
+  });
+
+  it("drops inherited scatterStyle when the resolved type is not scatter", () => {
+    // <c:scatterStyle> is valid only inside <c:scatterChart>; flattening
+    // a scatter template into a line clone drops the field so it does
+    // not leak into a chart kind whose schema rejects it.
+    const clone = cloneChart(source({ scatterStyle: "smooth" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "line",
+    });
+    expect(clone.type).toBe("line");
+    expect(clone.scatterStyle).toBeUndefined();
+  });
+
+  it("drops scatterStyle from explicit options when the resolved type is not scatter", () => {
+    // Symmetric to the inherit-and-drop case — even an explicit
+    // override must not leak into a non-scatter target.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+      scatterStyle: "smooth",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.scatterStyle).toBeUndefined();
+  });
+
+  it("propagates scatterStyle into the rendered chart through writeXlsx", async () => {
+    // Round-trip: a parsed scatter template carrying scatterStyle="smooth"
+    // clones into a SheetChart whose writer emits `<c:scatterStyle val="smooth"/>`
+    // on the `<c:scatterChart>` body. Re-parsing returns the same value.
+    const clone = cloneChart(source({ scatterStyle: "smoothMarker" }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:scatterStyle val="smoothMarker"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.scatterStyle).toBe("smoothMarker");
+  });
+
+  it("an explicit override beats the source value through writeXlsx", async () => {
+    // Source pins "smooth", clone overrides to "marker" — the rendered
+    // chart should carry the override and re-parse to it.
+    const clone = cloneChart(source({ scatterStyle: "smooth" }), {
+      anchor: { from: { row: 5, col: 0 } },
+      scatterStyle: "marker",
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:scatterStyle val="marker"');
+    expect(written).not.toContain('c:scatterStyle val="smooth"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.scatterStyle).toBe("marker");
+  });
+});
