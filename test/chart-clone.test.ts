@@ -8323,6 +8323,248 @@ describe("cloneChart — showLineMarkers", () => {
   });
 });
 
+// ── cloneChart — legend entries ──────────────────────────────────────
+
+describe("cloneChart — legendEntries", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["bar"],
+      seriesCount: 2,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          name: "Q1",
+          valuesRef: "Tpl!$B$2:$B$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+        },
+        {
+          kind: "bar",
+          index: 1,
+          name: "Q2",
+          valuesRef: "Tpl!$C$2:$C$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+        },
+      ],
+      legend: "right",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's legendEntries by default", () => {
+    const clone = cloneChart(source({ legendEntries: [{ idx: 1, delete: true }] }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.legendEntries).toEqual([{ idx: 1, delete: true }]);
+  });
+
+  it("returns a fresh copy of the inherited list (no shared reference)", () => {
+    // Mutating the cloned list must not leak into the parsed Chart
+    // the caller passed in. The clone-through must defensively copy
+    // both the array and each entry.
+    const sourceEntries = [{ idx: 1, delete: true }];
+    const sourceChart = source({ legendEntries: sourceEntries });
+    const clone = cloneChart(sourceChart, { anchor: { from: { row: 0, col: 0 } } });
+    clone.legendEntries!.push({ idx: 0, delete: true });
+    expect(sourceEntries).toHaveLength(1);
+    expect(sourceChart.legendEntries).toEqual([{ idx: 1, delete: true }]);
+  });
+
+  it("lets options.legendEntries replace the inherited list outright", () => {
+    const clone = cloneChart(source({ legendEntries: [{ idx: 0, delete: true }] }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendEntries: [
+        { idx: 0, delete: false },
+        { idx: 1, delete: true },
+      ],
+    });
+    expect(clone.legendEntries).toEqual([
+      { idx: 0, delete: false },
+      { idx: 1, delete: true },
+    ]);
+  });
+
+  it("drops the inherited list when the override is null", () => {
+    const clone = cloneChart(source({ legendEntries: [{ idx: 1, delete: true }] }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendEntries: null,
+    });
+    expect(clone.legendEntries).toBeUndefined();
+  });
+
+  it("collapses an empty-array override to undefined (matches null semantics)", () => {
+    // Empty arrays carry no information and the writer skips emission
+    // for them anyway; the clone-through normalizes to undefined so
+    // downstream code doesn't have to special-case both shapes.
+    const clone = cloneChart(source({ legendEntries: [{ idx: 1, delete: true }] }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendEntries: [],
+    });
+    expect(clone.legendEntries).toBeUndefined();
+  });
+
+  it("returns undefined legendEntries when neither source nor override sets them", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.legendEntries).toBeUndefined();
+  });
+
+  it("collapses an empty source list to undefined on inherit", () => {
+    // Defensive: even if the source carries an empty array (e.g. from a
+    // hand-built Chart object), the clone-through normalizes to
+    // undefined so the writer stays in sync with the omit-default
+    // serialization.
+    const clone = cloneChart(source({ legendEntries: [] }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.legendEntries).toBeUndefined();
+  });
+
+  it("lets the override pin legendEntries when the source declares none", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendEntries: [{ idx: 0, delete: true }],
+    });
+    expect(clone.legendEntries).toEqual([{ idx: 0, delete: true }]);
+  });
+
+  it("carries legendEntries through a flatten (bar -> column)", () => {
+    const clone = cloneChart(source({ legendEntries: [{ idx: 1, delete: true }] }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.legendEntries).toEqual([{ idx: 1, delete: true }]);
+  });
+
+  it("carries legendEntries through every flatten (line / pie / area / scatter)", () => {
+    // The flag has no chart-family restriction — every chart kind that
+    // emits a legend renders entries the same way.
+    for (const type of ["line", "pie", "doughnut", "area"] as const) {
+      const clone = cloneChart(source({ legendEntries: [{ idx: 0, delete: true }] }), {
+        anchor: { from: { row: 0, col: 0 } },
+        type,
+      });
+      expect(clone.type).toBe(type);
+      expect(clone.legendEntries).toEqual([{ idx: 0, delete: true }]);
+    }
+    const scatter = cloneChart(source({ legendEntries: [{ idx: 0, delete: true }] }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "scatter",
+      series: [{ values: "Sheet1!$B$2:$B$5", categories: "Sheet1!$A$2:$A$5" }],
+    });
+    expect(scatter.type).toBe("scatter");
+    expect(scatter.legendEntries).toEqual([{ idx: 0, delete: true }]);
+  });
+
+  it("drops the inherited legendEntries when the resolved legend is hidden", () => {
+    // legend === false suppresses the entire <c:legend> element on the
+    // writer side, so inherited entries would never render. The clone
+    // collapses the field to keep the SheetChart honest.
+    const clone = cloneChart(source({ legendEntries: [{ idx: 0, delete: true }] }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendEntries).toBeUndefined();
+  });
+
+  it("drops an explicit legendEntries override when the resolved legend is hidden", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+      legendEntries: [{ idx: 0, delete: true }],
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendEntries).toBeUndefined();
+  });
+
+  it("retains an explicit override when the override re-enables a hidden source legend", () => {
+    const clone = cloneChart(source({ legend: false, legendEntries: [{ idx: 0, delete: true }] }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: "top",
+      legendEntries: [{ idx: 1, delete: true }],
+    });
+    expect(clone.legend).toBe("top");
+    expect(clone.legendEntries).toEqual([{ idx: 1, delete: true }]);
+  });
+
+  it("composes legendEntries alongside legendOverlay on the same clone", () => {
+    const clone = cloneChart(
+      source({ legendEntries: [{ idx: 1, delete: true }], legendOverlay: true }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.legendOverlay).toBe(true);
+    expect(clone.legendEntries).toEqual([{ idx: 1, delete: true }]);
+  });
+
+  it("end-to-end: parseChart -> cloneChart -> writeChart preserves the entries", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:ser>
+          <c:idx val="1"/>
+          <c:val><c:numRef><c:f>Tpl!$C$2:$C$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:legendEntry><c:idx val="1"/><c:delete val="1"/></c:legendEntry>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.legendEntries).toEqual([{ idx: 1, delete: true }]);
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(sheetChart.legendEntries).toEqual([{ idx: 1, delete: true }]);
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    expect(written).toContain('<c:legendEntry><c:idx val="1"/><c:delete val="1"/></c:legendEntry>');
+    const reparsed = parseChart(written);
+    expect(reparsed?.legendEntries).toEqual([{ idx: 1, delete: true }]);
+  });
+
+  it("end-to-end: writeXlsx packages the cloned chart with the entries intact", async () => {
+    const clone = cloneChart(source({ legendEntries: [{ idx: 1, delete: true }] }), {
+      anchor: { from: { row: 5, col: 0 } },
+      type: "column",
+      series: [
+        { name: "Q1", values: "Sheet1!$B$2:$B$3", categories: "Sheet1!$A$2:$A$3" },
+        { name: "Q2", values: "Sheet1!$C$2:$C$3", categories: "Sheet1!$A$2:$A$3" },
+      ],
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Region", "Q1", "Q2"],
+            ["North", 100, 120],
+            ["South", 200, 180],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('<c:legendEntry><c:idx val="1"/><c:delete val="1"/></c:legendEntry>');
+  });
+});
+
 // ── cloneChart — autoTitleDeleted ───────────────────────────────────
 
 describe("cloneChart — autoTitleDeleted", () => {
