@@ -1188,6 +1188,36 @@ export interface SheetChart {
    */
   lang?: string;
   /**
+   * Date-system hint. Maps to `<c:date1904 val=".."/>` on
+   * `<c:chartSpace>` (a sibling of `<c:chart>`, not a child). The flag
+   * mirrors the host workbook's `<workbookPr date1904="1"/>` toggle —
+   * `true` means the chart's date-axis values are interpreted under
+   * the 1904 base (Excel for Mac's legacy epoch where day 0 falls on
+   * 1904-01-01); `false` (the OOXML default) is the 1900 base.
+   *
+   * Default: omitted — when the field is absent the writer skips the
+   * element entirely and Excel falls back to the workbook's date
+   * system. Excel itself emits `<c:date1904 val="0"/>` on every
+   * authored chart even under the 1900 base; the writer does not pin
+   * that default so an unmarked chart re-parses to `undefined` (the
+   * minimal-shape contract every other chart-space toggle follows).
+   *
+   * Useful when restamping a chart from a 1904-based template into a
+   * 1900-based workbook (or vice versa) — pinning the field keeps the
+   * chart's date references anchored to the source's epoch even after
+   * the host changes. The value is emitted as `<c:date1904 val="1"/>`
+   * for `true` and skipped (rather than `val="0"`) for `false` so the
+   * writer's behavior matches absence — a re-parse drops the default
+   * back to `undefined` either way.
+   *
+   * Note: `<c:date1904>` lives on `<c:chartSpace>` (per CT_ChartSpace
+   * the element sits at the head of the sequence, before `<c:lang>`
+   * and `<c:roundedCorners>`), not inside `<c:chart>` — the toggle
+   * governs date interpretation across the whole chart document, not
+   * just the plot area.
+   */
+  date1904?: boolean;
+  /**
    * Per-axis configuration rendered alongside the plot area. The `x`
    * axis is the category axis for bar/column/line/area (or the bottom
    * value axis for scatter); the `y` axis is the value axis. Ignored
@@ -3037,6 +3067,39 @@ export interface Chart {
    * document, not just the plot area.
    */
   lang?: string;
+  /**
+   * Date-system flag pulled from `<c:chartSpace><c:date1904 val=".."/>`.
+   * Mirrors the host workbook's `<workbookPr date1904="1"/>` toggle —
+   * `true` signals that date-axis values inside the chart are
+   * interpreted under the 1904 base (Excel for Mac's legacy epoch
+   * where day 0 falls on 1904-01-01); the OOXML default `false` is
+   * the 1900 base.
+   *
+   * Surfaces `true` only when the chart pinned `<c:date1904 val="1"/>`
+   * (the non-default state). The default `val="0"` and absence both
+   * collapse to `undefined` so absence and the default round-trip
+   * identically through {@link cloneChart}. The reader accepts the
+   * OOXML truthy / falsy spellings (`"1"` / `"true"` / `"0"` /
+   * `"false"`); unknown values and missing `val` attributes drop to
+   * `undefined`.
+   *
+   * Useful when copying a chart authored on Excel for Mac (or any
+   * 1904-based template) into a 1900-based workbook — pinning the
+   * flag keeps the chart's date references anchored to the source's
+   * epoch instead of silently shifting by 1462 days when the host
+   * date system flips. Excel's reference serialization for a fresh
+   * chart authored on a 1900-based workbook emits `<c:date1904
+   * val="0"/>`, but a chart that omits the element renders identically;
+   * surfacing only the non-default value preserves the minimal-shape
+   * contract the rest of {@link Chart} follows.
+   *
+   * Note: `<c:date1904>` lives on `<c:chartSpace>` (per CT_ChartSpace
+   * the element sits at the head of the sequence, before `<c:lang>`
+   * and `<c:roundedCorners>`), not inside `<c:chart>` — the toggle
+   * governs date interpretation across the whole chart document, not
+   * just the plot area.
+   */
+  date1904?: boolean;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────

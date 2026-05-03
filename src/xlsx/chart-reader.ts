@@ -288,6 +288,14 @@ export function parseChart(xml: string): Chart | undefined {
   const lang = parseLang(chartSpace);
   if (lang !== undefined) out.lang = lang;
 
+  // `<c:date1904>` mirrors the host workbook's date-system toggle for
+  // chart date-axis interpretation. It sits at the head of
+  // `<c:chartSpace>` (per CT_ChartSpace, before `<c:lang>` and
+  // `<c:roundedCorners>`), not inside `<c:chart>` — the toggle governs
+  // date interpretation across the whole chart document.
+  const date1904 = parseDate1904(chartSpace);
+  if (date1904 !== undefined) out.date1904 = date1904;
+
   return out;
 }
 
@@ -1711,6 +1719,46 @@ function parseLang(chartSpace: XmlElement): string | undefined {
   // raw garbage like `"english"` or `"en US"`.
   if (!/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(raw)) return undefined;
   return raw;
+}
+
+// ── Date System ────────────────────────────────────────────────────
+
+/**
+ * Pull `<c:date1904 val=".."/>` off `<c:chartSpace>`. Surfaces `true`
+ * only when the chart pinned `<c:date1904 val="1"/>` (the non-default
+ * state — date-axis values inside the chart use the 1904 base, Excel
+ * for Mac's legacy epoch where day 0 falls on 1904-01-01). The OOXML
+ * default `val="0"` and absence both collapse to `undefined` so
+ * absence and the default round-trip identically through
+ * {@link cloneChart}.
+ *
+ * Accepts the OOXML truthy / falsy spellings (`"1"` / `"true"` /
+ * `"0"` / `"false"`); unknown values and missing `val` attributes drop
+ * to `undefined` rather than fabricate a flag Excel would not emit.
+ *
+ * Note: `<c:date1904>` lives on `<c:chartSpace>` (per CT_ChartSpace
+ * the element sits at the head of the sequence, before `<c:lang>`
+ * and `<c:roundedCorners>`), not inside `<c:chart>` — the toggle
+ * governs date interpretation across the whole chart document, not
+ * just the plot area.
+ */
+function parseDate1904(chartSpace: XmlElement): boolean | undefined {
+  const el = findChild(chartSpace, "date1904");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  switch (raw) {
+    case "1":
+    case "true":
+      return true;
+    case "0":
+    case "false":
+      // OOXML default — collapse to undefined for symmetry with the
+      // writer's `date1904` field.
+      return undefined;
+    default:
+      return undefined;
+  }
 }
 
 // ── Vary Colors ────────────────────────────────────────────────────
