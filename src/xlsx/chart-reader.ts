@@ -717,6 +717,17 @@ function parseSeries(ser: XmlElement, kind: ChartKind, index: number): ChartSeri
     if (invertIfNegative !== undefined) out.invertIfNegative = invertIfNegative;
   }
 
+  // `<c:explosion>` lives on `CT_PieSer` only — the OOXML schema
+  // shares the type across every pie-family chart (`<c:pieChart>`,
+  // `<c:pie3DChart>`, `<c:doughnutChart>`, `<c:ofPieChart>`) so
+  // surface the value for any of those kinds. A stray element on a
+  // bar / line / area / scatter template is dropped rather than
+  // surfaced — the writer would never emit it back anyway.
+  if (kind === "pie" || kind === "pie3D" || kind === "doughnut" || kind === "ofPie") {
+    const explosion = parseExplosion(ser);
+    if (explosion !== undefined) out.explosion = explosion;
+  }
+
   return out;
 }
 
@@ -748,6 +759,29 @@ function parseInvertIfNegative(ser: XmlElement): boolean | undefined {
   const v = readBoolAttr(el);
   if (v !== true) return undefined;
   return true;
+}
+
+/**
+ * Pull `<c:explosion val=".."/>` off a pie / doughnut series element.
+ * The element's `val` attribute is `xsd:unsignedInt` per the OOXML
+ * schema (CT_UnsignedInt) — the slice is pulled away from the chart
+ * center by `val` percent of the radius. Returns `undefined` when the
+ * attribute is absent, malformed, negative, or carries the OOXML
+ * default `0` — absence and `0` round-trip identically through the
+ * writer's elision logic, so collapsing them keeps the parsed shape
+ * minimal. Non-integer input rounds to the nearest integer for parity
+ * with the writer (Excel's UI accepts integer percentages only).
+ */
+function parseExplosion(ser: XmlElement): number | undefined {
+  const el = findChild(ser, "explosion");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  const n = Number.parseFloat(raw);
+  if (!Number.isFinite(n) || n < 0) return undefined;
+  const rounded = Math.round(n);
+  if (rounded === 0) return undefined;
+  return rounded;
 }
 
 // ── Marker ────────────────────────────────────────────────────────

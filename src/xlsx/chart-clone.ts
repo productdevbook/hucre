@@ -93,6 +93,16 @@ export interface CloneChartSeriesOverride {
    * resolved chart type is anything else.
    */
   invertIfNegative?: boolean | null;
+  /**
+   * Slice-explosion override (in percent of the radius). `undefined`
+   * (or omitted) inherits the source series' `explosion`; `null` drops
+   * the inherited value (the cloned series falls back to the OOXML
+   * default `0`); a finite `number` replaces it wholesale (clamped to
+   * the 0..400% band Excel's UI exposes; `0` collapses to absence).
+   * Only meaningful for `pie` and `doughnut` clones — silently dropped
+   * from the output when the resolved chart type is anything else.
+   */
+  explosion?: number | null;
 }
 
 /**
@@ -414,6 +424,17 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     }
   }
 
+  // `<c:explosion>` lives exclusively on pie-family series (CT_PieSer,
+  // shared across `<c:pieChart>` / `<c:doughnutChart>` via EG_PieSer);
+  // drop the field from every other resolved type so a pie → bar
+  // flatten (or any other coercion) does not leak the value into a
+  // chart kind whose schema rejects it.
+  if (type !== "pie" && type !== "doughnut") {
+    for (const s of series) {
+      if (s.explosion !== undefined) delete s.explosion;
+    }
+  }
+
   if (series.length === 0) {
     throw new Error(
       "cloneChart: produced 0 series; pass `series` or ensure the source has at least one series with a valuesRef",
@@ -666,6 +687,9 @@ function mergeSeries(
   const invertIfNegative = resolveInvertIfNegative(src?.invertIfNegative, ov?.invertIfNegative);
   if (invertIfNegative !== undefined) out.invertIfNegative = invertIfNegative;
 
+  const explosion = resolveExplosion(src?.explosion, ov?.explosion);
+  if (explosion !== undefined) out.explosion = explosion;
+
   return out;
 }
 
@@ -744,6 +768,36 @@ function resolveInvertIfNegative(
   }
   if (override === null) return undefined;
   return override === true ? true : undefined;
+}
+
+/**
+ * Resolve a per-series slice-explosion override.
+ *
+ * `undefined` → inherit the source series' `explosion`.
+ * `null`      → drop the inherited value (the cloned series renders
+ *               flush against its neighbors).
+ * `number`    → replace.
+ *
+ * Non-finite or non-positive numbers (and the OOXML default `0`)
+ * collapse to `undefined` so absence and the default round-trip
+ * identically through the writer's elision logic. Out-of-band values
+ * (the writer also clamps) are passed through here — the writer
+ * applies the final `0..400` clamp at emit time so a parsed-then-cloned
+ * value remains visible on the resulting `SheetChart` object.
+ */
+function resolveExplosion(
+  sourceValue: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) {
+    if (sourceValue === undefined || !Number.isFinite(sourceValue) || sourceValue <= 0) {
+      return undefined;
+    }
+    return sourceValue;
+  }
+  if (override === null) return undefined;
+  if (!Number.isFinite(override) || override <= 0) return undefined;
+  return override;
 }
 
 /**

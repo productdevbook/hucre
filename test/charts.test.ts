@@ -3277,6 +3277,199 @@ describe("parseChart — series invertIfNegative flag", () => {
   });
 });
 
+// ── parseChart — series explosion (pie / doughnut) ────────────────
+
+describe("parseChart — series explosion", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces explosion=25 on a <c:pieChart> series with <c:explosion val="25"/>', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:pieChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:explosion val="25"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].explosion).toBe(25);
+  });
+
+  it('surfaces explosion on a <c:doughnutChart> series with <c:explosion val="50"/>', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:doughnutChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:explosion val="50"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+      <c:holeSize val="50"/>
+    </c:doughnutChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].explosion).toBe(50);
+  });
+
+  it("collapses the OOXML default explosion=0 to undefined", () => {
+    // Absence of <c:explosion> and `<c:explosion val="0"/>` round-trip
+    // identically through the writer's elision logic, so the parser
+    // collapses both to undefined to keep the read-side shape minimal.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:pieChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:explosion val="0"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].explosion).toBeUndefined();
+  });
+
+  it("returns explosion undefined when <c:explosion> is absent", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:pieChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].explosion).toBeUndefined();
+  });
+
+  it("rounds non-integer explosion values to the nearest integer", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:pieChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:explosion val="33.6"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].explosion).toBe(34);
+  });
+
+  it("rejects malformed or negative explosion values", () => {
+    const cases = ["bogus", "-50", "NaN", "Infinity", ""];
+    for (const val of cases) {
+      const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:pieChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:explosion val="${val}"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+      expect(parseChart(xml)?.series?.[0].explosion).toBeUndefined();
+    }
+  });
+
+  it("returns explosion undefined when val attribute is missing", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:pieChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:explosion/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].explosion).toBeUndefined();
+  });
+
+  it("ignores <c:explosion> on chart families whose schema rejects the element", () => {
+    // The OOXML schema places <c:explosion> only on CT_PieSer (shared
+    // across the pie family). A bar/line/area/scatter template carrying
+    // a stray explosion element should not surface a value the writer
+    // would never emit anyway.
+    const cases = ["barChart", "lineChart", "areaChart", "scatterChart"] as const;
+    for (const tag of cases) {
+      const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:${tag}>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:explosion val="50"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:${tag}>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+      expect(parseChart(xml)?.series?.[0].explosion).toBeUndefined();
+    }
+  });
+
+  it("surfaces explosion per-series independently across multi-series doughnut charts", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:doughnutChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:explosion val="25"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+      <c:ser>
+        <c:idx val="1"/>
+        <c:val><c:numRef><c:f>Sheet1!$C$2:$C$5</c:f></c:numRef></c:val>
+      </c:ser>
+      <c:ser>
+        <c:idx val="2"/>
+        <c:explosion val="75"/>
+        <c:val><c:numRef><c:f>Sheet1!$D$2:$D$5</c:f></c:numRef></c:val>
+      </c:ser>
+      <c:holeSize val="50"/>
+    </c:doughnutChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series).toHaveLength(3);
+    expect(chart?.series?.[0].explosion).toBe(25);
+    expect(chart?.series?.[1].explosion).toBeUndefined();
+    expect(chart?.series?.[2].explosion).toBe(75);
+  });
+
+  it("surfaces explosion on <c:pie3DChart> and <c:ofPieChart> series", () => {
+    // CT_Pie3DSer / CT_OfPieSer share CT_PieSer through EG_PieSer, so
+    // the parser should accept <c:explosion> on both flavors.
+    for (const tag of ["pie3DChart", "ofPieChart"] as const) {
+      const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:${tag}>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:explosion val="40"/>
+        <c:val><c:numRef><c:f>Sheet1!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:${tag}>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+      expect(parseChart(xml)?.series?.[0].explosion).toBe(40);
+    }
+  });
+});
+
 // ── parseChart — axis tick marks and tick label position ──────────
 
 describe("parseChart — axis tick marks and tick label position", () => {

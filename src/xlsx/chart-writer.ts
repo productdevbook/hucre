@@ -815,6 +815,7 @@ function buildPieChart(chart: SheetChart, sheetName: string): string {
     children.push(
       buildSeries(chart.series[0], 0, sheetName, /* numericCategories */ false, {
         dataLabels: chart.dataLabels,
+        explosion: chart.series[0].explosion,
       }),
     );
   }
@@ -851,6 +852,7 @@ function buildDoughnutChart(chart: SheetChart, sheetName: string): string {
     children.push(
       buildSeries(chart.series[i], i, sheetName, /* numericCategories */ false, {
         dataLabels: chart.dataLabels,
+        explosion: chart.series[i].explosion,
       }),
     );
   }
@@ -904,6 +906,29 @@ function clampHoleSize(value: number | undefined): number {
   const rounded = Math.round(value);
   if (rounded < DOUGHNUT_HOLE_MIN) return DOUGHNUT_HOLE_MIN;
   if (rounded > DOUGHNUT_HOLE_MAX) return DOUGHNUT_HOLE_MAX;
+  return rounded;
+}
+
+const EXPLOSION_MAX = 400;
+
+/**
+ * Normalize {@link ChartSeries.explosion} for emission inside
+ * `<c:explosion val=".."/>` on a pie / doughnut series.
+ *
+ * The OOXML schema (`CT_UnsignedInt`) accepts any non-negative integer,
+ * but Excel's UI only exposes 0..400% — values outside that band render
+ * but trigger Excel's repair dialog. Clamp to the UI band on the way
+ * out so a round-trip stays inside the range Excel will render.
+ *
+ * Returns `undefined` for the default `0` (and any negative / non-finite
+ * input) so the writer can elide the element entirely; absence and `0`
+ * round-trip identically through the parser's collapse logic.
+ */
+function clampExplosion(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  const rounded = Math.round(value);
+  if (rounded <= 0) return undefined;
+  if (rounded > EXPLOSION_MAX) return EXPLOSION_MAX;
   return rounded;
 }
 
@@ -1051,6 +1076,15 @@ interface SeriesOptions {
    * identically.
    */
   invertIfNegative?: boolean;
+  /**
+   * Per-series slice explosion (percentage of the radius). Only
+   * meaningful for pie / doughnut series — every other family ignores
+   * the field. The OOXML schema places `<c:explosion>` between
+   * `<c:spPr>` and `<c:dPt>` / `<c:dLbls>` on `CT_PieSer`. The element
+   * is only emitted when the resolved value is `> 0` — `0` is the OOXML
+   * default and absence round-trips identically.
+   */
+  explosion?: number;
 }
 
 function buildSeries(
@@ -1099,6 +1133,18 @@ function buildSeries(
   // matches the OOXML default and absence round-trips identically.
   if (options?.invertIfNegative === true) {
     children.push(xmlSelfClose("c:invertIfNegative", { val: 1 }));
+  }
+
+  // `<c:explosion>` — only pie / doughnut (CT_PieSer, shared across
+  // the pie family via `EG_PieSer`) series carry the element per the
+  // OOXML schema. It sits between `<c:spPr>` and `<c:dPt>` / `<c:dLbls>`.
+  // Non-pie callers leave `options.explosion` undefined so the field
+  // is silently dropped on every other chart family. Emit only when
+  // the resolved value is non-zero — `0` matches the OOXML default and
+  // absence round-trips identically.
+  const explosion = clampExplosion(options?.explosion);
+  if (explosion !== undefined) {
+    children.push(xmlSelfClose("c:explosion", { val: explosion }));
   }
 
   // Data labels — series-level override always wins over the chart-level

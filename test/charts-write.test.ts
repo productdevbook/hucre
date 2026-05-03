@@ -2370,6 +2370,216 @@ describe("writeChart — series invertIfNegative flag", () => {
   });
 });
 
+// ── explosion (per-series, pie / doughnut only) ─────────────────────
+
+describe("writeChart — series explosion", () => {
+  it("omits <c:explosion> on a pie series with the field left unset", () => {
+    // Absence of <c:explosion> matches the OOXML default
+    // (`val="0"`); the writer keeps untouched series byte-clean.
+    const result = writeChart(
+      makeChart({
+        type: "pie",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:explosion");
+  });
+
+  it('emits <c:explosion val="25"/> on a pie series when explosion is set', () => {
+    const result = writeChart(
+      makeChart({
+        type: "pie",
+        series: [{ values: "B2:B4", categories: "A2:A4", explosion: 25 }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:explosion val="25"');
+  });
+
+  it('emits <c:explosion val="50"/> on a doughnut series when explosion is set', () => {
+    const result = writeChart(
+      makeChart({
+        type: "doughnut",
+        series: [{ values: "B2:B4", categories: "A2:A4", explosion: 50 }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:explosion val="50"');
+  });
+
+  it("renders explosion per-series independently across a multi-series doughnut chart", () => {
+    const result = writeChart(
+      makeChart({
+        type: "doughnut",
+        series: [
+          { name: "Exploded", values: "B2:B4", explosion: 30 },
+          { name: "Default", values: "C2:C4" },
+          { name: "Zero", values: "D2:D4", explosion: 0 },
+        ],
+      }),
+      "Sheet1",
+    );
+    // Only the first series carries <c:explosion>. Series with the
+    // value explicitly 0 collapse to absence (the OOXML default).
+    const matches = result.chartXml.match(/c:explosion val="\d+"/g) ?? [];
+    expect(matches).toEqual(['c:explosion val="30"']);
+  });
+
+  it("ignores explosion on chart kinds whose schema rejects <c:explosion>", () => {
+    // The OOXML schema places <c:explosion> only on CT_PieSer (and
+    // its EG_PieSer-sharing siblings). Setting the field on a bar /
+    // column / line / area / scatter series must not leak the element.
+    const cases: Array<["bar" | "column" | "line" | "area" | "scatter"]> = [
+      ["bar"],
+      ["column"],
+      ["line"],
+      ["area"],
+      ["scatter"],
+    ];
+    for (const [type] of cases) {
+      const result = writeChart(
+        makeChart({
+          type,
+          series: [{ values: "B2:B4", categories: "A2:A4", explosion: 25 }],
+        }),
+        "Sheet1",
+      );
+      expect(result.chartXml).not.toContain("c:explosion");
+    }
+  });
+
+  it("places <c:explosion> between <c:spPr> and <c:cat>/<c:val> (OOXML order)", () => {
+    // CT_PieSer puts <c:explosion> after <c:spPr> and before
+    // <c:dPt> / <c:dLbls> / <c:cat> / <c:val>. The element must land
+    // between the styling block and the data references so Excel's
+    // strict validator does not reject the file.
+    const result = writeChart(
+      makeChart({
+        type: "pie",
+        series: [
+          {
+            name: "Exploded",
+            values: "B2:B4",
+            categories: "A2:A4",
+            color: "FF0000",
+            explosion: 30,
+          },
+        ],
+      }),
+      "Sheet1",
+    );
+    const serBlock = result.chartXml.match(/<c:ser>[\s\S]*?<\/c:ser>/)![0];
+    const spPrIdx = serBlock.indexOf("c:spPr");
+    const explosionIdx = serBlock.indexOf("c:explosion");
+    const catIdx = serBlock.indexOf("c:cat");
+    const valIdx = serBlock.indexOf("c:val");
+    expect(spPrIdx).toBeLessThan(explosionIdx);
+    expect(explosionIdx).toBeLessThan(catIdx);
+    expect(explosionIdx).toBeLessThan(valIdx);
+  });
+
+  it("clamps an explosion value above 400 down to 400", () => {
+    const result = writeChart(
+      makeChart({
+        type: "pie",
+        series: [{ values: "B2:B4", categories: "A2:A4", explosion: 9999 }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:explosion val="400"');
+  });
+
+  it("rounds non-integer explosion values to the nearest integer", () => {
+    const result = writeChart(
+      makeChart({
+        type: "pie",
+        series: [{ values: "B2:B4", categories: "A2:A4", explosion: 33.6 }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:explosion val="34"');
+  });
+
+  it("collapses negative or non-finite explosion values to absence (OOXML default)", () => {
+    const cases = [-50, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+    for (const value of cases) {
+      const result = writeChart(
+        makeChart({
+          type: "pie",
+          series: [{ values: "B2:B4", categories: "A2:A4", explosion: value }],
+        }),
+        "Sheet1",
+      );
+      expect(result.chartXml).not.toContain("c:explosion");
+    }
+  });
+
+  it("emits <c:explosion> alongside the pie-only <c:firstSliceAng> without disturbing it", () => {
+    // The pieChart-level <c:firstSliceAng> is independent of the
+    // per-series <c:explosion>. Both must emit cleanly without
+    // interfering and the chart must still parse back.
+    const result = writeChart(
+      makeChart({
+        type: "pie",
+        firstSliceAng: 90,
+        series: [{ values: "B2:B4", categories: "A2:A4", explosion: 25 }],
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:explosion val="25"');
+    expect(result.chartXml).toContain('c:firstSliceAng val="90"');
+  });
+
+  it("survives a parseChart round-trip with explosion preserved", async () => {
+    // writeChart → parseChart pulls the value straight back. Confirms
+    // the reader and writer agree on the element and that the value is
+    // surfaced on the resulting ChartSeriesInfo.
+    const written = writeChart(
+      makeChart({
+        type: "doughnut",
+        series: [
+          { name: "Exploded", values: "B2:B4", explosion: 30 },
+          { name: "Default", values: "C2:C4" },
+        ],
+      }),
+      "Sheet1",
+    );
+    const parsed = parseChart(written.chartXml);
+    expect(parsed?.series).toHaveLength(2);
+    expect(parsed?.series?.[0].explosion).toBe(30);
+    expect(parsed?.series?.[1].explosion).toBeUndefined();
+  });
+
+  it("threads explosion through an end-to-end writeXlsx round-trip", async () => {
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Dashboard",
+          rows: [
+            ["Region", "Revenue"],
+            ["North", 100],
+            ["South", 200],
+            ["East", 150],
+            ["West", 175],
+          ],
+          charts: [
+            {
+              type: "pie",
+              series: [{ values: "B2:B5", categories: "A2:A5", explosion: 40 }],
+              anchor: { from: { row: 6, col: 0 } },
+            },
+          ],
+        },
+      ],
+    });
+    const written = await extractXml(xlsx, "xl/charts/chart1.xml");
+    expect(written).toContain('c:explosion val="40"');
+    const reparsed = parseChart(written);
+    expect(reparsed?.series?.[0].explosion).toBe(40);
+  });
+});
+
 // ── Display blanks as ────────────────────────────────────────────────
 
 describe("writeChart — dispBlanksAs", () => {

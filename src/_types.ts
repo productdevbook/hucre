@@ -836,6 +836,22 @@ export interface ChartSeries {
    * the inverted color when the spreadsheet supplies one).
    */
   invertIfNegative?: boolean;
+  /**
+   * Pie / doughnut slice explosion as a percentage of the radius —
+   * the distance the slice is pulled away from the center. Maps to
+   * `<c:explosion val=".."/>` inside the `<c:ser>` element. Only
+   * meaningful for `pie` and `doughnut` charts — the OOXML schema
+   * places `<c:explosion>` exclusively on `CT_PieSer`, so the field
+   * is silently dropped on every other chart family at write time.
+   *
+   * Default: `0` (slices flush against each other). Excel's UI
+   * exposes 0–400% under "Format Data Point → Series Options → Pie
+   * Explosion"; values outside that band are clamped on write so a
+   * round-trip stays inside the range Excel will render. Per-data-point
+   * explosion (one slice pulled away while the rest stay flush) is not
+   * yet supported — the field applies to every slice in the series.
+   */
+  explosion?: number;
 }
 
 /**
@@ -1900,6 +1916,16 @@ export interface ChartSeriesInfo {
    * default and round-trips identically with absence of the field.
    */
   invertIfNegative?: boolean;
+  /**
+   * Slice explosion (in percent of the radius) pulled from
+   * `<c:ser><c:explosion val=".."/>`. Surfaces only on `pie`,
+   * `pie3D`, `doughnut`, and `ofPie` series — the OOXML schema
+   * places `<c:explosion>` exclusively on `CT_PieSer` (which is
+   * shared across the pie family via `EG_PieSer`). The OOXML
+   * default `0` collapses to `undefined` because absence and `0`
+   * round-trip identically through the writer's elision logic.
+   */
+  explosion?: number;
 }
 
 /**

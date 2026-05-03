@@ -2404,6 +2404,193 @@ describe("cloneChart — series invertIfNegative flag", () => {
   });
 });
 
+// ── cloneChart — series explosion (pie / doughnut) ────────────────
+
+describe("cloneChart — series explosion", () => {
+  function pieSource(explosion: number | undefined): Chart {
+    return {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "pie",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Tpl!$B$2:$B$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+          ...(explosion !== undefined ? { explosion } : {}),
+        },
+      ],
+    };
+  }
+
+  it("inherits explosion=25 from a pie series source", () => {
+    const clone = cloneChart(pieSource(25), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("pie");
+    expect(clone.series[0].explosion).toBe(25);
+  });
+
+  it("does not surface explosion when the source series did not declare it", () => {
+    const clone = cloneChart(pieSource(undefined), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.series[0].explosion).toBeUndefined();
+  });
+
+  it("lets seriesOverrides[i].explosion override a source missing the value", () => {
+    const clone = cloneChart(pieSource(undefined), {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ explosion: 50 }],
+    });
+    expect(clone.series[0].explosion).toBe(50);
+  });
+
+  it("lets seriesOverrides[i].explosion=null drop an inherited value", () => {
+    const clone = cloneChart(pieSource(25), {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ explosion: null }],
+    });
+    expect(clone.series[0].explosion).toBeUndefined();
+  });
+
+  it("lets seriesOverrides[i].explosion=0 drop an inherited value", () => {
+    // `0` collapses to undefined for symmetry with the OOXML default —
+    // unexploded slices and absence round-trip identically.
+    const clone = cloneChart(pieSource(25), {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ explosion: 0 }],
+    });
+    expect(clone.series[0].explosion).toBeUndefined();
+  });
+
+  it("carries explosion through when flattening doughnut to pie", () => {
+    const doughnut: Chart = {
+      kinds: ["doughnut"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "doughnut",
+          index: 0,
+          valuesRef: "Tpl!$B$2:$B$5",
+          explosion: 40,
+        },
+      ],
+    };
+    const clone = cloneChart(doughnut, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "pie",
+    });
+    expect(clone.type).toBe("pie");
+    expect(clone.series[0].explosion).toBe(40);
+  });
+
+  it("drops inherited explosion when the resolved type is not pie/doughnut", () => {
+    // A pie template flattened to bar / column / line / area / scatter
+    // must not leak <c:explosion> — the OOXML schema rejects it on
+    // every other chart family.
+    for (const type of ["bar", "column", "line", "area", "scatter"] as const) {
+      const clone = cloneChart(pieSource(50), {
+        anchor: { from: { row: 0, col: 0 } },
+        type,
+        seriesOverrides: [{ values: "Sheet1!$B$2:$B$5" }],
+      });
+      expect(clone.type).toBe(type);
+      expect(clone.series[0].explosion).toBeUndefined();
+    }
+  });
+
+  it("drops explosion from explicit options.series when the resolved type is not pie/doughnut", () => {
+    // Replacing the entire series array via options.series still goes
+    // through the post-build explosion-strip, so a stray field does not
+    // leak into a non-pie/doughnut target.
+    const clone = cloneChart(pieSource(50), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+      series: [{ values: "Sheet1!$B$2:$B$5", explosion: 25 }],
+    });
+    expect(clone.series[0].explosion).toBeUndefined();
+  });
+
+  it("propagates explosion across a multi-series doughnut clone", () => {
+    const multi: Chart = {
+      kinds: ["doughnut"],
+      seriesCount: 3,
+      series: [
+        { kind: "doughnut", index: 0, valuesRef: "Tpl!$B$2:$B$5", explosion: 25 },
+        { kind: "doughnut", index: 1, valuesRef: "Tpl!$C$2:$C$5" },
+        { kind: "doughnut", index: 2, valuesRef: "Tpl!$D$2:$D$5", explosion: 75 },
+      ],
+    };
+    const clone = cloneChart(multi, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.series[0].explosion).toBe(25);
+    expect(clone.series[1].explosion).toBeUndefined();
+    expect(clone.series[2].explosion).toBe(75);
+  });
+
+  it("round-trips explosion through parseChart → cloneChart → writeXlsx → parseChart", async () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:doughnutChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx><c:v>Exploded</c:v></c:tx>
+          <c:explosion val="35"/>
+          <c:cat><c:strRef><c:f>Tpl!$A$2:$A$5</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:ser>
+          <c:idx val="1"/>
+          <c:tx><c:v>Default</c:v></c:tx>
+          <c:cat><c:strRef><c:f>Tpl!$A$2:$A$5</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Tpl!$C$2:$C$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:firstSliceAng val="0"/>
+        <c:holeSize val="50"/>
+      </c:doughnutChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const source = parseChart(sourceXml)!;
+    expect(source.series?.[0].explosion).toBe(35);
+    expect(source.series?.[1].explosion).toBeUndefined();
+
+    const sheetChart: SheetChart = cloneChart(source, {
+      anchor: { from: { row: 14, col: 0 } },
+      seriesOverrides: [{ values: "Dashboard!$B$2:$B$5" }, { values: "Dashboard!$C$2:$C$5" }],
+    });
+    expect(sheetChart.type).toBe("doughnut");
+    expect(sheetChart.series[0].explosion).toBe(35);
+    expect(sheetChart.series[1].explosion).toBeUndefined();
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Dashboard",
+          rows: [
+            ["A", "B", "C"],
+            [1, 2, 3],
+            [4, 5, 6],
+            [7, 8, 9],
+            [10, 11, 12],
+          ],
+          charts: [sheetChart],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    // Only the exploded series carries <c:explosion>; the second
+    // falls back to the OOXML default (absence of the element).
+    const matches = written.match(/c:explosion val="\d+"/g) ?? [];
+    expect(matches).toEqual(['c:explosion val="35"']);
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.series?.[0].explosion).toBe(35);
+    expect(reparsed?.series?.[1].explosion).toBeUndefined();
+  });
+});
+
 // ── cloneChart — dispBlanksAs ─────────────────────────────────────
 
 describe("cloneChart — dispBlanksAs", () => {
