@@ -946,8 +946,19 @@ function buildLineChart(chart: SheetChart, sheetName: string): string {
 
   // CT_LineChart child order: grouping, varyColors?, ser*, dLbls?,
   // dropLines?, hiLowLines?, upDownBars?, marker?, axId+. The
-  // up/down-bars block sits before `<c:marker>` so the schema
-  // sequence is respected even on a chart that pins both flags.
+  // dropLines / hiLowLines / upDownBars blocks sit before `<c:marker>`
+  // so the schema sequence is respected even on a chart that pins all
+  // three flags. Each element is bare (or, for upDownBars, presence-
+  // gated), so we only emit when the caller explicitly opted in
+  // (`true`). Absence and an explicit `false` both collapse to no
+  // element so untouched line charts match Excel's reference
+  // serialization.
+  if (chart.dropLines === true) {
+    children.push(xmlElement("c:dropLines", undefined, []));
+  }
+  if (chart.hiLowLines === true) {
+    children.push(xmlElement("c:hiLowLines", undefined, []));
+  }
   if (chart.upDownBars === true) {
     children.push(buildUpDownBars());
   }
@@ -999,6 +1010,15 @@ function buildAreaChart(chart: SheetChart, sheetName: string): string {
 
   const chartLevelDLbls = buildChartLevelDataLabels(chart);
   if (chartLevelDLbls) children.push(chartLevelDLbls);
+
+  // CT_AreaChart sequence places `<c:dropLines>` between `<c:dLbls>`
+  // and `<c:axId>`. The element is bare — its mere presence paints
+  // the connectors — so we only emit when the caller explicitly opted
+  // in. `<c:hiLowLines>` has no slot on `<c:areaChart>` per the OOXML
+  // schema, so the area writer ignores `chart.hiLowLines` entirely.
+  if (chart.dropLines === true) {
+    children.push(xmlElement("c:dropLines", undefined, []));
+  }
 
   children.push(xmlSelfClose("c:axId", { val: AXIS_ID_CAT }));
   children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL }));

@@ -5391,6 +5391,396 @@ describe("cloneChart — axis crosses / crossesAt", () => {
   });
 });
 
+// ── cloneChart — drop / hi-low lines ────────────────────────────────
+
+describe("cloneChart — dropLines", () => {
+  function lineSource(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Tpl!$B$2:$B$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  function areaSource(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["area"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "area",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Tpl!$B$2:$B$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits dropLines=true from a line source by default", () => {
+    const clone = cloneChart(lineSource({ dropLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.dropLines).toBe(true);
+  });
+
+  it("inherits dropLines=true from an area source by default", () => {
+    const clone = cloneChart(areaSource({ dropLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.dropLines).toBe(true);
+  });
+
+  it("returns undefined dropLines when neither source nor override sets it", () => {
+    const clone = cloneChart(lineSource(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.dropLines).toBeUndefined();
+  });
+
+  it("drops the inherited dropLines when the override is null", () => {
+    const clone = cloneChart(lineSource({ dropLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      dropLines: null,
+    });
+    expect(clone.dropLines).toBeUndefined();
+  });
+
+  it("drops the inherited dropLines when the override is false", () => {
+    // `false` collapses to undefined just like `null` because the writer
+    // treats absence and `false` identically (no element emitted).
+    const clone = cloneChart(lineSource({ dropLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      dropLines: false,
+    });
+    expect(clone.dropLines).toBeUndefined();
+  });
+
+  it("lets the override pin dropLines=true when the source did not declare it", () => {
+    const clone = cloneChart(lineSource(), {
+      anchor: { from: { row: 0, col: 0 } },
+      dropLines: true,
+    });
+    expect(clone.dropLines).toBe(true);
+  });
+
+  it("collapses non-boolean overrides to undefined", () => {
+    const clone = cloneChart(lineSource({ dropLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      dropLines: 1 as unknown as boolean,
+    });
+    // The non-boolean override drops, falling back to undefined (not the
+    // inherited true) because the override path treats non-boolean as
+    // "explicitly unset".
+    expect(clone.dropLines).toBeUndefined();
+  });
+
+  it("strips the flag when the resolved chart type is bar/column (line -> column)", () => {
+    // CT_BarChart has no `<c:dropLines>` slot. Coercing into column
+    // must drop the inherited flag so the writer never tries to emit
+    // an element on a host that rejects it.
+    const clone = cloneChart(lineSource({ dropLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.dropLines).toBeUndefined();
+  });
+
+  it("strips the flag when the resolved chart type is pie / doughnut", () => {
+    const pie = cloneChart(lineSource({ dropLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "pie",
+    });
+    expect(pie.dropLines).toBeUndefined();
+
+    const doughnut = cloneChart(lineSource({ dropLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(doughnut.dropLines).toBeUndefined();
+  });
+
+  it("strips the flag when the resolved chart type is scatter", () => {
+    const clone = cloneChart(lineSource({ dropLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "scatter",
+      series: [{ values: "Sheet1!$B$2:$B$5", categories: "Sheet1!$A$2:$A$5" }],
+    });
+    expect(clone.type).toBe("scatter");
+    expect(clone.dropLines).toBeUndefined();
+  });
+
+  it("carries the flag across the line <-> area coercions (both have <c:dropLines>)", () => {
+    const lineToArea = cloneChart(lineSource({ dropLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "area",
+    });
+    expect(lineToArea.type).toBe("area");
+    expect(lineToArea.dropLines).toBe(true);
+
+    const areaToLine = cloneChart(areaSource({ dropLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "line",
+    });
+    expect(areaToLine.type).toBe("line");
+    expect(areaToLine.dropLines).toBe(true);
+  });
+
+  it("composes dropLines alongside lineGrouping / dataLabels overrides", () => {
+    const clone = cloneChart(lineSource({ dropLines: true, lineGrouping: "stacked" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      dataLabels: { showValue: true },
+    });
+    expect(clone.dropLines).toBe(true);
+    expect(clone.lineGrouping).toBe("stacked");
+    expect(clone.dataLabels).toEqual({ showValue: true });
+  });
+
+  it("end-to-end: parseChart -> cloneChart -> writeChart preserves the flag", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:grouping val="standard"/>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:dropLines/>
+      </c:lineChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.dropLines).toBe(true);
+
+    const sheetChart = cloneChart(parsed!, { anchor: { from: { row: 0, col: 0 } } });
+    expect(sheetChart.dropLines).toBe(true);
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    const lineBlock = written.match(/<c:lineChart>[\s\S]*?<\/c:lineChart>/)![0];
+    expect(lineBlock).toContain("<c:dropLines/>");
+
+    // Re-parse to confirm the round-trip.
+    const reparsed = parseChart(written);
+    expect(reparsed?.dropLines).toBe(true);
+  });
+
+  it("end-to-end: writeXlsx packages the cloned chart with the flag intact", async () => {
+    const clone = cloneChart(lineSource({ dropLines: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:dropLines/>");
+  });
+});
+
+describe("cloneChart — hiLowLines", () => {
+  function lineSource(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 2,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "High",
+          valuesRef: "Tpl!$B$2:$B$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+        },
+        {
+          kind: "line",
+          index: 1,
+          name: "Low",
+          valuesRef: "Tpl!$C$2:$C$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits hiLowLines=true from the line source by default", () => {
+    const clone = cloneChart(lineSource({ hiLowLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.hiLowLines).toBe(true);
+  });
+
+  it("returns undefined hiLowLines when neither source nor override sets it", () => {
+    const clone = cloneChart(lineSource(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.hiLowLines).toBeUndefined();
+  });
+
+  it("drops the inherited hiLowLines when the override is null", () => {
+    const clone = cloneChart(lineSource({ hiLowLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      hiLowLines: null,
+    });
+    expect(clone.hiLowLines).toBeUndefined();
+  });
+
+  it("drops the inherited hiLowLines when the override is false", () => {
+    const clone = cloneChart(lineSource({ hiLowLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      hiLowLines: false,
+    });
+    expect(clone.hiLowLines).toBeUndefined();
+  });
+
+  it("lets the override pin hiLowLines=true when the source did not declare it", () => {
+    const clone = cloneChart(lineSource(), {
+      anchor: { from: { row: 0, col: 0 } },
+      hiLowLines: true,
+    });
+    expect(clone.hiLowLines).toBe(true);
+  });
+
+  it("strips the flag when the resolved chart type is area (no slot in CT_AreaChart)", () => {
+    // <c:hiLowLines> is line / line3D / stock only. Coercing a line
+    // template into an area clone must drop the inherited flag.
+    const clone = cloneChart(lineSource({ hiLowLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "area",
+    });
+    expect(clone.type).toBe("area");
+    expect(clone.hiLowLines).toBeUndefined();
+  });
+
+  it("strips the flag when the resolved chart type is bar/column/pie/doughnut/scatter", () => {
+    const types: Array<"column" | "bar" | "pie" | "doughnut" | "scatter"> = [
+      "column",
+      "bar",
+      "pie",
+      "doughnut",
+    ];
+    for (const t of types) {
+      const clone = cloneChart(lineSource({ hiLowLines: true }), {
+        anchor: { from: { row: 0, col: 0 } },
+        type: t,
+      });
+      expect(clone.type).toBe(t);
+      expect(clone.hiLowLines).toBeUndefined();
+    }
+
+    const scatter = cloneChart(lineSource({ hiLowLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "scatter",
+      series: [
+        { values: "Sheet1!$B$2:$B$5", categories: "Sheet1!$A$2:$A$5" },
+        { values: "Sheet1!$C$2:$C$5", categories: "Sheet1!$A$2:$A$5" },
+      ],
+    });
+    expect(scatter.type).toBe("scatter");
+    expect(scatter.hiLowLines).toBeUndefined();
+  });
+
+  it("composes hiLowLines independently from dropLines on a line clone", () => {
+    // Two distinct knobs — one may be set without the other and they
+    // should not collide on the resolver.
+    const clone = cloneChart(lineSource({ dropLines: true, hiLowLines: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      dropLines: null,
+    });
+    expect(clone.dropLines).toBeUndefined();
+    expect(clone.hiLowLines).toBe(true);
+  });
+
+  it("end-to-end: parseChart -> cloneChart -> writeChart preserves both flags", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:grouping val="standard"/>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:ser>
+          <c:idx val="1"/>
+          <c:val><c:numRef><c:f>Tpl!$C$2:$C$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:dropLines/>
+        <c:hiLowLines/>
+      </c:lineChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.dropLines).toBe(true);
+    expect(parsed?.hiLowLines).toBe(true);
+
+    const sheetChart = cloneChart(parsed!, { anchor: { from: { row: 0, col: 0 } } });
+    expect(sheetChart.dropLines).toBe(true);
+    expect(sheetChart.hiLowLines).toBe(true);
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    const lineBlock = written.match(/<c:lineChart>[\s\S]*?<\/c:lineChart>/)![0];
+    expect(lineBlock).toContain("<c:dropLines/>");
+    expect(lineBlock).toContain("<c:hiLowLines/>");
+    // OOXML order: dropLines before hiLowLines.
+    expect(lineBlock.indexOf("<c:dropLines/>")).toBeLessThan(lineBlock.indexOf("<c:hiLowLines/>"));
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.dropLines).toBe(true);
+    expect(reparsed?.hiLowLines).toBe(true);
+  });
+
+  it("end-to-end: writeXlsx packages the cloned chart with the flag intact", async () => {
+    const clone = cloneChart(lineSource({ hiLowLines: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "High", "Low"],
+            [1, 5, 1],
+            [2, 7, 2],
+            [3, 6, 3],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:hiLowLines/>");
+  });
+});
+
 // ── cloneChart — upDownBars ──────────────────────────────────────────
 
 describe("cloneChart — upDownBars", () => {

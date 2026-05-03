@@ -795,6 +795,25 @@ truthy / falsy spellings (`"1"` / `"true"` / `"0"` / `"false"`);
 unknown values and missing `val` attributes drop to `undefined`. The
 flag is dropped whenever the chart omits the `<c:title>` element
 entirely — there is no overlay slot to surface in that case.
+`Chart.dropLines` surfaces the chart-type-level `<c:dropLines/>` flag
+on the first `<c:lineChart>` / `<c:line3DChart>` / `<c:areaChart>` /
+`<c:area3DChart>` element — Excel's "Add Chart Element → Lines → Drop
+Lines" toggle (vertical reference lines connecting each data point to
+the category axis). The element is bare (no `val` attribute), so its
+mere presence surfaces `true` and absence collapses to `undefined`.
+The reader does not surface `dropLines` for chart families whose OOXML
+schema rejects the element (bar / column / pie / doughnut / scatter /
+stock / radar / surface / bubble) — a stray element on those parents
+is ignored.
+`Chart.hiLowLines` surfaces the chart-type-level `<c:hiLowLines/>`
+flag on the first `<c:lineChart>` / `<c:line3DChart>` / `<c:stockChart>`
+element — Excel's "Add Chart Element → Lines → High-Low Lines" toggle
+(vertical connectors between the highest and lowest series values at
+each category position). Same bare-element shape as `dropLines`:
+presence surfaces `true`, absence collapses to `undefined`. The
+element has no slot on `<c:areaChart>` / `<c:area3DChart>` per the
+OOXML schema, so the reader ignores it on those parents and on every
+non-line / non-stock family.
 `ChartSeriesInfo.smooth` surfaces the per-series
 `<c:ser><c:smooth val=".."/>` flag — Excel's "Format Data Series →
 Line → Smoothed line" toggle — only on `line` / `line3D` / `scatter`
@@ -1019,6 +1038,27 @@ emitted (no `title` set or `showTitle: false`) — there is no `<c:title>`
 block to host the overlay child in either case. Independent of
 `legendOverlay`: the legend and title `<c:overlay>` elements live on
 different parents, so the two flags compose freely.
+The chart-level `dropLines` field maps to a bare `<c:dropLines/>`
+inside `<c:lineChart>` / `<c:areaChart>` — Excel's "Add Chart Element
+→ Lines → Drop Lines" toggle (vertical reference lines from each data
+point down to the category axis). Default: `false` — the writer emits
+no element so untouched line / area charts match Excel's reference
+serialization byte-for-byte. Set `true` to paint the connector lines.
+Only literal `true` emits the element; `false`, absence, and
+non-boolean inputs all drop to the default. The flag is silently
+ignored on chart families whose schema rejects `<c:dropLines>` (bar /
+column / pie / doughnut / scatter) — the writer never leaks the element
+into a host that cannot accept it.
+The chart-level `hiLowLines` field maps to a bare `<c:hiLowLines/>`
+inside `<c:lineChart>` only — Excel's "Add Chart Element → Lines →
+High-Low Lines" toggle (vertical connectors between the highest and
+lowest series values at each category position; the same connector
+painted on stock charts). Same default and emit grammar as
+`dropLines`. The element has no slot on `<c:areaChart>` per the OOXML
+schema, so the area writer ignores `hiLowLines` entirely; same for
+bar / column / pie / doughnut / scatter. The two flags compose freely
+on a line chart and the writer pins `<c:dropLines>` before
+`<c:hiLowLines>` to honour the CT_LineChart sequence.
 The chart-level `upDownBars` field maps to `<c:upDownBars>` inside
 `<c:lineChart>` — Excel's "Add Chart Element -> Up/Down Bars" toggle
 on a line chart. The element paints a vertical bar at each category
@@ -1308,6 +1348,21 @@ is no `<c:title>` block to host the overlay flag in either case.
 Re-introducing a missing source title through an explicit `title:
 "..."` override re-opens the slot, and an explicit `titleOverlay: true`
 override threads through.
+The chart-level `dropLines` and `hiLowLines` flags follow the same
+`undefined` (inherit) / `null` (drop) / `boolean` (replace) grammar
+as the other chart-level toggles. An override of `false` is equivalent
+to `null` — the writer treats both as the OOXML default of no element,
+so the cloned `SheetChart` collapses both shapes to `undefined`.
+Non-boolean overrides drop rather than fall through to the inherited
+value. Both flags are silently dropped from the cloned `SheetChart`
+when the resolved clone target's chart-type element has no slot for
+the corresponding OOXML element: `dropLines` carries through line ↔
+area coercions but flattens on bar / column / pie / doughnut /
+scatter clones, while `hiLowLines` carries through line resolutions
+only and flattens on every other family (including area, where
+`<c:hiLowLines>` has no schema slot). Flattening a line template into
+a column clone therefore never leaks the connector lines into a host
+that cannot host them.
 The chart-level `upDownBars` flag follows the same grammar: pass
 `undefined` to inherit the source's parsed value, `null` to drop it
 back to the writer's OOXML default (no `<c:upDownBars>` element), or a
