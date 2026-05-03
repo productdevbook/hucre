@@ -1130,6 +1130,33 @@ export interface SheetChart {
    * lives on `<c:title>`, so the two flags compose freely.
    */
   titleOverlay?: boolean;
+  /**
+   * Auto-title-deleted flag. Maps to `<c:chart><c:autoTitleDeleted
+   * val=".."/>` — Excel's record of whether the user explicitly deleted
+   * the auto-generated title that single-series charts synthesise from
+   * the series name. Independent of whether a literal {@link title} is
+   * authored: pinning `true` suppresses Excel's auto-title even when
+   * no `<c:title>` element is emitted.
+   *
+   * Default: `undefined` — the writer derives the value from the
+   * presence of a literal title. When {@link title} is set (and
+   * {@link showTitle} is not `false`) the writer emits
+   * `<c:autoTitleDeleted val="0"/>` so Excel keeps the literal title
+   * visible; when no literal title is rendered the writer emits
+   * `<c:autoTitleDeleted val="1"/>` so single-series charts do not
+   * silently grow an auto-title from the series name. Pin the field
+   * explicitly to override that derivation — e.g. set `false` on a
+   * titleless single-series column chart to let Excel synthesise the
+   * series-name title, or `true` on a charted dashboard tile that
+   * should stay anonymous.
+   *
+   * The OOXML schema places `<c:autoTitleDeleted>` on `<c:chart>`
+   * (between `<c:title>` and `<c:plotArea>` per CT_Chart, ECMA-376
+   * Part 1, §21.2.2.4); the writer always emits the element so the
+   * rendered intent is explicit on roundtrip — Excel itself includes
+   * it on every reference serialization.
+   */
+  autoTitleDeleted?: boolean;
   /** Alternative text for screen readers (lands in xdr:cNvPr/@descr). */
   altText?: string;
   /** Caption for the chart frame (lands in xdr:cNvPr/@title). */
@@ -3018,6 +3045,30 @@ export interface Chart {
    * element at all — there is no overlay flag to surface in that case.
    */
   titleOverlay?: boolean;
+  /**
+   * Auto-title-deleted flag pulled from `<c:chart><c:autoTitleDeleted
+   * val=".."/>`. Reflects Excel's "the user explicitly deleted the
+   * auto-generated title" state — single-series charts where Excel
+   * normally synthesises a title from the series name leave the flag
+   * `false` (the OOXML default) so the auto-title can render; clicking
+   * "Delete" on that auto-title flips it to `true` and suppresses the
+   * synthesis even though no `<c:title>` element is emitted.
+   *
+   * The flag is independent of {@link title} — a chart with an explicit
+   * `<c:title>` typically pins `false` (the user has not deleted the
+   * auto-title because they overrode it with a literal one), while a
+   * chart with no `<c:title>` may be `true` (auto-title suppressed)
+   * or `false` (auto-title not suppressed; Excel may still synthesise
+   * one for a single-series chart).
+   *
+   * The OOXML default `false` collapses to `undefined` so absence and
+   * `<c:autoTitleDeleted val="0"/>` round-trip identically through
+   * {@link cloneChart} — only an explicit `<c:autoTitleDeleted val="1"/>`
+   * surfaces `true`. The reader accepts the OOXML truthy / falsy
+   * spellings (`"1"` / `"true"` / `"0"` / `"false"`); unknown values
+   * and missing `val` attributes drop to `undefined`.
+   */
+  autoTitleDeleted?: boolean;
   /**
    * Grouping pulled from the first `<c:barChart>` element, when the
    * chart has one. Surfaces only the stacked variants — the OOXML

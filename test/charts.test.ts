@@ -7745,3 +7745,157 @@ describe("parseChart — chart-space protection", () => {
     });
   });
 });
+
+// ── parseChart — auto title deleted ────────────────────────────────
+
+describe("parseChart — autoTitleDeleted", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withAutoTitleDeleted(val?: string): string {
+    const el = val === undefined ? "" : `<c:autoTitleDeleted val="${val}"/>`;
+    return `<c:chartSpace ${NS}>
+  <c:chart>
+    ${el}
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it('surfaces <c:autoTitleDeleted val="1"/> as true (non-default)', () => {
+    // The non-default state — the user explicitly deleted Excel's
+    // auto-generated title. Surfaces verbatim because a chart that
+    // pinned the flag carries the override Excel would otherwise
+    // synthesise from the series name.
+    expect(parseChart(withAutoTitleDeleted("1"))?.autoTitleDeleted).toBe(true);
+  });
+
+  it('surfaces <c:autoTitleDeleted val="true"/> as true', () => {
+    // OOXML accepts the textual `xsd:boolean` spellings.
+    expect(parseChart(withAutoTitleDeleted("true"))?.autoTitleDeleted).toBe(true);
+  });
+
+  it('collapses <c:autoTitleDeleted val="0"/> to undefined (OOXML default)', () => {
+    // The OOXML default — the auto-title is not suppressed. Absence
+    // and the default round-trip identically through cloneChart, so the
+    // reader collapses the explicit default to undefined for symmetry
+    // with every other chart-level toggle.
+    expect(parseChart(withAutoTitleDeleted("0"))?.autoTitleDeleted).toBeUndefined();
+  });
+
+  it('collapses <c:autoTitleDeleted val="false"/> to undefined', () => {
+    expect(parseChart(withAutoTitleDeleted("false"))?.autoTitleDeleted).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:autoTitleDeleted> element", () => {
+    // Absence is identical to the OOXML default; the reader surfaces
+    // nothing so a fresh chart and a chart that omits the element
+    // round-trip identically through cloneChart.
+    expect(parseChart(withAutoTitleDeleted())?.autoTitleDeleted).toBeUndefined();
+  });
+
+  it("ignores a missing val attribute on <c:autoTitleDeleted>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:autoTitleDeleted/>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.autoTitleDeleted).toBeUndefined();
+  });
+
+  it("drops unknown val tokens rather than fabricate a flag", () => {
+    expect(parseChart(withAutoTitleDeleted("bogus"))?.autoTitleDeleted).toBeUndefined();
+  });
+
+  it("surfaces autoTitleDeleted independently of the title presence (titleless chart)", () => {
+    // The element sits on <c:chart> directly, not nested inside
+    // <c:title>, so a chart with no <c:title> can still pin the flag
+    // to suppress Excel's series-name auto-title synthesis.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:autoTitleDeleted val="1"/>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.title).toBeUndefined();
+    expect(chart?.autoTitleDeleted).toBe(true);
+  });
+
+  it("surfaces autoTitleDeleted alongside a literal title (chart with both)", () => {
+    // A chart can emit both a literal <c:title> and pin
+    // <c:autoTitleDeleted val="1"/> — the flag suppresses any future
+    // auto-synthesis even though the literal already overrides it. The
+    // parser surfaces both fields independently.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:title>
+      <c:tx><c:rich>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:r><a:t>Sales</a:t></a:r></a:p>
+      </c:rich></c:tx>
+    </c:title>
+    <c:autoTitleDeleted val="1"/>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.title).toBe("Sales");
+    expect(chart?.autoTitleDeleted).toBe(true);
+  });
+
+  it("co-exists with other chart-level toggles", () => {
+    // The flag should not interfere with sibling chart-level fields
+    // parsed off <c:chart> / <c:chartSpace>.
+    const xml = `<c:chartSpace ${NS}>
+  <c:roundedCorners val="1"/>
+  <c:chart>
+    <c:autoTitleDeleted val="1"/>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="clustered"/>
+        <c:varyColors val="1"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+    <c:plotVisOnly val="0"/>
+    <c:dispBlanksAs val="zero"/>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.autoTitleDeleted).toBe(true);
+    expect(chart?.roundedCorners).toBe(true);
+    expect(chart?.plotVisOnly).toBe(false);
+    expect(chart?.dispBlanksAs).toBe("zero");
+    expect(chart?.varyColors).toBe(true);
+  });
+
+  it("surfaces the flag on every chart family", () => {
+    // The element sits on <c:chart>, not inside any chart-type
+    // element, so it round-trips identically across families.
+    for (const kind of ["lineChart", "barChart", "pieChart", "doughnutChart", "areaChart"]) {
+      const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:autoTitleDeleted val="1"/>
+    <c:plotArea>
+      <c:${kind}><c:ser><c:idx val="0"/></c:ser></c:${kind}>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+      expect(parseChart(xml)?.autoTitleDeleted).toBe(true);
+    }
+  });
+});

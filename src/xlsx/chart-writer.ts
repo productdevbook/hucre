@@ -67,10 +67,28 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
   // ── Title ──
   if (showTitle && chart.title) {
     chartChildren.push(buildTitle(chart.title, resolveTitleOverlay(chart)));
-    chartChildren.push(xmlSelfClose("c:autoTitleDeleted", { val: 0 }));
-  } else {
-    chartChildren.push(xmlSelfClose("c:autoTitleDeleted", { val: 1 }));
   }
+  // `<c:autoTitleDeleted>` records whether the user explicitly deleted
+  // Excel's auto-generated title (the synthesised series-name title
+  // single-series charts grow). The element sits on `<c:chart>`
+  // directly (between `<c:title>` and `<c:plotArea>` per CT_Chart,
+  // ECMA-376 Part 1, §21.2.2.4) and is independent of whether a
+  // literal `<c:title>` is emitted — a chart with no title may pin
+  // `val="1"` to suppress the auto-title or `val="0"` to let Excel
+  // synthesise one.
+  //
+  // Defaults derive from the title presence so back-compat holds: a
+  // chart with a literal title emits `val="0"` (Excel keeps the
+  // literal visible) and a chart with no literal title emits
+  // `val="1"` (Excel does not silently grow an auto-title from the
+  // series name). The caller can override the derivation via
+  // `autoTitleDeleted` — pin `false` on a titleless single-series
+  // column chart to let Excel synthesise the series-name title, or
+  // `true` on a charted dashboard tile that should stay anonymous
+  // even if a literal title is emitted.
+  chartChildren.push(
+    xmlSelfClose("c:autoTitleDeleted", { val: resolveAutoTitleDeleted(chart) ? 1 : 0 }),
+  );
 
   // ── Plot Area ──
   chartChildren.push(buildPlotArea(chart, sheetName));
@@ -214,6 +232,40 @@ function buildTitle(title: string, overlay: boolean): string {
  */
 function resolveTitleOverlay(chart: SheetChart): boolean {
   return chart.titleOverlay === true;
+}
+
+/**
+ * Resolve `<c:autoTitleDeleted val=".."/>` from
+ * {@link SheetChart.autoTitleDeleted}.
+ *
+ * The element records whether the user explicitly deleted the
+ * auto-generated title that single-series charts synthesise from the
+ * series name. The flag is independent of whether a literal
+ * `<c:title>` is emitted — a chart with no title may still pin
+ * `val="0"` to let Excel synthesise the auto-title, or `val="1"` to
+ * suppress it.
+ *
+ * When the caller pins {@link SheetChart.autoTitleDeleted} explicitly
+ * the literal boolean value wins. When the field is omitted the writer
+ * derives the value from the title presence so back-compat holds: a
+ * chart with a literal title (and `showTitle !== false`) emits
+ * `val="0"` so Excel keeps the literal visible; a chart with no
+ * literal title emits `val="1"` so Excel does not silently grow an
+ * auto-title from the series name.
+ *
+ * Anything other than literal `true` / `false` collapses to the
+ * derived default so a stray non-boolean leaking through the type
+ * guard (e.g. `0` / `1` / `"true"` / `null`) never inverts the
+ * derivation. This matches how `titleOverlay` / `roundedCorners` /
+ * `plotVisOnly` treat their inputs.
+ */
+function resolveAutoTitleDeleted(chart: SheetChart): boolean {
+  if (chart.autoTitleDeleted === true) return true;
+  if (chart.autoTitleDeleted === false) return false;
+  // Derive from title presence — preserves back-compat for callers
+  // that never set the field.
+  const showTitle = chart.showTitle ?? Boolean(chart.title);
+  return !(showTitle && chart.title);
 }
 
 // ── Plot Area ────────────────────────────────────────────────────────

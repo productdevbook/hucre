@@ -94,6 +94,17 @@ export function parseChart(xml: string): Chart | undefined {
   const titleOverlay = parseTitleOverlay(chartEl);
   if (titleOverlay !== undefined) out.titleOverlay = titleOverlay;
 
+  // `<c:autoTitleDeleted>` records whether the user explicitly deleted
+  // the auto-generated title — independent of whether a literal
+  // `<c:title>` is present. The element sits on `<c:chart>` directly
+  // (between `<c:title>` and `<c:plotArea>` per CT_Chart, ECMA-376
+  // Part 1, §21.2.2.4), not nested inside `<c:title>`, so a chart with
+  // no `<c:title>` may still pin the flag. The OOXML default `false`
+  // collapses to `undefined` so absence and the default round-trip
+  // identically through cloneChart.
+  const autoTitleDeleted = parseAutoTitleDeleted(chartEl);
+  if (autoTitleDeleted !== undefined) out.autoTitleDeleted = autoTitleDeleted;
+
   const plotArea = findChild(chartEl, "plotArea");
   if (plotArea) {
     let seriesCount = 0;
@@ -1617,6 +1628,50 @@ function parseTitleOverlay(chartEl: XmlElement): boolean | undefined {
     case "false":
       // OOXML default — collapse to undefined for symmetry with the
       // writer's `titleOverlay` field.
+      return undefined;
+    default:
+      return undefined;
+  }
+}
+
+// ── Auto Title Deleted ────────────────────────────────────────────
+
+/**
+ * Pull `<c:autoTitleDeleted val=".."/>` off `<c:chart>`. Surfaces
+ * `true` only when the chart pinned `<c:autoTitleDeleted val="1"/>`
+ * (the non-default state — the user explicitly deleted the
+ * auto-generated title that single-series charts synthesise from the
+ * series name). The OOXML default `val="0"` and absence both collapse
+ * to `undefined` so absence and the default round-trip identically
+ * through {@link cloneChart}.
+ *
+ * The element is independent of `<c:title>` — it sits on `<c:chart>`
+ * directly (between `<c:title>` and `<c:plotArea>` per CT_Chart,
+ * ECMA-376 Part 1, §21.2.2.4), not nested inside `<c:title>`. A chart
+ * with a literal `<c:title>` typically pins `val="0"` because the user
+ * has not deleted the auto-title (they overrode it with a literal
+ * one); a chart with no `<c:title>` may pin `val="1"` to suppress
+ * Excel's auto-title synthesis or omit the element entirely (Excel
+ * may still synthesise an auto-title in that case for a single-series
+ * chart).
+ *
+ * Accepts the OOXML truthy / falsy spellings (`"1"` / `"true"` / `"0"`
+ * / `"false"`); unknown values and missing `val` attributes drop to
+ * `undefined` rather than fabricate a flag Excel would not emit.
+ */
+function parseAutoTitleDeleted(chartEl: XmlElement): boolean | undefined {
+  const el = findChild(chartEl, "autoTitleDeleted");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  switch (raw) {
+    case "1":
+    case "true":
+      return true;
+    case "0":
+    case "false":
+      // OOXML default — collapse to undefined for symmetry with the
+      // writer's `autoTitleDeleted` field.
       return undefined;
     default:
       return undefined;
