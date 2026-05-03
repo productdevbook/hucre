@@ -1188,6 +1188,24 @@ export interface SheetChart {
        */
       lblOffset?: number;
       /**
+       * Suppress Excel's automatic multi-level category labels. Maps
+       * to `<c:catAx><c:noMultiLvlLbl val=".."/></c:catAx>`. The OOXML
+       * default `false` (Excel groups labels into tiers when the
+       * category range spans multiple columns / rows); set `true` to
+       * flatten every category into a single line of labels regardless
+       * of the source range's shape. Mirrors Excel's "Format Axis ->
+       * Multi-level Category Labels" checkbox (the checkbox is the
+       * inverse — checked means tiered labels, i.e.
+       * `noMultiLvlLbl: false`).
+       *
+       * Only meaningful for bar / column / line / area charts (whose X
+       * axis is `<c:catAx>`); silently ignored for scatter (both axes
+       * are value axes) and pie / doughnut (no axes at all). The OOXML
+       * schema places the element on `CT_CatAx` only — `CT_ValAx`,
+       * `CT_DateAx`, and `CT_SerAx` reject it.
+       */
+      noMultiLvlLbl?: boolean;
+      /**
        * Horizontal alignment of the tick labels on a category axis —
        * `"ctr"` (center, the OOXML default), `"l"` (left), or `"r"`
        * (right). Maps to `<c:catAx><c:lblAlgn val=".."/></c:catAx>`.
@@ -2230,6 +2248,23 @@ export interface ChartAxisInfo {
    * writer would never emit. See {@link ChartAxisLabelAlign}.
    */
   lblAlgn?: ChartAxisLabelAlign;
+  /**
+   * Multi-level-label suppression flag pulled from
+   * `<c:noMultiLvlLbl val=".."/>`. Surfaces `true` only when the axis
+   * pinned `val="1"` (Excel's "Multi-level Category Labels" checkbox
+   * unchecked — every category collapses onto one line). The OOXML
+   * default `val="0"` (and absence of the element) collapse to
+   * `undefined` so absence and the default round-trip identically
+   * through {@link cloneChart}.
+   *
+   * Surfaces only on category axes (`<c:catAx>`) — the OOXML schema
+   * places the element on `CT_CatAx` exclusively (it has no slot on
+   * `CT_ValAx`, `CT_DateAx`, or `CT_SerAx`). The reader accepts the
+   * OOXML truthy / falsy spellings (`"1"` / `"true"` / `"0"` /
+   * `"false"`); unknown values and missing `val` attributes drop to
+   * `undefined`.
+   */
+  noMultiLvlLbl?: boolean;
   /**
    * Axis hidden flag pulled from `<c:delete val=".."/>`. Surfaces
    * `true` when the axis pinned `val="1"` (Excel's "Format Axis ->

@@ -728,6 +728,18 @@ absence, missing `val`, and unknown tokens all collapse to `undefined`
 so absence and the default round-trip identically. The reader accepts
 the OOXML truthy / falsy spellings (`"1"` / `"true"` / `"0"` /
 `"false"`).
+`ChartAxisInfo.noMultiLvlLbl` surfaces the per-axis
+`<c:noMultiLvlLbl val=".."/>` flag — Excel's "Format Axis ->
+Multi-level Category Labels" checkbox (the checkbox is the inverse:
+checked means tiered labels, i.e. `noMultiLvlLbl: false`). The OOXML
+schema places the element on `CT_CatAx` exclusively (even
+`<c:dateAx>`, `<c:valAx>`, and `<c:serAx>` reject it), so the parser
+ignores the element on every other axis flavour. Only an explicit
+`val="1"` (multi-tier labels collapsed onto a single line) surfaces
+`true`; the OOXML default `val="0"`, absence, missing `val`, and
+unknown tokens all collapse to `undefined` so absence and the default
+round-trip identically. The reader accepts the OOXML truthy / falsy
+spellings (`"1"` / `"true"` / `"0"` / `"false"`).
 `ChartAxisInfo.reverse` surfaces the per-axis
 `<c:scaling><c:orientation val="maxMin"/></c:scaling>` flag — Excel's
 "Categories / Values in reverse order" toggle. Only `"maxMin"` surfaces
@@ -1004,6 +1016,21 @@ element because Excel's reference serialization includes
 that default, while only an explicit `true` emits `val="1"`. The flag
 threads through bar / column / line / area / scatter; pie / doughnut
 silently ignore it because OOXML defines no axes for those families.
+The `axes.x.noMultiLvlLbl` flag maps to
+`<c:catAx><c:noMultiLvlLbl val=".."/>` — Excel's "Format Axis ->
+Multi-level Category Labels" checkbox (the checkbox is the inverse:
+checked means tiered labels, i.e. `noMultiLvlLbl: false`). When a
+category range spans multiple columns / rows Excel groups the labels
+into tiers; setting `true` flattens every category onto a single line
+regardless of the source range's shape. The writer always emits the
+element because Excel's reference serialization includes
+`<c:noMultiLvlLbl val="0"/>` on every category axis; `false`, absence,
+and non-boolean inputs all collapse to the default `val="0"`, while
+only an explicit `true` emits `val="1"`. The element lives on
+`CT_CatAx` exclusively (even `<c:dateAx>`, `<c:valAx>`, and
+`<c:serAx>` reject it), so the flag threads through bar / column /
+line / area but is silently dropped on scatter (both axes are value
+axes) and pie / doughnut (no axes at all).
 The `axes.x.reverse` and `axes.y.reverse` flags map to
 `<c:scaling><c:orientation val="maxMin"/></c:scaling>` — Excel's
 "Categories / Values in reverse order" toggle. On a category axis,
@@ -1231,6 +1258,18 @@ because OOXML defines no axes for them. An override of `false` is
 equivalent to `null` — the writer treats both as the OOXML default
 `val="0"`, so the cloned `SheetChart` collapses both shapes to
 `undefined`.
+The per-axis `axes.x.noMultiLvlLbl` override follows the same
+`undefined` (inherit) / `null` (drop) / `boolean` (replace) grammar.
+Because `<c:noMultiLvlLbl>` lives exclusively on `CT_CatAx`, the flag
+threads through bar / column / line / area coercions but is dropped
+silently when the resolved clone target is `scatter` (its X axis is a
+value axis, so the element has no slot) or `pie` / `doughnut` (no
+axes at all) — flattening a column template into a scatter clone
+therefore never leaks a stale catAx flag into the output. An override
+of `false` is equivalent to `null` — the writer treats both as the
+OOXML default `val="0"`, so the cloned `SheetChart` collapses both
+shapes to `undefined`. Non-boolean overrides drop rather than fall
+through to the inherited value.
 The per-axis `axes.x.reverse` / `axes.y.reverse` overrides follow the
 same `undefined` (inherit) / `null` (drop) / boolean (replace) grammar
 as the other axis fields. A literal `false` override behaves

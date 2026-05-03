@@ -309,6 +309,12 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   // §21.2.2 — the OOXML `ST_LblAlgn` schema places the element on
   // `CT_CatAx` / `CT_DateAx` only. Same scope rule as `lblOffset`.
   const lblAlgn = isCategoryAxis ? parseAxisLblAlgn(axis) : undefined;
+  // `<c:noMultiLvlLbl>` lives exclusively on `CT_CatAx` per ECMA-376
+  // Part 1, §21.2.2 — even `<c:dateAx>`, `<c:valAx>`, and `<c:serAx>`
+  // reject the element. Skip the parse on every other axis flavour so
+  // a corrupt template carrying a stray flag does not surface a value
+  // the writer would never emit anyway.
+  const noMultiLvlLbl = axis.local === "catAx" ? parseAxisNoMultiLvlLbl(axis) : undefined;
   // `<c:delete>` sits on every axis flavour (CT_CatAx / CT_ValAx /
   // CT_DateAx / CT_SerAx) per ECMA-376 Part 1, §21.2.2. The OOXML
   // default `val="0"` (axis visible) collapses to `undefined` so
@@ -327,6 +333,7 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
     tickMarkSkip === undefined &&
     lblOffset === undefined &&
     lblAlgn === undefined &&
+    noMultiLvlLbl === undefined &&
     hidden === undefined
   ) {
     return undefined;
@@ -344,6 +351,7 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   if (tickMarkSkip !== undefined) out.tickMarkSkip = tickMarkSkip;
   if (lblOffset !== undefined) out.lblOffset = lblOffset;
   if (lblAlgn !== undefined) out.lblAlgn = lblAlgn;
+  if (noMultiLvlLbl !== undefined) out.noMultiLvlLbl = noMultiLvlLbl;
   if (hidden !== undefined) out.hidden = hidden;
   return out;
 }
@@ -509,6 +517,37 @@ function parseAxisLblAlgn(axis: XmlElement): ChartAxisLabelAlign | undefined {
   const value = raw.trim() as ChartAxisLabelAlign;
   if (!VALID_LBL_ALIGNS.has(value)) return undefined;
   return value === "ctr" ? undefined : value;
+}
+
+/**
+ * Pull `<c:noMultiLvlLbl val=".."/>` off a category axis element.
+ * Returns `true` only when the axis pinned `val="1"` / `val="true"`
+ * (Excel's "Multi-level Category Labels" checkbox unchecked, i.e.
+ * tiered category labels collapsed onto a single line). The OOXML
+ * default `val="0"` / `val="false"`, absence, missing `val`, and
+ * unknown tokens all collapse to `undefined` so absence and the
+ * default round-trip identically through {@link cloneChart}.
+ *
+ * Mirrors the truthy / falsy parsing in {@link parseAxisHidden} —
+ * the OOXML schema (`xsd:boolean`) accepts `0` / `1` / `false` /
+ * `true` for `<c:noMultiLvlLbl>` just as it does for every other
+ * Boolean-valued chart attribute.
+ */
+function parseAxisNoMultiLvlLbl(axis: XmlElement): boolean | undefined {
+  const el = findChild(axis, "noMultiLvlLbl");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  switch (raw.trim()) {
+    case "1":
+    case "true":
+      return true;
+    case "0":
+    case "false":
+      return undefined;
+    default:
+      return undefined;
+  }
 }
 
 /**

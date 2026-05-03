@@ -5115,3 +5115,187 @@ describe("parseChart — data labels showLegendKey", () => {
     });
   });
 });
+
+// ── parseChart — axis noMultiLvlLbl ────────────────────────────────
+
+describe("parseChart — axis noMultiLvlLbl", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces noMultiLvlLbl=true on the category axis when val="1"', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:noMultiLvlLbl val="1"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.noMultiLvlLbl).toBe(true);
+    expect(chart?.axes?.y?.noMultiLvlLbl).toBeUndefined();
+  });
+
+  it('collapses the OOXML default val="0" to undefined', () => {
+    // Excel's reference serialization emits `<c:noMultiLvlLbl val="0"/>`
+    // on every category axis even though the schema default is `false`.
+    // The parser collapses the default so absence and the default
+    // round-trip identically through the writer's elision logic.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:noMultiLvlLbl val="0"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("collapses absence of <c:noMultiLvlLbl> to undefined", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it('accepts the OOXML truthy spelling val="true"', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:noMultiLvlLbl val="true"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.noMultiLvlLbl).toBe(true);
+  });
+
+  it('accepts the OOXML falsy spelling val="false" and collapses to undefined', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:noMultiLvlLbl val="false"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when <c:noMultiLvlLbl> is missing the val attribute", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:noMultiLvlLbl/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("returns undefined for unknown val tokens", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:noMultiLvlLbl val="yes"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("does not surface noMultiLvlLbl on a value axis", () => {
+    // The OOXML schema places `<c:noMultiLvlLbl>` on CT_CatAx exclusively
+    // — `<c:valAx>` rejects it entirely. A corrupt template carrying a
+    // stray flag on a value axis should not surface a field the writer
+    // would never emit anyway.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:noMultiLvlLbl val="1"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.noMultiLvlLbl).toBeUndefined();
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("does not surface noMultiLvlLbl on a scatter chart's value axes", () => {
+    // Scatter has two valAx — the schema rejects `<c:noMultiLvlLbl>` on
+    // both, so a stray flag on either axis must not bleed through into
+    // the parsed shape.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:scatterChart><c:ser><c:idx val="0"/></c:ser></c:scatterChart>
+    <c:valAx>
+      <c:axId val="1"/>
+      <c:axPos val="b"/>
+      <c:noMultiLvlLbl val="1"/>
+    </c:valAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:axPos val="l"/>
+      <c:noMultiLvlLbl val="1"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.noMultiLvlLbl).toBeUndefined();
+    expect(chart?.axes?.y?.noMultiLvlLbl).toBeUndefined();
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("co-surfaces noMultiLvlLbl alongside title, gridlines, and other catAx fields", () => {
+    const xml = `<c:chartSpace ${NS}
+                xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:majorGridlines/>
+      <c:title><c:tx><c:rich><a:p><a:r><a:t>Region</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      <c:lblOffset val="200"/>
+      <c:tickLblSkip val="3"/>
+      <c:noMultiLvlLbl val="1"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x).toEqual({
+      title: "Region",
+      gridlines: { major: true },
+      lblOffset: 200,
+      tickLblSkip: 3,
+      noMultiLvlLbl: true,
+    });
+  });
+});

@@ -172,6 +172,11 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // scope rule as `lblOffset`; the catAx builder is the sole
     // consumer.
     xLblAlgn: normalizeAxisLblAlgn(chart.axes?.x?.lblAlgn),
+    // `noMultiLvlLbl` lives exclusively on `CT_CatAx` per ECMA-376
+    // Part 1, §21.2.2 — even `<c:dateAx>` rejects the element. Same
+    // catAx-only scope rule as the surrounding category-axis knobs;
+    // the catAx builder is the sole consumer.
+    xNoMultiLvlLbl: chart.axes?.x?.noMultiLvlLbl === true,
     // `<c:delete>` lives on every axis flavour (CT_CatAx / CT_ValAx /
     // CT_DateAx / CT_SerAx). The writer always emits the element —
     // Excel's reference serialization includes `<c:delete val="0"/>`
@@ -263,6 +268,15 @@ interface AxisRenderOptions {
    * writer falls back to the OOXML default `"ctr"`).
    */
   xLblAlgn: ChartAxisLabelAlign | undefined;
+  /**
+   * Whether the X axis should pin `<c:noMultiLvlLbl val="1"/>`
+   * (multi-level category labels suppressed). Always defined — `false`
+   * keeps Excel's reference `val="0"` while `true` collapses multi-tier
+   * category labels onto a single line. Only meaningful for the catAx
+   * builder; scatter has no category axis, so the value is silently
+   * dropped at the per-chart-type branch.
+   */
+  xNoMultiLvlLbl: boolean;
   /**
    * Whether the X axis should render its `<c:delete>` element with
    * `val="1"` (axis hidden). Always defined — `false` keeps Excel's
@@ -760,7 +774,12 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
     // so a fresh chart matches Excel's reference serialization (the
     // default `1` is omitted and Excel renders every tick).
     ...buildAxisSkips(opts.xTickLblSkip, opts.xTickMarkSkip),
-    xmlSelfClose("c:noMultiLvlLbl", { val: 0 }),
+    // `<c:noMultiLvlLbl>` is always emitted because Excel's reference
+    // serialization includes it on every category axis. The writer
+    // pins the caller's override when `true`; absence and an explicit
+    // `false` both produce `val="0"` so untouched charts match Excel's
+    // output byte-for-byte.
+    xmlSelfClose("c:noMultiLvlLbl", { val: opts.xNoMultiLvlLbl ? 1 : 0 }),
   );
 
   const valAxChildren: string[] = [
