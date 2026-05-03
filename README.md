@@ -658,6 +658,15 @@ single-color override). Every other chart family defaults to `false`,
 so absence and `<c:varyColors val="0"/>` both collapse to `undefined`
 and only an explicit `val="1"` surfaces `true`. Unknown / malformed
 values and a missing `val` attribute drop to `undefined`.
+`Chart.scatterStyle` surfaces `<c:scatterChart><c:scatterStyle
+val=".."/></c:scatterChart>` — the chart-level XY-scatter preset
+Excel selects in the chart-type picker (`"none"`, `"line"`,
+`"lineMarker"`, `"marker"`, `"smooth"`, or `"smoothMarker"`). Every
+recognized token surfaces literally so a clone preserves the exact
+preset; missing elements, missing `val` attributes, and tokens
+outside the OOXML enum drop to `undefined`. Only `scatter` charts
+report the field — the schema places the element exclusively on
+`<c:scatterChart>`.
 `ChartSeriesInfo.smooth` surfaces the per-series
 `<c:ser><c:smooth val=".."/>` flag — Excel's "Format Data Series →
 Line → Smoothed line" toggle — only on `line` / `line3D` / `scatter`
@@ -798,6 +807,18 @@ serialization. Pin `varyColors: true` on a single-series column or
 bar chart to paint each bar a different color, or pin `false` on a
 doughnut to collapse every wedge to one color (Excel's "single color"
 preset).
+The chart-level `scatterStyle` field maps to `<c:scatterStyle val=".."/>`
+on `<c:scatterChart>` and picks one of Excel's six XY-scatter presets:
+`"none"` / `"marker"` (markers only), `"line"` (straight lines, no
+markers), `"lineMarker"` (Excel's chart-picker default — straight
+lines with markers; the writer's fallback when the field is absent),
+`"smooth"` (smoothed curves, no markers), or `"smoothMarker"`
+(smoothed curves with markers). The element is required by the OOXML
+schema on `<c:scatterChart>` and the writer always emits it; values
+outside the enum fall back to `"lineMarker"` so a malformed input
+cannot produce invalid OOXML. Other chart kinds silently ignore the
+field — the schema places `<c:scatterStyle>` exclusively on
+`<c:scatterChart>`.
 For line and scatter charts, each `series[i].smooth` flag toggles
 Excel's curved-line variant (`<c:smooth val="..">` inside `<c:ser>`).
 Line series always emit the element — `smooth: true` writes `val="1"`,
@@ -937,6 +958,13 @@ back to the writer's per-family default (`true` for pie / doughnut,
 schema places `<c:varyColors>` on every chart-type element hucre
 authors, so the inherited value carries through every coercion
 (column → pie, doughnut → line, etc.) without being silently dropped.
+The chart-level `scatterStyle` follows the same grammar: pass
+`undefined` to inherit the source's parsed preset, `null` to drop it
+back to the writer's `"lineMarker"` default, or a {@link
+ChartScatterStyle} value to replace it. The inherited value is also
+dropped automatically when the resolved clone target is anything
+other than `scatter`, since the schema rejects `<c:scatterStyle>` on
+every other chart family.
 
 #### Walking and adding charts with `getCharts` / `addChart`
 

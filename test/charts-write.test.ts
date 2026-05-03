@@ -5,7 +5,7 @@ import { writeXlsx } from "../src/xlsx/writer";
 import { writeChart, chartKindElement } from "../src/xlsx/chart-writer";
 import { parseChart } from "../src/xlsx/chart-reader";
 import { writeDrawing } from "../src/xlsx/drawing-writer";
-import type { WriteChartKind, SheetChart, WriteSheet } from "../src/_types";
+import type { ChartScatterStyle, WriteChartKind, SheetChart, WriteSheet } from "../src/_types";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -2552,5 +2552,97 @@ describe("writeChart — varyColors", () => {
     expect(parseChart(pie)?.varyColors).toBeUndefined();
     const dough = writeChart(makeChart({ type: "doughnut" }), "Sheet1").chartXml;
     expect(parseChart(dough)?.varyColors).toBeUndefined();
+  });
+});
+
+// ── Scatter style ────────────────────────────────────────────────────
+
+describe("writeChart — scatterStyle", () => {
+  function makeScatter(overrides: Partial<SheetChart> = {}): SheetChart {
+    return makeChart({
+      type: "scatter",
+      series: [{ values: "B2:B4", categories: "A2:A4" }],
+      ...overrides,
+    });
+  }
+
+  it('emits <c:scatterStyle val="lineMarker"/> on a fresh scatter chart', () => {
+    // The writer's default mirrors Excel's chart-picker default —
+    // straight lines with markers — even though the OOXML schema
+    // default is `"marker"`. Matching Excel's UI default keeps fresh
+    // charts visually identical to what the user would draw by hand.
+    const result = writeChart(makeScatter(), "Sheet1");
+    expect(result.chartXml).toContain('c:scatterStyle val="lineMarker"');
+  });
+
+  it("threads an explicit scatterStyle through to the rendered chart", () => {
+    const result = writeChart(makeScatter({ scatterStyle: "smooth" }), "Sheet1");
+    expect(result.chartXml).toContain('c:scatterStyle val="smooth"');
+    expect(result.chartXml).not.toContain('c:scatterStyle val="lineMarker"');
+  });
+
+  it("emits every ST_ScatterStyle preset literally when pinned", () => {
+    for (const preset of [
+      "none",
+      "line",
+      "lineMarker",
+      "marker",
+      "smooth",
+      "smoothMarker",
+    ] as const) {
+      const result = writeChart(makeScatter({ scatterStyle: preset }), "Sheet1");
+      expect(result.chartXml).toContain(`c:scatterStyle val="${preset}"`);
+      // Element appears exactly once on the rendered chart.
+      const occurrences = result.chartXml.match(/c:scatterStyle/g) ?? [];
+      expect(occurrences).toHaveLength(1);
+    }
+  });
+
+  it("falls back to the default lineMarker on an unrecognized scatterStyle", () => {
+    // Type-cheat with an enum-violating string to exercise the
+    // validate-or-default branch — the writer never emits a token
+    // Excel's strict validator would reject.
+    const result = writeChart(
+      makeScatter({ scatterStyle: "bogus" as ChartScatterStyle }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:scatterStyle val="lineMarker"');
+    expect(result.chartXml).not.toContain('c:scatterStyle val="bogus"');
+  });
+
+  it("ignores scatterStyle on non-scatter chart families", () => {
+    // The OOXML schema places <c:scatterStyle> exclusively on
+    // <c:scatterChart>; the writer drops the field on every other
+    // family rather than emit an element Excel would refuse.
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, scatterStyle: "smooth" }), "Sheet1");
+      expect(result.chartXml).not.toContain("c:scatterStyle");
+    }
+  });
+
+  it("places <c:scatterStyle> as the first child of <c:scatterChart>", () => {
+    // CT_ScatterChart sequence: scatterStyle → varyColors → ser*
+    const result = writeChart(makeScatter({ scatterStyle: "smoothMarker" }), "Sheet1");
+    const styleIdx = result.chartXml.indexOf("c:scatterStyle");
+    const varyIdx = result.chartXml.indexOf("c:varyColors");
+    const serIdx = result.chartXml.indexOf("c:ser>");
+    expect(styleIdx).toBeGreaterThan(-1);
+    expect(varyIdx).toBeGreaterThan(styleIdx);
+    expect(serIdx).toBeGreaterThan(varyIdx);
+  });
+
+  it("round-trips a non-default scatterStyle through parseChart", () => {
+    const written = writeChart(makeScatter({ scatterStyle: "smooth" }), "Sheet1").chartXml;
+    expect(parseChart(written)?.scatterStyle).toBe("smooth");
+  });
+
+  it("round-trips the lineMarker default through parseChart", () => {
+    // The writer always emits `lineMarker` by default — re-parsing
+    // surfaces it literally because the reader does not collapse the
+    // writer's chosen default (only the OOXML schema default `marker`
+    // would be a candidate for collapse, but the reader keeps every
+    // token literal so a clone preserves the exact preset).
+    const written = writeChart(makeScatter(), "Sheet1").chartXml;
+    expect(parseChart(written)?.scatterStyle).toBe("lineMarker");
   });
 });

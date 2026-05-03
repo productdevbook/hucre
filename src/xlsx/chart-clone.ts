@@ -21,6 +21,7 @@ import type {
   ChartKind,
   ChartLineStroke,
   ChartMarker,
+  ChartScatterStyle,
   ChartSeries,
   ChartSeriesInfo,
   SheetChart,
@@ -190,6 +191,21 @@ export interface CloneChartOptions {
    * single-series column chart in a different color (`true`).
    */
   varyColors?: boolean | null;
+  /**
+   * Override `<c:scatterStyle>` (the chart-level XY-scatter preset).
+   *
+   * `undefined` (or omitted) inherits the source's parsed
+   * `scatterStyle`. `null` drops the inherited value so the writer
+   * falls back to its `"lineMarker"` default. A {@link ChartScatterStyle}
+   * value replaces it — useful when a smoothed-line scatter template
+   * should clone as a marker-only or straight-line variant.
+   *
+   * Only meaningful when the resolved chart type is `scatter`; the
+   * field is silently dropped when the clone targets any other family
+   * since the OOXML schema places `<c:scatterStyle>` exclusively on
+   * `<c:scatterChart>`.
+   */
+  scatterStyle?: ChartScatterStyle | null;
   /**
    * Per-axis overrides. Each field accepts a value to replace the
    * source's, or `null` to drop the source value (the cloned chart
@@ -364,6 +380,15 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
 
   const resolvedVaryColors = resolveVaryColors(source.varyColors, options.varyColors);
   if (resolvedVaryColors !== undefined) out.varyColors = resolvedVaryColors;
+
+  // `<c:scatterStyle>` only renders inside `<c:scatterChart>`. Drop the
+  // field on every other resolved type so a scatter template flattened
+  // to line / column does not leak the preset into a chart kind whose
+  // schema rejects it. Override wins over the source's parsed value.
+  if (type === "scatter") {
+    const resolvedScatterStyle = resolveScatterStyle(source.scatterStyle, options.scatterStyle);
+    if (resolvedScatterStyle !== undefined) out.scatterStyle = resolvedScatterStyle;
+  }
 
   // Pie and doughnut have no axes, so silently skip carrying over axis
   // titles even when the source declared them or the caller passed an
@@ -655,6 +680,26 @@ function resolveVaryColors(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve a `scatterStyle` override.
+ *
+ * `undefined` → inherit the source's parsed `scatterStyle`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               default `"lineMarker"`).
+ * value       → replace.
+ *
+ * The grammar mirrors `dispBlanksAs` / `varyColors` so the chart-level
+ * toggles compose the same way at the call site.
+ */
+function resolveScatterStyle(
+  sourceValue: ChartScatterStyle | undefined,
+  override: ChartScatterStyle | null | undefined,
+): ChartScatterStyle | undefined {
   if (override === undefined) return sourceValue;
   if (override === null) return undefined;
   return override;

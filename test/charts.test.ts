@@ -2361,6 +2361,146 @@ describe("parseChart — varyColors", () => {
   });
 });
 
+// ── parseChart — scatterStyle ─────────────────────────────────────
+
+describe("parseChart — scatterStyle", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces <c:scatterStyle val="lineMarker"/> on a scatter chart', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:scatterChart>
+        <c:scatterStyle val="lineMarker"/>
+        <c:varyColors val="0"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:scatterChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.scatterStyle).toBe("lineMarker");
+  });
+
+  it('surfaces <c:scatterStyle val="smooth"/> on a smooth-line scatter', () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:scatterChart>
+        <c:scatterStyle val="smooth"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:scatterChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.scatterStyle).toBe("smooth");
+  });
+
+  it("surfaces every other ST_ScatterStyle preset literally", () => {
+    // Walk the remaining four enum tokens — each one round-trips
+    // verbatim with no per-family default collapse.
+    for (const preset of ["none", "line", "marker", "smoothMarker"] as const) {
+      const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:scatterChart>
+        <c:scatterStyle val="${preset}"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:scatterChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+      expect(parseChart(xml)?.scatterStyle).toBe(preset);
+    }
+  });
+
+  it("returns undefined when the scatter chart omits <c:scatterStyle>", () => {
+    // The OOXML schema lists the element as required, but Excel falls
+    // back to the schema default `"marker"` when the file omits it. The
+    // reader does not fabricate a value — absence stays absence so the
+    // clone layer can decide whether to inherit the writer's own default.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:scatterChart>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:scatterChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.scatterStyle).toBeUndefined();
+  });
+
+  it("ignores a <c:scatterStyle> with no val attribute", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:scatterChart>
+        <c:scatterStyle/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:scatterChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.scatterStyle).toBeUndefined();
+  });
+
+  it("drops unknown scatterStyle values rather than fabricate one", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:scatterChart>
+        <c:scatterStyle val="bogus"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:scatterChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.scatterStyle).toBeUndefined();
+  });
+
+  it("does not surface scatterStyle on non-scatter charts", () => {
+    // The OOXML schema places <c:scatterStyle> exclusively on
+    // <c:scatterChart>; even if a hand-edited bar chart somehow carries
+    // the element, the reader does not surface it because the parse is
+    // gated on the matching kind.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="clustered"/>
+        <c:scatterStyle val="lineMarker"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.scatterStyle).toBeUndefined();
+  });
+
+  it("surfaces scatterStyle from the first scatterChart in a combo chart", () => {
+    // Combo charts are rare but Excel supports an arbitrary mix of
+    // chart-type elements inside one plot area. The reader latches onto
+    // the first <c:scatterChart>'s scatterStyle, mirroring how it
+    // handles other chart-type-level fields.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:scatterChart>
+        <c:scatterStyle val="smoothMarker"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:scatterChart>
+      <c:scatterChart>
+        <c:scatterStyle val="line"/>
+        <c:ser><c:idx val="1"/></c:ser>
+      </c:scatterChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.scatterStyle).toBe("smoothMarker");
+  });
+});
+
 // ── End-to-end: full XLSX with a chart ────────────────────────────
 
 /**
