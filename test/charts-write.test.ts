@@ -5617,6 +5617,161 @@ describe("writeChart — chart style preset", () => {
   });
 });
 
+// ── writeChart — chart editing locale (lang) ─────────────────────────
+
+describe("writeChart — chart editing locale", () => {
+  it("skips <c:lang> entirely when the field is unset (writer default)", () => {
+    // Excel's reference serialization for a fresh chart authored on
+    // an English locale pins <c:lang val="en-US"/>, but the writer
+    // skips emission when the chart leaves `lang` unset so the file
+    // does not silently fabricate a locale Excel falls back to anyway.
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:lang ");
+    expect(result.chartXml).not.toContain("<c:lang/>");
+  });
+
+  it('emits <c:lang val=".."/> on <c:chartSpace> when the field is pinned', () => {
+    const result = writeChart(makeChart({ lang: "en-US" }), "Sheet1");
+    expect(result.chartXml).toContain('c:lang val="en-US"');
+  });
+
+  it("emits a non-English locale verbatim", () => {
+    for (const tag of ["tr-TR", "de-DE", "pt-BR", "zh-Hans-CN", "fr"]) {
+      const result = writeChart(makeChart({ lang: tag }), "Sheet1");
+      expect(result.chartXml).toContain(`c:lang val="${tag}"`);
+    }
+  });
+
+  it("places <c:lang> before <c:roundedCorners> on <c:chartSpace>", () => {
+    // CT_ChartSpace sequence: date1904?, lang?, roundedCorners?, ...
+    // — the locale must precede <c:roundedCorners> so a strict
+    // validator (Excel itself rejects out-of-order children) sees the
+    // schema sequence respected.
+    const result = writeChart(makeChart({ lang: "en-US" }), "Sheet1");
+    const langIdx = result.chartXml.indexOf("c:lang ");
+    const roundedIdx = result.chartXml.indexOf("c:roundedCorners");
+    const chartIdx = result.chartXml.indexOf("<c:chart>");
+    expect(langIdx).toBeGreaterThan(-1);
+    expect(roundedIdx).toBeGreaterThan(langIdx);
+    expect(chartIdx).toBeGreaterThan(roundedIdx);
+  });
+
+  it("places <c:lang> before <c:style> when both are pinned", () => {
+    // <c:lang> precedes <c:roundedCorners> which precedes <c:style>
+    // per CT_ChartSpace; the writer threads all three in the right
+    // order so a validator never sees them transposed.
+    const result = writeChart(
+      makeChart({ lang: "tr-TR", style: 27, roundedCorners: true }),
+      "Sheet1",
+    );
+    const langIdx = result.chartXml.indexOf("c:lang ");
+    const roundedIdx = result.chartXml.indexOf("c:roundedCorners");
+    const styleIdx = result.chartXml.indexOf("c:style ");
+    expect(langIdx).toBeGreaterThan(-1);
+    expect(roundedIdx).toBeGreaterThan(langIdx);
+    expect(styleIdx).toBeGreaterThan(roundedIdx);
+  });
+
+  it("only emits <c:lang> once on a chart that pins it", () => {
+    // Guard against any regression that would double-emit the element.
+    const result = writeChart(makeChart({ lang: "en-US" }), "Sheet1");
+    const occurrences = result.chartXml.match(/<c:lang /g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("drops malformed locale tokens rather than emit them", () => {
+    // <c:lang> is xsd:language in the OOXML schema (BCP-47 culture
+    // names). Tokens that don't match the alphabet / length shape
+    // collapse to absence so the writer never emits a value Excel
+    // would reject.
+    for (const bad of [
+      "english",
+      "en US",
+      "en_US",
+      "1234",
+      "",
+      " ",
+      "a-bad-very-long-tag-segment",
+      "en-",
+      "-US",
+    ]) {
+      const result = writeChart(makeChart({ lang: bad }), "Sheet1");
+      expect(result.chartXml).not.toContain("<c:lang ");
+      expect(result.chartXml).not.toContain("<c:lang/>");
+    }
+  });
+
+  it("drops non-string lang values rather than fabricate one", () => {
+    for (const val of [42, true, null, undefined, {}, []]) {
+      const result = writeChart(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        makeChart({ lang: val as any }),
+        "Sheet1",
+      );
+      expect(result.chartXml).not.toContain("<c:lang ");
+    }
+  });
+
+  it("threads lang through every chart family", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, lang: "tr-TR" }), "Sheet1");
+      expect(result.chartXml).toContain('c:lang val="tr-TR"');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        lang: "tr-TR",
+      }),
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain('c:lang val="tr-TR"');
+  });
+
+  it("round-trips a pinned lang through parseChart", () => {
+    const written = writeChart(makeChart({ lang: "en-US" }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.lang).toBe("en-US");
+  });
+
+  it("collapses an unset lang round-trip back to undefined", () => {
+    // A fresh chart writes no element, which re-parses to undefined —
+    // absence and the unset default round-trip identically.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.lang).toBeUndefined();
+  });
+
+  it("threads lang end-to-end through writeXlsx packaging", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Dashboard",
+        rows: [
+          ["Quarter", "Revenue"],
+          ["Q1", 10],
+          ["Q2", 20],
+          ["Q3", 30],
+        ],
+        charts: [
+          {
+            type: "column",
+            series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            lang: "tr-TR",
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('c:lang val="tr-TR"');
+    // Re-parse the rendered chart to confirm the locale survives the
+    // packaging path.
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.lang).toBe("tr-TR");
+  });
+});
+
 // ── writeChart — axis crossBetween ───────────────────────────────────
 
 describe("writeChart — axis crossBetween", () => {

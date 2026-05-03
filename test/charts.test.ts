@@ -6464,6 +6464,132 @@ describe("parseChart — chart style preset", () => {
   });
 });
 
+// ── parseChart — chart editing locale (lang) ───────────────────────
+
+describe("parseChart — chart editing locale", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces <c:lang val="en-US"/> on <c:chartSpace> as the string "en-US"', () => {
+    // Excel's reference serialization for a fresh chart authored on
+    // an English locale pins lang en-US — it surfaces verbatim
+    // because the reader does not collapse a default (a chart that
+    // omits the element renders identically).
+    const xml = `<c:chartSpace ${NS}>
+  <c:lang val="en-US"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.lang).toBe("en-US");
+  });
+
+  it("surfaces a templated non-English locale (tr-TR)", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:lang val="tr-TR"/>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.lang).toBe("tr-TR");
+  });
+
+  it("surfaces locale shapes Excel actually emits", () => {
+    // Sample of the BCP-47 forms <c:lang> accepts under xsd:language.
+    for (const tag of ["en-US", "tr-TR", "de-DE", "pt-BR", "zh-Hans-CN", "fr"]) {
+      const xml = `<c:chartSpace ${NS}>
+  <c:lang val="${tag}"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+      expect(parseChart(xml)?.lang).toBe(tag);
+    }
+  });
+
+  it("returns undefined when the chartSpace has no <c:lang> element", () => {
+    // Absence is the writer's default — the reader surfaces nothing
+    // so a fresh chart and a chart that omits the element round-trip
+    // identically through cloneChart.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.lang).toBeUndefined();
+  });
+
+  it("drops malformed locale tokens rather than surface them", () => {
+    // <c:lang> is xsd:language (BCP-47 culture name). Garbage values
+    // collapse to undefined so the parsed chart never carries a token
+    // Excel itself would not emit.
+    for (const bad of ["english", "en US", "en_US", "1234", "en-", "-US", " ", ""]) {
+      const xml = `<c:chartSpace ${NS}>
+  <c:lang val="${bad}"/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+      expect(parseChart(xml)?.lang).toBeUndefined();
+    }
+  });
+
+  it("ignores a missing val attribute on <c:lang>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:lang/>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.lang).toBeUndefined();
+  });
+
+  it("surfaces lang alongside other chart-space toggles", () => {
+    // <c:lang> sits before <c:roundedCorners> per CT_ChartSpace and
+    // <c:style> sits after — co-existing chart-space children should
+    // not interfere with each other's parsing.
+    const xml = `<c:chartSpace ${NS}>
+  <c:lang val="tr-TR"/>
+  <c:roundedCorners val="1"/>
+  <c:style val="34"/>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:varyColors val="1"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+    <c:plotVisOnly val="0"/>
+    <c:dispBlanksAs val="zero"/>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.lang).toBe("tr-TR");
+    expect(chart?.roundedCorners).toBe(true);
+    expect(chart?.style).toBe(34);
+    expect(chart?.plotVisOnly).toBe(false);
+    expect(chart?.dispBlanksAs).toBe("zero");
+    expect(chart?.varyColors).toBe(true);
+  });
+});
+
 // ── parseChart — axis crossBetween ───────────────────────────────────
 
 describe("parseChart — axis crossBetween", () => {

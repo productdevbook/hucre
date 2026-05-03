@@ -280,6 +280,14 @@ export function parseChart(xml: string): Chart | undefined {
   const style = parseStyle(chartSpace);
   if (style !== undefined) out.style = style;
 
+  // `<c:lang>` records the editing locale Excel used to author the
+  // chart. It also sits on `<c:chartSpace>` (per CT_ChartSpace, between
+  // `<c:date1904>` and `<c:roundedCorners>`), not inside `<c:chart>` —
+  // the value drives locale-sensitive defaults across the entire chart
+  // document.
+  const lang = parseLang(chartSpace);
+  if (lang !== undefined) out.lang = lang;
+
   return out;
 }
 
@@ -1667,6 +1675,42 @@ function parseStyle(chartSpace: XmlElement): number | undefined {
   if (!Number.isInteger(n)) return undefined;
   if (n < 1 || n > 48) return undefined;
   return n;
+}
+
+// ── Editing Locale ────────────────────────────────────────────────
+
+/**
+ * Pull `<c:lang val=".."/>` off `<c:chartSpace>`. Surfaces the
+ * culture-name verbatim when `val` matches the IETF BCP-47 subset
+ * Excel emits (`[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*`, e.g. `en-US`,
+ * `tr-TR`, `zh-Hant-TW`); absence and malformed tokens drop to
+ * `undefined`.
+ *
+ * The reader does not pin a default — Excel's reference serialization
+ * for a fresh chart authored on an English locale emits `<c:lang
+ * val="en-US"/>`, but a chart that omits the element renders
+ * identically (Excel falls back to the workbook's editing language).
+ * Surfacing only the values that round-trip preserves the minimal-
+ * shape contract the rest of {@link Chart} follows.
+ *
+ * Note: `<c:lang>` lives on `<c:chartSpace>` (per the CT_ChartSpace
+ * sequence the element sits between `<c:date1904>` and
+ * `<c:roundedCorners>`), not inside `<c:chart>` — the locale governs
+ * the entire chart document, not just the plot area.
+ */
+function parseLang(chartSpace: XmlElement): string | undefined {
+  const el = findChild(chartSpace, "lang");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  // Strict shape check — Excel's `<c:lang>` is `xsd:language`
+  // (RFC-1766 / BCP-47 culture name). The pattern matches a primary
+  // 2- / 3-letter language tag plus zero or more `-`-separated 2–8
+  // alphanumeric subtags, which covers everything Excel emits
+  // (`en-US`, `tr-TR`, `pt-BR`, `zh-Hans-CN`, …) without admitting
+  // raw garbage like `"english"` or `"en US"`.
+  if (!/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(raw)) return undefined;
+  return raw;
 }
 
 // ── Vary Colors ────────────────────────────────────────────────────

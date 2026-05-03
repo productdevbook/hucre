@@ -6342,6 +6342,227 @@ describe("cloneChart — chart style preset", () => {
   });
 });
 
+// ── cloneChart — chart editing locale (lang) ─────────────────────────
+
+describe("cloneChart — chart editing locale", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's lang by default", () => {
+    const clone = cloneChart(source({ lang: "en-US" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.lang).toBe("en-US");
+  });
+
+  it("lets options.lang override the source's value", () => {
+    const clone = cloneChart(source({ lang: "en-US" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      lang: "tr-TR",
+    });
+    expect(clone.lang).toBe("tr-TR");
+  });
+
+  it("drops the inherited lang when the override is null", () => {
+    // null collapses to absence — the cloned SheetChart drops the
+    // field so the writer skips <c:lang> entirely on emit.
+    const clone = cloneChart(source({ lang: "en-US" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      lang: null,
+    });
+    expect(clone.lang).toBeUndefined();
+  });
+
+  it("returns undefined lang when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.lang).toBeUndefined();
+  });
+
+  it("adds a lang hint on a source that lacked one", () => {
+    // The source has no parsed lang — the override pins one and the
+    // resolved SheetChart carries the value through.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      lang: "de-DE",
+    });
+    expect(clone.lang).toBe("de-DE");
+  });
+
+  it("carries lang through a flatten (line → column)", () => {
+    // <c:lang> lives on <c:chartSpace> and is valid on every chart
+    // family, so a coercion does not drop it.
+    const clone = cloneChart(source({ lang: "tr-TR" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.lang).toBe("tr-TR");
+  });
+
+  it("carries lang through a doughnut flatten (line → doughnut)", () => {
+    // The locale has no chart-family restriction — even a coercion to
+    // doughnut, which has no axes, must preserve the pinned value.
+    const clone = cloneChart(source({ lang: "tr-TR" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.lang).toBe("tr-TR");
+  });
+
+  it("propagates lang into the rendered <c:chartSpace> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ lang: "tr-TR" }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:lang val="tr-TR"');
+
+    // Re-parsing the rendered chart returns the same value — closes
+    // the template → clone → write → read loop.
+    const reparsed = parseChart(written);
+    expect(reparsed?.lang).toBe("tr-TR");
+  });
+
+  it("emits no <c:lang> element when both source and override are absent", async () => {
+    // A bare clone with no lang hint rolls into a SheetChart whose
+    // writer skips the element and re-parses to undefined.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).not.toContain("<c:lang ");
+    expect(parseChart(written)?.lang).toBeUndefined();
+  });
+
+  it("an explicit null override beats the source value through writeXlsx", async () => {
+    // Source pins lang en-US, clone overrides to null — the rendered
+    // chart should carry no element and re-parse to undefined.
+    const clone = cloneChart(source({ lang: "en-US" }), {
+      anchor: { from: { row: 5, col: 0 } },
+      lang: null,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).not.toContain("<c:lang ");
+    expect(parseChart(written)?.lang).toBeUndefined();
+  });
+
+  it("an explicit string override replaces a source lang through writeXlsx", async () => {
+    const clone = cloneChart(source({ lang: "en-US" }), {
+      anchor: { from: { row: 5, col: 0 } },
+      lang: "de-DE",
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:lang val="de-DE"');
+    expect(written).not.toContain('c:lang val="en-US"');
+    expect(parseChart(written)?.lang).toBe("de-DE");
+  });
+
+  it("composes lang with other chart-space toggles through writeXlsx", async () => {
+    // lang / roundedCorners / style all live on <c:chartSpace> and
+    // must round-trip together without interfering with each other.
+    const clone = cloneChart(source({ lang: "tr-TR", roundedCorners: true, style: 34 }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('c:lang val="tr-TR"');
+    expect(written).toContain('c:roundedCorners val="1"');
+    expect(written).toContain('c:style val="34"');
+    const reparsed = parseChart(written);
+    expect(reparsed?.lang).toBe("tr-TR");
+    expect(reparsed?.roundedCorners).toBe(true);
+    expect(reparsed?.style).toBe(34);
+  });
+});
+
 // ── cloneChart — axis crossBetween ───────────────────────────────────
 
 describe("cloneChart — axis crossBetween", () => {
