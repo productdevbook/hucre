@@ -6779,10 +6779,10 @@ describe("parseChart — axis dispUnits", () => {
     expect(chart?.axes?.y?.dispUnits).toBeUndefined();
   });
 
-  it("drops the parsed value when <c:builtInUnit> is missing or malformed", () => {
-    // <c:dispUnits> has a choice between <c:builtInUnit> and
-    // <c:custUnit>; the reader only surfaces the built-in path. A
-    // bare <c:dispUnits> (or one with only <c:custUnit>) should drop.
+  it("drops the parsed value when neither <c:builtInUnit> nor <c:custUnit> resolves", () => {
+    // <c:dispUnits> has an xsd:choice between <c:builtInUnit> and
+    // <c:custUnit>. A bare <c:dispUnits>, or one whose lone child has
+    // a missing / malformed `val`, surfaces nothing.
     const bare = `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -6801,14 +6801,14 @@ describe("parseChart — axis dispUnits", () => {
 </c:chartSpace>`;
     expect(parseChart(noVal)?.axes?.y?.dispUnits).toBeUndefined();
 
-    const custUnit = `<c:chartSpace ${NS}>
+    const noCustVal = `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
     <c:catAx><c:axId val="1"/></c:catAx>
-    <c:valAx><c:axId val="2"/><c:dispUnits><c:custUnit val="500"/></c:dispUnits></c:valAx>
+    <c:valAx><c:axId val="2"/><c:dispUnits><c:custUnit/></c:dispUnits></c:valAx>
   </c:plotArea></c:chart>
 </c:chartSpace>`;
-    expect(parseChart(custUnit)?.axes?.y?.dispUnits).toBeUndefined();
+    expect(parseChart(noCustVal)?.axes?.y?.dispUnits).toBeUndefined();
   });
 
   it("surfaces dispUnits on both scatter axes (both are valAx)", () => {
@@ -6845,6 +6845,139 @@ describe("parseChart — axis dispUnits", () => {
 </c:chartSpace>`;
     const chart = parseChart(xml);
     expect(chart?.axes?.y?.dispUnits).toBeUndefined();
+  });
+
+  it("surfaces a custom numeric divisor on the value axis", () => {
+    // Excel's "Display units → Other" path emits <c:custUnit val=".."/>
+    // instead of <c:builtInUnit>. The reader surfaces the numeric divisor
+    // as `custUnit` so a templated chart that pins an arbitrary divisor
+    // (e.g. 86400 to convert seconds to days) round-trips through clone.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:dispUnits><c:custUnit val="86400"/></c:dispUnits>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.dispUnits).toEqual({ custUnit: 86400 });
+  });
+
+  it("parses fractional custUnit values per the OOXML CT_Double schema", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:dispUnits><c:custUnit val="2.5"/></c:dispUnits>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.dispUnits).toEqual({ custUnit: 2.5 });
+  });
+
+  it("surfaces showLabel alongside custUnit when <c:dispUnitsLbl> is present", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:dispUnits>
+        <c:custUnit val="500"/>
+        <c:dispUnitsLbl/>
+      </c:dispUnits>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.dispUnits).toEqual({ custUnit: 500, showLabel: true });
+  });
+
+  it("drops custUnit values that are non-positive, non-finite, or malformed", () => {
+    // OOXML CT_Double accepts any double, but a divisor of 0 or below
+    // would silently break the rendered scale. The reader requires a
+    // finite positive value rather than fabricate a token Excel rejects.
+    for (const raw of ["0", "-100", "NaN", "Infinity", "-Infinity", "abc", ""]) {
+      const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:dispUnits><c:custUnit val="${raw}"/></c:dispUnits>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+      expect(parseChart(xml)?.axes?.y?.dispUnits).toBeUndefined();
+    }
+  });
+
+  it("prefers <c:custUnit> over <c:builtInUnit> when a malformed template declares both", () => {
+    // The OOXML schema's xsd:choice forbids both children, but a
+    // corrupt template may carry both. The reader picks `custUnit`
+    // (the more specific element) and drops the preset; the writer
+    // mirrors this preference so the round-trip stays consistent.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:dispUnits>
+        <c:custUnit val="1500"/>
+        <c:builtInUnit val="thousands"/>
+      </c:dispUnits>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.dispUnits).toEqual({ custUnit: 1500 });
+  });
+
+  it("falls back to <c:builtInUnit> when <c:custUnit> is present but malformed", () => {
+    // A `<c:custUnit>` whose `val` fails the positive-finite gate
+    // does not poison the parse — the reader falls back to the
+    // sibling `<c:builtInUnit>` (also out-of-spec for the schema's
+    // choice, but a corrupt template may declare both).
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:dispUnits>
+        <c:custUnit val="-5"/>
+        <c:builtInUnit val="hundreds"/>
+      </c:dispUnits>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.dispUnits).toEqual({ unit: "hundreds" });
+  });
+
+  it("collapses custUnit to undefined on a category axis (catAx rejects <c:dispUnits>)", () => {
+    // Same scope rule as the built-in preset — `<c:dispUnits>` lives
+    // exclusively on `CT_ValAx`, so a stray element on `<c:catAx>`
+    // never surfaces.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:dispUnits><c:custUnit val="500"/></c:dispUnits>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.dispUnits).toBeUndefined();
   });
 });
 

@@ -1108,6 +1108,16 @@ const VALID_DISP_UNITS: ReadonlySet<ChartAxisDispUnit> = new Set([
  * tokens collapse to `undefined` so the writer never emits a value the
  * OOXML `ST_BuiltInUnit` enum rejects. Non-object / non-string inputs
  * (e.g. `null`, numbers, arrays) also collapse to `undefined`.
+ *
+ * The OOXML schema places `<c:builtInUnit>` and `<c:custUnit>` in an
+ * `xsd:choice` — at most one of the two may appear inside `<c:dispUnits>`.
+ * The normalizer keeps both fields when the input declares both, leaving
+ * the precedence pick to {@link buildAxisDispUnits} (where `custUnit`
+ * wins because it is the more specific OOXML element). When neither
+ * field is valid, the normalizer returns `undefined` so the writer skips
+ * the `<c:dispUnits>` element entirely — a `<c:dispUnits>` shell with
+ * no `<c:builtInUnit>` / `<c:custUnit>` child would fail Excel's strict
+ * validator.
  */
 function normalizeAxisDispUnits(
   value: ChartAxisDispUnits | ChartAxisDispUnit | undefined,
@@ -1119,11 +1129,21 @@ function normalizeAxisDispUnits(
       : undefined;
   }
   if (typeof value !== "object" || value === null) return undefined;
+  const out: ChartAxisDispUnits = {};
   const unit = value.unit;
-  if (typeof unit !== "string" || !VALID_DISP_UNITS.has(unit as ChartAxisDispUnit)) {
-    return undefined;
+  if (typeof unit === "string" && VALID_DISP_UNITS.has(unit as ChartAxisDispUnit)) {
+    out.unit = unit as ChartAxisDispUnit;
   }
-  const out: ChartAxisDispUnits = { unit: unit as ChartAxisDispUnit };
+  const custUnit = value.custUnit;
+  if (typeof custUnit === "number" && Number.isFinite(custUnit) && custUnit > 0) {
+    out.custUnit = custUnit;
+  }
+  // Drop the entire object when neither child resolves — a bare
+  // `<c:dispUnits/>` shell would fail Excel's strict validator (the
+  // CT_DispUnits choice has `minOccurs="0"` on the choice itself, but
+  // an empty element with the parent's `<c:extLst>` slot also empty
+  // is rejected by Excel's reference renderer).
+  if (out.unit === undefined && out.custUnit === undefined) return undefined;
   if (value.showLabel === true) out.showLabel = true;
   return out;
 }
@@ -1131,18 +1151,33 @@ function normalizeAxisDispUnits(
 /**
  * Build the optional `<c:dispUnits>` block that sits at the very end of
  * `<c:valAx>` per CT_ValAx (after `<c:minorUnit>`). The element itself
- * holds the choice between `<c:builtInUnit>` and `<c:custUnit>`; the
- * writer only emits the built-in variant. When `showLabel` is `true`
- * the writer emits a bare `<c:dispUnitsLbl/>` so Excel paints its
- * default automatic annotation; the rich-text label customization is
- * intentionally not surfaced.
+ * holds the choice between `<c:builtInUnit>` and `<c:custUnit>` — the
+ * writer emits exactly one per the OOXML `xsd:choice`, preferring
+ * `<c:custUnit>` when both fields are pinned because the more specific
+ * numeric divisor takes precedence (a caller appending a custom unit to
+ * a cloned source need not manually prune the inherited preset). When
+ * `showLabel` is `true` the writer emits a bare `<c:dispUnitsLbl/>` so
+ * Excel paints its default automatic annotation; the rich-text label
+ * customization is intentionally not surfaced.
  *
- * Returns an empty array when the caller did not pin a preset so the
- * writer leaves Excel's default "no display unit" state untouched.
+ * Returns an empty array when the caller did not pin either child so
+ * the writer leaves Excel's default "no display unit" state untouched.
  */
 function buildAxisDispUnits(dispUnits: ChartAxisDispUnits | undefined): string[] {
   if (!dispUnits) return [];
-  const children: string[] = [xmlSelfClose("c:builtInUnit", { val: dispUnits.unit })];
+  const children: string[] = [];
+  if (dispUnits.custUnit !== undefined) {
+    children.push(xmlSelfClose("c:custUnit", { val: dispUnits.custUnit }));
+  } else if (dispUnits.unit !== undefined) {
+    children.push(xmlSelfClose("c:builtInUnit", { val: dispUnits.unit }));
+  } else {
+    // Neither child resolved — skip emission rather than ship a bare
+    // `<c:dispUnits/>` Excel rejects. The normalizer should have
+    // pre-filtered this case, but the guard here keeps the writer
+    // robust against a stray runtime object slipping past the type
+    // boundary.
+    return [];
+  }
   if (dispUnits.showLabel === true) {
     children.push(xmlSelfClose("c:dispUnitsLbl"));
   }

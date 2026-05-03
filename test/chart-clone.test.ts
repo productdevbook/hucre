@@ -6719,6 +6719,118 @@ describe("cloneChart — axis dispUnits", () => {
       showLabel: true,
     });
   });
+
+  // ── custUnit (custom numeric divisor) ─────────────────────────────
+
+  const sourceWithCustUnit: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: { y: { dispUnits: { custUnit: 86400 } } },
+  };
+
+  it("inherits axes.y.dispUnits.custUnit from the source when no override is given", () => {
+    const clone = cloneChart(sourceWithCustUnit, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y?.dispUnits).toEqual({ custUnit: 86400 });
+  });
+
+  it("replaces the inherited preset with a custUnit override", () => {
+    // A caller appending a custom divisor to a cloned source whose
+    // parsed value pinned a built-in preset should swap cleanly into
+    // the new shape.
+    const clone = cloneChart(sourceWithUnit, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { dispUnits: { custUnit: 1500 } } },
+    });
+    expect(clone.axes?.y?.dispUnits).toEqual({ custUnit: 1500 });
+  });
+
+  it("replaces the inherited custUnit with a built-in preset override", () => {
+    const clone = cloneChart(sourceWithCustUnit, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { dispUnits: { unit: "millions" } } },
+    });
+    expect(clone.axes?.y?.dispUnits).toEqual({ unit: "millions" });
+  });
+
+  it("keeps both fields on a clone when the override pins both — writer picks custUnit", () => {
+    // The clone-layer normalizer keeps both values; the writer enforces
+    // the OOXML xsd:choice by preferring `custUnit` on emit. Carrying
+    // both fields lets a caller layer a custom divisor on top of an
+    // inherited preset without manually pruning the original.
+    const clone = cloneChart(sourceWithUnit, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { dispUnits: { unit: "millions", custUnit: 1500 } } },
+    });
+    expect(clone.axes?.y?.dispUnits).toEqual({ unit: "millions", custUnit: 1500 });
+  });
+
+  it("drops invalid custUnit values (zero, negative, non-finite) at the clone layer", () => {
+    for (const bad of [0, -100, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const clone = cloneChart(sourceWithUnit, {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { y: { dispUnits: { custUnit: bad } } },
+      });
+      // Override has no valid field — `unit` is unset and `custUnit`
+      // dropped — so the entire dispUnits object collapses.
+      expect(clone.axes).toBeUndefined();
+    }
+  });
+
+  it("inherits showLabel alongside custUnit", () => {
+    const sourceLabeled: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { y: { dispUnits: { custUnit: 500, showLabel: true } } },
+    };
+    const clone = cloneChart(sourceLabeled, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.y?.dispUnits).toEqual({ custUnit: 500, showLabel: true });
+  });
+
+  it("drops the inherited custUnit when flattening to pie (no axes)", () => {
+    const clone = cloneChart(sourceWithCustUnit, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "pie",
+    });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("round-trips a custUnit chart through parseChart -> cloneChart -> writeChart", async () => {
+    const source: SheetChart = {
+      type: "column",
+      series: [{ name: "Seconds", values: "B2:B4", categories: "A2:A4" }],
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { y: { dispUnits: { custUnit: 86400, showLabel: true } } },
+    };
+    const xml = writeChart(source, "Sheet1").chartXml;
+    const parsed = parseChart(xml)!;
+    const clone = cloneChart(parsed, { anchor: { from: { row: 5, col: 0 } } });
+    expect(clone.axes?.y?.dispUnits).toEqual({ custUnit: 86400, showLabel: true });
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["H", "Seconds"],
+            ["H1", 360_000],
+            ["H2", 720_000],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('<c:custUnit val="86400"/>');
+    expect(written).toContain("<c:dispUnitsLbl/>");
+    expect(written).not.toContain("c:builtInUnit");
+    expect(parseChart(written)?.axes?.y?.dispUnits).toEqual({
+      custUnit: 86400,
+      showLabel: true,
+    });
+  });
 });
 
 // ── cloneChart — chart style preset ──────────────────────────────────

@@ -856,18 +856,21 @@ const VALID_DISP_UNITS: ReadonlySet<ChartAxisDispUnit> = new Set([
 ]);
 
 /**
- * Read a value axis's `<c:dispUnits>` block. The element holds a choice
- * between `<c:builtInUnit val=".."/>` and `<c:custUnit val=".."/>`,
- * optionally followed by `<c:dispUnitsLbl>`. The reader only surfaces
- * the built-in path — the `<c:custUnit>` variant (custom numeric
- * divisor) and any rich-text `<c:dispUnitsLbl>` body are ignored.
+ * Read a value axis's `<c:dispUnits>` block. The element holds an
+ * `xsd:choice` between `<c:builtInUnit val=".."/>` and
+ * `<c:custUnit val=".."/>`, optionally followed by `<c:dispUnitsLbl>`.
+ * The reader surfaces both: a recognized `<c:builtInUnit>` token lands
+ * in `unit`, and a finite positive `<c:custUnit>` value lands in
+ * `custUnit`. When both children are present (a malformed template,
+ * since the schema's choice forbids it), `custUnit` wins and `unit`
+ * drops — the writer applies the same precedence on emit, so the parsed
+ * shape round-trips identically through {@link cloneChart}.
  *
  * Returns `undefined` when:
  *   - the axis declares no `<c:dispUnits>` at all,
- *   - `<c:dispUnits>` is present but has no `<c:builtInUnit>` child
- *     (the schema also tolerates `<c:custUnit>` but we don't surface it),
- *   - `<c:builtInUnit val>` is missing, malformed, or not in
- *     {@link VALID_DISP_UNITS}.
+ *   - `<c:dispUnits>` is present but neither child resolves to a
+ *     valid value (missing children, malformed `val`, unknown
+ *     `<c:builtInUnit>` token, non-positive / non-finite `<c:custUnit>`).
  *
  * `showLabel` is set `true` only when `<c:dispUnitsLbl>` is present
  * inside `<c:dispUnits>` (Excel paints its automatic annotation in
@@ -877,13 +880,34 @@ const VALID_DISP_UNITS: ReadonlySet<ChartAxisDispUnit> = new Set([
 function parseAxisDispUnits(axis: XmlElement): ChartAxisDispUnits | undefined {
   const dispUnits = findChild(axis, "dispUnits");
   if (!dispUnits) return undefined;
-  const builtInUnit = findChild(dispUnits, "builtInUnit");
-  if (!builtInUnit) return undefined;
-  const raw = builtInUnit.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim() as ChartAxisDispUnit;
-  if (!VALID_DISP_UNITS.has(trimmed)) return undefined;
-  const out: ChartAxisDispUnits = { unit: trimmed };
+  const out: ChartAxisDispUnits = {};
+  // `<c:custUnit>` wins when both children are pinned — the OOXML
+  // schema's `xsd:choice` forbids both, but a corrupt template may
+  // declare them simultaneously. The writer mirrors this preference so
+  // the round-trip stays consistent.
+  const custUnit = findChild(dispUnits, "custUnit");
+  if (custUnit) {
+    const raw = custUnit.attrs.val;
+    if (typeof raw === "string") {
+      const parsed = Number.parseFloat(raw.trim());
+      if (Number.isFinite(parsed) && parsed > 0) {
+        out.custUnit = parsed;
+      }
+    }
+  }
+  if (out.custUnit === undefined) {
+    const builtInUnit = findChild(dispUnits, "builtInUnit");
+    if (builtInUnit) {
+      const raw = builtInUnit.attrs.val;
+      if (typeof raw === "string") {
+        const trimmed = raw.trim() as ChartAxisDispUnit;
+        if (VALID_DISP_UNITS.has(trimmed)) {
+          out.unit = trimmed;
+        }
+      }
+    }
+  }
+  if (out.unit === undefined && out.custUnit === undefined) return undefined;
   if (findChild(dispUnits, "dispUnitsLbl")) {
     out.showLabel = true;
   }

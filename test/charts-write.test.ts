@@ -6092,6 +6092,161 @@ describe("writeChart — axis dispUnits", () => {
     const reparsed = parseChart(chartXml);
     expect(reparsed?.axes?.y?.dispUnits).toEqual({ unit: "millions", showLabel: true });
   });
+
+  it('emits <c:dispUnits><c:custUnit val=".."/></c:dispUnits> when custUnit is pinned', () => {
+    // The OOXML schema's xsd:choice between <c:builtInUnit> and
+    // <c:custUnit> means the writer must emit exactly one. Pinning
+    // `custUnit` selects the numeric divisor path (Excel's "Display
+    // units → Other") instead of the named preset.
+    const result = writeChart(
+      makeChart({ axes: { y: { dispUnits: { custUnit: 86400 } } } }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<c:custUnit val="86400"/>');
+    expect(valAxBlock).toContain("<c:dispUnits>");
+    expect(valAxBlock).not.toContain("c:builtInUnit");
+    expect(valAxBlock).not.toContain("c:dispUnitsLbl");
+  });
+
+  it("emits a fractional <c:custUnit> per the OOXML CT_Double schema", () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { dispUnits: { custUnit: 2.5 } } } }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<c:custUnit val="2.5"/>');
+  });
+
+  it("emits a bare <c:dispUnitsLbl/> alongside custUnit when showLabel is true", () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { dispUnits: { custUnit: 500, showLabel: true } } } }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<c:custUnit val="500"/>');
+    expect(valAxBlock).toContain("<c:dispUnitsLbl/>");
+  });
+
+  it("prefers <c:custUnit> over <c:builtInUnit> when both fields are pinned", () => {
+    // The OOXML schema's xsd:choice forbids both children, so the writer
+    // must pick one. `custUnit` is the more specific element — a caller
+    // appending a custom divisor to a cloned source need not manually
+    // prune the inherited preset. The reader mirrors this preference.
+    const result = writeChart(
+      makeChart({ axes: { y: { dispUnits: { unit: "millions", custUnit: 1500 } } } }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<c:custUnit val="1500"/>');
+    expect(valAxBlock).not.toContain("c:builtInUnit");
+  });
+
+  it("falls back to <c:builtInUnit> when custUnit is non-positive / non-finite", () => {
+    // The normalizer drops invalid custUnit values; if the caller also
+    // pinned a valid `unit` preset, that takes over instead of dropping
+    // the entire element.
+    for (const bad of [0, -100, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const result = writeChart(
+        makeChart({ axes: { y: { dispUnits: { unit: "millions", custUnit: bad } } } }),
+        "Sheet1",
+      );
+      const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+      expect(valAxBlock).toContain('<c:builtInUnit val="millions"/>');
+      expect(valAxBlock).not.toContain("c:custUnit");
+    }
+  });
+
+  it("drops <c:dispUnits> entirely when neither unit nor custUnit resolves", () => {
+    // A bare <c:dispUnits/> shell with no <c:builtInUnit>/<c:custUnit>
+    // child fails Excel's strict validator. The writer skips emission.
+    const result = writeChart(
+      makeChart({
+        axes: {
+          y: {
+            // Both fields invalid — `unit` is an unknown token, `custUnit`
+            // is non-finite.
+            dispUnits: { unit: "quintillions" as never, custUnit: -5 },
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:dispUnits");
+    expect(result.chartXml).not.toContain("c:builtInUnit");
+    expect(result.chartXml).not.toContain("c:custUnit");
+  });
+
+  it("does not emit <c:custUnit> on the X axis of a column chart (catAx rejects it)", () => {
+    // Same scope rule as the built-in preset — `<c:dispUnits>` lives
+    // exclusively on `CT_ValAx`, so a stray hint on the column's X axis
+    // silently drops at the writer.
+    const result = writeChart(
+      makeChart({ type: "column", axes: { x: { dispUnits: { custUnit: 1000 } } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).not.toContain("c:dispUnits");
+    expect(catAxBlock).not.toContain("c:custUnit");
+  });
+
+  it("emits <c:custUnit> on both scatter axes (both are valAx)", () => {
+    const scatter: SheetChart = {
+      type: "scatter",
+      series: [{ name: "S1", values: "B2:B5", categories: "A2:A5" }],
+      anchor: { from: { row: 0, col: 0 } },
+      axes: {
+        x: { dispUnits: { custUnit: 60 } },
+        y: { dispUnits: { custUnit: 86400, showLabel: true } },
+      },
+    };
+    const result = writeChart(scatter, "Sheet1");
+    const valAxBlocks = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/g)!;
+    expect(valAxBlocks).toHaveLength(2);
+    expect(valAxBlocks[0]).toContain('<c:custUnit val="60"/>');
+    expect(valAxBlocks[0]).not.toContain("c:dispUnitsLbl");
+    expect(valAxBlocks[1]).toContain('<c:custUnit val="86400"/>');
+    expect(valAxBlocks[1]).toContain("<c:dispUnitsLbl/>");
+  });
+
+  it("survives a parseChart round-trip on the value axis with custUnit", () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { dispUnits: { custUnit: 500, showLabel: true } } } }),
+      "Sheet1",
+    );
+    const reparsed = parseChart(result.chartXml);
+    expect(reparsed?.axes?.y?.dispUnits).toEqual({ custUnit: 500, showLabel: true });
+  });
+
+  it("packages a custUnit chart end-to-end through writeXlsx", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Hour", "Seconds"],
+          ["H1", 360_000],
+          ["H2", 720_000],
+          ["H3", 1_080_000],
+        ],
+        charts: [
+          {
+            type: "column",
+            series: [{ name: "Seconds", values: "B2:B4", categories: "A2:A4" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            // 86400 seconds per day — convert tick labels to days.
+            axes: { y: { dispUnits: { custUnit: 86400, showLabel: true } } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('<c:custUnit val="86400"/>');
+    expect(chartXml).toContain("<c:dispUnitsLbl/>");
+    expect(chartXml).not.toContain("c:builtInUnit");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.y?.dispUnits).toEqual({ custUnit: 86400, showLabel: true });
+  });
 });
 
 // ── writeChart — chart style preset ──────────────────────────────────
