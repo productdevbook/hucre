@@ -7442,3 +7442,184 @@ describe("writeChart — showLineMarkers", () => {
     expect(reparsed?.showLineMarkers).toBe(false);
   });
 });
+// ── writeChart — autoTitleDeleted ───────────────────────────────────
+
+describe("writeChart — autoTitleDeleted", () => {
+  it('emits <c:autoTitleDeleted val="0"/> on a chart with a literal title (derived default)', () => {
+    // Back-compat default: a chart with a literal title pins `val="0"`
+    // so Excel keeps the literal visible. The writer always emits the
+    // element — Excel itself includes it on every reference
+    // serialization.
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(result.chartXml).toContain('<c:autoTitleDeleted val="0"/>');
+    expect(result.chartXml).not.toContain('<c:autoTitleDeleted val="1"/>');
+  });
+
+  it('emits <c:autoTitleDeleted val="1"/> on a chart with no literal title (derived default)', () => {
+    // Back-compat default: a titleless chart pins `val="1"` so Excel
+    // does not silently grow an auto-title from the series name.
+    const result = writeChart(makeChart({ title: undefined }), "Sheet1");
+    expect(result.chartXml).toContain('<c:autoTitleDeleted val="1"/>');
+    expect(result.chartXml).not.toContain('<c:autoTitleDeleted val="0"/>');
+  });
+
+  it('emits <c:autoTitleDeleted val="1"/> when showTitle=false suppresses the title', () => {
+    // `showTitle: false` suppresses the title block entirely — same
+    // wire shape as a titleless chart: pin the flag so Excel does not
+    // auto-synthesise one.
+    const result = writeChart(makeChart({ showTitle: false }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:title>");
+    expect(result.chartXml).toContain('<c:autoTitleDeleted val="1"/>');
+  });
+
+  it("threads autoTitleDeleted=true explicitly through to <c:autoTitleDeleted>", () => {
+    // Pinning `true` overrides the title-presence-derived default — a
+    // chart with a literal title that should also pin
+    // `autoTitleDeleted=true` (an unusual but legal state — Excel
+    // emits it when a literal title is added but the auto-suppression
+    // flag was already on) emits both the title block and the flag.
+    const result = writeChart(makeChart({ autoTitleDeleted: true }), "Sheet1");
+    expect(result.chartXml).toContain("<c:title>");
+    expect(result.chartXml).toContain('<c:autoTitleDeleted val="1"/>');
+    expect(result.chartXml).not.toContain('<c:autoTitleDeleted val="0"/>');
+  });
+
+  it("threads autoTitleDeleted=false explicitly through to <c:autoTitleDeleted> (titleless chart)", () => {
+    // A titleless single-series chart can pin `false` to let Excel
+    // synthesise the series-name auto-title. The override beats the
+    // title-presence-derived default.
+    const result = writeChart(makeChart({ title: undefined, autoTitleDeleted: false }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:title>");
+    expect(result.chartXml).toContain('<c:autoTitleDeleted val="0"/>');
+    expect(result.chartXml).not.toContain('<c:autoTitleDeleted val="1"/>');
+  });
+
+  it("places <c:autoTitleDeleted> after <c:title> per CT_Chart sequence", () => {
+    // CT_Chart sequence (ECMA-376 Part 1, §21.2.2.4):
+    //   title?, autoTitleDeleted?, pivotFmts?, view3D?, ..., plotArea, ...
+    const result = writeChart(makeChart(), "Sheet1");
+    const titleIdx = result.chartXml.indexOf("<c:title>");
+    const autoIdx = result.chartXml.indexOf("<c:autoTitleDeleted");
+    const plotAreaIdx = result.chartXml.indexOf("<c:plotArea>");
+    expect(titleIdx).toBeGreaterThanOrEqual(0);
+    expect(autoIdx).toBeGreaterThan(titleIdx);
+    expect(autoIdx).toBeLessThan(plotAreaIdx);
+  });
+
+  it("places <c:autoTitleDeleted> before <c:plotArea> on a titleless chart", () => {
+    // No `<c:title>` in the wire shape — the flag still slots before
+    // the plot area per CT_Chart.
+    const result = writeChart(makeChart({ title: undefined }), "Sheet1");
+    const autoIdx = result.chartXml.indexOf("<c:autoTitleDeleted");
+    const plotAreaIdx = result.chartXml.indexOf("<c:plotArea>");
+    expect(autoIdx).toBeGreaterThan(0);
+    expect(autoIdx).toBeLessThan(plotAreaIdx);
+  });
+
+  it("emits exactly one <c:autoTitleDeleted> per chart (no double-emit on override)", () => {
+    // Guard against a regression that would emit the derived default
+    // alongside the override. Only one element should appear.
+    const result = writeChart(makeChart({ autoTitleDeleted: true }), "Sheet1");
+    const occurrences = result.chartXml.match(/c:autoTitleDeleted/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads autoTitleDeleted through every chart family", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, title: undefined, autoTitleDeleted: false }),
+        "Sheet1",
+      );
+      expect(result.chartXml).toContain('<c:autoTitleDeleted val="0"/>');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        title: undefined,
+        autoTitleDeleted: false,
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+      }),
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain('<c:autoTitleDeleted val="0"/>');
+  });
+
+  it("composes independently with titleOverlay (different parents)", () => {
+    // `<c:autoTitleDeleted>` lives on `<c:chart>`; `<c:overlay>` lives
+    // on `<c:title>`. Pinning one must not change the other.
+    const result = writeChart(makeChart({ autoTitleDeleted: true, titleOverlay: true }), "Sheet1");
+    expect(result.chartXml).toContain('<c:autoTitleDeleted val="1"/>');
+    const title = result.chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(title).toContain('c:overlay val="1"');
+  });
+
+  it("ignores non-boolean autoTitleDeleted values (falls back to derived default)", () => {
+    // Match how `titleOverlay` / `roundedCorners` / `plotVisOnly` treat
+    // their inputs — only literal `true` / `false` honour the override.
+    // A stray non-boolean (e.g. truthy string) collapses to the
+    // title-presence-derived default.
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ autoTitleDeleted: "yes" as any }),
+      "Sheet1",
+    );
+    // Title is present on the default makeChart, so derived default is
+    // val="0" — even with a truthy string override, the flag stays at
+    // the derived default.
+    expect(result.chartXml).toContain('<c:autoTitleDeleted val="0"/>');
+  });
+
+  it("round-trips a non-default autoTitleDeleted=true through parseChart", () => {
+    // A chart that pins `autoTitleDeleted=true` on a titled chart
+    // should re-parse into a Chart whose `autoTitleDeleted` field is
+    // `true` (not collapsed to undefined since true is not the OOXML
+    // default).
+    const written = writeChart(makeChart({ autoTitleDeleted: true }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.autoTitleDeleted).toBe(true);
+  });
+
+  it("collapses a defaulted autoTitleDeleted=false round-trip back to undefined", () => {
+    // A chart with a literal title (default makeChart) writes `val="0"`
+    // and re-parses to undefined — absence and the OOXML default
+    // round-trip identically.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.autoTitleDeleted).toBeUndefined();
+  });
+
+  it("re-parses autoTitleDeleted=true on a titleless chart back to true", () => {
+    // The titleless-chart derived default writes `val="1"`; the reader
+    // surfaces it because the value differs from the OOXML default.
+    const written = writeChart(makeChart({ title: undefined }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.autoTitleDeleted).toBe(true);
+  });
+
+  it("survives a writeXlsx round trip — autoTitleDeleted lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Quarterly",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            autoTitleDeleted: true,
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('<c:autoTitleDeleted val="1"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.autoTitleDeleted).toBe(true);
+  });
+});

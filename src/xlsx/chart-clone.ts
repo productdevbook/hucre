@@ -233,6 +233,28 @@ export interface CloneChartOptions {
    * the overlay flag in either case.
    */
   titleOverlay?: boolean | null;
+  /**
+   * Override `<c:autoTitleDeleted>` (the "user explicitly deleted the
+   * auto-generated title" flag).
+   *
+   * `undefined` (or omitted) inherits the source's parsed
+   * `autoTitleDeleted`. `null` drops the inherited value so the
+   * writer falls back to its derived default (the value pinned by
+   * the title presence on the cloned chart — `true` when no literal
+   * title is rendered, `false` when one is). A `boolean` replaces it.
+   *
+   * The override is independent of the resolved title — `<c:autoTitleDeleted>`
+   * sits on `<c:chart>` directly (not nested inside `<c:title>`), so
+   * a clone with no literal title can still pin `false` to let Excel
+   * synthesise the auto-title from the series name, and a clone with
+   * a literal title can pin `true` to suppress the synthesis even
+   * though the literal renders.
+   *
+   * The grammar mirrors `titleOverlay` / `roundedCorners` /
+   * `plotVisOnly` so the chart-level title flags compose the same way
+   * at the call site.
+   */
+  autoTitleDeleted?: boolean | null;
   /** Override `SheetChart.altText`. */
   altText?: string;
   /** Override `SheetChart.frameTitle`. */
@@ -883,6 +905,20 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     const resolvedTitleOverlay = resolveTitleOverlay(source.titleOverlay, options.titleOverlay);
     if (resolvedTitleOverlay !== undefined) out.titleOverlay = resolvedTitleOverlay;
   }
+
+  // `<c:autoTitleDeleted>` sits on `<c:chart>` directly, not inside
+  // `<c:title>`, so the override carries through every clone — independent
+  // of whether the resolved chart renders a literal title. Pinning the
+  // flag lets a titleless clone suppress (or keep) Excel's auto-generated
+  // series-name title regardless of what the source declared. The
+  // override wins over the source's parsed value; absence inherits,
+  // `null` drops (writer falls back to its title-presence-derived
+  // default), a `boolean` replaces.
+  const resolvedAutoTitleDeleted = resolveAutoTitleDeleted(
+    source.autoTitleDeleted,
+    options.autoTitleDeleted,
+  );
+  if (resolvedAutoTitleDeleted !== undefined) out.autoTitleDeleted = resolvedAutoTitleDeleted;
 
   const resolvedDataLabels = resolveChartDataLabels(source.dataLabels, options.dataLabels);
   if (resolvedDataLabels !== undefined) out.dataLabels = resolvedDataLabels;
@@ -1637,6 +1673,35 @@ function resolveLegendOverlay(
  * title is emitted, the overlay flag has no slot in the rendered chart.
  */
 function resolveTitleOverlay(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve an `autoTitleDeleted` override.
+ *
+ * `undefined` → inherit the source's parsed `autoTitleDeleted`.
+ * `null`      → drop the inherited value (the writer falls back to its
+ *               title-presence-derived default — `val="0"` when the
+ *               cloned chart has a literal title, `val="1"` when it
+ *               does not).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `titleOverlay` / `roundedCorners` /
+ * `plotVisOnly` so the chart-level title flags compose the same way
+ * at the call site. Independent of the resolved title presence —
+ * `<c:autoTitleDeleted>` sits on `<c:chart>` directly (between
+ * `<c:title>` and `<c:plotArea>` per CT_Chart, ECMA-376 Part 1,
+ * §21.2.2.4), not nested inside `<c:title>`, so a clone with no
+ * literal title can still pin `false` (let Excel synthesise the
+ * series-name auto-title) and a clone with a literal title can pin
+ * `true` (suppress the synthesis even though the literal renders).
+ */
+function resolveAutoTitleDeleted(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {

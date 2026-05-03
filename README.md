@@ -871,6 +871,18 @@ truthy / falsy spellings (`"1"` / `"true"` / `"0"` / `"false"`);
 unknown values and missing `val` attributes drop to `undefined`. The
 flag is dropped whenever the chart omits the `<c:title>` element
 entirely — there is no overlay slot to surface in that case.
+`Chart.autoTitleDeleted` surfaces the chart-level
+`<c:chart><c:autoTitleDeleted val=".."/>` flag — Excel's record of
+whether the user explicitly deleted the auto-generated title that
+single-series charts synthesise from the series name. The element sits
+on `<c:chart>` directly (between `<c:title>` and `<c:plotArea>` per
+CT_Chart, ECMA-376 Part 1, §21.2.2.4), not nested inside `<c:title>`,
+so a chart with no `<c:title>` may still pin the flag. The OOXML
+default `false` collapses to `undefined` so absence and
+`<c:autoTitleDeleted val="0"/>` round-trip identically; only an
+explicit `val="1"` surfaces `true`. The reader accepts the OOXML
+truthy / falsy spellings (`"1"` / `"true"` / `"0"` / `"false"`);
+unknown values and missing `val` attributes drop to `undefined`.
 `Chart.dropLines` surfaces the chart-type-level `<c:dropLines/>` flag
 on the first `<c:lineChart>` / `<c:line3DChart>` / `<c:areaChart>` /
 `<c:area3DChart>` element — Excel's "Add Chart Element → Lines → Drop
@@ -1182,6 +1194,23 @@ emitted (no `title` set or `showTitle: false`) — there is no `<c:title>`
 block to host the overlay child in either case. Independent of
 `legendOverlay`: the legend and title `<c:overlay>` elements live on
 different parents, so the two flags compose freely.
+The chart-level `autoTitleDeleted` field maps to
+`<c:autoTitleDeleted val=".."/>` inside `<c:chart>` — Excel's record of
+whether the user explicitly deleted the auto-generated title that
+single-series charts synthesise from the series name. The element sits
+on `<c:chart>` directly (between `<c:title>` and `<c:plotArea>` per
+CT_Chart, ECMA-376 Part 1, §21.2.2.4), not nested inside `<c:title>`,
+and is independent of whether a literal `<c:title>` is emitted. Absent
+it, the writer derives the value from the title presence: a chart with
+a literal title (and `showTitle !== false`) emits `val="0"` so Excel
+keeps the literal visible; a chart with no literal title emits
+`val="1"` so Excel does not silently grow an auto-title from the
+series name. Pin `autoTitleDeleted: true` to suppress Excel's
+auto-title even on a charted dashboard tile that should stay anonymous,
+or `autoTitleDeleted: false` on a titleless single-series column chart
+to let Excel synthesise the series-name title. The writer always emits
+the element so the rendered intent is explicit on roundtrip — Excel
+itself includes it on every reference serialization.
 The chart-level `dropLines` field maps to a bare `<c:dropLines/>`
 inside `<c:lineChart>` / `<c:areaChart>` — Excel's "Add Chart Element
 → Lines → Drop Lines" toggle (vertical reference lines from each data
@@ -1594,6 +1623,17 @@ is no `<c:title>` block to host the overlay flag in either case.
 Re-introducing a missing source title through an explicit `title:
 "..."` override re-opens the slot, and an explicit `titleOverlay: true`
 override threads through.
+The chart-level `autoTitleDeleted` flag follows the same grammar: pass
+`undefined` to inherit the source's parsed value, `null` to drop it
+back to the writer's title-presence-derived default, or a `boolean` to
+replace it. Unlike `titleOverlay`, this flag is independent of the
+resolved title presence — `<c:autoTitleDeleted>` sits on `<c:chart>`
+directly (not nested inside `<c:title>`), so a clone with no literal
+title can still pin `false` to let Excel synthesise the series-name
+auto-title and a clone with a literal title can pin `true` to suppress
+the synthesis even though the literal renders. The override carries
+through every chart family because the element has no per-family
+restriction in the OOXML schema.
 The chart-level `dropLines` and `hiLowLines` flags follow the same
 `undefined` (inherit) / `null` (drop) / `boolean` (replace) grammar
 as the other chart-level toggles. An override of `false` is equivalent
