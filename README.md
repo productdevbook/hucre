@@ -827,6 +827,19 @@ series (the OOXML schema places `<c:invertIfNegative>` exclusively on
 `CT_BarSer` / `CT_Bar3DSer`). Absence and the OOXML default
 `val="0"` both collapse to `undefined`, so only an explicit
 `<c:invertIfNegative val="1"/>` round-trips as `invertIfNegative: true`.
+`Chart.upDownBars` surfaces the line-chart up / down bars flag pulled
+from `<c:lineChart><c:upDownBars>...</c:upDownBars></c:lineChart>` —
+Excel's "Add Chart Element -> Up/Down Bars" toggle. The element
+paints a vertical bar at each category whose top tracks the higher
+series value and bottom tracks the lower one (typically used to
+visualize open / close differences on a line-style stock chart).
+Surfaces `true` whenever the element is present (with or without the
+optional `<c:gapWidth>` / `<c:upBars>` / `<c:downBars>` children — the
+model is a plain presence flag at this layer); absence collapses to
+`undefined`. Only line-flavored chart-type bodies surface the field —
+`CT_LineChart` / `CT_Line3DChart` / `CT_StockChart` per the OOXML
+schema; a stray `<c:upDownBars>` on a bar / column / pie / doughnut /
+area / scatter chart is ignored.
 Sheets that hucre actively regenerates because they
 also carry hucre-managed images currently keep the chart bodies but
 lose the in-drawing chart anchor — merging hucre's drawing output
@@ -1006,6 +1019,18 @@ emitted (no `title` set or `showTitle: false`) — there is no `<c:title>`
 block to host the overlay child in either case. Independent of
 `legendOverlay`: the legend and title `<c:overlay>` elements live on
 different parents, so the two flags compose freely.
+The chart-level `upDownBars` field maps to `<c:upDownBars>` inside
+`<c:lineChart>` — Excel's "Add Chart Element -> Up/Down Bars" toggle
+on a line chart. The element paints a vertical bar at each category
+whose top tracks the higher series value and bottom tracks the lower
+one (typically used to visualize open / close differences on a
+line-style stock chart). The OOXML default is absence, so the writer
+omits the element on a fresh chart. Pin `upDownBars: true` on a
+`type: "line"` chart to emit the element with Excel's reference
+`<c:gapWidth val="150"/>` child. The flag is silently ignored on
+every other chart family — `<c:upDownBars>` lives exclusively on
+`CT_LineChart` / `CT_Line3DChart` / `CT_StockChart` per the OOXML
+schema, and the writer never authors the 3D / stock variants.
 The `axes.x.tickLblSkip` and `axes.x.tickMarkSkip` fields thin out a
 crowded category axis (`<c:catAx><c:tickLblSkip val=".."/>` and
 `<c:catAx><c:tickMarkSkip val=".."/>`). Pass a positive integer to
@@ -1283,6 +1308,15 @@ is no `<c:title>` block to host the overlay flag in either case.
 Re-introducing a missing source title through an explicit `title:
 "..."` override re-opens the slot, and an explicit `titleOverlay: true`
 override threads through.
+The chart-level `upDownBars` flag follows the same grammar: pass
+`undefined` to inherit the source's parsed value, `null` to drop it
+back to the writer's OOXML default (no `<c:upDownBars>` element), or a
+`boolean` to replace it. The element renders inside `<c:lineChart>`
+so the field is silently dropped from the cloned `SheetChart`
+whenever the resolved chart type is anything but `line` — flattening
+a stock or line template into a column / pie / doughnut / area /
+scatter clone therefore never leaks a stale up / down bars block into
+a chart-type element whose schema rejects the element.
 The per-axis `axes.x.tickLblSkip` and `axes.x.tickMarkSkip` overrides
 follow the same `undefined` (inherit) / `null` (drop) / number
 (replace) grammar as `gridlines` / `scale` / `numberFormat`. The

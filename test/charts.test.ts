@@ -5771,3 +5771,230 @@ describe("parseChart — axis crosses / crossesAt", () => {
     });
   });
 });
+
+// ── parseChart — upDownBars ────────────────────────────────────────
+
+describe("parseChart — upDownBars", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it("surfaces upDownBars=true on a line chart with the bare element", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:upDownBars/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBe(true);
+  });
+
+  it("surfaces upDownBars=true when the element carries the optional gapWidth child", () => {
+    // Excel's reference serialization includes <c:gapWidth val="150"/>
+    // inside <c:upDownBars>. The model is a presence flag at this
+    // layer, so the child should not change the surfaced value.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:upDownBars>
+        <c:gapWidth val="150"/>
+      </c:upDownBars>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBe(true);
+  });
+
+  it("surfaces upDownBars=true when the element carries upBars / downBars children", () => {
+    // <c:upBars> and <c:downBars> are CT_UpDownBar — each with an
+    // optional <c:spPr>. Their presence does not change the bare
+    // toggle exposed at this layer.
+    const xml = `<c:chartSpace ${NS}
+                xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:upDownBars>
+        <c:gapWidth val="200"/>
+        <c:upBars>
+          <c:spPr>
+            <a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>
+          </c:spPr>
+        </c:upBars>
+        <c:downBars>
+          <c:spPr>
+            <a:solidFill><a:srgbClr val="000000"/></a:solidFill>
+          </c:spPr>
+        </c:downBars>
+      </c:upDownBars>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBe(true);
+  });
+
+  it("collapses absence of <c:upDownBars> to undefined on a line chart", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBeUndefined();
+  });
+
+  it("ignores <c:upDownBars> on a bar chart (CT_BarChart rejects the element)", () => {
+    // The OOXML schema places <c:upDownBars> on CT_LineChart /
+    // CT_Line3DChart / CT_StockChart only. A stray element on a bar
+    // / column chart is not surfaced — the writer would never emit
+    // it there.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:grouping val="clustered"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:upDownBars/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBeUndefined();
+  });
+
+  it("ignores <c:upDownBars> on an area chart (CT_AreaChart rejects the element)", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:areaChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:upDownBars/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:areaChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBeUndefined();
+  });
+
+  it("ignores <c:upDownBars> on a scatter chart (CT_ScatterChart rejects the element)", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:scatterChart>
+      <c:scatterStyle val="lineMarker"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:upDownBars/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:scatterChart>
+    <c:valAx><c:axId val="1"/></c:valAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBeUndefined();
+  });
+
+  it("surfaces upDownBars on a stock chart (CT_StockChart accepts the element)", () => {
+    // CT_StockChart is where Excel typically paints up/down bars in the
+    // wild (open / close). The reader accepts the element on any
+    // line-flavored chart-type body.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:stockChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:upDownBars/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:stockChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBe(true);
+  });
+
+  it("surfaces upDownBars on a 3D line chart (CT_Line3DChart accepts the element)", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:line3DChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:upDownBars/>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+      <c:axId val="3"/>
+    </c:line3DChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:serAx><c:axId val="3"/></c:serAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBe(true);
+  });
+
+  it("co-surfaces upDownBars alongside other chart-level fields", () => {
+    // upDownBars sits inside the chart-type element (line/stock) and
+    // should not interfere with chart-level toggles like dispBlanksAs
+    // / plotVisOnly that live on <c:chart> itself.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:lineChart>
+        <c:grouping val="standard"/>
+        <c:varyColors val="0"/>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:upDownBars>
+          <c:gapWidth val="150"/>
+        </c:upDownBars>
+        <c:axId val="1"/>
+        <c:axId val="2"/>
+      </c:lineChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:plotVisOnly val="0"/>
+    <c:dispBlanksAs val="zero"/>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBe(true);
+    expect(chart?.plotVisOnly).toBe(false);
+    expect(chart?.dispBlanksAs).toBe("zero");
+  });
+});

@@ -944,11 +944,40 @@ function buildLineChart(chart: SheetChart, sheetName: string): string {
   const chartLevelDLbls = buildChartLevelDataLabels(chart);
   if (chartLevelDLbls) children.push(chartLevelDLbls);
 
+  // CT_LineChart child order: grouping, varyColors?, ser*, dLbls?,
+  // dropLines?, hiLowLines?, upDownBars?, marker?, axId+. The
+  // up/down-bars block sits before `<c:marker>` so the schema
+  // sequence is respected even on a chart that pins both flags.
+  if (chart.upDownBars === true) {
+    children.push(buildUpDownBars());
+  }
+
   children.push(xmlSelfClose("c:marker", { val: 1 }));
   children.push(xmlSelfClose("c:axId", { val: AXIS_ID_CAT }));
   children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL }));
 
   return xmlElement("c:lineChart", undefined, children);
+}
+
+/**
+ * Build a default `<c:upDownBars>` block for {@link buildLineChart}.
+ *
+ * The OOXML schema (`CT_UpDownBars`) allows three optional children —
+ * `<c:gapWidth>`, `<c:upBars>`, and `<c:downBars>` — but the up / down
+ * bars themselves are painted by the mere presence of the parent
+ * element. The writer emits a default `<c:gapWidth val="150"/>` to
+ * mirror Excel's reference serialization for a freshly-toggled
+ * "Add Chart Element -> Up/Down Bars" — `150` is the OOXML default for
+ * `CT_UpDownBars/gapWidth` and the value Excel itself emits.
+ *
+ * `<c:upBars>` / `<c:downBars>` are intentionally omitted: each is a
+ * `CT_UpDownBar` (only `<c:spPr>` inside) and their absence makes
+ * Excel paint the default white-up / black-down bars Excel uses on a
+ * fresh toggle. A richer model — explicit gap widths or per-bar
+ * styling — can layer on top in a follow-up if needed.
+ */
+function buildUpDownBars(): string {
+  return xmlElement("c:upDownBars", undefined, [xmlSelfClose("c:gapWidth", { val: 150 })]);
 }
 
 // ── Area ─────────────────────────────────────────────────────────────

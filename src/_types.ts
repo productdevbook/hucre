@@ -1086,6 +1086,28 @@ export interface SheetChart {
    */
   roundedCorners?: boolean;
   /**
+   * Whether to render up / down bars between paired series on a line
+   * chart. Maps to `<c:lineChart><c:upDownBars/></c:lineChart>` —
+   * Excel's "Add Chart Element -> Up/Down Bars" toggle. The element
+   * paints a vertical bar at each category whose top tracks the higher
+   * series value and bottom tracks the lower one (typically used to
+   * highlight open / close differences on a line-style stock chart).
+   *
+   * Only meaningful for `line` charts — the OOXML schema places
+   * `<c:upDownBars>` on `CT_LineChart`, `CT_Line3DChart`, and
+   * `CT_StockChart`; the writer never emits it on bar / column / pie /
+   * doughnut / area / scatter, so the field is silently dropped on
+   * those families. Default: `false` (no up / down bars; Excel's
+   * reference serialization for a fresh line chart omits the element).
+   *
+   * The writer emits a default `<c:gapWidth val="150"/>` child to
+   * mirror Excel's reference serialization — `150` is the OOXML
+   * default for `CT_UpDownBars/gapWidth`. Custom gap widths are not
+   * exposed at this layer; pass a richer model in a follow-up if a
+   * caller needs to thin or widen the bars.
+   */
+  upDownBars?: boolean;
+  /**
    * Per-axis configuration rendered alongside the plot area. The `x`
    * axis is the category axis for bar/column/line/area (or the bottom
    * value axis for scatter); the `y` axis is the value axis. Ignored
@@ -2653,6 +2675,23 @@ export interface Chart {
    * `<c:chart>` — the toggle styles the outer frame, not the plot area.
    */
   roundedCorners?: boolean;
+  /**
+   * Up / down bars flag pulled from the first `<c:lineChart>` element's
+   * `<c:upDownBars>` child. Reflects Excel's "Add Chart Element ->
+   * Up/Down Bars" toggle on a line chart — vertical bars connecting
+   * paired series at each category, typically used to visualize open /
+   * close differences on a line-style stock chart.
+   *
+   * Surfaces `true` whenever the element is present (with or without
+   * the optional `<c:gapWidth>` / `<c:upBars>` / `<c:downBars>`
+   * children — the model is a plain presence flag at this layer).
+   * Absence collapses to `undefined`. Only line-flavored chart types
+   * surface the field; the OOXML schema places `<c:upDownBars>` on
+   * `CT_LineChart`, `CT_Line3DChart`, and `CT_StockChart`, so the
+   * reader ignores any stray element on bar / column / pie / doughnut
+   * / area / scatter chart-type elements.
+   */
+  upDownBars?: boolean;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────

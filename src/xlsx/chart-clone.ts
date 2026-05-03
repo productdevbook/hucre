@@ -260,6 +260,24 @@ export interface CloneChartOptions {
    */
   roundedCorners?: boolean | null;
   /**
+   * Override `<c:upDownBars>` (the line-chart up / down bars toggle).
+   *
+   * `undefined` (or omitted) inherits the source's parsed
+   * `upDownBars`. `null` drops the inherited value so the writer
+   * falls back to the OOXML default (no up / down bars). A `boolean`
+   * replaces it — useful for adding the bars to a dashboard line clone
+   * whose template did not carry them, or stripping them from a
+   * template-supplied stock-style line chart.
+   *
+   * Only meaningful when the resolved chart type is `line` — the OOXML
+   * schema places `<c:upDownBars>` on `CT_LineChart` /
+   * `CT_Line3DChart` / `CT_StockChart`. The field is silently dropped
+   * when the clone targets any other family (so a line-template
+   * up/down-bars hint never leaks into a column / pie / doughnut /
+   * area / scatter clone).
+   */
+  upDownBars?: boolean | null;
+  /**
    * Override `<c:scatterStyle>` (the chart-level XY-scatter preset).
    *
    * `undefined` (or omitted) inherits the source's parsed
@@ -626,6 +644,18 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     if (resolvedScatterStyle !== undefined) out.scatterStyle = resolvedScatterStyle;
   }
 
+  // `<c:upDownBars>` only renders inside `<c:lineChart>` (the writer
+  // never authors `<c:line3DChart>` or `<c:stockChart>`). Drop the
+  // flag on every other resolved type so a line-template up/down-bars
+  // hint never leaks into a column / pie / doughnut / area / scatter
+  // clone — the OOXML schema places the element exclusively on the
+  // line-flavored chart-type elements. Override wins over the source's
+  // parsed value.
+  if (type === "line") {
+    const resolvedUpDownBars = resolveUpDownBars(source.upDownBars, options.upDownBars);
+    if (resolvedUpDownBars !== undefined) out.upDownBars = resolvedUpDownBars;
+  }
+
   // Pie and doughnut have no axes, so silently skip carrying over axis
   // titles even when the source declared them or the caller passed an
   // override.
@@ -986,6 +1016,31 @@ function resolvePlotVisOnly(
  * toggles compose the same way at the call site.
  */
 function resolveRoundedCorners(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve an `upDownBars` override.
+ *
+ * `undefined` → inherit the source's parsed `upDownBars`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               OOXML default — no `<c:upDownBars>` element emitted).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `roundedCorners` / `plotVisOnly` so the chart-
+ * level line-only toggle composes the same way at the call site.
+ * `false` collapses to absence on the writer side because the writer
+ * only emits `<c:upDownBars>` when the flag is literally `true`; the
+ * `false` value still surfaces in the cloned `SheetChart` for
+ * symmetry with other resolve helpers, leaving the renderer to drop
+ * it during emit.
+ */
+function resolveUpDownBars(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {

@@ -5390,3 +5390,220 @@ describe("cloneChart — axis crosses / crossesAt", () => {
     expect(written).toContain('c:crossesAt val="42"');
   });
 });
+
+// ── cloneChart — upDownBars ──────────────────────────────────────────
+
+describe("cloneChart — upDownBars", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 2,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "High",
+          valuesRef: "Tpl!$B$2:$B$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+        },
+        {
+          kind: "line",
+          index: 1,
+          name: "Low",
+          valuesRef: "Tpl!$C$2:$C$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's upDownBars by default", () => {
+    const clone = cloneChart(source({ upDownBars: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.upDownBars).toBe(true);
+  });
+
+  it("lets options.upDownBars override the source's value", () => {
+    // Source pins the flag, clone strips it back to false (which the
+    // writer collapses to absence — the default).
+    const clone = cloneChart(source({ upDownBars: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      upDownBars: false,
+    });
+    expect(clone.upDownBars).toBe(false);
+  });
+
+  it("drops the inherited upDownBars when the override is null", () => {
+    // null collapses to the writer's OOXML default — the field
+    // disappears from the resolved SheetChart so the writer emits no
+    // <c:upDownBars> element.
+    const clone = cloneChart(source({ upDownBars: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      upDownBars: null,
+    });
+    expect(clone.upDownBars).toBeUndefined();
+  });
+
+  it("returns undefined upDownBars when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.upDownBars).toBeUndefined();
+  });
+
+  it("lets the caller add upDownBars to a source that did not carry one", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      upDownBars: true,
+    });
+    expect(clone.upDownBars).toBe(true);
+  });
+
+  it("drops upDownBars on a flatten to a non-line family (line → column)", () => {
+    // <c:upDownBars> only renders inside <c:lineChart>. A column clone
+    // must not surface a flag whose target chart-type element rejects
+    // it — the writer would otherwise refuse to compile.
+    const clone = cloneChart(source({ upDownBars: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.upDownBars).toBeUndefined();
+  });
+
+  it("drops upDownBars on a flatten to area (CT_AreaChart rejects the element)", () => {
+    const clone = cloneChart(source({ upDownBars: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "area",
+    });
+    expect(clone.type).toBe("area");
+    expect(clone.upDownBars).toBeUndefined();
+  });
+
+  it("drops upDownBars on a flatten to pie (CT_PieChart rejects the element)", () => {
+    const clone = cloneChart(source({ upDownBars: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "pie",
+    });
+    expect(clone.type).toBe("pie");
+    expect(clone.upDownBars).toBeUndefined();
+  });
+
+  it("drops upDownBars on a flatten to scatter (CT_ScatterChart rejects the element)", () => {
+    const clone = cloneChart(source({ upDownBars: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "scatter",
+      // scatter expects a numeric x/y range, override the series shape.
+      series: [{ values: "Sheet1!$B$2:$B$5", categories: "Sheet1!$A$2:$A$5" }],
+    });
+    expect(clone.type).toBe("scatter");
+    expect(clone.upDownBars).toBeUndefined();
+  });
+
+  it("carries upDownBars through a stock-template flatten (stock → line)", () => {
+    // Stock charts are read-only on the writer side, but a stock
+    // template's upDownBars flag should survive a flatten to line —
+    // CT_LineChart hosts the same element.
+    const stockSource: Chart = {
+      kinds: ["stock"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "stock",
+          index: 0,
+          valuesRef: "Tpl!$B$2:$B$5",
+        },
+      ],
+      upDownBars: true,
+    };
+    const clone = cloneChart(stockSource, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "line",
+      // The stock series shape doesn't carry a categories range; pass
+      // a fresh series for the line clone.
+      series: [{ values: "Tpl!$B$2:$B$5", categories: "Tpl!$A$2:$A$5" }],
+    });
+    expect(clone.type).toBe("line");
+    expect(clone.upDownBars).toBe(true);
+  });
+
+  it("propagates upDownBars into the rendered <c:lineChart> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ upDownBars: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B", "C"],
+            [1, 10, 5],
+            [2, 12, 6],
+            [3, 15, 8],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:upDownBars>");
+    expect(written).toContain('c:gapWidth val="150"');
+
+    // Re-parsing the rendered chart returns the same value — closes the
+    // template → clone → write → read loop.
+    const reparsed = parseChart(written);
+    expect(reparsed?.upDownBars).toBe(true);
+  });
+
+  it("emits no <c:upDownBars> when both source and override are absent", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B", "C"],
+            [1, 10, 5],
+            [2, 12, 6],
+            [3, 15, 8],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).not.toContain("c:upDownBars");
+    expect(parseChart(written)?.upDownBars).toBeUndefined();
+  });
+
+  it("an explicit override beats the source value through writeXlsx", async () => {
+    // Source pins `true`, clone overrides to `null` — the rendered
+    // chart should carry no element and re-parse to undefined.
+    const clone = cloneChart(source({ upDownBars: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+      upDownBars: null,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B", "C"],
+            [1, 10, 5],
+            [2, 12, 6],
+            [3, 15, 8],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).not.toContain("c:upDownBars");
+    expect(parseChart(written)?.upDownBars).toBeUndefined();
+  });
+});

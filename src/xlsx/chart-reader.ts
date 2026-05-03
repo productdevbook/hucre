@@ -103,6 +103,7 @@ export function parseChart(xml: string): Chart | undefined {
     let firstSliceAng: number | undefined;
     let varyColors: boolean | undefined;
     let scatterStyle: ChartScatterStyle | undefined;
+    let upDownBars: boolean | undefined;
     for (const child of childElements(plotArea)) {
       const kind = CHART_KIND_TAGS.get(child.local);
       if (!kind) continue;
@@ -170,6 +171,20 @@ export function parseChart(xml: string): Chart | undefined {
       if (scatterStyle === undefined && kind === "scatter") {
         scatterStyle = parseScatterStyle(child);
       }
+      // `<c:upDownBars>` lives on `CT_LineChart`, `CT_Line3DChart`, and
+      // `CT_StockChart` per the OOXML schema. Surface the flag from the
+      // first line-flavored chart-type element that carries one — the
+      // schema places the element on the chart-type element itself, not
+      // the per-series body, so this is a chart-level toggle. The
+      // model is a plain presence flag at this layer; richer details
+      // (per-bar styling, custom gap width) can layer on later.
+      if (
+        upDownBars === undefined &&
+        (kind === "line" || kind === "line3D" || kind === "stock") &&
+        findChild(child, "upDownBars") !== undefined
+      ) {
+        upDownBars = true;
+      }
       let localIndex = 0;
       for (const ser of childElements(child)) {
         if (ser.local !== "ser") continue;
@@ -201,6 +216,7 @@ export function parseChart(xml: string): Chart | undefined {
     if (firstSliceAng !== undefined) out.firstSliceAng = firstSliceAng;
     if (varyColors !== undefined) out.varyColors = varyColors;
     if (scatterStyle !== undefined) out.scatterStyle = scatterStyle;
+    if (upDownBars !== undefined) out.upDownBars = upDownBars;
 
     const axes = parseAxes(plotArea);
     if (axes !== undefined) out.axes = axes;

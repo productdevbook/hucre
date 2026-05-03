@@ -4839,3 +4839,132 @@ describe("writeChart — axis crosses / crossesAt", () => {
     expect(chartXml).toContain('c:crossesAt val="0"');
   });
 });
+
+// ── writeChart — upDownBars ──────────────────────────────────────────
+
+describe("writeChart — upDownBars", () => {
+  it("omits <c:upDownBars> when the field is unset (OOXML default)", () => {
+    // The OOXML default for <c:upDownBars> on CT_LineChart is absence —
+    // Excel's reference serialization for a fresh line chart does not
+    // emit the element. The writer mirrors that default by only
+    // emitting on an explicit `true`.
+    const result = writeChart(makeChart({ type: "line" }), "Sheet1");
+    expect(result.chartXml).not.toContain("c:upDownBars");
+  });
+
+  it('emits <c:upDownBars> with default <c:gapWidth val="150"/> when upDownBars=true', () => {
+    // The schema default for CT_UpDownBars/gapWidth is 150 — Excel's
+    // reference serialization emits the element with that gap width.
+    const result = writeChart(makeChart({ type: "line", upDownBars: true }), "Sheet1");
+    expect(result.chartXml).toContain("<c:upDownBars>");
+    expect(result.chartXml).toContain("</c:upDownBars>");
+    expect(result.chartXml).toContain('c:gapWidth val="150"');
+  });
+
+  it("treats upDownBars=false as absence (no element emitted)", () => {
+    // The writer only emits on a literal `true`; `false` collapses to
+    // the OOXML default (no element) so a stray `false` from clone
+    // resolution does not fabricate an empty up/down bars block.
+    const result = writeChart(makeChart({ type: "line", upDownBars: false }), "Sheet1");
+    expect(result.chartXml).not.toContain("c:upDownBars");
+  });
+
+  it("places <c:upDownBars> before <c:marker> inside <c:lineChart> (OOXML order)", () => {
+    // CT_LineChart sequence: ... ser*, dLbls?, dropLines?, hiLowLines?,
+    // upDownBars?, marker?, axId+. The schema rejects an out-of-order
+    // <c:upDownBars> after <c:marker>, so the writer must place it
+    // first.
+    const result = writeChart(makeChart({ type: "line", upDownBars: true }), "Sheet1");
+    const upDownBarsIdx = result.chartXml.indexOf("c:upDownBars");
+    const markerIdx = result.chartXml.indexOf('c:marker val="1"');
+    expect(upDownBarsIdx).toBeGreaterThan(0);
+    expect(markerIdx).toBeGreaterThan(0);
+    expect(upDownBarsIdx).toBeLessThan(markerIdx);
+  });
+
+  it("places <c:upDownBars> before <c:axId> inside <c:lineChart> (OOXML order)", () => {
+    // The axId pair sits at the tail of CT_LineChart — every optional
+    // chart-level child must precede them.
+    const result = writeChart(makeChart({ type: "line", upDownBars: true }), "Sheet1");
+    const upDownBarsIdx = result.chartXml.indexOf("c:upDownBars");
+    const firstAxIdIdx = result.chartXml.indexOf("c:axId");
+    expect(upDownBarsIdx).toBeLessThan(firstAxIdIdx);
+  });
+
+  it("only emits <c:upDownBars> once even on a chart that pins the flag", () => {
+    // Guard against any regression that would double-emit the element.
+    const result = writeChart(makeChart({ type: "line", upDownBars: true }), "Sheet1");
+    const occurrences = result.chartXml.match(/<c:upDownBars\b/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("ignores upDownBars on bar / column / pie / doughnut / area / scatter chart kinds", () => {
+    // The OOXML schema places <c:upDownBars> exclusively on CT_LineChart
+    // / CT_Line3DChart / CT_StockChart. The writer never authors the
+    // 3D / stock variants, so only `type: "line"` should emit. Every
+    // other family must drop the flag silently.
+    for (const type of ["bar", "column", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, upDownBars: true }), "Sheet1");
+      expect(result.chartXml).not.toContain("c:upDownBars");
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        upDownBars: true,
+      }),
+      "Sheet1",
+    );
+    expect(scatter.chartXml).not.toContain("c:upDownBars");
+  });
+
+  it("round-trips upDownBars=true through parseChart", () => {
+    // A line chart with upDownBars=true should re-parse into a Chart
+    // whose `upDownBars` field is `true`.
+    const written = writeChart(makeChart({ type: "line", upDownBars: true }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.upDownBars).toBe(true);
+  });
+
+  it("collapses an unset upDownBars round-trip back to undefined", () => {
+    // A fresh line chart (upDownBars omitted) writes no element and
+    // re-parses to undefined — absence and the OOXML default round-trip
+    // identically.
+    const written = writeChart(makeChart({ type: "line" }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.upDownBars).toBeUndefined();
+  });
+
+  it("threads upDownBars through writeXlsx end-to-end packaging", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["High", "Low"],
+          [10, 5],
+          [12, 6],
+          [15, 8],
+        ],
+        charts: [
+          {
+            type: "line",
+            series: [
+              { name: "High", values: "A2:A4" },
+              { name: "Low", values: "B2:B4" },
+            ],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            upDownBars: true,
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain("<c:upDownBars>");
+    expect(chartXml).toContain('c:gapWidth val="150"');
+    // Re-parse the rendered chart to confirm the flag survives the
+    // packaging path.
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.upDownBars).toBe(true);
+  });
+});
