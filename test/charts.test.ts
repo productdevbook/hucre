@@ -3765,3 +3765,164 @@ describe("parseChart — axis reverse (orientation)", () => {
     });
   });
 });
+
+// ── parseChart — axis tick label / mark skip ──────────────────────
+
+describe("parseChart — axis tickLblSkip / tickMarkSkip", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it("surfaces a non-default tickLblSkip on the category axis", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:tickLblSkip val="3"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.tickLblSkip).toBe(3);
+    expect(chart?.axes?.x?.tickMarkSkip).toBeUndefined();
+  });
+
+  it("surfaces a non-default tickMarkSkip on the category axis", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:tickMarkSkip val="5"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.tickMarkSkip).toBe(5);
+    expect(chart?.axes?.x?.tickLblSkip).toBeUndefined();
+  });
+
+  it("surfaces both skips together when set on the same axis", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:tickLblSkip val="2"/>
+      <c:tickMarkSkip val="4"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x).toEqual({ tickLblSkip: 2, tickMarkSkip: 4 });
+  });
+
+  it("collapses the OOXML default tickLblSkip=1 to undefined", () => {
+    // Absence of the element and `val="1"` round-trip identically
+    // through the writer's elision logic — both mean "show every label".
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:tickLblSkip val="1"/>
+      <c:tickMarkSkip val="1"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("ignores out-of-range skip values (drops rather than clamps)", () => {
+    // ST_SkipIntervals restricts the value to 1..32767. Out-of-range
+    // values like 0, -5, 99999 should drop rather than clamp because a
+    // silent clamp would mask a configuration error.
+    const out = (val: string): unknown => {
+      const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:tickLblSkip val="${val}"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+      return parseChart(xml)?.axes?.x?.tickLblSkip;
+    };
+    expect(out("0")).toBeUndefined();
+    expect(out("-5")).toBeUndefined();
+    expect(out("99999")).toBeUndefined();
+    expect(out("not-a-number")).toBeUndefined();
+    // Boundaries 2 and 32767 are accepted.
+    expect(out("2")).toBe(2);
+    expect(out("32767")).toBe(32767);
+  });
+
+  it("returns undefined when tickLblSkip val attribute is missing", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:tickLblSkip/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("does not surface tickLblSkip / tickMarkSkip on a value axis", () => {
+    // The OOXML schema places these elements on CT_CatAx / CT_DateAx
+    // only — `<c:valAx>` rejects them entirely. A corrupt template
+    // carrying a stray skip element on a value axis should not surface
+    // a field the writer would never emit anyway.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:tickLblSkip val="3"/>
+      <c:tickMarkSkip val="5"/>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.tickLblSkip).toBeUndefined();
+    expect(chart?.axes?.y?.tickMarkSkip).toBeUndefined();
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("co-surfaces tick skips alongside title, gridlines, scale, and number format", () => {
+    const xml = `<c:chartSpace ${NS}
+                xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:majorGridlines/>
+      <c:title><c:tx><c:rich><a:p><a:r><a:t>Region</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      <c:numFmt formatCode="@" sourceLinked="0"/>
+      <c:tickLblSkip val="3"/>
+      <c:tickMarkSkip val="6"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x).toEqual({
+      title: "Region",
+      gridlines: { major: true },
+      numberFormat: { formatCode: "@" },
+      tickLblSkip: 3,
+      tickMarkSkip: 6,
+    });
+  });
+});

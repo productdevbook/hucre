@@ -689,6 +689,24 @@ non-default that keeps hidden cells in the chart). The reader accepts
 the OOXML truthy / falsy spellings (`"1"` / `"true"` / `"0"` /
 `"false"`); unknown values and missing `val` attributes drop to
 `undefined`.
+`ChartAxisInfo.tickLblSkip` and `ChartAxisInfo.tickMarkSkip` surface
+the category-axis tick-thinning knobs (`<c:catAx><c:tickLblSkip val=".."/>`
+and `<c:catAx><c:tickMarkSkip val=".."/>`). Both elements live on
+`CT_CatAx` / `CT_DateAx` only — the reader skips the parse on
+`<c:valAx>` so a corrupt template carrying a stray skip on a value
+axis does not surface a field the writer would never emit anyway. The
+OOXML default `1` (show every label / mark) collapses to `undefined`;
+out-of-range values (non-positive or > 32767) drop rather than clamp
+so a malformed input cannot leak into the writer.
+`ChartAxisInfo.reverse` surfaces the per-axis
+`<c:scaling><c:orientation val="maxMin"/></c:scaling>` flag — Excel's
+"Categories / Values in reverse order" toggle. Only `"maxMin"` surfaces
+`true`; the OOXML default `"minMax"` (and unknown tokens, missing `val`
+attributes, missing `<c:orientation>` / `<c:scaling>` elements) all
+collapse to `undefined` so absence and the default round-trip
+identically through `cloneChart`. Reverse can fire on either or both
+axes independently — bar / column / line / area / scatter all support
+it; pie / doughnut never report it because they have no axes.
 `ChartSeriesInfo.smooth` surfaces the per-series
 `<c:ser><c:smooth val=".."/>` flag — Excel's "Format Data Series →
 Line → Smoothed line" toggle — only on `line` / `line3D` / `scatter`
@@ -774,7 +792,7 @@ charts; `lineGrouping` and `areaGrouping` accept
 `top` / `bottom` / `left` / `right` / `topRight` / `false`, and
 `altText` / `frameTitle` flow through to the drawing's `xdr:cNvPr`
 attributes for screen readers.
-`axes: { x: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos }, y: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos } }`
+`axes: { x: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, reverse }, y: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, reverse } }`
 attaches per-axis labels, gridlines, numeric scaling, the tick-label
 number format and the tick-rendering trio — `x` lands inside
 `<c:catAx>` (or the X value axis for scatter), `y` inside the value
@@ -863,6 +881,30 @@ the chart), matching Excel's reference serialization. Pin
 chart (`val="0"`). The writer always emits the element so the
 rendered intent is explicit on roundtrip — no chart family is special-
 cased.
+The `axes.x.tickLblSkip` and `axes.x.tickMarkSkip` fields thin out a
+crowded category axis (`<c:catAx><c:tickLblSkip val=".."/>` and
+`<c:catAx><c:tickMarkSkip val=".."/>`). Pass a positive integer to
+show every Nth label or mark; the OOXML default `1` (show every tick)
+is omitted from the rendered XML so untouched charts match Excel's
+reference serialization byte-for-byte. Out-of-range values
+(non-positive or > 32767) drop silently rather than clamp. Both
+fields live on category axes only — bar / column / line / area
+honour them; scatter (whose two axes are value axes) and pie /
+doughnut (no axes at all) silently ignore them. Non-integer inputs
+round to the nearest integer.
+The `axes.x.reverse` and `axes.y.reverse` flags map to
+`<c:scaling><c:orientation val="maxMin"/></c:scaling>` — Excel's
+"Categories / Values in reverse order" toggle. On a category axis,
+reversing flips the order in which categories are drawn (right-to-left
+on a column chart, top-to-bottom on a bar chart); on a value axis it
+flips the numeric direction so the maximum sits at the origin and the
+minimum at the far end. The writer always emits `<c:orientation>`
+because Excel requires it inside `<c:scaling>`, pinning `"maxMin"` only
+when `reverse === true` — `false`, absent, or non-boolean inputs all
+collapse to the forward `"minMax"` default. Each axis carries its own
+flag so reversing X never propagates to Y. Bar / column / line / area /
+scatter all honour both axes; pie / doughnut silently ignore the entire
+`axes` block since OOXML defines no axes for them.
 For line and scatter charts, each `series[i].smooth` flag toggles
 Excel's curved-line variant (`<c:smooth val="..">` inside `<c:ser>`).
 Line series always emit the element — `smooth: true` writes `val="1"`,
@@ -1021,6 +1063,23 @@ a `boolean` to replace it. Like `dispBlanksAs` and `varyColors`, the
 field lives on `<c:chart>` and is valid on every chart family, so a
 coercion (line → column, doughnut → pie, etc.) preserves the
 inherited value rather than dropping it.
+The per-axis `axes.x.tickLblSkip` and `axes.x.tickMarkSkip` overrides
+follow the same `undefined` (inherit) / `null` (drop) / number
+(replace) grammar as `gridlines` / `scale` / `numberFormat`. The
+inherited values are dropped silently when the resolved clone target
+is `scatter` (its X axis is a value axis, so the skip would have no
+slot in the rendered chart) and when the target is `pie` or
+`doughnut` (no axes at all) — flattening a column template into a
+scatter clone therefore never leaks a stale catAx skip into the
+output.
+The per-axis `axes.x.reverse` / `axes.y.reverse` overrides follow the
+same `undefined` (inherit) / `null` (drop) / boolean (replace) grammar
+as the other axis fields. A literal `false` override behaves
+identically to `null` because the OOXML default and an explicit
+`false` produce the same forward `"minMax"` orientation on the wire.
+The inherited flag is dropped silently when the resolved clone target
+is `pie` or `doughnut` so flattening a bar template into a pie clone
+never leaks a stale orientation into the output.
 
 #### Walking and adding charts with `getCharts` / `addChart`
 
