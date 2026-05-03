@@ -4896,6 +4896,228 @@ describe("cloneChart — axis noMultiLvlLbl", () => {
   });
 });
 
+// ── cloneChart — titleOverlay ────────────────────────────────────────
+
+describe("cloneChart — titleOverlay", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Sales",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's titleOverlay by default", () => {
+    const clone = cloneChart(source({ titleOverlay: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleOverlay).toBe(true);
+  });
+
+  it("lets options.titleOverlay override the source's value", () => {
+    const clone = cloneChart(source({ titleOverlay: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleOverlay: false,
+    });
+    expect(clone.titleOverlay).toBe(false);
+  });
+
+  it("drops the inherited titleOverlay when the override is null", () => {
+    // null collapses to the writer's OOXML default — the field
+    // disappears from the resolved SheetChart so the writer emits the
+    // default `0` (no overlap with the plot area).
+    const clone = cloneChart(source({ titleOverlay: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleOverlay: null,
+    });
+    expect(clone.titleOverlay).toBeUndefined();
+  });
+
+  it("returns undefined titleOverlay when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.titleOverlay).toBeUndefined();
+  });
+
+  it("carries titleOverlay through a flatten (line → column)", () => {
+    // titleOverlay lives on `<c:title>` and is valid on every chart
+    // family that emits a title, so a coercion does not drop it.
+    const clone = cloneChart(source({ titleOverlay: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.titleOverlay).toBe(true);
+  });
+
+  it("carries titleOverlay through a doughnut flatten (line → doughnut)", () => {
+    // Pie / doughnut both render the chart-level title block, so the
+    // overlay flag must survive coercion into either family.
+    const clone = cloneChart(source({ titleOverlay: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.titleOverlay).toBe(true);
+  });
+
+  it("drops the inherited titleOverlay when the resolved title is dropped", () => {
+    // `title: null` on the override flattens the inherited title — no
+    // `<c:title>` element will be emitted, so the inherited overlay
+    // flag has no slot in the rendered chart and the clone collapses it.
+    const clone = cloneChart(source({ titleOverlay: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      title: null,
+    });
+    expect(clone.title).toBeUndefined();
+    expect(clone.titleOverlay).toBeUndefined();
+  });
+
+  it("drops the inherited titleOverlay when showTitle is set to false", () => {
+    // `showTitle: false` suppresses the title block on the writer side,
+    // so the inherited overlay flag would never render. The clone
+    // collapses the field to keep the SheetChart honest.
+    const clone = cloneChart(source({ titleOverlay: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      showTitle: false,
+    });
+    expect(clone.showTitle).toBe(false);
+    expect(clone.titleOverlay).toBeUndefined();
+  });
+
+  it("drops the titleOverlay override when the resolved chart has no title", () => {
+    // Same guard, this time on the override path — pinning title:null
+    // wins over an explicit overlay override too.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      title: null,
+      titleOverlay: true,
+    });
+    expect(clone.title).toBeUndefined();
+    expect(clone.titleOverlay).toBeUndefined();
+  });
+
+  it("retains the titleOverlay override when the override re-introduces a missing source title", () => {
+    // Source had no title (so titleOverlay would normally be undefined),
+    // but the override pins a title — the overlay flag the override
+    // carries must thread through.
+    const clone = cloneChart(source({ title: undefined }), {
+      anchor: { from: { row: 0, col: 0 } },
+      title: "New Title",
+      titleOverlay: true,
+    });
+    expect(clone.title).toBe("New Title");
+    expect(clone.titleOverlay).toBe(true);
+  });
+
+  it("composes independently with the legendOverlay clone-through", () => {
+    // The two overlay flags live on different parents and must not
+    // collide on the clone-through.
+    const clone = cloneChart(
+      source({ titleOverlay: true, legend: "right", legendOverlay: false }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.titleOverlay).toBe(true);
+    expect(clone.legendOverlay).toBe(false);
+  });
+
+  it("propagates titleOverlay into the rendered <c:title> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ titleOverlay: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const title = written.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(title).toContain('c:overlay val="1"');
+    expect(title).not.toContain('c:overlay val="0"');
+
+    // Re-parsing the rendered chart returns the same value — closes the
+    // template → clone → write → read loop.
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleOverlay).toBe(true);
+  });
+
+  it("emits the OOXML default titleOverlay=0 when both source and override are absent", async () => {
+    // A bare clone with no overlay hint rolls into a SheetChart whose
+    // writer emits the default `0` and re-parses to undefined.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const title = written.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(title).toContain('c:overlay val="0"');
+    expect(parseChart(written)?.titleOverlay).toBeUndefined();
+  });
+
+  it("an explicit override beats the source value through writeXlsx", async () => {
+    // Source pins `true`, clone overrides to `false` — the rendered
+    // chart should carry the override and re-parse to undefined (since
+    // `false` is the OOXML default and collapses on read).
+    const clone = cloneChart(source({ titleOverlay: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+      titleOverlay: false,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const title = written.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(title).toContain('c:overlay val="0"');
+    expect(title).not.toContain('c:overlay val="1"');
+    expect(parseChart(written)?.titleOverlay).toBeUndefined();
+  });
+});
+
 // ── cloneChart — axis crosses / crossesAt ───────────────────────────
 
 describe("cloneChart — axis crosses / crossesAt", () => {
