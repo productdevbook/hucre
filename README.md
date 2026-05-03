@@ -704,63 +704,62 @@ tick skips above — `CT_CatAx` / `CT_DateAx` only — and the same
 default-collapse semantics: the OOXML default `100` (Excel's
 reference label spacing) collapses to `undefined` so absence and the
 default round-trip identically; out-of-range values (negative or
-
-> 1000. drop rather than clamp.
->       `ChartAxisInfo.reverse` surfaces the per-axis
->       `<c:scaling><c:orientation val="maxMin"/></c:scaling>` flag — Excel's
->       "Categories / Values in reverse order" toggle. Only `"maxMin"` surfaces
->       `true`; the OOXML default `"minMax"` (and unknown tokens, missing `val`
->       attributes, missing `<c:orientation>` / `<c:scaling>` elements) all
->       collapse to `undefined` so absence and the default round-trip
->       identically through `cloneChart`. Reverse can fire on either or both
->       axes independently — bar / column / line / area / scatter all support
->       it; pie / doughnut never report it because they have no axes.
->       `Chart.roundedCorners` surfaces the chart-frame
->       `<c:chartSpace><c:roundedCorners val=".."/>` flag — Excel's "Format
->       Chart Area → Border → Rounded corners" toggle. The element sits on
->       `<c:chartSpace>` (a sibling of `<c:chart>`) because it styles the
->       outer frame rather than the plot area. The OOXML default `false`
->       collapses to `undefined` so absence and `<c:roundedCorners val="0"/>`
->       round-trip identically; only an explicit `val="1"` surfaces `true`.
->       The reader accepts the OOXML truthy / falsy spellings (`"1"` / `"true"`
->       / `"0"` / `"false"`); unknown values and missing `val` attributes drop
->       to `undefined`.
->       `ChartSeriesInfo.smooth` surfaces the per-series
->       `<c:ser><c:smooth val=".."/>` flag — Excel's "Format Data Series →
->       Line → Smoothed line" toggle — only on `line` / `line3D` / `scatter`
->       series (the OOXML schema places `<c:smooth>` exclusively on
->       `CT_LineSer` and `CT_ScatterSer`). Absence and the OOXML default
->       `val="0"` both collapse to `undefined`, so only an explicit
->       `<c:smooth val="1"/>` round-trips as `smooth: true`.
->       `ChartSeriesInfo.marker` surfaces the per-series `<c:ser><c:marker>`
->       glyph configuration on `line` / `line3D` / `scatter` series (the
->       schema places `<c:marker>` only on `CT_LineSer` and `CT_ScatterSer`).
->       The reader pulls `symbol` (`circle` / `square` / `diamond` /
->       `triangle` / `x` / `star` / `dot` / `dash` / `plus` / `auto` /
->       `none`), `size` (clamped to the OOXML 2..72 band), and the marker's
->       fill / outline colors out of `<c:spPr><a:solidFill>` and
->       `<c:spPr><a:ln><a:solidFill>` — empty `<c:marker/>` elements collapse
->       to `undefined` so absence and a bare element round-trip identically.
->       `ChartSeriesInfo.stroke` surfaces the per-series
->       `<c:ser><c:spPr><a:ln>` line styling on the same `line` / `line3D` /
->       `scatter` series — `dash` mirrors the OOXML `ST_PresetLineDashVal`
->       enum (`solid`, `dot`, `dash`, `lgDash`, `dashDot`, `lgDashDot`,
->       `lgDashDotDot`, `sysDash`, `sysDot`, `sysDashDot`, `sysDashDotDot`)
->       and `width` is reported in points after converting from EMU and
->       clamping to Excel's 0.25 – 13.5 pt UI band. Empty `<a:ln/>` blocks,
->       unknown dash tokens, and out-of-band widths collapse to `undefined`
->       so the parsed shape stays minimal.
->       `ChartSeriesInfo.invertIfNegative` surfaces the per-series
->       `<c:ser><c:invertIfNegative val=".."/>` flag — Excel's "Format Data
->       Series → Fill → Invert if negative" toggle — only on `bar` / `bar3D`
->       series (the OOXML schema places `<c:invertIfNegative>` exclusively on
->       `CT_BarSer` / `CT_Bar3DSer`). Absence and the OOXML default
->       `val="0"` both collapse to `undefined`, so only an explicit
->       `<c:invertIfNegative val="1"/>` round-trips as `invertIfNegative: true`.
->       Sheets that hucre actively regenerates because they
->       also carry hucre-managed images currently keep the chart bodies but
->       lose the in-drawing chart anchor — merging hucre's drawing output
->       with the original chart graphicFrames is a follow-up.
+greater than 1000) drop rather than clamp.
+`ChartAxisInfo.reverse` surfaces the per-axis
+`<c:scaling><c:orientation val="maxMin"/></c:scaling>` flag — Excel's
+"Categories / Values in reverse order" toggle. Only `"maxMin"` surfaces
+`true`; the OOXML default `"minMax"` (and unknown tokens, missing `val`
+attributes, missing `<c:orientation>` / `<c:scaling>` elements) all
+collapse to `undefined` so absence and the default round-trip
+identically through `cloneChart`. Reverse can fire on either or both
+axes independently — bar / column / line / area / scatter all support
+it; pie / doughnut never report it because they have no axes.
+`Chart.roundedCorners` surfaces the chart-frame
+`<c:chartSpace><c:roundedCorners val=".."/>` flag — Excel's "Format
+Chart Area → Border → Rounded corners" toggle. The element sits on
+`<c:chartSpace>` (a sibling of `<c:chart>`) because it styles the
+outer frame rather than the plot area. The OOXML default `false`
+collapses to `undefined` so absence and `<c:roundedCorners val="0"/>`
+round-trip identically; only an explicit `val="1"` surfaces `true`.
+The reader accepts the OOXML truthy / falsy spellings (`"1"` / `"true"`
+/ `"0"` / `"false"`); unknown values and missing `val` attributes drop
+to `undefined`.
+`ChartSeriesInfo.smooth` surfaces the per-series
+`<c:ser><c:smooth val=".."/>` flag — Excel's "Format Data Series →
+Line → Smoothed line" toggle — only on `line` / `line3D` / `scatter`
+series (the OOXML schema places `<c:smooth>` exclusively on
+`CT_LineSer` and `CT_ScatterSer`). Absence and the OOXML default
+`val="0"` both collapse to `undefined`, so only an explicit
+`<c:smooth val="1"/>` round-trips as `smooth: true`.
+`ChartSeriesInfo.marker` surfaces the per-series `<c:ser><c:marker>`
+glyph configuration on `line` / `line3D` / `scatter` series (the
+schema places `<c:marker>` only on `CT_LineSer` and `CT_ScatterSer`).
+The reader pulls `symbol` (`circle` / `square` / `diamond` /
+`triangle` / `x` / `star` / `dot` / `dash` / `plus` / `auto` /
+`none`), `size` (clamped to the OOXML 2..72 band), and the marker's
+fill / outline colors out of `<c:spPr><a:solidFill>` and
+`<c:spPr><a:ln><a:solidFill>` — empty `<c:marker/>` elements collapse
+to `undefined` so absence and a bare element round-trip identically.
+`ChartSeriesInfo.stroke` surfaces the per-series
+`<c:ser><c:spPr><a:ln>` line styling on the same `line` / `line3D` /
+`scatter` series — `dash` mirrors the OOXML `ST_PresetLineDashVal`
+enum (`solid`, `dot`, `dash`, `lgDash`, `dashDot`, `lgDashDot`,
+`lgDashDotDot`, `sysDash`, `sysDot`, `sysDashDot`, `sysDashDotDot`)
+and `width` is reported in points after converting from EMU and
+clamping to Excel's 0.25 – 13.5 pt UI band. Empty `<a:ln/>` blocks,
+unknown dash tokens, and out-of-band widths collapse to `undefined`
+so the parsed shape stays minimal.
+`ChartSeriesInfo.invertIfNegative` surfaces the per-series
+`<c:ser><c:invertIfNegative val=".."/>` flag — Excel's "Format Data
+Series → Fill → Invert if negative" toggle — only on `bar` / `bar3D`
+series (the OOXML schema places `<c:invertIfNegative>` exclusively on
+`CT_BarSer` / `CT_Bar3DSer`). Absence and the OOXML default
+`val="0"` both collapse to `undefined`, so only an explicit
+`<c:invertIfNegative val="1"/>` round-trips as `invertIfNegative: true`.
+Sheets that hucre actively regenerates because they
+also carry hucre-managed images currently keep the chart bodies but
+lose the in-drawing chart anchor — merging hucre's drawing output
+with the original chart graphicFrames is a follow-up.
 
 #### Authoring charts with `writeXlsx`
 
