@@ -677,6 +677,15 @@ non-default that keeps hidden cells in the chart). The reader accepts
 the OOXML truthy / falsy spellings (`"1"` / `"true"` / `"0"` /
 `"false"`); unknown values and missing `val` attributes drop to
 `undefined`.
+`ChartAxisInfo.tickLblSkip` and `ChartAxisInfo.tickMarkSkip` surface
+the category-axis tick-thinning knobs (`<c:catAx><c:tickLblSkip val=".."/>`
+and `<c:catAx><c:tickMarkSkip val=".."/>`). Both elements live on
+`CT_CatAx` / `CT_DateAx` only — the reader skips the parse on
+`<c:valAx>` so a corrupt template carrying a stray skip on a value
+axis does not surface a field the writer would never emit anyway. The
+OOXML default `1` (show every label / mark) collapses to `undefined`;
+out-of-range values (non-positive or > 32767) drop rather than clamp
+so a malformed input cannot leak into the writer.
 `ChartSeriesInfo.smooth` surfaces the per-series
 `<c:ser><c:smooth val=".."/>` flag — Excel's "Format Data Series →
 Line → Smoothed line" toggle — only on `line` / `line3D` / `scatter`
@@ -838,6 +847,17 @@ the chart), matching Excel's reference serialization. Pin
 chart (`val="0"`). The writer always emits the element so the
 rendered intent is explicit on roundtrip — no chart family is special-
 cased.
+The `axes.x.tickLblSkip` and `axes.x.tickMarkSkip` fields thin out a
+crowded category axis (`<c:catAx><c:tickLblSkip val=".."/>` and
+`<c:catAx><c:tickMarkSkip val=".."/>`). Pass a positive integer to
+show every Nth label or mark; the OOXML default `1` (show every tick)
+is omitted from the rendered XML so untouched charts match Excel's
+reference serialization byte-for-byte. Out-of-range values
+(non-positive or > 32767) drop silently rather than clamp. Both
+fields live on category axes only — bar / column / line / area
+honour them; scatter (whose two axes are value axes) and pie /
+doughnut (no axes at all) silently ignore them. Non-integer inputs
+round to the nearest integer.
 For line and scatter charts, each `series[i].smooth` flag toggles
 Excel's curved-line variant (`<c:smooth val="..">` inside `<c:ser>`).
 Line series always emit the element — `smooth: true` writes `val="1"`,
@@ -991,6 +1011,15 @@ a `boolean` to replace it. Like `dispBlanksAs` and `varyColors`, the
 field lives on `<c:chart>` and is valid on every chart family, so a
 coercion (line → column, doughnut → pie, etc.) preserves the
 inherited value rather than dropping it.
+The per-axis `axes.x.tickLblSkip` and `axes.x.tickMarkSkip` overrides
+follow the same `undefined` (inherit) / `null` (drop) / number
+(replace) grammar as `gridlines` / `scale` / `numberFormat`. The
+inherited values are dropped silently when the resolved clone target
+is `scatter` (its X axis is a value axis, so the skip would have no
+slot in the rendered chart) and when the target is `pie` or
+`doughnut` (no axes at all) — flattening a column template into a
+scatter clone therefore never leaks a stale catAx skip into the
+output.
 
 #### Walking and adding charts with `getCharts` / `addChart`
 

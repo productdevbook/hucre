@@ -257,11 +257,22 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   const gridlines = parseAxisGridlines(axis);
   const scale = parseAxisScale(axis);
   const numberFormat = parseAxisNumberFormat(axis);
+  // `<c:tickLblSkip>` / `<c:tickMarkSkip>` live exclusively on
+  // `CT_CatAx` / `CT_DateAx` per ECMA-376 Part 1, §21.2.2 — the
+  // `<c:valAx>` schema rejects them entirely. Skip the parse on
+  // value axes so a corrupt template carrying a stray skip element
+  // on a value axis does not surface a field the writer would never
+  // emit anyway.
+  const isCategoryAxis = axis.local === "catAx" || axis.local === "dateAx";
+  const tickLblSkip = isCategoryAxis ? parseAxisSkip(axis, "tickLblSkip") : undefined;
+  const tickMarkSkip = isCategoryAxis ? parseAxisSkip(axis, "tickMarkSkip") : undefined;
   if (
     title === undefined &&
     gridlines === undefined &&
     scale === undefined &&
-    numberFormat === undefined
+    numberFormat === undefined &&
+    tickLblSkip === undefined &&
+    tickMarkSkip === undefined
   ) {
     return undefined;
   }
@@ -270,7 +281,40 @@ function parseAxisInfo(axis: XmlElement): ChartAxisInfo | undefined {
   if (gridlines !== undefined) out.gridlines = gridlines;
   if (scale !== undefined) out.scale = scale;
   if (numberFormat !== undefined) out.numberFormat = numberFormat;
+  if (tickLblSkip !== undefined) out.tickLblSkip = tickLblSkip;
+  if (tickMarkSkip !== undefined) out.tickMarkSkip = tickMarkSkip;
   return out;
+}
+
+/**
+ * Pull `<c:tickLblSkip val=".."/>` or `<c:tickMarkSkip val=".."/>`
+ * off a category axis element. Returns `undefined` when:
+ *   - the element is absent,
+ *   - the `val` attribute is missing or non-numeric,
+ *   - the parsed value is `1` (the OOXML default — show every label /
+ *     mark),
+ *   - the parsed value falls outside the OOXML `ST_SkipIntervals`
+ *     range (`1..32767`).
+ *
+ * Negative / zero / out-of-range inputs are dropped rather than
+ * clamped so a corrupt template cannot leak a skip count Excel would
+ * reject.
+ */
+function parseAxisSkip(
+  axis: XmlElement,
+  localName: "tickLblSkip" | "tickMarkSkip",
+): number | undefined {
+  const el = findChild(axis, localName);
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  if (parsed < 1 || parsed > 32767) return undefined;
+  if (parsed === 1) return undefined;
+  return parsed;
 }
 
 /**

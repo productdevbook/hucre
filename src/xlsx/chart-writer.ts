@@ -145,6 +145,12 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     yScale: normalizeAxisScale(chart.axes?.y?.scale),
     xNumFmt: normalizeAxisNumberFormat(chart.axes?.x?.numberFormat),
     yNumFmt: normalizeAxisNumberFormat(chart.axes?.y?.numberFormat),
+    // `tickLblSkip` / `tickMarkSkip` only round-trip on category axes
+    // (`<c:catAx>` / `<c:dateAx>`). The scatter writer never emits
+    // them — both axes are value axes — so the bar/column/line/area
+    // catAx builder is the only consumer of these knobs.
+    xTickLblSkip: normalizeAxisSkip(chart.axes?.x?.tickLblSkip),
+    xTickMarkSkip: normalizeAxisSkip(chart.axes?.x?.tickMarkSkip),
   };
 
   switch (chart.type) {
@@ -196,6 +202,17 @@ interface AxisRenderOptions {
   yScale: ChartAxisScale | undefined;
   xNumFmt: ChartAxisNumberFormat | undefined;
   yNumFmt: ChartAxisNumberFormat | undefined;
+  /**
+   * Tick-label skip interval emitted on the X axis only when the axis
+   * is `<c:catAx>` (i.e. bar / column / line / area). Scatter charts
+   * have no category axis, so the skip is dropped silently.
+   */
+  xTickLblSkip: number | undefined;
+  /**
+   * Tick-mark skip interval emitted on the X axis only when the axis
+   * is `<c:catAx>`. Same scope rule as {@link xTickLblSkip}.
+   */
+  xTickMarkSkip: number | undefined;
 }
 
 /**
@@ -302,6 +319,29 @@ function normalizeAxisNumberFormat(
 }
 
 /**
+ * Normalize a `tickLblSkip` / `tickMarkSkip` value to a positive
+ * integer in the OOXML `ST_SkipIntervals` band (`1..32767`).
+ *
+ * Returns `undefined` when:
+ *   - the input is missing or non-finite,
+ *   - the rounded value is `1` (the OOXML default — show every label /
+ *     mark — and what absence already means),
+ *   - the rounded value falls outside the `1..32767` range.
+ *
+ * Out-of-range values drop rather than clamp because a skip count of
+ * `100` and `32767` mean structurally different things to Excel — a
+ * silent clamp would mask the configuration error rather than reveal
+ * it.
+ */
+function normalizeAxisSkip(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  const rounded = Math.round(value);
+  if (rounded < 1 || rounded > 32767) return undefined;
+  if (rounded === 1) return undefined;
+  return rounded;
+}
+
+/**
  * Build the children that augment a `<c:scaling>` element. Order is
  * spec-enforced: `<c:logBase>` → `<c:orientation>` → `<c:max>` →
  * `<c:min>`. The orientation child is always emitted by the caller
@@ -366,6 +406,29 @@ function buildAxisNumFmt(numFmt: ChartAxisNumberFormat | undefined): string[] {
   if (!numFmt) return [];
   const sourceLinked = numFmt.sourceLinked === true ? 1 : 0;
   return [xmlSelfClose("c:numFmt", { formatCode: numFmt.formatCode, sourceLinked })];
+}
+
+/**
+ * Build the `<c:tickLblSkip>` / `<c:tickMarkSkip>` siblings that sit
+ * between `<c:lblOffset>` and `<c:noMultiLvlLbl>` inside `<c:catAx>`
+ * (CT_CatAx). Order is `tickLblSkip` first, then `tickMarkSkip` per
+ * the OOXML schema. Each element is emitted only when the caller
+ * pinned a non-default value (the helper relies on
+ * {@link normalizeAxisSkip} having already collapsed `1` and out-of-
+ * range inputs to `undefined`).
+ */
+function buildAxisSkips(
+  tickLblSkip: number | undefined,
+  tickMarkSkip: number | undefined,
+): string[] {
+  const out: string[] = [];
+  if (tickLblSkip !== undefined) {
+    out.push(xmlSelfClose("c:tickLblSkip", { val: tickLblSkip }));
+  }
+  if (tickMarkSkip !== undefined) {
+    out.push(xmlSelfClose("c:tickMarkSkip", { val: tickMarkSkip }));
+  }
+  return out;
 }
 
 // ── Bar / Column ─────────────────────────────────────────────────────
@@ -496,6 +559,12 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
     xmlSelfClose("c:auto", { val: 1 }),
     xmlSelfClose("c:lblAlgn", { val: "ctr" }),
     xmlSelfClose("c:lblOffset", { val: 100 }),
+    // OOXML CT_CatAx places `<c:tickLblSkip>` / `<c:tickMarkSkip>`
+    // after `<c:lblOffset>` and before `<c:noMultiLvlLbl>`. Only
+    // emit each element when the caller pinned a non-default value
+    // so a fresh chart matches Excel's reference serialization (the
+    // default `1` is omitted and Excel renders every tick).
+    ...buildAxisSkips(opts.xTickLblSkip, opts.xTickMarkSkip),
     xmlSelfClose("c:noMultiLvlLbl", { val: 0 }),
   );
 

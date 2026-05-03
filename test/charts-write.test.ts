@@ -2733,3 +2733,182 @@ describe("writeChart — plotVisOnly", () => {
     expect(reparsed?.plotVisOnly).toBeUndefined();
   });
 });
+
+// ── Axis tick label / mark skip ──────────────────────────────────────
+
+describe("writeChart — axis tickLblSkip / tickMarkSkip", () => {
+  it("emits <c:tickLblSkip> on the category axis when set", () => {
+    const result = writeChart(makeChart({ axes: { x: { tickLblSkip: 3 } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:tickLblSkip val="3"');
+  });
+
+  it("emits <c:tickMarkSkip> on the category axis when set", () => {
+    const result = writeChart(makeChart({ axes: { x: { tickMarkSkip: 5 } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('c:tickMarkSkip val="5"');
+  });
+
+  it("emits both skips together in the OOXML-required order", () => {
+    // CT_CatAx: lblOffset → tickLblSkip → tickMarkSkip → noMultiLvlLbl.
+    const result = writeChart(
+      makeChart({ axes: { x: { tickLblSkip: 2, tickMarkSkip: 4 } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const lblOffsetIdx = catAxBlock.indexOf("c:lblOffset");
+    const tickLblSkipIdx = catAxBlock.indexOf("c:tickLblSkip");
+    const tickMarkSkipIdx = catAxBlock.indexOf("c:tickMarkSkip");
+    const noMultiLvlIdx = catAxBlock.indexOf("c:noMultiLvlLbl");
+    expect(lblOffsetIdx).toBeGreaterThan(0);
+    expect(tickLblSkipIdx).toBeGreaterThan(lblOffsetIdx);
+    expect(tickMarkSkipIdx).toBeGreaterThan(tickLblSkipIdx);
+    expect(noMultiLvlIdx).toBeGreaterThan(tickMarkSkipIdx);
+  });
+
+  it("omits the elements when tickLblSkip / tickMarkSkip are unset (Excel default)", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(result.chartXml).not.toContain("c:tickLblSkip");
+    expect(result.chartXml).not.toContain("c:tickMarkSkip");
+  });
+
+  it("omits the elements when the value is the OOXML default 1", () => {
+    // Absence and the default `1` round-trip identically. The writer
+    // therefore drops the element when the caller pinned `1` so the
+    // emitted XML matches Excel's reference serialization byte-for-byte.
+    const result = writeChart(
+      makeChart({ axes: { x: { tickLblSkip: 1, tickMarkSkip: 1 } } }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:tickLblSkip");
+    expect(result.chartXml).not.toContain("c:tickMarkSkip");
+  });
+
+  it("drops out-of-range values without clamping", () => {
+    // ST_SkipIntervals restricts the value to 1..32767. Passing 0,
+    // -3, or 99999 drops the element silently rather than clamping —
+    // a silent clamp would mask the configuration error.
+    const result = writeChart(
+      makeChart({
+        axes: { x: { tickLblSkip: 0, tickMarkSkip: 99999 } },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:tickLblSkip");
+    expect(result.chartXml).not.toContain("c:tickMarkSkip");
+  });
+
+  it("rounds non-integer values to the nearest integer", () => {
+    const result = writeChart(makeChart({ axes: { x: { tickLblSkip: 3.7 } } }), "Sheet1");
+    expect(result.chartXml).toContain('c:tickLblSkip val="4"');
+  });
+
+  it("accepts the schema boundaries 2 and 32767", () => {
+    const lo = writeChart(makeChart({ axes: { x: { tickLblSkip: 2 } } }), "Sheet1");
+    expect(lo.chartXml).toContain('c:tickLblSkip val="2"');
+    const hi = writeChart(makeChart({ axes: { x: { tickLblSkip: 32767 } } }), "Sheet1");
+    expect(hi.chartXml).toContain('c:tickLblSkip val="32767"');
+  });
+
+  it("emits each element exactly once on the rendered chart", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { tickLblSkip: 3, tickMarkSkip: 5 } } }),
+      "Sheet1",
+    );
+    expect((result.chartXml.match(/c:tickLblSkip/g) ?? []).length).toBe(1);
+    expect((result.chartXml.match(/c:tickMarkSkip/g) ?? []).length).toBe(1);
+  });
+
+  it("threads the skips through bar, column, line, and area chart families", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, axes: { x: { tickLblSkip: 3, tickMarkSkip: 5 } } }),
+        "Sheet1",
+      );
+      expect(result.chartXml).toContain('c:tickLblSkip val="3"');
+      expect(result.chartXml).toContain('c:tickMarkSkip val="5"');
+    }
+  });
+
+  it("ignores the skips on scatter charts (both axes are value axes)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { x: { tickLblSkip: 3, tickMarkSkip: 5 } },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:tickLblSkip");
+    expect(result.chartXml).not.toContain("c:tickMarkSkip");
+  });
+
+  it("ignores the skips on pie / doughnut charts (no axes at all)", () => {
+    const pie = writeChart(makeChart({ type: "pie", axes: { x: { tickLblSkip: 3 } } }), "Sheet1");
+    expect(pie.chartXml).not.toContain("c:tickLblSkip");
+    const dough = writeChart(
+      makeChart({ type: "doughnut", axes: { x: { tickMarkSkip: 4 } } }),
+      "Sheet1",
+    );
+    expect(dough.chartXml).not.toContain("c:tickMarkSkip");
+  });
+
+  it("does not emit the elements on the value axis even when set on .y", () => {
+    // The model surfaces these only on `axes.x`; setting them via
+    // `axes.y` is impossible at the type level. This test pins the
+    // negative case for the writer: a valAx never carries tick skips.
+    const result = writeChart(
+      makeChart({ axes: { x: { tickLblSkip: 3, tickMarkSkip: 5 } } }),
+      "Sheet1",
+    );
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).not.toContain("c:tickLblSkip");
+    expect(valAxBlock).not.toContain("c:tickMarkSkip");
+  });
+
+  it("round-trips a non-default skip pair through parseChart", () => {
+    const written = writeChart(
+      makeChart({ axes: { x: { tickLblSkip: 3, tickMarkSkip: 5 } } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.tickLblSkip).toBe(3);
+    expect(reparsed?.axes?.x?.tickMarkSkip).toBe(5);
+  });
+
+  it("collapses a defaulted skip round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes).toBeUndefined();
+  });
+
+  it("places tick skips inside the catAx without breaking schema-required ordering of other elements", () => {
+    // Combine title, gridlines, scale, number format and skips on the
+    // X axis to verify the catAx still renders in spec order.
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: {
+            title: "Region",
+            gridlines: { major: true },
+            numberFormat: { formatCode: "@" },
+            tickLblSkip: 3,
+            tickMarkSkip: 5,
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const idx = (needle: string): number => catAxBlock.indexOf(needle);
+    expect(idx("c:axId")).toBeLessThan(idx("c:scaling"));
+    expect(idx("c:scaling")).toBeLessThan(idx("c:axPos"));
+    expect(idx("c:axPos")).toBeLessThan(idx("c:majorGridlines"));
+    expect(idx("c:majorGridlines")).toBeLessThan(idx("c:title"));
+    expect(idx("c:title")).toBeLessThan(idx("c:numFmt"));
+    expect(idx("c:numFmt")).toBeLessThan(idx("c:crossAx"));
+    expect(idx("c:lblOffset")).toBeLessThan(idx("c:tickLblSkip"));
+    expect(idx("c:tickLblSkip")).toBeLessThan(idx("c:tickMarkSkip"));
+    expect(idx("c:tickMarkSkip")).toBeLessThan(idx("c:noMultiLvlLbl"));
+  });
+});

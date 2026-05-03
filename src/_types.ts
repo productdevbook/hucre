@@ -1039,6 +1039,12 @@ export interface SheetChart {
    * useful when the cloned chart needs a different format from the
    * source data range (e.g. forcing `"0.00%"` on a percentage chart
    * whose underlying cells are stored as decimals).
+   *
+   * `tickLblSkip` and `tickMarkSkip` thin out a crowded category axis.
+   * Both map to category-axis-only OOXML elements (`<c:tickLblSkip>` /
+   * `<c:tickMarkSkip>` on `CT_CatAx` / `CT_DateAx`); they have no slot
+   * on `<c:valAx>` and are silently ignored on the value axis or on
+   * scatter charts (whose two axes are both value axes).
    */
   axes?: {
     /** Category axis (bar/column/line/area) or X value axis (scatter). */
@@ -1047,6 +1053,27 @@ export interface SheetChart {
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
+      /**
+       * Show every Nth tick label on a category axis. `1` (the OOXML
+       * default) shows every label; `2` shows every other one; `3`
+       * shows every third, and so on. Maps to
+       * `<c:catAx><c:tickLblSkip val="N"/></c:catAx>`. Only meaningful
+       * for bar / column / line / area charts (whose X axis is
+       * `<c:catAx>`); silently ignored for scatter (both axes are
+       * value axes) and pie / doughnut (no axes at all). Accepted
+       * range: positive integers 1..32767 (the OOXML
+       * `ST_SkipIntervals` schema). Values outside the range or
+       * non-positive are dropped at write time.
+       */
+      tickLblSkip?: number;
+      /**
+       * Show every Nth tick mark on a category axis. Same `1`-default
+       * semantics as {@link tickLblSkip} but for the short tick lines
+       * Excel paints alongside each label. Maps to
+       * `<c:catAx><c:tickMarkSkip val="N"/></c:catAx>`. Same
+       * scope-restriction as `tickLblSkip` — category axes only.
+       */
+      tickMarkSkip?: number;
     };
     /** Value axis. */
     y?: {
@@ -1865,6 +1892,22 @@ export interface ChartAxisInfo {
    * the writer side.
    */
   numberFormat?: ChartAxisNumberFormat;
+  /**
+   * Tick-label skip interval pulled from `<c:tickLblSkip val=".."/>`.
+   * Surfaces only on category axes (`<c:catAx>` / `<c:dateAx>`) — the
+   * OOXML schema does not place this element on `<c:valAx>`. The
+   * default `1` (show every label) collapses to `undefined` so absence
+   * and the default round-trip identically through {@link cloneChart}.
+   * Out-of-range values (non-positive or > 32767) are dropped rather
+   * than fabricated.
+   */
+  tickLblSkip?: number;
+  /**
+   * Tick-mark skip interval pulled from `<c:tickMarkSkip val=".."/>`.
+   * Same scope (category axes only) and default-collapse semantics as
+   * {@link tickLblSkip}.
+   */
+  tickMarkSkip?: number;
 }
 
 /**
