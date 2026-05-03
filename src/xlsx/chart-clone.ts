@@ -187,6 +187,19 @@ export interface CloneChartOptions {
   firstSliceAng?: number;
   /** Override `SheetChart.showTitle`. */
   showTitle?: boolean;
+  /**
+   * Override the chart-level title-overlay flag. `undefined` (or
+   * omitted) inherits the source's parsed value; `null` drops the
+   * inherited value (the writer falls back to the OOXML `false` default
+   * — the title reserves its own slot above the plot area, no overlap);
+   * a `boolean` replaces it.
+   *
+   * The override is silently dropped from the cloned `SheetChart` when
+   * the resolved chart renders no title (`title` resolved to `undefined`
+   * or `showTitle === false`) — there is no `<c:title>` block to host
+   * the overlay flag in either case.
+   */
+  titleOverlay?: boolean | null;
   /** Override `SheetChart.altText`. */
   altText?: string;
   /** Override `SheetChart.frameTitle`. */
@@ -542,6 +555,18 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   if (options.showTitle !== undefined) out.showTitle = options.showTitle;
   if (options.altText !== undefined) out.altText = options.altText;
   if (options.frameTitle !== undefined) out.frameTitle = options.frameTitle;
+
+  // `titleOverlay` only renders inside `<c:title>`, so a clone that
+  // omits the title (resolved title is undefined or `showTitle === false`)
+  // drops the inherited overlay flag — there is no `<c:overlay>` slot on
+  // a missing title for the writer to populate. The override wins over
+  // the source's parsed value; absence inherits, `null` drops, a `boolean`
+  // replaces. Mirrors the legendOverlay scoping rule.
+  const titleRendered = (out.showTitle ?? Boolean(out.title)) && out.title !== undefined;
+  if (titleRendered) {
+    const resolvedTitleOverlay = resolveTitleOverlay(source.titleOverlay, options.titleOverlay);
+    if (resolvedTitleOverlay !== undefined) out.titleOverlay = resolvedTitleOverlay;
+  }
 
   const resolvedDataLabels = resolveChartDataLabels(source.dataLabels, options.dataLabels);
   if (resolvedDataLabels !== undefined) out.dataLabels = resolvedDataLabels;
@@ -953,6 +978,29 @@ function resolveRoundedCorners(
  * is emitted, the overlay flag has no slot in the rendered chart.
  */
 function resolveLegendOverlay(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve a `titleOverlay` override.
+ *
+ * `undefined` → inherit the source's parsed `titleOverlay`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               OOXML `false` default — the title reserves its own slot
+ *               above the plot area, no overlap with it).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `legendOverlay` / `roundedCorners` so the chart-
+ * level overlay toggles compose the same way at the call site. Callers
+ * should gate the result on the resolved title visibility — when no
+ * title is emitted, the overlay flag has no slot in the rendered chart.
+ */
+function resolveTitleOverlay(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {

@@ -4472,3 +4472,162 @@ describe("writeChart — axis noMultiLvlLbl", () => {
     expect(chartXml).toContain('c:noMultiLvlLbl val="1"');
   });
 });
+
+// ── writeChart — title overlay ───────────────────────────────────────
+
+describe("writeChart — titleOverlay", () => {
+  it('emits <c:overlay val="0"/> inside <c:title> when the field is unset (OOXML default)', () => {
+    // The writer always emits the element so the rendered intent is
+    // explicit on roundtrip — Excel itself includes it in every
+    // reference title serialization.
+    const result = writeChart(makeChart(), "Sheet1");
+    const title = result.chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(title).toContain('c:overlay val="0"');
+    expect(title).not.toContain('c:overlay val="1"');
+  });
+
+  it("threads titleOverlay=true through to <c:title>", () => {
+    // true is the non-default — Excel's "Show the title without
+    // overlapping the chart" toggle off (the title is drawn on top of
+    // the plot area).
+    const result = writeChart(makeChart({ titleOverlay: true }), "Sheet1");
+    const title = result.chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(title).toContain('c:overlay val="1"');
+    expect(title).not.toContain('c:overlay val="0"');
+  });
+
+  it("threads titleOverlay=false through to <c:title>", () => {
+    // Setting the OOXML default explicitly produces the same wire shape
+    // as omitting the field — the element is always emitted.
+    const result = writeChart(makeChart({ titleOverlay: false }), "Sheet1");
+    const title = result.chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(title).toContain('c:overlay val="0"');
+  });
+
+  it("places <c:overlay> after <c:tx> inside <c:title> (CT_Title order)", () => {
+    // CT_Title sequence: tx?, layout?, overlay?, ...
+    const result = writeChart(makeChart({ titleOverlay: true }), "Sheet1");
+    const title = result.chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(title.indexOf("c:tx")).toBeLessThan(title.indexOf("c:overlay"));
+  });
+
+  it("only emits <c:overlay> once inside <c:title> even on a chart that overrides it", () => {
+    // Guard against any regression that would double-emit the element
+    // (e.g. one hardcoded copy plus a dynamic one). Scope the count to
+    // the title — the legend also carries its own `<c:overlay>`.
+    const result = writeChart(makeChart({ titleOverlay: true }), "Sheet1");
+    const title = result.chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    const occurrences = title.match(/c:overlay/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("does not emit any <c:title> when the chart has no title", () => {
+    // No title means no title block to host the overlay flag — the
+    // writer suppresses the entire `<c:title>` element. The chart still
+    // emits `<c:autoTitleDeleted val="1"/>` so the picker shows blank.
+    const result = writeChart(makeChart({ title: undefined, titleOverlay: true }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:title>");
+    // The legend still carries its own `<c:overlay>`; the chart-level
+    // title block has none.
+    expect(result.chartXml).toContain('c:autoTitleDeleted val="1"');
+  });
+
+  it("does not emit any <c:title> when showTitle=false even with titleOverlay", () => {
+    // `showTitle: false` suppresses the title block entirely — the
+    // writer drops the inherited overlay flag rather than emit a stray
+    // overlay child Excel would never read.
+    const result = writeChart(makeChart({ showTitle: false, titleOverlay: true }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:title>");
+    expect(result.chartXml).toContain('c:autoTitleDeleted val="1"');
+  });
+
+  it("threads titleOverlay through every chart family", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, titleOverlay: true }), "Sheet1");
+      const title = result.chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+      expect(title).toContain('c:overlay val="1"');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        titleOverlay: true,
+      }),
+      "Sheet1",
+    );
+    const title = scatter.chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(title).toContain('c:overlay val="1"');
+  });
+
+  it("composes independently with legendOverlay", () => {
+    // The two flags live on different parents (`<c:title>` vs
+    // `<c:legend>`); pinning one must not change the other.
+    const result = writeChart(makeChart({ titleOverlay: true, legendOverlay: false }), "Sheet1");
+    const title = result.chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    const legend = result.chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(title).toContain('c:overlay val="1"');
+    expect(legend).toContain('c:overlay val="0"');
+  });
+
+  it("round-trips a non-default titleOverlay value through parseChart", () => {
+    // A chart with titleOverlay=true should re-parse into a Chart whose
+    // `titleOverlay` field is `true` (not collapsed to undefined since
+    // true is not the OOXML default).
+    const written = writeChart(makeChart({ titleOverlay: true }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleOverlay).toBe(true);
+  });
+
+  it("collapses a defaulted titleOverlay round-trip back to undefined", () => {
+    // A fresh chart (titleOverlay omitted) writes `0` and re-parses to
+    // undefined — absence and the OOXML default round-trip identically.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleOverlay).toBeUndefined();
+  });
+
+  it("collapses an explicit titleOverlay=false round-trip back to undefined", () => {
+    // Pinning the OOXML default also collapses on read, so a template
+    // that explicitly emits `<c:overlay val="0"/>` is treated the same
+    // as one that omits the field.
+    const written = writeChart(makeChart({ titleOverlay: false }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleOverlay).toBeUndefined();
+  });
+
+  it("ignores non-boolean titleOverlay values", () => {
+    // Match how `legendOverlay` / `roundedCorners` / axis hidden treat
+    // their inputs: only literal `true` produces the non-default. A
+    // stray non-boolean (e.g. truthy string) collapses to the default.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = writeChart(makeChart({ titleOverlay: "yes" as any }), "Sheet1");
+    const title = result.chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(title).toContain('c:overlay val="0"');
+  });
+
+  it("survives a writeXlsx round trip — titleOverlay lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            titleOverlay: true,
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const title = chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(title).toContain('c:overlay val="1"');
+  });
+});

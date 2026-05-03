@@ -61,7 +61,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
 
   // ── Title ──
   if (showTitle && chart.title) {
-    chartChildren.push(buildTitle(chart.title));
+    chartChildren.push(buildTitle(chart.title, resolveTitleOverlay(chart)));
     chartChildren.push(xmlSelfClose("c:autoTitleDeleted", { val: 0 }));
   } else {
     chartChildren.push(xmlSelfClose("c:autoTitleDeleted", { val: 1 }));
@@ -101,7 +101,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
 
 // ── Title ────────────────────────────────────────────────────────────
 
-function buildTitle(title: string): string {
+function buildTitle(title: string, overlay: boolean): string {
   return xmlElement("c:title", undefined, [
     xmlElement("c:tx", undefined, [
       xmlElement("c:rich", undefined, [
@@ -127,8 +127,34 @@ function buildTitle(title: string): string {
         ]),
       ]),
     ]),
-    xmlSelfClose("c:overlay", { val: 0 }),
+    xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }),
   ]);
+}
+
+/**
+ * Resolve `<c:title><c:overlay val=".."/></c:title>` from
+ * {@link SheetChart.titleOverlay}.
+ *
+ * Defaults to `false` (the OOXML default Excel itself emits — the title
+ * reserves its own slot above the plot area and the plot area shrinks
+ * to make room). Anything other than literal `true` collapses to `false`
+ * so a stray non-boolean leaking through the type guard (e.g. `0` / `1` /
+ * `"true"` / `null`) never produces `<c:overlay val="1"/>`. This matches
+ * how `legendOverlay` / `roundedCorners` / `plotVisOnly` / axis `hidden`
+ * treat their inputs: a literal boolean is the only path to a non-default
+ * value.
+ *
+ * The writer always emits `<c:overlay>` inside `<c:title>` because Excel's
+ * reference serialization includes the element on every visible title;
+ * only the `val` flips when the caller pins `titleOverlay: true`.
+ *
+ * The flag is only meaningful when the chart actually emits a title — the
+ * caller is expected to gate the call on `showTitle && chart.title`. A
+ * chart whose title is suppressed has no `<c:title>` block to host the
+ * overlay element.
+ */
+function resolveTitleOverlay(chart: SheetChart): boolean {
+  return chart.titleOverlay === true;
 }
 
 // ── Plot Area ────────────────────────────────────────────────────────

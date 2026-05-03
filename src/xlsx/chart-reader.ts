@@ -80,6 +80,14 @@ export function parseChart(xml: string): Chart | undefined {
   const title = parseTitle(chartEl);
   if (title !== undefined) out.title = title;
 
+  // `<c:overlay>` is a child of `<c:title>`, so a chart that omits the
+  // title element has no overlay flag to surface — pulling the value
+  // off a `<c:title>` that is not part of the chart's render would leak
+  // a toggle that has no effect. Only attempt the parse when the chart
+  // declares a title element.
+  const titleOverlay = parseTitleOverlay(chartEl);
+  if (titleOverlay !== undefined) out.titleOverlay = titleOverlay;
+
   const plotArea = findChild(chartEl, "plotArea");
   if (plotArea) {
     let seriesCount = 0;
@@ -1257,6 +1265,44 @@ function parseLegendOverlay(chartEl: XmlElement): boolean | undefined {
     case "false":
       // OOXML default — collapse to undefined for symmetry with the
       // writer's `legendOverlay` field.
+      return undefined;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Pull `<c:title><c:overlay val=".."/></c:title>` off the chart. The
+ * OOXML default `false` (the title reserves its own slot above the plot
+ * area, no overlap) collapses to `undefined` so absence and
+ * `<c:overlay val="0"/>` round-trip identically through
+ * {@link cloneChart} — only an explicit `<c:overlay val="1"/>` surfaces
+ * `true`.
+ *
+ * Returns `undefined` whenever the chart omits the `<c:title>` element
+ * — there is no overlay slot to surface in that case. The element is a
+ * sibling of `<c:tx>` inside `<c:title>` per the CT_Title schema, so the
+ * lookup is scoped to direct title children.
+ *
+ * Accepts the OOXML truthy / falsy spellings (`"1"` / `"true"` / `"0"`
+ * / `"false"`); unknown values and missing `val` attributes drop to
+ * `undefined` rather than fabricate a flag Excel would not emit.
+ */
+function parseTitleOverlay(chartEl: XmlElement): boolean | undefined {
+  const title = findChild(chartEl, "title");
+  if (!title) return undefined;
+  const overlay = findChild(title, "overlay");
+  if (!overlay) return undefined;
+  const raw = overlay.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  switch (raw) {
+    case "1":
+    case "true":
+      return true;
+    case "0":
+    case "false":
+      // OOXML default — collapse to undefined for symmetry with the
+      // writer's `titleOverlay` field.
       return undefined;
     default:
       return undefined;

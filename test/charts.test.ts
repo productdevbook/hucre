@@ -5299,3 +5299,211 @@ describe("parseChart — axis noMultiLvlLbl", () => {
     });
   });
 });
+
+// ── parseChart — titleOverlay ───────────────────────────────────────
+
+describe("parseChart — titleOverlay", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withTitle(overlay?: string): string {
+    const overlayElement = overlay === undefined ? "" : `<c:overlay val="${overlay}"/>`;
+    return `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:title>
+      <c:tx><c:rich>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:r><a:t>Sales</a:t></a:r></a:p>
+      </c:rich></c:tx>
+      ${overlayElement}
+    </c:title>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it('surfaces <c:title><c:overlay val="1"/></c:title> as true (non-default)', () => {
+    const chart = parseChart(withTitle("1"));
+    expect(chart?.title).toBe("Sales");
+    expect(chart?.titleOverlay).toBe(true);
+  });
+
+  it("collapses the OOXML default false to undefined (writer absence)", () => {
+    // The default carried explicitly by Excel's reference serialization
+    // round-trips identically to absence of the field.
+    const chart = parseChart(withTitle("0"));
+    expect(chart?.title).toBe("Sales");
+    expect(chart?.titleOverlay).toBeUndefined();
+  });
+
+  it("returns undefined when the title element omits <c:overlay>", () => {
+    const chart = parseChart(withTitle());
+    expect(chart?.title).toBe("Sales");
+    expect(chart?.titleOverlay).toBeUndefined();
+  });
+
+  it("accepts the OOXML true / false spellings on the val attribute", () => {
+    // The OOXML schema for `xsd:boolean` accepts `"true"` / `"false"`
+    // alongside `"1"` / `"0"`. Hucre tolerates both shapes — a hand-
+    // edited template using `true` should round-trip.
+    expect(parseChart(withTitle("true"))?.titleOverlay).toBe(true);
+  });
+
+  it("collapses the 'false' spelling to undefined as well", () => {
+    expect(parseChart(withTitle("false"))?.titleOverlay).toBeUndefined();
+  });
+
+  it("drops unknown overlay values rather than fabricate one", () => {
+    expect(parseChart(withTitle("bogus"))?.titleOverlay).toBeUndefined();
+  });
+
+  it("ignores a missing val attribute on <c:overlay>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:title>
+      <c:tx><c:rich>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:r><a:t>Sales</a:t></a:r></a:p>
+      </c:rich></c:tx>
+      <c:overlay/>
+    </c:title>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.titleOverlay).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:title> element at all", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.title).toBeUndefined();
+    expect(chart?.titleOverlay).toBeUndefined();
+  });
+
+  it("surfaces the overlay flag on every chart family that emits a title", () => {
+    // The element lives on <c:title>, a chart-level sibling of
+    // <c:plotArea>, so it round-trips identically across families. Pie
+    // / doughnut / line / bar all support the title block identically.
+    for (const kind of ["lineChart", "barChart", "pieChart", "doughnutChart"]) {
+      const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:title>
+      <c:tx><c:rich>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:r><a:t>Header</a:t></a:r></a:p>
+      </c:rich></c:tx>
+      <c:overlay val="1"/>
+    </c:title>
+    <c:plotArea>
+      <c:${kind}><c:ser><c:idx val="0"/></c:ser></c:${kind}>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+      const chart = parseChart(xml);
+      expect(chart?.titleOverlay).toBe(true);
+    }
+  });
+
+  it("co-exists independently with the legend overlay flag", () => {
+    // The chart-title `<c:overlay>` lives on `<c:title>`, while the
+    // legend `<c:overlay>` lives on `<c:legend>`; the two flags must
+    // surface independently from the same chart even though they share
+    // a local element name.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:title>
+      <c:tx><c:rich>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:r><a:t>Sales</a:t></a:r></a:p>
+      </c:rich></c:tx>
+      <c:overlay val="1"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleOverlay).toBe(true);
+    expect(chart?.legendOverlay).toBeUndefined();
+  });
+
+  it("co-exists with other chart-level toggles", () => {
+    // The title overlay flag should not interfere with sibling chart-
+    // level fields parsed off <c:chart> / <c:chartSpace>.
+    const xml = `<c:chartSpace ${NS}>
+  <c:roundedCorners val="1"/>
+  <c:chart>
+    <c:title>
+      <c:tx><c:rich>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:r><a:t>Sales</a:t></a:r></a:p>
+      </c:rich></c:tx>
+      <c:overlay val="1"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="clustered"/>
+        <c:varyColors val="1"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+    </c:plotArea>
+    <c:plotVisOnly val="0"/>
+    <c:dispBlanksAs val="zero"/>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.title).toBe("Sales");
+    expect(chart?.titleOverlay).toBe(true);
+    expect(chart?.roundedCorners).toBe(true);
+    expect(chart?.plotVisOnly).toBe(false);
+    expect(chart?.dispBlanksAs).toBe("zero");
+    expect(chart?.varyColors).toBe(true);
+  });
+
+  it("does not pull <c:overlay> from a sibling element by mistake", () => {
+    // The reader must scope the lookup to direct `<c:title>` children
+    // — if the title omits an `<c:overlay>` but the legend has one,
+    // the title flag must not pick up the legend's value.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:title>
+      <c:tx><c:rich>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:r><a:t>Sales</a:t></a:r></a:p>
+      </c:rich></c:tx>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="1"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleOverlay).toBeUndefined();
+    expect(chart?.legendOverlay).toBe(true);
+  });
+});
