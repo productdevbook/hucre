@@ -1439,6 +1439,29 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
   const numFmt = parseDataLabelsNumberFormat(el);
   if (numFmt) out.numberFormat = numFmt;
 
+  // `<c:showLeaderLines val=".."/>` mirrors Excel's "Format Data
+  // Labels -> Show Leader Lines" checkbox. The OOXML default is
+  // `true` (Excel paints leader lines on every label that gets pushed
+  // outside its slice), so absence and `val="1"` collapse to
+  // `undefined` — only an explicit `val="0"` (or `"false"`) surfaces
+  // `false`. Mirrors how the writer-side scope guard treats the
+  // element: only meaningful on pie / doughnut, but the parser is
+  // permissive (the OOXML schema scopes the element to `EG_DLbls` for
+  // `CT_PieChart` / `CT_DoughnutChart`, but a templated chart whose
+  // type element ends up coerced should still surface the source's
+  // intent so the cloned model stays accurate).
+  // Only the literal OOXML falsy spellings (`"0"` / `"false"`) flip the
+  // toggle — unknown / missing val tokens collapse to `undefined` rather
+  // than surface a `false` the writer would round-trip into a non-default
+  // `<c:showLeaderLines val="0"/>` Excel never authored.
+  const showLeader = findChild(el, "showLeaderLines");
+  if (showLeader) {
+    const v = showLeader.attrs.val;
+    if (typeof v === "string" && (v === "0" || v.toLowerCase() === "false")) {
+      out.showLeaderLines = false;
+    }
+  }
+
   // Empty record is meaningless to a consumer — collapse to undefined.
   if (
     out.position === undefined &&
@@ -1448,7 +1471,8 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
     !out.showPercent &&
     !out.showLegendKey &&
     out.separator === undefined &&
-    out.numberFormat === undefined
+    out.numberFormat === undefined &&
+    out.showLeaderLines === undefined
   ) {
     return undefined;
   }
