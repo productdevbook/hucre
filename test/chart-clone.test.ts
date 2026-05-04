@@ -6755,6 +6755,199 @@ describe("cloneChart — upDownBars", () => {
   });
 });
 
+// ── cloneChart — upDownBars gap width ────────────────────────────────
+
+describe("cloneChart — upDownBars gap width", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 2,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "High",
+          valuesRef: "Tpl!$B$2:$B$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+        },
+        {
+          kind: "line",
+          index: 1,
+          name: "Low",
+          valuesRef: "Tpl!$C$2:$C$5",
+          categoriesRef: "Tpl!$A$2:$A$5",
+        },
+      ],
+      upDownBars: true,
+      ...extra,
+    };
+  }
+
+  it("inherits the source's upDownBarsGapWidth by default", () => {
+    const clone = cloneChart(source({ upDownBarsGapWidth: 200 }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.upDownBars).toBe(true);
+    expect(clone.upDownBarsGapWidth).toBe(200);
+  });
+
+  it("lets options.upDownBarsGapWidth override the source's value", () => {
+    const clone = cloneChart(source({ upDownBarsGapWidth: 200 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      upDownBarsGapWidth: 75,
+    });
+    expect(clone.upDownBarsGapWidth).toBe(75);
+  });
+
+  it("drops the inherited gap width when the override is null", () => {
+    // null collapses to the writer's OOXML default (150) — the field
+    // disappears from the resolved SheetChart so the writer falls back
+    // to Excel's reference value.
+    const clone = cloneChart(source({ upDownBarsGapWidth: 200 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      upDownBarsGapWidth: null,
+    });
+    expect(clone.upDownBarsGapWidth).toBeUndefined();
+  });
+
+  it("returns undefined when neither source nor override sets the gap width", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.upDownBarsGapWidth).toBeUndefined();
+  });
+
+  it("lets the caller add a gap width to a source that did not carry one", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      upDownBarsGapWidth: 250,
+    });
+    expect(clone.upDownBarsGapWidth).toBe(250);
+  });
+
+  it("drops the gap width when the resolved upDownBars is false", () => {
+    // The OOXML schema scopes <c:gapWidth> to <c:upDownBars> only.
+    // When the parent toggle is off, the gap width has no slot to live
+    // in — drop it silently.
+    const clone = cloneChart(source({ upDownBarsGapWidth: 200 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      upDownBars: false,
+    });
+    expect(clone.upDownBars).toBe(false);
+    expect(clone.upDownBarsGapWidth).toBeUndefined();
+  });
+
+  it("drops the gap width when the resolved upDownBars is null-stripped", () => {
+    const clone = cloneChart(source({ upDownBarsGapWidth: 200 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      upDownBars: null,
+    });
+    expect(clone.upDownBars).toBeUndefined();
+    expect(clone.upDownBarsGapWidth).toBeUndefined();
+  });
+
+  it("drops the gap width when the source has no upDownBars and the clone does not add one", () => {
+    // Source carries a stray gap width but no parent toggle — the
+    // cloner drops the value because no <c:upDownBars> element will
+    // be emitted.
+    const stray: Chart = {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [{ kind: "line", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      // upDownBars omitted; upDownBarsGapWidth set in isolation.
+      upDownBarsGapWidth: 200,
+    };
+    const clone = cloneChart(stray, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.upDownBars).toBeUndefined();
+    expect(clone.upDownBarsGapWidth).toBeUndefined();
+  });
+
+  it("drops the gap width on a flatten to a non-line family (line → column)", () => {
+    const clone = cloneChart(source({ upDownBarsGapWidth: 200 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.upDownBars).toBeUndefined();
+    expect(clone.upDownBarsGapWidth).toBeUndefined();
+  });
+
+  it("drops the gap width on a flatten to area (CT_AreaChart rejects upDownBars)", () => {
+    const clone = cloneChart(source({ upDownBarsGapWidth: 200 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "area",
+    });
+    expect(clone.upDownBarsGapWidth).toBeUndefined();
+  });
+
+  it("composes with an upDownBars override that adds the parent toggle", () => {
+    // Source has no toggle; clone adds `upDownBars: true` and pins the
+    // gap width — both should land on the resolved chart.
+    const clone = cloneChart(source({ upDownBars: undefined }), {
+      anchor: { from: { row: 0, col: 0 } },
+      upDownBars: true,
+      upDownBarsGapWidth: 300,
+    });
+    expect(clone.upDownBars).toBe(true);
+    expect(clone.upDownBarsGapWidth).toBe(300);
+  });
+
+  it("propagates a custom gap width into the rendered <c:lineChart> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ upDownBarsGapWidth: 200 }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B", "C"],
+            [1, 10, 5],
+            [2, 12, 6],
+            [3, 15, 8],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:upDownBars>");
+    expect(written).toContain('c:gapWidth val="200"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.upDownBars).toBe(true);
+    expect(reparsed?.upDownBarsGapWidth).toBe(200);
+  });
+
+  it("falls back to 150 when the override is null on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ upDownBarsGapWidth: 200 }), {
+      anchor: { from: { row: 5, col: 0 } },
+      upDownBarsGapWidth: null,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B", "C"],
+            [1, 10, 5],
+            [2, 12, 6],
+            [3, 15, 8],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:upDownBars>");
+    expect(written).toContain('c:gapWidth val="150"');
+    expect(written).not.toContain('c:gapWidth val="200"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.upDownBarsGapWidth).toBeUndefined();
+  });
+});
+
 // ── cloneChart — axis dispUnits ──────────────────────────────────────
 
 describe("cloneChart — axis dispUnits", () => {

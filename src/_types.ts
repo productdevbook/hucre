@@ -1472,11 +1472,39 @@ export interface SheetChart {
    *
    * The writer emits a default `<c:gapWidth val="150"/>` child to
    * mirror Excel's reference serialization — `150` is the OOXML
-   * default for `CT_UpDownBars/gapWidth`. Custom gap widths are not
-   * exposed at this layer; pass a richer model in a follow-up if a
-   * caller needs to thin or widen the bars.
+   * default for `CT_UpDownBars/gapWidth`. Pin
+   * {@link upDownBarsGapWidth} to thin or widen the bars.
    */
   upDownBars?: boolean;
+  /**
+   * Width of the gap between up / down bars as a percentage of the bar
+   * width. Maps to `<c:lineChart><c:upDownBars><c:gapWidth val=".."/>
+   * </c:upDownBars></c:lineChart>` — Excel's "Format Up Bars / Down
+   * Bars -> Gap Width" slider. Accepted range: `0` – `500` (the OOXML
+   * `ST_GapAmount` schema). Excel's default is `150` (each up/down
+   * bar group's gap equals 1.5× the bar width); smaller values pack
+   * the bars tighter, `0` removes the gap entirely.
+   *
+   * Only meaningful when {@link upDownBars} is `true` — the writer
+   * silently drops the value on every other line chart configuration
+   * (the OOXML schema places `<c:gapWidth>` on `CT_UpDownBars`, so
+   * there is no slot for the value when the parent element is not
+   * emitted). The writer also drops the field on bar / column / pie /
+   * doughnut / area / scatter chart kinds for the same reason
+   * {@link upDownBars} is line-only.
+   *
+   * Out-of-range or non-finite values fall back to the OOXML default
+   * `150` so a fresh chart with a corrupt input still matches Excel's
+   * reference serialization. Non-integer values round to the nearest
+   * whole percent (Excel's UI accepts integer percentages only).
+   *
+   * Distinct from {@link gapWidth}: the bar-chart gap width controls
+   * spacing between category groups on a `<c:barChart>`, while this
+   * field controls the spacing between the up / down bars themselves
+   * on a line chart. Both share the same `ST_GapAmount` schema range
+   * but are independently scoped.
+   */
+  upDownBarsGapWidth?: number;
   /**
    * Whether the line chart paints markers at each data point. Maps to
    * `<c:lineChart><c:marker val=".."/></c:lineChart>` — Excel's
@@ -3643,15 +3671,36 @@ export interface Chart {
    * close differences on a line-style stock chart.
    *
    * Surfaces `true` whenever the element is present (with or without
-   * the optional `<c:gapWidth>` / `<c:upBars>` / `<c:downBars>`
-   * children — the model is a plain presence flag at this layer).
-   * Absence collapses to `undefined`. Only line-flavored chart types
-   * surface the field; the OOXML schema places `<c:upDownBars>` on
-   * `CT_LineChart`, `CT_Line3DChart`, and `CT_StockChart`, so the
-   * reader ignores any stray element on bar / column / pie / doughnut
-   * / area / scatter chart-type elements.
+   * the optional `<c:upBars>` / `<c:downBars>` children — the per-bar
+   * styling is not modelled at this layer). The optional
+   * `<c:gapWidth>` child is surfaced separately via
+   * {@link upDownBarsGapWidth}. Absence collapses to `undefined`. Only
+   * line-flavored chart types surface the field; the OOXML schema
+   * places `<c:upDownBars>` on `CT_LineChart`, `CT_Line3DChart`, and
+   * `CT_StockChart`, so the reader ignores any stray element on bar /
+   * column / pie / doughnut / area / scatter chart-type elements.
    */
   upDownBars?: boolean;
+  /**
+   * Up / down bars gap width pulled from
+   * `<c:lineChart><c:upDownBars><c:gapWidth val=".."/></c:upDownBars>
+   * </c:lineChart>`. The value is a percentage of the bar width
+   * (the OOXML `ST_GapAmount` schema, `0..500`).
+   *
+   * Surfaces the literal value carried by the file when it falls in
+   * the schema band and differs from the OOXML default of `150`. The
+   * default and absence both collapse to `undefined` so absence and
+   * `<c:gapWidth val="150"/>` round-trip identically through
+   * {@link cloneChart}. Out-of-range or non-numeric values are dropped
+   * rather than clamped so a corrupt template does not silently surface
+   * a value the writer would never emit.
+   *
+   * Only meaningful when {@link upDownBars} is `true` — the OOXML
+   * schema scopes `<c:gapWidth>` exclusively to `<c:upDownBars>`, so
+   * the reader only inspects the element when the parent toggle is
+   * present.
+   */
+  upDownBarsGapWidth?: number;
   /**
    * Chart-level marker visibility flag pulled from
    * `<c:lineChart><c:marker val=".."/></c:lineChart>`. Reflects Excel's

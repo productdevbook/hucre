@@ -1573,7 +1573,7 @@ function buildLineChart(chart: SheetChart, sheetName: string): string {
     children.push(xmlElement("c:hiLowLines", undefined, []));
   }
   if (chart.upDownBars === true) {
-    children.push(buildUpDownBars());
+    children.push(buildUpDownBars(chart.upDownBarsGapWidth));
   }
 
   // `<c:marker>` (the chart-level CT_Boolean variant) gates per-series
@@ -1594,24 +1594,52 @@ function buildLineChart(chart: SheetChart, sheetName: string): string {
 }
 
 /**
- * Build a default `<c:upDownBars>` block for {@link buildLineChart}.
+ * Build a `<c:upDownBars>` block for {@link buildLineChart}.
  *
  * The OOXML schema (`CT_UpDownBars`) allows three optional children —
  * `<c:gapWidth>`, `<c:upBars>`, and `<c:downBars>` — but the up / down
  * bars themselves are painted by the mere presence of the parent
- * element. The writer emits a default `<c:gapWidth val="150"/>` to
- * mirror Excel's reference serialization for a freshly-toggled
- * "Add Chart Element -> Up/Down Bars" — `150` is the OOXML default for
- * `CT_UpDownBars/gapWidth` and the value Excel itself emits.
+ * element. The writer emits a `<c:gapWidth val="N"/>` child to mirror
+ * Excel's reference serialization for a freshly-toggled "Add Chart
+ * Element -> Up/Down Bars" — `150` is the OOXML default for
+ * `CT_UpDownBars/gapWidth` and the value Excel itself emits, so the
+ * writer falls back to it when the caller leaves
+ * {@link SheetChart.upDownBarsGapWidth} unset or pins an out-of-range
+ * value. An explicit value in the inclusive `0..500` band is rounded
+ * to the nearest integer and emitted literally.
  *
  * `<c:upBars>` / `<c:downBars>` are intentionally omitted: each is a
  * `CT_UpDownBar` (only `<c:spPr>` inside) and their absence makes
  * Excel paint the default white-up / black-down bars Excel uses on a
- * fresh toggle. A richer model — explicit gap widths or per-bar
- * styling — can layer on top in a follow-up if needed.
+ * fresh toggle. A richer model — per-bar styling — can layer on top
+ * in a follow-up if needed.
  */
-function buildUpDownBars(): string {
-  return xmlElement("c:upDownBars", undefined, [xmlSelfClose("c:gapWidth", { val: 150 })]);
+function buildUpDownBars(gapWidth: number | undefined): string {
+  const resolved = clampUpDownBarsGapWidth(gapWidth) ?? 150;
+  return xmlElement("c:upDownBars", undefined, [xmlSelfClose("c:gapWidth", { val: resolved })]);
+}
+
+/**
+ * Normalize {@link SheetChart.upDownBarsGapWidth} to an integer in the
+ * inclusive `0..500` band the OOXML schema (`ST_GapAmount`) allows.
+ *
+ * Returns `undefined` when the input is missing or non-finite so the
+ * caller can fall through to the OOXML default `150`. Non-integer
+ * values round to the nearest integer; out-of-range values drop to
+ * `undefined` rather than clamp — a templated chart whose gap width
+ * fell outside the schema bounds is treated as a fresh chart and
+ * collapses to the default. Mirrors {@link clampGapWidth} but uses a
+ * stricter "drop on out-of-range" policy because the up/down-bars gap
+ * width has no per-grouping default to fall through to (every line
+ * chart with the parent toggle on emits the same `150` default), so
+ * silently rewriting an `800` to `500` would mislead the caller about
+ * what Excel ends up rendering.
+ */
+function clampUpDownBarsGapWidth(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  const rounded = Math.round(value);
+  if (rounded < 0 || rounded > 500) return undefined;
+  return rounded;
 }
 
 // ── Area ─────────────────────────────────────────────────────────────

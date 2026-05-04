@@ -125,6 +125,7 @@ export function parseChart(xml: string): Chart | undefined {
     let hiLowLines: boolean | undefined;
     let serLines: boolean | undefined;
     let upDownBars: boolean | undefined;
+    let upDownBarsGapWidth: number | undefined;
     let showLineMarkers: boolean | undefined;
     for (const child of childElements(plotArea)) {
       const kind = CHART_KIND_TAGS.get(child.local);
@@ -223,15 +224,22 @@ export function parseChart(xml: string): Chart | undefined {
       // `CT_StockChart` per the OOXML schema. Surface the flag from the
       // first line-flavored chart-type element that carries one — the
       // schema places the element on the chart-type element itself, not
-      // the per-series body, so this is a chart-level toggle. The
-      // model is a plain presence flag at this layer; richer details
-      // (per-bar styling, custom gap width) can layer on later.
-      if (
-        upDownBars === undefined &&
-        (kind === "line" || kind === "line3D" || kind === "stock") &&
-        findChild(child, "upDownBars") !== undefined
-      ) {
-        upDownBars = true;
+      // the per-series body, so this is a chart-level toggle. Per-bar
+      // styling can layer on later.
+      if (upDownBars === undefined && (kind === "line" || kind === "line3D" || kind === "stock")) {
+        const udb = findChild(child, "upDownBars");
+        if (udb !== undefined) {
+          upDownBars = true;
+          // `<c:gapWidth val="N"/>` (CT_GapAmount, ST_GapAmount) lives
+          // inside `<c:upDownBars>` and controls the spacing between the
+          // up / down bars themselves. The OOXML default of `150`
+          // collapses to `undefined` for symmetry with the writer's
+          // {@link SheetChart.upDownBarsGapWidth} default — absence and
+          // `150` mean the same thing on roundtrip. Out-of-range values
+          // are dropped rather than clamped so a corrupt template does
+          // not silently rewrite as a different gap.
+          upDownBarsGapWidth = parseUpDownBarsGapWidth(udb);
+        }
       }
       // `<c:marker>` (the chart-level CT_Boolean variant) lives on
       // `CT_LineChart` only — `CT_Line3DChart` and `CT_StockChart` have
@@ -280,6 +288,7 @@ export function parseChart(xml: string): Chart | undefined {
     if (hiLowLines !== undefined) out.hiLowLines = hiLowLines;
     if (serLines !== undefined) out.serLines = serLines;
     if (upDownBars !== undefined) out.upDownBars = upDownBars;
+    if (upDownBarsGapWidth !== undefined) out.upDownBarsGapWidth = upDownBarsGapWidth;
     if (showLineMarkers !== undefined) out.showLineMarkers = showLineMarkers;
 
     const axes = parseAxes(plotArea);
@@ -2603,6 +2612,31 @@ function parseHoleSize(doughnut: XmlElement): number | undefined {
  */
 function parseGapWidth(barChart: XmlElement): number | undefined {
   const el = findChild(barChart, "gapWidth");
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  if (parsed < 0 || parsed > 500) return undefined;
+  if (parsed === 150) return undefined;
+  return parsed;
+}
+
+/**
+ * Pull `<c:gapWidth val=".."/>` off a `<c:upDownBars>` element. The
+ * value controls the spacing between the up / down bars themselves on
+ * a line chart (distinct from the bar-chart `<c:gapWidth>` which
+ * controls spacing between category groups).
+ *
+ * The OOXML schema (`ST_GapAmount`) restricts the value to the
+ * inclusive `0..500` band; out-of-range values are dropped rather than
+ * clamped so a corrupt template does not silently rewrite as a
+ * different gap. The OOXML default of `150` collapses to `undefined`
+ * for symmetry with the writer's {@link SheetChart.upDownBarsGapWidth}
+ * default — absence and `150` mean the same thing.
+ */
+function parseUpDownBarsGapWidth(upDownBars: XmlElement): number | undefined {
+  const el = findChild(upDownBars, "gapWidth");
   if (!el) return undefined;
   const raw = el.attrs.val;
   if (typeof raw !== "string") return undefined;

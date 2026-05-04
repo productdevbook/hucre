@@ -369,6 +369,30 @@ export interface CloneChartOptions {
    */
   upDownBars?: boolean | null;
   /**
+   * Override `<c:upDownBars><c:gapWidth val=".."/>` (the gap width
+   * between up / down bars on a line chart, as a percentage of the
+   * bar width).
+   *
+   * `undefined` (or omitted) inherits the source's parsed
+   * `upDownBarsGapWidth`. `null` drops the inherited value so the
+   * writer falls back to the OOXML default `150` (Excel's reference
+   * value for a freshly-toggled "Add Chart Element -> Up/Down Bars").
+   * A `number` replaces it — pass any value in the inclusive `0..500`
+   * band; out-of-range or non-finite values fall through to the
+   * default at write time rather than emit a token Excel rejects.
+   *
+   * Only meaningful when the resolved chart type is `line` and the
+   * resolved `upDownBars` is `true` — the writer drops the value
+   * silently otherwise (the OOXML schema scopes `<c:gapWidth>`
+   * exclusively to `<c:upDownBars>`, so there is no slot for it when
+   * the parent element is not emitted).
+   *
+   * The grammar mirrors the other line-only overrides
+   * ({@link upDownBars} / {@link showLineMarkers}) so the chart-level
+   * line-bar knobs compose the same way at the call site.
+   */
+  upDownBarsGapWidth?: number | null;
+  /**
    * Override `<c:lineChart><c:marker val=".."/>` (the chart-level
    * line-marker visibility toggle).
    *
@@ -1076,6 +1100,22 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   if (type === "line") {
     const resolvedUpDownBars = resolveUpDownBars(source.upDownBars, options.upDownBars);
     if (resolvedUpDownBars !== undefined) out.upDownBars = resolvedUpDownBars;
+
+    // `<c:upDownBars><c:gapWidth>` only makes sense when the parent
+    // toggle is on. Drop the gap-width value silently when the resolved
+    // `upDownBars` is `false` / `undefined` — there is no `<c:upDownBars>`
+    // element to host the value in either case, so leaking it through to
+    // the cloned `SheetChart` would surface a setting the writer would
+    // never emit anyway.
+    if (resolvedUpDownBars === true) {
+      const resolvedUpDownBarsGapWidth = resolveUpDownBarsGapWidth(
+        source.upDownBarsGapWidth,
+        options.upDownBarsGapWidth,
+      );
+      if (resolvedUpDownBarsGapWidth !== undefined) {
+        out.upDownBarsGapWidth = resolvedUpDownBarsGapWidth;
+      }
+    }
   }
 
   // `<c:marker>` (the chart-level CT_Boolean variant) lives exclusively
@@ -1732,6 +1772,32 @@ function resolveUpDownBars(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve an `upDownBarsGapWidth` override.
+ *
+ * `undefined` → inherit the source's parsed `upDownBarsGapWidth`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               OOXML default `150` Excel itself emits on a fresh
+ *               toggle).
+ * `number`    → replace. Out-of-range or non-finite values still
+ *               surface in the cloned `SheetChart` for symmetry with
+ *               the other override helpers; the writer's
+ *               `clampUpDownBarsGapWidth` then drops them at emit
+ *               time so a fresh chart matches Excel's reference
+ *               serialization.
+ *
+ * The grammar mirrors `gapWidth` / `holeSize` / `firstSliceAng` so the
+ * numeric chart-level knobs compose the same way at the call site.
+ */
+function resolveUpDownBarsGapWidth(
+  sourceValue: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
   if (override === undefined) return sourceValue;
   if (override === null) return undefined;
   return override;
