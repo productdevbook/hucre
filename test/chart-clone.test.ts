@@ -9707,3 +9707,242 @@ describe("cloneChart — data labels showLeaderLines", () => {
     expect(dLbls).toContain('<c:showLeaderLines val="0"/>');
   });
 });
+
+// ── cloneChart — title rotation ─────────────────────────────────────
+
+describe("cloneChart — title rotation", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Sales",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's titleRotation by default", () => {
+    const clone = cloneChart(source({ titleRotation: 45 }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleRotation).toBe(45);
+  });
+
+  it("lets options.titleRotation override the source's value", () => {
+    const clone = cloneChart(source({ titleRotation: 45 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleRotation: -30,
+    });
+    expect(clone.titleRotation).toBe(-30);
+  });
+
+  it("drops the inherited titleRotation when the override is null", () => {
+    const clone = cloneChart(source({ titleRotation: 45 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleRotation: null,
+    });
+    expect(clone.titleRotation).toBeUndefined();
+  });
+
+  it("returns undefined titleRotation when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.titleRotation).toBeUndefined();
+  });
+
+  it("clamps an out-of-range override to the -90..90 band", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleRotation: 200,
+    });
+    expect(clone.titleRotation).toBe(90);
+  });
+
+  it("clamps a below-range override to -90", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleRotation: -200,
+    });
+    expect(clone.titleRotation).toBe(-90);
+  });
+
+  it("rounds a fractional override to the nearest whole degree", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleRotation: 45.6,
+    });
+    expect(clone.titleRotation).toBe(46);
+  });
+
+  it("collapses an override of 0 to undefined (matches OOXML default)", () => {
+    const clone = cloneChart(source({ titleRotation: 45 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleRotation: 0,
+    });
+    expect(clone.titleRotation).toBeUndefined();
+  });
+
+  it("collapses non-finite overrides (NaN / Infinity) to undefined", () => {
+    const a = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleRotation: Number.NaN,
+    });
+    expect(a.titleRotation).toBeUndefined();
+    const b = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleRotation: Number.POSITIVE_INFINITY,
+    });
+    expect(b.titleRotation).toBeUndefined();
+  });
+
+  it("clamps a parsed source rotation that is somehow out of range", () => {
+    // Defensive: a corrupt template parsed by an older reader could
+    // surface an out-of-band value. The clone normalizer collapses it
+    // through the same band so the writer never sees a bad token.
+    const clone = cloneChart(source({ titleRotation: 200 as number }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleRotation).toBe(90);
+  });
+
+  it("carries titleRotation through a flatten (line → column)", () => {
+    const clone = cloneChart(source({ titleRotation: 45 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.titleRotation).toBe(45);
+  });
+
+  it("carries titleRotation through a doughnut flatten (line → doughnut)", () => {
+    // Pie / doughnut both render the chart-level title block, so the
+    // rotation must survive coercion into either family.
+    const clone = cloneChart(source({ titleRotation: 45 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.titleRotation).toBe(45);
+  });
+
+  it("drops the inherited titleRotation when the resolved title is dropped", () => {
+    // `title: null` flattens the inherited title — no `<c:title>` block
+    // will be emitted, so the inherited rotation has no slot in the
+    // rendered chart and the clone collapses it.
+    const clone = cloneChart(source({ titleRotation: 45 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      title: null,
+    });
+    expect(clone.title).toBeUndefined();
+    expect(clone.titleRotation).toBeUndefined();
+  });
+
+  it("drops the inherited titleRotation when showTitle is set to false", () => {
+    const clone = cloneChart(source({ titleRotation: 45 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      showTitle: false,
+    });
+    expect(clone.showTitle).toBe(false);
+    expect(clone.titleRotation).toBeUndefined();
+  });
+
+  it("drops the titleRotation override when the resolved chart has no title", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      title: null,
+      titleRotation: 45,
+    });
+    expect(clone.title).toBeUndefined();
+    expect(clone.titleRotation).toBeUndefined();
+  });
+
+  it("composes independently with the titleOverlay clone-through", () => {
+    // Both flags live on `<c:title>` but on different children, so they
+    // must not collide on the clone-through.
+    const clone = cloneChart(source({ titleRotation: 45, titleOverlay: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleRotation).toBe(45);
+    expect(clone.titleOverlay).toBe(true);
+  });
+
+  it("end-to-end: parseChart -> cloneChart -> writeChart preserves the rotation", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr rot="2700000"/>
+          <a:lstStyle/>
+          <a:p><a:r><a:t>Tilted</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.titleRotation).toBe(45);
+    expect(parsed?.title).toBe("Tilted");
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(sheetChart.titleRotation).toBe(45);
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    const titleBlock = written.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(titleBlock).toContain('rot="2700000"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleRotation).toBe(45);
+  });
+
+  it("propagates titleRotation into the rendered <c:title> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ titleRotation: -45 }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const titleBlock = written.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(titleBlock).toContain('rot="-2700000"');
+
+    // Re-parsing the rendered chart returns the same value — closes the
+    // template -> clone -> write -> read loop.
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleRotation).toBe(-45);
+  });
+});

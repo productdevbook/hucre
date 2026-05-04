@@ -1309,6 +1309,39 @@ export interface SheetChart {
    */
   titleOverlay?: boolean;
   /**
+   * Chart title rotation in whole degrees, measured clockwise from the
+   * normal horizontal baseline. Maps to `<c:title><c:tx><c:rich>
+   * <a:bodyPr rot="N"/></c:rich></c:tx></c:title>` — Excel's "Format
+   * Chart Title -> Size & Properties -> Alignment -> Custom angle" knob.
+   * The OOXML attribute is in 60000ths of a degree, so 45° serializes
+   * as `rot="2700000"` and -90° as `rot="-5400000"`; the writer
+   * performs the conversion at emit time.
+   *
+   * Accepted range: `-90..90` (Excel's UI band). Out-of-range inputs
+   * clamp to the nearest endpoint; non-integer inputs round to the
+   * nearest whole degree (the OOXML attribute is an integer in
+   * 60000ths, so a fractional whole-degree value has no meaningful
+   * refinement at emit time). `0`, `NaN`, `Infinity`, and non-numeric
+   * inputs collapse to `undefined` so the writer falls back to the
+   * default horizontal orientation.
+   *
+   * Default: omitted — the title renders horizontally (the OOXML
+   * default `rot="0"` Excel itself emits on a fresh chart). Set a
+   * non-zero value to tilt the title diagonally or stand it on its
+   * side, useful when composing a dashboard whose chart titles need to
+   * fit a tight vertical sidebar slot or to mirror the rotation of an
+   * underlying axis label set.
+   *
+   * Silently ignored when no title is rendered (`showTitle === false`
+   * or `title` is absent) — there is no `<c:title>` block to host the
+   * rotation in either case. Mirrors the axis-side
+   * {@link SheetChart.axes.x.labelRotation} field — same range, same
+   * normalization, same OOXML conversion factor — so a caller can
+   * thread a single rotation value through both the chart title and an
+   * axis label set without bookkeeping the units.
+   */
+  titleRotation?: number;
+  /**
    * Auto-title-deleted flag. Maps to `<c:chart><c:autoTitleDeleted
    * val=".."/>` — Excel's record of whether the user explicitly deleted
    * the auto-generated title that single-series charts synthesise from
@@ -3456,6 +3489,29 @@ export interface Chart {
    * element at all — there is no overlay flag to surface in that case.
    */
   titleOverlay?: boolean;
+  /**
+   * Chart title rotation in whole degrees, pulled from
+   * `<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title>`.
+   * Reflects Excel's "Format Chart Title -> Size & Properties ->
+   * Alignment -> Custom angle" knob.
+   *
+   * The OOXML attribute is in 60000ths of a degree; the reader divides
+   * by 60000 (and rounds) to surface a whole-degree value in the
+   * `-90..90` band Excel's UI exposes. The OOXML default `0` (and
+   * absence of the `<a:bodyPr>` element / `rot` attribute) all collapse
+   * to `undefined` so absence and the default round-trip identically
+   * through {@link cloneChart}. Out-of-range values clamp to the
+   * nearest endpoint of the `-90..90` band; non-numeric tokens drop
+   * back to `undefined`.
+   *
+   * Reported as `undefined` whenever the source chart has no
+   * `<c:title>` element at all — there is no rotation to surface in
+   * that case. Mirrors the axis-side {@link ChartAxisInfo.labelRotation}
+   * field — same range, same conversion factor — so a parsed value
+   * threads straight back into the writer-side
+   * {@link SheetChart.titleRotation} without transformation.
+   */
+  titleRotation?: number;
   /**
    * Auto-title-deleted flag pulled from `<c:chart><c:autoTitleDeleted
    * val=".."/>`. Reflects Excel's "the user explicitly deleted the

@@ -67,7 +67,9 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
 
   // ── Title ──
   if (showTitle && chart.title) {
-    chartChildren.push(buildTitle(chart.title, resolveTitleOverlay(chart)));
+    chartChildren.push(
+      buildTitle(chart.title, resolveTitleOverlay(chart), resolveTitleRotation(chart)),
+    );
   }
   // `<c:autoTitleDeleted>` records whether the user explicitly deleted
   // Excel's auto-generated title (the synthesised series-name title
@@ -196,14 +198,20 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
 
 // ── Title ────────────────────────────────────────────────────────────
 
-function buildTitle(title: string, overlay: boolean): string {
+function buildTitle(title: string, overlay: boolean, rotationDeg: number | undefined): string {
+  // OOXML's `<a:bodyPr rot="N"/>` attribute is in 60000ths of a degree.
+  // The writer holds `titleRotation` in whole degrees and converts at
+  // emit time. Absence (`undefined`) collapses to the OOXML default
+  // `0` so a fresh chart matches Excel's reference serialization
+  // byte-for-byte.
+  const rot = rotationDeg === undefined ? 0 : rotationDeg * TITLE_ROT_PER_DEGREE;
   return xmlElement("c:title", undefined, [
     xmlElement("c:tx", undefined, [
       xmlElement("c:rich", undefined, [
         xmlElement(
           "a:bodyPr",
           {
-            rot: 0,
+            rot,
             spcFirstLastPara: 1,
             vertOverflow: "ellipsis",
             wrap: "square",
@@ -224,6 +232,55 @@ function buildTitle(title: string, overlay: boolean): string {
     ]),
     xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }),
   ]);
+}
+
+/**
+ * OOXML's `<a:bodyPr rot="N"/>` attribute is in 60000ths of a degree —
+ * the writer holds `titleRotation` in whole degrees and converts at
+ * emit time. Excel's UI exposes the `-90..90` band; out-of-band values
+ * clamp to the nearest endpoint so a corrupt template cannot leak
+ * through to the writer either.
+ */
+const TITLE_ROT_PER_DEGREE = 60000;
+const TITLE_ROTATION_MIN_DEG = -90;
+const TITLE_ROTATION_MAX_DEG = 90;
+
+/**
+ * Normalize a {@link SheetChart.titleRotation} value (whole degrees)
+ * for the `<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx>
+ * </c:title>` writer slot. Returns `undefined` when the input is unset,
+ * non-finite, non-numeric, or resolves to `0` after rounding — every
+ * absence path collapses to the same omit-the-attribute shape so
+ * absence and the OOXML default `0` round-trip identically through
+ * {@link cloneChart}. Out-of-range inputs clamp to the `-90..90` band
+ * Excel's UI exposes; non-integer inputs round to the nearest whole
+ * degree (the OOXML attribute is an integer in 60000ths of a degree,
+ * so a fractional whole-degree value has no meaningful refinement at
+ * emit time).
+ */
+function normalizeTitleRotation(value: number | undefined): number | undefined {
+  if (value === undefined || typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  let degrees = Math.round(value);
+  if (degrees < TITLE_ROTATION_MIN_DEG) degrees = TITLE_ROTATION_MIN_DEG;
+  else if (degrees > TITLE_ROTATION_MAX_DEG) degrees = TITLE_ROTATION_MAX_DEG;
+  if (degrees === 0) return undefined;
+  return degrees;
+}
+
+/**
+ * Resolve `<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx>
+ * </c:title>` from {@link SheetChart.titleRotation}.
+ *
+ * Returns the rotation in whole degrees, or `undefined` when the chart
+ * leaves the field unset / pinned the OOXML default `0` / passed a
+ * non-numeric or non-finite token. The flag is only meaningful when
+ * the chart actually emits a title — the caller is expected to gate
+ * the call on `showTitle && chart.title`. A chart whose title is
+ * suppressed has no `<c:title>` block to host the rotation in either
+ * case.
+ */
+function resolveTitleRotation(chart: SheetChart): number | undefined {
+  return normalizeTitleRotation(chart.titleRotation);
 }
 
 /**

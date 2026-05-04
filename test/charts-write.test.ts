@@ -8954,3 +8954,185 @@ describe("writeChart — data labels showLeaderLines", () => {
     expect(dLbls).toContain('<c:showLeaderLines val="0"/>');
   });
 });
+
+// ── writeChart — title rotation ────────────────────────────────────
+
+describe("writeChart — title rotation", () => {
+  function titleBodyPrOf(xml: string): string {
+    // The title's <a:bodyPr> lives inside <c:title><c:tx><c:rich>.
+    const titleBlock = xml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    const bodyPr = titleBlock.match(/<a:bodyPr[^/]*\/>/)![0];
+    return bodyPr;
+  }
+
+  it('emits <a:bodyPr rot="0"/> by default (matches the OOXML default)', () => {
+    // Excel's reference serialization writes `rot="0"` on every visible
+    // title even when no rotation is pinned — the writer mirrors that
+    // contract so a fresh chart stays byte-clean against Excel's own
+    // output.
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(titleBodyPrOf(result.chartXml)).toContain('rot="0"');
+  });
+
+  it('emits <a:bodyPr rot="N"/> when the chart pins a positive rotation', () => {
+    const result = writeChart(makeChart({ titleRotation: 45 }), "Sheet1");
+    // 45 degrees * 60000 = 2,700,000.
+    expect(titleBodyPrOf(result.chartXml)).toContain('rot="2700000"');
+  });
+
+  it("converts negative rotations to negative 60000ths of a degree", () => {
+    const result = writeChart(makeChart({ titleRotation: -45 }), "Sheet1");
+    expect(titleBodyPrOf(result.chartXml)).toContain('rot="-2700000"');
+  });
+
+  it("emits a 90-degree rotation as the band endpoint", () => {
+    const result = writeChart(makeChart({ titleRotation: 90 }), "Sheet1");
+    // 90 degrees * 60000 = 5,400,000.
+    expect(titleBodyPrOf(result.chartXml)).toContain('rot="5400000"');
+  });
+
+  it('collapses the OOXML default 0 to absence (writer emits rot="0")', () => {
+    // Pinning the default `0` round-trips identically to absence — the
+    // writer skips the conversion and emits the OOXML default.
+    const result = writeChart(makeChart({ titleRotation: 0 }), "Sheet1");
+    expect(titleBodyPrOf(result.chartXml)).toContain('rot="0"');
+  });
+
+  it("clamps rotations above 90 to the 90-degree maximum", () => {
+    const result = writeChart(makeChart({ titleRotation: 180 }), "Sheet1");
+    expect(titleBodyPrOf(result.chartXml)).toContain('rot="5400000"');
+  });
+
+  it("clamps rotations below -90 to the -90-degree minimum", () => {
+    const result = writeChart(makeChart({ titleRotation: -180 }), "Sheet1");
+    expect(titleBodyPrOf(result.chartXml)).toContain('rot="-5400000"');
+  });
+
+  it("rounds non-integer degree values to the nearest whole degree", () => {
+    // 45.4 rounds to 45 (-> 2,700,000); 45.6 rounds to 46 (-> 2,760,000).
+    const a = writeChart(makeChart({ titleRotation: 45.4 }), "Sheet1");
+    expect(titleBodyPrOf(a.chartXml)).toContain('rot="2700000"');
+    const b = writeChart(makeChart({ titleRotation: 45.6 }), "Sheet1");
+    expect(titleBodyPrOf(b.chartXml)).toContain('rot="2760000"');
+  });
+
+  it("drops non-finite rotation inputs (NaN, Infinity) back to the default", () => {
+    const nan = writeChart(makeChart({ titleRotation: Number.NaN }), "Sheet1");
+    const inf = writeChart(makeChart({ titleRotation: Number.POSITIVE_INFINITY }), "Sheet1");
+    expect(titleBodyPrOf(nan.chartXml)).toContain('rot="0"');
+    expect(titleBodyPrOf(inf.chartXml)).toContain('rot="0"');
+  });
+
+  it("drops non-numeric rotation inputs (string, boolean) back to the default", () => {
+    const stringy = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ titleRotation: "45" as any }),
+      "Sheet1",
+    );
+    const boolish = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ titleRotation: true as any }),
+      "Sheet1",
+    );
+    expect(titleBodyPrOf(stringy.chartXml)).toContain('rot="0"');
+    expect(titleBodyPrOf(boolish.chartXml)).toContain('rot="0"');
+  });
+
+  it("ignores titleRotation when the chart renders no title (showTitle=false)", () => {
+    // No `<c:title>` block ever emits — there is no slot for the
+    // rotation in either case. The chart still serializes cleanly.
+    const result = writeChart(makeChart({ showTitle: false, titleRotation: 45 }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:title>");
+  });
+
+  it("ignores titleRotation when the chart has no literal title", () => {
+    const result = writeChart(makeChart({ title: undefined, titleRotation: 45 }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:title>");
+  });
+
+  it("composes with titleOverlay (both flags survive on the same title)", () => {
+    const result = writeChart(makeChart({ titleOverlay: true, titleRotation: -45 }), "Sheet1");
+    const titleBlock = result.chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(titleBlock).toContain('rot="-2700000"');
+    expect(titleBlock).toContain('<c:overlay val="1"/>');
+  });
+
+  it("threads the rotation through every chart family that emits a title", () => {
+    // `<c:title>` lives on `<c:chart>` directly — every chart family
+    // (bar / column / line / pie / doughnut / area / scatter) that
+    // pins a literal title carries the rotation.
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, titleRotation: 30 }), "Sheet1");
+      // 30 degrees * 60000 = 1,800,000.
+      expect(titleBodyPrOf(result.chartXml)).toContain('rot="1800000"');
+    }
+    // Scatter requires a numeric category range.
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        titleRotation: 30,
+      }),
+      "Sheet1",
+    );
+    expect(titleBodyPrOf(scatter.chartXml)).toContain('rot="1800000"');
+  });
+
+  it("emits exactly one <a:bodyPr> on the chart title", () => {
+    const result = writeChart(makeChart({ titleRotation: 45 }), "Sheet1");
+    const titleBlock = result.chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect((titleBlock.match(/<a:bodyPr/g) ?? []).length).toBe(1);
+  });
+
+  it("does not emit an axis-style <c:txPr> on the title", () => {
+    // The chart title carries its rotation on the rich-text body's
+    // `<a:bodyPr>` (inside `<c:tx><c:rich>`), not via an axis-style
+    // `<c:txPr>` sibling. Confirm the writer keeps the two paths
+    // distinct so a parse round-trip does not double-count.
+    const result = writeChart(makeChart({ titleRotation: 45 }), "Sheet1");
+    const titleBlock = result.chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(titleBlock).not.toContain("<c:txPr>");
+  });
+
+  it("round-trips a non-default rotation through parseChart", () => {
+    const written = writeChart(makeChart({ titleRotation: 45 }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleRotation).toBe(45);
+  });
+
+  it("collapses a defaulted rotation round-trip back to undefined", () => {
+    // A fresh chart emits `rot="0"`; the reader collapses that to
+    // `undefined` so absence and the default stay symmetric.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleRotation).toBeUndefined();
+  });
+
+  it("end-to-end: writeXlsx packages the title rotation into chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            titleRotation: -45,
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const titleBlock = chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(titleBlock).toContain('rot="-2700000"');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.titleRotation).toBe(-45);
+  });
+});
