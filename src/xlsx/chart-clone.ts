@@ -589,6 +589,22 @@ export interface CloneChartOptions {
   axes?: {
     x?: {
       title?: string | null;
+      /**
+       * Override `SheetChart.axes.x.axisTitleRotation`. `undefined` (or
+       * omitted) inherits the source axis's parsed value; `null` drops
+       * the inherited rotation (the writer falls back to the OOXML
+       * default `0` — the title renders horizontally); a number in the
+       * `-90..90` band replaces it (out-of-range and non-finite inputs
+       * collapse to `undefined`).
+       *
+       * `<c:title>` lives on every axis flavour per the OOXML schema,
+       * so the override carries through every chart family that has
+       * axes (bar / column / line / area / scatter). Silently dropped
+       * on `pie` / `doughnut` charts (no axes at all) and on any axis
+       * whose `title` is unset (no `<c:title>` block to host the
+       * rotation).
+       */
+      axisTitleRotation?: number | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -769,6 +785,8 @@ export interface CloneChartOptions {
     };
     y?: {
       title?: string | null;
+      /** See {@link CloneChartOptions.axes.x.axisTitleRotation}. */
+      axisTitleRotation?: number | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -2177,6 +2195,24 @@ function resolveAxes(
 ): SheetChart["axes"] | undefined {
   const xTitle = applyOverride(sourceAxes?.x?.title, overrides?.x?.title);
   const yTitle = applyOverride(sourceAxes?.y?.title, overrides?.y?.title);
+  // `<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title>`
+  // lives on every axis flavour per the OOXML schema (CT_CatAx,
+  // CT_ValAx, CT_DateAx, CT_SerAx all share the same `<c:title>`
+  // shape), so the resolver applies on every chart family that has
+  // axes (pie / doughnut were short-circuited upstream). Out-of-range
+  // / non-numeric values clamp to the `-90..90` band the writer
+  // accepts; the OOXML default `0` collapses to `undefined` so absence
+  // and the default round-trip identically. The writer drops the
+  // rotation when the matching axis title is unset, so a stray pin on
+  // an axis with no title silently disappears at emit time.
+  const xAxisTitleRotation = applyAxisTitleRotationOverride(
+    sourceAxes?.x?.axisTitleRotation,
+    overrides?.x?.axisTitleRotation,
+  );
+  const yAxisTitleRotation = applyAxisTitleRotationOverride(
+    sourceAxes?.y?.axisTitleRotation,
+    overrides?.y?.axisTitleRotation,
+  );
   const xGridlines = applyGridlinesOverride(sourceAxes?.x?.gridlines, overrides?.x?.gridlines);
   const yGridlines = applyGridlinesOverride(sourceAxes?.y?.gridlines, overrides?.y?.gridlines);
   const xScale = applyScaleOverride(sourceAxes?.x?.scale, overrides?.x?.scale);
@@ -2305,9 +2341,19 @@ function resolveAxes(
     overrides?.y?.crossBetween,
   );
 
+  // The axis-title rotation only renders when the axis carries a
+  // title — drop a stray inherited rotation when the resolved axis
+  // title is unset so the cloned `SheetChart` accurately reflects what
+  // the chart will paint. Symmetric with the writer's title-presence
+  // gate (the per-family axis builder only invokes `buildAxisTitle`
+  // when `opts.xAxisTitle` / `opts.yAxisTitle` is set).
+  const xAxisTitleRotationResolved = xTitle === undefined ? undefined : xAxisTitleRotation;
+  const yAxisTitleRotationResolved = yTitle === undefined ? undefined : yAxisTitleRotation;
+
   const out: NonNullable<SheetChart["axes"]> = {};
   if (
     xTitle !== undefined ||
+    xAxisTitleRotationResolved !== undefined ||
     xGridlines !== undefined ||
     xScale !== undefined ||
     xNumFmt !== undefined ||
@@ -2330,6 +2376,8 @@ function resolveAxes(
   ) {
     out.x = {};
     if (xTitle !== undefined) out.x.title = xTitle;
+    if (xAxisTitleRotationResolved !== undefined)
+      out.x.axisTitleRotation = xAxisTitleRotationResolved;
     if (xGridlines !== undefined) out.x.gridlines = xGridlines;
     if (xScale !== undefined) out.x.scale = xScale;
     if (xNumFmt !== undefined) out.x.numberFormat = xNumFmt;
@@ -2352,6 +2400,7 @@ function resolveAxes(
   }
   if (
     yTitle !== undefined ||
+    yAxisTitleRotationResolved !== undefined ||
     yGridlines !== undefined ||
     yScale !== undefined ||
     yNumFmt !== undefined ||
@@ -2368,6 +2417,8 @@ function resolveAxes(
   ) {
     out.y = {};
     if (yTitle !== undefined) out.y.title = yTitle;
+    if (yAxisTitleRotationResolved !== undefined)
+      out.y.axisTitleRotation = yAxisTitleRotationResolved;
     if (yGridlines !== undefined) out.y.gridlines = yGridlines;
     if (yScale !== undefined) out.y.scale = yScale;
     if (yNumFmt !== undefined) out.y.numberFormat = yNumFmt;
@@ -2702,6 +2753,31 @@ function clampLabelRotationDeg(value: number): number | undefined {
   else if (degrees > 90) degrees = 90;
   if (degrees === 0) return undefined;
   return degrees;
+}
+
+/**
+ * Resolve an `axisTitleRotation` override using the same `undefined`
+ * (inherit) / `null` (drop) / value (replace) grammar as the other
+ * axis helpers. The conversion / clamping rules mirror
+ * {@link applyLabelRotationOverride} — out-of-range and non-numeric
+ * inputs clamp to the `-90..90` band the writer accepts, the OOXML
+ * default `0` collapses to `undefined`, and a `null` override always
+ * drops the inherited rotation. The caller is expected to additionally
+ * gate the resolved value on the matching axis title's presence so the
+ * cloned shape never carries a rotation that the writer would silently
+ * elide.
+ */
+function applyAxisTitleRotationOverride(
+  source: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) {
+    if (typeof source !== "number" || !Number.isFinite(source)) return undefined;
+    return clampLabelRotationDeg(source);
+  }
+  if (override === null) return undefined;
+  if (typeof override !== "number" || !Number.isFinite(override)) return undefined;
+  return clampLabelRotationDeg(override);
 }
 
 /**

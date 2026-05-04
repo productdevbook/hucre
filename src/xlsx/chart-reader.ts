@@ -469,6 +469,18 @@ function parseAxisInfo(
   familyDefaultCrossBetween: ChartAxisCrossBetween,
 ): ChartAxisInfo | undefined {
   const title = parseAxisTitle(axis);
+  // `<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title>` —
+  // axis-title rotation in 60000ths of a degree. Sits on every axis
+  // flavour per the OOXML schema (CT_CatAx, CT_ValAx, CT_DateAx,
+  // CT_SerAx all share the same `<c:title>` shape). The lookup is
+  // scoped to the `<c:title>` body so a stray `<a:bodyPr>` elsewhere
+  // on the axis (e.g. on the tick-label `<c:txPr>`) cannot leak in.
+  // Out-of-range values clamp to the `-90..90` band Excel's UI
+  // exposes; the OOXML default `0` and absence both collapse to
+  // `undefined`. Returns `undefined` when the axis omits `<c:title>`
+  // entirely or when the title is a `<c:strRef>` (formula reference)
+  // with no `<c:rich>` body.
+  const axisTitleRotation = parseAxisTitleRotation(axis);
   const gridlines = parseAxisGridlines(axis);
   const scale = parseAxisScale(axis);
   const numberFormat = parseAxisNumberFormat(axis);
@@ -558,6 +570,7 @@ function parseAxisInfo(
     parsedCrossBetween === familyDefaultCrossBetween ? undefined : parsedCrossBetween;
   if (
     title === undefined &&
+    axisTitleRotation === undefined &&
     gridlines === undefined &&
     scale === undefined &&
     numberFormat === undefined &&
@@ -582,6 +595,7 @@ function parseAxisInfo(
   }
   const out: ChartAxisInfo = {};
   if (title !== undefined) out.title = title;
+  if (axisTitleRotation !== undefined) out.axisTitleRotation = axisTitleRotation;
   if (gridlines !== undefined) out.gridlines = gridlines;
   if (scale !== undefined) out.scale = scale;
   if (numberFormat !== undefined) out.numberFormat = numberFormat;
@@ -1210,6 +1224,52 @@ function parseAxisTitle(axis: XmlElement): string | undefined {
     }
   }
   return undefined;
+}
+
+/**
+ * Pull `<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title>`
+ * off an axis element. Returns the rotation in whole degrees (range
+ * `-90..90`).
+ *
+ * The OOXML default `0` (and absence of the element / attribute) all
+ * collapse to `undefined` so absence and the default round-trip
+ * identically through {@link cloneChart}. Out-of-range values clamp to
+ * the nearest endpoint of the `-90..90` band Excel's UI exposes;
+ * non-finite (`NaN`, `Infinity`) inputs drop to `undefined`.
+ *
+ * The lookup is scoped to the title's `<c:rich>` body so a stray
+ * `<a:bodyPr>` elsewhere on the axis (e.g. the tick-label `<c:txPr>`
+ * surfaced by {@link parseAxisLabelRotation}) cannot leak in. Returns
+ * `undefined` when the axis omits `<c:title>` entirely or when the
+ * title is a `<c:strRef>` (formula reference) with no `<c:rich>` body.
+ *
+ * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+ * `<c:dateAx>` / `<c:serAx>` all share the same `<c:title>` shape per
+ * the OOXML schema. Mirrors the chart-level title rotation
+ * {@link parseTitleRotation} so a parsed value slots straight into the
+ * writer-side {@link SheetChart.axes}.x.axisTitleRotation.
+ */
+function parseAxisTitleRotation(axis: XmlElement): number | undefined {
+  const title = findChild(axis, "title");
+  if (!title) return undefined;
+  const tx = findChild(title, "tx");
+  if (!tx) return undefined;
+  const rich = findChild(tx, "rich");
+  if (!rich) return undefined;
+  const bodyPr = findChild(rich, "bodyPr");
+  if (!bodyPr) return undefined;
+  const raw = bodyPr.attrs.rot;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  // Convert from 60000ths of a degree to whole degrees.
+  const degrees = Math.round(parsed / TXPR_ROT_PER_DEGREE);
+  if (degrees === 0) return undefined;
+  if (degrees < LABEL_ROTATION_MIN_DEG) return LABEL_ROTATION_MIN_DEG;
+  if (degrees > LABEL_ROTATION_MAX_DEG) return LABEL_ROTATION_MAX_DEG;
+  return degrees;
 }
 
 // ── Series ────────────────────────────────────────────────────────

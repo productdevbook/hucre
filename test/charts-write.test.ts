@@ -9338,3 +9338,277 @@ describe("writeChart — title rotation", () => {
     expect(reparsed?.titleRotation).toBe(-45);
   });
 });
+
+// ── writeChart — axis title rotation ────────────────────────────────
+
+describe("writeChart — axis title rotation", () => {
+  function axisBlocks(xml: string): string[] {
+    // <c:catAx>, <c:valAx> (and <c:dateAx>) — return every axis block in
+    // document order so callers can probe X / Y independently.
+    return Array.from(xml.matchAll(/<c:(catAx|valAx|dateAx)>[\s\S]*?<\/c:\1>/g)).map((m) => m[0]);
+  }
+
+  function axisTitleBodyPrOf(axisBlock: string): string | undefined {
+    const titleMatch = axisBlock.match(/<c:title>[\s\S]*?<\/c:title>/);
+    if (!titleMatch) return undefined;
+    const bodyPr = titleMatch[0].match(/<a:bodyPr[^/]*\/>/);
+    return bodyPr?.[0];
+  }
+
+  it('emits rot="0" on the X-axis title by default', () => {
+    // Excel's reference serialization writes `rot="0"` on every axis
+    // title even when no rotation is pinned — the writer mirrors that
+    // contract so a fresh chart stays byte-clean against Excel's own
+    // output.
+    const result = writeChart(makeChart({ axes: { x: { title: "Period" } } }), "Sheet1");
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleBodyPrOf(xAx)).toContain('rot="0"');
+  });
+
+  it('emits rot="N" when the X-axis title pins a positive rotation', () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleRotation: 45 } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    // 45 degrees * 60000 = 2,700,000.
+    expect(axisTitleBodyPrOf(xAx)).toContain('rot="2700000"');
+  });
+
+  it("converts negative rotations to negative 60000ths of a degree", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleRotation: -45 } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleBodyPrOf(xAx)).toContain('rot="-2700000"');
+  });
+
+  it("emits a 90-degree rotation as the band endpoint", () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { title: "USD", axisTitleRotation: -90 } } }),
+      "Sheet1",
+    );
+    const [, yAx] = axisBlocks(result.chartXml);
+    // -90 degrees * 60000 = -5,400,000.
+    expect(axisTitleBodyPrOf(yAx)).toContain('rot="-5400000"');
+  });
+
+  it('collapses the OOXML default 0 to absence (writer emits rot="0")', () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleRotation: 0 } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleBodyPrOf(xAx)).toContain('rot="0"');
+  });
+
+  it("clamps rotations above 90 to the 90-degree maximum", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleRotation: 180 } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleBodyPrOf(xAx)).toContain('rot="5400000"');
+  });
+
+  it("clamps rotations below -90 to the -90-degree minimum", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleRotation: -180 } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleBodyPrOf(xAx)).toContain('rot="-5400000"');
+  });
+
+  it("rounds non-integer degree values to the nearest whole degree", () => {
+    // 45.4 -> 45 -> 2,700,000; 45.6 -> 46 -> 2,760,000.
+    const a = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleRotation: 45.4 } } }),
+      "Sheet1",
+    );
+    expect(axisTitleBodyPrOf(axisBlocks(a.chartXml)[0])).toContain('rot="2700000"');
+    const b = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleRotation: 45.6 } } }),
+      "Sheet1",
+    );
+    expect(axisTitleBodyPrOf(axisBlocks(b.chartXml)[0])).toContain('rot="2760000"');
+  });
+
+  it("drops non-finite rotation inputs (NaN, Infinity) back to the default", () => {
+    const nan = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleRotation: Number.NaN } } }),
+      "Sheet1",
+    );
+    const inf = writeChart(
+      makeChart({
+        axes: { x: { title: "Period", axisTitleRotation: Number.POSITIVE_INFINITY } },
+      }),
+      "Sheet1",
+    );
+    expect(axisTitleBodyPrOf(axisBlocks(nan.chartXml)[0])).toContain('rot="0"');
+    expect(axisTitleBodyPrOf(axisBlocks(inf.chartXml)[0])).toContain('rot="0"');
+  });
+
+  it("drops non-numeric rotation inputs (string, boolean) back to the default", () => {
+    const stringy = writeChart(
+      makeChart({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        axes: { x: { title: "Period", axisTitleRotation: "45" as any } },
+      }),
+      "Sheet1",
+    );
+    const boolish = writeChart(
+      makeChart({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        axes: { x: { title: "Period", axisTitleRotation: true as any } },
+      }),
+      "Sheet1",
+    );
+    expect(axisTitleBodyPrOf(axisBlocks(stringy.chartXml)[0])).toContain('rot="0"');
+    expect(axisTitleBodyPrOf(axisBlocks(boolish.chartXml)[0])).toContain('rot="0"');
+  });
+
+  it("ignores axisTitleRotation when the axis renders no title", () => {
+    // No title means no `<c:title>` block — there is no slot for the
+    // rotation in either case.
+    const result = writeChart(makeChart({ axes: { x: { axisTitleRotation: 45 } } }), "Sheet1");
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(xAx).not.toContain("<c:title>");
+  });
+
+  it("composes independently with the chart-level title rotation", () => {
+    const result = writeChart(
+      makeChart({
+        titleRotation: -45,
+        axes: { x: { title: "Period", axisTitleRotation: 30 } },
+      }),
+      "Sheet1",
+    );
+    // The chart-level title sits on `<c:chart><c:title>`; the axis
+    // title sits inside the axis block. Each <bodyPr> carries its own
+    // rotation independently.
+    const chartTitle = result.chartXml.match(/<c:chart>[\s\S]*?<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(chartTitle).toContain('rot="-2700000"');
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleBodyPrOf(xAx)).toContain('rot="1800000"');
+  });
+
+  it("threads the rotation through both axes independently", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: { title: "Period", axisTitleRotation: 45 },
+          y: { title: "USD", axisTitleRotation: -30 },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx, yAx] = axisBlocks(result.chartXml);
+    expect(axisTitleBodyPrOf(xAx)).toContain('rot="2700000"');
+    expect(axisTitleBodyPrOf(yAx)).toContain('rot="-1800000"');
+  });
+
+  it("threads the rotation through line / area / scatter chart families", () => {
+    for (const type of ["line", "area"] as const) {
+      const result = writeChart(
+        makeChart({
+          type,
+          axes: { x: { title: "Period", axisTitleRotation: 30 } },
+        }),
+        "Sheet1",
+      );
+      const [xAx] = axisBlocks(result.chartXml);
+      expect(axisTitleBodyPrOf(xAx)).toContain('rot="1800000"');
+    }
+    // Scatter requires a numeric category range and routes both axes
+    // through `<c:valAx>` — confirm the rotation still threads.
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { y: { title: "USD", axisTitleRotation: -90 } },
+      }),
+      "Sheet1",
+    );
+    const blocks = axisBlocks(scatter.chartXml);
+    // Scatter emits two `<c:valAx>` siblings; the Y-axis title sits on
+    // the second.
+    const yAx = blocks[1];
+    expect(axisTitleBodyPrOf(yAx)).toContain('rot="-5400000"');
+  });
+
+  it("emits exactly one <a:bodyPr> on the axis title", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleRotation: 45 } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const titleBlock = xAx.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect((titleBlock.match(/<a:bodyPr/g) ?? []).length).toBe(1);
+  });
+
+  it("preserves the axis title's other <a:bodyPr> attributes", () => {
+    // The reference serialization carries `spcFirstLastPara`,
+    // `vertOverflow`, `wrap`, `anchor`, and `anchorCtr` alongside `rot`.
+    // Confirm the rotation pin does not strip them.
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleRotation: 45 } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const bodyPr = axisTitleBodyPrOf(xAx)!;
+    expect(bodyPr).toContain('spcFirstLastPara="1"');
+    expect(bodyPr).toContain('vertOverflow="ellipsis"');
+    expect(bodyPr).toContain('wrap="square"');
+    expect(bodyPr).toContain('anchor="ctr"');
+    expect(bodyPr).toContain('anchorCtr="1"');
+  });
+
+  it("round-trips a non-default axis title rotation through parseChart", () => {
+    const written = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleRotation: 45 } } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.title).toBe("Period");
+    expect(reparsed?.axes?.x?.axisTitleRotation).toBe(45);
+  });
+
+  it("collapses a defaulted axis title rotation round-trip back to undefined", () => {
+    const written = writeChart(makeChart({ axes: { x: { title: "Period" } } }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.title).toBe("Period");
+    expect(reparsed?.axes?.x?.axisTitleRotation).toBeUndefined();
+  });
+
+  it("end-to-end: writeXlsx packages the axis title rotation into chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            axes: {
+              x: { title: "Period", axisTitleRotation: 45 },
+              y: { title: "USD", axisTitleRotation: -90 },
+            },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.x?.axisTitleRotation).toBe(45);
+    expect(reparsed?.axes?.y?.axisTitleRotation).toBe(-90);
+  });
+});

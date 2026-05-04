@@ -1773,6 +1773,35 @@ export interface SheetChart {
     /** Category axis (bar/column/line/area) or X value axis (scatter). */
     x?: {
       title?: string;
+      /**
+       * Rotation of the axis title in whole degrees. Maps to
+       * `<c:catAx><c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title></c:catAx>`
+       * (or `<c:valAx>` for scatter / value axes) — Excel's "Format Axis
+       * Title -> Size & Properties -> Alignment -> Custom angle" knob.
+       *
+       * Mirrors {@link SheetChart.titleRotation} for axis titles — same
+       * `-90..90` band Excel's UI exposes, same conversion factor
+       * (60000ths of a degree on the wire). Useful for standing the Y-
+       * axis title vertically next to the value labels (the typical
+       * "rotated axis label" dashboard look) or pinning a custom angle
+       * on a long X-axis title that would otherwise crowd the plot
+       * area.
+       *
+       * Default: `0` (no rotation, Excel's reference look). Out-of-range
+       * inputs clamp to the nearest endpoint; non-finite (`NaN`,
+       * `Infinity`) and non-numeric inputs drop at write time so the
+       * writer never emits a token Excel's strict validator would
+       * reject. Silently dropped when the axis renders no title (the
+       * `<c:title>` element is absent in either case).
+       *
+       * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+       * `<c:dateAx>` / `<c:serAx>` all carry the same `<c:title>` shape
+       * per the OOXML schema, so the field round-trips on every chart
+       * family that has axes (bar / column / line / area / scatter).
+       * Pie / doughnut have no axes at all, so the field is silently
+       * dropped on those families.
+       */
+      axisTitleRotation?: number;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -2023,6 +2052,24 @@ export interface SheetChart {
     /** Value axis. */
     y?: {
       title?: string;
+      /**
+       * Rotation of the value-axis title in whole degrees. Maps to
+       * `<c:valAx><c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title></c:valAx>`.
+       * Mirrors {@link SheetChart.axes.x.axisTitleRotation} for the
+       * value axis — see that field for the full semantics. The OOXML
+       * `rot` attribute is in 60000ths of a degree; the writer converts
+       * at emit time so callers pin the value in degrees. Range:
+       * `-90..90`.
+       *
+       * Useful for standing the Y-axis title vertically (a common
+       * dashboard pattern that reclaims horizontal real estate next to
+       * the value labels) or pinning a custom angle on a long axis
+       * title that would otherwise crowd the plot area. Silently
+       * dropped on `pie` / `doughnut` charts (no axes at all) and on
+       * any axis whose `title` is unset (no `<c:title>` block to host
+       * the rotation).
+       */
+      axisTitleRotation?: number;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -3181,6 +3228,30 @@ export interface ChartAxisDispUnits {
 export interface ChartAxisInfo {
   /** Plain-text title from the axis's `<c:title>`. Omitted when absent. */
   title?: string;
+  /**
+   * Axis-title rotation in degrees pulled from
+   * `<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title>`
+   * on the axis element. Mirrors Excel's "Format Axis Title -> Size &
+   * Properties -> Alignment -> Custom angle" pin.
+   *
+   * The OOXML `rot` attribute is in 60000ths of a degree; the reader
+   * converts to whole degrees and surfaces the literal value (range
+   * `-90..90`). The OOXML default `0` (and absence of the element)
+   * collapses to `undefined` so absence and the default round-trip
+   * identically through {@link cloneChart}. Out-of-range values clamp
+   * to the nearest endpoint so a parsed value slots straight back into
+   * the writer-side {@link SheetChart.axes.x.axisTitleRotation} field
+   * without further transformation. Returns `undefined` when the axis
+   * omits `<c:title>` entirely or when the title is a `<c:strRef>`
+   * (formula reference) with no `<c:rich>` body.
+   *
+   * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+   * `<c:dateAx>` / `<c:serAx>` all carry the same `<c:title>` shape
+   * per the OOXML schema. The reader surfaces the value on every axis
+   * flavour so a parsed chart preserves the rotation regardless of
+   * whether the source axis was a category or value axis.
+   */
+  axisTitleRotation?: number;
   /**
    * Major / minor gridline visibility. Omitted when neither
    * `<c:majorGridlines>` nor `<c:minorGridlines>` is declared on the
