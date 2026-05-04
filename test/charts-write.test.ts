@@ -6062,6 +6062,208 @@ describe("writeChart — upDownBars", () => {
   });
 });
 
+// ── writeChart — upDownBars gap width ────────────────────────────────
+
+describe("writeChart — upDownBars gap width", () => {
+  it("emits a custom gap width inside <c:upDownBars> when explicitly pinned", () => {
+    // The OOXML schema (CT_UpDownBars) places <c:gapWidth> inside the
+    // parent element. The writer rounds the value to a whole percent
+    // and emits the literal value the caller pinned.
+    const result = writeChart(
+      makeChart({ type: "line", upDownBars: true, upDownBarsGapWidth: 200 }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain("<c:upDownBars>");
+    expect(result.chartXml).toContain('c:gapWidth val="200"');
+    expect(result.chartXml).not.toContain('c:gapWidth val="150"');
+  });
+
+  it("emits a tight gap width of 0", () => {
+    const result = writeChart(
+      makeChart({ type: "line", upDownBars: true, upDownBarsGapWidth: 0 }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:gapWidth val="0"');
+  });
+
+  it("emits the maximum gap width of 500", () => {
+    const result = writeChart(
+      makeChart({ type: "line", upDownBars: true, upDownBarsGapWidth: 500 }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:gapWidth val="500"');
+  });
+
+  it("falls back to the OOXML default 150 when the caller omits the field", () => {
+    // The writer always emits <c:gapWidth> when the parent element is
+    // emitted — Excel's reference serialization includes the child
+    // unconditionally. Absence of the field collapses to the default.
+    const result = writeChart(makeChart({ type: "line", upDownBars: true }), "Sheet1");
+    expect(result.chartXml).toContain('c:gapWidth val="150"');
+  });
+
+  it("rounds non-integer values to the nearest whole percent", () => {
+    // Excel's UI accepts integer percentages only. Callers passing a
+    // fractional value get the rounded value the writer emits.
+    const result = writeChart(
+      makeChart({ type: "line", upDownBars: true, upDownBarsGapWidth: 174.6 }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:gapWidth val="175"');
+  });
+
+  it("falls back to 150 when the value is above the schema cap of 500", () => {
+    // The OOXML schema (ST_GapAmount) restricts the value to 0..500;
+    // out-of-range values fall back to the default rather than clamp
+    // to the schema bound — silently rewriting an `800` to `500`
+    // would mislead the caller about what Excel ends up rendering.
+    const result = writeChart(
+      makeChart({ type: "line", upDownBars: true, upDownBarsGapWidth: 800 }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:gapWidth val="150"');
+    expect(result.chartXml).not.toContain('c:gapWidth val="800"');
+  });
+
+  it("falls back to 150 when the value is below the schema floor of 0", () => {
+    const result = writeChart(
+      makeChart({ type: "line", upDownBars: true, upDownBarsGapWidth: -25 }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:gapWidth val="150"');
+  });
+
+  it("falls back to 150 when the value is non-finite", () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const result = writeChart(
+        makeChart({ type: "line", upDownBars: true, upDownBarsGapWidth: bad }),
+        "Sheet1",
+      );
+      expect(result.chartXml).toContain('c:gapWidth val="150"');
+    }
+  });
+
+  it("drops the gap width when upDownBars is unset (no parent element to host it)", () => {
+    // The OOXML schema scopes <c:gapWidth> exclusively to <c:upDownBars>.
+    // Pinning a gap width without the parent toggle never emits the
+    // child — there is no slot for it.
+    const result = writeChart(makeChart({ type: "line", upDownBarsGapWidth: 200 }), "Sheet1");
+    expect(result.chartXml).not.toContain("c:upDownBars");
+    expect(result.chartXml).not.toContain('c:gapWidth val="200"');
+  });
+
+  it("drops the gap width on a chart that pins upDownBars=false", () => {
+    // upDownBars=false collapses to absence of the parent element, so
+    // there is no slot for the child.
+    const result = writeChart(
+      makeChart({ type: "line", upDownBars: false, upDownBarsGapWidth: 200 }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:upDownBars");
+  });
+
+  it("only emits <c:gapWidth> once inside the up/down bars block", () => {
+    // Guard against any regression that would double-emit the element.
+    const result = writeChart(
+      makeChart({ type: "line", upDownBars: true, upDownBarsGapWidth: 200 }),
+      "Sheet1",
+    );
+    const occurrences = result.chartXml.match(/<c:gapWidth\b/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("drops the gap width on bar / column / pie / doughnut / area chart kinds", () => {
+    // The bar-family <c:gapWidth> writer is independent — it should not
+    // surface when only `upDownBarsGapWidth` is set on a bar chart.
+    for (const type of ["bar", "column", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, upDownBars: true, upDownBarsGapWidth: 200 }),
+        "Sheet1",
+      );
+      expect(result.chartXml).not.toContain("c:upDownBars");
+    }
+  });
+
+  it("drops the gap width on a scatter chart (CT_ScatterChart rejects upDownBars)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        upDownBars: true,
+        upDownBarsGapWidth: 200,
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("c:upDownBars");
+  });
+
+  it("does not collide with the bar-chart gap width on a column chart", () => {
+    // A column chart with both gapWidth (bar-family) and
+    // upDownBarsGapWidth (line-family) emits only the bar-family value;
+    // the line-family field is dropped because the parent element is
+    // never emitted on a column chart.
+    const result = writeChart(
+      makeChart({ type: "column", gapWidth: 75, upDownBarsGapWidth: 200 }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('c:gapWidth val="75"');
+    expect(result.chartXml).not.toContain('c:gapWidth val="200"');
+  });
+
+  it("round-trips a custom gap width through parseChart", () => {
+    const written = writeChart(
+      makeChart({ type: "line", upDownBars: true, upDownBarsGapWidth: 200 }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.upDownBars).toBe(true);
+    expect(reparsed?.upDownBarsGapWidth).toBe(200);
+  });
+
+  it("collapses the OOXML default 150 round-trip back to undefined", () => {
+    // Writing upDownBars=true (with no explicit gap width) emits the
+    // default 150; the reader then collapses that default back to
+    // undefined so absence and the default round-trip identically.
+    const written = writeChart(makeChart({ type: "line", upDownBars: true }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.upDownBars).toBe(true);
+    expect(reparsed?.upDownBarsGapWidth).toBeUndefined();
+  });
+
+  it("threads the custom gap width through writeXlsx end-to-end packaging", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["High", "Low"],
+          [10, 5],
+          [12, 6],
+          [15, 8],
+        ],
+        charts: [
+          {
+            type: "line",
+            series: [
+              { name: "High", values: "A2:A4" },
+              { name: "Low", values: "B2:B4" },
+            ],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            upDownBars: true,
+            upDownBarsGapWidth: 250,
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain("<c:upDownBars>");
+    expect(chartXml).toContain('c:gapWidth val="250"');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.upDownBars).toBe(true);
+    expect(reparsed?.upDownBarsGapWidth).toBe(250);
+  });
+});
+
 // ── writeChart — axis dispUnits ──────────────────────────────────────
 
 describe("writeChart — axis dispUnits", () => {

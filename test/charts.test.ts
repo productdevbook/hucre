@@ -6886,6 +6886,171 @@ describe("parseChart — upDownBars", () => {
   });
 });
 
+// ── parseChart — upDownBars gap width ────────────────────────────────
+
+describe("parseChart — upDownBars gap width", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  function makeLineChart(udbBody: string): string {
+    return `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      ${udbBody}
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces a custom gap width on the up/down bars", () => {
+    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="200"/></c:upDownBars>`);
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBe(true);
+    expect(chart?.upDownBarsGapWidth).toBe(200);
+  });
+
+  it("surfaces a tight gap width of 0", () => {
+    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="0"/></c:upDownBars>`);
+    const chart = parseChart(xml);
+    expect(chart?.upDownBarsGapWidth).toBe(0);
+  });
+
+  it("surfaces the maximum gap width of 500", () => {
+    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="500"/></c:upDownBars>`);
+    const chart = parseChart(xml);
+    expect(chart?.upDownBarsGapWidth).toBe(500);
+  });
+
+  it("collapses the OOXML default 150 to undefined", () => {
+    // <c:gapWidth val="150"/> is Excel's reference value; the parser
+    // collapses it for round-trip symmetry with the writer's default
+    // — absence and `150` must round-trip identically.
+    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="150"/></c:upDownBars>`);
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBe(true);
+    expect(chart?.upDownBarsGapWidth).toBeUndefined();
+  });
+
+  it("returns undefined when <c:gapWidth> is absent", () => {
+    const xml = makeLineChart(`<c:upDownBars/>`);
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBe(true);
+    expect(chart?.upDownBarsGapWidth).toBeUndefined();
+  });
+
+  it("drops out-of-range values above the schema cap of 500", () => {
+    // The OOXML schema (ST_GapAmount) restricts the value to 0..500;
+    // the reader drops out-of-range values rather than clamp so a
+    // corrupt template does not silently rewrite as a different gap.
+    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="800"/></c:upDownBars>`);
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBe(true);
+    expect(chart?.upDownBarsGapWidth).toBeUndefined();
+  });
+
+  it("drops negative values below the schema floor of 0", () => {
+    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="-25"/></c:upDownBars>`);
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBe(true);
+    expect(chart?.upDownBarsGapWidth).toBeUndefined();
+  });
+
+  it("drops non-numeric val attributes", () => {
+    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="wide"/></c:upDownBars>`);
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBe(true);
+    expect(chart?.upDownBarsGapWidth).toBeUndefined();
+  });
+
+  it("drops a missing val attribute", () => {
+    const xml = makeLineChart(`<c:upDownBars><c:gapWidth/></c:upDownBars>`);
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBe(true);
+    expect(chart?.upDownBarsGapWidth).toBeUndefined();
+  });
+
+  it("returns undefined when <c:upDownBars> itself is absent", () => {
+    const xml = makeLineChart("");
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBeUndefined();
+    expect(chart?.upDownBarsGapWidth).toBeUndefined();
+  });
+
+  it("ignores the gap width on a bar chart (CT_BarChart has no <c:upDownBars> slot)", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:grouping val="clustered"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:upDownBars><c:gapWidth val="200"/></c:upDownBars>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBeUndefined();
+    expect(chart?.upDownBarsGapWidth).toBeUndefined();
+  });
+
+  it("surfaces the gap width on a stock chart (CT_StockChart accepts <c:upDownBars>)", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:stockChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:upDownBars><c:gapWidth val="80"/></c:upDownBars>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+    </c:stockChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBe(true);
+    expect(chart?.upDownBarsGapWidth).toBe(80);
+  });
+
+  it("surfaces the gap width on a 3D line chart (CT_Line3DChart accepts <c:upDownBars>)", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:line3DChart>
+      <c:grouping val="standard"/>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:upDownBars><c:gapWidth val="120"/></c:upDownBars>
+      <c:axId val="1"/>
+      <c:axId val="2"/>
+      <c:axId val="3"/>
+    </c:line3DChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:serAx><c:axId val="3"/></c:serAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.upDownBars).toBe(true);
+    expect(chart?.upDownBarsGapWidth).toBe(120);
+  });
+
+  it("does not collide with the bar-chart gap width field", () => {
+    // Bar charts also carry <c:gapWidth> — make sure surfacing the
+    // up/down-bars value does not leak into / collide with the
+    // bar-chart `gapWidth` field.
+    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="200"/></c:upDownBars>`);
+    const chart = parseChart(xml);
+    expect(chart?.upDownBarsGapWidth).toBe(200);
+    expect(chart?.gapWidth).toBeUndefined();
+  });
+});
+
 // ── parseChart — axis dispUnits ──────────────────────────────────────
 
 describe("parseChart — axis dispUnits", () => {
