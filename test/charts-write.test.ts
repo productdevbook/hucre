@@ -8480,3 +8480,221 @@ describe("writeChart — view3D", () => {
     expect(reparsed?.view3D).toEqual({ rotX: 15, rotY: 20, perspective: 30 });
   });
 });
+
+// ── writeChart — axis label rotation ────────────────────────────────
+
+describe("writeChart — axis labelRotation", () => {
+  it("omits <c:txPr> on the category axis when the rotation is unset", () => {
+    // Excel's reference serialization omits `<c:txPr>` on every axis
+    // whose labels render flat — the writer mirrors that contract so a
+    // fresh chart stays byte-clean against Excel's own output.
+    const result = writeChart(makeChart(), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).not.toContain("<c:txPr>");
+  });
+
+  it('emits <c:txPr><a:bodyPr rot="N"/></c:txPr> when the X axis pins a rotation', () => {
+    const result = writeChart(makeChart({ axes: { x: { labelRotation: 45 } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain("<c:txPr>");
+    // 45 degrees * 60000 = 2,700,000.
+    expect(catAxBlock).toContain('<a:bodyPr rot="2700000"/>');
+  });
+
+  it("converts negative rotations to negative 60000ths of a degree", () => {
+    const result = writeChart(makeChart({ axes: { x: { labelRotation: -45 } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('<a:bodyPr rot="-2700000"/>');
+  });
+
+  it("emits the rotation on the Y axis (value axis)", () => {
+    const result = writeChart(makeChart({ axes: { y: { labelRotation: 30 } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain("<c:txPr>");
+    expect(valAxBlock).toContain('<a:bodyPr rot="1800000"/>');
+  });
+
+  it("emits independently on both axes when both pin a rotation", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { labelRotation: 45 }, y: { labelRotation: -30 } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(catAxBlock).toContain('<a:bodyPr rot="2700000"/>');
+    expect(valAxBlock).toContain('<a:bodyPr rot="-1800000"/>');
+  });
+
+  it("collapses the OOXML default 0 to absence (no <c:txPr> emitted)", () => {
+    // Pinning the default `0` round-trips identically to absence — the
+    // writer skips the entire `<c:txPr>` block. Mirrors how every other
+    // axis-default-collapse field treats its input.
+    const result = writeChart(makeChart({ axes: { x: { labelRotation: 0 } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).not.toContain("<c:txPr>");
+  });
+
+  it("clamps rotations above 90 to the 90-degree maximum", () => {
+    const result = writeChart(makeChart({ axes: { x: { labelRotation: 180 } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    // 90 degrees * 60000 = 5,400,000.
+    expect(catAxBlock).toContain('<a:bodyPr rot="5400000"/>');
+  });
+
+  it("clamps rotations below -90 to the -90-degree minimum", () => {
+    const result = writeChart(makeChart({ axes: { x: { labelRotation: -180 } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('<a:bodyPr rot="-5400000"/>');
+  });
+
+  it("rounds non-integer degree values to the nearest whole degree", () => {
+    // The OOXML attribute is an integer in 60000ths of a degree, so a
+    // fractional whole-degree input has no meaningful refinement at
+    // emit time. Rounding keeps the wire output stable.
+    const result = writeChart(makeChart({ axes: { x: { labelRotation: 45.4 } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('<a:bodyPr rot="2700000"/>');
+    const result2 = writeChart(makeChart({ axes: { x: { labelRotation: 45.6 } } }), "Sheet1");
+    const catAxBlock2 = result2.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock2).toContain('<a:bodyPr rot="2760000"/>');
+  });
+
+  it("drops non-finite rotation inputs (NaN, Infinity)", () => {
+    const nan = writeChart(makeChart({ axes: { x: { labelRotation: Number.NaN } } }), "Sheet1");
+    const inf = writeChart(
+      makeChart({ axes: { x: { labelRotation: Number.POSITIVE_INFINITY } } }),
+      "Sheet1",
+    );
+    expect(nan.chartXml).not.toContain("<c:txPr>");
+    expect(inf.chartXml).not.toContain("<c:txPr>");
+  });
+
+  it("drops non-numeric rotation inputs (string, boolean)", () => {
+    // The type guard rejects non-numeric inputs at the normalizer
+    // boundary — the writer never emits a value Excel's strict
+    // validator would reject.
+    const stringy = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { labelRotation: "45" as any } } }),
+      "Sheet1",
+    );
+    const boolish = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { labelRotation: true as any } } }),
+      "Sheet1",
+    );
+    expect(stringy.chartXml).not.toContain("<c:txPr>");
+    expect(boolish.chartXml).not.toContain("<c:txPr>");
+  });
+
+  it("places <c:txPr> between <c:tickLblPos> and <c:crossAx> per the OOXML schema", () => {
+    // CT_CatAx: ... tickLblPos -> spPr? -> txPr? -> crossAx -> ...
+    const result = writeChart(
+      makeChart({
+        axes: { x: { tickLblPos: "low", labelRotation: 45 } },
+      }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const tickLblPosIdx = catAxBlock.indexOf("c:tickLblPos");
+    const txPrIdx = catAxBlock.indexOf("<c:txPr>");
+    const crossAxIdx = catAxBlock.indexOf("c:crossAx");
+    expect(tickLblPosIdx).toBeGreaterThan(0);
+    expect(txPrIdx).toBeGreaterThan(tickLblPosIdx);
+    expect(crossAxIdx).toBeGreaterThan(txPrIdx);
+  });
+
+  it("threads the rotation through bar, column, line, and area chart families", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(makeChart({ type, axes: { x: { labelRotation: 30 } } }), "Sheet1");
+      expect(result.chartXml).toContain('<a:bodyPr rot="1800000"/>');
+    }
+  });
+
+  it("threads the rotation through scatter charts (both axes are value axes)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { x: { labelRotation: 45 }, y: { labelRotation: -45 } },
+      }),
+      "Sheet1",
+    );
+    // Scatter has two `<c:valAx>` siblings — confirm both pins survive.
+    const valAxes = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/g)!;
+    expect(valAxes).toHaveLength(2);
+    expect(valAxes[0]).toContain('<a:bodyPr rot="2700000"/>');
+    expect(valAxes[1]).toContain('<a:bodyPr rot="-2700000"/>');
+  });
+
+  it("ignores the rotation on pie / doughnut charts (no axes at all)", () => {
+    const pie = writeChart(
+      makeChart({ type: "pie", axes: { x: { labelRotation: 45 } } }),
+      "Sheet1",
+    );
+    const dough = writeChart(
+      makeChart({ type: "doughnut", axes: { x: { labelRotation: 45 } } }),
+      "Sheet1",
+    );
+    expect(pie.chartXml).not.toContain("<c:txPr>");
+    expect(dough.chartXml).not.toContain("<c:txPr>");
+  });
+
+  it("emits exactly one <c:txPr> per axis", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { labelRotation: 45 }, y: { labelRotation: 30 } } }),
+      "Sheet1",
+    );
+    expect((result.chartXml.match(/<c:txPr>/g) ?? []).length).toBe(2);
+  });
+
+  it("emits the minimal <c:txPr> shape (bodyPr + lstStyle + p)", () => {
+    const result = writeChart(makeChart({ axes: { x: { labelRotation: 45 } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain("<a:lstStyle/>");
+    expect(catAxBlock).toMatch(/<a:p>.*<\/a:p>/);
+    expect(catAxBlock).toContain("<a:endParaRPr");
+  });
+
+  it("round-trips a non-default rotation through parseChart", () => {
+    const written = writeChart(
+      makeChart({ axes: { x: { labelRotation: 45 } } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.labelRotation).toBe(45);
+  });
+
+  it("collapses a defaulted rotation round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.labelRotation).toBeUndefined();
+  });
+
+  it("end-to-end: writeXlsx packages the rotation into chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            axes: { x: { labelRotation: -45 } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('<a:bodyPr rot="-2700000"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.x?.labelRotation).toBe(-45);
+  });
+});

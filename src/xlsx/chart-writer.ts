@@ -309,6 +309,15 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     yMinorTickMark: normalizeTickMark(chart.axes?.y?.minorTickMark),
     xTickLblPos: normalizeTickLblPos(chart.axes?.x?.tickLblPos),
     yTickLblPos: normalizeTickLblPos(chart.axes?.y?.tickLblPos),
+    // `<c:txPr><a:bodyPr rot="N"/></c:txPr>` lives on every axis
+    // flavour per the OOXML schema (CT_CatAx, CT_ValAx, CT_DateAx,
+    // CT_SerAx all carry the optional `<c:txPr>`). Normalize the
+    // caller's degree input — clamp to the `-90..90` band Excel's UI
+    // exposes; non-finite / non-numeric inputs and the OOXML default
+    // `0` collapse to `undefined` so the writer can elide the entire
+    // `<c:txPr>` block on a fresh chart.
+    xLabelRotation: normalizeAxisLabelRotation(chart.axes?.x?.labelRotation),
+    yLabelRotation: normalizeAxisLabelRotation(chart.axes?.y?.labelRotation),
     xReverse: chart.axes?.x?.reverse === true,
     yReverse: chart.axes?.y?.reverse === true,
     // `tickLblSkip` / `tickMarkSkip` only round-trip on category axes
@@ -693,6 +702,22 @@ interface AxisRenderOptions {
   yMinorTickMark: ChartAxisTickMark | undefined;
   xTickLblPos: ChartAxisTickLabelPosition | undefined;
   yTickLblPos: ChartAxisTickLabelPosition | undefined;
+  /**
+   * Tick-label rotation in whole degrees emitted on the X axis via
+   * `<c:txPr><a:bodyPr rot="N"/></c:txPr>`. The OOXML `rot` attribute
+   * is in 60000ths of a degree; the writer converts at emit time.
+   * Range: `-90..90` (Excel's UI band). `undefined` skips the
+   * `<c:txPr>` block entirely so a fresh chart matches Excel's
+   * minimal serialization. Surfaces on every axis flavour because the
+   * OOXML schema places `<c:txPr>` on `<c:catAx>` / `<c:valAx>` /
+   * `<c:dateAx>` / `<c:serAx>` alike.
+   */
+  xLabelRotation: number | undefined;
+  /**
+   * Tick-label rotation in whole degrees emitted on the Y axis. Same
+   * shape and conversion semantics as {@link xLabelRotation}.
+   */
+  yLabelRotation: number | undefined;
   xReverse: boolean;
   yReverse: boolean;
   /**
@@ -990,6 +1015,69 @@ function normalizeAxisLblAlgn(
  */
 function normalizeAxisHidden(value: boolean | undefined): boolean {
   return value === true;
+}
+
+/**
+ * OOXML's `<a:bodyPr rot="N"/>` attribute is in 60000ths of a degree —
+ * the writer holds the value in whole degrees and converts at emit
+ * time. Excel's UI exposes the `-90..90` band; out-of-band values clamp
+ * to the nearest endpoint so a corrupt template cannot leak through to
+ * the writer either.
+ */
+const TXPR_ROT_PER_DEGREE = 60000;
+const LABEL_ROTATION_MIN_DEG = -90;
+const LABEL_ROTATION_MAX_DEG = 90;
+
+/**
+ * Normalize an axis `labelRotation` value (whole degrees) for the
+ * `<c:txPr><a:bodyPr rot="N"/></c:txPr>` writer slot. Returns
+ * `undefined` when the input is unset, non-finite, non-numeric, or
+ * resolves to `0` after rounding — every absence path collapses to the
+ * same omit-the-element shape so absence and the OOXML default `0`
+ * round-trip identically through {@link cloneChart}. Out-of-range
+ * inputs clamp to the `-90..90` band Excel's UI exposes; non-integer
+ * inputs round to the nearest whole degree (the OOXML attribute is an
+ * integer in 60000ths of a degree, so a fractional whole-degree value
+ * has no meaningful refinement at emit time).
+ */
+function normalizeAxisLabelRotation(value: number | undefined): number | undefined {
+  if (value === undefined || typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  let degrees = Math.round(value);
+  if (degrees < LABEL_ROTATION_MIN_DEG) degrees = LABEL_ROTATION_MIN_DEG;
+  else if (degrees > LABEL_ROTATION_MAX_DEG) degrees = LABEL_ROTATION_MAX_DEG;
+  if (degrees === 0) return undefined;
+  return degrees;
+}
+
+/**
+ * Build the `<c:txPr>` block that carries an axis tick-label rotation.
+ * Returns `undefined` when the resolved degree value is unset so the
+ * caller can elide the element entirely (Excel's reference
+ * serialization on a fresh axis omits `<c:txPr>` when the labels
+ * render at the default `rot="0"`).
+ *
+ * The emitted block mirrors the minimal `<c:txPr>` shape Excel writes
+ * when the user pins a custom angle — `<a:bodyPr rot="N"/>` carries
+ * the rotation, `<a:lstStyle/>` is the empty list-style placeholder
+ * the schema requires, and `<a:p><a:pPr><a:defRPr/></a:pPr><a:endParaRPr/></a:p>`
+ * is the empty paragraph stub Excel always emits even when no per-run
+ * styling is pinned. Additional `<a:bodyPr>` attributes Excel writes
+ * in its full reference (`spcFirstLastPara` / `vertOverflow` / `wrap`
+ * / `anchor` / `anchorCtr`) are intentionally omitted — the OOXML
+ * schema marks them all optional, and dropping them keeps the writer's
+ * footprint minimal while preserving the rotation intent.
+ */
+function buildAxisTxPr(rotationDeg: number | undefined): string | undefined {
+  if (rotationDeg === undefined) return undefined;
+  const rot = rotationDeg * TXPR_ROT_PER_DEGREE;
+  return xmlElement("c:txPr", undefined, [
+    xmlSelfClose("a:bodyPr", { rot }),
+    xmlSelfClose("a:lstStyle"),
+    xmlElement("a:p", undefined, [
+      xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr")]),
+      xmlSelfClose("a:endParaRPr", { lang: "en-US" }),
+    ]),
+  ]);
 }
 
 /** Recognized values of `<c:crosses>` per the OOXML `ST_Crosses` enum. */
@@ -1463,6 +1551,14 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
   catAxChildren.push(
     ...buildAxisNumFmt(opts.xNumFmt),
     ...buildAxisTickRendering(opts.xMajorTickMark, opts.xMinorTickMark, opts.xTickLblPos),
+  );
+  // `<c:txPr>` sits between `<c:tickLblPos>` (the last child of
+  // `buildAxisTickRendering`) and `<c:crossAx>` per CT_CatAx (ECMA-376
+  // Part 1, §21.2.2.7). Skip the entire block when the caller did not
+  // pin a rotation so a fresh chart matches Excel's minimal serialization.
+  const xCatAxTxPr = buildAxisTxPr(opts.xLabelRotation);
+  if (xCatAxTxPr) catAxChildren.push(xCatAxTxPr);
+  catAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL }),
     buildAxisCrosses(opts.xCrosses),
     // `<c:auto>` is always emitted because Excel's reference
@@ -1508,6 +1604,15 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
   valAxChildren.push(
     ...buildAxisNumFmt(opts.yNumFmt),
     ...buildAxisTickRendering(opts.yMajorTickMark, opts.yMinorTickMark, opts.yTickLblPos),
+  );
+  // `<c:txPr>` sits between `<c:tickLblPos>` and `<c:crossAx>` per
+  // CT_ValAx (ECMA-376 Part 1, §21.2.2.32). Same omit-by-default
+  // contract as the catAx slot above — emit nothing when the caller
+  // did not pin a rotation so the writer matches Excel's reference
+  // serialization on a fresh value axis.
+  const yValAxTxPr = buildAxisTxPr(opts.yLabelRotation);
+  if (yValAxTxPr) valAxChildren.push(yValAxTxPr);
+  valAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_CAT }),
     buildAxisCrosses(opts.yCrosses),
     // `<c:crossBetween>` sits between `<c:crosses>`/`<c:crossesAt>` and
@@ -1820,6 +1925,13 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
   xAxChildren.push(
     ...buildAxisNumFmt(opts.xNumFmt),
     ...buildAxisTickRendering(opts.xMajorTickMark, opts.xMinorTickMark, opts.xTickLblPos),
+  );
+  // `<c:txPr>` slot — same CT_ValAx position as the bar / column
+  // builder above. Scatter X is a value axis, so the rotation pins on
+  // the X-axis just as it does on the Y-axis.
+  const xValAxTxPr = buildAxisTxPr(opts.xLabelRotation);
+  if (xValAxTxPr) xAxChildren.push(xValAxTxPr);
+  xAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL_Y }),
     buildAxisCrosses(opts.xCrosses),
     // Scatter charts default to `"midCat"` (data points sit ON the
@@ -1845,6 +1957,12 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
   yAxChildren.push(
     ...buildAxisNumFmt(opts.yNumFmt),
     ...buildAxisTickRendering(opts.yMajorTickMark, opts.yMinorTickMark, opts.yTickLblPos),
+  );
+  // `<c:txPr>` slot for the scatter Y axis — same CT_ValAx position
+  // and omit-by-default contract as the catAx / valAx builders above.
+  const yScatterTxPr = buildAxisTxPr(opts.yLabelRotation);
+  if (yScatterTxPr) yAxChildren.push(yScatterTxPr);
+  yAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL_X }),
     buildAxisCrosses(opts.yCrosses),
     // Scatter Y axis defaults to `"midCat"`. Same override grammar as

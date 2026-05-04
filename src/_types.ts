@@ -1717,6 +1717,37 @@ export interface SheetChart {
        */
       tickLblPos?: ChartAxisTickLabelPosition;
       /**
+       * Tick-label rotation in degrees. Maps to
+       * `<c:catAx><c:txPr><a:bodyPr rot="N"/></c:txPr></c:catAx>` (or
+       * `<c:valAx>` for scatter / value axes) — Excel's "Format Axis ->
+       * Alignment -> Custom angle" knob. Useful for rotating long
+       * category labels diagonally so they fit underneath a column
+       * chart's bars without overlapping their neighbours.
+       *
+       * Accepted range: `-90..90` (the band Excel's UI exposes; values
+       * outside the band clamp to the nearest endpoint). The OOXML
+       * `rot` attribute is in 60000ths of a degree — the writer
+       * converts at emit time so callers pin the value in degrees.
+       *
+       * Default: `0` (no rotation, Excel's reference look). Set a
+       * positive integer (e.g. `45`) to rotate the labels clockwise
+       * (their right edge tilts down — typical "diagonal labels"
+       * dashboard look on a column chart). Negative values rotate
+       * counter-clockwise.
+       *
+       * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+       * `<c:dateAx>` / `<c:serAx>` all carry an optional `<c:txPr>` per
+       * the OOXML schema, so the field round-trips on every chart family
+       * that has axes (bar / column / line / area / scatter). Pie /
+       * doughnut have no axes at all, so the field is silently dropped
+       * on those families.
+       *
+       * Non-finite (`NaN`, `Infinity`) and non-numeric inputs drop at
+       * write time so the writer never emits a token Excel's strict
+       * validator would reject.
+       */
+      labelRotation?: number;
+      /**
        * Reverse the axis plotting order. Maps to
        * `<c:scaling><c:orientation val="maxMin"/></c:scaling>` —
        * Excel's "Categories in reverse order" / "Values in reverse
@@ -1932,6 +1963,21 @@ export interface SheetChart {
        * `"nextTo"`. See {@link ChartAxisTickLabelPosition}.
        */
       tickLblPos?: ChartAxisTickLabelPosition;
+      /**
+       * Tick-label rotation in degrees for the value axis. Maps to
+       * `<c:valAx><c:txPr><a:bodyPr rot="N"/></c:txPr></c:valAx>`.
+       * Mirrors {@link SheetChart.axes.x.labelRotation} for the value
+       * axis — see that field for the full semantics. The OOXML `rot`
+       * attribute is in 60000ths of a degree; the writer converts at
+       * emit time so callers pin the value in degrees. Range: `-90..90`.
+       *
+       * Useful for tilting Y-axis number labels when a tight chart
+       * frame would otherwise crowd them, or for rotating the X-axis
+       * value labels on a scatter chart whose long category strings
+       * sit on the value axis. Silently dropped on `pie` / `doughnut`
+       * charts (no axes at all).
+       */
+      labelRotation?: number;
       /**
        * Hide the entire value axis (line, tick marks, tick labels).
        * Maps to `<c:valAx><c:delete val="1"/></c:valAx>`. Default:
@@ -3076,6 +3122,27 @@ export interface ChartAxisInfo {
    * shape minimal. See {@link ChartAxisTickLabelPosition}.
    */
   tickLblPos?: ChartAxisTickLabelPosition;
+  /**
+   * Tick-label rotation in degrees pulled from
+   * `<c:txPr><a:bodyPr rot="N"/></c:txPr>` on the axis element.
+   * Mirrors Excel's "Format Axis -> Alignment -> Custom angle" pin.
+   *
+   * The OOXML `rot` attribute is in 60000ths of a degree; the reader
+   * converts to whole degrees and surfaces the literal value (range
+   * `-90..90`). The OOXML default `0` (and absence of the element)
+   * collapses to `undefined` so absence and the default round-trip
+   * identically through {@link cloneChart}. Out-of-range values are
+   * clamped to the nearest endpoint so a parsed value slots straight
+   * back into the writer-side {@link SheetChart.axes.x.labelRotation}
+   * field without further transformation.
+   *
+   * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+   * `<c:dateAx>` / `<c:serAx>` all carry an optional `<c:txPr>` per
+   * the OOXML schema. The reader surfaces the value on every axis
+   * flavour so a parsed chart preserves the rotation regardless of
+   * whether the source axis was a category or value axis.
+   */
+  labelRotation?: number;
   /**
    * Reverse-axis flag pulled from
    * `<c:scaling><c:orientation val=".."/></c:scaling>`. Surfaces `true`

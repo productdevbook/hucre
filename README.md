@@ -1077,7 +1077,7 @@ charts; `lineGrouping` and `areaGrouping` accept
 `top` / `bottom` / `left` / `right` / `topRight` / `false`, and
 `altText` / `frameTitle` flow through to the drawing's `xdr:cNvPr`
 attributes for screen readers.
-`axes: { x: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, reverse, crosses, crossesAt, dispUnits, crossBetween }, y: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, reverse, crosses, crossesAt, dispUnits, crossBetween } }`
+`axes: { x: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, labelRotation, reverse, crosses, crossesAt, dispUnits, crossBetween }, y: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, labelRotation, reverse, crosses, crossesAt, dispUnits, crossBetween } }`
 attaches per-axis labels, gridlines, numeric scaling, the tick-label
 number format and the tick-rendering trio — `x` lands inside
 `<c:catAx>` (or the X value axis for scatter), `y` inside the value
@@ -1488,6 +1488,25 @@ exclusively (even `<c:dateAx>`, `<c:valAx>`, and `<c:serAx>` reject
 it), so the flag threads through bar / column / line / area but is
 silently dropped on scatter (both axes are value axes) and pie /
 doughnut (no axes at all).
+The `axes.x.labelRotation` and `axes.y.labelRotation` fields pin the
+tick-label rotation in whole degrees, mapping to
+`<c:txPr><a:bodyPr rot="N"/></c:txPr>` on the matching axis — Excel's
+"Format Axis -> Alignment -> Custom angle" knob. The OOXML `rot`
+attribute is in 60000ths of a degree; the writer converts at emit
+time so callers pin the value in degrees. Useful for rotating long
+category labels diagonally so they fit underneath a column chart's
+bars without overlapping their neighbours, or for tilting a value
+axis's number labels when a tight chart frame would otherwise crowd
+them. Range: `-90..90` (Excel's UI band — out-of-range values clamp
+to the nearest endpoint, fractional inputs round to the nearest whole
+degree, non-finite / non-numeric inputs drop). The writer omits the
+entire `<c:txPr>` block on the OOXML default `0` (and on absence) so a
+fresh chart matches Excel's minimal serialization. The element sits on
+every axis flavour per the OOXML schema (`<c:catAx>` / `<c:valAx>` /
+`<c:dateAx>` / `<c:serAx>` all carry an optional `<c:txPr>`), so the
+field threads through every chart family that has axes (bar / column /
+line / area / scatter); pie / doughnut have no axes at all and the
+field is silently dropped there.
 The `axes.x.reverse` and `axes.y.reverse` flags map to
 `<c:scaling><c:orientation val="maxMin"/></c:scaling>` — Excel's
 "Categories / Values in reverse order" toggle. On a category axis,

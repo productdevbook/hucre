@@ -461,6 +461,14 @@ function parseAxisInfo(
   const majorTickMark = parseAxisTickMark(axis, "majorTickMark", "out");
   const minorTickMark = parseAxisTickMark(axis, "minorTickMark", "none");
   const tickLblPos = parseAxisTickLblPos(axis);
+  // `<c:txPr><a:bodyPr rot="N"/></c:txPr>` — tick-label rotation in
+  // 60000ths of a degree. The element sits on every axis flavour per
+  // the OOXML schema (CT_CatAx, CT_ValAx, CT_DateAx, CT_SerAx all
+  // carry an optional `<c:txPr>`), so the reader runs on every axis
+  // flavour. Out-of-range values clamp to the `-90..90` band Excel's
+  // UI exposes; the OOXML default `0` and absence both collapse to
+  // `undefined`.
+  const labelRotation = parseAxisLabelRotation(axis);
   // <c:scaling><c:orientation val=".."/></c:scaling> — ST_Orientation
   // accepts "minMax" (default, low → high) and "maxMin" (reversed).
   // The default collapses to undefined so a fresh chart and a chart
@@ -536,6 +544,7 @@ function parseAxisInfo(
     majorTickMark === undefined &&
     minorTickMark === undefined &&
     tickLblPos === undefined &&
+    labelRotation === undefined &&
     reverse === undefined &&
     tickLblSkip === undefined &&
     tickMarkSkip === undefined &&
@@ -559,6 +568,7 @@ function parseAxisInfo(
   if (majorTickMark !== undefined) out.majorTickMark = majorTickMark;
   if (minorTickMark !== undefined) out.minorTickMark = minorTickMark;
   if (tickLblPos !== undefined) out.tickLblPos = tickLblPos;
+  if (labelRotation !== undefined) out.labelRotation = labelRotation;
   if (reverse !== undefined) out.reverse = reverse;
   if (tickLblSkip !== undefined) out.tickLblSkip = tickLblSkip;
   if (tickMarkSkip !== undefined) out.tickMarkSkip = tickMarkSkip;
@@ -835,6 +845,54 @@ function parseAxisHidden(axis: XmlElement): boolean | undefined {
     default:
       return undefined;
   }
+}
+
+/**
+ * Conversion factor between OOXML's `rot` attribute (60000ths of a
+ * degree, the integer Excel writes inside `<a:bodyPr rot="N"/>`) and
+ * whole degrees. Excel's UI exposes the -90..90 degree band — the
+ * reader clamps anything outside that band so a corrupt template
+ * cannot surface a value the writer would never emit.
+ */
+const TXPR_ROT_PER_DEGREE = 60000;
+const LABEL_ROTATION_MIN_DEG = -90;
+const LABEL_ROTATION_MAX_DEG = 90;
+
+/**
+ * Pull `<c:txPr><a:bodyPr rot="N"/></c:txPr>` off an axis element.
+ * Returns the rotation in whole degrees (range `-90..90`).
+ *
+ * The OOXML default `0` (and absence of the element / attribute) all
+ * collapse to `undefined` so absence and the default round-trip
+ * identically through {@link cloneChart}. Non-integer / non-numeric /
+ * out-of-range values clamp to the nearest endpoint of the
+ * `-90..90` band Excel's UI exposes; non-finite (`NaN`, `Infinity`)
+ * inputs drop to `undefined`.
+ *
+ * The `<c:txPr>` element sits on every axis flavour — `<c:catAx>` /
+ * `<c:valAx>` / `<c:dateAx>` / `<c:serAx>` all carry the optional
+ * element per the OOXML schema. The reader surfaces the rotation
+ * regardless of axis flavour so a parsed chart preserves the value
+ * for symmetry with the writer-side
+ * {@link SheetChart.axes}.x.labelRotation.
+ */
+function parseAxisLabelRotation(axis: XmlElement): number | undefined {
+  const txPr = findChild(axis, "txPr");
+  if (!txPr) return undefined;
+  const bodyPr = findChild(txPr, "bodyPr");
+  if (!bodyPr) return undefined;
+  const raw = bodyPr.attrs.rot;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  // Convert from 60000ths of a degree to whole degrees.
+  const degrees = Math.round(parsed / TXPR_ROT_PER_DEGREE);
+  if (degrees === 0) return undefined;
+  if (degrees < LABEL_ROTATION_MIN_DEG) return LABEL_ROTATION_MIN_DEG;
+  if (degrees > LABEL_ROTATION_MAX_DEG) return LABEL_ROTATION_MAX_DEG;
+  return degrees;
 }
 
 /** Recognized values of `<c:crosses>` per the OOXML `ST_Crosses` enum. */

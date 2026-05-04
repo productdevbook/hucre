@@ -572,6 +572,19 @@ export interface CloneChartOptions {
        */
       tickLblPos?: ChartAxisTickLabelPosition | null;
       /**
+       * Override `SheetChart.axes.x.labelRotation`. `undefined` (or
+       * omitted) inherits the source axis's rotation; `null` drops the
+       * inherited value (the writer falls back to the OOXML default `0`
+       * — labels render flat); a number in the `-90..90` band replaces
+       * it (out-of-range and non-finite inputs collapse to `undefined`).
+       *
+       * `<c:txPr>` lives on every axis flavour per the OOXML schema, so
+       * the override carries through every chart family that has axes
+       * (bar / column / line / area / scatter). Silently dropped on
+       * `pie` / `doughnut` charts since neither has axes.
+       */
+      labelRotation?: number | null;
+      /**
        * Override the reverse-axis flag. `undefined` (or omitted)
        * inherits the source axis' parsed value; `null` drops it (the
        * writer falls back to the OOXML default `"minMax"` — forward
@@ -723,6 +736,8 @@ export interface CloneChartOptions {
       minorTickMark?: ChartAxisTickMark | null;
       /** See {@link CloneChartOptions.axes.x.tickLblPos}. */
       tickLblPos?: ChartAxisTickLabelPosition | null;
+      /** See {@link CloneChartOptions.axes.x.labelRotation}. */
+      labelRotation?: number | null;
       /** See {@link CloneChartOptions.axes.x.hidden}. */
       hidden?: boolean | null;
       /** See {@link CloneChartOptions.axes.x.reverse}. */
@@ -2049,6 +2064,21 @@ function resolveAxes(
   );
   const xTickLblPos = applyTickLblPosOverride(sourceAxes?.x?.tickLblPos, overrides?.x?.tickLblPos);
   const yTickLblPos = applyTickLblPosOverride(sourceAxes?.y?.tickLblPos, overrides?.y?.tickLblPos);
+  // `<c:txPr><a:bodyPr rot="N"/></c:txPr>` lives on every axis flavour
+  // per the OOXML schema (CT_CatAx, CT_ValAx, CT_DateAx, CT_SerAx all
+  // carry an optional `<c:txPr>`), so the resolver applies on every
+  // chart family that has axes (pie / doughnut were short-circuited
+  // upstream). Out-of-range / non-numeric values clamp to the
+  // `-90..90` band the writer accepts; the OOXML default `0` collapses
+  // to `undefined` so absence and the default round-trip identically.
+  const xLabelRotation = applyLabelRotationOverride(
+    sourceAxes?.x?.labelRotation,
+    overrides?.x?.labelRotation,
+  );
+  const yLabelRotation = applyLabelRotationOverride(
+    sourceAxes?.y?.labelRotation,
+    overrides?.y?.labelRotation,
+  );
   const xReverse = applyReverseOverride(sourceAxes?.x?.reverse, overrides?.x?.reverse);
   const yReverse = applyReverseOverride(sourceAxes?.y?.reverse, overrides?.y?.reverse);
   // `tickLblSkip` / `tickMarkSkip` only render on category axes
@@ -2141,6 +2171,7 @@ function resolveAxes(
     xMajorTickMark !== undefined ||
     xMinorTickMark !== undefined ||
     xTickLblPos !== undefined ||
+    xLabelRotation !== undefined ||
     xReverse !== undefined ||
     xTickLblSkip !== undefined ||
     xTickMarkSkip !== undefined ||
@@ -2162,6 +2193,7 @@ function resolveAxes(
     if (xMajorTickMark !== undefined) out.x.majorTickMark = xMajorTickMark;
     if (xMinorTickMark !== undefined) out.x.minorTickMark = xMinorTickMark;
     if (xTickLblPos !== undefined) out.x.tickLblPos = xTickLblPos;
+    if (xLabelRotation !== undefined) out.x.labelRotation = xLabelRotation;
     if (xReverse !== undefined) out.x.reverse = xReverse;
     if (xTickLblSkip !== undefined) out.x.tickLblSkip = xTickLblSkip;
     if (xTickMarkSkip !== undefined) out.x.tickMarkSkip = xTickMarkSkip;
@@ -2183,6 +2215,7 @@ function resolveAxes(
     yMajorTickMark !== undefined ||
     yMinorTickMark !== undefined ||
     yTickLblPos !== undefined ||
+    yLabelRotation !== undefined ||
     yHidden !== undefined ||
     yReverse !== undefined ||
     yCrossesPair.crosses !== undefined ||
@@ -2198,6 +2231,7 @@ function resolveAxes(
     if (yMajorTickMark !== undefined) out.y.majorTickMark = yMajorTickMark;
     if (yMinorTickMark !== undefined) out.y.minorTickMark = yMinorTickMark;
     if (yTickLblPos !== undefined) out.y.tickLblPos = yTickLblPos;
+    if (yLabelRotation !== undefined) out.y.labelRotation = yLabelRotation;
     if (yHidden !== undefined) out.y.hidden = yHidden;
     if (yReverse !== undefined) out.y.reverse = yReverse;
     if (yCrossesPair.crosses !== undefined) out.y.crosses = yCrossesPair.crosses;
@@ -2490,6 +2524,41 @@ function applyTickLblPosOverride(
   }
   if (override === null) return undefined;
   return VALID_TICK_LBL_POS_VALUES.has(override) ? override : undefined;
+}
+
+/**
+ * Resolve a `labelRotation` override using the same `undefined`
+ * (inherit) / `null` (drop) / value (replace) grammar as the other
+ * axis helpers. Out-of-range / non-numeric values clamp to the
+ * `-90..90` band the writer accepts and the OOXML default `0`
+ * collapses to `undefined` so absence and the default round-trip
+ * identically — symmetric with the parser-side default-collapse.
+ */
+function applyLabelRotationOverride(
+  source: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) {
+    if (typeof source !== "number" || !Number.isFinite(source)) return undefined;
+    return clampLabelRotationDeg(source);
+  }
+  if (override === null) return undefined;
+  if (typeof override !== "number" || !Number.isFinite(override)) return undefined;
+  return clampLabelRotationDeg(override);
+}
+
+/**
+ * Snap a `labelRotation` value (whole degrees) into the `-90..90` band
+ * the writer accepts. Returns `undefined` for `0` so the OOXML default
+ * collapses to absence — symmetric with the writer-side
+ * {@link normalizeAxisLabelRotation} contract.
+ */
+function clampLabelRotationDeg(value: number): number | undefined {
+  let degrees = Math.round(value);
+  if (degrees < -90) degrees = -90;
+  else if (degrees > 90) degrees = 90;
+  if (degrees === 0) return undefined;
+  return degrees;
 }
 
 /**

@@ -9111,3 +9111,180 @@ describe("parseChart — legend entries", () => {
     expect(parseChart(xml)?.legendEntries).toEqual([{ idx: 1, delete: true }]);
   });
 });
+
+// ── parseChart — axis label rotation ───────────────────────────────
+
+describe("parseChart — axis labelRotation", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withCatAxTxPr(rot: string | undefined): string {
+    const txPr =
+      rot === undefined
+        ? ""
+        : `<c:txPr><a:bodyPr rot="${rot}"/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>`;
+    return `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      ${txPr}
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces the rotation in whole degrees from the rot attribute (60000ths)", () => {
+    // 45 degrees * 60000 = 2,700,000.
+    const chart = parseChart(withCatAxTxPr("2700000"));
+    expect(chart?.axes?.x?.labelRotation).toBe(45);
+  });
+
+  it("surfaces negative rotations literally", () => {
+    const chart = parseChart(withCatAxTxPr("-2700000"));
+    expect(chart?.axes?.x?.labelRotation).toBe(-45);
+  });
+
+  it('collapses the OOXML default rot="0" to undefined', () => {
+    // The default `0` round-trips identically to absence — both leave
+    // the labels rendering flat.
+    const chart = parseChart(withCatAxTxPr("0"));
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when <c:txPr> is absent", () => {
+    const chart = parseChart(withCatAxTxPr(undefined));
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when <a:bodyPr> is absent inside <c:txPr>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:txPr><a:lstStyle/><a:p/></c:txPr>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when <a:bodyPr> omits the rot attribute", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:txPr><a:bodyPr/><a:lstStyle/><a:p/></c:txPr>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.axes).toBeUndefined();
+  });
+
+  it("clamps rot values above the 90-degree maximum to 90", () => {
+    // Values outside Excel's UI band collapse to the nearest endpoint
+    // so a corrupt template cannot surface a rotation the writer would
+    // never emit. 180° in 60000ths = 10,800,000.
+    const chart = parseChart(withCatAxTxPr("10800000"));
+    expect(chart?.axes?.x?.labelRotation).toBe(90);
+  });
+
+  it("clamps rot values below the -90-degree minimum to -90", () => {
+    const chart = parseChart(withCatAxTxPr("-10800000"));
+    expect(chart?.axes?.x?.labelRotation).toBe(-90);
+  });
+
+  it("drops non-numeric rot tokens", () => {
+    expect(parseChart(withCatAxTxPr("forty-five"))?.axes).toBeUndefined();
+  });
+
+  it("rounds non-integer 60000ths to the nearest whole degree", () => {
+    // 2,700,030 ≈ 45.0005°, rounds to 45.
+    const chart = parseChart(withCatAxTxPr("2700030"));
+    expect(chart?.axes?.x?.labelRotation).toBe(45);
+  });
+
+  it("surfaces the rotation on the value axis", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:txPr><a:bodyPr rot="-1800000"/><a:lstStyle/><a:p/></c:txPr>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.labelRotation).toBe(-30);
+  });
+
+  it("surfaces independently on both axes", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:txPr><a:bodyPr rot="2700000"/><a:lstStyle/><a:p/></c:txPr>
+    </c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:txPr><a:bodyPr rot="-1800000"/><a:lstStyle/><a:p/></c:txPr>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.labelRotation).toBe(45);
+    expect(chart?.axes?.y?.labelRotation).toBe(-30);
+  });
+
+  it("surfaces the rotation on a scatter chart's value axes", () => {
+    // Scatter has two `<c:valAx>` siblings — the rotation surfaces on
+    // both axes for symmetry with the writer-side scatter builder.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:scatterChart><c:ser><c:idx val="0"/></c:ser></c:scatterChart>
+    <c:valAx>
+      <c:axId val="1"/>
+      <c:axPos val="b"/>
+      <c:txPr><a:bodyPr rot="2700000"/><a:lstStyle/><a:p/></c:txPr>
+    </c:valAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:axPos val="l"/>
+      <c:txPr><a:bodyPr rot="-2700000"/><a:lstStyle/><a:p/></c:txPr>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.labelRotation).toBe(45);
+    expect(chart?.axes?.y?.labelRotation).toBe(-45);
+  });
+
+  it("co-surfaces alongside other axis fields", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title><c:tx><c:rich><a:p><a:r><a:t>Period</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      <c:tickLblPos val="low"/>
+      <c:txPr><a:bodyPr rot="2700000"/><a:lstStyle/><a:p/></c:txPr>
+      <c:noMultiLvlLbl val="1"/>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x).toEqual({
+      title: "Period",
+      tickLblPos: "low",
+      labelRotation: 45,
+      noMultiLvlLbl: true,
+    });
+  });
+});
