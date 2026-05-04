@@ -9506,3 +9506,204 @@ describe("cloneChart — axis labelRotation", () => {
     expect(written).toContain('<a:bodyPr rot="-1800000"/>');
   });
 });
+
+// ── cloneChart — data labels showLeaderLines ────────────────────────
+
+describe("cloneChart — data labels showLeaderLines", () => {
+  const sourceWithLeaderLines: Chart = {
+    kinds: ["pie"],
+    seriesCount: 1,
+    series: [{ kind: "pie", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    dataLabels: { showValue: true, showLeaderLines: false },
+  };
+
+  it("inherits chart-level showLeaderLines from the source by default", () => {
+    const clone = cloneChart(sourceWithLeaderLines, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.dataLabels?.showLeaderLines).toBe(false);
+    expect(clone.dataLabels?.showValue).toBe(true);
+  });
+
+  it("drops the inherited showLeaderLines when chart-level dataLabels override is null", () => {
+    const clone = cloneChart(sourceWithLeaderLines, {
+      anchor: { from: { row: 0, col: 0 } },
+      dataLabels: null,
+    });
+    expect(clone.dataLabels).toBeUndefined();
+  });
+
+  it("replaces the dataLabels block wholesale, dropping the inherited showLeaderLines", () => {
+    const clone = cloneChart(sourceWithLeaderLines, {
+      anchor: { from: { row: 0, col: 0 } },
+      dataLabels: { showCategoryName: true },
+    });
+    // The override is wholesale — the inherited showLeaderLines does
+    // not bleed through.
+    expect(clone.dataLabels).toEqual({ showCategoryName: true });
+  });
+
+  it("can pin showLeaderLines via a chart-level dataLabels override", () => {
+    const noLeaderLines: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [{ kind: "pie", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      dataLabels: { showValue: true },
+    };
+    const clone = cloneChart(noLeaderLines, {
+      anchor: { from: { row: 0, col: 0 } },
+      dataLabels: { showValue: true, showLeaderLines: false },
+    });
+    expect(clone.dataLabels).toEqual({ showValue: true, showLeaderLines: false });
+  });
+
+  it("inherits showLeaderLines on per-series dataLabels by default", () => {
+    const src: Chart = {
+      kinds: ["doughnut"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "doughnut",
+          index: 0,
+          valuesRef: "Tpl!$B$2:$B$5",
+          dataLabels: { showValue: true, showLeaderLines: false, position: "bestFit" },
+        },
+      ],
+    };
+    const clone = cloneChart(src, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.series[0].dataLabels).toEqual({
+      showValue: true,
+      showLeaderLines: false,
+      position: "bestFit",
+    });
+  });
+
+  it("drops the per-series showLeaderLines when the override is null", () => {
+    const src: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "pie",
+          index: 0,
+          valuesRef: "Tpl!$B$2:$B$5",
+          dataLabels: { showValue: true, showLeaderLines: false },
+        },
+      ],
+    };
+    const clone = cloneChart(src, {
+      anchor: { from: { row: 0, col: 0 } },
+      seriesOverrides: [{ dataLabels: null }],
+    });
+    expect(clone.series[0].dataLabels).toBeUndefined();
+  });
+
+  it("composes showLeaderLines alongside numberFormat and other show toggles", () => {
+    const src: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [{ kind: "pie", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      dataLabels: {
+        showValue: true,
+        showPercent: true,
+        showLegendKey: true,
+        showLeaderLines: false,
+        position: "bestFit",
+        numberFormat: { formatCode: "0.00%" },
+      },
+    };
+    const clone = cloneChart(src, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.dataLabels).toEqual({
+      showValue: true,
+      showPercent: true,
+      showLegendKey: true,
+      showLeaderLines: false,
+      position: "bestFit",
+      numberFormat: { formatCode: "0.00%" },
+    });
+  });
+
+  it("carries showLeaderLines through a chart-type coercion (pie -> doughnut)", () => {
+    const doughnutClone = cloneChart(sourceWithLeaderLines, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(doughnutClone.type).toBe("doughnut");
+    expect(doughnutClone.dataLabels?.showLeaderLines).toBe(false);
+  });
+
+  it("carries showLeaderLines through but the writer drops it on a non-pie / non-doughnut coercion", () => {
+    // The clone always carries the source's intent forward — the
+    // writer is the layer that scope-guards the OOXML schema. So the
+    // cloned model preserves `showLeaderLines: false` even after the
+    // type is coerced to bar; the rendered XML simply omits the
+    // element on the non-pie family.
+    const barClone = cloneChart(sourceWithLeaderLines, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "bar",
+    });
+    expect(barClone.type).toBe("bar");
+    expect(barClone.dataLabels?.showLeaderLines).toBe(false);
+
+    const written = writeChart(barClone, "Dashboard").chartXml;
+    expect(written).not.toContain("<c:showLeaderLines");
+  });
+
+  it("end-to-end: parseChart -> cloneChart -> writeChart preserves showLeaderLines on a pie", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart>
+    <c:plotArea>
+      <c:pieChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:dLbls>
+          <c:dLblPos val="bestFit"/>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="1"/>
+          <c:showBubbleSize val="0"/>
+          <c:showLeaderLines val="0"/>
+        </c:dLbls>
+      </c:pieChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.dataLabels?.showLeaderLines).toBe(false);
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(sheetChart.dataLabels?.showLeaderLines).toBe(false);
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    const dLbls = written.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/)![0];
+    expect(dLbls).toContain('<c:showLeaderLines val="0"/>');
+
+    // Re-parse to confirm the round-trip.
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataLabels?.showLeaderLines).toBe(false);
+  });
+
+  it("end-to-end: writeXlsx packages the cloned pie chart with showLeaderLines intact", async () => {
+    const clone = cloneChart(sourceWithLeaderLines, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [["Header"], [10], [20], [30], [40]],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const dLbls = written.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/)![0];
+    expect(dLbls).toContain('<c:showLeaderLines val="0"/>');
+  });
+});

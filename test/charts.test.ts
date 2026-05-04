@@ -9288,3 +9288,241 @@ describe("parseChart — axis labelRotation", () => {
     });
   });
 });
+
+// ── parseChart — data labels showLeaderLines ─────────────────────────
+
+describe("parseChart — data labels showLeaderLines", () => {
+  const NS_LL = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it('surfaces showLeaderLines=false on a pie chart-level dLbls when val="0"', () => {
+    const xml = `<c:chartSpace ${NS_LL}>
+  <c:chart><c:plotArea>
+    <c:pieChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:showLegendKey val="0"/>
+        <c:showVal val="1"/>
+        <c:showCatName val="0"/>
+        <c:showSerName val="0"/>
+        <c:showPercent val="0"/>
+        <c:showBubbleSize val="0"/>
+        <c:showLeaderLines val="0"/>
+      </c:dLbls>
+    </c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels).toEqual({
+      showValue: true,
+      showLeaderLines: false,
+    });
+  });
+
+  it('collapses the OOXML default val="1" to undefined', () => {
+    // The OOXML default is `true`; absence and the default round-trip
+    // identically through cloneChart, so the parser collapses
+    // `val="1"` to `undefined`.
+    const xml = `<c:chartSpace ${NS_LL}>
+  <c:chart><c:plotArea>
+    <c:pieChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:showVal val="1"/>
+        <c:showLeaderLines val="1"/>
+      </c:dLbls>
+    </c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.showLeaderLines).toBeUndefined();
+    expect(chart?.dataLabels?.showValue).toBe(true);
+  });
+
+  it("collapses absence of <c:showLeaderLines> to undefined", () => {
+    const xml = `<c:chartSpace ${NS_LL}>
+  <c:chart><c:plotArea>
+    <c:pieChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:showVal val="1"/>
+      </c:dLbls>
+    </c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.showLeaderLines).toBeUndefined();
+  });
+
+  it('accepts the OOXML falsy spelling val="false"', () => {
+    const xml = `<c:chartSpace ${NS_LL}>
+  <c:chart><c:plotArea>
+    <c:doughnutChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:showVal val="1"/>
+        <c:showLeaderLines val="false"/>
+      </c:dLbls>
+    </c:doughnutChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.showLeaderLines).toBe(false);
+  });
+
+  it('accepts the OOXML truthy spelling val="true" and collapses to undefined', () => {
+    const xml = `<c:chartSpace ${NS_LL}>
+  <c:chart><c:plotArea>
+    <c:pieChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:showVal val="1"/>
+        <c:showLeaderLines val="true"/>
+      </c:dLbls>
+    </c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.showLeaderLines).toBeUndefined();
+  });
+
+  it("ignores unknown val tokens", () => {
+    const xml = `<c:chartSpace ${NS_LL}>
+  <c:chart><c:plotArea>
+    <c:pieChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:showVal val="1"/>
+        <c:showLeaderLines val="off"/>
+      </c:dLbls>
+    </c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.showLeaderLines).toBeUndefined();
+  });
+
+  it("returns undefined when <c:showLeaderLines> is missing the val attribute", () => {
+    const xml = `<c:chartSpace ${NS_LL}>
+  <c:chart><c:plotArea>
+    <c:pieChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:showVal val="1"/>
+        <c:showLeaderLines/>
+      </c:dLbls>
+    </c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.showLeaderLines).toBeUndefined();
+  });
+
+  it("makes showLeaderLines=false alone enough to surface a dataLabels record", () => {
+    // Even when no value/category/series/percent toggle is on, a pinned
+    // showLeaderLines=false is still meaningful — Excel suppresses the
+    // connecting lines on every otherwise-empty label slot. The reader
+    // must not collapse the block to undefined in that case.
+    const xml = `<c:chartSpace ${NS_LL}>
+  <c:chart><c:plotArea>
+    <c:pieChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:showLegendKey val="0"/>
+        <c:showVal val="0"/>
+        <c:showCatName val="0"/>
+        <c:showSerName val="0"/>
+        <c:showPercent val="0"/>
+        <c:showBubbleSize val="0"/>
+        <c:showLeaderLines val="0"/>
+      </c:dLbls>
+    </c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels).toEqual({ showLeaderLines: false });
+  });
+
+  it("surfaces showLeaderLines on a series-level <c:dLbls>", () => {
+    const xml = `<c:chartSpace ${NS_LL}>
+  <c:chart><c:plotArea>
+    <c:doughnutChart>
+      <c:ser>
+        <c:idx val="0"/>
+        <c:tx><c:v>Distribution</c:v></c:tx>
+        <c:dLbls>
+          <c:dLblPos val="bestFit"/>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="1"/>
+          <c:showBubbleSize val="0"/>
+          <c:showLeaderLines val="0"/>
+        </c:dLbls>
+        <c:val><c:numRef><c:f>S!$B$2:$B$5</c:f></c:numRef></c:val>
+      </c:ser>
+    </c:doughnutChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0].dataLabels).toEqual({
+      position: "bestFit",
+      showValue: true,
+      showPercent: true,
+      showLeaderLines: false,
+    });
+  });
+
+  it("co-surfaces showLeaderLines alongside numberFormat and other show toggles", () => {
+    const xml = `<c:chartSpace ${NS_LL}>
+  <c:chart><c:plotArea>
+    <c:pieChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:numFmt formatCode="0.00%" sourceLinked="0"/>
+        <c:dLblPos val="bestFit"/>
+        <c:showLegendKey val="1"/>
+        <c:showVal val="1"/>
+        <c:showCatName val="1"/>
+        <c:showSerName val="0"/>
+        <c:showPercent val="1"/>
+        <c:showBubbleSize val="0"/>
+        <c:separator>; </c:separator>
+        <c:showLeaderLines val="0"/>
+      </c:dLbls>
+    </c:pieChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels).toEqual({
+      position: "bestFit",
+      showLegendKey: true,
+      showValue: true,
+      showCategoryName: true,
+      showPercent: true,
+      separator: "; ",
+      numberFormat: { formatCode: "0.00%" },
+      showLeaderLines: false,
+    });
+  });
+
+  it("permissively surfaces showLeaderLines on non-pie families (parser is type-agnostic)", () => {
+    // The OOXML schema scopes <c:showLeaderLines> to pie / doughnut on
+    // the writer side, but the reader is permissive — a templated
+    // chart whose chart-type element ends up coerced still surfaces the
+    // source's intent so the cloned model stays accurate.
+    const xml = `<c:chartSpace ${NS_LL}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:ser><c:idx val="0"/></c:ser>
+      <c:dLbls>
+        <c:showVal val="1"/>
+        <c:showLeaderLines val="0"/>
+      </c:dLbls>
+    </c:barChart>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.showLeaderLines).toBe(false);
+  });
+});

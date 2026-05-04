@@ -8698,3 +8698,259 @@ describe("writeChart — axis labelRotation", () => {
     expect(reparsed?.axes?.x?.labelRotation).toBe(-45);
   });
 });
+
+// ── writeChart — data labels showLeaderLines ─────────────────────────
+
+describe("writeChart — data labels showLeaderLines", () => {
+  function dLblsOf(xml: string): string {
+    const m = xml.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/);
+    if (!m) throw new Error("No <c:dLbls> block found in chart XML");
+    return m[0];
+  }
+
+  it("does not emit <c:showLeaderLines> on a pie chart by default (OOXML default true)", () => {
+    // Excel's reference serialization omits the element when the user
+    // did not flip the toggle off — the OOXML default is `true`.
+    // Mirroring that on emit keeps absence and the default
+    // round-tripping identically through parseChart.
+    const result = writeChart(
+      makeChart({ type: "pie", dataLabels: { showValue: true } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).not.toContain("<c:showLeaderLines");
+  });
+
+  it('emits <c:showLeaderLines val="0"/> on a pie chart when showLeaderLines=false', () => {
+    const result = writeChart(
+      makeChart({ type: "pie", dataLabels: { showValue: true, showLeaderLines: false } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain('<c:showLeaderLines val="0"/>');
+  });
+
+  it('emits <c:showLeaderLines val="0"/> on a doughnut chart when showLeaderLines=false', () => {
+    const result = writeChart(
+      makeChart({
+        type: "doughnut",
+        dataLabels: { showValue: true, showLeaderLines: false },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain('<c:showLeaderLines val="0"/>');
+  });
+
+  it("treats showLeaderLines=true the same as omitting the field (no element emitted)", () => {
+    // Pinning the OOXML default has the same wire shape as omitting
+    // the field — only an explicit `false` flips the toggle.
+    const explicit = writeChart(
+      makeChart({ type: "pie", dataLabels: { showValue: true, showLeaderLines: true } }),
+      "Sheet1",
+    ).chartXml;
+    const implicit = writeChart(
+      makeChart({ type: "pie", dataLabels: { showValue: true } }),
+      "Sheet1",
+    ).chartXml;
+    expect(explicit).toEqual(implicit);
+  });
+
+  it("collapses non-boolean showLeaderLines inputs to the OOXML default (no element)", () => {
+    // A stray non-boolean leaking past the type guard (e.g. 0 / "false"
+    // / null) must collapse to the default rather than emit something
+    // Excel would reject. Mirrors how the other show* toggles treat
+    // their inputs — only literal `false` flips the toggle.
+    const result = writeChart(
+      makeChart({
+        type: "pie",
+        dataLabels: { showValue: true, showLeaderLines: 0 as unknown as boolean },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).not.toContain("<c:showLeaderLines");
+  });
+
+  it("scope-guards showLeaderLines on bar / column / line / area / scatter (drops the override)", () => {
+    // The OOXML schema scopes <c:showLeaderLines> to EG_DLbls (pie /
+    // doughnut only). Every other family routes through EG_DLblsShared
+    // which omits the element — emitting it would break Excel's
+    // strict validator.
+    const families: Array<{ type: WriteChartKind; setup?: Partial<SheetChart> }> = [
+      { type: "bar" },
+      { type: "column" },
+      { type: "line" },
+      { type: "area" },
+      {
+        type: "scatter",
+        setup: { series: [{ values: "B2:B4", categories: "A2:A4" }] },
+      },
+    ];
+    for (const { type, setup } of families) {
+      const result = writeChart(
+        makeChart({ type, dataLabels: { showValue: true, showLeaderLines: false }, ...setup }),
+        "Sheet1",
+      );
+      const dLbls = dLblsOf(result.chartXml);
+      expect(dLbls).not.toContain("<c:showLeaderLines");
+    }
+  });
+
+  it("places <c:showLeaderLines> after <c:separator> when both are emitted (CT_DLbls order)", () => {
+    // CT_DLbls sequence: ... showBubbleSize, separator?, showLeaderLines?
+    const result = writeChart(
+      makeChart({
+        type: "pie",
+        dataLabels: { showValue: true, separator: " | ", showLeaderLines: false },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    const idxSep = dLbls.indexOf("<c:separator");
+    const idxLead = dLbls.indexOf("<c:showLeaderLines");
+    expect(idxSep).toBeGreaterThan(0);
+    expect(idxLead).toBeGreaterThan(idxSep);
+  });
+
+  it("places <c:showLeaderLines> after <c:showBubbleSize> when no separator is set", () => {
+    const result = writeChart(
+      makeChart({
+        type: "doughnut",
+        dataLabels: { showValue: true, showLeaderLines: false },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    const idxBub = dLbls.indexOf("<c:showBubbleSize");
+    const idxLead = dLbls.indexOf("<c:showLeaderLines");
+    expect(idxBub).toBeGreaterThan(0);
+    expect(idxLead).toBeGreaterThan(idxBub);
+  });
+
+  it("emits exactly one <c:showLeaderLines> per <c:dLbls> block", () => {
+    // Guard against a regression that would double-emit the element.
+    const result = writeChart(
+      makeChart({ type: "pie", dataLabels: { showValue: true, showLeaderLines: false } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect((dLbls.match(/<c:showLeaderLines /g) ?? []).length).toBe(1);
+  });
+
+  it("threads showLeaderLines through a series-level <c:dLbls> on a pie chart", () => {
+    const result = writeChart(
+      makeChart({
+        type: "pie",
+        series: [
+          {
+            name: "S1",
+            values: "B2:B4",
+            categories: "A2:A4",
+            dataLabels: { showValue: true, showLeaderLines: false },
+          },
+        ],
+      }),
+      "Sheet1",
+    );
+    const xml = result.chartXml;
+    const serStart = xml.indexOf("<c:ser>");
+    const serEnd = xml.indexOf("</c:ser>");
+    const inner = xml.slice(serStart, serEnd);
+    expect(inner).toContain('<c:showLeaderLines val="0"/>');
+  });
+
+  it("scope-guards series-level showLeaderLines on a column chart", () => {
+    // The OOXML schema scopes the element to pie / doughnut on the
+    // series-level dLbls just as it does on the chart level. The
+    // override must be silently dropped on every other family.
+    const result = writeChart(
+      makeChart({
+        type: "column",
+        series: [
+          {
+            name: "S1",
+            values: "B2:B4",
+            categories: "A2:A4",
+            dataLabels: { showValue: true, showLeaderLines: false },
+          },
+        ],
+      }),
+      "Sheet1",
+    );
+    const xml = result.chartXml;
+    const serStart = xml.indexOf("<c:ser>");
+    const serEnd = xml.indexOf("</c:ser>");
+    const inner = xml.slice(serStart, serEnd);
+    expect(inner).not.toContain("<c:showLeaderLines");
+  });
+
+  it("composes independently with showLegendKey and numberFormat", () => {
+    // The three knobs live on different lines of the CT_DLbls
+    // sequence; pinning one must not change the others.
+    const result = writeChart(
+      makeChart({
+        type: "pie",
+        dataLabels: {
+          showValue: true,
+          showLegendKey: true,
+          showLeaderLines: false,
+          numberFormat: { formatCode: "0.00%" },
+        },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain('<c:numFmt formatCode="0.00%"');
+    expect(dLbls).toContain('<c:showLegendKey val="1"/>');
+    expect(dLbls).toContain('<c:showLeaderLines val="0"/>');
+  });
+
+  it("round-trips a pie chart with showLeaderLines=false through parseChart", () => {
+    const written = writeChart(
+      makeChart({ type: "pie", dataLabels: { showValue: true, showLeaderLines: false } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataLabels?.showLeaderLines).toBe(false);
+    expect(reparsed?.dataLabels?.showValue).toBe(true);
+  });
+
+  it("collapses a defaulted pie showLeaderLines round-trip back to undefined", () => {
+    // A fresh pie chart (showLeaderLines omitted) emits no element and
+    // re-parses to undefined — absence and the OOXML default round-trip
+    // identically.
+    const written = writeChart(
+      makeChart({ type: "pie", dataLabels: { showValue: true } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataLabels?.showLeaderLines).toBeUndefined();
+  });
+
+  it("end-to-end: writeXlsx packages a pie chart with showLeaderLines=false", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Slice", "Value"],
+          ["A", 30],
+          ["B", 70],
+        ],
+        charts: [
+          {
+            type: "pie",
+            title: "Distribution",
+            series: [{ name: "Distribution", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            dataLabels: { showValue: true, showLeaderLines: false },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const dLbls = chartXml.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/)![0];
+    expect(dLbls).toContain('<c:showLeaderLines val="0"/>');
+  });
+});

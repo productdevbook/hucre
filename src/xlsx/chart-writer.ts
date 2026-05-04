@@ -1433,6 +1433,7 @@ function buildBarChart(chart: SheetChart, sheetName: string): string {
   for (let i = 0; i < chart.series.length; i++) {
     children.push(
       buildSeries(chart.series[i], i, sheetName, /* numericCategories */ false, {
+        chartType: chart.type,
         dataLabels: chart.dataLabels,
         invertIfNegative: chart.series[i].invertIfNegative === true,
       }),
@@ -1649,6 +1650,7 @@ function buildLineChart(chart: SheetChart, sheetName: string): string {
     // the line writer always emits the element — straight by default
     // (`val="0"`), curved when the caller pinned `smooth: true`.
     const seriesXml = buildSeries(chart.series[i], i, sheetName, /* numericCategories */ false, {
+      chartType: chart.type,
       smooth: chart.series[i].smooth === true,
       dataLabels: chart.dataLabels,
       stroke: chart.series[i].stroke,
@@ -1729,6 +1731,7 @@ function buildAreaChart(chart: SheetChart, sheetName: string): string {
   for (let i = 0; i < chart.series.length; i++) {
     children.push(
       buildSeries(chart.series[i], i, sheetName, /* numericCategories */ false, {
+        chartType: chart.type,
         dataLabels: chart.dataLabels,
       }),
     );
@@ -1764,6 +1767,7 @@ function buildPieChart(chart: SheetChart, sheetName: string): string {
   if (chart.series.length > 0) {
     children.push(
       buildSeries(chart.series[0], 0, sheetName, /* numericCategories */ false, {
+        chartType: chart.type,
         dataLabels: chart.dataLabels,
         explosion: chart.series[0].explosion,
       }),
@@ -1801,6 +1805,7 @@ function buildDoughnutChart(chart: SheetChart, sheetName: string): string {
   for (let i = 0; i < chart.series.length; i++) {
     children.push(
       buildSeries(chart.series[i], i, sheetName, /* numericCategories */ false, {
+        chartType: chart.type,
         dataLabels: chart.dataLabels,
         explosion: chart.series[i].explosion,
       }),
@@ -1896,6 +1901,7 @@ function buildScatterChart(chart: SheetChart, sheetName: string): string {
     // shape Excel writes for straight scatter series.
     children.push(
       buildSeries(chart.series[i], i, sheetName, /* numericCategories */ true, {
+        chartType: chart.type,
         smooth: chart.series[i].smooth === true ? true : undefined,
         dataLabels: chart.dataLabels,
         stroke: chart.series[i].stroke,
@@ -2021,6 +2027,15 @@ function buildAxisTitle(label: string): string {
 interface SeriesOptions {
   smooth?: boolean;
   /**
+   * Owning chart's family. Used to scope-guard schema-restricted
+   * data-label flags such as `<c:showLeaderLines>` (pie / doughnut
+   * only) so a templated chart's pin never leaks onto a chart family
+   * Excel's strict validator would reject. Required so the per-family
+   * caller cannot forget to thread the type through; every chart
+   * builder passes `chart.type` directly.
+   */
+  chartType: WriteChartKind;
+  /**
    * Chart-level data label defaults from {@link SheetChart.dataLabels}.
    * Used when the series itself does not specify `dataLabels`. Series
    * passing `dataLabels: false` always wins over this default.
@@ -2069,7 +2084,7 @@ function buildSeries(
   index: number,
   sheetName: string,
   numericCategories: boolean,
-  options?: SeriesOptions,
+  options: SeriesOptions,
 ): string {
   const children: string[] = [
     xmlSelfClose("c:idx", { val: index }),
@@ -2126,8 +2141,14 @@ function buildSeries(
 
   // Data labels — series-level override always wins over the chart-level
   // default. `<c:dLbls>` sits between <c:spPr> and <c:cat>/<c:val> per
-  // the OOXML series schema (CT_BarSer, CT_LineSer, ...).
-  const seriesDLblsXml = buildSeriesDataLabels(series.dataLabels, options?.dataLabels);
+  // the OOXML series schema (CT_BarSer, CT_LineSer, ...). The chart
+  // type threads through so the dLbls body can scope-guard the pie /
+  // doughnut-only `<c:showLeaderLines>` flag.
+  const seriesDLblsXml = buildSeriesDataLabels(
+    series.dataLabels,
+    options.dataLabels,
+    options.chartType,
+  );
   if (seriesDLblsXml) children.push(seriesDLblsXml);
 
   // Categories (skipped for pie when omitted; allowed for all)
@@ -2400,6 +2421,7 @@ function normalizeRgbHex(value: string | undefined): string | undefined {
 function buildSeriesDataLabels(
   seriesDLbls: ChartDataLabels | false | undefined,
   chartDLbls: ChartDataLabels | undefined,
+  chartType: WriteChartKind,
 ): string | undefined {
   if (seriesDLbls === false) {
     // Suppress this series even when chart-level labels are on.
@@ -2412,7 +2434,7 @@ function buildSeriesDataLabels(
     ]);
   }
   if (seriesDLbls) {
-    return buildDataLabelsBody(seriesDLbls);
+    return buildDataLabelsBody(seriesDLbls, chartType);
   }
   // Series doesn't override → fall through to chart-level. Returning
   // undefined here keeps the chart-level <c:dLbls> as the single source
@@ -2428,7 +2450,7 @@ function buildSeriesDataLabels(
  */
 function buildChartLevelDataLabels(chart: SheetChart): string | undefined {
   if (!chart.dataLabels) return undefined;
-  return buildDataLabelsBody(chart.dataLabels);
+  return buildDataLabelsBody(chart.dataLabels, chart.type);
 }
 
 /**
@@ -2437,8 +2459,14 @@ function buildChartLevelDataLabels(chart: SheetChart): string | undefined {
  * showLegendKey, showVal, showCatName, showSerName, showPercent,
  * showBubbleSize, separator?, showLeaderLines? — toggles must appear
  * in that exact order or Excel ignores the block.
+ *
+ * `chartType` lets the builder gate the pie / doughnut-only
+ * `<c:showLeaderLines>` element — the OOXML schema scopes that flag to
+ * `EG_DLbls` for `CT_PieChart` / `CT_DoughnutChart` only, so the writer
+ * silently drops `dl.showLeaderLines` on every other family rather than
+ * emit a child Excel's strict validator would reject.
  */
-function buildDataLabelsBody(dl: ChartDataLabels): string {
+function buildDataLabelsBody(dl: ChartDataLabels, chartType: WriteChartKind): string {
   const children: string[] = [];
 
   // `<c:numFmt>` sits at the head of the CT_DLbls sequence (before
@@ -2473,6 +2501,24 @@ function buildDataLabelsBody(dl: ChartDataLabels): string {
 
   if (dl.separator !== undefined) {
     children.push(xmlElement("c:separator", undefined, xmlEscape(dl.separator)));
+  }
+
+  // `<c:showLeaderLines>` sits at the tail of the `EG_DLbls` group
+  // (after `<c:separator>`, before `<c:extLst>`). The OOXML schema
+  // scopes the element to pie / doughnut chart families exclusively
+  // (`EG_DLbls` for `CT_PieChart` / `CT_DoughnutChart` only — bar /
+  // column / line / area / scatter route through `EG_DLblsShared` which
+  // omits it). The writer drops the field silently on every non-pie /
+  // non-doughnut family to mirror Excel's reference serialization.
+  //
+  // The OOXML default is `true` (Excel paints leader lines on every
+  // label that gets pushed outside its slice). Only an explicit
+  // `false` flips the toggle, so absence and the default round-trip
+  // identically through {@link parseChart}. Non-boolean inputs collapse
+  // to the default, mirroring how the other `show*` toggles treat
+  // their inputs.
+  if ((chartType === "pie" || chartType === "doughnut") && dl.showLeaderLines === false) {
+    children.push(xmlSelfClose("c:showLeaderLines", { val: 0 }));
   }
 
   return xmlElement("c:dLbls", undefined, children);

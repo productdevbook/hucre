@@ -634,6 +634,26 @@ export interface ChartDataLabels {
    * from the source cell formatting.
    */
   numberFormat?: ChartAxisNumberFormat;
+  /**
+   * Render the leader lines that connect each data label back to its
+   * pie / doughnut slice when Excel pushes a label outside the slice it
+   * belongs to. Mirrors Excel's "Format Data Labels -> Label Options ->
+   * Show Leader Lines" checkbox.
+   *
+   * Maps to `<c:showLeaderLines val=".."/>` inside `<c:dLbls>`, which
+   * sits at the tail of the `EG_DLbls` group (after `<c:separator>`,
+   * before `<c:extLst>`). The OOXML schema scopes the element to
+   * pie / doughnut chart families exclusively (`EG_DLbls` for
+   * `CT_PieChart` / `CT_DoughnutChart` only — bar / column / line /
+   * area / scatter route through `EG_DLblsShared` which omits it). The
+   * writer drops the field silently on every non-pie / non-doughnut
+   * family to mirror Excel's reference serialization.
+   *
+   * The OOXML default is `true` (Excel paints leader lines on every
+   * label that gets pushed outside its slice). Set to `false` to opt
+   * out and render labels without the connecting lines.
+   */
+  showLeaderLines?: boolean;
 }
 
 /**
@@ -2766,6 +2786,25 @@ export interface ChartDataLabelsInfo {
    * empty.
    */
   numberFormat?: ChartAxisNumberFormat;
+  /**
+   * Mirror of {@link ChartDataLabels.showLeaderLines}. Surfaces the
+   * `<c:showLeaderLines val=".."/>` flag parsed from the source
+   * `<c:dLbls>` block — Excel's "Format Data Labels -> Show Leader
+   * Lines" checkbox.
+   *
+   * The OOXML default is `true`. Surfaces `false` only when the source
+   * pinned `<c:showLeaderLines val="0"/>`; absence and the default
+   * `val="1"` collapse to `undefined` so a re-parse of a writer that
+   * omits the element matches a re-parse of one that pins the default
+   * explicitly.
+   *
+   * The element only appears on pie / doughnut data-labels per the
+   * OOXML schema (`EG_DLbls` is scoped to `CT_PieChart` /
+   * `CT_DoughnutChart`); the parser surfaces it on every chart family
+   * the source emits it for so a templated chart can round-trip
+   * cleanly even when the chart-type element ends up coerced.
+   */
+  showLeaderLines?: boolean;
 }
 
 /**
