@@ -9691,3 +9691,145 @@ describe("parseChart — data labels showLeaderLines", () => {
     expect(chart?.dataLabels?.showLeaderLines).toBe(false);
   });
 });
+
+describe("parseChart — title rotation", () => {
+  const NS_TR = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withTitleRot(rot: string | undefined): string {
+    const bodyPr = rot === undefined ? "<a:bodyPr/>" : `<a:bodyPr rot="${rot}"/>`;
+    return `<c:chartSpace ${NS_TR}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          ${bodyPr}
+          <a:lstStyle/>
+          <a:p><a:r><a:t>Quarterly Revenue</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces the rotation in whole degrees from the rot attribute (60000ths)", () => {
+    // 45 degrees * 60000 = 2,700,000.
+    const chart = parseChart(withTitleRot("2700000"));
+    expect(chart?.titleRotation).toBe(45);
+  });
+
+  it("surfaces negative rotations literally", () => {
+    const chart = parseChart(withTitleRot("-2700000"));
+    expect(chart?.titleRotation).toBe(-45);
+  });
+
+  it('collapses the OOXML default rot="0" to undefined', () => {
+    // The default `0` round-trips identically to absence — both leave
+    // the title rendering horizontally.
+    const chart = parseChart(withTitleRot("0"));
+    expect(chart?.titleRotation).toBeUndefined();
+  });
+
+  it("returns undefined when <a:bodyPr> omits the rot attribute", () => {
+    const chart = parseChart(withTitleRot(undefined));
+    expect(chart?.titleRotation).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:title> element", () => {
+    const xml = `<c:chartSpace ${NS_TR}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleRotation).toBeUndefined();
+  });
+
+  it("returns undefined when <c:title> has no <c:tx><c:rich> body", () => {
+    // A title that only carries `<c:strRef>` (formula reference) has
+    // no `<a:bodyPr>` to host the rotation.
+    const xml = `<c:chartSpace ${NS_TR}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:strRef>
+          <c:f>Sheet1!$A$1</c:f>
+          <c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Quarterly Revenue</c:v></c:pt></c:strCache>
+        </c:strRef>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleRotation).toBeUndefined();
+    // Title still surfaces from the strRef cache.
+    expect(chart?.title).toBe("Quarterly Revenue");
+  });
+
+  it("clamps rot values above the 90-degree maximum to 90", () => {
+    // Values outside Excel's UI band collapse to the nearest endpoint
+    // so a corrupt template cannot surface a rotation the writer would
+    // never emit. 180° in 60000ths = 10,800,000.
+    const chart = parseChart(withTitleRot("10800000"));
+    expect(chart?.titleRotation).toBe(90);
+  });
+
+  it("clamps rot values below the -90-degree minimum to -90", () => {
+    const chart = parseChart(withTitleRot("-10800000"));
+    expect(chart?.titleRotation).toBe(-90);
+  });
+
+  it("drops non-numeric rot tokens", () => {
+    expect(parseChart(withTitleRot("forty-five"))?.titleRotation).toBeUndefined();
+  });
+
+  it("drops empty rot tokens", () => {
+    expect(parseChart(withTitleRot(""))?.titleRotation).toBeUndefined();
+  });
+
+  it("rounds non-integer 60000ths to the nearest whole degree", () => {
+    // 2,700,030 ≈ 45.0005°, rounds to 45.
+    const chart = parseChart(withTitleRot("2700030"));
+    expect(chart?.titleRotation).toBe(45);
+  });
+
+  it("co-surfaces alongside titleOverlay and other chart fields", () => {
+    const xml = `<c:chartSpace ${NS_TR}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr rot="-5400000"/>
+          <a:lstStyle/>
+          <a:p><a:r><a:t>Sidebar</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="1"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.title).toBe("Sidebar");
+    expect(chart?.titleOverlay).toBe(true);
+    expect(chart?.titleRotation).toBe(-90);
+  });
+});

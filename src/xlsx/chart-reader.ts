@@ -96,6 +96,17 @@ export function parseChart(xml: string): Chart | undefined {
   const titleOverlay = parseTitleOverlay(chartEl);
   if (titleOverlay !== undefined) out.titleOverlay = titleOverlay;
 
+  // `<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title>`
+  // mirrors Excel's "Format Chart Title -> Size & Properties ->
+  // Alignment -> Custom angle" knob. Same scope rule as `<c:overlay>` —
+  // a chart that omits the `<c:title>` element has no rotation to
+  // surface, so the helper short-circuits to `undefined` when the title
+  // is absent. The value comes back in whole degrees (range `-90..90`)
+  // for symmetry with the writer-side
+  // {@link SheetChart.titleRotation} field.
+  const titleRotation = parseTitleRotation(chartEl);
+  if (titleRotation !== undefined) out.titleRotation = titleRotation;
+
   // `<c:autoTitleDeleted>` records whether the user explicitly deleted
   // the auto-generated title — independent of whether a literal
   // `<c:title>` is present. The element sits on `<c:chart>` directly
@@ -1895,6 +1906,58 @@ function parseTitleOverlay(chartEl: XmlElement): boolean | undefined {
     default:
       return undefined;
   }
+}
+
+/**
+ * Conversion factor between OOXML's `rot` attribute (60000ths of a
+ * degree, the integer Excel writes inside `<a:bodyPr rot="N"/>`) and
+ * whole degrees. Excel's UI exposes the -90..90 degree band — the
+ * reader clamps anything outside that band so a corrupt template
+ * cannot surface a value the writer would never emit.
+ */
+const TITLE_ROT_PER_DEGREE = 60000;
+const TITLE_ROTATION_MIN_DEG = -90;
+const TITLE_ROTATION_MAX_DEG = 90;
+
+/**
+ * Pull `<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx>
+ * </c:title>` off the chart. Returns the rotation in whole degrees
+ * (range `-90..90`).
+ *
+ * The OOXML default `0` (and absence of the `<a:bodyPr>` element /
+ * `rot` attribute) all collapse to `undefined` so absence and the
+ * default round-trip identically through {@link cloneChart}.
+ * Non-integer / non-numeric / out-of-range values clamp to the nearest
+ * endpoint of the `-90..90` band Excel's UI exposes; non-finite
+ * (`NaN`, `Infinity`) inputs drop to `undefined`.
+ *
+ * Returns `undefined` whenever the chart omits the `<c:title>` element
+ * — there is no rotation slot to surface in that case. The
+ * `<a:bodyPr>` lives inside `<c:tx><c:rich>` per the CT_Title schema
+ * (the rich-text body's body-properties); the lookup is scoped to that
+ * path so a stray `<a:bodyPr>` elsewhere in the chart cannot leak in.
+ */
+function parseTitleRotation(chartEl: XmlElement): number | undefined {
+  const title = findChild(chartEl, "title");
+  if (!title) return undefined;
+  const tx = findChild(title, "tx");
+  if (!tx) return undefined;
+  const rich = findChild(tx, "rich");
+  if (!rich) return undefined;
+  const bodyPr = findChild(rich, "bodyPr");
+  if (!bodyPr) return undefined;
+  const raw = bodyPr.attrs.rot;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  // Convert from 60000ths of a degree to whole degrees.
+  const degrees = Math.round(parsed / TITLE_ROT_PER_DEGREE);
+  if (degrees === 0) return undefined;
+  if (degrees < TITLE_ROTATION_MIN_DEG) return TITLE_ROTATION_MIN_DEG;
+  if (degrees > TITLE_ROTATION_MAX_DEG) return TITLE_ROTATION_MAX_DEG;
+  return degrees;
 }
 
 // ── Auto Title Deleted ────────────────────────────────────────────

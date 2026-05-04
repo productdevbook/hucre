@@ -255,6 +255,24 @@ export interface CloneChartOptions {
    */
   titleOverlay?: boolean | null;
   /**
+   * Override the chart-level title rotation in whole degrees.
+   * `undefined` (or omitted) inherits the source's parsed value;
+   * `null` drops the inherited rotation so the writer falls back to
+   * the OOXML default `0` (horizontal); a `number` replaces it.
+   *
+   * Out-of-range overrides clamp to the `-90..90` band Excel's UI
+   * exposes; non-integer overrides round to the nearest whole degree;
+   * `0`, `NaN`, `Infinity`, and non-numeric overrides collapse to a
+   * drop (the writer's normalization band) so the cloned `SheetChart`
+   * always carries a value the writer will accept.
+   *
+   * The override is silently dropped from the cloned `SheetChart` when
+   * the resolved chart renders no title (`title` resolved to `undefined`
+   * or `showTitle === false`) — there is no `<c:title>` block to host
+   * the rotation in either case.
+   */
+  titleRotation?: number | null;
+  /**
    * Override `<c:autoTitleDeleted>` (the "user explicitly deleted the
    * auto-generated title" flag).
    *
@@ -1014,6 +1032,16 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   if (titleRendered) {
     const resolvedTitleOverlay = resolveTitleOverlay(source.titleOverlay, options.titleOverlay);
     if (resolvedTitleOverlay !== undefined) out.titleOverlay = resolvedTitleOverlay;
+
+    // `titleRotation` only renders inside `<c:title>` — a clone that
+    // omits the title has no `<a:bodyPr rot="N"/>` slot for the writer
+    // to populate. Same scope rule as `titleOverlay`: the override wins
+    // over the source's parsed value; absence inherits, `null` drops,
+    // a `number` replaces. Out-of-range / non-finite / non-numeric
+    // overrides collapse via the writer's normalizer so the cloned
+    // `SheetChart` always carries a value the writer will accept.
+    const resolvedTitleRotation = resolveTitleRotation(source.titleRotation, options.titleRotation);
+    if (resolvedTitleRotation !== undefined) out.titleRotation = resolvedTitleRotation;
   }
 
   // `<c:autoTitleDeleted>` sits on `<c:chart>` directly, not inside
@@ -1921,6 +1949,55 @@ function resolveTitleOverlay(
   if (override === undefined) return sourceValue;
   if (override === null) return undefined;
   return override;
+}
+
+/**
+ * Conversion bookkeeping for the chart-title rotation override. Same
+ * `-90..90` band the writer enforces so the cloned `SheetChart` always
+ * carries a value the writer will accept.
+ */
+const TITLE_ROTATION_MIN_DEG = -90;
+const TITLE_ROTATION_MAX_DEG = 90;
+
+/**
+ * Normalize a `titleRotation` value (whole degrees) for the cloned
+ * `SheetChart`. Mirrors the writer's `normalizeTitleRotation` — the
+ * cloned shape is guaranteed to round-trip through the writer without
+ * surprise: out-of-range inputs clamp to the `-90..90` band; non-integer
+ * inputs round to the nearest whole degree; `0`, `NaN`, `Infinity`, and
+ * non-numeric inputs collapse to `undefined` so the cloned chart drops
+ * the field rather than carry a value the writer would silently elide.
+ */
+function normalizeTitleRotation(value: number | undefined): number | undefined {
+  if (value === undefined || typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  let degrees = Math.round(value);
+  if (degrees < TITLE_ROTATION_MIN_DEG) degrees = TITLE_ROTATION_MIN_DEG;
+  else if (degrees > TITLE_ROTATION_MAX_DEG) degrees = TITLE_ROTATION_MAX_DEG;
+  if (degrees === 0) return undefined;
+  return degrees;
+}
+
+/**
+ * Resolve a `titleRotation` override.
+ *
+ * `undefined` → inherit the source's parsed `titleRotation`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               OOXML `0` default — the title renders horizontally).
+ * `number`    → replace, after clamping / rounding through
+ *               {@link normalizeTitleRotation}.
+ *
+ * The grammar mirrors `titleOverlay` / `legendOverlay` so the chart-
+ * level title knobs compose the same way at the call site. Callers
+ * should gate the result on the resolved title visibility — when no
+ * title is emitted, the rotation has no slot in the rendered chart.
+ */
+function resolveTitleRotation(
+  sourceValue: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) return normalizeTitleRotation(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleRotation(override);
 }
 
 /**

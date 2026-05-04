@@ -925,6 +925,21 @@ truthy / falsy spellings (`"1"` / `"true"` / `"0"` / `"false"`);
 unknown values and missing `val` attributes drop to `undefined`. The
 flag is dropped whenever the chart omits the `<c:title>` element
 entirely — there is no overlay slot to surface in that case.
+`Chart.titleRotation` surfaces the chart-title rotation pulled from
+`<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title>`
+— Excel's "Format Chart Title → Size & Properties → Alignment → Custom
+angle" knob. The OOXML attribute is in 60000ths of a degree; the reader
+divides by 60000 (rounding) to surface a whole-degree value in the
+`-90..90` band Excel's UI exposes. The OOXML default `0` (and absence
+of the `<a:bodyPr>` element / `rot` attribute) collapses to `undefined`
+so absence and the default round-trip identically through `cloneChart`.
+Out-of-range values clamp to the nearest endpoint of the `-90..90` band;
+non-numeric tokens drop back to `undefined`. The field is dropped
+whenever the chart omits the `<c:title>` element entirely — there is no
+rotation to surface in that case. Mirrors the axis-side
+`ChartAxisInfo.labelRotation` field — same range, same conversion
+factor — so a parsed value threads straight back into the writer-side
+`SheetChart.titleRotation`.
 `Chart.autoTitleDeleted` surfaces the chart-level
 `<c:chart><c:autoTitleDeleted val=".."/>` flag — Excel's record of
 whether the user explicitly deleted the auto-generated title that
@@ -1284,6 +1299,22 @@ emitted (no `title` set or `showTitle: false`) — there is no `<c:title>`
 block to host the overlay child in either case. Independent of
 `legendOverlay`: the legend and title `<c:overlay>` elements live on
 different parents, so the two flags compose freely.
+The chart-level `titleRotation` field maps to `<a:bodyPr rot="N"/>`
+inside `<c:title><c:tx><c:rich>` — Excel's "Format Chart Title → Size &
+Properties → Alignment → Custom angle" knob. The OOXML attribute is in
+60000ths of a degree, so `titleRotation: 45` serializes as
+`rot="2700000"` and `titleRotation: -90` as `rot="-5400000"`; the writer
+performs the conversion at emit time. Accepted range: `-90..90` (Excel's
+UI band) — out-of-range inputs clamp to the nearest endpoint, non-integer
+inputs round to the nearest whole degree, and `0` / `NaN` / `Infinity` /
+non-numeric inputs collapse to absence so the writer falls back to the
+OOXML default `rot="0"` (horizontal). The flag is silently ignored when
+no title is emitted (no `title` set or `showTitle: false`) — there is no
+`<c:title>` block to host the rotation in either case. Mirrors the axis-
+side `axes.x.labelRotation` / `axes.y.labelRotation` fields — same
+range, same conversion factor — so a caller can thread a single rotation
+value through both the chart title and an axis label set without
+bookkeeping the units.
 The chart-level `autoTitleDeleted` field maps to
 `<c:autoTitleDeleted val=".."/>` inside `<c:chart>` — Excel's record of
 whether the user explicitly deleted the auto-generated title that
@@ -1783,6 +1814,18 @@ is no `<c:title>` block to host the overlay flag in either case.
 Re-introducing a missing source title through an explicit `title:
 "..."` override re-opens the slot, and an explicit `titleOverlay: true`
 override threads through.
+The chart-level `titleRotation` field follows the same grammar: pass
+`undefined` to inherit the source's parsed value, `null` to drop it
+back to the writer's OOXML `0` default (horizontal title), or a
+`number` to replace it. Out-of-range overrides clamp to the `-90..90`
+band Excel's UI exposes; non-integer overrides round to the nearest
+whole degree; `0` / `NaN` / `Infinity` / non-numeric overrides collapse
+to a drop so the cloned `SheetChart` always carries a value the writer
+will accept. Same scope rule as `titleOverlay`: the rotation lives on
+`<c:title>` so the field is valid on every chart family, but it is
+silently dropped from the cloned `SheetChart` whenever the resolved
+chart renders no title — there is no `<a:bodyPr rot="N"/>` slot to host
+the rotation in either case.
 The chart-level `autoTitleDeleted` flag follows the same grammar: pass
 `undefined` to inherit the source's parsed value, `null` to drop it
 back to the writer's title-presence-derived default, or a `boolean` to
