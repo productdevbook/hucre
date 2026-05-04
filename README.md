@@ -1092,7 +1092,7 @@ charts; `lineGrouping` and `areaGrouping` accept
 `top` / `bottom` / `left` / `right` / `topRight` / `false`, and
 `altText` / `frameTitle` flow through to the drawing's `xdr:cNvPr`
 attributes for screen readers.
-`axes: { x: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, labelRotation, reverse, crosses, crossesAt, dispUnits, crossBetween }, y: { title, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, labelRotation, reverse, crosses, crossesAt, dispUnits, crossBetween } }`
+`axes: { x: { title, axisTitleRotation, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, labelRotation, reverse, crosses, crossesAt, dispUnits, crossBetween }, y: { title, axisTitleRotation, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, labelRotation, reverse, crosses, crossesAt, dispUnits, crossBetween } }`
 attaches per-axis labels, gridlines, numeric scaling, the tick-label
 number format and the tick-rendering trio — `x` lands inside
 `<c:catAx>` (or the X value axis for scatter), `y` inside the value
@@ -1538,6 +1538,24 @@ every axis flavour per the OOXML schema (`<c:catAx>` / `<c:valAx>` /
 field threads through every chart family that has axes (bar / column /
 line / area / scatter); pie / doughnut have no axes at all and the
 field is silently dropped there.
+The `axes.x.axisTitleRotation` and `axes.y.axisTitleRotation` fields
+pin the rotation of the axis title in whole degrees, mapping to
+`<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title>`
+on the matching axis — Excel's "Format Axis Title -> Size & Properties
+-> Alignment -> Custom angle" knob. Mirrors the chart-level
+`titleRotation` field for axis titles: same `-90..90` band, same
+60000ths-of-a-degree on-the-wire conversion, same `0` / absence /
+non-finite collapse to the OOXML default `rot="0"`. Useful for
+standing the Y-axis title vertically next to the value labels (the
+typical "rotated axis label" dashboard look) or pinning a custom angle
+on a long X-axis title that would otherwise crowd the plot area. The
+field is silently dropped when the matching axis has no title (no
+`<c:title>` block to host the rotation in either case) and on
+`pie` / `doughnut` charts (no axes at all). Out-of-range inputs clamp
+to the nearest endpoint, fractional inputs round to the nearest whole
+degree, and non-finite / non-numeric inputs collapse to absence so a
+corrupt input never leaks through to a token Excel's strict validator
+would reject.
 The `axes.x.reverse` and `axes.y.reverse` flags map to
 `<c:scaling><c:orientation val="maxMin"/></c:scaling>` — Excel's
 "Categories / Values in reverse order" toggle. On a category axis,
@@ -1826,6 +1844,19 @@ will accept. Same scope rule as `titleOverlay`: the rotation lives on
 silently dropped from the cloned `SheetChart` whenever the resolved
 chart renders no title — there is no `<a:bodyPr rot="N"/>` slot to host
 the rotation in either case.
+The per-axis `axes.x.axisTitleRotation` and `axes.y.axisTitleRotation`
+fields follow the same grammar: pass `undefined` to inherit the source
+axis's parsed rotation, `null` to drop it back to the writer's OOXML
+`0` default (horizontal axis title), or a `number` to replace it.
+Range, clamp, rounding, and non-finite-collapse semantics mirror the
+chart-level `titleRotation` knob exactly, so a single rotation value
+threads cleanly through both the chart title and either axis title.
+The override is silently dropped from the cloned `SheetChart` whenever
+the resolved axis title is unset (no `<c:title>` block to host the
+rotation) and on `pie` / `doughnut` charts (no axes at all). Re-
+introducing a missing axis title through an explicit
+`axes.x.title: "..."` override re-opens the slot for the matching
+`axisTitleRotation` to take effect.
 The chart-level `autoTitleDeleted` flag follows the same grammar: pass
 `undefined` to inherit the source's parsed value, `null` to drop it
 back to the writer's title-presence-derived default, or a `boolean` to

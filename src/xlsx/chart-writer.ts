@@ -354,6 +354,16 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
   const opts: AxisRenderOptions = {
     xAxisTitle: normalizeAxisTitle(chart.axes?.x?.title),
     yAxisTitle: normalizeAxisTitle(chart.axes?.y?.title),
+    // `<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title>`
+    // sits on every axis flavour per the OOXML schema (CT_CatAx,
+    // CT_ValAx, CT_DateAx, CT_SerAx all carry the same `<c:title>`
+    // shape). Normalize the caller's degree input — clamp to the
+    // `-90..90` band Excel's UI exposes; non-finite / non-numeric
+    // inputs collapse to `undefined` so the writer emits the OOXML
+    // default `rot="0"` byte-for-byte. The per-family axis builders
+    // only honour the rotation when the axis actually renders a title.
+    xAxisTitleRotation: normalizeAxisTitleRotation(chart.axes?.x?.axisTitleRotation),
+    yAxisTitleRotation: normalizeAxisTitleRotation(chart.axes?.y?.axisTitleRotation),
     xGridlines: normalizeAxisGridlines(chart.axes?.x?.gridlines),
     yGridlines: normalizeAxisGridlines(chart.axes?.y?.gridlines),
     xScale: normalizeAxisScale(chart.axes?.x?.scale),
@@ -747,6 +757,22 @@ function clampView3DInt(value: number | undefined, min: number, max: number): nu
 interface AxisRenderOptions {
   xAxisTitle: string | undefined;
   yAxisTitle: string | undefined;
+  /**
+   * Axis-title rotation in whole degrees emitted on the X axis via
+   * `<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title>`.
+   * The OOXML `rot` attribute is in 60000ths of a degree; the writer
+   * converts at emit time. Range: `-90..90` (Excel's UI band).
+   * `undefined` collapses to the OOXML default `0` so a fresh chart
+   * matches Excel's reference serialization byte-for-byte. Only
+   * meaningful when the axis renders a title — the per-family axis
+   * builders gate the value on the `xAxisTitle` / `yAxisTitle` field.
+   */
+  xAxisTitleRotation: number | undefined;
+  /**
+   * Axis-title rotation in whole degrees emitted on the Y axis. Same
+   * shape and conversion semantics as {@link xAxisTitleRotation}.
+   */
+  yAxisTitleRotation: number | undefined;
   xGridlines: { major: boolean; minor: boolean } | undefined;
   yGridlines: { major: boolean; minor: boolean } | undefined;
   xScale: ChartAxisScale | undefined;
@@ -1605,7 +1631,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
     xmlSelfClose("c:axPos", { val: catPos }),
     ...buildAxisGridlines(opts.xGridlines),
   ];
-  if (opts.xAxisTitle) catAxChildren.push(buildAxisTitle(opts.xAxisTitle));
+  if (opts.xAxisTitle) catAxChildren.push(buildAxisTitle(opts.xAxisTitle, opts.xAxisTitleRotation));
   catAxChildren.push(
     ...buildAxisNumFmt(opts.xNumFmt),
     ...buildAxisTickRendering(opts.xMajorTickMark, opts.xMinorTickMark, opts.xTickLblPos),
@@ -1658,7 +1684,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
     xmlSelfClose("c:axPos", { val: valPos }),
     ...buildAxisGridlines(opts.yGridlines),
   ];
-  if (opts.yAxisTitle) valAxChildren.push(buildAxisTitle(opts.yAxisTitle));
+  if (opts.yAxisTitle) valAxChildren.push(buildAxisTitle(opts.yAxisTitle, opts.yAxisTitleRotation));
   valAxChildren.push(
     ...buildAxisNumFmt(opts.yNumFmt),
     ...buildAxisTickRendering(opts.yMajorTickMark, opts.yMinorTickMark, opts.yTickLblPos),
@@ -2012,7 +2038,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
     xmlSelfClose("c:axPos", { val: "b" }),
     ...buildAxisGridlines(opts.xGridlines),
   ];
-  if (opts.xAxisTitle) xAxChildren.push(buildAxisTitle(opts.xAxisTitle));
+  if (opts.xAxisTitle) xAxChildren.push(buildAxisTitle(opts.xAxisTitle, opts.xAxisTitleRotation));
   xAxChildren.push(
     ...buildAxisNumFmt(opts.xNumFmt),
     ...buildAxisTickRendering(opts.xMajorTickMark, opts.xMinorTickMark, opts.xTickLblPos),
@@ -2044,7 +2070,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
     xmlSelfClose("c:axPos", { val: "l" }),
     ...buildAxisGridlines(opts.yGridlines),
   ];
-  if (opts.yAxisTitle) yAxChildren.push(buildAxisTitle(opts.yAxisTitle));
+  if (opts.yAxisTitle) yAxChildren.push(buildAxisTitle(opts.yAxisTitle, opts.yAxisTitleRotation));
   yAxChildren.push(
     ...buildAxisNumFmt(opts.yNumFmt),
     ...buildAxisTickRendering(opts.yMajorTickMark, opts.yMinorTickMark, opts.yTickLblPos),
@@ -2076,15 +2102,24 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
  * Build a `<c:title>` for an axis. The structure mirrors the chart-
  * level title but renders the label at a smaller default font (10pt vs
  * 14pt) to match Excel's axis-title style.
+ *
+ * The optional `rotationDeg` parameter pins the title's
+ * `<a:bodyPr rot="N"/>` attribute. The OOXML attribute is in 60000ths
+ * of a degree; the writer holds the rotation in whole degrees and
+ * converts at emit time. Absence (`undefined`) collapses to the OOXML
+ * default `0` so a fresh chart matches Excel's reference serialization
+ * byte-for-byte. Mirrors the chart-title `buildTitle` slot exactly so
+ * an axis title and the chart-level title carry the same shape.
  */
-function buildAxisTitle(label: string): string {
+function buildAxisTitle(label: string, rotationDeg: number | undefined): string {
+  const rot = rotationDeg === undefined ? 0 : rotationDeg * TITLE_ROT_PER_DEGREE;
   return xmlElement("c:title", undefined, [
     xmlElement("c:tx", undefined, [
       xmlElement("c:rich", undefined, [
         xmlElement(
           "a:bodyPr",
           {
-            rot: 0,
+            rot,
             spcFirstLastPara: 1,
             vertOverflow: "ellipsis",
             wrap: "square",
@@ -2105,6 +2140,20 @@ function buildAxisTitle(label: string): string {
     ]),
     xmlSelfClose("c:overlay", { val: 0 }),
   ]);
+}
+
+/**
+ * Normalize a {@link SheetChart.axes}.x.axisTitleRotation value (whole
+ * degrees) for the `<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title>`
+ * writer slot inside an axis. Same conversion / clamping grammar as
+ * the chart-level {@link normalizeTitleRotation} — non-finite,
+ * non-numeric, and out-of-range inputs collapse to `undefined` (or
+ * clamp to the `-90..90` band Excel's UI exposes), and the OOXML
+ * default `0` collapses to `undefined` so absence and the default
+ * round-trip identically through {@link cloneChart}.
+ */
+function normalizeAxisTitleRotation(value: number | undefined): number | undefined {
+  return normalizeTitleRotation(value);
 }
 
 // ── Series ───────────────────────────────────────────────────────────

@@ -10139,3 +10139,256 @@ describe("cloneChart — title rotation", () => {
     expect(reparsed?.titleRotation).toBe(-45);
   });
 });
+
+describe("cloneChart — axis title rotation", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Sales",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's X-axis axisTitleRotation by default", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleRotation: 45 } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.x?.axisTitleRotation).toBe(45);
+    expect(clone.axes?.x?.title).toBe("Period");
+  });
+
+  it("inherits the source's Y-axis axisTitleRotation by default", () => {
+    const clone = cloneChart(source({ axes: { y: { title: "USD", axisTitleRotation: -90 } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.y?.axisTitleRotation).toBe(-90);
+    expect(clone.axes?.y?.title).toBe("USD");
+  });
+
+  it("lets options.axes.x.axisTitleRotation override the source's value", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleRotation: 45 } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleRotation: -30 } },
+    });
+    expect(clone.axes?.x?.axisTitleRotation).toBe(-30);
+  });
+
+  it("drops the inherited axisTitleRotation when the override is null", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleRotation: 45 } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleRotation: null } },
+    });
+    expect(clone.axes?.x?.axisTitleRotation).toBeUndefined();
+    expect(clone.axes?.x?.title).toBe("Period");
+  });
+
+  it("returns undefined axisTitleRotation when neither source nor override sets it", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.x?.axisTitleRotation).toBeUndefined();
+  });
+
+  it("clamps an out-of-range override to the -90..90 band", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleRotation: 200 } },
+    });
+    expect(clone.axes?.x?.axisTitleRotation).toBe(90);
+  });
+
+  it("clamps a below-range override to -90", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleRotation: -200 } },
+    });
+    expect(clone.axes?.x?.axisTitleRotation).toBe(-90);
+  });
+
+  it("rounds a fractional override to the nearest whole degree", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleRotation: 45.6 } },
+    });
+    expect(clone.axes?.x?.axisTitleRotation).toBe(46);
+  });
+
+  it("collapses an override of 0 to undefined (matches OOXML default)", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleRotation: 45 } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleRotation: 0 } },
+    });
+    expect(clone.axes?.x?.axisTitleRotation).toBeUndefined();
+  });
+
+  it("collapses non-finite overrides (NaN / Infinity) to undefined", () => {
+    const a = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleRotation: Number.NaN } },
+    });
+    expect(a.axes?.x?.axisTitleRotation).toBeUndefined();
+    const b = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleRotation: Number.POSITIVE_INFINITY } },
+    });
+    expect(b.axes?.x?.axisTitleRotation).toBeUndefined();
+  });
+
+  it("clamps a parsed source rotation that is somehow out of range", () => {
+    // Defensive: a corrupt template parsed by an older reader could
+    // surface an out-of-band value. The clone normalizer collapses it
+    // through the same band so the writer never sees a bad token.
+    const clone = cloneChart(
+      source({
+        axes: { x: { title: "Period", axisTitleRotation: 200 as number } },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.x?.axisTitleRotation).toBe(90);
+  });
+
+  it("drops the inherited axisTitleRotation when the resolved axis title is dropped", () => {
+    // `title: null` flattens the inherited axis title — no `<c:title>`
+    // block will be emitted, so the inherited rotation has no slot in
+    // the rendered axis and the clone collapses it.
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleRotation: 45 } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { title: null } },
+    });
+    expect(clone.axes?.x?.title).toBeUndefined();
+    expect(clone.axes?.x?.axisTitleRotation).toBeUndefined();
+  });
+
+  it("drops an override axisTitleRotation when no axis title resolves", () => {
+    // The axis has no source title and the caller did not pin one —
+    // the writer would silently elide the rotation either way, so the
+    // clone-side resolver mirrors that by dropping the field.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleRotation: 45 } },
+    });
+    expect(clone.axes?.x).toBeUndefined();
+  });
+
+  it("preserves the override when the override also pins a title", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { title: "Period", axisTitleRotation: 45 } },
+    });
+    expect(clone.axes?.x?.title).toBe("Period");
+    expect(clone.axes?.x?.axisTitleRotation).toBe(45);
+  });
+
+  it("composes independently with the chart-level titleRotation", () => {
+    const clone = cloneChart(
+      source({
+        titleRotation: -45,
+        axes: { x: { title: "Period", axisTitleRotation: 30 } },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.titleRotation).toBe(-45);
+    expect(clone.axes?.x?.axisTitleRotation).toBe(30);
+  });
+
+  it("threads X and Y axis title rotations independently", () => {
+    const clone = cloneChart(
+      source({
+        axes: {
+          x: { title: "Period", axisTitleRotation: 45 },
+          y: { title: "USD", axisTitleRotation: -30 },
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.x?.axisTitleRotation).toBe(45);
+    expect(clone.axes?.y?.axisTitleRotation).toBe(-30);
+  });
+
+  it("end-to-end: parseChart -> cloneChart -> writeChart preserves the axis title rotation", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:title>
+          <c:tx><c:rich>
+            <a:bodyPr rot="2700000"/>
+            <a:lstStyle/>
+            <a:p><a:r><a:t>Period</a:t></a:r></a:p>
+          </c:rich></c:tx>
+          <c:overlay val="0"/>
+        </c:title>
+      </c:catAx>
+      <c:valAx>
+        <c:axId val="2"/>
+        <c:title>
+          <c:tx><c:rich>
+            <a:bodyPr rot="-5400000"/>
+            <a:lstStyle/>
+            <a:p><a:r><a:t>USD</a:t></a:r></a:p>
+          </c:rich></c:tx>
+          <c:overlay val="0"/>
+        </c:title>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.axes?.x?.axisTitleRotation).toBe(45);
+    expect(parsed?.axes?.y?.axisTitleRotation).toBe(-90);
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(sheetChart.axes?.x?.axisTitleRotation).toBe(45);
+    expect(sheetChart.axes?.y?.axisTitleRotation).toBe(-90);
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.axisTitleRotation).toBe(45);
+    expect(reparsed?.axes?.y?.axisTitleRotation).toBe(-90);
+  });
+
+  it("propagates axisTitleRotation into the rendered axis on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleRotation: -45 } } }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.axisTitleRotation).toBe(-45);
+  });
+});
