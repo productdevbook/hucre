@@ -4442,6 +4442,165 @@ describe("writeChart — legendFontSize", () => {
   });
 });
 
+// ── writeChart — legend bold ─────────────────────────────────────────
+
+describe("writeChart — legendBold", () => {
+  function legendOf(xml: string): string {
+    const m = xml.match(/<c:legend>[\s\S]*?<\/c:legend>/);
+    if (!m) throw new Error("No <c:legend> block found in chart XML");
+    return m[0];
+  }
+
+  it("does NOT emit <c:txPr> when legendBold is unset (matches Excel reference)", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend).not.toContain("<c:txPr>");
+    expect(legend).not.toContain("a:defRPr");
+  });
+
+  it("threads legendBold=true through to <c:legend><c:txPr> as b='1'", () => {
+    const result = writeChart(makeChart({ legendBold: true }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend).toContain("<c:txPr>");
+    expect(legend).toContain('b="1"');
+  });
+
+  it("threads legendBold=false through as b='0' (explicit non-default)", () => {
+    // The OOXML default is non-bold but the writer surfaces the
+    // explicit `false` so a clone target can pin it to override an
+    // upstream `b="1"` from a templated chart.
+    const result = writeChart(makeChart({ legendBold: false }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend).toContain("<c:txPr>");
+    expect(legend).toContain('b="0"');
+  });
+
+  it("places <c:txPr> after <c:overlay> inside <c:legend> (OOXML order)", () => {
+    const result = writeChart(makeChart({ legendBold: true }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend.indexOf("c:overlay")).toBeLessThan(legend.indexOf("c:txPr"));
+    expect(legend.indexOf("c:legendPos")).toBeLessThan(legend.indexOf("c:txPr"));
+  });
+
+  it("only emits <c:txPr> once inside <c:legend>", () => {
+    const result = writeChart(makeChart({ legendBold: true }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    const occurrences = legend.match(/<c:txPr>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("does not emit any <c:legend> when legend=false, even with legendBold set", () => {
+    const result = writeChart(makeChart({ legend: false, legendBold: true }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:legend>");
+    expect(result.chartXml.match(/<c:legend\b/g)).toBeNull();
+  });
+
+  it("threads legendBold through every chart family", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, legendBold: true }), "Sheet1");
+      const legend = legendOf(result.chartXml);
+      expect(legend).toContain('b="1"');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        legendBold: true,
+      }),
+      "Sheet1",
+    );
+    expect(legendOf(scatter.chartXml)).toContain('b="1"');
+  });
+
+  it("drops non-boolean inputs (string leaking past the type guard)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = writeChart(makeChart({ legendBold: "yes" as any }), "Sheet1");
+    expect(legendOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops null inputs (typed escape from an untyped caller)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = writeChart(makeChart({ legendBold: null as any }), "Sheet1");
+    expect(legendOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("emits the standard txPr stub shape (a:bodyPr / a:lstStyle / a:p / a:endParaRPr)", () => {
+    const result = writeChart(makeChart({ legendBold: true }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend).toContain("<a:bodyPr/>");
+    expect(legend).toContain("<a:lstStyle/>");
+    expect(legend).toContain('<a:defRPr b="1"/>');
+    expect(legend).toContain('<a:endParaRPr lang="en-US"/>');
+  });
+
+  it("emits <a:bodyPr/> without a rot attribute (legend is not rotatable)", () => {
+    const result = writeChart(makeChart({ legendBold: true }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    const bodyPr = legend.match(/<a:bodyPr[^/]*\/>/);
+    expect(bodyPr?.[0]).toBe("<a:bodyPr/>");
+  });
+
+  it("round-trips a legendBold=true value through parseChart", () => {
+    const written = writeChart(makeChart({ legendBold: true }), "Sheet1").chartXml;
+    expect(parseChart(written)?.legendBold).toBe(true);
+  });
+
+  it("collapses an unset legendBold round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    expect(parseChart(written)?.legendBold).toBeUndefined();
+  });
+
+  it("collapses a legendBold=false round-trip back to undefined (b='0' is OOXML default)", () => {
+    const written = writeChart(makeChart({ legendBold: false }), "Sheet1").chartXml;
+    expect(parseChart(written)?.legendBold).toBeUndefined();
+  });
+
+  it("composes with legendOverlay and legendEntries on the same <c:legend>", () => {
+    const result = writeChart(
+      makeChart({
+        legendBold: true,
+        legendOverlay: true,
+        legendEntries: [{ idx: 0, delete: true }],
+      }),
+      "Sheet1",
+    );
+    const legend = legendOf(result.chartXml);
+    expect(legend).toContain('b="1"');
+    expect(legend).toContain('c:overlay val="1"');
+    expect(legend).toContain("c:legendEntry");
+    // OOXML ordering: legendPos -> legendEntry -> overlay -> txPr.
+    expect(legend.indexOf("c:legendPos")).toBeLessThan(legend.indexOf("c:legendEntry"));
+    expect(legend.indexOf("c:legendEntry")).toBeLessThan(legend.indexOf("c:overlay"));
+    expect(legend.indexOf("c:overlay")).toBeLessThan(legend.indexOf("c:txPr"));
+  });
+
+  it("survives a writeXlsx round trip — legendBold lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            legendBold: true,
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const legend = chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain('b="1"');
+  });
+});
+
 // ── writeChart — data labels showLegendKey ──────────────────────────
 
 describe("writeChart — data labels showLegendKey", () => {

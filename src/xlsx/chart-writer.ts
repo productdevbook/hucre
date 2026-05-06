@@ -129,6 +129,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveLegendOverlay(chart),
         resolveLegendEntries(chart),
         resolveLegendFontSize(chart),
+        resolveLegendBold(chart),
       ),
     );
   }
@@ -3928,6 +3929,7 @@ function buildLegend(
   overlay: boolean,
   entries: readonly ResolvedLegendEntry[],
   fontSizePt: number | undefined,
+  bold: boolean | undefined,
 ): string {
   const children: string[] = [xmlSelfClose("c:legendPos", { val: pos })];
 
@@ -3955,14 +3957,14 @@ function buildLegend(
   // before the optional `<c:extLst>`). The writer skips emission
   // entirely when no typography knob is pinned so a fresh chart matches
   // Excel's reference serialization byte-for-byte (Excel itself omits
-  // the block whenever the legend renders at the theme-default 9pt).
-  // Currently the block carries the legend font size only; future
-  // typography pins (bold / italic / color) will land on the same
+  // the block whenever the legend renders at the theme-default style).
+  // The block currently carries the legend font size and bold flag;
+  // future typography pins (italic / color) will land on the same
   // `<a:defRPr>` slot. The `<a:bodyPr>` carries no rotation attribute
   // — the legend is not rotatable in Excel's UI, mirroring how the
-  // axis tick-label `<c:txPr>` slot drops `rot` when only a size is
-  // pinned.
-  const txPrXml = buildLegendTxPr(fontSizePt);
+  // axis tick-label `<c:txPr>` slot drops `rot` when only typography
+  // knobs are pinned.
+  const txPrXml = buildLegendTxPr(fontSizePt, bold);
   if (txPrXml !== undefined) {
     children.push(txPrXml);
   }
@@ -3972,29 +3974,40 @@ function buildLegend(
 
 /**
  * Build the `<c:txPr>` block that carries the legend's typography pins
- * (currently the font size). Returns `undefined` when every input is
- * unset so the caller can elide the element entirely (Excel's
- * reference serialization omits `<c:txPr>` from `<c:legend>` when the
- * legend renders at the theme-default 9pt).
+ * (currently the font size and bold flag). Returns `undefined` when
+ * every input is unset so the caller can elide the element entirely
+ * (Excel's reference serialization omits `<c:txPr>` from `<c:legend>`
+ * when the legend renders at the theme-default style).
  *
  * The emitted block mirrors the minimal `<c:txPr>` shape Excel writes
- * when the user pins a legend font size — `<a:bodyPr/>` (no rotation
- * because the legend is not rotatable), `<a:lstStyle/>` is the empty
- * list-style placeholder the schema requires, and the
- * `<a:p><a:pPr><a:defRPr sz="N"/></a:pPr><a:endParaRPr/></a:p>`
- * paragraph stub Excel always emits hosts the size attribute on
- * `<a:defRPr>`. Mirrors {@link buildAxisTxPr} for the tick-label slot
- * exactly so a re-parse picks the value off the canonical
- * default-paragraph slot every other typography reader expects.
+ * when the user pins a legend typography knob — `<a:bodyPr/>` (no
+ * rotation because the legend is not rotatable), `<a:lstStyle/>` is
+ * the empty list-style placeholder the schema requires, and the
+ * `<a:p><a:pPr><a:defRPr sz="N" b=".."/></a:pPr><a:endParaRPr/></a:p>`
+ * paragraph stub Excel always emits hosts the typography attributes on
+ * `<a:defRPr>`. Mirrors the chart-title / axis-title / tick-label
+ * `<c:txPr>` slots exactly so a re-parse picks the values off the
+ * canonical default-paragraph slot every other typography reader
+ * expects.
+ *
+ * The bold flag emits a literal `b="1"` / `b="0"` whenever the input
+ * is a boolean — `false` pins the OOXML default explicitly, which is
+ * functionally identical to absence but lets a clone target override
+ * an upstream `b="1"` from a templated chart.
  */
-function buildLegendTxPr(fontSizePt: number | undefined): string | undefined {
-  if (fontSizePt === undefined) return undefined;
-  const sz = fontSizePt * TITLE_FONT_SZ_PER_POINT;
+function buildLegendTxPr(
+  fontSizePt: number | undefined,
+  bold: boolean | undefined,
+): string | undefined {
+  if (fontSizePt === undefined && bold === undefined) return undefined;
+  const defRPrAttrs: Record<string, string | number> = {};
+  if (fontSizePt !== undefined) defRPrAttrs.sz = fontSizePt * TITLE_FONT_SZ_PER_POINT;
+  if (bold !== undefined) defRPrAttrs.b = bold ? 1 : 0;
   return xmlElement("c:txPr", undefined, [
     xmlSelfClose("a:bodyPr"),
     xmlSelfClose("a:lstStyle"),
     xmlElement("a:p", undefined, [
-      xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz })]),
+      xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", defRPrAttrs)]),
       xmlSelfClose("a:endParaRPr", { lang: "en-US" }),
     ]),
   ]);
@@ -4018,6 +4031,30 @@ function buildLegendTxPr(fontSizePt: number | undefined): string | undefined {
  */
 function resolveLegendFontSize(chart: SheetChart): number | undefined {
   return normalizeTitleFontSize(chart.legendFontSize);
+}
+
+/**
+ * Resolve `<c:legend><c:txPr><a:p><a:pPr><a:defRPr b=".."/></a:pPr>
+ * </a:p></c:txPr></c:legend>` from {@link SheetChart.legendBold}.
+ *
+ * Returns the bold flag, or `undefined` when the chart leaves the
+ * field unset / passed a non-boolean token. The flag is only
+ * meaningful when the chart actually emits a legend — the caller is
+ * expected to gate the call on the resolved legend visibility
+ * (`resolveLegendPosition` returning a non-null value), so a chart
+ * that hides the legend silently drops the value rather than emit a
+ * `<c:txPr>` block with no on-screen effect.
+ *
+ * Mirrors `resolveTitleBold` / `resolveAxisTitleBold` /
+ * `resolveAxisLabelBold` exactly — only literal `true` / `false` pass
+ * through; non-boolean tokens collapse to `undefined` so the writer
+ * drops the slot rather than emit a value Excel would reject.
+ */
+function resolveLegendBold(chart: SheetChart): boolean | undefined {
+  const value = chart.legendBold;
+  if (value === true) return true;
+  if (value === false) return false;
+  return undefined;
 }
 
 interface ResolvedLegendEntry {

@@ -1326,6 +1326,36 @@ export interface SheetChart {
    * threads cleanly through every legend knob Excel exposes.
    */
   legendFontSize?: number;
+  /**
+   * Legend bold flag. Maps to `<c:legend><c:txPr><a:p><a:pPr>
+   * <a:defRPr b=".."/></a:pPr></a:p></c:txPr></c:legend>` — Excel's
+   * "Format Legend -> Font -> Bold" toggle. The OOXML attribute is the
+   * `xsd:boolean` `b` on `CT_TextCharacterProperties` (ECMA-376 Part 1,
+   * §21.1.2.3.7); the writer lands the value on the default-paragraph
+   * `<a:defRPr>` slot inside the legend's `<c:txPr>` block so a
+   * re-parse picks the flag up off the canonical slot the OOXML schema
+   * exposes.
+   *
+   * Default: omitted — the legend renders non-bold (no `b` attribute,
+   * matching Excel's reference serialization for a fresh chart legend
+   * whose typography has not been customized; the OOXML default `false`
+   * collapses to absence). Set `true` to emit `b="1"` so the legend
+   * renders bold; set `false` explicitly to pin the non-default `b="0"`
+   * (functionally identical to omission, but useful when overriding a
+   * templated legend that had bold pinned upstream).
+   *
+   * Silently ignored when `legend === false` (no `<c:legend>` element
+   * is emitted) — there is no `<c:txPr>` slot to host the flag in that
+   * case. Mirrors {@link titleBold} / {@link axes.x.axisTitleBold} /
+   * {@link axes.x.labelBold} — same boolean-with-explicit-default
+   * shape, same OOXML `<a:defRPr b=".."/>` mapping — so a caller can
+   * thread a single bold value through every typography-pinning slot.
+   * Composes independently with {@link legend} / {@link legendOverlay}
+   * / {@link legendEntries}: all four fields land on the same
+   * `<c:legend>` element so a single configuration call threads
+   * cleanly through every legend knob Excel exposes.
+   */
+  legendBold?: boolean;
   /** Show the chart-level title element. Default: `true` when `title` is set. */
   showTitle?: boolean;
   /**
@@ -4989,6 +5019,24 @@ export interface Chart {
    * slots straight into {@link cloneChart} without conversion.
    */
   legendFontSize?: number;
+  /**
+   * Legend bold flag pulled from `<c:legend><c:txPr><a:p><a:pPr>
+   * <a:defRPr b=".."/></a:pPr></a:p></c:txPr></c:legend>`. The OOXML
+   * `b` attribute is the `xsd:boolean` bold flag on
+   * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7).
+   *
+   * The OOXML default `false` collapses to `undefined` so absence and
+   * `b="0"` round-trip identically — only an explicit `b="1"` surfaces
+   * `true`. Unknown / malformed `b` tokens drop to `undefined` rather
+   * than fabricate a value the writer would never emit.
+   *
+   * Reported as `undefined` whenever {@link legend} is `false` or the
+   * source chart has no `<c:legend>` element at all — there is no
+   * `<c:txPr>` slot to surface the flag from in either case. Mirrors
+   * the writer-side {@link SheetChart.legendBold} so a parsed value
+   * slots straight into {@link cloneChart} without conversion.
+   */
+  legendBold?: boolean;
   /**
    * Title-overlay flag pulled from `<c:title><c:overlay val=".."/>`.
    * Reflects Excel's "Format Chart Title -> Show the title without

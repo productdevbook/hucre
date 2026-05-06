@@ -428,6 +428,12 @@ export function parseChart(xml: string): Chart | undefined {
     // `legendEntries`.
     const legendFontSize = parseLegendFontSize(chartEl);
     if (legendFontSize !== undefined) out.legendFontSize = legendFontSize;
+
+    // Same scoping for the bold flag — `<c:txPr>` is the shared host
+    // element, and the OOXML default `false` collapses to `undefined`
+    // so absence and `b="0"` round-trip identically.
+    const legendBold = parseLegendBold(chartEl);
+    if (legendBold !== undefined) out.legendBold = legendBold;
   }
 
   const dispBlanksAs = parseDispBlanksAs(chartEl);
@@ -2854,6 +2860,49 @@ function parseLegendFontSize(chartEl: XmlElement): number | undefined {
   const points = halfSteps / 2;
   if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
   return points;
+}
+
+/**
+ * Pull `<c:legend><c:txPr><a:p><a:pPr><a:defRPr b=".."/></a:pPr></a:p>
+ * </c:txPr></c:legend>` off the chart. Returns the bold flag.
+ *
+ * The OOXML `b` attribute is the `xsd:boolean` bold flag on
+ * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7). The
+ * OOXML default `false` collapses to `undefined` so absence and
+ * `b="0"` round-trip identically — only an explicit `b="1"` surfaces
+ * `true`. Unknown / malformed `b` tokens drop to `undefined` rather
+ * than fabricate a value the writer would never emit.
+ *
+ * Returns `undefined` whenever the chart omits the `<c:legend>`
+ * element — there is no `<c:txPr>` slot to surface the flag from in
+ * that case. The `<a:defRPr>` lives inside `<c:txPr><a:p><a:pPr>` per
+ * the CT_TextBody schema (the default-paragraph properties on the
+ * legend's text-body's first paragraph); the lookup is scoped to that
+ * path so a stray `<a:defRPr>` elsewhere in the chart (e.g. on the
+ * chart title or an axis) cannot leak in. Mirrors the chart-title /
+ * axis-title / axis tick-label readers exactly so a parsed value
+ * slots straight back into the writer's emit path.
+ */
+function parseLegendBold(chartEl: XmlElement): boolean | undefined {
+  const legend = findChild(chartEl, "legend");
+  if (!legend) return undefined;
+  const txPr = findChild(legend, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const raw = defRPr.attrs.b;
+  // OOXML `xsd:boolean` accepts `"1"` / `"true"` (truthy) and `"0"` /
+  // `"false"` (falsy). Truthy spellings surface `true`; falsy
+  // spellings collapse to `undefined` so the OOXML default and an
+  // explicit `b="0"` round-trip identically through `cloneChart`.
+  // Unknown / missing `b` tokens drop to `undefined` for the same
+  // reason — never fabricate a flag Excel would not emit.
+  if (raw === "1" || raw === "true") return true;
+  return undefined;
 }
 
 /**

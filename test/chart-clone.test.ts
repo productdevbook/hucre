@@ -4786,6 +4786,263 @@ describe("cloneChart — legendFontSize", () => {
   });
 });
 
+// ── cloneChart — legendBold ──────────────────────────────────────────
+
+describe("cloneChart — legendBold", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      legend: "right",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's legendBold by default", () => {
+    const clone = cloneChart(source({ legendBold: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.legendBold).toBe(true);
+  });
+
+  it("lets options.legendBold override the source's value", () => {
+    const clone = cloneChart(source({ legendBold: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendBold: false,
+    });
+    expect(clone.legendBold).toBe(false);
+  });
+
+  it("drops the inherited legendBold when the override is null", () => {
+    // null collapses to the writer's OOXML default — the field
+    // disappears from the resolved SheetChart so the writer emits no
+    // <c:txPr> block (OOXML default — non-bold).
+    const clone = cloneChart(source({ legendBold: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendBold: null,
+    });
+    expect(clone.legendBold).toBeUndefined();
+  });
+
+  it("returns undefined legendBold when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.legendBold).toBeUndefined();
+  });
+
+  it("collapses non-boolean overrides to undefined (typed escape from an untyped caller)", () => {
+    const clone = cloneChart(source({ legendBold: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      legendBold: "yes" as any,
+    });
+    expect(clone.legendBold).toBeUndefined();
+  });
+
+  it("normalizes a non-boolean source value (typed escape) to undefined", () => {
+    // A parsed Chart with a malformed legendBold (typed escape from
+    // an upstream malformed parse) should not leak into the cloned
+    // SheetChart.
+    const malformed = source({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      legendBold: "yes" as any,
+    });
+    const clone = cloneChart(malformed, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.legendBold).toBeUndefined();
+  });
+
+  it("carries legendBold through a flatten (line → column)", () => {
+    // The flag lives on `<c:legend>` and is valid on every chart
+    // family, so a coercion does not drop it.
+    const clone = cloneChart(source({ legendBold: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.legendBold).toBe(true);
+  });
+
+  it("carries legendBold through a doughnut flatten (line → doughnut)", () => {
+    // No chart-family restriction — even doughnut, which has no axes,
+    // must preserve the legend bold flag.
+    const clone = cloneChart(source({ legendBold: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.legendBold).toBe(true);
+  });
+
+  it("drops the inherited legendBold when the resolved legend is hidden", () => {
+    // legend === false suppresses the entire <c:legend> on the writer
+    // side, so an inherited bold flag would never render.
+    const clone = cloneChart(source({ legendBold: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendBold).toBeUndefined();
+  });
+
+  it("drops the legendBold override when the resolved legend is hidden", () => {
+    // Same guard, this time on the override path — pinning legend:false
+    // wins over an explicit bold override too.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+      legendBold: true,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendBold).toBeUndefined();
+  });
+
+  it("retains the legendBold override when the override re-enables a hidden source legend", () => {
+    // Source pinned legend:false (so legendBold would normally be
+    // undefined), but the override re-enables a visible legend — the
+    // bold flag the override carries must thread through.
+    const clone = cloneChart(source({ legend: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: "top",
+      legendBold: true,
+    });
+    expect(clone.legend).toBe("top");
+    expect(clone.legendBold).toBe(true);
+  });
+
+  it("composes with legendOverlay and legendEntries on the cloned SheetChart", () => {
+    const clone = cloneChart(
+      source({
+        legendBold: true,
+        legendOverlay: true,
+        legendEntries: [{ idx: 0, delete: true }],
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.legendBold).toBe(true);
+    expect(clone.legendOverlay).toBe(true);
+    expect(clone.legendEntries).toEqual([{ idx: 0, delete: true }]);
+  });
+
+  it("propagates legendBold into the rendered <c:legend><c:txPr> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ legendBold: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain("<c:txPr>");
+    expect(legend).toContain('b="1"');
+
+    // Re-parsing the rendered chart returns the same value — closes
+    // the template → clone → write → read loop.
+    expect(parseChart(written)?.legendBold).toBe(true);
+  });
+
+  it("emits no <c:txPr> when both source and override are absent (round-trips to undefined)", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).not.toContain("<c:txPr>");
+    expect(parseChart(written)?.legendBold).toBeUndefined();
+  });
+
+  it("an explicit override beats the source value through writeXlsx", async () => {
+    // Source pins `true`, clone overrides to `false` — the rendered
+    // chart should carry the override's `b="0"` and re-parse to
+    // undefined (since `b="0"` is the OOXML default and collapses on
+    // read).
+    const clone = cloneChart(source({ legendBold: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+      legendBold: false,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain('b="0"');
+    expect(legend).not.toContain('b="1"');
+    expect(parseChart(written)?.legendBold).toBeUndefined();
+  });
+
+  it("a null override drops the source value through writeXlsx (no <c:txPr> emitted)", async () => {
+    const clone = cloneChart(source({ legendBold: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+      legendBold: null,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).not.toContain("<c:txPr>");
+    expect(parseChart(written)?.legendBold).toBeUndefined();
+  });
+});
+
 // ── cloneChart — axis lblAlgn ───────────────────────────────────────
 
 describe("cloneChart — axis lblAlgn", () => {

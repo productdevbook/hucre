@@ -203,6 +203,29 @@ export interface CloneChartOptions {
    * round-trips that pin through the parse / clone / write loop.
    */
   legendFontSize?: number | null;
+  /**
+   * Override `SheetChart.legendBold`. `undefined` (or omitted) inherits
+   * the source's parsed `legendBold`; `null` drops the inherited flag
+   * (the writer emits no `<c:txPr>` block on the legend, falling back
+   * to the OOXML default — no `b` attribute, equivalent to non-bold);
+   * a `boolean` replaces. Non-boolean overrides (typed escapes from an
+   * untyped caller) collapse to `undefined` so a typed escape cannot
+   * pin a value the writer would silently elide.
+   *
+   * The override is silently dropped from the cloned `SheetChart` when
+   * the resolved legend is `false` (no `<c:legend>` element will be
+   * emitted) — there is no `<c:txPr>` slot to host the flag on a
+   * hidden legend, so leaking the value into the output would carry a
+   * pin Excel never reads.
+   *
+   * The grammar mirrors `titleBold` / `axes.x.axisTitleBold` /
+   * `axes.x.labelBold` so the typography knobs compose the same way
+   * at the call site. Bridges another typography-customization gap
+   * for the dashboard composition flow tracked in #136 — a templated
+   * dashboard chart whose user pinned a custom legend bold flag now
+   * round-trips that pin through the parse / clone / write loop.
+   */
+  legendBold?: boolean | null;
   /** Override `SheetChart.barGrouping`. */
   barGrouping?: SheetChart["barGrouping"];
   /**
@@ -1384,6 +1407,14 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
       options.legendFontSize,
     );
     if (resolvedLegendFontSize !== undefined) out.legendFontSize = resolvedLegendFontSize;
+
+    // Same hidden-legend scoping for the bold flag: the writer has no
+    // `<c:txPr>` slot to populate when the legend is hidden. Mirrors the
+    // `titleBold` / `axisTitleBold` grammar: `undefined` inherits
+    // (after running through the boolean normalizer), `null` drops it
+    // (the writer emits no `<c:txPr>` block), a `boolean` replaces.
+    const resolvedLegendBold = resolveLegendBold(source.legendBold, options.legendBold);
+    if (resolvedLegendBold !== undefined) out.legendBold = resolvedLegendBold;
   }
 
   const barGrouping = options.barGrouping !== undefined ? options.barGrouping : source.barGrouping;
@@ -2477,6 +2508,47 @@ function resolveLegendFontSize(
   if (override === undefined) return normalizeTitleFontSize(sourceValue);
   if (override === null) return undefined;
   return normalizeTitleFontSize(override);
+}
+
+/**
+ * Normalize a `legendBold` value for the cloned `SheetChart`. Mirrors
+ * the writer's `resolveLegendBold` — the cloned shape is guaranteed to
+ * round-trip through the writer without surprise: `true` / `false`
+ * pass through literally, every other token (typed escape from an
+ * untyped caller) collapses to `undefined` so the cloned chart drops
+ * the field rather than carry a value the writer would silently elide
+ * back to absence.
+ */
+function normalizeLegendBold(value: boolean | undefined): boolean | undefined {
+  if (value === true) return true;
+  if (value === false) return false;
+  return undefined;
+}
+
+/**
+ * Resolve a `legendBold` override.
+ *
+ * `undefined` → inherit the source's parsed `legendBold` (after
+ *               running it through {@link normalizeLegendBold} so a
+ *               typed escape on the source path drops cleanly).
+ * `null`      → drop the inherited flag (the writer falls back to the
+ *               OOXML default — no `b` attribute, equivalent to
+ *               non-bold).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `titleBold` / `axisTitleBold` /
+ * `axes.x.labelBold` so the typography knobs compose the same way at
+ * the call site. Callers should gate the result on the resolved legend
+ * visibility — when no legend is emitted, the flag has no slot in the
+ * rendered chart.
+ */
+function resolveLegendBold(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return normalizeLegendBold(sourceValue);
+  if (override === null) return undefined;
+  return normalizeLegendBold(override);
 }
 
 /**

@@ -5261,6 +5261,186 @@ describe("parseChart — legendFontSize", () => {
   });
 });
 
+// ── parseChart — legend bold ─────────────────────────────────────────
+
+describe("parseChart — legendBold", () => {
+  const NS_LB = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withLegendBold(b: string | undefined): string {
+    const defRPr = b === undefined ? "<a:defRPr/>" : `<a:defRPr b="${b}"/>`;
+    return `<c:chartSpace ${NS_LB}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr>${defRPr}</a:pPr><a:endParaRPr lang="en-US"/></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces true when the legend pinned b='1'", () => {
+    expect(parseChart(withLegendBold("1"))?.legendBold).toBe(true);
+  });
+
+  it("accepts the OOXML 'true' spelling on b", () => {
+    expect(parseChart(withLegendBold("true"))?.legendBold).toBe(true);
+  });
+
+  it("collapses b='0' to undefined (OOXML default — non-bold)", () => {
+    expect(parseChart(withLegendBold("0"))?.legendBold).toBeUndefined();
+  });
+
+  it("collapses b='false' to undefined", () => {
+    expect(parseChart(withLegendBold("false"))?.legendBold).toBeUndefined();
+  });
+
+  it("returns undefined when <a:defRPr> omits the b attribute", () => {
+    expect(parseChart(withLegendBold(undefined))?.legendBold).toBeUndefined();
+  });
+
+  it("drops unknown b tokens rather than fabricate a value", () => {
+    expect(parseChart(withLegendBold("bold"))?.legendBold).toBeUndefined();
+    expect(parseChart(withLegendBold(""))?.legendBold).toBeUndefined();
+    expect(parseChart(withLegendBold("2"))?.legendBold).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:legend> element at all", () => {
+    const xml = `<c:chartSpace ${NS_LB}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendBold).toBeUndefined();
+  });
+
+  it("returns undefined when <c:legend> has no <c:txPr> body", () => {
+    const xml = `<c:chartSpace ${NS_LB}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendBold).toBeUndefined();
+  });
+
+  it("returns undefined when <c:txPr> has no <a:p><a:pPr> chain", () => {
+    const xml = `<c:chartSpace ${NS_LB}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendBold).toBeUndefined();
+  });
+
+  it('drops the bold flag when the legend is hidden via <c:delete val="1"/>', () => {
+    const xml = `<c:chartSpace ${NS_LB}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:delete val="1"/>
+      <c:overlay val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr b="1"/></a:pPr></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe(false);
+    expect(chart?.legendBold).toBeUndefined();
+  });
+
+  it("co-surfaces alongside legendOverlay and other legend fields", () => {
+    const xml = `<c:chartSpace ${NS_LB}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="b"/>
+      <c:legendEntry>
+        <c:idx val="0"/>
+        <c:delete val="1"/>
+      </c:legendEntry>
+      <c:overlay val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr b="1"/></a:pPr><a:endParaRPr lang="en-US"/></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe("bottom");
+    expect(chart?.legendOverlay).toBe(true);
+    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }]);
+    expect(chart?.legendBold).toBe(true);
+  });
+
+  it("surfaces the bold flag on every chart family that emits a legend", () => {
+    for (const kind of ["lineChart", "barChart", "pieChart", "doughnutChart"]) {
+      const xml = `<c:chartSpace ${NS_LB}>
+  <c:chart>
+    <c:plotArea>
+      <c:${kind}><c:ser><c:idx val="0"/></c:ser></c:${kind}>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr b="1"/></a:pPr></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+      expect(parseChart(xml)?.legendBold).toBe(true);
+    }
+  });
+});
+
 // ── parseChart — data labels showLegendKey ──────────────────────────
 
 describe("parseChart — data labels showLegendKey", () => {
