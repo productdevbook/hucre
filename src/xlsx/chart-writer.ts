@@ -607,6 +607,18 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // hardcoded 10pt default Excel itself emits on a fresh axis title.
     xAxisTitleFontSize: normalizeAxisTitleFontSize(chart.axes?.x?.axisTitleFontSize),
     yAxisTitleFontSize: normalizeAxisTitleFontSize(chart.axes?.y?.axisTitleFontSize),
+    // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr>
+    // <a:r><a:rPr i=".."/></a:r></a:p></c:rich></c:tx></c:title>` —
+    // axis-title italic flag. The OOXML attribute is the `xsd:boolean`
+    // `i` on `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7)
+    // and the slot lives on every axis flavour. Normalize the caller's
+    // boolean input — the writer keeps `true` / `false` literally so a
+    // re-parse picks the value up off either canonical slot, while every
+    // other token (typed escape from an untyped caller) collapses to
+    // `undefined` and the writer omits the `i` attribute (Excel's
+    // reference serialization for a non-italic axis title).
+    xAxisTitleItalic: normalizeAxisTitleItalic(chart.axes?.x?.axisTitleItalic),
+    yAxisTitleItalic: normalizeAxisTitleItalic(chart.axes?.y?.axisTitleItalic),
     xGridlines: normalizeAxisGridlines(chart.axes?.x?.gridlines),
     yGridlines: normalizeAxisGridlines(chart.axes?.y?.gridlines),
     xScale: normalizeAxisScale(chart.axes?.x?.scale),
@@ -1033,6 +1045,23 @@ interface AxisRenderOptions {
    * and conversion semantics as {@link xAxisTitleFontSize}.
    */
   yAxisTitleFontSize: number | undefined;
+  /**
+   * Axis-title italic flag emitted on the X axis via
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr>
+   * <a:r><a:rPr i=".."/></a:r></a:p></c:rich></c:tx></c:title>`. The
+   * OOXML attribute is the `xsd:boolean` `i` on
+   * `CT_TextCharacterProperties`. `undefined` and `false` both collapse
+   * to omitting the attribute (Excel's reference serialization for a
+   * non-italic axis title); only `true` emits `i="1"`. Only meaningful
+   * when the axis renders a title — the per-family axis builders gate
+   * the value on the `xAxisTitle` / `yAxisTitle` field.
+   */
+  xAxisTitleItalic: boolean | undefined;
+  /**
+   * Axis-title italic flag emitted on the Y axis. Same shape and emit
+   * semantics as {@link xAxisTitleItalic}.
+   */
+  yAxisTitleItalic: boolean | undefined;
   xGridlines: { major: boolean; minor: boolean } | undefined;
   yGridlines: { major: boolean; minor: boolean } | undefined;
   xScale: ChartAxisScale | undefined;
@@ -1893,7 +1922,12 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
   ];
   if (opts.xAxisTitle)
     catAxChildren.push(
-      buildAxisTitle(opts.xAxisTitle, opts.xAxisTitleRotation, opts.xAxisTitleFontSize),
+      buildAxisTitle(
+        opts.xAxisTitle,
+        opts.xAxisTitleRotation,
+        opts.xAxisTitleFontSize,
+        opts.xAxisTitleItalic,
+      ),
     );
   catAxChildren.push(
     ...buildAxisNumFmt(opts.xNumFmt),
@@ -1949,7 +1983,12 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
   ];
   if (opts.yAxisTitle)
     valAxChildren.push(
-      buildAxisTitle(opts.yAxisTitle, opts.yAxisTitleRotation, opts.yAxisTitleFontSize),
+      buildAxisTitle(
+        opts.yAxisTitle,
+        opts.yAxisTitleRotation,
+        opts.yAxisTitleFontSize,
+        opts.yAxisTitleItalic,
+      ),
     );
   valAxChildren.push(
     ...buildAxisNumFmt(opts.yNumFmt),
@@ -2306,7 +2345,12 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
   ];
   if (opts.xAxisTitle)
     xAxChildren.push(
-      buildAxisTitle(opts.xAxisTitle, opts.xAxisTitleRotation, opts.xAxisTitleFontSize),
+      buildAxisTitle(
+        opts.xAxisTitle,
+        opts.xAxisTitleRotation,
+        opts.xAxisTitleFontSize,
+        opts.xAxisTitleItalic,
+      ),
     );
   xAxChildren.push(
     ...buildAxisNumFmt(opts.xNumFmt),
@@ -2341,7 +2385,12 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
   ];
   if (opts.yAxisTitle)
     yAxChildren.push(
-      buildAxisTitle(opts.yAxisTitle, opts.yAxisTitleRotation, opts.yAxisTitleFontSize),
+      buildAxisTitle(
+        opts.yAxisTitle,
+        opts.yAxisTitleRotation,
+        opts.yAxisTitleFontSize,
+        opts.yAxisTitleItalic,
+      ),
     );
   yAxChildren.push(
     ...buildAxisNumFmt(opts.yNumFmt),
@@ -2392,11 +2441,21 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
  * that never set the field. The size lands on both the
  * default-paragraph `<a:defRPr>` and the literal run's `<a:rPr>` so
  * a re-parse picks the value up off either canonical slot.
+ *
+ * The optional `italic` parameter pins the title's
+ * `<a:defRPr i=".."/>` / `<a:rPr i=".."/>` attributes. The OOXML
+ * attribute is the `xsd:boolean` `i` on `CT_TextCharacterProperties`.
+ * Absence (`undefined`) and explicit `false` both collapse to omitting
+ * the attribute (Excel's reference serialization for a non-italic
+ * axis title — only the bold flag is always emitted); only `true`
+ * emits `i="1"` on both slots so a re-parse picks the flag up off
+ * either canonical slot.
  */
 function buildAxisTitle(
   label: string,
   rotationDeg: number | undefined,
   fontSizePt: number | undefined,
+  italic: boolean | undefined,
 ): string {
   const rot = rotationDeg === undefined ? 0 : rotationDeg * TITLE_ROT_PER_DEGREE;
   // OOXML's `<a:defRPr sz="N"/>` / `<a:rPr sz="N"/>` attribute is in
@@ -2411,6 +2470,17 @@ function buildAxisTitle(
     fontSizePt === undefined
       ? AXIS_TITLE_DEFAULT_FONT_SIZE_SZ
       : fontSizePt * TITLE_FONT_SZ_PER_POINT;
+  // OOXML's `<a:defRPr i=".."/>` / `<a:rPr i=".."/>` attribute is the
+  // `xsd:boolean` italic flag on `CT_TextCharacterProperties`. Mirrors
+  // the chart-level `buildTitle` italic emit: `axisTitleItalic` lands
+  // on both the default-paragraph `<a:defRPr>` and the literal run's
+  // `<a:rPr>` so a re-parse picks the value up off either canonical
+  // slot — Excel keeps the two attributes in sync. Absence
+  // (`undefined`) and explicit `false` both collapse to omitting the
+  // attribute so a fresh axis title matches Excel's reference
+  // serialization byte-for-byte (Excel itself omits `i` on a non-
+  // italic axis title — only the bold flag is always emitted).
+  const i = italic === true ? 1 : undefined;
   return xmlElement("c:title", undefined, [
     xmlElement("c:tx", undefined, [
       xmlElement("c:rich", undefined, [
@@ -2428,9 +2498,9 @@ function buildAxisTitle(
         ),
         xmlSelfClose("a:lstStyle"),
         xmlElement("a:p", undefined, [
-          xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz, b: 0 })]),
+          xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz, b: 0, i })]),
           xmlElement("a:r", undefined, [
-            xmlSelfClose("a:rPr", { lang: "en-US", sz, b: 0 }),
+            xmlSelfClose("a:rPr", { lang: "en-US", sz, b: 0, i }),
             xmlElement("a:t", undefined, xmlEscape(label)),
           ]),
         ]),
@@ -2478,6 +2548,21 @@ function normalizeAxisTitleRotation(value: number | undefined): number | undefin
  */
 function normalizeAxisTitleFontSize(value: number | undefined): number | undefined {
   return normalizeTitleFontSize(value);
+}
+
+/**
+ * Normalize a {@link SheetChart.axes}.x.axisTitleItalic value for the
+ * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr>
+ * </a:p></c:rich></c:tx></c:title>` writer slot inside an axis.
+ * Delegates to the chart-level {@link normalizeTitleItalic} so the two
+ * share the same drop-on-non-boolean grammar — `true` / `false` pass
+ * through literally, every other token (typed escape from an untyped
+ * caller) collapses to `undefined` and the writer omits the `i`
+ * attribute (Excel's reference serialization for a non-italic axis
+ * title).
+ */
+function normalizeAxisTitleItalic(value: boolean | undefined): boolean | undefined {
+  return normalizeTitleItalic(value);
 }
 
 // ── Series ───────────────────────────────────────────────────────────

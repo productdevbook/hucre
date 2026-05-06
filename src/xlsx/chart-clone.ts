@@ -705,6 +705,24 @@ export interface CloneChartOptions {
        * host the size).
        */
       axisTitleFontSize?: number | null;
+      /**
+       * Override `SheetChart.axes.x.axisTitleItalic`. `undefined` (or
+       * omitted) inherits the source axis's parsed value; `null` drops
+       * the inherited flag (the writer falls back to the OOXML default
+       * — no `i` attribute, equivalent to non-italic); a literal
+       * `boolean` replaces it. Non-boolean overrides (typed escape
+       * from an untyped caller) collapse to `undefined`, so the
+       * cloned `SheetChart` always carries a value the writer will
+       * accept.
+       *
+       * `<c:title>` lives on every axis flavour per the OOXML schema,
+       * so the override carries through every chart family that has
+       * axes (bar / column / line / area / scatter). Silently
+       * dropped on `pie` / `doughnut` charts (no axes at all) and on
+       * any axis whose `title` is unset (no `<c:title>` block to
+       * host the flag).
+       */
+      axisTitleItalic?: boolean | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -889,6 +907,8 @@ export interface CloneChartOptions {
       axisTitleRotation?: number | null;
       /** See {@link CloneChartOptions.axes.x.axisTitleFontSize}. */
       axisTitleFontSize?: number | null;
+      /** See {@link CloneChartOptions.axes.x.axisTitleItalic}. */
+      axisTitleItalic?: boolean | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -2552,6 +2572,23 @@ function resolveAxes(
     sourceAxes?.y?.axisTitleFontSize,
     overrides?.y?.axisTitleFontSize,
   );
+  // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p>
+  // </c:rich></c:tx></c:title>` — axis title italic flag. Sits on the
+  // same `<c:title>` body as `axisTitleRotation` / `axisTitleFontSize`,
+  // so the resolver applies on every chart family that has axes (pie /
+  // doughnut were short-circuited upstream). Non-boolean overrides
+  // collapse to `undefined` so the writer omits the `i` attribute.
+  // Like the rotation and the size, the writer drops the flag when
+  // the matching axis title is unset, so a stray pin on an axis with
+  // no title silently disappears at emit time.
+  const xAxisTitleItalic = applyAxisTitleItalicOverride(
+    sourceAxes?.x?.axisTitleItalic,
+    overrides?.x?.axisTitleItalic,
+  );
+  const yAxisTitleItalic = applyAxisTitleItalicOverride(
+    sourceAxes?.y?.axisTitleItalic,
+    overrides?.y?.axisTitleItalic,
+  );
   const xGridlines = applyGridlinesOverride(sourceAxes?.x?.gridlines, overrides?.x?.gridlines);
   const yGridlines = applyGridlinesOverride(sourceAxes?.y?.gridlines, overrides?.y?.gridlines);
   const xScale = applyScaleOverride(sourceAxes?.x?.scale, overrides?.x?.scale);
@@ -2696,12 +2733,21 @@ function resolveAxes(
   // `opts.xAxisTitle` / `opts.yAxisTitle` is set).
   const xAxisTitleFontSizeResolved = xTitle === undefined ? undefined : xAxisTitleFontSize;
   const yAxisTitleFontSizeResolved = yTitle === undefined ? undefined : yAxisTitleFontSize;
+  // The axis-title italic flag only renders when the axis carries a
+  // title — drop a stray inherited flag when the resolved axis title
+  // is unset so the cloned `SheetChart` accurately reflects what the
+  // chart will paint. Symmetric with the writer's title-presence gate
+  // (the per-family axis builder only invokes `buildAxisTitle` when
+  // `opts.xAxisTitle` / `opts.yAxisTitle` is set).
+  const xAxisTitleItalicResolved = xTitle === undefined ? undefined : xAxisTitleItalic;
+  const yAxisTitleItalicResolved = yTitle === undefined ? undefined : yAxisTitleItalic;
 
   const out: NonNullable<SheetChart["axes"]> = {};
   if (
     xTitle !== undefined ||
     xAxisTitleRotationResolved !== undefined ||
     xAxisTitleFontSizeResolved !== undefined ||
+    xAxisTitleItalicResolved !== undefined ||
     xGridlines !== undefined ||
     xScale !== undefined ||
     xNumFmt !== undefined ||
@@ -2728,6 +2774,7 @@ function resolveAxes(
       out.x.axisTitleRotation = xAxisTitleRotationResolved;
     if (xAxisTitleFontSizeResolved !== undefined)
       out.x.axisTitleFontSize = xAxisTitleFontSizeResolved;
+    if (xAxisTitleItalicResolved !== undefined) out.x.axisTitleItalic = xAxisTitleItalicResolved;
     if (xGridlines !== undefined) out.x.gridlines = xGridlines;
     if (xScale !== undefined) out.x.scale = xScale;
     if (xNumFmt !== undefined) out.x.numberFormat = xNumFmt;
@@ -2752,6 +2799,7 @@ function resolveAxes(
     yTitle !== undefined ||
     yAxisTitleRotationResolved !== undefined ||
     yAxisTitleFontSizeResolved !== undefined ||
+    yAxisTitleItalicResolved !== undefined ||
     yGridlines !== undefined ||
     yScale !== undefined ||
     yNumFmt !== undefined ||
@@ -2772,6 +2820,7 @@ function resolveAxes(
       out.y.axisTitleRotation = yAxisTitleRotationResolved;
     if (yAxisTitleFontSizeResolved !== undefined)
       out.y.axisTitleFontSize = yAxisTitleFontSizeResolved;
+    if (yAxisTitleItalicResolved !== undefined) out.y.axisTitleItalic = yAxisTitleItalicResolved;
     if (yGridlines !== undefined) out.y.gridlines = yGridlines;
     if (yScale !== undefined) out.y.scale = yScale;
     if (yNumFmt !== undefined) out.y.numberFormat = yNumFmt;
@@ -3155,6 +3204,31 @@ function applyAxisTitleFontSizeOverride(
   if (override === undefined) return normalizeTitleFontSize(source);
   if (override === null) return undefined;
   return normalizeTitleFontSize(override);
+}
+
+/**
+ * Resolve an `axisTitleItalic` override using the same `undefined`
+ * (inherit) / `null` (drop) / value (replace) grammar as the other
+ * axis helpers. Non-boolean overrides (typed escape from an untyped
+ * caller) collapse to `undefined` via {@link normalizeTitleItalic} so
+ * the cloned `SheetChart` always carries a value the writer will
+ * accept. A `null` override always drops the inherited flag (the
+ * writer falls back to the OOXML default — no `i` attribute,
+ * equivalent to non-italic).
+ *
+ * The caller is expected to additionally gate the resolved value on
+ * the matching axis title's presence so the cloned shape never
+ * carries a flag that the writer would silently elide (the writer
+ * scopes the flag emission to `<c:title>`, which is omitted when the
+ * axis renders no title).
+ */
+function applyAxisTitleItalicOverride(
+  source: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return normalizeTitleItalic(source);
+  if (override === null) return undefined;
+  return normalizeTitleItalic(override);
 }
 
 /**

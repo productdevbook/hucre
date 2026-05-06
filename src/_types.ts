@@ -1956,6 +1956,42 @@ export interface SheetChart {
        * family that has axes (bar / column / line / area / scatter).
        */
       axisTitleFontSize?: number;
+      /**
+       * Axis title italic flag. Maps to
+       * `<c:catAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr>
+       * <a:r><a:rPr i=".."/></a:r></a:p></c:rich></c:tx></c:title></c:catAx>`
+       * (or `<c:valAx>` for scatter / value axes) — Excel's "Format Axis
+       * Title -> Font -> Italic" toggle. The OOXML attribute is the
+       * `xsd:boolean` `i` on `CT_TextCharacterProperties` (ECMA-376
+       * Part 1, §21.1.2.3.7); the writer lands the value on both the
+       * default-paragraph `<a:defRPr>` and the literal run's `<a:rPr>`
+       * so a re-parse picks the flag up off either canonical slot —
+       * Excel keeps the two attributes in sync.
+       *
+       * Mirrors {@link SheetChart.titleItalic} for axis titles — same
+       * canonical-slot pair, same drop-on-default semantics, same
+       * `boolean | null` clone grammar so a single configuration call
+       * threads cleanly through both the chart title and either axis
+       * title without bookkeeping the canonical OOXML slots.
+       *
+       * Default: omitted — the axis title renders non-italic (no `i`
+       * attribute, Excel's reference serialization for a fresh axis
+       * title; the application-default `false` collapses to absence).
+       * Set `true` to emit `i="1"` on both slots so the title renders
+       * italic; set `false` explicitly to pin the non-default `i="0"`
+       * (functionally identical to omission, but useful when overriding
+       * a templated axis title that had italic pinned upstream).
+       *
+       * Silently dropped when the axis renders no title (the
+       * `<c:title>` element is absent in either case) and on `pie` /
+       * `doughnut` charts (no axes at all).
+       *
+       * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+       * `<c:dateAx>` / `<c:serAx>` all carry the same `<c:title>` shape
+       * per the OOXML schema, so the field round-trips on every chart
+       * family that has axes (bar / column / line / area / scatter).
+       */
+      axisTitleItalic?: boolean;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -2241,6 +2277,26 @@ export interface SheetChart {
        * to host the size).
        */
       axisTitleFontSize?: number;
+      /**
+       * Value-axis title italic flag. Maps to
+       * `<c:valAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr>
+       * <a:r><a:rPr i=".."/></a:r></a:p></c:rich></c:tx></c:title></c:valAx>`.
+       * Mirrors {@link SheetChart.axes.x.axisTitleItalic} for the value
+       * axis — see that field for the full semantics. The OOXML
+       * attribute is the `xsd:boolean` `i` on
+       * `CT_TextCharacterProperties`; the writer lands the value on
+       * both the default-paragraph `<a:defRPr>` and the literal run's
+       * `<a:rPr>` so a re-parse picks the flag up off either canonical
+       * slot.
+       *
+       * Useful for italicising a Y-axis unit label to mark it as a
+       * derived measure (a common dashboard pattern that distinguishes
+       * an aggregated / computed axis from a raw category axis).
+       * Silently dropped on `pie` / `doughnut` charts (no axes at all)
+       * and on any axis whose `title` is unset (no `<c:title>` block
+       * to host the flag).
+       */
+      axisTitleItalic?: boolean;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -3454,6 +3510,34 @@ export interface ChartAxisInfo {
    * whether the source axis was a category or value axis.
    */
   axisTitleFontSize?: number;
+  /**
+   * Axis-title italic flag pulled from
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p>
+   * </c:rich></c:tx></c:title>` on the axis element. Reflects Excel's
+   * "Format Axis Title -> Font -> Italic" toggle.
+   *
+   * The OOXML default `false` collapses to `undefined` so absence and
+   * `<a:defRPr i="0"/>` round-trip identically through
+   * {@link cloneChart} — only an explicit `<a:defRPr i="1"/>` surfaces
+   * `true`. The reader accepts the OOXML truthy / falsy spellings
+   * (`"1"` / `"true"` / `"0"` / `"false"`); unknown values and missing
+   * `i` attributes drop to `undefined`.
+   *
+   * Reported as `undefined` whenever the axis has no `<c:title>`
+   * element at all, or when the title is a `<c:strRef>` (formula
+   * reference) with no `<c:rich>` body — there is no `<a:p>` to host
+   * the flag in either case. Mirrors the chart-level
+   * {@link Chart.titleItalic} so a parsed value slots straight back
+   * into the writer-side {@link SheetChart.axes.x.axisTitleItalic}
+   * without transformation.
+   *
+   * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+   * `<c:dateAx>` / `<c:serAx>` all carry the same `<c:title>` shape
+   * per the OOXML schema. The reader surfaces the value on every axis
+   * flavour so a parsed chart preserves the flag regardless of
+   * whether the source axis was a category or value axis.
+   */
+  axisTitleItalic?: boolean;
   /**
    * Major / minor gridline visibility. Omitted when neither
    * `<c:majorGridlines>` nor `<c:minorGridlines>` is declared on the

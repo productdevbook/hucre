@@ -11083,3 +11083,230 @@ describe("parseChart — axis title font size", () => {
     });
   });
 });
+
+// ── parseChart — axis title italic ───────────────────────────────────
+
+describe("parseChart — axis title italic", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withCatAxTitle(iAttr: string | undefined): string {
+    const defRPr = iAttr === undefined ? "<a:defRPr/>" : `<a:defRPr i="${iAttr}"/>`;
+    return `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr>${defRPr}</a:pPr><a:r><a:t>Period</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces the axis-title italic flag from the i attribute (i=1)", () => {
+    const chart = parseChart(withCatAxTitle("1"));
+    expect(chart?.axes?.x?.axisTitleItalic).toBe(true);
+    expect(chart?.axes?.x?.title).toBe("Period");
+  });
+
+  it("collapses i=0 to undefined (OOXML default round-trip)", () => {
+    const chart = parseChart(withCatAxTitle("0"));
+    expect(chart?.axes?.x?.axisTitleItalic).toBeUndefined();
+    expect(chart?.axes?.x?.title).toBe("Period");
+  });
+
+  it("collapses absence to undefined", () => {
+    const chart = parseChart(withCatAxTitle(undefined));
+    expect(chart?.axes?.x?.axisTitleItalic).toBeUndefined();
+    expect(chart?.axes?.x?.title).toBe("Period");
+  });
+
+  it('accepts the OOXML truthy spelling i="true"', () => {
+    const chart = parseChart(withCatAxTitle("true"));
+    expect(chart?.axes?.x?.axisTitleItalic).toBe(true);
+  });
+
+  it('accepts the OOXML falsy spelling i="false"', () => {
+    const chart = parseChart(withCatAxTitle("false"));
+    expect(chart?.axes?.x?.axisTitleItalic).toBeUndefined();
+  });
+
+  it("drops unknown i tokens", () => {
+    expect(parseChart(withCatAxTitle("yes"))?.axes?.x?.axisTitleItalic).toBeUndefined();
+    expect(parseChart(withCatAxTitle(""))?.axes?.x?.axisTitleItalic).toBeUndefined();
+  });
+
+  it("returns undefined when the axis omits <c:title>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when the title is a <c:strRef> (no <c:rich> body)", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:strRef>
+          <c:f>Sheet1!$A$1</c:f>
+          <c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Period</c:v></c:pt></c:strCache>
+        </c:strRef></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.title).toBe("Period");
+    expect(chart?.axes?.x?.axisTitleItalic).toBeUndefined();
+  });
+
+  it("returns undefined when <a:p> has no <a:pPr> element", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:r><a:t>Period</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.title).toBe("Period");
+    expect(chart?.axes?.x?.axisTitleItalic).toBeUndefined();
+  });
+
+  it("does not leak the tick-label <c:txPr> italic flag into the title flag", () => {
+    // The reader scopes the lookup to the title's <c:rich> body —
+    // the tick-label `<c:txPr>` is a sibling element on the axis and
+    // must not feed its `<a:defRPr i>` into the title flag.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:r><a:t>Period</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+      <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr i="1"/></a:pPr></a:p></c:txPr>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.title).toBe("Period");
+    expect(chart?.axes?.x?.axisTitleItalic).toBeUndefined();
+  });
+
+  it("surfaces the italic flag on the value axis", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr i="1"/></a:pPr><a:r><a:t>USD</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.title).toBe("USD");
+    expect(chart?.axes?.y?.axisTitleItalic).toBe(true);
+  });
+
+  it("surfaces independently on both axes", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr i="1"/></a:pPr><a:r><a:t>Period</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr i="0"/></a:pPr><a:r><a:t>USD</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.axisTitleItalic).toBe(true);
+    expect(chart?.axes?.y?.axisTitleItalic).toBeUndefined();
+  });
+
+  it("co-surfaces alongside other axis fields", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr rot="2700000"/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr sz="1400" i="1"/></a:pPr><a:r><a:t>Period</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x).toEqual({
+      title: "Period",
+      axisTitleRotation: 45,
+      axisTitleFontSize: 14,
+      axisTitleItalic: true,
+    });
+  });
+});

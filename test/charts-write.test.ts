@@ -10539,3 +10539,198 @@ describe("writeChart — axis title font size", () => {
     expect(reparsed?.axes?.y?.axisTitleFontSize).toBe(16);
   });
 });
+
+// ── writeChart — axis title italic ───────────────────────────────────
+
+describe("writeChart — axis title italic", () => {
+  function axisBlocks(xml: string): string[] {
+    return Array.from(xml.matchAll(/<c:(catAx|valAx|dateAx)>[\s\S]*?<\/c:\1>/g)).map((m) => m[0]);
+  }
+
+  function axisTitleDefRPrIOf(axisBlock: string): string | undefined {
+    const titleMatch = axisBlock.match(/<c:title>[\s\S]*?<\/c:title>/);
+    if (!titleMatch) return undefined;
+    const m = titleMatch[0].match(/<a:defRPr\b[^/]*\/>/);
+    if (!m) return undefined;
+    const i = m[0].match(/\bi="([^"]+)"/);
+    return i ? i[1] : undefined;
+  }
+
+  function axisTitleRPrIOf(axisBlock: string): string | undefined {
+    const titleMatch = axisBlock.match(/<c:title>[\s\S]*?<\/c:title>/);
+    if (!titleMatch) return undefined;
+    const m = titleMatch[0].match(/<a:rPr\b[^/]*\/>/);
+    if (!m) return undefined;
+    const i = m[0].match(/\bi="([^"]+)"/);
+    return i ? i[1] : undefined;
+  }
+
+  it("omits the i attribute by default (matches Excel's reference non-italic axis title)", () => {
+    const result = writeChart(makeChart({ axes: { x: { title: "Period" } } }), "Sheet1");
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrIOf(xAx)).toBeUndefined();
+    expect(axisTitleRPrIOf(xAx)).toBeUndefined();
+  });
+
+  it('emits i="1" on both <a:defRPr> and <a:rPr> when axisTitleItalic=true', () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleItalic: true } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrIOf(xAx)).toBe("1");
+    expect(axisTitleRPrIOf(xAx)).toBe("1");
+  });
+
+  it("omits the i attribute when axisTitleItalic=false (matches the OOXML default)", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleItalic: false } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrIOf(xAx)).toBeUndefined();
+    expect(axisTitleRPrIOf(xAx)).toBeUndefined();
+  });
+
+  it("threads the flag through both axes independently", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: { title: "Period", axisTitleItalic: false },
+          y: { title: "USD", axisTitleItalic: true },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx, yAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrIOf(xAx)).toBeUndefined();
+    expect(axisTitleDefRPrIOf(yAx)).toBe("1");
+  });
+
+  it("drops non-boolean inputs (defends against the type guard escaping)", () => {
+    const result = writeChart(
+      makeChart({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        axes: { x: { title: "Period", axisTitleItalic: "true" as any } },
+      }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrIOf(xAx)).toBeUndefined();
+  });
+
+  it("ignores axisTitleItalic when the axis renders no title", () => {
+    // No title means no `<c:title>` block — there is no slot for the
+    // flag in either case.
+    const result = writeChart(makeChart({ axes: { x: { axisTitleItalic: true } } }), "Sheet1");
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(xAx).not.toContain("<c:title>");
+  });
+
+  it("composes independently with axisTitleRotation and axisTitleFontSize on the same axis", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: {
+            title: "Period",
+            axisTitleRotation: 45,
+            axisTitleFontSize: 14,
+            axisTitleItalic: true,
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const titleBlock = xAx.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(titleBlock).toContain('rot="2700000"');
+    expect(titleBlock).toContain('sz="1400"');
+    expect(titleBlock).toContain('i="1"');
+  });
+
+  it("threads the flag through line / area / scatter chart families", () => {
+    for (const type of ["line", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, axes: { x: { title: "Period", axisTitleItalic: true } } }),
+        "Sheet1",
+      );
+      const [xAx] = axisBlocks(result.chartXml);
+      expect(axisTitleDefRPrIOf(xAx)).toBe("1");
+    }
+    // Scatter routes both axes through `<c:valAx>` — confirm the flag
+    // still threads to the Y axis.
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { y: { title: "USD", axisTitleItalic: true } },
+      }),
+      "Sheet1",
+    );
+    const blocks = axisBlocks(scatter.chartXml);
+    const yAx = blocks[1];
+    expect(axisTitleDefRPrIOf(yAx)).toBe("1");
+  });
+
+  it("preserves the axis title's other attributes (b='0', lang='en-US', sz='1000')", () => {
+    // The writer keeps `b="0"` (non-bold), `lang="en-US"`, and the
+    // default `sz="1000"` so a templated axis title only gains the
+    // italic flag, not lose the surrounding font defaults.
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleItalic: true } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const titleBlock = xAx.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(titleBlock).toContain('lang="en-US"');
+    expect(titleBlock).toContain('sz="1000"');
+    expect(titleBlock.match(/b="0"/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("round-trips axisTitleItalic=true through parseChart", () => {
+    const written = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleItalic: true } } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.title).toBe("Period");
+    expect(reparsed?.axes?.x?.axisTitleItalic).toBe(true);
+  });
+
+  it("round-trips a defaulted axis title to undefined italic", () => {
+    const written = writeChart(makeChart({ axes: { x: { title: "Period" } } }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.title).toBe("Period");
+    expect(reparsed?.axes?.x?.axisTitleItalic).toBeUndefined();
+  });
+
+  it("end-to-end: writeXlsx packages the axis title italic flag into chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            axes: {
+              x: { title: "Period", axisTitleItalic: false },
+              y: { title: "USD", axisTitleItalic: true },
+            },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.x?.axisTitleItalic).toBeUndefined();
+    expect(reparsed?.axes?.y?.axisTitleItalic).toBe(true);
+  });
+});

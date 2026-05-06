@@ -544,6 +544,17 @@ function parseAxisInfo(
   // `undefined` for symmetry with the writer-side
   // {@link SheetChart.axes.x.axisTitleFontSize}.
   const axisTitleFontSize = parseAxisTitleFontSize(axis);
+  // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p>
+  // </c:rich></c:tx></c:title>` — axis-title italic flag. Same
+  // `<c:title>` body scope as `axisTitleFontSize`, so a stray
+  // `<a:defRPr>` elsewhere on the axis (e.g. on the tick-label
+  // `<c:txPr>`) cannot leak in. The OOXML default `false` collapses to
+  // `undefined` so absence and `i="0"` round-trip identically through
+  // the writer — only an explicit `i="1"` surfaces `true`. Returns
+  // `undefined` when the axis omits `<c:title>` entirely or when the
+  // title is a `<c:strRef>` (formula reference) with no `<c:rich>`
+  // body.
+  const axisTitleItalic = parseAxisTitleItalic(axis);
   const gridlines = parseAxisGridlines(axis);
   const scale = parseAxisScale(axis);
   const numberFormat = parseAxisNumberFormat(axis);
@@ -635,6 +646,7 @@ function parseAxisInfo(
     title === undefined &&
     axisTitleRotation === undefined &&
     axisTitleFontSize === undefined &&
+    axisTitleItalic === undefined &&
     gridlines === undefined &&
     scale === undefined &&
     numberFormat === undefined &&
@@ -661,6 +673,7 @@ function parseAxisInfo(
   if (title !== undefined) out.title = title;
   if (axisTitleRotation !== undefined) out.axisTitleRotation = axisTitleRotation;
   if (axisTitleFontSize !== undefined) out.axisTitleFontSize = axisTitleFontSize;
+  if (axisTitleItalic !== undefined) out.axisTitleItalic = axisTitleItalic;
   if (gridlines !== undefined) out.gridlines = gridlines;
   if (scale !== undefined) out.scale = scale;
   if (numberFormat !== undefined) out.numberFormat = numberFormat;
@@ -1390,6 +1403,58 @@ function parseAxisTitleFontSize(axis: XmlElement): number | undefined {
   const points = halfSteps / 2;
   if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
   return points;
+}
+
+/**
+ * Pull `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr>
+ * </a:p></c:rich></c:tx></c:title>` off an axis element. Returns
+ * `true` only when the OOXML attribute is the literal truthy spelling
+ * (`"1"` / `"true"`); the OOXML default `false` collapses to
+ * `undefined` so absence and `i="0"` round-trip identically through
+ * the writer.
+ *
+ * Mirrors {@link parseTitleItalic} for axis titles — same canonical-
+ * slot pair (`<a:defRPr>` carries the default-paragraph italic flag,
+ * which the writer keeps in sync with the literal run's `<a:rPr>` so
+ * the reader only needs to consult one of the two slots), same
+ * drop-on-default semantics. The lookup is scoped to the axis title's
+ * `<c:rich>` body so a stray `<a:defRPr>` elsewhere on the axis (e.g.
+ * on the tick-label `<c:txPr>`) cannot leak in.
+ *
+ * Returns `undefined` whenever the axis omits `<c:title>` entirely
+ * or when the title is a `<c:strRef>` (formula reference) with no
+ * `<c:rich>` body — there is no `<a:p>` slot to surface the flag
+ * from in either case.
+ *
+ * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+ * `<c:dateAx>` / `<c:serAx>` all share the same `<c:title>` shape
+ * per the OOXML schema. Mirrors the chart-level title italic
+ * {@link parseTitleItalic} so a parsed value slots straight into the
+ * writer-side {@link SheetChart.axes}.x.axisTitleItalic.
+ */
+function parseAxisTitleItalic(axis: XmlElement): boolean | undefined {
+  const title = findChild(axis, "title");
+  if (!title) return undefined;
+  const tx = findChild(title, "tx");
+  if (!tx) return undefined;
+  const rich = findChild(tx, "rich");
+  if (!rich) return undefined;
+  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
+  // default-paragraph italic flag. The reader walks the canonical chain
+  // and bails on the first missing link so a malformed `<c:rich>`
+  // surfaces as absence rather than a fabricated value.
+  const p = findChild(rich, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const parsed = parseBoolAttr(defRPr.attrs.i);
+  // The OOXML default `false` collapses to `undefined` so absence and
+  // `i="0"` round-trip identically through the writer — only an
+  // explicit `i="1"` surfaces `true`.
+  if (parsed === true) return true;
+  return undefined;
 }
 
 // ── Series ────────────────────────────────────────────────────────
