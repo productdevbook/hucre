@@ -1108,6 +1108,7 @@ function resolveDataTable(chart: SheetChart):
       showVertBorder: boolean;
       showOutline: boolean;
       showKeys: boolean;
+      fontSize: number | undefined;
     }
   | undefined {
   // Pie / doughnut have no axes — the OOXML schema places `<c:dTable>`
@@ -1125,6 +1126,7 @@ function resolveDataTable(chart: SheetChart):
       showVertBorder: true,
       showOutline: true,
       showKeys: true,
+      fontSize: undefined,
     };
   }
 
@@ -1137,32 +1139,93 @@ function resolveDataTable(chart: SheetChart):
     showVertBorder: raw.showVertBorder !== false,
     showOutline: raw.showOutline !== false,
     showKeys: raw.showKeys !== false,
+    fontSize: resolveDataTableFontSize(raw.fontSize),
   };
+}
+
+/**
+ * Resolve `<c:dTable><c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p>
+ * </c:txPr></c:dTable>` from {@link ChartDataTable.fontSize}.
+ *
+ * Returns the size in points (`1..400`), or `undefined` when the caller
+ * leaves the field unset / passed an out-of-range or non-numeric token.
+ * Delegates to {@link normalizeTitleFontSize} so the chart-title /
+ * axis-title / axis tick-label / legend / data-label / data-table
+ * font-size resolvers share the same range, the same fractional rounding
+ * (Excel's UI step is 0.5pt), and the same OOXML conversion (100ths of
+ * a point at emit time).
+ */
+function resolveDataTableFontSize(value: number | undefined): number | undefined {
+  return normalizeTitleFontSize(value);
 }
 
 /**
  * Serialize a resolved data-table into `<c:dTable>` with its four
  * required boolean children, in the order CT_DTable mandates:
- * `showHorzBorder`, `showVertBorder`, `showOutline`, `showKeys`.
+ * `showHorzBorder`, `showVertBorder`, `showOutline`, `showKeys`. When
+ * a `fontSize` is pinned the writer emits an additional `<c:txPr>`
+ * block after the four booleans; absence collapses to the existing
+ * four-child shape so a fresh chart with no typography pin matches
+ * Excel's reference serialization byte-for-byte.
  *
- * The writer always emits all four children — the OOXML schema marks
- * them required on `CT_DTable`, and Excel's reference serialization
- * includes every one even when the caller leaves it at the default. The
- * optional `<c:spPr>` / `<c:txPr>` / `<c:extLst>` children are skipped
- * because hucre's data-table model does not surface fill / text styling
- * yet.
+ * The writer always emits all four boolean children — the OOXML schema
+ * marks them required on `CT_DTable`, and Excel's reference
+ * serialization includes every one even when the caller leaves it at
+ * the default. The optional `<c:spPr>` / `<c:extLst>` children are
+ * skipped because hucre's data-table model does not surface fill /
+ * extension styling yet.
  */
 function buildDataTable(table: {
   showHorzBorder: boolean;
   showVertBorder: boolean;
   showOutline: boolean;
   showKeys: boolean;
+  fontSize: number | undefined;
 }): string {
-  return xmlElement("c:dTable", undefined, [
+  const children: string[] = [
     xmlSelfClose("c:showHorzBorder", { val: table.showHorzBorder ? 1 : 0 }),
     xmlSelfClose("c:showVertBorder", { val: table.showVertBorder ? 1 : 0 }),
     xmlSelfClose("c:showOutline", { val: table.showOutline ? 1 : 0 }),
     xmlSelfClose("c:showKeys", { val: table.showKeys ? 1 : 0 }),
+  ];
+  // CT_DTable schema places `<c:txPr>` after the four required
+  // boolean children, before the optional `<c:extLst>` (ECMA-376
+  // Part 1, §21.2.2.54). The writer skips emission entirely when no
+  // typography knob is pinned so a fresh chart matches Excel's
+  // reference serialization byte-for-byte.
+  const txPrXml = buildDataTableTxPr(table.fontSize);
+  if (txPrXml !== undefined) children.push(txPrXml);
+  return xmlElement("c:dTable", undefined, children);
+}
+
+/**
+ * Build the `<c:txPr>` block that carries a data-table's typography
+ * pins (currently the font size only). Returns `undefined` when every
+ * input is unset so the caller can elide the element entirely (Excel's
+ * reference serialization omits `<c:txPr>` from `<c:dTable>` when the
+ * table renders at the theme-default style).
+ *
+ * The emitted block mirrors the minimal `<c:txPr>` shape Excel writes
+ * when the user pins a data-table typography knob — `<a:bodyPr/>`,
+ * `<a:lstStyle/>`, and the `<a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
+ * <a:endParaRPr/></a:p>` paragraph stub Excel always emits hosts the
+ * typography attributes on `<a:defRPr>`. Mirrors the chart-title /
+ * axis-title / tick-label / legend / data-label `<c:txPr>` slots
+ * exactly so a re-parse picks the values off the canonical
+ * default-paragraph slot every other typography reader expects.
+ */
+function buildDataTableTxPr(fontSizePt: number | undefined): string | undefined {
+  if (fontSizePt === undefined) return undefined;
+  const defRPrAttrs: Record<string, string | number> = {
+    sz: fontSizePt * TITLE_FONT_SZ_PER_POINT,
+  };
+  return xmlElement("c:txPr", undefined, [
+    xmlSelfClose("a:bodyPr"),
+    xmlSelfClose("a:lstStyle"),
+    xmlElement("a:p", undefined, [
+      xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", defRPrAttrs)]),
+      xmlSelfClose("a:endParaRPr", { lang: "en-US" }),
+    ]),
   ]);
 }
 

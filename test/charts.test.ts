@@ -9507,6 +9507,189 @@ describe("parseChart — data table", () => {
     const xml = `<c:chartSpace ${NS}><c:chart></c:chart></c:chartSpace>`;
     expect(parseChart(xml)?.dataTable).toBeUndefined();
   });
+
+  // ── data-table font size ───────────────────────────────────────────
+
+  it("surfaces a pinned dataTable.fontSize from <c:txPr><a:p><a:pPr><a:defRPr sz='..'/>", () => {
+    // The OOXML attribute is in 100ths of a point; the reader divides
+    // by 100 at parse time so the surfaced value matches what the user
+    // sees in Excel's UI. Mirrors the chart-title / axis-title /
+    // tick-label / legend / data-label font-size readers exactly.
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="1800"/></a:pPr><a:endParaRPr lang="en-US"/></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: true,
+      showOutline: true,
+      showKeys: true,
+      fontSize: 18,
+    });
+  });
+
+  it("rounds a fractional sz to the nearest 0.5pt (Excel UI step)", () => {
+    // sz="1230" → 12.3pt → 12.5pt (rounded to half-step). Mirrors the
+    // chart-title / tick-label / legend / data-label half-step rounding.
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="1230"/></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.fontSize).toBe(12.5);
+  });
+
+  it("collapses an out-of-range sz to undefined fontSize (chart with the four flags only)", () => {
+    // sz="0" → 0pt is below the OOXML supported range. The reader drops
+    // the field rather than surface a value Excel would reject.
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="0"/></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: true,
+      showOutline: true,
+      showKeys: true,
+    });
+  });
+
+  it("collapses a non-numeric sz token to undefined fontSize", () => {
+    // sz="garbage" can't be parsed as an integer. The reader drops the
+    // field rather than fabricate a value the file did not pin.
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="garbage"/></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.fontSize).toBeUndefined();
+  });
+
+  it("returns undefined fontSize when <c:txPr> is missing entirely", () => {
+    // The OOXML default for the data-table is no <c:txPr> at all — the
+    // table renders at the theme-default size. The reader collapses
+    // absence to undefined so a fresh chart and a chart that omits the
+    // typography pin round-trip identically through cloneChart.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.fontSize).toBeUndefined();
+  });
+
+  it("returns undefined fontSize when <c:txPr> is present but the chain is broken", () => {
+    // Each link of `<c:txPr><a:p><a:pPr><a:defRPr sz="..">` must be
+    // present for the reader to surface a value. Missing the inner
+    // <a:pPr> drops the field rather than fabricate one.
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.fontSize).toBeUndefined();
+  });
+
+  it("surfaces the boundary fontSize values 1 and 400 verbatim", () => {
+    // sz="100" → 1pt; sz="40000" → 400pt. Both lie at the edge of the
+    // supported range and round-trip literally.
+    const minXml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="100"/></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(minXml)?.dataTable?.fontSize).toBe(1);
+    const maxXml = minXml.replace('sz="100"', 'sz="40000"');
+    expect(parseChart(maxXml)?.dataTable?.fontSize).toBe(400);
+  });
 });
 
 // ── parseChart — chart-space protection ──────────────────────────────

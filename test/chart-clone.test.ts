@@ -10156,6 +10156,153 @@ describe("cloneChart — data table", () => {
       showKeys: false,
     });
   });
+
+  // ── data-table font size ─────────────────────────────────────────
+
+  it("inherits the source's dataTable.fontSize by default", () => {
+    // The clone-through path should preserve the typography pin
+    // alongside the four boolean toggles when the caller leaves
+    // `options.dataTable` unset.
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+          fontSize: 14,
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+      fontSize: 14,
+    });
+  });
+
+  it("lets options.dataTable: object override the inherited fontSize", () => {
+    // Wholesale replace — the override fontSize wins, and the source's
+    // typography pin does not bleed into the clone.
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, fontSize: 14 },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        dataTable: { showVertBorder: false, fontSize: 22 },
+      },
+    );
+    expect(clone.dataTable).toEqual({ showVertBorder: false, fontSize: 22 });
+  });
+
+  it("drops the inherited fontSize when override clears the typography pin", () => {
+    // Wholesale-replace with no fontSize on the override drops the
+    // inherited typography — the four boolean toggles still emit at
+    // their writer-side defaults via the override block.
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, fontSize: 14 },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        dataTable: { showVertBorder: false },
+      },
+    );
+    expect(clone.dataTable).toEqual({ showVertBorder: false });
+  });
+
+  it("drops the inherited fontSize when flattening into a doughnut clone", () => {
+    // Pie / doughnut have no <c:dTable> slot at all — every dataTable
+    // field is dropped, fontSize included.
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, fontSize: 14 },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        type: "doughnut",
+      },
+    );
+    expect(clone.type).toBe("doughnut");
+    expect(clone.dataTable).toBeUndefined();
+  });
+
+  it("propagates dataTable.fontSize into the rendered <c:dTable> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+          fontSize: 16,
+        },
+      }),
+      { anchor: { from: { row: 5, col: 0 } } },
+    );
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:dTable>");
+    expect(written).toContain('<a:defRPr sz="1600"/>');
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+      fontSize: 16,
+    });
+  });
+
+  it("a parsed dataTable.fontSize round-trips through parseChart -> cloneChart -> writeChart -> parseChart", async () => {
+    const seed: SheetChart = {
+      type: "column",
+      series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+      anchor: { from: { row: 0, col: 0 } },
+      dataTable: { showKeys: false, fontSize: 13 },
+    };
+    const xml = writeChart(seed, "Sheet1").chartXml;
+    const parsed = parseChart(xml)!;
+    expect(parsed.dataTable?.fontSize).toBe(13);
+    const clone = cloneChart(parsed, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Q", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable?.fontSize).toBe(13);
+  });
 });
 
 // ── cloneChart — chart-space protection ──────────────────────────────

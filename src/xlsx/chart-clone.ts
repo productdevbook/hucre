@@ -808,9 +808,13 @@ export interface CloneChartOptions {
    * border / outline / key flag to its OOXML default `true`. A
    * {@link ChartDataTable} object replaces the block wholesale (no
    * per-field merge; pass every flag you want preserved). Each
-   * unspecified flag inside the object falls back to `true` at the
-   * writer side because every `<c:dTable>` boolean child is required
-   * on `CT_DTable` and Excel emits all four.
+   * unspecified boolean flag inside the object falls back to `true` at
+   * the writer side because every `<c:dTable>` boolean child is
+   * required on `CT_DTable` and Excel emits all four. The optional
+   * {@link ChartDataTable.fontSize} typography pin survives the
+   * wholesale-replace path along with the four boolean toggles, so a
+   * clone that inherits a templated data-table carries the typography
+   * forward unchanged.
    *
    * Only meaningful when the resolved chart type has axes — `bar`,
    * `column`, `line`, `area`, `scatter`. The field is silently dropped

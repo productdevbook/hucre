@@ -4457,7 +4457,50 @@ function parseDataTable(plotArea: XmlElement): ChartDataTable | undefined {
   if (showOutline !== undefined) out.showOutline = showOutline;
   const showKeys = parseDataTableFlag(el, "showKeys");
   if (showKeys !== undefined) out.showKeys = showKeys;
+  const fontSize = parseDataTableFontSize(el);
+  if (fontSize !== undefined) out.fontSize = fontSize;
   return out;
+}
+
+/**
+ * Pull `<c:dTable><c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p>
+ * </c:txPr></c:dTable>` off a data-table block. Returns the font size
+ * in points (`1..400`), or `undefined` when the element is absent /
+ * the chain is malformed at any link / the surfaced value is out of
+ * the supported range.
+ *
+ * The OOXML attribute is in 100ths of a point on
+ * `CT_TextCharacterProperties`' `sz` slot (ECMA-376 Part 1,
+ * §21.1.2.3.7); the reader divides by 100 at parse time so the
+ * surfaced value matches what the user sees in Excel's UI. Mirrors
+ * the chart-title / axis-title / axis tick-label / legend / data-label
+ * font-size readers exactly so a parsed value slots straight back into
+ * the writer's emit path.
+ */
+function parseDataTableFontSize(dTable: XmlElement): number | undefined {
+  const txPr = findChild(dTable, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const raw = defRPr.attrs.sz;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  // Convert from 100ths of a point to points, rounding to the nearest
+  // 0.5pt to match the granularity Excel's UI exposes. Mirrors the
+  // chart-title / axis-title / tick-label / legend / data-label
+  // sibling parsers exactly so a parsed value flows through every
+  // typography slot without bookkeeping the units.
+  const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2);
+  const points = halfSteps / 2;
+  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
+  return points;
 }
 
 /**

@@ -8720,6 +8720,202 @@ describe("writeChart — data table", () => {
       showKeys: false,
     });
   });
+
+  // ── data-table font size ───────────────────────────────────────────
+
+  it("skips <c:txPr> inside <c:dTable> when fontSize is unset", () => {
+    // The OOXML default for the data-table is no `<c:txPr>` at all —
+    // the table renders at the theme-default size. The writer matches
+    // that shape so a fresh chart with no typography pin emits the
+    // four-child variant only.
+    const result = writeChart(makeChart({ dataTable: true }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice).not.toContain("<c:txPr>");
+  });
+
+  it("emits <c:txPr> with sz=2400 when dataTable.fontSize is 24", () => {
+    // The OOXML attribute is in 100ths of a point — the writer
+    // multiplies the caller-facing point value by 100 at emit time.
+    const result = writeChart(makeChart({ dataTable: { fontSize: 24 } }), "Sheet1");
+    expect(result.chartXml).toContain('<a:defRPr sz="2400"/>');
+  });
+
+  it("emits the txPr block in CT_DTable schema order (after the four boolean children)", () => {
+    // CT_DTable: showHorzBorder?, showVertBorder?, showOutline?,
+    // showKeys?, spPr?, txPr?, extLst? — the txPr block sits after the
+    // four boolean children, before the optional extLst.
+    const result = writeChart(makeChart({ dataTable: { fontSize: 14 } }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    const keysIdx = dTableSlice.indexOf("c:showKeys");
+    const txPrIdx = dTableSlice.indexOf("<c:txPr>");
+    expect(keysIdx).toBeGreaterThan(-1);
+    expect(txPrIdx).toBeGreaterThan(keysIdx);
+  });
+
+  it("rounds fractional points to the nearest half-point (Excel UI step)", () => {
+    // 12.3 → 12.5pt → sz=1250; 12.24 → 12pt → sz=1200. Mirrors the
+    // chart-title / axis-title / tick-label / legend / data-label
+    // half-point rounding.
+    const half = writeChart(makeChart({ dataTable: { fontSize: 12.3 } }), "Sheet1").chartXml;
+    expect(half).toContain('<a:defRPr sz="1250"/>');
+    const whole = writeChart(makeChart({ dataTable: { fontSize: 12.24 } }), "Sheet1").chartXml;
+    expect(whole).toContain('<a:defRPr sz="1200"/>');
+  });
+
+  it("collapses out-of-range fontSize values to undefined", () => {
+    // Values < 1 or > 400 fall outside the OOXML supported range. The
+    // writer drops the field rather than emit a token Excel rejects.
+    const tooSmall = writeChart(makeChart({ dataTable: { fontSize: 0 } }), "Sheet1").chartXml;
+    expect(tooSmall).not.toContain("<c:txPr>");
+    const tooBig = writeChart(makeChart({ dataTable: { fontSize: 401 } }), "Sheet1").chartXml;
+    expect(tooBig).not.toContain("<c:txPr>");
+  });
+
+  it("collapses non-numeric fontSize escapes to undefined", () => {
+    // Typed escapes from an untyped caller — strings, NaN, Infinity —
+    // drop the field rather than fabricate a malformed sz attribute.
+    const dt = { fontSize: Number.NaN } as unknown as { fontSize: number };
+    const result = writeChart(makeChart({ dataTable: dt }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:txPr>");
+    const dt2 = { fontSize: Number.POSITIVE_INFINITY } as unknown as { fontSize: number };
+    const result2 = writeChart(makeChart({ dataTable: dt2 }), "Sheet1");
+    expect(result2.chartXml).not.toContain("<c:txPr>");
+    const dt3 = { fontSize: "20" } as unknown as { fontSize: number };
+    const result3 = writeChart(makeChart({ dataTable: dt3 }), "Sheet1");
+    expect(result3.chartXml).not.toContain("<c:txPr>");
+  });
+
+  it("emits the boundary fontSize values 1 and 400 verbatim", () => {
+    const min = writeChart(makeChart({ dataTable: { fontSize: 1 } }), "Sheet1").chartXml;
+    expect(min).toContain('<a:defRPr sz="100"/>');
+    const max = writeChart(makeChart({ dataTable: { fontSize: 400 } }), "Sheet1").chartXml;
+    expect(max).toContain('<a:defRPr sz="40000"/>');
+  });
+
+  it("composes fontSize with the four boolean toggles independently", () => {
+    // Each typography knob lands on the txPr block; the four boolean
+    // toggles continue to land on their dedicated child elements.
+    const result = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: false,
+          showVertBorder: true,
+          showOutline: false,
+          showKeys: true,
+          fontSize: 16,
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('<c:showHorzBorder val="0"/>');
+    expect(result.chartXml).toContain('<c:showVertBorder val="1"/>');
+    expect(result.chartXml).toContain('<c:showOutline val="0"/>');
+    expect(result.chartXml).toContain('<c:showKeys val="1"/>');
+    expect(result.chartXml).toContain('<a:defRPr sz="1600"/>');
+  });
+
+  it("threads fontSize through every chart family with axes", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(makeChart({ type, dataTable: { fontSize: 12 } }), "Sheet1");
+      expect(result.chartXml).toContain('<a:defRPr sz="1200"/>');
+    }
+    const scatter = writeChart(
+      {
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        dataTable: { fontSize: 12 },
+      },
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain('<a:defRPr sz="1200"/>');
+  });
+
+  it("silently drops fontSize on pie charts (no <c:dTable> slot at all)", () => {
+    const result = writeChart(
+      {
+        type: "pie",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        dataTable: { fontSize: 14 },
+      },
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:dTable");
+    expect(result.chartXml).not.toContain('<a:defRPr sz="1400"/>');
+  });
+
+  it("round-trips a pinned dataTable fontSize through parseChart", () => {
+    const written = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+          fontSize: 18.5,
+        },
+      }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+      fontSize: 18.5,
+    });
+  });
+
+  it("collapses an unset fontSize round-trip to undefined on the dataTable", () => {
+    // The four boolean children still surface (they're required on
+    // CT_DTable), but the fontSize field drops out because no txPr
+    // block is emitted.
+    const written = writeChart(makeChart({ dataTable: true }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: true,
+      showOutline: true,
+      showKeys: true,
+    });
+    expect(reparsed?.dataTable?.fontSize).toBeUndefined();
+  });
+
+  it("threads fontSize end-to-end through writeXlsx packaging", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Dashboard",
+        rows: [
+          ["Quarter", "Revenue"],
+          ["Q1", 10],
+          ["Q2", 20],
+          ["Q3", 30],
+        ],
+        charts: [
+          {
+            type: "column",
+            series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            dataTable: { showKeys: true, fontSize: 11 },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain("<c:dTable>");
+    expect(chartXml).toContain('<a:defRPr sz="1100"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.dataTable?.fontSize).toBe(11);
+  });
 });
 
 // ── writeChart — chart-space protection ──────────────────────────────
