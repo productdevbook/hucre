@@ -13471,3 +13471,175 @@ describe("parseChart — axis labelColor", () => {
     });
   });
 });
+
+describe("parseChart — axis labelStrike", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withCatAxTxPrStrike(strike: string | undefined): string {
+    const txPr =
+      strike === undefined
+        ? ""
+        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr strike="${strike}"/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>`;
+    return `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      ${txPr}
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+  }
+
+  it('surfaces labelStrike=true when <a:defRPr strike="sngStrike"/> is pinned', () => {
+    const chart = parseChart(withCatAxTxPrStrike("sngStrike"));
+    expect(chart?.axes?.x?.labelStrike).toBe(true);
+  });
+
+  it('drops the OOXML default strike="noStrike" to undefined (round-trips with absence)', () => {
+    expect(parseChart(withCatAxTxPrStrike("noStrike"))?.axes).toBeUndefined();
+  });
+
+  it('drops the non-UI strike="dblStrike" variant to undefined (avoids lossy downgrade)', () => {
+    // Hucre's writer emits only "sngStrike". Surfacing "dblStrike" as
+    // true would silently downgrade the choice on round-trip, so the
+    // reader collapses it to undefined to keep the round-trip lossless.
+    expect(parseChart(withCatAxTxPrStrike("dblStrike"))?.axes).toBeUndefined();
+  });
+
+  it("drops malformed strike tokens to undefined", () => {
+    expect(parseChart(withCatAxTxPrStrike("yes"))?.axes).toBeUndefined();
+    expect(parseChart(withCatAxTxPrStrike("on"))?.axes).toBeUndefined();
+    expect(parseChart(withCatAxTxPrStrike(""))?.axes).toBeUndefined();
+    expect(parseChart(withCatAxTxPrStrike("1"))?.axes).toBeUndefined();
+    expect(parseChart(withCatAxTxPrStrike("true"))?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when <c:txPr> is absent", () => {
+    expect(parseChart(withCatAxTxPrStrike(undefined))?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when <a:defRPr> omits the strike attribute", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr></a:p></c:txPr>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when <a:p> is absent inside <c:txPr>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:txPr><a:bodyPr/><a:lstStyle/></c:txPr>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.axes).toBeUndefined();
+  });
+
+  it("surfaces labelStrike on the value axis", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr strike="sngStrike"/></a:pPr></a:p></c:txPr>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.axes?.y?.labelStrike).toBe(true);
+  });
+
+  it("surfaces labelStrike independently on both axes", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr strike="sngStrike"/></a:pPr></a:p></c:txPr>
+    </c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr strike="sngStrike"/></a:pPr></a:p></c:txPr>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.labelStrike).toBe(true);
+    expect(chart?.axes?.y?.labelStrike).toBe(true);
+  });
+
+  it("co-surfaces labelStrike alongside labelBold, labelItalic, labelRotation, and labelFontSize from the same <c:txPr>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:txPr><a:bodyPr rot="2700000"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1400" b="1" i="1" strike="sngStrike"/></a:pPr></a:p></c:txPr>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.labelRotation).toBe(45);
+    expect(chart?.axes?.x?.labelFontSize).toBe(14);
+    expect(chart?.axes?.x?.labelBold).toBe(true);
+    expect(chart?.axes?.x?.labelItalic).toBe(true);
+    expect(chart?.axes?.x?.labelStrike).toBe(true);
+  });
+
+  it('does not pick up an <a:defRPr strike=".."/> from the axis title\'s <c:rich>', () => {
+    // The axis-title's `<c:rich>` carries its own `<a:defRPr strike="..">`
+    // separately from the tick-label `<c:txPr>`. The tick-label parser
+    // must not surface the title's flag — that belongs to
+    // axisTitleStrike.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr strike="sngStrike"/></a:pPr><a:r><a:rPr/><a:t>Period</a:t></a:r></a:p></c:rich></c:tx></c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.axisTitleStrike).toBe(true);
+    expect(chart?.axes?.x?.labelStrike).toBeUndefined();
+  });
+
+  it("co-surfaces alongside other axis fields", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title><c:tx><c:rich><a:p><a:r><a:t>Period</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      <c:tickLblPos val="low"/>
+      <c:txPr><a:bodyPr rot="2700000"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1200" strike="sngStrike"/></a:pPr></a:p></c:txPr>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x).toEqual({
+      title: "Period",
+      tickLblPos: "low",
+      labelRotation: 45,
+      labelFontSize: 12,
+      labelStrike: true,
+    });
+  });
+});

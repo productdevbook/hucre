@@ -2523,6 +2523,61 @@ export interface SheetChart {
        */
       labelColor?: string;
       /**
+       * Tick-label strikethrough flag. Maps to
+       * `<c:catAx><c:txPr><a:p><a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr></c:catAx>`
+       * (or `<c:valAx>` for scatter / value axes) — Excel's "Format
+       * Axis -> Font -> Strikethrough" toggle applied to the tick
+       * labels. The OOXML attribute is the `ST_TextStrikeType` enum on
+       * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7);
+       * the writer lands the value on the default-paragraph
+       * `<a:defRPr>` slot inside the same `<c:txPr>` block that
+       * carries {@link labelRotation} / {@link labelFontSize} /
+       * {@link labelBold} / {@link labelItalic} / {@link labelColor}.
+       *
+       * Modeled as a boolean for symmetry with {@link labelBold} /
+       * {@link labelItalic} and the axis-title counterpart
+       * {@link SheetChart.axes.x.axisTitleStrike}: `true` emits
+       * `strike="sngStrike"` (Excel's UI checkbox — single line);
+       * absence and explicit `false` collapse to omitting the
+       * attribute (the OOXML default `"noStrike"` collapses to absence,
+       * mirroring how Excel's reference serialization emits a non-
+       * strikethrough tick label). The non-UI variant `"dblStrike"` is
+       * read-only — the writer emits only `"sngStrike"` to keep the
+       * surfaced shape consistent with what Excel's reference UI
+       * authors, and the reader collapses `"dblStrike"` to `undefined`
+       * so a templated tick label that pinned the double-line variant
+       * in raw OOXML round-trips lossless rather than silently
+       * downgrading on re-emit.
+       *
+       * Useful for striking through dashboard tick labels (e.g.
+       * crossing out an obsolete category-axis bucket on a snapshot
+       * report, or pairing with {@link labelColor} to render a muted
+       * strikethrough on a deprecated value-axis range).
+       *
+       * Default: omitted — the tick labels render non-strikethrough
+       * (the OOXML default; the writer elides the `strike` attribute
+       * when no value is pinned). Set `true` to emit
+       * `strike="sngStrike"` on the default-paragraph slot; set `false`
+       * explicitly to pin the OOXML default behaviour (functionally
+       * identical to omission, but useful when overriding a templated
+       * chart that had a strikethrough pinned upstream).
+       *
+       * Composes independently with {@link labelRotation} /
+       * {@link labelFontSize} / {@link labelBold} /
+       * {@link labelItalic} / {@link labelColor}: all six knobs land
+       * on the same `<c:txPr>` body, so a single configuration call
+       * threads cleanly through every tick-label knob the writer
+       * exposes.
+       *
+       * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+       * `<c:dateAx>` / `<c:serAx>` all carry an optional `<c:txPr>` per
+       * the OOXML schema, so the field round-trips on every chart family
+       * that has axes (bar / column / line / area / scatter). Pie /
+       * doughnut have no axes at all, so the field is silently dropped
+       * on those families.
+       */
+      labelStrike?: boolean;
+      /**
        * Reverse the axis plotting order. Maps to
        * `<c:scaling><c:orientation val="maxMin"/></c:scaling>` —
        * Excel's "Categories in reverse order" / "Values in reverse
@@ -2958,6 +3013,25 @@ export interface SheetChart {
        * (no axes at all).
        */
       labelColor?: string;
+      /**
+       * Tick-label strikethrough flag for the value axis. Maps to
+       * `<c:valAx><c:txPr><a:p><a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr></c:valAx>`.
+       * Mirrors {@link SheetChart.axes.x.labelStrike} for the value
+       * axis — see that field for the full semantics. The OOXML
+       * `strike` attribute is the `ST_TextStrikeType` enum on
+       * `CT_TextCharacterProperties`; the writer emits only the UI
+       * variant `"sngStrike"` (single line) when the input is `true`.
+       * Absence and explicit `false` collapse to omitting the
+       * attribute (the OOXML default `"noStrike"` collapses to
+       * absence) so a fresh chart inherits Excel's reference non-
+       * strikethrough tick labels.
+       *
+       * Useful for striking through obsolete value-axis labels on a
+       * dashboard (e.g. crossing out a deprecated numeric range on a
+       * snapshot report). Silently dropped on `pie` / `doughnut` charts
+       * (no axes at all).
+       */
+      labelStrike?: boolean;
       /**
        * Hide the entire value axis (line, tick marks, tick labels).
        * Maps to `<c:valAx><c:delete val="1"/></c:valAx>`. Default:
@@ -4461,6 +4535,35 @@ export interface ChartAxisInfo {
    * fill cannot leak in.
    */
   labelColor?: string;
+  /**
+   * Tick-label strikethrough flag pulled from
+   * `<c:txPr><a:p><a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr>`
+   * on the axis element. Reflects Excel's "Format Axis -> Font ->
+   * Strikethrough" toggle applied to tick labels.
+   *
+   * The OOXML `strike` attribute is the `ST_TextStrikeType` enum on
+   * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7) with
+   * three values: `"noStrike"` (the OOXML application default),
+   * `"sngStrike"` (single line — the value Excel's UI checkbox
+   * emits), and `"dblStrike"` (double line — a non-UI variant). The
+   * reader surfaces only the UI-default `"sngStrike"` as `true`;
+   * `"noStrike"` (the OOXML application default), absence, and the
+   * non-UI `"dblStrike"` variant all collapse to `undefined` — the
+   * writer emits only `"sngStrike"`, so reporting `"dblStrike"` as
+   * `true` would silently downgrade the choice to a single line on
+   * round-trip. Unknown / malformed `strike` tokens likewise drop to
+   * `undefined`.
+   *
+   * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+   * `<c:dateAx>` / `<c:serAx>` all carry an optional `<c:txPr>` per
+   * the OOXML schema. Mirrors the writer-side
+   * {@link SheetChart.axes.x.labelStrike} so a parsed value slots
+   * straight back into a clone target without transformation. The
+   * lookup is scoped to the axis-level `<c:txPr>` so a stray
+   * `<a:defRPr strike=".."/>` inside `<c:title>` (surfaced by
+   * {@link ChartAxisInfo.axisTitleStrike}) cannot leak in.
+   */
+  labelStrike?: boolean;
   /**
    * Reverse-axis flag pulled from
    * `<c:scaling><c:orientation val=".."/></c:scaling>`. Surfaces `true`
