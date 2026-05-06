@@ -78,6 +78,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveTitleColor(chart),
         resolveTitleStrike(chart),
         resolveTitleUnderline(chart),
+        resolveTitleFontFamily(chart),
       ),
     );
   }
@@ -228,6 +229,7 @@ function buildTitle(
   rgbHex: string | undefined,
   strike: boolean | undefined,
   underline: boolean | undefined,
+  fontFamily: string | undefined,
 ): string {
   // OOXML's `<a:bodyPr rot="N"/>` attribute is in 60000ths of a degree.
   // The writer holds `titleRotation` in whole degrees and converts at
@@ -306,26 +308,48 @@ function buildTitle(
   const solidFillChild = rgbHex
     ? xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: rgbHex })])
     : undefined;
-  // When a fill color is set the `<a:defRPr>` / `<a:rPr>` slots
-  // expand from self-closing to wrapping the `<a:solidFill>` child;
+  // OOXML's `<a:defRPr><a:latin typeface=".."/></a:defRPr>` carries the
+  // title's font family. The writer holds `titleFontFamily` as a non-
+  // empty string and lands the `<a:latin>` element on both the default-
+  // paragraph `<a:defRPr>` and the literal run's `<a:rPr>` so a re-
+  // parse picks the typeface up off either canonical slot. Absence
+  // (`undefined`) collapses to omitting the entire `<a:latin>` element
+  // so the title inherits the theme typeface (Excel's reference
+  // behavior for a fresh chart title that has not had a custom font
+  // picked). The `<a:latin>` element follows `<a:solidFill>` per the
+  // CT_TextCharacterProperties child sequence (ECMA-376 Part 1,
+  // §21.1.2.3.7) so a fresh chart with both color and family matches
+  // Excel's reference serialization byte-for-byte.
+  const latinChild = fontFamily ? xmlSelfClose("a:latin", { typeface: fontFamily }) : undefined;
+  // When a fill color or a typeface is set the `<a:defRPr>` /
+  // `<a:rPr>` slots expand from self-closing to wrapping the children;
   // otherwise the writer keeps the existing self-closing form so a
-  // fresh chart with no custom color matches Excel's reference
-  // serialization byte-for-byte.
-  const defRPr = solidFillChild
-    ? xmlElement("a:defRPr", { sz, b, i, u: underlineAttr, strike: strikeAttr }, [solidFillChild])
-    : xmlSelfClose("a:defRPr", { sz, b, i, u: underlineAttr, strike: strikeAttr });
-  const rPr = solidFillChild
-    ? xmlElement("a:rPr", { lang: "en-US", sz, b, i, u: underlineAttr, strike: strikeAttr }, [
-        solidFillChild,
-      ])
-    : xmlSelfClose("a:rPr", {
-        lang: "en-US",
-        sz,
-        b,
-        i,
-        u: underlineAttr,
-        strike: strikeAttr,
-      });
+  // fresh chart with no custom color or font matches Excel's reference
+  // serialization byte-for-byte. Children are emitted in CT_TextChar
+  // acterProperties' canonical schema order: solidFill first, then
+  // latin.
+  const rPrChildren: string[] = [];
+  if (solidFillChild) rPrChildren.push(solidFillChild);
+  if (latinChild) rPrChildren.push(latinChild);
+  const defRPr =
+    rPrChildren.length > 0
+      ? xmlElement("a:defRPr", { sz, b, i, u: underlineAttr, strike: strikeAttr }, rPrChildren)
+      : xmlSelfClose("a:defRPr", { sz, b, i, u: underlineAttr, strike: strikeAttr });
+  const rPr =
+    rPrChildren.length > 0
+      ? xmlElement(
+          "a:rPr",
+          { lang: "en-US", sz, b, i, u: underlineAttr, strike: strikeAttr },
+          rPrChildren,
+        )
+      : xmlSelfClose("a:rPr", {
+          lang: "en-US",
+          sz,
+          b,
+          i,
+          u: underlineAttr,
+          strike: strikeAttr,
+        });
   return xmlElement("c:title", undefined, [
     xmlElement("c:tx", undefined, [
       xmlElement("c:rich", undefined, [
@@ -636,6 +660,43 @@ function normalizeTitleUnderline(value: boolean | undefined): boolean | undefine
  */
 function resolveTitleUnderline(chart: SheetChart): boolean | undefined {
   return normalizeTitleUnderline(chart.titleUnderline);
+}
+
+/**
+ * Normalize a {@link SheetChart.titleFontFamily} value for the
+ * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
+ * typeface=".."/></a:defRPr></a:pPr></a:p></c:rich></c:tx>
+ * </c:title>` writer slot. Returns the trimmed typeface string when
+ * the input is a non-empty string, or `undefined` for any malformed
+ * token — empty / whitespace-only strings, or non-string escapes from
+ * an untyped caller (`null`, numbers, booleans, etc.).
+ *
+ * Absence and malformed tokens both collapse to `undefined` so the
+ * writer skips the entire `<a:latin>` element and the title inherits
+ * the theme typeface (Excel's reference behavior for a fresh chart
+ * title without a custom font picked).
+ */
+function normalizeTitleFontFamily(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
+}
+
+/**
+ * Resolve `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
+ * typeface=".."/></a:defRPr></a:pPr></a:p></c:rich></c:tx></c:title>`
+ * from {@link SheetChart.titleFontFamily}.
+ *
+ * Returns the trimmed typeface string the writer emits, or
+ * `undefined` when the chart leaves the field unset / passed an empty
+ * or non-string token. The element is only meaningful when the chart
+ * actually emits a title — the caller is expected to gate the call
+ * on `showTitle && chart.title`. A chart whose title is suppressed
+ * has no `<c:title>` block to host the typeface in either case.
+ */
+function resolveTitleFontFamily(chart: SheetChart): string | undefined {
+  return normalizeTitleFontFamily(chart.titleFontFamily);
 }
 
 /**

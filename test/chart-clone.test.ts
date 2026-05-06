@@ -16968,3 +16968,153 @@ describe("cloneChart — dataLabels.strikethrough", () => {
     expect(clone.dataLabels?.strikethrough).toBe(true);
   });
 });
+
+// ── cloneChart — title font family ──────────────────────────────────
+
+describe("cloneChart — title font family", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Sales",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's titleFontFamily by default", () => {
+    const clone = cloneChart(source({ titleFontFamily: "Arial" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleFontFamily).toBe("Arial");
+  });
+
+  it("lets options.titleFontFamily override the source's typeface", () => {
+    const clone = cloneChart(source({ titleFontFamily: "Arial" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleFontFamily: "Calibri",
+    });
+    expect(clone.titleFontFamily).toBe("Calibri");
+  });
+
+  it("drops the inherited titleFontFamily when the override is null", () => {
+    const clone = cloneChart(source({ titleFontFamily: "Arial" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleFontFamily: null,
+    });
+    expect(clone.titleFontFamily).toBeUndefined();
+  });
+
+  it("returns undefined titleFontFamily when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.titleFontFamily).toBeUndefined();
+  });
+
+  it("lets options.titleFontFamily pin a typeface on a typeface-less source", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleFontFamily: "Verdana",
+    });
+    expect(clone.titleFontFamily).toBe("Verdana");
+  });
+
+  it("trims surrounding whitespace from the override", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleFontFamily: "   Arial   ",
+    });
+    expect(clone.titleFontFamily).toBe("Arial");
+  });
+
+  it("drops empty / whitespace-only overrides (collapses to undefined)", () => {
+    const c1 = cloneChart(source({ titleFontFamily: "Arial" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleFontFamily: "",
+    });
+    expect(c1.titleFontFamily).toBeUndefined();
+    const c2 = cloneChart(source({ titleFontFamily: "Arial" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleFontFamily: "   ",
+    });
+    expect(c2.titleFontFamily).toBeUndefined();
+  });
+
+  it("drops a non-string override (defends against an untyped caller)", () => {
+    const clone = cloneChart(source({ titleFontFamily: "Arial" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleFontFamily: 1 as any,
+    });
+    // The malformed override drops via the normalizer; the source's
+    // parsed value is shadowed (override wins, even when the override
+    // is malformed). Mirrors the titleColor behavior.
+    expect(clone.titleFontFamily).toBeUndefined();
+  });
+
+  it("drops the cloned titleFontFamily when the resolved title is dropped (title=null)", () => {
+    const clone = cloneChart(source({ titleFontFamily: "Arial" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      title: null,
+    });
+    expect(clone.title).toBeUndefined();
+    expect(clone.titleFontFamily).toBeUndefined();
+  });
+
+  it("drops the cloned titleFontFamily when showTitle is false", () => {
+    const clone = cloneChart(source({ titleFontFamily: "Arial" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      showTitle: false,
+    });
+    expect(clone.titleFontFamily).toBeUndefined();
+  });
+
+  it("preserves titleFontFamily when an override pins a fresh title on a sourceless chart", () => {
+    const noTitle = source();
+    delete noTitle.title;
+    const clone = cloneChart(noTitle, {
+      anchor: { from: { row: 0, col: 0 } },
+      title: "Replacement",
+      titleFontFamily: "Arial",
+    });
+    expect(clone.title).toBe("Replacement");
+    expect(clone.titleFontFamily).toBe("Arial");
+  });
+
+  it("composes with titleBold / titleItalic / titleStrike / titleUnderline / titleColor / titleFontSize", () => {
+    const clone = cloneChart(
+      source({
+        titleFontFamily: "Arial",
+        titleBold: true,
+        titleItalic: true,
+        titleStrike: true,
+        titleUnderline: true,
+        titleColor: "FF0000",
+        titleFontSize: 18,
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.titleFontFamily).toBe("Arial");
+    expect(clone.titleBold).toBe(true);
+    expect(clone.titleItalic).toBe(true);
+    expect(clone.titleStrike).toBe(true);
+    expect(clone.titleUnderline).toBe(true);
+    expect(clone.titleColor).toBe("FF0000");
+    expect(clone.titleFontSize).toBe(18);
+  });
+
+  it("normalizes a malformed source value (defensive — the reader trims, but the clone re-checks)", () => {
+    // A source that somehow carries a whitespace-only string still
+    // collapses to undefined on the cloned shape.
+    const clone = cloneChart(source({ titleFontFamily: "   " as any }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleFontFamily).toBeUndefined();
+  });
+});

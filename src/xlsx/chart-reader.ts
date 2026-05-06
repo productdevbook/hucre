@@ -190,6 +190,20 @@ export function parseChart(xml: string): Chart | undefined {
   const titleUnderline = parseTitleUnderline(chartEl);
   if (titleUnderline !== undefined) out.titleUnderline = titleUnderline;
 
+  // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
+  // typeface=".."/></a:defRPr></a:pPr></a:p></c:rich></c:tx></c:title>`
+  // mirrors Excel's "Format Chart Title -> Font -> Font" picker. Same
+  // scope rule as the size — a chart that omits `<c:title>` (or whose
+  // title is a `<c:strRef>` formula reference with no `<c:rich>` body)
+  // has no `<a:p>` slot to surface the typeface from, so the helper
+  // short-circuits to `undefined`. Empty / whitespace-only `typeface`
+  // attributes collapse to `undefined` so absence and the empty form
+  // round-trip identically through {@link cloneChart}. The value
+  // threads straight back into the writer-side
+  // {@link SheetChart.titleFontFamily} field.
+  const titleFontFamily = parseTitleFontFamily(chartEl);
+  if (titleFontFamily !== undefined) out.titleFontFamily = titleFontFamily;
+
   // `<c:autoTitleDeleted>` records whether the user explicitly deleted
   // the auto-generated title — independent of whether a literal
   // `<c:title>` is present. The element sits on `<c:chart>` directly
@@ -3783,6 +3797,60 @@ function parseTitleUnderline(chartEl: XmlElement): boolean | undefined {
   // downgrade the choice on round-trip.
   if (raw === "sng") return true;
   return undefined;
+}
+
+// ── Title Font Family ───────────────────────────────────────────────
+
+/**
+ * Pull `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
+ * typeface=".."/></a:defRPr></a:pPr></a:p></c:rich></c:tx></c:title>`
+ * off the chart. Returns the typeface string the title was authored
+ * with.
+ *
+ * The OOXML `<a:latin>` element carries the typeface name on
+ * `CT_TextFont` (ECMA-376 Part 1, §21.1.2.3.7). The reader trims
+ * surrounding whitespace and reports the trimmed typeface; empty /
+ * whitespace-only `typeface` attributes and missing `<a:latin>`
+ * elements both collapse to `undefined` so absence and the empty
+ * form round-trip identically through the writer. Non-string
+ * `typeface` tokens (defensive — the XML parser only ever surfaces
+ * strings) likewise drop to `undefined`.
+ *
+ * Returns `undefined` whenever the chart omits the `<c:title>` element
+ * — there is no `<a:p>` slot to surface the typeface from in that case
+ * — or when the title is a `<c:strRef>` (formula reference) with no
+ * `<c:rich>` body. The `<a:defRPr>` lives inside
+ * `<c:tx><c:rich><a:p><a:pPr>` per the CT_Title schema (the default-
+ * paragraph properties on the rich-text body's first paragraph); the
+ * lookup is scoped to that path so a stray `<a:latin>` elsewhere in
+ * the chart (e.g. on an axis title or a data-labels block) cannot
+ * leak in.
+ */
+function parseTitleFontFamily(chartEl: XmlElement): string | undefined {
+  const title = findChild(chartEl, "title");
+  if (!title) return undefined;
+  const tx = findChild(title, "tx");
+  if (!tx) return undefined;
+  const rich = findChild(tx, "rich");
+  if (!rich) return undefined;
+  // `<a:p><a:pPr><a:defRPr><a:latin>` is the OOXML path Excel writes
+  // for the default-paragraph typeface. The reader walks the
+  // canonical chain and bails on the first missing link so a
+  // malformed `<c:rich>` surfaces as absence rather than a fabricated
+  // value.
+  const p = findChild(rich, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const latin = findChild(defRPr, "latin");
+  if (!latin) return undefined;
+  const raw = latin.attrs.typeface;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
 }
 
 // ── Auto Title Deleted ────────────────────────────────────────────

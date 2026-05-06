@@ -1972,6 +1972,44 @@ export interface SheetChart {
    */
   titleUnderline?: boolean;
   /**
+   * Chart title font family / typeface. Maps to
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
+   * typeface=".."/></a:defRPr></a:pPr><a:r><a:rPr><a:latin
+   * typeface=".."/></a:rPr></a:r></a:p></c:rich></c:tx></c:title>` —
+   * Excel's "Format Chart Title -> Font -> Font" picker. The OOXML
+   * `<a:latin typeface=".."/>` element carries the typeface name
+   * (`CT_TextFont`, ECMA-376 Part 1, §21.1.2.3.7); the writer lands
+   * the element on both the default-paragraph `<a:defRPr>` and the
+   * literal run's `<a:rPr>` so a re-parse picks the typeface up off
+   * either canonical slot — Excel keeps the two values in sync.
+   *
+   * Accepts any non-empty string typeface name (e.g. `"Calibri"`,
+   * `"Arial"`, `"Times New Roman"`); the writer trims surrounding
+   * whitespace and emits the trimmed value verbatim (XML-escaped)
+   * so Excel can resolve the named font from the workbook's font
+   * scheme or the host system's installed fonts. Empty / whitespace-
+   * only strings and non-string tokens collapse to `undefined` so
+   * the writer skips the entire `<a:latin>` element and the title
+   * inherits Excel's reference theme typeface (Calibri Light from
+   * the default Office theme).
+   *
+   * Default: omitted — the title renders in Excel's reference theme
+   * typeface (no `<a:latin>` element, the writer skips the element
+   * entirely). Pin a typeface name to render the title in that font
+   * (e.g. `"Arial"` for a corporate dashboard standard).
+   *
+   * Silently ignored when no title is rendered (`showTitle === false`
+   * or `title` is absent) — there is no `<c:title>` block to host the
+   * typeface in either case. Composes independently with
+   * {@link titleBold} / {@link titleItalic} / {@link titleStrike} /
+   * {@link titleUnderline} / {@link titleColor} /
+   * {@link titleFontSize} / {@link titleRotation} /
+   * {@link titleOverlay}: all nine fields land on the same
+   * `<c:title>` element so a single configuration call threads
+   * cleanly through every chart-title knob Excel exposes.
+   */
+  titleFontFamily?: string;
+  /**
    * Auto-title-deleted flag. Maps to `<c:chart><c:autoTitleDeleted
    * val=".."/>` — Excel's record of whether the user explicitly deleted
    * the auto-generated title that single-series charts synthesise from
@@ -5752,6 +5790,30 @@ export interface Chart {
    * without transformation.
    */
   titleUnderline?: boolean;
+  /**
+   * Chart title font family / typeface pulled from
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
+   * typeface=".."/></a:defRPr></a:pPr></a:p></c:rich></c:tx>
+   * </c:title>`. Reflects Excel's "Format Chart Title -> Font -> Font"
+   * picker. The OOXML `<a:latin typeface=".."/>` element carries the
+   * typeface name (`CT_TextFont`, ECMA-376 Part 1, §21.1.2.3.7).
+   *
+   * Reports the trimmed typeface string when the source chart pinned
+   * a non-empty typeface; absence and empty / whitespace-only
+   * `typeface` attributes both collapse to `undefined` so absence
+   * and `<a:latin typeface=""/>` round-trip identically through
+   * {@link cloneChart}. Non-string `typeface` tokens (defensive — the
+   * XML parser only ever surfaces strings) likewise drop to
+   * `undefined`.
+   *
+   * Reported as `undefined` whenever the source chart has no
+   * `<c:title>` element at all, or when the title is a `<c:strRef>`
+   * (formula reference) with no `<c:rich>` body — there is no `<a:p>`
+   * to host the typeface in either case. The parsed value threads
+   * straight back into the writer-side
+   * {@link SheetChart.titleFontFamily} without transformation.
+   */
+  titleFontFamily?: string;
   /**
    * Auto-title-deleted flag pulled from `<c:chart><c:autoTitleDeleted
    * val=".."/>`. Reflects Excel's "the user explicitly deleted the

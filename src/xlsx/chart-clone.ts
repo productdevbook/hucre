@@ -536,6 +536,29 @@ export interface CloneChartOptions {
    */
   titleUnderline?: boolean | null;
   /**
+   * Override the chart-level title font family / typeface.
+   * `undefined` (or omitted) inherits the source's parsed
+   * `titleFontFamily`; `null` drops the inherited typeface so the
+   * writer falls back to the OOXML default (no `<a:latin>` element,
+   * the title inherits the theme typeface); a non-empty string
+   * replaces it.
+   *
+   * The override is trimmed; empty / whitespace-only strings and
+   * non-string overrides (typed escapes from an untyped caller)
+   * collapse to a drop so the cloned `SheetChart` always carries a
+   * value the writer will accept.
+   *
+   * The override is silently dropped from the cloned `SheetChart`
+   * when the resolved chart renders no title (`title` resolved to
+   * `undefined` or `showTitle === false`) — there is no `<c:title>`
+   * block to host the typeface in either case. The grammar mirrors
+   * `titleColor` (the other string-typed knob) and `titleBold` /
+   * `titleItalic` / `titleStrike` / `titleUnderline` /
+   * `titleFontSize` / `titleRotation` / `titleOverlay` so the
+   * chart-level title knobs compose the same way at the call site.
+   */
+  titleFontFamily?: string | null;
+  /**
    * Override `<c:autoTitleDeleted>` (the "user explicitly deleted the
    * auto-generated title" flag).
    *
@@ -1716,6 +1739,22 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
       options.titleUnderline,
     );
     if (resolvedTitleUnderline !== undefined) out.titleUnderline = resolvedTitleUnderline;
+
+    // `titleFontFamily` only renders inside `<c:title>` — a clone that
+    // omits the title has no `<a:defRPr><a:latin>` slot for the writer
+    // to populate. Same scope rule as `titleColor` (the other string-
+    // typed knob) / `titleStrike` / `titleUnderline` / `titleOverlay`
+    // / `titleRotation` / `titleFontSize` / `titleBold` /
+    // `titleItalic`: the override wins over the source's parsed value;
+    // absence inherits, `null` drops, a non-empty string replaces.
+    // Empty / whitespace-only strings and non-string overrides
+    // collapse via the normalizer so the cloned `SheetChart` always
+    // carries a value the writer will accept.
+    const resolvedTitleFontFamily = resolveTitleFontFamily(
+      source.titleFontFamily,
+      options.titleFontFamily,
+    );
+    if (resolvedTitleFontFamily !== undefined) out.titleFontFamily = resolvedTitleFontFamily;
   }
 
   // `<c:autoTitleDeleted>` sits on `<c:chart>` directly, not inside
@@ -3145,6 +3184,55 @@ function resolveTitleUnderline(
   if (override === undefined) return normalizeTitleUnderline(sourceValue);
   if (override === null) return undefined;
   return normalizeTitleUnderline(override);
+}
+
+/**
+ * Normalize a `titleFontFamily` value for the cloned `SheetChart`.
+ * Mirrors the writer's `normalizeTitleFontFamily` — the cloned shape
+ * is guaranteed to round-trip through the writer without surprise:
+ * non-empty strings pass through trimmed, every other token (empty
+ * / whitespace-only strings, typed escapes from an untyped caller)
+ * collapses to `undefined` so the cloned chart drops the field
+ * rather than carry a value the writer would silently elide back to
+ * absence.
+ */
+function normalizeTitleFontFamily(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
+}
+
+/**
+ * Resolve a `titleFontFamily` override.
+ *
+ * `undefined` → inherit the source's parsed `titleFontFamily`,
+ *               running it through {@link normalizeTitleFontFamily}
+ *               so a malformed source value cannot leak through to
+ *               the cloned chart.
+ * `null`      → drop the inherited typeface (the writer falls back to
+ *               the OOXML default — no `<a:latin>` element, the title
+ *               inherits the theme typeface).
+ * `string`    → replace, running it through
+ *               {@link normalizeTitleFontFamily} so the override
+ *               accepts any caller spelling that the writer will
+ *               accept (with surrounding whitespace trimmed; empty /
+ *               whitespace-only strings collapse to a drop).
+ *
+ * The grammar mirrors `titleColor` (the other string-typed knob) /
+ * `titleBold` / `titleItalic` / `titleStrike` / `titleUnderline` /
+ * `titleFontSize` / `titleRotation` / `titleOverlay` so the chart-
+ * level title knobs compose the same way at the call site. Callers
+ * should gate the result on the resolved title visibility — when no
+ * title is emitted, the typeface has no slot in the rendered chart.
+ */
+function resolveTitleFontFamily(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeTitleFontFamily(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleFontFamily(override);
 }
 
 /**
