@@ -10950,6 +10950,190 @@ describe("cloneChart — title color", () => {
   });
 });
 
+describe("cloneChart — title strike", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Sales",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's titleStrike by default", () => {
+    const clone = cloneChart(source({ titleStrike: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleStrike).toBe(true);
+  });
+
+  it("lets options.titleStrike override the source's value", () => {
+    const clone = cloneChart(source({ titleStrike: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleStrike: false,
+    });
+    expect(clone.titleStrike).toBe(false);
+  });
+
+  it("drops the inherited titleStrike when the override is null", () => {
+    const clone = cloneChart(source({ titleStrike: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleStrike: null,
+    });
+    expect(clone.titleStrike).toBeUndefined();
+  });
+
+  it("returns undefined titleStrike when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.titleStrike).toBeUndefined();
+  });
+
+  it("lets options.titleStrike pin true on a non-strike source", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleStrike: true,
+    });
+    expect(clone.titleStrike).toBe(true);
+  });
+
+  it("drops a non-boolean override (defends against an untyped caller)", () => {
+    const clone = cloneChart(source({ titleStrike: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleStrike: "true" as any,
+    });
+    // The malformed override drops via the normalizer; the source's
+    // parsed value is shadowed (override wins, even when the override is
+    // malformed). Mirrors the titleBold / titleItalic behavior.
+    expect(clone.titleStrike).toBeUndefined();
+  });
+
+  it("drops the cloned titleStrike when the resolved title is dropped (title=null)", () => {
+    const clone = cloneChart(source({ titleStrike: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      title: null,
+    });
+    expect(clone.title).toBeUndefined();
+    expect(clone.titleStrike).toBeUndefined();
+  });
+
+  it("drops the cloned titleStrike when showTitle is false", () => {
+    const clone = cloneChart(source({ titleStrike: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      showTitle: false,
+    });
+    expect(clone.titleStrike).toBeUndefined();
+  });
+
+  it("preserves titleStrike when an override pins a fresh title on a sourceless chart", () => {
+    const noTitle = source();
+    delete noTitle.title;
+    const clone = cloneChart(noTitle, {
+      anchor: { from: { row: 0, col: 0 } },
+      title: "Replacement",
+      titleStrike: true,
+    });
+    expect(clone.title).toBe("Replacement");
+    expect(clone.titleStrike).toBe(true);
+  });
+
+  it("composes with titleBold / titleItalic / titleColor / titleFontSize / titleRotation / titleOverlay", () => {
+    const clone = cloneChart(
+      source({
+        titleStrike: true,
+        titleColor: "1070CA",
+        titleItalic: true,
+        titleBold: true,
+        titleFontSize: 18,
+        titleRotation: -45,
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        titleOverlay: true,
+      },
+    );
+    expect(clone.titleStrike).toBe(true);
+    expect(clone.titleColor).toBe("1070CA");
+    expect(clone.titleItalic).toBe(true);
+    expect(clone.titleBold).toBe(true);
+    expect(clone.titleFontSize).toBe(18);
+    expect(clone.titleRotation).toBe(-45);
+    expect(clone.titleOverlay).toBe(true);
+  });
+
+  it("threads through line -> column flatten", () => {
+    const clone = cloneChart(source({ titleStrike: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.titleStrike).toBe(true);
+  });
+
+  it("end-to-end parse -> clone -> write -> reparse round-trip", async () => {
+    const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr sz="2000" strike="sngStrike"/></a:pPr><a:r><a:t>Source</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:lineChart>
+        <c:ser>
+          <c:idx val="0"/><c:order val="0"/>
+          <c:val><c:numRef><c:f>Sheet1!$B$2:$B$3</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:lineChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(xml)!;
+    expect(parsed.titleStrike).toBe(true);
+
+    const clone = cloneChart(parsed, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleStrike).toBe(true);
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Region", "Revenue"],
+            ["North", 100],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const titleBlock = written.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(titleBlock).toContain('strike="sngStrike"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleStrike).toBe(true);
+  });
+});
+
 describe("cloneChart — axis title rotation", () => {
   function source(extra?: Partial<Chart>): Chart {
     return {

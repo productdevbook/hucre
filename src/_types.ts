@@ -1463,6 +1463,56 @@ export interface SheetChart {
    */
   titleColor?: string;
   /**
+   * Chart title strikethrough flag. Maps to
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
+   * <a:r><a:rPr strike=".."/></a:r></a:p></c:rich></c:tx></c:title>` —
+   * Excel's "Format Chart Title -> Font -> Strikethrough" toggle. The
+   * OOXML attribute is the `ST_TextStrikeType` enum on
+   * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7) with
+   * three values: `"noStrike"` (the OOXML default — no strikethrough),
+   * `"sngStrike"` (single horizontal line, the value Excel's UI
+   * checkbox emits), and `"dblStrike"` (double horizontal line, a
+   * non-UI variant Excel does not surface in its ribbon). The writer
+   * lands the value on both the default-paragraph `<a:defRPr>` and
+   * the literal run's `<a:rPr>` so a re-parse picks the flag up off
+   * either canonical slot — Excel keeps the two attributes in sync.
+   *
+   * Modeled as a boolean for symmetry with {@link titleBold} /
+   * {@link titleItalic}: `true` emits `strike="sngStrike"` (Excel's
+   * UI "Strikethrough" checkbox — single line). Absence and
+   * non-boolean tokens collapse to omitting the attribute (Excel's
+   * reference serialization for a non-strikethrough title — the
+   * application-default `"noStrike"` collapses to absence). Set
+   * `false` explicitly to pin the non-default `strike="noStrike"`
+   * (functionally identical to omission, but useful when overriding a
+   * templated title that had strikethrough pinned upstream).
+   *
+   * Hucre's writer emits only `"sngStrike"` to keep the surfaced shape
+   * consistent with what Excel's reference UI authors. The reader
+   * collapses the non-UI `"dblStrike"` to `undefined` so a templated
+   * chart that pinned the double-line variant in raw OOXML round-trips
+   * to the same `undefined` an unmarked chart parses to (i.e. the
+   * double-line variant silently downgrades to the single-line write
+   * grammar rather than fabricate a value the writer would re-emit
+   * incorrectly).
+   *
+   * Default: omitted — the title renders without strikethrough (no
+   * `strike` attribute on either slot, Excel's reference serialization
+   * for a fresh chart title). Set `true` to render the title with a
+   * single strikethrough line, useful for marking "before / after" or
+   * "deprecated" dashboard tile headers.
+   *
+   * Silently ignored when no title is rendered (`showTitle === false`
+   * or `title` is absent) — there is no `<c:title>` block to host the
+   * flag in either case. Composes independently with {@link titleBold}
+   * / {@link titleItalic} / {@link titleColor} /
+   * {@link titleFontSize} / {@link titleRotation} /
+   * {@link titleOverlay}: all seven fields land on the same
+   * `<c:title>` element so a single configuration call threads
+   * cleanly through every chart-title knob Excel exposes.
+   */
+  titleStrike?: boolean;
+  /**
    * Auto-title-deleted flag. Maps to `<c:chart><c:autoTitleDeleted
    * val=".."/>` — Excel's record of whether the user explicitly deleted
    * the auto-generated title that single-series charts synthesise from
@@ -4185,6 +4235,35 @@ export interface Chart {
    * no `<a:p>` to host the fill in any of those cases.
    */
   titleColor?: string;
+  /**
+   * Chart title strikethrough flag pulled from
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
+   * </a:p></c:rich></c:tx></c:title>`. Reflects Excel's "Format Chart
+   * Title -> Font -> Strikethrough" toggle.
+   *
+   * The OOXML attribute is the `ST_TextStrikeType` enum on
+   * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7) with
+   * three values: `"noStrike"`, `"sngStrike"`, `"dblStrike"`. Only
+   * the UI-default `"sngStrike"` (Excel's "Strikethrough" checkbox —
+   * single line) surfaces as `true`; `"noStrike"` (the OOXML
+   * application default) and absence both collapse to `undefined`,
+   * and the non-UI `"dblStrike"` variant likewise collapses to
+   * `undefined` rather than surface a value the writer would silently
+   * downgrade on round-trip — hucre's writer emits only `"sngStrike"`,
+   * so reporting `"dblStrike"` as `true` would round-trip into a
+   * lossy single-line replacement.
+   *
+   * Unknown / malformed `strike` tokens drop to `undefined` rather
+   * than fabricate a value the writer would never emit.
+   *
+   * Reported as `undefined` whenever the source chart has no
+   * `<c:title>` element at all, or when the title is a `<c:strRef>`
+   * (formula reference) with no `<c:rich>` body — there is no `<a:p>`
+   * to host the flag in either case. The parsed value threads
+   * straight back into the writer-side {@link SheetChart.titleStrike}
+   * without transformation.
+   */
+  titleStrike?: boolean;
   /**
    * Auto-title-deleted flag pulled from `<c:chart><c:autoTitleDeleted
    * val=".."/>`. Reflects Excel's "the user explicitly deleted the

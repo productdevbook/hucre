@@ -355,6 +355,29 @@ export interface CloneChartOptions {
    */
   titleColor?: string | null;
   /**
+   * Override the chart-level title strikethrough flag.
+   * `undefined` (or omitted) inherits the source's parsed `titleStrike`.
+   * `null` drops the inherited flag (the writer falls back to the
+   * OOXML default — no `strike` attribute, equivalent to no
+   * strikethrough).
+   * A `boolean` replaces it: `true` emits `strike="sngStrike"`
+   * (Excel's UI "Strikethrough" — single line); `false` pins the
+   * non-default omission (functionally identical to dropping).
+   *
+   * Non-boolean overrides (typed escapes from an untyped caller)
+   * collapse to a drop so the cloned `SheetChart` always carries a
+   * value the writer will accept.
+   *
+   * The override is silently dropped from the cloned `SheetChart`
+   * when the resolved chart renders no title (`title` resolved to
+   * `undefined` or `showTitle === false`) — there is no `<c:title>`
+   * block to host the flag in either case. The grammar mirrors
+   * `titleBold` / `titleItalic` / `titleColor` / `titleFontSize` /
+   * `titleRotation` / `titleOverlay` so the chart-level title knobs
+   * compose the same way at the call site.
+   */
+  titleStrike?: boolean | null;
+  /**
    * Override `<c:autoTitleDeleted>` (the "user explicitly deleted the
    * auto-generated title" flag).
    *
@@ -1272,6 +1295,17 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // `SheetChart` always carries a value the writer will accept.
     const resolvedTitleColor = resolveTitleColor(source.titleColor, options.titleColor);
     if (resolvedTitleColor !== undefined) out.titleColor = resolvedTitleColor;
+
+    // `titleStrike` only renders inside `<c:title>` — a clone that
+    // omits the title has no `<a:defRPr strike="..">` slot for the
+    // writer to populate. Same scope rule as `titleOverlay` /
+    // `titleRotation` / `titleFontSize` / `titleBold` / `titleItalic`
+    // / `titleColor`: the override wins over the source's parsed
+    // value; absence inherits, `null` drops, a `boolean` replaces.
+    // Non-boolean overrides collapse via the normalizer so the cloned
+    // `SheetChart` always carries a value the writer will accept.
+    const resolvedTitleStrike = resolveTitleStrike(source.titleStrike, options.titleStrike);
+    if (resolvedTitleStrike !== undefined) out.titleStrike = resolvedTitleStrike;
   }
 
   // `<c:autoTitleDeleted>` sits on `<c:chart>` directly, not inside
@@ -2403,6 +2437,45 @@ function resolveTitleColor(
   if (override === undefined) return normalizeTitleColor(sourceValue);
   if (override === null) return undefined;
   return normalizeTitleColor(override);
+}
+
+/**
+ * Normalize a `titleStrike` value for the cloned `SheetChart`. Mirrors
+ * the writer's `normalizeTitleStrike` — the cloned shape is guaranteed
+ * to round-trip through the writer without surprise: `true` / `false`
+ * pass through literally, every other token (typed escape from an
+ * untyped caller) collapses to `undefined` so the cloned chart drops
+ * the field rather than carry a value the writer would silently elide
+ * back to absence.
+ */
+function normalizeTitleStrike(value: boolean | undefined): boolean | undefined {
+  if (value === true) return true;
+  if (value === false) return false;
+  return undefined;
+}
+
+/**
+ * Resolve a `titleStrike` override.
+ *
+ * `undefined` → inherit the source's parsed `titleStrike`.
+ * `null`      → drop the inherited flag (the writer falls back to the
+ *               OOXML default — no `strike` attribute, equivalent to
+ *               no strikethrough).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `titleBold` / `titleItalic` / `titleColor` /
+ * `titleFontSize` / `titleRotation` / `titleOverlay` so the chart-level
+ * title knobs compose the same way at the call site. Callers should
+ * gate the result on the resolved title visibility — when no title is
+ * emitted, the flag has no slot in the rendered chart.
+ */
+function resolveTitleStrike(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return normalizeTitleStrike(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleStrike(override);
 }
 
 /**

@@ -76,6 +76,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveTitleBold(chart),
         resolveTitleItalic(chart),
         resolveTitleColor(chart),
+        resolveTitleStrike(chart),
       ),
     );
   }
@@ -214,6 +215,7 @@ function buildTitle(
   bold: boolean | undefined,
   italic: boolean | undefined,
   rgbHex: string | undefined,
+  strike: boolean | undefined,
 ): string {
   // OOXML's `<a:bodyPr rot="N"/>` attribute is in 60000ths of a degree.
   // The writer holds `titleRotation` in whole degrees and converts at
@@ -250,6 +252,20 @@ function buildTitle(
   // reference serialization byte-for-byte (Excel itself omits `i` when
   // the title is non-italic — only the bold flag is always emitted).
   const i = italic === true ? 1 : undefined;
+  // OOXML's `<a:defRPr strike=".."/>` / `<a:rPr strike=".."/>` attribute
+  // is the `ST_TextStrikeType` enum on `CT_TextCharacterProperties` —
+  // `"noStrike"` (default), `"sngStrike"` (single line, the value
+  // Excel's UI emits), `"dblStrike"` (double line, non-UI). The writer
+  // emits only the UI variant `"sngStrike"` to keep the surfaced shape
+  // consistent with what Excel's reference UI authors. Absence
+  // (`undefined`) and explicit `false` both collapse to omitting the
+  // attribute (Excel itself omits `strike` when the title is not
+  // strikethrough — the OOXML default `"noStrike"` collapses to
+  // absence). Like bold / italic, the value lands on both the
+  // default-paragraph `<a:defRPr>` and the literal run's `<a:rPr>` so
+  // a re-parse picks the value up off either canonical slot — Excel
+  // keeps the two attributes in sync.
+  const strikeAttr = strike === true ? "sngStrike" : undefined;
   // OOXML's `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/>
   // </a:solidFill></a:defRPr>` carries the title's font color. The
   // writer holds `titleColor` as a 6-character uppercase hex string
@@ -268,11 +284,11 @@ function buildTitle(
   // fresh chart with no custom color matches Excel's reference
   // serialization byte-for-byte.
   const defRPr = solidFillChild
-    ? xmlElement("a:defRPr", { sz, b, i }, [solidFillChild])
-    : xmlSelfClose("a:defRPr", { sz, b, i });
+    ? xmlElement("a:defRPr", { sz, b, i, strike: strikeAttr }, [solidFillChild])
+    : xmlSelfClose("a:defRPr", { sz, b, i, strike: strikeAttr });
   const rPr = solidFillChild
-    ? xmlElement("a:rPr", { lang: "en-US", sz, b, i }, [solidFillChild])
-    : xmlSelfClose("a:rPr", { lang: "en-US", sz, b, i });
+    ? xmlElement("a:rPr", { lang: "en-US", sz, b, i, strike: strikeAttr }, [solidFillChild])
+    : xmlSelfClose("a:rPr", { lang: "en-US", sz, b, i, strike: strikeAttr });
   return xmlElement("c:title", undefined, [
     xmlElement("c:tx", undefined, [
       xmlElement("c:rich", undefined, [
@@ -515,6 +531,40 @@ function normalizeTitleColor(value: string | undefined): string | undefined {
  */
 function resolveTitleColor(chart: SheetChart): string | undefined {
   return normalizeTitleColor(chart.titleColor);
+}
+
+/**
+ * Normalize a {@link SheetChart.titleStrike} value for the
+ * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
+ * </a:p></c:rich></c:tx></c:title>` writer slot. Returns the literal
+ * boolean when the input is `true` / `false`, or `undefined` for any
+ * other token (including `null`-shaped escapes from an untyped
+ * caller). Absence and non-boolean tokens both collapse to
+ * `undefined` so the writer omits the `strike` attribute entirely
+ * (Excel's reference serialization for a non-strikethrough title —
+ * the OOXML default `"noStrike"` collapses to absence; only an
+ * explicit `true` emits `strike="sngStrike"`).
+ */
+function normalizeTitleStrike(value: boolean | undefined): boolean | undefined {
+  if (value === true) return true;
+  if (value === false) return false;
+  return undefined;
+}
+
+/**
+ * Resolve `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/>
+ * </a:pPr></a:p></c:rich></c:tx></c:title>` from
+ * {@link SheetChart.titleStrike}.
+ *
+ * Returns the literal boolean, or `undefined` when the chart leaves
+ * the field unset / passed a non-boolean token. The flag is only
+ * meaningful when the chart actually emits a title — the caller is
+ * expected to gate the call on `showTitle && chart.title`. A chart
+ * whose title is suppressed has no `<c:title>` block to host the flag
+ * in either case.
+ */
+function resolveTitleStrike(chart: SheetChart): boolean | undefined {
+  return normalizeTitleStrike(chart.titleStrike);
 }
 
 /**

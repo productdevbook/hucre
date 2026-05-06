@@ -10605,6 +10605,196 @@ describe("parseChart — title color", () => {
   });
 });
 
+// ── parseChart — title strike ────────────────────────────────────────
+
+describe("parseChart — title strike", () => {
+  const NS_TS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withTitleStrike(strike: string | undefined): string {
+    const defRPr = strike === undefined ? "<a:defRPr/>" : `<a:defRPr strike="${strike}"/>`;
+    return `<c:chartSpace ${NS_TS}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr>${defRPr}</a:pPr><a:r><a:t>Quarterly Revenue</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces true when the title pinned strike='sngStrike' (Excel UI checkbox)", () => {
+    const chart = parseChart(withTitleStrike("sngStrike"));
+    expect(chart?.titleStrike).toBe(true);
+  });
+
+  it("collapses strike='noStrike' to undefined (OOXML default round-trips identically)", () => {
+    const chart = parseChart(withTitleStrike("noStrike"));
+    expect(chart?.titleStrike).toBeUndefined();
+  });
+
+  it("collapses absence of the strike attribute to undefined", () => {
+    const chart = parseChart(withTitleStrike(undefined));
+    expect(chart?.titleStrike).toBeUndefined();
+  });
+
+  it("collapses the non-UI 'dblStrike' variant to undefined (avoids lossy downgrade)", () => {
+    // Hucre's writer emits only "sngStrike". Surfacing "dblStrike" as
+    // true would silently downgrade the choice on round-trip, so the
+    // reader collapses it to undefined to keep the round-trip lossless.
+    const chart = parseChart(withTitleStrike("dblStrike"));
+    expect(chart?.titleStrike).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:title> element", () => {
+    const xml = `<c:chartSpace ${NS_TS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleStrike).toBeUndefined();
+  });
+
+  it("returns undefined when <c:title> has no <c:tx><c:rich> body (strRef)", () => {
+    // A title that only carries `<c:strRef>` (formula reference) has
+    // no `<a:p><a:pPr><a:defRPr>` to host the strike flag.
+    const xml = `<c:chartSpace ${NS_TS}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:strRef>
+          <c:f>Sheet1!$A$1</c:f>
+          <c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Revenue</c:v></c:pt></c:strCache>
+        </c:strRef>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleStrike).toBeUndefined();
+    expect(chart?.title).toBe("Revenue");
+  });
+
+  it("returns undefined when <a:p> has no <a:pPr> element", () => {
+    const xml = `<c:chartSpace ${NS_TS}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:r><a:t>Quarterly Revenue</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleStrike).toBeUndefined();
+  });
+
+  it("drops unknown strike tokens to undefined", () => {
+    expect(parseChart(withTitleStrike("yes"))?.titleStrike).toBeUndefined();
+    expect(parseChart(withTitleStrike("on"))?.titleStrike).toBeUndefined();
+    expect(parseChart(withTitleStrike(""))?.titleStrike).toBeUndefined();
+    expect(parseChart(withTitleStrike("1"))?.titleStrike).toBeUndefined();
+    expect(parseChart(withTitleStrike("true"))?.titleStrike).toBeUndefined();
+  });
+
+  it("does not leak from a stray axis-title <a:defRPr>", () => {
+    // The category axis title carries a strike <a:defRPr strike="sngStrike"/>,
+    // but the chart-level title does not — `titleStrike` reflects only
+    // the chart-level title's <a:defRPr>, not a stray sibling element.
+    const xml = `<c:chartSpace ${NS_TS}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Header</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:title>
+          <c:tx><c:rich>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr strike="sngStrike"/></a:pPr><a:r><a:t>Period</a:t></a:r></a:p>
+          </c:rich></c:tx>
+          <c:overlay val="0"/>
+        </c:title>
+      </c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleStrike).toBeUndefined();
+  });
+
+  it("co-surfaces alongside titleBold, titleItalic, titleColor, titleFontSize, titleRotation, and titleOverlay", () => {
+    const xml = `<c:chartSpace ${NS_TS}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr rot="-2700000"/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr sz="2400" b="1" i="1" strike="sngStrike"><a:solidFill><a:srgbClr val="1070CA"/></a:solidFill></a:defRPr></a:pPr><a:r><a:t>Hero</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="1"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.title).toBe("Hero");
+    expect(chart?.titleStrike).toBe(true);
+    expect(chart?.titleColor).toBe("1070CA");
+    expect(chart?.titleItalic).toBe(true);
+    expect(chart?.titleBold).toBe(true);
+    expect(chart?.titleFontSize).toBe(24);
+    expect(chart?.titleRotation).toBe(-45);
+    expect(chart?.titleOverlay).toBe(true);
+  });
+});
+
 // ── parseChart — axis title rotation ─────────────────────────────────
 
 describe("parseChart — axis title rotation", () => {

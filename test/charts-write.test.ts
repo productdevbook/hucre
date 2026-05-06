@@ -9999,6 +9999,169 @@ describe("writeChart — title color", () => {
   });
 });
 
+// ── writeChart — title strike ───────────────────────────────────────
+
+describe("writeChart — title strike", () => {
+  function titleBlockOf(xml: string): string {
+    return xml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+  }
+
+  function defRPrStrikeOf(xml: string): string | undefined {
+    // The title's <a:defRPr> lives inside <c:title><c:tx><c:rich><a:p><a:pPr>.
+    const titleBlock = titleBlockOf(xml);
+    const m = titleBlock.match(/<a:defRPr\b[^/]*\/>/);
+    if (!m) return undefined;
+    const s = m[0].match(/\bstrike="([^"]+)"/);
+    return s ? s[1] : undefined;
+  }
+
+  function rPrStrikeOf(xml: string): string | undefined {
+    const titleBlock = titleBlockOf(xml);
+    const m = titleBlock.match(/<a:rPr\b[^/]*\/>/);
+    if (!m) return undefined;
+    const s = m[0].match(/\bstrike="([^"]+)"/);
+    return s ? s[1] : undefined;
+  }
+
+  it("omits the strike attribute by default (matches Excel's reference non-strikethrough title)", () => {
+    // Excel itself omits `strike` on a non-strikethrough title — the
+    // OOXML default `"noStrike"` collapses to absence. Only the bold
+    // flag is always emitted.
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(defRPrStrikeOf(result.chartXml)).toBeUndefined();
+    expect(rPrStrikeOf(result.chartXml)).toBeUndefined();
+  });
+
+  it("emits strike='sngStrike' on titleStrike=true", () => {
+    const result = writeChart(makeChart({ titleStrike: true }), "Sheet1");
+    expect(defRPrStrikeOf(result.chartXml)).toBe("sngStrike");
+    expect(rPrStrikeOf(result.chartXml)).toBe("sngStrike");
+  });
+
+  it("omits the strike attribute on titleStrike=false (functionally identical to omission)", () => {
+    const result = writeChart(makeChart({ titleStrike: false }), "Sheet1");
+    expect(defRPrStrikeOf(result.chartXml)).toBeUndefined();
+    expect(rPrStrikeOf(result.chartXml)).toBeUndefined();
+  });
+
+  it("drops non-boolean inputs back to the OOXML default (defends against type guard escape)", () => {
+    const result = writeChart(makeChart({ titleStrike: "true" as any }), "Sheet1");
+    expect(defRPrStrikeOf(result.chartXml)).toBeUndefined();
+    const result2 = writeChart(makeChart({ titleStrike: 1 as any }), "Sheet1");
+    expect(defRPrStrikeOf(result2.chartXml)).toBeUndefined();
+    const result3 = writeChart(makeChart({ titleStrike: "sngStrike" as any }), "Sheet1");
+    expect(defRPrStrikeOf(result3.chartXml)).toBeUndefined();
+  });
+
+  it("ignores titleStrike when the chart renders no title (showTitle=false)", () => {
+    // The whole `<c:title>` block is suppressed — no `<a:defRPr>` to
+    // host the strike flag.
+    const result = writeChart(makeChart({ showTitle: false, titleStrike: true }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:title>");
+  });
+
+  it("ignores titleStrike when the chart has no literal title", () => {
+    const result = writeChart(makeChart({ title: undefined, titleStrike: true }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:title>");
+  });
+
+  it("composes independently with titleBold, titleItalic, titleColor, titleFontSize, titleRotation, and titleOverlay", () => {
+    const result = writeChart(
+      makeChart({
+        titleStrike: true,
+        titleColor: "1070CA",
+        titleItalic: true,
+        titleBold: true,
+        titleFontSize: 24,
+        titleRotation: -45,
+        titleOverlay: true,
+      }),
+      "Sheet1",
+    );
+    const titleBlock = titleBlockOf(result.chartXml);
+    expect(titleBlock).toContain('rot="-2700000"');
+    expect(titleBlock).toContain('sz="2400"');
+    expect(titleBlock).toContain('b="1"');
+    expect(titleBlock).toContain('i="1"');
+    expect(titleBlock).toContain('strike="sngStrike"');
+    expect(titleBlock).toContain('val="1070CA"');
+    expect(titleBlock).toContain('<c:overlay val="1"/>');
+  });
+
+  it("preserves the title body's other attributes (lang='en-US', sz, b)", () => {
+    const result = writeChart(makeChart({ titleStrike: true }), "Sheet1");
+    const titleBlock = titleBlockOf(result.chartXml);
+    expect(titleBlock).toContain('lang="en-US"');
+    // The default 14pt size still lands on both slots even when strike flips.
+    expect(titleBlock.match(/sz="1400"/g)?.length).toBeGreaterThanOrEqual(2);
+    // The default `b="0"` is still emitted on both slots.
+    expect(titleBlock.match(/b="0"/g)?.length).toBeGreaterThanOrEqual(2);
+    // `strike="sngStrike"` lands on both the <a:defRPr> and the <a:rPr>.
+    expect(titleBlock.match(/strike="sngStrike"/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("threads through every chart family (bar / column / line / pie / scatter / area)", () => {
+    const types: WriteChartKind[] = ["bar", "column", "line", "pie", "scatter", "area"];
+    for (const type of types) {
+      const result = writeChart(makeChart({ type, titleStrike: true }), "Sheet1");
+      expect(defRPrStrikeOf(result.chartXml)).toBe("sngStrike");
+    }
+  });
+
+  it("parse round-trip surfaces titleStrike from the writer's output", () => {
+    const written = writeChart(makeChart({ titleStrike: true }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleStrike).toBe(true);
+  });
+
+  it("collapses the default (no-strike) round-trip back to undefined", () => {
+    // A fresh chart emits no `strike` attribute; the reader collapses
+    // absence to `undefined` so absence and the default round-trip
+    // identically.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleStrike).toBeUndefined();
+  });
+
+  it("collapses the explicit titleStrike=false round-trip back to undefined", () => {
+    // titleStrike=false drops the attribute entirely (the OOXML default
+    // is `"noStrike"`, but the writer omits the attribute for symmetry
+    // with how Excel's reference UI emits a non-strikethrough title);
+    // the reader collapses absence to `undefined`.
+    const written = writeChart(makeChart({ titleStrike: false }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleStrike).toBeUndefined();
+  });
+
+  it("writeXlsx package round-trip surfaces titleStrike from the chart part", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Revenue"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Quarterly Revenue",
+            titleStrike: true,
+            series: [{ name: "Revenue", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const titleBlock = chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(titleBlock).toContain('strike="sngStrike"');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.titleStrike).toBe(true);
+  });
+});
+
 // ── writeChart — axis title rotation ────────────────────────────────
 
 describe("writeChart — axis title rotation", () => {
