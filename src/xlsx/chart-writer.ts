@@ -1111,6 +1111,8 @@ function resolveDataTable(chart: SheetChart):
       fontSize: number | undefined;
       fontColor: string | undefined;
       bold: boolean | undefined;
+      italic: boolean | undefined;
+      underline: boolean | undefined;
       strikethrough: boolean | undefined;
     }
   | undefined {
@@ -1132,6 +1134,8 @@ function resolveDataTable(chart: SheetChart):
       fontSize: undefined,
       fontColor: undefined,
       bold: undefined,
+      italic: undefined,
+      underline: undefined,
       strikethrough: undefined,
     };
   }
@@ -1148,6 +1152,8 @@ function resolveDataTable(chart: SheetChart):
     fontSize: resolveDataTableFontSize(raw.fontSize),
     fontColor: resolveDataTableFontColor(raw.fontColor),
     bold: resolveDataTableBold(raw.bold),
+    italic: resolveDataTableItalic(raw.italic),
+    underline: resolveDataTableUnderline(raw.underline),
     strikethrough: resolveDataTableStrikethrough(raw.strikethrough),
   };
 }
@@ -1202,6 +1208,42 @@ function resolveDataTableBold(value: boolean | undefined): boolean | undefined {
 }
 
 /**
+ * Resolve `<c:dTable><c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr>
+ * </a:p></c:txPr></c:dTable>` from {@link ChartDataTable.italic}.
+ *
+ * Returns the italic flag, or `undefined` when the caller leaves the
+ * field unset / passed a non-boolean token. Mirrors the chart-title /
+ * axis-title / axis tick-label / legend / data-label italic resolvers
+ * (and the data-table bold resolver) exactly — only literal `true` /
+ * `false` pass through; non-boolean tokens (typed escapes from an
+ * untyped caller) collapse to `undefined`.
+ */
+function resolveDataTableItalic(value: boolean | undefined): boolean | undefined {
+  if (value === true) return true;
+  if (value === false) return false;
+  return undefined;
+}
+
+/**
+ * Resolve `<c:dTable><c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr>
+ * </a:p></c:txPr></c:dTable>` from {@link ChartDataTable.underline}.
+ *
+ * Returns the underline flag, or `undefined` when the caller leaves
+ * the field unset / passed a non-boolean token. Mirrors the
+ * chart-title / axis-title / axis tick-label / legend / data-label
+ * underline resolvers exactly — only literal `true` / `false` pass
+ * through; non-boolean tokens (typed escapes from an untyped caller)
+ * collapse to `undefined`. The writer translates `true` into
+ * `u="sng"` (Excel's UI variant — single underline) and `false` into
+ * `u="none"` at emit time.
+ */
+function resolveDataTableUnderline(value: boolean | undefined): boolean | undefined {
+  if (value === true) return true;
+  if (value === false) return false;
+  return undefined;
+}
+
+/**
  * Resolve `<c:dTable><c:txPr><a:p><a:pPr><a:defRPr strike=".."/>
  * </a:pPr></a:p></c:txPr></c:dTable>` from
  * {@link ChartDataTable.strikethrough}.
@@ -1245,6 +1287,8 @@ function buildDataTable(table: {
   fontSize: number | undefined;
   fontColor: string | undefined;
   bold: boolean | undefined;
+  italic: boolean | undefined;
+  underline: boolean | undefined;
   strikethrough: boolean | undefined;
 }): string {
   const children: string[] = [
@@ -1262,6 +1306,8 @@ function buildDataTable(table: {
     table.fontSize,
     table.fontColor,
     table.bold,
+    table.italic,
+    table.underline,
     table.strikethrough,
   );
   if (txPrXml !== undefined) children.push(txPrXml);
@@ -1293,18 +1339,24 @@ function buildDataTableTxPr(
   fontSizePt: number | undefined,
   rgbHex: string | undefined,
   bold: boolean | undefined,
+  italic: boolean | undefined,
+  underline: boolean | undefined,
   strikethrough: boolean | undefined,
 ): string | undefined {
   if (
     fontSizePt === undefined &&
     rgbHex === undefined &&
     bold === undefined &&
+    italic === undefined &&
+    underline === undefined &&
     strikethrough === undefined
   )
     return undefined;
   const defRPrAttrs: Record<string, string | number> = {};
   if (fontSizePt !== undefined) defRPrAttrs.sz = fontSizePt * TITLE_FONT_SZ_PER_POINT;
   if (bold !== undefined) defRPrAttrs.b = bold ? 1 : 0;
+  if (italic !== undefined) defRPrAttrs.i = italic ? 1 : 0;
+  if (underline !== undefined) defRPrAttrs.u = underline ? "sng" : "none";
   // Strikethrough rides as `strike="sngStrike"` on the same
   // `<a:defRPr>` slot. Absence collapses to omitting the attribute
   // entirely (the OOXML default `"noStrike"` is functionally

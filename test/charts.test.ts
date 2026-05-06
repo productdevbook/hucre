@@ -10028,6 +10028,317 @@ describe("parseChart — data table", () => {
       bold: true,
     });
   });
+  // ── data-table italic ──────────────────────────────────────────────
+
+  it("surfaces a pinned dataTable.italic from <a:defRPr i='1'/>", () => {
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr i="1"/></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.italic).toBe(true);
+  });
+
+  it("surfaces an explicit i='0' as italic: false", () => {
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr i="0"/></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.italic).toBe(false);
+  });
+
+  it("accepts the OOXML textual <xsd:boolean> spellings for i", () => {
+    const trueXml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr i="true"/></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(trueXml)?.dataTable?.italic).toBe(true);
+    const falseXml = trueXml.replace('i="true"', 'i="false"');
+    expect(parseChart(falseXml)?.dataTable?.italic).toBe(false);
+  });
+
+  it("collapses an unknown i token to undefined", () => {
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr i="yes"/></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.italic).toBeUndefined();
+  });
+
+  it("returns undefined italic when <c:txPr> is missing entirely", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.italic).toBeUndefined();
+  });
+
+  it("returns undefined italic when the i attribute is missing on defRPr", () => {
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="1400" b="1"/></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.italic).toBeUndefined();
+    // The fontSize and bold parts still surface.
+    expect(parseChart(xml)?.dataTable?.fontSize).toBe(14);
+    expect(parseChart(xml)?.dataTable?.bold).toBe(true);
+  });
+
+  it("surfaces every italic typography pin together when all four are pinned", () => {
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="1600" b="1" i="1"><a:solidFill><a:srgbClr val="1070CA"/></a:solidFill></a:defRPr></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: true,
+      showOutline: true,
+      showKeys: true,
+      fontSize: 16,
+      fontColor: "1070CA",
+      bold: true,
+      italic: true,
+    });
+  });
+
+  // ── data-table underline ───────────────────────────────────────────
+
+  it("surfaces a pinned dataTable.underline from <a:defRPr u='sng'/>", () => {
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr u="sng"/></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.underline).toBe(true);
+  });
+
+  it("surfaces an explicit u='none' as underline: false", () => {
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr u="none"/></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.underline).toBe(false);
+  });
+
+  it("collapses non-Excel-UI underline variants to undefined", () => {
+    // The OOXML schema allows `dbl`, `heavy`, `dotted`, `dotDash`,
+    // `wavy`, etc. The reader collapses them all to undefined rather
+    // than silently downgrade the choice to a single underline.
+    for (const variant of ["dbl", "heavy", "dotted", "dotDash", "wavy", "dash"]) {
+      const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr u="${variant}"/></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+      expect(parseChart(xml)?.dataTable?.underline).toBeUndefined();
+    }
+  });
+
+  it("returns undefined underline when <c:txPr> is missing entirely", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.underline).toBeUndefined();
+  });
+
+  it("returns undefined underline when the u attribute is missing on defRPr", () => {
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="1400" b="1"/></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.underline).toBeUndefined();
+    // The fontSize and bold parts still surface.
+    expect(parseChart(xml)?.dataTable?.fontSize).toBe(14);
+    expect(parseChart(xml)?.dataTable?.bold).toBe(true);
+  });
+
+  it("surfaces every underline typography pin together when all four are pinned", () => {
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="1600" b="1" u="sng"><a:solidFill><a:srgbClr val="1070CA"/></a:solidFill></a:defRPr></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: true,
+      showOutline: true,
+      showKeys: true,
+      fontSize: 16,
+      fontColor: "1070CA",
+      bold: true,
+      underline: true,
+    });
+  });
+
 
   // ── data-table strikethrough ───────────────────────────────────────
 

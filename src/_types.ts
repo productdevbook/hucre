@@ -1166,6 +1166,77 @@ export interface ChartDataTable {
    */
   bold?: boolean;
   /**
+   * Data-table italic flag. Maps to `<c:dTable><c:txPr><a:p><a:pPr>
+   * <a:defRPr i=".."/></a:pPr></a:p></c:txPr></c:dTable>` — Excel's
+   * "Format Data Table -> Font -> Italic" toggle. The OOXML attribute
+   * is the `xsd:boolean` italic flag on `CT_TextCharacterProperties`
+   * (ECMA-376 Part 1, §21.1.2.3.7); the writer lands `i="1"` (italic)
+   * or `i="0"` (the OOXML default — non-italic) on the default-paragraph
+   * `<a:defRPr>` slot inside the `<c:dTable><c:txPr>` block so a
+   * re-parse picks the flag up off the canonical slot the OOXML schema
+   * exposes.
+   *
+   * Default: omitted — the data table renders non-italic (no `i`
+   * attribute, matching Excel's reference serialization for fresh data
+   * tables whose typography has not been customized; the OOXML default
+   * `0` collapses to absence). Set `true` to emit `i="1"` so the table
+   * renders italic; set `false` explicitly to pin `i="0"` (functionally
+   * identical to omission, but useful when overriding a templated
+   * chart that had italic pinned upstream).
+   *
+   * Composes independently with the other dataTable typography knobs —
+   * {@link fontSize} / {@link fontColor} / {@link bold} — and the four
+   * boolean toggles. Mirrors the chart-title `titleItalic`, axis-title
+   * `axisTitleItalic`, axis tick-label `labelItalic`, legend
+   * `legendItalic`, and data-label `dataLabels.italic` knobs — same
+   * boolean shape, same OOXML `<a:defRPr i=".."/>` mapping — so a
+   * caller can thread a single italic value through every typography-
+   * pinning slot.
+   *
+   * Only meaningful for chart families with axes; silently dropped on
+   * pie / doughnut along with the rest of the data-table configuration.
+   */
+  italic?: boolean;
+  /**
+   * Data-table underline flag. Maps to `<c:dTable><c:txPr><a:p><a:pPr>
+   * <a:defRPr u=".."/></a:pPr></a:p></c:txPr></c:dTable>` — Excel's
+   * "Format Data Table -> Font -> Underline" toggle. The OOXML
+   * attribute is the `ST_TextUnderlineType` enumeration on
+   * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7); the
+   * writer lands `u="sng"` (single underline — Excel's UI variant) or
+   * `u="none"` (the OOXML default — non-underlined) on the
+   * default-paragraph `<a:defRPr>` slot inside the `<c:dTable><c:txPr>`
+   * block so a re-parse picks the flag up off the canonical slot the
+   * OOXML schema exposes.
+   *
+   * Default: omitted — the data table renders non-underlined (no `u`
+   * attribute, matching Excel's reference serialization for fresh data
+   * tables whose typography has not been customized; the OOXML default
+   * `"none"` collapses to absence). Set `true` to emit `u="sng"` so
+   * the table renders single-underlined; set `false` explicitly to pin
+   * `u="none"` (functionally identical to omission, but useful when
+   * overriding a templated chart that had underline pinned upstream).
+   *
+   * The reader surfaces only the boolean shape Excel's UI exposes —
+   * `u="sng"` collapses to `true`, `u="none"` collapses to `false`,
+   * and the schema's other variants (`"dbl"`, `"heavy"`, `"dotted"`,
+   * `"dotDash"`, `"wavy"`, etc.) collapse to `undefined` rather than
+   * silently downgrade the choice to a single line on round-trip.
+   *
+   * Composes independently with the other dataTable typography knobs —
+   * {@link fontSize} / {@link fontColor} / {@link bold} / {@link italic}
+   * — and the four boolean toggles. Mirrors the chart-title
+   * `titleUnderline`, axis-title `axisTitleUnderline`, axis tick-label
+   * `labelUnderline`, legend `legendUnderline`, and data-label
+   * `dataLabels.underline` knobs — same boolean shape, same OOXML
+   * `<a:defRPr u=".."/>` mapping — so a caller can thread a single
+   * underline value through every typography-pinning slot.
+   *
+   * Only meaningful for chart families with axes; silently dropped on
+   * pie / doughnut along with the rest of the data-table configuration.
+   */
+  underline?: boolean;
+  /**
    * Data-table strikethrough flag. Maps to `<c:dTable><c:txPr><a:p>
    * <a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr></c:dTable>` —
    * Excel's "Format Data Table -> Font -> Strikethrough" toggle. The
@@ -1195,10 +1266,11 @@ export interface ChartDataTable {
    * round-trip; only the UI-default `"sngStrike"` survives the parse.
    *
    * Composes independently with the other dataTable typography knobs —
-   * {@link fontSize} / {@link fontColor} / {@link bold} — and the
-   * four boolean toggles. Mirrors the chart-title `titleStrikethrough`,
-   * axis-title `axisTitleStrikethrough`, axis tick-label
-   * `labelStrikethrough`, legend `legendStrikethrough`, and data-label
+   * {@link fontSize} / {@link fontColor} / {@link bold} / {@link italic}
+   * / {@link underline} — and the four boolean toggles. Mirrors the
+   * chart-title `titleStrikethrough`, axis-title
+   * `axisTitleStrikethrough`, axis tick-label `labelStrikethrough`,
+   * legend `legendStrikethrough`, and data-label
    * `dataLabels.strikethrough` knobs — same boolean shape, same OOXML
    * `<a:defRPr strike=".."/>` mapping — so a caller can thread a
    * single strikethrough value through every typography-pinning slot.
