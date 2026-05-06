@@ -270,6 +270,26 @@ export interface CloneChartOptions {
    * typography knobs compose the same way at the call site.
    */
   legendUnderline?: boolean | null;
+  /**
+   * Override `SheetChart.legendStrikethrough`. `undefined` (or omitted)
+   * inherits the source's parsed `legendStrikethrough`; `null` drops
+   * the inherited flag (the writer emits no `strike` attribute on the
+   * legend's `<a:defRPr>`, falling back to the OOXML default — no
+   * strikethrough); a `boolean` replaces. Non-boolean overrides (typed
+   * escapes from an untyped caller) collapse to `undefined` so a typed
+   * escape cannot pin a value the writer would silently elide.
+   *
+   * The override is silently dropped from the cloned `SheetChart`
+   * when the resolved legend is `false` (no `<c:legend>` element will
+   * be emitted) — there is no `<c:txPr>` slot to host the flag on a
+   * hidden legend, so leaking the value into the output would carry
+   * a pin Excel never reads.
+   *
+   * The grammar mirrors `titleStrikethrough` /
+   * `axes.x.axisTitleStrike` / `axes.x.labelStrikethrough` so the
+   * typography knobs compose the same way at the call site.
+   */
+  legendStrikethrough?: boolean | null;
   /** Override `SheetChart.barGrouping`. */
   barGrouping?: SheetChart["barGrouping"];
   /**
@@ -1472,6 +1492,15 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
       options.legendUnderline,
     );
     if (resolvedLegendUnderline !== undefined) out.legendUnderline = resolvedLegendUnderline;
+
+    // Same hidden-legend scoping for the strikethrough flag.
+    const resolvedLegendStrikethrough = resolveLegendStrikethrough(
+      source.legendStrikethrough,
+      options.legendStrikethrough,
+    );
+    if (resolvedLegendStrikethrough !== undefined) {
+      out.legendStrikethrough = resolvedLegendStrikethrough;
+    }
   }
 
   const barGrouping = options.barGrouping !== undefined ? options.barGrouping : source.barGrouping;
@@ -2681,6 +2710,53 @@ function resolveLegendUnderline(
   if (override === undefined) return normalizeLegendUnderline(sourceValue);
   if (override === null) return undefined;
   return normalizeLegendUnderline(override);
+}
+
+/**
+ * Normalize a `legendStrikethrough` value for the cloned `SheetChart`.
+ * Mirrors the writer's `resolveLegendStrikethrough` — `true` / `false`
+ * pass through literally, every other token collapses to `undefined`.
+ *
+ * The cloned `SheetChart` retains a literal `false` (the writer drops
+ * `false` to absence at emit time, so pinning `false` on the cloned
+ * chart is functionally identical to omission, but it lets a downstream
+ * consumer that re-clones the chart distinguish "explicit no-strike
+ * pin" from "field never set"). The chart-title / axis-title / axis
+ * tick-label strike clone resolvers use the same shape — only at the
+ * writer's `<a:defRPr>` slot does the `false` collapse to attribute
+ * omission.
+ */
+function normalizeLegendStrikethrough(value: boolean | undefined): boolean | undefined {
+  if (value === true) return true;
+  if (value === false) return false;
+  return undefined;
+}
+
+/**
+ * Resolve a `legendStrikethrough` override.
+ *
+ * `undefined` → inherit the source's parsed `legendStrikethrough`
+ *               (after running it through
+ *               {@link normalizeLegendStrikethrough} so a typed escape
+ *               on the source path drops cleanly).
+ * `null`      → drop the inherited flag (the writer falls back to the
+ *               OOXML default — no `strike` attribute, equivalent to
+ *               non-strikethrough).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `titleStrikethrough` / `axisTitleStrike` /
+ * `axes.x.labelStrikethrough` so the typography knobs compose the same
+ * way at the call site. Callers should gate the result on the resolved
+ * legend visibility — when no legend is emitted, the flag has no slot
+ * in the rendered chart.
+ */
+function resolveLegendStrikethrough(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return normalizeLegendStrikethrough(sourceValue);
+  if (override === null) return undefined;
+  return normalizeLegendStrikethrough(override);
 }
 
 /**

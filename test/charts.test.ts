@@ -5823,6 +5823,190 @@ describe("parseChart — legendUnderline", () => {
   });
 });
 
+// ── parseChart — legendStrikethrough ────────────────────────────────
+
+describe("parseChart — legendStrikethrough", () => {
+  const NS_LS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withLegendStrike(strike: string | undefined): string {
+    const defRPr = strike === undefined ? "<a:defRPr/>" : `<a:defRPr strike="${strike}"/>`;
+    return `<c:chartSpace ${NS_LS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr>${defRPr}</a:pPr><a:endParaRPr lang="en-US"/></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it('surfaces legendStrikethrough=true when strike="sngStrike"', () => {
+    expect(parseChart(withLegendStrike("sngStrike"))?.legendStrikethrough).toBe(true);
+  });
+
+  it('collapses the OOXML default strike="noStrike" to undefined', () => {
+    // Absence and the OOXML default round-trip identically through the
+    // writer — only an explicit `strike="sngStrike"` surfaces `true`.
+    expect(parseChart(withLegendStrike("noStrike"))?.legendStrikethrough).toBeUndefined();
+  });
+
+  it('collapses the non-UI variant strike="dblStrike" to undefined', () => {
+    // The writer only emits `"sngStrike"`, so reporting `"dblStrike"`
+    // as `true` would silently downgrade the choice on round-trip.
+    expect(parseChart(withLegendStrike("dblStrike"))?.legendStrikethrough).toBeUndefined();
+  });
+
+  it("returns undefined when <a:defRPr> omits the strike attribute", () => {
+    expect(parseChart(withLegendStrike(undefined))?.legendStrikethrough).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:legend> element at all", () => {
+    const xml = `<c:chartSpace ${NS_LS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendStrikethrough).toBeUndefined();
+  });
+
+  it("returns undefined when <c:legend> has no <c:txPr> body", () => {
+    const xml = `<c:chartSpace ${NS_LS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendStrikethrough).toBeUndefined();
+  });
+
+  it("returns undefined when <c:txPr> has no <a:p><a:pPr> chain", () => {
+    const xml = `<c:chartSpace ${NS_LS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendStrikethrough).toBeUndefined();
+  });
+
+  it('drops the flag when the legend is hidden via <c:delete val="1"/>', () => {
+    const xml = `<c:chartSpace ${NS_LS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:delete val="1"/>
+      <c:overlay val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr strike="sngStrike"/></a:pPr></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe(false);
+    expect(chart?.legendStrikethrough).toBeUndefined();
+  });
+
+  it("collapses garbage / unknown strike tokens to undefined", () => {
+    expect(parseChart(withLegendStrike(""))?.legendStrikethrough).toBeUndefined();
+    expect(parseChart(withLegendStrike("yes"))?.legendStrikethrough).toBeUndefined();
+    expect(parseChart(withLegendStrike("1"))?.legendStrikethrough).toBeUndefined();
+    expect(parseChart(withLegendStrike("true"))?.legendStrikethrough).toBeUndefined();
+    expect(parseChart(withLegendStrike("strike"))?.legendStrikethrough).toBeUndefined();
+  });
+
+  it("co-surfaces alongside legendOverlay / legendEntries / legendFontSize / legendUnderline", () => {
+    const xml = `<c:chartSpace ${NS_LS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="b"/>
+      <c:legendEntry>
+        <c:idx val="0"/>
+        <c:delete val="1"/>
+      </c:legendEntry>
+      <c:overlay val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="1400" u="sng" strike="sngStrike"/></a:pPr><a:endParaRPr lang="en-US"/></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe("bottom");
+    expect(chart?.legendOverlay).toBe(true);
+    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }]);
+    expect(chart?.legendFontSize).toBe(14);
+    expect(chart?.legendUnderline).toBe(true);
+    expect(chart?.legendStrikethrough).toBe(true);
+  });
+
+  it("surfaces the flag on every chart family that emits a legend", () => {
+    for (const kind of ["lineChart", "barChart", "pieChart", "doughnutChart"]) {
+      const xml = `<c:chartSpace ${NS_LS}>
+  <c:chart>
+    <c:plotArea>
+      <c:${kind}><c:ser><c:idx val="0"/></c:ser></c:${kind}>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr strike="sngStrike"/></a:pPr></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+      expect(parseChart(xml)?.legendStrikethrough).toBe(true);
+    }
+  });
+});
+
 // ── parseChart — data labels showLegendKey ──────────────────────────
 
 describe("parseChart — data labels showLegendKey", () => {

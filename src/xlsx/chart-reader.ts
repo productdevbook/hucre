@@ -447,6 +447,15 @@ export function parseChart(xml: string): Chart | undefined {
     // collapse to `undefined`.
     const legendUnderline = parseLegendUnderline(chartEl);
     if (legendUnderline !== undefined) out.legendUnderline = legendUnderline;
+
+    // Same scoping for the strikethrough flag — only an explicit
+    // `strike="sngStrike"` (Excel's UI variant — single line) surfaces
+    // `true`; the OOXML default `"noStrike"` and the non-UI variant
+    // `"dblStrike"` (double line) both collapse to `undefined` so a
+    // templated chart with the double-line variant round-trips
+    // lossless rather than silently downgrading on re-emit.
+    const legendStrikethrough = parseLegendStrikethrough(chartEl);
+    if (legendStrikethrough !== undefined) out.legendStrikethrough = legendStrikethrough;
   }
 
   const dispBlanksAs = parseDispBlanksAs(chartEl);
@@ -2984,6 +2993,43 @@ function parseLegendUnderline(chartEl: XmlElement): boolean | undefined {
   if (!defRPr) return undefined;
   const raw = defRPr.attrs.u;
   if (raw === "sng") return true;
+  return undefined;
+}
+
+/**
+ * Pull `<c:legend><c:txPr><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
+ * </a:p></c:txPr></c:legend>` off the chart. Returns the strikethrough
+ * flag.
+ *
+ * The OOXML `strike` attribute is the `ST_TextStrikeType` enumeration
+ * on `CT_TextCharacterProperties` — `"noStrike"` (default),
+ * `"sngStrike"` (single line, Excel's UI variant), `"dblStrike"`
+ * (double line, non-UI). Only `strike="sngStrike"` surfaces `true`;
+ * the OOXML default `"noStrike"` and the double-line variant both
+ * collapse to `undefined` so absence and `strike="noStrike"`
+ * round-trip identically through `cloneChart`. Reporting `"dblStrike"`
+ * as `true` would silently downgrade the choice to a single line on
+ * re-emit; the writer emits only `"sngStrike"`, matching the boolean
+ * shape the UI exposes.
+ *
+ * Returns `undefined` whenever the chart omits the `<c:legend>`
+ * element. Mirrors the chart-title / axis-title / axis tick-label
+ * strikethrough readers exactly so a parsed value slots straight back
+ * into the writer's emit path.
+ */
+function parseLegendStrikethrough(chartEl: XmlElement): boolean | undefined {
+  const legend = findChild(chartEl, "legend");
+  if (!legend) return undefined;
+  const txPr = findChild(legend, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const raw = defRPr.attrs.strike;
+  if (raw === "sngStrike") return true;
   return undefined;
 }
 

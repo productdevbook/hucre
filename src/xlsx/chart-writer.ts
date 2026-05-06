@@ -132,6 +132,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveLegendBold(chart),
         resolveLegendItalic(chart),
         resolveLegendUnderline(chart),
+        resolveLegendStrikethrough(chart),
       ),
     );
   }
@@ -3934,6 +3935,7 @@ function buildLegend(
   bold: boolean | undefined,
   italic: boolean | undefined,
   underline: boolean | undefined,
+  strikethrough: boolean | undefined,
 ): string {
   const children: string[] = [xmlSelfClose("c:legendPos", { val: pos })];
 
@@ -3962,13 +3964,13 @@ function buildLegend(
   // entirely when no typography knob is pinned so a fresh chart matches
   // Excel's reference serialization byte-for-byte (Excel itself omits
   // the block whenever the legend renders at the theme-default style).
-  // The block currently carries the legend font size, bold, italic, and
-  // underline flags; future typography pins (color) will land on the
-  // same `<a:defRPr>` slot. The `<a:bodyPr>` carries no rotation
-  // attribute — the legend is not rotatable in Excel's UI, mirroring
-  // how the axis tick-label `<c:txPr>` slot drops `rot` when only
-  // typography knobs are pinned.
-  const txPrXml = buildLegendTxPr(fontSizePt, bold, italic, underline);
+  // The block currently carries the legend font size, bold, italic,
+  // underline, and strikethrough flags; future typography pins (color)
+  // will land on the same `<a:defRPr>` slot. The `<a:bodyPr>` carries
+  // no rotation attribute — the legend is not rotatable in Excel's UI,
+  // mirroring how the axis tick-label `<c:txPr>` slot drops `rot` when
+  // only typography knobs are pinned.
+  const txPrXml = buildLegendTxPr(fontSizePt, bold, italic, underline, strikethrough);
   if (txPrXml !== undefined) {
     children.push(txPrXml);
   }
@@ -4005,12 +4007,14 @@ function buildLegendTxPr(
   bold: boolean | undefined,
   italic: boolean | undefined,
   underline: boolean | undefined,
+  strikethrough: boolean | undefined,
 ): string | undefined {
   if (
     fontSizePt === undefined &&
     bold === undefined &&
     italic === undefined &&
-    underline === undefined
+    underline === undefined &&
+    strikethrough === undefined
   )
     return undefined;
   const defRPrAttrs: Record<string, string | number> = {};
@@ -4018,6 +4022,13 @@ function buildLegendTxPr(
   if (bold !== undefined) defRPrAttrs.b = bold ? 1 : 0;
   if (italic !== undefined) defRPrAttrs.i = italic ? 1 : 0;
   if (underline !== undefined) defRPrAttrs.u = underline ? "sng" : "none";
+  // Strikethrough rides as `strike="sngStrike"` on the same
+  // `<a:defRPr>` slot. Absence collapses to omitting the attribute
+  // entirely (the OOXML default `"noStrike"` is functionally identical
+  // to absence — the reader collapses both to `undefined`). The writer
+  // never emits `"noStrike"` or `"dblStrike"` so the surfaced shape
+  // stays consistent with Excel's UI checkbox.
+  if (strikethrough === true) defRPrAttrs.strike = "sngStrike";
   return xmlElement("c:txPr", undefined, [
     xmlSelfClose("a:bodyPr"),
     xmlSelfClose("a:lstStyle"),
@@ -4111,6 +4122,36 @@ function resolveLegendUnderline(chart: SheetChart): boolean | undefined {
   const value = chart.legendUnderline;
   if (value === true) return true;
   if (value === false) return false;
+  return undefined;
+}
+
+/**
+ * Resolve `<c:legend><c:txPr><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
+ * </a:p></c:txPr></c:legend>` from
+ * {@link SheetChart.legendStrikethrough}.
+ *
+ * Returns `true` when the chart pins the strikethrough flag literally;
+ * every other value (explicit `false`, absence, non-boolean tokens
+ * leaking past the type guard) collapses to `undefined` so the writer
+ * never emits a `strike` attribute below `"sngStrike"`. The OOXML
+ * default `"noStrike"` is functionally identical to absence — the
+ * writer keeps the surfaced shape consistent with what Excel's UI
+ * authors (`"sngStrike"` only, never `"noStrike"` or `"dblStrike"`),
+ * mirroring how `resolveTitleStrike` lands on the title's `<a:defRPr>`.
+ *
+ * Collapsing `false` to `undefined` (instead of the `boolean`-pass-through
+ * shape that `legendBold` / `legendItalic` / `legendUnderline` use)
+ * mirrors how the chart-title / axis-title / axis tick-label
+ * strikethrough writers also drop the attribute on `false`: a
+ * standalone `legendStrikethrough: false` does not gratuitously
+ * trigger the `<c:txPr>` block emission, so the legend stays at the
+ * theme-default style and a fresh chart with no custom strikethrough
+ * matches Excel's reference serialization byte-for-byte. The flag is
+ * only meaningful when the chart actually emits a legend — the caller
+ * is expected to gate the call on the resolved legend visibility.
+ */
+function resolveLegendStrikethrough(chart: SheetChart): boolean | undefined {
+  if (chart.legendStrikethrough === true) return true;
   return undefined;
 }
 

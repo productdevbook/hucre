@@ -1421,6 +1421,41 @@ export interface SheetChart {
    * call threads cleanly through every legend knob Excel exposes.
    */
   legendUnderline?: boolean;
+  /**
+   * Legend strikethrough flag. Maps to `<c:legend><c:txPr><a:p><a:pPr>
+   * <a:defRPr strike=".."/></a:pPr></a:p></c:txPr></c:legend>` — Excel's
+   * "Format Legend -> Font -> Strikethrough" toggle. The OOXML attribute
+   * is the `ST_TextStrikeType` enumeration on
+   * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7); the
+   * writer lands `strike="sngStrike"` (Excel's UI variant — single line)
+   * on the default-paragraph `<a:defRPr>` slot inside the legend's
+   * `<c:txPr>` block so a re-parse picks the flag up off the canonical
+   * slot the OOXML schema exposes.
+   *
+   * Default: omitted — the legend renders non-strikethrough (no
+   * `strike` attribute, matching Excel's reference serialization for a
+   * fresh chart legend whose typography has not been customized; the
+   * OOXML default `"noStrike"` collapses to absence). Set `true` to
+   * emit `strike="sngStrike"` so the legend renders with a single
+   * strikethrough line; absence and explicit `false` both collapse to
+   * omitting the attribute entirely (mirrors `titleStrikethrough` /
+   * `axisTitleStrike` / `labelStrikethrough` — the writer emits only
+   * the UI variant `"sngStrike"`, never `"noStrike"` or `"dblStrike"`).
+   *
+   * Silently ignored when `legend === false` (no `<c:legend>` element
+   * is emitted) — there is no `<c:txPr>` slot to host the flag in that
+   * case. Mirrors {@link titleStrikethrough} /
+   * {@link axes.x.axisTitleStrike} / {@link axes.x.labelStrikethrough}
+   * — same boolean shape, same OOXML `<a:defRPr strike=".."/>` mapping
+   * — so a caller can thread a single strikethrough value through every
+   * typography-pinning slot. Composes independently with {@link legend}
+   * / {@link legendOverlay} / {@link legendEntries} /
+   * {@link legendFontSize} / {@link legendBold} / {@link legendItalic}
+   * / {@link legendUnderline}: all eight fields land on the same
+   * `<c:legend>` element so a single configuration call threads
+   * cleanly through every legend knob Excel exposes.
+   */
+  legendStrikethrough?: boolean;
   /** Show the chart-level title element. Default: `true` when `title` is set. */
   showTitle?: boolean;
   /**
@@ -5141,6 +5176,28 @@ export interface Chart {
    * value slots straight into {@link cloneChart} without conversion.
    */
   legendUnderline?: boolean;
+  /**
+   * Legend strikethrough flag pulled from `<c:legend><c:txPr><a:p>
+   * <a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr></c:legend>`.
+   * The OOXML `strike` attribute is the `ST_TextStrikeType` enumeration
+   * on `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7).
+   *
+   * The OOXML default `"noStrike"` collapses to `undefined` so absence
+   * and `strike="noStrike"` round-trip identically — only
+   * `strike="sngStrike"` (Excel's UI variant — single line) surfaces
+   * `true`. The non-UI variant `strike="dblStrike"` (double line) is
+   * read-only and collapses to `undefined` so a templated chart that
+   * pinned the double-line variant in raw OOXML round-trips lossless
+   * rather than silently downgrading on re-emit; the writer emits only
+   * `"sngStrike"`, matching the boolean shape the UI exposes.
+   *
+   * Reported as `undefined` whenever {@link legend} is `false` or the
+   * source chart has no `<c:legend>` element at all — there is no
+   * `<c:txPr>` slot to surface the flag from in either case. Mirrors
+   * the writer-side {@link SheetChart.legendStrikethrough} so a parsed
+   * value slots straight into {@link cloneChart} without conversion.
+   */
+  legendStrikethrough?: boolean;
   /**
    * Title-overlay flag pulled from `<c:title><c:overlay val=".."/>`.
    * Reflects Excel's "Format Chart Title -> Show the title without

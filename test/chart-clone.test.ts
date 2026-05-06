@@ -5524,6 +5524,287 @@ describe("cloneChart — legendUnderline", () => {
   });
 });
 
+// ── cloneChart — legendStrikethrough ─────────────────────────────────
+
+describe("cloneChart — legendStrikethrough", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      legend: "right",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's legendStrikethrough by default", () => {
+    const clone = cloneChart(source({ legendStrikethrough: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.legendStrikethrough).toBe(true);
+  });
+
+  it("lets options.legendStrikethrough override the source's value", () => {
+    const clone = cloneChart(source({ legendStrikethrough: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendStrikethrough: false,
+    });
+    expect(clone.legendStrikethrough).toBe(false);
+  });
+
+  it("drops the inherited legendStrikethrough when the override is null", () => {
+    const clone = cloneChart(source({ legendStrikethrough: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendStrikethrough: null,
+    });
+    expect(clone.legendStrikethrough).toBeUndefined();
+  });
+
+  it("returns undefined legendStrikethrough when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.legendStrikethrough).toBeUndefined();
+  });
+
+  it("retains an explicit false override (for downstream re-clone visibility)", () => {
+    // The cloned `SheetChart` retains a literal `false` so a downstream
+    // consumer that re-clones the chart can distinguish "explicit
+    // no-strike pin" from "field never set" — even though the writer
+    // collapses `false` to absence at emit time.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendStrikethrough: false,
+    });
+    expect(clone.legendStrikethrough).toBe(false);
+  });
+
+  it("collapses non-boolean overrides (typed escape from an untyped caller)", () => {
+    const clone = cloneChart(source({ legendStrikethrough: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      legendStrikethrough: "yes" as any,
+    });
+    expect(clone.legendStrikethrough).toBeUndefined();
+  });
+
+  it("collapses numeric overrides leaking past the type guard", () => {
+    const clone = cloneChart(source({ legendStrikethrough: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      legendStrikethrough: 1 as any,
+    });
+    expect(clone.legendStrikethrough).toBeUndefined();
+  });
+
+  it("carries legendStrikethrough through a flatten (line → column)", () => {
+    const clone = cloneChart(source({ legendStrikethrough: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.legendStrikethrough).toBe(true);
+  });
+
+  it("carries legendStrikethrough through a doughnut flatten (line → doughnut)", () => {
+    const clone = cloneChart(source({ legendStrikethrough: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.legendStrikethrough).toBe(true);
+  });
+
+  it("drops the inherited legendStrikethrough when the resolved legend is hidden", () => {
+    const clone = cloneChart(source({ legendStrikethrough: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendStrikethrough).toBeUndefined();
+  });
+
+  it("drops the legendStrikethrough override when the resolved legend is hidden", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+      legendStrikethrough: true,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendStrikethrough).toBeUndefined();
+  });
+
+  it("retains the legendStrikethrough override when the override re-enables a hidden source legend", () => {
+    const clone = cloneChart(source({ legend: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: "top",
+      legendStrikethrough: true,
+    });
+    expect(clone.legend).toBe("top");
+    expect(clone.legendStrikethrough).toBe(true);
+  });
+
+  it("composes with legendOverlay / legendEntries / legendFontSize / legendUnderline on the cloned SheetChart", () => {
+    const clone = cloneChart(
+      source({
+        legendStrikethrough: true,
+        legendUnderline: true,
+        legendFontSize: 12,
+        legendOverlay: true,
+        legendEntries: [{ idx: 0, delete: true }],
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.legendStrikethrough).toBe(true);
+    expect(clone.legendUnderline).toBe(true);
+    expect(clone.legendFontSize).toBe(12);
+    expect(clone.legendOverlay).toBe(true);
+    expect(clone.legendEntries).toEqual([{ idx: 0, delete: true }]);
+  });
+
+  it("propagates legendStrikethrough into the rendered <c:legend><c:txPr> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ legendStrikethrough: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain("<c:txPr>");
+    expect(legend).toContain('strike="sngStrike"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.legendStrikethrough).toBe(true);
+  });
+
+  it("emits no <c:txPr> when both source and override are absent (round-trips to undefined)", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).not.toContain("<c:txPr>");
+    expect(parseChart(written)?.legendStrikethrough).toBeUndefined();
+  });
+
+  it("an explicit override beats the source value through writeXlsx", async () => {
+    const clone = cloneChart(source({ legendStrikethrough: false }), {
+      anchor: { from: { row: 5, col: 0 } },
+      legendStrikethrough: true,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain('strike="sngStrike"');
+    expect(parseChart(written)?.legendStrikethrough).toBe(true);
+  });
+
+  it("a null override drops the source value through writeXlsx (no <c:txPr> emitted)", async () => {
+    const clone = cloneChart(source({ legendStrikethrough: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+      legendStrikethrough: null,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).not.toContain("<c:txPr>");
+    expect(parseChart(written)?.legendStrikethrough).toBeUndefined();
+  });
+
+  it("a false override on the cloned SheetChart still writes no <c:txPr> (writer drops false)", async () => {
+    // The cloned SheetChart retains the literal `false` for downstream
+    // re-clone visibility, but the writer collapses `false` to absence
+    // — so the rendered XML never contains a `strike` attribute or a
+    // gratuitous `<c:txPr>` wrapper.
+    const clone = cloneChart(source({ legendStrikethrough: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+      legendStrikethrough: false,
+    });
+    expect(clone.legendStrikethrough).toBe(false);
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).not.toContain("strike=");
+    expect(legend).not.toContain("<c:txPr>");
+  });
+});
+
 // ── cloneChart — axis lblAlgn ───────────────────────────────────────
 
 describe("cloneChart — axis lblAlgn", () => {
