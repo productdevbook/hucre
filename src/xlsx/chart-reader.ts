@@ -533,6 +533,16 @@ function parseAxisInfo(
   // entirely or when the title is a `<c:strRef>` (formula reference)
   // with no `<c:rich>` body.
   const axisTitleRotation = parseAxisTitleRotation(axis);
+  // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr></a:p>
+  // </c:rich></c:tx></c:title>` — axis-title bold flag. Same `<c:title>`
+  // body scope as `axisTitleRotation` so a stray `<a:defRPr>` elsewhere
+  // on the axis (e.g. on the tick-label `<c:txPr>`) cannot leak in.
+  // The OOXML default `false` collapses to `undefined` so absence and
+  // `b="0"` round-trip identically through {@link cloneChart} — only
+  // an explicit `b="1"` surfaces `true`. Returns `undefined` when the
+  // axis omits `<c:title>` entirely or when the title is a `<c:strRef>`
+  // (formula reference) with no `<c:rich>` body.
+  const axisTitleBold = parseAxisTitleBold(axis);
   const gridlines = parseAxisGridlines(axis);
   const scale = parseAxisScale(axis);
   const numberFormat = parseAxisNumberFormat(axis);
@@ -623,6 +633,7 @@ function parseAxisInfo(
   if (
     title === undefined &&
     axisTitleRotation === undefined &&
+    axisTitleBold === undefined &&
     gridlines === undefined &&
     scale === undefined &&
     numberFormat === undefined &&
@@ -648,6 +659,7 @@ function parseAxisInfo(
   const out: ChartAxisInfo = {};
   if (title !== undefined) out.title = title;
   if (axisTitleRotation !== undefined) out.axisTitleRotation = axisTitleRotation;
+  if (axisTitleBold !== undefined) out.axisTitleBold = axisTitleBold;
   if (gridlines !== undefined) out.gridlines = gridlines;
   if (scale !== undefined) out.scale = scale;
   if (numberFormat !== undefined) out.numberFormat = numberFormat;
@@ -1322,6 +1334,59 @@ function parseAxisTitleRotation(axis: XmlElement): number | undefined {
   if (degrees < LABEL_ROTATION_MIN_DEG) return LABEL_ROTATION_MIN_DEG;
   if (degrees > LABEL_ROTATION_MAX_DEG) return LABEL_ROTATION_MAX_DEG;
   return degrees;
+}
+
+/**
+ * Pull `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr>
+ * </a:p></c:rich></c:tx></c:title>` off an axis element. Returns the
+ * bold flag.
+ *
+ * Mirrors {@link parseTitleBold} for axis titles — same
+ * canonical-slot pair, same drop-on-default-`false` semantics. The
+ * OOXML `b` attribute is the `xsd:boolean` bold flag on
+ * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7). The
+ * default `false` collapses to `undefined` so absence and `b="0"`
+ * round-trip identically — only an explicit `b="1"` surfaces `true`.
+ * Unknown / malformed `b` tokens drop to `undefined` rather than
+ * fabricate a value the writer would never emit.
+ *
+ * The lookup is scoped to the axis title's `<c:rich>` body so a stray
+ * `<a:defRPr>` elsewhere on the axis (e.g. on the tick-label
+ * `<c:txPr>` surfaced by {@link parseAxisLabelRotation}) cannot leak
+ * in. Returns `undefined` when the axis omits `<c:title>` entirely or
+ * when the title is a `<c:strRef>` (formula reference) with no
+ * `<c:rich>` body — there is no `<a:p>` slot to host the flag in
+ * either case.
+ *
+ * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+ * `<c:dateAx>` / `<c:serAx>` all share the same `<c:title>` shape per
+ * the OOXML schema. Mirrors the chart-level title bold
+ * {@link parseTitleBold} so a parsed value slots straight into the
+ * writer-side {@link SheetChart.axes}.x.axisTitleBold.
+ */
+function parseAxisTitleBold(axis: XmlElement): boolean | undefined {
+  const title = findChild(axis, "title");
+  if (!title) return undefined;
+  const tx = findChild(title, "tx");
+  if (!tx) return undefined;
+  const rich = findChild(tx, "rich");
+  if (!rich) return undefined;
+  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
+  // default-paragraph bold flag. The reader walks the canonical chain
+  // and bails on the first missing link so a malformed `<c:rich>`
+  // surfaces as absence rather than a fabricated value.
+  const p = findChild(rich, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const parsed = parseBoolAttr(defRPr.attrs.b);
+  // The OOXML default `false` collapses to `undefined` so absence and
+  // `b="0"` round-trip identically through the writer — only an
+  // explicit `b="1"` surfaces `true`.
+  if (parsed === true) return true;
+  return undefined;
 }
 
 // ── Series ────────────────────────────────────────────────────────

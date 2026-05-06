@@ -11198,3 +11198,131 @@ describe("cloneChart — axis title rotation", () => {
     expect(reparsed?.axes?.x?.axisTitleRotation).toBe(-45);
   });
 });
+
+// ── cloneChart — axis title bold ────────────────────────────────────
+
+describe("cloneChart — axis title bold", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Sales",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's X-axis axisTitleBold by default", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleBold: true } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.x?.axisTitleBold).toBe(true);
+    expect(clone.axes?.x?.title).toBe("Period");
+  });
+
+  it("inherits the source's Y-axis axisTitleBold by default", () => {
+    const clone = cloneChart(source({ axes: { y: { title: "USD", axisTitleBold: true } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.y?.axisTitleBold).toBe(true);
+    expect(clone.axes?.y?.title).toBe("USD");
+  });
+
+  it("lets options.axes.x.axisTitleBold override the source's value", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleBold: true } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleBold: false } },
+    });
+    expect(clone.axes?.x?.axisTitleBold).toBe(false);
+  });
+
+  it("drops the inherited axisTitleBold when the override is null", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleBold: true } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleBold: null } },
+    });
+    expect(clone.axes?.x?.axisTitleBold).toBeUndefined();
+  });
+
+  it("replaces with a fresh value when the source has none", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleBold: true } },
+    });
+    expect(clone.axes?.x?.axisTitleBold).toBe(true);
+  });
+
+  it("returns undefined axisTitleBold when neither source nor override sets it", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.x?.axisTitleBold).toBeUndefined();
+  });
+
+  it("drops a non-boolean override to undefined", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleBold: true } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      axes: { x: { axisTitleBold: "true" as any } },
+    });
+    expect(clone.axes?.x?.axisTitleBold).toBeUndefined();
+  });
+
+  it("drops the inherited axisTitleBold when the resolved title is null", () => {
+    // Without an axis title there is no `<c:title>` block to host the
+    // bold flag, so the resolver drops the inherited flag silently.
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleBold: true } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { title: null } },
+    });
+    expect(clone.axes?.x?.title).toBeUndefined();
+    expect(clone.axes?.x?.axisTitleBold).toBeUndefined();
+  });
+
+  it("composes independently with axisTitleRotation on the same axis", () => {
+    const clone = cloneChart(
+      source({
+        axes: {
+          x: { title: "Period", axisTitleRotation: 45, axisTitleBold: true },
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.x?.axisTitleRotation).toBe(45);
+    expect(clone.axes?.x?.axisTitleBold).toBe(true);
+  });
+
+  it("end-to-end: parse -> clone -> write -> reparse round-trip", async () => {
+    // Pinning bold on a templated chart's X-axis title preserves the
+    // flag through the entire dashboard composition flow.
+    const decoder = new TextDecoder();
+    const src = source({ axes: { x: { title: "Period", axisTitleBold: true } } });
+    const clone = cloneChart(src, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", 1],
+            ["B", 2],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.axisTitleBold).toBe(true);
+  });
+});

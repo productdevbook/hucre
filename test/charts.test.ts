@@ -10826,3 +10826,243 @@ describe("parseChart — axis title rotation", () => {
     });
   });
 });
+
+// ── parseChart — axis title bold ─────────────────────────────────────
+
+describe("parseChart — axis title bold", () => {
+  const NS_AXB = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withCatAxTitleBold(b: string | undefined): string {
+    const defRPr = b === undefined ? "<a:defRPr/>" : `<a:defRPr b="${b}"/>`;
+    return `<c:chartSpace ${NS_AXB}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr>${defRPr}</a:pPr><a:r><a:t>Period</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces true on the X axis when the axis title pinned b='1'", () => {
+    const chart = parseChart(withCatAxTitleBold("1"));
+    expect(chart?.axes?.x?.axisTitleBold).toBe(true);
+    expect(chart?.axes?.x?.title).toBe("Period");
+  });
+
+  it("collapses b='0' to undefined (OOXML default round-trips identically)", () => {
+    const chart = parseChart(withCatAxTitleBold("0"));
+    expect(chart?.axes?.x?.title).toBe("Period");
+    expect(chart?.axes?.x?.axisTitleBold).toBeUndefined();
+  });
+
+  it("collapses absence of the b attribute to undefined", () => {
+    const chart = parseChart(withCatAxTitleBold(undefined));
+    expect(chart?.axes?.x?.title).toBe("Period");
+    expect(chart?.axes?.x?.axisTitleBold).toBeUndefined();
+  });
+
+  it("accepts the OOXML truthy spelling 'true'", () => {
+    const chart = parseChart(withCatAxTitleBold("true"));
+    expect(chart?.axes?.x?.axisTitleBold).toBe(true);
+  });
+
+  it("collapses the OOXML falsy spelling 'false' to undefined", () => {
+    const chart = parseChart(withCatAxTitleBold("false"));
+    expect(chart?.axes?.x?.axisTitleBold).toBeUndefined();
+  });
+
+  it("drops unknown b tokens to undefined", () => {
+    expect(parseChart(withCatAxTitleBold("yes"))?.axes?.x?.axisTitleBold).toBeUndefined();
+    expect(parseChart(withCatAxTitleBold(""))?.axes?.x?.axisTitleBold).toBeUndefined();
+    expect(parseChart(withCatAxTitleBold("on"))?.axes?.x?.axisTitleBold).toBeUndefined();
+  });
+
+  it("returns undefined when the axis omits <c:title>", () => {
+    const xml = `<c:chartSpace ${NS_AXB}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when the axis title is a <c:strRef> (no <c:rich> body)", () => {
+    const xml = `<c:chartSpace ${NS_AXB}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:strRef>
+          <c:f>Sheet1!$A$1</c:f>
+          <c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Period</c:v></c:pt></c:strCache>
+        </c:strRef></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.title).toBe("Period");
+    expect(chart?.axes?.x?.axisTitleBold).toBeUndefined();
+  });
+
+  it("returns undefined when <a:p> has no <a:pPr> element", () => {
+    const xml = `<c:chartSpace ${NS_AXB}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:r><a:t>Period</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.title).toBe("Period");
+    expect(chart?.axes?.x?.axisTitleBold).toBeUndefined();
+  });
+
+  it("surfaces the bold flag on the value axis as well", () => {
+    const xml = `<c:chartSpace ${NS_AXB}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr b="1"/></a:pPr><a:r><a:t>Revenue</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.title).toBe("Revenue");
+    expect(chart?.axes?.y?.axisTitleBold).toBe(true);
+  });
+
+  it("surfaces the bold flag on a scatter chart's value-axis pair", () => {
+    const xml = `<c:chartSpace ${NS_AXB}>
+  <c:chart><c:plotArea>
+    <c:scatterChart>
+      <c:scatterStyle val="lineMarker"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:scatterChart>
+    <c:valAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr b="1"/></a:pPr><a:r><a:t>X</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:valAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr b="1"/></a:pPr><a:r><a:t>Y</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.axisTitleBold).toBe(true);
+    expect(chart?.axes?.y?.axisTitleBold).toBe(true);
+  });
+
+  it("does not leak from a stray chart-level <a:defRPr b='1'> onto the axis", () => {
+    // The chart-level title is bold, but the axis title is not — the
+    // axis-level reader scopes the lookup to its own `<c:title>` body
+    // and never reads the chart-level slot.
+    const xml = `<c:chartSpace ${NS_AXB}>
+  <c:chart>
+    <c:title>
+      <c:tx><c:rich>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr b="1"/></a:pPr><a:r><a:t>Sales</a:t></a:r></a:p>
+      </c:rich></c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:title>
+          <c:tx><c:rich>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Period</a:t></a:r></a:p>
+          </c:rich></c:tx>
+          <c:overlay val="0"/>
+        </c:title>
+      </c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleBold).toBe(true);
+    expect(chart?.axes?.x?.axisTitleBold).toBeUndefined();
+  });
+
+  it("co-surfaces alongside axisTitleRotation on the same axis title", () => {
+    // Axis-title rotation 45° (`rot="2700000"`) and bold `b="1"` both
+    // sit on the same `<c:title>` body — the reader surfaces both
+    // independently on the parsed `ChartAxisInfo`.
+    const xml = `<c:chartSpace ${NS_AXB}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr rot="2700000"/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr b="1"/></a:pPr><a:r><a:t>Period</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.title).toBe("Period");
+    expect(chart?.axes?.x?.axisTitleRotation).toBe(45);
+    expect(chart?.axes?.x?.axisTitleBold).toBe(true);
+  });
+});

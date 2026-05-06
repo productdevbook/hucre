@@ -598,6 +598,16 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // only honour the rotation when the axis actually renders a title.
     xAxisTitleRotation: normalizeAxisTitleRotation(chart.axes?.x?.axisTitleRotation),
     yAxisTitleRotation: normalizeAxisTitleRotation(chart.axes?.y?.axisTitleRotation),
+    // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr>
+    // <a:r><a:rPr b=".."/></a:r></a:p></c:rich></c:tx></c:title>` also
+    // sits on every axis flavour. Normalize the caller's boolean
+    // input — non-boolean tokens (typed escapes from an untyped
+    // caller) collapse to `undefined` so the writer falls back to the
+    // OOXML default `b="0"` (non-bold) Excel itself emits on a fresh
+    // axis title. The per-family axis builders only honour the flag
+    // when the axis actually renders a title.
+    xAxisTitleBold: normalizeAxisTitleBold(chart.axes?.x?.axisTitleBold),
+    yAxisTitleBold: normalizeAxisTitleBold(chart.axes?.y?.axisTitleBold),
     xGridlines: normalizeAxisGridlines(chart.axes?.x?.gridlines),
     yGridlines: normalizeAxisGridlines(chart.axes?.y?.gridlines),
     xScale: normalizeAxisScale(chart.axes?.x?.scale),
@@ -1007,6 +1017,24 @@ interface AxisRenderOptions {
    * shape and conversion semantics as {@link xAxisTitleRotation}.
    */
   yAxisTitleRotation: number | undefined;
+  /**
+   * Axis-title bold flag emitted on the X axis via
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr>
+   * <a:r><a:rPr b=".."/></a:r></a:p></c:rich></c:tx></c:title>`. The
+   * OOXML `b` attribute is the `xsd:boolean` bold flag on
+   * `CT_TextCharacterProperties`; the writer emits `1` / `0` at the
+   * canonical slots. `undefined` collapses to the OOXML default `0`
+   * (non-bold) so a fresh chart matches Excel's reference
+   * serialization byte-for-byte. Only meaningful when the axis
+   * renders a title — the per-family axis builders gate the value on
+   * the `xAxisTitle` / `yAxisTitle` field.
+   */
+  xAxisTitleBold: boolean | undefined;
+  /**
+   * Axis-title bold flag emitted on the Y axis. Same shape and
+   * semantics as {@link xAxisTitleBold}.
+   */
+  yAxisTitleBold: boolean | undefined;
   xGridlines: { major: boolean; minor: boolean } | undefined;
   yGridlines: { major: boolean; minor: boolean } | undefined;
   xScale: ChartAxisScale | undefined;
@@ -1865,7 +1893,10 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
     xmlSelfClose("c:axPos", { val: catPos }),
     ...buildAxisGridlines(opts.xGridlines),
   ];
-  if (opts.xAxisTitle) catAxChildren.push(buildAxisTitle(opts.xAxisTitle, opts.xAxisTitleRotation));
+  if (opts.xAxisTitle)
+    catAxChildren.push(
+      buildAxisTitle(opts.xAxisTitle, opts.xAxisTitleRotation, opts.xAxisTitleBold),
+    );
   catAxChildren.push(
     ...buildAxisNumFmt(opts.xNumFmt),
     ...buildAxisTickRendering(opts.xMajorTickMark, opts.xMinorTickMark, opts.xTickLblPos),
@@ -1918,7 +1949,10 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
     xmlSelfClose("c:axPos", { val: valPos }),
     ...buildAxisGridlines(opts.yGridlines),
   ];
-  if (opts.yAxisTitle) valAxChildren.push(buildAxisTitle(opts.yAxisTitle, opts.yAxisTitleRotation));
+  if (opts.yAxisTitle)
+    valAxChildren.push(
+      buildAxisTitle(opts.yAxisTitle, opts.yAxisTitleRotation, opts.yAxisTitleBold),
+    );
   valAxChildren.push(
     ...buildAxisNumFmt(opts.yNumFmt),
     ...buildAxisTickRendering(opts.yMajorTickMark, opts.yMinorTickMark, opts.yTickLblPos),
@@ -2272,7 +2306,8 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
     xmlSelfClose("c:axPos", { val: "b" }),
     ...buildAxisGridlines(opts.xGridlines),
   ];
-  if (opts.xAxisTitle) xAxChildren.push(buildAxisTitle(opts.xAxisTitle, opts.xAxisTitleRotation));
+  if (opts.xAxisTitle)
+    xAxChildren.push(buildAxisTitle(opts.xAxisTitle, opts.xAxisTitleRotation, opts.xAxisTitleBold));
   xAxChildren.push(
     ...buildAxisNumFmt(opts.xNumFmt),
     ...buildAxisTickRendering(opts.xMajorTickMark, opts.xMinorTickMark, opts.xTickLblPos),
@@ -2304,7 +2339,8 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
     xmlSelfClose("c:axPos", { val: "l" }),
     ...buildAxisGridlines(opts.yGridlines),
   ];
-  if (opts.yAxisTitle) yAxChildren.push(buildAxisTitle(opts.yAxisTitle, opts.yAxisTitleRotation));
+  if (opts.yAxisTitle)
+    yAxChildren.push(buildAxisTitle(opts.yAxisTitle, opts.yAxisTitleRotation, opts.yAxisTitleBold));
   yAxChildren.push(
     ...buildAxisNumFmt(opts.yNumFmt),
     ...buildAxisTickRendering(opts.yMajorTickMark, opts.yMinorTickMark, opts.yTickLblPos),
@@ -2344,9 +2380,33 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
  * default `0` so a fresh chart matches Excel's reference serialization
  * byte-for-byte. Mirrors the chart-title `buildTitle` slot exactly so
  * an axis title and the chart-level title carry the same shape.
+ *
+ * The optional `bold` parameter pins the title's `<a:defRPr b=".."/>`
+ * / `<a:rPr b=".."/>` attributes. The OOXML `b` attribute is the
+ * `xsd:boolean` bold flag on `CT_TextCharacterProperties`; the writer
+ * emits `1` / `0` at the canonical slots. Absence (`undefined`)
+ * collapses to the OOXML default `0` (non-bold) so a fresh chart
+ * matches Excel's reference serialization byte-for-byte. The flag
+ * lands on both `<a:defRPr>` and `<a:rPr>` so a re-parse picks the
+ * value up off either canonical slot — Excel keeps the two attributes
+ * in sync.
  */
-function buildAxisTitle(label: string, rotationDeg: number | undefined): string {
+function buildAxisTitle(
+  label: string,
+  rotationDeg: number | undefined,
+  bold: boolean | undefined,
+): string {
   const rot = rotationDeg === undefined ? 0 : rotationDeg * TITLE_ROT_PER_DEGREE;
+  // OOXML's `<a:defRPr b=".."/>` / `<a:rPr b=".."/>` attribute is the
+  // `xsd:boolean` bold flag on `CT_TextCharacterProperties`. The
+  // writer holds `axisTitleBold` as a boolean and emits `1` / `0` at
+  // the canonical slots. Absence (`undefined`) collapses to the OOXML
+  // default `0` (non-bold) so a fresh chart matches Excel's reference
+  // serialization byte-for-byte. The flag lands on both
+  // `<a:defRPr>` and `<a:rPr>` so a re-parse picks the value up off
+  // either canonical slot, mirroring the chart-level `buildTitle`
+  // writer.
+  const b = bold ? 1 : 0;
   return xmlElement("c:title", undefined, [
     xmlElement("c:tx", undefined, [
       xmlElement("c:rich", undefined, [
@@ -2364,9 +2424,9 @@ function buildAxisTitle(label: string, rotationDeg: number | undefined): string 
         ),
         xmlSelfClose("a:lstStyle"),
         xmlElement("a:p", undefined, [
-          xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz: 1000, b: 0 })]),
+          xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz: 1000, b })]),
           xmlElement("a:r", undefined, [
-            xmlSelfClose("a:rPr", { lang: "en-US", sz: 1000, b: 0 }),
+            xmlSelfClose("a:rPr", { lang: "en-US", sz: 1000, b }),
             xmlElement("a:t", undefined, xmlEscape(label)),
           ]),
         ]),
@@ -2388,6 +2448,20 @@ function buildAxisTitle(label: string, rotationDeg: number | undefined): string 
  */
 function normalizeAxisTitleRotation(value: number | undefined): number | undefined {
   return normalizeTitleRotation(value);
+}
+
+/**
+ * Normalize a {@link SheetChart.axes}.x.axisTitleBold value for the
+ * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr></a:p>
+ * </c:rich></c:tx></c:title>` writer slot inside an axis. Delegates
+ * to the chart-level {@link normalizeTitleBold} — `true` / `false`
+ * pass through literally, every other token (typed escape from an
+ * untyped caller, including `null`-shaped values) collapses to
+ * `undefined` so the writer falls back to the OOXML default `b="0"`
+ * (non-bold) Excel itself emits on a fresh axis title.
+ */
+function normalizeAxisTitleBold(value: boolean | undefined): boolean | undefined {
+  return normalizeTitleBold(value);
 }
 
 // ── Series ───────────────────────────────────────────────────────────
