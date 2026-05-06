@@ -705,6 +705,14 @@ function parseAxisInfo(
   // `<c:title>` entirely or when the title is a `<c:strRef>` (formula
   // reference) with no `<c:rich>` body.
   const axisTitleFontFamily = parseAxisTitleFontFamily(axis);
+  // `<c:title><c:overlay val=".."/></c:title>` — axis-title overlay
+  // flag. Sits as a direct child of `<c:title>` per CT_Title schema,
+  // so the lookup is scoped to direct title children. The OOXML
+  // default `false` collapses to `undefined` so absence and
+  // `<c:overlay val="0"/>` round-trip identically through
+  // {@link cloneChart}. Returns `undefined` when the axis omits
+  // `<c:title>` entirely.
+  const axisTitleOverlay = parseAxisTitleOverlay(axis);
   const gridlines = parseAxisGridlines(axis);
   const scale = parseAxisScale(axis);
   const numberFormat = parseAxisNumberFormat(axis);
@@ -863,6 +871,7 @@ function parseAxisInfo(
     axisTitleStrike === undefined &&
     axisTitleUnderline === undefined &&
     axisTitleFontFamily === undefined &&
+    axisTitleOverlay === undefined &&
     gridlines === undefined &&
     scale === undefined &&
     numberFormat === undefined &&
@@ -902,6 +911,7 @@ function parseAxisInfo(
   if (axisTitleStrike !== undefined) out.axisTitleStrike = axisTitleStrike;
   if (axisTitleUnderline !== undefined) out.axisTitleUnderline = axisTitleUnderline;
   if (axisTitleFontFamily !== undefined) out.axisTitleFontFamily = axisTitleFontFamily;
+  if (axisTitleOverlay !== undefined) out.axisTitleOverlay = axisTitleOverlay;
   if (gridlines !== undefined) out.gridlines = gridlines;
   if (scale !== undefined) out.scale = scale;
   if (numberFormat !== undefined) out.numberFormat = numberFormat;
@@ -2325,6 +2335,51 @@ function parseAxisTitleFontFamily(axis: XmlElement): string | undefined {
   const trimmed = raw.trim();
   if (trimmed.length === 0) return undefined;
   return trimmed;
+}
+
+/**
+ * Pull `<c:title><c:overlay val=".."/></c:title>` off an axis
+ * element. Returns the axis-title overlay flag.
+ *
+ * The OOXML default `false` (the title reserves its own slot adjacent
+ * to the axis, no overlap with the plot area) collapses to
+ * `undefined` so absence and `<c:overlay val="0"/>` round-trip
+ * identically through {@link cloneChart} — only an explicit
+ * `<c:overlay val="1"/>` surfaces `true`.
+ *
+ * Returns `undefined` whenever the axis omits the `<c:title>`
+ * element — there is no overlay slot to surface in that case. The
+ * element is a sibling of `<c:tx>` inside `<c:title>` per the
+ * CT_Title schema, so the lookup is scoped to direct title children
+ * (a stray `<c:overlay>` elsewhere on the axis or chart cannot leak
+ * in). Mirrors the chart-level title-overlay reader so a parsed
+ * value flows straight back into the writer-side
+ * {@link SheetChart.axes}.x.axisTitleOverlay.
+ *
+ * Accepts the OOXML truthy / falsy spellings (`"1"` / `"true"` /
+ * `"0"` / `"false"`); unknown values and missing `val` attributes
+ * drop to `undefined` rather than fabricate a flag Excel would not
+ * emit.
+ */
+function parseAxisTitleOverlay(axis: XmlElement): boolean | undefined {
+  const title = findChild(axis, "title");
+  if (!title) return undefined;
+  const overlay = findChild(title, "overlay");
+  if (!overlay) return undefined;
+  const raw = overlay.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  switch (raw) {
+    case "1":
+    case "true":
+      return true;
+    case "0":
+    case "false":
+      // OOXML default — collapse to undefined for symmetry with the
+      // writer's `axisTitleOverlay` field.
+      return undefined;
+    default:
+      return undefined;
+  }
 }
 
 // ── Series ────────────────────────────────────────────────────────

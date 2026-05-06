@@ -16370,3 +16370,155 @@ describe("parseChart — axis title font family", () => {
     expect(chart?.axes?.x?.axisTitleFontFamily).toBeUndefined();
   });
 });
+
+// ── parseChart — axis title overlay ─────────────────────────────────
+
+describe("parseChart — axis title overlay", () => {
+  const NS_ATO = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withAxisTitleOverlay(val: string | undefined): string {
+    const overlay = val === undefined ? "" : `<c:overlay val="${val}"/>`;
+    return `<c:chartSpace ${NS_ATO}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr rot="0"/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Period</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        ${overlay}
+      </c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+  }
+
+  it('surfaces axisTitleOverlay=true when val="1"', () => {
+    expect(parseChart(withAxisTitleOverlay("1"))?.axes?.x?.axisTitleOverlay).toBe(true);
+  });
+
+  it('surfaces axisTitleOverlay=true when val="true"', () => {
+    expect(parseChart(withAxisTitleOverlay("true"))?.axes?.x?.axisTitleOverlay).toBe(true);
+  });
+
+  it('collapses the OOXML default val="0" to undefined', () => {
+    expect(parseChart(withAxisTitleOverlay("0"))?.axes?.x?.axisTitleOverlay).toBeUndefined();
+  });
+
+  it('collapses val="false" to undefined', () => {
+    expect(parseChart(withAxisTitleOverlay("false"))?.axes?.x?.axisTitleOverlay).toBeUndefined();
+  });
+
+  it("returns undefined when <c:overlay> is missing entirely", () => {
+    expect(parseChart(withAxisTitleOverlay(undefined))?.axes?.x?.axisTitleOverlay).toBeUndefined();
+  });
+
+  it("collapses unknown / malformed val tokens to undefined", () => {
+    expect(parseChart(withAxisTitleOverlay(""))?.axes?.x?.axisTitleOverlay).toBeUndefined();
+    expect(parseChart(withAxisTitleOverlay("yes"))?.axes?.x?.axisTitleOverlay).toBeUndefined();
+    expect(parseChart(withAxisTitleOverlay("on"))?.axes?.x?.axisTitleOverlay).toBeUndefined();
+    expect(parseChart(withAxisTitleOverlay("2"))?.axes?.x?.axisTitleOverlay).toBeUndefined();
+  });
+
+  it("returns undefined when the axis omits <c:title> entirely", () => {
+    const xml = `<c:chartSpace ${NS_ATO}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.axes?.x?.axisTitleOverlay).toBeUndefined();
+  });
+
+  it("scopes the lookup to <c:title> (chart-level <c:overlay> does not leak in)", () => {
+    // The chart-level title pins overlay=true; the axis title pins
+    // overlay=false. The reader must not pick up the chart-level
+    // overlay for axisTitleOverlay.
+    const xml = `<c:chartSpace ${NS_ATO}>
+  <c:chart>
+    <c:title>
+      <c:tx><c:rich>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Sales</a:t></a:r></a:p>
+      </c:rich></c:tx>
+      <c:overlay val="1"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:title>
+          <c:tx><c:rich>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Period</a:t></a:r></a:p>
+          </c:rich></c:tx>
+          <c:overlay val="0"/>
+        </c:title>
+      </c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleOverlay).toBe(true);
+    expect(chart?.axes?.x?.axisTitleOverlay).toBeUndefined();
+  });
+
+  it("co-surfaces alongside other axis-title knobs", () => {
+    const xml = `<c:chartSpace ${NS_ATO}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr rot="1800000"/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr sz="1400" b="1"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:defRPr></a:pPr><a:r><a:rPr sz="1400" b="1"/><a:t>Period</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="1"/>
+      </c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.axisTitleOverlay).toBe(true);
+    expect(chart?.axes?.x?.axisTitleRotation).toBe(30);
+    expect(chart?.axes?.x?.axisTitleFontSize).toBe(14);
+    expect(chart?.axes?.x?.axisTitleBold).toBe(true);
+    expect(chart?.axes?.x?.axisTitleColor).toBe("FF0000");
+  });
+
+  it("surfaces axisTitleOverlay independently on the X and Y axes", () => {
+    const xml = `<c:chartSpace ${NS_ATO}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Period</a:t></a:r></a:p></c:rich></c:tx>
+        <c:overlay val="1"/>
+      </c:title>
+    </c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:title>
+        <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>USD</a:t></a:r></a:p></c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.axisTitleOverlay).toBe(true);
+    expect(chart?.axes?.y?.axisTitleOverlay).toBeUndefined();
+  });
+});

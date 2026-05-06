@@ -864,6 +864,16 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // inherits the theme typeface).
     xAxisTitleFontFamily: normalizeAxisTitleFontFamily(chart.axes?.x?.axisTitleFontFamily),
     yAxisTitleFontFamily: normalizeAxisTitleFontFamily(chart.axes?.y?.axisTitleFontFamily),
+    // `<c:title><c:overlay val=".."/></c:title>` — axis-title overlay
+    // flag. The element sits as a direct child of `<c:title>` per
+    // CT_Title schema, and is always emitted by the writer (Excel's
+    // reference serialization includes it on every visible axis
+    // title) — only the `val` attribute flips when the caller pins
+    // `axisTitleOverlay: true`. Anything other than literal `true`
+    // collapses to `false` so a stray non-boolean leaking through the
+    // type guard never produces `<c:overlay val="1"/>`.
+    xAxisTitleOverlay: chart.axes?.x?.axisTitleOverlay === true,
+    yAxisTitleOverlay: chart.axes?.y?.axisTitleOverlay === true,
     xGridlines: normalizeAxisGridlines(chart.axes?.x?.gridlines),
     yGridlines: normalizeAxisGridlines(chart.axes?.y?.gridlines),
     xScale: normalizeAxisScale(chart.axes?.x?.scale),
@@ -1470,6 +1480,25 @@ interface AxisRenderOptions {
    * shape and emit semantics as {@link xAxisTitleFontFamily}.
    */
   yAxisTitleFontFamily: string | undefined;
+  /**
+   * Axis-title overlay flag emitted on the X axis via
+   * `<c:catAx><c:title><c:overlay val=".."/></c:title></c:catAx>`.
+   * The OOXML `<c:overlay val=".."/>` element carries the boolean.
+   * `false` (the OOXML default) emits `val="0"` so the title
+   * reserves its own slot adjacent to the axis; `true` emits
+   * `val="1"` so the title overlaps the plot area. The writer
+   * always emits `<c:overlay>` because Excel's reference
+   * serialization includes it on every visible axis title — only
+   * the `val` flips. Only meaningful when the axis renders a title
+   * — the per-family axis builders gate the value on the
+   * `xAxisTitle` / `yAxisTitle` field.
+   */
+  xAxisTitleOverlay: boolean;
+  /**
+   * Axis-title overlay flag emitted on the Y axis. Same shape and
+   * emit semantics as {@link xAxisTitleOverlay}.
+   */
+  yAxisTitleOverlay: boolean;
   xGridlines: { major: boolean; minor: boolean } | undefined;
   yGridlines: { major: boolean; minor: boolean } | undefined;
   xScale: ChartAxisScale | undefined;
@@ -2699,6 +2728,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
         opts.xAxisTitleStrike,
         opts.xAxisTitleUnderline,
         opts.xAxisTitleFontFamily,
+        opts.xAxisTitleOverlay,
       ),
     );
   catAxChildren.push(
@@ -2774,6 +2804,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
         opts.yAxisTitleStrike,
         opts.yAxisTitleUnderline,
         opts.yAxisTitleFontFamily,
+        opts.yAxisTitleOverlay,
       ),
     );
   valAxChildren.push(
@@ -3150,6 +3181,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.xAxisTitleStrike,
         opts.xAxisTitleUnderline,
         opts.xAxisTitleFontFamily,
+        opts.xAxisTitleOverlay,
       ),
     );
   xAxChildren.push(
@@ -3204,6 +3236,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.yAxisTitleStrike,
         opts.yAxisTitleUnderline,
         opts.yAxisTitleFontFamily,
+        opts.yAxisTitleOverlay,
       ),
     );
   yAxChildren.push(
@@ -3305,6 +3338,7 @@ function buildAxisTitle(
   strike: boolean | undefined,
   underline: boolean | undefined,
   fontFamily: string | undefined,
+  overlay: boolean,
 ): string {
   const rot = rotationDeg === undefined ? 0 : rotationDeg * TITLE_ROT_PER_DEGREE;
   // OOXML's `<a:defRPr sz="N"/>` / `<a:rPr sz="N"/>` attribute is in
@@ -3445,7 +3479,7 @@ function buildAxisTitle(
         ]),
       ]),
     ]),
-    xmlSelfClose("c:overlay", { val: 0 }),
+    xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }),
   ]);
 }
 

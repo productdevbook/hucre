@@ -1044,6 +1044,27 @@ export interface CloneChartOptions {
        * same way at the call site.
        */
       axisTitleFontFamily?: string | null;
+      /**
+       * Override `SheetChart.axes.x.axisTitleOverlay`. `undefined`
+       * (or omitted) inherits the source axis's parsed value; `null`
+       * drops the inherited value (the writer falls back to the OOXML
+       * `false` default — the title reserves its own slot adjacent to
+       * the axis, no overlap with the plot area); a `boolean`
+       * replaces it.
+       *
+       * The override is silently dropped from the cloned `SheetChart`
+       * when the axis renders no title (the resolved `title` is
+       * `undefined`) — there is no `<c:title>` block to host the
+       * overlay flag in either case.
+       *
+       * The grammar mirrors `titleOverlay` (the chart-level analog)
+       * and the other axis-title knobs (`axisTitleRotation` /
+       * `axisTitleFontSize` / `axisTitleBold` / `axisTitleItalic` /
+       * `axisTitleColor` / `axisTitleStrike` / `axisTitleUnderline` /
+       * `axisTitleFontFamily`) so the axis-title knobs compose the
+       * same way at the call site.
+       */
+      axisTitleOverlay?: boolean | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -1382,6 +1403,8 @@ export interface CloneChartOptions {
       axisTitleUnderline?: boolean | null;
       /** See {@link CloneChartOptions.axes.x.axisTitleFontFamily}. */
       axisTitleFontFamily?: string | null;
+      /** See {@link CloneChartOptions.axes.x.axisTitleOverlay}. */
+      axisTitleOverlay?: boolean | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -3613,6 +3636,22 @@ function resolveAxes(
     sourceAxes?.y?.axisTitleFontFamily,
     overrides?.y?.axisTitleFontFamily,
   );
+  // `<c:title><c:overlay val=".."/></c:title>` — axis-title overlay
+  // flag. Sits as a direct child of `<c:title>` per CT_Title schema,
+  // so the resolver applies on every chart family that has axes (pie
+  // / doughnut were short-circuited upstream). Non-boolean overrides
+  // collapse to `undefined` via the resolver. Like the other axis-
+  // title knobs, the writer drops the flag when the matching axis
+  // title is unset, so a stray pin on an axis with no title silently
+  // disappears at emit time.
+  const xAxisTitleOverlay = applyAxisTitleOverlayOverride(
+    sourceAxes?.x?.axisTitleOverlay,
+    overrides?.x?.axisTitleOverlay,
+  );
+  const yAxisTitleOverlay = applyAxisTitleOverlayOverride(
+    sourceAxes?.y?.axisTitleOverlay,
+    overrides?.y?.axisTitleOverlay,
+  );
   const xGridlines = applyGridlinesOverride(sourceAxes?.x?.gridlines, overrides?.x?.gridlines);
   const yGridlines = applyGridlinesOverride(sourceAxes?.y?.gridlines, overrides?.y?.gridlines);
   const xScale = applyScaleOverride(sourceAxes?.x?.scale, overrides?.x?.scale);
@@ -3894,6 +3933,14 @@ function resolveAxes(
   // will paint.
   const xAxisTitleFontFamilyResolved = xTitle === undefined ? undefined : xAxisTitleFontFamily;
   const yAxisTitleFontFamilyResolved = yTitle === undefined ? undefined : yAxisTitleFontFamily;
+  // Same title-presence gate as the rotation / size / bold / italic /
+  // color / strike / underline / font-family resolved values — the
+  // writer always emits `<c:overlay>` when it emits the axis title,
+  // and the writer skips the entire axis-title block when the matching
+  // axis title is unset, so the cloned `SheetChart` accurately
+  // reflects what the chart will paint.
+  const xAxisTitleOverlayResolved = xTitle === undefined ? undefined : xAxisTitleOverlay;
+  const yAxisTitleOverlayResolved = yTitle === undefined ? undefined : yAxisTitleOverlay;
 
   const out: NonNullable<SheetChart["axes"]> = {};
   if (
@@ -3906,6 +3953,7 @@ function resolveAxes(
     xAxisTitleStrikeResolved !== undefined ||
     xAxisTitleUnderlineResolved !== undefined ||
     xAxisTitleFontFamilyResolved !== undefined ||
+    xAxisTitleOverlayResolved !== undefined ||
     xGridlines !== undefined ||
     xScale !== undefined ||
     xNumFmt !== undefined ||
@@ -3947,6 +3995,7 @@ function resolveAxes(
       out.x.axisTitleUnderline = xAxisTitleUnderlineResolved;
     if (xAxisTitleFontFamilyResolved !== undefined)
       out.x.axisTitleFontFamily = xAxisTitleFontFamilyResolved;
+    if (xAxisTitleOverlayResolved !== undefined) out.x.axisTitleOverlay = xAxisTitleOverlayResolved;
     if (xGridlines !== undefined) out.x.gridlines = xGridlines;
     if (xScale !== undefined) out.x.scale = xScale;
     if (xNumFmt !== undefined) out.x.numberFormat = xNumFmt;
@@ -3984,6 +4033,7 @@ function resolveAxes(
     yAxisTitleStrikeResolved !== undefined ||
     yAxisTitleUnderlineResolved !== undefined ||
     yAxisTitleFontFamilyResolved !== undefined ||
+    yAxisTitleOverlayResolved !== undefined ||
     yGridlines !== undefined ||
     yScale !== undefined ||
     yNumFmt !== undefined ||
@@ -4019,6 +4069,7 @@ function resolveAxes(
       out.y.axisTitleUnderline = yAxisTitleUnderlineResolved;
     if (yAxisTitleFontFamilyResolved !== undefined)
       out.y.axisTitleFontFamily = yAxisTitleFontFamilyResolved;
+    if (yAxisTitleOverlayResolved !== undefined) out.y.axisTitleOverlay = yAxisTitleOverlayResolved;
     if (yGridlines !== undefined) out.y.gridlines = yGridlines;
     if (yScale !== undefined) out.y.scale = yScale;
     if (yNumFmt !== undefined) out.y.numberFormat = yNumFmt;
@@ -4790,6 +4841,45 @@ function normalizeAxisTitleFontFamilyClone(value: string | undefined): string | 
   const trimmed = value.trim();
   if (trimmed.length === 0) return undefined;
   return trimmed;
+}
+
+/**
+ * Resolve an `axisTitleOverlay` override.
+ *
+ * `undefined` → inherit the source axis's parsed `axisTitleOverlay`.
+ * `null`      → drop the inherited value (the writer falls back to
+ *               the OOXML `false` default — `<c:overlay val="0"/>`,
+ *               the title reserves its own slot adjacent to the axis
+ *               with no overlap).
+ * `boolean`   → replace.
+ *
+ * Mirrors the chart-level `titleOverlay` resolver (PR #224) and the
+ * other axis-title knobs (`axisTitleRotation` / `axisTitleFontSize` /
+ * `axisTitleBold` / `axisTitleItalic` / `axisTitleColor` /
+ * `axisTitleStrike` / `axisTitleUnderline`) so the axis-title knobs
+ * compose the same way at the call site. Non-boolean overrides (typed
+ * escape from an untyped caller) collapse to `undefined` so the
+ * cloned `SheetChart` always carries a value the writer will accept.
+ *
+ * The caller is expected to additionally gate the resolved value on
+ * the matching axis title's presence so the cloned shape never
+ * carries a flag that the writer would silently elide (the writer
+ * scopes the flag emission to `<c:title>`, which is omitted when the
+ * axis renders no title).
+ */
+function applyAxisTitleOverlayOverride(
+  source: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) {
+    if (source === true) return true;
+    if (source === false) return false;
+    return undefined;
+  }
+  if (override === null) return undefined;
+  if (override === true) return true;
+  if (override === false) return false;
+  return undefined;
 }
 
 /**

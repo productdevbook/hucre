@@ -15862,3 +15862,205 @@ describe("writeChart — axis title font family", () => {
     expect(reparsed?.axes?.y?.axisTitleFontFamily).toBe("Calibri");
   });
 });
+
+// ── writeChart — axis title overlay ─────────────────────────────────
+
+describe("writeChart — axis title overlay", () => {
+  function axisBlocks(xml: string): string[] {
+    return Array.from(xml.matchAll(/<c:(catAx|valAx|dateAx)>[\s\S]*?<\/c:\1>/g)).map((m) => m[0]);
+  }
+
+  function axisTitleBlock(axisBlock: string): string | undefined {
+    const m = axisBlock.match(/<c:title>[\s\S]*?<\/c:title>/);
+    return m ? m[0] : undefined;
+  }
+
+  function axisTitleOverlayVal(axisBlock: string): string | undefined {
+    const titleBlock = axisTitleBlock(axisBlock);
+    if (!titleBlock) return undefined;
+    const m = titleBlock.match(/<c:overlay\s+val="([^"]+)"\s*\/>/);
+    return m ? m[1] : undefined;
+  }
+
+  it("emits <c:overlay val='0'/> by default (matches Excel reference)", () => {
+    const result = writeChart(makeChart({ axes: { x: { title: "Period" } } }), "Sheet1");
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleOverlayVal(xAx)).toBe("0");
+  });
+
+  it("emits <c:overlay val='1'/> on axisTitleOverlay=true", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleOverlay: true } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleOverlayVal(xAx)).toBe("1");
+  });
+
+  it("emits <c:overlay val='0'/> on axisTitleOverlay=false (functionally identical to absence)", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleOverlay: false } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleOverlayVal(xAx)).toBe("0");
+  });
+
+  it("drops non-boolean inputs back to the OOXML default (defends against type guard escape)", () => {
+    const r1 = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { title: "Period", axisTitleOverlay: "true" as any } } }),
+      "Sheet1",
+    );
+    const [r1XAx] = axisBlocks(r1.chartXml);
+    expect(axisTitleOverlayVal(r1XAx)).toBe("0");
+    const r2 = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { title: "Period", axisTitleOverlay: 1 as any } } }),
+      "Sheet1",
+    );
+    const [r2XAx] = axisBlocks(r2.chartXml);
+    expect(axisTitleOverlayVal(r2XAx)).toBe("0");
+    const r3 = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { title: "Period", axisTitleOverlay: null as any } } }),
+      "Sheet1",
+    );
+    const [r3XAx] = axisBlocks(r3.chartXml);
+    expect(axisTitleOverlayVal(r3XAx)).toBe("0");
+  });
+
+  it("threads the overlay flag independently across the X and Y axes", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: { title: "Period", axisTitleOverlay: true },
+          y: { title: "USD", axisTitleOverlay: false },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx, yAx] = axisBlocks(result.chartXml);
+    expect(axisTitleOverlayVal(xAx)).toBe("1");
+    expect(axisTitleOverlayVal(yAx)).toBe("0");
+  });
+
+  it("does not emit <c:overlay> when no axis title is rendered (no <c:title> block)", () => {
+    // Without a `title` field, the writer skips `<c:title>` entirely so
+    // the overlay flag has no slot in the rendered chart.
+    const result = writeChart(makeChart({ axes: { x: { axisTitleOverlay: true } } }), "Sheet1");
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleBlock(xAx)).toBeUndefined();
+  });
+
+  it("places <c:overlay> after <c:tx> inside <c:title> (CT_Title order)", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleOverlay: true } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const titleBlock = axisTitleBlock(xAx)!;
+    expect(titleBlock.indexOf("c:tx")).toBeLessThan(titleBlock.indexOf("c:overlay"));
+  });
+
+  it("emits <c:overlay> exactly once inside each axis title", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleOverlay: true } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const titleBlock = axisTitleBlock(xAx)!;
+    const occurrences = titleBlock.match(/<c:overlay\b/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads axisTitleOverlay through every chart family that has axes", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, axes: { x: { title: "Period", axisTitleOverlay: true } } }),
+        "Sheet1",
+      );
+      const [xAx] = axisBlocks(result.chartXml);
+      expect(axisTitleOverlayVal(xAx)).toBe("1");
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { x: { title: "Period", axisTitleOverlay: true } },
+      }),
+      "Sheet1",
+    );
+    const [xAxScatter] = Array.from(scatter.chartXml.matchAll(/<c:valAx>[\s\S]*?<\/c:valAx>/g)).map(
+      (m) => m[0],
+    );
+    expect(axisTitleOverlayVal(xAxScatter)).toBe("1");
+  });
+
+  it("composes with axisTitleRotation / axisTitleBold / axisTitleColor on the same <c:title> body", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: {
+            title: "Period",
+            axisTitleOverlay: true,
+            axisTitleBold: true,
+            axisTitleRotation: 30,
+            axisTitleColor: "FF0000",
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const titleBlock = axisTitleBlock(xAx)!;
+    expect(axisTitleOverlayVal(xAx)).toBe("1");
+    expect(titleBlock).toContain('b="1"');
+    expect(titleBlock).toContain('rot="1800000"');
+    expect(titleBlock).toContain('<a:srgbClr val="FF0000"/>');
+  });
+
+  it("round-trips axisTitleOverlay=true through parseChart", () => {
+    const written = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleOverlay: true } } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.axisTitleOverlay).toBe(true);
+  });
+
+  it("collapses an unset axisTitleOverlay round-trip back to undefined", () => {
+    const written = writeChart(makeChart({ axes: { x: { title: "Period" } } }), "Sheet1").chartXml;
+    expect(parseChart(written)?.axes?.x?.axisTitleOverlay).toBeUndefined();
+  });
+
+  it("end-to-end: writeXlsx -> open -> reparse retains the overlay flag", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            axes: {
+              x: { title: "Region", axisTitleOverlay: true },
+              y: { title: "Sales", axisTitleOverlay: false },
+            },
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.x?.axisTitleOverlay).toBe(true);
+    expect(reparsed?.axes?.y?.axisTitleOverlay).toBeUndefined();
+  });
+});

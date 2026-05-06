@@ -2797,6 +2797,45 @@ export interface SheetChart {
        * area / scatter).
        */
       axisTitleFontFamily?: string;
+      /**
+       * Axis-title overlay flag. Maps to
+       * `<c:catAx><c:title><c:overlay val=".."/></c:title></c:catAx>`
+       * (or `<c:valAx>` / `<c:dateAx>` / `<c:serAx>`) — the OOXML
+       * `<c:overlay>` child of `CT_Title`. The element controls
+       * whether the axis title is drawn on top of (and may overlap)
+       * the plot area, mirroring how the chart-level
+       * {@link SheetChart.titleOverlay} controls the chart title's
+       * overlap.
+       *
+       * Default: omitted — the writer emits the OOXML default
+       * `val="0"` (the axis title reserves its own slot adjacent to
+       * the axis and the plot area shrinks to make room), matching
+       * Excel's reference serialization for a fresh axis title. Pin
+       * `axisTitleOverlay: true` to draw the axis title on top of the
+       * plot area so the chart series get the full frame
+       * (`val="1"`). Excel's UI does not surface this toggle for axis
+       * titles directly, but the OOXML schema (CT_Title is shared
+       * with the chart-level title) carries the element on every
+       * emitted axis-title block — the writer always emits
+       * `<c:overlay>` so a hand-edited template that pinned `val="1"`
+       * round-trips cleanly.
+       *
+       * Mirrors {@link SheetChart.titleOverlay} — same `boolean`
+       * shape, same OOXML `<c:overlay val=".."/>` mapping — so a
+       * caller can thread a single overlay toggle through both the
+       * chart and axis titles.
+       *
+       * Silently dropped when the axis renders no title (the
+       * `<c:title>` element is absent in either case) and on `pie` /
+       * `doughnut` charts (no axes at all).
+       *
+       * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+       * `<c:dateAx>` / `<c:serAx>` all carry the same `<c:title>`
+       * shape per the OOXML schema, so the field round-trips on
+       * every chart family that has axes (bar / column / line /
+       * area / scatter).
+       */
+      axisTitleOverlay?: boolean;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -3547,6 +3586,14 @@ export interface SheetChart {
        * area / scatter).
        */
       axisTitleFontFamily?: string;
+      /**
+       * Value-axis-title overlay flag. Same canonical `<c:title>
+       * <c:overlay val=".."/></c:title>` slot and grammar as
+       * {@link SheetChart.axes.x.axisTitleOverlay} — the field
+       * round-trips on `<c:valAx>` exactly as it does on `<c:catAx>`.
+       * See the X-axis variant for the full semantics.
+       */
+      axisTitleOverlay?: boolean;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -5173,6 +5220,36 @@ export interface ChartAxisInfo {
    * axis.
    */
   axisTitleFontFamily?: string;
+  /**
+   * Axis-title overlay flag pulled from
+   * `<c:catAx><c:title><c:overlay val=".."/></c:title></c:catAx>` (or
+   * `<c:valAx>` / `<c:dateAx>` / `<c:serAx>`). Reflects the OOXML
+   * `<c:overlay>` child of `CT_Title` — whether the axis title is
+   * drawn on top of (and may overlap) the plot area.
+   *
+   * The OOXML default `false` (the title reserves its own slot
+   * adjacent to the axis, no overlap with the plot area) collapses
+   * to `undefined` so absence and `<c:overlay val="0"/>` round-trip
+   * identically through {@link cloneChart} — only an explicit
+   * `<c:overlay val="1"/>` surfaces `true`. The reader accepts the
+   * OOXML truthy / falsy spellings (`"1"` / `"true"` / `"0"` /
+   * `"false"`); unknown values and missing `val` attributes drop to
+   * `undefined` rather than fabricate a flag Excel would not emit.
+   *
+   * Returned as `undefined` whenever the axis omits the `<c:title>`
+   * element entirely — there is no overlay slot to surface in that
+   * case. The element is a sibling of `<c:tx>` inside `<c:title>`
+   * per the CT_Title schema, so the lookup is scoped to direct title
+   * children.
+   *
+   * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+   * `<c:dateAx>` / `<c:serAx>` all carry the same `<c:title>` shape
+   * per the OOXML schema. Mirrors the chart-level
+   * {@link Chart.titleOverlay} so a parsed value slots straight back
+   * into the writer-side {@link SheetChart.axes.x.axisTitleOverlay}
+   * without transformation.
+   */
+  axisTitleOverlay?: boolean;
   /**
    * Major / minor gridline visibility. Omitted when neither
    * `<c:majorGridlines>` nor `<c:minorGridlines>` is declared on the

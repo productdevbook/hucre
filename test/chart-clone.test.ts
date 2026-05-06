@@ -17477,3 +17477,179 @@ describe("cloneChart — axis title font family", () => {
     expect(clone.axes?.y?.axisTitleFontFamily).toBe("Calibri");
   });
 });
+
+// ── cloneChart — axis title overlay ─────────────────────────────────
+
+describe("cloneChart — axis title overlay", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Sales",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's X-axis axisTitleOverlay by default", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleOverlay: true } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.x?.axisTitleOverlay).toBe(true);
+    expect(clone.axes?.x?.title).toBe("Period");
+  });
+
+  it("inherits the source's Y-axis axisTitleOverlay by default", () => {
+    const clone = cloneChart(source({ axes: { y: { title: "USD", axisTitleOverlay: true } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.y?.axisTitleOverlay).toBe(true);
+    expect(clone.axes?.y?.title).toBe("USD");
+  });
+
+  it("lets options.axes.x.axisTitleOverlay replace the source's value", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleOverlay: true } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleOverlay: false } },
+    });
+    expect(clone.axes?.x?.axisTitleOverlay).toBe(false);
+  });
+
+  it("drops the inherited axisTitleOverlay when the override is null", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleOverlay: true } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleOverlay: null } },
+    });
+    expect(clone.axes?.x?.axisTitleOverlay).toBeUndefined();
+  });
+
+  it("returns undefined axisTitleOverlay when neither source nor override sets it", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.x?.axisTitleOverlay).toBeUndefined();
+  });
+
+  it("replaces an unset source axisTitleOverlay with the override", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleOverlay: true } },
+    });
+    expect(clone.axes?.x?.axisTitleOverlay).toBe(true);
+  });
+
+  it("collapses non-boolean overrides (defends against an untyped caller)", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleOverlay: true } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      axes: { x: { axisTitleOverlay: "true" as any } },
+    });
+    expect(clone.axes?.x?.axisTitleOverlay).toBeUndefined();
+  });
+
+  it("composes with all other axis-title typography knobs", () => {
+    const clone = cloneChart(
+      source({
+        axes: {
+          x: {
+            title: "Period",
+            axisTitleOverlay: true,
+            axisTitleBold: true,
+            axisTitleItalic: true,
+            axisTitleColor: "FF0000",
+            axisTitleFontSize: 14,
+            axisTitleFontFamily: "Arial",
+          },
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.x?.axisTitleOverlay).toBe(true);
+    expect(clone.axes?.x?.axisTitleBold).toBe(true);
+    expect(clone.axes?.x?.axisTitleItalic).toBe(true);
+    expect(clone.axes?.x?.axisTitleColor).toBe("FF0000");
+    expect(clone.axes?.x?.axisTitleFontSize).toBe(14);
+    expect(clone.axes?.x?.axisTitleFontFamily).toBe("Arial");
+  });
+
+  it("preserves Y-axis overlay when only X is overridden", () => {
+    const clone = cloneChart(
+      source({
+        axes: {
+          x: { title: "Period", axisTitleOverlay: true },
+          y: { title: "USD", axisTitleOverlay: false },
+        },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { axisTitleOverlay: false } },
+      },
+    );
+    expect(clone.axes?.x?.axisTitleOverlay).toBe(false);
+    expect(clone.axes?.y?.axisTitleOverlay).toBe(false);
+  });
+
+  it("drops the inherited axisTitleOverlay when the resolved axis has no title", () => {
+    // No title on the X axis means no `<c:title>` block — there is no
+    // `<c:overlay>` slot to host the flag, so the cloned `SheetChart`
+    // must drop the field.
+    const clone = cloneChart(source({ axes: { x: { axisTitleOverlay: true } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.x?.title).toBeUndefined();
+    expect(clone.axes?.x?.axisTitleOverlay).toBeUndefined();
+  });
+
+  it("collapses to undefined on pie / doughnut (no axes at all)", () => {
+    const pieSource: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "pie",
+          index: 0,
+          name: "Slices",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Distribution",
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      axes: { x: { title: "Period", axisTitleOverlay: true } } as any,
+    };
+    const clone = cloneChart(pieSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("survives writeXlsx round-trip — axisTitleOverlay lands in the packaged chart XML", async () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleOverlay: true } } }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.axisTitleOverlay).toBe(true);
+  });
+});
