@@ -9758,6 +9758,253 @@ describe("writeChart — data table", () => {
     const reparsed = parseChart(chartXml);
     expect(reparsed?.dataTable?.strikethrough).toBe(true);
   });
+
+  // ── data-table font family ─────────────────────────────────────────
+
+  it("does NOT emit <c:txPr> when dataTable.fontFamily is unset (matches Excel reference)", () => {
+    const result = writeChart(makeChart({ dataTable: true }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice).not.toContain("<c:txPr>");
+    expect(dTableSlice).not.toContain("a:latin");
+  });
+
+  it('threads fontFamily through to <c:dTable><c:txPr> as <a:latin typeface=".."/>', () => {
+    const result = writeChart(makeChart({ dataTable: { fontFamily: "Arial" } }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice).toContain("<c:txPr>");
+    expect(dTableSlice).toContain('<a:latin typeface="Arial"/>');
+  });
+
+  it("trims surrounding whitespace from the input typeface", () => {
+    const result = writeChart(makeChart({ dataTable: { fontFamily: "   Calibri   " } }), "Sheet1");
+    expect(result.chartXml).toContain('<a:latin typeface="Calibri"/>');
+  });
+
+  it("emits a multi-word typeface verbatim", () => {
+    const result = writeChart(
+      makeChart({ dataTable: { fontFamily: "Times New Roman" } }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('<a:latin typeface="Times New Roman"/>');
+  });
+
+  it("drops empty string fontFamily inputs (no <c:txPr>)", () => {
+    const result = writeChart(makeChart({ dataTable: { fontFamily: "" } }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice).not.toContain("<c:txPr>");
+  });
+
+  it("drops whitespace-only fontFamily inputs (no <c:txPr>)", () => {
+    const result = writeChart(makeChart({ dataTable: { fontFamily: "   " } }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice).not.toContain("<c:txPr>");
+  });
+
+  it("drops non-string fontFamily inputs (null leaking past the type guard)", () => {
+    const dt = { fontFamily: null } as unknown as { fontFamily: string };
+    const result = writeChart(makeChart({ dataTable: dt }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice).not.toContain("<c:txPr>");
+  });
+
+  it("drops non-string fontFamily inputs (number leaking past the type guard)", () => {
+    const dt = { fontFamily: 14 } as unknown as { fontFamily: string };
+    const result = writeChart(makeChart({ dataTable: dt }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice).not.toContain("<c:txPr>");
+  });
+
+  it("expands <a:defRPr> from self-closing to wrapping <a:latin>", () => {
+    const result = writeChart(makeChart({ dataTable: { fontFamily: "Arial" } }), "Sheet1");
+    expect(result.chartXml).toContain('<a:defRPr><a:latin typeface="Arial"/></a:defRPr>');
+  });
+
+  it("emits solidFill before latin in canonical CT_TextCharacterProperties order", () => {
+    const result = writeChart(
+      makeChart({ dataTable: { fontFamily: "Arial", fontColor: "FF0000" } }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain(
+      '<a:defRPr><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:latin typeface="Arial"/></a:defRPr>',
+    );
+  });
+
+  it("co-emits sz, b, strike, the solidFill child, and the latin child on a single <a:defRPr>", () => {
+    const result = writeChart(
+      makeChart({
+        dataTable: {
+          fontFamily: "Arial",
+          fontColor: "FF0000",
+          fontSize: 14,
+          bold: true,
+          strikethrough: true,
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain(
+      '<a:defRPr sz="1400" b="1" strike="sngStrike"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:latin typeface="Arial"/></a:defRPr>',
+    );
+  });
+
+  it("threads fontFamily through every chart family with axes", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, dataTable: { fontFamily: "Verdana" } }),
+        "Sheet1",
+      );
+      expect(result.chartXml).toContain('<a:latin typeface="Verdana"/>');
+    }
+    const scatter = writeChart(
+      {
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        dataTable: { fontFamily: "Verdana" },
+      },
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain('<a:latin typeface="Verdana"/>');
+  });
+
+  it("silently drops fontFamily on pie charts (no <c:dTable> slot at all)", () => {
+    const result = writeChart(
+      {
+        type: "pie",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        dataTable: { fontFamily: "Arial" },
+      },
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:dTable");
+    expect(result.chartXml).not.toContain('<a:latin typeface="Arial"/>');
+  });
+
+  it("silently drops fontFamily on doughnut charts (no <c:dTable> slot at all)", () => {
+    const result = writeChart(
+      {
+        type: "doughnut",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        dataTable: { fontFamily: "Arial" },
+      },
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:dTable");
+    expect(result.chartXml).not.toContain('<a:latin typeface="Arial"/>');
+  });
+
+  it("composes fontFamily with the four boolean toggles independently", () => {
+    const result = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: false,
+          showVertBorder: true,
+          showOutline: false,
+          showKeys: true,
+          fontFamily: "Calibri",
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('<c:showHorzBorder val="0"/>');
+    expect(result.chartXml).toContain('<c:showVertBorder val="1"/>');
+    expect(result.chartXml).toContain('<c:showOutline val="0"/>');
+    expect(result.chartXml).toContain('<c:showKeys val="1"/>');
+    expect(result.chartXml).toContain('<a:latin typeface="Calibri"/>');
+  });
+
+  it("only emits <c:txPr> once inside <c:dTable>", () => {
+    const result = writeChart(makeChart({ dataTable: { fontFamily: "Arial" } }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    const occurrences = dTableSlice.match(/<c:txPr>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("emits the standard txPr stub shape (a:bodyPr / a:lstStyle / a:p / a:endParaRPr)", () => {
+    const result = writeChart(makeChart({ dataTable: { fontFamily: "Arial" } }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice).toContain("<a:bodyPr/>");
+    expect(dTableSlice).toContain("<a:lstStyle/>");
+    expect(dTableSlice).toContain('<a:latin typeface="Arial"/>');
+    expect(dTableSlice).toContain('<a:endParaRPr lang="en-US"/>');
+  });
+
+  it("round-trips a pinned dataTable fontFamily through parseChart", () => {
+    const written = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+          fontFamily: "Calibri",
+        },
+      }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+      fontFamily: "Calibri",
+    });
+  });
+
+  it("threads fontFamily end-to-end through writeXlsx packaging", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Dashboard",
+        rows: [
+          ["Quarter", "Revenue"],
+          ["Q1", 10],
+          ["Q2", 20],
+          ["Q3", 30],
+        ],
+        charts: [
+          {
+            type: "column",
+            series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            dataTable: { showKeys: true, fontFamily: "Calibri" },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain("<c:dTable>");
+    expect(chartXml).toContain('<a:latin typeface="Calibri"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.dataTable?.fontFamily).toBe("Calibri");
+  });
 });
 
 // ── writeChart — chart-space protection ──────────────────────────────

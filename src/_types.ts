@@ -1279,6 +1279,53 @@ export interface ChartDataTable {
    * pie / doughnut along with the rest of the data-table configuration.
    */
   strikethrough?: boolean;
+  /**
+   * Data-table font family / typeface. Maps to `<c:dTable><c:txPr>
+   * <a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr></a:pPr>
+   * </a:p></c:txPr></c:dTable>` — Excel's "Format Data Table -> Font
+   * -> Font" picker. The OOXML `<a:latin typeface=".."/>` element
+   * carries the typeface name (`CT_TextFont` on
+   * `CT_TextCharacterProperties`' latin slot — ECMA-376 Part 1,
+   * §21.1.2.3.7); the writer lands the element on the default-
+   * paragraph `<a:defRPr>` slot inside the `<c:dTable><c:txPr>` block
+   * so a re-parse picks the typeface up off the canonical slot the
+   * OOXML schema exposes.
+   *
+   * Accepts any non-empty string typeface name (e.g. `"Calibri"`,
+   * `"Arial"`, `"Times New Roman"`); the writer trims surrounding
+   * whitespace and emits the trimmed value verbatim (XML-escaped) so
+   * Excel can resolve the named font from the workbook's font scheme
+   * or the host system's installed fonts. Empty / whitespace-only
+   * strings and non-string tokens collapse to `undefined` so the
+   * writer skips the entire `<a:latin>` element and the data table
+   * inherits Excel's reference theme typeface.
+   *
+   * Default: omitted — the data table renders in Excel's reference
+   * theme typeface (no `<a:latin>` element, the writer skips the
+   * element entirely). Pin a typeface name to render the table in
+   * that font.
+   *
+   * The `<a:latin>` element follows `<a:solidFill>` per the
+   * CT_TextCharacterProperties child sequence so a data-table block
+   * with both `fontColor` and `fontFamily` set lands the children in
+   * canonical schema order — a fresh chart matches Excel's reference
+   * serialization byte-for-byte. Composes independently with the
+   * other dataTable typography knobs — {@link fontSize} /
+   * {@link fontColor} / {@link bold} / {@link italic} /
+   * {@link underline} / {@link strikethrough} — and the four boolean
+   * toggles. Mirrors {@link SheetChart.titleFontFamily} /
+   * {@link SheetChart.legendFontFamily} /
+   * {@link SheetChart.axes.x.axisTitleFontFamily} /
+   * {@link SheetChart.axes.x.labelFontFamily} /
+   * {@link ChartDataLabels.fontFamily} — same accept-and-trim
+   * grammar, same OOXML `<a:latin typeface=".."/>` mapping — so a
+   * caller can thread a single typeface string through every
+   * typography-pinning slot.
+   *
+   * Only meaningful for chart families with axes; silently dropped on
+   * pie / doughnut along with the rest of the data-table configuration.
+   */
+  fontFamily?: string;
 }
 
 /**

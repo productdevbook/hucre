@@ -4469,6 +4469,8 @@ function parseDataTable(plotArea: XmlElement): ChartDataTable | undefined {
   if (underline !== undefined) out.underline = underline;
   const strikethrough = parseDataTableStrikethrough(el);
   if (strikethrough !== undefined) out.strikethrough = strikethrough;
+  const fontFamily = parseDataTableFontFamily(el);
+  if (fontFamily !== undefined) out.fontFamily = fontFamily;
   return out;
 }
 
@@ -4618,6 +4620,45 @@ function parseDataTableStrikethrough(dTable: XmlElement): boolean | undefined {
   const raw = defRPr.attrs.strike;
   if (raw === "sngStrike") return true;
   return undefined;
+}
+
+/**
+ * Pull `<c:dTable><c:txPr><a:p><a:pPr><a:defRPr><a:latin
+ * typeface=".."/></a:defRPr></a:pPr></a:p></c:txPr></c:dTable>` off
+ * a data-table block. Returns the typeface string the table was
+ * authored with.
+ *
+ * The OOXML `<a:latin>` element carries the typeface name on
+ * `CT_TextFont` (ECMA-376 Part 1, §21.1.2.3.7). The reader trims
+ * surrounding whitespace and reports the trimmed typeface; empty /
+ * whitespace-only `typeface` attributes and missing `<a:latin>`
+ * elements both collapse to `undefined` so absence and the empty
+ * form round-trip identically through the writer. Non-string
+ * `typeface` tokens (defensive — the XML parser only ever surfaces
+ * strings) likewise drop to `undefined`.
+ *
+ * Returns `undefined` whenever the data-table block omits `<c:txPr>`
+ * entirely or the canonical `<a:p><a:pPr><a:defRPr><a:latin>` chain
+ * is malformed at any link. Mirrors the chart-title / axis-title /
+ * axis tick-label / legend / data-label font family readers exactly
+ * so a parsed value slots straight back into the writer's emit path.
+ */
+function parseDataTableFontFamily(dTable: XmlElement): string | undefined {
+  const txPr = findChild(dTable, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const latin = findChild(defRPr, "latin");
+  if (!latin) return undefined;
+  const raw = latin.attrs.typeface;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
 }
 
 /**

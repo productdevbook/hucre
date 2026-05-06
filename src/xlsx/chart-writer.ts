@@ -1114,6 +1114,7 @@ function resolveDataTable(chart: SheetChart):
       italic: boolean | undefined;
       underline: boolean | undefined;
       strikethrough: boolean | undefined;
+      fontFamily: string | undefined;
     }
   | undefined {
   // Pie / doughnut have no axes — the OOXML schema places `<c:dTable>`
@@ -1137,6 +1138,7 @@ function resolveDataTable(chart: SheetChart):
       italic: undefined,
       underline: undefined,
       strikethrough: undefined,
+      fontFamily: undefined,
     };
   }
 
@@ -1155,6 +1157,7 @@ function resolveDataTable(chart: SheetChart):
     italic: resolveDataTableItalic(raw.italic),
     underline: resolveDataTableUnderline(raw.underline),
     strikethrough: resolveDataTableStrikethrough(raw.strikethrough),
+    fontFamily: resolveDataTableFontFamily(raw.fontFamily),
   };
 }
 
@@ -1264,6 +1267,25 @@ function resolveDataTableStrikethrough(value: boolean | undefined): boolean | un
 }
 
 /**
+ * Resolve `<c:dTable><c:txPr><a:p><a:pPr><a:defRPr><a:latin
+ * typeface=".."/></a:defRPr></a:pPr></a:p></c:txPr></c:dTable>` from
+ * {@link ChartDataTable.fontFamily}.
+ *
+ * Returns the trimmed typeface string the writer emits, or
+ * `undefined` when the caller leaves the field unset / passed an
+ * empty / whitespace-only / non-string token. Mirrors the chart-title
+ * / axis-title / axis tick-label / legend / data-label font family
+ * resolvers exactly so a single configuration call threads cleanly
+ * through every typography slot Excel exposes.
+ */
+function resolveDataTableFontFamily(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
+}
+
+/**
  * Serialize a resolved data-table into `<c:dTable>` with its four
  * required boolean children, in the order CT_DTable mandates:
  * `showHorzBorder`, `showVertBorder`, `showOutline`, `showKeys`. When
@@ -1290,6 +1312,7 @@ function buildDataTable(table: {
   italic: boolean | undefined;
   underline: boolean | undefined;
   strikethrough: boolean | undefined;
+  fontFamily: string | undefined;
 }): string {
   const children: string[] = [
     xmlSelfClose("c:showHorzBorder", { val: table.showHorzBorder ? 1 : 0 }),
@@ -1309,6 +1332,7 @@ function buildDataTable(table: {
     table.italic,
     table.underline,
     table.strikethrough,
+    table.fontFamily,
   );
   if (txPrXml !== undefined) children.push(txPrXml);
   return xmlElement("c:dTable", undefined, children);
@@ -1342,6 +1366,7 @@ function buildDataTableTxPr(
   italic: boolean | undefined,
   underline: boolean | undefined,
   strikethrough: boolean | undefined,
+  fontFamily: string | undefined,
 ): string | undefined {
   if (
     fontSizePt === undefined &&
@@ -1349,7 +1374,8 @@ function buildDataTableTxPr(
     bold === undefined &&
     italic === undefined &&
     underline === undefined &&
-    strikethrough === undefined
+    strikethrough === undefined &&
+    fontFamily === undefined
   )
     return undefined;
   const defRPrAttrs: Record<string, string | number> = {};
@@ -1373,9 +1399,28 @@ function buildDataTableTxPr(
   const solidFillChild = rgbHex
     ? xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: rgbHex })])
     : undefined;
-  const defRPr = solidFillChild
-    ? xmlElement("a:defRPr", defRPrAttrs, [solidFillChild])
-    : xmlSelfClose("a:defRPr", defRPrAttrs);
+  // OOXML's `<a:defRPr><a:latin typeface=".."/></a:defRPr>` carries
+  // the data-table font family. The `<a:latin>` element follows
+  // `<a:solidFill>` per the CT_TextCharacterProperties child sequence
+  // (ECMA-376 Part 1, §21.1.2.3.7). Absence (`undefined`) collapses
+  // to omitting the entire `<a:latin>` element so the data table
+  // inherits the theme typeface (Excel's reference behavior for
+  // fresh data tables that have not had a custom font picked).
+  const latinChild = fontFamily ? xmlSelfClose("a:latin", { typeface: fontFamily }) : undefined;
+  // When a fill color or a typeface is set the `<a:defRPr>` slot
+  // expands from self-closing to wrapping the children; otherwise the
+  // writer keeps the existing self-closing form so a fresh chart with
+  // no custom color or font matches Excel's reference serialization
+  // byte-for-byte. Children are emitted in
+  // CT_TextCharacterProperties' canonical schema order: solidFill
+  // first, then latin.
+  const defRPrChildren: string[] = [];
+  if (solidFillChild) defRPrChildren.push(solidFillChild);
+  if (latinChild) defRPrChildren.push(latinChild);
+  const defRPr =
+    defRPrChildren.length > 0
+      ? xmlElement("a:defRPr", defRPrAttrs, defRPrChildren)
+      : xmlSelfClose("a:defRPr", defRPrAttrs);
   return xmlElement("c:txPr", undefined, [
     xmlSelfClose("a:bodyPr"),
     xmlSelfClose("a:lstStyle"),

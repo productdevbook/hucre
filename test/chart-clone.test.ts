@@ -11058,6 +11058,179 @@ describe("cloneChart — data table", () => {
     const reparsed = parseChart(written);
     expect(reparsed?.dataTable?.strikethrough).toBe(true);
   });
+
+  // ── data-table font family ─────────────────────────────────────
+
+  it("inherits the source's dataTable.fontFamily by default", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+          fontFamily: "Calibri",
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+      fontFamily: "Calibri",
+    });
+  });
+
+  it("lets options.dataTable: object override the inherited fontFamily", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, fontFamily: "Calibri" },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        dataTable: { showVertBorder: false, fontFamily: "Arial" },
+      },
+    );
+    expect(clone.dataTable).toEqual({ showVertBorder: false, fontFamily: "Arial" });
+  });
+
+  it("drops the inherited fontFamily when override clears the typography pin", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, fontFamily: "Calibri" },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        dataTable: { showVertBorder: false },
+      },
+    );
+    expect(clone.dataTable).toEqual({ showVertBorder: false });
+  });
+
+  it("drops the inherited fontFamily when flattening into a pie clone", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, fontFamily: "Calibri" },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        type: "pie",
+      },
+    );
+    expect(clone.type).toBe("pie");
+    expect(clone.dataTable).toBeUndefined();
+  });
+
+  it("drops the inherited fontFamily when flattening into a doughnut clone", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, fontFamily: "Calibri" },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        type: "doughnut",
+      },
+    );
+    expect(clone.type).toBe("doughnut");
+    expect(clone.dataTable).toBeUndefined();
+  });
+
+  it("propagates dataTable.fontFamily into the rendered <c:dTable> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+          fontFamily: "Calibri",
+        },
+      }),
+      { anchor: { from: { row: 5, col: 0 } } },
+    );
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:dTable>");
+    expect(written).toContain('<a:latin typeface="Calibri"/>');
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+      fontFamily: "Calibri",
+    });
+  });
+
+  it("composes fontFamily with fontSize / fontColor / bold / strikethrough through the clone-through path", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          fontSize: 12,
+          fontColor: "1070CA",
+          bold: true,
+          strikethrough: true,
+          fontFamily: "Calibri",
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.dataTable).toEqual({
+      fontSize: 12,
+      fontColor: "1070CA",
+      bold: true,
+      strikethrough: true,
+      fontFamily: "Calibri",
+    });
+  });
+
+  it("a parsed dataTable.fontFamily round-trips through parseChart -> cloneChart -> writeChart -> parseChart", async () => {
+    const seed: SheetChart = {
+      type: "column",
+      series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+      anchor: { from: { row: 0, col: 0 } },
+      dataTable: { showKeys: false, fontFamily: "Calibri" },
+    };
+    const xml = writeChart(seed, "Sheet1").chartXml;
+    const parsed = parseChart(xml)!;
+    expect(parsed.dataTable?.fontFamily).toBe("Calibri");
+    const clone = cloneChart(parsed, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Q", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable?.fontFamily).toBe("Calibri");
+  });
 });
 
 // ── cloneChart — chart-space protection ──────────────────────────────
