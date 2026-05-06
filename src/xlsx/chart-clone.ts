@@ -706,6 +706,25 @@ export interface CloneChartOptions {
        */
       axisTitleFontSize?: number | null;
       /**
+       * Override `SheetChart.axes.x.axisTitleBold`. `undefined` (or
+       * omitted) inherits the source axis's parsed flag; `null` drops
+       * the inherited flag (the writer falls back to the OOXML
+       * default `b="0"` — the title renders non-bold); a `boolean`
+       * replaces it.
+       *
+       * Non-boolean overrides (typed escapes from an untyped caller)
+       * collapse to a drop so the cloned `SheetChart` always carries
+       * a value the writer will accept.
+       *
+       * `<c:title>` lives on every axis flavour per the OOXML schema,
+       * so the override carries through every chart family that has
+       * axes (bar / column / line / area / scatter). Silently dropped
+       * on `pie` / `doughnut` charts (no axes at all) and on any axis
+       * whose `title` is unset (no `<c:title>` block to host the
+       * flag).
+       */
+      axisTitleBold?: boolean | null;
+      /**
        * Override `SheetChart.axes.x.axisTitleItalic`. `undefined` (or
        * omitted) inherits the source axis's parsed value; `null` drops
        * the inherited flag (the writer falls back to the OOXML default
@@ -907,6 +926,8 @@ export interface CloneChartOptions {
       axisTitleRotation?: number | null;
       /** See {@link CloneChartOptions.axes.x.axisTitleFontSize}. */
       axisTitleFontSize?: number | null;
+      /** See {@link CloneChartOptions.axes.x.axisTitleBold}. */
+      axisTitleBold?: boolean | null;
       /** See {@link CloneChartOptions.axes.x.axisTitleItalic}. */
       axisTitleItalic?: boolean | null;
       gridlines?: ChartAxisGridlines | null;
@@ -2572,15 +2593,32 @@ function resolveAxes(
     sourceAxes?.y?.axisTitleFontSize,
     overrides?.y?.axisTitleFontSize,
   );
-  // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p>
-  // </c:rich></c:tx></c:title>` — axis title italic flag. Sits on the
-  // same `<c:title>` body as `axisTitleRotation` / `axisTitleFontSize`,
-  // so the resolver applies on every chart family that has axes (pie /
-  // doughnut were short-circuited upstream). Non-boolean overrides
-  // collapse to `undefined` so the writer omits the `i` attribute.
-  // Like the rotation and the size, the writer drops the flag when
+  // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr></a:p>
+  // </c:rich></c:tx></c:title>` — axis-title bold flag. Sits on the
+  // same `<c:title>` body as `axisTitleRotation`, so the resolver
+  // applies on every chart family that has axes (pie / doughnut were
+  // short-circuited upstream). Non-boolean overrides collapse to a
+  // drop so the cloned `SheetChart` always carries a value the writer
+  // will accept. Like the rotation, the writer drops the flag when
   // the matching axis title is unset, so a stray pin on an axis with
   // no title silently disappears at emit time.
+  const xAxisTitleBold = applyAxisTitleBoldOverride(
+    sourceAxes?.x?.axisTitleBold,
+    overrides?.x?.axisTitleBold,
+  );
+  const yAxisTitleBold = applyAxisTitleBoldOverride(
+    sourceAxes?.y?.axisTitleBold,
+    overrides?.y?.axisTitleBold,
+  );
+  // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p>
+  // </c:rich></c:tx></c:title>` — axis title italic flag. Sits on the
+  // same `<c:title>` body as `axisTitleRotation` / `axisTitleFontSize` /
+  // `axisTitleBold`, so the resolver applies on every chart family
+  // that has axes (pie / doughnut were short-circuited upstream).
+  // Non-boolean overrides collapse to `undefined` so the writer omits
+  // the `i` attribute. Like the rotation and the size, the writer
+  // drops the flag when the matching axis title is unset, so a stray
+  // pin on an axis with no title silently disappears at emit time.
   const xAxisTitleItalic = applyAxisTitleItalicOverride(
     sourceAxes?.x?.axisTitleItalic,
     overrides?.x?.axisTitleItalic,
@@ -2733,6 +2771,11 @@ function resolveAxes(
   // `opts.xAxisTitle` / `opts.yAxisTitle` is set).
   const xAxisTitleFontSizeResolved = xTitle === undefined ? undefined : xAxisTitleFontSize;
   const yAxisTitleFontSizeResolved = yTitle === undefined ? undefined : yAxisTitleFontSize;
+  // Same title-presence gate for the axis-title bold flag — drop a
+  // stray inherited flag when the resolved axis title is unset so the
+  // cloned `SheetChart` accurately reflects what the chart will paint.
+  const xAxisTitleBoldResolved = xTitle === undefined ? undefined : xAxisTitleBold;
+  const yAxisTitleBoldResolved = yTitle === undefined ? undefined : yAxisTitleBold;
   // The axis-title italic flag only renders when the axis carries a
   // title — drop a stray inherited flag when the resolved axis title
   // is unset so the cloned `SheetChart` accurately reflects what the
@@ -2747,6 +2790,7 @@ function resolveAxes(
     xTitle !== undefined ||
     xAxisTitleRotationResolved !== undefined ||
     xAxisTitleFontSizeResolved !== undefined ||
+    xAxisTitleBoldResolved !== undefined ||
     xAxisTitleItalicResolved !== undefined ||
     xGridlines !== undefined ||
     xScale !== undefined ||
@@ -2774,6 +2818,7 @@ function resolveAxes(
       out.x.axisTitleRotation = xAxisTitleRotationResolved;
     if (xAxisTitleFontSizeResolved !== undefined)
       out.x.axisTitleFontSize = xAxisTitleFontSizeResolved;
+    if (xAxisTitleBoldResolved !== undefined) out.x.axisTitleBold = xAxisTitleBoldResolved;
     if (xAxisTitleItalicResolved !== undefined) out.x.axisTitleItalic = xAxisTitleItalicResolved;
     if (xGridlines !== undefined) out.x.gridlines = xGridlines;
     if (xScale !== undefined) out.x.scale = xScale;
@@ -2799,6 +2844,7 @@ function resolveAxes(
     yTitle !== undefined ||
     yAxisTitleRotationResolved !== undefined ||
     yAxisTitleFontSizeResolved !== undefined ||
+    yAxisTitleBoldResolved !== undefined ||
     yAxisTitleItalicResolved !== undefined ||
     yGridlines !== undefined ||
     yScale !== undefined ||
@@ -2820,6 +2866,7 @@ function resolveAxes(
       out.y.axisTitleRotation = yAxisTitleRotationResolved;
     if (yAxisTitleFontSizeResolved !== undefined)
       out.y.axisTitleFontSize = yAxisTitleFontSizeResolved;
+    if (yAxisTitleBoldResolved !== undefined) out.y.axisTitleBold = yAxisTitleBoldResolved;
     if (yAxisTitleItalicResolved !== undefined) out.y.axisTitleItalic = yAxisTitleItalicResolved;
     if (yGridlines !== undefined) out.y.gridlines = yGridlines;
     if (yScale !== undefined) out.y.scale = yScale;
@@ -3204,6 +3251,35 @@ function applyAxisTitleFontSizeOverride(
   if (override === undefined) return normalizeTitleFontSize(source);
   if (override === null) return undefined;
   return normalizeTitleFontSize(override);
+}
+
+/**
+ * Resolve an `axisTitleBold` override using the same `undefined`
+ * (inherit) / `null` (drop) / value (replace) grammar as the other
+ * axis helpers. Mirrors the chart-level `resolveTitleBold` —
+ * non-boolean overrides (typed escapes from an untyped caller)
+ * collapse to `undefined`, a `null` override always drops the
+ * inherited flag, and a literal `true` / `false` replaces it.
+ *
+ * The caller is expected to additionally gate the resolved value on
+ * the matching axis title's presence so the cloned shape never
+ * carries a flag the writer would silently elide (the writer scopes
+ * the flag emission to `<c:title>`, which is omitted when the axis
+ * renders no title).
+ */
+function applyAxisTitleBoldOverride(
+  source: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) {
+    if (source === true) return true;
+    if (source === false) return false;
+    return undefined;
+  }
+  if (override === null) return undefined;
+  if (override === true) return true;
+  if (override === false) return false;
+  return undefined;
 }
 
 /**

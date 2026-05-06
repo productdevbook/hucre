@@ -10540,6 +10540,187 @@ describe("writeChart — axis title font size", () => {
   });
 });
 
+// ── writeChart — axis title bold ────────────────────────────────────
+
+describe("writeChart — axis title bold", () => {
+  function axisBlocks(xml: string): string[] {
+    return Array.from(xml.matchAll(/<c:(catAx|valAx|dateAx)>[\s\S]*?<\/c:\1>/g)).map((m) => m[0]);
+  }
+
+  function axisTitleBOf(axisBlock: string): { defRPr?: string; rPr?: string } {
+    const titleMatch = axisBlock.match(/<c:title>[\s\S]*?<\/c:title>/);
+    if (!titleMatch) return {};
+    const def = titleMatch[0].match(/<a:defRPr\b[^/]*\/>/);
+    const r = titleMatch[0].match(/<a:rPr\b[^/]*\/>/);
+    const out: { defRPr?: string; rPr?: string } = {};
+    if (def) {
+      const m = def[0].match(/\bb="([^"]+)"/);
+      if (m) out.defRPr = m[1];
+    }
+    if (r) {
+      const m = r[0].match(/\bb="([^"]+)"/);
+      if (m) out.rPr = m[1];
+    }
+    return out;
+  }
+
+  it('emits b="0" on both <a:defRPr> and <a:rPr> by default', () => {
+    const result = writeChart(makeChart({ axes: { x: { title: "Period" } } }), "Sheet1");
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleBOf(xAx)).toEqual({ defRPr: "0", rPr: "0" });
+  });
+
+  it('emits b="1" on the X-axis title when axisTitleBold=true', () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleBold: true } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleBOf(xAx)).toEqual({ defRPr: "1", rPr: "1" });
+  });
+
+  it('emits b="0" on axisTitleBold=false (functionally identical to omission)', () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleBold: false } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleBOf(xAx)).toEqual({ defRPr: "0", rPr: "0" });
+  });
+
+  it('emits b="1" on the Y-axis title when axisTitleBold=true', () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { title: "Revenue (USD)", axisTitleBold: true } } }),
+      "Sheet1",
+    );
+    const [, yAx] = axisBlocks(result.chartXml);
+    expect(axisTitleBOf(yAx)).toEqual({ defRPr: "1", rPr: "1" });
+  });
+
+  it("emits the bold flag independently on each axis", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: { title: "Period", axisTitleBold: false },
+          y: { title: "Revenue", axisTitleBold: true },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx, yAx] = axisBlocks(result.chartXml);
+    expect(axisTitleBOf(xAx)).toEqual({ defRPr: "0", rPr: "0" });
+    expect(axisTitleBOf(yAx)).toEqual({ defRPr: "1", rPr: "1" });
+  });
+
+  it("drops non-boolean inputs back to the OOXML default", () => {
+    const stringy = writeChart(
+      makeChart({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        axes: { x: { title: "Period", axisTitleBold: "true" as any } },
+      }),
+      "Sheet1",
+    );
+    const numeric = writeChart(
+      makeChart({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        axes: { x: { title: "Period", axisTitleBold: 1 as any } },
+      }),
+      "Sheet1",
+    );
+    expect(axisTitleBOf(axisBlocks(stringy.chartXml)[0])).toEqual({ defRPr: "0", rPr: "0" });
+    expect(axisTitleBOf(axisBlocks(numeric.chartXml)[0])).toEqual({ defRPr: "0", rPr: "0" });
+  });
+
+  it("silently ignores axisTitleBold when the axis renders no title", () => {
+    // The writer scopes the bold flag to `<c:title>` — when the axis
+    // has no title to render, the entire `<c:title>` block is omitted
+    // and there is no `<a:defRPr>` slot to host the flag.
+    const result = writeChart(makeChart({ axes: { x: { axisTitleBold: true } } }), "Sheet1");
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(xAx).not.toContain("<c:title>");
+  });
+
+  it("composes independently with axisTitleRotation on the same axis title", () => {
+    const result = writeChart(
+      makeChart({
+        axes: { x: { title: "Period", axisTitleRotation: 45, axisTitleBold: true } },
+      }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const titleMatch = xAx.match(/<c:title>[\s\S]*?<\/c:title>/);
+    expect(titleMatch?.[0]).toContain('rot="2700000"');
+    expect(axisTitleBOf(xAx)).toEqual({ defRPr: "1", rPr: "1" });
+  });
+
+  it("threads through every chart family that has axes", async () => {
+    // Bar / column / line / area route X through `<c:catAx>` and Y
+    // through `<c:valAx>`; scatter routes both through `<c:valAx>`.
+    // The flag lands on every axis-title `<a:defRPr>` for every
+    // family. Pie / doughnut were short-circuited upstream — the
+    // resolver never invokes the axis builder for those families.
+    for (const type of ["bar", "column", "line", "area", "scatter"] as WriteChartKind[]) {
+      const sheets: WriteSheet[] = [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", 1],
+            ["B", 2],
+          ],
+          charts: [
+            {
+              type,
+              title: "Sales",
+              series: [{ name: "S", values: "B1:B2", categories: "A1:A2" }],
+              anchor: { from: { row: 5, col: 0 } },
+              axes: {
+                x: { title: "X", axisTitleBold: true },
+                y: { title: "Y", axisTitleBold: true },
+              },
+            },
+          ],
+        },
+      ];
+      const out = await writeXlsx({ sheets });
+      const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+      const reparsed = parseChart(chartXml);
+      expect(reparsed?.axes?.x?.axisTitleBold).toBe(true);
+      expect(reparsed?.axes?.y?.axisTitleBold).toBe(true);
+    }
+  });
+
+  it("round-trips through writeXlsx -> readXlsx", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["A", 1],
+          ["B", 2],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Test Chart",
+            series: [{ name: "Revenue", values: "B1:B2", categories: "A1:A2" }],
+            anchor: { from: { row: 5, col: 0 } },
+            axes: {
+              x: { title: "Period", axisTitleBold: true },
+              y: { title: "USD", axisTitleBold: false },
+            },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.x?.axisTitleBold).toBe(true);
+    // axisTitleBold=false collapses to the OOXML default `b="0"`,
+    // which the reader surfaces as `undefined` for round-trip parity.
+    expect(reparsed?.axes?.y?.axisTitleBold).toBeUndefined();
+  });
+});
+
 // ── writeChart — axis title italic ───────────────────────────────────
 
 describe("writeChart — axis title italic", () => {
