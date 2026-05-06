@@ -1356,6 +1356,38 @@ export interface SheetChart {
    * cleanly through every legend knob Excel exposes.
    */
   legendBold?: boolean;
+  /**
+   * Legend italic flag. Maps to `<c:legend><c:txPr><a:p><a:pPr>
+   * <a:defRPr i=".."/></a:pPr></a:p></c:txPr></c:legend>` — Excel's
+   * "Format Legend -> Font -> Italic" toggle. The OOXML attribute is
+   * the `xsd:boolean` `i` on `CT_TextCharacterProperties` (ECMA-376
+   * Part 1, §21.1.2.3.7); the writer lands the value on the
+   * default-paragraph `<a:defRPr>` slot inside the legend's
+   * `<c:txPr>` block so a re-parse picks the flag up off the canonical
+   * slot the OOXML schema exposes.
+   *
+   * Default: omitted — the legend renders non-italic (no `i`
+   * attribute, matching Excel's reference serialization for a fresh
+   * chart legend whose typography has not been customized; the OOXML
+   * default `false` collapses to absence). Set `true` to emit `i="1"`
+   * so the legend renders italic; set `false` explicitly to pin the
+   * non-default `i="0"` (functionally identical to omission, but
+   * useful when overriding a templated legend that had italic pinned
+   * upstream).
+   *
+   * Silently ignored when `legend === false` (no `<c:legend>` element
+   * is emitted) — there is no `<c:txPr>` slot to host the flag in
+   * that case. Mirrors {@link titleItalic} /
+   * {@link axes.x.axisTitleItalic} / {@link axes.x.labelItalic} —
+   * same boolean-with-explicit-default shape, same OOXML
+   * `<a:defRPr i=".."/>` mapping — so a caller can thread a single
+   * italic value through every typography-pinning slot. Composes
+   * independently with {@link legend} / {@link legendOverlay} /
+   * {@link legendEntries}: all four fields land on the same
+   * `<c:legend>` element so a single configuration call threads
+   * cleanly through every legend knob Excel exposes.
+   */
+  legendItalic?: boolean;
   /** Show the chart-level title element. Default: `true` when `title` is set. */
   showTitle?: boolean;
   /**
@@ -5037,6 +5069,24 @@ export interface Chart {
    * slots straight into {@link cloneChart} without conversion.
    */
   legendBold?: boolean;
+  /**
+   * Legend italic flag pulled from `<c:legend><c:txPr><a:p><a:pPr>
+   * <a:defRPr i=".."/></a:pPr></a:p></c:txPr></c:legend>`. The OOXML
+   * `i` attribute is the `xsd:boolean` italic flag on
+   * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7).
+   *
+   * The OOXML default `false` collapses to `undefined` so absence and
+   * `i="0"` round-trip identically — only an explicit `i="1"` surfaces
+   * `true`. Unknown / malformed `i` tokens drop to `undefined` rather
+   * than fabricate a value the writer would never emit.
+   *
+   * Reported as `undefined` whenever {@link legend} is `false` or the
+   * source chart has no `<c:legend>` element at all — there is no
+   * `<c:txPr>` slot to surface the flag from in either case. Mirrors
+   * the writer-side {@link SheetChart.legendItalic} so a parsed value
+   * slots straight into {@link cloneChart} without conversion.
+   */
+  legendItalic?: boolean;
   /**
    * Title-overlay flag pulled from `<c:title><c:overlay val=".."/>`.
    * Reflects Excel's "Format Chart Title -> Show the title without

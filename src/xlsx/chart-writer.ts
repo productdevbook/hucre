@@ -130,6 +130,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveLegendEntries(chart),
         resolveLegendFontSize(chart),
         resolveLegendBold(chart),
+        resolveLegendItalic(chart),
       ),
     );
   }
@@ -3930,6 +3931,7 @@ function buildLegend(
   entries: readonly ResolvedLegendEntry[],
   fontSizePt: number | undefined,
   bold: boolean | undefined,
+  italic: boolean | undefined,
 ): string {
   const children: string[] = [xmlSelfClose("c:legendPos", { val: pos })];
 
@@ -3958,13 +3960,13 @@ function buildLegend(
   // entirely when no typography knob is pinned so a fresh chart matches
   // Excel's reference serialization byte-for-byte (Excel itself omits
   // the block whenever the legend renders at the theme-default style).
-  // The block currently carries the legend font size and bold flag;
-  // future typography pins (italic / color) will land on the same
+  // The block currently carries the legend font size, bold, and italic
+  // flags; future typography pins (color) will land on the same
   // `<a:defRPr>` slot. The `<a:bodyPr>` carries no rotation attribute
   // — the legend is not rotatable in Excel's UI, mirroring how the
   // axis tick-label `<c:txPr>` slot drops `rot` when only typography
   // knobs are pinned.
-  const txPrXml = buildLegendTxPr(fontSizePt, bold);
+  const txPrXml = buildLegendTxPr(fontSizePt, bold, italic);
   if (txPrXml !== undefined) {
     children.push(txPrXml);
   }
@@ -3974,35 +3976,38 @@ function buildLegend(
 
 /**
  * Build the `<c:txPr>` block that carries the legend's typography pins
- * (currently the font size and bold flag). Returns `undefined` when
- * every input is unset so the caller can elide the element entirely
- * (Excel's reference serialization omits `<c:txPr>` from `<c:legend>`
- * when the legend renders at the theme-default style).
+ * (currently the font size, bold, and italic flags). Returns
+ * `undefined` when every input is unset so the caller can elide the
+ * element entirely (Excel's reference serialization omits `<c:txPr>`
+ * from `<c:legend>` when the legend renders at the theme-default
+ * style).
  *
  * The emitted block mirrors the minimal `<c:txPr>` shape Excel writes
  * when the user pins a legend typography knob — `<a:bodyPr/>` (no
  * rotation because the legend is not rotatable), `<a:lstStyle/>` is
  * the empty list-style placeholder the schema requires, and the
- * `<a:p><a:pPr><a:defRPr sz="N" b=".."/></a:pPr><a:endParaRPr/></a:p>`
- * paragraph stub Excel always emits hosts the typography attributes on
- * `<a:defRPr>`. Mirrors the chart-title / axis-title / tick-label
- * `<c:txPr>` slots exactly so a re-parse picks the values off the
- * canonical default-paragraph slot every other typography reader
- * expects.
+ * `<a:p><a:pPr><a:defRPr sz="N" b=".." i=".."/></a:pPr><a:endParaRPr/>
+ * </a:p>` paragraph stub Excel always emits hosts the typography
+ * attributes on `<a:defRPr>`. Mirrors the chart-title / axis-title /
+ * tick-label `<c:txPr>` slots exactly so a re-parse picks the values
+ * off the canonical default-paragraph slot every other typography
+ * reader expects.
  *
- * The bold flag emits a literal `b="1"` / `b="0"` whenever the input
- * is a boolean — `false` pins the OOXML default explicitly, which is
- * functionally identical to absence but lets a clone target override
- * an upstream `b="1"` from a templated chart.
+ * The bold / italic flags emit literal `b="1"` / `b="0"` / `i="1"` /
+ * `i="0"` whenever the input is a boolean — `false` pins the OOXML
+ * default explicitly, which is functionally identical to absence but
+ * lets a clone target override an upstream `1` from a templated chart.
  */
 function buildLegendTxPr(
   fontSizePt: number | undefined,
   bold: boolean | undefined,
+  italic: boolean | undefined,
 ): string | undefined {
-  if (fontSizePt === undefined && bold === undefined) return undefined;
+  if (fontSizePt === undefined && bold === undefined && italic === undefined) return undefined;
   const defRPrAttrs: Record<string, string | number> = {};
   if (fontSizePt !== undefined) defRPrAttrs.sz = fontSizePt * TITLE_FONT_SZ_PER_POINT;
   if (bold !== undefined) defRPrAttrs.b = bold ? 1 : 0;
+  if (italic !== undefined) defRPrAttrs.i = italic ? 1 : 0;
   return xmlElement("c:txPr", undefined, [
     xmlSelfClose("a:bodyPr"),
     xmlSelfClose("a:lstStyle"),
@@ -4052,6 +4057,26 @@ function resolveLegendFontSize(chart: SheetChart): number | undefined {
  */
 function resolveLegendBold(chart: SheetChart): boolean | undefined {
   const value = chart.legendBold;
+  if (value === true) return true;
+  if (value === false) return false;
+  return undefined;
+}
+
+/**
+ * Resolve `<c:legend><c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr>
+ * </a:p></c:txPr></c:legend>` from {@link SheetChart.legendItalic}.
+ *
+ * Returns the italic flag, or `undefined` when the chart leaves the
+ * field unset / passed a non-boolean token. The flag is only
+ * meaningful when the chart actually emits a legend — the caller is
+ * expected to gate the call on the resolved legend visibility.
+ *
+ * Mirrors `resolveTitleItalic` / `resolveAxisTitleItalic` /
+ * `resolveAxisLabelItalic` exactly — only literal `true` / `false`
+ * pass through; non-boolean tokens collapse to `undefined`.
+ */
+function resolveLegendItalic(chart: SheetChart): boolean | undefined {
+  const value = chart.legendItalic;
   if (value === true) return true;
   if (value === false) return false;
   return undefined;

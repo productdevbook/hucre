@@ -5441,6 +5441,186 @@ describe("parseChart — legendBold", () => {
   });
 });
 
+// ── parseChart — legend italic ───────────────────────────────────────
+
+describe("parseChart — legendItalic", () => {
+  const NS_LI = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withLegendItalic(i: string | undefined): string {
+    const defRPr = i === undefined ? "<a:defRPr/>" : `<a:defRPr i="${i}"/>`;
+    return `<c:chartSpace ${NS_LI}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr>${defRPr}</a:pPr><a:endParaRPr lang="en-US"/></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces true when the legend pinned i='1'", () => {
+    expect(parseChart(withLegendItalic("1"))?.legendItalic).toBe(true);
+  });
+
+  it("accepts the OOXML 'true' spelling on i", () => {
+    expect(parseChart(withLegendItalic("true"))?.legendItalic).toBe(true);
+  });
+
+  it("collapses i='0' to undefined (OOXML default — non-italic)", () => {
+    expect(parseChart(withLegendItalic("0"))?.legendItalic).toBeUndefined();
+  });
+
+  it("collapses i='false' to undefined", () => {
+    expect(parseChart(withLegendItalic("false"))?.legendItalic).toBeUndefined();
+  });
+
+  it("returns undefined when <a:defRPr> omits the i attribute", () => {
+    expect(parseChart(withLegendItalic(undefined))?.legendItalic).toBeUndefined();
+  });
+
+  it("drops unknown i tokens rather than fabricate a value", () => {
+    expect(parseChart(withLegendItalic("italic"))?.legendItalic).toBeUndefined();
+    expect(parseChart(withLegendItalic(""))?.legendItalic).toBeUndefined();
+    expect(parseChart(withLegendItalic("2"))?.legendItalic).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:legend> element at all", () => {
+    const xml = `<c:chartSpace ${NS_LI}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendItalic).toBeUndefined();
+  });
+
+  it("returns undefined when <c:legend> has no <c:txPr> body", () => {
+    const xml = `<c:chartSpace ${NS_LI}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendItalic).toBeUndefined();
+  });
+
+  it("returns undefined when <c:txPr> has no <a:p><a:pPr> chain", () => {
+    const xml = `<c:chartSpace ${NS_LI}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendItalic).toBeUndefined();
+  });
+
+  it('drops the italic flag when the legend is hidden via <c:delete val="1"/>', () => {
+    const xml = `<c:chartSpace ${NS_LI}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:delete val="1"/>
+      <c:overlay val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr i="1"/></a:pPr></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe(false);
+    expect(chart?.legendItalic).toBeUndefined();
+  });
+
+  it("co-surfaces alongside legendOverlay and other legend fields", () => {
+    const xml = `<c:chartSpace ${NS_LI}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="b"/>
+      <c:legendEntry>
+        <c:idx val="0"/>
+        <c:delete val="1"/>
+      </c:legendEntry>
+      <c:overlay val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr i="1"/></a:pPr><a:endParaRPr lang="en-US"/></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe("bottom");
+    expect(chart?.legendOverlay).toBe(true);
+    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }]);
+    expect(chart?.legendItalic).toBe(true);
+  });
+
+  it("surfaces the italic flag on every chart family that emits a legend", () => {
+    for (const kind of ["lineChart", "barChart", "pieChart", "doughnutChart"]) {
+      const xml = `<c:chartSpace ${NS_LI}>
+  <c:chart>
+    <c:plotArea>
+      <c:${kind}><c:ser><c:idx val="0"/></c:ser></c:${kind}>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr i="1"/></a:pPr></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+      expect(parseChart(xml)?.legendItalic).toBe(true);
+    }
+  });
+});
+
 // ── parseChart — data labels showLegendKey ──────────────────────────
 
 describe("parseChart — data labels showLegendKey", () => {

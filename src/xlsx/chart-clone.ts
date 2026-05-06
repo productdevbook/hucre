@@ -226,6 +226,30 @@ export interface CloneChartOptions {
    * round-trips that pin through the parse / clone / write loop.
    */
   legendBold?: boolean | null;
+  /**
+   * Override `SheetChart.legendItalic`. `undefined` (or omitted)
+   * inherits the source's parsed `legendItalic`; `null` drops the
+   * inherited flag (the writer emits no `<c:txPr>` block on the
+   * legend, falling back to the OOXML default — no `i` attribute,
+   * equivalent to non-italic); a `boolean` replaces. Non-boolean
+   * overrides (typed escapes from an untyped caller) collapse to
+   * `undefined` so a typed escape cannot pin a value the writer
+   * would silently elide.
+   *
+   * The override is silently dropped from the cloned `SheetChart`
+   * when the resolved legend is `false` (no `<c:legend>` element will
+   * be emitted) — there is no `<c:txPr>` slot to host the flag on a
+   * hidden legend, so leaking the value into the output would carry
+   * a pin Excel never reads.
+   *
+   * The grammar mirrors `titleItalic` / `axes.x.axisTitleItalic` /
+   * `axes.x.labelItalic` so the typography knobs compose the same way
+   * at the call site. Bridges another typography-customization gap
+   * for the dashboard composition flow tracked in #136 — a templated
+   * dashboard chart whose user pinned a custom legend italic flag now
+   * round-trips that pin through the parse / clone / write loop.
+   */
+  legendItalic?: boolean | null;
   /** Override `SheetChart.barGrouping`. */
   barGrouping?: SheetChart["barGrouping"];
   /**
@@ -1415,6 +1439,12 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // (the writer emits no `<c:txPr>` block), a `boolean` replaces.
     const resolvedLegendBold = resolveLegendBold(source.legendBold, options.legendBold);
     if (resolvedLegendBold !== undefined) out.legendBold = resolvedLegendBold;
+
+    // Same hidden-legend scoping for the italic flag: `undefined`
+    // inherits (after the boolean normalizer), `null` drops, a
+    // `boolean` replaces.
+    const resolvedLegendItalic = resolveLegendItalic(source.legendItalic, options.legendItalic);
+    if (resolvedLegendItalic !== undefined) out.legendItalic = resolvedLegendItalic;
   }
 
   const barGrouping = options.barGrouping !== undefined ? options.barGrouping : source.barGrouping;
@@ -2549,6 +2579,44 @@ function resolveLegendBold(
   if (override === undefined) return normalizeLegendBold(sourceValue);
   if (override === null) return undefined;
   return normalizeLegendBold(override);
+}
+
+/**
+ * Normalize a `legendItalic` value for the cloned `SheetChart`. Mirrors
+ * the writer's `resolveLegendItalic` — `true` / `false` pass through
+ * literally, every other token (typed escape from an untyped caller)
+ * collapses to `undefined`.
+ */
+function normalizeLegendItalic(value: boolean | undefined): boolean | undefined {
+  if (value === true) return true;
+  if (value === false) return false;
+  return undefined;
+}
+
+/**
+ * Resolve a `legendItalic` override.
+ *
+ * `undefined` → inherit the source's parsed `legendItalic` (after
+ *               running it through {@link normalizeLegendItalic} so a
+ *               typed escape on the source path drops cleanly).
+ * `null`      → drop the inherited flag (the writer falls back to the
+ *               OOXML default — no `i` attribute, equivalent to
+ *               non-italic).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `titleItalic` / `axisTitleItalic` /
+ * `axes.x.labelItalic` so the typography knobs compose the same way at
+ * the call site. Callers should gate the result on the resolved legend
+ * visibility — when no legend is emitted, the flag has no slot in the
+ * rendered chart.
+ */
+function resolveLegendItalic(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return normalizeLegendItalic(sourceValue);
+  if (override === null) return undefined;
+  return normalizeLegendItalic(override);
 }
 
 /**

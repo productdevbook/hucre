@@ -434,6 +434,12 @@ export function parseChart(xml: string): Chart | undefined {
     // so absence and `b="0"` round-trip identically.
     const legendBold = parseLegendBold(chartEl);
     if (legendBold !== undefined) out.legendBold = legendBold;
+
+    // Same scoping for the italic flag — only an explicit `i="1"`
+    // surfaces `true`; the OOXML default and absence both collapse to
+    // `undefined`.
+    const legendItalic = parseLegendItalic(chartEl);
+    if (legendItalic !== undefined) out.legendItalic = legendItalic;
   }
 
   const dispBlanksAs = parseDispBlanksAs(chartEl);
@@ -2901,6 +2907,39 @@ function parseLegendBold(chartEl: XmlElement): boolean | undefined {
   // explicit `b="0"` round-trip identically through `cloneChart`.
   // Unknown / missing `b` tokens drop to `undefined` for the same
   // reason — never fabricate a flag Excel would not emit.
+  if (raw === "1" || raw === "true") return true;
+  return undefined;
+}
+
+/**
+ * Pull `<c:legend><c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p>
+ * </c:txPr></c:legend>` off the chart. Returns the italic flag.
+ *
+ * The OOXML `i` attribute is the `xsd:boolean` italic flag on
+ * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7). The
+ * OOXML default `false` collapses to `undefined` so absence and
+ * `i="0"` round-trip identically — only an explicit `i="1"` surfaces
+ * `true`. Unknown / malformed `i` tokens drop to `undefined` rather
+ * than fabricate a value the writer would never emit.
+ *
+ * Returns `undefined` whenever the chart omits the `<c:legend>`
+ * element — there is no `<c:txPr>` slot to surface the flag from in
+ * that case. Mirrors the chart-title / axis-title / axis tick-label
+ * readers exactly so a parsed value slots straight back into the
+ * writer's emit path.
+ */
+function parseLegendItalic(chartEl: XmlElement): boolean | undefined {
+  const legend = findChild(chartEl, "legend");
+  if (!legend) return undefined;
+  const txPr = findChild(legend, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const raw = defRPr.attrs.i;
   if (raw === "1" || raw === "true") return true;
   return undefined;
 }
