@@ -3842,11 +3842,15 @@ function buildDataLabelsBody(dl: ChartDataLabels, chartType: WriteChartKind): st
   // `<c:dLblPos>` (ECMA-376 Part 1, §21.2.2.50). The writer currently
   // skips `<c:spPr>` (not yet authored), so `<c:txPr>` lands directly
   // after `<c:numFmt>` and before `<c:dLblPos>`. The block currently
-  // carries the data-label font size; future typography pins (color,
-  // bold, italic, underline, strikethrough) will land on the same
-  // `<a:defRPr>` slot. The writer skips the entire block when no font
-  // knob is pinned so a fresh chart matches Excel's reference shape.
-  const txPrXml = buildDataLabelsTxPr(resolveDataLabelsFontSize(dl.fontSize));
+  // carries the data-label font size and font color; future
+  // typography pins (bold, italic, underline, strikethrough) will land
+  // on the same `<a:defRPr>` slot. The writer skips the entire block
+  // when no font knob is pinned so a fresh chart matches Excel's
+  // reference shape.
+  const txPrXml = buildDataLabelsTxPr(
+    resolveDataLabelsFontSize(dl.fontSize),
+    resolveDataLabelsFontColor(dl.fontColor),
+  );
   if (txPrXml !== undefined) {
     children.push(txPrXml);
   }
@@ -3934,6 +3938,21 @@ function resolveDataLabelsFontSize(value: number | undefined): number | undefine
 }
 
 /**
+ * Resolve `<c:dLbls><c:txPr><a:p><a:pPr><a:defRPr><a:solidFill>
+ * <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
+ * </c:txPr></c:dLbls>` from {@link ChartDataLabels.fontColor}.
+ *
+ * Returns the 6-character uppercase hex string the writer emits, or
+ * `undefined` when the caller leaves the field unset / passed a
+ * malformed token. Delegates to {@link normalizeTitleColor} so the
+ * accept-with-or-without-`#` grammar matches the chart-title /
+ * axis-title / axis tick-label / legend color resolvers exactly.
+ */
+function resolveDataLabelsFontColor(value: string | undefined): string | undefined {
+  return normalizeTitleColor(value);
+}
+
+/**
  * Build the `<c:txPr>` block that carries a data-label's typography
  * pins. Returns `undefined` when every input is unset so the caller
  * can elide the element entirely (Excel's reference serialization
@@ -3945,23 +3964,47 @@ function resolveDataLabelsFontSize(value: number | undefined): number | undefine
  * rotation because the data-label rotation is parked in a separate
  * extension element Excel emits at write time), `<a:lstStyle/>` is
  * the empty list-style placeholder the schema requires, and the
- * `<a:p><a:pPr><a:defRPr sz="N"/></a:pPr><a:endParaRPr/></a:p>`
- * paragraph stub Excel always emits hosts the typography attributes
- * on `<a:defRPr>`. Mirrors the chart-title / axis-title / axis
- * tick-label / legend `<c:txPr>` slots exactly so a re-parse picks
- * the value off the canonical default-paragraph slot every other
- * typography reader expects.
+ * `<a:p><a:pPr><a:defRPr ...><a:solidFill>...</a:solidFill></a:defRPr>
+ * </a:pPr><a:endParaRPr/></a:p>` paragraph stub Excel always emits
+ * hosts the typography attributes on `<a:defRPr>`. The `<a:defRPr>`
+ * element expands from self-closing to wrapping a single
+ * `<a:solidFill>` child when a color is set; otherwise the writer
+ * keeps the existing self-closing form so a fresh chart with no
+ * custom color matches Excel's reference serialization byte-for-byte.
+ * Mirrors the chart-title / axis-title / axis tick-label / legend
+ * `<c:txPr>` slots exactly so a re-parse picks the value off the
+ * canonical default-paragraph slot every other typography reader
+ * expects.
  */
-function buildDataLabelsTxPr(fontSizePt: number | undefined): string | undefined {
-  if (fontSizePt === undefined) return undefined;
-  const defRPrAttrs: Record<string, string | number> = {
-    sz: fontSizePt * TITLE_FONT_SZ_PER_POINT,
-  };
+function buildDataLabelsTxPr(
+  fontSizePt: number | undefined,
+  rgbHex: string | undefined,
+): string | undefined {
+  if (fontSizePt === undefined && rgbHex === undefined) return undefined;
+  const defRPrAttrs: Record<string, string | number> = {};
+  if (fontSizePt !== undefined) defRPrAttrs.sz = fontSizePt * TITLE_FONT_SZ_PER_POINT;
+  // OOXML's `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+  // </a:solidFill></a:defRPr>` carries the data-label font color.
+  // Absence (`undefined`) collapses to skipping the `<a:solidFill>`
+  // child entirely so the labels inherit the theme text color
+  // (Excel's reference behavior for fresh data labels that have not
+  // had a custom color picked).
+  const solidFillChild = rgbHex
+    ? xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: rgbHex })])
+    : undefined;
+  // When a fill color is set the `<a:defRPr>` slot expands from
+  // self-closing to wrapping the `<a:solidFill>` child; otherwise the
+  // writer keeps the existing self-closing form so a fresh chart with
+  // no custom color matches Excel's reference serialization
+  // byte-for-byte.
+  const defRPr = solidFillChild
+    ? xmlElement("a:defRPr", defRPrAttrs, [solidFillChild])
+    : xmlSelfClose("a:defRPr", defRPrAttrs);
   return xmlElement("c:txPr", undefined, [
     xmlSelfClose("a:bodyPr"),
     xmlSelfClose("a:lstStyle"),
     xmlElement("a:p", undefined, [
-      xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", defRPrAttrs)]),
+      xmlElement("a:pPr", undefined, [defRPr]),
       xmlSelfClose("a:endParaRPr", { lang: "en-US" }),
     ]),
   ]);

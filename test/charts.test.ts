@@ -15181,3 +15181,187 @@ describe("parseChart — data labels fontSize", () => {
     expect(parseChart(xml)?.dataLabels?.fontSize).toBe(16);
   });
 });
+
+// ── parseChart — data labels fontColor ──────────────────────────────
+
+describe("parseChart — data labels fontColor", () => {
+  const NS_DLC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withDLblsColor(srgbVal: string | undefined): string {
+    const fill =
+      srgbVal === undefined
+        ? "<a:defRPr/>"
+        : `<a:defRPr><a:solidFill><a:srgbClr val="${srgbVal}"/></a:solidFill></a:defRPr>`;
+    return `<c:chartSpace ${NS_DLC}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr>${fill}</a:pPr><a:endParaRPr lang="en-US"/></a:p>
+          </c:txPr>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces fontColor as the canonical 6-character uppercase hex", () => {
+    expect(parseChart(withDLblsColor("FF0000"))?.dataLabels?.fontColor).toBe("FF0000");
+  });
+
+  it("normalizes a lowercase srgbClr val to the OOXML uppercase canonical form", () => {
+    expect(parseChart(withDLblsColor("ff8800"))?.dataLabels?.fontColor).toBe("FF8800");
+  });
+
+  it("returns undefined when the dLbls block has no <a:solidFill>", () => {
+    expect(parseChart(withDLblsColor(undefined))?.dataLabels?.fontColor).toBeUndefined();
+  });
+
+  it("returns undefined when the dLbls block has no <c:txPr> body", () => {
+    const xml = `<c:chartSpace ${NS_DLC}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataLabels?.fontColor).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:dLbls> element at all", () => {
+    const xml = `<c:chartSpace ${NS_DLC}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataLabels).toBeUndefined();
+  });
+
+  it("collapses theme references (<a:schemeClr>) to undefined — only literal RGB round-trips", () => {
+    const xml = `<c:chartSpace ${NS_DLC}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:defRPr></a:pPr></a:p>
+          </c:txPr>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataLabels?.fontColor).toBeUndefined();
+  });
+
+  it("collapses malformed val tokens (wrong length, non-hex characters) to undefined", () => {
+    expect(parseChart(withDLblsColor(""))?.dataLabels?.fontColor).toBeUndefined();
+    expect(parseChart(withDLblsColor("FF00"))?.dataLabels?.fontColor).toBeUndefined();
+    expect(parseChart(withDLblsColor("FF0000FF"))?.dataLabels?.fontColor).toBeUndefined();
+    expect(parseChart(withDLblsColor("ZZZZZZ"))?.dataLabels?.fontColor).toBeUndefined();
+  });
+
+  it("co-surfaces alongside the other dLbls fields (showVal / position / numberFormat)", () => {
+    const xml = `<c:chartSpace ${NS_DLC}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:numFmt formatCode="0.00" sourceLinked="0"/>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="123456"/></a:solidFill></a:defRPr></a:pPr></a:p>
+          </c:txPr>
+          <c:dLblPos val="outEnd"/>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.fontColor).toBe("123456");
+    expect(chart?.dataLabels?.position).toBe("outEnd");
+    expect(chart?.dataLabels?.showValue).toBe(true);
+    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" });
+  });
+
+  it("surfaces the fontColor on a fontColor-only dLbls block (no other show* toggles)", () => {
+    const xml = `<c:chartSpace ${NS_DLC}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="00FF00"/></a:solidFill></a:defRPr></a:pPr></a:p>
+          </c:txPr>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="0"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataLabels?.fontColor).toBe("00FF00");
+  });
+});

@@ -2519,6 +2519,15 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
   const fontSize = parseDataLabelsFontSize(el);
   if (fontSize !== undefined) out.fontSize = fontSize;
 
+  // `<c:txPr><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val=".."/>
+  // </a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>` — data-label
+  // font color pinned via Excel's "Format Data Labels -> Font -> Font
+  // color" picker. Theme references (`<a:schemeClr>`) and malformed
+  // `val` tokens collapse to `undefined` since only the literal RGB
+  // triple round-trips losslessly through `writeChart`.
+  const fontColor = parseDataLabelsFontColor(el);
+  if (fontColor !== undefined) out.fontColor = fontColor;
+
   // Empty record is meaningless to a consumer — collapse to undefined.
   if (
     out.position === undefined &&
@@ -2530,7 +2539,8 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
     out.separator === undefined &&
     out.numberFormat === undefined &&
     out.showLeaderLines === undefined &&
-    out.fontSize === undefined
+    out.fontSize === undefined &&
+    out.fontColor === undefined
   ) {
     return undefined;
   }
@@ -2576,6 +2586,41 @@ function parseDataLabelsFontSize(dLbls: XmlElement): number | undefined {
   const points = halfSteps / 2;
   if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
   return points;
+}
+
+/**
+ * Pull `<c:dLbls><c:txPr><a:p><a:pPr><a:defRPr><a:solidFill>
+ * <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
+ * </c:txPr></c:dLbls>` off a data-labels block. Returns the
+ * 6-character uppercase hex string when the parser walks the full
+ * chain and lands on an `<a:srgbClr val="RRGGBB"/>`. Theme references
+ * (`<a:schemeClr>`), `<a:hslClr>`, `<a:sysClr>`, and `<a:prstClr>`
+ * all collapse to `undefined` — only the literal RGB triple
+ * round-trips losslessly through {@link writeChart}. Malformed `val`
+ * tokens (wrong length, non-hex characters) likewise drop to
+ * `undefined` rather than fabricate a value the writer would
+ * round-trip into a malformed `<a:srgbClr>`.
+ *
+ * Returns `undefined` whenever the data-labels block omits `<c:txPr>`
+ * entirely or the canonical chain is malformed at any link. Mirrors
+ * the chart-title / axis-title / axis tick-label / legend color
+ * readers exactly so a parsed value slots straight back into the
+ * writer's emit path.
+ */
+function parseDataLabelsFontColor(dLbls: XmlElement): string | undefined {
+  const txPr = findChild(dLbls, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const solidFill = findChild(defRPr, "solidFill");
+  if (!solidFill) return undefined;
+  const srgbClr = findChild(solidFill, "srgbClr");
+  if (!srgbClr) return undefined;
+  return normalizeRgbHex(srgbClr.attrs.val);
 }
 
 /**

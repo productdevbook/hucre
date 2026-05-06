@@ -16033,3 +16033,190 @@ describe("cloneChart — dataLabels.fontSize", () => {
     expect(clone.dataLabels?.fontSize).toBe(14);
   });
 });
+
+// ── cloneChart — dataLabels.fontColor ───────────────────────────────
+
+describe("cloneChart — dataLabels.fontColor", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's chart-level dataLabels.fontColor by default", () => {
+    const clone = cloneChart(source({ dataLabels: { showValue: true, fontColor: "FF0000" } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.dataLabels?.fontColor).toBe("FF0000");
+  });
+
+  it("lets options.dataLabels override the source's value (replaces the whole block)", () => {
+    const clone = cloneChart(source({ dataLabels: { showValue: true, fontColor: "FF0000" } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      dataLabels: { showValue: true, fontColor: "00FF00" },
+    });
+    expect(clone.dataLabels?.fontColor).toBe("00FF00");
+  });
+
+  it("drops the inherited dataLabels block when the override is null", () => {
+    const clone = cloneChart(source({ dataLabels: { showValue: true, fontColor: "FF0000" } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      dataLabels: null,
+    });
+    expect(clone.dataLabels).toBeUndefined();
+  });
+
+  it("returns undefined dataLabels when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.dataLabels).toBeUndefined();
+  });
+
+  it("composes with the other dLbls fields on the cloned SheetChart", () => {
+    const clone = cloneChart(
+      source({
+        dataLabels: {
+          showValue: true,
+          fontColor: "FF0000",
+          position: "outEnd",
+          numberFormat: { formatCode: "0.00" },
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.dataLabels?.fontColor).toBe("FF0000");
+    expect(clone.dataLabels?.showValue).toBe(true);
+    expect(clone.dataLabels?.position).toBe("outEnd");
+    expect(clone.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" });
+  });
+
+  it("propagates dataLabels.fontColor into the rendered <c:dLbls><c:txPr> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ dataLabels: { showValue: true, fontColor: "FF0000" } }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:txPr>");
+    expect(written).toContain('<a:srgbClr val="FF0000"/>');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataLabels?.fontColor).toBe("FF0000");
+  });
+
+  it("emits no <c:dLbls> when both source and override are absent (round-trips to undefined)", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).not.toContain("<c:dLbls>");
+    expect(parseChart(written)?.dataLabels).toBeUndefined();
+  });
+
+  it("an explicit override beats the source value through writeXlsx", async () => {
+    const clone = cloneChart(source({ dataLabels: { showValue: true, fontColor: "FF0000" } }), {
+      anchor: { from: { row: 5, col: 0 } },
+      dataLabels: { showValue: true, fontColor: "00FF00" },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('<a:srgbClr val="00FF00"/>');
+    expect(written).not.toContain('<a:srgbClr val="FF0000"/>');
+    expect(parseChart(written)?.dataLabels?.fontColor).toBe("00FF00");
+  });
+
+  it("a null override drops the source value through writeXlsx (no <c:dLbls> emitted)", async () => {
+    const clone = cloneChart(source({ dataLabels: { showValue: true, fontColor: "FF0000" } }), {
+      anchor: { from: { row: 5, col: 0 } },
+      dataLabels: null,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).not.toContain("<c:dLbls>");
+    expect(parseChart(written)?.dataLabels).toBeUndefined();
+  });
+
+  it("carries dataLabels.fontColor through a flatten (bar → line)", () => {
+    const clone = cloneChart(source({ dataLabels: { showValue: true, fontColor: "FF0000" } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "line",
+    });
+    expect(clone.type).toBe("line");
+    expect(clone.dataLabels?.fontColor).toBe("FF0000");
+  });
+
+  it("carries dataLabels.fontColor through a doughnut flatten (bar → doughnut)", () => {
+    const clone = cloneChart(source({ dataLabels: { showValue: true, fontColor: "FF0000" } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.dataLabels?.fontColor).toBe("FF0000");
+  });
+});

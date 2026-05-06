@@ -14382,3 +14382,197 @@ describe("writeChart — dataLabels.fontSize", () => {
     expect(reparsed?.dataLabels?.fontSize).toBe(14);
   });
 });
+
+// ── writeChart — dataLabels.fontColor ───────────────────────────────
+
+describe("writeChart — dataLabels.fontColor", () => {
+  function dLblsOf(xml: string): string {
+    const m = xml.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/);
+    if (!m) throw new Error("No <c:dLbls> block found in chart XML");
+    return m[0];
+  }
+
+  it("does NOT emit <c:txPr> when fontColor is unset (matches Excel reference)", () => {
+    const result = writeChart(makeChart({ dataLabels: { showValue: true } }), "Sheet1");
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).not.toContain("<c:txPr>");
+    expect(dLbls).not.toContain("a:solidFill");
+  });
+
+  it('threads fontColor through to <c:dLbls><c:txPr> as <a:srgbClr val="RRGGBB"/>', () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontColor: "FF0000" } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain("<c:txPr>");
+    expect(dLbls).toContain('<a:srgbClr val="FF0000"/>');
+  });
+
+  it("normalizes a leading # in the input hex string", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontColor: "#00FF00" } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).toContain('<a:srgbClr val="00FF00"/>');
+  });
+
+  it("normalizes a lowercase hex string to the OOXML uppercase canonical form", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontColor: "abcdef" } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).toContain('<a:srgbClr val="ABCDEF"/>');
+  });
+
+  it("places <c:txPr> after <c:numFmt> and before <c:dLblPos> inside <c:dLbls> (CT_DLbls order)", () => {
+    const result = writeChart(
+      makeChart({
+        dataLabels: {
+          showValue: true,
+          fontColor: "112233",
+          position: "outEnd",
+          numberFormat: { formatCode: "0.00" },
+        },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls.indexOf("c:numFmt")).toBeLessThan(dLbls.indexOf("c:txPr"));
+    expect(dLbls.indexOf("c:txPr")).toBeLessThan(dLbls.indexOf("c:dLblPos"));
+  });
+
+  it("only emits <c:txPr> once inside <c:dLbls>", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontColor: "112233" } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    const occurrences = dLbls.match(/<c:txPr>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads fontColor through every chart family that emits dLbls", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, dataLabels: { showValue: true, fontColor: "445566" } }),
+        "Sheet1",
+      );
+      const dLbls = dLblsOf(result.chartXml);
+      expect(dLbls).toContain('<a:srgbClr val="445566"/>');
+    }
+  });
+
+  it("drops malformed hex inputs (wrong length)", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontColor: "FF00" } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops malformed hex inputs (non-hex characters)", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontColor: "ZZZZZZ" } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops alpha-channel hex forms", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontColor: "#FF0000FF" } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops empty string inputs", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontColor: "" } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops non-string inputs (null leaking past the type guard)", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ dataLabels: { showValue: true, fontColor: null as any } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops non-string inputs (number leaking past the type guard)", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ dataLabels: { showValue: true, fontColor: 0xff0000 as any } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("emits the standard txPr stub shape (a:bodyPr / a:lstStyle / a:p / a:endParaRPr)", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontColor: "ABCDEF" } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain("<a:bodyPr/>");
+    expect(dLbls).toContain("<a:lstStyle/>");
+    expect(dLbls).toContain('<a:srgbClr val="ABCDEF"/>');
+    expect(dLbls).toContain('<a:endParaRPr lang="en-US"/>');
+  });
+
+  it("expands <a:defRPr> from self-closing to wrapping <a:solidFill>", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontColor: "ABCDEF" } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain("<a:defRPr><a:solidFill>");
+    expect(dLbls).toContain("</a:solidFill></a:defRPr>");
+  });
+
+  it("round-trips a fontColor through parseChart", () => {
+    const written = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontColor: "FF8800" } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataLabels?.fontColor).toBe("FF8800");
+  });
+
+  it("collapses an unset fontColor round-trip back to undefined", () => {
+    const written = writeChart(makeChart({ dataLabels: { showValue: true } }), "Sheet1").chartXml;
+    expect(parseChart(written)?.dataLabels?.fontColor).toBeUndefined();
+  });
+
+  it("survives a writeXlsx round trip — dataLabels.fontColor lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            dataLabels: { showValue: true, fontColor: "0F0F0F" },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('<a:srgbClr val="0F0F0F"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.dataLabels?.fontColor).toBe("0F0F0F");
+  });
+});
