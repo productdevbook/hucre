@@ -816,6 +816,14 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // chart inherits the theme-default tick-label weight.
     xLabelBold: normalizeAxisLabelBold(chart.axes?.x?.labelBold),
     yLabelBold: normalizeAxisLabelBold(chart.axes?.y?.labelBold),
+    // `<c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p></c:txPr>`
+    // shares the same `<c:txPr>` block as the rotation / size / bold
+    // slots above. `true` / `false` pass through literally; non-boolean
+    // tokens (typed escapes from an untyped caller) collapse to
+    // `undefined` so the writer omits the `i` attribute and a fresh
+    // chart inherits the theme-default tick-label slant.
+    xLabelItalic: normalizeAxisLabelItalic(chart.axes?.x?.labelItalic),
+    yLabelItalic: normalizeAxisLabelItalic(chart.axes?.y?.labelItalic),
     xReverse: chart.axes?.x?.reverse === true,
     yReverse: chart.axes?.y?.reverse === true,
     // `tickLblSkip` / `tickMarkSkip` only round-trip on category axes
@@ -1375,6 +1383,23 @@ interface AxisRenderOptions {
    * semantics as {@link xLabelBold}.
    */
   yLabelBold: boolean | undefined;
+  /**
+   * Tick-label italic flag emitted on the X axis via
+   * `<c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p></c:txPr>`.
+   * The OOXML `i` attribute is the `xsd:boolean` italic flag on
+   * `CT_TextCharacterProperties`; the writer emits `1` / `0` at the
+   * canonical slot. `undefined` skips the attribute so a fresh chart
+   * inherits the theme-default tick-label slant. The block is
+   * emitted whenever `xLabelRotation`, `xLabelFontSize`, `xLabelBold`,
+   * or `xLabelItalic` is set so the OOXML schema's `<c:txPr>` slot
+   * carries every pinned typography knob.
+   */
+  xLabelItalic: boolean | undefined;
+  /**
+   * Tick-label italic flag emitted on the Y axis. Same shape and
+   * semantics as {@link xLabelItalic}.
+   */
+  yLabelItalic: boolean | undefined;
   xReverse: boolean;
   yReverse: boolean;
   /**
@@ -1744,20 +1769,34 @@ function normalizeAxisLabelBold(value: boolean | undefined): boolean | undefined
 }
 
 /**
+ * Normalize an axis `labelItalic` value for the
+ * `<c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p></c:txPr>`
+ * writer slot. Delegates to the chart-level {@link normalizeTitleItalic}
+ * — `true` / `false` pass through literally, every other token (typed
+ * escape from an untyped caller, including `null`-shaped values)
+ * collapses to `undefined` so the writer omits the `i` attribute
+ * entirely. Absence then collapses to the OOXML default Excel itself
+ * emits on a fresh axis (the theme-default tick-label slant).
+ */
+function normalizeAxisLabelItalic(value: boolean | undefined): boolean | undefined {
+  return normalizeTitleItalic(value);
+}
+
+/**
  * Build the `<c:txPr>` block that carries an axis tick-label rotation,
- * font size, and / or bold flag. Returns `undefined` when every input
- * is unset so the caller can elide the element entirely (Excel's
- * reference serialization on a fresh axis omits `<c:txPr>` when the
- * labels render at the default rotation and inherit the theme font /
- * weight).
+ * font size, bold flag, and / or italic flag. Returns `undefined` when
+ * every input is unset so the caller can elide the element entirely
+ * (Excel's reference serialization on a fresh axis omits `<c:txPr>`
+ * when the labels render at the default rotation and inherit the
+ * theme font / weight / slant).
  *
  * The emitted block mirrors the minimal `<c:txPr>` shape Excel writes
  * when the user pins a custom typography knob — `<a:bodyPr rot="N"/>`
  * carries the rotation (when set), `<a:lstStyle/>` is the empty
  * list-style placeholder the schema requires, and the
  * `<a:p><a:pPr><a:defRPr/></a:pPr><a:endParaRPr/></a:p>` paragraph
- * stub Excel always emits hosts the optional `sz` / `b` attributes on
- * `<a:defRPr>`. Additional `<a:bodyPr>` attributes Excel writes in
+ * stub Excel always emits hosts the optional `sz` / `b` / `i`
+ * attributes on `<a:defRPr>`. Additional `<a:bodyPr>` attributes Excel writes in
  * its full reference (`spcFirstLastPara` / `vertOverflow` / `wrap` /
  * `anchor` / `anchorCtr`) are intentionally omitted — the OOXML
  * schema marks them all optional, and dropping them keeps the
@@ -1765,30 +1804,39 @@ function normalizeAxisLabelBold(value: boolean | undefined): boolean | undefined
  *
  * When only a rotation is pinned, the `<a:defRPr>` slot self-closes
  * with no attributes (matching the legacy rotation-only emit). When a
- * font size or bold flag is pinned, the slot carries `sz="N"` (in
- * 100ths of a point) and / or `b="1"` / `b="0"` so a re-parse picks
- * the values up off the canonical default-paragraph slot. When the
- * rotation is absent but a size or flag is pinned, the writer omits
- * `rot` from `<a:bodyPr>` so the OOXML default `0` collapses to
- * absence. The bold flag emits a literal `b="1"` / `b="0"` whenever
- * the input is a boolean — `false` pins the OOXML default explicitly,
- * which is functionally identical to absence but lets a clone target
- * override an upstream `b="1"` from a templated chart.
+ * font size, bold flag, or italic flag is pinned, the slot carries
+ * `sz="N"` (in 100ths of a point), `b="1"` / `b="0"`, and / or
+ * `i="1"` / `i="0"` so a re-parse picks the values up off the
+ * canonical default-paragraph slot. When the rotation is absent but a
+ * size or flag is pinned, the writer omits `rot` from `<a:bodyPr>` so
+ * the OOXML default `0` collapses to absence. The bold / italic flags
+ * each emit a literal `1` / `0` whenever the input is a boolean —
+ * `false` pins the OOXML default explicitly, which is functionally
+ * identical to absence but lets a clone target override an upstream
+ * `1` from a templated chart.
  */
 function buildAxisTxPr(
   rotationDeg: number | undefined,
   fontSizePt: number | undefined,
   bold: boolean | undefined,
+  italic: boolean | undefined,
 ): string | undefined {
-  if (rotationDeg === undefined && fontSizePt === undefined && bold === undefined) return undefined;
+  if (
+    rotationDeg === undefined &&
+    fontSizePt === undefined &&
+    bold === undefined &&
+    italic === undefined
+  )
+    return undefined;
   const rot = rotationDeg === undefined ? undefined : rotationDeg * TXPR_ROT_PER_DEGREE;
   const sz = fontSizePt === undefined ? undefined : fontSizePt * TITLE_FONT_SZ_PER_POINT;
   const b = bold === undefined ? undefined : bold ? 1 : 0;
+  const i = italic === undefined ? undefined : italic ? 1 : 0;
   return xmlElement("c:txPr", undefined, [
     xmlSelfClose("a:bodyPr", { rot }),
     xmlSelfClose("a:lstStyle"),
     xmlElement("a:p", undefined, [
-      xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz, b })]),
+      xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz, b, i })]),
       xmlSelfClose("a:endParaRPr", { lang: "en-US" }),
     ]),
   ]);
@@ -2283,7 +2331,12 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
   // `buildAxisTickRendering`) and `<c:crossAx>` per CT_CatAx (ECMA-376
   // Part 1, §21.2.2.7). Skip the entire block when the caller did not
   // pin a rotation so a fresh chart matches Excel's minimal serialization.
-  const xCatAxTxPr = buildAxisTxPr(opts.xLabelRotation, opts.xLabelFontSize, opts.xLabelBold);
+  const xCatAxTxPr = buildAxisTxPr(
+    opts.xLabelRotation,
+    opts.xLabelFontSize,
+    opts.xLabelBold,
+    opts.xLabelItalic,
+  );
   if (xCatAxTxPr) catAxChildren.push(xCatAxTxPr);
   catAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL }),
@@ -2349,7 +2402,12 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
   // contract as the catAx slot above — emit nothing when the caller
   // did not pin a rotation so the writer matches Excel's reference
   // serialization on a fresh value axis.
-  const yValAxTxPr = buildAxisTxPr(opts.yLabelRotation, opts.yLabelFontSize, opts.yLabelBold);
+  const yValAxTxPr = buildAxisTxPr(
+    opts.yLabelRotation,
+    opts.yLabelFontSize,
+    opts.yLabelBold,
+    opts.yLabelItalic,
+  );
   if (yValAxTxPr) valAxChildren.push(yValAxTxPr);
   valAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_CAT }),
@@ -2713,7 +2771,12 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
   // `<c:txPr>` slot — same CT_ValAx position as the bar / column
   // builder above. Scatter X is a value axis, so the rotation pins on
   // the X-axis just as it does on the Y-axis.
-  const xValAxTxPr = buildAxisTxPr(opts.xLabelRotation, opts.xLabelFontSize, opts.xLabelBold);
+  const xValAxTxPr = buildAxisTxPr(
+    opts.xLabelRotation,
+    opts.xLabelFontSize,
+    opts.xLabelBold,
+    opts.xLabelItalic,
+  );
   if (xValAxTxPr) xAxChildren.push(xValAxTxPr);
   xAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL_Y }),
@@ -2756,7 +2819,12 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
   );
   // `<c:txPr>` slot for the scatter Y axis — same CT_ValAx position
   // and omit-by-default contract as the catAx / valAx builders above.
-  const yScatterTxPr = buildAxisTxPr(opts.yLabelRotation, opts.yLabelFontSize, opts.yLabelBold);
+  const yScatterTxPr = buildAxisTxPr(
+    opts.yLabelRotation,
+    opts.yLabelFontSize,
+    opts.yLabelBold,
+    opts.yLabelItalic,
+  );
   if (yScatterTxPr) yAxChildren.push(yScatterTxPr);
   yAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL_X }),

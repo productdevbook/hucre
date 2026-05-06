@@ -2434,6 +2434,47 @@ export interface SheetChart {
        */
       labelBold?: boolean;
       /**
+       * Tick-label italic flag. Maps to
+       * `<c:catAx><c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p></c:txPr></c:catAx>`
+       * (or `<c:valAx>` for scatter / value axes) — Excel's "Format
+       * Axis -> Font -> Italic" toggle applied to the tick labels. The
+       * OOXML attribute is the `xsd:boolean` `i` on
+       * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7);
+       * the writer lands the value on the default-paragraph
+       * `<a:defRPr>` slot inside the same `<c:txPr>` block that
+       * carries {@link labelRotation} / {@link labelFontSize} /
+       * {@link labelBold}.
+       *
+       * Mirrors {@link SheetChart.axes.x.axisTitleItalic} for tick
+       * labels — same `boolean | null` clone grammar, same silent drop
+       * on `pie` / `doughnut` (no axes at all). Useful for italicising
+       * dashboard tick labels (e.g. emphasising the bottom-axis
+       * category names so they stand out against the chart frame
+       * without bolding them).
+       *
+       * Default: omitted — the tick labels render non-italic (the
+       * OOXML default; the writer elides the `i` attribute when no
+       * value is pinned). Set `true` to emit `i="1"` on the
+       * default-paragraph slot; set `false` explicitly to pin the
+       * OOXML default `i="0"` (functionally identical to omission, but
+       * useful when overriding a templated chart that had italic
+       * pinned upstream).
+       *
+       * Composes independently with {@link labelRotation} /
+       * {@link labelFontSize} / {@link labelBold}: all four knobs land
+       * on the same `<c:txPr>` body, so a single configuration call
+       * threads cleanly through every tick-label knob the writer
+       * exposes.
+       *
+       * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+       * `<c:dateAx>` / `<c:serAx>` all carry an optional `<c:txPr>` per
+       * the OOXML schema, so the field round-trips on every chart family
+       * that has axes (bar / column / line / area / scatter). Pie /
+       * doughnut have no axes at all, so the field is silently dropped
+       * on those families.
+       */
+      labelItalic?: boolean;
+      /**
        * Reverse the axis plotting order. Maps to
        * `<c:scaling><c:orientation val="maxMin"/></c:scaling>` —
        * Excel's "Categories in reverse order" / "Values in reverse
@@ -2833,6 +2874,23 @@ export interface SheetChart {
        * `doughnut` charts (no axes at all).
        */
       labelBold?: boolean;
+      /**
+       * Tick-label italic flag for the value axis. Maps to
+       * `<c:valAx><c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p></c:valAx>`.
+       * Mirrors {@link SheetChart.axes.x.labelItalic} for the value
+       * axis — see that field for the full semantics. The OOXML `i`
+       * attribute is the `xsd:boolean` italic flag on
+       * `CT_TextCharacterProperties`; the writer emits `1` / `0` at
+       * the canonical slot. Absence collapses to the OOXML default
+       * (the writer omits the attribute) so a fresh chart inherits
+       * the theme-default tick-label slant.
+       *
+       * Useful for emphasising the value-axis labels on a dashboard
+       * (e.g. italicising the Y-axis numeric totals so they read as
+       * a stylistic accent in a busy chart frame). Silently dropped
+       * on `pie` / `doughnut` charts (no axes at all).
+       */
+      labelItalic?: boolean;
       /**
        * Hide the entire value axis (line, tick marks, tick labels).
        * Maps to `<c:valAx><c:delete val="1"/></c:valAx>`. Default:
@@ -4282,6 +4340,29 @@ export interface ChartAxisInfo {
    * {@link ChartAxisInfo.axisTitleBold}) cannot leak in.
    */
   labelBold?: boolean;
+  /**
+   * Tick-label italic flag pulled from
+   * `<c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p></c:txPr>`
+   * on the axis element. Reflects Excel's "Format Axis -> Font ->
+   * Italic" toggle applied to tick labels.
+   *
+   * The OOXML default `false` collapses to `undefined` so absence and
+   * `<a:defRPr i="0"/>` round-trip identically through
+   * {@link cloneChart} — only an explicit `<a:defRPr i="1"/>` surfaces
+   * `true`. The reader accepts the OOXML truthy / falsy spellings
+   * (`"1"` / `"true"` / `"0"` / `"false"`); unknown values and missing
+   * `i` attributes drop to `undefined`.
+   *
+   * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+   * `<c:dateAx>` / `<c:serAx>` all carry an optional `<c:txPr>` per
+   * the OOXML schema. Mirrors the writer-side
+   * {@link SheetChart.axes.x.labelItalic} so a parsed value slots
+   * straight back into a clone target without transformation. The
+   * lookup is scoped to the axis-level `<c:txPr>` so a stray
+   * `<a:defRPr i=".."/>` inside `<c:title>` (surfaced by
+   * {@link ChartAxisInfo.axisTitleItalic}) cannot leak in.
+   */
+  labelItalic?: boolean;
   /**
    * Reverse-axis flag pulled from
    * `<c:scaling><c:orientation val=".."/></c:scaling>`. Surfaces `true`

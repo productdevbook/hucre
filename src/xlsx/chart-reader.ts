@@ -668,6 +668,13 @@ function parseAxisInfo(
   // an explicit `b="1"` surfaces `true`. Surfaced on every axis
   // flavour for symmetry with the writer.
   const labelBold = parseAxisLabelBold(axis);
+  // `<c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p></c:txPr>` —
+  // tick-label italic flag. Same `<c:txPr>` slot scope as the bold
+  // reader above. The OOXML default `false` collapses to `undefined`
+  // so absence and `i="0"` round-trip identically; only an explicit
+  // `i="1"` surfaces `true`. Surfaced on every axis flavour for
+  // symmetry with the writer.
+  const labelItalic = parseAxisLabelItalic(axis);
   // <c:scaling><c:orientation val=".."/></c:scaling> — ST_Orientation
   // accepts "minMax" (default, low → high) and "maxMin" (reversed).
   // The default collapses to undefined so a fresh chart and a chart
@@ -753,6 +760,7 @@ function parseAxisInfo(
     labelRotation === undefined &&
     labelFontSize === undefined &&
     labelBold === undefined &&
+    labelItalic === undefined &&
     reverse === undefined &&
     tickLblSkip === undefined &&
     tickMarkSkip === undefined &&
@@ -786,6 +794,7 @@ function parseAxisInfo(
   if (labelRotation !== undefined) out.labelRotation = labelRotation;
   if (labelFontSize !== undefined) out.labelFontSize = labelFontSize;
   if (labelBold !== undefined) out.labelBold = labelBold;
+  if (labelItalic !== undefined) out.labelItalic = labelItalic;
   if (reverse !== undefined) out.reverse = reverse;
   if (tickLblSkip !== undefined) out.tickLblSkip = tickLblSkip;
   if (tickMarkSkip !== undefined) out.tickMarkSkip = tickMarkSkip;
@@ -1200,6 +1209,42 @@ function parseAxisLabelBold(axis: XmlElement): boolean | undefined {
   // The OOXML default `false` collapses to `undefined` so absence and
   // `b="0"` round-trip identically through the writer — only an
   // explicit `b="1"` surfaces `true`.
+  if (parsed === true) return true;
+  return undefined;
+}
+
+/**
+ * Pull the axis tick-label italic flag off the canonical
+ * `<c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p></c:txPr>` chain
+ * Excel writes when the user pins italic on the axis tick labels.
+ *
+ * Returns `true` only when the parser walks the full chain and lands on
+ * an `<a:defRPr i="1"/>` (or the OOXML truthy spelling `i="true"`); the
+ * OOXML default `i="0"` collapses to `undefined` so absence and the
+ * default round-trip identically through {@link cloneChart}. Returns
+ * `undefined` whenever the axis omits `<c:txPr>` entirely or the
+ * canonical `<a:p><a:pPr><a:defRPr>` chain is malformed.
+ *
+ * The `<c:txPr>` element sits on every axis flavour — `<c:catAx>` /
+ * `<c:valAx>` / `<c:dateAx>` / `<c:serAx>` all carry the optional
+ * element per the OOXML schema. The reader surfaces the flag
+ * regardless of axis flavour so a parsed chart preserves the value
+ * for symmetry with the writer-side
+ * {@link SheetChart.axes}.x.labelItalic.
+ */
+function parseAxisLabelItalic(axis: XmlElement): boolean | undefined {
+  const txPr = findChild(axis, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const parsed = parseBoolAttr(defRPr.attrs.i);
+  // The OOXML default `false` collapses to `undefined` so absence and
+  // `i="0"` round-trip identically through the writer — only an
+  // explicit `i="1"` surfaces `true`.
   if (parsed === true) return true;
   return undefined;
 }

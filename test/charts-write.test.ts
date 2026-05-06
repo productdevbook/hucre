@@ -12318,3 +12318,214 @@ describe("writeChart — axis labelBold", () => {
     expect(reparsed?.axes?.y?.labelBold).toBe(true);
   });
 });
+
+// ── writeChart — axis labelItalic ────────────────────────────────────
+
+describe("writeChart — axis labelItalic", () => {
+  it("omits <c:txPr> on the category axis when no tick-label knob is pinned", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).not.toContain("<c:txPr>");
+  });
+
+  it('emits <c:txPr> with <a:defRPr i="1"/> when labelItalic=true on the X axis', () => {
+    const result = writeChart(makeChart({ axes: { x: { labelItalic: true } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain("<c:txPr>");
+    expect(catAxBlock).toContain('<a:defRPr i="1"/>');
+  });
+
+  it('emits <a:defRPr i="0"/> on labelItalic=false (functionally identical to omission)', () => {
+    const result = writeChart(makeChart({ axes: { x: { labelItalic: false } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('<a:defRPr i="0"/>');
+  });
+
+  it('emits <a:defRPr i="1"/> on the Y axis (value axis) when labelItalic=true', () => {
+    const result = writeChart(makeChart({ axes: { y: { labelItalic: true } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<a:defRPr i="1"/>');
+  });
+
+  it("emits the italic flag independently on each axis", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { labelItalic: true }, y: { labelItalic: false } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(catAxBlock).toContain('<a:defRPr i="1"/>');
+    expect(valAxBlock).toContain('<a:defRPr i="0"/>');
+  });
+
+  it("drops non-boolean inputs back to the OOXML default (no <c:txPr>)", () => {
+    const stringy = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { labelItalic: "true" as any } } }),
+      "Sheet1",
+    );
+    const numeric = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { labelItalic: 1 as any } } }),
+      "Sheet1",
+    );
+    const catA = stringy.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const catB = numeric.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catA).not.toContain("<c:txPr>");
+    expect(catB).not.toContain("<c:txPr>");
+  });
+
+  it("composes labelItalic with labelRotation in a single <c:txPr> block", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { labelRotation: 45, labelItalic: true } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect((catAxBlock.match(/<c:txPr>/g) ?? []).length).toBe(1);
+    expect(catAxBlock).toContain('<a:bodyPr rot="2700000"/>');
+    expect(catAxBlock).toContain('<a:defRPr i="1"/>');
+  });
+
+  it("composes labelItalic with labelFontSize in a single <c:txPr> block", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { labelFontSize: 12, labelItalic: true } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect((catAxBlock.match(/<c:txPr>/g) ?? []).length).toBe(1);
+    expect(catAxBlock).toContain('<a:defRPr sz="1200" i="1"/>');
+  });
+
+  it("composes labelItalic with labelBold in a single <c:txPr> block", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { labelBold: true, labelItalic: true } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect((catAxBlock.match(/<c:txPr>/g) ?? []).length).toBe(1);
+    expect(catAxBlock).toContain('<a:defRPr b="1" i="1"/>');
+  });
+
+  it("composes labelItalic with labelRotation, labelFontSize, and labelBold in a single block", () => {
+    const result = writeChart(
+      makeChart({
+        axes: { x: { labelRotation: 45, labelFontSize: 12, labelBold: true, labelItalic: true } },
+      }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect((catAxBlock.match(/<c:txPr>/g) ?? []).length).toBe(1);
+    expect(catAxBlock).toContain('<a:bodyPr rot="2700000"/>');
+    expect(catAxBlock).toContain('<a:defRPr sz="1200" b="1" i="1"/>');
+  });
+
+  it("emits <c:txPr> with no rot when only labelItalic is pinned", () => {
+    const result = writeChart(makeChart({ axes: { x: { labelItalic: true } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain("<a:bodyPr/>");
+    expect(catAxBlock).not.toContain("<a:bodyPr rot=");
+  });
+
+  it("threads the italic flag through bar, column, line, and area chart families", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(makeChart({ type, axes: { x: { labelItalic: true } } }), "Sheet1");
+      expect(result.chartXml).toContain('<a:defRPr i="1"/>');
+    }
+  });
+
+  it("threads the italic flag through scatter charts (both axes are value axes)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { x: { labelItalic: true }, y: { labelItalic: true } },
+      }),
+      "Sheet1",
+    );
+    const valAxes = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/g)!;
+    expect(valAxes).toHaveLength(2);
+    expect(valAxes[0]).toContain('<a:defRPr i="1"/>');
+    expect(valAxes[1]).toContain('<a:defRPr i="1"/>');
+  });
+
+  it("ignores labelItalic on pie / doughnut charts (no axes at all)", () => {
+    const pie = writeChart(
+      makeChart({ type: "pie", axes: { x: { labelItalic: true } } }),
+      "Sheet1",
+    );
+    const dough = writeChart(
+      makeChart({ type: "doughnut", axes: { x: { labelItalic: true } } }),
+      "Sheet1",
+    );
+    expect(pie.chartXml).not.toContain("<c:txPr>");
+    expect(dough.chartXml).not.toContain("<c:txPr>");
+  });
+
+  it("places <c:txPr> between <c:tickLblPos> and <c:crossAx> per the OOXML schema", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { tickLblPos: "low", labelItalic: true } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const tickLblPosIdx = catAxBlock.indexOf("c:tickLblPos");
+    const txPrIdx = catAxBlock.indexOf("<c:txPr>");
+    const crossAxIdx = catAxBlock.indexOf("c:crossAx");
+    expect(tickLblPosIdx).toBeGreaterThan(0);
+    expect(txPrIdx).toBeGreaterThan(tickLblPosIdx);
+    expect(crossAxIdx).toBeGreaterThan(txPrIdx);
+  });
+
+  it("round-trips labelItalic=true through parseChart", () => {
+    const written = writeChart(
+      makeChart({ axes: { x: { labelItalic: true } } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.labelItalic).toBe(true);
+  });
+
+  it("collapses an absent labelItalic round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.labelItalic).toBeUndefined();
+  });
+
+  it('collapses labelItalic=false round-trip back to undefined (i="0" matches the OOXML default)', () => {
+    // The reader collapses the OOXML default `false` to `undefined` so
+    // a writer emit of `i="0"` and absence round-trip identically.
+    const written = writeChart(
+      makeChart({ axes: { x: { labelItalic: false } } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.labelItalic).toBeUndefined();
+  });
+
+  it("end-to-end: writeXlsx packages the italic flag into chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            axes: { x: { labelItalic: true }, y: { labelItalic: true } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('<a:defRPr i="1"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.x?.labelItalic).toBe(true);
+    expect(reparsed?.axes?.y?.labelItalic).toBe(true);
+  });
+});
