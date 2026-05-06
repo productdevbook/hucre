@@ -2536,6 +2536,14 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
   const bold = parseDataLabelsBold(el);
   if (bold !== undefined) out.bold = bold;
 
+  // `<c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p></c:txPr>` —
+  // data-label italic flag pinned via Excel's "Format Data Labels ->
+  // Font -> Italic" toggle. Only an explicit `i="1"` surfaces `true`;
+  // the OOXML default `i="0"` collapses to `undefined` so absence
+  // and `i="0"` round-trip identically through `cloneChart`.
+  const italic = parseDataLabelsItalic(el);
+  if (italic !== undefined) out.italic = italic;
+
   // Empty record is meaningless to a consumer — collapse to undefined.
   if (
     out.position === undefined &&
@@ -2549,7 +2557,8 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
     out.showLeaderLines === undefined &&
     out.fontSize === undefined &&
     out.fontColor === undefined &&
-    out.bold === undefined
+    out.bold === undefined &&
+    out.italic === undefined
   ) {
     return undefined;
   }
@@ -2656,6 +2665,34 @@ function parseDataLabelsBold(dLbls: XmlElement): boolean | undefined {
   const defRPr = findChild(pPr, "defRPr");
   if (!defRPr) return undefined;
   const raw = defRPr.attrs.b;
+  if (raw === "1" || raw === "true") return true;
+  return undefined;
+}
+
+/**
+ * Pull `<c:dLbls><c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p>
+ * </c:txPr></c:dLbls>` off a data-labels block. Returns the italic
+ * flag.
+ *
+ * The OOXML `i` attribute is the `xsd:boolean` italic flag on
+ * `CT_TextCharacterProperties`. Only an explicit `i="1"` (or
+ * `"true"`) surfaces `true`; the OOXML default `0` (and absence /
+ * malformed tokens) collapses to `undefined` so absence and the
+ * default round-trip identically through `cloneChart`. Mirrors the
+ * chart-title / axis-title / axis tick-label / legend italic readers
+ * exactly so a parsed value slots straight back into the writer's
+ * emit path.
+ */
+function parseDataLabelsItalic(dLbls: XmlElement): boolean | undefined {
+  const txPr = findChild(dLbls, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const raw = defRPr.attrs.i;
   if (raw === "1" || raw === "true") return true;
   return undefined;
 }

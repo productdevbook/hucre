@@ -753,6 +753,36 @@ export interface ChartDataLabels {
    * bold value through every typography-pinning slot.
    */
   bold?: boolean;
+  /**
+   * Data-label italic flag. Maps to `<c:dLbls><c:txPr><a:p><a:pPr>
+   * <a:defRPr i=".."/></a:pPr></a:p></c:txPr></c:dLbls>` — Excel's
+   * "Format Data Labels -> Font -> Italic" toggle. The OOXML attribute
+   * is the `xsd:boolean` italic flag on `CT_TextCharacterProperties`
+   * (ECMA-376 Part 1, §21.1.2.3.7); the writer lands `i="1"` (italic)
+   * or `i="0"` (the OOXML default — upright) on the default-paragraph
+   * `<a:defRPr>` slot inside the data-label's `<c:txPr>` block so a
+   * re-parse picks the flag up off the canonical slot the OOXML
+   * schema exposes.
+   *
+   * Default: omitted — the data labels render upright (no `i`
+   * attribute, matching Excel's reference serialization for fresh
+   * data labels whose typography has not been customized; the OOXML
+   * default `0` collapses to absence). Set `true` to emit `i="1"` so
+   * the labels render italic; set `false` explicitly to pin `i="0"`
+   * (functionally identical to omission, but useful when overriding
+   * a templated chart that had italic pinned upstream).
+   *
+   * The `<c:txPr>` block lands between `<c:numFmt>` and `<c:dLblPos>`
+   * (CT_DLbls schema, ECMA-376 Part 1, §21.2.2.50). Composes
+   * independently with the other dLbls knobs — {@link position} /
+   * {@link separator} / {@link numberFormat} / {@link showLeaderLines}
+   * / the `show*` toggles / {@link bold}. Mirrors the chart-title
+   * `titleItalic` / axis-title `axisTitleItalic` / axis tick-label
+   * `labelItalic` / legend `legendItalic` knobs — same boolean shape,
+   * same OOXML `<a:defRPr i=".."/>` mapping — so a caller can thread
+   * a single italic value through every typography-pinning slot.
+   */
+  italic?: boolean;
 }
 
 /**
@@ -4275,6 +4305,20 @@ export interface ChartDataLabelsInfo {
    * straight into {@link cloneChart} without conversion.
    */
   bold?: boolean;
+  /**
+   * Data-label italic flag pulled from `<c:dLbls><c:txPr><a:p><a:pPr>
+   * <a:defRPr i=".."/></a:pPr></a:p></c:txPr></c:dLbls>`. The OOXML
+   * `i` attribute is the `xsd:boolean` italic flag on
+   * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7).
+   *
+   * The OOXML default `false` collapses to `undefined` so absence and
+   * `i="0"` round-trip identically — only an explicit `i="1"` surfaces
+   * `true`. Unknown / malformed `i` tokens drop to `undefined` rather
+   * than fabricate a value the writer would never emit. Mirrors the
+   * writer-side {@link ChartDataLabels.italic} so a parsed value slots
+   * straight into {@link cloneChart} without conversion.
+   */
+  italic?: boolean;
 }
 
 /**

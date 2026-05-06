@@ -15511,3 +15511,150 @@ describe("parseChart — data labels bold", () => {
     expect(parseChart(xml)?.dataLabels?.bold).toBe(true);
   });
 });
+
+// ── parseChart — data labels italic ─────────────────────────────────
+
+describe("parseChart — data labels italic", () => {
+  const NS_DLI = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withDLblsItalic(i: string | undefined): string {
+    const defRPr = i === undefined ? "<a:defRPr/>" : `<a:defRPr i="${i}"/>`;
+    return `<c:chartSpace ${NS_DLI}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr>${defRPr}</a:pPr><a:endParaRPr lang="en-US"/></a:p>
+          </c:txPr>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it('surfaces italic=true when i="1"', () => {
+    expect(parseChart(withDLblsItalic("1"))?.dataLabels?.italic).toBe(true);
+  });
+
+  it('surfaces italic=true when i="true" (less common but valid)', () => {
+    expect(parseChart(withDLblsItalic("true"))?.dataLabels?.italic).toBe(true);
+  });
+
+  it('collapses the OOXML default i="0" to undefined', () => {
+    expect(parseChart(withDLblsItalic("0"))?.dataLabels?.italic).toBeUndefined();
+  });
+
+  it('collapses i="false" to undefined (matches the OOXML default)', () => {
+    expect(parseChart(withDLblsItalic("false"))?.dataLabels?.italic).toBeUndefined();
+  });
+
+  it("returns undefined when <a:defRPr> omits the i attribute", () => {
+    expect(parseChart(withDLblsItalic(undefined))?.dataLabels?.italic).toBeUndefined();
+  });
+
+  it("returns undefined when the dLbls block has no <c:txPr> body", () => {
+    const xml = `<c:chartSpace ${NS_DLI}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataLabels?.italic).toBeUndefined();
+  });
+
+  it("collapses garbage / unknown i tokens to undefined", () => {
+    expect(parseChart(withDLblsItalic(""))?.dataLabels?.italic).toBeUndefined();
+    expect(parseChart(withDLblsItalic("yes"))?.dataLabels?.italic).toBeUndefined();
+    expect(parseChart(withDLblsItalic("2"))?.dataLabels?.italic).toBeUndefined();
+    expect(parseChart(withDLblsItalic("italic"))?.dataLabels?.italic).toBeUndefined();
+  });
+
+  it("co-surfaces alongside the other dLbls fields (showVal / position / numberFormat / bold)", () => {
+    const xml = `<c:chartSpace ${NS_DLI}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:numFmt formatCode="0.00" sourceLinked="0"/>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr b="1" i="1"/></a:pPr></a:p>
+          </c:txPr>
+          <c:dLblPos val="outEnd"/>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.italic).toBe(true);
+    expect(chart?.dataLabels?.bold).toBe(true);
+    expect(chart?.dataLabels?.position).toBe("outEnd");
+    expect(chart?.dataLabels?.showValue).toBe(true);
+    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" });
+  });
+
+  it("surfaces the italic flag on an italic-only dLbls block (no other show* toggles)", () => {
+    const xml = `<c:chartSpace ${NS_DLI}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr i="1"/></a:pPr></a:p>
+          </c:txPr>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="0"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataLabels?.italic).toBe(true);
+  });
+});
