@@ -2528,6 +2528,14 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
   const fontColor = parseDataLabelsFontColor(el);
   if (fontColor !== undefined) out.fontColor = fontColor;
 
+  // `<c:txPr><a:p><a:pPr><a:defRPr b=".."/></a:pPr></a:p></c:txPr>` —
+  // data-label bold flag pinned via Excel's "Format Data Labels ->
+  // Font -> Bold" toggle. Only an explicit `b="1"` surfaces `true`;
+  // the OOXML default `b="0"` collapses to `undefined` so absence
+  // and `b="0"` round-trip identically through `cloneChart`.
+  const bold = parseDataLabelsBold(el);
+  if (bold !== undefined) out.bold = bold;
+
   // Empty record is meaningless to a consumer — collapse to undefined.
   if (
     out.position === undefined &&
@@ -2540,7 +2548,8 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
     out.numberFormat === undefined &&
     out.showLeaderLines === undefined &&
     out.fontSize === undefined &&
-    out.fontColor === undefined
+    out.fontColor === undefined &&
+    out.bold === undefined
   ) {
     return undefined;
   }
@@ -2621,6 +2630,34 @@ function parseDataLabelsFontColor(dLbls: XmlElement): string | undefined {
   const srgbClr = findChild(solidFill, "srgbClr");
   if (!srgbClr) return undefined;
   return normalizeRgbHex(srgbClr.attrs.val);
+}
+
+/**
+ * Pull `<c:dLbls><c:txPr><a:p><a:pPr><a:defRPr b=".."/></a:pPr></a:p>
+ * </c:txPr></c:dLbls>` off a data-labels block. Returns the bold
+ * flag.
+ *
+ * The OOXML `b` attribute is the `xsd:boolean` bold flag on
+ * `CT_TextCharacterProperties`. Only an explicit `b="1"` (or
+ * `"true"`) surfaces `true`; the OOXML default `0` (and absence /
+ * malformed tokens) collapses to `undefined` so absence and the
+ * default round-trip identically through `cloneChart`. Mirrors the
+ * chart-title / axis-title / axis tick-label / legend bold readers
+ * exactly so a parsed value slots straight back into the writer's
+ * emit path.
+ */
+function parseDataLabelsBold(dLbls: XmlElement): boolean | undefined {
+  const txPr = findChild(dLbls, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const raw = defRPr.attrs.b;
+  if (raw === "1" || raw === "true") return true;
+  return undefined;
 }
 
 /**

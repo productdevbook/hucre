@@ -15365,3 +15365,149 @@ describe("parseChart — data labels fontColor", () => {
     expect(parseChart(xml)?.dataLabels?.fontColor).toBe("00FF00");
   });
 });
+
+// ── parseChart — data labels bold ───────────────────────────────────
+
+describe("parseChart — data labels bold", () => {
+  const NS_DLB = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withDLblsBold(b: string | undefined): string {
+    const defRPr = b === undefined ? "<a:defRPr/>" : `<a:defRPr b="${b}"/>`;
+    return `<c:chartSpace ${NS_DLB}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr>${defRPr}</a:pPr><a:endParaRPr lang="en-US"/></a:p>
+          </c:txPr>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it('surfaces bold=true when b="1"', () => {
+    expect(parseChart(withDLblsBold("1"))?.dataLabels?.bold).toBe(true);
+  });
+
+  it('surfaces bold=true when b="true" (less common but valid)', () => {
+    expect(parseChart(withDLblsBold("true"))?.dataLabels?.bold).toBe(true);
+  });
+
+  it('collapses the OOXML default b="0" to undefined', () => {
+    expect(parseChart(withDLblsBold("0"))?.dataLabels?.bold).toBeUndefined();
+  });
+
+  it('collapses b="false" to undefined (matches the OOXML default)', () => {
+    expect(parseChart(withDLblsBold("false"))?.dataLabels?.bold).toBeUndefined();
+  });
+
+  it("returns undefined when <a:defRPr> omits the b attribute", () => {
+    expect(parseChart(withDLblsBold(undefined))?.dataLabels?.bold).toBeUndefined();
+  });
+
+  it("returns undefined when the dLbls block has no <c:txPr> body", () => {
+    const xml = `<c:chartSpace ${NS_DLB}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataLabels?.bold).toBeUndefined();
+  });
+
+  it("collapses garbage / unknown b tokens to undefined", () => {
+    expect(parseChart(withDLblsBold(""))?.dataLabels?.bold).toBeUndefined();
+    expect(parseChart(withDLblsBold("yes"))?.dataLabels?.bold).toBeUndefined();
+    expect(parseChart(withDLblsBold("2"))?.dataLabels?.bold).toBeUndefined();
+    expect(parseChart(withDLblsBold("bold"))?.dataLabels?.bold).toBeUndefined();
+  });
+
+  it("co-surfaces alongside the other dLbls fields (showVal / position / numberFormat)", () => {
+    const xml = `<c:chartSpace ${NS_DLB}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:numFmt formatCode="0.00" sourceLinked="0"/>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr b="1"/></a:pPr></a:p>
+          </c:txPr>
+          <c:dLblPos val="outEnd"/>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.bold).toBe(true);
+    expect(chart?.dataLabels?.position).toBe("outEnd");
+    expect(chart?.dataLabels?.showValue).toBe(true);
+    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" });
+  });
+
+  it("surfaces the bold flag on a bold-only dLbls block (no other show* toggles)", () => {
+    const xml = `<c:chartSpace ${NS_DLB}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr b="1"/></a:pPr></a:p>
+          </c:txPr>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="0"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataLabels?.bold).toBe(true);
+  });
+});

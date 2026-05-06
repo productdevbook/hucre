@@ -723,6 +723,36 @@ export interface ChartDataLabels {
    * thread a single hex string through every typography-pinning slot.
    */
   fontColor?: string;
+  /**
+   * Data-label bold flag. Maps to `<c:dLbls><c:txPr><a:p><a:pPr>
+   * <a:defRPr b=".."/></a:pPr></a:p></c:txPr></c:dLbls>` — Excel's
+   * "Format Data Labels -> Font -> Bold" toggle. The OOXML attribute
+   * is the `xsd:boolean` bold flag on `CT_TextCharacterProperties`
+   * (ECMA-376 Part 1, §21.1.2.3.7); the writer lands `b="1"` (bold)
+   * or `b="0"` (the OOXML default — non-bold) on the
+   * default-paragraph `<a:defRPr>` slot inside the data-label's
+   * `<c:txPr>` block so a re-parse picks the flag up off the
+   * canonical slot the OOXML schema exposes.
+   *
+   * Default: omitted — the data labels render non-bold (no `b`
+   * attribute, matching Excel's reference serialization for fresh
+   * data labels whose typography has not been customized; the OOXML
+   * default `0` collapses to absence). Set `true` to emit `b="1"` so
+   * the labels render bold; set `false` explicitly to pin `b="0"`
+   * (functionally identical to omission, but useful when overriding
+   * a templated chart that had bold pinned upstream).
+   *
+   * The `<c:txPr>` block lands between `<c:numFmt>` and `<c:dLblPos>`
+   * (CT_DLbls schema, ECMA-376 Part 1, §21.2.2.50). Composes
+   * independently with the other dLbls knobs — {@link position} /
+   * {@link separator} / {@link numberFormat} / {@link showLeaderLines}
+   * / the `show*` toggles. Mirrors the chart-title `titleBold` /
+   * axis-title `axisTitleBold` / axis tick-label `labelBold` / legend
+   * `legendBold` knobs — same boolean shape, same OOXML
+   * `<a:defRPr b=".."/>` mapping — so a caller can thread a single
+   * bold value through every typography-pinning slot.
+   */
+  bold?: boolean;
 }
 
 /**
@@ -4231,6 +4261,20 @@ export interface ChartDataLabelsInfo {
    * straight into {@link cloneChart} without conversion.
    */
   fontColor?: string;
+  /**
+   * Data-label bold flag pulled from `<c:dLbls><c:txPr><a:p><a:pPr>
+   * <a:defRPr b=".."/></a:pPr></a:p></c:txPr></c:dLbls>`. The OOXML
+   * `b` attribute is the `xsd:boolean` bold flag on
+   * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7).
+   *
+   * The OOXML default `false` collapses to `undefined` so absence and
+   * `b="0"` round-trip identically — only an explicit `b="1"` surfaces
+   * `true`. Unknown / malformed `b` tokens drop to `undefined` rather
+   * than fabricate a value the writer would never emit. Mirrors the
+   * writer-side {@link ChartDataLabels.bold} so a parsed value slots
+   * straight into {@link cloneChart} without conversion.
+   */
+  bold?: boolean;
 }
 
 /**

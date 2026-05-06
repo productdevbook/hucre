@@ -3842,14 +3842,15 @@ function buildDataLabelsBody(dl: ChartDataLabels, chartType: WriteChartKind): st
   // `<c:dLblPos>` (ECMA-376 Part 1, §21.2.2.50). The writer currently
   // skips `<c:spPr>` (not yet authored), so `<c:txPr>` lands directly
   // after `<c:numFmt>` and before `<c:dLblPos>`. The block currently
-  // carries the data-label font size and font color; future
-  // typography pins (bold, italic, underline, strikethrough) will land
-  // on the same `<a:defRPr>` slot. The writer skips the entire block
-  // when no font knob is pinned so a fresh chart matches Excel's
-  // reference shape.
+  // carries the data-label font size, font color, and bold flag;
+  // future typography pins (italic, underline, strikethrough) will
+  // land on the same `<a:defRPr>` slot. The writer skips the entire
+  // block when no font knob is pinned so a fresh chart matches
+  // Excel's reference shape.
   const txPrXml = buildDataLabelsTxPr(
     resolveDataLabelsFontSize(dl.fontSize),
     resolveDataLabelsFontColor(dl.fontColor),
+    resolveDataLabelsBold(dl.bold),
   );
   if (txPrXml !== undefined) {
     children.push(txPrXml);
@@ -3953,6 +3954,22 @@ function resolveDataLabelsFontColor(value: string | undefined): string | undefin
 }
 
 /**
+ * Resolve `<c:dLbls><c:txPr><a:p><a:pPr><a:defRPr b=".."/></a:pPr>
+ * </a:p></c:txPr></c:dLbls>` from {@link ChartDataLabels.bold}.
+ *
+ * Returns the bold flag, or `undefined` when the caller leaves the
+ * field unset / passed a non-boolean token. Mirrors the chart-title /
+ * axis-title / axis tick-label / legend bold resolvers exactly —
+ * only literal `true` / `false` pass through; non-boolean tokens
+ * (typed escapes from an untyped caller) collapse to `undefined`.
+ */
+function resolveDataLabelsBold(value: boolean | undefined): boolean | undefined {
+  if (value === true) return true;
+  if (value === false) return false;
+  return undefined;
+}
+
+/**
  * Build the `<c:txPr>` block that carries a data-label's typography
  * pins. Returns `undefined` when every input is unset so the caller
  * can elide the element entirely (Excel's reference serialization
@@ -3971,18 +3988,23 @@ function resolveDataLabelsFontColor(value: string | undefined): string | undefin
  * `<a:solidFill>` child when a color is set; otherwise the writer
  * keeps the existing self-closing form so a fresh chart with no
  * custom color matches Excel's reference serialization byte-for-byte.
- * Mirrors the chart-title / axis-title / axis tick-label / legend
- * `<c:txPr>` slots exactly so a re-parse picks the value off the
- * canonical default-paragraph slot every other typography reader
- * expects.
+ * The bold flag emits a literal `b="1"` / `b="0"` whenever the input
+ * is a boolean — `false` pins the OOXML default explicitly, which is
+ * functionally identical to absence but lets a clone target override
+ * an upstream `b="1"` from a templated chart. Mirrors the chart-title
+ * / axis-title / axis tick-label / legend `<c:txPr>` slots exactly so
+ * a re-parse picks the value off the canonical default-paragraph slot
+ * every other typography reader expects.
  */
 function buildDataLabelsTxPr(
   fontSizePt: number | undefined,
   rgbHex: string | undefined,
+  bold: boolean | undefined,
 ): string | undefined {
-  if (fontSizePt === undefined && rgbHex === undefined) return undefined;
+  if (fontSizePt === undefined && rgbHex === undefined && bold === undefined) return undefined;
   const defRPrAttrs: Record<string, string | number> = {};
   if (fontSizePt !== undefined) defRPrAttrs.sz = fontSizePt * TITLE_FONT_SZ_PER_POINT;
+  if (bold !== undefined) defRPrAttrs.b = bold ? 1 : 0;
   // OOXML's `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/>
   // </a:solidFill></a:defRPr>` carries the data-label font color.
   // Absence (`undefined`) collapses to skipping the `<a:solidFill>`
