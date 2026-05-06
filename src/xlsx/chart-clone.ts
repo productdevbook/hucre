@@ -178,6 +178,31 @@ export interface CloneChartOptions {
    * caller can pass `null` (or an empty array) to start fresh.
    */
   legendEntries?: ChartLegendEntry[] | null;
+  /**
+   * Override `SheetChart.legendFontSize`. `undefined` (or omitted)
+   * inherits the source's parsed `legendFontSize`; `null` drops the
+   * inherited size (the writer emits no `<c:txPr>` block on the
+   * legend, falling back to Excel's theme-default 9pt); a number
+   * replaces. Out-of-range / non-numeric / non-finite overrides
+   * collapse to `undefined` (inherit) so a typed escape from an
+   * untyped caller cannot pin a value the writer would silently elide
+   * back to absence. Fractional inputs round to the nearest 0.5pt
+   * (Excel's UI granularity).
+   *
+   * The override is silently dropped from the cloned `SheetChart` when
+   * the resolved legend is `false` (no `<c:legend>` element will be
+   * emitted) — there is no `<c:txPr>` slot to host the size on a
+   * hidden legend, so leaking the value into the output would carry a
+   * pin Excel never reads.
+   *
+   * The grammar mirrors `titleFontSize` / `axes.x.axisTitleFontSize` /
+   * `axes.x.labelFontSize` so the typography knobs compose the same way
+   * at the call site. Bridges another typography-customization gap for
+   * the dashboard composition flow tracked in #136 — a templated
+   * dashboard chart whose user pinned a custom legend size now
+   * round-trips that pin through the parse / clone / write loop.
+   */
+  legendFontSize?: number | null;
   /** Override `SheetChart.barGrouping`. */
   barGrouping?: SheetChart["barGrouping"];
   /**
@@ -1345,6 +1370,20 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // replaces it outright.
     const resolvedLegendEntries = resolveLegendEntries(source.legendEntries, options.legendEntries);
     if (resolvedLegendEntries !== undefined) out.legendEntries = resolvedLegendEntries;
+
+    // `<c:txPr>` only renders inside `<c:legend>`, so the same hidden /
+    // missing-legend scoping that drops `legendOverlay` /
+    // `legendEntries` also drops the inherited font size — the writer
+    // has no slot to populate when the legend is hidden. Mirrors the
+    // `titleFontSize` / `axisTitleFontSize` grammar: `undefined`
+    // inherits the parsed value (after running it through the
+    // half-step / range normalizer), `null` drops it (the writer
+    // emits no `<c:txPr>` block), a number replaces.
+    const resolvedLegendFontSize = resolveLegendFontSize(
+      source.legendFontSize,
+      options.legendFontSize,
+    );
+    if (resolvedLegendFontSize !== undefined) out.legendFontSize = resolvedLegendFontSize;
   }
 
   const barGrouping = options.barGrouping !== undefined ? options.barGrouping : source.barGrouping;
@@ -2411,6 +2450,33 @@ function resolveLegendEntries(
   if (override === null) return undefined;
   if (!Array.isArray(override) || override.length === 0) return undefined;
   return override.map((entry) => ({ ...entry }));
+}
+
+/**
+ * Resolve a `legendFontSize` override.
+ *
+ * `undefined` → inherit the source's parsed `legendFontSize` (after
+ *               running it through {@link normalizeTitleFontSize} so
+ *               an out-of-range parsed value drops cleanly).
+ * `null`      → drop the inherited value (the writer falls back to
+ *               Excel's theme-default 9pt — no `<c:txPr>` block on
+ *               the legend).
+ * `number`    → replace, after clamping / rounding through
+ *               {@link normalizeTitleFontSize}.
+ *
+ * The grammar mirrors `titleFontSize` / `axisTitleFontSize` /
+ * `axes.x.labelFontSize` so the typography knobs compose the same way
+ * at the call site. Callers should gate the result on the resolved
+ * legend visibility — when no legend is emitted, the size has no slot
+ * in the rendered chart.
+ */
+function resolveLegendFontSize(
+  sourceValue: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) return normalizeTitleFontSize(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleFontSize(override);
 }
 
 /**

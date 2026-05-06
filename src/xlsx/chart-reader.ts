@@ -418,6 +418,16 @@ export function parseChart(xml: string): Chart | undefined {
     // visible legend. Same scoping rule as `legendOverlay`.
     const legendEntries = parseLegendEntries(chartEl);
     if (legendEntries !== undefined) out.legendEntries = legendEntries;
+
+    // `<c:legend><c:txPr>` carries the legend's typography pins —
+    // tick-label / axis-title / chart-title style. The CT_Legend schema
+    // places `<c:txPr>` after `<c:overlay>` (and before `<c:extLst>`).
+    // A hidden or missing legend has no slot for the block, so the
+    // parser only inspects it when the chart actually declares a
+    // visible legend. Same scoping rule as `legendOverlay` /
+    // `legendEntries`.
+    const legendFontSize = parseLegendFontSize(chartEl);
+    if (legendFontSize !== undefined) out.legendFontSize = legendFontSize;
   }
 
   const dispBlanksAs = parseDispBlanksAs(chartEl);
@@ -2791,6 +2801,59 @@ function parseLegendEntries(chartEl: XmlElement): ChartLegendEntry[] | undefined
   }
 
   return out.length > 0 ? out : undefined;
+}
+
+/**
+ * Pull `<c:legend><c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p>
+ * </c:txPr></c:legend>` off the chart. Returns the font size in points
+ * (range `1..400`).
+ *
+ * The OOXML `sz` attribute is in 100ths of a point — the reader
+ * converts to points and rounds to the nearest 0.5pt (Excel's UI
+ * exposes the same 0.5pt granularity). Absence of the element /
+ * attribute and out-of-range / non-numeric / non-finite values all
+ * collapse to `undefined` so a fresh chart and a chart that pinned an
+ * out-of-range size both round-trip to the writer's "skip the size
+ * attribute" path.
+ *
+ * Returns `undefined` whenever the chart omits the `<c:legend>` element
+ * — there is no `<c:txPr>` slot to surface the size from in that case.
+ * The `<a:defRPr>` lives inside `<c:txPr><a:p><a:pPr>` per the
+ * CT_TextBody schema (the default-paragraph properties on the
+ * legend's text-body's first paragraph); the lookup is scoped to that
+ * path so a stray `<a:defRPr>` elsewhere in the chart (e.g. on the
+ * chart title or an axis) cannot leak in. Mirrors the chart-title /
+ * axis-title / axis tick-label readers exactly so a parsed value slots
+ * straight back into the writer's emit path.
+ */
+function parseLegendFontSize(chartEl: XmlElement): number | undefined {
+  const legend = findChild(chartEl, "legend");
+  if (!legend) return undefined;
+  const txPr = findChild(legend, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const raw = defRPr.attrs.sz;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  // Convert from 100ths of a point to points, rounding to the nearest
+  // 0.5pt to match the granularity Excel's UI exposes. `Math.round`
+  // on `2 * (parsed / 100)` and dividing by 2 gives a clean half-step
+  // band that mirrors the writer's emit-time normalization. The
+  // chart-title / axis-title / tick-label sibling parsers use the
+  // identical conversion so a parsed value flows through every
+  // typography slot without bookkeeping the units.
+  const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2);
+  const points = halfSteps / 2;
+  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
+  return points;
 }
 
 /**

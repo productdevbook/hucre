@@ -124,7 +124,12 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
   // ── Legend ──
   if (legendPos) {
     chartChildren.push(
-      buildLegend(legendPos, resolveLegendOverlay(chart), resolveLegendEntries(chart)),
+      buildLegend(
+        legendPos,
+        resolveLegendOverlay(chart),
+        resolveLegendEntries(chart),
+        resolveLegendFontSize(chart),
+      ),
     );
   }
 
@@ -3922,6 +3927,7 @@ function buildLegend(
   pos: LegendPos,
   overlay: boolean,
   entries: readonly ResolvedLegendEntry[],
+  fontSizePt: number | undefined,
 ): string {
   const children: string[] = [xmlSelfClose("c:legendPos", { val: pos })];
 
@@ -3944,7 +3950,74 @@ function buildLegend(
   }
 
   children.push(xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }));
+
+  // CT_Legend sequence places `<c:txPr>` after `<c:overlay>` (and
+  // before the optional `<c:extLst>`). The writer skips emission
+  // entirely when no typography knob is pinned so a fresh chart matches
+  // Excel's reference serialization byte-for-byte (Excel itself omits
+  // the block whenever the legend renders at the theme-default 9pt).
+  // Currently the block carries the legend font size only; future
+  // typography pins (bold / italic / color) will land on the same
+  // `<a:defRPr>` slot. The `<a:bodyPr>` carries no rotation attribute
+  // — the legend is not rotatable in Excel's UI, mirroring how the
+  // axis tick-label `<c:txPr>` slot drops `rot` when only a size is
+  // pinned.
+  const txPrXml = buildLegendTxPr(fontSizePt);
+  if (txPrXml !== undefined) {
+    children.push(txPrXml);
+  }
+
   return xmlElement("c:legend", undefined, children);
+}
+
+/**
+ * Build the `<c:txPr>` block that carries the legend's typography pins
+ * (currently the font size). Returns `undefined` when every input is
+ * unset so the caller can elide the element entirely (Excel's
+ * reference serialization omits `<c:txPr>` from `<c:legend>` when the
+ * legend renders at the theme-default 9pt).
+ *
+ * The emitted block mirrors the minimal `<c:txPr>` shape Excel writes
+ * when the user pins a legend font size — `<a:bodyPr/>` (no rotation
+ * because the legend is not rotatable), `<a:lstStyle/>` is the empty
+ * list-style placeholder the schema requires, and the
+ * `<a:p><a:pPr><a:defRPr sz="N"/></a:pPr><a:endParaRPr/></a:p>`
+ * paragraph stub Excel always emits hosts the size attribute on
+ * `<a:defRPr>`. Mirrors {@link buildAxisTxPr} for the tick-label slot
+ * exactly so a re-parse picks the value off the canonical
+ * default-paragraph slot every other typography reader expects.
+ */
+function buildLegendTxPr(fontSizePt: number | undefined): string | undefined {
+  if (fontSizePt === undefined) return undefined;
+  const sz = fontSizePt * TITLE_FONT_SZ_PER_POINT;
+  return xmlElement("c:txPr", undefined, [
+    xmlSelfClose("a:bodyPr"),
+    xmlSelfClose("a:lstStyle"),
+    xmlElement("a:p", undefined, [
+      xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz })]),
+      xmlSelfClose("a:endParaRPr", { lang: "en-US" }),
+    ]),
+  ]);
+}
+
+/**
+ * Resolve `<c:legend><c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
+ * </a:p></c:txPr></c:legend>` from {@link SheetChart.legendFontSize}.
+ *
+ * Returns the size in points (`1..400`), or `undefined` when the chart
+ * leaves the field unset / passed an out-of-range or non-numeric token.
+ * The flag is only meaningful when the chart actually emits a legend —
+ * the caller is expected to gate the call on the resolved legend
+ * visibility (`resolveLegendPosition` returning a non-null value), so a
+ * chart that hides the legend silently drops the value rather than
+ * emit a `<c:txPr>` block with no on-screen effect.
+ *
+ * Mirrors `resolveTitleFontSize` / `resolveAxisTitleFontSize` /
+ * `resolveAxisLabelFontSize` exactly so a single configuration call
+ * threads cleanly through every typography slot Excel exposes.
+ */
+function resolveLegendFontSize(chart: SheetChart): number | undefined {
+  return normalizeTitleFontSize(chart.legendFontSize);
 }
 
 interface ResolvedLegendEntry {

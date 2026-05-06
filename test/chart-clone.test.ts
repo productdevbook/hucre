@@ -4492,6 +4492,300 @@ describe("cloneChart — legendOverlay", () => {
   });
 });
 
+// ── cloneChart — legendFontSize ──────────────────────────────────────
+
+describe("cloneChart — legendFontSize", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      legend: "right",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's legendFontSize by default", () => {
+    const clone = cloneChart(source({ legendFontSize: 12 }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.legendFontSize).toBe(12);
+  });
+
+  it("lets options.legendFontSize override the source's value", () => {
+    const clone = cloneChart(source({ legendFontSize: 12 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendFontSize: 16,
+    });
+    expect(clone.legendFontSize).toBe(16);
+  });
+
+  it("drops the inherited legendFontSize when the override is null", () => {
+    const clone = cloneChart(source({ legendFontSize: 12 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendFontSize: null,
+    });
+    expect(clone.legendFontSize).toBeUndefined();
+  });
+
+  it("returns undefined legendFontSize when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.legendFontSize).toBeUndefined();
+  });
+
+  it("rounds the override to the nearest 0.5pt (Excel UI granularity)", () => {
+    // 12.3 rounds to 12.5; 12.24 rounds to 12.
+    const a = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendFontSize: 12.3,
+    });
+    expect(a.legendFontSize).toBe(12.5);
+    const b = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendFontSize: 12.24,
+    });
+    expect(b.legendFontSize).toBe(12);
+  });
+
+  it("rounds an inherited fractional source value through the same half-step normalizer", () => {
+    // A parsed value just slightly off the half-step grid (e.g. 12.3
+    // pt) collapses to the nearest 0.5pt so the cloned SheetChart is
+    // guaranteed to round-trip.
+    const clone = cloneChart(source({ legendFontSize: 12.3 }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.legendFontSize).toBe(12.5);
+  });
+
+  it("collapses out-of-range overrides to undefined (>400pt, inherit path)", () => {
+    // Override is non-finite / out-of-range — the cloned shape drops
+    // to undefined rather than carry a value the writer would silently
+    // elide. (`undefined` semantics: inherit; the inherit then drops.)
+    const clone = cloneChart(source({ legendFontSize: 12 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendFontSize: 401,
+    });
+    expect(clone.legendFontSize).toBeUndefined();
+  });
+
+  it("collapses out-of-range overrides to undefined (<1pt)", () => {
+    const clone = cloneChart(source({ legendFontSize: 12 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendFontSize: 0.5,
+    });
+    expect(clone.legendFontSize).toBeUndefined();
+  });
+
+  it("collapses non-finite overrides (NaN / Infinity)", () => {
+    const a = cloneChart(source({ legendFontSize: 12 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendFontSize: Number.NaN,
+    });
+    expect(a.legendFontSize).toBeUndefined();
+    const b = cloneChart(source({ legendFontSize: 12 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendFontSize: Number.POSITIVE_INFINITY,
+    });
+    expect(b.legendFontSize).toBeUndefined();
+  });
+
+  it("collapses non-numeric overrides (typed escape from an untyped caller)", () => {
+    const clone = cloneChart(source({ legendFontSize: 12 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      legendFontSize: "twelve" as any,
+    });
+    expect(clone.legendFontSize).toBeUndefined();
+  });
+
+  it("carries legendFontSize through a flatten (line → column)", () => {
+    // The size lives on `<c:legend>` and is valid on every chart family.
+    const clone = cloneChart(source({ legendFontSize: 12 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.legendFontSize).toBe(12);
+  });
+
+  it("carries legendFontSize through a doughnut flatten (line → doughnut)", () => {
+    // No chart-family restriction — even doughnut, which has no axes,
+    // must preserve the legend font size.
+    const clone = cloneChart(source({ legendFontSize: 12 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.legendFontSize).toBe(12);
+  });
+
+  it("drops the inherited legendFontSize when the resolved legend is hidden", () => {
+    // legend === false suppresses the entire <c:legend> on the writer
+    // side, so an inherited size would never render. The clone collapses
+    // the field to keep the SheetChart honest.
+    const clone = cloneChart(source({ legendFontSize: 12 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendFontSize).toBeUndefined();
+  });
+
+  it("drops the legendFontSize override when the resolved legend is hidden", () => {
+    // Same guard, this time on the override path.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+      legendFontSize: 12,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendFontSize).toBeUndefined();
+  });
+
+  it("retains the legendFontSize override when the override re-enables a hidden source legend", () => {
+    // Source pinned legend:false (so legendFontSize would normally be
+    // undefined), but the override re-enables a visible legend — the
+    // size the override carries must thread through.
+    const clone = cloneChart(source({ legend: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: "top",
+      legendFontSize: 12,
+    });
+    expect(clone.legend).toBe("top");
+    expect(clone.legendFontSize).toBe(12);
+  });
+
+  it("composes with legendOverlay and legendEntries on the cloned SheetChart", () => {
+    const clone = cloneChart(
+      source({
+        legendFontSize: 12,
+        legendOverlay: true,
+        legendEntries: [{ idx: 0, delete: true }],
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.legendFontSize).toBe(12);
+    expect(clone.legendOverlay).toBe(true);
+    expect(clone.legendEntries).toEqual([{ idx: 0, delete: true }]);
+  });
+
+  it("propagates legendFontSize into the rendered <c:legend><c:txPr> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ legendFontSize: 12 }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain("<c:txPr>");
+    expect(legend).toContain('sz="1200"');
+
+    // Re-parsing the rendered chart returns the same value — closes
+    // the template → clone → write → read loop.
+    const reparsed = parseChart(written);
+    expect(reparsed?.legendFontSize).toBe(12);
+  });
+
+  it("emits no <c:txPr> when both source and override are absent (round-trips to undefined)", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).not.toContain("<c:txPr>");
+    expect(parseChart(written)?.legendFontSize).toBeUndefined();
+  });
+
+  it("an explicit override beats the source value through writeXlsx", async () => {
+    const clone = cloneChart(source({ legendFontSize: 9 }), {
+      anchor: { from: { row: 5, col: 0 } },
+      legendFontSize: 18,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain('sz="1800"');
+    expect(legend).not.toContain('sz="900"');
+    expect(parseChart(written)?.legendFontSize).toBe(18);
+  });
+
+  it("a null override drops the source value through writeXlsx (no <c:txPr> emitted)", async () => {
+    const clone = cloneChart(source({ legendFontSize: 12 }), {
+      anchor: { from: { row: 5, col: 0 } },
+      legendFontSize: null,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).not.toContain("<c:txPr>");
+    expect(parseChart(written)?.legendFontSize).toBeUndefined();
+  });
+});
+
 // ── cloneChart — axis lblAlgn ───────────────────────────────────────
 
 describe("cloneChart — axis lblAlgn", () => {

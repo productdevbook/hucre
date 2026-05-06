@@ -1289,6 +1289,43 @@ export interface SheetChart {
    * emits in that order so a re-parse sees the canonical sequence.
    */
   legendEntries?: ChartLegendEntry[];
+  /**
+   * Legend font size in whole or half points. Maps to
+   * `<c:legend><c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p>
+   * </c:txPr></c:legend>` — Excel's "Format Legend -> Font -> Size"
+   * knob. The OOXML attribute is in 100ths of a point, so 12pt
+   * serializes as `sz="1200"` and 9pt (Excel's reference default for
+   * the legend) as `sz="900"`; the writer performs the conversion at
+   * emit time and lands the value on the default-paragraph
+   * `<a:defRPr>` slot inside the legend's `<c:txPr>` block so a
+   * re-parse picks the size up off the canonical slot the OOXML schema
+   * exposes.
+   *
+   * Accepted range: `1..400`pt (the band the OOXML `ST_TextFontSize`
+   * schema exposes — `100..400000` in 100ths of a point). Fractional
+   * inputs round to the nearest 0.5pt (Excel's UI granularity); inputs
+   * outside the band, `NaN`, `Infinity`, and non-numeric inputs all
+   * collapse to `undefined` so the writer drops the `<c:txPr>` block
+   * rather than emit a token Excel would reject — the rendered legend
+   * falls back to the theme-default 9pt.
+   *
+   * Default: omitted — the legend renders at Excel's reference 9pt
+   * (the OOXML schema's application-default for chart legend text). Set
+   * an explicit value to scale the legend up for a hero dashboard tile
+   * (e.g. `14`) or down to fit a tight sidebar slot (e.g. `7`).
+   * Silently ignored when `legend === false` (no `<c:legend>` element
+   * is emitted) — there is no slot to host the size in that case.
+   *
+   * Mirrors {@link titleFontSize} / {@link axes.x.axisTitleFontSize} /
+   * {@link axes.x.labelFontSize} — same range, same normalization,
+   * same OOXML conversion factor — so a caller can thread a single
+   * size value through every typography-pinning slot without bookkeeping
+   * the units. Composes independently with {@link legend} /
+   * {@link legendOverlay} / {@link legendEntries}: all four fields land
+   * on the same `<c:legend>` element so a single configuration call
+   * threads cleanly through every legend knob Excel exposes.
+   */
+  legendFontSize?: number;
   /** Show the chart-level title element. Default: `true` when `title` is set. */
   showTitle?: boolean;
   /**
@@ -4932,6 +4969,26 @@ export interface Chart {
    * legend entries to surface in either case.
    */
   legendEntries?: ChartLegendEntry[];
+  /**
+   * Legend font size in points pulled from
+   * `<c:legend><c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p>
+   * </c:txPr></c:legend>`. The OOXML `sz` attribute is in 100ths of a
+   * point — the reader converts to points and rounds to the nearest
+   * 0.5pt (Excel's UI exposes the same 0.5pt granularity). Range:
+   * `1..400`pt (the band the OOXML `ST_TextFontSize` schema exposes).
+   *
+   * Absence of the element / attribute and out-of-range / non-numeric
+   * / non-finite values all collapse to `undefined` so a fresh chart
+   * and a chart that pinned an out-of-range size both round-trip to
+   * the writer's "skip the size attribute" path.
+   *
+   * Reported as `undefined` whenever {@link legend} is `false` or the
+   * source chart has no `<c:legend>` element at all — there is no
+   * `<c:txPr>` slot to surface the size from in either case. Mirrors
+   * the writer-side {@link SheetChart.legendFontSize} so a parsed value
+   * slots straight into {@link cloneChart} without conversion.
+   */
+  legendFontSize?: number;
   /**
    * Title-overlay flag pulled from `<c:title><c:overlay val=".."/>`.
    * Reflects Excel's "Format Chart Title -> Show the title without

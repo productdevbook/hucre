@@ -4253,6 +4253,195 @@ describe("writeChart — legendOverlay", () => {
   });
 });
 
+// ── writeChart — legend font size ────────────────────────────────────
+
+describe("writeChart — legendFontSize", () => {
+  function legendOf(xml: string): string {
+    const m = xml.match(/<c:legend>[\s\S]*?<\/c:legend>/);
+    if (!m) throw new Error("No <c:legend> block found in chart XML");
+    return m[0];
+  }
+
+  it("does NOT emit <c:txPr> when legendFontSize is unset (matches Excel reference)", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend).not.toContain("<c:txPr>");
+    expect(legend).not.toContain("a:defRPr");
+  });
+
+  it("threads legendFontSize=12 through to <c:legend><c:txPr> as sz=1200", () => {
+    const result = writeChart(makeChart({ legendFontSize: 12 }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend).toContain("<c:txPr>");
+    expect(legend).toContain('sz="1200"');
+  });
+
+  it("threads legendFontSize=14 through as sz=1400", () => {
+    const result = writeChart(makeChart({ legendFontSize: 14 }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend).toContain('sz="1400"');
+  });
+
+  it("threads half-point sizes through (legendFontSize=10.5 -> sz=1050)", () => {
+    const result = writeChart(makeChart({ legendFontSize: 10.5 }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend).toContain('sz="1050"');
+  });
+
+  it("rounds finer-than-half-step inputs to the nearest 0.5pt", () => {
+    // 10.3 -> halfSteps = round(20.6) = 21 -> 10.5pt -> sz=1050.
+    const a = writeChart(makeChart({ legendFontSize: 10.3 }), "Sheet1");
+    expect(legendOf(a.chartXml)).toContain('sz="1050"');
+    // 10.24 -> halfSteps = round(20.48) = 20 -> 10pt -> sz=1000.
+    const b = writeChart(makeChart({ legendFontSize: 10.24 }), "Sheet1");
+    expect(legendOf(b.chartXml)).toContain('sz="1000"');
+  });
+
+  it("places <c:txPr> after <c:overlay> inside <c:legend> (OOXML order)", () => {
+    // CT_Legend sequence: legendPos?, legendEntry*, layout?, overlay?,
+    // spPr?, txPr?, extLst? — `<c:txPr>` lands after `<c:overlay>`.
+    const result = writeChart(makeChart({ legendFontSize: 12 }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend.indexOf("c:overlay")).toBeLessThan(legend.indexOf("c:txPr"));
+    expect(legend.indexOf("c:legendPos")).toBeLessThan(legend.indexOf("c:txPr"));
+  });
+
+  it("only emits <c:txPr> once inside <c:legend>", () => {
+    const result = writeChart(makeChart({ legendFontSize: 12 }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    const occurrences = legend.match(/<c:txPr>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("does not emit any <c:legend> when legend=false, even with legendFontSize set", () => {
+    const result = writeChart(makeChart({ legend: false, legendFontSize: 12 }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:legend>");
+    expect(result.chartXml.match(/<c:legend\b/g)).toBeNull();
+  });
+
+  it("threads legendFontSize through every chart family", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, legendFontSize: 12 }), "Sheet1");
+      const legend = legendOf(result.chartXml);
+      expect(legend).toContain('sz="1200"');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        legendFontSize: 12,
+      }),
+      "Sheet1",
+    );
+    expect(legendOf(scatter.chartXml)).toContain('sz="1200"');
+  });
+
+  it("drops out-of-range values (>400pt) — the txPr block is not emitted", () => {
+    const result = writeChart(makeChart({ legendFontSize: 401 }), "Sheet1");
+    expect(legendOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops out-of-range values (<1pt) — the txPr block is not emitted", () => {
+    const result = writeChart(makeChart({ legendFontSize: 0.5 }), "Sheet1");
+    expect(legendOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops non-finite inputs (NaN / Infinity)", () => {
+    const a = writeChart(makeChart({ legendFontSize: Number.NaN }), "Sheet1");
+    expect(legendOf(a.chartXml)).not.toContain("<c:txPr>");
+    const b = writeChart(makeChart({ legendFontSize: Number.POSITIVE_INFINITY }), "Sheet1");
+    expect(legendOf(b.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops non-numeric inputs (string leaking past the type guard)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = writeChart(makeChart({ legendFontSize: "twelve" as any }), "Sheet1");
+    expect(legendOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("emits the standard txPr stub shape (a:bodyPr / a:lstStyle / a:p / a:endParaRPr)", () => {
+    // The block should mirror Excel's reference legend-typography
+    // emission: <a:bodyPr/> with no rotation, <a:lstStyle/>, and a
+    // <a:p><a:pPr><a:defRPr sz="N"/></a:pPr><a:endParaRPr/></a:p>
+    // paragraph stub.
+    const result = writeChart(makeChart({ legendFontSize: 12 }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend).toContain("<a:bodyPr/>");
+    expect(legend).toContain("<a:lstStyle/>");
+    expect(legend).toContain('<a:defRPr sz="1200"/>');
+    expect(legend).toContain('<a:endParaRPr lang="en-US"/>');
+  });
+
+  it("emits <a:bodyPr/> without a rot attribute (legend is not rotatable)", () => {
+    const result = writeChart(makeChart({ legendFontSize: 12 }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    // The bodyPr should have no rotation attribute — only an empty
+    // self-closing element.
+    expect(legend).toContain("<a:bodyPr/>");
+    // Sanity-check no rot attribute leaks in.
+    const bodyPr = legend.match(/<a:bodyPr[^/]*\/>/);
+    expect(bodyPr?.[0]).toBe("<a:bodyPr/>");
+  });
+
+  it("round-trips a legendFontSize value through parseChart", () => {
+    const written = writeChart(makeChart({ legendFontSize: 12 }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.legendFontSize).toBe(12);
+  });
+
+  it("collapses an unset legendFontSize round-trip back to undefined", () => {
+    // Absence on the writer side => no <c:txPr>; the reader returns
+    // undefined for absence. Round-trip is lossless.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    expect(parseChart(written)?.legendFontSize).toBeUndefined();
+  });
+
+  it("composes with legendOverlay and legendEntries on the same <c:legend>", () => {
+    const result = writeChart(
+      makeChart({
+        legendFontSize: 12,
+        legendOverlay: true,
+        legendEntries: [{ idx: 0, delete: true }],
+      }),
+      "Sheet1",
+    );
+    const legend = legendOf(result.chartXml);
+    expect(legend).toContain('sz="1200"');
+    expect(legend).toContain('c:overlay val="1"');
+    expect(legend).toContain("c:legendEntry");
+    // OOXML ordering: legendPos -> legendEntry -> overlay -> txPr.
+    expect(legend.indexOf("c:legendPos")).toBeLessThan(legend.indexOf("c:legendEntry"));
+    expect(legend.indexOf("c:legendEntry")).toBeLessThan(legend.indexOf("c:overlay"));
+    expect(legend.indexOf("c:overlay")).toBeLessThan(legend.indexOf("c:txPr"));
+  });
+
+  it("survives a writeXlsx round trip — legendFontSize lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            legendFontSize: 12,
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const legend = chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain('sz="1200"');
+  });
+});
+
 // ── writeChart — data labels showLegendKey ──────────────────────────
 
 describe("writeChart — data labels showLegendKey", () => {

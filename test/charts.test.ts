@@ -5032,6 +5032,235 @@ describe("parseChart — legendOverlay", () => {
   });
 });
 
+// ── parseChart — legend font size ────────────────────────────────────
+
+describe("parseChart — legendFontSize", () => {
+  const NS_LFS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withLegendSz(sz: string | undefined): string {
+    const defRPr = sz === undefined ? "<a:defRPr/>" : `<a:defRPr sz="${sz}"/>`;
+    return `<c:chartSpace ${NS_LFS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr>${defRPr}</a:pPr><a:endParaRPr lang="en-US"/></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces the size in points from the sz attribute (100ths of a point)", () => {
+    // 12pt * 100 = 1200.
+    const chart = parseChart(withLegendSz("1200"));
+    expect(chart?.legendFontSize).toBe(12);
+  });
+
+  it("surfaces the default 9pt size literally", () => {
+    // Excel writes sz="900" on every fresh chart legend whose typography
+    // has been customized — the reader surfaces it because it is a
+    // literal pin on the wire.
+    const chart = parseChart(withLegendSz("900"));
+    expect(chart?.legendFontSize).toBe(9);
+  });
+
+  it("rounds to the nearest 0.5pt", () => {
+    // sz="950" = 9.5pt — surfaces literally.
+    const a = parseChart(withLegendSz("950"));
+    expect(a?.legendFontSize).toBe(9.5);
+    // sz="924" = 9.24pt — rounds down to 9.
+    const b = parseChart(withLegendSz("924"));
+    expect(b?.legendFontSize).toBe(9);
+    // sz="980" = 9.8pt — rounds up to 10 (halfSteps `Math.round(19.6)=20`).
+    const c = parseChart(withLegendSz("980"));
+    expect(c?.legendFontSize).toBe(10);
+    // sz="930" = 9.3pt — rounds to 9.5 (halfSteps `Math.round(18.6)=19`).
+    const d = parseChart(withLegendSz("930"));
+    expect(d?.legendFontSize).toBe(9.5);
+  });
+
+  it("returns undefined when <a:defRPr> omits the sz attribute", () => {
+    const chart = parseChart(withLegendSz(undefined));
+    expect(chart?.legendFontSize).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:legend> element at all", () => {
+    const xml = `<c:chartSpace ${NS_LFS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legendFontSize).toBeUndefined();
+  });
+
+  it("returns undefined when <c:legend> has no <c:txPr> body", () => {
+    // A bare legend with only <c:legendPos> / <c:overlay> children has
+    // no <a:p><a:pPr><a:defRPr> to host the size.
+    const xml = `<c:chartSpace ${NS_LFS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendFontSize).toBeUndefined();
+  });
+
+  it("returns undefined when <c:txPr> has no <a:p><a:pPr> chain", () => {
+    // A degenerate <c:txPr> with only <a:bodyPr> and <a:lstStyle> has
+    // no defRPr slot to surface a size from. The reader bails on the
+    // first missing link rather than fabricate a value.
+    const xml = `<c:chartSpace ${NS_LFS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendFontSize).toBeUndefined();
+  });
+
+  it('drops the size when the legend is hidden via <c:delete val="1"/>', () => {
+    // A hidden legend (legend === false) has no <c:txPr> slot in the
+    // rendered chart, so the reader does not surface a value that would
+    // carry no on-screen effect through cloneChart.
+    const xml = `<c:chartSpace ${NS_LFS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:delete val="1"/>
+      <c:overlay val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="1400"/></a:pPr></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe(false);
+    expect(chart?.legendFontSize).toBeUndefined();
+  });
+
+  it("drops sz values below the 1pt minimum after rounding (sz=49)", () => {
+    // 49 / 100 = 0.49pt — half-step round lands at 0.5pt, which is
+    // outside the OOXML ST_TextFontSize 1pt minimum. (sz values from
+    // 75 onwards round up to 1.0pt and surface literally; 74 and below
+    // are dropped.)
+    expect(parseChart(withLegendSz("49"))?.legendFontSize).toBeUndefined();
+  });
+
+  it("drops sz values above the 400pt maximum (sz=400001)", () => {
+    expect(parseChart(withLegendSz("400001"))?.legendFontSize).toBeUndefined();
+  });
+
+  it("surfaces the 1pt minimum (sz=100)", () => {
+    expect(parseChart(withLegendSz("100"))?.legendFontSize).toBe(1);
+  });
+
+  it("surfaces the 400pt maximum (sz=40000)", () => {
+    expect(parseChart(withLegendSz("40000"))?.legendFontSize).toBe(400);
+  });
+
+  it("drops non-numeric sz tokens", () => {
+    expect(parseChart(withLegendSz("twelve"))?.legendFontSize).toBeUndefined();
+  });
+
+  it("drops empty sz tokens", () => {
+    expect(parseChart(withLegendSz(""))?.legendFontSize).toBeUndefined();
+  });
+
+  it("co-surfaces alongside legendOverlay and other legend fields", () => {
+    const xml = `<c:chartSpace ${NS_LFS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="b"/>
+      <c:legendEntry>
+        <c:idx val="0"/>
+        <c:delete val="1"/>
+      </c:legendEntry>
+      <c:overlay val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="1400"/></a:pPr><a:endParaRPr lang="en-US"/></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe("bottom");
+    expect(chart?.legendOverlay).toBe(true);
+    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }]);
+    expect(chart?.legendFontSize).toBe(14);
+  });
+
+  it("surfaces the size on every chart family that emits a legend", () => {
+    // The element lives on <c:legend>, which is a sibling of
+    // <c:plotArea> on every chart-family <c:chart>; the size should
+    // round-trip identically across families. Pie / doughnut / line /
+    // bar all emit legends by default.
+    for (const kind of ["lineChart", "barChart", "pieChart", "doughnutChart"]) {
+      const xml = `<c:chartSpace ${NS_LFS}>
+  <c:chart>
+    <c:plotArea>
+      <c:${kind}><c:ser><c:idx val="0"/></c:ser></c:${kind}>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="1100"/></a:pPr></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+      expect(parseChart(xml)?.legendFontSize).toBe(11);
+    }
+  });
+});
+
 // ── parseChart — data labels showLegendKey ──────────────────────────
 
 describe("parseChart — data labels showLegendKey", () => {
