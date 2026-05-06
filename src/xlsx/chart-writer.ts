@@ -836,14 +836,24 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // serialization for tick labels that inherit the theme text color).
     xLabelColor: normalizeAxisLabelColor(chart.axes?.x?.labelColor),
     yLabelColor: normalizeAxisLabelColor(chart.axes?.y?.labelColor),
-    // `<c:txPr><a:p><a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr>`
+    // `<c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr>`
     // shares the same `<c:txPr>` block as the rotation / size / bold
     // / italic / color slots above. The writer emits only the UI
-    // variant `"sngStrike"` when the input is `true`. `true` / `false`
-    // pass through literally; non-boolean tokens (typed escapes from
-    // an untyped caller) collapse to `undefined` so the writer omits
-    // the `strike` attribute and a fresh chart inherits Excel's
-    // reference non-strikethrough tick labels.
+    // variant `"sng"` when the input is `true`. `true` / `false` pass
+    // through literally; non-boolean tokens (typed escapes from an
+    // untyped caller) collapse to `undefined` so the writer omits the
+    // `u` attribute and a fresh chart inherits Excel's reference
+    // non-underlined tick labels.
+    xLabelUnderline: normalizeAxisLabelUnderline(chart.axes?.x?.labelUnderline),
+    yLabelUnderline: normalizeAxisLabelUnderline(chart.axes?.y?.labelUnderline),
+    // `<c:txPr><a:p><a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr>`
+    // shares the same `<c:txPr>` block as the rotation / size / bold
+    // / italic / color / underline slots above. The writer emits only
+    // the UI variant `"sngStrike"` when the input is `true`. `true` /
+    // `false` pass through literally; non-boolean tokens (typed
+    // escapes from an untyped caller) collapse to `undefined` so the
+    // writer omits the `strike` attribute and a fresh chart inherits
+    // Excel's reference non-strikethrough tick labels.
     xLabelStrike: normalizeAxisLabelStrike(chart.axes?.x?.labelStrike),
     yLabelStrike: normalizeAxisLabelStrike(chart.axes?.y?.labelStrike),
     xReverse: chart.axes?.x?.reverse === true,
@@ -1445,6 +1455,27 @@ interface AxisRenderOptions {
    */
   yLabelColor: string | undefined;
   /**
+   * Tick-label underline flag emitted on the X axis via
+   * `<c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr>`.
+   * The OOXML `u` attribute is the `ST_TextUnderlineType` enum on
+   * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7); the
+   * writer emits only the UI variant `"sng"` when the input is
+   * `true`. `undefined` and `false` both collapse to omitting the
+   * attribute so a fresh chart inherits Excel's reference
+   * non-underlined tick labels (the OOXML default `"none"` collapses
+   * to absence). The block is emitted whenever any tick-label
+   * typography knob (`xLabelRotation`, `xLabelFontSize`,
+   * `xLabelBold`, `xLabelItalic`, `xLabelColor`, or
+   * `xLabelUnderline`) is set so the OOXML schema's `<c:txPr>` slot
+   * carries every pinned typography knob.
+   */
+  xLabelUnderline: boolean | undefined;
+  /**
+   * Tick-label underline flag emitted on the Y axis. Same shape and
+   * semantics as {@link xLabelUnderline}.
+   */
+  yLabelUnderline: boolean | undefined;
+  /**
    * Tick-label strikethrough flag emitted on the X axis via
    * `<c:txPr><a:p><a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr>`.
    * The OOXML `strike` attribute is the `ST_TextStrikeType` enum on
@@ -1455,9 +1486,9 @@ interface AxisRenderOptions {
    * strikethrough tick labels (the OOXML default `"noStrike"`
    * collapses to absence). The block is emitted whenever any tick-
    * label typography knob (`xLabelRotation`, `xLabelFontSize`,
-   * `xLabelBold`, `xLabelItalic`, `xLabelColor`, or `xLabelStrike`)
-   * is set so the OOXML schema's `<c:txPr>` slot carries every
-   * pinned typography knob.
+   * `xLabelBold`, `xLabelItalic`, `xLabelColor`, `xLabelUnderline`,
+   * or `xLabelStrike`) is set so the OOXML schema's `<c:txPr>` slot
+   * carries every pinned typography knob.
    */
   xLabelStrike: boolean | undefined;
   /**
@@ -1866,6 +1897,21 @@ function normalizeAxisLabelColor(value: string | undefined): string | undefined 
 }
 
 /**
+ * Normalize an axis `labelUnderline` value for the
+ * `<c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr>`
+ * writer slot. Delegates to the chart-level
+ * {@link normalizeTitleUnderline} — `true` / `false` pass through
+ * literally, every other token (typed escape from an untyped caller,
+ * including `null`-shaped values) collapses to `undefined` so the
+ * writer omits the `u` attribute entirely. Absence then collapses to
+ * the OOXML default Excel itself emits on a fresh axis (the
+ * theme-default non-underlined tick labels).
+ */
+function normalizeAxisLabelUnderline(value: boolean | undefined): boolean | undefined {
+  return normalizeTitleUnderline(value);
+}
+
+/**
  * Normalize an axis `labelStrike` value for the
  * `<c:txPr><a:p><a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr>`
  * writer slot. Delegates to the chart-level
@@ -1882,19 +1928,19 @@ function normalizeAxisLabelStrike(value: boolean | undefined): boolean | undefin
 
 /**
  * Build the `<c:txPr>` block that carries an axis tick-label rotation,
- * font size, bold flag, italic flag, font color, and / or strikethrough
- * flag. Returns `undefined` when every input is unset so the caller
- * can elide the element entirely (Excel's reference serialization on a
- * fresh axis omits `<c:txPr>` when the labels render at the default
- * rotation and inherit the theme font / weight / slant / color /
- * strike).
+ * font size, bold flag, italic flag, font color, underline flag, and /
+ * or strikethrough flag. Returns `undefined` when every input is unset
+ * so the caller can elide the element entirely (Excel's reference
+ * serialization on a fresh axis omits `<c:txPr>` when the labels render
+ * at the default rotation and inherit the theme font / weight / slant /
+ * color / underline / strike).
  *
  * The emitted block mirrors the minimal `<c:txPr>` shape Excel writes
  * when the user pins a custom typography knob — `<a:bodyPr rot="N"/>`
  * carries the rotation (when set), `<a:lstStyle/>` is the empty
  * list-style placeholder the schema requires, and the
  * `<a:p><a:pPr><a:defRPr/></a:pPr><a:endParaRPr/></a:p>` paragraph
- * stub Excel always emits hosts the optional `sz` / `b` / `i` /
+ * stub Excel always emits hosts the optional `sz` / `b` / `i` / `u` /
  * `strike` attributes on `<a:defRPr>`. Additional `<a:bodyPr>` attributes Excel writes in
  * its full reference (`spcFirstLastPara` / `vertOverflow` / `wrap` /
  * `anchor` / `anchorCtr`) are intentionally omitted — the OOXML
@@ -1903,21 +1949,25 @@ function normalizeAxisLabelStrike(value: boolean | undefined): boolean | undefin
  *
  * When only a rotation is pinned, the `<a:defRPr>` slot self-closes
  * with no attributes (matching the legacy rotation-only emit). When a
- * font size, bold flag, italic flag, font color, or strikethrough
- * flag is pinned, the slot carries `sz="N"` (in 100ths of a point),
- * `b="1"` / `b="0"`, `i="1"` / `i="0"`, `strike="sngStrike"`, and /
- * or wraps an `<a:solidFill>` child so a re-parse picks the values
- * up off the canonical default-paragraph slot. When the rotation is
- * absent but any other knob is pinned, the writer omits `rot` from
- * `<a:bodyPr>` so the OOXML default `0` collapses to absence. The
- * bold / italic flags each emit a literal `1` / `0` whenever the
- * input is a boolean — `false` pins the OOXML default explicitly,
- * which is functionally identical to absence but lets a clone target
- * override an upstream `1` from a templated chart. The strikethrough
- * flag emits only `strike="sngStrike"` (Excel's UI variant — single
+ * font size, bold flag, italic flag, font color, underline flag, or
+ * strikethrough flag is pinned, the slot carries `sz="N"` (in 100ths
+ * of a point), `b="1"` / `b="0"`, `i="1"` / `i="0"`, `u="sng"`,
+ * `strike="sngStrike"`, and / or wraps an `<a:solidFill>` child so a
+ * re-parse picks the values up off the canonical default-paragraph
+ * slot. When the rotation is absent but any other knob is pinned, the
+ * writer omits `rot` from `<a:bodyPr>` so the OOXML default `0`
+ * collapses to absence. The bold / italic flags each emit a literal
+ * `1` / `0` whenever the input is a boolean — `false` pins the OOXML
+ * default explicitly, which is functionally identical to absence but
+ * lets a clone target override an upstream `1` from a templated chart.
+ * The underline flag emits only `u="sng"` (Excel's UI variant — single
  * line) when the input is `true`; absence and explicit `false` both
- * collapse to omitting the attribute since the OOXML default
- * `"noStrike"` collapses to absence.
+ * collapse to omitting the attribute since the OOXML default `"none"`
+ * collapses to absence. The strikethrough flag emits only
+ * `strike="sngStrike"` (Excel's UI variant — single line) when the
+ * input is `true`; absence and explicit `false` both collapse to
+ * omitting the attribute since the OOXML default `"noStrike"`
+ * collapses to absence.
  *
  * The `rgbHex` parameter pins the tick-label color via the
  * `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill>
@@ -1933,6 +1983,7 @@ function buildAxisTxPr(
   bold: boolean | undefined,
   italic: boolean | undefined,
   rgbHex: string | undefined,
+  underline: boolean | undefined,
   strike: boolean | undefined,
 ): string | undefined {
   if (
@@ -1941,6 +1992,7 @@ function buildAxisTxPr(
     bold === undefined &&
     italic === undefined &&
     rgbHex === undefined &&
+    underline === undefined &&
     strike === undefined
   )
     return undefined;
@@ -1948,6 +2000,17 @@ function buildAxisTxPr(
   const sz = fontSizePt === undefined ? undefined : fontSizePt * TITLE_FONT_SZ_PER_POINT;
   const b = bold === undefined ? undefined : bold ? 1 : 0;
   const i = italic === undefined ? undefined : italic ? 1 : 0;
+  // OOXML's `<a:defRPr u=".."/>` attribute is the
+  // `ST_TextUnderlineType` enum on `CT_TextCharacterProperties` —
+  // eighteen values total, with `"none"` as the OOXML default and
+  // `"sng"` as the value Excel's UI authors for the "Underline"
+  // checkbox (single line). The writer emits only the UI variant
+  // `"sng"` to keep the surfaced shape consistent with what Excel's
+  // reference UI authors. Absence (`undefined`) and explicit `false`
+  // both collapse to omitting the attribute (the OOXML default
+  // `"none"` collapses to absence; Excel itself omits `u` when the
+  // tick labels are not underlined).
+  const u = underline === true ? "sng" : undefined;
   // OOXML's `<a:defRPr strike=".."/>` attribute is the
   // `ST_TextStrikeType` enum on `CT_TextCharacterProperties` — three
   // values total, with `"noStrike"` as the OOXML default and
@@ -1974,8 +2037,8 @@ function buildAxisTxPr(
   // no custom color matches Excel's reference serialization byte-for-
   // byte.
   const defRPr = solidFillChild
-    ? xmlElement("a:defRPr", { sz, b, i, strike: strikeAttr }, [solidFillChild])
-    : xmlSelfClose("a:defRPr", { sz, b, i, strike: strikeAttr });
+    ? xmlElement("a:defRPr", { sz, b, i, u, strike: strikeAttr }, [solidFillChild])
+    : xmlSelfClose("a:defRPr", { sz, b, i, u, strike: strikeAttr });
   return xmlElement("c:txPr", undefined, [
     xmlSelfClose("a:bodyPr", { rot }),
     xmlSelfClose("a:lstStyle"),
@@ -2481,6 +2544,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
     opts.xLabelBold,
     opts.xLabelItalic,
     opts.xLabelColor,
+    opts.xLabelUnderline,
     opts.xLabelStrike,
   );
   if (xCatAxTxPr) catAxChildren.push(xCatAxTxPr);
@@ -2554,6 +2618,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
     opts.yLabelBold,
     opts.yLabelItalic,
     opts.yLabelColor,
+    opts.yLabelUnderline,
     opts.yLabelStrike,
   );
   if (yValAxTxPr) valAxChildren.push(yValAxTxPr);
@@ -2925,6 +2990,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
     opts.xLabelBold,
     opts.xLabelItalic,
     opts.xLabelColor,
+    opts.xLabelUnderline,
     opts.xLabelStrike,
   );
   if (xValAxTxPr) xAxChildren.push(xValAxTxPr);
@@ -2975,6 +3041,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
     opts.yLabelBold,
     opts.yLabelItalic,
     opts.yLabelColor,
+    opts.yLabelUnderline,
     opts.yLabelStrike,
   );
   if (yScatterTxPr) yAxChildren.push(yScatterTxPr);
