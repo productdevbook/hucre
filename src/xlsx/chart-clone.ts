@@ -1152,6 +1152,29 @@ export interface CloneChartOptions {
        */
       labelStrike?: boolean | null;
       /**
+       * Override `SheetChart.axes.x.labelFontFamily`. `undefined` (or
+       * omitted) inherits the source axis's tick-label typeface;
+       * `null` drops the inherited typeface (the writer falls back to
+       * the OOXML default — no `<a:latin>` element, the labels
+       * inherit the theme typeface); a non-empty string replaces it;
+       * the override is trimmed.
+       *
+       * Empty / whitespace-only strings and non-string overrides
+       * (typed escapes from an untyped caller) collapse to a drop so
+       * the cloned `SheetChart` always carries a value the writer
+       * will accept.
+       *
+       * `<c:txPr>` lives on every axis flavour per the OOXML schema,
+       * so the override carries through every chart family that has
+       * axes (bar / column / line / area / scatter). Silently dropped
+       * on `pie` / `doughnut` charts since neither has axes. Composes
+       * independently with {@link labelRotation} / {@link labelFontSize} /
+       * {@link labelBold} / {@link labelItalic} / {@link labelColor} /
+       * {@link labelUnderline} / {@link labelStrike}: all eight knobs
+       * land on the same `<c:txPr>` body.
+       */
+      labelFontFamily?: string | null;
+      /**
        * Override the reverse-axis flag. `undefined` (or omitted)
        * inherits the source axis' parsed value; `null` drops it (the
        * writer falls back to the OOXML default `"minMax"` — forward
@@ -1331,6 +1354,8 @@ export interface CloneChartOptions {
       labelUnderline?: boolean | null;
       /** See {@link CloneChartOptions.axes.x.labelStrike}. */
       labelStrike?: boolean | null;
+      /** See {@link CloneChartOptions.axes.x.labelFontFamily}. */
+      labelFontFamily?: string | null;
       /** See {@link CloneChartOptions.axes.x.hidden}. */
       hidden?: boolean | null;
       /** See {@link CloneChartOptions.axes.x.reverse}. */
@@ -3573,6 +3598,22 @@ function resolveAxes(
     sourceAxes?.y?.labelStrike,
     overrides?.y?.labelStrike,
   );
+  // `<c:txPr><a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
+  // </a:pPr></a:p></c:txPr>` shares the same `<c:txPr>` slot as the
+  // rotation / size / bold / italic / color / underline / strike
+  // resolvers above, and the same per-axis scope rule (every axis
+  // flavour carries `<c:txPr>`; pie / doughnut already short-
+  // circuited upstream). Empty / whitespace-only / non-string
+  // overrides collapse to a drop so the cloned `SheetChart` always
+  // carries a value the writer will accept.
+  const xLabelFontFamily = applyLabelFontFamilyOverride(
+    sourceAxes?.x?.labelFontFamily,
+    overrides?.x?.labelFontFamily,
+  );
+  const yLabelFontFamily = applyLabelFontFamilyOverride(
+    sourceAxes?.y?.labelFontFamily,
+    overrides?.y?.labelFontFamily,
+  );
   const xReverse = applyReverseOverride(sourceAxes?.x?.reverse, overrides?.x?.reverse);
   const yReverse = applyReverseOverride(sourceAxes?.y?.reverse, overrides?.y?.reverse);
   // `tickLblSkip` / `tickMarkSkip` only render on category axes
@@ -3734,6 +3775,7 @@ function resolveAxes(
     xLabelColor !== undefined ||
     xLabelUnderline !== undefined ||
     xLabelStrike !== undefined ||
+    xLabelFontFamily !== undefined ||
     xReverse !== undefined ||
     xTickLblSkip !== undefined ||
     xTickMarkSkip !== undefined ||
@@ -3772,6 +3814,7 @@ function resolveAxes(
     if (xLabelColor !== undefined) out.x.labelColor = xLabelColor;
     if (xLabelUnderline !== undefined) out.x.labelUnderline = xLabelUnderline;
     if (xLabelStrike !== undefined) out.x.labelStrike = xLabelStrike;
+    if (xLabelFontFamily !== undefined) out.x.labelFontFamily = xLabelFontFamily;
     if (xReverse !== undefined) out.x.reverse = xReverse;
     if (xTickLblSkip !== undefined) out.x.tickLblSkip = xTickLblSkip;
     if (xTickMarkSkip !== undefined) out.x.tickMarkSkip = xTickMarkSkip;
@@ -3807,6 +3850,7 @@ function resolveAxes(
     yLabelColor !== undefined ||
     yLabelUnderline !== undefined ||
     yLabelStrike !== undefined ||
+    yLabelFontFamily !== undefined ||
     yHidden !== undefined ||
     yReverse !== undefined ||
     yCrossesPair.crosses !== undefined ||
@@ -3839,6 +3883,7 @@ function resolveAxes(
     if (yLabelColor !== undefined) out.y.labelColor = yLabelColor;
     if (yLabelUnderline !== undefined) out.y.labelUnderline = yLabelUnderline;
     if (yLabelStrike !== undefined) out.y.labelStrike = yLabelStrike;
+    if (yLabelFontFamily !== undefined) out.y.labelFontFamily = yLabelFontFamily;
     if (yHidden !== undefined) out.y.hidden = yHidden;
     if (yReverse !== undefined) out.y.reverse = yReverse;
     if (yCrossesPair.crosses !== undefined) out.y.crosses = yCrossesPair.crosses;
@@ -4330,6 +4375,48 @@ function applyLabelStrikeOverride(
   if (override === true) return true;
   if (override === false) return false;
   return undefined;
+}
+
+/**
+ * Resolve a `labelFontFamily` override using the same `undefined`
+ * (inherit) / `null` (drop) / value (replace) grammar as the other
+ * axis tick-label typography knobs.
+ *
+ * Empty / whitespace-only strings and non-string overrides (typed
+ * escapes from an untyped caller) collapse to `undefined` via
+ * {@link normalizeLabelFontFamily} so the cloned `SheetChart` always
+ * carries a value the writer will accept. A `null` override always
+ * drops the inherited typeface (the writer falls back to the OOXML
+ * default — no `<a:latin>` element, the labels inherit the theme
+ * typeface).
+ *
+ * The `<c:txPr>` block sits on every axis flavour per the OOXML
+ * schema, so the override applies on every chart family that has
+ * axes. The pie / doughnut short-circuit upstream collapses the
+ * field on those families since neither has axes.
+ */
+function applyLabelFontFamilyOverride(
+  source: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeLabelFontFamily(source);
+  if (override === null) return undefined;
+  return normalizeLabelFontFamily(override);
+}
+
+/**
+ * Normalize a `labelFontFamily` value for the cloned `SheetChart`.
+ * Mirrors the writer's `normalizeAxisLabelFontFamily` — non-empty
+ * strings pass through trimmed, every other token (empty /
+ * whitespace-only strings, typed escapes from an untyped caller)
+ * collapses to `undefined` so the cloned chart drops the field
+ * rather than carry a value the writer would silently elide.
+ */
+function normalizeLabelFontFamily(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
 }
 
 /**

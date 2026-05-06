@@ -15965,3 +15965,118 @@ describe("parseChart — data labels strikethrough", () => {
     expect(parseChart(xml)?.dataLabels?.strikethrough).toBe(true);
   });
 });
+
+// ── parseChart — axis tick-label font family ────────────────────────
+
+describe("parseChart — axis tick-label font family", () => {
+  const NS_ALFF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withCatAxLabelFontFamily(typeface: string | undefined): string {
+    const txPr =
+      typeface === undefined
+        ? ""
+        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:latin typeface="${typeface}"/></a:defRPr></a:pPr></a:p></c:txPr>`;
+    return `<c:chartSpace ${NS_ALFF}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      ${txPr}
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+  }
+
+  function withValAxLabelFontFamily(typeface: string | undefined): string {
+    const txPr =
+      typeface === undefined
+        ? ""
+        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:latin typeface="${typeface}"/></a:defRPr></a:pPr></a:p></c:txPr>`;
+    return `<c:chartSpace ${NS_ALFF}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      ${txPr}
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces the typeface on a category axis", () => {
+    const chart = parseChart(withCatAxLabelFontFamily("Arial"));
+    expect(chart?.axes?.x?.labelFontFamily).toBe("Arial");
+  });
+
+  it("surfaces the typeface on a value axis", () => {
+    const chart = parseChart(withValAxLabelFontFamily("Calibri"));
+    expect(chart?.axes?.y?.labelFontFamily).toBe("Calibri");
+  });
+
+  it("surfaces multi-word typefaces verbatim", () => {
+    const chart = parseChart(withCatAxLabelFontFamily("Times New Roman"));
+    expect(chart?.axes?.x?.labelFontFamily).toBe("Times New Roman");
+  });
+
+  it("collapses absence of <a:latin> to undefined", () => {
+    const xml = `<c:chartSpace ${NS_ALFF}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr></a:p></c:txPr>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.labelFontFamily).toBeUndefined();
+  });
+
+  it("collapses an empty typeface attribute to undefined", () => {
+    const chart = parseChart(withCatAxLabelFontFamily(""));
+    expect(chart?.axes?.x?.labelFontFamily).toBeUndefined();
+  });
+
+  it("trims surrounding whitespace from the typeface", () => {
+    const chart = parseChart(withCatAxLabelFontFamily("   Arial   "));
+    expect(chart?.axes?.x?.labelFontFamily).toBe("Arial");
+  });
+
+  it("collapses whitespace-only typefaces to undefined", () => {
+    const chart = parseChart(withCatAxLabelFontFamily("   "));
+    expect(chart?.axes?.x?.labelFontFamily).toBeUndefined();
+  });
+
+  it("returns undefined when the axis has no <c:txPr>", () => {
+    const chart = parseChart(withCatAxLabelFontFamily(undefined));
+    expect(chart?.axes?.x?.labelFontFamily).toBeUndefined();
+  });
+
+  it("scopes the lookup to the axis-level <c:txPr> (axis-title <a:latin> does not leak in)", () => {
+    // The axis title pins <a:latin>; the tick-label <c:txPr> pins
+    // none. The reader must not pick up the axis-title typeface
+    // for labelFontFamily.
+    const xml = `<c:chartSpace ${NS_ALFF}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr><a:latin typeface="Verdana"/></a:defRPr></a:pPr></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.labelFontFamily).toBeUndefined();
+  });
+});

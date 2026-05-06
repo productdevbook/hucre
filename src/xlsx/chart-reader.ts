@@ -749,6 +749,17 @@ function parseAxisInfo(
   // `"sngStrike"`). Surfaced on every axis flavour for symmetry with
   // the writer.
   const labelStrike = parseAxisLabelStrike(axis);
+  // `<c:txPr><a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
+  // </a:pPr></a:p></c:txPr>` — axis tick-label font family. Same
+  // axis-level `<c:txPr>` body scope as the rotation / size / bold /
+  // italic / color / underline / strike readers above. Empty /
+  // whitespace-only `typeface` attributes and missing `<a:latin>`
+  // elements both collapse to `undefined` so absence and the empty
+  // form round-trip identically through the writer. The reader is
+  // scoped to the axis-level `<c:txPr>` so a stray `<a:latin>` inside
+  // `<c:title>` (surfaced by `axisTitleFontFamily`) cannot leak in.
+  // Surfaced on every axis flavour for symmetry with the writer.
+  const labelFontFamily = parseAxisLabelFontFamily(axis);
   // <c:scaling><c:orientation val=".."/></c:scaling> — ST_Orientation
   // accepts "minMax" (default, low → high) and "maxMin" (reversed).
   // The default collapses to undefined so a fresh chart and a chart
@@ -836,6 +847,7 @@ function parseAxisInfo(
     labelBold === undefined &&
     labelItalic === undefined &&
     labelColor === undefined &&
+    labelFontFamily === undefined &&
     labelUnderline === undefined &&
     labelStrike === undefined &&
     reverse === undefined &&
@@ -873,6 +885,7 @@ function parseAxisInfo(
   if (labelBold !== undefined) out.labelBold = labelBold;
   if (labelItalic !== undefined) out.labelItalic = labelItalic;
   if (labelColor !== undefined) out.labelColor = labelColor;
+  if (labelFontFamily !== undefined) out.labelFontFamily = labelFontFamily;
   if (labelUnderline !== undefined) out.labelUnderline = labelUnderline;
   if (labelStrike !== undefined) out.labelStrike = labelStrike;
   if (reverse !== undefined) out.reverse = reverse;
@@ -1481,6 +1494,52 @@ function parseAxisLabelStrike(axis: XmlElement): boolean | undefined {
   // trip.
   if (raw === "sngStrike") return true;
   return undefined;
+}
+
+/**
+ * Pull the axis tick-label font family off the canonical
+ * `<c:txPr><a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
+ * </a:pPr></a:p></c:txPr>` chain Excel writes when the user pins a
+ * typeface on the axis tick labels.
+ *
+ * The OOXML `<a:latin>` element carries the typeface name on
+ * `CT_TextFont` (ECMA-376 Part 1, §21.1.2.3.7). The reader trims
+ * surrounding whitespace and reports the trimmed typeface; empty /
+ * whitespace-only `typeface` attributes and missing `<a:latin>`
+ * elements both collapse to `undefined` so absence and the empty
+ * form round-trip identically through the writer. Non-string
+ * `typeface` tokens (defensive — the XML parser only ever surfaces
+ * strings) likewise drop to `undefined`.
+ *
+ * Returns `undefined` whenever the axis omits `<c:txPr>` entirely or
+ * the canonical `<a:p><a:pPr><a:defRPr><a:latin>` chain is malformed
+ * at any link.
+ *
+ * The `<c:txPr>` element sits on every axis flavour — `<c:catAx>` /
+ * `<c:valAx>` / `<c:dateAx>` / `<c:serAx>` all carry the optional
+ * element per the OOXML schema. The reader surfaces the value
+ * regardless of axis flavour so a parsed chart preserves the
+ * typeface for symmetry with the writer-side
+ * {@link SheetChart.axes}.x.labelFontFamily. The lookup is scoped to
+ * the axis-level `<c:txPr>` so a stray `<a:latin>` inside the axis
+ * `<c:title><c:tx><c:rich>` body cannot leak in.
+ */
+function parseAxisLabelFontFamily(axis: XmlElement): string | undefined {
+  const txPr = findChild(axis, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const latin = findChild(defRPr, "latin");
+  if (!latin) return undefined;
+  const raw = latin.attrs.typeface;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
 }
 
 /** Recognized values of `<c:crosses>` per the OOXML `ST_Crosses` enum. */
