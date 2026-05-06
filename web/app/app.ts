@@ -1276,7 +1276,7 @@ function renderChartList(state: ChartCloneState): string {
     html += `</summary>`;
 
     html += `<div class="field-grid">`;
-    html += `<div class="field"><label>Title override</label><input type="text" data-chart-title="${i}" placeholder="(keep "${escapeHtml(title)}")" /></div>`;
+    html += `<div class="field"><label>Title override</label><input type="text" data-chart-title="${i}" placeholder="(keep ${escapeHtml(title)})" /></div>`;
 
     html += `<div class="field"><label>Type coercion</label><select data-chart-type="${i}">`;
     html += `<option value="">(auto: ${escapeHtml(writeKind || "n/a")})</option>`;
@@ -1323,7 +1323,9 @@ function readChartUiOverride(
   const anchorRaw = (anchorEl?.value || "").trim() || defaultAnchorFor(source, i);
   const from = parseAnchorCell(anchorRaw);
   if (!from) {
-    return { error: `Chart #${i + 1}: invalid anchor cell "${anchorRaw}". Use A1-style notation (e.g. B2).` };
+    return {
+      error: `Chart #${i + 1}: invalid anchor cell "${anchorRaw}". Use A1-style notation (e.g. B2).`,
+    };
   }
 
   const opts: CloneChartOptions = { anchor: { from } };
