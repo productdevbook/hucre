@@ -2750,6 +2750,53 @@ export interface SheetChart {
        * family that has axes (bar / column / line / area / scatter).
        */
       axisTitleUnderline?: boolean;
+      /**
+       * Axis title font family / typeface. Maps to
+       * `<c:catAx>` / `<c:valAx>` / `<c:dateAx>` / `<c:serAx>` ->
+       * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
+       * typeface=".."/></a:defRPr></a:pPr><a:r><a:rPr><a:latin
+       * typeface=".."/></a:rPr></a:r></a:p></c:rich></c:tx></c:title>` —
+       * Excel's "Format Axis Title -> Font -> Font" picker. The OOXML
+       * `<a:latin typeface=".."/>` element carries the typeface name
+       * (`CT_TextFont`, ECMA-376 Part 1, §21.1.2.3.7); the writer
+       * lands the element on both the default-paragraph `<a:defRPr>`
+       * and the literal run's `<a:rPr>` so a re-parse picks the
+       * typeface up off either canonical slot — Excel keeps the two
+       * values in sync.
+       *
+       * Accepts any non-empty string typeface name (e.g. `"Calibri"`,
+       * `"Arial"`, `"Times New Roman"`); the writer trims surrounding
+       * whitespace and emits the trimmed value verbatim (XML-escaped)
+       * so Excel can resolve the named font from the workbook's font
+       * scheme or the host system's installed fonts. Empty /
+       * whitespace-only strings and non-string tokens collapse to
+       * `undefined` so the writer skips the entire `<a:latin>`
+       * element and the title inherits Excel's reference theme
+       * typeface (Calibri Light from the default Office theme).
+       *
+       * Mirrors {@link SheetChart.titleFontFamily} for axis titles —
+       * same canonical-slot pair, same drop-on-empty semantics, same
+       * `string | null` clone grammar so a single configuration call
+       * threads cleanly through both the chart title and either axis
+       * title without bookkeeping the canonical OOXML slots. Mirrors
+       * {@link axisTitleRotation} / {@link axisTitleFontSize} /
+       * {@link axisTitleBold} / {@link axisTitleItalic} /
+       * {@link axisTitleColor} / {@link axisTitleStrike} /
+       * {@link axisTitleUnderline} for the same `<c:title>` body, so
+       * all eight axis-title typography knobs compose freely on the
+       * same axis.
+       *
+       * Silently dropped when the axis renders no title (the
+       * `<c:title>` element is absent in either case) and on `pie` /
+       * `doughnut` charts (no axes at all).
+       *
+       * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+       * `<c:dateAx>` / `<c:serAx>` all carry the same `<c:title>`
+       * shape per the OOXML schema, so the field round-trips on
+       * every chart family that has axes (bar / column / line /
+       * area / scatter).
+       */
+      axisTitleFontFamily?: string;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -3081,6 +3128,48 @@ export interface SheetChart {
        */
       labelStrike?: boolean;
       /**
+       * Axis tick-label font family / typeface. Maps to
+       * `<c:catAx>` / `<c:valAx>` / `<c:dateAx>` / `<c:serAx>` ->
+       * `<c:txPr><a:p><a:pPr><a:defRPr><a:latin typeface=".."/>
+       * </a:defRPr></a:pPr></a:p></c:txPr>` — Excel's "Format Axis ->
+       * Number / Font -> Font" picker scoped to the axis's tick
+       * labels. The OOXML `<a:latin typeface=".."/>` element carries
+       * the typeface name (`CT_TextFont`, ECMA-376 Part 1,
+       * §21.1.2.3.7); the writer lands the element on the default-
+       * paragraph `<a:defRPr>` of the axis-level `<c:txPr>` body.
+       *
+       * Accepts any non-empty string typeface name (e.g. `"Calibri"`,
+       * `"Arial"`, `"Times New Roman"`); the writer trims surrounding
+       * whitespace and emits the trimmed value verbatim (XML-escaped)
+       * so Excel can resolve the named font from the workbook's font
+       * scheme or the host system's installed fonts. Empty /
+       * whitespace-only strings and non-string tokens collapse to
+       * `undefined` so the writer skips the entire `<a:latin>`
+       * element and the tick labels inherit Excel's reference theme
+       * typeface.
+       *
+       * Default: omitted — the tick labels render in Excel's
+       * reference theme typeface (no `<a:latin>` element, the writer
+       * skips the element entirely). Pin a typeface name to render
+       * the labels in that font.
+       *
+       * Composes independently with {@link labelRotation} /
+       * {@link labelFontSize} / {@link labelBold} /
+       * {@link labelItalic} / {@link labelColor} /
+       * {@link labelUnderline} / {@link labelStrike}: all eight knobs
+       * land on the same `<c:txPr>` body, so a single configuration
+       * call threads cleanly through every tick-label knob the
+       * writer exposes.
+       *
+       * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+       * `<c:dateAx>` / `<c:serAx>` all carry an optional `<c:txPr>`
+       * per the OOXML schema, so the field round-trips on every
+       * chart family that has axes (bar / column / line / area /
+       * scatter). Pie / doughnut have no axes at all, so the field
+       * is silently dropped on those families.
+       */
+      labelFontFamily?: string;
+      /**
        * Reverse the axis plotting order. Maps to
        * `<c:scaling><c:orientation val="maxMin"/></c:scaling>` —
        * Excel's "Categories in reverse order" / "Values in reverse
@@ -3411,6 +3500,53 @@ export interface SheetChart {
        * block to host the flag).
        */
       axisTitleUnderline?: boolean;
+      /**
+       * Axis title font family / typeface. Maps to
+       * `<c:catAx>` / `<c:valAx>` / `<c:dateAx>` / `<c:serAx>` ->
+       * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
+       * typeface=".."/></a:defRPr></a:pPr><a:r><a:rPr><a:latin
+       * typeface=".."/></a:rPr></a:r></a:p></c:rich></c:tx></c:title>` —
+       * Excel's "Format Axis Title -> Font -> Font" picker. The OOXML
+       * `<a:latin typeface=".."/>` element carries the typeface name
+       * (`CT_TextFont`, ECMA-376 Part 1, §21.1.2.3.7); the writer
+       * lands the element on both the default-paragraph `<a:defRPr>`
+       * and the literal run's `<a:rPr>` so a re-parse picks the
+       * typeface up off either canonical slot — Excel keeps the two
+       * values in sync.
+       *
+       * Accepts any non-empty string typeface name (e.g. `"Calibri"`,
+       * `"Arial"`, `"Times New Roman"`); the writer trims surrounding
+       * whitespace and emits the trimmed value verbatim (XML-escaped)
+       * so Excel can resolve the named font from the workbook's font
+       * scheme or the host system's installed fonts. Empty /
+       * whitespace-only strings and non-string tokens collapse to
+       * `undefined` so the writer skips the entire `<a:latin>`
+       * element and the title inherits Excel's reference theme
+       * typeface (Calibri Light from the default Office theme).
+       *
+       * Mirrors {@link SheetChart.titleFontFamily} for axis titles —
+       * same canonical-slot pair, same drop-on-empty semantics, same
+       * `string | null` clone grammar so a single configuration call
+       * threads cleanly through both the chart title and either axis
+       * title without bookkeeping the canonical OOXML slots. Mirrors
+       * {@link axisTitleRotation} / {@link axisTitleFontSize} /
+       * {@link axisTitleBold} / {@link axisTitleItalic} /
+       * {@link axisTitleColor} / {@link axisTitleStrike} /
+       * {@link axisTitleUnderline} for the same `<c:title>` body, so
+       * all eight axis-title typography knobs compose freely on the
+       * same axis.
+       *
+       * Silently dropped when the axis renders no title (the
+       * `<c:title>` element is absent in either case) and on `pie` /
+       * `doughnut` charts (no axes at all).
+       *
+       * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+       * `<c:dateAx>` / `<c:serAx>` all carry the same `<c:title>`
+       * shape per the OOXML schema, so the field round-trips on
+       * every chart family that has axes (bar / column / line /
+       * area / scatter).
+       */
+      axisTitleFontFamily?: string;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -3554,6 +3690,13 @@ export interface SheetChart {
        * (no axes at all).
        */
       labelStrike?: boolean;
+      /**
+       * Value-axis tick-label font family / typeface. Same canonical-
+       * slot pair and grammar as {@link SheetChart.axes.x.labelFontFamily} —
+       * the field round-trips on `<c:valAx>` exactly as it does on
+       * `<c:catAx>`. See the X-axis variant for the full semantics.
+       */
+      labelFontFamily?: string;
       /**
        * Hide the entire value axis (line, tick marks, tick labels).
        * Maps to `<c:valAx><c:delete val="1"/></c:valAx>`. Default:
@@ -4996,6 +5139,41 @@ export interface ChartAxisInfo {
    */
   axisTitleUnderline?: boolean;
   /**
+   * Axis title font family / typeface pulled from `<c:catAx>` /
+   * `<c:valAx>` / `<c:dateAx>` / `<c:serAx>` ->
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
+   * typeface=".."/></a:defRPr></a:pPr></a:p></c:rich></c:tx>
+   * </c:title>`. Reflects Excel's "Format Axis Title -> Font ->
+   * Font" picker. The OOXML `<a:latin typeface=".."/>` element
+   * carries the typeface name (`CT_TextFont`, ECMA-376 Part 1,
+   * §21.1.2.3.7).
+   *
+   * Reports the trimmed typeface string when the source axis pinned
+   * a non-empty typeface; absence and empty / whitespace-only
+   * `typeface` attributes both collapse to `undefined` so absence
+   * and `<a:latin typeface=""/>` round-trip identically through
+   * {@link cloneChart}. Non-string `typeface` tokens (defensive —
+   * the XML parser only ever surfaces strings) likewise drop to
+   * `undefined`.
+   *
+   * Reported as `undefined` whenever the source axis has no
+   * `<c:title>` element at all, or when the title is a `<c:strRef>`
+   * (formula reference) with no `<c:rich>` body — there is no
+   * `<a:p>` to host the typeface in either case. Mirrors the
+   * chart-level {@link Chart.titleFontFamily} so a parsed value
+   * slots straight back into the writer-side
+   * {@link SheetChart.axes.x.axisTitleFontFamily} without
+   * transformation.
+   *
+   * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+   * `<c:dateAx>` / `<c:serAx>` all carry the same `<c:title>` shape
+   * per the OOXML schema. The reader surfaces the value on every
+   * axis flavour so a parsed chart preserves the typeface
+   * regardless of whether the source axis was a category or value
+   * axis.
+   */
+  axisTitleFontFamily?: string;
+  /**
    * Major / minor gridline visibility. Omitted when neither
    * `<c:majorGridlines>` nor `<c:minorGridlines>` is declared on the
    * axis (i.e. Excel's "no gridlines" state for both).
@@ -5219,6 +5397,33 @@ export interface ChartAxisInfo {
    * {@link ChartAxisInfo.axisTitleStrike}) cannot leak in.
    */
   labelStrike?: boolean;
+  /**
+   * Axis tick-label font family / typeface pulled from `<c:catAx>` /
+   * `<c:valAx>` / `<c:dateAx>` / `<c:serAx>` ->
+   * `<c:txPr><a:p><a:pPr><a:defRPr><a:latin typeface=".."/>
+   * </a:defRPr></a:pPr></a:p></c:txPr>`. Reflects Excel's "Format
+   * Axis -> Number / Font -> Font" picker scoped to the axis's tick
+   * labels. The OOXML `<a:latin typeface=".."/>` element carries the
+   * typeface name (`CT_TextFont`, ECMA-376 Part 1, §21.1.2.3.7).
+   *
+   * Reports the trimmed typeface string when the source axis pinned
+   * a non-empty typeface; absence and empty / whitespace-only
+   * `typeface` attributes both collapse to `undefined` so absence
+   * and `<a:latin typeface=""/>` round-trip identically through
+   * {@link cloneChart}. Non-string `typeface` tokens (defensive —
+   * the XML parser only ever surfaces strings) likewise drop to
+   * `undefined`.
+   *
+   * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+   * `<c:dateAx>` / `<c:serAx>` all carry an optional `<c:txPr>` per
+   * the OOXML schema. Mirrors the writer-side
+   * {@link SheetChart.axes.x.labelFontFamily} so a parsed value slots
+   * straight back into a clone target without transformation. The
+   * lookup is scoped to the axis-level `<c:txPr>` so a stray
+   * `<a:latin>` inside `<c:title>` (surfaced by
+   * {@link ChartAxisInfo.axisTitleFontFamily}) cannot leak in.
+   */
+  labelFontFamily?: string;
   /**
    * Reverse-axis flag pulled from
    * `<c:scaling><c:orientation val=".."/></c:scaling>`. Surfaces `true`

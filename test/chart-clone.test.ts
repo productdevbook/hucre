@@ -17118,3 +17118,362 @@ describe("cloneChart — title font family", () => {
     expect(clone.titleFontFamily).toBeUndefined();
   });
 });
+
+// ── cloneChart — axis tick-label font family ────────────────────────
+
+describe("cloneChart — axis tick-label font family", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Sales",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's X-axis labelFontFamily by default", () => {
+    const clone = cloneChart(source({ axes: { x: { labelFontFamily: "Arial" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.x?.labelFontFamily).toBe("Arial");
+  });
+
+  it("inherits the source's Y-axis labelFontFamily by default", () => {
+    const clone = cloneChart(source({ axes: { y: { labelFontFamily: "Calibri" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.y?.labelFontFamily).toBe("Calibri");
+  });
+
+  it("lets options.axes.x.labelFontFamily replace the source's value", () => {
+    const clone = cloneChart(source({ axes: { x: { labelFontFamily: "Arial" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { labelFontFamily: "Calibri" } },
+    });
+    expect(clone.axes?.x?.labelFontFamily).toBe("Calibri");
+  });
+
+  it("drops the inherited labelFontFamily when the override is null", () => {
+    const clone = cloneChart(source({ axes: { x: { labelFontFamily: "Arial" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { labelFontFamily: null } },
+    });
+    expect(clone.axes?.x?.labelFontFamily).toBeUndefined();
+  });
+
+  it("returns undefined labelFontFamily when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.labelFontFamily).toBeUndefined();
+  });
+
+  it("replaces an unset source labelFontFamily with the override", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { labelFontFamily: "Verdana" } },
+    });
+    expect(clone.axes?.x?.labelFontFamily).toBe("Verdana");
+  });
+
+  it("trims surrounding whitespace from the override", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { labelFontFamily: "   Arial   " } },
+    });
+    expect(clone.axes?.x?.labelFontFamily).toBe("Arial");
+  });
+
+  it("drops empty / whitespace-only overrides", () => {
+    const c1 = cloneChart(source({ axes: { x: { labelFontFamily: "Arial" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { labelFontFamily: "" } },
+    });
+    expect(c1.axes?.x?.labelFontFamily).toBeUndefined();
+    const c2 = cloneChart(source({ axes: { x: { labelFontFamily: "Arial" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { labelFontFamily: "   " } },
+    });
+    expect(c2.axes?.x?.labelFontFamily).toBeUndefined();
+  });
+
+  it("drops a non-string override (defends against an untyped caller)", () => {
+    const clone = cloneChart(source({ axes: { x: { labelFontFamily: "Arial" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      axes: { x: { labelFontFamily: 1 as any } },
+    });
+    expect(clone.axes?.x?.labelFontFamily).toBeUndefined();
+  });
+
+  it("composes with all other tick-label typography knobs", () => {
+    const clone = cloneChart(
+      source({
+        axes: {
+          x: {
+            labelFontFamily: "Arial",
+            labelBold: true,
+            labelItalic: true,
+            labelStrike: true,
+            labelUnderline: true,
+            labelColor: "FF0000",
+            labelFontSize: 14,
+          },
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.x?.labelFontFamily).toBe("Arial");
+    expect(clone.axes?.x?.labelBold).toBe(true);
+    expect(clone.axes?.x?.labelItalic).toBe(true);
+    expect(clone.axes?.x?.labelStrike).toBe(true);
+    expect(clone.axes?.x?.labelUnderline).toBe(true);
+    expect(clone.axes?.x?.labelColor).toBe("FF0000");
+    expect(clone.axes?.x?.labelFontSize).toBe(14);
+  });
+
+  it("normalizes a malformed source value (defensive)", () => {
+    const clone = cloneChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      source({ axes: { x: { labelFontFamily: "   " as any } } }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.x?.labelFontFamily).toBeUndefined();
+  });
+
+  it("preserves Y-axis typeface when only X is overridden", () => {
+    const clone = cloneChart(
+      source({
+        axes: {
+          x: { labelFontFamily: "Arial" },
+          y: { labelFontFamily: "Calibri" },
+        },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { labelFontFamily: "Verdana" } },
+      },
+    );
+    expect(clone.axes?.x?.labelFontFamily).toBe("Verdana");
+    expect(clone.axes?.y?.labelFontFamily).toBe("Calibri");
+  });
+
+  it("collapses to undefined on pie / doughnut (no axes at all)", () => {
+    const pieSource: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "pie",
+          index: 0,
+          name: "Slices",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Distribution",
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      axes: { x: { labelFontFamily: "Arial" } } as any,
+    };
+    const clone = cloneChart(pieSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes).toBeUndefined();
+  });
+});
+
+// ── cloneChart — axis title font family ─────────────────────────────
+
+describe("cloneChart — axis title font family", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Sales",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's X-axis axisTitleFontFamily by default", () => {
+    const clone = cloneChart(
+      source({ axes: { x: { title: "Period", axisTitleFontFamily: "Arial" } } }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.x?.axisTitleFontFamily).toBe("Arial");
+    expect(clone.axes?.x?.title).toBe("Period");
+  });
+
+  it("inherits the source's Y-axis axisTitleFontFamily by default", () => {
+    const clone = cloneChart(
+      source({ axes: { y: { title: "USD", axisTitleFontFamily: "Calibri" } } }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.y?.axisTitleFontFamily).toBe("Calibri");
+    expect(clone.axes?.y?.title).toBe("USD");
+  });
+
+  it("lets options.axes.x.axisTitleFontFamily replace the source's value", () => {
+    const clone = cloneChart(
+      source({ axes: { x: { title: "Period", axisTitleFontFamily: "Arial" } } }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { axisTitleFontFamily: "Calibri" } },
+      },
+    );
+    expect(clone.axes?.x?.axisTitleFontFamily).toBe("Calibri");
+  });
+
+  it("drops the inherited axisTitleFontFamily when the override is null", () => {
+    const clone = cloneChart(
+      source({ axes: { x: { title: "Period", axisTitleFontFamily: "Arial" } } }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { axisTitleFontFamily: null } },
+      },
+    );
+    expect(clone.axes?.x?.axisTitleFontFamily).toBeUndefined();
+    expect(clone.axes?.x?.title).toBe("Period");
+  });
+
+  it("returns undefined axisTitleFontFamily when neither source nor override sets it", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.x?.axisTitleFontFamily).toBeUndefined();
+  });
+
+  it("replaces an unset source axisTitleFontFamily with the override", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleFontFamily: "Verdana" } },
+    });
+    expect(clone.axes?.x?.axisTitleFontFamily).toBe("Verdana");
+  });
+
+  it("trims surrounding whitespace from the override", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleFontFamily: "   Arial   " } },
+    });
+    expect(clone.axes?.x?.axisTitleFontFamily).toBe("Arial");
+  });
+
+  it("drops empty / whitespace-only overrides", () => {
+    const c1 = cloneChart(
+      source({ axes: { x: { title: "Period", axisTitleFontFamily: "Arial" } } }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { axisTitleFontFamily: "" } },
+      },
+    );
+    expect(c1.axes?.x?.axisTitleFontFamily).toBeUndefined();
+    const c2 = cloneChart(
+      source({ axes: { x: { title: "Period", axisTitleFontFamily: "Arial" } } }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { axisTitleFontFamily: "   " } },
+      },
+    );
+    expect(c2.axes?.x?.axisTitleFontFamily).toBeUndefined();
+  });
+
+  it("drops a non-string override (defends against an untyped caller)", () => {
+    const clone = cloneChart(
+      source({ axes: { x: { title: "Period", axisTitleFontFamily: "Arial" } } }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        axes: { x: { axisTitleFontFamily: 1 as any } },
+      },
+    );
+    expect(clone.axes?.x?.axisTitleFontFamily).toBeUndefined();
+  });
+
+  it("drops the cloned axisTitleFontFamily when the resolved axis title is dropped (title=null)", () => {
+    const clone = cloneChart(
+      source({ axes: { x: { title: "Period", axisTitleFontFamily: "Arial" } } }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { title: null } },
+      },
+    );
+    expect(clone.axes?.x?.title).toBeUndefined();
+    expect(clone.axes?.x?.axisTitleFontFamily).toBeUndefined();
+  });
+
+  it("preserves axisTitleFontFamily when an override pins a fresh title on a sourceless axis", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { title: "Period", axisTitleFontFamily: "Arial" } },
+    });
+    expect(clone.axes?.x?.title).toBe("Period");
+    expect(clone.axes?.x?.axisTitleFontFamily).toBe("Arial");
+  });
+
+  it("composes with all other axis-title typography knobs", () => {
+    const clone = cloneChart(
+      source({
+        axes: {
+          x: {
+            title: "Period",
+            axisTitleFontFamily: "Arial",
+            axisTitleBold: true,
+            axisTitleItalic: true,
+            axisTitleStrike: true,
+            axisTitleUnderline: true,
+            axisTitleColor: "FF0000",
+            axisTitleFontSize: 16,
+          },
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.x?.axisTitleFontFamily).toBe("Arial");
+    expect(clone.axes?.x?.axisTitleBold).toBe(true);
+    expect(clone.axes?.x?.axisTitleItalic).toBe(true);
+    expect(clone.axes?.x?.axisTitleStrike).toBe(true);
+    expect(clone.axes?.x?.axisTitleUnderline).toBe(true);
+    expect(clone.axes?.x?.axisTitleColor).toBe("FF0000");
+    expect(clone.axes?.x?.axisTitleFontSize).toBe(16);
+  });
+
+  it("normalizes a malformed source value (defensive)", () => {
+    const clone = cloneChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      source({ axes: { x: { title: "Period", axisTitleFontFamily: "   " as any } } }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.x?.axisTitleFontFamily).toBeUndefined();
+  });
+
+  it("preserves Y-axis typeface when only X is overridden", () => {
+    const clone = cloneChart(
+      source({
+        axes: {
+          x: { title: "Period", axisTitleFontFamily: "Arial" },
+          y: { title: "USD", axisTitleFontFamily: "Calibri" },
+        },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { axisTitleFontFamily: "Verdana" } },
+      },
+    );
+    expect(clone.axes?.x?.axisTitleFontFamily).toBe("Verdana");
+    expect(clone.axes?.y?.axisTitleFontFamily).toBe("Calibri");
+  });
+});

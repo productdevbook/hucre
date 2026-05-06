@@ -693,6 +693,18 @@ function parseAxisInfo(
   // title is a `<c:strRef>` (formula reference) with no `<c:rich>`
   // body.
   const axisTitleUnderline = parseAxisTitleUnderline(axis);
+  // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
+  // typeface=".."/></a:defRPr></a:pPr></a:p></c:rich></c:tx></c:title>` —
+  // axis-title font family. Same `<c:title>` body scope as
+  // `axisTitleColor` / `axisTitleStrike` / `axisTitleUnderline`, so a
+  // stray `<a:latin>` elsewhere on the axis (e.g. on the tick-label
+  // `<c:txPr>`) cannot leak in. Empty / whitespace-only `typeface`
+  // attributes and missing `<a:latin>` elements both collapse to
+  // `undefined` so absence and the empty form round-trip identically
+  // through the writer. Returns `undefined` when the axis omits
+  // `<c:title>` entirely or when the title is a `<c:strRef>` (formula
+  // reference) with no `<c:rich>` body.
+  const axisTitleFontFamily = parseAxisTitleFontFamily(axis);
   const gridlines = parseAxisGridlines(axis);
   const scale = parseAxisScale(axis);
   const numberFormat = parseAxisNumberFormat(axis);
@@ -763,6 +775,17 @@ function parseAxisInfo(
   // `"sngStrike"`). Surfaced on every axis flavour for symmetry with
   // the writer.
   const labelStrike = parseAxisLabelStrike(axis);
+  // `<c:txPr><a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
+  // </a:pPr></a:p></c:txPr>` — axis tick-label font family. Same
+  // axis-level `<c:txPr>` body scope as the rotation / size / bold /
+  // italic / color / underline / strike readers above. Empty /
+  // whitespace-only `typeface` attributes and missing `<a:latin>`
+  // elements both collapse to `undefined` so absence and the empty
+  // form round-trip identically through the writer. The reader is
+  // scoped to the axis-level `<c:txPr>` so a stray `<a:latin>` inside
+  // `<c:title>` (surfaced by `axisTitleFontFamily`) cannot leak in.
+  // Surfaced on every axis flavour for symmetry with the writer.
+  const labelFontFamily = parseAxisLabelFontFamily(axis);
   // <c:scaling><c:orientation val=".."/></c:scaling> — ST_Orientation
   // accepts "minMax" (default, low → high) and "maxMin" (reversed).
   // The default collapses to undefined so a fresh chart and a chart
@@ -839,6 +862,7 @@ function parseAxisInfo(
     axisTitleColor === undefined &&
     axisTitleStrike === undefined &&
     axisTitleUnderline === undefined &&
+    axisTitleFontFamily === undefined &&
     gridlines === undefined &&
     scale === undefined &&
     numberFormat === undefined &&
@@ -850,6 +874,7 @@ function parseAxisInfo(
     labelBold === undefined &&
     labelItalic === undefined &&
     labelColor === undefined &&
+    labelFontFamily === undefined &&
     labelUnderline === undefined &&
     labelStrike === undefined &&
     reverse === undefined &&
@@ -876,6 +901,7 @@ function parseAxisInfo(
   if (axisTitleColor !== undefined) out.axisTitleColor = axisTitleColor;
   if (axisTitleStrike !== undefined) out.axisTitleStrike = axisTitleStrike;
   if (axisTitleUnderline !== undefined) out.axisTitleUnderline = axisTitleUnderline;
+  if (axisTitleFontFamily !== undefined) out.axisTitleFontFamily = axisTitleFontFamily;
   if (gridlines !== undefined) out.gridlines = gridlines;
   if (scale !== undefined) out.scale = scale;
   if (numberFormat !== undefined) out.numberFormat = numberFormat;
@@ -887,6 +913,7 @@ function parseAxisInfo(
   if (labelBold !== undefined) out.labelBold = labelBold;
   if (labelItalic !== undefined) out.labelItalic = labelItalic;
   if (labelColor !== undefined) out.labelColor = labelColor;
+  if (labelFontFamily !== undefined) out.labelFontFamily = labelFontFamily;
   if (labelUnderline !== undefined) out.labelUnderline = labelUnderline;
   if (labelStrike !== undefined) out.labelStrike = labelStrike;
   if (reverse !== undefined) out.reverse = reverse;
@@ -1495,6 +1522,52 @@ function parseAxisLabelStrike(axis: XmlElement): boolean | undefined {
   // trip.
   if (raw === "sngStrike") return true;
   return undefined;
+}
+
+/**
+ * Pull the axis tick-label font family off the canonical
+ * `<c:txPr><a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
+ * </a:pPr></a:p></c:txPr>` chain Excel writes when the user pins a
+ * typeface on the axis tick labels.
+ *
+ * The OOXML `<a:latin>` element carries the typeface name on
+ * `CT_TextFont` (ECMA-376 Part 1, §21.1.2.3.7). The reader trims
+ * surrounding whitespace and reports the trimmed typeface; empty /
+ * whitespace-only `typeface` attributes and missing `<a:latin>`
+ * elements both collapse to `undefined` so absence and the empty
+ * form round-trip identically through the writer. Non-string
+ * `typeface` tokens (defensive — the XML parser only ever surfaces
+ * strings) likewise drop to `undefined`.
+ *
+ * Returns `undefined` whenever the axis omits `<c:txPr>` entirely or
+ * the canonical `<a:p><a:pPr><a:defRPr><a:latin>` chain is malformed
+ * at any link.
+ *
+ * The `<c:txPr>` element sits on every axis flavour — `<c:catAx>` /
+ * `<c:valAx>` / `<c:dateAx>` / `<c:serAx>` all carry the optional
+ * element per the OOXML schema. The reader surfaces the value
+ * regardless of axis flavour so a parsed chart preserves the
+ * typeface for symmetry with the writer-side
+ * {@link SheetChart.axes}.x.labelFontFamily. The lookup is scoped to
+ * the axis-level `<c:txPr>` so a stray `<a:latin>` inside the axis
+ * `<c:title><c:tx><c:rich>` body cannot leak in.
+ */
+function parseAxisLabelFontFamily(axis: XmlElement): string | undefined {
+  const txPr = findChild(axis, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const latin = findChild(defRPr, "latin");
+  if (!latin) return undefined;
+  const raw = latin.attrs.typeface;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
 }
 
 /** Recognized values of `<c:crosses>` per the OOXML `ST_Crosses` enum. */
@@ -2192,6 +2265,66 @@ function parseAxisTitleUnderline(axis: XmlElement): boolean | undefined {
   // downgrade the choice on round-trip.
   if (raw === "sng") return true;
   return undefined;
+}
+
+/**
+ * Pull `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
+ * typeface=".."/></a:defRPr></a:pPr></a:p></c:rich></c:tx></c:title>`
+ * off the axis. Returns the typeface string the title was authored
+ * with.
+ *
+ * The OOXML `<a:latin>` element carries the typeface name on
+ * `CT_TextFont` (ECMA-376 Part 1, §21.1.2.3.7). The reader trims
+ * surrounding whitespace and reports the trimmed typeface; empty /
+ * whitespace-only `typeface` attributes and missing `<a:latin>`
+ * elements both collapse to `undefined` so absence and the empty
+ * form round-trip identically through the writer. Non-string
+ * `typeface` tokens (defensive — the XML parser only ever surfaces
+ * strings) likewise drop to `undefined`.
+ *
+ * Mirrors the chart-level title typeface {@link parseTitleFontFamily} —
+ * same canonical-slot pair (`<a:defRPr>` carries the default-paragraph
+ * typeface, which the writer keeps in sync with the literal run's
+ * `<a:rPr>` so the reader only needs to consult one of the two
+ * slots). The lookup is scoped to the axis title's `<c:rich>` body
+ * so a stray `<a:latin>` elsewhere on the axis (e.g. on the
+ * tick-label `<c:txPr>`) cannot leak in.
+ *
+ * Returns `undefined` whenever the axis omits `<c:title>` entirely
+ * or when the title is a `<c:strRef>` (formula reference) with no
+ * `<c:rich>` body — there is no `<a:p>` slot to surface the
+ * typeface from in either case.
+ *
+ * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+ * `<c:dateAx>` / `<c:serAx>` all share the same `<c:title>` shape
+ * per the OOXML schema. The parsed value slots straight into the
+ * writer-side {@link SheetChart.axes}.x.axisTitleFontFamily.
+ */
+function parseAxisTitleFontFamily(axis: XmlElement): string | undefined {
+  const title = findChild(axis, "title");
+  if (!title) return undefined;
+  const tx = findChild(title, "tx");
+  if (!tx) return undefined;
+  const rich = findChild(tx, "rich");
+  if (!rich) return undefined;
+  // `<a:p><a:pPr><a:defRPr><a:latin>` is the OOXML path Excel writes
+  // for the default-paragraph typeface. The reader walks the
+  // canonical chain and bails on the first missing link so a
+  // malformed `<c:rich>` surfaces as absence rather than a fabricated
+  // value.
+  const p = findChild(rich, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const latin = findChild(defRPr, "latin");
+  if (!latin) return undefined;
+  const raw = latin.attrs.typeface;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
 }
 
 // ── Series ────────────────────────────────────────────────────────

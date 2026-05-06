@@ -1018,6 +1018,32 @@ export interface CloneChartOptions {
        * compose the same way at the call site.
        */
       axisTitleUnderline?: boolean | null;
+      /**
+       * Override `SheetChart.axes.x.axisTitleFontFamily`. `undefined`
+       * (or omitted) inherits the source axis's parsed typeface;
+       * `null` drops the inherited typeface so the writer falls back
+       * to the OOXML default (no `<a:latin>` element, the title
+       * inherits the theme typeface). A non-empty string replaces
+       * it; the override is trimmed.
+       *
+       * Empty / whitespace-only strings and non-string overrides
+       * (typed escapes from an untyped caller) collapse to a drop so
+       * the cloned `SheetChart` always carries a value the writer
+       * will accept.
+       *
+       * `<c:title>` lives on every axis flavour per the OOXML schema,
+       * so the override carries through every chart family that has
+       * axes (bar / column / line / area / scatter). Silently dropped
+       * on `pie` / `doughnut` charts (no axes at all) and on any
+       * axis whose `title` is unset (no `<c:title>` block to host
+       * the typeface). The grammar mirrors `titleFontFamily` (the
+       * chart-level analog) and `axisTitleColor` (the other string-
+       * typed knob) / `axisTitleRotation` / `axisTitleFontSize` /
+       * `axisTitleBold` / `axisTitleItalic` / `axisTitleStrike` /
+       * `axisTitleUnderline` so the axis-title knobs compose the
+       * same way at the call site.
+       */
+      axisTitleFontFamily?: string | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -1175,6 +1201,29 @@ export interface CloneChartOptions {
        */
       labelStrike?: boolean | null;
       /**
+       * Override `SheetChart.axes.x.labelFontFamily`. `undefined` (or
+       * omitted) inherits the source axis's tick-label typeface;
+       * `null` drops the inherited typeface (the writer falls back to
+       * the OOXML default — no `<a:latin>` element, the labels
+       * inherit the theme typeface); a non-empty string replaces it;
+       * the override is trimmed.
+       *
+       * Empty / whitespace-only strings and non-string overrides
+       * (typed escapes from an untyped caller) collapse to a drop so
+       * the cloned `SheetChart` always carries a value the writer
+       * will accept.
+       *
+       * `<c:txPr>` lives on every axis flavour per the OOXML schema,
+       * so the override carries through every chart family that has
+       * axes (bar / column / line / area / scatter). Silently dropped
+       * on `pie` / `doughnut` charts since neither has axes. Composes
+       * independently with {@link labelRotation} / {@link labelFontSize} /
+       * {@link labelBold} / {@link labelItalic} / {@link labelColor} /
+       * {@link labelUnderline} / {@link labelStrike}: all eight knobs
+       * land on the same `<c:txPr>` body.
+       */
+      labelFontFamily?: string | null;
+      /**
        * Override the reverse-axis flag. `undefined` (or omitted)
        * inherits the source axis' parsed value; `null` drops it (the
        * writer falls back to the OOXML default `"minMax"` — forward
@@ -1331,6 +1380,8 @@ export interface CloneChartOptions {
       axisTitleStrike?: boolean | null;
       /** See {@link CloneChartOptions.axes.x.axisTitleUnderline}. */
       axisTitleUnderline?: boolean | null;
+      /** See {@link CloneChartOptions.axes.x.axisTitleFontFamily}. */
+      axisTitleFontFamily?: string | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -1354,6 +1405,8 @@ export interface CloneChartOptions {
       labelUnderline?: boolean | null;
       /** See {@link CloneChartOptions.axes.x.labelStrike}. */
       labelStrike?: boolean | null;
+      /** See {@link CloneChartOptions.axes.x.labelFontFamily}. */
+      labelFontFamily?: string | null;
       /** See {@link CloneChartOptions.axes.x.hidden}. */
       hidden?: boolean | null;
       /** See {@link CloneChartOptions.axes.x.reverse}. */
@@ -3540,6 +3593,26 @@ function resolveAxes(
     sourceAxes?.y?.axisTitleUnderline,
     overrides?.y?.axisTitleUnderline,
   );
+  // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
+  // typeface=".."/></a:defRPr></a:pPr></a:p></c:rich></c:tx></c:title>` —
+  // axis title font family. Sits on the same `<c:title>` body as
+  // `axisTitleRotation` / `axisTitleFontSize` / `axisTitleBold` /
+  // `axisTitleItalic` / `axisTitleColor` / `axisTitleStrike` /
+  // `axisTitleUnderline`, so the resolver applies on every chart
+  // family that has axes (pie / doughnut were short-circuited
+  // upstream). Empty / whitespace-only / non-string overrides collapse
+  // to `undefined` so the writer omits the `<a:latin>` element. Like
+  // the other axis-title knobs, the writer drops the typeface when
+  // the matching axis title is unset, so a stray pin on an axis with
+  // no title silently disappears at emit time.
+  const xAxisTitleFontFamily = applyAxisTitleFontFamilyOverride(
+    sourceAxes?.x?.axisTitleFontFamily,
+    overrides?.x?.axisTitleFontFamily,
+  );
+  const yAxisTitleFontFamily = applyAxisTitleFontFamilyOverride(
+    sourceAxes?.y?.axisTitleFontFamily,
+    overrides?.y?.axisTitleFontFamily,
+  );
   const xGridlines = applyGridlinesOverride(sourceAxes?.x?.gridlines, overrides?.x?.gridlines);
   const yGridlines = applyGridlinesOverride(sourceAxes?.y?.gridlines, overrides?.y?.gridlines);
   const xScale = applyScaleOverride(sourceAxes?.x?.scale, overrides?.x?.scale);
@@ -3660,6 +3733,22 @@ function resolveAxes(
   const yLabelStrike = applyLabelStrikeOverride(
     sourceAxes?.y?.labelStrike,
     overrides?.y?.labelStrike,
+  );
+  // `<c:txPr><a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
+  // </a:pPr></a:p></c:txPr>` shares the same `<c:txPr>` slot as the
+  // rotation / size / bold / italic / color / underline / strike
+  // resolvers above, and the same per-axis scope rule (every axis
+  // flavour carries `<c:txPr>`; pie / doughnut already short-
+  // circuited upstream). Empty / whitespace-only / non-string
+  // overrides collapse to a drop so the cloned `SheetChart` always
+  // carries a value the writer will accept.
+  const xLabelFontFamily = applyLabelFontFamilyOverride(
+    sourceAxes?.x?.labelFontFamily,
+    overrides?.x?.labelFontFamily,
+  );
+  const yLabelFontFamily = applyLabelFontFamilyOverride(
+    sourceAxes?.y?.labelFontFamily,
+    overrides?.y?.labelFontFamily,
   );
   const xReverse = applyReverseOverride(sourceAxes?.x?.reverse, overrides?.x?.reverse);
   const yReverse = applyReverseOverride(sourceAxes?.y?.reverse, overrides?.y?.reverse);
@@ -3798,6 +3887,13 @@ function resolveAxes(
   // `opts.xAxisTitle` / `opts.yAxisTitle` is set).
   const xAxisTitleUnderlineResolved = xTitle === undefined ? undefined : xAxisTitleUnderline;
   const yAxisTitleUnderlineResolved = yTitle === undefined ? undefined : yAxisTitleUnderline;
+  // Same title-presence gate as the rotation / size / bold / italic /
+  // color / strike / underline resolved values — the writer skips the
+  // entire `<a:latin>` element when the matching axis title is unset,
+  // so the cloned `SheetChart` accurately reflects what the chart
+  // will paint.
+  const xAxisTitleFontFamilyResolved = xTitle === undefined ? undefined : xAxisTitleFontFamily;
+  const yAxisTitleFontFamilyResolved = yTitle === undefined ? undefined : yAxisTitleFontFamily;
 
   const out: NonNullable<SheetChart["axes"]> = {};
   if (
@@ -3809,6 +3905,7 @@ function resolveAxes(
     xAxisTitleColorResolved !== undefined ||
     xAxisTitleStrikeResolved !== undefined ||
     xAxisTitleUnderlineResolved !== undefined ||
+    xAxisTitleFontFamilyResolved !== undefined ||
     xGridlines !== undefined ||
     xScale !== undefined ||
     xNumFmt !== undefined ||
@@ -3822,6 +3919,7 @@ function resolveAxes(
     xLabelColor !== undefined ||
     xLabelUnderline !== undefined ||
     xLabelStrike !== undefined ||
+    xLabelFontFamily !== undefined ||
     xReverse !== undefined ||
     xTickLblSkip !== undefined ||
     xTickMarkSkip !== undefined ||
@@ -3847,6 +3945,8 @@ function resolveAxes(
     if (xAxisTitleStrikeResolved !== undefined) out.x.axisTitleStrike = xAxisTitleStrikeResolved;
     if (xAxisTitleUnderlineResolved !== undefined)
       out.x.axisTitleUnderline = xAxisTitleUnderlineResolved;
+    if (xAxisTitleFontFamilyResolved !== undefined)
+      out.x.axisTitleFontFamily = xAxisTitleFontFamilyResolved;
     if (xGridlines !== undefined) out.x.gridlines = xGridlines;
     if (xScale !== undefined) out.x.scale = xScale;
     if (xNumFmt !== undefined) out.x.numberFormat = xNumFmt;
@@ -3860,6 +3960,7 @@ function resolveAxes(
     if (xLabelColor !== undefined) out.x.labelColor = xLabelColor;
     if (xLabelUnderline !== undefined) out.x.labelUnderline = xLabelUnderline;
     if (xLabelStrike !== undefined) out.x.labelStrike = xLabelStrike;
+    if (xLabelFontFamily !== undefined) out.x.labelFontFamily = xLabelFontFamily;
     if (xReverse !== undefined) out.x.reverse = xReverse;
     if (xTickLblSkip !== undefined) out.x.tickLblSkip = xTickLblSkip;
     if (xTickMarkSkip !== undefined) out.x.tickMarkSkip = xTickMarkSkip;
@@ -3882,6 +3983,7 @@ function resolveAxes(
     yAxisTitleColorResolved !== undefined ||
     yAxisTitleStrikeResolved !== undefined ||
     yAxisTitleUnderlineResolved !== undefined ||
+    yAxisTitleFontFamilyResolved !== undefined ||
     yGridlines !== undefined ||
     yScale !== undefined ||
     yNumFmt !== undefined ||
@@ -3895,6 +3997,7 @@ function resolveAxes(
     yLabelColor !== undefined ||
     yLabelUnderline !== undefined ||
     yLabelStrike !== undefined ||
+    yLabelFontFamily !== undefined ||
     yHidden !== undefined ||
     yReverse !== undefined ||
     yCrossesPair.crosses !== undefined ||
@@ -3914,6 +4017,8 @@ function resolveAxes(
     if (yAxisTitleStrikeResolved !== undefined) out.y.axisTitleStrike = yAxisTitleStrikeResolved;
     if (yAxisTitleUnderlineResolved !== undefined)
       out.y.axisTitleUnderline = yAxisTitleUnderlineResolved;
+    if (yAxisTitleFontFamilyResolved !== undefined)
+      out.y.axisTitleFontFamily = yAxisTitleFontFamilyResolved;
     if (yGridlines !== undefined) out.y.gridlines = yGridlines;
     if (yScale !== undefined) out.y.scale = yScale;
     if (yNumFmt !== undefined) out.y.numberFormat = yNumFmt;
@@ -3927,6 +4032,7 @@ function resolveAxes(
     if (yLabelColor !== undefined) out.y.labelColor = yLabelColor;
     if (yLabelUnderline !== undefined) out.y.labelUnderline = yLabelUnderline;
     if (yLabelStrike !== undefined) out.y.labelStrike = yLabelStrike;
+    if (yLabelFontFamily !== undefined) out.y.labelFontFamily = yLabelFontFamily;
     if (yHidden !== undefined) out.y.hidden = yHidden;
     if (yReverse !== undefined) out.y.reverse = yReverse;
     if (yCrossesPair.crosses !== undefined) out.y.crosses = yCrossesPair.crosses;
@@ -4421,6 +4527,48 @@ function applyLabelStrikeOverride(
 }
 
 /**
+ * Resolve a `labelFontFamily` override using the same `undefined`
+ * (inherit) / `null` (drop) / value (replace) grammar as the other
+ * axis tick-label typography knobs.
+ *
+ * Empty / whitespace-only strings and non-string overrides (typed
+ * escapes from an untyped caller) collapse to `undefined` via
+ * {@link normalizeLabelFontFamily} so the cloned `SheetChart` always
+ * carries a value the writer will accept. A `null` override always
+ * drops the inherited typeface (the writer falls back to the OOXML
+ * default — no `<a:latin>` element, the labels inherit the theme
+ * typeface).
+ *
+ * The `<c:txPr>` block sits on every axis flavour per the OOXML
+ * schema, so the override applies on every chart family that has
+ * axes. The pie / doughnut short-circuit upstream collapses the
+ * field on those families since neither has axes.
+ */
+function applyLabelFontFamilyOverride(
+  source: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeLabelFontFamily(source);
+  if (override === null) return undefined;
+  return normalizeLabelFontFamily(override);
+}
+
+/**
+ * Normalize a `labelFontFamily` value for the cloned `SheetChart`.
+ * Mirrors the writer's `normalizeAxisLabelFontFamily` — non-empty
+ * strings pass through trimmed, every other token (empty /
+ * whitespace-only strings, typed escapes from an untyped caller)
+ * collapses to `undefined` so the cloned chart drops the field
+ * rather than carry a value the writer would silently elide.
+ */
+function normalizeLabelFontFamily(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
+}
+
+/**
  * Resolve an `axisTitleRotation` override using the same `undefined`
  * (inherit) / `null` (drop) / value (replace) grammar as the other
  * axis helpers. The conversion / clamping rules mirror
@@ -4598,6 +4746,50 @@ function applyAxisTitleUnderlineOverride(
   if (override === undefined) return normalizeTitleUnderline(source);
   if (override === null) return undefined;
   return normalizeTitleUnderline(override);
+}
+
+/**
+ * Resolve an `axisTitleFontFamily` override using the same `undefined`
+ * (inherit) / `null` (drop) / value (replace) grammar as the other
+ * axis-title typography knobs.
+ *
+ * Empty / whitespace-only strings and non-string overrides (typed
+ * escapes from an untyped caller) collapse to `undefined` via
+ * {@link normalizeTitleFontFamily} so the cloned `SheetChart` always
+ * carries a value the writer will accept. A `null` override always
+ * drops the inherited typeface (the writer falls back to the OOXML
+ * default — no `<a:latin>` element, the title inherits the theme
+ * typeface).
+ *
+ * The caller is expected to additionally gate the resolved value on
+ * the matching axis title's presence so the cloned shape never
+ * carries a typeface that the writer would silently elide (the
+ * writer scopes the element emission to `<c:title>`, which is omitted
+ * when the axis renders no title).
+ */
+function applyAxisTitleFontFamilyOverride(
+  source: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeAxisTitleFontFamilyClone(source);
+  if (override === null) return undefined;
+  return normalizeAxisTitleFontFamilyClone(override);
+}
+
+/**
+ * Normalize an `axisTitleFontFamily` value for the cloned `SheetChart`.
+ * Mirrors the writer's `normalizeAxisTitleFontFamily` — the cloned
+ * shape is guaranteed to round-trip through the writer without
+ * surprise: non-empty strings pass through trimmed, every other token
+ * (empty / whitespace-only strings, typed escapes from an untyped
+ * caller) collapses to `undefined` so the cloned chart drops the
+ * field rather than carry a value the writer would silently elide.
+ */
+function normalizeAxisTitleFontFamilyClone(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
 }
 
 /**

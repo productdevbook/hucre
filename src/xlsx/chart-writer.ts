@@ -850,6 +850,20 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // non-underlined axis title).
     xAxisTitleUnderline: normalizeAxisTitleUnderline(chart.axes?.x?.axisTitleUnderline),
     yAxisTitleUnderline: normalizeAxisTitleUnderline(chart.axes?.y?.axisTitleUnderline),
+    // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
+    // typeface=".."/></a:defRPr></a:pPr><a:r><a:rPr><a:latin
+    // typeface=".."/></a:rPr></a:r></a:p></c:rich></c:tx></c:title>` —
+    // axis-title font family. The OOXML `<a:latin typeface=".."/>`
+    // element carries the typeface name on `CT_TextFont` (ECMA-376
+    // Part 1, §21.1.2.3.7) and the slot lives on every axis flavour.
+    // Normalize the caller's string input — non-empty strings pass
+    // through trimmed, every other token (empty / whitespace-only
+    // strings, typed escapes from an untyped caller) collapses to
+    // `undefined` and the writer skips the entire `<a:latin>` element
+    // (Excel's reference serialization for an axis title that
+    // inherits the theme typeface).
+    xAxisTitleFontFamily: normalizeAxisTitleFontFamily(chart.axes?.x?.axisTitleFontFamily),
+    yAxisTitleFontFamily: normalizeAxisTitleFontFamily(chart.axes?.y?.axisTitleFontFamily),
     xGridlines: normalizeAxisGridlines(chart.axes?.x?.gridlines),
     yGridlines: normalizeAxisGridlines(chart.axes?.y?.gridlines),
     xScale: normalizeAxisScale(chart.axes?.x?.scale),
@@ -927,6 +941,17 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // Excel's reference non-strikethrough tick labels.
     xLabelStrike: normalizeAxisLabelStrike(chart.axes?.x?.labelStrike),
     yLabelStrike: normalizeAxisLabelStrike(chart.axes?.y?.labelStrike),
+    // `<c:txPr><a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
+    // </a:pPr></a:p></c:txPr>` — axis tick-label font family. The
+    // element shares the same `<c:txPr>` block as the rotation / size
+    // / bold / italic / color / underline / strike slots. The writer
+    // trims surrounding whitespace and emits the trimmed typeface
+    // verbatim. Empty / whitespace-only / non-string tokens collapse
+    // to `undefined` so the writer skips the entire `<a:latin>`
+    // element and a fresh chart inherits Excel's reference theme
+    // typeface.
+    xLabelFontFamily: normalizeAxisLabelFontFamily(chart.axes?.x?.labelFontFamily),
+    yLabelFontFamily: normalizeAxisLabelFontFamily(chart.axes?.y?.labelFontFamily),
     xReverse: chart.axes?.x?.reverse === true,
     yReverse: chart.axes?.y?.reverse === true,
     // `tickLblSkip` / `tickMarkSkip` only round-trip on category axes
@@ -1424,6 +1449,27 @@ interface AxisRenderOptions {
    * and emit semantics as {@link xAxisTitleUnderline}.
    */
   yAxisTitleUnderline: boolean | undefined;
+  /**
+   * Axis-title font family / typeface emitted on the X axis via
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
+   * typeface=".."/></a:defRPr></a:pPr><a:r><a:rPr><a:latin
+   * typeface=".."/></a:rPr></a:r></a:p></c:rich></c:tx></c:title>`.
+   * The OOXML `<a:latin typeface=".."/>` element carries the
+   * typeface name on `CT_TextFont`. `undefined` collapses to
+   * omitting the element (Excel's reference serialization for an
+   * axis title that inherits the theme typeface); a non-empty
+   * trimmed string emits `<a:latin typeface=".."/>` on both the
+   * default-paragraph `<a:defRPr>` and the literal run's `<a:rPr>`.
+   * Only meaningful when the axis renders a title — the per-family
+   * axis builders gate the value on the `xAxisTitle` / `yAxisTitle`
+   * field.
+   */
+  xAxisTitleFontFamily: string | undefined;
+  /**
+   * Axis-title font family / typeface emitted on the Y axis. Same
+   * shape and emit semantics as {@link xAxisTitleFontFamily}.
+   */
+  yAxisTitleFontFamily: string | undefined;
   xGridlines: { major: boolean; minor: boolean } | undefined;
   yGridlines: { major: boolean; minor: boolean } | undefined;
   xScale: ChartAxisScale | undefined;
@@ -1567,6 +1613,23 @@ interface AxisRenderOptions {
    * and semantics as {@link xLabelStrike}.
    */
   yLabelStrike: boolean | undefined;
+  /**
+   * Tick-label font family / typeface emitted on the X axis via
+   * `<c:txPr><a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
+   * </a:pPr></a:p></c:txPr>`. The OOXML `<a:latin>` element carries
+   * the typeface name on `CT_TextFont`. `undefined` collapses to
+   * omitting the element (Excel's reference serialization for tick
+   * labels that inherit the theme typeface); a non-empty trimmed
+   * string emits `<a:latin typeface=".."/>`. The block is emitted
+   * whenever any tick-label typography knob is set so the OOXML
+   * schema's `<c:txPr>` slot carries every pinned typography knob.
+   */
+  xLabelFontFamily: string | undefined;
+  /**
+   * Tick-label font family / typeface emitted on the Y axis. Same
+   * shape and semantics as {@link xLabelFontFamily}.
+   */
+  yLabelFontFamily: string | undefined;
   xReverse: boolean;
   yReverse: boolean;
   /**
@@ -1998,6 +2061,26 @@ function normalizeAxisLabelStrike(value: boolean | undefined): boolean | undefin
 }
 
 /**
+ * Normalize an axis `labelFontFamily` value for the
+ * `<c:txPr><a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
+ * </a:pPr></a:p></c:txPr>` writer slot. Returns the trimmed typeface
+ * string when the input is a non-empty string, or `undefined` for any
+ * malformed token — empty / whitespace-only strings, or non-string
+ * escapes from an untyped caller (`null`, numbers, booleans, etc.).
+ *
+ * Absence and malformed tokens both collapse to `undefined` so the
+ * writer skips the entire `<a:latin>` element and the tick labels
+ * inherit the theme typeface (Excel's reference behavior for a fresh
+ * axis without a custom tick-label font picked).
+ */
+function normalizeAxisLabelFontFamily(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
+}
+
+/**
  * Build the `<c:txPr>` block that carries an axis tick-label rotation,
  * font size, bold flag, italic flag, font color, underline flag, and /
  * or strikethrough flag. Returns `undefined` when every input is unset
@@ -2056,6 +2139,7 @@ function buildAxisTxPr(
   rgbHex: string | undefined,
   underline: boolean | undefined,
   strike: boolean | undefined,
+  fontFamily: string | undefined,
 ): string | undefined {
   if (
     rotationDeg === undefined &&
@@ -2064,7 +2148,8 @@ function buildAxisTxPr(
     italic === undefined &&
     rgbHex === undefined &&
     underline === undefined &&
-    strike === undefined
+    strike === undefined &&
+    fontFamily === undefined
   )
     return undefined;
   const rot = rotationDeg === undefined ? undefined : rotationDeg * TXPR_ROT_PER_DEGREE;
@@ -2102,14 +2187,28 @@ function buildAxisTxPr(
   const solidFillChild = rgbHex
     ? xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: rgbHex })])
     : undefined;
-  // When a fill color is set the `<a:defRPr>` slot expands from
-  // self-closing to wrapping the `<a:solidFill>` child; otherwise the
+  // OOXML's `<a:defRPr><a:latin typeface=".."/></a:defRPr>` carries
+  // the tick-label font family. The `<a:latin>` element follows
+  // `<a:solidFill>` per the CT_TextCharacterProperties child sequence
+  // (ECMA-376 Part 1, §21.1.2.3.7). Absence (`undefined`) collapses to
+  // omitting the entire `<a:latin>` element so the labels inherit the
+  // theme typeface (Excel's reference behavior for a fresh axis that
+  // has not had a custom tick-label font picked).
+  const latinChild = fontFamily ? xmlSelfClose("a:latin", { typeface: fontFamily }) : undefined;
+  // When a fill color or a typeface is set the `<a:defRPr>` slot
+  // expands from self-closing to wrapping the children; otherwise the
   // writer keeps the existing self-closing form so a fresh axis with
-  // no custom color matches Excel's reference serialization byte-for-
-  // byte.
-  const defRPr = solidFillChild
-    ? xmlElement("a:defRPr", { sz, b, i, u, strike: strikeAttr }, [solidFillChild])
-    : xmlSelfClose("a:defRPr", { sz, b, i, u, strike: strikeAttr });
+  // no custom color or font matches Excel's reference serialization
+  // byte-for-byte. Children are emitted in
+  // CT_TextCharacterProperties' canonical schema order: solidFill
+  // first, then latin.
+  const defRPrChildren: string[] = [];
+  if (solidFillChild) defRPrChildren.push(solidFillChild);
+  if (latinChild) defRPrChildren.push(latinChild);
+  const defRPr =
+    defRPrChildren.length > 0
+      ? xmlElement("a:defRPr", { sz, b, i, u, strike: strikeAttr }, defRPrChildren)
+      : xmlSelfClose("a:defRPr", { sz, b, i, u, strike: strikeAttr });
   return xmlElement("c:txPr", undefined, [
     xmlSelfClose("a:bodyPr", { rot }),
     xmlSelfClose("a:lstStyle"),
@@ -2599,6 +2698,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
         opts.xAxisTitleColor,
         opts.xAxisTitleStrike,
         opts.xAxisTitleUnderline,
+        opts.xAxisTitleFontFamily,
       ),
     );
   catAxChildren.push(
@@ -2617,6 +2717,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
     opts.xLabelColor,
     opts.xLabelUnderline,
     opts.xLabelStrike,
+    opts.xLabelFontFamily,
   );
   if (xCatAxTxPr) catAxChildren.push(xCatAxTxPr);
   catAxChildren.push(
@@ -2672,6 +2773,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
         opts.yAxisTitleColor,
         opts.yAxisTitleStrike,
         opts.yAxisTitleUnderline,
+        opts.yAxisTitleFontFamily,
       ),
     );
   valAxChildren.push(
@@ -2691,6 +2793,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
     opts.yLabelColor,
     opts.yLabelUnderline,
     opts.yLabelStrike,
+    opts.yLabelFontFamily,
   );
   if (yValAxTxPr) valAxChildren.push(yValAxTxPr);
   valAxChildren.push(
@@ -3046,6 +3149,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.xAxisTitleColor,
         opts.xAxisTitleStrike,
         opts.xAxisTitleUnderline,
+        opts.xAxisTitleFontFamily,
       ),
     );
   xAxChildren.push(
@@ -3063,6 +3167,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
     opts.xLabelColor,
     opts.xLabelUnderline,
     opts.xLabelStrike,
+    opts.xLabelFontFamily,
   );
   if (xValAxTxPr) xAxChildren.push(xValAxTxPr);
   xAxChildren.push(
@@ -3098,6 +3203,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.yAxisTitleColor,
         opts.yAxisTitleStrike,
         opts.yAxisTitleUnderline,
+        opts.yAxisTitleFontFamily,
       ),
     );
   yAxChildren.push(
@@ -3114,6 +3220,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
     opts.yLabelColor,
     opts.yLabelUnderline,
     opts.yLabelStrike,
+    opts.yLabelFontFamily,
   );
   if (yScatterTxPr) yAxChildren.push(yScatterTxPr);
   yAxChildren.push(
@@ -3197,6 +3304,7 @@ function buildAxisTitle(
   rgbHex: string | undefined,
   strike: boolean | undefined,
   underline: boolean | undefined,
+  fontFamily: string | undefined,
 ): string {
   const rot = rotationDeg === undefined ? 0 : rotationDeg * TITLE_ROT_PER_DEGREE;
   // OOXML's `<a:defRPr sz="N"/>` / `<a:rPr sz="N"/>` attribute is in
@@ -3274,26 +3382,47 @@ function buildAxisTitle(
   const solidFillChild = rgbHex
     ? xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: rgbHex })])
     : undefined;
-  // When a fill color is set the `<a:defRPr>` / `<a:rPr>` slots
-  // expand from self-closing to wrapping the `<a:solidFill>` child;
-  // otherwise the writer keeps the existing self-closing form so a
-  // fresh axis title with no custom color matches Excel's reference
-  // serialization byte-for-byte.
-  const defRPr = solidFillChild
-    ? xmlElement("a:defRPr", { sz, b, i, u: underlineAttr, strike: strikeAttr }, [solidFillChild])
-    : xmlSelfClose("a:defRPr", { sz, b, i, u: underlineAttr, strike: strikeAttr });
-  const rPr = solidFillChild
-    ? xmlElement("a:rPr", { lang: "en-US", sz, b, i, u: underlineAttr, strike: strikeAttr }, [
-        solidFillChild,
-      ])
-    : xmlSelfClose("a:rPr", {
-        lang: "en-US",
-        sz,
-        b,
-        i,
-        u: underlineAttr,
-        strike: strikeAttr,
-      });
+  // OOXML's `<a:defRPr><a:latin typeface=".."/></a:defRPr>` carries the
+  // axis title's font family. Mirrors the chart-level `buildTitle`
+  // typeface emit: `axisTitleFontFamily` lands on both the default-
+  // paragraph `<a:defRPr>` and the literal run's `<a:rPr>` so a
+  // re-parse picks the typeface up off either canonical slot. Absence
+  // (`undefined`) collapses to omitting the entire `<a:latin>` element
+  // so the title inherits the theme typeface (Excel's reference
+  // behavior for a fresh axis title that has not had a custom font
+  // picked). The `<a:latin>` element follows `<a:solidFill>` per the
+  // CT_TextCharacterProperties child sequence (ECMA-376 Part 1,
+  // §21.1.2.3.7).
+  const latinChild = fontFamily ? xmlSelfClose("a:latin", { typeface: fontFamily }) : undefined;
+  // When a fill color or a typeface is set the `<a:defRPr>` /
+  // `<a:rPr>` slots expand from self-closing to wrapping the
+  // children; otherwise the writer keeps the existing self-closing
+  // form so a fresh axis title with no custom color or font matches
+  // Excel's reference serialization byte-for-byte. Children are
+  // emitted in CT_TextCharacterProperties' canonical schema order:
+  // solidFill first, then latin.
+  const rPrChildren: string[] = [];
+  if (solidFillChild) rPrChildren.push(solidFillChild);
+  if (latinChild) rPrChildren.push(latinChild);
+  const defRPr =
+    rPrChildren.length > 0
+      ? xmlElement("a:defRPr", { sz, b, i, u: underlineAttr, strike: strikeAttr }, rPrChildren)
+      : xmlSelfClose("a:defRPr", { sz, b, i, u: underlineAttr, strike: strikeAttr });
+  const rPr =
+    rPrChildren.length > 0
+      ? xmlElement(
+          "a:rPr",
+          { lang: "en-US", sz, b, i, u: underlineAttr, strike: strikeAttr },
+          rPrChildren,
+        )
+      : xmlSelfClose("a:rPr", {
+          lang: "en-US",
+          sz,
+          b,
+          i,
+          u: underlineAttr,
+          strike: strikeAttr,
+        });
   return xmlElement("c:title", undefined, [
     xmlElement("c:tx", undefined, [
       xmlElement("c:rich", undefined, [
@@ -3435,6 +3564,27 @@ function normalizeAxisTitleStrike(value: boolean | undefined): boolean | undefin
  */
 function normalizeAxisTitleUnderline(value: boolean | undefined): boolean | undefined {
   return normalizeTitleUnderline(value);
+}
+
+/**
+ * Normalize a {@link SheetChart.axes}.x.axisTitleFontFamily value for
+ * the `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
+ * typeface=".."/></a:defRPr></a:pPr></a:p></c:rich></c:tx></c:title>`
+ * writer slot inside an axis. Returns the trimmed typeface string
+ * when the input is a non-empty string, or `undefined` for any
+ * malformed token — empty / whitespace-only strings, or non-string
+ * escapes from an untyped caller (`null`, numbers, booleans, etc.).
+ *
+ * Absence and malformed tokens both collapse to `undefined` so the
+ * writer skips the entire `<a:latin>` element and the axis title
+ * inherits the theme typeface (Excel's reference behavior for a
+ * fresh axis title without a custom font picked).
+ */
+function normalizeAxisTitleFontFamily(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
 }
 
 // ── Series ───────────────────────────────────────────────────────────
