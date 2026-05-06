@@ -11477,3 +11477,235 @@ describe("writeChart — axis title color", () => {
     expect(reparsed?.axes?.y?.axisTitleColor).toBe("00C586");
   });
 });
+
+// ── writeChart — axis title strike ──────────────────────────────────
+
+describe("writeChart — axis title strike", () => {
+  function axisBlocks(xml: string): string[] {
+    return Array.from(xml.matchAll(/<c:(catAx|valAx|dateAx)>[\s\S]*?<\/c:\1>/g)).map((m) => m[0]);
+  }
+
+  function axisTitleBlock(axisBlock: string): string | undefined {
+    const m = axisBlock.match(/<c:title>[\s\S]*?<\/c:title>/);
+    return m ? m[0] : undefined;
+  }
+
+  function axisTitleDefRPrStrike(axisBlock: string): string | undefined {
+    const titleBlock = axisTitleBlock(axisBlock);
+    if (!titleBlock) return undefined;
+    // The writer keeps `<a:defRPr>` self-closing when no fill is set
+    // but expands it when a fill is applied. Match either form.
+    const defRPrMatch = titleBlock.match(
+      /<a:defRPr\b[^/>]*\/>|<a:defRPr\b[^>]*>[\s\S]*?<\/a:defRPr>/,
+    );
+    if (!defRPrMatch) return undefined;
+    const s = defRPrMatch[0].match(/\bstrike="([^"]+)"/);
+    return s ? s[1] : undefined;
+  }
+
+  function axisTitleRPrStrike(axisBlock: string): string | undefined {
+    const titleBlock = axisTitleBlock(axisBlock);
+    if (!titleBlock) return undefined;
+    const rPrMatch = titleBlock.match(/<a:rPr\b[^/>]*\/>|<a:rPr\b[^>]*>[\s\S]*?<\/a:rPr>/);
+    if (!rPrMatch) return undefined;
+    const s = rPrMatch[0].match(/\bstrike="([^"]+)"/);
+    return s ? s[1] : undefined;
+  }
+
+  it("omits the strike attribute by default (matches Excel's reference non-strikethrough axis title)", () => {
+    const result = writeChart(makeChart({ axes: { x: { title: "Period" } } }), "Sheet1");
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrStrike(xAx)).toBeUndefined();
+    expect(axisTitleRPrStrike(xAx)).toBeUndefined();
+  });
+
+  it("emits strike='sngStrike' on axisTitleStrike=true", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleStrike: true } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrStrike(xAx)).toBe("sngStrike");
+    expect(axisTitleRPrStrike(xAx)).toBe("sngStrike");
+  });
+
+  it("omits the strike attribute on axisTitleStrike=false (functionally identical to omission)", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleStrike: false } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrStrike(xAx)).toBeUndefined();
+    expect(axisTitleRPrStrike(xAx)).toBeUndefined();
+  });
+
+  it("drops non-boolean inputs back to the OOXML default (defends against type guard escape)", () => {
+    const r1 = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { title: "Period", axisTitleStrike: "true" as any } } }),
+      "Sheet1",
+    );
+    const [r1XAx] = axisBlocks(r1.chartXml);
+    expect(axisTitleDefRPrStrike(r1XAx)).toBeUndefined();
+    const r2 = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { title: "Period", axisTitleStrike: 1 as any } } }),
+      "Sheet1",
+    );
+    const [r2XAx] = axisBlocks(r2.chartXml);
+    expect(axisTitleDefRPrStrike(r2XAx)).toBeUndefined();
+    const r3 = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { title: "Period", axisTitleStrike: "sngStrike" as any } } }),
+      "Sheet1",
+    );
+    const [r3XAx] = axisBlocks(r3.chartXml);
+    expect(axisTitleDefRPrStrike(r3XAx)).toBeUndefined();
+  });
+
+  it("threads the strike flag through both axes independently", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: { title: "Period", axisTitleStrike: true },
+          y: { title: "USD", axisTitleStrike: false },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx, yAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrStrike(xAx)).toBe("sngStrike");
+    expect(axisTitleDefRPrStrike(yAx)).toBeUndefined();
+  });
+
+  it("ignores axisTitleStrike when the axis renders no title", () => {
+    // No title means no `<c:title>` block — there is no slot for the
+    // flag in either case.
+    const result = writeChart(makeChart({ axes: { x: { axisTitleStrike: true } } }), "Sheet1");
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(xAx).not.toContain("<c:title>");
+  });
+
+  it("composes independently with rotation / size / bold / italic / color on the same axis title", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: {
+            title: "Period",
+            axisTitleRotation: 45,
+            axisTitleFontSize: 14,
+            axisTitleBold: true,
+            axisTitleItalic: true,
+            axisTitleColor: "1070CA",
+            axisTitleStrike: true,
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const titleBlock = axisTitleBlock(xAx)!;
+    expect(titleBlock).toContain('rot="2700000"');
+    expect(titleBlock).toContain('sz="1400"');
+    expect(titleBlock).toContain('b="1"');
+    expect(titleBlock).toContain('i="1"');
+    expect(titleBlock).toContain('strike="sngStrike"');
+    expect(titleBlock).toContain('val="1070CA"');
+  });
+
+  it("threads the strike flag through line / area chart families and scatter (both axes via valAx)", () => {
+    for (const type of ["line", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, axes: { x: { title: "Period", axisTitleStrike: true } } }),
+        "Sheet1",
+      );
+      const [xAx] = axisBlocks(result.chartXml);
+      expect(axisTitleDefRPrStrike(xAx)).toBe("sngStrike");
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { y: { title: "USD", axisTitleStrike: true } },
+      }),
+      "Sheet1",
+    );
+    const blocks = axisBlocks(scatter.chartXml);
+    const yAx = blocks[1];
+    expect(axisTitleDefRPrStrike(yAx)).toBe("sngStrike");
+  });
+
+  it("preserves the surrounding font defaults (lang='en-US', sz='1000', b='0')", () => {
+    // Only the strike attribute should be added; the writer keeps the
+    // existing size / language / bold defaults so a templated axis title
+    // only gains the strikethrough, not lose the surrounding font defaults.
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleStrike: true } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const titleBlock = axisTitleBlock(xAx)!;
+    expect(titleBlock).toContain('lang="en-US"');
+    expect(titleBlock).toContain('sz="1000"');
+    expect(titleBlock.match(/b="0"/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(titleBlock.match(/strike="sngStrike"/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("round-trips axisTitleStrike through parseChart", () => {
+    const written = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleStrike: true } } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.title).toBe("Period");
+    expect(reparsed?.axes?.x?.axisTitleStrike).toBe(true);
+  });
+
+  it("round-trips a defaulted axis title to undefined strike", () => {
+    const written = writeChart(makeChart({ axes: { x: { title: "Period" } } }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.title).toBe("Period");
+    expect(reparsed?.axes?.x?.axisTitleStrike).toBeUndefined();
+  });
+
+  it("round-trips an explicit axisTitleStrike=false back to undefined", () => {
+    // axisTitleStrike=false drops the attribute entirely; the reader
+    // collapses absence to `undefined`.
+    const written = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleStrike: false } } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.axisTitleStrike).toBeUndefined();
+  });
+
+  it("end-to-end: writeXlsx packages the axis title strike into chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            axes: {
+              x: { title: "Period", axisTitleStrike: true },
+              y: { title: "USD", axisTitleStrike: true },
+            },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.x?.axisTitleStrike).toBe(true);
+    expect(reparsed?.axes?.y?.axisTitleStrike).toBe(true);
+  });
+});

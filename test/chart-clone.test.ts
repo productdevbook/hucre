@@ -12521,3 +12521,223 @@ describe("cloneChart — axis title color", () => {
     expect(reparsed?.axes?.x?.axisTitleColor).toBe("1070CA");
   });
 });
+
+// ── cloneChart — axis title strike ───────────────────────────────────
+
+describe("cloneChart — axis title strike", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Sales",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's X-axis axisTitleStrike by default", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleStrike: true } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.x?.axisTitleStrike).toBe(true);
+    expect(clone.axes?.x?.title).toBe("Period");
+  });
+
+  it("inherits the source's Y-axis axisTitleStrike by default", () => {
+    const clone = cloneChart(source({ axes: { y: { title: "USD", axisTitleStrike: true } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.y?.axisTitleStrike).toBe(true);
+    expect(clone.axes?.y?.title).toBe("USD");
+  });
+
+  it("lets options.axes.x.axisTitleStrike replace the source's value", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleStrike: true } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleStrike: false } },
+    });
+    expect(clone.axes?.x?.axisTitleStrike).toBe(false);
+  });
+
+  it("drops the inherited axisTitleStrike when the override is null", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleStrike: true } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleStrike: null } },
+    });
+    expect(clone.axes?.x?.axisTitleStrike).toBeUndefined();
+    expect(clone.axes?.x?.title).toBe("Period");
+  });
+
+  it("returns undefined axisTitleStrike when neither source nor override sets it", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.x?.axisTitleStrike).toBeUndefined();
+  });
+
+  it("replaces an unset source axisTitleStrike with the override", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleStrike: true } },
+    });
+    expect(clone.axes?.x?.axisTitleStrike).toBe(true);
+  });
+
+  it("drops a non-boolean override (defends against an untyped caller)", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleStrike: true } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      axes: { x: { axisTitleStrike: "true" as any } },
+    });
+    // The malformed override drops via the normalizer; the source's
+    // parsed value is shadowed (override wins, even when malformed).
+    expect(clone.axes?.x?.axisTitleStrike).toBeUndefined();
+  });
+
+  it("drops the cloned axisTitleStrike when the resolved axis title is dropped (title=null)", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleStrike: true } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { title: null } },
+    });
+    expect(clone.axes?.x?.title).toBeUndefined();
+    expect(clone.axes?.x?.axisTitleStrike).toBeUndefined();
+  });
+
+  it("preserves axisTitleStrike when an override pins a fresh title on a sourceless axis", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { title: "Period", axisTitleStrike: true } },
+    });
+    expect(clone.axes?.x?.title).toBe("Period");
+    expect(clone.axes?.x?.axisTitleStrike).toBe(true);
+  });
+
+  it("composes with axisTitleBold, axisTitleItalic, axisTitleColor, axisTitleFontSize, axisTitleRotation", () => {
+    const clone = cloneChart(
+      source({
+        axes: {
+          x: {
+            title: "Period",
+            axisTitleStrike: true,
+            axisTitleColor: "1070CA",
+            axisTitleItalic: true,
+            axisTitleBold: true,
+            axisTitleFontSize: 14,
+            axisTitleRotation: 45,
+          },
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.x).toEqual({
+      title: "Period",
+      axisTitleStrike: true,
+      axisTitleColor: "1070CA",
+      axisTitleItalic: true,
+      axisTitleBold: true,
+      axisTitleFontSize: 14,
+      axisTitleRotation: 45,
+    });
+  });
+
+  it("threads independently across both axes", () => {
+    const clone = cloneChart(
+      source({
+        axes: {
+          x: { title: "Period", axisTitleStrike: true },
+          y: { title: "USD" },
+        },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { y: { axisTitleStrike: true } },
+      },
+    );
+    expect(clone.axes?.x?.axisTitleStrike).toBe(true);
+    expect(clone.axes?.y?.axisTitleStrike).toBe(true);
+  });
+
+  it("end-to-end parse -> clone -> write -> reparse round-trip", async () => {
+    const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+    const sourceXml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/><c:order val="0"/>
+          <c:val><c:numRef><c:f>Sheet1!$B$2:$B$3</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:title>
+          <c:tx><c:rich>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr strike="sngStrike"/></a:pPr><a:r><a:t>Period</a:t></a:r></a:p>
+          </c:rich></c:tx>
+          <c:overlay val="0"/>
+        </c:title>
+      </c:catAx>
+      <c:valAx>
+        <c:axId val="2"/>
+        <c:title>
+          <c:tx><c:rich>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr strike="sngStrike"/></a:pPr><a:r><a:t>USD</a:t></a:r></a:p>
+          </c:rich></c:tx>
+          <c:overlay val="0"/>
+        </c:title>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.axes?.x?.axisTitleStrike).toBe(true);
+    expect(parsed?.axes?.y?.axisTitleStrike).toBe(true);
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(sheetChart.axes?.x?.axisTitleStrike).toBe(true);
+    expect(sheetChart.axes?.y?.axisTitleStrike).toBe(true);
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.axisTitleStrike).toBe(true);
+    expect(reparsed?.axes?.y?.axisTitleStrike).toBe(true);
+  });
+
+  it("propagates axisTitleStrike into the rendered axis on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleStrike: true } } }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.axisTitleStrike).toBe(true);
+  });
+});

@@ -2188,6 +2188,63 @@ export interface SheetChart {
        * family that has axes (bar / column / line / area / scatter).
        */
       axisTitleColor?: string;
+      /**
+       * Axis title strikethrough flag. Maps to
+       * `<c:catAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
+       * <a:r><a:rPr strike=".."/></a:r></a:p></c:rich></c:tx></c:title></c:catAx>`
+       * (or `<c:valAx>` for scatter / value axes) — Excel's "Format Axis
+       * Title -> Font -> Strikethrough" toggle. The OOXML attribute is
+       * the `ST_TextStrikeType` enum on `CT_TextCharacterProperties`
+       * (ECMA-376 Part 1, §21.1.2.3.7) with three values: `"noStrike"`
+       * (the OOXML default — no strikethrough), `"sngStrike"` (single
+       * horizontal line, the value Excel's UI checkbox emits), and
+       * `"dblStrike"` (double horizontal line, a non-UI variant Excel
+       * does not surface in its ribbon). The writer lands the value on
+       * both the default-paragraph `<a:defRPr>` and the literal run's
+       * `<a:rPr>` so a re-parse picks the flag up off either canonical
+       * slot — Excel keeps the two attributes in sync.
+       *
+       * Modeled as a boolean for symmetry with {@link axisTitleBold} /
+       * {@link axisTitleItalic}: `true` emits `strike="sngStrike"`
+       * (Excel's UI "Strikethrough" checkbox — single line). Absence
+       * and non-boolean tokens collapse to omitting the attribute
+       * (Excel's reference serialization for a non-strikethrough axis
+       * title — the application-default `"noStrike"` collapses to
+       * absence). Set `false` explicitly to pin the non-default
+       * omission (functionally identical to omission, but useful when
+       * overriding a templated axis title that had strikethrough pinned
+       * upstream).
+       *
+       * Hucre's writer emits only `"sngStrike"` to keep the surfaced
+       * shape consistent with what Excel's reference UI authors. The
+       * reader collapses the non-UI `"dblStrike"` to `undefined` so a
+       * templated axis title that pinned the double-line variant in
+       * raw OOXML round-trips to the same `undefined` an unmarked axis
+       * title parses to (i.e. the double-line variant silently
+       * downgrades to the single-line write grammar rather than
+       * fabricate a value the writer would re-emit incorrectly).
+       *
+       * Mirrors {@link SheetChart.titleStrike} for axis titles — same
+       * canonical-slot pair, same drop-on-default semantics, same
+       * `boolean | null` clone grammar so a single configuration call
+       * threads cleanly through both the chart title and either axis
+       * title without bookkeeping the canonical OOXML slots. Mirrors
+       * {@link axisTitleRotation} / {@link axisTitleFontSize} /
+       * {@link axisTitleBold} / {@link axisTitleItalic} /
+       * {@link axisTitleColor} for the same `<c:title>` body, so all
+       * six axis-title knobs (rotation, size, bold, italic, color,
+       * strike) compose freely on the same axis.
+       *
+       * Silently dropped when the axis renders no title (the
+       * `<c:title>` element is absent in either case) and on `pie` /
+       * `doughnut` charts (no axes at all).
+       *
+       * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+       * `<c:dateAx>` / `<c:serAx>` all carry the same `<c:title>` shape
+       * per the OOXML schema, so the field round-trips on every chart
+       * family that has axes (bar / column / line / area / scatter).
+       */
+      axisTitleStrike?: boolean;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -2535,6 +2592,25 @@ export interface SheetChart {
        * fill).
        */
       axisTitleColor?: string;
+      /**
+       * Value-axis title strikethrough flag. Maps to
+       * `<c:valAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
+       * <a:r><a:rPr strike=".."/></a:r></a:p></c:rich></c:tx></c:title></c:valAx>`.
+       * Mirrors {@link SheetChart.axes.x.axisTitleStrike} for the value
+       * axis — see that field for the full semantics. The OOXML
+       * attribute is the `ST_TextStrikeType` enum on
+       * `CT_TextCharacterProperties`; the writer emits only the UI
+       * variant `"sngStrike"` and lands it on both the default-paragraph
+       * `<a:defRPr>` and the literal run's `<a:rPr>` so a re-parse picks
+       * the flag up off either canonical slot.
+       *
+       * Useful for marking a Y-axis unit label as "before" or
+       * "deprecated" in dashboard tile typography without touching the
+       * chart title. Silently dropped on `pie` / `doughnut` charts (no
+       * axes at all) and on any axis whose `title` is unset (no
+       * `<c:title>` block to host the flag).
+       */
+      axisTitleStrike?: boolean;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -3838,6 +3914,41 @@ export interface ChartAxisInfo {
    * whether the source axis was a category or value axis.
    */
   axisTitleColor?: string;
+  /**
+   * Axis-title strikethrough flag pulled from
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
+   * </a:p></c:rich></c:tx></c:title>` on the axis element. Reflects
+   * Excel's "Format Axis Title -> Font -> Strikethrough" toggle.
+   *
+   * The OOXML attribute is the `ST_TextStrikeType` enum on
+   * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7) with
+   * three values: `"noStrike"`, `"sngStrike"`, `"dblStrike"`. Only the
+   * UI-default `"sngStrike"` (Excel's "Strikethrough" checkbox —
+   * single line) surfaces as `true`; `"noStrike"` (the OOXML
+   * application default) and absence both collapse to `undefined`,
+   * and the non-UI `"dblStrike"` variant likewise collapses to
+   * `undefined` rather than surface a value the writer would silently
+   * downgrade on round-trip — hucre's writer emits only `"sngStrike"`,
+   * so reporting `"dblStrike"` as `true` would round-trip into a lossy
+   * single-line replacement.
+   *
+   * Unknown / malformed `strike` tokens drop to `undefined` rather
+   * than fabricate a value the writer would never emit.
+   *
+   * Reported as `undefined` whenever the axis omits `<c:title>`
+   * entirely, or when the title is a `<c:strRef>` (formula reference)
+   * with no `<c:rich>` body — there is no `<a:p>` to host the flag in
+   * either case. Mirrors the chart-level {@link Chart.titleStrike} so
+   * a parsed value slots straight back into the writer-side
+   * {@link SheetChart.axes.x.axisTitleStrike} without transformation.
+   *
+   * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+   * `<c:dateAx>` / `<c:serAx>` all carry the same `<c:title>` shape
+   * per the OOXML schema. The reader surfaces the value on every axis
+   * flavour so a parsed chart preserves the flag regardless of
+   * whether the source axis was a category or value axis.
+   */
+  axisTitleStrike?: boolean;
   /**
    * Major / minor gridline visibility. Omitted when neither
    * `<c:majorGridlines>` nor `<c:minorGridlines>` is declared on the

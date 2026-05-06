@@ -609,6 +609,18 @@ function parseAxisInfo(
   // omits `<c:title>` entirely or when the title is a `<c:strRef>`
   // (formula reference) with no `<c:rich>` body.
   const axisTitleColor = parseAxisTitleColor(axis);
+  // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
+  // </a:p></c:rich></c:tx></c:title>` — axis-title strikethrough flag.
+  // Same `<c:title>` body scope as `axisTitleItalic`, so a stray
+  // `<a:defRPr>` elsewhere on the axis (e.g. on the tick-label
+  // `<c:txPr>`) cannot leak in. Only the UI-default `"sngStrike"`
+  // surfaces as `true`; `"noStrike"` (the OOXML application default)
+  // and the non-UI `"dblStrike"` both collapse to `undefined` so absence
+  // and the OOXML default round-trip identically through the writer
+  // (which emits only `"sngStrike"`). Returns `undefined` when the axis
+  // omits `<c:title>` entirely or when the title is a `<c:strRef>`
+  // (formula reference) with no `<c:rich>` body.
+  const axisTitleStrike = parseAxisTitleStrike(axis);
   const gridlines = parseAxisGridlines(axis);
   const scale = parseAxisScale(axis);
   const numberFormat = parseAxisNumberFormat(axis);
@@ -703,6 +715,7 @@ function parseAxisInfo(
     axisTitleBold === undefined &&
     axisTitleItalic === undefined &&
     axisTitleColor === undefined &&
+    axisTitleStrike === undefined &&
     gridlines === undefined &&
     scale === undefined &&
     numberFormat === undefined &&
@@ -732,6 +745,7 @@ function parseAxisInfo(
   if (axisTitleBold !== undefined) out.axisTitleBold = axisTitleBold;
   if (axisTitleItalic !== undefined) out.axisTitleItalic = axisTitleItalic;
   if (axisTitleColor !== undefined) out.axisTitleColor = axisTitleColor;
+  if (axisTitleStrike !== undefined) out.axisTitleStrike = axisTitleStrike;
   if (gridlines !== undefined) out.gridlines = gridlines;
   if (scale !== undefined) out.scale = scale;
   if (numberFormat !== undefined) out.numberFormat = numberFormat;
@@ -1628,6 +1642,70 @@ function parseAxisTitleColor(axis: XmlElement): string | undefined {
   if (!srgbClr) return undefined;
   const raw = srgbClr.attrs.val;
   return normalizeRgbHex(raw);
+}
+
+/**
+ * Pull `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/>
+ * </a:pPr></a:p></c:rich></c:tx></c:title>` off an axis element.
+ * Returns the axis-title strikethrough flag.
+ *
+ * The OOXML `strike` attribute is the `ST_TextStrikeType` enum on
+ * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7) with
+ * three values: `"noStrike"` (the OOXML application default),
+ * `"sngStrike"` (single line, the value Excel's UI checkbox emits),
+ * and `"dblStrike"` (double line, a non-UI variant). The reader
+ * surfaces only the UI-default `"sngStrike"` as `true`; `"noStrike"`,
+ * absence, and the non-UI `"dblStrike"` all collapse to `undefined` —
+ * the writer emits only `"sngStrike"`, so reporting `"dblStrike"` as
+ * `true` would silently downgrade the choice to a single line on
+ * round-trip. Unknown / malformed `strike` tokens likewise drop to
+ * `undefined`.
+ *
+ * Mirrors {@link parseTitleStrike} for axis titles — same canonical-
+ * slot pair (`<a:defRPr>` carries the default-paragraph strike flag,
+ * which the writer keeps in sync with the literal run's `<a:rPr>` so
+ * the reader only needs to consult one of the two slots), same
+ * drop-on-default semantics. The lookup is scoped to the axis title's
+ * `<c:rich>` body so a stray `<a:defRPr>` elsewhere on the axis (e.g.
+ * on the tick-label `<c:txPr>`) cannot leak in.
+ *
+ * Returns `undefined` whenever the axis omits `<c:title>` entirely or
+ * when the title is a `<c:strRef>` (formula reference) with no
+ * `<c:rich>` body — there is no `<a:p>` slot to surface the flag from
+ * in either case.
+ *
+ * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+ * `<c:dateAx>` / `<c:serAx>` all share the same `<c:title>` shape per
+ * the OOXML schema. Mirrors the chart-level title strike
+ * {@link parseTitleStrike} so a parsed value slots straight into the
+ * writer-side {@link SheetChart.axes}.x.axisTitleStrike.
+ */
+function parseAxisTitleStrike(axis: XmlElement): boolean | undefined {
+  const title = findChild(axis, "title");
+  if (!title) return undefined;
+  const tx = findChild(title, "tx");
+  if (!tx) return undefined;
+  const rich = findChild(tx, "rich");
+  if (!rich) return undefined;
+  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
+  // default-paragraph strikethrough flag. The reader walks the
+  // canonical chain and bails on the first missing link so a malformed
+  // `<c:rich>` surfaces as absence rather than a fabricated value.
+  const p = findChild(rich, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const raw = defRPr.attrs.strike;
+  // Only the UI-default `"sngStrike"` surfaces as `true`. The OOXML
+  // application default `"noStrike"` and the non-UI `"dblStrike"` both
+  // collapse to `undefined` so absence and the OOXML default round-trip
+  // identically through the writer; the writer emits only `"sngStrike"`,
+  // so reporting `"dblStrike"` here would silently downgrade the choice
+  // on round-trip.
+  if (raw === "sngStrike") return true;
+  return undefined;
 }
 
 // ── Series ────────────────────────────────────────────────────────
