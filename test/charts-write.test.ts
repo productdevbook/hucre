@@ -15272,3 +15272,242 @@ describe("writeChart — dataLabels.strikethrough", () => {
     expect(reparsed?.dataLabels?.strikethrough).toBe(true);
   });
 });
+
+// ── writeChart — axis title font family ─────────────────────────────
+
+describe("writeChart — axis title font family", () => {
+  function axisBlocks(xml: string): string[] {
+    return Array.from(xml.matchAll(/<c:(catAx|valAx|dateAx)>[\s\S]*?<\/c:\1>/g)).map((m) => m[0]);
+  }
+
+  function axisTitleBlock(axisBlock: string): string | undefined {
+    const m = axisBlock.match(/<c:title>[\s\S]*?<\/c:title>/);
+    return m ? m[0] : undefined;
+  }
+
+  function axisTitleDefRPrLatin(axisBlock: string): string | undefined {
+    const titleBlock = axisTitleBlock(axisBlock);
+    if (!titleBlock) return undefined;
+    // Match the defRPr (which wraps <a:latin> when set)
+    const defRPrMatch = titleBlock.match(/<a:defRPr\b[^>]*>([\s\S]*?)<\/a:defRPr>/);
+    if (!defRPrMatch) return undefined;
+    const latin = defRPrMatch[1].match(/<a:latin\b[^/]*\/>/);
+    if (!latin) return undefined;
+    const typeface = latin[0].match(/typeface="([^"]*)"/);
+    return typeface ? typeface[1] : undefined;
+  }
+
+  function axisTitleRPrLatin(axisBlock: string): string | undefined {
+    const titleBlock = axisTitleBlock(axisBlock);
+    if (!titleBlock) return undefined;
+    const rPrMatch = titleBlock.match(/<a:rPr\b[^>]*>([\s\S]*?)<\/a:rPr>/);
+    if (!rPrMatch) return undefined;
+    const latin = rPrMatch[1].match(/<a:latin\b[^/]*\/>/);
+    if (!latin) return undefined;
+    const typeface = latin[0].match(/typeface="([^"]*)"/);
+    return typeface ? typeface[1] : undefined;
+  }
+
+  it("omits the <a:latin> element by default (matches Excel's reference inherited typeface)", () => {
+    const result = writeChart(makeChart({ axes: { x: { title: "Period" } } }), "Sheet1");
+    const [xAx] = axisBlocks(result.chartXml);
+    const titleBlock = axisTitleBlock(xAx);
+    expect(titleBlock).not.toContain("<a:latin");
+  });
+
+  it("emits <a:latin typeface='Arial'/> on axisTitleFontFamily='Arial'", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleFontFamily: "Arial" } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrLatin(xAx)).toBe("Arial");
+    expect(axisTitleRPrLatin(xAx)).toBe("Arial");
+  });
+
+  it("emits multi-word typefaces verbatim", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleFontFamily: "Times New Roman" } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrLatin(xAx)).toBe("Times New Roman");
+  });
+
+  it("trims surrounding whitespace from the typeface", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleFontFamily: "   Calibri   " } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrLatin(xAx)).toBe("Calibri");
+  });
+
+  it("drops empty / whitespace-only inputs back to the OOXML default", () => {
+    const r1 = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleFontFamily: "" } } }),
+      "Sheet1",
+    );
+    const [r1XAx] = axisBlocks(r1.chartXml);
+    expect(axisTitleBlock(r1XAx)).not.toContain("<a:latin");
+    const r2 = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleFontFamily: "   " } } }),
+      "Sheet1",
+    );
+    const [r2XAx] = axisBlocks(r2.chartXml);
+    expect(axisTitleBlock(r2XAx)).not.toContain("<a:latin");
+  });
+
+  it("drops non-string inputs back to the OOXML default", () => {
+    const r1 = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { title: "Period", axisTitleFontFamily: 1 as any } } }),
+      "Sheet1",
+    );
+    const [r1XAx] = axisBlocks(r1.chartXml);
+    expect(axisTitleBlock(r1XAx)).not.toContain("<a:latin");
+    const r2 = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { title: "Period", axisTitleFontFamily: null as any } } }),
+      "Sheet1",
+    );
+    const [r2XAx] = axisBlocks(r2.chartXml);
+    expect(axisTitleBlock(r2XAx)).not.toContain("<a:latin");
+  });
+
+  it("ignores axisTitleFontFamily when the axis renders no title", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { axisTitleFontFamily: "Arial" } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(xAx).not.toContain("<c:title>");
+  });
+
+  it("emits the typeface on a value axis (Y axis)", () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { title: "Revenue", axisTitleFontFamily: "Arial" } } }),
+      "Sheet1",
+    );
+    const blocks = axisBlocks(result.chartXml);
+    const valAx = blocks.find((b) => b.startsWith("<c:valAx>"));
+    expect(valAx).toBeDefined();
+    expect(axisTitleDefRPrLatin(valAx!)).toBe("Arial");
+  });
+
+  it("XML-escapes the typeface", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleFontFamily: 'A&B"C' } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleBlock(xAx)).toContain('typeface="A&amp;B&quot;C"');
+  });
+
+  it("composes with axisTitleColor (both wrap defRPr/rPr together in schema order)", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: {
+            title: "Period",
+            axisTitleFontFamily: "Arial",
+            axisTitleColor: "FF0000",
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const titleBlock = axisTitleBlock(xAx)!;
+    expect(titleBlock).toContain('<a:srgbClr val="FF0000"/>');
+    expect(titleBlock).toContain('<a:latin typeface="Arial"/>');
+    // Schema order: solidFill before latin inside CT_TextCharacterProperties.
+    expect(titleBlock.indexOf("<a:solidFill>")).toBeLessThan(titleBlock.indexOf("<a:latin"));
+  });
+
+  it("composes with all other axis-title typography knobs", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: {
+            title: "Period",
+            axisTitleFontFamily: "Arial",
+            axisTitleBold: true,
+            axisTitleItalic: true,
+            axisTitleStrike: true,
+            axisTitleUnderline: true,
+            axisTitleFontSize: 16,
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const titleBlock = axisTitleBlock(xAx)!;
+    expect(titleBlock).toContain('<a:latin typeface="Arial"/>');
+    expect(titleBlock).toContain('sz="1600"');
+    expect(titleBlock).toContain('b="1"');
+    expect(titleBlock).toContain('i="1"');
+    expect(titleBlock).toContain('strike="sngStrike"');
+    expect(titleBlock).toContain('u="sng"');
+  });
+
+  it("threads through every chart family (bar / column / line / area / scatter)", () => {
+    const types: WriteChartKind[] = ["bar", "column", "line", "area", "scatter"];
+    for (const type of types) {
+      const result = writeChart(
+        makeChart({
+          type,
+          axes: { x: { title: "Period", axisTitleFontFamily: "Arial" } },
+        }),
+        "Sheet1",
+      );
+      const blocks = axisBlocks(result.chartXml);
+      expect(blocks.length).toBeGreaterThan(0);
+      // Find the X axis (catAx for bar/column/line/area, valAx for scatter).
+      const xAxBlock = blocks[0];
+      expect(axisTitleDefRPrLatin(xAxBlock)).toBe("Arial");
+    }
+  });
+
+  it("parse round-trip surfaces axisTitleFontFamily from the writer's output", () => {
+    const written = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleFontFamily: "Arial" } } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.axisTitleFontFamily).toBe("Arial");
+  });
+
+  it("end-to-end: writeXlsx -> open -> reparse retains the typeface", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            axes: {
+              x: { title: "Region", axisTitleFontFamily: "Arial" },
+              y: { title: "Sales", axisTitleFontFamily: "Calibri" },
+            },
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('<a:latin typeface="Arial"/>');
+    expect(chartXml).toContain('<a:latin typeface="Calibri"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.x?.axisTitleFontFamily).toBe("Arial");
+    expect(reparsed?.axes?.y?.axisTitleFontFamily).toBe("Calibri");
+  });
+});
