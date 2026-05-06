@@ -9517,6 +9517,154 @@ describe("writeChart — title font size", () => {
   });
 });
 
+// ── writeChart — title bold ─────────────────────────────────────────
+
+describe("writeChart — title bold", () => {
+  function titleBlockOf(xml: string): string {
+    return xml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+  }
+
+  function defRPrBOf(xml: string): string | undefined {
+    // The title's <a:defRPr> lives inside <c:title><c:tx><c:rich><a:p><a:pPr>.
+    const titleBlock = titleBlockOf(xml);
+    const m = titleBlock.match(/<a:defRPr\b[^/]*\/>/);
+    if (!m) return undefined;
+    const b = m[0].match(/\bb="([^"]+)"/);
+    return b ? b[1] : undefined;
+  }
+
+  function rPrBOf(xml: string): string | undefined {
+    const titleBlock = titleBlockOf(xml);
+    const m = titleBlock.match(/<a:rPr\b[^/]*\/>/);
+    if (!m) return undefined;
+    const b = m[0].match(/\bb="([^"]+)"/);
+    return b ? b[1] : undefined;
+  }
+
+  it('emits b="0" by default (matches Excel\'s reference non-bold title)', () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(defRPrBOf(result.chartXml)).toBe("0");
+    expect(rPrBOf(result.chartXml)).toBe("0");
+  });
+
+  it('emits b="1" on titleBold=true', () => {
+    const result = writeChart(makeChart({ titleBold: true }), "Sheet1");
+    expect(defRPrBOf(result.chartXml)).toBe("1");
+    expect(rPrBOf(result.chartXml)).toBe("1");
+  });
+
+  it('emits b="0" on titleBold=false (functionally identical to omission)', () => {
+    const result = writeChart(makeChart({ titleBold: false }), "Sheet1");
+    expect(defRPrBOf(result.chartXml)).toBe("0");
+    expect(rPrBOf(result.chartXml)).toBe("0");
+  });
+
+  it("drops non-boolean inputs back to the OOXML default (defends against type guard escape)", () => {
+    const result = writeChart(makeChart({ titleBold: "true" as any }), "Sheet1");
+    expect(defRPrBOf(result.chartXml)).toBe("0");
+    const result2 = writeChart(makeChart({ titleBold: 1 as any }), "Sheet1");
+    expect(defRPrBOf(result2.chartXml)).toBe("0");
+  });
+
+  it("ignores titleBold when the chart renders no title (showTitle=false)", () => {
+    // The whole `<c:title>` block is suppressed — no `<a:defRPr>` to
+    // host the bold flag.
+    const result = writeChart(makeChart({ showTitle: false, titleBold: true }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:title>");
+  });
+
+  it("ignores titleBold when the chart has no literal title", () => {
+    const result = writeChart(makeChart({ title: undefined, titleBold: true }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:title>");
+  });
+
+  it("composes independently with titleFontSize, titleRotation, and titleOverlay", () => {
+    const result = writeChart(
+      makeChart({
+        titleBold: true,
+        titleFontSize: 24,
+        titleRotation: -45,
+        titleOverlay: true,
+      }),
+      "Sheet1",
+    );
+    const titleBlock = titleBlockOf(result.chartXml);
+    expect(titleBlock).toContain('rot="-2700000"');
+    expect(titleBlock).toContain('sz="2400"');
+    expect(titleBlock).toContain('b="1"');
+    expect(titleBlock).toContain('<c:overlay val="1"/>');
+  });
+
+  it("preserves the title body's other attributes (lang='en-US', sz)", () => {
+    const result = writeChart(makeChart({ titleBold: true }), "Sheet1");
+    const titleBlock = titleBlockOf(result.chartXml);
+    expect(titleBlock).toContain('lang="en-US"');
+    // The default 14pt size still lands on both slots even when bold flips.
+    expect(titleBlock.match(/sz="1400"/g)?.length).toBeGreaterThanOrEqual(2);
+    // `b="1"` lands on both the <a:defRPr> and the <a:rPr>.
+    expect(titleBlock.match(/b="1"/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("threads through every chart family (bar / column / line / pie / scatter / area)", () => {
+    const types: WriteChartKind[] = ["bar", "column", "line", "pie", "scatter", "area"];
+    for (const type of types) {
+      const result = writeChart(makeChart({ type, titleBold: true }), "Sheet1");
+      expect(defRPrBOf(result.chartXml)).toBe("1");
+    }
+  });
+
+  it("parse round-trip surfaces titleBold from the writer's output", () => {
+    const written = writeChart(makeChart({ titleBold: true }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleBold).toBe(true);
+  });
+
+  it("collapses the default (non-bold) round-trip back to undefined", () => {
+    // A fresh chart writes `b="0"`; the reader collapses the default
+    // to `undefined` so absence and the default round-trip identically.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleBold).toBeUndefined();
+  });
+
+  it("collapses the explicit titleBold=false round-trip back to undefined", () => {
+    // titleBold=false emits `b="0"` (the OOXML default) which the
+    // reader collapses to `undefined`. So pinning `false` is
+    // functionally equivalent to absence on round-trip.
+    const written = writeChart(makeChart({ titleBold: false }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleBold).toBeUndefined();
+  });
+
+  it("writeXlsx package round-trip surfaces titleBold from the chart part", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Revenue"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Quarterly Revenue",
+            titleBold: true,
+            series: [{ name: "Revenue", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const titleBlock = chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(titleBlock).toContain('b="1"');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.titleBold).toBe(true);
+  });
+});
+
 // ── writeChart — axis title rotation ────────────────────────────────
 
 describe("writeChart — axis title rotation", () => {

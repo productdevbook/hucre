@@ -73,6 +73,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveTitleOverlay(chart),
         resolveTitleRotation(chart),
         resolveTitleFontSize(chart),
+        resolveTitleBold(chart),
       ),
     );
   }
@@ -208,6 +209,7 @@ function buildTitle(
   overlay: boolean,
   rotationDeg: number | undefined,
   fontSizePt: number | undefined,
+  bold: boolean | undefined,
 ): string {
   // OOXML's `<a:bodyPr rot="N"/>` attribute is in 60000ths of a degree.
   // The writer holds `titleRotation` in whole degrees and converts at
@@ -224,6 +226,16 @@ function buildTitle(
   // a re-parse picks the value up off either canonical slot.
   const sz =
     fontSizePt === undefined ? TITLE_DEFAULT_FONT_SIZE_SZ : fontSizePt * TITLE_FONT_SZ_PER_POINT;
+  // OOXML's `<a:defRPr b=".."/>` / `<a:rPr b=".."/>` attribute is the
+  // `xsd:boolean` bold flag on `CT_TextCharacterProperties`. The writer
+  // holds `titleBold` as a boolean and emits `1` / `0` at the canonical
+  // slots. Absence (`undefined`) collapses to the OOXML default `0`
+  // (non-bold) so a fresh chart matches Excel's reference serialization
+  // byte-for-byte. Like the size, the flag lands on both the
+  // default-paragraph `<a:defRPr>` and the literal run's `<a:rPr>` so
+  // a re-parse picks the value up off either canonical slot — Excel
+  // keeps the two attributes in sync.
+  const b = bold ? 1 : 0;
   return xmlElement("c:title", undefined, [
     xmlElement("c:tx", undefined, [
       xmlElement("c:rich", undefined, [
@@ -241,9 +253,9 @@ function buildTitle(
         ),
         xmlSelfClose("a:lstStyle"),
         xmlElement("a:p", undefined, [
-          xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz, b: 0 })]),
+          xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz, b })]),
           xmlElement("a:r", undefined, [
-            xmlSelfClose("a:rPr", { lang: "en-US", sz, b: 0 }),
+            xmlSelfClose("a:rPr", { lang: "en-US", sz, b }),
             xmlElement("a:t", undefined, xmlEscape(title)),
           ]),
         ]),
@@ -363,6 +375,38 @@ function normalizeTitleFontSize(value: number | undefined): number | undefined {
  */
 function resolveTitleFontSize(chart: SheetChart): number | undefined {
   return normalizeTitleFontSize(chart.titleFontSize);
+}
+
+/**
+ * Normalize a {@link SheetChart.titleBold} value for the
+ * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr></a:p>
+ * </c:rich></c:tx></c:title>` writer slot. Returns the literal
+ * boolean when the input is `true` / `false`, or `undefined` for any
+ * other token (including `null`-shaped escapes from an untyped
+ * caller). Absence and non-boolean tokens both collapse to
+ * `undefined` so the writer falls back to the OOXML default `b="0"`
+ * (non-bold) Excel itself emits on a fresh chart title.
+ */
+function normalizeTitleBold(value: boolean | undefined): boolean | undefined {
+  if (value === true) return true;
+  if (value === false) return false;
+  return undefined;
+}
+
+/**
+ * Resolve `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/>
+ * </a:pPr></a:p></c:rich></c:tx></c:title>` from
+ * {@link SheetChart.titleBold}.
+ *
+ * Returns the literal boolean, or `undefined` when the chart leaves
+ * the field unset / passed a non-boolean token. The flag is only
+ * meaningful when the chart actually emits a title — the caller is
+ * expected to gate the call on `showTitle && chart.title`. A chart
+ * whose title is suppressed has no `<c:title>` block to host the flag
+ * in either case.
+ */
+function resolveTitleBold(chart: SheetChart): boolean | undefined {
+  return normalizeTitleBold(chart.titleBold);
 }
 
 /**

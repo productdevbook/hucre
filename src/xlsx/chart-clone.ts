@@ -294,6 +294,24 @@ export interface CloneChartOptions {
    */
   titleFontSize?: number | null;
   /**
+   * Override the chart-level title bold flag.
+   * `undefined` (or omitted) inherits the source's parsed value;
+   * `null` drops the inherited flag so the writer falls back to the
+   * OOXML default `b="0"` (non-bold); a `boolean` replaces it.
+   *
+   * Non-boolean overrides (typed escapes from an untyped caller)
+   * collapse to a drop so the cloned `SheetChart` always carries a
+   * value the writer will accept.
+   *
+   * The override is silently dropped from the cloned `SheetChart`
+   * when the resolved chart renders no title (`title` resolved to
+   * `undefined` or `showTitle === false`) — there is no `<c:title>`
+   * block to host the flag in either case. The grammar mirrors
+   * `titleFontSize` / `titleRotation` / `titleOverlay` so the
+   * chart-level title knobs compose the same way at the call site.
+   */
+  titleBold?: boolean | null;
+  /**
    * Override `<c:autoTitleDeleted>` (the "user explicitly deleted the
    * auto-generated title" flag).
    *
@@ -1093,6 +1111,16 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // writer will accept.
     const resolvedTitleFontSize = resolveTitleFontSize(source.titleFontSize, options.titleFontSize);
     if (resolvedTitleFontSize !== undefined) out.titleFontSize = resolvedTitleFontSize;
+
+    // `titleBold` only renders inside `<c:title>` — a clone that
+    // omits the title has no `<a:defRPr b=".."/>` slot for the writer
+    // to populate. Same scope rule as `titleOverlay` / `titleRotation`
+    // / `titleFontSize`: the override wins over the source's parsed
+    // value; absence inherits, `null` drops, a `boolean` replaces.
+    // Non-boolean overrides collapse via the normalizer so the cloned
+    // `SheetChart` always carries a value the writer will accept.
+    const resolvedTitleBold = resolveTitleBold(source.titleBold, options.titleBold);
+    if (resolvedTitleBold !== undefined) out.titleBold = resolvedTitleBold;
   }
 
   // `<c:autoTitleDeleted>` sits on `<c:chart>` directly, not inside
@@ -2102,6 +2130,44 @@ function resolveTitleFontSize(
   if (override === undefined) return normalizeTitleFontSize(sourceValue);
   if (override === null) return undefined;
   return normalizeTitleFontSize(override);
+}
+
+/**
+ * Normalize a `titleBold` value for the cloned `SheetChart`. Mirrors
+ * the writer's `normalizeTitleBold` — the cloned shape is guaranteed
+ * to round-trip through the writer without surprise: `true` / `false`
+ * pass through literally, every other token (typed escape from an
+ * untyped caller) collapses to `undefined` so the cloned chart drops
+ * the field rather than carry a value the writer would silently elide
+ * back to the OOXML default.
+ */
+function normalizeTitleBold(value: boolean | undefined): boolean | undefined {
+  if (value === true) return true;
+  if (value === false) return false;
+  return undefined;
+}
+
+/**
+ * Resolve a `titleBold` override.
+ *
+ * `undefined` → inherit the source's parsed `titleBold`.
+ * `null`      → drop the inherited flag (the writer falls back to the
+ *               OOXML default `b="0"`, non-bold).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `titleFontSize` / `titleRotation` /
+ * `titleOverlay` so the chart-level title knobs compose the same way
+ * at the call site. Callers should gate the result on the resolved
+ * title visibility — when no title is emitted, the flag has no slot
+ * in the rendered chart.
+ */
+function resolveTitleBold(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return normalizeTitleBold(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleBold(override);
 }
 
 /**

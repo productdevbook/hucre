@@ -1369,6 +1369,33 @@ export interface SheetChart {
    */
   titleFontSize?: number;
   /**
+   * Chart title bold flag. Maps to
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr>
+   * <a:r><a:rPr b=".."/></a:r></a:p></c:rich></c:tx></c:title>` —
+   * Excel's "Format Chart Title -> Font -> Bold" toggle. The OOXML
+   * attribute is the `xsd:boolean` `b` on `CT_TextCharacterProperties`
+   * (ECMA-376 Part 1, §21.1.2.3.7); the writer lands the value on both
+   * the default-paragraph `<a:defRPr>` and the literal run's `<a:rPr>`
+   * so a re-parse picks the flag up off either canonical slot — Excel
+   * keeps the two attributes in sync.
+   *
+   * Default: omitted — the title renders non-bold (`b="0"`, Excel's
+   * reference serialization for a fresh chart title). Set `true` to
+   * emit `b="1"` on both slots so the title renders bold; set `false`
+   * explicitly to pin the non-default `b="0"` (functionally identical
+   * to omission, but useful when overriding a templated title that
+   * had bold pinned upstream).
+   *
+   * Silently ignored when no title is rendered (`showTitle === false`
+   * or `title` is absent) — there is no `<c:title>` block to host the
+   * flag in either case. Composes independently with
+   * {@link titleFontSize} / {@link titleRotation} / {@link titleOverlay}:
+   * all four fields land on the same `<c:title>` element so a single
+   * configuration call threads cleanly through every chart-title knob
+   * Excel exposes.
+   */
+  titleBold?: boolean;
+  /**
    * Auto-title-deleted flag. Maps to `<c:chart><c:autoTitleDeleted
    * val=".."/>` — Excel's record of whether the user explicitly deleted
    * the auto-generated title that single-series charts synthesise from
@@ -3664,6 +3691,27 @@ export interface Chart {
    * {@link SheetChart.titleFontSize} without transformation.
    */
   titleFontSize?: number;
+  /**
+   * Chart title bold flag pulled from
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr>
+   * </a:p></c:rich></c:tx></c:title>`. Reflects Excel's "Format Chart
+   * Title -> Font -> Bold" toggle.
+   *
+   * The OOXML default `false` collapses to `undefined` so absence and
+   * `<a:defRPr b="0"/>` round-trip identically through
+   * {@link cloneChart} — only an explicit `<a:defRPr b="1"/>` surfaces
+   * `true`. The reader accepts the OOXML truthy / falsy spellings
+   * (`"1"` / `"true"` / `"0"` / `"false"`); unknown values and missing
+   * `b` attributes drop to `undefined`.
+   *
+   * Reported as `undefined` whenever the source chart has no
+   * `<c:title>` element at all, or when the title is a `<c:strRef>`
+   * (formula reference) with no `<c:rich>` body — there is no `<a:p>`
+   * to host the flag in either case. The parsed value threads
+   * straight back into the writer-side {@link SheetChart.titleBold}
+   * without transformation.
+   */
+  titleBold?: boolean;
   /**
    * Auto-title-deleted flag pulled from `<c:chart><c:autoTitleDeleted
    * val=".."/>`. Reflects Excel's "the user explicitly deleted the

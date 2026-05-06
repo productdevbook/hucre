@@ -10020,6 +10020,193 @@ describe("parseChart — title font size", () => {
   });
 });
 
+// ── parseChart — title bold ──────────────────────────────────────────
+
+describe("parseChart — title bold", () => {
+  const NS_TB = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withTitleBold(b: string | undefined): string {
+    const defRPr = b === undefined ? "<a:defRPr/>" : `<a:defRPr b="${b}"/>`;
+    return `<c:chartSpace ${NS_TB}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr>${defRPr}</a:pPr><a:r><a:t>Quarterly Revenue</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces true when the title pinned b='1'", () => {
+    const chart = parseChart(withTitleBold("1"));
+    expect(chart?.titleBold).toBe(true);
+  });
+
+  it("collapses b='0' to undefined (OOXML default round-trips identically)", () => {
+    const chart = parseChart(withTitleBold("0"));
+    expect(chart?.titleBold).toBeUndefined();
+  });
+
+  it("collapses absence of the b attribute to undefined", () => {
+    const chart = parseChart(withTitleBold(undefined));
+    expect(chart?.titleBold).toBeUndefined();
+  });
+
+  it("accepts the OOXML truthy spelling 'true'", () => {
+    const chart = parseChart(withTitleBold("true"));
+    expect(chart?.titleBold).toBe(true);
+  });
+
+  it("collapses the OOXML falsy spelling 'false' to undefined", () => {
+    const chart = parseChart(withTitleBold("false"));
+    expect(chart?.titleBold).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:title> element", () => {
+    const xml = `<c:chartSpace ${NS_TB}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleBold).toBeUndefined();
+  });
+
+  it("returns undefined when <c:title> has no <c:tx><c:rich> body (strRef)", () => {
+    // A title that only carries `<c:strRef>` (formula reference) has
+    // no `<a:p><a:pPr><a:defRPr>` to host the bold flag.
+    const xml = `<c:chartSpace ${NS_TB}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:strRef>
+          <c:f>Sheet1!$A$1</c:f>
+          <c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Revenue</c:v></c:pt></c:strCache>
+        </c:strRef>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleBold).toBeUndefined();
+    expect(chart?.title).toBe("Revenue");
+  });
+
+  it("returns undefined when <a:p> has no <a:pPr> element", () => {
+    const xml = `<c:chartSpace ${NS_TB}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:r><a:t>Quarterly Revenue</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleBold).toBeUndefined();
+  });
+
+  it("drops unknown b tokens to undefined", () => {
+    expect(parseChart(withTitleBold("yes"))?.titleBold).toBeUndefined();
+    expect(parseChart(withTitleBold("on"))?.titleBold).toBeUndefined();
+    expect(parseChart(withTitleBold(""))?.titleBold).toBeUndefined();
+  });
+
+  it("does not leak from a stray axis-title <a:defRPr>", () => {
+    // The category axis title carries a bold <a:defRPr b="1"/>, but
+    // the chart-level title does not — `titleBold` reflects only the
+    // chart-level title's <a:defRPr>, not a stray sibling element.
+    const xml = `<c:chartSpace ${NS_TB}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Header</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:title>
+          <c:tx><c:rich>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr b="1"/></a:pPr><a:r><a:t>Period</a:t></a:r></a:p>
+          </c:rich></c:tx>
+          <c:overlay val="0"/>
+        </c:title>
+      </c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleBold).toBeUndefined();
+  });
+
+  it("co-surfaces alongside titleFontSize, titleRotation, and titleOverlay", () => {
+    const xml = `<c:chartSpace ${NS_TB}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr rot="-2700000"/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr sz="2400" b="1"/></a:pPr><a:r><a:t>Hero</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="1"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.title).toBe("Hero");
+    expect(chart?.titleBold).toBe(true);
+    expect(chart?.titleFontSize).toBe(24);
+    expect(chart?.titleRotation).toBe(-45);
+    expect(chart?.titleOverlay).toBe(true);
+  });
+});
+
 // ── parseChart — axis title rotation ─────────────────────────────────
 
 describe("parseChart — axis title rotation", () => {
