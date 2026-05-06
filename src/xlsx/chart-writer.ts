@@ -3842,8 +3842,8 @@ function buildDataLabelsBody(dl: ChartDataLabels, chartType: WriteChartKind): st
   // `<c:dLblPos>` (ECMA-376 Part 1, §21.2.2.50). The writer currently
   // skips `<c:spPr>` (not yet authored), so `<c:txPr>` lands directly
   // after `<c:numFmt>` and before `<c:dLblPos>`. The block currently
-  // carries the data-label font size, font color, bold flag, and
-  // italic flag; future typography pins (underline, strikethrough)
+  // carries the data-label font size, font color, bold flag, italic
+  // flag, and underline flag; future typography pins (strikethrough)
   // will land on the same `<a:defRPr>` slot. The writer skips the
   // entire block when no font knob is pinned so a fresh chart matches
   // Excel's reference shape.
@@ -3852,6 +3852,7 @@ function buildDataLabelsBody(dl: ChartDataLabels, chartType: WriteChartKind): st
     resolveDataLabelsFontColor(dl.fontColor),
     resolveDataLabelsBold(dl.bold),
     resolveDataLabelsItalic(dl.italic),
+    resolveDataLabelsUnderline(dl.underline),
   );
   if (txPrXml !== undefined) {
     children.push(txPrXml);
@@ -3987,6 +3988,25 @@ function resolveDataLabelsItalic(value: boolean | undefined): boolean | undefine
 }
 
 /**
+ * Resolve `<c:dLbls><c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr>
+ * </a:p></c:txPr></c:dLbls>` from {@link ChartDataLabels.underline}.
+ *
+ * Returns the underline flag, or `undefined` when the caller leaves
+ * the field unset / passed a non-boolean token. Mirrors the
+ * chart-title / axis-title / axis tick-label / legend underline
+ * resolvers exactly — only literal `true` / `false` pass through;
+ * non-boolean tokens (typed escapes from an untyped caller) collapse
+ * to `undefined`. The writer translates `true` into `u="sng"` (Excel's
+ * UI variant — single underline) and `false` into `u="none"` at emit
+ * time.
+ */
+function resolveDataLabelsUnderline(value: boolean | undefined): boolean | undefined {
+  if (value === true) return true;
+  if (value === false) return false;
+  return undefined;
+}
+
+/**
  * Build the `<c:txPr>` block that carries a data-label's typography
  * pins. Returns `undefined` when every input is unset so the caller
  * can elide the element entirely (Excel's reference serialization
@@ -4009,28 +4029,34 @@ function resolveDataLabelsItalic(value: boolean | undefined): boolean | undefine
  * (or `i="1"` / `i="0"`) whenever the input is a boolean — `false`
  * pins the OOXML default explicitly, which is functionally identical
  * to absence but lets a clone target override an upstream `b="1"` /
- * `i="1"` from a templated chart. Mirrors the chart-title /
- * axis-title / axis tick-label / legend `<c:txPr>` slots exactly so
- * a re-parse picks the value off the canonical default-paragraph slot
- * every other typography reader expects.
+ * `i="1"` from a templated chart. The underline flag emits `u="sng"`
+ * (single underline — Excel's UI variant) for `true` and `u="none"`
+ * (the OOXML default) for `false`, with the same override semantics
+ * as bold and italic. Mirrors the chart-title / axis-title / axis
+ * tick-label / legend `<c:txPr>` slots exactly so a re-parse picks
+ * the value off the canonical default-paragraph slot every other
+ * typography reader expects.
  */
 function buildDataLabelsTxPr(
   fontSizePt: number | undefined,
   rgbHex: string | undefined,
   bold: boolean | undefined,
   italic: boolean | undefined,
+  underline: boolean | undefined,
 ): string | undefined {
   if (
     fontSizePt === undefined &&
     rgbHex === undefined &&
     bold === undefined &&
-    italic === undefined
+    italic === undefined &&
+    underline === undefined
   )
     return undefined;
   const defRPrAttrs: Record<string, string | number> = {};
   if (fontSizePt !== undefined) defRPrAttrs.sz = fontSizePt * TITLE_FONT_SZ_PER_POINT;
   if (bold !== undefined) defRPrAttrs.b = bold ? 1 : 0;
   if (italic !== undefined) defRPrAttrs.i = italic ? 1 : 0;
+  if (underline !== undefined) defRPrAttrs.u = underline ? "sng" : "none";
   // OOXML's `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/>
   // </a:solidFill></a:defRPr>` carries the data-label font color.
   // Absence (`undefined`) collapses to skipping the `<a:solidFill>`

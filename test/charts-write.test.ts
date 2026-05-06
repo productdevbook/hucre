@@ -14913,3 +14913,182 @@ describe("writeChart — dataLabels.italic", () => {
     expect(reparsed?.dataLabels?.italic).toBe(true);
   });
 });
+// ── writeChart — dataLabels.underline ───────────────────────────────
+
+describe("writeChart — dataLabels.underline", () => {
+  function dLblsOf(xml: string): string {
+    const m = xml.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/);
+    if (!m) throw new Error("No <c:dLbls> block found in chart XML");
+    return m[0];
+  }
+
+  it("does NOT emit <c:txPr> when underline is unset (matches Excel reference)", () => {
+    const result = writeChart(makeChart({ dataLabels: { showValue: true } }), "Sheet1");
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).not.toContain("<c:txPr>");
+    expect(dLbls).not.toContain("a:defRPr");
+  });
+
+  it('threads underline=true through to <c:dLbls><c:txPr> as u="sng"', () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, underline: true } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain("<c:txPr>");
+    expect(dLbls).toContain('u="sng"');
+  });
+
+  it('threads underline=false through as u="none" (explicit OOXML default)', () => {
+    // Explicit `false` pins the OOXML default — functionally identical
+    // to omission, but lets a clone target override an upstream
+    // `u="sng"` from a templated chart.
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, underline: false } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain("<c:txPr>");
+    expect(dLbls).toContain('u="none"');
+  });
+
+  it("places <c:txPr> after <c:numFmt> and before <c:dLblPos> inside <c:dLbls> (CT_DLbls order)", () => {
+    const result = writeChart(
+      makeChart({
+        dataLabels: {
+          showValue: true,
+          underline: true,
+          position: "outEnd",
+          numberFormat: { formatCode: "0.00" },
+        },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls.indexOf("c:numFmt")).toBeLessThan(dLbls.indexOf("c:txPr"));
+    expect(dLbls.indexOf("c:txPr")).toBeLessThan(dLbls.indexOf("c:dLblPos"));
+  });
+
+  it("only emits <c:txPr> once inside <c:dLbls>", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, underline: true } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    const occurrences = dLbls.match(/<c:txPr>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads underline through every chart family that emits dLbls", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, dataLabels: { showValue: true, underline: true } }),
+        "Sheet1",
+      );
+      const dLbls = dLblsOf(result.chartXml);
+      expect(dLbls).toContain('u="sng"');
+    }
+  });
+
+  it("composes with bold on the same <a:defRPr> slot", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, bold: true, underline: true } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain('b="1"');
+    expect(dLbls).toContain('u="sng"');
+    // Ensure both attrs land on the same <a:defRPr> element.
+    expect(dLbls).toMatch(
+      /<a:defRPr [^>]*b="1"[^>]*u="sng"[^>]*\/>|<a:defRPr [^>]*u="sng"[^>]*b="1"[^>]*\/>/,
+    );
+  });
+
+  it("drops non-boolean inputs (null leaking past the type guard)", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ dataLabels: { showValue: true, underline: null as any } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops non-boolean inputs (string leaking past the type guard)", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ dataLabels: { showValue: true, underline: "sng" as any } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops non-boolean inputs (number leaking past the type guard)", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ dataLabels: { showValue: true, underline: 1 as any } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("emits the standard txPr stub shape (a:bodyPr / a:lstStyle / a:p / a:endParaRPr)", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, underline: true } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain("<a:bodyPr/>");
+    expect(dLbls).toContain("<a:lstStyle/>");
+    expect(dLbls).toContain('<a:defRPr u="sng"/>');
+    expect(dLbls).toContain('<a:endParaRPr lang="en-US"/>');
+  });
+
+  it("round-trips an underline=true value through parseChart", () => {
+    const written = writeChart(
+      makeChart({ dataLabels: { showValue: true, underline: true } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataLabels?.underline).toBe(true);
+  });
+
+  it('collapses underline=false back to undefined on re-parse (u="none" is OOXML default)', () => {
+    const written = writeChart(
+      makeChart({ dataLabels: { showValue: true, underline: false } }),
+      "Sheet1",
+    ).chartXml;
+    expect(parseChart(written)?.dataLabels?.underline).toBeUndefined();
+  });
+
+  it("collapses an unset underline round-trip back to undefined", () => {
+    const written = writeChart(makeChart({ dataLabels: { showValue: true } }), "Sheet1").chartXml;
+    expect(parseChart(written)?.dataLabels?.underline).toBeUndefined();
+  });
+
+  it("survives a writeXlsx round trip — dataLabels.underline lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            dataLabels: { showValue: true, underline: true },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('u="sng"');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.dataLabels?.underline).toBe(true);
+  });
+});

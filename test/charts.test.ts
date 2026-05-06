@@ -15658,3 +15658,167 @@ describe("parseChart — data labels italic", () => {
     expect(parseChart(xml)?.dataLabels?.italic).toBe(true);
   });
 });
+// ── parseChart — data labels underline ──────────────────────────────
+
+describe("parseChart — data labels underline", () => {
+  const NS_DLU = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withDLblsUnderline(u: string | undefined): string {
+    const defRPr = u === undefined ? "<a:defRPr/>" : `<a:defRPr u="${u}"/>`;
+    return `<c:chartSpace ${NS_DLU}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr>${defRPr}</a:pPr><a:endParaRPr lang="en-US"/></a:p>
+          </c:txPr>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it('surfaces underline=true when u="sng"', () => {
+    expect(parseChart(withDLblsUnderline("sng"))?.dataLabels?.underline).toBe(true);
+  });
+
+  it('collapses the OOXML default u="none" to undefined', () => {
+    expect(parseChart(withDLblsUnderline("none"))?.dataLabels?.underline).toBeUndefined();
+  });
+
+  it('collapses u="dbl" (double underline) to undefined — only "sng" round-trips losslessly', () => {
+    expect(parseChart(withDLblsUnderline("dbl"))?.dataLabels?.underline).toBeUndefined();
+  });
+
+  it("collapses every non-sng ST_TextUnderlineType variant to undefined", () => {
+    for (const variant of [
+      "heavy",
+      "dotted",
+      "dottedHeavy",
+      "dash",
+      "dashHeavy",
+      "dashLong",
+      "dashLongHeavy",
+      "dotDash",
+      "dotDashHeavy",
+      "dotDotDash",
+      "dotDotDashHeavy",
+      "wavy",
+      "wavyHeavy",
+      "wavyDbl",
+      "words",
+    ]) {
+      expect(parseChart(withDLblsUnderline(variant))?.dataLabels?.underline).toBeUndefined();
+    }
+  });
+
+  it("returns undefined when <a:defRPr> omits the u attribute", () => {
+    expect(parseChart(withDLblsUnderline(undefined))?.dataLabels?.underline).toBeUndefined();
+  });
+
+  it("returns undefined when the dLbls block has no <c:txPr> body", () => {
+    const xml = `<c:chartSpace ${NS_DLU}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataLabels?.underline).toBeUndefined();
+  });
+
+  it("collapses garbage tokens to undefined", () => {
+    expect(parseChart(withDLblsUnderline(""))?.dataLabels?.underline).toBeUndefined();
+    expect(parseChart(withDLblsUnderline("yes"))?.dataLabels?.underline).toBeUndefined();
+    expect(parseChart(withDLblsUnderline("1"))?.dataLabels?.underline).toBeUndefined();
+    expect(parseChart(withDLblsUnderline("true"))?.dataLabels?.underline).toBeUndefined();
+  });
+
+  it("co-surfaces alongside the other dLbls fields (showVal / position / numberFormat / bold)", () => {
+    const xml = `<c:chartSpace ${NS_DLU}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:numFmt formatCode="0.00" sourceLinked="0"/>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr b="1" u="sng"/></a:pPr></a:p>
+          </c:txPr>
+          <c:dLblPos val="outEnd"/>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.underline).toBe(true);
+    expect(chart?.dataLabels?.bold).toBe(true);
+    expect(chart?.dataLabels?.position).toBe("outEnd");
+    expect(chart?.dataLabels?.showValue).toBe(true);
+    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" });
+  });
+
+  it("surfaces the underline flag on an underline-only dLbls block (no other show* toggles)", () => {
+    const xml = `<c:chartSpace ${NS_DLU}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr u="sng"/></a:pPr></a:p>
+          </c:txPr>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="0"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataLabels?.underline).toBe(true);
+  });
+});

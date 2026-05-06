@@ -783,6 +783,41 @@ export interface ChartDataLabels {
    * a single italic value through every typography-pinning slot.
    */
   italic?: boolean;
+  /**
+   * Data-label underline flag. Maps to `<c:dLbls><c:txPr><a:p><a:pPr>
+   * <a:defRPr u=".."/></a:pPr></a:p></c:txPr></c:dLbls>` — Excel's
+   * "Format Data Labels -> Font -> Underline" toggle. The OOXML
+   * attribute is the `ST_TextUnderlineType` enumeration on
+   * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7); the
+   * writer lands `u="sng"` (single underline — Excel's UI checkbox)
+   * or `u="none"` (the OOXML default — no underline) on the
+   * default-paragraph `<a:defRPr>` slot inside the data-label's
+   * `<c:txPr>` block so a re-parse picks the flag up off the
+   * canonical slot the OOXML schema exposes.
+   *
+   * Modeled as a boolean for symmetry with {@link bold} / {@link italic}
+   * / the other `*Underline` knobs across the chart-title, axis-title,
+   * axis tick-label, and legend slots: `true` emits `u="sng"`; `false`
+   * emits `u="none"` explicitly so a clone target can override an
+   * upstream `u="sng"` from a templated chart; absence collapses to
+   * omitting the attribute entirely. The non-UI variant `"dbl"`
+   * (double line) and the sixteen exotic `ST_TextUnderlineType`
+   * tokens (`"words"`, `"heavy"`, `"dotted"`, etc.) are read-only —
+   * the writer emits only `"sng"` / `"none"` to keep the surfaced
+   * shape consistent with what Excel's reference UI authors.
+   *
+   * The `<c:txPr>` block lands between `<c:numFmt>` and `<c:dLblPos>`
+   * (CT_DLbls schema, ECMA-376 Part 1, §21.2.2.50). Composes
+   * independently with the other dLbls knobs — {@link position} /
+   * {@link separator} / {@link numberFormat} / {@link showLeaderLines}
+   * / the `show*` toggles / {@link bold} / {@link italic}. Mirrors the
+   * chart-title `titleUnderline` / axis-title `axisTitleUnderline` /
+   * axis tick-label `labelUnderline` / legend `legendUnderline` knobs
+   * — same boolean shape, same OOXML `<a:defRPr u=".."/>` mapping —
+   * so a caller can thread a single underline value through every
+   * typography-pinning slot.
+   */
+  underline?: boolean;
 }
 
 /**
@@ -4319,6 +4354,25 @@ export interface ChartDataLabelsInfo {
    * straight into {@link cloneChart} without conversion.
    */
   italic?: boolean;
+  /**
+   * Data-label underline flag pulled from `<c:dLbls><c:txPr><a:p>
+   * <a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr></c:dLbls>`. The
+   * OOXML `u` attribute is the `ST_TextUnderlineType` enumeration on
+   * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7).
+   *
+   * Only `u="sng"` (Excel's UI variant — single underline) surfaces
+   * `true`; the OOXML default `"none"` (and every other variant the
+   * schema allows — `"dbl"`, `"heavy"`, `"dotted"`, `"dotDash"`,
+   * `"wavy"`, etc.) collapse to `undefined` so absence and `u="none"`
+   * round-trip identically through `cloneChart`. Reporting any
+   * non-`"sng"` underline as `true` would silently downgrade the
+   * choice to a single line on round-trip; the writer emits only
+   * `u="sng"` / `u="none"`, matching the boolean shape the UI
+   * exposes. Mirrors the writer-side
+   * {@link ChartDataLabels.underline} so a parsed value slots
+   * straight into {@link cloneChart} without conversion.
+   */
+  underline?: boolean;
 }
 
 /**
