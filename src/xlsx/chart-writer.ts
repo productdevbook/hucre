@@ -131,6 +131,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveLegendFontSize(chart),
         resolveLegendBold(chart),
         resolveLegendItalic(chart),
+        resolveLegendUnderline(chart),
       ),
     );
   }
@@ -3932,6 +3933,7 @@ function buildLegend(
   fontSizePt: number | undefined,
   bold: boolean | undefined,
   italic: boolean | undefined,
+  underline: boolean | undefined,
 ): string {
   const children: string[] = [xmlSelfClose("c:legendPos", { val: pos })];
 
@@ -3960,13 +3962,13 @@ function buildLegend(
   // entirely when no typography knob is pinned so a fresh chart matches
   // Excel's reference serialization byte-for-byte (Excel itself omits
   // the block whenever the legend renders at the theme-default style).
-  // The block currently carries the legend font size, bold, and italic
-  // flags; future typography pins (color) will land on the same
-  // `<a:defRPr>` slot. The `<a:bodyPr>` carries no rotation attribute
-  // — the legend is not rotatable in Excel's UI, mirroring how the
-  // axis tick-label `<c:txPr>` slot drops `rot` when only typography
-  // knobs are pinned.
-  const txPrXml = buildLegendTxPr(fontSizePt, bold, italic);
+  // The block currently carries the legend font size, bold, italic, and
+  // underline flags; future typography pins (color) will land on the
+  // same `<a:defRPr>` slot. The `<a:bodyPr>` carries no rotation
+  // attribute — the legend is not rotatable in Excel's UI, mirroring
+  // how the axis tick-label `<c:txPr>` slot drops `rot` when only
+  // typography knobs are pinned.
+  const txPrXml = buildLegendTxPr(fontSizePt, bold, italic, underline);
   if (txPrXml !== undefined) {
     children.push(txPrXml);
   }
@@ -4002,12 +4004,20 @@ function buildLegendTxPr(
   fontSizePt: number | undefined,
   bold: boolean | undefined,
   italic: boolean | undefined,
+  underline: boolean | undefined,
 ): string | undefined {
-  if (fontSizePt === undefined && bold === undefined && italic === undefined) return undefined;
+  if (
+    fontSizePt === undefined &&
+    bold === undefined &&
+    italic === undefined &&
+    underline === undefined
+  )
+    return undefined;
   const defRPrAttrs: Record<string, string | number> = {};
   if (fontSizePt !== undefined) defRPrAttrs.sz = fontSizePt * TITLE_FONT_SZ_PER_POINT;
   if (bold !== undefined) defRPrAttrs.b = bold ? 1 : 0;
   if (italic !== undefined) defRPrAttrs.i = italic ? 1 : 0;
+  if (underline !== undefined) defRPrAttrs.u = underline ? "sng" : "none";
   return xmlElement("c:txPr", undefined, [
     xmlSelfClose("a:bodyPr"),
     xmlSelfClose("a:lstStyle"),
@@ -4077,6 +4087,28 @@ function resolveLegendBold(chart: SheetChart): boolean | undefined {
  */
 function resolveLegendItalic(chart: SheetChart): boolean | undefined {
   const value = chart.legendItalic;
+  if (value === true) return true;
+  if (value === false) return false;
+  return undefined;
+}
+
+/**
+ * Resolve `<c:legend><c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr>
+ * </a:p></c:txPr></c:legend>` from {@link SheetChart.legendUnderline}.
+ *
+ * Returns the underline flag, or `undefined` when the chart leaves
+ * the field unset / passed a non-boolean token. The flag is only
+ * meaningful when the chart actually emits a legend — the caller is
+ * expected to gate the call on the resolved legend visibility.
+ *
+ * Mirrors `resolveTitleUnderline` / `resolveAxisTitleUnderline` /
+ * `resolveAxisLabelUnderline` exactly — only literal `true` / `false`
+ * pass through; non-boolean tokens collapse to `undefined`. The
+ * writer translates `true` into `u="sng"` (Excel's UI variant —
+ * single underline) and `false` into `u="none"` at emit time.
+ */
+function resolveLegendUnderline(chart: SheetChart): boolean | undefined {
+  const value = chart.legendUnderline;
   if (value === true) return true;
   if (value === false) return false;
   return undefined;

@@ -250,6 +250,26 @@ export interface CloneChartOptions {
    * round-trips that pin through the parse / clone / write loop.
    */
   legendItalic?: boolean | null;
+  /**
+   * Override `SheetChart.legendUnderline`. `undefined` (or omitted)
+   * inherits the source's parsed `legendUnderline`; `null` drops the
+   * inherited flag (the writer emits no `u` attribute on the legend's
+   * `<a:defRPr>`, falling back to the OOXML default — non-underlined);
+   * a `boolean` replaces. Non-boolean overrides (typed escapes from an
+   * untyped caller) collapse to `undefined` so a typed escape cannot
+   * pin a value the writer would silently elide.
+   *
+   * The override is silently dropped from the cloned `SheetChart`
+   * when the resolved legend is `false` (no `<c:legend>` element will
+   * be emitted) — there is no `<c:txPr>` slot to host the flag on a
+   * hidden legend, so leaking the value into the output would carry
+   * a pin Excel never reads.
+   *
+   * The grammar mirrors `titleUnderline` /
+   * `axes.x.axisTitleUnderline` / `axes.x.labelUnderline` so the
+   * typography knobs compose the same way at the call site.
+   */
+  legendUnderline?: boolean | null;
   /** Override `SheetChart.barGrouping`. */
   barGrouping?: SheetChart["barGrouping"];
   /**
@@ -1445,6 +1465,13 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // `boolean` replaces.
     const resolvedLegendItalic = resolveLegendItalic(source.legendItalic, options.legendItalic);
     if (resolvedLegendItalic !== undefined) out.legendItalic = resolvedLegendItalic;
+
+    // Same hidden-legend scoping for the underline flag.
+    const resolvedLegendUnderline = resolveLegendUnderline(
+      source.legendUnderline,
+      options.legendUnderline,
+    );
+    if (resolvedLegendUnderline !== undefined) out.legendUnderline = resolvedLegendUnderline;
   }
 
   const barGrouping = options.barGrouping !== undefined ? options.barGrouping : source.barGrouping;
@@ -2617,6 +2644,43 @@ function resolveLegendItalic(
   if (override === undefined) return normalizeLegendItalic(sourceValue);
   if (override === null) return undefined;
   return normalizeLegendItalic(override);
+}
+
+/**
+ * Normalize a `legendUnderline` value for the cloned `SheetChart`.
+ * Mirrors the writer's `resolveLegendUnderline` — `true` / `false`
+ * pass through literally, every other token collapses to `undefined`.
+ */
+function normalizeLegendUnderline(value: boolean | undefined): boolean | undefined {
+  if (value === true) return true;
+  if (value === false) return false;
+  return undefined;
+}
+
+/**
+ * Resolve a `legendUnderline` override.
+ *
+ * `undefined` → inherit the source's parsed `legendUnderline` (after
+ *               running it through {@link normalizeLegendUnderline}
+ *               so a typed escape on the source path drops cleanly).
+ * `null`      → drop the inherited flag (the writer falls back to the
+ *               OOXML default — no `u` attribute, equivalent to
+ *               non-underlined).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `titleUnderline` / `axisTitleUnderline` /
+ * `axes.x.labelUnderline` so the typography knobs compose the same way
+ * at the call site. Callers should gate the result on the resolved
+ * legend visibility — when no legend is emitted, the flag has no slot
+ * in the rendered chart.
+ */
+function resolveLegendUnderline(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return normalizeLegendUnderline(sourceValue);
+  if (override === null) return undefined;
+  return normalizeLegendUnderline(override);
 }
 
 /**

@@ -5621,6 +5621,208 @@ describe("parseChart — legendItalic", () => {
   });
 });
 
+// ── parseChart — legend underline ────────────────────────────────────
+
+describe("parseChart — legendUnderline", () => {
+  const NS_LU = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withLegendU(u: string | undefined): string {
+    const defRPr = u === undefined ? "<a:defRPr/>" : `<a:defRPr u="${u}"/>`;
+    return `<c:chartSpace ${NS_LU}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr>${defRPr}</a:pPr><a:endParaRPr lang="en-US"/></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it('surfaces legendUnderline=true when u="sng"', () => {
+    expect(parseChart(withLegendU("sng"))?.legendUnderline).toBe(true);
+  });
+
+  it('collapses the OOXML default u="none" to undefined', () => {
+    // Absence and the OOXML default round-trip identically through the
+    // writer — only an explicit `u="sng"` surfaces `true`.
+    expect(parseChart(withLegendU("none"))?.legendUnderline).toBeUndefined();
+  });
+
+  it("returns undefined when <a:defRPr> omits the u attribute", () => {
+    expect(parseChart(withLegendU(undefined))?.legendUnderline).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:legend> element at all", () => {
+    const xml = `<c:chartSpace ${NS_LU}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendUnderline).toBeUndefined();
+  });
+
+  it("returns undefined when <c:legend> has no <c:txPr> body", () => {
+    const xml = `<c:chartSpace ${NS_LU}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendUnderline).toBeUndefined();
+  });
+
+  it("returns undefined when <c:txPr> has no <a:p><a:pPr> chain", () => {
+    const xml = `<c:chartSpace ${NS_LU}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendUnderline).toBeUndefined();
+  });
+
+  it('drops the flag when the legend is hidden via <c:delete val="1"/>', () => {
+    const xml = `<c:chartSpace ${NS_LU}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:delete val="1"/>
+      <c:overlay val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr u="sng"/></a:pPr></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe(false);
+    expect(chart?.legendUnderline).toBeUndefined();
+  });
+
+  it("collapses non-sng underline variants to undefined", () => {
+    // The writer only emits `"sng"` / `"none"`, so reporting any
+    // non-single underline as `true` would silently downgrade the
+    // choice on round-trip.
+    for (const variant of [
+      "dbl",
+      "heavy",
+      "dotted",
+      "dottedHeavy",
+      "dash",
+      "dashHeavy",
+      "dashLong",
+      "dashLongHeavy",
+      "dotDash",
+      "dotDashHeavy",
+      "dotDotDash",
+      "dotDotDashHeavy",
+      "wavy",
+      "wavyHeavy",
+      "wavyDbl",
+      "words",
+    ]) {
+      expect(parseChart(withLegendU(variant))?.legendUnderline).toBeUndefined();
+    }
+  });
+
+  it("collapses garbage / unknown u tokens to undefined", () => {
+    expect(parseChart(withLegendU(""))?.legendUnderline).toBeUndefined();
+    expect(parseChart(withLegendU("yes"))?.legendUnderline).toBeUndefined();
+    expect(parseChart(withLegendU("1"))?.legendUnderline).toBeUndefined();
+    expect(parseChart(withLegendU("true"))?.legendUnderline).toBeUndefined();
+  });
+
+  it("co-surfaces alongside legendOverlay / legendEntries / legendFontSize", () => {
+    const xml = `<c:chartSpace ${NS_LU}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="b"/>
+      <c:legendEntry>
+        <c:idx val="0"/>
+        <c:delete val="1"/>
+      </c:legendEntry>
+      <c:overlay val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="1400" u="sng"/></a:pPr><a:endParaRPr lang="en-US"/></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe("bottom");
+    expect(chart?.legendOverlay).toBe(true);
+    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }]);
+    expect(chart?.legendFontSize).toBe(14);
+    expect(chart?.legendUnderline).toBe(true);
+  });
+
+  it("surfaces the flag on every chart family that emits a legend", () => {
+    for (const kind of ["lineChart", "barChart", "pieChart", "doughnutChart"]) {
+      const xml = `<c:chartSpace ${NS_LU}>
+  <c:chart>
+    <c:plotArea>
+      <c:${kind}><c:ser><c:idx val="0"/></c:ser></c:${kind}>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr u="sng"/></a:pPr></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+      expect(parseChart(xml)?.legendUnderline).toBe(true);
+    }
+  });
+});
+
 // ── parseChart — data labels showLegendKey ──────────────────────────
 
 describe("parseChart — data labels showLegendKey", () => {

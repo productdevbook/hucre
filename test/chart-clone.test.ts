@@ -5276,6 +5276,254 @@ describe("cloneChart — legendItalic", () => {
   });
 });
 
+// ── cloneChart — legendUnderline ─────────────────────────────────────
+
+describe("cloneChart — legendUnderline", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      legend: "right",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's legendUnderline by default", () => {
+    const clone = cloneChart(source({ legendUnderline: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.legendUnderline).toBe(true);
+  });
+
+  it("lets options.legendUnderline override the source's value", () => {
+    const clone = cloneChart(source({ legendUnderline: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendUnderline: false,
+    });
+    expect(clone.legendUnderline).toBe(false);
+  });
+
+  it("drops the inherited legendUnderline when the override is null", () => {
+    const clone = cloneChart(source({ legendUnderline: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendUnderline: null,
+    });
+    expect(clone.legendUnderline).toBeUndefined();
+  });
+
+  it("returns undefined legendUnderline when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.legendUnderline).toBeUndefined();
+  });
+
+  it("retains an explicit false override (pins the OOXML default)", () => {
+    // Explicit `false` is functionally identical to omission but lets
+    // a clone target override an upstream `u="sng"` from the templated
+    // chart. The cloned SheetChart must carry the literal value.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendUnderline: false,
+    });
+    expect(clone.legendUnderline).toBe(false);
+  });
+
+  it("collapses non-boolean overrides (typed escape from an untyped caller)", () => {
+    const clone = cloneChart(source({ legendUnderline: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      legendUnderline: "yes" as any,
+    });
+    expect(clone.legendUnderline).toBeUndefined();
+  });
+
+  it("collapses numeric overrides leaking past the type guard", () => {
+    const clone = cloneChart(source({ legendUnderline: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      legendUnderline: 1 as any,
+    });
+    expect(clone.legendUnderline).toBeUndefined();
+  });
+
+  it("carries legendUnderline through a flatten (line → column)", () => {
+    const clone = cloneChart(source({ legendUnderline: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.legendUnderline).toBe(true);
+  });
+
+  it("carries legendUnderline through a doughnut flatten (line → doughnut)", () => {
+    const clone = cloneChart(source({ legendUnderline: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.legendUnderline).toBe(true);
+  });
+
+  it("drops the inherited legendUnderline when the resolved legend is hidden", () => {
+    const clone = cloneChart(source({ legendUnderline: true }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendUnderline).toBeUndefined();
+  });
+
+  it("drops the legendUnderline override when the resolved legend is hidden", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+      legendUnderline: true,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendUnderline).toBeUndefined();
+  });
+
+  it("retains the legendUnderline override when the override re-enables a hidden source legend", () => {
+    const clone = cloneChart(source({ legend: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: "top",
+      legendUnderline: true,
+    });
+    expect(clone.legend).toBe("top");
+    expect(clone.legendUnderline).toBe(true);
+  });
+
+  it("composes with legendOverlay / legendEntries / legendFontSize on the cloned SheetChart", () => {
+    const clone = cloneChart(
+      source({
+        legendUnderline: true,
+        legendFontSize: 12,
+        legendOverlay: true,
+        legendEntries: [{ idx: 0, delete: true }],
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.legendUnderline).toBe(true);
+    expect(clone.legendFontSize).toBe(12);
+    expect(clone.legendOverlay).toBe(true);
+    expect(clone.legendEntries).toEqual([{ idx: 0, delete: true }]);
+  });
+
+  it("propagates legendUnderline into the rendered <c:legend><c:txPr> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ legendUnderline: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain("<c:txPr>");
+    expect(legend).toContain('u="sng"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.legendUnderline).toBe(true);
+  });
+
+  it("emits no <c:txPr> when both source and override are absent (round-trips to undefined)", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).not.toContain("<c:txPr>");
+    expect(parseChart(written)?.legendUnderline).toBeUndefined();
+  });
+
+  it("an explicit override beats the source value through writeXlsx", async () => {
+    const clone = cloneChart(source({ legendUnderline: false }), {
+      anchor: { from: { row: 5, col: 0 } },
+      legendUnderline: true,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain('u="sng"');
+    expect(legend).not.toContain('u="none"');
+    expect(parseChart(written)?.legendUnderline).toBe(true);
+  });
+
+  it("a null override drops the source value through writeXlsx (no <c:txPr> emitted)", async () => {
+    const clone = cloneChart(source({ legendUnderline: true }), {
+      anchor: { from: { row: 5, col: 0 } },
+      legendUnderline: null,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).not.toContain("<c:txPr>");
+    expect(parseChart(written)?.legendUnderline).toBeUndefined();
+  });
+});
+
 // ── cloneChart — axis lblAlgn ───────────────────────────────────────
 
 describe("cloneChart — axis lblAlgn", () => {
