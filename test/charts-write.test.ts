@@ -12529,3 +12529,205 @@ describe("writeChart — axis labelItalic", () => {
     expect(reparsed?.axes?.y?.labelItalic).toBe(true);
   });
 });
+
+describe("writeChart — axis labelColor", () => {
+  function axisLabelDefRPrFillVal(axisBlock: string): string | undefined {
+    // The writer wraps the tick-label `<a:defRPr>` element when a
+    // color is set (`<a:defRPr ...><a:solidFill>...</a:solidFill>
+    // </a:defRPr>`); when no color is pinned the slot stays
+    // self-closing. Match the wrapping form explicitly so the helper
+    // does not stop at the `<a:srgbClr.../>` self-close inside.
+    const txPrMatch = axisBlock.match(/<c:txPr>[\s\S]*?<\/c:txPr>/);
+    if (!txPrMatch) return undefined;
+    const defRPrMatch = txPrMatch[0].match(/<a:defRPr\b[^>]*>([\s\S]*?)<\/a:defRPr>/);
+    if (!defRPrMatch) return undefined;
+    const fill = defRPrMatch[1].match(
+      /<a:solidFill>\s*<a:srgbClr\b[^/]*val="([0-9A-Fa-f]{6})"\s*\/>\s*<\/a:solidFill>/,
+    );
+    return fill ? fill[1] : undefined;
+  }
+
+  it("omits <c:txPr> on the category axis when no tick-label knob is pinned", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).not.toContain("<c:txPr>");
+  });
+
+  it("emits <a:solidFill><a:srgbClr/> on <a:defRPr> when labelColor is set", () => {
+    const result = writeChart(makeChart({ axes: { x: { labelColor: "FF0000" } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain("<c:txPr>");
+    expect(axisLabelDefRPrFillVal(catAxBlock)).toBe("FF0000");
+  });
+
+  it("normalizes a lowercase hex value to uppercase", () => {
+    const result = writeChart(makeChart({ axes: { x: { labelColor: "1070ca" } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(axisLabelDefRPrFillVal(catAxBlock)).toBe("1070CA");
+  });
+
+  it("strips a leading '#' on input", () => {
+    const result = writeChart(makeChart({ axes: { x: { labelColor: "#1070CA" } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(axisLabelDefRPrFillVal(catAxBlock)).toBe("1070CA");
+  });
+
+  it("drops malformed hex inputs back to the theme-color default (no <c:txPr>)", () => {
+    for (const bad of ["", "FFF", "ZZZZZZ", "FF0000FF"]) {
+      const result = writeChart(makeChart({ axes: { x: { labelColor: bad } } }), "Sheet1");
+      const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+      expect(catAxBlock).not.toContain("<c:txPr>");
+    }
+  });
+
+  it("drops non-string inputs (defends against the type guard escaping)", () => {
+    const result = writeChart(
+      makeChart({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        axes: { x: { labelColor: 123 as any } },
+      }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).not.toContain("<c:txPr>");
+  });
+
+  it("emits the color independently on each axis", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { labelColor: "FF0000" }, y: { labelColor: "00C586" } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(axisLabelDefRPrFillVal(catAxBlock)).toBe("FF0000");
+    expect(axisLabelDefRPrFillVal(valAxBlock)).toBe("00C586");
+  });
+
+  it("composes labelColor with labelRotation in a single <c:txPr> block", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { labelRotation: 45, labelColor: "1070CA" } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect((catAxBlock.match(/<c:txPr>/g) ?? []).length).toBe(1);
+    expect(catAxBlock).toContain('<a:bodyPr rot="2700000"/>');
+    expect(axisLabelDefRPrFillVal(catAxBlock)).toBe("1070CA");
+  });
+
+  it("composes labelColor with labelFontSize, labelBold, and labelItalic in a single block", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: { labelFontSize: 12, labelBold: true, labelItalic: true, labelColor: "1070CA" },
+        },
+      }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect((catAxBlock.match(/<c:txPr>/g) ?? []).length).toBe(1);
+    expect(catAxBlock).toContain('<a:defRPr sz="1200" b="1" i="1">');
+    expect(axisLabelDefRPrFillVal(catAxBlock)).toBe("1070CA");
+  });
+
+  it("emits <c:txPr> with no rot when only labelColor is pinned", () => {
+    const result = writeChart(makeChart({ axes: { x: { labelColor: "FF0000" } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain("<a:bodyPr/>");
+    expect(catAxBlock).not.toContain("<a:bodyPr rot=");
+  });
+
+  it("threads the color through bar, column, line, and area chart families", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, axes: { x: { labelColor: "FF0000" } } }),
+        "Sheet1",
+      );
+      const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+      expect(axisLabelDefRPrFillVal(catAxBlock)).toBe("FF0000");
+    }
+  });
+
+  it("threads the color through scatter charts (both axes are value axes)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { x: { labelColor: "FF0000" }, y: { labelColor: "00C586" } },
+      }),
+      "Sheet1",
+    );
+    const valAxes = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/g)!;
+    expect(valAxes).toHaveLength(2);
+    expect(axisLabelDefRPrFillVal(valAxes[0])).toBe("FF0000");
+    expect(axisLabelDefRPrFillVal(valAxes[1])).toBe("00C586");
+  });
+
+  it("ignores labelColor on pie / doughnut charts (no axes at all)", () => {
+    const pie = writeChart(
+      makeChart({ type: "pie", axes: { x: { labelColor: "FF0000" } } }),
+      "Sheet1",
+    );
+    const dough = writeChart(
+      makeChart({ type: "doughnut", axes: { x: { labelColor: "FF0000" } } }),
+      "Sheet1",
+    );
+    expect(pie.chartXml).not.toContain("<c:txPr>");
+    expect(dough.chartXml).not.toContain("<c:txPr>");
+  });
+
+  it("places <c:txPr> between <c:tickLblPos> and <c:crossAx> per the OOXML schema", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { tickLblPos: "low", labelColor: "FF0000" } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const tickLblPosIdx = catAxBlock.indexOf("c:tickLblPos");
+    const txPrIdx = catAxBlock.indexOf("<c:txPr>");
+    const crossAxIdx = catAxBlock.indexOf("c:crossAx");
+    expect(tickLblPosIdx).toBeGreaterThan(0);
+    expect(txPrIdx).toBeGreaterThan(tickLblPosIdx);
+    expect(crossAxIdx).toBeGreaterThan(txPrIdx);
+  });
+
+  it("round-trips labelColor through parseChart", () => {
+    const written = writeChart(
+      makeChart({ axes: { x: { labelColor: "1070CA" } } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.labelColor).toBe("1070CA");
+  });
+
+  it("collapses an absent labelColor round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.labelColor).toBeUndefined();
+  });
+
+  it("end-to-end: writeXlsx packages the color into chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            axes: { x: { labelColor: "1070CA" }, y: { labelColor: "00C586" } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.x?.labelColor).toBe("1070CA");
+    expect(reparsed?.axes?.y?.labelColor).toBe("00C586");
+  });
+});

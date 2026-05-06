@@ -13571,3 +13571,260 @@ describe("cloneChart — axis labelItalic", () => {
     expect(matches.length).toBeGreaterThanOrEqual(2);
   });
 });
+
+describe("cloneChart — axis labelColor", () => {
+  const sourceWithColor: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: { x: { labelColor: "FF0000" }, y: { labelColor: "00C586" } },
+  };
+
+  it("inherits axes.x.labelColor from the source when no override is given", () => {
+    const clone = cloneChart(sourceWithColor, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.labelColor).toBe("FF0000");
+    expect(clone.axes?.y?.labelColor).toBe("00C586");
+  });
+
+  it("drops the inherited color when override is null", () => {
+    const clone = cloneChart(sourceWithColor, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { labelColor: null } },
+    });
+    expect(clone.axes?.x?.labelColor).toBeUndefined();
+    // Y axis stays put — nulling X must not bleed into Y.
+    expect(clone.axes?.y?.labelColor).toBe("00C586");
+  });
+
+  it("replaces the inherited color when override is a hex string", () => {
+    const clone = cloneChart(sourceWithColor, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { labelColor: "1070CA" } },
+    });
+    expect(clone.axes?.x?.labelColor).toBe("1070CA");
+  });
+
+  it("normalizes a lowercase hex override to uppercase", () => {
+    const clone = cloneChart(sourceWithColor, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { labelColor: "1070ca" } },
+    });
+    expect(clone.axes?.x?.labelColor).toBe("1070CA");
+  });
+
+  it("strips a leading '#' on override input", () => {
+    const clone = cloneChart(sourceWithColor, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { labelColor: "#1070CA" } },
+    });
+    expect(clone.axes?.x?.labelColor).toBe("1070CA");
+  });
+
+  it("replaces a missing source color when override is set", () => {
+    const noColor: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(noColor, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { labelColor: "1070CA" } },
+    });
+    expect(clone.axes?.x?.labelColor).toBe("1070CA");
+  });
+
+  it("returns undefined labelColor when neither source nor override sets it", () => {
+    const noColor: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(noColor, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.labelColor).toBeUndefined();
+  });
+
+  it("drops malformed hex overrides (defends against the type guard escaping)", () => {
+    for (const bad of ["", "FFF", "ZZZZZZ", "FF0000FF"]) {
+      const clone = cloneChart(sourceWithColor, {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { labelColor: bad } },
+      });
+      expect(clone.axes?.x?.labelColor).toBeUndefined();
+    }
+  });
+
+  it("drops non-string overrides (defends against the type guard escaping)", () => {
+    const clone = cloneChart(sourceWithColor, {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      axes: { x: { labelColor: 123 as any } },
+    });
+    expect(clone.axes?.x?.labelColor).toBeUndefined();
+  });
+
+  it("normalises a parsed source value that is somehow malformed", () => {
+    // Defensive: a corrupt template parsed by an older reader could
+    // surface a non-canonical value. The clone normalizer drops it
+    // through the same hex band so the writer never sees a bad token.
+    const clone = cloneChart(
+      {
+        kinds: ["bar"],
+        seriesCount: 1,
+        series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        axes: { x: { labelColor: "ZZZZZZ" as any } },
+      },
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.x?.labelColor).toBeUndefined();
+  });
+
+  it("strips the color silently when the resolved chart type is pie", () => {
+    const pieSource: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [{ kind: "pie", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { labelColor: "FF0000" } },
+    };
+    const clone = cloneChart(pieSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("pie");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("strips the color silently when the resolved chart type is doughnut", () => {
+    const doughnutSource: Chart = {
+      kinds: ["doughnut"],
+      seriesCount: 1,
+      series: [{ kind: "doughnut", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { labelColor: "FF0000" } },
+    };
+    const clone = cloneChart(doughnutSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("carries the color through chart-type coercion (bar -> column)", () => {
+    const clone = cloneChart(sourceWithColor, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.axes?.x?.labelColor).toBe("FF0000");
+    expect(clone.axes?.y?.labelColor).toBe("00C586");
+  });
+
+  it("composes the color alongside labelRotation, labelFontSize, labelBold, and labelItalic", () => {
+    const source: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: {
+        x: {
+          labelRotation: 45,
+          labelFontSize: 12,
+          labelBold: true,
+          labelItalic: true,
+          labelColor: "1070CA",
+        },
+      },
+    };
+    const clone = cloneChart(source, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.labelRotation).toBe(45);
+    expect(clone.axes?.x?.labelFontSize).toBe(12);
+    expect(clone.axes?.x?.labelBold).toBe(true);
+    expect(clone.axes?.x?.labelItalic).toBe(true);
+    expect(clone.axes?.x?.labelColor).toBe("1070CA");
+  });
+
+  it("composes the color independently with the axis-title color on the same axis", () => {
+    const source: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { title: "Period", axisTitleColor: "FF0000", labelColor: "00C586" } },
+    };
+    const clone = cloneChart(source, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.axisTitleColor).toBe("FF0000");
+    expect(clone.axes?.x?.labelColor).toBe("00C586");
+  });
+
+  it("composes the color alongside other axis overrides", () => {
+    const clone = cloneChart(sourceWithColor, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: {
+        x: {
+          title: "Period",
+          gridlines: { major: true },
+          labelColor: "1070CA",
+        },
+      },
+    });
+    expect(clone.axes?.x?.title).toBe("Period");
+    expect(clone.axes?.x?.gridlines).toEqual({ major: true });
+    expect(clone.axes?.x?.labelColor).toBe("1070CA");
+  });
+
+  it("end-to-end: parseChart -> cloneChart -> writeChart preserves the color", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="1070CA"/></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>
+      </c:catAx>
+      <c:valAx>
+        <c:axId val="2"/>
+        <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="00C586"/></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.axes?.x?.labelColor).toBe("1070CA");
+    expect(parsed?.axes?.y?.labelColor).toBe("00C586");
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(sheetChart.axes?.x?.labelColor).toBe("1070CA");
+    expect(sheetChart.axes?.y?.labelColor).toBe("00C586");
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.labelColor).toBe("1070CA");
+    expect(reparsed?.axes?.y?.labelColor).toBe("00C586");
+  });
+
+  it("end-to-end: writeXlsx packages the cloned chart with the color intact", async () => {
+    const clone = cloneChart(sourceWithColor, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.labelColor).toBe("FF0000");
+    expect(reparsed?.axes?.y?.labelColor).toBe("00C586");
+  });
+});

@@ -2475,6 +2475,54 @@ export interface SheetChart {
        */
       labelItalic?: boolean;
       /**
+       * Tick-label font color. Maps to
+       * `<c:catAx><c:txPr><a:p><a:pPr><a:defRPr><a:solidFill>
+       * <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
+       * </c:txPr></c:catAx>` (or `<c:valAx>` for scatter / value axes) —
+       * Excel's "Format Axis -> Font -> Font Color" picker applied to
+       * the tick labels. The OOXML `<a:srgbClr val=".."/>` carries the
+       * 6-character uppercase hex sRGB color (`CT_SRgbColor`,
+       * ECMA-376 Part 1, §20.1.2.3.32); the writer lands the fill on
+       * the default-paragraph `<a:defRPr>` slot inside the same
+       * `<c:txPr>` block that carries {@link labelRotation} /
+       * {@link labelFontSize} / {@link labelBold} / {@link labelItalic}.
+       *
+       * Mirrors {@link SheetChart.axes.x.axisTitleColor} for tick
+       * labels — same accept-with-or-without-`#` grammar (`"FF0000"` /
+       * `"#FF0000"` / `"ff0000"` all collapse to the uppercase
+       * canonical form), same `string | null` clone grammar
+       * (`undefined` inherits, `null` drops, a hex string replaces).
+       * Useful for tinting dashboard tick labels (e.g. dimming the
+       * value-axis numeric ticks to a muted grey so the data series
+       * read as the visual focus of a busy chart frame).
+       *
+       * Default: omitted — the tick labels render in Excel's reference
+       * inherited theme color (no `<a:solidFill>` element, the writer
+       * skips the fill block entirely). Pin a hex value to render the
+       * tick labels in that color (e.g. `"1070CA"` for the dashboard
+       * hero blue the issue-#136 example reaches for). The 8-character
+       * `#RRGGBBAA` form is *not* accepted — alpha lives on
+       * `<a:srgbClr><a:alpha val=".."/>` which is a separate runs-level
+       * knob; pinning `labelColor` carries the RGB triple only.
+       * Malformed inputs (wrong length, non-hex characters, alpha-
+       * channel form) collapse to `undefined` so a stray non-hex token
+       * never produces a malformed `<a:srgbClr>`.
+       *
+       * Composes independently with {@link labelRotation} /
+       * {@link labelFontSize} / {@link labelBold} / {@link labelItalic}:
+       * all five knobs land on the same `<c:txPr>` body, so a single
+       * configuration call threads cleanly through every tick-label
+       * knob the writer exposes.
+       *
+       * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+       * `<c:dateAx>` / `<c:serAx>` all carry an optional `<c:txPr>` per
+       * the OOXML schema, so the field round-trips on every chart family
+       * that has axes (bar / column / line / area / scatter). Pie /
+       * doughnut have no axes at all, so the field is silently dropped
+       * on those families.
+       */
+      labelColor?: string;
+      /**
        * Reverse the axis plotting order. Maps to
        * `<c:scaling><c:orientation val="maxMin"/></c:scaling>` —
        * Excel's "Categories in reverse order" / "Values in reverse
@@ -2891,6 +2939,25 @@ export interface SheetChart {
        * on `pie` / `doughnut` charts (no axes at all).
        */
       labelItalic?: boolean;
+      /**
+       * Tick-label font color for the value axis. Maps to
+       * `<c:valAx><c:txPr><a:p><a:pPr><a:defRPr><a:solidFill>
+       * <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
+       * </c:txPr></c:valAx>`. Mirrors
+       * {@link SheetChart.axes.x.labelColor} for the value axis — see
+       * that field for the full semantics. The OOXML
+       * `<a:srgbClr val=".."/>` carries the 6-character uppercase hex
+       * sRGB color; the writer lands the fill on the default-paragraph
+       * `<a:defRPr>` slot inside the same `<c:txPr>` block that
+       * carries every other tick-label typography knob.
+       *
+       * Useful for dimming or accenting the Y-axis numeric ticks on a
+       * dashboard (e.g. a muted grey so the data series read as the
+       * visual focus, or a brand accent so the totals carry a
+       * stylistic tint). Silently dropped on `pie` / `doughnut` charts
+       * (no axes at all).
+       */
+      labelColor?: string;
       /**
        * Hide the entire value axis (line, tick marks, tick labels).
        * Maps to `<c:valAx><c:delete val="1"/></c:valAx>`. Default:
@@ -4363,6 +4430,37 @@ export interface ChartAxisInfo {
    * {@link ChartAxisInfo.axisTitleItalic}) cannot leak in.
    */
   labelItalic?: boolean;
+  /**
+   * Tick-label font color pulled from
+   * `<c:txPr><a:p><a:pPr><a:defRPr><a:solidFill>
+   * <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
+   * </c:txPr>` on the axis element. Reflects Excel's "Format Axis ->
+   * Font -> Font Color" picker applied to tick labels.
+   *
+   * Surfaced as the 6-character uppercase hex string the writer round-
+   * trips (`"FF0000"` / `"1070CA"`) — the leading `#` is stripped on
+   * read so the value threads straight into the writer-side
+   * {@link SheetChart.axes.x.labelColor} without transformation. Color
+   * picks other than the literal sRGB form (`<a:schemeClr>` theme
+   * references, `<a:hslClr>`, `<a:sysClr>`, `<a:prstClr>`) collapse
+   * to `undefined` — the reader records only the resolvable RGB
+   * triple to keep the round-trip lossless against {@link cloneChart}
+   * -> {@link writeXlsx}. Malformed `val` tokens (wrong length,
+   * non-hex characters) likewise drop to `undefined` rather than
+   * fabricate a value the writer would round-trip into a malformed
+   * `<a:srgbClr>`.
+   *
+   * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+   * `<c:dateAx>` / `<c:serAx>` all carry an optional `<c:txPr>` per
+   * the OOXML schema. Mirrors the writer-side
+   * {@link SheetChart.axes.x.labelColor} so a parsed value slots
+   * straight back into a clone target without transformation. The
+   * lookup is scoped to the axis-level `<c:txPr>` so a stray
+   * `<a:solidFill>` inside `<c:title>` (surfaced by
+   * {@link ChartAxisInfo.axisTitleColor}) or on a `<c:spPr>` series
+   * fill cannot leak in.
+   */
+  labelColor?: string;
   /**
    * Reverse-axis flag pulled from
    * `<c:scaling><c:orientation val=".."/></c:scaling>`. Surfaces `true`

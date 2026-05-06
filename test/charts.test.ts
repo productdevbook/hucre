@@ -13307,3 +13307,167 @@ describe("parseChart — axis labelItalic", () => {
     });
   });
 });
+
+describe("parseChart — axis labelColor", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withCatAxLabelColor(val: string | undefined): string {
+    const txPr =
+      val === undefined
+        ? ""
+        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="${val}"/></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>`;
+    return `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      ${txPr}
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces labelColor as the 6-character uppercase hex when <a:srgbClr/> is pinned", () => {
+    const chart = parseChart(withCatAxLabelColor("FF0000"));
+    expect(chart?.axes?.x?.labelColor).toBe("FF0000");
+  });
+
+  it("normalizes a lowercase hex value to uppercase", () => {
+    const chart = parseChart(withCatAxLabelColor("1070ca"));
+    expect(chart?.axes?.x?.labelColor).toBe("1070CA");
+  });
+
+  it("drops malformed val tokens to undefined", () => {
+    expect(parseChart(withCatAxLabelColor("FFF"))?.axes).toBeUndefined();
+    expect(parseChart(withCatAxLabelColor("ZZZZZZ"))?.axes).toBeUndefined();
+    expect(parseChart(withCatAxLabelColor("FF0000FF"))?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when <c:txPr> is absent", () => {
+    expect(parseChart(withCatAxLabelColor(undefined))?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when <a:defRPr> omits the solidFill child", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr></a:p></c:txPr>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when the fill uses <a:schemeClr> instead of <a:srgbClr>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:solidFill><a:schemeClr val="tx1"/></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.axes).toBeUndefined();
+  });
+
+  it("surfaces labelColor on the value axis", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="00C586"/></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.axes?.y?.labelColor).toBe("00C586");
+  });
+
+  it("surfaces labelColor independently on both axes", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>
+    </c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="00C586"/></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.labelColor).toBe("FF0000");
+    expect(chart?.axes?.y?.labelColor).toBe("00C586");
+  });
+
+  it("co-surfaces labelColor alongside labelBold, labelItalic, labelRotation, and labelFontSize from the same <c:txPr>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:txPr><a:bodyPr rot="2700000"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1400" b="1" i="1"><a:solidFill><a:srgbClr val="1070CA"/></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.labelRotation).toBe(45);
+    expect(chart?.axes?.x?.labelFontSize).toBe(14);
+    expect(chart?.axes?.x?.labelBold).toBe(true);
+    expect(chart?.axes?.x?.labelItalic).toBe(true);
+    expect(chart?.axes?.x?.labelColor).toBe("1070CA");
+  });
+
+  it("does not pick up an <a:srgbClr/> from the axis title's <c:rich>", () => {
+    // The axis-title's `<c:rich>` carries its own `<a:solidFill>`
+    // separately from the tick-label `<c:txPr>`. The tick-label parser
+    // must not surface the title's color — that belongs to
+    // axisTitleColor.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="1070CA"/></a:solidFill></a:defRPr></a:pPr><a:r><a:rPr/><a:t>Period</a:t></a:r></a:p></c:rich></c:tx></c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.axisTitleColor).toBe("1070CA");
+    expect(chart?.axes?.x?.labelColor).toBeUndefined();
+  });
+
+  it("co-surfaces alongside other axis fields", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title><c:tx><c:rich><a:p><a:r><a:t>Period</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      <c:tickLblPos val="low"/>
+      <c:txPr><a:bodyPr rot="2700000"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1200"><a:solidFill><a:srgbClr val="1070CA"/></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x).toEqual({
+      title: "Period",
+      tickLblPos: "low",
+      labelRotation: 45,
+      labelFontSize: 12,
+      labelColor: "1070CA",
+    });
+  });
+});

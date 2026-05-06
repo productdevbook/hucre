@@ -824,6 +824,18 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // chart inherits the theme-default tick-label slant.
     xLabelItalic: normalizeAxisLabelItalic(chart.axes?.x?.labelItalic),
     yLabelItalic: normalizeAxisLabelItalic(chart.axes?.y?.labelItalic),
+    // `<c:txPr><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val=".."/>
+    // </a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>` — tick-label
+    // font color. Shares the same `<c:txPr>` block as the rotation /
+    // size / bold / italic slots above. Normalize the caller's hex
+    // input — the writer accepts a leading `#` and any case, then
+    // collapses to the OOXML canonical uppercase form. Malformed
+    // inputs (wrong length, non-hex characters, alpha-channel forms,
+    // non-string escapes) collapse to `undefined` and the writer
+    // omits the entire `<a:solidFill>` block (Excel's reference
+    // serialization for tick labels that inherit the theme text color).
+    xLabelColor: normalizeAxisLabelColor(chart.axes?.x?.labelColor),
+    yLabelColor: normalizeAxisLabelColor(chart.axes?.y?.labelColor),
     xReverse: chart.axes?.x?.reverse === true,
     yReverse: chart.axes?.y?.reverse === true,
     // `tickLblSkip` / `tickMarkSkip` only round-trip on category axes
@@ -1400,6 +1412,28 @@ interface AxisRenderOptions {
    * semantics as {@link xLabelItalic}.
    */
   yLabelItalic: boolean | undefined;
+  /**
+   * Tick-label font color emitted on the X axis via
+   * `<c:txPr><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val=".."/>
+   * </a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>`. The OOXML
+   * `<a:srgbClr val=".."/>` carries the 6-character uppercase hex
+   * sRGB color (`CT_SRgbColor` inside `CT_TextCharacterProperties`'
+   * fill choice — ECMA-376 Part 1, §20.1.2.3.32 / §21.1.2.3.7).
+   * `undefined` collapses to omitting the entire `<a:solidFill>`
+   * block (Excel's reference serialization for tick labels that
+   * inherit the theme text color); any non-`undefined` value is the
+   * normalized uppercase hex string the writer lands on the
+   * default-paragraph `<a:defRPr>` slot. The block is emitted
+   * whenever `xLabelRotation`, `xLabelFontSize`, `xLabelBold`,
+   * `xLabelItalic`, or `xLabelColor` is set so the OOXML schema's
+   * `<c:txPr>` slot carries every pinned typography knob.
+   */
+  xLabelColor: string | undefined;
+  /**
+   * Tick-label font color emitted on the Y axis. Same shape and
+   * semantics as {@link xLabelColor}.
+   */
+  yLabelColor: string | undefined;
   xReverse: boolean;
   yReverse: boolean;
   /**
@@ -1783,12 +1817,30 @@ function normalizeAxisLabelItalic(value: boolean | undefined): boolean | undefin
 }
 
 /**
+ * Normalize an axis `labelColor` value for the
+ * `<c:txPr><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val=".."/>
+ * </a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>` writer slot.
+ * Delegates to the chart-level {@link normalizeTitleColor} so the two
+ * share the same accept-with-or-without-`#` grammar — `"FF0000"`,
+ * `"#FF0000"`, and `"ff0000"` all collapse to the OOXML uppercase
+ * canonical form; malformed inputs (wrong length, non-hex characters,
+ * alpha-channel forms, non-string escapes from an untyped caller)
+ * collapse to `undefined` so the writer skips the entire
+ * `<a:solidFill>` block and the tick labels inherit the theme text
+ * color (Excel's reference behavior for fresh tick labels without a
+ * custom color).
+ */
+function normalizeAxisLabelColor(value: string | undefined): string | undefined {
+  return normalizeTitleColor(value);
+}
+
+/**
  * Build the `<c:txPr>` block that carries an axis tick-label rotation,
- * font size, bold flag, and / or italic flag. Returns `undefined` when
- * every input is unset so the caller can elide the element entirely
- * (Excel's reference serialization on a fresh axis omits `<c:txPr>`
- * when the labels render at the default rotation and inherit the
- * theme font / weight / slant).
+ * font size, bold flag, italic flag, and / or font color. Returns
+ * `undefined` when every input is unset so the caller can elide the
+ * element entirely (Excel's reference serialization on a fresh axis
+ * omits `<c:txPr>` when the labels render at the default rotation and
+ * inherit the theme font / weight / slant / color).
  *
  * The emitted block mirrors the minimal `<c:txPr>` shape Excel writes
  * when the user pins a custom typography knob — `<a:bodyPr rot="N"/>`
@@ -1804,39 +1856,67 @@ function normalizeAxisLabelItalic(value: boolean | undefined): boolean | undefin
  *
  * When only a rotation is pinned, the `<a:defRPr>` slot self-closes
  * with no attributes (matching the legacy rotation-only emit). When a
- * font size, bold flag, or italic flag is pinned, the slot carries
- * `sz="N"` (in 100ths of a point), `b="1"` / `b="0"`, and / or
- * `i="1"` / `i="0"` so a re-parse picks the values up off the
- * canonical default-paragraph slot. When the rotation is absent but a
- * size or flag is pinned, the writer omits `rot` from `<a:bodyPr>` so
- * the OOXML default `0` collapses to absence. The bold / italic flags
- * each emit a literal `1` / `0` whenever the input is a boolean —
- * `false` pins the OOXML default explicitly, which is functionally
- * identical to absence but lets a clone target override an upstream
- * `1` from a templated chart.
+ * font size, bold flag, italic flag, or font color is pinned, the
+ * slot carries `sz="N"` (in 100ths of a point), `b="1"` / `b="0"`,
+ * `i="1"` / `i="0"`, and / or wraps an `<a:solidFill>` child so a
+ * re-parse picks the values up off the canonical default-paragraph
+ * slot. When the rotation is absent but any other knob is pinned,
+ * the writer omits `rot` from `<a:bodyPr>` so the OOXML default `0`
+ * collapses to absence. The bold / italic flags each emit a literal
+ * `1` / `0` whenever the input is a boolean — `false` pins the OOXML
+ * default explicitly, which is functionally identical to absence but
+ * lets a clone target override an upstream `1` from a templated
+ * chart.
+ *
+ * The `rgbHex` parameter pins the tick-label color via the
+ * `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill>
+ * </a:defRPr>` slot. When set, the `<a:defRPr>` element expands from
+ * self-closing to wrapping a single `<a:solidFill>` child; otherwise
+ * the writer keeps the existing self-closing form so a fresh axis
+ * with no custom color matches Excel's reference serialization (the
+ * tick labels inherit the theme text color in that case).
  */
 function buildAxisTxPr(
   rotationDeg: number | undefined,
   fontSizePt: number | undefined,
   bold: boolean | undefined,
   italic: boolean | undefined,
+  rgbHex: string | undefined,
 ): string | undefined {
   if (
     rotationDeg === undefined &&
     fontSizePt === undefined &&
     bold === undefined &&
-    italic === undefined
+    italic === undefined &&
+    rgbHex === undefined
   )
     return undefined;
   const rot = rotationDeg === undefined ? undefined : rotationDeg * TXPR_ROT_PER_DEGREE;
   const sz = fontSizePt === undefined ? undefined : fontSizePt * TITLE_FONT_SZ_PER_POINT;
   const b = bold === undefined ? undefined : bold ? 1 : 0;
   const i = italic === undefined ? undefined : italic ? 1 : 0;
+  // OOXML's `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+  // </a:solidFill></a:defRPr>` carries the tick-label font color.
+  // Absence (`undefined`) collapses to omitting the entire
+  // `<a:solidFill>` block so the labels inherit the theme text color
+  // (Excel's reference behavior for a fresh axis that has not had a
+  // custom tick-label color picked).
+  const solidFillChild = rgbHex
+    ? xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: rgbHex })])
+    : undefined;
+  // When a fill color is set the `<a:defRPr>` slot expands from
+  // self-closing to wrapping the `<a:solidFill>` child; otherwise the
+  // writer keeps the existing self-closing form so a fresh axis with
+  // no custom color matches Excel's reference serialization byte-for-
+  // byte.
+  const defRPr = solidFillChild
+    ? xmlElement("a:defRPr", { sz, b, i }, [solidFillChild])
+    : xmlSelfClose("a:defRPr", { sz, b, i });
   return xmlElement("c:txPr", undefined, [
     xmlSelfClose("a:bodyPr", { rot }),
     xmlSelfClose("a:lstStyle"),
     xmlElement("a:p", undefined, [
-      xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz, b, i })]),
+      xmlElement("a:pPr", undefined, [defRPr]),
       xmlSelfClose("a:endParaRPr", { lang: "en-US" }),
     ]),
   ]);
@@ -2336,6 +2416,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
     opts.xLabelFontSize,
     opts.xLabelBold,
     opts.xLabelItalic,
+    opts.xLabelColor,
   );
   if (xCatAxTxPr) catAxChildren.push(xCatAxTxPr);
   catAxChildren.push(
@@ -2407,6 +2488,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
     opts.yLabelFontSize,
     opts.yLabelBold,
     opts.yLabelItalic,
+    opts.yLabelColor,
   );
   if (yValAxTxPr) valAxChildren.push(yValAxTxPr);
   valAxChildren.push(
@@ -2776,6 +2858,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
     opts.xLabelFontSize,
     opts.xLabelBold,
     opts.xLabelItalic,
+    opts.xLabelColor,
   );
   if (xValAxTxPr) xAxChildren.push(xValAxTxPr);
   xAxChildren.push(
@@ -2824,6 +2907,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
     opts.yLabelFontSize,
     opts.yLabelBold,
     opts.yLabelItalic,
+    opts.yLabelColor,
   );
   if (yScatterTxPr) yAxChildren.push(yScatterTxPr);
   yAxChildren.push(
