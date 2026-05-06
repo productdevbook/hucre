@@ -1165,6 +1165,48 @@ export interface ChartDataTable {
    * pie / doughnut along with the rest of the data-table configuration.
    */
   bold?: boolean;
+  /**
+   * Data-table strikethrough flag. Maps to `<c:dTable><c:txPr><a:p>
+   * <a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr></c:dTable>` —
+   * Excel's "Format Data Table -> Font -> Strikethrough" toggle. The
+   * OOXML attribute is the `ST_TextStrikeType` enumeration on
+   * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7); the
+   * writer lands `strike="sngStrike"` (single line — Excel's UI
+   * variant) on the default-paragraph `<a:defRPr>` slot inside the
+   * `<c:dTable><c:txPr>` block so a re-parse picks the flag up off the
+   * canonical slot the OOXML schema exposes.
+   *
+   * Default: omitted — the data table renders without a strikethrough
+   * (no `strike` attribute, matching Excel's reference serialization
+   * for fresh data tables whose typography has not been customized).
+   * Set `true` to emit `strike="sngStrike"` so the table renders with
+   * a single-line strikethrough; explicit `false` collapses to
+   * absence (functionally identical, since the OOXML default
+   * `"noStrike"` is what Excel's UI exposes as "off"; the writer
+   * keeps the surfaced shape consistent with what the UI authors —
+   * `"sngStrike"` only, never `"noStrike"` or `"dblStrike"`).
+   *
+   * The reader surfaces only the boolean shape Excel's UI exposes —
+   * `strike="sngStrike"` collapses to `true`; the OOXML default
+   * `"noStrike"` and the schema's other variant `"dblStrike"` (and
+   * malformed tokens) collapse to `undefined` so absence and
+   * `"noStrike"` round-trip identically through `cloneChart`. The
+   * reader never silently downgrades `"dblStrike"` to a single line on
+   * round-trip; only the UI-default `"sngStrike"` survives the parse.
+   *
+   * Composes independently with the other dataTable typography knobs —
+   * {@link fontSize} / {@link fontColor} / {@link bold} — and the
+   * four boolean toggles. Mirrors the chart-title `titleStrikethrough`,
+   * axis-title `axisTitleStrikethrough`, axis tick-label
+   * `labelStrikethrough`, legend `legendStrikethrough`, and data-label
+   * `dataLabels.strikethrough` knobs — same boolean shape, same OOXML
+   * `<a:defRPr strike=".."/>` mapping — so a caller can thread a
+   * single strikethrough value through every typography-pinning slot.
+   *
+   * Only meaningful for chart families with axes; silently dropped on
+   * pie / doughnut along with the rest of the data-table configuration.
+   */
+  strikethrough?: boolean;
 }
 
 /**

@@ -10028,6 +10028,175 @@ describe("parseChart — data table", () => {
       bold: true,
     });
   });
+
+  // ── data-table strikethrough ───────────────────────────────────────
+
+  it("surfaces a pinned dataTable.strikethrough from <a:defRPr strike='sngStrike'/>", () => {
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr strike="sngStrike"/></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.strikethrough).toBe(true);
+  });
+
+  it("collapses an explicit strike='noStrike' to undefined", () => {
+    // The OOXML default `"noStrike"` is functionally identical to
+    // absence — reporting it as `false` would create a silent
+    // round-trip mismatch (the writer emits only `"sngStrike"`).
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr strike="noStrike"/></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.strikethrough).toBeUndefined();
+  });
+
+  it("collapses the dblStrike variant to undefined", () => {
+    // Reporting `"dblStrike"` as `true` would silently downgrade the
+    // choice to a single line on round-trip. Drop it instead so the
+    // round-trip behaviour is loss-aware.
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr strike="dblStrike"/></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.strikethrough).toBeUndefined();
+  });
+
+  it("collapses an unknown strike token to undefined", () => {
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr strike="weirdStrike"/></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.strikethrough).toBeUndefined();
+  });
+
+  it("returns undefined strikethrough when <c:txPr> is missing entirely", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.strikethrough).toBeUndefined();
+  });
+
+  it("returns undefined strikethrough when the strike attribute is missing on defRPr", () => {
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="1400" b="1"/></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.strikethrough).toBeUndefined();
+    // The fontSize and bold parts still surface.
+    expect(parseChart(xml)?.dataTable?.fontSize).toBe(14);
+    expect(parseChart(xml)?.dataTable?.bold).toBe(true);
+  });
+
+  it("surfaces every typography pin together when all four are pinned", () => {
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="1600" b="1" strike="sngStrike"><a:solidFill><a:srgbClr val="1070CA"/></a:solidFill></a:defRPr></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: true,
+      showOutline: true,
+      showKeys: true,
+      fontSize: 16,
+      fontColor: "1070CA",
+      bold: true,
+      strikethrough: true,
+    });
+  });
 });
 
 // ── parseChart — chart-space protection ──────────────────────────────

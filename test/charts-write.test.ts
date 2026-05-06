@@ -9244,6 +9244,184 @@ describe("writeChart — data table", () => {
     const reparsed = parseChart(chartXml);
     expect(reparsed?.dataTable?.bold).toBe(true);
   });
+
+  // ── data-table strikethrough ───────────────────────────────────────
+
+  it("skips the strike attribute when strikethrough is unset (writer default)", () => {
+    // Absence collapses to omitting the strike attribute entirely —
+    // the OOXML default `"noStrike"` is functionally identical to
+    // absence and Excel itself omits the attribute on a fresh data
+    // table.
+    const result = writeChart(makeChart({ dataTable: true }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice).not.toMatch(/strike="(sngStrike|noStrike|dblStrike)"/);
+  });
+
+  it("emits strike='sngStrike' when dataTable.strikethrough is true", () => {
+    const result = writeChart(makeChart({ dataTable: { strikethrough: true } }), "Sheet1");
+    expect(result.chartXml).toContain('<a:defRPr strike="sngStrike"/>');
+  });
+
+  it("collapses dataTable.strikethrough: false to absence (no strike attribute)", () => {
+    // The OOXML default `"noStrike"` is functionally identical to
+    // absence — the writer drops the attribute rather than emit
+    // `"noStrike"` so the round-trip stays consistent with Excel's
+    // UI checkbox.
+    const result = writeChart(makeChart({ dataTable: { strikethrough: false } }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice).not.toContain('strike="');
+    // The whole txPr block is skipped because there's no other typography pin.
+    expect(dTableSlice).not.toContain("<c:txPr>");
+  });
+
+  it("collapses non-boolean strikethrough escapes to undefined", () => {
+    // Typed escapes from an untyped caller — strings, null, numbers —
+    // drop the field rather than fabricate a malformed strike attribute.
+    const dt = { strikethrough: "yes" } as unknown as { strikethrough: boolean };
+    const result = writeChart(makeChart({ dataTable: dt }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice).not.toContain("<c:txPr>");
+    const dt2 = { strikethrough: 1 } as unknown as { strikethrough: boolean };
+    const result2 = writeChart(makeChart({ dataTable: dt2 }), "Sheet1");
+    const dTableSlice2 = result2.chartXml.slice(
+      result2.chartXml.indexOf("<c:dTable>"),
+      result2.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice2).not.toContain("<c:txPr>");
+  });
+
+  it("composes strikethrough with fontSize / fontColor / bold on the same defRPr slot", () => {
+    // All four typography knobs land on the same <a:defRPr> — the
+    // size, bold, and strike as attributes, the color as the wrapped <a:solidFill>.
+    const result = writeChart(
+      makeChart({
+        dataTable: { fontSize: 14, fontColor: "1070CA", bold: true, strikethrough: true },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain(
+      '<a:defRPr sz="1400" b="1" strike="sngStrike"><a:solidFill><a:srgbClr val="1070CA"/></a:solidFill></a:defRPr>',
+    );
+  });
+
+  it("composes strikethrough with fontSize alone (no fontColor) on a self-closing defRPr", () => {
+    const result = writeChart(
+      makeChart({ dataTable: { fontSize: 14, strikethrough: true } }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('<a:defRPr sz="1400" strike="sngStrike"/>');
+  });
+
+  it("threads strikethrough through every chart family with axes", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(makeChart({ type, dataTable: { strikethrough: true } }), "Sheet1");
+      expect(result.chartXml).toContain('<a:defRPr strike="sngStrike"/>');
+    }
+    const scatter = writeChart(
+      {
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        dataTable: { strikethrough: true },
+      },
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain('<a:defRPr strike="sngStrike"/>');
+  });
+
+  it("silently drops strikethrough on pie charts (no <c:dTable> slot at all)", () => {
+    const result = writeChart(
+      {
+        type: "pie",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        dataTable: { strikethrough: true },
+      },
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:dTable");
+    expect(result.chartXml).not.toContain('<a:defRPr strike="sngStrike"/>');
+  });
+
+  it("composes strikethrough with the four boolean toggles independently", () => {
+    const result = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: false,
+          showVertBorder: true,
+          showOutline: false,
+          showKeys: true,
+          strikethrough: true,
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('<c:showHorzBorder val="0"/>');
+    expect(result.chartXml).toContain('<c:showVertBorder val="1"/>');
+    expect(result.chartXml).toContain('<c:showOutline val="0"/>');
+    expect(result.chartXml).toContain('<c:showKeys val="1"/>');
+    expect(result.chartXml).toContain('<a:defRPr strike="sngStrike"/>');
+  });
+
+  it("round-trips a pinned dataTable strikethrough through parseChart", () => {
+    const written = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+          strikethrough: true,
+        },
+      }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+      strikethrough: true,
+    });
+  });
+
+  it("threads strikethrough end-to-end through writeXlsx packaging", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Dashboard",
+        rows: [
+          ["Quarter", "Revenue"],
+          ["Q1", 10],
+          ["Q2", 20],
+          ["Q3", 30],
+        ],
+        charts: [
+          {
+            type: "column",
+            series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            dataTable: { showKeys: true, strikethrough: true },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain("<c:dTable>");
+    expect(chartXml).toContain('<a:defRPr strike="sngStrike"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.dataTable?.strikethrough).toBe(true);
+  });
 });
 
 // ── writeChart — chart-space protection ──────────────────────────────

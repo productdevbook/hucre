@@ -10598,6 +10598,163 @@ describe("cloneChart — data table", () => {
     const reparsed = parseChart(written);
     expect(reparsed?.dataTable?.bold).toBe(true);
   });
+
+  // ── data-table strikethrough ───────────────────────────────────
+
+  it("inherits the source's dataTable.strikethrough by default", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+          strikethrough: true,
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+      strikethrough: true,
+    });
+  });
+
+  it("lets options.dataTable: object override the inherited strikethrough", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, strikethrough: true },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        dataTable: { showVertBorder: false, strikethrough: false },
+      },
+    );
+    expect(clone.dataTable).toEqual({ showVertBorder: false, strikethrough: false });
+  });
+
+  it("drops the inherited strikethrough when override clears the typography pin", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, strikethrough: true },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        dataTable: { showVertBorder: false },
+      },
+    );
+    expect(clone.dataTable).toEqual({ showVertBorder: false });
+  });
+
+  it("drops the inherited strikethrough when flattening into a doughnut clone", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, strikethrough: true },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        type: "doughnut",
+      },
+    );
+    expect(clone.type).toBe("doughnut");
+    expect(clone.dataTable).toBeUndefined();
+  });
+
+  it("propagates dataTable.strikethrough into the rendered <c:dTable> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+          strikethrough: true,
+        },
+      }),
+      { anchor: { from: { row: 5, col: 0 } } },
+    );
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:dTable>");
+    expect(written).toContain('<a:defRPr strike="sngStrike"/>');
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+      strikethrough: true,
+    });
+  });
+
+  it("composes strikethrough with fontSize / fontColor / bold through the clone-through path", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          fontSize: 12,
+          fontColor: "1070CA",
+          bold: true,
+          strikethrough: true,
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.dataTable).toEqual({
+      fontSize: 12,
+      fontColor: "1070CA",
+      bold: true,
+      strikethrough: true,
+    });
+  });
+
+  it("a parsed dataTable.strikethrough round-trips through parseChart -> cloneChart -> writeChart -> parseChart", async () => {
+    const seed: SheetChart = {
+      type: "column",
+      series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+      anchor: { from: { row: 0, col: 0 } },
+      dataTable: { showKeys: false, strikethrough: true },
+    };
+    const xml = writeChart(seed, "Sheet1").chartXml;
+    const parsed = parseChart(xml)!;
+    expect(parsed.dataTable?.strikethrough).toBe(true);
+    const clone = cloneChart(parsed, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Q", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable?.strikethrough).toBe(true);
+  });
 });
 
 // ── cloneChart — chart-space protection ──────────────────────────────

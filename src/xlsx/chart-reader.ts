@@ -4463,6 +4463,8 @@ function parseDataTable(plotArea: XmlElement): ChartDataTable | undefined {
   if (fontColor !== undefined) out.fontColor = fontColor;
   const bold = parseDataTableBold(el);
   if (bold !== undefined) out.bold = bold;
+  const strikethrough = parseDataTableStrikethrough(el);
+  if (strikethrough !== undefined) out.strikethrough = strikethrough;
   return out;
 }
 
@@ -4500,6 +4502,38 @@ function parseDataTableBold(dTable: XmlElement): boolean | undefined {
     default:
       return undefined;
   }
+}
+
+/**
+ * Pull `<c:dTable><c:txPr><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
+ * </a:p></c:txPr></c:dTable>` off a data-table block. Returns the
+ * strikethrough flag.
+ *
+ * The OOXML `strike` attribute is the `ST_TextStrikeType`
+ * enumeration on `CT_TextCharacterProperties`. Only
+ * `strike="sngStrike"` (Excel's UI variant — single line) surfaces
+ * `true`; the OOXML default `"noStrike"` and the non-UI variant
+ * `"dblStrike"` (and any malformed token) collapse to `undefined` so
+ * absence and `"noStrike"` round-trip identically through
+ * `cloneChart`. Reporting `"dblStrike"` as `true` would silently
+ * downgrade the choice to a single line on round-trip; the writer
+ * emits only `"sngStrike"`, matching the boolean shape the UI
+ * exposes. Mirrors the chart-title / axis-title / axis tick-label /
+ * legend / data-label strikethrough readers exactly so a parsed value
+ * slots straight back into the writer's emit path.
+ */
+function parseDataTableStrikethrough(dTable: XmlElement): boolean | undefined {
+  const txPr = findChild(dTable, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const raw = defRPr.attrs.strike;
+  if (raw === "sngStrike") return true;
+  return undefined;
 }
 
 /**
