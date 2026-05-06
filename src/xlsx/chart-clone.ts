@@ -273,6 +273,27 @@ export interface CloneChartOptions {
    */
   titleRotation?: number | null;
   /**
+   * Override the chart-level title font size in whole or half points.
+   * `undefined` (or omitted) inherits the source's parsed value;
+   * `null` drops the inherited size so the writer falls back to
+   * Excel's default 14pt; a `number` replaces it.
+   *
+   * Out-of-range overrides (outside the `1..400`pt band the OOXML
+   * `ST_TextFontSize` schema exposes) collapse to a drop (the writer's
+   * normalization band) so the cloned `SheetChart` always carries a
+   * value the writer will accept. Fractional overrides round to the
+   * nearest 0.5pt (Excel's UI granularity); `NaN`, `Infinity`, and
+   * non-numeric overrides also collapse to a drop.
+   *
+   * The override is silently dropped from the cloned `SheetChart` when
+   * the resolved chart renders no title (`title` resolved to `undefined`
+   * or `showTitle === false`) — there is no `<c:title>` block to host
+   * the size in either case. The grammar mirrors `titleRotation` /
+   * `titleOverlay` so the chart-level title knobs compose the same
+   * way at the call site.
+   */
+  titleFontSize?: number | null;
+  /**
    * Override `<c:autoTitleDeleted>` (the "user explicitly deleted the
    * auto-generated title" flag).
    *
@@ -1060,6 +1081,18 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // `SheetChart` always carries a value the writer will accept.
     const resolvedTitleRotation = resolveTitleRotation(source.titleRotation, options.titleRotation);
     if (resolvedTitleRotation !== undefined) out.titleRotation = resolvedTitleRotation;
+
+    // `titleFontSize` only renders inside `<c:title>` — a clone that
+    // omits the title has no `<a:defRPr sz="N"/>` slot for the writer
+    // to populate. Same scope rule as `titleOverlay` / `titleRotation`:
+    // the override wins over the source's parsed value; absence
+    // inherits, `null` drops, a `number` replaces. Out-of-range
+    // (outside the `1..400`pt band the OOXML `ST_TextFontSize` schema
+    // exposes) / non-finite / non-numeric overrides collapse via the
+    // normalizer so the cloned `SheetChart` always carries a value the
+    // writer will accept.
+    const resolvedTitleFontSize = resolveTitleFontSize(source.titleFontSize, options.titleFontSize);
+    if (resolvedTitleFontSize !== undefined) out.titleFontSize = resolvedTitleFontSize;
   }
 
   // `<c:autoTitleDeleted>` sits on `<c:chart>` directly, not inside
@@ -2016,6 +2049,59 @@ function resolveTitleRotation(
   if (override === undefined) return normalizeTitleRotation(sourceValue);
   if (override === null) return undefined;
   return normalizeTitleRotation(override);
+}
+
+/**
+ * Conversion bookkeeping for the chart-title font-size override. Same
+ * `1..400`pt band the writer enforces (mirroring the OOXML
+ * `ST_TextFontSize` schema, `100..400000` in 100ths of a point) so the
+ * cloned `SheetChart` always carries a value the writer will accept.
+ */
+const TITLE_FONT_SIZE_MIN_PT = 1;
+const TITLE_FONT_SIZE_MAX_PT = 400;
+
+/**
+ * Normalize a `titleFontSize` value (whole / half points) for the
+ * cloned `SheetChart`. Mirrors the writer's `normalizeTitleFontSize` —
+ * the cloned shape is guaranteed to round-trip through the writer
+ * without surprise: fractional inputs round to the nearest 0.5pt
+ * (Excel's UI granularity); inputs outside the `1..400`pt band, `NaN`,
+ * `Infinity`, and non-numeric inputs all collapse to `undefined` so
+ * the cloned chart drops the field rather than carry a value the
+ * writer would silently elide back to the application default.
+ */
+function normalizeTitleFontSize(value: number | undefined): number | undefined {
+  if (value === undefined || typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  // Round to the nearest 0.5pt (Excel's UI granularity). `Math.round`
+  // on `2 * value` and dividing by 2 gives a clean half-step band.
+  const halfSteps = Math.round(value * 2);
+  const points = halfSteps / 2;
+  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
+  return points;
+}
+
+/**
+ * Resolve a `titleFontSize` override.
+ *
+ * `undefined` → inherit the source's parsed `titleFontSize`.
+ * `null`      → drop the inherited value (the writer falls back to
+ *               Excel's default 14pt).
+ * `number`    → replace, after clamping / rounding through
+ *               {@link normalizeTitleFontSize}.
+ *
+ * The grammar mirrors `titleRotation` / `titleOverlay` /
+ * `legendOverlay` so the chart-level title knobs compose the same way
+ * at the call site. Callers should gate the result on the resolved
+ * title visibility — when no title is emitted, the size has no slot
+ * in the rendered chart.
+ */
+function resolveTitleFontSize(
+  sourceValue: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) return normalizeTitleFontSize(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleFontSize(override);
 }
 
 /**

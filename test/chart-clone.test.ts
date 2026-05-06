@@ -10140,6 +10140,230 @@ describe("cloneChart — title rotation", () => {
   });
 });
 
+// ── cloneChart — title font size ────────────────────────────────────
+
+describe("cloneChart — title font size", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Sales",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's titleFontSize by default", () => {
+    const clone = cloneChart(source({ titleFontSize: 18 }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleFontSize).toBe(18);
+  });
+
+  it("lets options.titleFontSize override the source's value", () => {
+    const clone = cloneChart(source({ titleFontSize: 18 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleFontSize: 24,
+    });
+    expect(clone.titleFontSize).toBe(24);
+  });
+
+  it("drops the inherited titleFontSize when the override is null", () => {
+    const clone = cloneChart(source({ titleFontSize: 18 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleFontSize: null,
+    });
+    expect(clone.titleFontSize).toBeUndefined();
+  });
+
+  it("returns undefined titleFontSize when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.titleFontSize).toBeUndefined();
+  });
+
+  it("drops an out-of-range override (above the 400pt maximum)", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleFontSize: 401,
+    });
+    expect(clone.titleFontSize).toBeUndefined();
+  });
+
+  it("drops a below-range override (below the 1pt minimum after rounding)", () => {
+    // 0.49pt rounds to 0.5pt, which is below the OOXML 1pt minimum.
+    // (Inputs from 0.75 round up to 1pt and survive normalization.)
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleFontSize: 0.49,
+    });
+    expect(clone.titleFontSize).toBeUndefined();
+  });
+
+  it("rounds a fractional override to the nearest 0.5pt", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleFontSize: 14.8,
+    });
+    expect(clone.titleFontSize).toBe(15);
+  });
+
+  it("collapses non-finite overrides (NaN / Infinity) to undefined", () => {
+    const a = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleFontSize: Number.NaN,
+    });
+    expect(a.titleFontSize).toBeUndefined();
+    const b = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleFontSize: Number.POSITIVE_INFINITY,
+    });
+    expect(b.titleFontSize).toBeUndefined();
+  });
+
+  it("drops a parsed source font size that is somehow out of range", () => {
+    // Defensive: a corrupt template parsed by an older reader could
+    // surface an out-of-band value. The clone normalizer collapses it
+    // through the same band so the writer never sees a bad token.
+    const clone = cloneChart(source({ titleFontSize: 401 as number }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleFontSize).toBeUndefined();
+  });
+
+  it("carries titleFontSize through a flatten (line → column)", () => {
+    const clone = cloneChart(source({ titleFontSize: 24 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.titleFontSize).toBe(24);
+  });
+
+  it("carries titleFontSize through a doughnut flatten (line → doughnut)", () => {
+    const clone = cloneChart(source({ titleFontSize: 24 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.titleFontSize).toBe(24);
+  });
+
+  it("drops the inherited titleFontSize when the resolved title is dropped", () => {
+    // `title: null` flattens the inherited title — no `<c:title>` block
+    // in the rendered chart, so the size has no slot.
+    const clone = cloneChart(source({ titleFontSize: 24 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      title: null,
+    });
+    expect(clone.title).toBeUndefined();
+    expect(clone.titleFontSize).toBeUndefined();
+  });
+
+  it("drops the inherited titleFontSize when showTitle is false", () => {
+    const clone = cloneChart(source({ titleFontSize: 24 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      showTitle: false,
+    });
+    expect(clone.titleFontSize).toBeUndefined();
+  });
+
+  it("preserves titleFontSize when an override pins a new title", () => {
+    const clone = cloneChart(source({ titleFontSize: 24 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      title: "New",
+    });
+    expect(clone.title).toBe("New");
+    expect(clone.titleFontSize).toBe(24);
+  });
+
+  it("composes independently with titleRotation", () => {
+    const clone = cloneChart(source({ titleRotation: 45, titleFontSize: 24 }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleRotation).toBe(45);
+    expect(clone.titleFontSize).toBe(24);
+  });
+
+  it("end-to-end: parses a templated title font size, clones, and writes it through", () => {
+    const sourceXml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr sz="2400"/></a:pPr><a:r><a:t>Hero</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.titleFontSize).toBe(24);
+    expect(parsed?.title).toBe("Hero");
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(sheetChart.titleFontSize).toBe(24);
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    const titleBlock = written.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(titleBlock).toContain('sz="2400"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleFontSize).toBe(24);
+  });
+
+  it("propagates titleFontSize into the rendered <c:title> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ titleFontSize: 24 }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const titleBlock = written.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(titleBlock).toContain('sz="2400"');
+
+    // Re-parsing the rendered chart returns the same value — closes the
+    // template -> clone -> write -> read loop.
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleFontSize).toBe(24);
+  });
+});
+
 describe("cloneChart — axis title rotation", () => {
   function source(extra?: Partial<Chart>): Chart {
     return {

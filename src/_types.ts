@@ -1342,6 +1342,33 @@ export interface SheetChart {
    */
   titleRotation?: number;
   /**
+   * Chart title font size in whole or half points. Maps to
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
+   * <a:r><a:rPr sz="N"/></a:r></a:p></c:rich></c:tx></c:title>` —
+   * Excel's "Format Chart Title -> Font -> Size" knob. The OOXML
+   * attribute is in 100ths of a point, so 18pt serializes as
+   * `sz="1800"` and 14pt (Excel's reference default) as `sz="1400"`;
+   * the writer performs the conversion at emit time and lands the
+   * value on both the default-paragraph `<a:defRPr>` and the literal
+   * run's `<a:rPr>` so a re-parse picks the size up off either
+   * canonical slot.
+   *
+   * Accepted range: `1..400`pt (the band the OOXML `ST_TextFontSize`
+   * schema exposes — `100..400000` in 100ths of a point). Fractional
+   * inputs round to the nearest 0.5pt (Excel's UI granularity); inputs
+   * outside the band, `NaN`, `Infinity`, and non-numeric inputs all
+   * collapse to `undefined` so the writer falls back to the default
+   * `14`pt size Excel itself emits on a fresh chart.
+   *
+   * Default: omitted — the title renders at Excel's default 14pt. Set
+   * an explicit value to scale the title up for a hero dashboard tile
+   * (e.g. `24`) or down to fit a tight header slot (e.g. `10`).
+   * Silently ignored when no title is rendered (`showTitle === false`
+   * or `title` is absent) — there is no `<c:title>` block to host the
+   * size in either case.
+   */
+  titleFontSize?: number;
+  /**
    * Auto-title-deleted flag. Maps to `<c:chart><c:autoTitleDeleted
    * val=".."/>` — Excel's record of whether the user explicitly deleted
    * the auto-generated title that single-series charts synthesise from
@@ -3611,6 +3638,32 @@ export interface Chart {
    * {@link SheetChart.titleRotation} without transformation.
    */
   titleRotation?: number;
+  /**
+   * Chart title font size in points (range `1..400`), pulled from
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
+   * </a:p></c:rich></c:tx></c:title>`. Reflects Excel's "Format Chart
+   * Title -> Font -> Size" knob.
+   *
+   * The OOXML attribute is in 100ths of a point; the reader converts
+   * to points and rounds to the nearest 0.5pt (Excel's UI exposes the
+   * same 0.5pt granularity, e.g. `sz="1400"` surfaces as `14`,
+   * `sz="1450"` as `14.5`). Out-of-range values (outside the `1..400`
+   * band the OOXML `ST_TextFontSize` schema exposes) drop to
+   * `undefined` rather than fabricate a value the writer would never
+   * emit. Absence of the attribute (or of `<a:defRPr>` / `<a:pPr>` /
+   * `<a:p>` / `<c:rich>` / `<c:tx>` / `<c:title>`) likewise collapses
+   * to `undefined` so a fresh chart and a chart that pinned an
+   * out-of-range size both round-trip to the writer's "skip the size
+   * attribute" path.
+   *
+   * Reported as `undefined` whenever the source chart has no
+   * `<c:title>` element at all, or when the title is a `<c:strRef>`
+   * (formula reference) with no `<c:rich>` body — there is no `<a:p>`
+   * to host the size in either case. The parsed value threads
+   * straight back into the writer-side
+   * {@link SheetChart.titleFontSize} without transformation.
+   */
+  titleFontSize?: number;
   /**
    * Auto-title-deleted flag pulled from `<c:chart><c:autoTitleDeleted
    * val=".."/>`. Reflects Excel's "the user explicitly deleted the

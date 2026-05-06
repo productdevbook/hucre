@@ -9339,6 +9339,184 @@ describe("writeChart — title rotation", () => {
   });
 });
 
+// ── writeChart — title font size ────────────────────────────────────
+
+describe("writeChart — title font size", () => {
+  function titleBlockOf(xml: string): string {
+    return xml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+  }
+
+  function defRPrSzOf(xml: string): string | undefined {
+    // The title's <a:defRPr> lives inside <c:title><c:tx><c:rich><a:p><a:pPr>.
+    const titleBlock = titleBlockOf(xml);
+    const m = titleBlock.match(/<a:defRPr\b[^/]*\/>/);
+    if (!m) return undefined;
+    const sz = m[0].match(/sz="([^"]+)"/);
+    return sz ? sz[1] : undefined;
+  }
+
+  function rPrSzOf(xml: string): string | undefined {
+    // The title's literal run carries an <a:rPr sz="N"/> alongside the
+    // default-paragraph slot — Excel keeps both in sync.
+    const titleBlock = titleBlockOf(xml);
+    const m = titleBlock.match(/<a:rPr\b[^/]*\/>/);
+    if (!m) return undefined;
+    const sz = m[0].match(/sz="([^"]+)"/);
+    return sz ? sz[1] : undefined;
+  }
+
+  it('emits sz="1400" by default (matches Excel\'s reference 14pt)', () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(defRPrSzOf(result.chartXml)).toBe("1400");
+    expect(rPrSzOf(result.chartXml)).toBe("1400");
+  });
+
+  it("emits the size in 100ths of a point on a positive input", () => {
+    const result = writeChart(makeChart({ titleFontSize: 18 }), "Sheet1");
+    expect(defRPrSzOf(result.chartXml)).toBe("1800");
+    expect(rPrSzOf(result.chartXml)).toBe("1800");
+  });
+
+  it("supports half-point granularity", () => {
+    const result = writeChart(makeChart({ titleFontSize: 14.5 }), "Sheet1");
+    expect(defRPrSzOf(result.chartXml)).toBe("1450");
+    expect(rPrSzOf(result.chartXml)).toBe("1450");
+  });
+
+  it("rounds fractional inputs to the nearest 0.5pt", () => {
+    // 14.24pt rounds down to 14 -> sz="1400".
+    const a = writeChart(makeChart({ titleFontSize: 14.24 }), "Sheet1");
+    expect(defRPrSzOf(a.chartXml)).toBe("1400");
+    // 14.8pt rounds up to 15 -> sz="1500".
+    const b = writeChart(makeChart({ titleFontSize: 14.8 }), "Sheet1");
+    expect(defRPrSzOf(b.chartXml)).toBe("1500");
+  });
+
+  it("emits the 1pt minimum (sz=100)", () => {
+    const result = writeChart(makeChart({ titleFontSize: 1 }), "Sheet1");
+    expect(defRPrSzOf(result.chartXml)).toBe("100");
+    expect(rPrSzOf(result.chartXml)).toBe("100");
+  });
+
+  it("emits the 400pt maximum (sz=40000)", () => {
+    const result = writeChart(makeChart({ titleFontSize: 400 }), "Sheet1");
+    expect(defRPrSzOf(result.chartXml)).toBe("40000");
+    expect(rPrSzOf(result.chartXml)).toBe("40000");
+  });
+
+  it("drops out-of-range values and falls back to the 14pt default (sz=1400)", () => {
+    // 0.49pt rounds to 0.5pt, below the OOXML ST_TextFontSize 1pt
+    // minimum — the writer falls back to the 14pt default. (Inputs
+    // from 0.75 round up to 1pt and emit literally.)
+    const a = writeChart(makeChart({ titleFontSize: 0.49 }), "Sheet1");
+    expect(defRPrSzOf(a.chartXml)).toBe("1400");
+    // 401pt is above the OOXML ST_TextFontSize 400pt maximum.
+    const b = writeChart(makeChart({ titleFontSize: 401 }), "Sheet1");
+    expect(defRPrSzOf(b.chartXml)).toBe("1400");
+  });
+
+  it("drops non-finite inputs and falls back to the 14pt default", () => {
+    const nan = writeChart(makeChart({ titleFontSize: Number.NaN }), "Sheet1");
+    expect(defRPrSzOf(nan.chartXml)).toBe("1400");
+    const inf = writeChart(makeChart({ titleFontSize: Number.POSITIVE_INFINITY }), "Sheet1");
+    expect(defRPrSzOf(inf.chartXml)).toBe("1400");
+    const negInf = writeChart(makeChart({ titleFontSize: Number.NEGATIVE_INFINITY }), "Sheet1");
+    expect(defRPrSzOf(negInf.chartXml)).toBe("1400");
+  });
+
+  it("drops non-numeric inputs (defends against the type guard escaping)", () => {
+    const result = writeChart(makeChart({ titleFontSize: "18" as any }), "Sheet1");
+    expect(defRPrSzOf(result.chartXml)).toBe("1400");
+  });
+
+  it("ignores titleFontSize when the chart renders no title (showTitle=false)", () => {
+    // The whole `<c:title>` block is suppressed — no `<a:defRPr>` to
+    // host the size.
+    const result = writeChart(makeChart({ showTitle: false, titleFontSize: 24 }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:title>");
+  });
+
+  it("ignores titleFontSize when the chart has no literal title", () => {
+    const result = writeChart(makeChart({ title: undefined, titleFontSize: 24 }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:title>");
+  });
+
+  it("composes independently with titleRotation and titleOverlay", () => {
+    const result = writeChart(
+      makeChart({ titleOverlay: true, titleRotation: -45, titleFontSize: 24 }),
+      "Sheet1",
+    );
+    const titleBlock = titleBlockOf(result.chartXml);
+    expect(titleBlock).toContain('rot="-2700000"');
+    expect(titleBlock).toContain('sz="2400"');
+    expect(titleBlock).toContain('<c:overlay val="1"/>');
+  });
+
+  it("preserves the title body's other attributes (b='0', lang='en-US')", () => {
+    // The writer keeps `b="0"` (non-bold) and `lang="en-US"` on the
+    // run's `<a:rPr>` so a templated title only loses the size, not
+    // the surrounding font defaults.
+    const result = writeChart(makeChart({ titleFontSize: 18 }), "Sheet1");
+    const titleBlock = titleBlockOf(result.chartXml);
+    expect(titleBlock).toContain('lang="en-US"');
+    // `b="0"` lands on both the <a:defRPr> and the <a:rPr>.
+    expect(titleBlock.match(/b="0"/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("threads through every chart family (bar / column / line / pie / scatter / area)", () => {
+    const types: WriteChartKind[] = ["bar", "column", "line", "pie", "scatter", "area"];
+    for (const type of types) {
+      const result = writeChart(makeChart({ type, titleFontSize: 24 }), "Sheet1");
+      expect(defRPrSzOf(result.chartXml)).toBe("2400");
+    }
+  });
+
+  it("parse round-trip surfaces the size from the writer's output", () => {
+    const written = writeChart(makeChart({ titleFontSize: 18 }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleFontSize).toBe(18);
+  });
+
+  it("collapses the default 14pt round-trip back to undefined", () => {
+    // The writer emits sz="1400" by default; the reader surfaces it
+    // literally because 14pt is a valid pin (not collapsed). However
+    // the writer's omit-on-default behavior means a chart that pinned
+    // 14pt explicitly and one that left the field unset both surface
+    // 14 on read — round-trip is symmetric in shape, not in absence.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleFontSize).toBe(14);
+  });
+
+  it("end-to-end: writeXlsx packages the title font size into chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            titleFontSize: 24,
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const titleBlock = chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(titleBlock).toContain('sz="2400"');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.titleFontSize).toBe(24);
+  });
+});
+
 // ── writeChart — axis title rotation ────────────────────────────────
 
 describe("writeChart — axis title rotation", () => {

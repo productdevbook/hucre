@@ -107,6 +107,18 @@ export function parseChart(xml: string): Chart | undefined {
   const titleRotation = parseTitleRotation(chartEl);
   if (titleRotation !== undefined) out.titleRotation = titleRotation;
 
+  // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p>
+  // </c:rich></c:tx></c:title>` mirrors Excel's "Format Chart Title ->
+  // Font -> Size" knob. Same scope rule as `<c:overlay>` /
+  // `<a:bodyPr rot>` — a chart that omits `<c:title>` (or whose title
+  // is a `<c:strRef>` formula reference with no `<c:rich>` body) has
+  // no `<a:p>` slot to surface the size from, so the helper
+  // short-circuits to `undefined`. The value comes back in points
+  // (range `1..400`) for symmetry with the writer-side
+  // {@link SheetChart.titleFontSize} field.
+  const titleFontSize = parseTitleFontSize(chartEl);
+  if (titleFontSize !== undefined) out.titleFontSize = titleFontSize;
+
   // `<c:autoTitleDeleted>` records whether the user explicitly deleted
   // the auto-generated title — independent of whether a literal
   // `<c:title>` is present. The element sits on `<c:chart>` directly
@@ -2018,6 +2030,76 @@ function parseTitleRotation(chartEl: XmlElement): number | undefined {
   if (degrees < TITLE_ROTATION_MIN_DEG) return TITLE_ROTATION_MIN_DEG;
   if (degrees > TITLE_ROTATION_MAX_DEG) return TITLE_ROTATION_MAX_DEG;
   return degrees;
+}
+
+/**
+ * Conversion factor between OOXML's `sz` attribute (100ths of a point,
+ * the integer Excel writes inside `<a:defRPr sz="N"/>` /
+ * `<a:rPr sz="N"/>`) and whole / half points. The OOXML
+ * `ST_TextFontSize` schema restricts `sz` to the inclusive
+ * `100..400000` band — the writer's clamp uses the same range
+ * converted to points (`1..400`), so any out-of-range value collapses
+ * to `undefined` here rather than surface a token Excel would never
+ * emit.
+ */
+const TITLE_FONT_SZ_PER_POINT = 100;
+const TITLE_FONT_SIZE_MIN_PT = 1;
+const TITLE_FONT_SIZE_MAX_PT = 400;
+
+/**
+ * Pull `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
+ * </a:p></c:rich></c:tx></c:title>` off the chart. Returns the font
+ * size in points (range `1..400`).
+ *
+ * The OOXML `sz` attribute is in 100ths of a point — the reader
+ * converts to points and rounds to the nearest 0.5pt (Excel's UI
+ * exposes the same 0.5pt granularity). Absence of the element /
+ * attribute and out-of-range / non-numeric / non-finite values all
+ * collapse to `undefined` so a fresh chart and a chart that pinned an
+ * out-of-range size both round-trip to the writer's "skip the size
+ * attribute" path.
+ *
+ * Returns `undefined` whenever the chart omits the `<c:title>` element
+ * — there is no `<a:p>` slot to surface the size from in that case —
+ * or when the title is a `<c:strRef>` (formula reference) with no
+ * `<c:rich>` body. The `<a:defRPr>` lives inside
+ * `<c:tx><c:rich><a:p><a:pPr>` per the CT_Title schema (the
+ * default-paragraph properties on the rich-text body's first
+ * paragraph); the lookup is scoped to that path so a stray
+ * `<a:defRPr>` elsewhere in the chart (e.g. on an axis title or a
+ * data-labels block) cannot leak in.
+ */
+function parseTitleFontSize(chartEl: XmlElement): number | undefined {
+  const title = findChild(chartEl, "title");
+  if (!title) return undefined;
+  const tx = findChild(title, "tx");
+  if (!tx) return undefined;
+  const rich = findChild(tx, "rich");
+  if (!rich) return undefined;
+  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
+  // default-paragraph font size. The reader walks the canonical chain
+  // and bails on the first missing link so a malformed `<c:rich>`
+  // surfaces as absence rather than a fabricated value.
+  const p = findChild(rich, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const raw = defRPr.attrs.sz;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  // Convert from 100ths of a point to points, rounding to the nearest
+  // 0.5pt to match the granularity Excel's UI exposes. `Math.round`
+  // on `2 * (parsed / 100)` and dividing by 2 gives a clean half-step
+  // band that mirrors the writer's emit-time normalization.
+  const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2);
+  const points = halfSteps / 2;
+  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
+  return points;
 }
 
 // ── Auto Title Deleted ────────────────────────────────────────────

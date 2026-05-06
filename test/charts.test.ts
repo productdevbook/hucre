@@ -9834,6 +9834,192 @@ describe("parseChart — title rotation", () => {
   });
 });
 
+// ── parseChart — title font size ─────────────────────────────────────
+
+describe("parseChart — title font size", () => {
+  const NS_TFS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withTitleSz(sz: string | undefined): string {
+    const defRPr = sz === undefined ? "<a:defRPr/>" : `<a:defRPr sz="${sz}"/>`;
+    return `<c:chartSpace ${NS_TFS}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr>${defRPr}</a:pPr><a:r><a:t>Quarterly Revenue</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces the size in points from the sz attribute (100ths of a point)", () => {
+    // 18pt * 100 = 1800.
+    const chart = parseChart(withTitleSz("1800"));
+    expect(chart?.titleFontSize).toBe(18);
+  });
+
+  it("surfaces the default 14pt size literally", () => {
+    // Excel writes sz="1400" on every fresh chart title — the reader
+    // surfaces it because it is a literal pin (no "default collapse"
+    // for a literal sz, unlike the rot attribute's `0` default).
+    const chart = parseChart(withTitleSz("1400"));
+    expect(chart?.titleFontSize).toBe(14);
+  });
+
+  it("rounds to the nearest 0.5pt", () => {
+    // sz="1450" = 14.5pt — surfaces literally.
+    const a = parseChart(withTitleSz("1450"));
+    expect(a?.titleFontSize).toBe(14.5);
+    // sz="1424" = 14.24pt — rounds down to 14.
+    const b = parseChart(withTitleSz("1424"));
+    expect(b?.titleFontSize).toBe(14);
+    // sz="1480" = 14.8pt — rounds up to 15 (halfSteps `Math.round(29.6)=30`).
+    const c = parseChart(withTitleSz("1480"));
+    expect(c?.titleFontSize).toBe(15);
+    // sz="1430" = 14.3pt — rounds to 14.5 (halfSteps `Math.round(28.6)=29`).
+    const d = parseChart(withTitleSz("1430"));
+    expect(d?.titleFontSize).toBe(14.5);
+  });
+
+  it("returns undefined when <a:defRPr> omits the sz attribute", () => {
+    const chart = parseChart(withTitleSz(undefined));
+    expect(chart?.titleFontSize).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:title> element", () => {
+    const xml = `<c:chartSpace ${NS_TFS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleFontSize).toBeUndefined();
+  });
+
+  it("returns undefined when <c:title> has no <c:tx><c:rich> body", () => {
+    // A title that only carries `<c:strRef>` (formula reference) has
+    // no `<a:p><a:pPr><a:defRPr>` to host the size.
+    const xml = `<c:chartSpace ${NS_TFS}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:strRef>
+          <c:f>Sheet1!$A$1</c:f>
+          <c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Quarterly Revenue</c:v></c:pt></c:strCache>
+        </c:strRef>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleFontSize).toBeUndefined();
+    // Title still surfaces from the strRef cache.
+    expect(chart?.title).toBe("Quarterly Revenue");
+  });
+
+  it("returns undefined when <a:p> has no <a:pPr> element", () => {
+    const xml = `<c:chartSpace ${NS_TFS}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:r><a:t>Quarterly Revenue</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleFontSize).toBeUndefined();
+  });
+
+  it("drops sz values below the 1pt minimum after rounding (sz=49)", () => {
+    // 49 / 100 = 0.49pt — half-step round lands at 0.5pt, which is
+    // outside the OOXML ST_TextFontSize 1pt minimum. (sz values from
+    // 75 onwards round up to 1.0pt and surface literally; 74 and below
+    // are dropped.)
+    const chart = parseChart(withTitleSz("49"));
+    expect(chart?.titleFontSize).toBeUndefined();
+  });
+
+  it("drops sz values above the 400pt maximum (sz=400001)", () => {
+    // 400001 / 100 = 4000.01pt — outside the OOXML band.
+    const chart = parseChart(withTitleSz("400001"));
+    expect(chart?.titleFontSize).toBeUndefined();
+  });
+
+  it("surfaces the 1pt minimum (sz=100)", () => {
+    const chart = parseChart(withTitleSz("100"));
+    expect(chart?.titleFontSize).toBe(1);
+  });
+
+  it("surfaces the 400pt maximum (sz=40000)", () => {
+    const chart = parseChart(withTitleSz("40000"));
+    expect(chart?.titleFontSize).toBe(400);
+  });
+
+  it("drops non-numeric sz tokens", () => {
+    expect(parseChart(withTitleSz("fourteen"))?.titleFontSize).toBeUndefined();
+  });
+
+  it("drops empty sz tokens", () => {
+    expect(parseChart(withTitleSz(""))?.titleFontSize).toBeUndefined();
+  });
+
+  it("co-surfaces alongside titleRotation, titleOverlay, and other chart fields", () => {
+    const xml = `<c:chartSpace ${NS_TFS}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr rot="-5400000"/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr sz="2400"/></a:pPr><a:r><a:t>Hero</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="1"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.title).toBe("Hero");
+    expect(chart?.titleOverlay).toBe(true);
+    expect(chart?.titleRotation).toBe(-90);
+    expect(chart?.titleFontSize).toBe(24);
+  });
+});
+
 // ── parseChart — axis title rotation ─────────────────────────────────
 
 describe("parseChart — axis title rotation", () => {

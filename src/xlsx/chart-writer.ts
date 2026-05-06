@@ -68,7 +68,12 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
   // ── Title ──
   if (showTitle && chart.title) {
     chartChildren.push(
-      buildTitle(chart.title, resolveTitleOverlay(chart), resolveTitleRotation(chart)),
+      buildTitle(
+        chart.title,
+        resolveTitleOverlay(chart),
+        resolveTitleRotation(chart),
+        resolveTitleFontSize(chart),
+      ),
     );
   }
   // `<c:autoTitleDeleted>` records whether the user explicitly deleted
@@ -198,13 +203,27 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
 
 // ── Title ────────────────────────────────────────────────────────────
 
-function buildTitle(title: string, overlay: boolean, rotationDeg: number | undefined): string {
+function buildTitle(
+  title: string,
+  overlay: boolean,
+  rotationDeg: number | undefined,
+  fontSizePt: number | undefined,
+): string {
   // OOXML's `<a:bodyPr rot="N"/>` attribute is in 60000ths of a degree.
   // The writer holds `titleRotation` in whole degrees and converts at
   // emit time. Absence (`undefined`) collapses to the OOXML default
   // `0` so a fresh chart matches Excel's reference serialization
   // byte-for-byte.
   const rot = rotationDeg === undefined ? 0 : rotationDeg * TITLE_ROT_PER_DEGREE;
+  // OOXML's `<a:defRPr sz="N"/>` / `<a:rPr sz="N"/>` attribute is in
+  // 100ths of a point. The writer holds `titleFontSize` in points and
+  // converts at emit time. Absence (`undefined`) collapses to the
+  // application-default `1400` (14pt) so a fresh chart matches Excel's
+  // reference serialization byte-for-byte. The size lands on both the
+  // default-paragraph `<a:defRPr>` and the literal run's `<a:rPr>` so
+  // a re-parse picks the value up off either canonical slot.
+  const sz =
+    fontSizePt === undefined ? TITLE_DEFAULT_FONT_SIZE_SZ : fontSizePt * TITLE_FONT_SZ_PER_POINT;
   return xmlElement("c:title", undefined, [
     xmlElement("c:tx", undefined, [
       xmlElement("c:rich", undefined, [
@@ -222,9 +241,9 @@ function buildTitle(title: string, overlay: boolean, rotationDeg: number | undef
         ),
         xmlSelfClose("a:lstStyle"),
         xmlElement("a:p", undefined, [
-          xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz: 1400, b: 0 })]),
+          xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz, b: 0 })]),
           xmlElement("a:r", undefined, [
-            xmlSelfClose("a:rPr", { lang: "en-US", sz: 1400, b: 0 }),
+            xmlSelfClose("a:rPr", { lang: "en-US", sz, b: 0 }),
             xmlElement("a:t", undefined, xmlEscape(title)),
           ]),
         ]),
@@ -281,6 +300,69 @@ function normalizeTitleRotation(value: number | undefined): number | undefined {
  */
 function resolveTitleRotation(chart: SheetChart): number | undefined {
   return normalizeTitleRotation(chart.titleRotation);
+}
+
+/**
+ * OOXML's `<a:defRPr sz="N"/>` / `<a:rPr sz="N"/>` attribute is in
+ * 100ths of a point — the writer holds {@link SheetChart.titleFontSize}
+ * in points and converts at emit time. The OOXML `ST_TextFontSize`
+ * schema restricts `sz` to the inclusive `100..400000` band; the
+ * writer's clamp uses the same range converted to points (`1..400`pt),
+ * so any out-of-range value drops at emit time rather than surface a
+ * token Excel would reject.
+ */
+const TITLE_FONT_SZ_PER_POINT = 100;
+const TITLE_FONT_SIZE_MIN_PT = 1;
+const TITLE_FONT_SIZE_MAX_PT = 400;
+
+/**
+ * Application-default `sz` value for the chart title's `<a:defRPr>` /
+ * `<a:rPr>` slots — Excel renders the title at 14pt (`sz="1400"`)
+ * unless the user pins a custom size. Absence of
+ * {@link SheetChart.titleFontSize} resolves to this default so a fresh
+ * chart matches Excel's reference serialization byte-for-byte.
+ */
+const TITLE_DEFAULT_FONT_SIZE_SZ = 1400;
+
+/**
+ * Normalize a {@link SheetChart.titleFontSize} value (whole / half
+ * points) for the `<c:title><c:tx><c:rich><a:p><a:pPr>
+ * <a:defRPr sz="N"/></a:pPr></a:p></c:rich></c:tx></c:title>` writer
+ * slot. Returns `undefined` when the input is unset, non-finite,
+ * non-numeric, or out of the `1..400`pt band the OOXML
+ * `ST_TextFontSize` schema exposes — every absence path collapses to
+ * the same default-the-attribute shape so absence and an out-of-range
+ * input both fall back to Excel's reference 14pt.
+ *
+ * Fractional inputs round to the nearest 0.5pt (the OOXML attribute is
+ * an integer in 100ths of a point and Excel's UI exposes the same
+ * 0.5pt granularity, so finer fractions have no meaningful refinement
+ * at emit time).
+ */
+function normalizeTitleFontSize(value: number | undefined): number | undefined {
+  if (value === undefined || typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  // Round to the nearest 0.5pt (Excel's UI granularity). `Math.round`
+  // on `2 * value` and dividing by 2 gives a clean half-step band.
+  const halfSteps = Math.round(value * 2);
+  const points = halfSteps / 2;
+  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
+  return points;
+}
+
+/**
+ * Resolve `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/>
+ * </a:pPr></a:p></c:rich></c:tx></c:title>` from
+ * {@link SheetChart.titleFontSize}.
+ *
+ * Returns the size in points (`1..400`), or `undefined` when the chart
+ * leaves the field unset / passed an out-of-range or non-numeric
+ * token. The flag is only meaningful when the chart actually emits a
+ * title — the caller is expected to gate the call on
+ * `showTitle && chart.title`. A chart whose title is suppressed has
+ * no `<c:title>` block to host the size in either case.
+ */
+function resolveTitleFontSize(chart: SheetChart): number | undefined {
+  return normalizeTitleFontSize(chart.titleFontSize);
 }
 
 /**
