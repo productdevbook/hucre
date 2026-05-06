@@ -10915,3 +10915,235 @@ describe("writeChart — axis title italic", () => {
     expect(reparsed?.axes?.y?.axisTitleItalic).toBe(true);
   });
 });
+
+// ── writeChart — axis title color ────────────────────────────────────
+
+describe("writeChart — axis title color", () => {
+  function axisBlocks(xml: string): string[] {
+    return Array.from(xml.matchAll(/<c:(catAx|valAx|dateAx)>[\s\S]*?<\/c:\1>/g)).map((m) => m[0]);
+  }
+
+  function axisTitleBlock(axisBlock: string): string | undefined {
+    const m = axisBlock.match(/<c:title>[\s\S]*?<\/c:title>/);
+    return m ? m[0] : undefined;
+  }
+
+  function axisTitleDefRPrFillVal(axisBlock: string): string | undefined {
+    const titleBlock = axisTitleBlock(axisBlock);
+    if (!titleBlock) return undefined;
+    // The writer wraps the `<a:defRPr>` element when a color is set
+    // (`<a:defRPr ...><a:solidFill>...</a:solidFill></a:defRPr>`); when
+    // no color is pinned the slot stays self-closing. Match the
+    // wrapping form explicitly so the helper does not stop at the
+    // `<a:srgbClr.../>` self-close inside.
+    const defRPrMatch = titleBlock.match(/<a:defRPr\b[^>]*>([\s\S]*?)<\/a:defRPr>/);
+    if (!defRPrMatch) return undefined;
+    const fill = defRPrMatch[1].match(
+      /<a:solidFill>\s*<a:srgbClr\b[^/]*val="([0-9A-Fa-f]{6})"\s*\/>\s*<\/a:solidFill>/,
+    );
+    return fill ? fill[1] : undefined;
+  }
+
+  function axisTitleRPrFillVal(axisBlock: string): string | undefined {
+    const titleBlock = axisTitleBlock(axisBlock);
+    if (!titleBlock) return undefined;
+    // Same wrapping-form story as `<a:defRPr>` — the writer expands the
+    // slot from self-closing to wrapping when a color is set.
+    const rPrMatch = titleBlock.match(/<a:rPr\b[^>]*>([\s\S]*?)<\/a:rPr>/);
+    if (!rPrMatch) return undefined;
+    const fill = rPrMatch[1].match(
+      /<a:solidFill>\s*<a:srgbClr\b[^/]*val="([0-9A-Fa-f]{6})"\s*\/>\s*<\/a:solidFill>/,
+    );
+    return fill ? fill[1] : undefined;
+  }
+
+  it("omits <a:solidFill> by default (matches Excel's reference theme-color axis title)", () => {
+    const result = writeChart(makeChart({ axes: { x: { title: "Period" } } }), "Sheet1");
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrFillVal(xAx)).toBeUndefined();
+    expect(axisTitleRPrFillVal(xAx)).toBeUndefined();
+  });
+
+  it("emits <a:solidFill><a:srgbClr/> on both <a:defRPr> and <a:rPr> when axisTitleColor is set", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleColor: "FF0000" } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrFillVal(xAx)).toBe("FF0000");
+    expect(axisTitleRPrFillVal(xAx)).toBe("FF0000");
+  });
+
+  it("normalizes a lowercase hex value to uppercase", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleColor: "1070ca" } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrFillVal(xAx)).toBe("1070CA");
+  });
+
+  it("strips a leading '#' on input", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleColor: "#1070CA" } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrFillVal(xAx)).toBe("1070CA");
+  });
+
+  it("drops malformed hex inputs back to the theme-color default", () => {
+    for (const bad of ["", "FFF", "ZZZZZZ", "FF0000FF"]) {
+      const result = writeChart(
+        makeChart({ axes: { x: { title: "Period", axisTitleColor: bad } } }),
+        "Sheet1",
+      );
+      const [xAx] = axisBlocks(result.chartXml);
+      expect(axisTitleDefRPrFillVal(xAx)).toBeUndefined();
+    }
+  });
+
+  it("drops non-string inputs (defends against the type guard escaping)", () => {
+    const result = writeChart(
+      makeChart({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        axes: { x: { title: "Period", axisTitleColor: 123 as any } },
+      }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrFillVal(xAx)).toBeUndefined();
+  });
+
+  it("threads the color through both axes independently", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: { title: "Period", axisTitleColor: "FF0000" },
+          y: { title: "USD", axisTitleColor: "00C586" },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx, yAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrFillVal(xAx)).toBe("FF0000");
+    expect(axisTitleDefRPrFillVal(yAx)).toBe("00C586");
+  });
+
+  it("ignores axisTitleColor when the axis renders no title", () => {
+    // No title means no `<c:title>` block — there is no slot for the
+    // fill in either case.
+    const result = writeChart(makeChart({ axes: { x: { axisTitleColor: "FF0000" } } }), "Sheet1");
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(xAx).not.toContain("<c:title>");
+  });
+
+  it("composes independently with rotation / size / bold / italic on the same axis title", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: {
+            title: "Period",
+            axisTitleRotation: 45,
+            axisTitleFontSize: 14,
+            axisTitleBold: true,
+            axisTitleItalic: true,
+            axisTitleColor: "1070CA",
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const titleBlock = axisTitleBlock(xAx)!;
+    expect(titleBlock).toContain('rot="2700000"');
+    expect(titleBlock).toContain('sz="1400"');
+    expect(titleBlock).toContain('b="1"');
+    expect(titleBlock).toContain('i="1"');
+    expect(titleBlock).toContain('val="1070CA"');
+  });
+
+  it("threads the color through line / area chart families and scatter (both axes via valAx)", () => {
+    for (const type of ["line", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, axes: { x: { title: "Period", axisTitleColor: "1070CA" } } }),
+        "Sheet1",
+      );
+      const [xAx] = axisBlocks(result.chartXml);
+      expect(axisTitleDefRPrFillVal(xAx)).toBe("1070CA");
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { y: { title: "USD", axisTitleColor: "00C586" } },
+      }),
+      "Sheet1",
+    );
+    const blocks = axisBlocks(scatter.chartXml);
+    const yAx = blocks[1];
+    expect(axisTitleDefRPrFillVal(yAx)).toBe("00C586");
+  });
+
+  it("preserves the surrounding font defaults (lang='en-US', sz='1000', b='0')", () => {
+    // Only the fill should be added; the writer keeps the existing
+    // size / language / bold defaults so a templated axis title only
+    // gains the color, not lose the surrounding font defaults.
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleColor: "FF0000" } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const titleBlock = axisTitleBlock(xAx)!;
+    expect(titleBlock).toContain('lang="en-US"');
+    expect(titleBlock).toContain('sz="1000"');
+    expect(titleBlock.match(/b="0"/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("round-trips axisTitleColor through parseChart", () => {
+    const written = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleColor: "1070CA" } } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.title).toBe("Period");
+    expect(reparsed?.axes?.x?.axisTitleColor).toBe("1070CA");
+  });
+
+  it("round-trips a defaulted axis title to undefined color", () => {
+    const written = writeChart(makeChart({ axes: { x: { title: "Period" } } }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.title).toBe("Period");
+    expect(reparsed?.axes?.x?.axisTitleColor).toBeUndefined();
+  });
+
+  it("end-to-end: writeXlsx packages the axis title color into chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            axes: {
+              x: { title: "Period", axisTitleColor: "FF0000" },
+              y: { title: "USD", axisTitleColor: "00C586" },
+            },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.x?.axisTitleColor).toBe("FF0000");
+    expect(reparsed?.axes?.y?.axisTitleColor).toBe("00C586");
+  });
+});

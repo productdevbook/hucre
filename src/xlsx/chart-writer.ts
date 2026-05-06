@@ -629,6 +629,23 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // reference serialization for a non-italic axis title).
     xAxisTitleItalic: normalizeAxisTitleItalic(chart.axes?.x?.axisTitleItalic),
     yAxisTitleItalic: normalizeAxisTitleItalic(chart.axes?.y?.axisTitleItalic),
+    // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>
+    // <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr>
+    // <a:r><a:rPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill>
+    // </a:rPr></a:r></a:p></c:rich></c:tx></c:title>` — axis-title
+    // font color. The OOXML `<a:srgbClr val=".."/>` carries the
+    // 6-character uppercase hex sRGB color (CT_SRgbColor inside
+    // CT_TextCharacterProperties' fill choice — ECMA-376 Part 1,
+    // §20.1.2.3.32 / §21.1.2.3.7) and the slot lives on every axis
+    // flavour. Normalize the caller's hex input — the writer accepts
+    // a leading `#` and any case, then collapses to the OOXML
+    // canonical uppercase form. Malformed inputs (wrong length,
+    // non-hex characters, alpha-channel forms, non-string escapes)
+    // collapse to `undefined` and the writer omits the entire
+    // `<a:solidFill>` block (Excel's reference serialization for an
+    // axis title that inherits the theme text color).
+    xAxisTitleColor: normalizeAxisTitleColor(chart.axes?.x?.axisTitleColor),
+    yAxisTitleColor: normalizeAxisTitleColor(chart.axes?.y?.axisTitleColor),
     xGridlines: normalizeAxisGridlines(chart.axes?.x?.gridlines),
     yGridlines: normalizeAxisGridlines(chart.axes?.y?.gridlines),
     xScale: normalizeAxisScale(chart.axes?.x?.scale),
@@ -1090,6 +1107,27 @@ interface AxisRenderOptions {
    * semantics as {@link xAxisTitleItalic}.
    */
   yAxisTitleItalic: boolean | undefined;
+  /**
+   * Axis-title font color emitted on the X axis via
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>
+   * <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr>
+   * <a:r><a:rPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill>
+   * </a:rPr></a:r></a:p></c:rich></c:tx></c:title>`. The OOXML
+   * `<a:srgbClr val=".."/>` carries the 6-character uppercase hex
+   * sRGB color. `undefined` collapses to omitting the entire
+   * `<a:solidFill>` block (Excel's reference serialization for an
+   * axis title that inherits the theme text color); any non-`undefined`
+   * value is the normalized uppercase hex string the writer lands on
+   * both `<a:defRPr>` and `<a:rPr>`. Only meaningful when the axis
+   * renders a title — the per-family axis builders gate the value on
+   * the `xAxisTitle` / `yAxisTitle` field.
+   */
+  xAxisTitleColor: string | undefined;
+  /**
+   * Axis-title font color emitted on the Y axis. Same shape and emit
+   * semantics as {@link xAxisTitleColor}.
+   */
+  yAxisTitleColor: string | undefined;
   xGridlines: { major: boolean; minor: boolean } | undefined;
   yGridlines: { major: boolean; minor: boolean } | undefined;
   xScale: ChartAxisScale | undefined;
@@ -1956,6 +1994,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
         opts.xAxisTitleFontSize,
         opts.xAxisTitleBold,
         opts.xAxisTitleItalic,
+        opts.xAxisTitleColor,
       ),
     );
   catAxChildren.push(
@@ -2018,6 +2057,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
         opts.yAxisTitleFontSize,
         opts.yAxisTitleBold,
         opts.yAxisTitleItalic,
+        opts.yAxisTitleColor,
       ),
     );
   valAxChildren.push(
@@ -2381,6 +2421,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.xAxisTitleFontSize,
         opts.xAxisTitleBold,
         opts.xAxisTitleItalic,
+        opts.xAxisTitleColor,
       ),
     );
   xAxChildren.push(
@@ -2422,6 +2463,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.yAxisTitleFontSize,
         opts.yAxisTitleBold,
         opts.yAxisTitleItalic,
+        opts.yAxisTitleColor,
       ),
     );
   yAxChildren.push(
@@ -2492,6 +2534,17 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
  * axis title — only the bold flag is always emitted); only `true`
  * emits `i="1"` on both slots so a re-parse picks the flag up off
  * either canonical slot.
+ *
+ * The optional `rgbHex` parameter pins the title's
+ * `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill>
+ * </a:defRPr>` / `<a:rPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+ * </a:solidFill></a:rPr>` font color. Mirrors the chart-level
+ * `buildTitle` color emit: when set, the `<a:defRPr>` / `<a:rPr>`
+ * slots expand from self-closing to wrapping a single
+ * `<a:solidFill>` child; otherwise the writer keeps the existing
+ * self-closing form so a fresh axis title with no custom color
+ * matches Excel's reference serialization byte-for-byte (the title
+ * inherits the theme text color in that case).
  */
 function buildAxisTitle(
   label: string,
@@ -2499,6 +2552,7 @@ function buildAxisTitle(
   fontSizePt: number | undefined,
   bold: boolean | undefined,
   italic: boolean | undefined,
+  rgbHex: string | undefined,
 ): string {
   const rot = rotationDeg === undefined ? 0 : rotationDeg * TITLE_ROT_PER_DEGREE;
   // OOXML's `<a:defRPr sz="N"/>` / `<a:rPr sz="N"/>` attribute is in
@@ -2534,6 +2588,29 @@ function buildAxisTitle(
   // serialization byte-for-byte (Excel itself omits `i` on a non-
   // italic axis title — only the bold flag is always emitted).
   const i = italic === true ? 1 : undefined;
+  // OOXML's `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+  // </a:solidFill></a:defRPr>` carries the title's font color. Mirrors
+  // the chart-level `buildTitle` color emit: `axisTitleColor` lands on
+  // both the default-paragraph `<a:defRPr>` and the literal run's
+  // `<a:rPr>` so a re-parse picks the value up off either canonical
+  // slot. Absence (`undefined`) collapses to omitting the entire
+  // `<a:solidFill>` block so the title inherits the theme text color
+  // (Excel's reference behavior for a fresh axis title that has not
+  // had a custom color picked).
+  const solidFillChild = rgbHex
+    ? xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: rgbHex })])
+    : undefined;
+  // When a fill color is set the `<a:defRPr>` / `<a:rPr>` slots
+  // expand from self-closing to wrapping the `<a:solidFill>` child;
+  // otherwise the writer keeps the existing self-closing form so a
+  // fresh axis title with no custom color matches Excel's reference
+  // serialization byte-for-byte.
+  const defRPr = solidFillChild
+    ? xmlElement("a:defRPr", { sz, b, i }, [solidFillChild])
+    : xmlSelfClose("a:defRPr", { sz, b, i });
+  const rPr = solidFillChild
+    ? xmlElement("a:rPr", { lang: "en-US", sz, b, i }, [solidFillChild])
+    : xmlSelfClose("a:rPr", { lang: "en-US", sz, b, i });
   return xmlElement("c:title", undefined, [
     xmlElement("c:tx", undefined, [
       xmlElement("c:rich", undefined, [
@@ -2551,11 +2628,8 @@ function buildAxisTitle(
         ),
         xmlSelfClose("a:lstStyle"),
         xmlElement("a:p", undefined, [
-          xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz, b, i })]),
-          xmlElement("a:r", undefined, [
-            xmlSelfClose("a:rPr", { lang: "en-US", sz, b, i }),
-            xmlElement("a:t", undefined, xmlEscape(label)),
-          ]),
+          xmlElement("a:pPr", undefined, [defRPr]),
+          xmlElement("a:r", undefined, [rPr, xmlElement("a:t", undefined, xmlEscape(label))]),
         ]),
       ]),
     ]),
@@ -2630,6 +2704,24 @@ function normalizeAxisTitleBold(value: boolean | undefined): boolean | undefined
  */
 function normalizeAxisTitleItalic(value: boolean | undefined): boolean | undefined {
   return normalizeTitleItalic(value);
+}
+
+/**
+ * Normalize a {@link SheetChart.axes}.x.axisTitleColor value for the
+ * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>
+ * <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
+ * </c:rich></c:tx></c:title>` writer slot inside an axis. Delegates
+ * to the chart-level {@link normalizeTitleColor} so the two share the
+ * same accept-with-or-without-`#` grammar — `"FF0000"`, `"#FF0000"`,
+ * and `"ff0000"` all collapse to the OOXML uppercase canonical form;
+ * malformed inputs (wrong length, non-hex characters, alpha-channel
+ * forms, non-string escapes from an untyped caller) collapse to
+ * `undefined` so the writer skips the entire `<a:solidFill>` block
+ * and the axis title inherits the theme text color (Excel's
+ * reference behavior for a fresh axis title without a custom color).
+ */
+function normalizeAxisTitleColor(value: string | undefined): string | undefined {
+  return normalizeTitleColor(value);
 }
 
 // ── Series ───────────────────────────────────────────────────────────

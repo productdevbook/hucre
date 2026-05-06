@@ -742,6 +742,29 @@ export interface CloneChartOptions {
        * host the flag).
        */
       axisTitleItalic?: boolean | null;
+      /**
+       * Override `SheetChart.axes.x.axisTitleColor`. `undefined` (or
+       * omitted) inherits the source axis's parsed value; `null` drops
+       * the inherited fill so the writer falls back to the theme text
+       * color (no `<a:solidFill>` element on the axis title's
+       * default-paragraph properties); a 6-character hex string (with
+       * or without a leading `#`, any case) replaces it.
+       *
+       * Malformed overrides (wrong length, non-hex characters,
+       * alpha-channel forms, non-string escapes from an untyped
+       * caller) collapse to a drop so the cloned `SheetChart` always
+       * carries a value the writer will accept.
+       *
+       * `<c:title>` lives on every axis flavour per the OOXML schema,
+       * so the override carries through every chart family that has
+       * axes (bar / column / line / area / scatter). Silently dropped
+       * on `pie` / `doughnut` charts (no axes at all) and on any axis
+       * whose `title` is unset (no `<c:title>` block to host the
+       * fill). The grammar mirrors `axisTitleRotation` /
+       * `axisTitleFontSize` / `axisTitleBold` / `axisTitleItalic` so
+       * the axis-title knobs compose the same way at the call site.
+       */
+      axisTitleColor?: string | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -930,6 +953,8 @@ export interface CloneChartOptions {
       axisTitleBold?: boolean | null;
       /** See {@link CloneChartOptions.axes.x.axisTitleItalic}. */
       axisTitleItalic?: boolean | null;
+      /** See {@link CloneChartOptions.axes.x.axisTitleColor}. */
+      axisTitleColor?: string | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -2627,6 +2652,26 @@ function resolveAxes(
     sourceAxes?.y?.axisTitleItalic,
     overrides?.y?.axisTitleItalic,
   );
+  // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>
+  // <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
+  // </c:rich></c:tx></c:title>` — axis title font color. Sits on the
+  // same `<c:title>` body as `axisTitleRotation` / `axisTitleFontSize` /
+  // `axisTitleBold` / `axisTitleItalic`, so the resolver applies on
+  // every chart family that has axes (pie / doughnut were short-
+  // circuited upstream). Malformed overrides collapse to a drop via
+  // the normalizer so the cloned `SheetChart` always carries a value
+  // the writer will accept. Like the rotation, size, bold, and italic
+  // knobs, the writer drops the fill when the matching axis title is
+  // unset, so a stray pin on an axis with no title silently disappears
+  // at emit time.
+  const xAxisTitleColor = applyAxisTitleColorOverride(
+    sourceAxes?.x?.axisTitleColor,
+    overrides?.x?.axisTitleColor,
+  );
+  const yAxisTitleColor = applyAxisTitleColorOverride(
+    sourceAxes?.y?.axisTitleColor,
+    overrides?.y?.axisTitleColor,
+  );
   const xGridlines = applyGridlinesOverride(sourceAxes?.x?.gridlines, overrides?.x?.gridlines);
   const yGridlines = applyGridlinesOverride(sourceAxes?.y?.gridlines, overrides?.y?.gridlines);
   const xScale = applyScaleOverride(sourceAxes?.x?.scale, overrides?.x?.scale);
@@ -2784,6 +2829,14 @@ function resolveAxes(
   // `opts.xAxisTitle` / `opts.yAxisTitle` is set).
   const xAxisTitleItalicResolved = xTitle === undefined ? undefined : xAxisTitleItalic;
   const yAxisTitleItalicResolved = yTitle === undefined ? undefined : yAxisTitleItalic;
+  // The axis-title font color only renders when the axis carries a
+  // title — drop a stray inherited fill when the resolved axis title
+  // is unset so the cloned `SheetChart` accurately reflects what the
+  // chart will paint. Symmetric with the writer's title-presence gate
+  // (the per-family axis builder only invokes `buildAxisTitle` when
+  // `opts.xAxisTitle` / `opts.yAxisTitle` is set).
+  const xAxisTitleColorResolved = xTitle === undefined ? undefined : xAxisTitleColor;
+  const yAxisTitleColorResolved = yTitle === undefined ? undefined : yAxisTitleColor;
 
   const out: NonNullable<SheetChart["axes"]> = {};
   if (
@@ -2792,6 +2845,7 @@ function resolveAxes(
     xAxisTitleFontSizeResolved !== undefined ||
     xAxisTitleBoldResolved !== undefined ||
     xAxisTitleItalicResolved !== undefined ||
+    xAxisTitleColorResolved !== undefined ||
     xGridlines !== undefined ||
     xScale !== undefined ||
     xNumFmt !== undefined ||
@@ -2820,6 +2874,7 @@ function resolveAxes(
       out.x.axisTitleFontSize = xAxisTitleFontSizeResolved;
     if (xAxisTitleBoldResolved !== undefined) out.x.axisTitleBold = xAxisTitleBoldResolved;
     if (xAxisTitleItalicResolved !== undefined) out.x.axisTitleItalic = xAxisTitleItalicResolved;
+    if (xAxisTitleColorResolved !== undefined) out.x.axisTitleColor = xAxisTitleColorResolved;
     if (xGridlines !== undefined) out.x.gridlines = xGridlines;
     if (xScale !== undefined) out.x.scale = xScale;
     if (xNumFmt !== undefined) out.x.numberFormat = xNumFmt;
@@ -2846,6 +2901,7 @@ function resolveAxes(
     yAxisTitleFontSizeResolved !== undefined ||
     yAxisTitleBoldResolved !== undefined ||
     yAxisTitleItalicResolved !== undefined ||
+    yAxisTitleColorResolved !== undefined ||
     yGridlines !== undefined ||
     yScale !== undefined ||
     yNumFmt !== undefined ||
@@ -2868,6 +2924,7 @@ function resolveAxes(
       out.y.axisTitleFontSize = yAxisTitleFontSizeResolved;
     if (yAxisTitleBoldResolved !== undefined) out.y.axisTitleBold = yAxisTitleBoldResolved;
     if (yAxisTitleItalicResolved !== undefined) out.y.axisTitleItalic = yAxisTitleItalicResolved;
+    if (yAxisTitleColorResolved !== undefined) out.y.axisTitleColor = yAxisTitleColorResolved;
     if (yGridlines !== undefined) out.y.gridlines = yGridlines;
     if (yScale !== undefined) out.y.scale = yScale;
     if (yNumFmt !== undefined) out.y.numberFormat = yNumFmt;
@@ -3305,6 +3362,33 @@ function applyAxisTitleItalicOverride(
   if (override === undefined) return normalizeTitleItalic(source);
   if (override === null) return undefined;
   return normalizeTitleItalic(override);
+}
+
+/**
+ * Resolve an `axisTitleColor` override using the same `undefined`
+ * (inherit) / `null` (drop) / value (replace) grammar as the other
+ * axis helpers. Non-string overrides and malformed hex tokens (typed
+ * escapes from an untyped caller, wrong length, non-hex characters,
+ * alpha-channel forms) collapse to `undefined` via
+ * {@link normalizeTitleColor} so the cloned `SheetChart` always
+ * carries a value the writer will accept. A `null` override always
+ * drops the inherited fill (the writer falls back to the theme text
+ * color — no `<a:solidFill>` block on the axis title's
+ * default-paragraph properties).
+ *
+ * The caller is expected to additionally gate the resolved value on
+ * the matching axis title's presence so the cloned shape never
+ * carries a fill that the writer would silently elide (the writer
+ * scopes the fill emission to `<c:title>`, which is omitted when
+ * the axis renders no title).
+ */
+function applyAxisTitleColorOverride(
+  source: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeTitleColor(source);
+  if (override === null) return undefined;
+  return normalizeTitleColor(override);
 }
 
 /**

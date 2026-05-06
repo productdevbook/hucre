@@ -2033,6 +2033,56 @@ export interface SheetChart {
        * family that has axes (bar / column / line / area / scatter).
        */
       axisTitleItalic?: boolean;
+      /**
+       * Axis title font color. Maps to
+       * `<c:catAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr>
+       * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr>
+       * </a:pPr><a:r><a:rPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+       * </a:solidFill></a:rPr></a:r></a:p></c:rich></c:tx></c:title>
+       * </c:catAx>` (or `<c:valAx>` for scatter / value axes) — Excel's
+       * "Format Axis Title -> Font -> Font Color" picker. The OOXML
+       * `<a:srgbClr val=".."/>` carries the 6-character uppercase hex
+       * sRGB color (`CT_SRgbColor`, ECMA-376 Part 1, §20.1.2.3.32); the
+       * writer lands the fill on both the default-paragraph
+       * `<a:defRPr>` and the literal run's `<a:rPr>` so a re-parse
+       * picks the color up off either canonical slot — Excel keeps the
+       * two values in sync.
+       *
+       * Mirrors {@link SheetChart.titleColor} for axis titles — same
+       * canonical-slot pair, same accept-with-or-without-`#` grammar
+       * (`"FF0000"` / `"#FF0000"` / `"ff0000"` all collapse to the
+       * uppercase canonical form), same `string | null` clone grammar
+       * (`undefined` inherits, `null` drops, a hex string replaces) so
+       * a single configuration call threads cleanly through both the
+       * chart title and either axis title without bookkeeping the
+       * canonical OOXML slots. Mirrors {@link axisTitleRotation} /
+       * {@link axisTitleFontSize} / {@link axisTitleBold} /
+       * {@link axisTitleItalic} for the same `<c:title>` body, so all
+       * five axis-title knobs (rotation, size, bold, italic, color)
+       * compose freely on the same axis.
+       *
+       * Default: omitted — the axis title renders in Excel's reference
+       * inherited theme color (no `<a:solidFill>` element, the writer
+       * skips the fill block entirely). Pin a hex value to render the
+       * axis title in that color (e.g. `"1070CA"` for the dashboard
+       * hero blue the issue-#136 example reaches for). The 8-character
+       * `#RRGGBBAA` form is *not* accepted — alpha lives on
+       * `<a:srgbClr><a:alpha val=".."/>` which is a separate runs-level
+       * knob; pinning `axisTitleColor` carries the RGB triple only.
+       * Malformed inputs (wrong length, non-hex characters, alpha-
+       * channel form) collapse to `undefined` so a stray non-hex token
+       * never produces a malformed `<a:srgbClr>`.
+       *
+       * Silently dropped when the axis renders no title (the
+       * `<c:title>` element is absent in either case) and on `pie` /
+       * `doughnut` charts (no axes at all).
+       *
+       * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+       * `<c:dateAx>` / `<c:serAx>` all carry the same `<c:title>` shape
+       * per the OOXML schema, so the field round-trips on every chart
+       * family that has axes (bar / column / line / area / scatter).
+       */
+      axisTitleColor?: string;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -2358,6 +2408,28 @@ export interface SheetChart {
        * to host the flag).
        */
       axisTitleItalic?: boolean;
+      /**
+       * Value-axis title font color. Maps to
+       * `<c:valAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr>
+       * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr>
+       * </a:pPr><a:r><a:rPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+       * </a:solidFill></a:rPr></a:r></a:p></c:rich></c:tx></c:title>
+       * </c:valAx>`. Mirrors {@link SheetChart.axes.x.axisTitleColor}
+       * for the value axis — see that field for the full semantics.
+       * The OOXML `<a:srgbClr val=".."/>` carries the 6-character
+       * uppercase hex sRGB color; the writer lands the fill on both
+       * the default-paragraph `<a:defRPr>` and the literal run's
+       * `<a:rPr>` so a re-parse picks the color up off either
+       * canonical slot.
+       *
+       * Useful for tinting a Y-axis unit label to match a dashboard
+       * accent color (e.g. green for revenue, red for expense) without
+       * touching the chart title or axis tick labels. Silently dropped
+       * on `pie` / `doughnut` charts (no axes at all) and on any axis
+       * whose `title` is unset (no `<c:title>` block to host the
+       * fill).
+       */
+      axisTitleColor?: string;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -3627,6 +3699,40 @@ export interface ChartAxisInfo {
    * whether the source axis was a category or value axis.
    */
   axisTitleItalic?: boolean;
+  /**
+   * Axis-title font color pulled from
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>
+   * <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
+   * </c:rich></c:tx></c:title>` on the axis element. Reflects Excel's
+   * "Format Axis Title -> Font -> Font Color" picker.
+   *
+   * Surfaced as the 6-character uppercase hex string the writer round-
+   * trips (`"FF0000"` / `"1070CA"`) — the leading `#` is stripped on
+   * read so the value threads straight into the writer-side
+   * {@link SheetChart.axes.x.axisTitleColor} without transformation.
+   * Color picks other than the literal sRGB form (`<a:schemeClr>` theme
+   * references, `<a:hslClr>`, `<a:sysClr>`, `<a:prstClr>`) collapse to
+   * `undefined` — the reader records only the resolvable RGB triple to
+   * keep the round-trip lossless against {@link cloneChart} ->
+   * {@link writeXlsx}. Malformed `val` tokens (wrong length, non-hex
+   * characters) likewise drop to `undefined` rather than fabricate a
+   * value the writer would round-trip into a malformed `<a:srgbClr>`.
+   *
+   * Reported as `undefined` whenever the axis omits `<c:title>`
+   * entirely, when the title is a `<c:strRef>` (formula reference)
+   * with no `<c:rich>` body, or when the `<a:defRPr>` slot has no
+   * `<a:solidFill>` child (the title inherits the theme's text color
+   * in that case). Mirrors the chart-level {@link Chart.titleColor} so
+   * a parsed value slots straight back into the writer-side
+   * {@link SheetChart.axes.x.axisTitleColor} without transformation.
+   *
+   * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+   * `<c:dateAx>` / `<c:serAx>` all carry the same `<c:title>` shape
+   * per the OOXML schema. The reader surfaces the value on every axis
+   * flavour so a parsed chart preserves the color regardless of
+   * whether the source axis was a category or value axis.
+   */
+  axisTitleColor?: string;
   /**
    * Major / minor gridline visibility. Omitted when neither
    * `<c:majorGridlines>` nor `<c:minorGridlines>` is declared on the

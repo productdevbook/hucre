@@ -565,6 +565,19 @@ function parseAxisInfo(
   // title is a `<c:strRef>` (formula reference) with no `<c:rich>`
   // body.
   const axisTitleItalic = parseAxisTitleItalic(axis);
+  // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>
+  // <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
+  // </c:rich></c:tx></c:title>` — axis-title font color. Same
+  // `<c:title>` body scope as `axisTitleItalic`, so a stray
+  // `<a:solidFill>` elsewhere on the axis (e.g. on a tick-label
+  // `<c:txPr>` block or a `<c:spPr>` series fill) cannot leak in.
+  // Theme references (`<a:schemeClr>`), `<a:hslClr>`, `<a:sysClr>`,
+  // `<a:prstClr>`, and malformed `val` tokens all collapse to
+  // `undefined` since only the literal RGB triple round-trips
+  // losslessly through the writer. Returns `undefined` when the axis
+  // omits `<c:title>` entirely or when the title is a `<c:strRef>`
+  // (formula reference) with no `<c:rich>` body.
+  const axisTitleColor = parseAxisTitleColor(axis);
   const gridlines = parseAxisGridlines(axis);
   const scale = parseAxisScale(axis);
   const numberFormat = parseAxisNumberFormat(axis);
@@ -658,6 +671,7 @@ function parseAxisInfo(
     axisTitleFontSize === undefined &&
     axisTitleBold === undefined &&
     axisTitleItalic === undefined &&
+    axisTitleColor === undefined &&
     gridlines === undefined &&
     scale === undefined &&
     numberFormat === undefined &&
@@ -686,6 +700,7 @@ function parseAxisInfo(
   if (axisTitleFontSize !== undefined) out.axisTitleFontSize = axisTitleFontSize;
   if (axisTitleBold !== undefined) out.axisTitleBold = axisTitleBold;
   if (axisTitleItalic !== undefined) out.axisTitleItalic = axisTitleItalic;
+  if (axisTitleColor !== undefined) out.axisTitleColor = axisTitleColor;
   if (gridlines !== undefined) out.gridlines = gridlines;
   if (scale !== undefined) out.scale = scale;
   if (numberFormat !== undefined) out.numberFormat = numberFormat;
@@ -1520,6 +1535,68 @@ function parseAxisTitleItalic(axis: XmlElement): boolean | undefined {
   // explicit `i="1"` surfaces `true`.
   if (parsed === true) return true;
   return undefined;
+}
+
+/**
+ * Pull `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>
+ * <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
+ * </c:rich></c:tx></c:title>` off an axis element. Returns the axis
+ * title's sRGB font color as a 6-character uppercase hex string.
+ *
+ * Mirrors {@link parseTitleColor} for axis titles — same canonical-
+ * slot pair (`<a:defRPr>` carries the default-paragraph fill, which
+ * the writer keeps in sync with the literal run's `<a:rPr>` so the
+ * reader only needs to consult one of the two slots), same drop-on-
+ * non-sRGB semantics. The lookup is scoped to the axis title's
+ * `<c:rich>` body so a stray `<a:solidFill>` elsewhere on the axis
+ * (e.g. on a tick-label `<c:txPr>` block or a `<c:spPr>` series
+ * fill) cannot leak in.
+ *
+ * The OOXML `<a:srgbClr val=".."/>` is the literal sRGB triple Excel
+ * lands on the axis title's default-paragraph properties when the
+ * user picks a custom font color. Theme references (`<a:schemeClr>`),
+ * `<a:hslClr>`, `<a:sysClr>`, and `<a:prstClr>` all collapse to
+ * `undefined` — only the literal RGB triple round-trips losslessly
+ * through {@link writeChart}. Malformed `val` tokens (wrong length,
+ * non-hex characters) likewise drop to `undefined` rather than
+ * fabricate a value the writer would round-trip into a malformed
+ * `<a:srgbClr>`.
+ *
+ * Returns `undefined` whenever the axis omits `<c:title>` entirely
+ * or when the title is a `<c:strRef>` (formula reference) with no
+ * `<c:rich>` body — there is no `<a:p>` slot to surface the fill
+ * from in either case.
+ *
+ * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+ * `<c:dateAx>` / `<c:serAx>` all share the same `<c:title>` shape
+ * per the OOXML schema. Mirrors the chart-level title color
+ * {@link parseTitleColor} so a parsed value slots straight into the
+ * writer-side {@link SheetChart.axes}.x.axisTitleColor.
+ */
+function parseAxisTitleColor(axis: XmlElement): string | undefined {
+  const title = findChild(axis, "title");
+  if (!title) return undefined;
+  const tx = findChild(title, "tx");
+  if (!tx) return undefined;
+  const rich = findChild(tx, "rich");
+  if (!rich) return undefined;
+  // `<a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr>` is the OOXML path
+  // Excel writes for the default-paragraph font color. The reader walks
+  // the canonical chain and bails on the first missing link so a
+  // malformed `<c:rich>` surfaces as absence rather than a fabricated
+  // value.
+  const p = findChild(rich, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const solidFill = findChild(defRPr, "solidFill");
+  if (!solidFill) return undefined;
+  const srgbClr = findChild(solidFill, "srgbClr");
+  if (!srgbClr) return undefined;
+  const raw = srgbClr.attrs.val;
+  return normalizeRgbHex(raw);
 }
 
 // ── Series ────────────────────────────────────────────────────────
