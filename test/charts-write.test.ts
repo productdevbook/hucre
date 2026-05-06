@@ -15092,3 +15092,183 @@ describe("writeChart — dataLabels.underline", () => {
     expect(reparsed?.dataLabels?.underline).toBe(true);
   });
 });
+// ── writeChart — dataLabels.strikethrough ───────────────────────────
+
+describe("writeChart — dataLabels.strikethrough", () => {
+  function dLblsOf(xml: string): string {
+    const m = xml.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/);
+    if (!m) throw new Error("No <c:dLbls> block found in chart XML");
+    return m[0];
+  }
+
+  it("does NOT emit <c:txPr> when strikethrough is unset (matches Excel reference)", () => {
+    const result = writeChart(makeChart({ dataLabels: { showValue: true } }), "Sheet1");
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).not.toContain("<c:txPr>");
+    expect(dLbls).not.toContain("a:defRPr");
+  });
+
+  it('threads strikethrough=true through to <c:dLbls><c:txPr> as strike="sngStrike"', () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, strikethrough: true } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain("<c:txPr>");
+    expect(dLbls).toContain('strike="sngStrike"');
+  });
+
+  it("does NOT emit <c:txPr> when strikethrough=false (collapses to absence)", () => {
+    // Explicit `false` collapses to `undefined` since the OOXML default
+    // `"noStrike"` is functionally identical to absence — the writer
+    // never emits `"noStrike"` to keep the surfaced shape consistent
+    // with what Excel's UI authors.
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, strikethrough: false } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).not.toContain("<c:txPr>");
+    expect(dLbls).not.toContain("strike=");
+  });
+
+  it("places <c:txPr> after <c:numFmt> and before <c:dLblPos> inside <c:dLbls> (CT_DLbls order)", () => {
+    const result = writeChart(
+      makeChart({
+        dataLabels: {
+          showValue: true,
+          strikethrough: true,
+          position: "outEnd",
+          numberFormat: { formatCode: "0.00" },
+        },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls.indexOf("c:numFmt")).toBeLessThan(dLbls.indexOf("c:txPr"));
+    expect(dLbls.indexOf("c:txPr")).toBeLessThan(dLbls.indexOf("c:dLblPos"));
+  });
+
+  it("only emits <c:txPr> once inside <c:dLbls>", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, strikethrough: true } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    const occurrences = dLbls.match(/<c:txPr>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads strikethrough through every chart family that emits dLbls", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, dataLabels: { showValue: true, strikethrough: true } }),
+        "Sheet1",
+      );
+      const dLbls = dLblsOf(result.chartXml);
+      expect(dLbls).toContain('strike="sngStrike"');
+    }
+  });
+
+  it("composes with bold on the same <a:defRPr> slot", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, bold: true, strikethrough: true } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain('b="1"');
+    expect(dLbls).toContain('strike="sngStrike"');
+    // Ensure both attrs land on the same <a:defRPr> element.
+    expect(dLbls).toMatch(
+      /<a:defRPr [^>]*b="1"[^>]*strike="sngStrike"[^>]*\/>|<a:defRPr [^>]*strike="sngStrike"[^>]*b="1"[^>]*\/>/,
+    );
+  });
+
+  it("drops non-boolean inputs (null leaking past the type guard)", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ dataLabels: { showValue: true, strikethrough: null as any } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops non-boolean inputs (string leaking past the type guard)", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ dataLabels: { showValue: true, strikethrough: "sngStrike" as any } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops non-boolean inputs (number leaking past the type guard)", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ dataLabels: { showValue: true, strikethrough: 1 as any } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("emits the standard txPr stub shape (a:bodyPr / a:lstStyle / a:p / a:endParaRPr)", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, strikethrough: true } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain("<a:bodyPr/>");
+    expect(dLbls).toContain("<a:lstStyle/>");
+    expect(dLbls).toContain('<a:defRPr strike="sngStrike"/>');
+    expect(dLbls).toContain('<a:endParaRPr lang="en-US"/>');
+  });
+
+  it("round-trips a strikethrough=true value through parseChart", () => {
+    const written = writeChart(
+      makeChart({ dataLabels: { showValue: true, strikethrough: true } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataLabels?.strikethrough).toBe(true);
+  });
+
+  it("collapses strikethrough=false back to undefined on re-parse (no attribute emitted)", () => {
+    const written = writeChart(
+      makeChart({ dataLabels: { showValue: true, strikethrough: false } }),
+      "Sheet1",
+    ).chartXml;
+    expect(parseChart(written)?.dataLabels?.strikethrough).toBeUndefined();
+  });
+
+  it("collapses an unset strikethrough round-trip back to undefined", () => {
+    const written = writeChart(makeChart({ dataLabels: { showValue: true } }), "Sheet1").chartXml;
+    expect(parseChart(written)?.dataLabels?.strikethrough).toBeUndefined();
+  });
+
+  it("survives a writeXlsx round trip — dataLabels.strikethrough lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            dataLabels: { showValue: true, strikethrough: true },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('strike="sngStrike"');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.dataLabels?.strikethrough).toBe(true);
+  });
+});

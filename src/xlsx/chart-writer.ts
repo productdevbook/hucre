@@ -3843,8 +3843,8 @@ function buildDataLabelsBody(dl: ChartDataLabels, chartType: WriteChartKind): st
   // skips `<c:spPr>` (not yet authored), so `<c:txPr>` lands directly
   // after `<c:numFmt>` and before `<c:dLblPos>`. The block currently
   // carries the data-label font size, font color, bold flag, italic
-  // flag, and underline flag; future typography pins (strikethrough)
-  // will land on the same `<a:defRPr>` slot. The writer skips the
+  // flag, underline flag, and strikethrough flag — every typography
+  // pin lands on the same `<a:defRPr>` slot. The writer skips the
   // entire block when no font knob is pinned so a fresh chart matches
   // Excel's reference shape.
   const txPrXml = buildDataLabelsTxPr(
@@ -3853,6 +3853,7 @@ function buildDataLabelsBody(dl: ChartDataLabels, chartType: WriteChartKind): st
     resolveDataLabelsBold(dl.bold),
     resolveDataLabelsItalic(dl.italic),
     resolveDataLabelsUnderline(dl.underline),
+    resolveDataLabelsStrikethrough(dl.strikethrough),
   );
   if (txPrXml !== undefined) {
     children.push(txPrXml);
@@ -4007,6 +4008,26 @@ function resolveDataLabelsUnderline(value: boolean | undefined): boolean | undef
 }
 
 /**
+ * Resolve `<c:dLbls><c:txPr><a:p><a:pPr><a:defRPr strike=".."/>
+ * </a:pPr></a:p></c:txPr></c:dLbls>` from
+ * {@link ChartDataLabels.strikethrough}.
+ *
+ * Returns `true` when the caller pins the strikethrough flag
+ * literally; every other value (explicit `false`, absence, non-boolean
+ * tokens leaking past the type guard) collapses to `undefined` so the
+ * writer never emits a `strike` attribute below `"sngStrike"`. The
+ * OOXML default `"noStrike"` is functionally identical to absence —
+ * the writer keeps the surfaced shape consistent with what Excel's
+ * UI authors (`"sngStrike"` only, never `"noStrike"` or
+ * `"dblStrike"`), mirroring how `resolveTitleStrike` /
+ * `resolveLegendStrikethrough` land on their `<a:defRPr>` slots.
+ */
+function resolveDataLabelsStrikethrough(value: boolean | undefined): boolean | undefined {
+  if (value === true) return true;
+  return undefined;
+}
+
+/**
  * Build the `<c:txPr>` block that carries a data-label's typography
  * pins. Returns `undefined` when every input is unset so the caller
  * can elide the element entirely (Excel's reference serialization
@@ -4032,10 +4053,15 @@ function resolveDataLabelsUnderline(value: boolean | undefined): boolean | undef
  * `i="1"` from a templated chart. The underline flag emits `u="sng"`
  * (single underline — Excel's UI variant) for `true` and `u="none"`
  * (the OOXML default) for `false`, with the same override semantics
- * as bold and italic. Mirrors the chart-title / axis-title / axis
- * tick-label / legend `<c:txPr>` slots exactly so a re-parse picks
- * the value off the canonical default-paragraph slot every other
- * typography reader expects.
+ * as bold and italic. The strikethrough flag rides as
+ * `strike="sngStrike"` on the same `<a:defRPr>` slot when the input
+ * is `true`; absence (and explicit `false`, which the resolver
+ * collapses to `undefined`) skips the attribute entirely since the
+ * OOXML default `"noStrike"` is functionally identical to absence.
+ * Mirrors the chart-title / axis-title / axis tick-label / legend
+ * `<c:txPr>` slots exactly so a re-parse picks the value off the
+ * canonical default-paragraph slot every other typography reader
+ * expects.
  */
 function buildDataLabelsTxPr(
   fontSizePt: number | undefined,
@@ -4043,13 +4069,15 @@ function buildDataLabelsTxPr(
   bold: boolean | undefined,
   italic: boolean | undefined,
   underline: boolean | undefined,
+  strikethrough: boolean | undefined,
 ): string | undefined {
   if (
     fontSizePt === undefined &&
     rgbHex === undefined &&
     bold === undefined &&
     italic === undefined &&
-    underline === undefined
+    underline === undefined &&
+    strikethrough === undefined
   )
     return undefined;
   const defRPrAttrs: Record<string, string | number> = {};
@@ -4057,6 +4085,13 @@ function buildDataLabelsTxPr(
   if (bold !== undefined) defRPrAttrs.b = bold ? 1 : 0;
   if (italic !== undefined) defRPrAttrs.i = italic ? 1 : 0;
   if (underline !== undefined) defRPrAttrs.u = underline ? "sng" : "none";
+  // Strikethrough rides as `strike="sngStrike"` on the same
+  // `<a:defRPr>` slot. Absence collapses to omitting the attribute
+  // entirely (the OOXML default `"noStrike"` is functionally
+  // identical to absence — the reader collapses both to `undefined`).
+  // The writer never emits `"noStrike"` or `"dblStrike"` so the
+  // surfaced shape stays consistent with Excel's UI checkbox.
+  if (strikethrough === true) defRPrAttrs.strike = "sngStrike";
   // OOXML's `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/>
   // </a:solidFill></a:defRPr>` carries the data-label font color.
   // Absence (`undefined`) collapses to skipping the `<a:solidFill>`

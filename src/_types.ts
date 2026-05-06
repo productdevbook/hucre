@@ -818,6 +818,39 @@ export interface ChartDataLabels {
    * typography-pinning slot.
    */
   underline?: boolean;
+  /**
+   * Data-label strikethrough flag. Maps to `<c:dLbls><c:txPr><a:p>
+   * <a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr></c:dLbls>`
+   * — Excel's "Format Data Labels -> Font -> Strikethrough" toggle.
+   * The OOXML attribute is the `ST_TextStrikeType` enumeration on
+   * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7); the
+   * writer lands `strike="sngStrike"` (single line — Excel's UI
+   * checkbox) on the default-paragraph `<a:defRPr>` slot inside the
+   * data-label's `<c:txPr>` block so a re-parse picks the flag up
+   * off the canonical slot the OOXML schema exposes.
+   *
+   * Modeled as a boolean for symmetry with the data-labels {@link bold}
+   * / {@link italic} / {@link underline} and the chart-title
+   * `titleStrikethrough` / axis-title `axisTitleStrike` / axis
+   * tick-label `labelStrikethrough` / legend `legendStrikethrough`
+   * knobs: `true` emits `strike="sngStrike"`; absence and explicit
+   * `false` both collapse to omitting the attribute (the OOXML default
+   * `"noStrike"` is functionally identical to absence — the writer
+   * never emits `"noStrike"` or `"dblStrike"` to keep the surfaced
+   * shape consistent with what Excel's UI authors). The non-UI variant
+   * `"dblStrike"` (double line) is read-only — the reader collapses
+   * every non-`"sngStrike"` token to `undefined` so a templated chart
+   * that pinned the double-line variant in raw OOXML round-trips
+   * lossless rather than silently downgrading on re-emit.
+   *
+   * The `<c:txPr>` block lands between `<c:numFmt>` and `<c:dLblPos>`
+   * (CT_DLbls schema, ECMA-376 Part 1, §21.2.2.50). Composes
+   * independently with the other dLbls knobs — {@link position} /
+   * {@link separator} / {@link numberFormat} / {@link showLeaderLines}
+   * / the `show*` toggles / {@link bold} / {@link italic} /
+   * {@link underline}.
+   */
+  strikethrough?: boolean;
 }
 
 /**
@@ -4373,6 +4406,25 @@ export interface ChartDataLabelsInfo {
    * straight into {@link cloneChart} without conversion.
    */
   underline?: boolean;
+  /**
+   * Data-label strikethrough flag pulled from `<c:dLbls><c:txPr>
+   * <a:p><a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr>
+   * </c:dLbls>`. The OOXML `strike` attribute is the
+   * `ST_TextStrikeType` enumeration on `CT_TextCharacterProperties`
+   * (ECMA-376 Part 1, §21.1.2.3.7).
+   *
+   * Only `strike="sngStrike"` (Excel's UI variant — single line)
+   * surfaces `true`; the OOXML default `"noStrike"` and the non-UI
+   * variant `"dblStrike"` (and any malformed token) collapse to
+   * `undefined` so absence and `"noStrike"` round-trip identically
+   * through `cloneChart`. Reporting `"dblStrike"` as `true` would
+   * silently downgrade the choice to a single line on round-trip;
+   * the writer emits only `"sngStrike"`, matching the boolean shape
+   * the UI exposes. Mirrors the writer-side
+   * {@link ChartDataLabels.strikethrough} so a parsed value slots
+   * straight into {@link cloneChart} without conversion.
+   */
+  strikethrough?: boolean;
 }
 
 /**

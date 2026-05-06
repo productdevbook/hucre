@@ -15822,3 +15822,146 @@ describe("parseChart — data labels underline", () => {
     expect(parseChart(xml)?.dataLabels?.underline).toBe(true);
   });
 });
+// ── parseChart — data labels strikethrough ──────────────────────────
+
+describe("parseChart — data labels strikethrough", () => {
+  const NS_DLS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withDLblsStrike(strike: string | undefined): string {
+    const defRPr = strike === undefined ? "<a:defRPr/>" : `<a:defRPr strike="${strike}"/>`;
+    return `<c:chartSpace ${NS_DLS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr>${defRPr}</a:pPr><a:endParaRPr lang="en-US"/></a:p>
+          </c:txPr>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it('surfaces strikethrough=true when strike="sngStrike"', () => {
+    expect(parseChart(withDLblsStrike("sngStrike"))?.dataLabels?.strikethrough).toBe(true);
+  });
+
+  it('collapses the OOXML default strike="noStrike" to undefined', () => {
+    expect(parseChart(withDLblsStrike("noStrike"))?.dataLabels?.strikethrough).toBeUndefined();
+  });
+
+  it('collapses strike="dblStrike" (double line) to undefined — only "sngStrike" round-trips losslessly', () => {
+    expect(parseChart(withDLblsStrike("dblStrike"))?.dataLabels?.strikethrough).toBeUndefined();
+  });
+
+  it("returns undefined when <a:defRPr> omits the strike attribute", () => {
+    expect(parseChart(withDLblsStrike(undefined))?.dataLabels?.strikethrough).toBeUndefined();
+  });
+
+  it("returns undefined when the dLbls block has no <c:txPr> body", () => {
+    const xml = `<c:chartSpace ${NS_DLS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataLabels?.strikethrough).toBeUndefined();
+  });
+
+  it("collapses garbage tokens to undefined", () => {
+    expect(parseChart(withDLblsStrike(""))?.dataLabels?.strikethrough).toBeUndefined();
+    expect(parseChart(withDLblsStrike("yes"))?.dataLabels?.strikethrough).toBeUndefined();
+    expect(parseChart(withDLblsStrike("1"))?.dataLabels?.strikethrough).toBeUndefined();
+    expect(parseChart(withDLblsStrike("true"))?.dataLabels?.strikethrough).toBeUndefined();
+    expect(parseChart(withDLblsStrike("strike"))?.dataLabels?.strikethrough).toBeUndefined();
+  });
+
+  it("co-surfaces alongside the other dLbls fields (showVal / position / numberFormat / bold)", () => {
+    const xml = `<c:chartSpace ${NS_DLS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:numFmt formatCode="0.00" sourceLinked="0"/>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr b="1" strike="sngStrike"/></a:pPr></a:p>
+          </c:txPr>
+          <c:dLblPos val="outEnd"/>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.strikethrough).toBe(true);
+    expect(chart?.dataLabels?.bold).toBe(true);
+    expect(chart?.dataLabels?.position).toBe("outEnd");
+    expect(chart?.dataLabels?.showValue).toBe(true);
+    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" });
+  });
+
+  it("surfaces the strikethrough flag on a strike-only dLbls block (no other show* toggles)", () => {
+    const xml = `<c:chartSpace ${NS_DLS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr strike="sngStrike"/></a:pPr></a:p>
+          </c:txPr>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="0"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataLabels?.strikethrough).toBe(true);
+  });
+});

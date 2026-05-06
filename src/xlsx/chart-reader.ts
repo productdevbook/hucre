@@ -2554,6 +2554,17 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
   const underline = parseDataLabelsUnderline(el);
   if (underline !== undefined) out.underline = underline;
 
+  // `<c:txPr><a:p><a:pPr><a:defRPr strike=".."/></a:pPr></a:p>
+  // </c:txPr>` — data-label strikethrough flag pinned via Excel's
+  // "Format Data Labels -> Font -> Strikethrough" toggle. Only
+  // `strike="sngStrike"` (Excel's UI variant — single line) surfaces
+  // `true`; the OOXML default `"noStrike"` and the non-UI variant
+  // `"dblStrike"` (and any malformed token) collapse to `undefined`
+  // so absence and `"noStrike"` round-trip identically through
+  // `cloneChart`.
+  const strikethrough = parseDataLabelsStrikethrough(el);
+  if (strikethrough !== undefined) out.strikethrough = strikethrough;
+
   // Empty record is meaningless to a consumer — collapse to undefined.
   if (
     out.position === undefined &&
@@ -2569,7 +2580,8 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
     out.fontColor === undefined &&
     out.bold === undefined &&
     out.italic === undefined &&
-    out.underline === undefined
+    out.underline === undefined &&
+    out.strikethrough === undefined
   ) {
     return undefined;
   }
@@ -2737,6 +2749,38 @@ function parseDataLabelsUnderline(dLbls: XmlElement): boolean | undefined {
   if (!defRPr) return undefined;
   const raw = defRPr.attrs.u;
   if (raw === "sng") return true;
+  return undefined;
+}
+
+/**
+ * Pull `<c:dLbls><c:txPr><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
+ * </a:p></c:txPr></c:dLbls>` off a data-labels block. Returns the
+ * strikethrough flag.
+ *
+ * The OOXML `strike` attribute is the `ST_TextStrikeType`
+ * enumeration on `CT_TextCharacterProperties`. Only
+ * `strike="sngStrike"` (Excel's UI variant — single line) surfaces
+ * `true`; the OOXML default `"noStrike"` and the non-UI variant
+ * `"dblStrike"` (and any malformed token) collapse to `undefined` so
+ * absence and `"noStrike"` round-trip identically through
+ * `cloneChart`. Reporting `"dblStrike"` as `true` would silently
+ * downgrade the choice to a single line on round-trip; the writer
+ * emits only `"sngStrike"`, matching the boolean shape the UI
+ * exposes. Mirrors the chart-title / axis-title / axis tick-label /
+ * legend strikethrough readers exactly so a parsed value slots
+ * straight back into the writer's emit path.
+ */
+function parseDataLabelsStrikethrough(dLbls: XmlElement): boolean | undefined {
+  const txPr = findChild(dLbls, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const raw = defRPr.attrs.strike;
+  if (raw === "sngStrike") return true;
   return undefined;
 }
 
