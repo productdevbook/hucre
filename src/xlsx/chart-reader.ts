@@ -621,6 +621,19 @@ function parseAxisInfo(
   // omits `<c:title>` entirely or when the title is a `<c:strRef>`
   // (formula reference) with no `<c:rich>` body.
   const axisTitleStrike = parseAxisTitleStrike(axis);
+  // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr u=".."/></a:pPr>
+  // </a:p></c:rich></c:tx></c:title>` — axis-title underline flag.
+  // Same `<c:title>` body scope as `axisTitleStrike`, so a stray
+  // `<a:defRPr>` elsewhere on the axis (e.g. on the tick-label
+  // `<c:txPr>`) cannot leak in. Only the UI-default `"sng"` surfaces
+  // as `true`; `"none"` (the OOXML application default), the non-UI
+  // `"dbl"` variant, and the sixteen exotic tokens all collapse to
+  // `undefined` so absence and the OOXML default round-trip
+  // identically through the writer (which emits only `"sng"`). Returns
+  // `undefined` when the axis omits `<c:title>` entirely or when the
+  // title is a `<c:strRef>` (formula reference) with no `<c:rich>`
+  // body.
+  const axisTitleUnderline = parseAxisTitleUnderline(axis);
   const gridlines = parseAxisGridlines(axis);
   const scale = parseAxisScale(axis);
   const numberFormat = parseAxisNumberFormat(axis);
@@ -716,6 +729,7 @@ function parseAxisInfo(
     axisTitleItalic === undefined &&
     axisTitleColor === undefined &&
     axisTitleStrike === undefined &&
+    axisTitleUnderline === undefined &&
     gridlines === undefined &&
     scale === undefined &&
     numberFormat === undefined &&
@@ -746,6 +760,7 @@ function parseAxisInfo(
   if (axisTitleItalic !== undefined) out.axisTitleItalic = axisTitleItalic;
   if (axisTitleColor !== undefined) out.axisTitleColor = axisTitleColor;
   if (axisTitleStrike !== undefined) out.axisTitleStrike = axisTitleStrike;
+  if (axisTitleUnderline !== undefined) out.axisTitleUnderline = axisTitleUnderline;
   if (gridlines !== undefined) out.gridlines = gridlines;
   if (scale !== undefined) out.scale = scale;
   if (numberFormat !== undefined) out.numberFormat = numberFormat;
@@ -1705,6 +1720,74 @@ function parseAxisTitleStrike(axis: XmlElement): boolean | undefined {
   // so reporting `"dblStrike"` here would silently downgrade the choice
   // on round-trip.
   if (raw === "sngStrike") return true;
+  return undefined;
+}
+
+/**
+ * Pull `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr u=".."/>
+ * </a:pPr></a:p></c:rich></c:tx></c:title>` off an axis element.
+ * Returns the axis-title underline flag.
+ *
+ * The OOXML `u` attribute is the `ST_TextUnderlineType` enum on
+ * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7) with
+ * eighteen values; Excel's UI exposes only `"sng"` (single line — the
+ * default underline checkbox) and `"dbl"` (double line). The reader
+ * surfaces only the UI-default `"sng"` as `true`; `"none"` (the OOXML
+ * application default), absence, the non-UI `"dbl"` variant, and the
+ * sixteen exotic tokens (`"words"`, `"heavy"`, `"dotted"`,
+ * `"dottedHeavy"`, `"dash"`, `"dashHeavy"`, `"dashLong"`,
+ * `"dashLongHeavy"`, `"dotDash"`, `"dotDashHeavy"`, `"dotDotDash"`,
+ * `"dotDotDashHeavy"`, `"wavy"`, `"wavyHeavy"`, `"wavyDbl"`) all
+ * collapse to `undefined` — the writer emits only `"sng"`, so
+ * reporting any non-single underline as `true` would silently
+ * downgrade the choice to a single line on round-trip. Unknown /
+ * malformed `u` tokens likewise drop to `undefined`.
+ *
+ * Mirrors {@link parseTitleUnderline} for axis titles — same
+ * canonical-slot pair (`<a:defRPr>` carries the default-paragraph
+ * underline flag, which the writer keeps in sync with the literal
+ * run's `<a:rPr>` so the reader only needs to consult one of the two
+ * slots), same drop-on-default semantics. The lookup is scoped to the
+ * axis title's `<c:rich>` body so a stray `<a:defRPr>` elsewhere on
+ * the axis (e.g. on the tick-label `<c:txPr>`) cannot leak in.
+ *
+ * Returns `undefined` whenever the axis omits `<c:title>` entirely or
+ * when the title is a `<c:strRef>` (formula reference) with no
+ * `<c:rich>` body — there is no `<a:p>` slot to surface the flag from
+ * in either case.
+ *
+ * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+ * `<c:dateAx>` / `<c:serAx>` all share the same `<c:title>` shape per
+ * the OOXML schema. Mirrors the chart-level title underline
+ * {@link parseTitleUnderline} so a parsed value slots straight into
+ * the writer-side {@link SheetChart.axes}.x.axisTitleUnderline.
+ */
+function parseAxisTitleUnderline(axis: XmlElement): boolean | undefined {
+  const title = findChild(axis, "title");
+  if (!title) return undefined;
+  const tx = findChild(title, "tx");
+  if (!tx) return undefined;
+  const rich = findChild(tx, "rich");
+  if (!rich) return undefined;
+  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
+  // default-paragraph underline flag. The reader walks the canonical
+  // chain and bails on the first missing link so a malformed
+  // `<c:rich>` surfaces as absence rather than a fabricated value.
+  const p = findChild(rich, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const raw = defRPr.attrs.u;
+  // Only the UI-default `"sng"` surfaces as `true`. The OOXML
+  // application default `"none"`, the non-UI `"dbl"` variant, and
+  // every exotic token (`"words"`, `"heavy"`, `"dotted"`, etc.) all
+  // collapse to `undefined` so absence and the OOXML default
+  // round-trip identically through the writer; the writer emits only
+  // `"sng"`, so reporting a non-single underline here would silently
+  // downgrade the choice on round-trip.
+  if (raw === "sng") return true;
   return undefined;
 }
 

@@ -769,6 +769,16 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // reference serialization for a non-strikethrough axis title).
     xAxisTitleStrike: normalizeAxisTitleStrike(chart.axes?.x?.axisTitleStrike),
     yAxisTitleStrike: normalizeAxisTitleStrike(chart.axes?.y?.axisTitleStrike),
+    // `<c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr>`
+    // also lives on every axis title `<c:rich>` body — same canonical
+    // slot pair as the strike flag above. The writer emits only the UI
+    // variant `"sng"`. Normalize the caller's boolean input — `true` /
+    // `false` pass through literally, every other token (typed escape
+    // from an untyped caller) collapses to `undefined` and the writer
+    // omits the `u` attribute (Excel's reference serialization for a
+    // non-underlined axis title).
+    xAxisTitleUnderline: normalizeAxisTitleUnderline(chart.axes?.x?.axisTitleUnderline),
+    yAxisTitleUnderline: normalizeAxisTitleUnderline(chart.axes?.y?.axisTitleUnderline),
     xGridlines: normalizeAxisGridlines(chart.axes?.x?.gridlines),
     yGridlines: normalizeAxisGridlines(chart.axes?.y?.gridlines),
     xScale: normalizeAxisScale(chart.axes?.x?.scale),
@@ -1269,6 +1279,24 @@ interface AxisRenderOptions {
    * and emit semantics as {@link xAxisTitleStrike}.
    */
   yAxisTitleStrike: boolean | undefined;
+  /**
+   * Axis-title underline flag emitted on the X axis via
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr u=".."/></a:pPr>
+   * <a:r><a:rPr u=".."/></a:r></a:p></c:rich></c:tx></c:title>`. The
+   * OOXML attribute is the `ST_TextUnderlineType` enum on
+   * `CT_TextCharacterProperties`. `undefined` and `false` both collapse
+   * to omitting the attribute (Excel's reference serialization for a
+   * non-underlined axis title); only `true` emits `u="sng"` (Excel's UI
+   * checkbox — single line). Only meaningful when the axis renders a
+   * title — the per-family axis builders gate the value on the
+   * `xAxisTitle` / `yAxisTitle` field.
+   */
+  xAxisTitleUnderline: boolean | undefined;
+  /**
+   * Axis-title underline flag emitted on the Y axis. Same shape
+   * and emit semantics as {@link xAxisTitleUnderline}.
+   */
+  yAxisTitleUnderline: boolean | undefined;
   xGridlines: { major: boolean; minor: boolean } | undefined;
   yGridlines: { major: boolean; minor: boolean } | undefined;
   xScale: ChartAxisScale | undefined;
@@ -2137,6 +2165,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
         opts.xAxisTitleItalic,
         opts.xAxisTitleColor,
         opts.xAxisTitleStrike,
+        opts.xAxisTitleUnderline,
       ),
     );
   catAxChildren.push(
@@ -2201,6 +2230,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
         opts.yAxisTitleItalic,
         opts.yAxisTitleColor,
         opts.yAxisTitleStrike,
+        opts.yAxisTitleUnderline,
       ),
     );
   valAxChildren.push(
@@ -2566,6 +2596,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.xAxisTitleItalic,
         opts.xAxisTitleColor,
         opts.xAxisTitleStrike,
+        opts.xAxisTitleUnderline,
       ),
     );
   xAxChildren.push(
@@ -2609,6 +2640,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.yAxisTitleItalic,
         opts.yAxisTitleColor,
         opts.yAxisTitleStrike,
+        opts.yAxisTitleUnderline,
       ),
     );
   yAxChildren.push(
@@ -2699,6 +2731,7 @@ function buildAxisTitle(
   italic: boolean | undefined,
   rgbHex: string | undefined,
   strike: boolean | undefined,
+  underline: boolean | undefined,
 ): string {
   const rot = rotationDeg === undefined ? 0 : rotationDeg * TITLE_ROT_PER_DEGREE;
   // OOXML's `<a:defRPr sz="N"/>` / `<a:rPr sz="N"/>` attribute is in
@@ -2748,6 +2781,22 @@ function buildAxisTitle(
   // a re-parse picks the value up off either canonical slot — Excel
   // keeps the two attributes in sync.
   const strikeAttr = strike === true ? "sngStrike" : undefined;
+  // OOXML's `<a:defRPr u=".."/>` / `<a:rPr u=".."/>` attribute is the
+  // `ST_TextUnderlineType` enum on `CT_TextCharacterProperties` —
+  // eighteen values total, with `"none"` as the OOXML default,
+  // `"sng"` as the value Excel's UI authors for the "Underline"
+  // checkbox (single line), `"dbl"` for the non-UI double-line
+  // variant, and sixteen exotic types Excel does not surface. The
+  // writer emits only the UI variant `"sng"` to keep the surfaced
+  // shape consistent with what Excel's reference UI authors. Absence
+  // (`undefined`) and explicit `false` both collapse to omitting the
+  // attribute (Excel itself omits `u` when the title is not
+  // underlined — the OOXML default `"none"` collapses to absence).
+  // Like bold / italic / strike, the value lands on both the
+  // default-paragraph `<a:defRPr>` and the literal run's `<a:rPr>` so
+  // a re-parse picks the value up off either canonical slot — Excel
+  // keeps the two attributes in sync.
+  const underlineAttr = underline === true ? "sng" : undefined;
   // OOXML's `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/>
   // </a:solidFill></a:defRPr>` carries the title's font color. Mirrors
   // the chart-level `buildTitle` color emit: `axisTitleColor` lands on
@@ -2766,11 +2815,20 @@ function buildAxisTitle(
   // fresh axis title with no custom color matches Excel's reference
   // serialization byte-for-byte.
   const defRPr = solidFillChild
-    ? xmlElement("a:defRPr", { sz, b, i, strike: strikeAttr }, [solidFillChild])
-    : xmlSelfClose("a:defRPr", { sz, b, i, strike: strikeAttr });
+    ? xmlElement("a:defRPr", { sz, b, i, u: underlineAttr, strike: strikeAttr }, [solidFillChild])
+    : xmlSelfClose("a:defRPr", { sz, b, i, u: underlineAttr, strike: strikeAttr });
   const rPr = solidFillChild
-    ? xmlElement("a:rPr", { lang: "en-US", sz, b, i, strike: strikeAttr }, [solidFillChild])
-    : xmlSelfClose("a:rPr", { lang: "en-US", sz, b, i, strike: strikeAttr });
+    ? xmlElement("a:rPr", { lang: "en-US", sz, b, i, u: underlineAttr, strike: strikeAttr }, [
+        solidFillChild,
+      ])
+    : xmlSelfClose("a:rPr", {
+        lang: "en-US",
+        sz,
+        b,
+        i,
+        u: underlineAttr,
+        strike: strikeAttr,
+      });
   return xmlElement("c:title", undefined, [
     xmlElement("c:tx", undefined, [
       xmlElement("c:rich", undefined, [
@@ -2897,6 +2955,21 @@ function normalizeAxisTitleColor(value: string | undefined): string | undefined 
  */
 function normalizeAxisTitleStrike(value: boolean | undefined): boolean | undefined {
   return normalizeTitleStrike(value);
+}
+
+/**
+ * Normalize a {@link SheetChart.axes}.x.axisTitleUnderline value for the
+ * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr u=".."/></a:pPr>
+ * </a:p></c:rich></c:tx></c:title>` writer slot inside an axis.
+ * Delegates to the chart-level {@link normalizeTitleUnderline} so the
+ * two share the same drop-on-non-boolean grammar — `true` / `false`
+ * pass through literally, every other token (typed escape from an
+ * untyped caller) collapses to `undefined` and the writer omits the
+ * `u` attribute (Excel's reference serialization for a non-underlined
+ * axis title).
+ */
+function normalizeAxisTitleUnderline(value: boolean | undefined): boolean | undefined {
+  return normalizeTitleUnderline(value);
 }
 
 // ── Series ───────────────────────────────────────────────────────────

@@ -11709,3 +11709,218 @@ describe("writeChart — axis title strike", () => {
     expect(reparsed?.axes?.y?.axisTitleStrike).toBe(true);
   });
 });
+
+// ── writeChart — axis title underline ───────────────────────────────
+
+describe("writeChart — axis title underline", () => {
+  function axisBlocks(xml: string): string[] {
+    return Array.from(xml.matchAll(/<c:(catAx|valAx|dateAx)>[\s\S]*?<\/c:\1>/g)).map((m) => m[0]);
+  }
+
+  function axisTitleBlock(axisBlock: string): string | undefined {
+    const m = axisBlock.match(/<c:title>[\s\S]*?<\/c:title>/);
+    return m ? m[0] : undefined;
+  }
+
+  function axisTitleDefRPrU(axisBlock: string): string | undefined {
+    const titleBlock = axisTitleBlock(axisBlock);
+    if (!titleBlock) return undefined;
+    // The writer keeps `<a:defRPr>` self-closing when no fill is set
+    // but expands it when a fill is applied. Match either form.
+    const defRPrMatch = titleBlock.match(
+      /<a:defRPr\b[^/>]*\/>|<a:defRPr\b[^>]*>[\s\S]*?<\/a:defRPr>/,
+    );
+    if (!defRPrMatch) return undefined;
+    const u = defRPrMatch[0].match(/\bu="([^"]+)"/);
+    return u ? u[1] : undefined;
+  }
+
+  function axisTitleRPrU(axisBlock: string): string | undefined {
+    const titleBlock = axisTitleBlock(axisBlock);
+    if (!titleBlock) return undefined;
+    const rPrMatch = titleBlock.match(/<a:rPr\b[^/>]*\/>|<a:rPr\b[^>]*>[\s\S]*?<\/a:rPr>/);
+    if (!rPrMatch) return undefined;
+    const u = rPrMatch[0].match(/\bu="([^"]+)"/);
+    return u ? u[1] : undefined;
+  }
+
+  it("omits the u attribute by default (matches Excel's reference non-underlined axis title)", () => {
+    const result = writeChart(makeChart({ axes: { x: { title: "Period" } } }), "Sheet1");
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrU(xAx)).toBeUndefined();
+    expect(axisTitleRPrU(xAx)).toBeUndefined();
+  });
+
+  it("emits u='sng' on axisTitleUnderline=true", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleUnderline: true } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrU(xAx)).toBe("sng");
+    expect(axisTitleRPrU(xAx)).toBe("sng");
+  });
+
+  it("omits the u attribute on axisTitleUnderline=false (functionally identical to omission)", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleUnderline: false } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrU(xAx)).toBeUndefined();
+    expect(axisTitleRPrU(xAx)).toBeUndefined();
+  });
+
+  it("drops non-boolean inputs back to the OOXML default (defends against type guard escape)", () => {
+    const r1 = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { title: "Period", axisTitleUnderline: "true" as any } } }),
+      "Sheet1",
+    );
+    const [r1XAx] = axisBlocks(r1.chartXml);
+    expect(axisTitleDefRPrU(r1XAx)).toBeUndefined();
+    const r2 = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { title: "Period", axisTitleUnderline: 1 as any } } }),
+      "Sheet1",
+    );
+    const [r2XAx] = axisBlocks(r2.chartXml);
+    expect(axisTitleDefRPrU(r2XAx)).toBeUndefined();
+    const r3 = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { title: "Period", axisTitleUnderline: "sng" as any } } }),
+      "Sheet1",
+    );
+    const [r3XAx] = axisBlocks(r3.chartXml);
+    expect(axisTitleDefRPrU(r3XAx)).toBeUndefined();
+  });
+
+  it("threads the underline independently across the X and Y axes", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: { title: "Period", axisTitleUnderline: true },
+          y: { title: "USD", axisTitleUnderline: false },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx, yAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrU(xAx)).toBe("sng");
+    expect(axisTitleDefRPrU(yAx)).toBeUndefined();
+  });
+
+  it("does not emit the u attribute when no axis title is rendered (no <c:title> block)", () => {
+    // Without a `title` field, the writer skips `<c:title>` entirely so
+    // the underline flag has no slot. The pin disappears silently.
+    const result = writeChart(makeChart({ axes: { x: { axisTitleUnderline: true } } }), "Sheet1");
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleBlock(xAx)).toBeUndefined();
+    expect(result.chartXml).not.toContain('u="sng"');
+  });
+
+  it("composes with axisTitleRotation, font size, bold, italic, color, and strike on the same axis", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: {
+            title: "Period",
+            axisTitleRotation: 45,
+            axisTitleFontSize: 14,
+            axisTitleBold: true,
+            axisTitleItalic: true,
+            axisTitleColor: "1070CA",
+            axisTitleStrike: true,
+            axisTitleUnderline: true,
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrU(xAx)).toBe("sng");
+    expect(axisTitleRPrU(xAx)).toBe("sng");
+    const titleBlock = axisTitleBlock(xAx);
+    expect(titleBlock).toContain('strike="sngStrike"');
+    expect(titleBlock).toContain('b="1"');
+    expect(titleBlock).toContain('i="1"');
+    expect(titleBlock).toContain('sz="1400"');
+    expect(titleBlock).toContain('val="1070CA"');
+    // 45 degrees -> 2700000 in 60000ths
+    expect(titleBlock).toMatch(/<a:bodyPr\b[^>]*rot="2700000"/);
+  });
+
+  it("propagates axisTitleUnderline through line / area / scatter chart families", () => {
+    for (const type of ["line", "area", "scatter"] as const) {
+      const result = writeChart(
+        makeChart({
+          type,
+          series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+          axes: { x: { title: "Period", axisTitleUnderline: true } },
+        }),
+        "Sheet1",
+      );
+      const [xAx] = axisBlocks(result.chartXml);
+      expect(axisTitleDefRPrU(xAx)).toBe("sng");
+    }
+  });
+
+  it("preserves existing font defaults on the axis title even when underline is toggled", () => {
+    // The writer always emits `<a:defRPr sz="..." b="0">` on the axis
+    // title (Excel's reference shape). Adding the `u` attribute must not
+    // collapse the existing font defaults.
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleUnderline: true } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const titleBlock = axisTitleBlock(xAx);
+    expect(titleBlock).toMatch(/<a:defRPr\b[^/>]*sz="1000"[^/>]*\/>/);
+    expect(titleBlock).toMatch(/<a:defRPr\b[^/>]*b="0"[^/>]*\/>/);
+  });
+
+  it("reparses through parseChart on a writer round-trip", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: { title: "Period", axisTitleUnderline: true },
+          y: { title: "USD", axisTitleUnderline: true },
+        },
+      }),
+      "Sheet1",
+    );
+    const reparsed = parseChart(result.chartXml);
+    expect(reparsed?.axes?.x?.axisTitleUnderline).toBe(true);
+    expect(reparsed?.axes?.y?.axisTitleUnderline).toBe(true);
+  });
+
+  it("end-to-end: writeXlsx packages the axis title underline into chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            axes: {
+              x: { title: "Period", axisTitleUnderline: true },
+              y: { title: "USD", axisTitleUnderline: true },
+            },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.x?.axisTitleUnderline).toBe(true);
+    expect(reparsed?.axes?.y?.axisTitleUnderline).toBe(true);
+  });
+});

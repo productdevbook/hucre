@@ -835,6 +835,30 @@ export interface CloneChartOptions {
        * at the call site.
        */
       axisTitleStrike?: boolean | null;
+      /**
+       * Override `SheetChart.axes.x.axisTitleUnderline`. `undefined`
+       * (or omitted) inherits the source axis's parsed value; `null`
+       * drops the inherited flag so the writer falls back to the
+       * OOXML default — no `u` attribute, equivalent to no underline.
+       * A `boolean` replaces it: `true` emits `u="sng"` (Excel's UI
+       * "Underline" — single line); `false` pins the non-default
+       * omission (functionally identical to dropping).
+       *
+       * Non-boolean overrides (typed escapes from an untyped caller)
+       * collapse to a drop so the cloned `SheetChart` always carries
+       * a value the writer will accept.
+       *
+       * `<c:title>` lives on every axis flavour per the OOXML schema,
+       * so the override carries through every chart family that has
+       * axes (bar / column / line / area / scatter). Silently dropped
+       * on `pie` / `doughnut` charts (no axes at all) and on any axis
+       * whose `title` is unset (no `<c:title>` block to host the
+       * flag). The grammar mirrors `axisTitleRotation` /
+       * `axisTitleFontSize` / `axisTitleBold` / `axisTitleItalic` /
+       * `axisTitleColor` / `axisTitleStrike` so the axis-title knobs
+       * compose the same way at the call site.
+       */
+      axisTitleUnderline?: boolean | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -1027,6 +1051,8 @@ export interface CloneChartOptions {
       axisTitleColor?: string | null;
       /** See {@link CloneChartOptions.axes.x.axisTitleStrike}. */
       axisTitleStrike?: boolean | null;
+      /** See {@link CloneChartOptions.axes.x.axisTitleUnderline}. */
+      axisTitleUnderline?: boolean | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -2868,6 +2894,25 @@ function resolveAxes(
     sourceAxes?.y?.axisTitleStrike,
     overrides?.y?.axisTitleStrike,
   );
+  // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr u=".."/></a:pPr>
+  // </a:p></c:rich></c:tx></c:title>` — axis title underline flag.
+  // Sits on the same `<c:title>` body as `axisTitleRotation` /
+  // `axisTitleFontSize` / `axisTitleBold` / `axisTitleItalic` /
+  // `axisTitleColor` / `axisTitleStrike`, so the resolver applies on
+  // every chart family that has axes (pie / doughnut were short-
+  // circuited upstream). Non-boolean overrides collapse to `undefined`
+  // so the writer omits the `u` attribute. Like the rotation, size,
+  // bold, italic, color, and strike knobs, the writer drops the flag
+  // when the matching axis title is unset, so a stray pin on an axis
+  // with no title silently disappears at emit time.
+  const xAxisTitleUnderline = applyAxisTitleUnderlineOverride(
+    sourceAxes?.x?.axisTitleUnderline,
+    overrides?.x?.axisTitleUnderline,
+  );
+  const yAxisTitleUnderline = applyAxisTitleUnderlineOverride(
+    sourceAxes?.y?.axisTitleUnderline,
+    overrides?.y?.axisTitleUnderline,
+  );
   const xGridlines = applyGridlinesOverride(sourceAxes?.x?.gridlines, overrides?.x?.gridlines);
   const yGridlines = applyGridlinesOverride(sourceAxes?.y?.gridlines, overrides?.y?.gridlines);
   const xScale = applyScaleOverride(sourceAxes?.x?.scale, overrides?.x?.scale);
@@ -3042,6 +3087,14 @@ function resolveAxes(
   // set).
   const xAxisTitleStrikeResolved = xTitle === undefined ? undefined : xAxisTitleStrike;
   const yAxisTitleStrikeResolved = yTitle === undefined ? undefined : yAxisTitleStrike;
+  // The axis-title underline flag only renders when the axis carries a
+  // title — drop a stray inherited flag when the resolved axis title
+  // is unset so the cloned `SheetChart` accurately reflects what the
+  // chart will paint. Symmetric with the writer's title-presence gate
+  // (the per-family axis builder only invokes `buildAxisTitle` when
+  // `opts.xAxisTitle` / `opts.yAxisTitle` is set).
+  const xAxisTitleUnderlineResolved = xTitle === undefined ? undefined : xAxisTitleUnderline;
+  const yAxisTitleUnderlineResolved = yTitle === undefined ? undefined : yAxisTitleUnderline;
 
   const out: NonNullable<SheetChart["axes"]> = {};
   if (
@@ -3052,6 +3105,7 @@ function resolveAxes(
     xAxisTitleItalicResolved !== undefined ||
     xAxisTitleColorResolved !== undefined ||
     xAxisTitleStrikeResolved !== undefined ||
+    xAxisTitleUnderlineResolved !== undefined ||
     xGridlines !== undefined ||
     xScale !== undefined ||
     xNumFmt !== undefined ||
@@ -3082,6 +3136,8 @@ function resolveAxes(
     if (xAxisTitleItalicResolved !== undefined) out.x.axisTitleItalic = xAxisTitleItalicResolved;
     if (xAxisTitleColorResolved !== undefined) out.x.axisTitleColor = xAxisTitleColorResolved;
     if (xAxisTitleStrikeResolved !== undefined) out.x.axisTitleStrike = xAxisTitleStrikeResolved;
+    if (xAxisTitleUnderlineResolved !== undefined)
+      out.x.axisTitleUnderline = xAxisTitleUnderlineResolved;
     if (xGridlines !== undefined) out.x.gridlines = xGridlines;
     if (xScale !== undefined) out.x.scale = xScale;
     if (xNumFmt !== undefined) out.x.numberFormat = xNumFmt;
@@ -3110,6 +3166,7 @@ function resolveAxes(
     yAxisTitleItalicResolved !== undefined ||
     yAxisTitleColorResolved !== undefined ||
     yAxisTitleStrikeResolved !== undefined ||
+    yAxisTitleUnderlineResolved !== undefined ||
     yGridlines !== undefined ||
     yScale !== undefined ||
     yNumFmt !== undefined ||
@@ -3134,6 +3191,8 @@ function resolveAxes(
     if (yAxisTitleItalicResolved !== undefined) out.y.axisTitleItalic = yAxisTitleItalicResolved;
     if (yAxisTitleColorResolved !== undefined) out.y.axisTitleColor = yAxisTitleColorResolved;
     if (yAxisTitleStrikeResolved !== undefined) out.y.axisTitleStrike = yAxisTitleStrikeResolved;
+    if (yAxisTitleUnderlineResolved !== undefined)
+      out.y.axisTitleUnderline = yAxisTitleUnderlineResolved;
     if (yGridlines !== undefined) out.y.gridlines = yGridlines;
     if (yScale !== undefined) out.y.scale = yScale;
     if (yNumFmt !== undefined) out.y.numberFormat = yNumFmt;
@@ -3623,6 +3682,31 @@ function applyAxisTitleStrikeOverride(
   if (override === undefined) return normalizeTitleStrike(source);
   if (override === null) return undefined;
   return normalizeTitleStrike(override);
+}
+
+/**
+ * Resolve an `axisTitleUnderline` override using the same `undefined`
+ * (inherit) / `null` (drop) / value (replace) grammar as the other
+ * axis helpers. Non-boolean overrides (typed escape from an untyped
+ * caller) collapse to `undefined` via {@link normalizeTitleUnderline}
+ * so the cloned `SheetChart` always carries a value the writer will
+ * accept. A `null` override always drops the inherited flag (the
+ * writer falls back to the OOXML default — no `u` attribute,
+ * equivalent to no underline).
+ *
+ * The caller is expected to additionally gate the resolved value on
+ * the matching axis title's presence so the cloned shape never
+ * carries a flag that the writer would silently elide (the writer
+ * scopes the flag emission to `<c:title>`, which is omitted when the
+ * axis renders no title).
+ */
+function applyAxisTitleUnderlineOverride(
+  source: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return normalizeTitleUnderline(source);
+  if (override === null) return undefined;
+  return normalizeTitleUnderline(override);
 }
 
 /**
