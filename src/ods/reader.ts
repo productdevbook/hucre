@@ -52,6 +52,8 @@ interface OdsStyleDef {
   fontSize?: number;
   fontColor?: string; // hex with '#' prefix
   backgroundColor?: string; // hex with '#' prefix
+  /** Excel-style number format reconstructed from a data style */
+  numFmt?: string;
 }
 
 function parseStyles(doc: XmlElement): Map<string, OdsStyleDef> {
@@ -60,6 +62,10 @@ function parseStyles(doc: XmlElement): Map<string, OdsStyleDef> {
   // Styles live in <office:automatic-styles>
   const autoStyles = findChild(doc, "automatic-styles");
   if (!autoStyles) return styles;
+
+  // First pass — collect data-style definitions (`<number:*-style>`) so we
+  // can resolve `style:data-style-name` references in the second pass.
+  const dataStyleMap = parseDataStyles(autoStyles);
 
   const styleElements = findChildren(autoStyles, "style");
   for (const styleEl of styleElements) {
@@ -101,10 +107,104 @@ function parseStyles(doc: XmlElement): Map<string, OdsStyleDef> {
       }
     }
 
+    // Resolve `style:data-style-name` to an Excel-style format code
+    const dataStyleRef = styleEl.attrs["style:data-style-name"];
+    if (dataStyleRef) {
+      const numFmt = dataStyleMap.get(dataStyleRef);
+      if (numFmt) def.numFmt = numFmt;
+    }
+
     styles.set(name, def);
   }
 
   return styles;
+}
+
+// ── Data-style (number format) parsing ──────────────────────────────
+
+/**
+ * Parse `<number:number-style>`, `<number:percentage-style>`,
+ * `<number:date-style>`, `<number:time-style>`, and
+ * `<number:currency-style>` elements into Excel-compatible format codes.
+ */
+function parseDataStyles(autoStyles: XmlElement): Map<string, string> {
+  const out = new Map<string, string>();
+
+  for (const child of autoStyles.children) {
+    if (typeof child === "string") continue;
+    const local = child.local || child.tag;
+    const name = child.attrs["style:name"];
+    if (!name) continue;
+
+    let code: string | undefined;
+    if (local === "number-style") {
+      code = serializeDataStyleChildren(child, "number");
+    } else if (local === "percentage-style") {
+      code = serializeDataStyleChildren(child, "percentage");
+    } else if (local === "currency-style") {
+      code = serializeDataStyleChildren(child, "currency");
+    } else if (local === "date-style") {
+      code = serializeDataStyleChildren(child, "date");
+    } else if (local === "time-style") {
+      const truncate = child.attrs["number:truncate-on-overflow"];
+      code = serializeDataStyleChildren(child, "time", truncate === "false");
+    }
+    if (code) out.set(name, code);
+  }
+
+  return out;
+}
+
+function serializeDataStyleChildren(
+  el: XmlElement,
+  kind: "number" | "percentage" | "currency" | "date" | "time",
+  bracketDuration = false,
+): string {
+  let out = "";
+  for (const child of el.children) {
+    if (typeof child === "string") continue;
+    const local = child.local || child.tag;
+    if (local === "number") {
+      const decimals = parseInt(child.attrs["number:decimal-places"] ?? "0", 10);
+      const grouping = child.attrs["number:grouping"] === "true";
+      const integerPart = grouping ? "#,##0" : "0";
+      out += decimals > 0 ? `${integerPart}.${"0".repeat(decimals)}` : integerPart;
+    } else if (local === "currency-symbol") {
+      const text = child.children.filter((c: unknown) => typeof c === "string").join("");
+      out += `"${text}"`;
+    } else if (local === "text") {
+      const text = child.children.filter((c: unknown) => typeof c === "string").join("");
+      // Single-character separators stay bare; longer literals get quoted.
+      if (text.length === 1 && /[\s\-/:.,()%]/.test(text)) {
+        out += text;
+      } else {
+        out += `"${text}"`;
+      }
+    } else if (local === "year") {
+      out += child.attrs["number:style"] === "long" ? "yyyy" : "yy";
+    } else if (local === "month") {
+      const long = child.attrs["number:style"] === "long";
+      const textual = child.attrs["number:textual"] === "true";
+      out += textual ? (long ? "mmmm" : "mmm") : long ? "mm" : "m";
+    } else if (local === "day") {
+      out += child.attrs["number:style"] === "long" ? "dd" : "d";
+    } else if (local === "day-of-week") {
+      out += child.attrs["number:style"] === "long" ? "dddd" : "ddd";
+    } else if (local === "hours") {
+      const tok = child.attrs["number:style"] === "long" ? "hh" : "h";
+      out += bracketDuration && !out.includes("[") ? `[${tok}]` : tok;
+    } else if (local === "minutes") {
+      out += child.attrs["number:style"] === "long" ? "mm" : "m";
+    } else if (local === "seconds") {
+      out += child.attrs["number:style"] === "long" ? "ss" : "s";
+    } else if (local === "am-pm") {
+      out += "AM/PM";
+    }
+  }
+  if (kind === "percentage" && !out.endsWith("%")) out += "%";
+  // ODS time elements may emit elapsed-hour brackets via the writer; if the
+  // reader detects truncate-on-overflow=false, surface the bracket form.
+  return out;
 }
 
 /** Convert a parsed ODS style def into a CellStyle */
@@ -132,6 +232,10 @@ function odsStyleToCellStyle(def: OdsStyleDef): CellStyle {
       pattern: "solid",
       fgColor: { rgb: hex.toUpperCase() },
     };
+  }
+
+  if (def.numFmt) {
+    style.numFmt = def.numFmt;
   }
 
   return style;

@@ -62,6 +62,280 @@ function formatOdsDateValue(date: Date): string {
   return `${y}-${m}-${d}T${hh}:${mm}:${ss}`;
 }
 
+// ── Number Format Translation ───────────────────────────────────────
+//
+// Translate an Excel-style format code (e.g. "0.00%", "yyyy-mm-dd",
+// "[HH]:MM") into an ODS data-style element from the
+// `urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0` namespace.
+//
+// ODS data styles are wrappers — the actual presentation lives in
+// child `<number:number>`, `<number:year>`, `<number:hours>` etc
+// elements that describe each token of the formatted output. A cell
+// references a data style by name through `style:data-style-name` on
+// its `<style:style>` element.
+
+type OdsNumFmtKind = "number" | "percentage" | "currency" | "date" | "time";
+
+interface OdsNumFmtDef {
+  /** Element local name (no namespace prefix) */
+  kind: OdsNumFmtKind;
+  /** Children of the data-style element, in document order */
+  children: string[];
+  /** Extra attributes on the data-style root (e.g. `number:truncate-on-overflow`) */
+  attrs?: Record<string, string>;
+}
+
+function isDateFormat(code: string): boolean {
+  // Strip locale / colour tags / bracketed duration tokens so they don't
+  // interfere — `[HH]`, `[red]`, `[$$-409]` are not date markers.
+  const stripped = code.replace(/\[[^\]]*\]/g, "");
+  return /[yY]/.test(stripped) || /[dD]/.test(stripped);
+}
+
+function isTimeFormat(code: string): boolean {
+  // Bracketed [h], [m], [s] always mean elapsed-time, otherwise the bare
+  // letters h or s mark a clock-style time. Excel uses `m` for both month
+  // and minute; we let the date check above win when only `m` is present.
+  if (/\[[hHmMsS]+\]/.test(code)) return true;
+  if (/[hHsS]/.test(code)) return true;
+  return false;
+}
+
+function isPercentageFormat(code: string): boolean {
+  // Strip quoted literals so a literal "%" inside a string doesn't trigger
+  return /(?<!\\)%/.test(code.replace(/"[^"]*"/g, "").replace(/\\./g, ""));
+}
+
+function detectCurrencySymbol(code: string): string | undefined {
+  // [$<symbol>-<locale>] form, e.g. [$$-409], [$€-2], [$£-809]
+  const bracketed = code.match(/\[\$([^-\]]*)(?:-[^\]]*)?\]/);
+  if (bracketed && bracketed[1]) return bracketed[1];
+  // "$" or "€" etc. as a quoted literal
+  const quoted = code.match(/"([^"]+)"/);
+  if (quoted && /[$€£¥₺₽₹]/.test(quoted[1])) return quoted[1];
+  // Bare $ at the start
+  if (/^\$/.test(code) || /[$€£¥₺₽₹]/.test(code)) {
+    const m = code.match(/[$€£¥₺₽₹]/);
+    if (m) return m[0];
+  }
+  return undefined;
+}
+
+function decimalsFromCode(code: string): number {
+  // Find the first decimal section like "0.00" / "#.##" / "#,##0.000"
+  const m = code.match(/[0#]\.([0#]+)/);
+  return m ? m[1].length : 0;
+}
+
+function hasGrouping(code: string): boolean {
+  return /#,##0|0,000/.test(code);
+}
+
+/** Build a `<number:number>` child for numeric / percentage / currency styles */
+function buildNumberChild(decimals: number, grouping: boolean): string {
+  const attrs: Record<string, string> = {
+    "number:decimal-places": String(decimals),
+    "number:min-integer-digits": "1",
+  };
+  if (grouping) attrs["number:grouping"] = "true";
+  return xmlSelfClose("number:number", attrs);
+}
+
+/** Translate a date-format code into a sequence of `<number:*>` children */
+function buildDateChildren(code: string): string[] {
+  const out: string[] = [];
+  // Tokenise: longest matches first. Bracketed elapsed tokens like `[hh]`
+  // collapse onto the same hour/minute/second elements but with style:long
+  // when two letters are present.
+  const tokenRegex =
+    /\[[hH]{1,2}\]|\[[mM]{1,2}\]|\[[sS]{1,2}\]|yyyy|yy|mmmm|mmm|mm|m|dddd|ddd|dd|d|hh|h|ss|s|AM\/PM|am\/pm|"[^"]*"|\\.|./g;
+
+  // Heuristic: an `m` token is treated as minute when the previous non-literal
+  // token is hours, otherwise as month.
+  let lastWasHours = false;
+  let nextIsSeconds = false;
+  const tokens: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = tokenRegex.exec(code)) !== null) {
+    tokens.push(match[0]);
+  }
+
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    const lower = tok.toLowerCase();
+    nextIsSeconds = false;
+    for (let j = i + 1; j < tokens.length; j++) {
+      const t = tokens[j].toLowerCase();
+      if (t === "s" || t === "ss") {
+        nextIsSeconds = true;
+        break;
+      }
+      if (
+        t === "h" ||
+        t === "hh" ||
+        t === "m" ||
+        t === "mm" ||
+        t === "d" ||
+        t === "dd" ||
+        t === "yyyy" ||
+        t === "yy"
+      )
+        break;
+    }
+
+    // Bracketed elapsed tokens: `[h]`, `[hh]`, `[m]`, `[mm]`, `[s]`, `[ss]`.
+    if (/^\[[hH]{1,2}\]$/.test(tok)) {
+      const long = tok.length === 4; // `[hh]` -> 4 chars
+      const attrs: Record<string, string> = {};
+      if (long) attrs["number:style"] = "long";
+      out.push(xmlSelfClose("number:hours", attrs));
+      lastWasHours = true;
+      continue;
+    }
+    if (/^\[[mM]{1,2}\]$/.test(tok)) {
+      const long = tok.length === 4;
+      const attrs: Record<string, string> = {};
+      if (long) attrs["number:style"] = "long";
+      out.push(xmlSelfClose("number:minutes", attrs));
+      lastWasHours = false;
+      continue;
+    }
+    if (/^\[[sS]{1,2}\]$/.test(tok)) {
+      const long = tok.length === 4;
+      const attrs: Record<string, string> = {};
+      if (long) attrs["number:style"] = "long";
+      out.push(xmlSelfClose("number:seconds", attrs));
+      lastWasHours = false;
+      continue;
+    }
+
+    if (lower === "yyyy") {
+      out.push(xmlSelfClose("number:year", { "number:style": "long" }));
+      lastWasHours = false;
+    } else if (lower === "yy") {
+      out.push(xmlSelfClose("number:year"));
+      lastWasHours = false;
+    } else if (lower === "mmmm") {
+      out.push(xmlSelfClose("number:month", { "number:textual": "true", "number:style": "long" }));
+      lastWasHours = false;
+    } else if (lower === "mmm") {
+      out.push(xmlSelfClose("number:month", { "number:textual": "true" }));
+      lastWasHours = false;
+    } else if (lower === "mm" || lower === "m") {
+      // minute when between hours and seconds, else month
+      const isMinute = lastWasHours || nextIsSeconds;
+      if (isMinute) {
+        const attrs: Record<string, string> = {};
+        if (lower === "mm") attrs["number:style"] = "long";
+        out.push(xmlSelfClose("number:minutes", attrs));
+      } else {
+        const attrs: Record<string, string> = {};
+        if (lower === "mm") attrs["number:style"] = "long";
+        out.push(xmlSelfClose("number:month", attrs));
+        lastWasHours = false;
+      }
+    } else if (lower === "dddd") {
+      out.push(xmlSelfClose("number:day-of-week", { "number:style": "long" }));
+      lastWasHours = false;
+    } else if (lower === "ddd") {
+      out.push(xmlSelfClose("number:day-of-week"));
+      lastWasHours = false;
+    } else if (lower === "dd") {
+      out.push(xmlSelfClose("number:day", { "number:style": "long" }));
+      lastWasHours = false;
+    } else if (lower === "d") {
+      out.push(xmlSelfClose("number:day"));
+      lastWasHours = false;
+    } else if (lower === "hh") {
+      out.push(xmlSelfClose("number:hours", { "number:style": "long" }));
+      lastWasHours = true;
+    } else if (lower === "h") {
+      out.push(xmlSelfClose("number:hours"));
+      lastWasHours = true;
+    } else if (lower === "ss") {
+      out.push(xmlSelfClose("number:seconds", { "number:style": "long" }));
+      lastWasHours = false;
+    } else if (lower === "s") {
+      out.push(xmlSelfClose("number:seconds"));
+      lastWasHours = false;
+    } else if (lower === "am/pm") {
+      out.push(xmlSelfClose("number:am-pm"));
+      lastWasHours = false;
+    } else if (tok.startsWith('"') && tok.endsWith('"')) {
+      out.push(xmlElement("number:text", undefined, xmlEscape(tok.slice(1, -1))));
+    } else if (tok.startsWith("\\") && tok.length === 2) {
+      out.push(xmlElement("number:text", undefined, xmlEscape(tok.slice(1))));
+    } else {
+      // Literal separator (`-`, `/`, `:`, `.`, ` `, etc.)
+      out.push(xmlElement("number:text", undefined, xmlEscape(tok)));
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Convert an Excel-style `numFmt` code into an ODS data-style definition.
+ * Returns `undefined` for codes the writer cannot translate — those are
+ * silently dropped rather than emitting an invalid style.
+ */
+function translateNumFmt(code: string): OdsNumFmtDef | undefined {
+  if (!code) return undefined;
+
+  const trimmed = code.trim();
+  // "General" or "@" (text) — no data style needed
+  if (trimmed === "General" || trimmed === "@" || trimmed === "") return undefined;
+
+  // Take only the first section (before `;`); negative/zero sections are
+  // ODS' `<style:map>` territory and outside this writer's scope.
+  const firstSection = trimmed.split(";")[0];
+
+  if (isPercentageFormat(firstSection)) {
+    const decimals = decimalsFromCode(firstSection);
+    const grouping = hasGrouping(firstSection);
+    const children = [
+      buildNumberChild(decimals, grouping),
+      xmlElement("number:text", undefined, "%"),
+    ];
+    return { kind: "percentage", children };
+  }
+
+  const currency = detectCurrencySymbol(firstSection);
+  if (currency) {
+    const decimals = decimalsFromCode(firstSection);
+    const grouping = hasGrouping(firstSection);
+    const symbol = xmlElement("number:currency-symbol", undefined, xmlEscape(currency));
+    const number = buildNumberChild(decimals, grouping);
+    // Detect symbol position: leading vs trailing
+    const beforeNum = /^[^0#]*(\$|\[\$|"[$€£¥₺₽₹])/.test(firstSection);
+    const children = beforeNum ? [symbol, number] : [number, symbol];
+    return { kind: "currency", children, attrs: { "number:automatic-order": "true" } };
+  }
+
+  const time = isTimeFormat(firstSection);
+  const date = isDateFormat(firstSection);
+  // Bracketed-hour durations like `[HH]:MM` are pure time; check time first.
+  const isElapsed = /\[[hHmMsS]+\]/.test(firstSection);
+  if (isElapsed || (time && !date)) {
+    const def: OdsNumFmtDef = {
+      kind: "time",
+      children: buildDateChildren(firstSection),
+    };
+    // `[H]`, `[M]`, `[S]` request a duration presentation that doesn't wrap
+    // at 24h — ODS marks this with `number:truncate-on-overflow="false"`.
+    if (isElapsed) def.attrs = { "number:truncate-on-overflow": "false" };
+    return def;
+  }
+  if (date) {
+    return { kind: "date", children: buildDateChildren(firstSection) };
+  }
+
+  // Plain number
+  const decimals = decimalsFromCode(firstSection);
+  const grouping = hasGrouping(firstSection);
+  return { kind: "number", children: [buildNumberChild(decimals, grouping)] };
+}
+
 // ── Style Generation ────────────────────────────────────────────────
 
 /** Maps a CellStyle to a unique string key for deduplication */
@@ -74,11 +348,12 @@ function styleKey(style: CellStyle): string {
   if (style.fill?.type === "pattern" && style.fill.fgColor?.rgb) {
     parts.push(`bg${style.fill.fgColor.rgb}`);
   }
+  if (style.numFmt) parts.push(`nf:${style.numFmt}`);
   return parts.join("|");
 }
 
 /** Generate a <style:style> element for a cell style */
-function generateStyleElement(name: string, style: CellStyle): string {
+function generateStyleElement(name: string, style: CellStyle, dataStyleName?: string): string {
   const textProps: Record<string, string> = {};
   const cellProps: Record<string, string> = {};
 
@@ -107,7 +382,10 @@ function generateStyleElement(name: string, style: CellStyle): string {
     children.push(xmlSelfClose("style:table-cell-properties", cellProps));
   }
 
-  return xmlElement("style:style", { "style:name": name, "style:family": "table-cell" }, children);
+  const attrs: Record<string, string> = { "style:name": name, "style:family": "table-cell" };
+  if (dataStyleName) attrs["style:data-style-name"] = dataStyleName;
+
+  return xmlElement("style:style", attrs, children);
 }
 
 // ── Style Collector ────────────────────────────────────────────────
@@ -117,12 +395,53 @@ interface StyleCollector {
   styleMap: Map<string, string>;
   /** Map from style name → XML element string */
   styleElements: Map<string, string>;
-  /** Counter for generating unique names */
+  /** Counter for generating unique cell-style names */
   counter: number;
+  /** Map from numFmt code → data-style name (e.g. "N100") */
+  dataStyleMap: Map<string, string>;
+  /** Map from data-style name → XML element string */
+  dataStyleElements: Map<string, string>;
+  /** Counter for generating unique data-style names */
+  dataStyleCounter: number;
 }
 
 function createStyleCollector(): StyleCollector {
-  return { styleMap: new Map(), styleElements: new Map(), counter: 1 };
+  return {
+    styleMap: new Map(),
+    styleElements: new Map(),
+    counter: 1,
+    dataStyleMap: new Map(),
+    dataStyleElements: new Map(),
+    dataStyleCounter: 100,
+  };
+}
+
+function getOrCreateDataStyleName(collector: StyleCollector, numFmt: string): string | undefined {
+  const existing = collector.dataStyleMap.get(numFmt);
+  if (existing) return existing;
+
+  const def = translateNumFmt(numFmt);
+  if (!def) return undefined;
+
+  const name = `N${collector.dataStyleCounter++}`;
+  collector.dataStyleMap.set(numFmt, name);
+
+  const tag = `number:${def.kind}-style`;
+  const attrs: Record<string, string> = { "style:name": name };
+  if (def.attrs) Object.assign(attrs, def.attrs);
+
+  collector.dataStyleElements.set(name, xmlElement(tag, attrs, def.children));
+  return name;
+}
+
+function hasVisualProps(style: CellStyle): boolean {
+  return Boolean(
+    style.font?.bold ||
+    style.font?.italic ||
+    style.font?.size ||
+    style.font?.color?.rgb ||
+    (style.fill?.type === "pattern" && style.fill.fgColor?.rgb),
+  );
 }
 
 function getOrCreateStyleName(collector: StyleCollector, style: CellStyle): string {
@@ -132,9 +451,18 @@ function getOrCreateStyleName(collector: StyleCollector, style: CellStyle): stri
   const existing = collector.styleMap.get(key);
   if (existing) return existing;
 
+  const dataStyleName = style.numFmt
+    ? getOrCreateDataStyleName(collector, style.numFmt)
+    : undefined;
+
+  // If the only piece of styling is a numFmt that translated to nothing
+  // (e.g. "General" / "@"), drop the cell-style entirely — emitting an
+  // empty `<style:style>` would just bloat the document.
+  if (!dataStyleName && !hasVisualProps(style)) return "";
+
   const name = `ce${collector.counter++}`;
   collector.styleMap.set(key, name);
-  collector.styleElements.set(name, generateStyleElement(name, style));
+  collector.styleElements.set(name, generateStyleElement(name, style, dataStyleName));
   return name;
 }
 
@@ -474,10 +802,16 @@ function writeContentXml(options: WriteOptions): string {
   const spreadsheetBody = xmlElement("office:spreadsheet", undefined, tableElements);
   const body = xmlElement("office:body", undefined, spreadsheetBody);
 
-  // Build automatic styles from collected styles
+  // Build automatic styles from collected styles. Per ODS spec the data
+  // styles (`<number:*-style>`) MUST appear before any `<style:style>`
+  // that references them through `style:data-style-name`.
+  const allStyleParts: string[] = [
+    ...styleCollector.dataStyleElements.values(),
+    ...styleCollector.styleElements.values(),
+  ];
   const styleXml =
-    styleCollector.styleElements.size > 0
-      ? xmlElement("office:automatic-styles", undefined, [...styleCollector.styleElements.values()])
+    allStyleParts.length > 0
+      ? xmlElement("office:automatic-styles", undefined, allStyleParts)
       : xmlElement("office:automatic-styles", undefined, "");
 
   // Build content sections in order per ODS spec:
