@@ -2556,10 +2556,18 @@ function parseDataLabelsFontSize(dLbls: XmlElement): number | undefined {
   if (!defRPr) return undefined;
   const raw = defRPr.attrs.sz;
   if (typeof raw !== "string") return undefined;
-  const num = Number.parseInt(raw, 10);
-  if (!Number.isFinite(num)) return undefined;
-  const points = num / 100;
-  if (points < 1 || points > 400) return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  // Convert from 100ths of a point to points, rounding to the nearest
+  // 0.5pt to match the granularity Excel's UI exposes. Mirrors the
+  // chart-title / axis-title / tick-label / legend sibling parsers
+  // exactly so a parsed value flows through every typography slot
+  // without bookkeeping the units.
+  const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2);
+  const points = halfSteps / 2;
+  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
   return points;
 }
 
