@@ -10339,7 +10339,6 @@ describe("parseChart — data table", () => {
     });
   });
 
-
   // ── data-table strikethrough ───────────────────────────────────────
 
   it("surfaces a pinned dataTable.strikethrough from <a:defRPr strike='sngStrike'/>", () => {

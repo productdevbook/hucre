@@ -10902,7 +10902,6 @@ describe("cloneChart — data table", () => {
     expect(reparsed?.dataTable?.underline).toBe(true);
   });
 
-
   // ── data-table strikethrough ───────────────────────────────────
 
   it("inherits the source's dataTable.strikethrough by default", () => {

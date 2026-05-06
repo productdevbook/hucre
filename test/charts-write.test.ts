@@ -9581,7 +9581,6 @@ describe("writeChart — data table", () => {
     expect(reparsed?.dataTable?.underline).toBe(true);
   });
 
-
   // ── data-table strikethrough ───────────────────────────────────────
 
   it("skips the strike attribute when strikethrough is unset (writer default)", () => {
