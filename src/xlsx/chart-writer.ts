@@ -1109,6 +1109,7 @@ function resolveDataTable(chart: SheetChart):
       showOutline: boolean;
       showKeys: boolean;
       fontSize: number | undefined;
+      fontColor: string | undefined;
     }
   | undefined {
   // Pie / doughnut have no axes — the OOXML schema places `<c:dTable>`
@@ -1127,6 +1128,7 @@ function resolveDataTable(chart: SheetChart):
       showOutline: true,
       showKeys: true,
       fontSize: undefined,
+      fontColor: undefined,
     };
   }
 
@@ -1140,6 +1142,7 @@ function resolveDataTable(chart: SheetChart):
     showOutline: raw.showOutline !== false,
     showKeys: raw.showKeys !== false,
     fontSize: resolveDataTableFontSize(raw.fontSize),
+    fontColor: resolveDataTableFontColor(raw.fontColor),
   };
 }
 
@@ -1160,10 +1163,26 @@ function resolveDataTableFontSize(value: number | undefined): number | undefined
 }
 
 /**
+ * Resolve `<c:dTable><c:txPr><a:p><a:pPr><a:defRPr><a:solidFill>
+ * <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
+ * </c:txPr></c:dTable>` from {@link ChartDataTable.fontColor}.
+ *
+ * Returns the 6-character uppercase hex string the writer emits, or
+ * `undefined` when the caller leaves the field unset / passed a
+ * malformed token. Delegates to {@link normalizeTitleColor} so the
+ * accept-with-or-without-`#` grammar matches the chart-title /
+ * axis-title / axis tick-label / legend / data-label color resolvers
+ * exactly.
+ */
+function resolveDataTableFontColor(value: string | undefined): string | undefined {
+  return normalizeTitleColor(value);
+}
+
+/**
  * Serialize a resolved data-table into `<c:dTable>` with its four
  * required boolean children, in the order CT_DTable mandates:
  * `showHorzBorder`, `showVertBorder`, `showOutline`, `showKeys`. When
- * a `fontSize` is pinned the writer emits an additional `<c:txPr>`
+ * a typography knob is pinned the writer emits an additional `<c:txPr>`
  * block after the four booleans; absence collapses to the existing
  * four-child shape so a fresh chart with no typography pin matches
  * Excel's reference serialization byte-for-byte.
@@ -1181,6 +1200,7 @@ function buildDataTable(table: {
   showOutline: boolean;
   showKeys: boolean;
   fontSize: number | undefined;
+  fontColor: string | undefined;
 }): string {
   const children: string[] = [
     xmlSelfClose("c:showHorzBorder", { val: table.showHorzBorder ? 1 : 0 }),
@@ -1193,37 +1213,56 @@ function buildDataTable(table: {
   // Part 1, §21.2.2.54). The writer skips emission entirely when no
   // typography knob is pinned so a fresh chart matches Excel's
   // reference serialization byte-for-byte.
-  const txPrXml = buildDataTableTxPr(table.fontSize);
+  const txPrXml = buildDataTableTxPr(table.fontSize, table.fontColor);
   if (txPrXml !== undefined) children.push(txPrXml);
   return xmlElement("c:dTable", undefined, children);
 }
 
 /**
  * Build the `<c:txPr>` block that carries a data-table's typography
- * pins (currently the font size only). Returns `undefined` when every
- * input is unset so the caller can elide the element entirely (Excel's
- * reference serialization omits `<c:txPr>` from `<c:dTable>` when the
- * table renders at the theme-default style).
+ * pins (currently font size and font color). Returns `undefined` when
+ * every input is unset so the caller can elide the element entirely
+ * (Excel's reference serialization omits `<c:txPr>` from `<c:dTable>`
+ * when the table renders at the theme-default style).
  *
  * The emitted block mirrors the minimal `<c:txPr>` shape Excel writes
  * when the user pins a data-table typography knob — `<a:bodyPr/>`,
  * `<a:lstStyle/>`, and the `<a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
  * <a:endParaRPr/></a:p>` paragraph stub Excel always emits hosts the
- * typography attributes on `<a:defRPr>`. Mirrors the chart-title /
- * axis-title / tick-label / legend / data-label `<c:txPr>` slots
- * exactly so a re-parse picks the values off the canonical
- * default-paragraph slot every other typography reader expects.
+ * typography attributes on `<a:defRPr>`. The `<a:defRPr>` element
+ * expands from self-closing to wrapping a single `<a:solidFill>` child
+ * when a color is set; otherwise the writer keeps the existing
+ * self-closing form so a fresh chart with no custom color matches
+ * Excel's reference serialization byte-for-byte. Mirrors the
+ * chart-title / axis-title / tick-label / legend / data-label
+ * `<c:txPr>` slots exactly so a re-parse picks the values off the
+ * canonical default-paragraph slot every other typography reader
+ * expects.
  */
-function buildDataTableTxPr(fontSizePt: number | undefined): string | undefined {
-  if (fontSizePt === undefined) return undefined;
-  const defRPrAttrs: Record<string, string | number> = {
-    sz: fontSizePt * TITLE_FONT_SZ_PER_POINT,
-  };
+function buildDataTableTxPr(
+  fontSizePt: number | undefined,
+  rgbHex: string | undefined,
+): string | undefined {
+  if (fontSizePt === undefined && rgbHex === undefined) return undefined;
+  const defRPrAttrs: Record<string, string | number> = {};
+  if (fontSizePt !== undefined) defRPrAttrs.sz = fontSizePt * TITLE_FONT_SZ_PER_POINT;
+  // OOXML's `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+  // </a:solidFill></a:defRPr>` carries the data-table font color.
+  // Absence (`undefined`) collapses to skipping the `<a:solidFill>`
+  // child entirely so the data table inherits the theme text color
+  // (Excel's reference behavior for fresh data tables that have not
+  // had a custom color picked).
+  const solidFillChild = rgbHex
+    ? xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: rgbHex })])
+    : undefined;
+  const defRPr = solidFillChild
+    ? xmlElement("a:defRPr", defRPrAttrs, [solidFillChild])
+    : xmlSelfClose("a:defRPr", defRPrAttrs);
   return xmlElement("c:txPr", undefined, [
     xmlSelfClose("a:bodyPr"),
     xmlSelfClose("a:lstStyle"),
     xmlElement("a:p", undefined, [
-      xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", defRPrAttrs)]),
+      xmlElement("a:pPr", undefined, [defRPr]),
       xmlSelfClose("a:endParaRPr", { lang: "en-US" }),
     ]),
   ]);

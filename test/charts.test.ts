@@ -9690,6 +9690,181 @@ describe("parseChart — data table", () => {
     const maxXml = minXml.replace('sz="100"', 'sz="40000"');
     expect(parseChart(maxXml)?.dataTable?.fontSize).toBe(400);
   });
+
+  // ── data-table font color ──────────────────────────────────────────
+
+  it("surfaces a pinned dataTable.fontColor from <a:solidFill><a:srgbClr val='RRGGBB'/>", () => {
+    // The OOXML <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill>
+    // chain lands on the default-paragraph <a:defRPr> slot inside
+    // <c:dTable><c:txPr>. Mirrors the chart-title / axis-title /
+    // tick-label / legend / data-label color readers exactly.
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="1070CA"/></a:solidFill></a:defRPr></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.fontColor).toBe("1070CA");
+  });
+
+  it("uppercases a lowercase srgbClr val on parse", () => {
+    // The reader normalises the hex to the OOXML uppercase canonical
+    // form so a re-emit lands on the same byte sequence Excel writes.
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="abcdef"/></a:solidFill></a:defRPr></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.fontColor).toBe("ABCDEF");
+  });
+
+  it("collapses a malformed srgbClr val to undefined", () => {
+    // Wrong length, non-hex characters, missing val all drop the field
+    // rather than surface a value Excel would reject.
+    const wrongLen = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="FF00"/></a:solidFill></a:defRPr></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(wrongLen)?.dataTable?.fontColor).toBeUndefined();
+
+    const nonHex = wrongLen.replace('val="FF00"', 'val="ZZZZZZ"');
+    expect(parseChart(nonHex)?.dataTable?.fontColor).toBeUndefined();
+  });
+
+  it("collapses theme references (a:schemeClr) to undefined fontColor", () => {
+    // Only the literal <a:srgbClr> RGB triple round-trips; theme
+    // references collapse to undefined (writer can't round-trip them).
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr><a:solidFill><a:schemeClr val="dk1"/></a:solidFill></a:defRPr></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.fontColor).toBeUndefined();
+  });
+
+  it("returns undefined fontColor when <c:txPr> is missing entirely", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.fontColor).toBeUndefined();
+  });
+
+  it("returns undefined fontColor when the chain has no <a:solidFill>", () => {
+    // The <a:defRPr> exists but carries no <a:solidFill> child — the
+    // reader collapses to undefined rather than fabricate a default.
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="1400"/></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.fontColor).toBeUndefined();
+    // The fontSize part still surfaces.
+    expect(parseChart(xml)?.dataTable?.fontSize).toBe(14);
+  });
+
+  it("surfaces both fontSize and fontColor when both are pinned", () => {
+    const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart><c:plotArea>
+    <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="1600"><a:solidFill><a:srgbClr val="123456"/></a:solidFill></a:defRPr></a:pPr></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: true,
+      showOutline: true,
+      showKeys: true,
+      fontSize: 16,
+      fontColor: "123456",
+    });
+  });
 });
 
 // ── parseChart — chart-space protection ──────────────────────────────

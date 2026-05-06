@@ -10303,6 +10303,154 @@ describe("cloneChart — data table", () => {
     const reparsed = parseChart(written);
     expect(reparsed?.dataTable?.fontSize).toBe(13);
   });
+
+  // ── data-table font color ────────────────────────────────────────
+
+  it("inherits the source's dataTable.fontColor by default", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+          fontColor: "FF6600",
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+      fontColor: "FF6600",
+    });
+  });
+
+  it("lets options.dataTable: object override the inherited fontColor", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, fontColor: "FF6600" },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        dataTable: { showVertBorder: false, fontColor: "00AAFF" },
+      },
+    );
+    expect(clone.dataTable).toEqual({ showVertBorder: false, fontColor: "00AAFF" });
+  });
+
+  it("drops the inherited fontColor when override clears the typography pin", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, fontColor: "FF6600" },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        dataTable: { showVertBorder: false },
+      },
+    );
+    expect(clone.dataTable).toEqual({ showVertBorder: false });
+  });
+
+  it("drops the inherited fontColor when flattening into a doughnut clone", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, fontColor: "FF6600" },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        type: "doughnut",
+      },
+    );
+    expect(clone.type).toBe("doughnut");
+    expect(clone.dataTable).toBeUndefined();
+  });
+
+  it("propagates dataTable.fontColor into the rendered <c:dTable> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+          fontColor: "1070CA",
+        },
+      }),
+      { anchor: { from: { row: 5, col: 0 } } },
+    );
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:dTable>");
+    expect(written).toContain('<a:srgbClr val="1070CA"/>');
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+      fontColor: "1070CA",
+    });
+  });
+
+  it("composes dataTable.fontSize and fontColor through the clone-through path", () => {
+    // Both typography pins survive the inherit-by-default path together.
+    const clone = cloneChart(
+      source({
+        dataTable: { fontSize: 12, fontColor: "1070CA" },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.dataTable).toEqual({ fontSize: 12, fontColor: "1070CA" });
+  });
+
+  it("a parsed dataTable.fontColor round-trips through parseChart -> cloneChart -> writeChart -> parseChart", async () => {
+    const seed: SheetChart = {
+      type: "column",
+      series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+      anchor: { from: { row: 0, col: 0 } },
+      dataTable: { showKeys: false, fontColor: "AABBCC" },
+    };
+    const xml = writeChart(seed, "Sheet1").chartXml;
+    const parsed = parseChart(xml)!;
+    expect(parsed.dataTable?.fontColor).toBe("AABBCC");
+    const clone = cloneChart(parsed, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Q", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable?.fontColor).toBe("AABBCC");
+  });
 });
 
 // ── cloneChart — chart-space protection ──────────────────────────────

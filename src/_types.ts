@@ -1093,6 +1093,47 @@ export interface ChartDataTable {
    * configuration.
    */
   fontSize?: number;
+  /**
+   * Data-table font color. Maps to `<c:dTable><c:txPr><a:p><a:pPr>
+   * <a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill>
+   * </a:defRPr></a:pPr></a:p></c:txPr></c:dTable>` — Excel's "Format
+   * Data Table -> Font -> Font color" picker. The OOXML
+   * `<a:srgbClr val=".."/>` carries the 6-character uppercase hex
+   * sRGB color (`CT_SRgbColor` inside `CT_TextCharacterProperties`'
+   * fill choice — ECMA-376 Part 1, §20.1.2.3.32 / §21.1.2.3.7); the
+   * writer lands the value on the default-paragraph `<a:defRPr>` slot
+   * inside the `<c:dTable><c:txPr>` block so a re-parse picks the
+   * color up off the canonical slot the OOXML schema exposes.
+   *
+   * Accepts the color either with or without a leading `#` and in any
+   * case — `"FF0000"`, `"#FF0000"`, and `"ff0000"` all collapse to the
+   * OOXML uppercase canonical form `"FF0000"`. Malformed inputs (wrong
+   * length, non-hex characters, alpha-channel forms like `"#FF0000FF"`,
+   * non-string escapes from an untyped caller) collapse to `undefined`
+   * so the writer skips the entire `<a:solidFill>` block and the data
+   * table inherits the theme text color (Excel's reference behavior
+   * for fresh data tables that have not had a custom color picked).
+   *
+   * Default: omitted — the data table renders at the theme text color
+   * (no `<a:solidFill>` block, matching Excel's reference
+   * serialization for fresh data tables whose typography has not been
+   * customized).
+   *
+   * The `<c:txPr>` block lands after the four required boolean children
+   * per the CT_DTable schema sequence (ECMA-376 Part 1, §21.2.2.54).
+   * Mirrors the chart-title `titleColor` / axis-title `axisTitleColor`
+   * / axis tick-label `labelColor` / legend `legendFontColor` /
+   * data-label `fontColor` knobs — same accept-with-or-without-`#` hex
+   * grammar, same OOXML `<a:solidFill><a:srgbClr val=".."/>` mapping —
+   * so a caller can thread a single hex string through every
+   * typography-pinning slot. Composes independently with
+   * {@link fontSize} and the four boolean toggles — so a caller can
+   * pin the color without touching the rest of the configuration.
+   *
+   * Only meaningful for chart families with axes; silently dropped on
+   * pie / doughnut along with the rest of the data-table configuration.
+   */
+  fontColor?: string;
 }
 
 /**

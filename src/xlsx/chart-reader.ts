@@ -4459,7 +4459,44 @@ function parseDataTable(plotArea: XmlElement): ChartDataTable | undefined {
   if (showKeys !== undefined) out.showKeys = showKeys;
   const fontSize = parseDataTableFontSize(el);
   if (fontSize !== undefined) out.fontSize = fontSize;
+  const fontColor = parseDataTableFontColor(el);
+  if (fontColor !== undefined) out.fontColor = fontColor;
   return out;
+}
+
+/**
+ * Pull `<c:dTable><c:txPr><a:p><a:pPr><a:defRPr><a:solidFill>
+ * <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
+ * </c:txPr></c:dTable>` off a data-table block. Returns the
+ * 6-character uppercase hex string when the parser walks the full
+ * chain and lands on an `<a:srgbClr val="RRGGBB"/>`. Theme references
+ * (`<a:schemeClr>`), `<a:hslClr>`, `<a:sysClr>`, and `<a:prstClr>`
+ * all collapse to `undefined` — only the literal RGB triple round-
+ * trips losslessly through {@link writeChart}. Malformed `val` tokens
+ * (wrong length, non-hex characters) likewise drop to `undefined`
+ * rather than fabricate a value the writer would round-trip into a
+ * malformed `<a:srgbClr>`.
+ *
+ * Returns `undefined` whenever the data-table block omits `<c:txPr>`
+ * entirely or the canonical chain is malformed at any link. Mirrors
+ * the chart-title / axis-title / axis tick-label / legend / data-label
+ * color readers exactly so a parsed value slots straight back into the
+ * writer's emit path.
+ */
+function parseDataTableFontColor(dTable: XmlElement): string | undefined {
+  const txPr = findChild(dTable, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const solidFill = findChild(defRPr, "solidFill");
+  if (!solidFill) return undefined;
+  const srgbClr = findChild(solidFill, "srgbClr");
+  if (!srgbClr) return undefined;
+  return normalizeRgbHex(srgbClr.attrs.val);
 }
 
 /**

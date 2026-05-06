@@ -8916,6 +8916,169 @@ describe("writeChart — data table", () => {
     const reparsed = parseChart(chartXml);
     expect(reparsed?.dataTable?.fontSize).toBe(11);
   });
+
+  // ── data-table font color ──────────────────────────────────────────
+
+  it("skips <c:txPr> when fontColor is unset (writer default)", () => {
+    // The OOXML default for the data-table is no <c:txPr> at all — the
+    // table renders at the theme text color. Absence collapses to no
+    // <a:solidFill> block.
+    const result = writeChart(makeChart({ dataTable: true }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice).not.toContain("<a:solidFill>");
+  });
+
+  it("emits <a:solidFill><a:srgbClr val='FF0000'/> when dataTable.fontColor is 'FF0000'", () => {
+    const result = writeChart(makeChart({ dataTable: { fontColor: "FF0000" } }), "Sheet1");
+    expect(result.chartXml).toContain('<a:srgbClr val="FF0000"/>');
+    expect(result.chartXml).toContain("<a:solidFill>");
+    // The defRPr expands from self-closing to wrapping the solidFill.
+    expect(result.chartXml).toMatch(/<a:defRPr><a:solidFill>/);
+  });
+
+  it("accepts the color with a leading '#' and lowercases input", () => {
+    // Mirrors the chart-title / axis-title / tick-label / legend /
+    // data-label color resolvers — the leading `#` is stripped and the
+    // hex is uppercased.
+    const result = writeChart(makeChart({ dataTable: { fontColor: "#abc123" } }), "Sheet1");
+    expect(result.chartXml).toContain('<a:srgbClr val="ABC123"/>');
+  });
+
+  it("collapses malformed fontColor inputs to undefined", () => {
+    // Wrong length, non-hex characters, alpha-channel forms, and
+    // non-string escapes all drop the field rather than fabricate a
+    // value the writer would round-trip into a malformed <a:srgbClr>.
+    const wrong = writeChart(makeChart({ dataTable: { fontColor: "FF00" } }), "Sheet1");
+    expect(wrong.chartXml).not.toContain("<a:solidFill>");
+    const nonHex = writeChart(makeChart({ dataTable: { fontColor: "ZZZZZZ" } }), "Sheet1");
+    expect(nonHex.chartXml).not.toContain("<a:solidFill>");
+    const alpha = writeChart(makeChart({ dataTable: { fontColor: "#FF0000FF" } }), "Sheet1");
+    expect(alpha.chartXml).not.toContain("<a:solidFill>");
+    const empty = writeChart(makeChart({ dataTable: { fontColor: "" } }), "Sheet1");
+    expect(empty.chartXml).not.toContain("<a:solidFill>");
+    const nonString = {
+      fontColor: 123 as unknown as string,
+    } as { fontColor: string };
+    const numeric = writeChart(makeChart({ dataTable: nonString }), "Sheet1");
+    expect(numeric.chartXml).not.toContain("<a:solidFill>");
+  });
+
+  it("emits the txPr block with both fontSize and fontColor on the same defRPr slot", () => {
+    // Both knobs land on the same <a:defRPr> — the size as the `sz`
+    // attribute, the color as the wrapped <a:solidFill> child.
+    const result = writeChart(
+      makeChart({ dataTable: { fontSize: 12, fontColor: "1070CA" } }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain(
+      '<a:defRPr sz="1200"><a:solidFill><a:srgbClr val="1070CA"/></a:solidFill></a:defRPr>',
+    );
+  });
+
+  it("threads fontColor through every chart family with axes", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(makeChart({ type, dataTable: { fontColor: "1070CA" } }), "Sheet1");
+      expect(result.chartXml).toContain('<a:srgbClr val="1070CA"/>');
+    }
+    const scatter = writeChart(
+      {
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        dataTable: { fontColor: "1070CA" },
+      },
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain('<a:srgbClr val="1070CA"/>');
+  });
+
+  it("silently drops fontColor on pie charts (no <c:dTable> slot at all)", () => {
+    const result = writeChart(
+      {
+        type: "pie",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        dataTable: { fontColor: "FF0000" },
+      },
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:dTable");
+    expect(result.chartXml).not.toContain('<a:srgbClr val="FF0000"/>');
+  });
+
+  it("composes fontColor with the four boolean toggles independently", () => {
+    const result = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: false,
+          showVertBorder: true,
+          showOutline: false,
+          showKeys: true,
+          fontColor: "00FF00",
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('<c:showHorzBorder val="0"/>');
+    expect(result.chartXml).toContain('<c:showVertBorder val="1"/>');
+    expect(result.chartXml).toContain('<c:showOutline val="0"/>');
+    expect(result.chartXml).toContain('<c:showKeys val="1"/>');
+    expect(result.chartXml).toContain('<a:srgbClr val="00FF00"/>');
+  });
+
+  it("round-trips a pinned dataTable fontColor through parseChart", () => {
+    const written = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+          fontColor: "FF6600",
+        },
+      }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+      fontColor: "FF6600",
+    });
+  });
+
+  it("threads fontColor end-to-end through writeXlsx packaging", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Dashboard",
+        rows: [
+          ["Quarter", "Revenue"],
+          ["Q1", 10],
+          ["Q2", 20],
+          ["Q3", 30],
+        ],
+        charts: [
+          {
+            type: "column",
+            series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            dataTable: { showKeys: true, fontColor: "AABBCC" },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain("<c:dTable>");
+    expect(chartXml).toContain('<a:srgbClr val="AABBCC"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.dataTable?.fontColor).toBe("AABBCC");
+  });
 });
 
 // ── writeChart — chart-space protection ──────────────────────────────
