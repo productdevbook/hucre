@@ -1456,6 +1456,46 @@ export interface SheetChart {
    * cleanly through every legend knob Excel exposes.
    */
   legendStrikethrough?: boolean;
+  /**
+   * Legend font color. Maps to `<c:legend><c:txPr><a:p><a:pPr>
+   * <a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill>
+   * </a:defRPr></a:pPr></a:p></c:txPr></c:legend>` — Excel's "Format
+   * Legend -> Font -> Font color" picker. The OOXML `<a:srgbClr val=".."/>`
+   * carries the 6-character uppercase hex sRGB color (`CT_SRgbColor`
+   * inside `CT_TextCharacterProperties`' fill choice — ECMA-376 Part 1,
+   * §20.1.2.3.32 / §21.1.2.3.7); the writer lands the value on the
+   * default-paragraph `<a:defRPr>` slot inside the legend's `<c:txPr>`
+   * block so a re-parse picks the color up off the canonical slot the
+   * OOXML schema exposes.
+   *
+   * Accepts the color either with or without a leading `#` and in any
+   * case — `"FF0000"`, `"#FF0000"`, and `"ff0000"` all collapse to the
+   * OOXML uppercase canonical form `"FF0000"`. Malformed inputs (wrong
+   * length, non-hex characters, alpha-channel forms like `"#FF0000FF"`,
+   * non-string escapes from an untyped caller) collapse to `undefined`
+   * so the writer skips the entire `<a:solidFill>` block and the legend
+   * inherits the theme text color (Excel's reference behavior for a
+   * fresh legend that has not had a custom color picked).
+   *
+   * Default: omitted — the legend renders at the theme text color (no
+   * `<a:solidFill>` block, matching Excel's reference serialization for
+   * a fresh chart legend whose typography has not been customized).
+   *
+   * Silently ignored when `legend === false` (no `<c:legend>` element
+   * is emitted) — there is no `<c:txPr>` slot to host the fill in that
+   * case. Mirrors {@link titleColor} / {@link axes.x.axisTitleColor} /
+   * {@link axes.x.labelColor} — same accept-with-or-without-`#` hex
+   * grammar, same OOXML `<a:solidFill><a:srgbClr val=".."/>` mapping —
+   * so a caller can thread a single hex string through every
+   * typography-pinning slot. Composes independently with
+   * {@link legend} / {@link legendOverlay} / {@link legendEntries} /
+   * {@link legendFontSize} / {@link legendBold} / {@link legendItalic}
+   * / {@link legendUnderline} / {@link legendStrikethrough}: all nine
+   * fields land on the same `<c:legend>` element so a single
+   * configuration call threads cleanly through every legend knob Excel
+   * exposes.
+   */
+  legendFontColor?: string;
   /** Show the chart-level title element. Default: `true` when `title` is set. */
   showTitle?: boolean;
   /**
@@ -5198,6 +5238,29 @@ export interface Chart {
    * value slots straight into {@link cloneChart} without conversion.
    */
   legendStrikethrough?: boolean;
+  /**
+   * Legend font color pulled from `<c:legend><c:txPr><a:p><a:pPr>
+   * <a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill>
+   * </a:defRPr></a:pPr></a:p></c:txPr></c:legend>`. The OOXML
+   * `<a:srgbClr val=".."/>` carries the 6-character uppercase hex
+   * sRGB color (`CT_SRgbColor` inside `CT_TextCharacterProperties`'
+   * fill choice — ECMA-376 Part 1, §20.1.2.3.32 / §21.1.2.3.7).
+   *
+   * Returned as the canonical 6-character uppercase hex string when
+   * the parser walks the full chain and lands on an `<a:srgbClr
+   * val="RRGGBB"/>`. Theme references (`<a:schemeClr>`),
+   * `<a:hslClr>`, `<a:sysClr>`, `<a:prstClr>`, and malformed `val`
+   * tokens (wrong length, non-hex characters) all collapse to
+   * `undefined` since only the literal RGB triple round-trips
+   * losslessly through {@link writeChart}.
+   *
+   * Reported as `undefined` whenever {@link legend} is `false` or the
+   * source chart has no `<c:legend>` element at all — there is no
+   * `<c:txPr>` slot to surface the fill from in either case. Mirrors
+   * the writer-side {@link SheetChart.legendFontColor} so a parsed
+   * value slots straight into {@link cloneChart} without conversion.
+   */
+  legendFontColor?: string;
   /**
    * Title-overlay flag pulled from `<c:title><c:overlay val=".."/>`.
    * Reflects Excel's "Format Chart Title -> Show the title without

@@ -290,6 +290,30 @@ export interface CloneChartOptions {
    * typography knobs compose the same way at the call site.
    */
   legendStrikethrough?: boolean | null;
+  /**
+   * Override `SheetChart.legendFontColor`. `undefined` (or omitted)
+   * inherits the source's parsed `legendFontColor`; `null` drops the
+   * inherited fill (the writer emits no `<a:solidFill>` block on the
+   * legend's `<a:defRPr>`, falling back to the theme text color); a
+   * hex string replaces. Accepts the color either with or without a
+   * leading `#` and in any case (`"FF0000"`, `"#FF0000"`, `"ff0000"`
+   * all collapse to the OOXML uppercase canonical form `"FF0000"`);
+   * malformed inputs (wrong length, non-hex characters, alpha-channel
+   * forms, non-string escapes from an untyped caller) collapse to
+   * `undefined` so a typed escape cannot pin a value the writer would
+   * silently elide.
+   *
+   * The override is silently dropped from the cloned `SheetChart`
+   * when the resolved legend is `false` (no `<c:legend>` element will
+   * be emitted) — there is no `<c:txPr>` slot to host the fill on a
+   * hidden legend, so leaking the value into the output would carry
+   * a pin Excel never reads.
+   *
+   * The grammar mirrors `titleColor` / `axes.x.axisTitleColor` /
+   * `axes.x.labelColor` so the typography knobs compose the same way
+   * at the call site.
+   */
+  legendFontColor?: string | null;
   /** Override `SheetChart.barGrouping`. */
   barGrouping?: SheetChart["barGrouping"];
   /**
@@ -1501,6 +1525,15 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     if (resolvedLegendStrikethrough !== undefined) {
       out.legendStrikethrough = resolvedLegendStrikethrough;
     }
+
+    // Same hidden-legend scoping for the font color — `<c:txPr>` is
+    // the shared host element. `undefined` inherits, `null` drops, a
+    // hex string replaces.
+    const resolvedLegendFontColor = resolveLegendFontColor(
+      source.legendFontColor,
+      options.legendFontColor,
+    );
+    if (resolvedLegendFontColor !== undefined) out.legendFontColor = resolvedLegendFontColor;
   }
 
   const barGrouping = options.barGrouping !== undefined ? options.barGrouping : source.barGrouping;
@@ -2757,6 +2790,35 @@ function resolveLegendStrikethrough(
   if (override === undefined) return normalizeLegendStrikethrough(sourceValue);
   if (override === null) return undefined;
   return normalizeLegendStrikethrough(override);
+}
+
+/**
+ * Resolve a `legendFontColor` override.
+ *
+ * `undefined` → inherit the source's parsed `legendFontColor` (after
+ *               running it through {@link normalizeTitleColor} so a
+ *               malformed source value drops cleanly).
+ * `null`      → drop the inherited fill (the writer falls back to the
+ *               theme text color — no `<a:solidFill>` block on the
+ *               legend's `<a:defRPr>`).
+ * `string`    → replace, after running through
+ *               {@link normalizeTitleColor} so the override accepts
+ *               `"FF0000"` / `"#FF0000"` / `"ff0000"` and collapses
+ *               malformed tokens to `undefined`.
+ *
+ * The grammar mirrors `titleColor` / `axisTitleColor` /
+ * `axes.x.labelColor` so the typography knobs compose the same way at
+ * the call site. Callers should gate the result on the resolved
+ * legend visibility — when no legend is emitted, the fill has no slot
+ * in the rendered chart.
+ */
+function resolveLegendFontColor(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeTitleColor(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleColor(override);
 }
 
 /**

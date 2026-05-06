@@ -5123,6 +5123,208 @@ describe("writeChart — legendStrikethrough", () => {
   });
 });
 
+// ── writeChart — legendFontColor ─────────────────────────────────────
+
+describe("writeChart — legendFontColor", () => {
+  function legendOf(xml: string): string {
+    const m = xml.match(/<c:legend>[\s\S]*?<\/c:legend>/);
+    if (!m) throw new Error("No <c:legend> block found in chart XML");
+    return m[0];
+  }
+
+  it("does NOT emit <c:txPr> when legendFontColor is unset (matches Excel reference)", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend).not.toContain("<c:txPr>");
+    expect(legend).not.toContain("a:solidFill");
+  });
+
+  it('threads legendFontColor through to <c:legend><c:txPr> as <a:srgbClr val="RRGGBB"/>', () => {
+    const result = writeChart(makeChart({ legendFontColor: "FF0000" }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend).toContain("<c:txPr>");
+    expect(legend).toContain('<a:srgbClr val="FF0000"/>');
+    expect(legend).toContain("<a:solidFill>");
+  });
+
+  it("normalizes a leading # in the input hex string", () => {
+    const result = writeChart(makeChart({ legendFontColor: "#00FF00" }), "Sheet1");
+    expect(legendOf(result.chartXml)).toContain('<a:srgbClr val="00FF00"/>');
+  });
+
+  it("normalizes a lowercase hex string to the OOXML uppercase canonical form", () => {
+    const result = writeChart(makeChart({ legendFontColor: "abcdef" }), "Sheet1");
+    expect(legendOf(result.chartXml)).toContain('<a:srgbClr val="ABCDEF"/>');
+  });
+
+  it("places <c:txPr> after <c:overlay> inside <c:legend> (OOXML order)", () => {
+    const result = writeChart(makeChart({ legendFontColor: "112233" }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend.indexOf("c:overlay")).toBeLessThan(legend.indexOf("c:txPr"));
+    expect(legend.indexOf("c:legendPos")).toBeLessThan(legend.indexOf("c:txPr"));
+  });
+
+  it("only emits <c:txPr> once inside <c:legend>", () => {
+    const result = writeChart(makeChart({ legendFontColor: "112233" }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    const occurrences = legend.match(/<c:txPr>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("does not emit any <c:legend> when legend=false, even with legendFontColor set", () => {
+    const result = writeChart(makeChart({ legend: false, legendFontColor: "FF0000" }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:legend>");
+    expect(result.chartXml.match(/<c:legend\b/g)).toBeNull();
+  });
+
+  it("threads legendFontColor through every chart family", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, legendFontColor: "445566" }), "Sheet1");
+      const legend = legendOf(result.chartXml);
+      expect(legend).toContain('<a:srgbClr val="445566"/>');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        legendFontColor: "445566",
+      }),
+      "Sheet1",
+    );
+    expect(legendOf(scatter.chartXml)).toContain('<a:srgbClr val="445566"/>');
+  });
+
+  it("drops malformed hex inputs (wrong length)", () => {
+    const result = writeChart(makeChart({ legendFontColor: "FF00" }), "Sheet1");
+    expect(legendOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops malformed hex inputs (non-hex characters)", () => {
+    const result = writeChart(makeChart({ legendFontColor: "ZZZZZZ" }), "Sheet1");
+    expect(legendOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops alpha-channel hex forms", () => {
+    const result = writeChart(makeChart({ legendFontColor: "#FF0000FF" }), "Sheet1");
+    expect(legendOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops empty string inputs", () => {
+    const result = writeChart(makeChart({ legendFontColor: "" }), "Sheet1");
+    expect(legendOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops non-string inputs (null leaking past the type guard)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = writeChart(makeChart({ legendFontColor: null as any }), "Sheet1");
+    expect(legendOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops non-string inputs (number leaking past the type guard)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = writeChart(makeChart({ legendFontColor: 0xff0000 as any }), "Sheet1");
+    expect(legendOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("emits the standard txPr stub shape (a:bodyPr / a:lstStyle / a:p / a:endParaRPr)", () => {
+    const result = writeChart(makeChart({ legendFontColor: "ABCDEF" }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend).toContain("<a:bodyPr/>");
+    expect(legend).toContain("<a:lstStyle/>");
+    expect(legend).toContain('<a:srgbClr val="ABCDEF"/>');
+    expect(legend).toContain('<a:endParaRPr lang="en-US"/>');
+  });
+
+  it("emits <a:bodyPr/> without a rot attribute (legend is not rotatable)", () => {
+    const result = writeChart(makeChart({ legendFontColor: "ABCDEF" }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    const bodyPr = legend.match(/<a:bodyPr[^/]*\/>/);
+    expect(bodyPr?.[0]).toBe("<a:bodyPr/>");
+  });
+
+  it("expands <a:defRPr> from self-closing to wrapping <a:solidFill>", () => {
+    const result = writeChart(makeChart({ legendFontColor: "ABCDEF" }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    // Without a fill, <a:defRPr/> self-closes; with a fill, it wraps
+    // a single <a:solidFill> child.
+    expect(legend).toContain("<a:defRPr><a:solidFill>");
+    expect(legend).toContain("</a:solidFill></a:defRPr>");
+  });
+
+  it("round-trips a legendFontColor through parseChart", () => {
+    const written = writeChart(makeChart({ legendFontColor: "FF8800" }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.legendFontColor).toBe("FF8800");
+  });
+
+  it("collapses an unset legendFontColor round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    expect(parseChart(written)?.legendFontColor).toBeUndefined();
+  });
+
+  it("composes with legendOverlay / legendEntries / legendFontSize / legendUnderline on the same <c:legend>", () => {
+    const result = writeChart(
+      makeChart({
+        legendFontColor: "1A2B3C",
+        legendUnderline: true,
+        legendFontSize: 12,
+        legendOverlay: true,
+        legendEntries: [{ idx: 0, delete: true }],
+      }),
+      "Sheet1",
+    );
+    const legend = legendOf(result.chartXml);
+    expect(legend).toContain('<a:srgbClr val="1A2B3C"/>');
+    expect(legend).toContain('u="sng"');
+    expect(legend).toContain('sz="1200"');
+    expect(legend).toContain('c:overlay val="1"');
+    expect(legend).toContain("c:legendEntry");
+    expect(legend.indexOf("c:legendPos")).toBeLessThan(legend.indexOf("c:legendEntry"));
+    expect(legend.indexOf("c:legendEntry")).toBeLessThan(legend.indexOf("c:overlay"));
+    expect(legend.indexOf("c:overlay")).toBeLessThan(legend.indexOf("c:txPr"));
+  });
+
+  it("co-emits sz, u, and the solidFill child on a single <a:defRPr> when all three are pinned", () => {
+    const result = writeChart(
+      makeChart({ legendFontColor: "FF0000", legendUnderline: true, legendFontSize: 14 }),
+      "Sheet1",
+    );
+    const legend = legendOf(result.chartXml);
+    // Single <a:defRPr> hosts all three — matches the canonical
+    // tick-label / chart-title txPr emission that lands the
+    // typography pins on the same default-paragraph slot.
+    expect(legend).toContain('sz="1400"');
+    expect(legend).toContain('u="sng"');
+    expect(legend).toContain('<a:srgbClr val="FF0000"/>');
+  });
+
+  it("survives a writeXlsx round trip — legendFontColor lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            legendFontColor: "0F0F0F",
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const legend = chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain('<a:srgbClr val="0F0F0F"/>');
+  });
+});
+
 // ── writeChart — data labels showLegendKey ──────────────────────────
 
 describe("writeChart — data labels showLegendKey", () => {

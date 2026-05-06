@@ -133,6 +133,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveLegendItalic(chart),
         resolveLegendUnderline(chart),
         resolveLegendStrikethrough(chart),
+        resolveLegendFontColor(chart),
       ),
     );
   }
@@ -3936,6 +3937,7 @@ function buildLegend(
   italic: boolean | undefined,
   underline: boolean | undefined,
   strikethrough: boolean | undefined,
+  rgbHex: string | undefined,
 ): string {
   const children: string[] = [xmlSelfClose("c:legendPos", { val: pos })];
 
@@ -3965,12 +3967,11 @@ function buildLegend(
   // Excel's reference serialization byte-for-byte (Excel itself omits
   // the block whenever the legend renders at the theme-default style).
   // The block currently carries the legend font size, bold, italic,
-  // underline, and strikethrough flags; future typography pins (color)
-  // will land on the same `<a:defRPr>` slot. The `<a:bodyPr>` carries
-  // no rotation attribute — the legend is not rotatable in Excel's UI,
-  // mirroring how the axis tick-label `<c:txPr>` slot drops `rot` when
-  // only typography knobs are pinned.
-  const txPrXml = buildLegendTxPr(fontSizePt, bold, italic, underline, strikethrough);
+  // underline, strikethrough, and font color knobs. The `<a:bodyPr>`
+  // carries no rotation attribute — the legend is not rotatable in
+  // Excel's UI, mirroring how the axis tick-label `<c:txPr>` slot
+  // drops `rot` when only typography knobs are pinned.
+  const txPrXml = buildLegendTxPr(fontSizePt, bold, italic, underline, strikethrough, rgbHex);
   if (txPrXml !== undefined) {
     children.push(txPrXml);
   }
@@ -4008,13 +4009,15 @@ function buildLegendTxPr(
   italic: boolean | undefined,
   underline: boolean | undefined,
   strikethrough: boolean | undefined,
+  rgbHex: string | undefined,
 ): string | undefined {
   if (
     fontSizePt === undefined &&
     bold === undefined &&
     italic === undefined &&
     underline === undefined &&
-    strikethrough === undefined
+    strikethrough === undefined &&
+    rgbHex === undefined
   )
     return undefined;
   const defRPrAttrs: Record<string, string | number> = {};
@@ -4029,11 +4032,28 @@ function buildLegendTxPr(
   // never emits `"noStrike"` or `"dblStrike"` so the surfaced shape
   // stays consistent with Excel's UI checkbox.
   if (strikethrough === true) defRPrAttrs.strike = "sngStrike";
+  // OOXML's `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+  // </a:solidFill></a:defRPr>` carries the legend font color.
+  // Absence (`undefined`) collapses to omitting the entire
+  // `<a:solidFill>` block so the legend inherits the theme text
+  // color (Excel's reference behavior for a fresh legend that has
+  // not had a custom font color picked).
+  const solidFillChild = rgbHex
+    ? xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: rgbHex })])
+    : undefined;
+  // When a fill color is set the `<a:defRPr>` slot expands from
+  // self-closing to wrapping the `<a:solidFill>` child; otherwise the
+  // writer keeps the existing self-closing form so a fresh legend
+  // with no custom color matches Excel's reference serialization
+  // byte-for-byte.
+  const defRPr = solidFillChild
+    ? xmlElement("a:defRPr", defRPrAttrs, [solidFillChild])
+    : xmlSelfClose("a:defRPr", defRPrAttrs);
   return xmlElement("c:txPr", undefined, [
     xmlSelfClose("a:bodyPr"),
     xmlSelfClose("a:lstStyle"),
     xmlElement("a:p", undefined, [
-      xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", defRPrAttrs)]),
+      xmlElement("a:pPr", undefined, [defRPr]),
       xmlSelfClose("a:endParaRPr", { lang: "en-US" }),
     ]),
   ]);
@@ -4153,6 +4173,25 @@ function resolveLegendUnderline(chart: SheetChart): boolean | undefined {
 function resolveLegendStrikethrough(chart: SheetChart): boolean | undefined {
   if (chart.legendStrikethrough === true) return true;
   return undefined;
+}
+
+/**
+ * Resolve `<c:legend><c:txPr><a:p><a:pPr><a:defRPr><a:solidFill>
+ * <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
+ * </c:txPr></c:legend>` from {@link SheetChart.legendFontColor}.
+ *
+ * Returns the 6-character uppercase hex string the writer emits, or
+ * `undefined` when the chart leaves the field unset / passed a
+ * malformed token. Delegates to {@link normalizeTitleColor} so the
+ * accept-with-or-without-`#` grammar matches the chart-title /
+ * axis-title / axis tick-label color resolvers exactly. The fill is
+ * only meaningful when the chart actually emits a legend — the
+ * caller is expected to gate the call on the resolved legend
+ * visibility. A chart whose legend is suppressed has no `<c:txPr>`
+ * slot to host the fill in either case.
+ */
+function resolveLegendFontColor(chart: SheetChart): string | undefined {
+  return normalizeTitleColor(chart.legendFontColor);
 }
 
 interface ResolvedLegendEntry {

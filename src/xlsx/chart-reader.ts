@@ -456,6 +456,13 @@ export function parseChart(xml: string): Chart | undefined {
     // lossless rather than silently downgrading on re-emit.
     const legendStrikethrough = parseLegendStrikethrough(chartEl);
     if (legendStrikethrough !== undefined) out.legendStrikethrough = legendStrikethrough;
+
+    // Same scoping for the font color — `<c:txPr>` is the shared host
+    // element. Only the literal `<a:srgbClr val="RRGGBB"/>` round-trips
+    // losslessly; theme references / preset colors / malformed val
+    // tokens all collapse to `undefined`.
+    const legendFontColor = parseLegendFontColor(chartEl);
+    if (legendFontColor !== undefined) out.legendFontColor = legendFontColor;
   }
 
   const dispBlanksAs = parseDispBlanksAs(chartEl);
@@ -3031,6 +3038,47 @@ function parseLegendStrikethrough(chartEl: XmlElement): boolean | undefined {
   const raw = defRPr.attrs.strike;
   if (raw === "sngStrike") return true;
   return undefined;
+}
+
+/**
+ * Pull the legend font color off the canonical
+ * `<c:legend><c:txPr><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr
+ * val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>
+ * </c:legend>` chain Excel writes when the user pins a custom font
+ * color on the legend.
+ *
+ * Returns the 6-character uppercase hex string when the parser walks
+ * the full chain and lands on an `<a:srgbClr val="RRGGBB"/>`. Theme
+ * references (`<a:schemeClr>`), `<a:hslClr>`, `<a:sysClr>`, and
+ * `<a:prstClr>` all collapse to `undefined` — only the literal RGB
+ * triple round-trips losslessly through {@link writeChart}. Malformed
+ * `val` tokens (wrong length, non-hex characters) likewise drop to
+ * `undefined` rather than fabricate a value the writer would round-
+ * trip into a malformed `<a:srgbClr>`.
+ *
+ * Returns `undefined` whenever the chart omits the `<c:legend>`
+ * element or the canonical `<c:txPr><a:p><a:pPr><a:defRPr>
+ * <a:solidFill><a:srgbClr>` chain is malformed at any link. Mirrors
+ * the chart-title / axis-title / axis tick-label color readers
+ * exactly so a parsed value slots straight back into the writer's
+ * emit path.
+ */
+function parseLegendFontColor(chartEl: XmlElement): string | undefined {
+  const legend = findChild(chartEl, "legend");
+  if (!legend) return undefined;
+  const txPr = findChild(legend, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const solidFill = findChild(defRPr, "solidFill");
+  if (!solidFill) return undefined;
+  const srgbClr = findChild(solidFill, "srgbClr");
+  if (!srgbClr) return undefined;
+  return normalizeRgbHex(srgbClr.attrs.val);
 }
 
 /**

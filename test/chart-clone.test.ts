@@ -5805,6 +5805,270 @@ describe("cloneChart — legendStrikethrough", () => {
   });
 });
 
+// ── cloneChart — legendFontColor ─────────────────────────────────────
+
+describe("cloneChart — legendFontColor", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      legend: "right",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's legendFontColor by default", () => {
+    const clone = cloneChart(source({ legendFontColor: "FF0000" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.legendFontColor).toBe("FF0000");
+  });
+
+  it("lets options.legendFontColor override the source's value", () => {
+    const clone = cloneChart(source({ legendFontColor: "FF0000" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendFontColor: "00FF00",
+    });
+    expect(clone.legendFontColor).toBe("00FF00");
+  });
+
+  it("drops the inherited legendFontColor when the override is null", () => {
+    const clone = cloneChart(source({ legendFontColor: "FF0000" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendFontColor: null,
+    });
+    expect(clone.legendFontColor).toBeUndefined();
+  });
+
+  it("returns undefined legendFontColor when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.legendFontColor).toBeUndefined();
+  });
+
+  it("normalizes a leading # in the override hex string", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendFontColor: "#abcdef",
+    });
+    expect(clone.legendFontColor).toBe("ABCDEF");
+  });
+
+  it("normalizes a lowercase override hex string to uppercase", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendFontColor: "ff8800",
+    });
+    expect(clone.legendFontColor).toBe("FF8800");
+  });
+
+  it("normalizes a malformed source value through the resolver (drops to undefined)", () => {
+    const clone = cloneChart(source({ legendFontColor: "ZZZ" as string }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.legendFontColor).toBeUndefined();
+  });
+
+  it("collapses malformed override hex tokens (typed escape from an untyped caller)", () => {
+    const clone = cloneChart(source({ legendFontColor: "FF0000" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendFontColor: "ZZZZZZ",
+    });
+    // Malformed override drops, source value does NOT come back —
+    // a malformed override means "the caller wanted to set a value
+    // and got it wrong", not "fall back to the source".
+    expect(clone.legendFontColor).toBeUndefined();
+  });
+
+  it("collapses non-string overrides (number leaking past the type guard)", () => {
+    const clone = cloneChart(source({ legendFontColor: "FF0000" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      legendFontColor: 0xff0000 as any,
+    });
+    expect(clone.legendFontColor).toBeUndefined();
+  });
+
+  it("carries legendFontColor through a flatten (line → column)", () => {
+    const clone = cloneChart(source({ legendFontColor: "FF0000" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.legendFontColor).toBe("FF0000");
+  });
+
+  it("carries legendFontColor through a doughnut flatten (line → doughnut)", () => {
+    const clone = cloneChart(source({ legendFontColor: "FF0000" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.legendFontColor).toBe("FF0000");
+  });
+
+  it("drops the inherited legendFontColor when the resolved legend is hidden", () => {
+    const clone = cloneChart(source({ legendFontColor: "FF0000" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendFontColor).toBeUndefined();
+  });
+
+  it("drops the legendFontColor override when the resolved legend is hidden", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+      legendFontColor: "FF0000",
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendFontColor).toBeUndefined();
+  });
+
+  it("retains the legendFontColor override when the override re-enables a hidden source legend", () => {
+    const clone = cloneChart(source({ legend: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: "top",
+      legendFontColor: "FF0000",
+    });
+    expect(clone.legend).toBe("top");
+    expect(clone.legendFontColor).toBe("FF0000");
+  });
+
+  it("composes with legendOverlay / legendEntries / legendFontSize / legendUnderline on the cloned SheetChart", () => {
+    const clone = cloneChart(
+      source({
+        legendFontColor: "FF0000",
+        legendUnderline: true,
+        legendFontSize: 12,
+        legendOverlay: true,
+        legendEntries: [{ idx: 0, delete: true }],
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.legendFontColor).toBe("FF0000");
+    expect(clone.legendUnderline).toBe(true);
+    expect(clone.legendFontSize).toBe(12);
+    expect(clone.legendOverlay).toBe(true);
+    expect(clone.legendEntries).toEqual([{ idx: 0, delete: true }]);
+  });
+
+  it("propagates legendFontColor into the rendered <c:legend><c:txPr> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ legendFontColor: "FF0000" }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain("<c:txPr>");
+    expect(legend).toContain('<a:srgbClr val="FF0000"/>');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.legendFontColor).toBe("FF0000");
+  });
+
+  it("emits no <c:txPr> when both source and override are absent (round-trips to undefined)", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).not.toContain("<c:txPr>");
+    expect(parseChart(written)?.legendFontColor).toBeUndefined();
+  });
+
+  it("an explicit override beats the source value through writeXlsx", async () => {
+    const clone = cloneChart(source({ legendFontColor: "FF0000" }), {
+      anchor: { from: { row: 5, col: 0 } },
+      legendFontColor: "00FF00",
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain('<a:srgbClr val="00FF00"/>');
+    expect(legend).not.toContain('<a:srgbClr val="FF0000"/>');
+    expect(parseChart(written)?.legendFontColor).toBe("00FF00");
+  });
+
+  it("a null override drops the source value through writeXlsx (no <c:txPr> emitted)", async () => {
+    const clone = cloneChart(source({ legendFontColor: "FF0000" }), {
+      anchor: { from: { row: 5, col: 0 } },
+      legendFontColor: null,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).not.toContain("<c:txPr>");
+    expect(parseChart(written)?.legendFontColor).toBeUndefined();
+  });
+});
+
 // ── cloneChart — axis lblAlgn ───────────────────────────────────────
 
 describe("cloneChart — axis lblAlgn", () => {
