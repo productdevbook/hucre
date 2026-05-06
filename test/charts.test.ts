@@ -13471,3 +13471,194 @@ describe("parseChart — axis labelColor", () => {
     });
   });
 });
+
+// ── parseChart — axis labelUnderline ───────────────────────────────
+
+describe("parseChart — axis labelUnderline", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withCatAxLabelUnderline(u: string | undefined): string {
+    const txPr =
+      u === undefined
+        ? ""
+        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr u="${u}"/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>`;
+    return `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      ${txPr}
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+  }
+
+  it('surfaces labelUnderline=true when <a:defRPr u="sng"/> is pinned', () => {
+    const chart = parseChart(withCatAxLabelUnderline("sng"));
+    expect(chart?.axes?.x?.labelUnderline).toBe(true);
+  });
+
+  it('drops the OOXML default u="none" to undefined (round-trips with absence)', () => {
+    expect(parseChart(withCatAxLabelUnderline("none"))?.axes).toBeUndefined();
+  });
+
+  it('drops the non-UI variant u="dbl" to undefined (writer would downgrade to "sng")', () => {
+    expect(parseChart(withCatAxLabelUnderline("dbl"))?.axes).toBeUndefined();
+  });
+
+  it("drops the sixteen exotic ST_TextUnderlineType tokens to undefined", () => {
+    for (const exotic of [
+      "words",
+      "heavy",
+      "dotted",
+      "dottedHeavy",
+      "dash",
+      "dashHeavy",
+      "dashLong",
+      "dashLongHeavy",
+      "dotDash",
+      "dotDashHeavy",
+      "dotDotDash",
+      "dotDotDashHeavy",
+      "wavy",
+      "wavyHeavy",
+      "wavyDbl",
+    ]) {
+      expect(parseChart(withCatAxLabelUnderline(exotic))?.axes).toBeUndefined();
+    }
+  });
+
+  it("drops malformed u tokens to undefined", () => {
+    expect(parseChart(withCatAxLabelUnderline("bogus"))?.axes).toBeUndefined();
+    expect(parseChart(withCatAxLabelUnderline(""))?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when <c:txPr> is absent", () => {
+    expect(parseChart(withCatAxLabelUnderline(undefined))?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when <a:defRPr> omits the u attribute", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr></a:p></c:txPr>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when <a:p> is absent inside <c:txPr>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:txPr><a:bodyPr/><a:lstStyle/></c:txPr>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.axes).toBeUndefined();
+  });
+
+  it("surfaces labelUnderline on the value axis", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr u="sng"/></a:pPr></a:p></c:txPr>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.axes?.y?.labelUnderline).toBe(true);
+  });
+
+  it("surfaces labelUnderline independently on both axes", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr u="sng"/></a:pPr></a:p></c:txPr>
+    </c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr u="sng"/></a:pPr></a:p></c:txPr>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.labelUnderline).toBe(true);
+    expect(chart?.axes?.y?.labelUnderline).toBe(true);
+  });
+
+  it("co-surfaces labelUnderline alongside the other tick-label typography knobs from the same <c:txPr>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:txPr><a:bodyPr rot="2700000"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1400" b="1" i="1" u="sng"><a:solidFill><a:srgbClr val="1070CA"/></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.labelRotation).toBe(45);
+    expect(chart?.axes?.x?.labelFontSize).toBe(14);
+    expect(chart?.axes?.x?.labelBold).toBe(true);
+    expect(chart?.axes?.x?.labelItalic).toBe(true);
+    expect(chart?.axes?.x?.labelColor).toBe("1070CA");
+    expect(chart?.axes?.x?.labelUnderline).toBe(true);
+  });
+
+  it('does not pick up an <a:defRPr u=".."/> from the axis title\'s <c:rich>', () => {
+    // The axis-title's `<c:rich>` carries its own `<a:defRPr u="..">`
+    // separately from the tick-label `<c:txPr>`. The tick-label parser
+    // must not surface the title's flag — that belongs to
+    // axisTitleUnderline.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr u="sng"/></a:pPr><a:r><a:rPr u="sng"/><a:t>Period</a:t></a:r></a:p></c:rich></c:tx></c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.axisTitleUnderline).toBe(true);
+    expect(chart?.axes?.x?.labelUnderline).toBeUndefined();
+  });
+
+  it("co-surfaces alongside other axis fields", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title><c:tx><c:rich><a:p><a:r><a:t>Period</a:t></a:r></a:p></c:rich></c:tx></c:title>
+      <c:tickLblPos val="low"/>
+      <c:txPr><a:bodyPr rot="2700000"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1200" u="sng"/></a:pPr></a:p></c:txPr>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x).toEqual({
+      title: "Period",
+      tickLblPos: "low",
+      labelRotation: 45,
+      labelFontSize: 12,
+      labelUnderline: true,
+    });
+  });
+});

@@ -2523,6 +2523,66 @@ export interface SheetChart {
        */
       labelColor?: string;
       /**
+       * Tick-label underline flag. Maps to
+       * `<c:catAx><c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr></c:catAx>`
+       * (or `<c:valAx>` for scatter / value axes) — Excel's "Format
+       * Axis -> Font -> Underline" toggle applied to the tick labels.
+       * The OOXML attribute is the `ST_TextUnderlineType` enum on
+       * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7);
+       * the writer lands the value on the default-paragraph
+       * `<a:defRPr>` slot inside the same `<c:txPr>` block that
+       * carries {@link labelRotation} / {@link labelFontSize} /
+       * {@link labelBold} / {@link labelItalic} / {@link labelColor}.
+       *
+       * Modeled as a boolean for symmetry with {@link labelBold} /
+       * {@link labelItalic} and the axis-title counterpart
+       * {@link SheetChart.axes.x.axisTitleUnderline}: `true` emits
+       * `u="sng"` (Excel's UI checkbox — single line); absence and
+       * explicit `false` collapse to omitting the attribute (the
+       * OOXML default `"none"` collapses to absence, mirroring how
+       * Excel's reference serialization emits a non-underlined tick
+       * label). The non-UI variant `"dbl"` and the sixteen exotic
+       * types (`"words"`, `"heavy"`, `"dotted"`, `"dottedHeavy"`,
+       * `"dash"`, `"dashHeavy"`, `"dashLong"`, `"dashLongHeavy"`,
+       * `"dotDash"`, `"dotDashHeavy"`, `"dotDotDash"`,
+       * `"dotDotDashHeavy"`, `"wavy"`, `"wavyHeavy"`, `"wavyDbl"`)
+       * are read-only — the writer emits only `"sng"` to keep the
+       * surfaced shape consistent with what Excel's reference UI
+       * authors, and the reader collapses every non-`"sng"` token to
+       * `undefined` so a templated tick label that pinned a non-single
+       * underline in raw OOXML round-trips lossless rather than
+       * silently downgrading on re-emit.
+       *
+       * Useful for emphasising dashboard tick labels (e.g.
+       * underlining the bottom-axis category names so they read as
+       * inline links in a busy chart frame, or pairing with
+       * {@link labelColor} to land an accented underlined tick on a
+       * KPI dashboard).
+       *
+       * Default: omitted — the tick labels render non-underlined (the
+       * OOXML default; the writer elides the `u` attribute when no
+       * value is pinned). Set `true` to emit `u="sng"` on the
+       * default-paragraph slot; set `false` explicitly to pin the
+       * OOXML default behaviour (functionally identical to omission,
+       * but useful when overriding a templated chart that had an
+       * underline pinned upstream).
+       *
+       * Composes independently with {@link labelRotation} /
+       * {@link labelFontSize} / {@link labelBold} /
+       * {@link labelItalic} / {@link labelColor}: all six knobs land
+       * on the same `<c:txPr>` body, so a single configuration call
+       * threads cleanly through every tick-label knob the writer
+       * exposes.
+       *
+       * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+       * `<c:dateAx>` / `<c:serAx>` all carry an optional `<c:txPr>` per
+       * the OOXML schema, so the field round-trips on every chart family
+       * that has axes (bar / column / line / area / scatter). Pie /
+       * doughnut have no axes at all, so the field is silently dropped
+       * on those families.
+       */
+      labelUnderline?: boolean;
+      /**
        * Reverse the axis plotting order. Maps to
        * `<c:scaling><c:orientation val="maxMin"/></c:scaling>` —
        * Excel's "Categories in reverse order" / "Values in reverse
@@ -2958,6 +3018,25 @@ export interface SheetChart {
        * (no axes at all).
        */
       labelColor?: string;
+      /**
+       * Tick-label underline flag for the value axis. Maps to
+       * `<c:valAx><c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr></c:valAx>`.
+       * Mirrors {@link SheetChart.axes.x.labelUnderline} for the value
+       * axis — see that field for the full semantics. The OOXML `u`
+       * attribute is the `ST_TextUnderlineType` enum on
+       * `CT_TextCharacterProperties`; the writer emits only the UI
+       * variant `"sng"` (single line) when the input is `true`.
+       * Absence and explicit `false` collapse to omitting the
+       * attribute (the OOXML default `"none"` collapses to absence)
+       * so a fresh chart inherits Excel's reference non-underlined
+       * tick labels.
+       *
+       * Useful for emphasising the value-axis labels on a dashboard
+       * (e.g. underlining the Y-axis numeric totals so they read as
+       * inline links in a busy chart frame). Silently dropped on
+       * `pie` / `doughnut` charts (no axes at all).
+       */
+      labelUnderline?: boolean;
       /**
        * Hide the entire value axis (line, tick marks, tick labels).
        * Maps to `<c:valAx><c:delete val="1"/></c:valAx>`. Default:
@@ -4461,6 +4540,37 @@ export interface ChartAxisInfo {
    * fill cannot leak in.
    */
   labelColor?: string;
+  /**
+   * Tick-label underline flag pulled from
+   * `<c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr>`
+   * on the axis element. Reflects Excel's "Format Axis -> Font ->
+   * Underline" toggle applied to tick labels.
+   *
+   * The OOXML `u` attribute is the `ST_TextUnderlineType` enum on
+   * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7) with
+   * eighteen values; Excel's UI exposes only `"sng"` (single line —
+   * the default underline checkbox) and `"dbl"` (double line). The
+   * reader surfaces only the UI-default `"sng"` as `true`; `"none"`
+   * (the OOXML application default), absence, the non-UI `"dbl"`
+   * variant, and the sixteen exotic tokens (`"words"`, `"heavy"`,
+   * `"dotted"`, `"dottedHeavy"`, `"dash"`, `"dashHeavy"`,
+   * `"dashLong"`, `"dashLongHeavy"`, `"dotDash"`, `"dotDashHeavy"`,
+   * `"dotDotDash"`, `"dotDotDashHeavy"`, `"wavy"`, `"wavyHeavy"`,
+   * `"wavyDbl"`) all collapse to `undefined` — the writer emits only
+   * `"sng"`, so reporting any non-single underline as `true` would
+   * silently downgrade the choice to a single line on round-trip.
+   * Unknown / malformed `u` tokens likewise drop to `undefined`.
+   *
+   * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+   * `<c:dateAx>` / `<c:serAx>` all carry an optional `<c:txPr>` per
+   * the OOXML schema. Mirrors the writer-side
+   * {@link SheetChart.axes.x.labelUnderline} so a parsed value slots
+   * straight back into a clone target without transformation. The
+   * lookup is scoped to the axis-level `<c:txPr>` so a stray
+   * `<a:defRPr u=".."/>` inside `<c:title>` (surfaced by
+   * {@link ChartAxisInfo.axisTitleUnderline}) cannot leak in.
+   */
+  labelUnderline?: boolean;
   /**
    * Reverse-axis flag pulled from
    * `<c:scaling><c:orientation val=".."/></c:scaling>`. Surfaces `true`

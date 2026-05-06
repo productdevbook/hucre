@@ -13828,3 +13828,223 @@ describe("cloneChart — axis labelColor", () => {
     expect(reparsed?.axes?.y?.labelColor).toBe("00C586");
   });
 });
+
+// ── cloneChart — axis labelUnderline ─────────────────────────────────
+
+describe("cloneChart — axis labelUnderline", () => {
+  const sourceWithUnderline: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: { x: { labelUnderline: true }, y: { labelUnderline: true } },
+  };
+
+  it("inherits axes.x.labelUnderline from the source when no override is given", () => {
+    const clone = cloneChart(sourceWithUnderline, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.labelUnderline).toBe(true);
+    expect(clone.axes?.y?.labelUnderline).toBe(true);
+  });
+
+  it("drops the inherited flag when override is null", () => {
+    const clone = cloneChart(sourceWithUnderline, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { labelUnderline: null } },
+    });
+    expect(clone.axes?.x?.labelUnderline).toBeUndefined();
+    // Y axis stays put — nulling X must not bleed into Y.
+    expect(clone.axes?.y?.labelUnderline).toBe(true);
+  });
+
+  it("replaces the inherited flag when override is true", () => {
+    const noUnderline: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(noUnderline, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { labelUnderline: true } },
+    });
+    expect(clone.axes?.x?.labelUnderline).toBe(true);
+  });
+
+  it("replaces the inherited flag when override is false (functionally identical to drop)", () => {
+    const clone = cloneChart(sourceWithUnderline, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { labelUnderline: false } },
+    });
+    expect(clone.axes?.x?.labelUnderline).toBe(false);
+  });
+
+  it("returns undefined labelUnderline when neither source nor override sets it", () => {
+    const noUnderline: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(noUnderline, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.labelUnderline).toBeUndefined();
+  });
+
+  it("drops non-boolean overrides (defends against the type guard escaping)", () => {
+    for (const bad of ["true", 1, {}, "sng"]) {
+      const clone = cloneChart(sourceWithUnderline, {
+        anchor: { from: { row: 0, col: 0 } },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        axes: { x: { labelUnderline: bad as any } },
+      });
+      expect(clone.axes?.x?.labelUnderline).toBeUndefined();
+    }
+  });
+
+  it("strips the flag silently when the resolved chart type is pie", () => {
+    const pieSource: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [{ kind: "pie", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { labelUnderline: true } },
+    };
+    const clone = cloneChart(pieSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("pie");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("strips the flag silently when the resolved chart type is doughnut", () => {
+    const doughnutSource: Chart = {
+      kinds: ["doughnut"],
+      seriesCount: 1,
+      series: [{ kind: "doughnut", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { labelUnderline: true } },
+    };
+    const clone = cloneChart(doughnutSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("carries the flag through chart-type coercion (bar -> column)", () => {
+    const clone = cloneChart(sourceWithUnderline, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.axes?.x?.labelUnderline).toBe(true);
+    expect(clone.axes?.y?.labelUnderline).toBe(true);
+  });
+
+  it("composes the flag alongside the other tick-label typography knobs", () => {
+    const source: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: {
+        x: {
+          labelRotation: 45,
+          labelFontSize: 12,
+          labelBold: true,
+          labelItalic: true,
+          labelColor: "1070CA",
+          labelUnderline: true,
+        },
+      },
+    };
+    const clone = cloneChart(source, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.labelRotation).toBe(45);
+    expect(clone.axes?.x?.labelFontSize).toBe(12);
+    expect(clone.axes?.x?.labelBold).toBe(true);
+    expect(clone.axes?.x?.labelItalic).toBe(true);
+    expect(clone.axes?.x?.labelColor).toBe("1070CA");
+    expect(clone.axes?.x?.labelUnderline).toBe(true);
+  });
+
+  it("composes the flag independently with the axis-title underline on the same axis", () => {
+    const source: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { title: "Period", axisTitleUnderline: true, labelUnderline: true } },
+    };
+    const clone = cloneChart(source, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.axisTitleUnderline).toBe(true);
+    expect(clone.axes?.x?.labelUnderline).toBe(true);
+  });
+
+  it("composes the flag alongside other axis overrides", () => {
+    const clone = cloneChart(sourceWithUnderline, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: {
+        x: {
+          title: "Period",
+          gridlines: { major: true },
+          labelUnderline: true,
+        },
+      },
+    });
+    expect(clone.axes?.x?.title).toBe("Period");
+    expect(clone.axes?.x?.gridlines).toEqual({ major: true });
+    expect(clone.axes?.x?.labelUnderline).toBe(true);
+  });
+
+  it("end-to-end: parseChart -> cloneChart -> writeChart preserves the flag", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr u="sng"/></a:pPr></a:p></c:txPr>
+      </c:catAx>
+      <c:valAx>
+        <c:axId val="2"/>
+        <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr u="sng"/></a:pPr></a:p></c:txPr>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.axes?.x?.labelUnderline).toBe(true);
+    expect(parsed?.axes?.y?.labelUnderline).toBe(true);
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(sheetChart.axes?.x?.labelUnderline).toBe(true);
+    expect(sheetChart.axes?.y?.labelUnderline).toBe(true);
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.labelUnderline).toBe(true);
+    expect(reparsed?.axes?.y?.labelUnderline).toBe(true);
+  });
+
+  it("end-to-end: writeXlsx packages the cloned chart with the flag intact", async () => {
+    const clone = cloneChart(sourceWithUnderline, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.labelUnderline).toBe(true);
+    expect(reparsed?.axes?.y?.labelUnderline).toBe(true);
+  });
+});

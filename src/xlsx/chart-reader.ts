@@ -684,6 +684,16 @@ function parseAxisInfo(
   // triple round-trips losslessly through the writer. Surfaced on
   // every axis flavour for symmetry with the writer.
   const labelColor = parseAxisLabelColor(axis);
+  // `<c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr>` —
+  // tick-label underline flag. Same `<c:txPr>` slot scope as the
+  // rotation / size / bold / italic / color readers above. Only the
+  // UI-default `"sng"` surfaces as `true`; the OOXML default `"none"`,
+  // absence, the non-UI `"dbl"` variant, and the sixteen exotic
+  // tokens all collapse to `undefined` so absence and the OOXML
+  // default round-trip identically through the writer (which emits
+  // only `"sng"`). Surfaced on every axis flavour for symmetry with
+  // the writer.
+  const labelUnderline = parseAxisLabelUnderline(axis);
   // <c:scaling><c:orientation val=".."/></c:scaling> — ST_Orientation
   // accepts "minMax" (default, low → high) and "maxMin" (reversed).
   // The default collapses to undefined so a fresh chart and a chart
@@ -771,6 +781,7 @@ function parseAxisInfo(
     labelBold === undefined &&
     labelItalic === undefined &&
     labelColor === undefined &&
+    labelUnderline === undefined &&
     reverse === undefined &&
     tickLblSkip === undefined &&
     tickMarkSkip === undefined &&
@@ -806,6 +817,7 @@ function parseAxisInfo(
   if (labelBold !== undefined) out.labelBold = labelBold;
   if (labelItalic !== undefined) out.labelItalic = labelItalic;
   if (labelColor !== undefined) out.labelColor = labelColor;
+  if (labelUnderline !== undefined) out.labelUnderline = labelUnderline;
   if (reverse !== undefined) out.reverse = reverse;
   if (tickLblSkip !== undefined) out.tickLblSkip = tickLblSkip;
   if (tickMarkSkip !== undefined) out.tickMarkSkip = tickMarkSkip;
@@ -1303,6 +1315,61 @@ function parseAxisLabelColor(axis: XmlElement): string | undefined {
   const srgbClr = findChild(solidFill, "srgbClr");
   if (!srgbClr) return undefined;
   return normalizeRgbHex(srgbClr.attrs.val);
+}
+
+/**
+ * Pull the axis tick-label underline flag off the canonical
+ * `<c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr>` chain
+ * Excel writes when the user pins an underline on the axis tick labels.
+ *
+ * The OOXML `u` attribute is the `ST_TextUnderlineType` enum on
+ * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7) with
+ * eighteen values; Excel's UI exposes only `"sng"` (single line — the
+ * default underline checkbox) and `"dbl"` (double line). The reader
+ * surfaces only the UI-default `"sng"` as `true`; `"none"` (the OOXML
+ * application default), absence, the non-UI `"dbl"` variant, and the
+ * sixteen exotic tokens (`"words"`, `"heavy"`, `"dotted"`,
+ * `"dottedHeavy"`, `"dash"`, `"dashHeavy"`, `"dashLong"`,
+ * `"dashLongHeavy"`, `"dotDash"`, `"dotDashHeavy"`, `"dotDotDash"`,
+ * `"dotDotDashHeavy"`, `"wavy"`, `"wavyHeavy"`, `"wavyDbl"`) all
+ * collapse to `undefined` — the writer emits only `"sng"`, so
+ * reporting any non-single underline as `true` would silently
+ * downgrade the choice to a single line on round-trip. Unknown /
+ * malformed `u` tokens likewise drop to `undefined`.
+ *
+ * Mirrors {@link parseAxisTitleUnderline} for tick labels — same
+ * canonical-slot semantics but scoped to the axis-level `<c:txPr>` so
+ * a stray `<a:defRPr u=".."/>` inside `<c:title><c:tx><c:rich>`
+ * (surfaced by {@link parseAxisTitleUnderline}) cannot leak in.
+ * Returns `undefined` whenever the axis omits `<c:txPr>` entirely or
+ * the canonical `<a:p><a:pPr><a:defRPr>` chain is malformed.
+ *
+ * The `<c:txPr>` element sits on every axis flavour — `<c:catAx>` /
+ * `<c:valAx>` / `<c:dateAx>` / `<c:serAx>` all carry the optional
+ * element per the OOXML schema. The reader surfaces the flag
+ * regardless of axis flavour so a parsed chart preserves the value
+ * for symmetry with the writer-side
+ * {@link SheetChart.axes}.x.labelUnderline.
+ */
+function parseAxisLabelUnderline(axis: XmlElement): boolean | undefined {
+  const txPr = findChild(axis, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const raw = defRPr.attrs.u;
+  // Only the UI-default `"sng"` surfaces as `true`. The OOXML
+  // application default `"none"`, the non-UI `"dbl"` variant, and
+  // every exotic token (`"words"`, `"heavy"`, `"dotted"`, etc.) all
+  // collapse to `undefined` so absence and the OOXML default
+  // round-trip identically through the writer; the writer emits only
+  // `"sng"`, so reporting a non-single underline here would silently
+  // downgrade the choice on round-trip.
+  if (raw === "sng") return true;
+  return undefined;
 }
 
 /** Recognized values of `<c:crosses>` per the OOXML `ST_Crosses` enum. */
