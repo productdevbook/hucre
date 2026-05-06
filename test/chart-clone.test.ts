@@ -13188,3 +13188,193 @@ describe("cloneChart — axis title underline", () => {
     expect(reparsed?.axes?.x?.axisTitleUnderline).toBe(true);
   });
 });
+
+// ── cloneChart — axis labelBold ─────────────────────────────────────
+
+describe("cloneChart — axis labelBold", () => {
+  const sourceWithBold: Chart = {
+    kinds: ["bar"],
+    seriesCount: 1,
+    series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    axes: { x: { labelBold: true }, y: { labelBold: true } },
+  };
+
+  it("inherits axes.x.labelBold from the source when no override is given", () => {
+    const clone = cloneChart(sourceWithBold, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.labelBold).toBe(true);
+    expect(clone.axes?.y?.labelBold).toBe(true);
+  });
+
+  it("drops the inherited bold flag when override is null", () => {
+    const clone = cloneChart(sourceWithBold, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { labelBold: null } },
+    });
+    expect(clone.axes?.x?.labelBold).toBeUndefined();
+    // Y axis stays put — nulling X must not bleed into Y.
+    expect(clone.axes?.y?.labelBold).toBe(true);
+  });
+
+  it("replaces the inherited flag when override is false", () => {
+    const clone = cloneChart(sourceWithBold, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { labelBold: false } },
+    });
+    expect(clone.axes?.x?.labelBold).toBe(false);
+  });
+
+  it("replaces a missing source flag when override is true", () => {
+    const noBold: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(noBold, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { labelBold: true } },
+    });
+    expect(clone.axes?.x?.labelBold).toBe(true);
+  });
+
+  it("returns undefined labelBold when neither source nor override sets it", () => {
+    const noBold: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+    };
+    const clone = cloneChart(noBold, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.labelBold).toBeUndefined();
+  });
+
+  it("collapses non-boolean overrides to undefined", () => {
+    const clone = cloneChart(sourceWithBold, {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      axes: { x: { labelBold: "true" as any } },
+    });
+    expect(clone.axes?.x?.labelBold).toBeUndefined();
+  });
+
+  it("strips the flag silently when the resolved chart type is pie", () => {
+    const pieSource: Chart = {
+      kinds: ["pie"],
+      seriesCount: 1,
+      series: [{ kind: "pie", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { labelBold: true } },
+    };
+    const clone = cloneChart(pieSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("pie");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("strips the flag silently when the resolved chart type is doughnut", () => {
+    const doughnutSource: Chart = {
+      kinds: ["doughnut"],
+      seriesCount: 1,
+      series: [{ kind: "doughnut", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { labelBold: true } },
+    };
+    const clone = cloneChart(doughnutSource, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.axes).toBeUndefined();
+  });
+
+  it("carries the flag through chart-type coercion (bar -> column)", () => {
+    const clone = cloneChart(sourceWithBold, {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.axes?.x?.labelBold).toBe(true);
+    expect(clone.axes?.y?.labelBold).toBe(true);
+  });
+
+  it("composes the flag alongside labelRotation and labelFontSize", () => {
+    const source: Chart = {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Tpl!$B$2:$B$5" }],
+      axes: { x: { labelRotation: 45, labelFontSize: 12, labelBold: true } },
+    };
+    const clone = cloneChart(source, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.labelRotation).toBe(45);
+    expect(clone.axes?.x?.labelFontSize).toBe(12);
+    expect(clone.axes?.x?.labelBold).toBe(true);
+  });
+
+  it("composes the flag alongside other axis overrides", () => {
+    const clone = cloneChart(sourceWithBold, {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: {
+        x: {
+          title: "Period",
+          gridlines: { major: true },
+          labelBold: false,
+        },
+      },
+    });
+    expect(clone.axes?.x?.title).toBe("Period");
+    expect(clone.axes?.x?.gridlines).toEqual({ major: true });
+    expect(clone.axes?.x?.labelBold).toBe(false);
+  });
+
+  it("end-to-end: parseChart -> cloneChart -> writeChart preserves the flag", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr b="1"/></a:pPr></a:p></c:txPr>
+      </c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.axes?.x?.labelBold).toBe(true);
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(sheetChart.axes?.x?.labelBold).toBe(true);
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    expect(written).toContain('<a:defRPr b="1"/>');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.labelBold).toBe(true);
+  });
+
+  it("end-to-end: writeXlsx packages the cloned chart with the flag intact", async () => {
+    const clone = cloneChart(sourceWithBold, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    // Both axes carry b="1".
+    const matches = written.match(/<a:defRPr b="1"\/>/g) ?? [];
+    expect(matches.length).toBeGreaterThanOrEqual(2);
+  });
+});

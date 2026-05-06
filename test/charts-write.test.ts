@@ -12128,3 +12128,193 @@ describe("writeChart — axis title underline", () => {
     expect(reparsed?.axes?.y?.axisTitleUnderline).toBe(true);
   });
 });
+
+// ── writeChart — axis labelBold ──────────────────────────────────────
+
+describe("writeChart — axis labelBold", () => {
+  it("omits <c:txPr> on the category axis when no tick-label knob is pinned", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).not.toContain("<c:txPr>");
+  });
+
+  it('emits <c:txPr> with <a:defRPr b="1"/> when labelBold=true on the X axis', () => {
+    const result = writeChart(makeChart({ axes: { x: { labelBold: true } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain("<c:txPr>");
+    expect(catAxBlock).toContain('<a:defRPr b="1"/>');
+  });
+
+  it('emits <a:defRPr b="0"/> on labelBold=false (functionally identical to omission)', () => {
+    const result = writeChart(makeChart({ axes: { x: { labelBold: false } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('<a:defRPr b="0"/>');
+  });
+
+  it('emits <a:defRPr b="1"/> on the Y axis (value axis) when labelBold=true', () => {
+    const result = writeChart(makeChart({ axes: { y: { labelBold: true } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<a:defRPr b="1"/>');
+  });
+
+  it("emits the bold flag independently on each axis", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { labelBold: true }, y: { labelBold: false } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(catAxBlock).toContain('<a:defRPr b="1"/>');
+    expect(valAxBlock).toContain('<a:defRPr b="0"/>');
+  });
+
+  it("drops non-boolean inputs back to the OOXML default (no <c:txPr>)", () => {
+    const stringy = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { labelBold: "true" as any } } }),
+      "Sheet1",
+    );
+    const numeric = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { labelBold: 1 as any } } }),
+      "Sheet1",
+    );
+    const catA = stringy.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const catB = numeric.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catA).not.toContain("<c:txPr>");
+    expect(catB).not.toContain("<c:txPr>");
+  });
+
+  it("composes labelBold with labelRotation in a single <c:txPr> block", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { labelRotation: 45, labelBold: true } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect((catAxBlock.match(/<c:txPr>/g) ?? []).length).toBe(1);
+    expect(catAxBlock).toContain('<a:bodyPr rot="2700000"/>');
+    expect(catAxBlock).toContain('<a:defRPr b="1"/>');
+  });
+
+  it("composes labelBold with labelFontSize in a single <c:txPr> block", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { labelFontSize: 12, labelBold: true } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect((catAxBlock.match(/<c:txPr>/g) ?? []).length).toBe(1);
+    expect(catAxBlock).toContain('<a:defRPr sz="1200" b="1"/>');
+  });
+
+  it("composes labelBold with both labelRotation and labelFontSize in a single block", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { labelRotation: 45, labelFontSize: 12, labelBold: true } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect((catAxBlock.match(/<c:txPr>/g) ?? []).length).toBe(1);
+    expect(catAxBlock).toContain('<a:bodyPr rot="2700000"/>');
+    expect(catAxBlock).toContain('<a:defRPr sz="1200" b="1"/>');
+  });
+
+  it("emits <c:txPr> with no rot when only labelBold is pinned", () => {
+    const result = writeChart(makeChart({ axes: { x: { labelBold: true } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain("<a:bodyPr/>");
+    expect(catAxBlock).not.toContain("<a:bodyPr rot=");
+  });
+
+  it("threads the bold flag through bar, column, line, and area chart families", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(makeChart({ type, axes: { x: { labelBold: true } } }), "Sheet1");
+      expect(result.chartXml).toContain('<a:defRPr b="1"/>');
+    }
+  });
+
+  it("threads the bold flag through scatter charts (both axes are value axes)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { x: { labelBold: true }, y: { labelBold: true } },
+      }),
+      "Sheet1",
+    );
+    const valAxes = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/g)!;
+    expect(valAxes).toHaveLength(2);
+    expect(valAxes[0]).toContain('<a:defRPr b="1"/>');
+    expect(valAxes[1]).toContain('<a:defRPr b="1"/>');
+  });
+
+  it("ignores labelBold on pie / doughnut charts (no axes at all)", () => {
+    const pie = writeChart(makeChart({ type: "pie", axes: { x: { labelBold: true } } }), "Sheet1");
+    const dough = writeChart(
+      makeChart({ type: "doughnut", axes: { x: { labelBold: true } } }),
+      "Sheet1",
+    );
+    expect(pie.chartXml).not.toContain("<c:txPr>");
+    expect(dough.chartXml).not.toContain("<c:txPr>");
+  });
+
+  it("places <c:txPr> between <c:tickLblPos> and <c:crossAx> per the OOXML schema", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { tickLblPos: "low", labelBold: true } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const tickLblPosIdx = catAxBlock.indexOf("c:tickLblPos");
+    const txPrIdx = catAxBlock.indexOf("<c:txPr>");
+    const crossAxIdx = catAxBlock.indexOf("c:crossAx");
+    expect(tickLblPosIdx).toBeGreaterThan(0);
+    expect(txPrIdx).toBeGreaterThan(tickLblPosIdx);
+    expect(crossAxIdx).toBeGreaterThan(txPrIdx);
+  });
+
+  it("round-trips labelBold=true through parseChart", () => {
+    const written = writeChart(makeChart({ axes: { x: { labelBold: true } } }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.labelBold).toBe(true);
+  });
+
+  it("collapses an absent labelBold round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.labelBold).toBeUndefined();
+  });
+
+  it('collapses labelBold=false round-trip back to undefined (b="0" matches the OOXML default)', () => {
+    // The reader collapses the OOXML default `false` to `undefined` so
+    // a writer emit of `b="0"` and absence round-trip identically.
+    const written = writeChart(makeChart({ axes: { x: { labelBold: false } } }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.labelBold).toBeUndefined();
+  });
+
+  it("end-to-end: writeXlsx packages the bold flag into chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            axes: { x: { labelBold: true }, y: { labelBold: true } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('<a:defRPr b="1"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.x?.labelBold).toBe(true);
+    expect(reparsed?.axes?.y?.labelBold).toBe(true);
+  });
+});

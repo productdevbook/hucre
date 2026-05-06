@@ -661,6 +661,13 @@ function parseAxisInfo(
   // writer would never emit. Surfaced on every axis flavour for
   // symmetry with the writer.
   const labelFontSize = parseAxisLabelFontSize(axis);
+  // `<c:txPr><a:p><a:pPr><a:defRPr b=".."/></a:pPr></a:p></c:txPr>` —
+  // tick-label bold flag. Same `<c:txPr>` slot scope as the rotation /
+  // size readers above. The OOXML default `false` collapses to
+  // `undefined` so absence and `b="0"` round-trip identically; only
+  // an explicit `b="1"` surfaces `true`. Surfaced on every axis
+  // flavour for symmetry with the writer.
+  const labelBold = parseAxisLabelBold(axis);
   // <c:scaling><c:orientation val=".."/></c:scaling> — ST_Orientation
   // accepts "minMax" (default, low → high) and "maxMin" (reversed).
   // The default collapses to undefined so a fresh chart and a chart
@@ -745,6 +752,7 @@ function parseAxisInfo(
     tickLblPos === undefined &&
     labelRotation === undefined &&
     labelFontSize === undefined &&
+    labelBold === undefined &&
     reverse === undefined &&
     tickLblSkip === undefined &&
     tickMarkSkip === undefined &&
@@ -777,6 +785,7 @@ function parseAxisInfo(
   if (tickLblPos !== undefined) out.tickLblPos = tickLblPos;
   if (labelRotation !== undefined) out.labelRotation = labelRotation;
   if (labelFontSize !== undefined) out.labelFontSize = labelFontSize;
+  if (labelBold !== undefined) out.labelBold = labelBold;
   if (reverse !== undefined) out.reverse = reverse;
   if (tickLblSkip !== undefined) out.tickLblSkip = tickLblSkip;
   if (tickMarkSkip !== undefined) out.tickMarkSkip = tickMarkSkip;
@@ -1150,6 +1159,49 @@ function parseAxisLabelFontSize(axis: XmlElement): number | undefined {
   const points = halfSteps / 2;
   if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
   return points;
+}
+
+/**
+ * Pull `<c:txPr><a:p><a:pPr><a:defRPr b=".."/></a:pPr></a:p></c:txPr>`
+ * off an axis element. Returns the tick-label bold flag.
+ *
+ * Mirrors {@link parseAxisTitleBold} for tick labels — same
+ * canonical-slot pair, same drop-on-default-`false` semantics. The
+ * OOXML `b` attribute is the `xsd:boolean` bold flag on
+ * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7). The
+ * default `false` collapses to `undefined` so absence and `b="0"`
+ * round-trip identically — only an explicit `b="1"` surfaces `true`.
+ * Unknown / malformed `b` tokens drop to `undefined` rather than
+ * fabricate a value the writer would never emit.
+ *
+ * The lookup is scoped to the axis-level `<c:txPr>` so a stray
+ * `<a:defRPr b=".."/>` inside `<c:title><c:tx><c:rich>` (surfaced by
+ * {@link parseAxisTitleBold}) cannot leak in. Returns `undefined`
+ * whenever the axis omits `<c:txPr>` entirely or the canonical
+ * `<a:p><a:pPr><a:defRPr>` chain is malformed.
+ *
+ * The `<c:txPr>` element sits on every axis flavour — `<c:catAx>` /
+ * `<c:valAx>` / `<c:dateAx>` / `<c:serAx>` all carry the optional
+ * element per the OOXML schema. The reader surfaces the flag
+ * regardless of axis flavour so a parsed chart preserves the value
+ * for symmetry with the writer-side
+ * {@link SheetChart.axes}.x.labelBold.
+ */
+function parseAxisLabelBold(axis: XmlElement): boolean | undefined {
+  const txPr = findChild(axis, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const parsed = parseBoolAttr(defRPr.attrs.b);
+  // The OOXML default `false` collapses to `undefined` so absence and
+  // `b="0"` round-trip identically through the writer — only an
+  // explicit `b="1"` surfaces `true`.
+  if (parsed === true) return true;
+  return undefined;
 }
 
 /** Recognized values of `<c:crosses>` per the OOXML `ST_Crosses` enum. */

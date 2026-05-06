@@ -914,6 +914,25 @@ export interface CloneChartOptions {
        */
       labelFontSize?: number | null;
       /**
+       * Override `SheetChart.axes.x.labelBold`. `undefined` (or
+       * omitted) inherits the source axis's tick-label bold flag;
+       * `null` drops the inherited value (the writer falls back to
+       * the OOXML default — the tick labels render at the theme's
+       * default weight); a `boolean` replaces it.
+       *
+       * Non-boolean overrides (typed escapes from an untyped caller)
+       * collapse to a drop so the cloned `SheetChart` always carries
+       * a value the writer will accept.
+       *
+       * `<c:txPr>` lives on every axis flavour per the OOXML schema,
+       * so the override carries through every chart family that has
+       * axes (bar / column / line / area / scatter). Silently dropped
+       * on `pie` / `doughnut` charts since neither has axes. Composes
+       * independently with {@link labelRotation} / {@link labelFontSize}:
+       * all three knobs land on the same `<c:txPr>` body.
+       */
+      labelBold?: boolean | null;
+      /**
        * Override the reverse-axis flag. `undefined` (or omitted)
        * inherits the source axis' parsed value; `null` drops it (the
        * writer falls back to the OOXML default `"minMax"` — forward
@@ -1083,6 +1102,8 @@ export interface CloneChartOptions {
       labelRotation?: number | null;
       /** See {@link CloneChartOptions.axes.x.labelFontSize}. */
       labelFontSize?: number | null;
+      /** See {@link CloneChartOptions.axes.x.labelBold}. */
+      labelBold?: boolean | null;
       /** See {@link CloneChartOptions.axes.x.hidden}. */
       hidden?: boolean | null;
       /** See {@link CloneChartOptions.axes.x.reverse}. */
@@ -2991,6 +3012,14 @@ function resolveAxes(
     sourceAxes?.y?.labelFontSize,
     overrides?.y?.labelFontSize,
   );
+  // `<c:txPr><a:p><a:pPr><a:defRPr b=".."/></a:pPr></a:p></c:txPr>`
+  // shares the same `<c:txPr>` slot as the rotation / size resolvers
+  // above, and the same per-axis scope rule (every axis flavour
+  // carries `<c:txPr>`; pie / doughnut already short-circuited
+  // upstream). Non-boolean overrides collapse to a drop so the cloned
+  // `SheetChart` always carries a value the writer will accept.
+  const xLabelBold = applyLabelBoldOverride(sourceAxes?.x?.labelBold, overrides?.x?.labelBold);
+  const yLabelBold = applyLabelBoldOverride(sourceAxes?.y?.labelBold, overrides?.y?.labelBold);
   const xReverse = applyReverseOverride(sourceAxes?.x?.reverse, overrides?.x?.reverse);
   const yReverse = applyReverseOverride(sourceAxes?.y?.reverse, overrides?.y?.reverse);
   // `tickLblSkip` / `tickMarkSkip` only render on category axes
@@ -3147,6 +3176,7 @@ function resolveAxes(
     xTickLblPos !== undefined ||
     xLabelRotation !== undefined ||
     xLabelFontSize !== undefined ||
+    xLabelBold !== undefined ||
     xReverse !== undefined ||
     xTickLblSkip !== undefined ||
     xTickMarkSkip !== undefined ||
@@ -3180,6 +3210,7 @@ function resolveAxes(
     if (xTickLblPos !== undefined) out.x.tickLblPos = xTickLblPos;
     if (xLabelRotation !== undefined) out.x.labelRotation = xLabelRotation;
     if (xLabelFontSize !== undefined) out.x.labelFontSize = xLabelFontSize;
+    if (xLabelBold !== undefined) out.x.labelBold = xLabelBold;
     if (xReverse !== undefined) out.x.reverse = xReverse;
     if (xTickLblSkip !== undefined) out.x.tickLblSkip = xTickLblSkip;
     if (xTickMarkSkip !== undefined) out.x.tickMarkSkip = xTickMarkSkip;
@@ -3210,6 +3241,7 @@ function resolveAxes(
     yTickLblPos !== undefined ||
     yLabelRotation !== undefined ||
     yLabelFontSize !== undefined ||
+    yLabelBold !== undefined ||
     yHidden !== undefined ||
     yReverse !== undefined ||
     yCrossesPair.crosses !== undefined ||
@@ -3237,6 +3269,7 @@ function resolveAxes(
     if (yTickLblPos !== undefined) out.y.tickLblPos = yTickLblPos;
     if (yLabelRotation !== undefined) out.y.labelRotation = yLabelRotation;
     if (yLabelFontSize !== undefined) out.y.labelFontSize = yLabelFontSize;
+    if (yLabelBold !== undefined) out.y.labelBold = yLabelBold;
     if (yHidden !== undefined) out.y.hidden = yHidden;
     if (yReverse !== undefined) out.y.reverse = yReverse;
     if (yCrossesPair.crosses !== undefined) out.y.crosses = yCrossesPair.crosses;
@@ -3588,6 +3621,34 @@ function applyLabelFontSizeOverride(
   if (override === undefined) return normalizeTitleFontSize(source);
   if (override === null) return undefined;
   return normalizeTitleFontSize(override);
+}
+
+/**
+ * Resolve a `labelBold` override using the same `undefined` (inherit)
+ * / `null` (drop) / value (replace) grammar as the other axis
+ * helpers. Mirrors the chart-level `resolveTitleBold` — non-boolean
+ * overrides (typed escapes from an untyped caller) collapse to
+ * `undefined`, a `null` override always drops the inherited flag, and
+ * a literal `true` / `false` replaces it.
+ *
+ * The `<c:txPr>` block sits on every axis flavour per the OOXML
+ * schema, so the override applies on every chart family that has
+ * axes. The pie / doughnut short-circuit upstream collapses the
+ * field on those families since neither has axes.
+ */
+function applyLabelBoldOverride(
+  source: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) {
+    if (source === true) return true;
+    if (source === false) return false;
+    return undefined;
+  }
+  if (override === null) return undefined;
+  if (override === true) return true;
+  if (override === false) return false;
+  return undefined;
 }
 
 /**
