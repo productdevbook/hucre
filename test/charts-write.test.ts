@@ -9244,6 +9244,173 @@ describe("writeChart — data table", () => {
     const reparsed = parseChart(chartXml);
     expect(reparsed?.dataTable?.bold).toBe(true);
   });
+
+  // ── data-table italic ──────────────────────────────────────────────
+
+  it("skips the i attribute when italic is unset (writer default)", () => {
+    // Absence collapses to omitting the i attribute entirely — the
+    // OOXML default `0` is functionally identical to absence and Excel
+    // itself omits the attribute on a fresh data table.
+    const result = writeChart(makeChart({ dataTable: true }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice).not.toMatch(/i="[01]"/);
+  });
+
+  it("emits i='1' when dataTable.italic is true", () => {
+    const result = writeChart(makeChart({ dataTable: { italic: true } }), "Sheet1");
+    expect(result.chartXml).toContain('<a:defRPr i="1"/>');
+  });
+
+  it("emits i='0' explicitly when dataTable.italic is false", () => {
+    // Pinning `false` lets a clone target override an upstream `i="1"`
+    // from a templated chart. Functionally identical to absence but
+    // useful for explicit overrides.
+    const result = writeChart(makeChart({ dataTable: { italic: false } }), "Sheet1");
+    expect(result.chartXml).toContain('<a:defRPr i="0"/>');
+  });
+
+  it("collapses non-boolean italic escapes to undefined", () => {
+    // Typed escapes from an untyped caller — strings, null, numbers —
+    // drop the field rather than fabricate a malformed i attribute.
+    const dt = { italic: "yes" } as unknown as { italic: boolean };
+    const result = writeChart(makeChart({ dataTable: dt }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice).not.toContain("<c:txPr>");
+    const dt2 = { italic: 1 } as unknown as { italic: boolean };
+    const result2 = writeChart(makeChart({ dataTable: dt2 }), "Sheet1");
+    const dTableSlice2 = result2.chartXml.slice(
+      result2.chartXml.indexOf("<c:dTable>"),
+      result2.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice2).not.toContain("<c:txPr>");
+  });
+
+  it("composes italic with fontSize / fontColor / bold on the same defRPr slot", () => {
+    // All four typography knobs land on the same <a:defRPr> — the
+    // size, bold, and italic as attributes, the color as the wrapped <a:solidFill>.
+    const result = writeChart(
+      makeChart({
+        dataTable: { fontSize: 14, fontColor: "1070CA", bold: true, italic: true },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain(
+      '<a:defRPr sz="1400" b="1" i="1"><a:solidFill><a:srgbClr val="1070CA"/></a:solidFill></a:defRPr>',
+    );
+  });
+
+  it("composes italic with fontSize alone (no fontColor) on a self-closing defRPr", () => {
+    const result = writeChart(makeChart({ dataTable: { fontSize: 14, italic: true } }), "Sheet1");
+    expect(result.chartXml).toContain('<a:defRPr sz="1400" i="1"/>');
+  });
+
+  it("threads italic through every chart family with axes", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(makeChart({ type, dataTable: { italic: true } }), "Sheet1");
+      expect(result.chartXml).toContain('<a:defRPr i="1"/>');
+    }
+    const scatter = writeChart(
+      {
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        dataTable: { italic: true },
+      },
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain('<a:defRPr i="1"/>');
+  });
+
+  it("silently drops italic on pie charts (no <c:dTable> slot at all)", () => {
+    const result = writeChart(
+      {
+        type: "pie",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        dataTable: { italic: true },
+      },
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:dTable");
+    expect(result.chartXml).not.toContain('<a:defRPr i="1"/>');
+  });
+
+  it("composes italic with the four boolean toggles independently", () => {
+    const result = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: false,
+          showVertBorder: true,
+          showOutline: false,
+          showKeys: true,
+          italic: true,
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('<c:showHorzBorder val="0"/>');
+    expect(result.chartXml).toContain('<c:showVertBorder val="1"/>');
+    expect(result.chartXml).toContain('<c:showOutline val="0"/>');
+    expect(result.chartXml).toContain('<c:showKeys val="1"/>');
+    expect(result.chartXml).toContain('<a:defRPr i="1"/>');
+  });
+
+  it("round-trips a pinned dataTable italic through parseChart", () => {
+    const written = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+          italic: true,
+        },
+      }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+      italic: true,
+    });
+  });
+
+  it("threads italic end-to-end through writeXlsx packaging", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Dashboard",
+        rows: [
+          ["Quarter", "Revenue"],
+          ["Q1", 10],
+          ["Q2", 20],
+          ["Q3", 30],
+        ],
+        charts: [
+          {
+            type: "column",
+            series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            dataTable: { showKeys: true, italic: true },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain("<c:dTable>");
+    expect(chartXml).toContain('<a:defRPr i="1"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.dataTable?.italic).toBe(true);
+  });
 });
 
 // ── writeChart — chart-space protection ──────────────────────────────

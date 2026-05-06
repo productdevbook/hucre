@@ -4463,6 +4463,8 @@ function parseDataTable(plotArea: XmlElement): ChartDataTable | undefined {
   if (fontColor !== undefined) out.fontColor = fontColor;
   const bold = parseDataTableBold(el);
   if (bold !== undefined) out.bold = bold;
+  const italic = parseDataTableItalic(el);
+  if (italic !== undefined) out.italic = italic;
   return out;
 }
 
@@ -4489,6 +4491,46 @@ function parseDataTableBold(dTable: XmlElement): boolean | undefined {
   const defRPr = findChild(pPr, "defRPr");
   if (!defRPr) return undefined;
   const raw = defRPr.attrs.b;
+  if (typeof raw !== "string") return undefined;
+  switch (raw) {
+    case "1":
+    case "true":
+      return true;
+    case "0":
+    case "false":
+      return false;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Pull `<c:dTable><c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p>
+ * </c:txPr></c:dTable>` off a data-table block. Returns the italic
+ * flag.
+ *
+ * The OOXML `i` attribute is the `xsd:boolean` italic flag on
+ * `CT_TextCharacterProperties`. An explicit `i="1"` / `"true"`
+ * surfaces `true`; an explicit `i="0"` / `"false"` surfaces `false`
+ * so a templated chart that pinned `i="0"` round-trips literally and
+ * a clone target can override an upstream `i="1"` cleanly. Absence /
+ * malformed tokens collapse to `undefined` so a fresh data table that
+ * never pinned the flag round-trips identically through `cloneChart`.
+ * Mirrors the data-table bold reader (and the chart-title /
+ * axis-title / axis tick-label / legend / data-label italic readers
+ * for the OOXML attribute layout) so a parsed value slots straight
+ * back into the writer's emit path.
+ */
+function parseDataTableItalic(dTable: XmlElement): boolean | undefined {
+  const txPr = findChild(dTable, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const raw = defRPr.attrs.i;
   if (typeof raw !== "string") return undefined;
   switch (raw) {
     case "1":

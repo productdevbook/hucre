@@ -10598,6 +10598,158 @@ describe("cloneChart — data table", () => {
     const reparsed = parseChart(written);
     expect(reparsed?.dataTable?.bold).toBe(true);
   });
+
+  // ── data-table italic ──────────────────────────────────────────
+
+  it("inherits the source's dataTable.italic by default", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+          italic: true,
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+      italic: true,
+    });
+  });
+
+  it("lets options.dataTable: object override the inherited italic", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, italic: true },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        dataTable: { showVertBorder: false, italic: false },
+      },
+    );
+    expect(clone.dataTable).toEqual({ showVertBorder: false, italic: false });
+  });
+
+  it("drops the inherited italic when override clears the typography pin", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, italic: true },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        dataTable: { showVertBorder: false },
+      },
+    );
+    expect(clone.dataTable).toEqual({ showVertBorder: false });
+  });
+
+  it("drops the inherited italic when flattening into a doughnut clone", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, italic: true },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        type: "doughnut",
+      },
+    );
+    expect(clone.type).toBe("doughnut");
+    expect(clone.dataTable).toBeUndefined();
+  });
+
+  it("propagates dataTable.italic into the rendered <c:dTable> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+          italic: true,
+        },
+      }),
+      { anchor: { from: { row: 5, col: 0 } } },
+    );
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:dTable>");
+    expect(written).toContain('<a:defRPr i="1"/>');
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+      italic: true,
+    });
+  });
+
+  it("composes italic with fontSize / fontColor / bold through the clone-through path", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: { fontSize: 12, fontColor: "1070CA", bold: true, italic: true },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.dataTable).toEqual({
+      fontSize: 12,
+      fontColor: "1070CA",
+      bold: true,
+      italic: true,
+    });
+  });
+
+  it("a parsed dataTable.italic round-trips through parseChart -> cloneChart -> writeChart -> parseChart", async () => {
+    const seed: SheetChart = {
+      type: "column",
+      series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+      anchor: { from: { row: 0, col: 0 } },
+      dataTable: { showKeys: false, italic: true },
+    };
+    const xml = writeChart(seed, "Sheet1").chartXml;
+    const parsed = parseChart(xml)!;
+    expect(parsed.dataTable?.italic).toBe(true);
+    const clone = cloneChart(parsed, {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Q", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable?.italic).toBe(true);
+  });
 });
 
 // ── cloneChart — chart-space protection ──────────────────────────────
