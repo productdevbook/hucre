@@ -790,6 +790,14 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // `<c:txPr>` block on a fresh chart.
     xLabelRotation: normalizeAxisLabelRotation(chart.axes?.x?.labelRotation),
     yLabelRotation: normalizeAxisLabelRotation(chart.axes?.y?.labelRotation),
+    // `<c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p></c:txPr>`
+    // shares the same `<c:txPr>` block as the rotation slot above. The
+    // writer normalizes the points input — clamp to the `1..400`pt
+    // band the OOXML `ST_TextFontSize` schema exposes; non-finite /
+    // out-of-range / non-numeric inputs collapse to `undefined` so a
+    // fresh chart inherits Excel's reference 10pt tick-label size.
+    xLabelFontSize: normalizeAxisLabelFontSize(chart.axes?.x?.labelFontSize),
+    yLabelFontSize: normalizeAxisLabelFontSize(chart.axes?.y?.labelFontSize),
     xReverse: chart.axes?.x?.reverse === true,
     yReverse: chart.axes?.y?.reverse === true,
     // `tickLblSkip` / `tickMarkSkip` only round-trip on category axes
@@ -1297,6 +1305,23 @@ interface AxisRenderOptions {
    * shape and conversion semantics as {@link xLabelRotation}.
    */
   yLabelRotation: number | undefined;
+  /**
+   * Tick-label font size in points emitted on the X axis via
+   * `<c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p></c:txPr>`.
+   * The OOXML `sz` attribute is in 100ths of a point; the writer
+   * converts at emit time. Range: `1..400`pt (the OOXML
+   * `ST_TextFontSize` band). `undefined` skips the size attribute so
+   * a fresh chart inherits Excel's reference 10pt tick-label size.
+   * The block is emitted whenever `xLabelRotation` or
+   * `xLabelFontSize` is set so the OOXML schema's `<c:txPr>` slot
+   * carries every pinned typography knob.
+   */
+  xLabelFontSize: number | undefined;
+  /**
+   * Tick-label font size in points emitted on the Y axis. Same shape
+   * and conversion semantics as {@link xLabelFontSize}.
+   */
+  yLabelFontSize: number | undefined;
   xReverse: boolean;
   yReverse: boolean;
   /**
@@ -1629,31 +1654,68 @@ function normalizeAxisLabelRotation(value: number | undefined): number | undefin
 }
 
 /**
- * Build the `<c:txPr>` block that carries an axis tick-label rotation.
- * Returns `undefined` when the resolved degree value is unset so the
- * caller can elide the element entirely (Excel's reference
+ * Normalize an axis `labelFontSize` value (whole / half points) for
+ * the `<c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p></c:txPr>`
+ * writer slot. Returns `undefined` when the input is unset,
+ * non-finite, non-numeric, or out of the `1..400`pt band the OOXML
+ * `ST_TextFontSize` schema exposes — every absence path collapses to
+ * the same omit-the-attribute shape so a fresh chart inherits Excel's
+ * reference 10pt tick-label size.
+ *
+ * Fractional inputs round to the nearest 0.5pt (the OOXML attribute
+ * is an integer in 100ths of a point and Excel's UI exposes the same
+ * 0.5pt granularity, so finer fractions have no meaningful refinement
+ * at emit time). Mirrors {@link normalizeTitleFontSize} so a value
+ * threads cleanly through both the title and axis-label slots.
+ */
+function normalizeAxisLabelFontSize(value: number | undefined): number | undefined {
+  if (value === undefined || typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const halfSteps = Math.round(value * 2);
+  const points = halfSteps / 2;
+  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
+  return points;
+}
+
+/**
+ * Build the `<c:txPr>` block that carries an axis tick-label rotation
+ * and / or font size. Returns `undefined` when both inputs are unset
+ * so the caller can elide the element entirely (Excel's reference
  * serialization on a fresh axis omits `<c:txPr>` when the labels
- * render at the default `rot="0"`).
+ * render at the default rotation and inherit the theme font size).
  *
  * The emitted block mirrors the minimal `<c:txPr>` shape Excel writes
  * when the user pins a custom angle — `<a:bodyPr rot="N"/>` carries
- * the rotation, `<a:lstStyle/>` is the empty list-style placeholder
- * the schema requires, and `<a:p><a:pPr><a:defRPr/></a:pPr><a:endParaRPr/></a:p>`
- * is the empty paragraph stub Excel always emits even when no per-run
- * styling is pinned. Additional `<a:bodyPr>` attributes Excel writes
- * in its full reference (`spcFirstLastPara` / `vertOverflow` / `wrap`
- * / `anchor` / `anchorCtr`) are intentionally omitted — the OOXML
- * schema marks them all optional, and dropping them keeps the writer's
- * footprint minimal while preserving the rotation intent.
+ * the rotation (when set), `<a:lstStyle/>` is the empty list-style
+ * placeholder the schema requires, and the
+ * `<a:p><a:pPr><a:defRPr/></a:pPr><a:endParaRPr/></a:p>` paragraph
+ * stub Excel always emits hosts the optional `sz` attribute on
+ * `<a:defRPr>`. Additional `<a:bodyPr>` attributes Excel writes in
+ * its full reference (`spcFirstLastPara` / `vertOverflow` / `wrap` /
+ * `anchor` / `anchorCtr`) are intentionally omitted — the OOXML
+ * schema marks them all optional, and dropping them keeps the
+ * writer's footprint minimal while preserving the rotation / size
+ * intent.
+ *
+ * When only a rotation is pinned, the `<a:defRPr>` slot self-closes
+ * with no attributes (matching the legacy rotation-only emit). When
+ * a font size is pinned, the slot carries `sz="N"` (in 100ths of a
+ * point) so a re-parse picks the value up off the canonical
+ * default-paragraph slot. When the rotation is absent but the size
+ * is pinned, the writer omits `rot` from `<a:bodyPr>` so the OOXML
+ * default `0` collapses to absence.
  */
-function buildAxisTxPr(rotationDeg: number | undefined): string | undefined {
-  if (rotationDeg === undefined) return undefined;
-  const rot = rotationDeg * TXPR_ROT_PER_DEGREE;
+function buildAxisTxPr(
+  rotationDeg: number | undefined,
+  fontSizePt: number | undefined,
+): string | undefined {
+  if (rotationDeg === undefined && fontSizePt === undefined) return undefined;
+  const rot = rotationDeg === undefined ? undefined : rotationDeg * TXPR_ROT_PER_DEGREE;
+  const sz = fontSizePt === undefined ? undefined : fontSizePt * TITLE_FONT_SZ_PER_POINT;
   return xmlElement("c:txPr", undefined, [
     xmlSelfClose("a:bodyPr", { rot }),
     xmlSelfClose("a:lstStyle"),
     xmlElement("a:p", undefined, [
-      xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr")]),
+      xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz })]),
       xmlSelfClose("a:endParaRPr", { lang: "en-US" }),
     ]),
   ]);
@@ -2147,7 +2209,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
   // `buildAxisTickRendering`) and `<c:crossAx>` per CT_CatAx (ECMA-376
   // Part 1, §21.2.2.7). Skip the entire block when the caller did not
   // pin a rotation so a fresh chart matches Excel's minimal serialization.
-  const xCatAxTxPr = buildAxisTxPr(opts.xLabelRotation);
+  const xCatAxTxPr = buildAxisTxPr(opts.xLabelRotation, opts.xLabelFontSize);
   if (xCatAxTxPr) catAxChildren.push(xCatAxTxPr);
   catAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL }),
@@ -2212,7 +2274,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
   // contract as the catAx slot above — emit nothing when the caller
   // did not pin a rotation so the writer matches Excel's reference
   // serialization on a fresh value axis.
-  const yValAxTxPr = buildAxisTxPr(opts.yLabelRotation);
+  const yValAxTxPr = buildAxisTxPr(opts.yLabelRotation, opts.yLabelFontSize);
   if (yValAxTxPr) valAxChildren.push(yValAxTxPr);
   valAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_CAT }),
@@ -2575,7 +2637,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
   // `<c:txPr>` slot — same CT_ValAx position as the bar / column
   // builder above. Scatter X is a value axis, so the rotation pins on
   // the X-axis just as it does on the Y-axis.
-  const xValAxTxPr = buildAxisTxPr(opts.xLabelRotation);
+  const xValAxTxPr = buildAxisTxPr(opts.xLabelRotation, opts.xLabelFontSize);
   if (xValAxTxPr) xAxChildren.push(xValAxTxPr);
   xAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL_Y }),
@@ -2617,7 +2679,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
   );
   // `<c:txPr>` slot for the scatter Y axis — same CT_ValAx position
   // and omit-by-default contract as the catAx / valAx builders above.
-  const yScatterTxPr = buildAxisTxPr(opts.yLabelRotation);
+  const yScatterTxPr = buildAxisTxPr(opts.yLabelRotation, opts.yLabelFontSize);
   if (yScatterTxPr) yAxChildren.push(yScatterTxPr);
   yAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL_X }),

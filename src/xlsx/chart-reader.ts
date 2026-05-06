@@ -641,6 +641,13 @@ function parseAxisInfo(
   // UI exposes; the OOXML default `0` and absence both collapse to
   // `undefined`.
   const labelRotation = parseAxisLabelRotation(axis);
+  // `<c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p></c:txPr>` —
+  // tick-label font size in 100ths of a point. Same `<c:txPr>` slot
+  // as `labelRotation` above. Out-of-range / non-numeric values drop
+  // to `undefined` so a corrupt template cannot surface a value the
+  // writer would never emit. Surfaced on every axis flavour for
+  // symmetry with the writer.
+  const labelFontSize = parseAxisLabelFontSize(axis);
   // <c:scaling><c:orientation val=".."/></c:scaling> — ST_Orientation
   // accepts "minMax" (default, low → high) and "maxMin" (reversed).
   // The default collapses to undefined so a fresh chart and a chart
@@ -723,6 +730,7 @@ function parseAxisInfo(
     minorTickMark === undefined &&
     tickLblPos === undefined &&
     labelRotation === undefined &&
+    labelFontSize === undefined &&
     reverse === undefined &&
     tickLblSkip === undefined &&
     tickMarkSkip === undefined &&
@@ -753,6 +761,7 @@ function parseAxisInfo(
   if (minorTickMark !== undefined) out.minorTickMark = minorTickMark;
   if (tickLblPos !== undefined) out.tickLblPos = tickLblPos;
   if (labelRotation !== undefined) out.labelRotation = labelRotation;
+  if (labelFontSize !== undefined) out.labelFontSize = labelFontSize;
   if (reverse !== undefined) out.reverse = reverse;
   if (tickLblSkip !== undefined) out.tickLblSkip = tickLblSkip;
   if (tickMarkSkip !== undefined) out.tickMarkSkip = tickMarkSkip;
@@ -1077,6 +1086,55 @@ function parseAxisLabelRotation(axis: XmlElement): number | undefined {
   if (degrees < LABEL_ROTATION_MIN_DEG) return LABEL_ROTATION_MIN_DEG;
   if (degrees > LABEL_ROTATION_MAX_DEG) return LABEL_ROTATION_MAX_DEG;
   return degrees;
+}
+
+/**
+ * Pull `<c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p></c:txPr>`
+ * off an axis element. Returns the tick-label font size in points
+ * (range `1..400`).
+ *
+ * Mirrors {@link parseAxisTitleFontSize} for tick labels — same
+ * 0.5pt half-step granularity, same `1..400`pt band, same
+ * drop-on-out-of-range / non-numeric / absence semantics. The lookup
+ * is scoped to the axis-level `<c:txPr>` so a stray `<a:defRPr>`
+ * inside `<c:title><c:tx><c:rich>` (surfaced by
+ * {@link parseAxisTitleFontSize}) cannot leak in.
+ *
+ * The OOXML default — `<a:defRPr>` with no `sz` attribute — collapses
+ * to `undefined` so absence and the default round-trip identically
+ * through {@link cloneChart}. Out-of-range / non-numeric `sz` values
+ * drop rather than fabricate a value the writer would never emit.
+ *
+ * The `<c:txPr>` element sits on every axis flavour — `<c:catAx>` /
+ * `<c:valAx>` / `<c:dateAx>` / `<c:serAx>` all carry the optional
+ * element per the OOXML schema. The reader surfaces the size
+ * regardless of axis flavour so a parsed chart preserves the value
+ * for symmetry with the writer-side
+ * {@link SheetChart.axes}.x.labelFontSize.
+ */
+function parseAxisLabelFontSize(axis: XmlElement): number | undefined {
+  const txPr = findChild(axis, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const raw = defRPr.attrs.sz;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  // Convert from 100ths of a point to points, rounding to the nearest
+  // 0.5pt to match the granularity Excel's UI exposes. Mirrors the
+  // chart-level / axis-title `parseTitleFontSize` half-step
+  // normalisation.
+  const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2);
+  const points = halfSteps / 2;
+  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
+  return points;
 }
 
 /** Recognized values of `<c:crosses>` per the OOXML `ST_Crosses` enum. */

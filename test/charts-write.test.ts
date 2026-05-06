@@ -8901,6 +8901,210 @@ describe("writeChart — axis labelRotation", () => {
   });
 });
 
+// ── writeChart — axis labelFontSize ──────────────────────────────────
+
+describe("writeChart — axis labelFontSize", () => {
+  it("omits <c:txPr> on the category axis when the size is unset", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).not.toContain("<c:txPr>");
+  });
+
+  it('emits <c:txPr> with <a:defRPr sz="N"/> when the X axis pins a size', () => {
+    const result = writeChart(makeChart({ axes: { x: { labelFontSize: 12 } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain("<c:txPr>");
+    expect(catAxBlock).toContain('<a:defRPr sz="1200"/>');
+  });
+
+  it("emits the size on the Y axis (value axis)", () => {
+    const result = writeChart(makeChart({ axes: { y: { labelFontSize: 9 } } }), "Sheet1");
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(valAxBlock).toContain('<a:defRPr sz="900"/>');
+  });
+
+  it("emits independently on both axes when both pin a size", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { labelFontSize: 12 }, y: { labelFontSize: 8 } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const valAxBlock = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/)![0];
+    expect(catAxBlock).toContain('<a:defRPr sz="1200"/>');
+    expect(valAxBlock).toContain('<a:defRPr sz="800"/>');
+  });
+
+  it("rounds fractional inputs to the nearest 0.5pt (Excel UI granularity)", () => {
+    // 10.4 rounds to 10.5 (5 half-steps from 0).
+    const result = writeChart(makeChart({ axes: { x: { labelFontSize: 10.4 } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain('<a:defRPr sz="1050"/>');
+  });
+
+  it("drops out-of-range sizes (below 1pt)", () => {
+    const result = writeChart(makeChart({ axes: { x: { labelFontSize: 0.5 } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).not.toContain("<c:txPr>");
+  });
+
+  it("drops out-of-range sizes (above 400pt)", () => {
+    const result = writeChart(makeChart({ axes: { x: { labelFontSize: 500 } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).not.toContain("<c:txPr>");
+  });
+
+  it("drops non-finite sizes (NaN, Infinity)", () => {
+    const nan = writeChart(makeChart({ axes: { x: { labelFontSize: Number.NaN } } }), "Sheet1");
+    const inf = writeChart(
+      makeChart({ axes: { x: { labelFontSize: Number.POSITIVE_INFINITY } } }),
+      "Sheet1",
+    );
+    expect(nan.chartXml).not.toContain("<c:txPr>");
+    expect(inf.chartXml).not.toContain("<c:txPr>");
+  });
+
+  it("drops non-numeric sizes (string, boolean)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stringy = writeChart(
+      makeChart({ axes: { x: { labelFontSize: "12" as any } } }),
+      "Sheet1",
+    );
+    const boolish = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { labelFontSize: true as any } } }),
+      "Sheet1",
+    );
+    expect(stringy.chartXml).not.toContain("<c:txPr>");
+    expect(boolish.chartXml).not.toContain("<c:txPr>");
+  });
+
+  it("composes with labelRotation in a single <c:txPr> block", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { labelRotation: 45, labelFontSize: 12 } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    // Only one <c:txPr> per axis even with both knobs pinned.
+    expect((catAxBlock.match(/<c:txPr>/g) ?? []).length).toBe(1);
+    expect(catAxBlock).toContain('<a:bodyPr rot="2700000"/>');
+    expect(catAxBlock).toContain('<a:defRPr sz="1200"/>');
+  });
+
+  it("emits <c:txPr> with no rot when only labelFontSize is pinned", () => {
+    const result = writeChart(makeChart({ axes: { x: { labelFontSize: 12 } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain("<a:bodyPr/>");
+    expect(catAxBlock).not.toContain("<a:bodyPr rot=");
+  });
+
+  it('emits <a:defRPr sz=".."/> with no sz when only labelRotation is pinned', () => {
+    const result = writeChart(makeChart({ axes: { x: { labelRotation: 45 } } }), "Sheet1");
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    expect(catAxBlock).toContain("<a:defRPr/>");
+    expect(catAxBlock).not.toContain("<a:defRPr sz=");
+  });
+
+  it("threads the size through bar, column, line, and area chart families", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(makeChart({ type, axes: { x: { labelFontSize: 11 } } }), "Sheet1");
+      expect(result.chartXml).toContain('<a:defRPr sz="1100"/>');
+    }
+  });
+
+  it("threads the size through scatter charts (both axes are value axes)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { x: { labelFontSize: 12 }, y: { labelFontSize: 9 } },
+      }),
+      "Sheet1",
+    );
+    const valAxes = result.chartXml.match(/<c:valAx>[\s\S]*?<\/c:valAx>/g)!;
+    expect(valAxes).toHaveLength(2);
+    expect(valAxes[0]).toContain('<a:defRPr sz="1200"/>');
+    expect(valAxes[1]).toContain('<a:defRPr sz="900"/>');
+  });
+
+  it("ignores the size on pie / doughnut charts (no axes at all)", () => {
+    const pie = writeChart(
+      makeChart({ type: "pie", axes: { x: { labelFontSize: 12 } } }),
+      "Sheet1",
+    );
+    const dough = writeChart(
+      makeChart({ type: "doughnut", axes: { x: { labelFontSize: 12 } } }),
+      "Sheet1",
+    );
+    expect(pie.chartXml).not.toContain("<c:txPr>");
+    expect(dough.chartXml).not.toContain("<c:txPr>");
+  });
+
+  it("places <c:txPr> between <c:tickLblPos> and <c:crossAx> per the OOXML schema", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { tickLblPos: "low", labelFontSize: 12 } } }),
+      "Sheet1",
+    );
+    const catAxBlock = result.chartXml.match(/<c:catAx>[\s\S]*?<\/c:catAx>/)![0];
+    const tickLblPosIdx = catAxBlock.indexOf("c:tickLblPos");
+    const txPrIdx = catAxBlock.indexOf("<c:txPr>");
+    const crossAxIdx = catAxBlock.indexOf("c:crossAx");
+    expect(tickLblPosIdx).toBeGreaterThan(0);
+    expect(txPrIdx).toBeGreaterThan(tickLblPosIdx);
+    expect(crossAxIdx).toBeGreaterThan(txPrIdx);
+  });
+
+  it("round-trips a non-default size through parseChart", () => {
+    const written = writeChart(
+      makeChart({ axes: { x: { labelFontSize: 12 } } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.labelFontSize).toBe(12);
+  });
+
+  it("round-trips a half-point size through parseChart", () => {
+    const written = writeChart(
+      makeChart({ axes: { x: { labelFontSize: 10.5 } } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.labelFontSize).toBe(10.5);
+  });
+
+  it("collapses an absent size round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.labelFontSize).toBeUndefined();
+  });
+
+  it("end-to-end: writeXlsx packages the size into chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            axes: { x: { labelFontSize: 14 } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('<a:defRPr sz="1400"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.x?.labelFontSize).toBe(14);
+  });
+});
+
 // ── writeChart — data labels showLeaderLines ─────────────────────────
 
 describe("writeChart — data labels showLeaderLines", () => {

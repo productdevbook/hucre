@@ -2301,6 +2301,39 @@ export interface SheetChart {
        */
       labelRotation?: number;
       /**
+       * Tick-label font size in whole or half points. Maps to
+       * `<c:catAx><c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p></c:txPr></c:catAx>`
+       * (or `<c:valAx>` for scatter / value axes) — Excel's "Format
+       * Axis -> Font -> Size" knob applied to the tick labels. The
+       * OOXML attribute is in 100ths of a point, so 12pt serializes as
+       * `sz="1200"` and 10pt (Excel's reference default for tick
+       * labels) as `sz="1000"`; the writer performs the conversion at
+       * emit time and lands the value on the default-paragraph
+       * `<a:defRPr>` slot.
+       *
+       * Mirrors {@link SheetChart.axes.x.axisTitleFontSize} for tick
+       * labels — same `1..400`pt band the OOXML `ST_TextFontSize`
+       * schema exposes, same 0.5pt half-step granularity Excel's UI
+       * exposes, same out-of-range / non-finite drop semantics. Useful
+       * for shrinking dense numeric tick labels on a value axis to fit
+       * a tight chart frame, or bumping category-axis labels up to
+       * match a presentation slide's typography.
+       *
+       * Default: omitted — the tick labels render at Excel's reference
+       * size (10pt). Composes independently with
+       * {@link labelRotation}: both fields land on the same
+       * `<c:txPr>` body, so a single configuration call threads cleanly
+       * through both knobs.
+       *
+       * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+       * `<c:dateAx>` / `<c:serAx>` all carry an optional `<c:txPr>` per
+       * the OOXML schema, so the field round-trips on every chart family
+       * that has axes (bar / column / line / area / scatter). Pie /
+       * doughnut have no axes at all, so the field is silently dropped
+       * on those families.
+       */
+      labelFontSize?: number;
+      /**
        * Reverse the axis plotting order. Maps to
        * `<c:scaling><c:orientation val="maxMin"/></c:scaling>` —
        * Excel's "Categories in reverse order" / "Values in reverse
@@ -2647,6 +2680,22 @@ export interface SheetChart {
        * charts (no axes at all).
        */
       labelRotation?: number;
+      /**
+       * Tick-label font size in points for the value axis. Maps to
+       * `<c:valAx><c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p></c:txPr></c:valAx>`.
+       * Mirrors {@link SheetChart.axes.x.labelFontSize} for the value
+       * axis — see that field for the full semantics. The OOXML `sz`
+       * attribute is in 100ths of a point; the writer converts at emit
+       * time so callers pin the value in points. Range: `1..400`pt
+       * (the OOXML `ST_TextFontSize` band), with 0.5pt granularity.
+       *
+       * Useful for shrinking dense numeric tick labels (e.g. wide
+       * currency totals) so they fit a tight Y-axis column, or
+       * bumping the value-axis labels up to match a chart-level
+       * typography pin. Silently dropped on `pie` / `doughnut`
+       * charts (no axes at all).
+       */
+      labelFontSize?: number;
       /**
        * Hide the entire value axis (line, tick marks, tick labels).
        * Maps to `<c:valAx><c:delete val="1"/></c:valAx>`. Default:
@@ -4011,6 +4060,31 @@ export interface ChartAxisInfo {
    * whether the source axis was a category or value axis.
    */
   labelRotation?: number;
+  /**
+   * Tick-label font size in points pulled from
+   * `<c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p></c:txPr>`
+   * on the axis element. Reflects Excel's "Format Axis -> Font ->
+   * Size" knob applied to tick labels.
+   *
+   * The OOXML attribute is in 100ths of a point; the reader converts
+   * to points and rounds to the nearest 0.5pt (Excel's UI exposes the
+   * same 0.5pt granularity, e.g. `sz="1000"` surfaces as `10`,
+   * `sz="1050"` as `10.5`). Out-of-range values (outside the `1..400`
+   * band the OOXML `ST_TextFontSize` schema exposes) drop to
+   * `undefined` rather than fabricate a value the writer would never
+   * emit. Absence of the attribute / element / chain likewise
+   * collapses to `undefined`.
+   *
+   * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+   * `<c:dateAx>` / `<c:serAx>` all carry an optional `<c:txPr>` per
+   * the OOXML schema. Mirrors the writer-side
+   * {@link SheetChart.axes.x.labelFontSize} so a parsed value slots
+   * straight back into a clone target without transformation. The
+   * lookup is scoped to the axis-level `<c:txPr>` so a stray
+   * `<a:defRPr>` inside `<c:title>` (surfaced by
+   * {@link ChartAxisInfo.axisTitleFontSize}) cannot leak in.
+   */
+  labelFontSize?: number;
   /**
    * Reverse-axis flag pulled from
    * `<c:scaling><c:orientation val=".."/></c:scaling>`. Surfaces `true`

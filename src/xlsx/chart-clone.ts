@@ -873,6 +873,23 @@ export interface CloneChartOptions {
        */
       labelRotation?: number | null;
       /**
+       * Override `SheetChart.axes.x.labelFontSize`. `undefined` (or
+       * omitted) inherits the source axis's tick-label font size;
+       * `null` drops the inherited value (the writer falls back to
+       * Excel's reference 10pt); a number in the `1..400`pt band
+       * replaces it (out-of-range, non-finite, and non-numeric inputs
+       * collapse to `undefined`). Fractional inputs round to the
+       * nearest 0.5pt, matching Excel's UI granularity.
+       *
+       * `<c:txPr>` lives on every axis flavour per the OOXML schema,
+       * so the override carries through every chart family that has
+       * axes (bar / column / line / area / scatter). Silently dropped
+       * on `pie` / `doughnut` charts since neither has axes. Composes
+       * independently with {@link labelRotation}: both fields land on
+       * the same `<c:txPr>` body.
+       */
+      labelFontSize?: number | null;
+      /**
        * Override the reverse-axis flag. `undefined` (or omitted)
        * inherits the source axis' parsed value; `null` drops it (the
        * writer falls back to the OOXML default `"minMax"` — forward
@@ -1038,6 +1055,8 @@ export interface CloneChartOptions {
       tickLblPos?: ChartAxisTickLabelPosition | null;
       /** See {@link CloneChartOptions.axes.x.labelRotation}. */
       labelRotation?: number | null;
+      /** See {@link CloneChartOptions.axes.x.labelFontSize}. */
+      labelFontSize?: number | null;
       /** See {@link CloneChartOptions.axes.x.hidden}. */
       hidden?: boolean | null;
       /** See {@link CloneChartOptions.axes.x.reverse}. */
@@ -2913,6 +2932,20 @@ function resolveAxes(
     sourceAxes?.y?.labelRotation,
     overrides?.y?.labelRotation,
   );
+  // `<c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p></c:txPr>`
+  // shares the same `<c:txPr>` slot as the rotation resolver above,
+  // and the same per-axis scope rule (every axis flavour carries
+  // `<c:txPr>`; pie / doughnut already short-circuited upstream).
+  // Out-of-range / non-finite / non-numeric inputs collapse to
+  // `undefined`; fractional inputs round to the nearest 0.5pt.
+  const xLabelFontSize = applyLabelFontSizeOverride(
+    sourceAxes?.x?.labelFontSize,
+    overrides?.x?.labelFontSize,
+  );
+  const yLabelFontSize = applyLabelFontSizeOverride(
+    sourceAxes?.y?.labelFontSize,
+    overrides?.y?.labelFontSize,
+  );
   const xReverse = applyReverseOverride(sourceAxes?.x?.reverse, overrides?.x?.reverse);
   const yReverse = applyReverseOverride(sourceAxes?.y?.reverse, overrides?.y?.reverse);
   // `tickLblSkip` / `tickMarkSkip` only render on category axes
@@ -3059,6 +3092,7 @@ function resolveAxes(
     xMinorTickMark !== undefined ||
     xTickLblPos !== undefined ||
     xLabelRotation !== undefined ||
+    xLabelFontSize !== undefined ||
     xReverse !== undefined ||
     xTickLblSkip !== undefined ||
     xTickMarkSkip !== undefined ||
@@ -3089,6 +3123,7 @@ function resolveAxes(
     if (xMinorTickMark !== undefined) out.x.minorTickMark = xMinorTickMark;
     if (xTickLblPos !== undefined) out.x.tickLblPos = xTickLblPos;
     if (xLabelRotation !== undefined) out.x.labelRotation = xLabelRotation;
+    if (xLabelFontSize !== undefined) out.x.labelFontSize = xLabelFontSize;
     if (xReverse !== undefined) out.x.reverse = xReverse;
     if (xTickLblSkip !== undefined) out.x.tickLblSkip = xTickLblSkip;
     if (xTickMarkSkip !== undefined) out.x.tickMarkSkip = xTickMarkSkip;
@@ -3117,6 +3152,7 @@ function resolveAxes(
     yMinorTickMark !== undefined ||
     yTickLblPos !== undefined ||
     yLabelRotation !== undefined ||
+    yLabelFontSize !== undefined ||
     yHidden !== undefined ||
     yReverse !== undefined ||
     yCrossesPair.crosses !== undefined ||
@@ -3141,6 +3177,7 @@ function resolveAxes(
     if (yMinorTickMark !== undefined) out.y.minorTickMark = yMinorTickMark;
     if (yTickLblPos !== undefined) out.y.tickLblPos = yTickLblPos;
     if (yLabelRotation !== undefined) out.y.labelRotation = yLabelRotation;
+    if (yLabelFontSize !== undefined) out.y.labelFontSize = yLabelFontSize;
     if (yHidden !== undefined) out.y.hidden = yHidden;
     if (yReverse !== undefined) out.y.reverse = yReverse;
     if (yCrossesPair.crosses !== undefined) out.y.crosses = yCrossesPair.crosses;
@@ -3468,6 +3505,30 @@ function clampLabelRotationDeg(value: number): number | undefined {
   else if (degrees > 90) degrees = 90;
   if (degrees === 0) return undefined;
   return degrees;
+}
+
+/**
+ * Resolve a `labelFontSize` override using the same `undefined`
+ * (inherit) / `null` (drop) / value (replace) grammar as the other
+ * axis helpers. The conversion / clamping rules delegate to
+ * {@link normalizeTitleFontSize} — out-of-range, non-finite, and
+ * non-numeric inputs all collapse to `undefined`, fractional inputs
+ * round to the nearest 0.5pt (Excel's UI granularity), and a `null`
+ * override always drops the inherited size so the writer falls back
+ * to Excel's reference 10pt tick-label size.
+ *
+ * The `<c:txPr>` block sits on every axis flavour per the OOXML
+ * schema, so the override applies on every chart family that has
+ * axes. The pie / doughnut short-circuit upstream collapses the
+ * field on those families since neither has axes.
+ */
+function applyLabelFontSizeOverride(
+  source: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) return normalizeTitleFontSize(source);
+  if (override === null) return undefined;
+  return normalizeTitleFontSize(override);
 }
 
 /**
