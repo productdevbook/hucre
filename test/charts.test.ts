@@ -15966,6 +15966,157 @@ describe("parseChart — data labels strikethrough", () => {
   });
 });
 
+// ── parseChart — data labels fontFamily ─────────────────────────────
+
+describe("parseChart — data labels fontFamily", () => {
+  const NS_DLFF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withDLblsTypeface(typeface: string | undefined): string {
+    const defRPr =
+      typeface === undefined
+        ? "<a:defRPr/>"
+        : `<a:defRPr><a:latin typeface="${typeface}"/></a:defRPr>`;
+    return `<c:chartSpace ${NS_DLFF}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr>${defRPr}</a:pPr><a:endParaRPr lang="en-US"/></a:p>
+          </c:txPr>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces fontFamily as the trimmed typeface string", () => {
+    expect(parseChart(withDLblsTypeface("Arial"))?.dataLabels?.fontFamily).toBe("Arial");
+  });
+
+  it("trims surrounding whitespace from the typeface attribute", () => {
+    expect(parseChart(withDLblsTypeface("   Calibri   "))?.dataLabels?.fontFamily).toBe("Calibri");
+  });
+
+  it("surfaces a multi-word typeface verbatim", () => {
+    expect(parseChart(withDLblsTypeface("Times New Roman"))?.dataLabels?.fontFamily).toBe(
+      "Times New Roman",
+    );
+  });
+
+  it("returns undefined when the dLbls block has no <a:latin> element at all", () => {
+    expect(parseChart(withDLblsTypeface(undefined))?.dataLabels?.fontFamily).toBeUndefined();
+  });
+
+  it("collapses an empty typeface attribute to undefined", () => {
+    expect(parseChart(withDLblsTypeface(""))?.dataLabels?.fontFamily).toBeUndefined();
+  });
+
+  it("collapses a whitespace-only typeface attribute to undefined", () => {
+    expect(parseChart(withDLblsTypeface("   "))?.dataLabels?.fontFamily).toBeUndefined();
+  });
+
+  it("returns undefined when the dLbls block has no <c:txPr> body", () => {
+    const xml = `<c:chartSpace ${NS_DLFF}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataLabels?.fontFamily).toBeUndefined();
+  });
+
+  it("co-surfaces alongside other dLbls typography fields (sz / strike / fontColor / fontFamily)", () => {
+    const xml = `<c:chartSpace ${NS_DLFF}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:numFmt formatCode="0.00" sourceLinked="0"/>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr sz="1400" b="1" strike="sngStrike"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:latin typeface="Verdana"/></a:defRPr></a:pPr></a:p>
+          </c:txPr>
+          <c:dLblPos val="outEnd"/>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.fontFamily).toBe("Verdana");
+    expect(chart?.dataLabels?.fontSize).toBe(14);
+    expect(chart?.dataLabels?.bold).toBe(true);
+    expect(chart?.dataLabels?.strikethrough).toBe(true);
+    expect(chart?.dataLabels?.fontColor).toBe("FF0000");
+    expect(chart?.dataLabels?.position).toBe("outEnd");
+    expect(chart?.dataLabels?.showValue).toBe(true);
+  });
+
+  it("surfaces the typeface on a font-only dLbls block (no other show* toggles)", () => {
+    const xml = `<c:chartSpace ${NS_DLFF}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr><a:latin typeface="Calibri"/></a:defRPr></a:pPr></a:p>
+          </c:txPr>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="0"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataLabels?.fontFamily).toBe("Calibri");
+  });
+});
+
 // ── parseChart — title font family ──────────────────────────────────
 
 describe("parseChart — title font family", () => {

@@ -15273,6 +15273,213 @@ describe("writeChart — dataLabels.strikethrough", () => {
   });
 });
 
+// ── writeChart — dataLabels.fontFamily ──────────────────────────────
+
+describe("writeChart — dataLabels.fontFamily", () => {
+  function dLblsOf(xml: string): string {
+    const m = xml.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/);
+    if (!m) throw new Error("No <c:dLbls> block found in chart XML");
+    return m[0];
+  }
+
+  it("does NOT emit <c:txPr> when fontFamily is unset (matches Excel reference)", () => {
+    const result = writeChart(makeChart({ dataLabels: { showValue: true } }), "Sheet1");
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).not.toContain("<c:txPr>");
+    expect(dLbls).not.toContain("a:latin");
+  });
+
+  it('threads fontFamily through to <c:dLbls><c:txPr> as <a:latin typeface=".."/>', () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontFamily: "Arial" } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain("<c:txPr>");
+    expect(dLbls).toContain('<a:latin typeface="Arial"/>');
+  });
+
+  it("trims surrounding whitespace from the input typeface", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontFamily: "   Calibri   " } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).toContain('<a:latin typeface="Calibri"/>');
+  });
+
+  it("emits a multi-word typeface verbatim", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontFamily: "Times New Roman" } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).toContain('<a:latin typeface="Times New Roman"/>');
+  });
+
+  it("places <c:txPr> after <c:numFmt> and before <c:dLblPos> inside <c:dLbls> (CT_DLbls order)", () => {
+    const result = writeChart(
+      makeChart({
+        dataLabels: {
+          showValue: true,
+          fontFamily: "Arial",
+          position: "outEnd",
+          numberFormat: { formatCode: "0.00" },
+        },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls.indexOf("c:numFmt")).toBeLessThan(dLbls.indexOf("c:txPr"));
+    expect(dLbls.indexOf("c:txPr")).toBeLessThan(dLbls.indexOf("c:dLblPos"));
+  });
+
+  it("only emits <c:txPr> once inside <c:dLbls>", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontFamily: "Arial" } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    const occurrences = dLbls.match(/<c:txPr>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads fontFamily through every chart family that supports data labels", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, dataLabels: { showValue: true, fontFamily: "Verdana" } }),
+        "Sheet1",
+      );
+      const dLbls = dLblsOf(result.chartXml);
+      expect(dLbls).toContain('<a:latin typeface="Verdana"/>');
+    }
+  });
+
+  it("drops empty string inputs", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontFamily: "" } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops whitespace-only inputs", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontFamily: "   " } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops non-string inputs (null leaking past the type guard)", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ dataLabels: { showValue: true, fontFamily: null as any } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops non-string inputs (number leaking past the type guard)", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ dataLabels: { showValue: true, fontFamily: 14 as any } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("emits the standard txPr stub shape (a:bodyPr / a:lstStyle / a:p / a:endParaRPr)", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontFamily: "Arial" } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain("<a:bodyPr/>");
+    expect(dLbls).toContain("<a:lstStyle/>");
+    expect(dLbls).toContain('<a:latin typeface="Arial"/>');
+    expect(dLbls).toContain('<a:endParaRPr lang="en-US"/>');
+  });
+
+  it("expands <a:defRPr> from self-closing to wrapping <a:latin>", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontFamily: "Arial" } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain('<a:defRPr><a:latin typeface="Arial"/></a:defRPr>');
+  });
+
+  it("emits solidFill before latin in canonical CT_TextCharacterProperties order", () => {
+    const result = writeChart(
+      makeChart({
+        dataLabels: { showValue: true, fontFamily: "Arial", fontColor: "FF0000" },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain(
+      '<a:defRPr><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:latin typeface="Arial"/></a:defRPr>',
+    );
+  });
+
+  it("co-emits sz, b, strike, the solidFill child, and the latin child on a single <a:defRPr>", () => {
+    const result = writeChart(
+      makeChart({
+        dataLabels: {
+          showValue: true,
+          fontFamily: "Arial",
+          fontColor: "FF0000",
+          fontSize: 14,
+          bold: true,
+          strikethrough: true,
+        },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain('sz="1400"');
+    expect(dLbls).toContain('b="1"');
+    expect(dLbls).toContain('strike="sngStrike"');
+    expect(dLbls).toContain('<a:srgbClr val="FF0000"/>');
+    expect(dLbls).toContain('<a:latin typeface="Arial"/>');
+  });
+
+  it("round-trips a fontFamily through parseChart", () => {
+    const written = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontFamily: "Arial" } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataLabels?.fontFamily).toBe("Arial");
+  });
+
+  it("survives a writeXlsx round trip — fontFamily lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            dataLabels: { showValue: true, fontFamily: "Calibri" },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('<a:latin typeface="Calibri"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.dataLabels?.fontFamily).toBe("Calibri");
+  });
+});
+
 // ── writeChart — title font family ──────────────────────────────────
 
 describe("writeChart — title font family", () => {

@@ -851,6 +851,46 @@ export interface ChartDataLabels {
    * {@link underline}.
    */
   strikethrough?: boolean;
+  /**
+   * Data-label font family / typeface. Maps to `<c:dLbls><c:txPr>
+   * <a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
+   * </a:pPr></a:p></c:txPr></c:dLbls>` — Excel's "Format Data Labels
+   * -> Font -> Font" picker. The OOXML `<a:latin typeface=".."/>`
+   * element carries the typeface name (`CT_TextFont`, ECMA-376 Part 1,
+   * §21.1.2.3.7); the writer lands the element on the default-
+   * paragraph `<a:defRPr>` slot inside the data-label's `<c:txPr>`
+   * block so a re-parse picks the typeface up off the canonical slot
+   * the OOXML schema exposes.
+   *
+   * Accepts any non-empty string typeface name (e.g. `"Calibri"`,
+   * `"Arial"`, `"Times New Roman"`); the writer trims surrounding
+   * whitespace and emits the trimmed value verbatim (XML-escaped) so
+   * Excel can resolve the named font from the workbook's font scheme
+   * or the host system's installed fonts. Empty / whitespace-only
+   * strings and non-string tokens collapse to `undefined` so the
+   * writer skips the entire `<a:latin>` element and the data labels
+   * inherit Excel's reference theme typeface.
+   *
+   * Default: omitted — the data labels render in Excel's reference
+   * theme typeface (no `<a:latin>` element, the writer skips the
+   * element entirely). Pin a typeface name to render the labels in
+   * that font.
+   *
+   * The `<c:txPr>` block lands between `<c:numFmt>` and `<c:dLblPos>`
+   * (CT_DLbls schema, ECMA-376 Part 1, §21.2.2.50). Mirrors
+   * {@link SheetChart.titleFontFamily} /
+   * {@link SheetChart.legendFontFamily} /
+   * {@link SheetChart.axes.x.axisTitleFontFamily} /
+   * {@link SheetChart.axes.x.labelFontFamily} — same accept-and-trim
+   * grammar, same OOXML `<a:latin typeface=".."/>` mapping — so a
+   * caller can thread a single typeface string through every
+   * typography-pinning slot. Composes independently with the other
+   * dLbls knobs — {@link position} / {@link separator} /
+   * {@link numberFormat} / {@link showLeaderLines} / the `show*`
+   * toggles / {@link bold} / {@link italic} / {@link underline} /
+   * {@link strikethrough} / {@link fontSize} / {@link fontColor}.
+   */
+  fontFamily?: string;
 }
 
 /**
@@ -4606,6 +4646,25 @@ export interface ChartDataLabelsInfo {
    * straight into {@link cloneChart} without conversion.
    */
   strikethrough?: boolean;
+  /**
+   * Data-label font family / typeface pulled from `<c:dLbls><c:txPr>
+   * <a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
+   * </a:pPr></a:p></c:txPr></c:dLbls>`. Reflects Excel's "Format Data
+   * Labels -> Font -> Font" picker. The OOXML `<a:latin
+   * typeface=".."/>` element carries the typeface name (`CT_TextFont`,
+   * ECMA-376 Part 1, §21.1.2.3.7).
+   *
+   * Reports the trimmed typeface string when the source chart pinned
+   * a non-empty typeface; absence and empty / whitespace-only
+   * `typeface` attributes both collapse to `undefined` so absence
+   * and `<a:latin typeface=""/>` round-trip identically through
+   * {@link cloneChart}. Non-string `typeface` tokens (defensive — the
+   * XML parser only ever surfaces strings) likewise drop to
+   * `undefined`. Mirrors the writer-side
+   * {@link ChartDataLabels.fontFamily} so a parsed value slots
+   * straight into {@link cloneChart} without conversion.
+   */
+  fontFamily?: string;
 }
 
 /**

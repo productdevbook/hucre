@@ -2712,6 +2712,15 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
   const strikethrough = parseDataLabelsStrikethrough(el);
   if (strikethrough !== undefined) out.strikethrough = strikethrough;
 
+  // `<c:txPr><a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
+  // </a:pPr></a:p></c:txPr>` — data-label font family pinned via
+  // Excel's "Format Data Labels -> Font -> Font" picker. Empty /
+  // whitespace-only `typeface` attributes and missing `<a:latin>`
+  // elements both collapse to `undefined` so absence and the empty
+  // form round-trip identically through the writer.
+  const fontFamily = parseDataLabelsFontFamily(el);
+  if (fontFamily !== undefined) out.fontFamily = fontFamily;
+
   // Empty record is meaningless to a consumer — collapse to undefined.
   if (
     out.position === undefined &&
@@ -2728,7 +2737,8 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
     out.bold === undefined &&
     out.italic === undefined &&
     out.underline === undefined &&
-    out.strikethrough === undefined
+    out.strikethrough === undefined &&
+    out.fontFamily === undefined
   ) {
     return undefined;
   }
@@ -2929,6 +2939,45 @@ function parseDataLabelsStrikethrough(dLbls: XmlElement): boolean | undefined {
   const raw = defRPr.attrs.strike;
   if (raw === "sngStrike") return true;
   return undefined;
+}
+
+/**
+ * Pull `<c:dLbls><c:txPr><a:p><a:pPr><a:defRPr><a:latin
+ * typeface=".."/></a:defRPr></a:pPr></a:p></c:txPr></c:dLbls>` off a
+ * data-labels block. Returns the typeface string the labels were
+ * authored with.
+ *
+ * The OOXML `<a:latin>` element carries the typeface name on
+ * `CT_TextFont` (ECMA-376 Part 1, §21.1.2.3.7). The reader trims
+ * surrounding whitespace and reports the trimmed typeface; empty /
+ * whitespace-only `typeface` attributes and missing `<a:latin>`
+ * elements both collapse to `undefined` so absence and the empty
+ * form round-trip identically through the writer. Non-string
+ * `typeface` tokens (defensive — the XML parser only ever surfaces
+ * strings) likewise drop to `undefined`.
+ *
+ * Returns `undefined` whenever the data-labels block omits `<c:txPr>`
+ * entirely or the canonical `<a:p><a:pPr><a:defRPr><a:latin>` chain
+ * is malformed at any link. Mirrors the chart-title / axis-title /
+ * axis tick-label / legend font family readers exactly so a parsed
+ * value slots straight back into the writer's emit path.
+ */
+function parseDataLabelsFontFamily(dLbls: XmlElement): string | undefined {
+  const txPr = findChild(dLbls, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const latin = findChild(defRPr, "latin");
+  if (!latin) return undefined;
+  const raw = latin.attrs.typeface;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
 }
 
 /**

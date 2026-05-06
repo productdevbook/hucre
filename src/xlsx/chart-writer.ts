@@ -4054,10 +4054,10 @@ function buildDataLabelsBody(dl: ChartDataLabels, chartType: WriteChartKind): st
   // skips `<c:spPr>` (not yet authored), so `<c:txPr>` lands directly
   // after `<c:numFmt>` and before `<c:dLblPos>`. The block currently
   // carries the data-label font size, font color, bold flag, italic
-  // flag, underline flag, and strikethrough flag — every typography
-  // pin lands on the same `<a:defRPr>` slot. The writer skips the
-  // entire block when no font knob is pinned so a fresh chart matches
-  // Excel's reference shape.
+  // flag, underline flag, strikethrough flag, and font family — every
+  // typography pin lands on the same `<a:defRPr>` slot. The writer
+  // skips the entire block when no font knob is pinned so a fresh
+  // chart matches Excel's reference shape.
   const txPrXml = buildDataLabelsTxPr(
     resolveDataLabelsFontSize(dl.fontSize),
     resolveDataLabelsFontColor(dl.fontColor),
@@ -4065,6 +4065,7 @@ function buildDataLabelsBody(dl: ChartDataLabels, chartType: WriteChartKind): st
     resolveDataLabelsItalic(dl.italic),
     resolveDataLabelsUnderline(dl.underline),
     resolveDataLabelsStrikethrough(dl.strikethrough),
+    resolveDataLabelsFontFamily(dl.fontFamily),
   );
   if (txPrXml !== undefined) {
     children.push(txPrXml);
@@ -4239,6 +4240,25 @@ function resolveDataLabelsStrikethrough(value: boolean | undefined): boolean | u
 }
 
 /**
+ * Resolve `<c:dLbls><c:txPr><a:p><a:pPr><a:defRPr><a:latin
+ * typeface=".."/></a:defRPr></a:pPr></a:p></c:txPr></c:dLbls>` from
+ * {@link ChartDataLabels.fontFamily}.
+ *
+ * Returns the trimmed typeface string the writer emits, or
+ * `undefined` when the caller leaves the field unset / passed an
+ * empty / whitespace-only / non-string token. Mirrors the chart-title
+ * / axis-title / axis tick-label / legend font family resolvers
+ * exactly so a single configuration call threads cleanly through
+ * every typography slot Excel exposes.
+ */
+function resolveDataLabelsFontFamily(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
+}
+
+/**
  * Build the `<c:txPr>` block that carries a data-label's typography
  * pins. Returns `undefined` when every input is unset so the caller
  * can elide the element entirely (Excel's reference serialization
@@ -4281,6 +4301,7 @@ function buildDataLabelsTxPr(
   italic: boolean | undefined,
   underline: boolean | undefined,
   strikethrough: boolean | undefined,
+  fontFamily: string | undefined,
 ): string | undefined {
   if (
     fontSizePt === undefined &&
@@ -4288,7 +4309,8 @@ function buildDataLabelsTxPr(
     bold === undefined &&
     italic === undefined &&
     underline === undefined &&
-    strikethrough === undefined
+    strikethrough === undefined &&
+    fontFamily === undefined
   )
     return undefined;
   const defRPrAttrs: Record<string, string | number> = {};
@@ -4312,14 +4334,28 @@ function buildDataLabelsTxPr(
   const solidFillChild = rgbHex
     ? xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: rgbHex })])
     : undefined;
-  // When a fill color is set the `<a:defRPr>` slot expands from
-  // self-closing to wrapping the `<a:solidFill>` child; otherwise the
+  // OOXML's `<a:defRPr><a:latin typeface=".."/></a:defRPr>` carries
+  // the data-label font family. The `<a:latin>` element follows
+  // `<a:solidFill>` per the CT_TextCharacterProperties child sequence
+  // (ECMA-376 Part 1, §21.1.2.3.7). Absence (`undefined`) collapses
+  // to omitting the entire `<a:latin>` element so the labels inherit
+  // the theme typeface (Excel's reference behavior for fresh data
+  // labels that have not had a custom font picked).
+  const latinChild = fontFamily ? xmlSelfClose("a:latin", { typeface: fontFamily }) : undefined;
+  // When a fill color or a typeface is set the `<a:defRPr>` slot
+  // expands from self-closing to wrapping the children; otherwise the
   // writer keeps the existing self-closing form so a fresh chart with
-  // no custom color matches Excel's reference serialization
-  // byte-for-byte.
-  const defRPr = solidFillChild
-    ? xmlElement("a:defRPr", defRPrAttrs, [solidFillChild])
-    : xmlSelfClose("a:defRPr", defRPrAttrs);
+  // no custom color or font matches Excel's reference serialization
+  // byte-for-byte. Children are emitted in
+  // CT_TextCharacterProperties' canonical schema order: solidFill
+  // first, then latin.
+  const defRPrChildren: string[] = [];
+  if (solidFillChild) defRPrChildren.push(solidFillChild);
+  if (latinChild) defRPrChildren.push(latinChild);
+  const defRPr =
+    defRPrChildren.length > 0
+      ? xmlElement("a:defRPr", defRPrAttrs, defRPrChildren)
+      : xmlSelfClose("a:defRPr", defRPrAttrs);
   return xmlElement("c:txPr", undefined, [
     xmlSelfClose("a:bodyPr"),
     xmlSelfClose("a:lstStyle"),
