@@ -598,6 +598,15 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // only honour the rotation when the axis actually renders a title.
     xAxisTitleRotation: normalizeAxisTitleRotation(chart.axes?.x?.axisTitleRotation),
     yAxisTitleRotation: normalizeAxisTitleRotation(chart.axes?.y?.axisTitleRotation),
+    // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
+    // <a:r><a:rPr sz="N"/></a:r></a:p></c:rich></c:tx></c:title>`
+    // also sits on every axis flavour. Normalize the caller's point
+    // input — drop out-of-range and non-finite / non-numeric inputs at
+    // write time rather than emit a token Excel would reject; absence
+    // collapses to `undefined` so the writer falls back to the
+    // hardcoded 10pt default Excel itself emits on a fresh axis title.
+    xAxisTitleFontSize: normalizeAxisTitleFontSize(chart.axes?.x?.axisTitleFontSize),
+    yAxisTitleFontSize: normalizeAxisTitleFontSize(chart.axes?.y?.axisTitleFontSize),
     // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr>
     // <a:r><a:rPr b=".."/></a:r></a:p></c:rich></c:tx></c:title>` also
     // sits on every axis flavour. Normalize the caller's boolean
@@ -1017,6 +1026,23 @@ interface AxisRenderOptions {
    * shape and conversion semantics as {@link xAxisTitleRotation}.
    */
   yAxisTitleRotation: number | undefined;
+  /**
+   * Axis-title font size in points emitted on the X axis via
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
+   * <a:r><a:rPr sz="N"/></a:r></a:p></c:rich></c:tx></c:title>`. The
+   * OOXML `sz` attribute is in 100ths of a point; the writer converts
+   * at emit time. Range: `1..400`pt. `undefined` collapses to the
+   * hardcoded `1000` (10pt) default Excel itself emits on a fresh
+   * axis title. Only meaningful when the axis renders a title — the
+   * per-family axis builders gate the value on the `xAxisTitle` /
+   * `yAxisTitle` field.
+   */
+  xAxisTitleFontSize: number | undefined;
+  /**
+   * Axis-title font size in points emitted on the Y axis. Same shape
+   * and conversion semantics as {@link xAxisTitleFontSize}.
+   */
+  yAxisTitleFontSize: number | undefined;
   /**
    * Axis-title bold flag emitted on the X axis via
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr>
@@ -1895,7 +1921,12 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
   ];
   if (opts.xAxisTitle)
     catAxChildren.push(
-      buildAxisTitle(opts.xAxisTitle, opts.xAxisTitleRotation, opts.xAxisTitleBold),
+      buildAxisTitle(
+        opts.xAxisTitle,
+        opts.xAxisTitleRotation,
+        opts.xAxisTitleFontSize,
+        opts.xAxisTitleBold,
+      ),
     );
   catAxChildren.push(
     ...buildAxisNumFmt(opts.xNumFmt),
@@ -1951,7 +1982,12 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
   ];
   if (opts.yAxisTitle)
     valAxChildren.push(
-      buildAxisTitle(opts.yAxisTitle, opts.yAxisTitleRotation, opts.yAxisTitleBold),
+      buildAxisTitle(
+        opts.yAxisTitle,
+        opts.yAxisTitleRotation,
+        opts.yAxisTitleFontSize,
+        opts.yAxisTitleBold,
+      ),
     );
   valAxChildren.push(
     ...buildAxisNumFmt(opts.yNumFmt),
@@ -2307,7 +2343,14 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
     ...buildAxisGridlines(opts.xGridlines),
   ];
   if (opts.xAxisTitle)
-    xAxChildren.push(buildAxisTitle(opts.xAxisTitle, opts.xAxisTitleRotation, opts.xAxisTitleBold));
+    xAxChildren.push(
+      buildAxisTitle(
+        opts.xAxisTitle,
+        opts.xAxisTitleRotation,
+        opts.xAxisTitleFontSize,
+        opts.xAxisTitleBold,
+      ),
+    );
   xAxChildren.push(
     ...buildAxisNumFmt(opts.xNumFmt),
     ...buildAxisTickRendering(opts.xMajorTickMark, opts.xMinorTickMark, opts.xTickLblPos),
@@ -2340,7 +2383,14 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
     ...buildAxisGridlines(opts.yGridlines),
   ];
   if (opts.yAxisTitle)
-    yAxChildren.push(buildAxisTitle(opts.yAxisTitle, opts.yAxisTitleRotation, opts.yAxisTitleBold));
+    yAxChildren.push(
+      buildAxisTitle(
+        opts.yAxisTitle,
+        opts.yAxisTitleRotation,
+        opts.yAxisTitleFontSize,
+        opts.yAxisTitleBold,
+      ),
+    );
   yAxChildren.push(
     ...buildAxisNumFmt(opts.yNumFmt),
     ...buildAxisTickRendering(opts.yMajorTickMark, opts.yMinorTickMark, opts.yTickLblPos),
@@ -2381,6 +2431,16 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
  * byte-for-byte. Mirrors the chart-title `buildTitle` slot exactly so
  * an axis title and the chart-level title carry the same shape.
  *
+ * The optional `fontSizePt` parameter pins the title's
+ * `<a:defRPr sz="N"/>` / `<a:rPr sz="N"/>` attributes. The OOXML
+ * attribute is in 100ths of a point; the writer holds the size in
+ * points and converts at emit time. Absence (`undefined`) collapses
+ * to the hardcoded `1000` (10pt) default Excel itself emits on a
+ * fresh axis title, keeping the rendered shape stable for callers
+ * that never set the field. The size lands on both the
+ * default-paragraph `<a:defRPr>` and the literal run's `<a:rPr>` so
+ * a re-parse picks the value up off either canonical slot.
+ *
  * The optional `bold` parameter pins the title's `<a:defRPr b=".."/>`
  * / `<a:rPr b=".."/>` attributes. The OOXML `b` attribute is the
  * `xsd:boolean` bold flag on `CT_TextCharacterProperties`; the writer
@@ -2394,9 +2454,22 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
 function buildAxisTitle(
   label: string,
   rotationDeg: number | undefined,
+  fontSizePt: number | undefined,
   bold: boolean | undefined,
 ): string {
   const rot = rotationDeg === undefined ? 0 : rotationDeg * TITLE_ROT_PER_DEGREE;
+  // OOXML's `<a:defRPr sz="N"/>` / `<a:rPr sz="N"/>` attribute is in
+  // 100ths of a point. The writer holds the size in points and
+  // converts at emit time. Absence (`undefined`) collapses to the
+  // hardcoded `1000` (10pt) default — Excel's reference axis-title
+  // size — so callers that never pin the field still match Excel's
+  // shape byte-for-byte. The size lands on both `<a:defRPr>` and
+  // `<a:rPr>` so a re-parse picks the value up off either canonical
+  // slot, mirroring the chart-level `buildTitle` writer.
+  const sz =
+    fontSizePt === undefined
+      ? AXIS_TITLE_DEFAULT_FONT_SIZE_SZ
+      : fontSizePt * TITLE_FONT_SZ_PER_POINT;
   // OOXML's `<a:defRPr b=".."/>` / `<a:rPr b=".."/>` attribute is the
   // `xsd:boolean` bold flag on `CT_TextCharacterProperties`. The
   // writer holds `axisTitleBold` as a boolean and emits `1` / `0` at
@@ -2424,9 +2497,9 @@ function buildAxisTitle(
         ),
         xmlSelfClose("a:lstStyle"),
         xmlElement("a:p", undefined, [
-          xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz: 1000, b })]),
+          xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz, b })]),
           xmlElement("a:r", undefined, [
-            xmlSelfClose("a:rPr", { lang: "en-US", sz: 1000, b }),
+            xmlSelfClose("a:rPr", { lang: "en-US", sz, b }),
             xmlElement("a:t", undefined, xmlEscape(label)),
           ]),
         ]),
@@ -2435,6 +2508,17 @@ function buildAxisTitle(
     xmlSelfClose("c:overlay", { val: 0 }),
   ]);
 }
+
+/**
+ * Application-default `sz` value for an axis title's `<a:defRPr>` /
+ * `<a:rPr>` slots — Excel renders axis titles at 10pt (`sz="1000"`)
+ * unless the user pins a custom size. Absence of
+ * {@link SheetChart.axes.x.axisTitleFontSize} resolves to this default
+ * so a fresh chart matches Excel's reference serialization byte-for-
+ * byte, and round-trips of templates that never pinned the field stay
+ * stable across the parse -> clone -> write loop.
+ */
+const AXIS_TITLE_DEFAULT_FONT_SIZE_SZ = 1000;
 
 /**
  * Normalize a {@link SheetChart.axes}.x.axisTitleRotation value (whole
@@ -2448,6 +2532,21 @@ function buildAxisTitle(
  */
 function normalizeAxisTitleRotation(value: number | undefined): number | undefined {
   return normalizeTitleRotation(value);
+}
+
+/**
+ * Normalize a {@link SheetChart.axes}.x.axisTitleFontSize value
+ * (whole / half points) for the `<c:title><c:tx><c:rich><a:p><a:pPr>
+ * <a:defRPr sz="N"/></a:pPr></a:p></c:rich></c:tx></c:title>` writer
+ * slot inside an axis. Delegates to the chart-level
+ * {@link normalizeTitleFontSize} so the two share a clamping band
+ * (`1..400`pt, the OOXML `ST_TextFontSize` schema range) and the
+ * same 0.5pt half-step rounding. Out-of-range, non-finite, and
+ * non-numeric inputs all collapse to `undefined` so the writer falls
+ * back to the hardcoded 10pt axis-title default.
+ */
+function normalizeAxisTitleFontSize(value: number | undefined): number | undefined {
+  return normalizeTitleFontSize(value);
 }
 
 /**
