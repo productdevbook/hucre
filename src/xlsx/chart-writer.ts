@@ -75,6 +75,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveTitleFontSize(chart),
         resolveTitleBold(chart),
         resolveTitleItalic(chart),
+        resolveTitleColor(chart),
       ),
     );
   }
@@ -212,6 +213,7 @@ function buildTitle(
   fontSizePt: number | undefined,
   bold: boolean | undefined,
   italic: boolean | undefined,
+  rgbHex: string | undefined,
 ): string {
   // OOXML's `<a:bodyPr rot="N"/>` attribute is in 60000ths of a degree.
   // The writer holds `titleRotation` in whole degrees and converts at
@@ -248,6 +250,29 @@ function buildTitle(
   // reference serialization byte-for-byte (Excel itself omits `i` when
   // the title is non-italic — only the bold flag is always emitted).
   const i = italic === true ? 1 : undefined;
+  // OOXML's `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+  // </a:solidFill></a:defRPr>` carries the title's font color. The
+  // writer holds `titleColor` as a 6-character uppercase hex string
+  // and lands the `<a:solidFill>` block on both the default-paragraph
+  // `<a:defRPr>` and the literal run's `<a:rPr>` so a re-parse picks
+  // the value up off either canonical slot. Absence (`undefined`)
+  // collapses to omitting the entire `<a:solidFill>` block so the
+  // title inherits the theme text color (Excel's reference behavior
+  // for a fresh chart title that has not had a custom color picked).
+  const solidFillChild = rgbHex
+    ? xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: rgbHex })])
+    : undefined;
+  // When a fill color is set the `<a:defRPr>` / `<a:rPr>` slots
+  // expand from self-closing to wrapping the `<a:solidFill>` child;
+  // otherwise the writer keeps the existing self-closing form so a
+  // fresh chart with no custom color matches Excel's reference
+  // serialization byte-for-byte.
+  const defRPr = solidFillChild
+    ? xmlElement("a:defRPr", { sz, b, i }, [solidFillChild])
+    : xmlSelfClose("a:defRPr", { sz, b, i });
+  const rPr = solidFillChild
+    ? xmlElement("a:rPr", { lang: "en-US", sz, b, i }, [solidFillChild])
+    : xmlSelfClose("a:rPr", { lang: "en-US", sz, b, i });
   return xmlElement("c:title", undefined, [
     xmlElement("c:tx", undefined, [
       xmlElement("c:rich", undefined, [
@@ -265,11 +290,8 @@ function buildTitle(
         ),
         xmlSelfClose("a:lstStyle"),
         xmlElement("a:p", undefined, [
-          xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz, b, i })]),
-          xmlElement("a:r", undefined, [
-            xmlSelfClose("a:rPr", { lang: "en-US", sz, b, i }),
-            xmlElement("a:t", undefined, xmlEscape(title)),
-          ]),
+          xmlElement("a:pPr", undefined, [defRPr]),
+          xmlElement("a:r", undefined, [rPr, xmlElement("a:t", undefined, xmlEscape(title))]),
         ]),
       ]),
     ]),
@@ -452,6 +474,47 @@ function normalizeTitleItalic(value: boolean | undefined): boolean | undefined {
  */
 function resolveTitleItalic(chart: SheetChart): boolean | undefined {
   return normalizeTitleItalic(chart.titleItalic);
+}
+
+/**
+ * Normalize a {@link SheetChart.titleColor} value for the
+ * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>
+ * <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
+ * </c:rich></c:tx></c:title>` writer slot. Returns the 6-character
+ * uppercase hex form when the input is a valid sRGB triple (with or
+ * without a leading `#`), or `undefined` for any malformed token —
+ * wrong length, non-hex characters, alpha-channel forms, or
+ * non-string escapes from an untyped caller.
+ *
+ * Absence and malformed tokens both collapse to `undefined` so the
+ * writer skips the entire `<a:solidFill>` block and the title
+ * inherits the theme text color (Excel's reference behavior for a
+ * fresh chart title without a custom color).
+ */
+function normalizeTitleColor(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  const hex = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
+  if (hex.length !== 6) return undefined;
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return undefined;
+  return hex.toUpperCase();
+}
+
+/**
+ * Resolve `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>
+ * <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
+ * </c:rich></c:tx></c:title>` from {@link SheetChart.titleColor}.
+ *
+ * Returns the 6-character uppercase hex string the writer emits, or
+ * `undefined` when the chart leaves the field unset / passed a
+ * malformed token. The fill is only meaningful when the chart
+ * actually emits a title — the caller is expected to gate the call
+ * on `showTitle && chart.title`. A chart whose title is suppressed
+ * has no `<c:title>` block to host the fill in either case.
+ */
+function resolveTitleColor(chart: SheetChart): string | undefined {
+  return normalizeTitleColor(chart.titleColor);
 }
 
 /**

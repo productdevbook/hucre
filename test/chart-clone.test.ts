@@ -10732,6 +10732,220 @@ describe("cloneChart — title italic", () => {
   });
 });
 
+// ── cloneChart — title color ────────────────────────────────────────
+
+describe("cloneChart — title color", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Sales",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's titleColor by default", () => {
+    const clone = cloneChart(source({ titleColor: "1070CA" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleColor).toBe("1070CA");
+  });
+
+  it("lets options.titleColor override the source's value", () => {
+    const clone = cloneChart(source({ titleColor: "1070CA" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleColor: "FF0000",
+    });
+    expect(clone.titleColor).toBe("FF0000");
+  });
+
+  it("normalizes a lowercase override to uppercase", () => {
+    const clone = cloneChart(source({ titleColor: "1070CA" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleColor: "ff8800",
+    });
+    expect(clone.titleColor).toBe("FF8800");
+  });
+
+  it("strips a leading '#' from the override", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleColor: "#1070CA",
+    });
+    expect(clone.titleColor).toBe("1070CA");
+  });
+
+  it("drops the inherited titleColor when the override is null", () => {
+    const clone = cloneChart(source({ titleColor: "1070CA" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleColor: null,
+    });
+    expect(clone.titleColor).toBeUndefined();
+  });
+
+  it("returns undefined titleColor when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.titleColor).toBeUndefined();
+  });
+
+  it("lets options.titleColor pin a color on a sourceless chart", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleColor: "FF0000",
+    });
+    expect(clone.titleColor).toBe("FF0000");
+  });
+
+  it("drops a malformed override (defends against an untyped caller)", () => {
+    const clone = cloneChart(source({ titleColor: "1070CA" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleColor: "ZZZZZZ" as any,
+    });
+    expect(clone.titleColor).toBeUndefined();
+  });
+
+  it("drops a non-string override", () => {
+    const clone = cloneChart(source({ titleColor: "1070CA" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleColor: 0xff0000 as any,
+    });
+    expect(clone.titleColor).toBeUndefined();
+  });
+
+  it("drops the cloned titleColor when the resolved title is dropped (title=null)", () => {
+    const clone = cloneChart(source({ titleColor: "1070CA" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      title: null,
+    });
+    expect(clone.title).toBeUndefined();
+    expect(clone.titleColor).toBeUndefined();
+  });
+
+  it("drops the cloned titleColor when showTitle is false", () => {
+    const clone = cloneChart(source({ titleColor: "1070CA" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      showTitle: false,
+    });
+    expect(clone.titleColor).toBeUndefined();
+  });
+
+  it("preserves titleColor when an override pins a fresh title on a sourceless chart", () => {
+    const noTitle = source();
+    delete noTitle.title;
+    const clone = cloneChart(noTitle, {
+      anchor: { from: { row: 0, col: 0 } },
+      title: "Replacement",
+      titleColor: "1070CA",
+    });
+    expect(clone.title).toBe("Replacement");
+    expect(clone.titleColor).toBe("1070CA");
+  });
+
+  it("composes with titleBold / titleItalic / titleFontSize / titleRotation / titleOverlay", () => {
+    const clone = cloneChart(
+      source({
+        titleColor: "1070CA",
+        titleItalic: true,
+        titleBold: true,
+        titleFontSize: 18,
+        titleRotation: -45,
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        titleOverlay: true,
+      },
+    );
+    expect(clone.titleColor).toBe("1070CA");
+    expect(clone.titleItalic).toBe(true);
+    expect(clone.titleBold).toBe(true);
+    expect(clone.titleFontSize).toBe(18);
+    expect(clone.titleRotation).toBe(-45);
+    expect(clone.titleOverlay).toBe(true);
+  });
+
+  it("threads through line -> column flatten", () => {
+    const clone = cloneChart(source({ titleColor: "FF0000" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.titleColor).toBe("FF0000");
+  });
+
+  it("threads through line -> doughnut flatten", () => {
+    const clone = cloneChart(source({ titleColor: "FF0000" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.titleColor).toBe("FF0000");
+  });
+
+  it("end-to-end parse -> clone -> write -> reparse round-trip", async () => {
+    const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr sz="2000"><a:solidFill><a:srgbClr val="1070CA"/></a:solidFill></a:defRPr></a:pPr><a:r><a:t>Source</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:lineChart>
+        <c:ser>
+          <c:idx val="0"/><c:order val="0"/>
+          <c:val><c:numRef><c:f>Sheet1!$B$2:$B$3</c:f></c:numRef></c:val>
+        </c:ser>
+      </c:lineChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(xml)!;
+    expect(parsed.titleColor).toBe("1070CA");
+
+    const clone = cloneChart(parsed, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleColor).toBe("1070CA");
+
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Region", "Revenue"],
+            ["North", 100],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const titleBlock = written.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(titleBlock).toContain('val="1070CA"');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleColor).toBe("1070CA");
+  });
+});
+
 describe("cloneChart — axis title rotation", () => {
   function source(extra?: Partial<Chart>): Chart {
     return {

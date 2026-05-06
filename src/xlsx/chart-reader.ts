@@ -145,6 +145,20 @@ export function parseChart(xml: string): Chart | undefined {
   const titleItalic = parseTitleItalic(chartEl);
   if (titleItalic !== undefined) out.titleItalic = titleItalic;
 
+  // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>
+  // <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
+  // </c:rich></c:tx></c:title>` mirrors Excel's "Format Chart Title ->
+  // Font -> Font Color" picker. Same scope rule as the bold/italic
+  // flags — a chart that omits `<c:title>` (or whose title is a
+  // `<c:strRef>` formula reference with no `<c:rich>` body) has no
+  // `<a:p>` slot to surface the fill from, so the helper short-circuits
+  // to `undefined`. Non-sRGB color picks (`<a:schemeClr>` theme refs,
+  // `<a:hslClr>`, etc.) collapse to `undefined` since only the literal
+  // RGB triple round-trips losslessly through the writer. The value
+  // threads straight back into the writer-side {@link SheetChart.titleColor}.
+  const titleColor = parseTitleColor(chartEl);
+  if (titleColor !== undefined) out.titleColor = titleColor;
+
   // `<c:autoTitleDeleted>` records whether the user explicitly deleted
   // the auto-generated title — independent of whether a literal
   // `<c:title>` is present. The element sits on `<c:chart>` directly
@@ -2222,6 +2236,76 @@ function parseTitleItalic(chartEl: XmlElement): boolean | undefined {
   // explicit `i="1"` surfaces `true`.
   if (parsed === true) return true;
   return undefined;
+}
+
+// ── Title Color ─────────────────────────────────────────────────────
+
+/**
+ * Pull `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>
+ * <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
+ * </c:rich></c:tx></c:title>` off the chart. Returns the title's
+ * sRGB font color as a 6-character uppercase hex string.
+ *
+ * The OOXML `<a:srgbClr val=".."/>` is the literal sRGB triple Excel
+ * lands on the title's default-paragraph properties when the user
+ * picks a custom font color. Theme references (`<a:schemeClr>`),
+ * `<a:hslClr>`, `<a:sysClr>`, and `<a:prstClr>` all collapse to
+ * `undefined` — only the literal RGB triple round-trips losslessly
+ * through {@link writeChart}. Malformed `val` tokens (wrong length,
+ * non-hex characters) likewise drop to `undefined` rather than
+ * fabricate a value the writer would round-trip into a malformed
+ * `<a:srgbClr>`.
+ *
+ * Returns `undefined` whenever the chart omits the `<c:title>`
+ * element — there is no `<a:p>` slot to surface the fill from in
+ * that case — or when the title is a `<c:strRef>` (formula
+ * reference) with no `<c:rich>` body. The `<a:solidFill>` lives
+ * inside `<c:tx><c:rich><a:p><a:pPr><a:defRPr>` per the CT_Title
+ * schema (the default-paragraph properties on the rich-text body's
+ * first paragraph); the lookup is scoped to that path so a stray
+ * `<a:solidFill>` elsewhere in the chart (e.g. on an axis title or
+ * a data-labels block) cannot leak in.
+ */
+function parseTitleColor(chartEl: XmlElement): string | undefined {
+  const title = findChild(chartEl, "title");
+  if (!title) return undefined;
+  const tx = findChild(title, "tx");
+  if (!tx) return undefined;
+  const rich = findChild(tx, "rich");
+  if (!rich) return undefined;
+  // `<a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr>` is the OOXML path
+  // Excel writes for the default-paragraph font color. The reader
+  // walks the canonical chain and bails on the first missing link so
+  // a malformed `<c:rich>` surfaces as absence rather than a
+  // fabricated value.
+  const p = findChild(rich, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const solidFill = findChild(defRPr, "solidFill");
+  if (!solidFill) return undefined;
+  const srgbClr = findChild(solidFill, "srgbClr");
+  if (!srgbClr) return undefined;
+  const raw = srgbClr.attrs.val;
+  return normalizeRgbHex(raw);
+}
+
+/**
+ * Normalize an sRGB hex token. Returns the 6-character uppercase form
+ * when the input is a valid 6-character hex string (with or without a
+ * leading `#`), or `undefined` for any malformed input — wrong length,
+ * non-hex characters, alpha-channel forms, or non-string tokens.
+ */
+function normalizeRgbHex(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  const hex = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
+  if (hex.length !== 6) return undefined;
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return undefined;
+  return hex.toUpperCase();
 }
 
 // ── Auto Title Deleted ────────────────────────────────────────────

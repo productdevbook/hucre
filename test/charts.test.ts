@@ -10395,6 +10395,216 @@ describe("parseChart — title italic", () => {
   });
 });
 
+// ── parseChart — title color ─────────────────────────────────────────
+
+describe("parseChart — title color", () => {
+  const NS_TC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withTitleColor(srgb: string | undefined): string {
+    const fill = srgb === undefined ? "" : `<a:solidFill><a:srgbClr val="${srgb}"/></a:solidFill>`;
+    return `<c:chartSpace ${NS_TC}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr>${fill}</a:defRPr></a:pPr><a:r><a:t>Quarterly Revenue</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces the uppercase hex value pinned by <a:srgbClr val='..'>", () => {
+    const chart = parseChart(withTitleColor("FF0000"));
+    expect(chart?.titleColor).toBe("FF0000");
+  });
+
+  it("normalizes a lowercase hex value to uppercase", () => {
+    const chart = parseChart(withTitleColor("1070ca"));
+    expect(chart?.titleColor).toBe("1070CA");
+  });
+
+  it("strips a leading '#' on read", () => {
+    const chart = parseChart(withTitleColor("#1070CA"));
+    expect(chart?.titleColor).toBe("1070CA");
+  });
+
+  it("collapses absence of <a:solidFill> to undefined (theme-color default)", () => {
+    const chart = parseChart(withTitleColor(undefined));
+    expect(chart?.titleColor).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:title> element", () => {
+    const xml = `<c:chartSpace ${NS_TC}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleColor).toBeUndefined();
+  });
+
+  it("returns undefined when the title is a <c:strRef> formula reference", () => {
+    const xml = `<c:chartSpace ${NS_TC}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:strRef>
+          <c:f>Sheet1!$A$1</c:f>
+          <c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Revenue</c:v></c:pt></c:strCache>
+        </c:strRef>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleColor).toBeUndefined();
+    expect(chart?.title).toBe("Revenue");
+  });
+
+  it("returns undefined when <a:p> has no <a:pPr> element", () => {
+    const xml = `<c:chartSpace ${NS_TC}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:r><a:t>Quarterly Revenue</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleColor).toBeUndefined();
+  });
+
+  it("collapses theme color (<a:schemeClr>) to undefined", () => {
+    // Theme references don't round-trip losslessly — only literal sRGB
+    // triples surface.
+    const xml = `<c:chartSpace ${NS_TC}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr><a:solidFill><a:schemeClr val="tx1"/></a:solidFill></a:defRPr></a:pPr><a:r><a:t>Header</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleColor).toBeUndefined();
+  });
+
+  it("drops malformed val tokens (wrong length / non-hex / 8-char alpha form)", () => {
+    expect(parseChart(withTitleColor(""))?.titleColor).toBeUndefined();
+    expect(parseChart(withTitleColor("FFF"))?.titleColor).toBeUndefined();
+    expect(parseChart(withTitleColor("ZZZZZZ"))?.titleColor).toBeUndefined();
+    // 8-character alpha form (Excel uses <a:alpha> sibling for that)
+    expect(parseChart(withTitleColor("FF0000FF"))?.titleColor).toBeUndefined();
+  });
+
+  it("does not leak from a stray axis-title <a:solidFill>", () => {
+    // The category axis title carries an italic-colored <a:solidFill>,
+    // but the chart-level title's defRPr has no fill — `titleColor`
+    // reflects only the chart-level title's defRPr.
+    const xml = `<c:chartSpace ${NS_TC}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Header</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:title>
+          <c:tx><c:rich>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:defRPr></a:pPr><a:r><a:t>Period</a:t></a:r></a:p>
+          </c:rich></c:tx>
+          <c:overlay val="0"/>
+        </c:title>
+      </c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleColor).toBeUndefined();
+  });
+
+  it("co-surfaces alongside titleBold, titleItalic, titleFontSize, titleRotation, and titleOverlay", () => {
+    const xml = `<c:chartSpace ${NS_TC}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr rot="-2700000"/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr sz="2400" b="1" i="1"><a:solidFill><a:srgbClr val="1070CA"/></a:solidFill></a:defRPr></a:pPr><a:r><a:t>Hero</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="1"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.title).toBe("Hero");
+    expect(chart?.titleColor).toBe("1070CA");
+    expect(chart?.titleItalic).toBe(true);
+    expect(chart?.titleBold).toBe(true);
+    expect(chart?.titleFontSize).toBe(24);
+    expect(chart?.titleRotation).toBe(-45);
+    expect(chart?.titleOverlay).toBe(true);
+  });
+});
+
 // ── parseChart — axis title rotation ─────────────────────────────────
 
 describe("parseChart — axis title rotation", () => {

@@ -332,6 +332,29 @@ export interface CloneChartOptions {
    */
   titleItalic?: boolean | null;
   /**
+   * Override the chart-level title font color.
+   * `undefined` (or omitted) inherits the source's parsed value;
+   * `null` drops the inherited fill so the writer falls back to the
+   * theme text color (no `<a:solidFill>` element on the title's
+   * default-paragraph properties);
+   * a 6-character hex string (with or without a leading `#`)
+   * replaces it.
+   *
+   * Malformed overrides (wrong length, non-hex characters,
+   * alpha-channel forms, non-string escapes) collapse to a drop so
+   * the cloned `SheetChart` always carries a value the writer will
+   * accept.
+   *
+   * The override is silently dropped from the cloned `SheetChart`
+   * when the resolved chart renders no title (`title` resolved to
+   * `undefined` or `showTitle === false`) — there is no `<c:title>`
+   * block to host the fill in either case. The grammar mirrors
+   * `titleBold` / `titleItalic` / `titleFontSize` / `titleRotation`
+   * / `titleOverlay` so the chart-level title knobs compose the same
+   * way at the call site.
+   */
+  titleColor?: string | null;
+  /**
    * Override `<c:autoTitleDeleted>` (the "user explicitly deleted the
    * auto-generated title" flag).
    *
@@ -1152,6 +1175,17 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // the writer will accept.
     const resolvedTitleItalic = resolveTitleItalic(source.titleItalic, options.titleItalic);
     if (resolvedTitleItalic !== undefined) out.titleItalic = resolvedTitleItalic;
+
+    // `titleColor` only renders inside `<c:title>` — a clone that
+    // omits the title has no `<a:defRPr><a:solidFill>` slot for the
+    // writer to populate. Same scope rule as `titleOverlay` /
+    // `titleRotation` / `titleFontSize` / `titleBold` / `titleItalic`:
+    // the override wins over the source's parsed value; absence
+    // inherits, `null` drops, a hex string replaces. Malformed
+    // overrides collapse via the normalizer so the cloned
+    // `SheetChart` always carries a value the writer will accept.
+    const resolvedTitleColor = resolveTitleColor(source.titleColor, options.titleColor);
+    if (resolvedTitleColor !== undefined) out.titleColor = resolvedTitleColor;
   }
 
   // `<c:autoTitleDeleted>` sits on `<c:chart>` directly, not inside
@@ -2238,6 +2272,51 @@ function resolveTitleItalic(
   if (override === undefined) return normalizeTitleItalic(sourceValue);
   if (override === null) return undefined;
   return normalizeTitleItalic(override);
+}
+
+/**
+ * Normalize a `titleColor` value for the cloned `SheetChart`. Mirrors
+ * the writer's `normalizeTitleColor` — the cloned shape is guaranteed
+ * to round-trip through the writer without surprise: a valid sRGB
+ * hex string (with or without a leading `#`) collapses to the
+ * 6-character uppercase canonical form; every malformed input (wrong
+ * length, non-hex characters, alpha-channel forms, non-string
+ * escapes) collapses to `undefined` so the cloned chart drops the
+ * field rather than carry a value the writer would silently elide.
+ */
+function normalizeTitleColor(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  const hex = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
+  if (hex.length !== 6) return undefined;
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return undefined;
+  return hex.toUpperCase();
+}
+
+/**
+ * Resolve a `titleColor` override.
+ *
+ * `undefined` → inherit the source's parsed `titleColor`.
+ * `null`      → drop the inherited fill (the writer falls back to the
+ *               theme text color — no `<a:solidFill>` block on the
+ *               title's default-paragraph properties).
+ * `string`    → replace with the normalized 6-character uppercase
+ *               hex form.
+ *
+ * The grammar mirrors `titleBold` / `titleItalic` / `titleFontSize` /
+ * `titleRotation` / `titleOverlay` so the chart-level title knobs
+ * compose the same way at the call site. Callers should gate the
+ * result on the resolved title visibility — when no title is
+ * emitted, the fill has no slot in the rendered chart.
+ */
+function resolveTitleColor(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeTitleColor(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleColor(override);
 }
 
 /**

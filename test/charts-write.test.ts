@@ -9821,6 +9821,184 @@ describe("writeChart — title italic", () => {
   });
 });
 
+// ── writeChart — title color ────────────────────────────────────────
+
+describe("writeChart — title color", () => {
+  function titleBlockOf(xml: string): string {
+    return xml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+  }
+
+  function defRPrSrgbOf(xml: string): string | undefined {
+    // <a:defRPr><a:solidFill><a:srgbClr val=".."/></a:solidFill></a:defRPr>
+    const titleBlock = titleBlockOf(xml);
+    const defBlock = titleBlock.match(/<a:defRPr\b[\s\S]*?<\/a:defRPr>/)?.[0];
+    if (!defBlock) return undefined;
+    const m = defBlock.match(/<a:srgbClr\s+val="([^"]+)"/);
+    return m ? m[1] : undefined;
+  }
+
+  function rPrSrgbOf(xml: string): string | undefined {
+    const titleBlock = titleBlockOf(xml);
+    const rBlock = titleBlock.match(/<a:rPr\b[\s\S]*?<\/a:rPr>/)?.[0];
+    if (!rBlock) return undefined;
+    const m = rBlock.match(/<a:srgbClr\s+val="([^"]+)"/);
+    return m ? m[1] : undefined;
+  }
+
+  it("omits the <a:solidFill> block by default (theme-color inherited)", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    const titleBlock = titleBlockOf(result.chartXml);
+    expect(titleBlock).not.toContain("<a:solidFill>");
+    expect(titleBlock).not.toContain("<a:srgbClr");
+    // The <a:defRPr> / <a:rPr> stay self-closing in the default case so
+    // a fresh chart matches Excel's reference serialization.
+    expect(titleBlock).toContain("<a:defRPr ");
+    expect(titleBlock).toContain("<a:rPr ");
+  });
+
+  it("emits <a:solidFill><a:srgbClr val='..'/></a:solidFill> on titleColor='FF0000'", () => {
+    const result = writeChart(makeChart({ titleColor: "FF0000" }), "Sheet1");
+    expect(defRPrSrgbOf(result.chartXml)).toBe("FF0000");
+    expect(rPrSrgbOf(result.chartXml)).toBe("FF0000");
+  });
+
+  it("normalizes a lowercase hex input to uppercase", () => {
+    const result = writeChart(makeChart({ titleColor: "1070ca" }), "Sheet1");
+    expect(defRPrSrgbOf(result.chartXml)).toBe("1070CA");
+    expect(rPrSrgbOf(result.chartXml)).toBe("1070CA");
+  });
+
+  it("strips a leading '#' on emit", () => {
+    const result = writeChart(makeChart({ titleColor: "#1070CA" }), "Sheet1");
+    expect(defRPrSrgbOf(result.chartXml)).toBe("1070CA");
+    expect(rPrSrgbOf(result.chartXml)).toBe("1070CA");
+  });
+
+  it("drops malformed inputs back to the OOXML default (defends against type-guard escape)", () => {
+    expect(
+      defRPrSrgbOf(writeChart(makeChart({ titleColor: "" }), "Sheet1").chartXml),
+    ).toBeUndefined();
+    expect(
+      defRPrSrgbOf(writeChart(makeChart({ titleColor: "FFF" }), "Sheet1").chartXml),
+    ).toBeUndefined();
+    expect(
+      defRPrSrgbOf(writeChart(makeChart({ titleColor: "ZZZZZZ" }), "Sheet1").chartXml),
+    ).toBeUndefined();
+    expect(
+      defRPrSrgbOf(writeChart(makeChart({ titleColor: "FF0000FF" }), "Sheet1").chartXml),
+    ).toBeUndefined();
+    expect(
+      defRPrSrgbOf(writeChart(makeChart({ titleColor: 0xff0000 as any }), "Sheet1").chartXml),
+    ).toBeUndefined();
+    expect(
+      defRPrSrgbOf(writeChart(makeChart({ titleColor: null as any }), "Sheet1").chartXml),
+    ).toBeUndefined();
+  });
+
+  it("ignores titleColor when the chart renders no title (showTitle=false)", () => {
+    const result = writeChart(makeChart({ showTitle: false, titleColor: "FF0000" }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:title>");
+  });
+
+  it("ignores titleColor when the chart has no literal title", () => {
+    const result = writeChart(makeChart({ title: undefined, titleColor: "FF0000" }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:title>");
+  });
+
+  it("composes independently with titleBold, titleItalic, titleFontSize, titleRotation, and titleOverlay", () => {
+    const result = writeChart(
+      makeChart({
+        titleColor: "1070CA",
+        titleItalic: true,
+        titleBold: true,
+        titleFontSize: 24,
+        titleRotation: -45,
+        titleOverlay: true,
+      }),
+      "Sheet1",
+    );
+    const titleBlock = titleBlockOf(result.chartXml);
+    expect(titleBlock).toContain('rot="-2700000"');
+    expect(titleBlock).toContain('sz="2400"');
+    expect(titleBlock).toContain('b="1"');
+    expect(titleBlock).toContain('i="1"');
+    expect(titleBlock).toContain('val="1070CA"');
+    expect(titleBlock).toContain('<c:overlay val="1"/>');
+  });
+
+  it("preserves the title body's other attributes (lang='en-US', sz, b)", () => {
+    const result = writeChart(makeChart({ titleColor: "FF0000" }), "Sheet1");
+    const titleBlock = titleBlockOf(result.chartXml);
+    expect(titleBlock).toContain('lang="en-US"');
+    // The default 14pt size still lands on both slots when color flips.
+    expect(titleBlock.match(/sz="1400"/g)?.length).toBeGreaterThanOrEqual(2);
+    // The default `b="0"` (non-bold) is still emitted on both slots.
+    expect(titleBlock.match(/b="0"/g)?.length).toBeGreaterThanOrEqual(2);
+    // `<a:srgbClr val="FF0000"/>` lands on both the <a:defRPr> and the <a:rPr>.
+    expect(titleBlock.match(/val="FF0000"/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("threads through every chart family (bar / column / line / pie / scatter / area)", () => {
+    const types: WriteChartKind[] = ["bar", "column", "line", "pie", "scatter", "area"];
+    for (const type of types) {
+      const result = writeChart(makeChart({ type, titleColor: "1070CA" }), "Sheet1");
+      expect(defRPrSrgbOf(result.chartXml)).toBe("1070CA");
+    }
+  });
+
+  it("parse round-trip surfaces titleColor from the writer's output", () => {
+    const written = writeChart(makeChart({ titleColor: "1070CA" }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleColor).toBe("1070CA");
+  });
+
+  it("collapses the default (no-color) round-trip back to undefined", () => {
+    // A fresh chart emits no `<a:solidFill>`; the reader collapses
+    // absence to `undefined` so absence and the default round-trip
+    // identically.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleColor).toBeUndefined();
+  });
+
+  it("collapses a malformed titleColor input round-trip back to undefined", () => {
+    // Malformed inputs drop the `<a:solidFill>` block, which the
+    // reader collapses to `undefined`. So pinning a malformed token
+    // is functionally equivalent to absence on round-trip.
+    const written = writeChart(makeChart({ titleColor: "ZZZZZZ" }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleColor).toBeUndefined();
+  });
+
+  it("writeXlsx package round-trip surfaces titleColor from the chart part", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Revenue"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Quarterly Revenue",
+            titleColor: "1070CA",
+            series: [{ name: "Revenue", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const titleBlock = chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(titleBlock).toContain('val="1070CA"');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.titleColor).toBe("1070CA");
+  });
+});
+
 // ── writeChart — axis title rotation ────────────────────────────────
 
 describe("writeChart — axis title rotation", () => {
