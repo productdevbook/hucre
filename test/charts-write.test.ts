@@ -10162,6 +10162,173 @@ describe("writeChart — title strike", () => {
   });
 });
 
+// ── writeChart — title underline ────────────────────────────────────
+
+describe("writeChart — title underline", () => {
+  function titleBlockOf(xml: string): string {
+    return xml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+  }
+
+  function defRPrUnderlineOf(xml: string): string | undefined {
+    // The title's <a:defRPr> lives inside <c:title><c:tx><c:rich><a:p><a:pPr>.
+    const titleBlock = titleBlockOf(xml);
+    const m = titleBlock.match(/<a:defRPr\b[^/]*\/>/);
+    if (!m) return undefined;
+    const u = m[0].match(/\bu="([^"]+)"/);
+    return u ? u[1] : undefined;
+  }
+
+  function rPrUnderlineOf(xml: string): string | undefined {
+    const titleBlock = titleBlockOf(xml);
+    const m = titleBlock.match(/<a:rPr\b[^/]*\/>/);
+    if (!m) return undefined;
+    const u = m[0].match(/\bu="([^"]+)"/);
+    return u ? u[1] : undefined;
+  }
+
+  it("omits the u attribute by default (matches Excel's reference non-underlined title)", () => {
+    // Excel itself omits `u` on a non-underlined title — the OOXML
+    // default `"none"` collapses to absence. Only the bold flag is
+    // always emitted.
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(defRPrUnderlineOf(result.chartXml)).toBeUndefined();
+    expect(rPrUnderlineOf(result.chartXml)).toBeUndefined();
+  });
+
+  it("emits u='sng' on titleUnderline=true", () => {
+    const result = writeChart(makeChart({ titleUnderline: true }), "Sheet1");
+    expect(defRPrUnderlineOf(result.chartXml)).toBe("sng");
+    expect(rPrUnderlineOf(result.chartXml)).toBe("sng");
+  });
+
+  it("omits the u attribute on titleUnderline=false (functionally identical to omission)", () => {
+    const result = writeChart(makeChart({ titleUnderline: false }), "Sheet1");
+    expect(defRPrUnderlineOf(result.chartXml)).toBeUndefined();
+    expect(rPrUnderlineOf(result.chartXml)).toBeUndefined();
+  });
+
+  it("drops non-boolean inputs back to the OOXML default (defends against type guard escape)", () => {
+    const result = writeChart(makeChart({ titleUnderline: "true" as any }), "Sheet1");
+    expect(defRPrUnderlineOf(result.chartXml)).toBeUndefined();
+    const result2 = writeChart(makeChart({ titleUnderline: 1 as any }), "Sheet1");
+    expect(defRPrUnderlineOf(result2.chartXml)).toBeUndefined();
+    const result3 = writeChart(makeChart({ titleUnderline: "sng" as any }), "Sheet1");
+    expect(defRPrUnderlineOf(result3.chartXml)).toBeUndefined();
+    const result4 = writeChart(makeChart({ titleUnderline: "dbl" as any }), "Sheet1");
+    expect(defRPrUnderlineOf(result4.chartXml)).toBeUndefined();
+  });
+
+  it("ignores titleUnderline when the chart renders no title (showTitle=false)", () => {
+    // The whole `<c:title>` block is suppressed — no `<a:defRPr>` to
+    // host the underline flag.
+    const result = writeChart(makeChart({ showTitle: false, titleUnderline: true }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:title>");
+  });
+
+  it("ignores titleUnderline when the chart has no literal title", () => {
+    const result = writeChart(makeChart({ title: undefined, titleUnderline: true }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:title>");
+  });
+
+  it("composes independently with titleBold, titleItalic, titleStrike, titleColor, titleFontSize, titleRotation, and titleOverlay", () => {
+    const result = writeChart(
+      makeChart({
+        titleUnderline: true,
+        titleStrike: true,
+        titleColor: "1070CA",
+        titleItalic: true,
+        titleBold: true,
+        titleFontSize: 24,
+        titleRotation: -45,
+        titleOverlay: true,
+      }),
+      "Sheet1",
+    );
+    const titleBlock = titleBlockOf(result.chartXml);
+    expect(titleBlock).toContain('rot="-2700000"');
+    expect(titleBlock).toContain('sz="2400"');
+    expect(titleBlock).toContain('b="1"');
+    expect(titleBlock).toContain('i="1"');
+    expect(titleBlock).toContain('u="sng"');
+    expect(titleBlock).toContain('strike="sngStrike"');
+    expect(titleBlock).toContain('val="1070CA"');
+    expect(titleBlock).toContain('<c:overlay val="1"/>');
+  });
+
+  it("preserves the title body's other attributes (lang='en-US', sz, b)", () => {
+    const result = writeChart(makeChart({ titleUnderline: true }), "Sheet1");
+    const titleBlock = titleBlockOf(result.chartXml);
+    expect(titleBlock).toContain('lang="en-US"');
+    // The default 14pt size still lands on both slots even when underline flips.
+    expect(titleBlock.match(/sz="1400"/g)?.length).toBeGreaterThanOrEqual(2);
+    // The default `b="0"` is still emitted on both slots.
+    expect(titleBlock.match(/b="0"/g)?.length).toBeGreaterThanOrEqual(2);
+    // `u="sng"` lands on both the <a:defRPr> and the <a:rPr>.
+    expect(titleBlock.match(/u="sng"/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("threads through every chart family (bar / column / line / pie / scatter / area)", () => {
+    const types: WriteChartKind[] = ["bar", "column", "line", "pie", "scatter", "area"];
+    for (const type of types) {
+      const result = writeChart(makeChart({ type, titleUnderline: true }), "Sheet1");
+      expect(defRPrUnderlineOf(result.chartXml)).toBe("sng");
+    }
+  });
+
+  it("parse round-trip surfaces titleUnderline from the writer's output", () => {
+    const written = writeChart(makeChart({ titleUnderline: true }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleUnderline).toBe(true);
+  });
+
+  it("collapses the default (no-underline) round-trip back to undefined", () => {
+    // A fresh chart emits no `u` attribute; the reader collapses
+    // absence to `undefined` so absence and the default round-trip
+    // identically.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleUnderline).toBeUndefined();
+  });
+
+  it("collapses the explicit titleUnderline=false round-trip back to undefined", () => {
+    // titleUnderline=false drops the attribute entirely (the OOXML
+    // default is `"none"`, but the writer omits the attribute for
+    // symmetry with how Excel's reference UI emits a non-underlined
+    // title); the reader collapses absence to `undefined`.
+    const written = writeChart(makeChart({ titleUnderline: false }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleUnderline).toBeUndefined();
+  });
+
+  it("writeXlsx package round-trip surfaces titleUnderline from the chart part", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Revenue"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Quarterly Revenue",
+            titleUnderline: true,
+            series: [{ name: "Revenue", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const titleBlock = chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(titleBlock).toContain('u="sng"');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.titleUnderline).toBe(true);
+  });
+});
+
 // ── writeChart — axis title rotation ────────────────────────────────
 
 describe("writeChart — axis title rotation", () => {

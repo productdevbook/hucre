@@ -77,6 +77,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveTitleItalic(chart),
         resolveTitleColor(chart),
         resolveTitleStrike(chart),
+        resolveTitleUnderline(chart),
       ),
     );
   }
@@ -216,6 +217,7 @@ function buildTitle(
   italic: boolean | undefined,
   rgbHex: string | undefined,
   strike: boolean | undefined,
+  underline: boolean | undefined,
 ): string {
   // OOXML's `<a:bodyPr rot="N"/>` attribute is in 60000ths of a degree.
   // The writer holds `titleRotation` in whole degrees and converts at
@@ -266,6 +268,22 @@ function buildTitle(
   // a re-parse picks the value up off either canonical slot — Excel
   // keeps the two attributes in sync.
   const strikeAttr = strike === true ? "sngStrike" : undefined;
+  // OOXML's `<a:defRPr u=".."/>` / `<a:rPr u=".."/>` attribute is the
+  // `ST_TextUnderlineType` enum on `CT_TextCharacterProperties` —
+  // eighteen values total, with `"none"` as the OOXML default,
+  // `"sng"` as the value Excel's UI authors for the "Underline"
+  // checkbox (single line), `"dbl"` for the non-UI double-line
+  // variant, and sixteen exotic types Excel does not surface. The
+  // writer emits only the UI variant `"sng"` to keep the surfaced
+  // shape consistent with what Excel's reference UI authors. Absence
+  // (`undefined`) and explicit `false` both collapse to omitting the
+  // attribute (Excel itself omits `u` when the title is not
+  // underlined — the OOXML default `"none"` collapses to absence).
+  // Like bold / italic / strike, the value lands on both the
+  // default-paragraph `<a:defRPr>` and the literal run's `<a:rPr>` so
+  // a re-parse picks the value up off either canonical slot — Excel
+  // keeps the two attributes in sync.
+  const underlineAttr = underline === true ? "sng" : undefined;
   // OOXML's `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/>
   // </a:solidFill></a:defRPr>` carries the title's font color. The
   // writer holds `titleColor` as a 6-character uppercase hex string
@@ -284,11 +302,20 @@ function buildTitle(
   // fresh chart with no custom color matches Excel's reference
   // serialization byte-for-byte.
   const defRPr = solidFillChild
-    ? xmlElement("a:defRPr", { sz, b, i, strike: strikeAttr }, [solidFillChild])
-    : xmlSelfClose("a:defRPr", { sz, b, i, strike: strikeAttr });
+    ? xmlElement("a:defRPr", { sz, b, i, u: underlineAttr, strike: strikeAttr }, [solidFillChild])
+    : xmlSelfClose("a:defRPr", { sz, b, i, u: underlineAttr, strike: strikeAttr });
   const rPr = solidFillChild
-    ? xmlElement("a:rPr", { lang: "en-US", sz, b, i, strike: strikeAttr }, [solidFillChild])
-    : xmlSelfClose("a:rPr", { lang: "en-US", sz, b, i, strike: strikeAttr });
+    ? xmlElement("a:rPr", { lang: "en-US", sz, b, i, u: underlineAttr, strike: strikeAttr }, [
+        solidFillChild,
+      ])
+    : xmlSelfClose("a:rPr", {
+        lang: "en-US",
+        sz,
+        b,
+        i,
+        u: underlineAttr,
+        strike: strikeAttr,
+      });
   return xmlElement("c:title", undefined, [
     xmlElement("c:tx", undefined, [
       xmlElement("c:rich", undefined, [
@@ -565,6 +592,40 @@ function normalizeTitleStrike(value: boolean | undefined): boolean | undefined {
  */
 function resolveTitleStrike(chart: SheetChart): boolean | undefined {
   return normalizeTitleStrike(chart.titleStrike);
+}
+
+/**
+ * Normalize a {@link SheetChart.titleUnderline} value for the
+ * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr u=".."/></a:pPr>
+ * </a:p></c:rich></c:tx></c:title>` writer slot. Returns the literal
+ * boolean when the input is `true` / `false`, or `undefined` for any
+ * other token (including `null`-shaped escapes from an untyped
+ * caller). Absence and non-boolean tokens both collapse to
+ * `undefined` so the writer omits the `u` attribute entirely (Excel's
+ * reference serialization for a non-underlined title — the OOXML
+ * default `"none"` collapses to absence; only an explicit `true`
+ * emits `u="sng"`).
+ */
+function normalizeTitleUnderline(value: boolean | undefined): boolean | undefined {
+  if (value === true) return true;
+  if (value === false) return false;
+  return undefined;
+}
+
+/**
+ * Resolve `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr u=".."/>
+ * </a:pPr></a:p></c:rich></c:tx></c:title>` from
+ * {@link SheetChart.titleUnderline}.
+ *
+ * Returns the literal boolean, or `undefined` when the chart leaves
+ * the field unset / passed a non-boolean token. The flag is only
+ * meaningful when the chart actually emits a title — the caller is
+ * expected to gate the call on `showTitle && chart.title`. A chart
+ * whose title is suppressed has no `<c:title>` block to host the flag
+ * in either case.
+ */
+function resolveTitleUnderline(chart: SheetChart): boolean | undefined {
+  return normalizeTitleUnderline(chart.titleUnderline);
 }
 
 /**

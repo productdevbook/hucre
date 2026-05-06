@@ -1513,6 +1513,61 @@ export interface SheetChart {
    */
   titleStrike?: boolean;
   /**
+   * Chart title underline flag. Maps to
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr u=".."/></a:pPr>
+   * <a:r><a:rPr u=".."/></a:r></a:p></c:rich></c:tx></c:title>` —
+   * Excel's "Format Chart Title -> Font -> Underline" picker. The
+   * OOXML attribute is the `ST_TextUnderlineType` enum on
+   * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7) with
+   * eighteen values; the two Excel surfaces in the ribbon are
+   * `"sng"` (single-line underline — the default checkbox) and
+   * `"dbl"` (double-line underline). The remaining sixteen tokens
+   * (`"none"`, `"words"`, `"heavy"`, `"dotted"`, `"dottedHeavy"`,
+   * `"dash"`, `"dashHeavy"`, `"dashLong"`, `"dashLongHeavy"`,
+   * `"dotDash"`, `"dotDashHeavy"`, `"dotDotDash"`,
+   * `"dotDotDashHeavy"`, `"wavy"`, `"wavyHeavy"`, `"wavyDbl"`) are
+   * non-UI variants Excel does not surface in its ribbon. The writer
+   * lands the value on both the default-paragraph `<a:defRPr>` and
+   * the literal run's `<a:rPr>` so a re-parse picks the flag up off
+   * either canonical slot — Excel keeps the two attributes in sync.
+   *
+   * Modeled as a boolean for symmetry with {@link titleBold} /
+   * {@link titleItalic} / {@link titleStrike}: `true` emits `u="sng"`
+   * (Excel's UI "Underline" checkbox — single line). Absence and
+   * non-boolean tokens collapse to omitting the attribute (Excel's
+   * reference serialization for a non-underlined title — the
+   * application-default `"none"` collapses to absence). Set `false`
+   * explicitly to pin the non-default omission (functionally
+   * identical to omission, but useful when overriding a templated
+   * title that had underline pinned upstream).
+   *
+   * Hucre's writer emits only `"sng"` to keep the surfaced shape
+   * consistent with what Excel's reference UI authors. The reader
+   * collapses every non-`"sng"` token (the non-UI `"dbl"` variant
+   * and the sixteen exotic types) to `undefined` so a templated
+   * chart that pinned a non-single underline in raw OOXML round-trips
+   * to the same `undefined` an unmarked chart parses to (i.e. the
+   * exotic underline silently downgrades to the single-line write
+   * grammar rather than fabricate a value the writer would re-emit
+   * incorrectly).
+   *
+   * Default: omitted — the title renders without underline (no `u`
+   * attribute on either slot, Excel's reference serialization for a
+   * fresh chart title). Set `true` to render the title with a single
+   * underline, useful for emphasising "key metric" or "section header"
+   * dashboard tile titles.
+   *
+   * Silently ignored when no title is rendered (`showTitle === false`
+   * or `title` is absent) — there is no `<c:title>` block to host the
+   * flag in either case. Composes independently with {@link titleBold}
+   * / {@link titleItalic} / {@link titleStrike} / {@link titleColor} /
+   * {@link titleFontSize} / {@link titleRotation} /
+   * {@link titleOverlay}: all eight fields land on the same
+   * `<c:title>` element so a single configuration call threads
+   * cleanly through every chart-title knob Excel exposes.
+   */
+  titleUnderline?: boolean;
+  /**
    * Auto-title-deleted flag. Maps to `<c:chart><c:autoTitleDeleted
    * val=".."/>` — Excel's record of whether the user explicitly deleted
    * the auto-generated title that single-series charts synthesise from
@@ -4264,6 +4319,36 @@ export interface Chart {
    * without transformation.
    */
   titleStrike?: boolean;
+  /**
+   * Chart title underline flag pulled from
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr u=".."/></a:pPr>
+   * </a:p></c:rich></c:tx></c:title>`. Reflects Excel's "Format Chart
+   * Title -> Font -> Underline" picker.
+   *
+   * The OOXML attribute is the `ST_TextUnderlineType` enum on
+   * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7) with
+   * eighteen values; Excel's UI exposes only `"sng"` (single line —
+   * the default underline checkbox) and `"dbl"` (double line). Only
+   * the UI-default `"sng"` (Excel's "Underline" checkbox — single
+   * line) surfaces as `true`; `"none"` (the OOXML application
+   * default) and absence both collapse to `undefined`, and every
+   * other token (`"dbl"` and the sixteen exotic variants) likewise
+   * collapses to `undefined` rather than surface a value the writer
+   * would silently downgrade on round-trip — hucre's writer emits
+   * only `"sng"`, so reporting any non-single underline as `true`
+   * would round-trip into a lossy single-line replacement.
+   *
+   * Unknown / malformed `u` tokens drop to `undefined` rather than
+   * fabricate a value the writer would never emit.
+   *
+   * Reported as `undefined` whenever the source chart has no
+   * `<c:title>` element at all, or when the title is a `<c:strRef>`
+   * (formula reference) with no `<c:rich>` body — there is no `<a:p>`
+   * to host the flag in either case. The parsed value threads
+   * straight back into the writer-side {@link SheetChart.titleUnderline}
+   * without transformation.
+   */
+  titleUnderline?: boolean;
   /**
    * Auto-title-deleted flag pulled from `<c:chart><c:autoTitleDeleted
    * val=".."/>`. Reflects Excel's "the user explicitly deleted the
