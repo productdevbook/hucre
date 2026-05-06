@@ -812,9 +812,10 @@ export interface CloneChartOptions {
    * the writer side because every `<c:dTable>` boolean child is
    * required on `CT_DTable` and Excel emits all four. The optional
    * {@link ChartDataTable.fontSize} / {@link ChartDataTable.fontColor}
-   * typography pins survive the wholesale-replace path along with the
-   * four boolean toggles, so a clone that inherits a templated
-   * data-table carries the typography forward unchanged.
+   * / {@link ChartDataTable.bold} typography pins survive the
+   * wholesale-replace path along with the four boolean toggles, so a
+   * clone that inherits a templated data-table carries the typography
+   * forward unchanged.
    *
    * Only meaningful when the resolved chart type has axes — `bar`,
    * `column`, `line`, `area`, `scatter`. The field is silently dropped

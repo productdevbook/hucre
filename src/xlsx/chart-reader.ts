@@ -4461,7 +4461,45 @@ function parseDataTable(plotArea: XmlElement): ChartDataTable | undefined {
   if (fontSize !== undefined) out.fontSize = fontSize;
   const fontColor = parseDataTableFontColor(el);
   if (fontColor !== undefined) out.fontColor = fontColor;
+  const bold = parseDataTableBold(el);
+  if (bold !== undefined) out.bold = bold;
   return out;
+}
+
+/**
+ * Pull `<c:dTable><c:txPr><a:p><a:pPr><a:defRPr b=".."/></a:pPr></a:p>
+ * </c:txPr></c:dTable>` off a data-table block. Returns the bold flag.
+ *
+ * The OOXML `b` attribute is the `xsd:boolean` bold flag on
+ * `CT_TextCharacterProperties`. Only an explicit `b="1"` (or `"true"`)
+ * surfaces `true`; the OOXML default `0` (and absence / malformed
+ * tokens) collapses to `undefined` so absence and the default
+ * round-trip identically through `cloneChart`. Mirrors the
+ * chart-title / axis-title / axis tick-label / legend / data-label
+ * bold readers exactly so a parsed value slots straight back into the
+ * writer's emit path.
+ */
+function parseDataTableBold(dTable: XmlElement): boolean | undefined {
+  const txPr = findChild(dTable, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const raw = defRPr.attrs.b;
+  if (typeof raw !== "string") return undefined;
+  switch (raw) {
+    case "1":
+    case "true":
+      return true;
+    case "0":
+    case "false":
+      return false;
+    default:
+      return undefined;
+  }
 }
 
 /**

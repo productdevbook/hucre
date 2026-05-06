@@ -9079,6 +9079,171 @@ describe("writeChart — data table", () => {
     const reparsed = parseChart(chartXml);
     expect(reparsed?.dataTable?.fontColor).toBe("AABBCC");
   });
+
+  // ── data-table bold ────────────────────────────────────────────────
+
+  it("skips the b attribute when bold is unset (writer default)", () => {
+    // Absence collapses to omitting the b attribute entirely — the
+    // OOXML default `0` is functionally identical to absence and Excel
+    // itself omits the attribute on a fresh data table.
+    const result = writeChart(makeChart({ dataTable: true }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice).not.toMatch(/b="[01]"/);
+  });
+
+  it("emits b='1' when dataTable.bold is true", () => {
+    const result = writeChart(makeChart({ dataTable: { bold: true } }), "Sheet1");
+    expect(result.chartXml).toContain('<a:defRPr b="1"/>');
+  });
+
+  it("emits b='0' explicitly when dataTable.bold is false", () => {
+    // Pinning `false` lets a clone target override an upstream `b="1"`
+    // from a templated chart. Functionally identical to absence but
+    // useful for explicit overrides.
+    const result = writeChart(makeChart({ dataTable: { bold: false } }), "Sheet1");
+    expect(result.chartXml).toContain('<a:defRPr b="0"/>');
+  });
+
+  it("collapses non-boolean bold escapes to undefined", () => {
+    // Typed escapes from an untyped caller — strings, null, numbers —
+    // drop the field rather than fabricate a malformed b attribute.
+    const dt = { bold: "yes" } as unknown as { bold: boolean };
+    const result = writeChart(makeChart({ dataTable: dt }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice).not.toContain("<c:txPr>");
+    const dt2 = { bold: 1 } as unknown as { bold: boolean };
+    const result2 = writeChart(makeChart({ dataTable: dt2 }), "Sheet1");
+    const dTableSlice2 = result2.chartXml.slice(
+      result2.chartXml.indexOf("<c:dTable>"),
+      result2.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice2).not.toContain("<c:txPr>");
+  });
+
+  it("composes bold with fontSize / fontColor on the same defRPr slot", () => {
+    // All three typography knobs land on the same <a:defRPr> — the
+    // size and bold as attributes, the color as the wrapped <a:solidFill>.
+    const result = writeChart(
+      makeChart({ dataTable: { fontSize: 14, fontColor: "1070CA", bold: true } }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain(
+      '<a:defRPr sz="1400" b="1"><a:solidFill><a:srgbClr val="1070CA"/></a:solidFill></a:defRPr>',
+    );
+  });
+
+  it("composes bold with fontSize alone (no fontColor) on a self-closing defRPr", () => {
+    const result = writeChart(makeChart({ dataTable: { fontSize: 14, bold: true } }), "Sheet1");
+    expect(result.chartXml).toContain('<a:defRPr sz="1400" b="1"/>');
+  });
+
+  it("threads bold through every chart family with axes", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(makeChart({ type, dataTable: { bold: true } }), "Sheet1");
+      expect(result.chartXml).toContain('<a:defRPr b="1"/>');
+    }
+    const scatter = writeChart(
+      {
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        dataTable: { bold: true },
+      },
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain('<a:defRPr b="1"/>');
+  });
+
+  it("silently drops bold on pie charts (no <c:dTable> slot at all)", () => {
+    const result = writeChart(
+      {
+        type: "pie",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        dataTable: { bold: true },
+      },
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:dTable");
+    expect(result.chartXml).not.toContain('<a:defRPr b="1"/>');
+  });
+
+  it("composes bold with the four boolean toggles independently", () => {
+    const result = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: false,
+          showVertBorder: true,
+          showOutline: false,
+          showKeys: true,
+          bold: true,
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('<c:showHorzBorder val="0"/>');
+    expect(result.chartXml).toContain('<c:showVertBorder val="1"/>');
+    expect(result.chartXml).toContain('<c:showOutline val="0"/>');
+    expect(result.chartXml).toContain('<c:showKeys val="1"/>');
+    expect(result.chartXml).toContain('<a:defRPr b="1"/>');
+  });
+
+  it("round-trips a pinned dataTable bold through parseChart", () => {
+    const written = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+          bold: true,
+        },
+      }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+      bold: true,
+    });
+  });
+
+  it("threads bold end-to-end through writeXlsx packaging", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Dashboard",
+        rows: [
+          ["Quarter", "Revenue"],
+          ["Q1", 10],
+          ["Q2", 20],
+          ["Q3", 30],
+        ],
+        charts: [
+          {
+            type: "column",
+            series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            dataTable: { showKeys: true, bold: true },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain("<c:dTable>");
+    expect(chartXml).toContain('<a:defRPr b="1"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.dataTable?.bold).toBe(true);
+  });
 });
 
 // ── writeChart — chart-space protection ──────────────────────────────

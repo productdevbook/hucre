@@ -1110,6 +1110,7 @@ function resolveDataTable(chart: SheetChart):
       showKeys: boolean;
       fontSize: number | undefined;
       fontColor: string | undefined;
+      bold: boolean | undefined;
     }
   | undefined {
   // Pie / doughnut have no axes — the OOXML schema places `<c:dTable>`
@@ -1129,6 +1130,7 @@ function resolveDataTable(chart: SheetChart):
       showKeys: true,
       fontSize: undefined,
       fontColor: undefined,
+      bold: undefined,
     };
   }
 
@@ -1143,6 +1145,7 @@ function resolveDataTable(chart: SheetChart):
     showKeys: raw.showKeys !== false,
     fontSize: resolveDataTableFontSize(raw.fontSize),
     fontColor: resolveDataTableFontColor(raw.fontColor),
+    bold: resolveDataTableBold(raw.bold),
   };
 }
 
@@ -1179,6 +1182,23 @@ function resolveDataTableFontColor(value: string | undefined): string | undefine
 }
 
 /**
+ * Resolve `<c:dTable><c:txPr><a:p><a:pPr><a:defRPr b=".."/></a:pPr>
+ * </a:p></c:txPr></c:dTable>` from {@link ChartDataTable.bold}.
+ *
+ * Returns the bold flag, or `undefined` when the caller leaves the
+ * field unset / passed a non-boolean token. Mirrors the chart-title /
+ * axis-title / axis tick-label / legend / data-label bold resolvers
+ * exactly — only literal `true` / `false` pass through; non-boolean
+ * tokens (typed escapes from an untyped caller) collapse to
+ * `undefined`.
+ */
+function resolveDataTableBold(value: boolean | undefined): boolean | undefined {
+  if (value === true) return true;
+  if (value === false) return false;
+  return undefined;
+}
+
+/**
  * Serialize a resolved data-table into `<c:dTable>` with its four
  * required boolean children, in the order CT_DTable mandates:
  * `showHorzBorder`, `showVertBorder`, `showOutline`, `showKeys`. When
@@ -1201,6 +1221,7 @@ function buildDataTable(table: {
   showKeys: boolean;
   fontSize: number | undefined;
   fontColor: string | undefined;
+  bold: boolean | undefined;
 }): string {
   const children: string[] = [
     xmlSelfClose("c:showHorzBorder", { val: table.showHorzBorder ? 1 : 0 }),
@@ -1213,7 +1234,7 @@ function buildDataTable(table: {
   // Part 1, §21.2.2.54). The writer skips emission entirely when no
   // typography knob is pinned so a fresh chart matches Excel's
   // reference serialization byte-for-byte.
-  const txPrXml = buildDataTableTxPr(table.fontSize, table.fontColor);
+  const txPrXml = buildDataTableTxPr(table.fontSize, table.fontColor, table.bold);
   if (txPrXml !== undefined) children.push(txPrXml);
   return xmlElement("c:dTable", undefined, children);
 }
@@ -1242,10 +1263,12 @@ function buildDataTable(table: {
 function buildDataTableTxPr(
   fontSizePt: number | undefined,
   rgbHex: string | undefined,
+  bold: boolean | undefined,
 ): string | undefined {
-  if (fontSizePt === undefined && rgbHex === undefined) return undefined;
+  if (fontSizePt === undefined && rgbHex === undefined && bold === undefined) return undefined;
   const defRPrAttrs: Record<string, string | number> = {};
   if (fontSizePt !== undefined) defRPrAttrs.sz = fontSizePt * TITLE_FONT_SZ_PER_POINT;
+  if (bold !== undefined) defRPrAttrs.b = bold ? 1 : 0;
   // OOXML's `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/>
   // </a:solidFill></a:defRPr>` carries the data-table font color.
   // Absence (`undefined`) collapses to skipping the `<a:solidFill>`

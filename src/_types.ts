@@ -1134,6 +1134,37 @@ export interface ChartDataTable {
    * pie / doughnut along with the rest of the data-table configuration.
    */
   fontColor?: string;
+  /**
+   * Data-table bold flag. Maps to `<c:dTable><c:txPr><a:p><a:pPr>
+   * <a:defRPr b=".."/></a:pPr></a:p></c:txPr></c:dTable>` — Excel's
+   * "Format Data Table -> Font -> Bold" toggle. The OOXML attribute is
+   * the `xsd:boolean` bold flag on `CT_TextCharacterProperties`
+   * (ECMA-376 Part 1, §21.1.2.3.7); the writer lands `b="1"` (bold) or
+   * `b="0"` (the OOXML default — non-bold) on the default-paragraph
+   * `<a:defRPr>` slot inside the `<c:dTable><c:txPr>` block so a
+   * re-parse picks the flag up off the canonical slot the OOXML schema
+   * exposes.
+   *
+   * Default: omitted — the data table renders non-bold (no `b`
+   * attribute, matching Excel's reference serialization for fresh data
+   * tables whose typography has not been customized; the OOXML default
+   * `0` collapses to absence). Set `true` to emit `b="1"` so the table
+   * renders bold; set `false` explicitly to pin `b="0"` (functionally
+   * identical to omission, but useful when overriding a templated
+   * chart that had bold pinned upstream).
+   *
+   * Composes independently with the other dataTable typography knobs —
+   * {@link fontSize} / {@link fontColor} — and the four boolean
+   * toggles. Mirrors the chart-title `titleBold`, axis-title
+   * `axisTitleBold`, axis tick-label `labelBold`, legend `legendBold`,
+   * and data-label `dataLabels.bold` knobs — same boolean shape, same
+   * OOXML `<a:defRPr b=".."/>` mapping — so a caller can thread a
+   * single bold value through every typography-pinning slot.
+   *
+   * Only meaningful for chart families with axes; silently dropped on
+   * pie / doughnut along with the rest of the data-table configuration.
+   */
+  bold?: boolean;
 }
 
 /**
