@@ -33,6 +33,7 @@
         <button class="tab" data-tab="ods" role="tab">ODS</button>
         <button class="tab" data-tab="export" role="tab">Export</button>
         <button class="tab" data-tab="format" role="tab">Format</button>
+        <button class="tab" data-tab="chart-clone" role="tab">Chart Clone</button>
       </nav>
 
       <!-- ═══════ READ XLSX ═══════ -->
@@ -697,6 +698,61 @@ Sensor,45.99,64,true</textarea
               <p style="color: var(--text-dim); text-align: center; padding: 3rem 0">
                 Click "Format" or pick a quick example
               </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════ CHART CLONE ═══════ -->
+      <section class="panel" data-panel="chart-clone">
+        <p class="panel-desc">
+          Drop a template <code>.xlsx</code> with one or more charts. Hucre lists every chart it
+          finds via <code>getCharts(workbook)</code>, then lets you tweak per-chart knobs and
+          re-emit the workbook through <code>cloneChart</code> + <code>addChart</code> +
+          <code>writeXlsx</code>. Refs #136.
+        </p>
+        <div class="split">
+          <div class="controls">
+            <div class="drop-zone" id="chart-clone-drop">
+              <div class="icon">📊</div>
+              <p>Drop .xlsx file with charts (or click to browse)</p>
+              <input type="file" id="chart-clone-file" accept=".xlsx" />
+            </div>
+
+            <details class="section" open>
+              <summary>Output</summary>
+              <div class="field-grid">
+                <div class="field">
+                  <label for="chart-clone-mode">Mode</label>
+                  <select id="chart-clone-mode">
+                    <option value="clone" selected>Clone (per chart)</option>
+                    <option value="compose">Compose into Dashboard</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="chart-clone-dest">Destination Sheet</label>
+                  <select id="chart-clone-dest">
+                    <option value="__new__">[ New sheet "Charts" ]</option>
+                  </select>
+                </div>
+                <div class="field full">
+                  <label for="chart-clone-dest-name">New sheet name (when "New")</label>
+                  <input id="chart-clone-dest-name" type="text" value="Charts" />
+                </div>
+              </div>
+            </details>
+
+            <div id="chart-clone-stats" class="stats" hidden></div>
+          </div>
+
+          <div class="preview">
+            <div class="output" id="chart-clone-output">
+              <p style="color: var(--text-dim); text-align: center; padding: 3rem 0">
+                Drop an XLSX file containing charts to see them listed here
+              </p>
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="chart-clone-run" disabled>Clone &amp; Download</button>
             </div>
           </div>
         </div>

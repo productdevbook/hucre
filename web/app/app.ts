@@ -21,8 +21,24 @@ import {
   readXml,
   writeXml,
   writeXlsxObjects,
+  getCharts,
+  cloneChart,
+  chartKindToWriteKind,
+  addChart,
 } from "hucre";
-import type { CellValue, WriteSheet, SchemaDefinition, Sheet } from "hucre";
+import type {
+  CellValue,
+  WriteSheet,
+  SchemaDefinition,
+  Sheet,
+  Chart,
+  ChartKind,
+  WriteChartKind,
+  CloneChartOptions,
+  CloneChartSeriesOverride,
+  SheetChart,
+  Workbook,
+} from "hucre";
 
 // ── Toast ─────────────────────────────────────────────────────────
 
@@ -1163,6 +1179,357 @@ function setupFormat() {
   });
 }
 
+// ── Chart Clone ───────────────────────────────────────────────────
+//
+// Demo for the chart cloning / dashboard composition flow tracked in
+// issue #136. The user drops a template workbook, the panel surfaces
+// every chart via `getCharts(workbook)`, and per-chart override knobs
+// let them re-anchor / retitle / recolor / coerce a chart kind before
+// re-emitting through `cloneChart` + `addChart` + `writeXlsx`.
+
+interface ChartCloneState {
+  workbook: Workbook;
+  rawBytes: Uint8Array;
+  charts: ReturnType<typeof getCharts>;
+  fileName: string;
+}
+
+let chartCloneState: ChartCloneState | null = null;
+
+const WRITE_CHART_KINDS: WriteChartKind[] = [
+  "bar",
+  "column",
+  "line",
+  "pie",
+  "doughnut",
+  "scatter",
+  "area",
+];
+
+function colIndexToLetter(col: number): string {
+  let n = col;
+  let s = "";
+  while (n >= 0) {
+    s = String.fromCharCode(65 + (n % 26)) + s;
+    n = Math.floor(n / 26) - 1;
+  }
+  return s;
+}
+
+function parseAnchorCell(input: string): { row: number; col: number } | null {
+  const m = /^\s*([A-Z]+)\s*([0-9]+)\s*$/i.exec(input);
+  if (!m) return null;
+  const letters = m[1].toUpperCase();
+  const row1 = parseInt(m[2], 10);
+  if (!Number.isFinite(row1) || row1 < 1) return null;
+  let col = 0;
+  for (let i = 0; i < letters.length; i++) {
+    col = col * 26 + (letters.charCodeAt(i) - 64);
+  }
+  col -= 1;
+  return { row: row1 - 1, col };
+}
+
+function describeKinds(kinds: ChartKind[]): string {
+  if (!kinds || kinds.length === 0) return "(unknown)";
+  return kinds.join(", ");
+}
+
+function defaultWriteKind(source: Chart): WriteChartKind | "" {
+  for (const k of source.kinds) {
+    const w = chartKindToWriteKind(k);
+    if (w) return w;
+  }
+  return "";
+}
+
+function defaultAnchorFor(source: Chart, fallbackIndex: number): string {
+  const a = source.anchor?.from;
+  if (a) return `${colIndexToLetter(a.col)}${a.row + 1}`;
+  // Fallback: stagger 18 rows per chart starting at B2 so multi-chart
+  // dashboards do not stack on top of each other.
+  return `B${2 + fallbackIndex * 18}`;
+}
+
+function renderChartList(state: ChartCloneState): string {
+  if (state.charts.length === 0) {
+    return `<p class="error">No charts found in this workbook. Try a file containing at least one Excel chart.</p>`;
+  }
+
+  let html = `<div class="meta" style="border-top:none;padding-top:0;margin-top:0">`;
+  html += `<strong>${state.charts.length}</strong> chart${state.charts.length === 1 ? "" : "s"} found in <em>${escapeHtml(state.fileName)}</em>`;
+  html += `</div>`;
+
+  state.charts.forEach((loc, i) => {
+    const c = loc.chart;
+    const writeKind = defaultWriteKind(c);
+    const writable = writeKind !== "";
+    const anchor = defaultAnchorFor(c, i);
+    const seriesCount = c.seriesCount ?? c.series?.length ?? 0;
+    const title = c.title ?? "(untitled)";
+
+    html += `<details class="section" data-chart-row="${i}" ${i === 0 ? "open" : ""} style="margin-top:0.5rem">`;
+    html += `<summary>`;
+    html += `<input type="checkbox" data-chart-pick="${i}" ${writable ? "checked" : ""} ${writable ? "" : "disabled"} style="margin-right:0.4rem" onclick="event.stopPropagation()" />`;
+    html += `<span style="text-transform:none;letter-spacing:0;color:var(--text);font-weight:600">#${i + 1} · ${escapeHtml(loc.sheetName)}</span>`;
+    html += ` <span style="color:var(--text-muted);font-weight:400;margin-left:0.4rem">${escapeHtml(describeKinds(c.kinds))} · ${seriesCount} ser · ${escapeHtml(title)}</span>`;
+    html += `</summary>`;
+
+    html += `<div class="field-grid">`;
+    html += `<div class="field"><label>Title override</label><input type="text" data-chart-title="${i}" placeholder="(keep "${escapeHtml(title)}")" /></div>`;
+
+    html += `<div class="field"><label>Type coercion</label><select data-chart-type="${i}">`;
+    html += `<option value="">(auto: ${escapeHtml(writeKind || "n/a")})</option>`;
+    for (const k of WRITE_CHART_KINDS) {
+      html += `<option value="${k}">${k}</option>`;
+    }
+    html += `</select></div>`;
+
+    html += `<div class="field"><label>Anchor cell</label><input type="text" data-chart-anchor="${i}" value="${escapeHtml(anchor)}" /></div>`;
+
+    html += `<div class="field"><label>Series #1 color (RRGGBB)</label><input type="text" data-chart-color="${i}" placeholder="e.g. 1F77B4" maxlength="6" /></div>`;
+
+    if (!writable) {
+      html += `<div class="field full"><span class="error" style="display:block">This chart kind ("${escapeHtml(describeKinds(c.kinds))}") cannot be cloned via the writer yet — pick a target type above to coerce it.</span></div>`;
+    }
+
+    if (c.series && c.series.length > 0) {
+      html += `<div class="field full"><label>Series</label><div style="font-size:0.75rem;color:var(--text-muted);font-family:'SF Mono','Fira Code',monospace">`;
+      for (const s of c.series) {
+        html += `<div>${escapeHtml(String(s.index ?? 0))}: ${escapeHtml(s.name ?? "(unnamed)")} ← ${escapeHtml(s.valuesRef ?? "(literal)")}</div>`;
+      }
+      html += `</div></div>`;
+    }
+
+    html += `</div></details>`;
+  });
+
+  return html;
+}
+
+function readChartUiOverride(
+  i: number,
+  source: Chart,
+): { picked: boolean; options: CloneChartOptions } | { error: string } {
+  const pickEl = document.querySelector<HTMLInputElement>(`[data-chart-pick="${i}"]`);
+  if (!pickEl) return { error: `Chart #${i + 1}: missing picker` };
+  const picked = !pickEl.disabled && pickEl.checked;
+
+  const titleEl = document.querySelector<HTMLInputElement>(`[data-chart-title="${i}"]`);
+  const typeEl = document.querySelector<HTMLSelectElement>(`[data-chart-type="${i}"]`);
+  const anchorEl = document.querySelector<HTMLInputElement>(`[data-chart-anchor="${i}"]`);
+  const colorEl = document.querySelector<HTMLInputElement>(`[data-chart-color="${i}"]`);
+
+  const anchorRaw = (anchorEl?.value || "").trim() || defaultAnchorFor(source, i);
+  const from = parseAnchorCell(anchorRaw);
+  if (!from) {
+    return { error: `Chart #${i + 1}: invalid anchor cell "${anchorRaw}". Use A1-style notation (e.g. B2).` };
+  }
+
+  const opts: CloneChartOptions = { anchor: { from } };
+
+  const typeChoice = (typeEl?.value || "").trim();
+  if (typeChoice) opts.type = typeChoice as WriteChartKind;
+
+  const titleChoice = (titleEl?.value || "").trim();
+  if (titleChoice) opts.title = titleChoice;
+
+  const colorChoice = (colorEl?.value || "").trim().replace(/^#/, "").toUpperCase();
+  if (colorChoice) {
+    if (!/^[0-9A-F]{6}$/.test(colorChoice)) {
+      return { error: `Chart #${i + 1}: color must be 6 hex digits (e.g. 1F77B4).` };
+    }
+    const overrides: CloneChartSeriesOverride[] = [];
+    overrides[0] = { color: colorChoice };
+    opts.seriesOverrides = overrides;
+  }
+
+  return { picked, options: opts };
+}
+
+function cleanWorkbookForRewrite(wb: Workbook): WriteSheet[] {
+  // The reader produces a `Workbook` with `Sheet[]` shaped objects.
+  // For the purpose of round-tripping data to the writer we keep just
+  // the rows/name and drop the read-side metadata the writer doesn't
+  // accept verbatim. We deliberately strip pre-existing charts on each
+  // sheet — the demo re-emits a curated chart selection, so leaking
+  // every original chart back into the output would double up.
+  return wb.sheets.map<WriteSheet>((s) => ({
+    name: s.name,
+    rows: (s.rows ?? []) as CellValue[][],
+  }));
+}
+
+function setupChartClone() {
+  const drop = $("chart-clone-drop");
+  const fileInput = $("chart-clone-file") as HTMLInputElement;
+  const output = $("chart-clone-output");
+  const stats = $("chart-clone-stats");
+  const runBtn = $("chart-clone-run") as HTMLButtonElement;
+  const destSel = $("chart-clone-dest") as HTMLSelectElement;
+  const modeSel = $("chart-clone-mode") as HTMLSelectElement;
+
+  drop.addEventListener("click", () => fileInput.click());
+  drop.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    drop.classList.add("drag-over");
+  });
+  drop.addEventListener("dragleave", () => drop.classList.remove("drag-over"));
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault();
+    drop.classList.remove("drag-over");
+    const file = (e as DragEvent).dataTransfer?.files[0];
+    if (file) handleChartCloneFile(file);
+  });
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files?.[0]) handleChartCloneFile(fileInput.files[0]);
+  });
+
+  async function handleChartCloneFile(file: File) {
+    try {
+      output.innerHTML = '<p style="color:var(--text-dim);text-align:center">Parsing charts...</p>';
+      const buffer = await file.arrayBuffer();
+      const data = new Uint8Array(buffer);
+      const wb = await readXlsx(data);
+      const charts = getCharts(wb);
+
+      chartCloneState = { workbook: wb, rawBytes: data, charts, fileName: file.name };
+
+      // Stats
+      stats.hidden = false;
+      stats.innerHTML = `
+        <div class="stat"><div class="value">${wb.sheets.length}</div><div class="label">Sheets</div></div>
+        <div class="stat"><div class="value">${charts.length}</div><div class="label">Charts</div></div>
+        <div class="stat"><div class="value">${(data.byteLength / 1024).toFixed(1)} KB</div><div class="label">File Size</div></div>
+      `;
+
+      // Refresh destination list with sheets from the workbook + a "new sheet" option.
+      destSel.innerHTML = "";
+      const newOpt = document.createElement("option");
+      newOpt.value = "__new__";
+      newOpt.textContent = '[ New sheet "Charts" ]';
+      destSel.appendChild(newOpt);
+      for (let si = 0; si < wb.sheets.length; si++) {
+        const o = document.createElement("option");
+        o.value = String(si);
+        o.textContent = wb.sheets[si].name;
+        destSel.appendChild(o);
+      }
+
+      output.innerHTML = renderChartList(chartCloneState);
+      runBtn.disabled = charts.length === 0;
+    } catch (e: unknown) {
+      output.innerHTML = `<p class="error">${escapeHtml(String(e))}</p>`;
+      stats.hidden = true;
+      runBtn.disabled = true;
+      chartCloneState = null;
+    }
+  }
+
+  runBtn.addEventListener("click", async () => {
+    if (!chartCloneState) return;
+    try {
+      const state = chartCloneState;
+      const writeSheets = cleanWorkbookForRewrite(state.workbook);
+
+      // Resolve destination sheet
+      const destChoice = destSel.value;
+      const mode = modeSel.value;
+      let destSheet: WriteSheet;
+      let destSheetLabel: string;
+      if (destChoice === "__new__") {
+        const newName = ($("chart-clone-dest-name") as HTMLInputElement).value.trim() || "Charts";
+        // Avoid colliding with an existing sheet by suffixing a number if needed.
+        let unique = newName;
+        let n = 2;
+        while (writeSheets.some((s) => s.name === unique)) {
+          unique = `${newName} ${n++}`;
+        }
+        destSheet = { name: unique, rows: [["Generated by hucre cloneChart() demo"]] };
+        writeSheets.push(destSheet);
+        destSheetLabel = unique;
+      } else {
+        const idx = parseInt(destChoice, 10);
+        destSheet = writeSheets[idx];
+        destSheetLabel = destSheet.name;
+      }
+
+      const composedAnchors: Array<{ from: { row: number; col: number } }> = [];
+      const addedTitles: string[] = [];
+      let addedCount = 0;
+
+      for (let i = 0; i < state.charts.length; i++) {
+        const source = state.charts[i].chart;
+        const result = readChartUiOverride(i, source);
+        if ("error" in result) {
+          throw new Error(result.error);
+        }
+        if (!result.picked) continue;
+
+        // Compose mode lays charts out in a 2-column grid; clone mode
+        // honors each chart's own anchor input as-is.
+        let opts = result.options;
+        if (mode === "compose") {
+          const col = (addedCount % 2) * 9; // ~9 columns wide per chart
+          const row = Math.floor(addedCount / 2) * 18 + 1; // ~18 rows tall
+          opts = { ...opts, anchor: { from: { row, col } } };
+        }
+
+        let chart: SheetChart;
+        try {
+          chart = cloneChart(source, opts);
+        } catch (e: unknown) {
+          throw new Error(`Chart #${i + 1}: ${String(e)}`);
+        }
+
+        addChart(destSheet, chart);
+        composedAnchors.push({ from: opts.anchor.from });
+        addedTitles.push(chart.title ?? "(untitled)");
+        addedCount++;
+      }
+
+      if (addedCount === 0) {
+        toast("Pick at least one chart to clone");
+        return;
+      }
+
+      const bytes = await writeXlsx({ sheets: writeSheets });
+      const blob = new Blob([bytes], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = state.fileName.replace(/\.xlsx$/i, "") + ".clone.xlsx";
+      a.click();
+      URL.revokeObjectURL(url);
+
+      // Append a small log to the output panel.
+      const logHtml: string[] = [];
+      logHtml.push(`<div class="meta" style="margin-top:0.75rem">`);
+      logHtml.push(
+        `Cloned <strong>${addedCount}</strong> chart${addedCount === 1 ? "" : "s"} onto sheet <strong>${escapeHtml(destSheetLabel)}</strong> (${(bytes.byteLength / 1024).toFixed(1)} KB).`,
+      );
+      logHtml.push(`<ul style="margin:0.4rem 0 0 1.2rem;padding:0;font-size:0.75rem">`);
+      addedTitles.forEach((t, k) => {
+        const a = composedAnchors[k].from;
+        logHtml.push(
+          `<li>${escapeHtml(t)} → ${escapeHtml(colIndexToLetter(a.col))}${a.row + 1}</li>`,
+        );
+      });
+      logHtml.push(`</ul></div>`);
+      output.insertAdjacentHTML("beforeend", logHtml.join(""));
+
+      toast(`Downloaded ${addedCount} cloned chart${addedCount === 1 ? "" : "s"}`);
+    } catch (e: unknown) {
+      output.insertAdjacentHTML(
+        "beforeend",
+        `<p class="error" style="margin-top:0.75rem">${escapeHtml(String(e))}</p>`,
+      );
+    }
+  });
+}
+
 // ── Init ──────────────────────────────────────────────────────────
 
 export function setupApp() {
@@ -1177,4 +1544,5 @@ export function setupApp() {
   setupOds();
   setupExport();
   setupFormat();
+  setupChartClone();
 }
