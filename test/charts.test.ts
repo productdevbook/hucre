@@ -14809,3 +14809,172 @@ describe("parseChart — axis labelStrike", () => {
     });
   });
 });
+
+// ── parseChart — data labels fontSize ───────────────────────────────
+
+describe("parseChart — data labels fontSize", () => {
+  const NS_DLF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withDLblsTxPr(sz: string | undefined): string {
+    const defRPr = sz === undefined ? "<a:defRPr/>" : `<a:defRPr sz="${sz}"/>`;
+    return `<c:chartSpace ${NS_DLF}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr>${defRPr}</a:pPr><a:endParaRPr lang="en-US"/></a:p>
+          </c:txPr>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it('surfaces fontSize=14 when sz="1400" (100ths of a point)', () => {
+    const chart = parseChart(withDLblsTxPr("1400"));
+    expect(chart?.dataLabels?.fontSize).toBe(14);
+  });
+
+  it("surfaces a half-point integer-based fractional size (1450 → 14.5)", () => {
+    const chart = parseChart(withDLblsTxPr("1450"));
+    expect(chart?.dataLabels?.fontSize).toBe(14.5);
+  });
+
+  it("returns undefined when <a:defRPr> omits the sz attribute", () => {
+    const chart = parseChart(withDLblsTxPr(undefined));
+    expect(chart?.dataLabels?.fontSize).toBeUndefined();
+  });
+
+  it("returns undefined when the dLbls block has no <c:txPr> body", () => {
+    const xml = `<c:chartSpace ${NS_DLF}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.fontSize).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:dLbls> element at all", () => {
+    const xml = `<c:chartSpace ${NS_DLF}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataLabels).toBeUndefined();
+  });
+
+  it("collapses out-of-range sz values (below 100) to undefined", () => {
+    expect(parseChart(withDLblsTxPr("50"))?.dataLabels?.fontSize).toBeUndefined();
+    expect(parseChart(withDLblsTxPr("0"))?.dataLabels?.fontSize).toBeUndefined();
+  });
+
+  it("collapses out-of-range sz values (above 40000) to undefined", () => {
+    expect(parseChart(withDLblsTxPr("40100"))?.dataLabels?.fontSize).toBeUndefined();
+    expect(parseChart(withDLblsTxPr("999999"))?.dataLabels?.fontSize).toBeUndefined();
+  });
+
+  it("collapses malformed sz tokens (non-numeric) to undefined", () => {
+    expect(parseChart(withDLblsTxPr(""))?.dataLabels?.fontSize).toBeUndefined();
+    expect(parseChart(withDLblsTxPr("abc"))?.dataLabels?.fontSize).toBeUndefined();
+    expect(parseChart(withDLblsTxPr("12pt"))?.dataLabels?.fontSize).toBeUndefined();
+  });
+
+  it("co-surfaces alongside the other dLbls fields (showVal / position / numberFormat)", () => {
+    const xml = `<c:chartSpace ${NS_DLF}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:numFmt formatCode="0.00" sourceLinked="0"/>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr sz="1400"/></a:pPr></a:p>
+          </c:txPr>
+          <c:dLblPos val="outEnd"/>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.fontSize).toBe(14);
+    expect(chart?.dataLabels?.position).toBe("outEnd");
+    expect(chart?.dataLabels?.showValue).toBe(true);
+    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" });
+  });
+
+  it("surfaces the fontSize on a fontSize-only dLbls block (no other show* toggles)", () => {
+    // Even when no other dataLabels field is set, a fontSize-only
+    // <c:txPr> block surfaces a record so the cloned chart preserves
+    // the typography intent.
+    const xml = `<c:chartSpace ${NS_DLF}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr sz="1600"/></a:pPr></a:p>
+          </c:txPr>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="0"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataLabels?.fontSize).toBe(16);
+  });
+});

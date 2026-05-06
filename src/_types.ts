@@ -654,6 +654,39 @@ export interface ChartDataLabels {
    * out and render labels without the connecting lines.
    */
   showLeaderLines?: boolean;
+  /**
+   * Data-label font size in points (range `1..400`), pinned via
+   * `<c:dLbls><c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p>
+   * </c:txPr></c:dLbls>`. Mirrors Excel's "Format Data Labels -> Font
+   * -> Size" knob — the OOXML attribute is in 100ths of a point on
+   * `CT_TextCharacterProperties`' `sz` slot (ECMA-376 Part 1,
+   * §21.1.2.3.7); the writer holds the value in points and converts
+   * at emit time so a caller can pass the value directly without
+   * doing the multiplication.
+   *
+   * Default: omitted — the data labels render at the theme-default
+   * size (Excel's reference behavior for fresh data labels whose
+   * typography has not been customized; the writer skips the entire
+   * `<c:txPr>` block when no font knob is pinned).
+   *
+   * Out-of-range values (`< 1` or `> 400`) and non-numeric tokens
+   * (typed escapes from an untyped caller — strings, `null`, `NaN`,
+   * `Infinity`) collapse to `undefined` so the writer never emits a
+   * malformed `sz` attribute. Fractional points round to the nearest
+   * half-point (Excel's UI step) — `12.3` → `12.5`, `12.24` → `12`.
+   *
+   * The `<c:txPr>` block lands between `<c:spPr>` and `<c:dLblPos>`,
+   * matching the CT_DLbls schema sequence (ECMA-376 Part 1,
+   * §21.2.2.50). Composes independently with the other dLbls knobs —
+   * {@link position} / {@link separator} / {@link numberFormat} /
+   * {@link showLeaderLines} / the `show*` toggles — so a caller can
+   * pin the font size without touching the rest of the configuration.
+   * Mirrors {@link SheetChart.titleFontSize} /
+   * {@link SheetChart.legendFontSize} — same range, same conversion
+   * factor — so a caller can thread a single point value through every
+   * typography-pinning slot.
+   */
+  fontSize?: number;
 }
 
 /**
@@ -4086,6 +4119,23 @@ export interface ChartDataLabelsInfo {
    * cleanly even when the chart-type element ends up coerced.
    */
   showLeaderLines?: boolean;
+  /**
+   * Data-label font size in points pulled from `<c:dLbls><c:txPr>
+   * <a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p></c:txPr></c:dLbls>`.
+   * The OOXML attribute is in 100ths of a point on
+   * `CT_TextCharacterProperties`' `sz` slot (ECMA-376 Part 1,
+   * §21.1.2.3.7); the reader divides by 100 at parse time so the
+   * surfaced value matches what the user sees in Excel's "Format Data
+   * Labels -> Font -> Size" UI.
+   *
+   * Out-of-range values (`< 1` or `> 400`) and malformed tokens
+   * collapse to `undefined` so absence and a malformed source value
+   * round-trip identically through {@link cloneChart} — only an
+   * in-range `sz` attribute surfaces a numeric value. Mirrors the
+   * writer-side {@link ChartDataLabels.fontSize} so a parsed value
+   * slots straight into {@link cloneChart} without conversion.
+   */
+  fontSize?: number;
 }
 
 /**

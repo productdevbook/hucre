@@ -3837,6 +3837,19 @@ function buildDataLabelsBody(dl: ChartDataLabels, chartType: WriteChartKind): st
     );
   }
 
+  // CT_DLbls schema places `<c:txPr>` between `<c:spPr>` and
+  // `<c:dLblPos>` (ECMA-376 Part 1, §21.2.2.50). The writer currently
+  // skips `<c:spPr>` (not yet authored), so `<c:txPr>` lands directly
+  // after `<c:numFmt>` and before `<c:dLblPos>`. The block currently
+  // carries the data-label font size; future typography pins (color,
+  // bold, italic, underline, strikethrough) will land on the same
+  // `<a:defRPr>` slot. The writer skips the entire block when no font
+  // knob is pinned so a fresh chart matches Excel's reference shape.
+  const txPrXml = buildDataLabelsTxPr(resolveDataLabelsFontSize(dl.fontSize));
+  if (txPrXml !== undefined) {
+    children.push(txPrXml);
+  }
+
   if (dl.position) {
     children.push(xmlSelfClose("c:dLblPos", { val: dl.position }));
   }
@@ -3901,6 +3914,56 @@ function resolveDataLabelsNumberFormat(
   const out: ChartAxisNumberFormat = { formatCode };
   if (value.sourceLinked === true) out.sourceLinked = true;
   return out;
+}
+
+/**
+ * Resolve `<c:dLbls><c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
+ * </a:p></c:txPr></c:dLbls>` from {@link ChartDataLabels.fontSize}.
+ *
+ * Returns the size in points (`1..400`), or `undefined` when the
+ * caller leaves the field unset / passed an out-of-range or
+ * non-numeric token. Delegates to {@link normalizeTitleFontSize} so
+ * the chart-title / axis-title / axis tick-label / legend / data-label
+ * font-size resolvers share the same range, the same fractional
+ * rounding (Excel's UI step is 0.5pt), and the same OOXML conversion
+ * (100ths of a point at emit time).
+ */
+function resolveDataLabelsFontSize(value: number | undefined): number | undefined {
+  return normalizeTitleFontSize(value);
+}
+
+/**
+ * Build the `<c:txPr>` block that carries a data-label's typography
+ * pins. Returns `undefined` when every input is unset so the caller
+ * can elide the element entirely (Excel's reference serialization
+ * omits `<c:txPr>` from `<c:dLbls>` when the labels render at the
+ * theme-default style).
+ *
+ * The emitted block mirrors the minimal `<c:txPr>` shape Excel writes
+ * when the user pins a data-label typography knob — `<a:bodyPr/>` (no
+ * rotation because the data-label rotation is parked in a separate
+ * extension element Excel emits at write time), `<a:lstStyle/>` is
+ * the empty list-style placeholder the schema requires, and the
+ * `<a:p><a:pPr><a:defRPr sz="N"/></a:pPr><a:endParaRPr/></a:p>`
+ * paragraph stub Excel always emits hosts the typography attributes
+ * on `<a:defRPr>`. Mirrors the chart-title / axis-title / axis
+ * tick-label / legend `<c:txPr>` slots exactly so a re-parse picks
+ * the value off the canonical default-paragraph slot every other
+ * typography reader expects.
+ */
+function buildDataLabelsTxPr(fontSizePt: number | undefined): string | undefined {
+  if (fontSizePt === undefined) return undefined;
+  const defRPrAttrs: Record<string, string | number> = {
+    sz: fontSizePt * TITLE_FONT_SZ_PER_POINT,
+  };
+  return xmlElement("c:txPr", undefined, [
+    xmlSelfClose("a:bodyPr"),
+    xmlSelfClose("a:lstStyle"),
+    xmlElement("a:p", undefined, [
+      xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", defRPrAttrs)]),
+      xmlSelfClose("a:endParaRPr", { lang: "en-US" }),
+    ]),
+  ]);
 }
 
 // ── Legend ───────────────────────────────────────────────────────────

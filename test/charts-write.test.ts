@@ -14003,3 +14003,180 @@ describe("writeChart — axis labelStrike", () => {
     expect(reparsed?.axes?.y?.labelStrike).toBe(true);
   });
 });
+
+// ── writeChart — data labels fontSize ───────────────────────────────
+
+describe("writeChart — dataLabels.fontSize", () => {
+  function dLblsOf(xml: string): string {
+    const m = xml.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/);
+    if (!m) throw new Error("No <c:dLbls> block found in chart XML");
+    return m[0];
+  }
+
+  it("does NOT emit <c:txPr> when fontSize is unset (matches Excel reference)", () => {
+    const result = writeChart(makeChart({ dataLabels: { showValue: true } }), "Sheet1");
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).not.toContain("<c:txPr>");
+    expect(dLbls).not.toContain("a:defRPr");
+  });
+
+  it('threads fontSize=14 through to <c:dLbls><c:txPr> as sz="1400"', () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontSize: 14 } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain("<c:txPr>");
+    expect(dLbls).toContain('sz="1400"');
+  });
+
+  it("converts fractional points to 100ths-of-a-point at emit time (12.5 → 1250)", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontSize: 12.5 } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).toContain('sz="1250"');
+  });
+
+  it("rounds non-half-step fractional points to the nearest 0.5pt (Excel UI step)", () => {
+    // 12.3 → 12.5, 12.24 → 12 — mirrors the title / axis font-size
+    // resolvers exactly so a single point value threads cleanly
+    // through every typography slot Excel exposes.
+    const a = writeChart(makeChart({ dataLabels: { showValue: true, fontSize: 12.3 } }), "Sheet1");
+    expect(dLblsOf(a.chartXml)).toContain('sz="1250"');
+    const b = writeChart(makeChart({ dataLabels: { showValue: true, fontSize: 12.24 } }), "Sheet1");
+    expect(dLblsOf(b.chartXml)).toContain('sz="1200"');
+  });
+
+  it("places <c:txPr> after <c:numFmt> and before <c:dLblPos> inside <c:dLbls> (CT_DLbls order)", () => {
+    const result = writeChart(
+      makeChart({
+        dataLabels: {
+          showValue: true,
+          fontSize: 14,
+          position: "outEnd",
+          numberFormat: { formatCode: "0.00" },
+        },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls.indexOf("c:numFmt")).toBeLessThan(dLbls.indexOf("c:txPr"));
+    expect(dLbls.indexOf("c:txPr")).toBeLessThan(dLbls.indexOf("c:dLblPos"));
+  });
+
+  it("only emits <c:txPr> once inside <c:dLbls>", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontSize: 14 } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    const occurrences = dLbls.match(/<c:txPr>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads fontSize through every chart family that emits dLbls", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, dataLabels: { showValue: true, fontSize: 14 } }),
+        "Sheet1",
+      );
+      const dLbls = dLblsOf(result.chartXml);
+      expect(dLbls).toContain('sz="1400"');
+    }
+  });
+
+  it("drops out-of-range font sizes (below 1pt)", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontSize: 0.5 } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops out-of-range font sizes (above 400pt)", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontSize: 401 } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops non-numeric inputs (string leaking past the type guard)", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ dataLabels: { showValue: true, fontSize: "14" as any } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops NaN inputs", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontSize: Number.NaN } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("drops Infinity inputs", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontSize: Number.POSITIVE_INFINITY } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:txPr>");
+  });
+
+  it("emits the standard txPr stub shape (a:bodyPr / a:lstStyle / a:p / a:endParaRPr)", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontSize: 14 } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain("<a:bodyPr/>");
+    expect(dLbls).toContain("<a:lstStyle/>");
+    expect(dLbls).toContain('<a:defRPr sz="1400"/>');
+    expect(dLbls).toContain('<a:endParaRPr lang="en-US"/>');
+  });
+
+  it("round-trips a fontSize=14 value through parseChart", () => {
+    const written = writeChart(
+      makeChart({ dataLabels: { showValue: true, fontSize: 14 } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataLabels?.fontSize).toBe(14);
+  });
+
+  it("collapses an unset fontSize round-trip back to undefined", () => {
+    const written = writeChart(makeChart({ dataLabels: { showValue: true } }), "Sheet1").chartXml;
+    expect(parseChart(written)?.dataLabels?.fontSize).toBeUndefined();
+  });
+
+  it("survives a writeXlsx round trip — dataLabels.fontSize lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            dataLabels: { showValue: true, fontSize: 14 },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('sz="1400"');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.dataLabels?.fontSize).toBe(14);
+  });
+});
