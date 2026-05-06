@@ -9244,6 +9244,176 @@ describe("writeChart — data table", () => {
     const reparsed = parseChart(chartXml);
     expect(reparsed?.dataTable?.bold).toBe(true);
   });
+
+  // ── data-table underline ───────────────────────────────────────────
+
+  it("skips the u attribute when underline is unset (writer default)", () => {
+    // Absence collapses to omitting the u attribute entirely — the
+    // OOXML default `"none"` is functionally identical to absence
+    // and Excel itself omits the attribute on a fresh data table.
+    const result = writeChart(makeChart({ dataTable: true }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice).not.toMatch(/u="(sng|none)"/);
+  });
+
+  it("emits u='sng' when dataTable.underline is true", () => {
+    const result = writeChart(makeChart({ dataTable: { underline: true } }), "Sheet1");
+    expect(result.chartXml).toContain('<a:defRPr u="sng"/>');
+  });
+
+  it("emits u='none' explicitly when dataTable.underline is false", () => {
+    // Pinning `false` lets a clone target override an upstream `u="sng"`
+    // from a templated chart. Functionally identical to absence but
+    // useful for explicit overrides.
+    const result = writeChart(makeChart({ dataTable: { underline: false } }), "Sheet1");
+    expect(result.chartXml).toContain('<a:defRPr u="none"/>');
+  });
+
+  it("collapses non-boolean underline escapes to undefined", () => {
+    // Typed escapes from an untyped caller — strings, null, numbers —
+    // drop the field rather than fabricate a malformed u attribute.
+    const dt = { underline: "yes" } as unknown as { underline: boolean };
+    const result = writeChart(makeChart({ dataTable: dt }), "Sheet1");
+    const dTableSlice = result.chartXml.slice(
+      result.chartXml.indexOf("<c:dTable>"),
+      result.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice).not.toContain("<c:txPr>");
+    const dt2 = { underline: 1 } as unknown as { underline: boolean };
+    const result2 = writeChart(makeChart({ dataTable: dt2 }), "Sheet1");
+    const dTableSlice2 = result2.chartXml.slice(
+      result2.chartXml.indexOf("<c:dTable>"),
+      result2.chartXml.indexOf("</c:dTable>"),
+    );
+    expect(dTableSlice2).not.toContain("<c:txPr>");
+  });
+
+  it("composes underline with fontSize / fontColor / bold on the same defRPr slot", () => {
+    // All four typography knobs land on the same <a:defRPr> — the
+    // size, bold, and underline as attributes, the color as the wrapped <a:solidFill>.
+    const result = writeChart(
+      makeChart({
+        dataTable: { fontSize: 14, fontColor: "1070CA", bold: true, underline: true },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain(
+      '<a:defRPr sz="1400" b="1" u="sng"><a:solidFill><a:srgbClr val="1070CA"/></a:solidFill></a:defRPr>',
+    );
+  });
+
+  it("composes underline with fontSize alone (no fontColor) on a self-closing defRPr", () => {
+    const result = writeChart(
+      makeChart({ dataTable: { fontSize: 14, underline: true } }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('<a:defRPr sz="1400" u="sng"/>');
+  });
+
+  it("threads underline through every chart family with axes", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(makeChart({ type, dataTable: { underline: true } }), "Sheet1");
+      expect(result.chartXml).toContain('<a:defRPr u="sng"/>');
+    }
+    const scatter = writeChart(
+      {
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        dataTable: { underline: true },
+      },
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain('<a:defRPr u="sng"/>');
+  });
+
+  it("silently drops underline on pie charts (no <c:dTable> slot at all)", () => {
+    const result = writeChart(
+      {
+        type: "pie",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        dataTable: { underline: true },
+      },
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:dTable");
+    expect(result.chartXml).not.toContain('<a:defRPr u="sng"/>');
+  });
+
+  it("composes underline with the four boolean toggles independently", () => {
+    const result = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: false,
+          showVertBorder: true,
+          showOutline: false,
+          showKeys: true,
+          underline: true,
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).toContain('<c:showHorzBorder val="0"/>');
+    expect(result.chartXml).toContain('<c:showVertBorder val="1"/>');
+    expect(result.chartXml).toContain('<c:showOutline val="0"/>');
+    expect(result.chartXml).toContain('<c:showKeys val="1"/>');
+    expect(result.chartXml).toContain('<a:defRPr u="sng"/>');
+  });
+
+  it("round-trips a pinned dataTable underline through parseChart", () => {
+    const written = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+          underline: true,
+        },
+      }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+      underline: true,
+    });
+  });
+
+  it("threads underline end-to-end through writeXlsx packaging", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Dashboard",
+        rows: [
+          ["Quarter", "Revenue"],
+          ["Q1", 10],
+          ["Q2", 20],
+          ["Q3", 30],
+        ],
+        charts: [
+          {
+            type: "column",
+            series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            dataTable: { showKeys: true, underline: true },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain("<c:dTable>");
+    expect(chartXml).toContain('<a:defRPr u="sng"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.dataTable?.underline).toBe(true);
+  });
 });
 
 // ── writeChart — chart-space protection ──────────────────────────────

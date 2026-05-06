@@ -1111,6 +1111,7 @@ function resolveDataTable(chart: SheetChart):
       fontSize: number | undefined;
       fontColor: string | undefined;
       bold: boolean | undefined;
+      underline: boolean | undefined;
     }
   | undefined {
   // Pie / doughnut have no axes — the OOXML schema places `<c:dTable>`
@@ -1131,6 +1132,7 @@ function resolveDataTable(chart: SheetChart):
       fontSize: undefined,
       fontColor: undefined,
       bold: undefined,
+      underline: undefined,
     };
   }
 
@@ -1146,6 +1148,7 @@ function resolveDataTable(chart: SheetChart):
     fontSize: resolveDataTableFontSize(raw.fontSize),
     fontColor: resolveDataTableFontColor(raw.fontColor),
     bold: resolveDataTableBold(raw.bold),
+    underline: resolveDataTableUnderline(raw.underline),
   };
 }
 
@@ -1199,6 +1202,25 @@ function resolveDataTableBold(value: boolean | undefined): boolean | undefined {
 }
 
 /**
+ * Resolve `<c:dTable><c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr>
+ * </a:p></c:txPr></c:dTable>` from {@link ChartDataTable.underline}.
+ *
+ * Returns the underline flag, or `undefined` when the caller leaves
+ * the field unset / passed a non-boolean token. Mirrors the
+ * chart-title / axis-title / axis tick-label / legend / data-label
+ * underline resolvers exactly — only literal `true` / `false` pass
+ * through; non-boolean tokens (typed escapes from an untyped caller)
+ * collapse to `undefined`. The writer translates `true` into
+ * `u="sng"` (Excel's UI variant — single underline) and `false` into
+ * `u="none"` at emit time.
+ */
+function resolveDataTableUnderline(value: boolean | undefined): boolean | undefined {
+  if (value === true) return true;
+  if (value === false) return false;
+  return undefined;
+}
+
+/**
  * Serialize a resolved data-table into `<c:dTable>` with its four
  * required boolean children, in the order CT_DTable mandates:
  * `showHorzBorder`, `showVertBorder`, `showOutline`, `showKeys`. When
@@ -1222,6 +1244,7 @@ function buildDataTable(table: {
   fontSize: number | undefined;
   fontColor: string | undefined;
   bold: boolean | undefined;
+  underline: boolean | undefined;
 }): string {
   const children: string[] = [
     xmlSelfClose("c:showHorzBorder", { val: table.showHorzBorder ? 1 : 0 }),
@@ -1234,7 +1257,7 @@ function buildDataTable(table: {
   // Part 1, §21.2.2.54). The writer skips emission entirely when no
   // typography knob is pinned so a fresh chart matches Excel's
   // reference serialization byte-for-byte.
-  const txPrXml = buildDataTableTxPr(table.fontSize, table.fontColor, table.bold);
+  const txPrXml = buildDataTableTxPr(table.fontSize, table.fontColor, table.bold, table.underline);
   if (txPrXml !== undefined) children.push(txPrXml);
   return xmlElement("c:dTable", undefined, children);
 }
@@ -1264,11 +1287,19 @@ function buildDataTableTxPr(
   fontSizePt: number | undefined,
   rgbHex: string | undefined,
   bold: boolean | undefined,
+  underline: boolean | undefined,
 ): string | undefined {
-  if (fontSizePt === undefined && rgbHex === undefined && bold === undefined) return undefined;
+  if (
+    fontSizePt === undefined &&
+    rgbHex === undefined &&
+    bold === undefined &&
+    underline === undefined
+  )
+    return undefined;
   const defRPrAttrs: Record<string, string | number> = {};
   if (fontSizePt !== undefined) defRPrAttrs.sz = fontSizePt * TITLE_FONT_SZ_PER_POINT;
   if (bold !== undefined) defRPrAttrs.b = bold ? 1 : 0;
+  if (underline !== undefined) defRPrAttrs.u = underline ? "sng" : "none";
   // OOXML's `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/>
   // </a:solidFill></a:defRPr>` carries the data-table font color.
   // Absence (`undefined`) collapses to skipping the `<a:solidFill>`

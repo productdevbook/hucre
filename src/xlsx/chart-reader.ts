@@ -4463,6 +4463,8 @@ function parseDataTable(plotArea: XmlElement): ChartDataTable | undefined {
   if (fontColor !== undefined) out.fontColor = fontColor;
   const bold = parseDataTableBold(el);
   if (bold !== undefined) out.bold = bold;
+  const underline = parseDataTableUnderline(el);
+  if (underline !== undefined) out.underline = underline;
   return out;
 }
 
@@ -4500,6 +4502,46 @@ function parseDataTableBold(dTable: XmlElement): boolean | undefined {
     default:
       return undefined;
   }
+}
+
+/**
+ * Pull `<c:dTable><c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p>
+ * </c:txPr></c:dTable>` off a data-table block. Returns the underline
+ * flag.
+ *
+ * The OOXML `u` attribute is the `ST_TextUnderlineType` enumeration
+ * on `CT_TextCharacterProperties`. `u="sng"` (Excel's UI variant —
+ * single underline) surfaces `true`; `u="none"` (the OOXML default)
+ * surfaces `false` so a templated chart that pinned `u="none"`
+ * round-trips literally and a clone target can override an upstream
+ * `u="sng"` cleanly. The schema's other variants (`"dbl"`, `"heavy"`,
+ * `"dotted"`, `"dotDash"`, `"wavy"`, etc.) and absence / malformed
+ * tokens collapse to `undefined` so a fresh data table that never
+ * pinned the flag round-trips identically through `cloneChart`. The
+ * reader never silently downgrades a non-`"sng"` underline to a
+ * single line on round-trip; only the boolean shape Excel's UI
+ * exposes survives the parse.
+ *
+ * Mirrors the data-table bold reader pattern — `true` and `false`
+ * round-trip explicitly so a clone can override either direction —
+ * while the OOXML attribute layout matches the chart-title /
+ * axis-title / axis tick-label / legend / data-label underline
+ * readers exactly so a parsed value slots straight back into the
+ * writer's emit path.
+ */
+function parseDataTableUnderline(dTable: XmlElement): boolean | undefined {
+  const txPr = findChild(dTable, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const raw = defRPr.attrs.u;
+  if (raw === "sng") return true;
+  if (raw === "none") return false;
+  return undefined;
 }
 
 /**
