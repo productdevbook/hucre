@@ -9665,6 +9665,162 @@ describe("writeChart — title bold", () => {
   });
 });
 
+// ── writeChart — title italic ───────────────────────────────────────
+
+describe("writeChart — title italic", () => {
+  function titleBlockOf(xml: string): string {
+    return xml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+  }
+
+  function defRPrIOf(xml: string): string | undefined {
+    // The title's <a:defRPr> lives inside <c:title><c:tx><c:rich><a:p><a:pPr>.
+    const titleBlock = titleBlockOf(xml);
+    const m = titleBlock.match(/<a:defRPr\b[^/]*\/>/);
+    if (!m) return undefined;
+    const i = m[0].match(/\bi="([^"]+)"/);
+    return i ? i[1] : undefined;
+  }
+
+  function rPrIOf(xml: string): string | undefined {
+    const titleBlock = titleBlockOf(xml);
+    const m = titleBlock.match(/<a:rPr\b[^/]*\/>/);
+    if (!m) return undefined;
+    const i = m[0].match(/\bi="([^"]+)"/);
+    return i ? i[1] : undefined;
+  }
+
+  it("omits the i attribute by default (matches Excel's reference non-italic title)", () => {
+    // Excel itself omits `i` on a non-italic title — the OOXML default
+    // `false` collapses to absence of the attribute. Only the bold flag
+    // is always emitted.
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(defRPrIOf(result.chartXml)).toBeUndefined();
+    expect(rPrIOf(result.chartXml)).toBeUndefined();
+  });
+
+  it('emits i="1" on titleItalic=true', () => {
+    const result = writeChart(makeChart({ titleItalic: true }), "Sheet1");
+    expect(defRPrIOf(result.chartXml)).toBe("1");
+    expect(rPrIOf(result.chartXml)).toBe("1");
+  });
+
+  it("omits the i attribute on titleItalic=false (functionally identical to omission)", () => {
+    const result = writeChart(makeChart({ titleItalic: false }), "Sheet1");
+    expect(defRPrIOf(result.chartXml)).toBeUndefined();
+    expect(rPrIOf(result.chartXml)).toBeUndefined();
+  });
+
+  it("drops non-boolean inputs back to the OOXML default (defends against type guard escape)", () => {
+    const result = writeChart(makeChart({ titleItalic: "true" as any }), "Sheet1");
+    expect(defRPrIOf(result.chartXml)).toBeUndefined();
+    const result2 = writeChart(makeChart({ titleItalic: 1 as any }), "Sheet1");
+    expect(defRPrIOf(result2.chartXml)).toBeUndefined();
+  });
+
+  it("ignores titleItalic when the chart renders no title (showTitle=false)", () => {
+    // The whole `<c:title>` block is suppressed — no `<a:defRPr>` to
+    // host the italic flag.
+    const result = writeChart(makeChart({ showTitle: false, titleItalic: true }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:title>");
+  });
+
+  it("ignores titleItalic when the chart has no literal title", () => {
+    const result = writeChart(makeChart({ title: undefined, titleItalic: true }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:title>");
+  });
+
+  it("composes independently with titleBold, titleFontSize, titleRotation, and titleOverlay", () => {
+    const result = writeChart(
+      makeChart({
+        titleItalic: true,
+        titleBold: true,
+        titleFontSize: 24,
+        titleRotation: -45,
+        titleOverlay: true,
+      }),
+      "Sheet1",
+    );
+    const titleBlock = titleBlockOf(result.chartXml);
+    expect(titleBlock).toContain('rot="-2700000"');
+    expect(titleBlock).toContain('sz="2400"');
+    expect(titleBlock).toContain('b="1"');
+    expect(titleBlock).toContain('i="1"');
+    expect(titleBlock).toContain('<c:overlay val="1"/>');
+  });
+
+  it("preserves the title body's other attributes (lang='en-US', sz, b)", () => {
+    const result = writeChart(makeChart({ titleItalic: true }), "Sheet1");
+    const titleBlock = titleBlockOf(result.chartXml);
+    expect(titleBlock).toContain('lang="en-US"');
+    // The default 14pt size still lands on both slots even when italic flips.
+    expect(titleBlock.match(/sz="1400"/g)?.length).toBeGreaterThanOrEqual(2);
+    // The default `b="0"` (non-bold) is still emitted on both slots.
+    expect(titleBlock.match(/b="0"/g)?.length).toBeGreaterThanOrEqual(2);
+    // `i="1"` lands on both the <a:defRPr> and the <a:rPr>.
+    expect(titleBlock.match(/i="1"/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("threads through every chart family (bar / column / line / pie / scatter / area)", () => {
+    const types: WriteChartKind[] = ["bar", "column", "line", "pie", "scatter", "area"];
+    for (const type of types) {
+      const result = writeChart(makeChart({ type, titleItalic: true }), "Sheet1");
+      expect(defRPrIOf(result.chartXml)).toBe("1");
+    }
+  });
+
+  it("parse round-trip surfaces titleItalic from the writer's output", () => {
+    const written = writeChart(makeChart({ titleItalic: true }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleItalic).toBe(true);
+  });
+
+  it("collapses the default (non-italic) round-trip back to undefined", () => {
+    // A fresh chart omits the `i` attribute; the reader collapses
+    // absence to `undefined` so absence and the default round-trip
+    // identically.
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleItalic).toBeUndefined();
+  });
+
+  it("collapses the explicit titleItalic=false round-trip back to undefined", () => {
+    // titleItalic=false omits the `i` attribute (the OOXML default)
+    // which the reader collapses to `undefined`. So pinning `false` is
+    // functionally equivalent to absence on round-trip.
+    const written = writeChart(makeChart({ titleItalic: false }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleItalic).toBeUndefined();
+  });
+
+  it("writeXlsx package round-trip surfaces titleItalic from the chart part", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Revenue"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Quarterly Revenue",
+            titleItalic: true,
+            series: [{ name: "Revenue", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const titleBlock = chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(titleBlock).toContain('i="1"');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.titleItalic).toBe(true);
+  });
+});
+
 // ── writeChart — axis title rotation ────────────────────────────────
 
 describe("writeChart — axis title rotation", () => {

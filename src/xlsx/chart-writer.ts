@@ -74,6 +74,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveTitleRotation(chart),
         resolveTitleFontSize(chart),
         resolveTitleBold(chart),
+        resolveTitleItalic(chart),
       ),
     );
   }
@@ -210,6 +211,7 @@ function buildTitle(
   rotationDeg: number | undefined,
   fontSizePt: number | undefined,
   bold: boolean | undefined,
+  italic: boolean | undefined,
 ): string {
   // OOXML's `<a:bodyPr rot="N"/>` attribute is in 60000ths of a degree.
   // The writer holds `titleRotation` in whole degrees and converts at
@@ -236,6 +238,16 @@ function buildTitle(
   // a re-parse picks the value up off either canonical slot — Excel
   // keeps the two attributes in sync.
   const b = bold ? 1 : 0;
+  // OOXML's `<a:defRPr i=".."/>` / `<a:rPr i=".."/>` attribute is the
+  // `xsd:boolean` italic flag on `CT_TextCharacterProperties`. Mirrors
+  // the bold pattern: `titleItalic` lands on both the default-paragraph
+  // `<a:defRPr>` and the literal run's `<a:rPr>` so a re-parse picks
+  // the value up off either canonical slot — Excel keeps the two
+  // attributes in sync. Absence (`undefined`) and explicit `false` both
+  // collapse to omitting the attribute so a fresh chart matches Excel's
+  // reference serialization byte-for-byte (Excel itself omits `i` when
+  // the title is non-italic — only the bold flag is always emitted).
+  const i = italic === true ? 1 : undefined;
   return xmlElement("c:title", undefined, [
     xmlElement("c:tx", undefined, [
       xmlElement("c:rich", undefined, [
@@ -253,9 +265,9 @@ function buildTitle(
         ),
         xmlSelfClose("a:lstStyle"),
         xmlElement("a:p", undefined, [
-          xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz, b })]),
+          xmlElement("a:pPr", undefined, [xmlSelfClose("a:defRPr", { sz, b, i })]),
           xmlElement("a:r", undefined, [
-            xmlSelfClose("a:rPr", { lang: "en-US", sz, b }),
+            xmlSelfClose("a:rPr", { lang: "en-US", sz, b, i }),
             xmlElement("a:t", undefined, xmlEscape(title)),
           ]),
         ]),
@@ -407,6 +419,39 @@ function normalizeTitleBold(value: boolean | undefined): boolean | undefined {
  */
 function resolveTitleBold(chart: SheetChart): boolean | undefined {
   return normalizeTitleBold(chart.titleBold);
+}
+
+/**
+ * Normalize a {@link SheetChart.titleItalic} value for the
+ * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p>
+ * </c:rich></c:tx></c:title>` writer slot. Returns the literal
+ * boolean when the input is `true` / `false`, or `undefined` for any
+ * other token (including `null`-shaped escapes from an untyped
+ * caller). Absence and non-boolean tokens both collapse to
+ * `undefined` so the writer omits the `i` attribute (Excel's reference
+ * serialization for a non-italic title — the OOXML default `false`
+ * collapses to absence).
+ */
+function normalizeTitleItalic(value: boolean | undefined): boolean | undefined {
+  if (value === true) return true;
+  if (value === false) return false;
+  return undefined;
+}
+
+/**
+ * Resolve `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/>
+ * </a:pPr></a:p></c:rich></c:tx></c:title>` from
+ * {@link SheetChart.titleItalic}.
+ *
+ * Returns the literal boolean, or `undefined` when the chart leaves
+ * the field unset / passed a non-boolean token. The flag is only
+ * meaningful when the chart actually emits a title — the caller is
+ * expected to gate the call on `showTitle && chart.title`. A chart
+ * whose title is suppressed has no `<c:title>` block to host the flag
+ * in either case.
+ */
+function resolveTitleItalic(chart: SheetChart): boolean | undefined {
+  return normalizeTitleItalic(chart.titleItalic);
 }
 
 /**

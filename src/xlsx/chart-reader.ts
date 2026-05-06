@@ -132,6 +132,19 @@ export function parseChart(xml: string): Chart | undefined {
   const titleBold = parseTitleBold(chartEl);
   if (titleBold !== undefined) out.titleBold = titleBold;
 
+  // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p>
+  // </c:rich></c:tx></c:title>` mirrors Excel's "Format Chart Title ->
+  // Font -> Italic" toggle. Same scope rule as the bold flag — a chart
+  // that omits `<c:title>` (or whose title is a `<c:strRef>` formula
+  // reference with no `<c:rich>` body) has no `<a:p>` slot to surface
+  // the flag from, so the helper short-circuits to `undefined`. The
+  // OOXML default `false` collapses to `undefined` so absence and
+  // `i="0"` round-trip identically through {@link cloneChart} — only
+  // an explicit `i="1"` surfaces `true`. The value threads straight
+  // back into the writer-side {@link SheetChart.titleItalic} field.
+  const titleItalic = parseTitleItalic(chartEl);
+  if (titleItalic !== undefined) out.titleItalic = titleItalic;
+
   // `<c:autoTitleDeleted>` records whether the user explicitly deleted
   // the auto-generated title — independent of whether a literal
   // `<c:title>` is present. The element sits on `<c:chart>` directly
@@ -2158,6 +2171,55 @@ function parseTitleBold(chartEl: XmlElement): boolean | undefined {
   // The OOXML default `false` collapses to `undefined` so absence and
   // `b="0"` round-trip identically through the writer — only an
   // explicit `b="1"` surfaces `true`.
+  if (parsed === true) return true;
+  return undefined;
+}
+
+// ── Title Italic ─────────────────────────────────────────────────────
+
+/**
+ * Pull `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr>
+ * </a:p></c:rich></c:tx></c:title>` off the chart. Returns the italic
+ * flag.
+ *
+ * The OOXML `i` attribute is the `xsd:boolean` italic flag on
+ * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7). The
+ * OOXML default `false` collapses to `undefined` so absence and
+ * `i="0"` round-trip identically — only an explicit `i="1"` surfaces
+ * `true`. Unknown / malformed `i` tokens drop to `undefined` rather
+ * than fabricate a value the writer would never emit.
+ *
+ * Returns `undefined` whenever the chart omits the `<c:title>` element
+ * — there is no `<a:p>` slot to surface the flag from in that case —
+ * or when the title is a `<c:strRef>` (formula reference) with no
+ * `<c:rich>` body. The `<a:defRPr>` lives inside
+ * `<c:tx><c:rich><a:p><a:pPr>` per the CT_Title schema (the
+ * default-paragraph properties on the rich-text body's first
+ * paragraph); the lookup is scoped to that path so a stray
+ * `<a:defRPr>` elsewhere in the chart (e.g. on an axis title or a
+ * data-labels block) cannot leak in.
+ */
+function parseTitleItalic(chartEl: XmlElement): boolean | undefined {
+  const title = findChild(chartEl, "title");
+  if (!title) return undefined;
+  const tx = findChild(title, "tx");
+  if (!tx) return undefined;
+  const rich = findChild(tx, "rich");
+  if (!rich) return undefined;
+  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
+  // default-paragraph italic flag. The reader walks the canonical chain
+  // and bails on the first missing link so a malformed `<c:rich>`
+  // surfaces as absence rather than a fabricated value.
+  const p = findChild(rich, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const parsed = parseBoolAttr(defRPr.attrs.i);
+  // The OOXML default `false` collapses to `undefined` so absence and
+  // `i="0"` round-trip identically through the writer — only an
+  // explicit `i="1"` surfaces `true`.
   if (parsed === true) return true;
   return undefined;
 }

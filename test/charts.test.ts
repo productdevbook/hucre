@@ -10207,6 +10207,194 @@ describe("parseChart — title bold", () => {
   });
 });
 
+// ── parseChart — title italic ────────────────────────────────────────
+
+describe("parseChart — title italic", () => {
+  const NS_TI = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withTitleItalic(i: string | undefined): string {
+    const defRPr = i === undefined ? "<a:defRPr/>" : `<a:defRPr i="${i}"/>`;
+    return `<c:chartSpace ${NS_TI}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr>${defRPr}</a:pPr><a:r><a:t>Quarterly Revenue</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces true when the title pinned i='1'", () => {
+    const chart = parseChart(withTitleItalic("1"));
+    expect(chart?.titleItalic).toBe(true);
+  });
+
+  it("collapses i='0' to undefined (OOXML default round-trips identically)", () => {
+    const chart = parseChart(withTitleItalic("0"));
+    expect(chart?.titleItalic).toBeUndefined();
+  });
+
+  it("collapses absence of the i attribute to undefined", () => {
+    const chart = parseChart(withTitleItalic(undefined));
+    expect(chart?.titleItalic).toBeUndefined();
+  });
+
+  it("accepts the OOXML truthy spelling 'true'", () => {
+    const chart = parseChart(withTitleItalic("true"));
+    expect(chart?.titleItalic).toBe(true);
+  });
+
+  it("collapses the OOXML falsy spelling 'false' to undefined", () => {
+    const chart = parseChart(withTitleItalic("false"));
+    expect(chart?.titleItalic).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:title> element", () => {
+    const xml = `<c:chartSpace ${NS_TI}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleItalic).toBeUndefined();
+  });
+
+  it("returns undefined when <c:title> has no <c:tx><c:rich> body (strRef)", () => {
+    // A title that only carries `<c:strRef>` (formula reference) has
+    // no `<a:p><a:pPr><a:defRPr>` to host the italic flag.
+    const xml = `<c:chartSpace ${NS_TI}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:strRef>
+          <c:f>Sheet1!$A$1</c:f>
+          <c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Revenue</c:v></c:pt></c:strCache>
+        </c:strRef>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleItalic).toBeUndefined();
+    expect(chart?.title).toBe("Revenue");
+  });
+
+  it("returns undefined when <a:p> has no <a:pPr> element", () => {
+    const xml = `<c:chartSpace ${NS_TI}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:r><a:t>Quarterly Revenue</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleItalic).toBeUndefined();
+  });
+
+  it("drops unknown i tokens to undefined", () => {
+    expect(parseChart(withTitleItalic("yes"))?.titleItalic).toBeUndefined();
+    expect(parseChart(withTitleItalic("on"))?.titleItalic).toBeUndefined();
+    expect(parseChart(withTitleItalic(""))?.titleItalic).toBeUndefined();
+  });
+
+  it("does not leak from a stray axis-title <a:defRPr>", () => {
+    // The category axis title carries an italic <a:defRPr i="1"/>, but
+    // the chart-level title does not — `titleItalic` reflects only the
+    // chart-level title's <a:defRPr>, not a stray sibling element.
+    const xml = `<c:chartSpace ${NS_TI}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Header</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:title>
+          <c:tx><c:rich>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr i="1"/></a:pPr><a:r><a:t>Period</a:t></a:r></a:p>
+          </c:rich></c:tx>
+          <c:overlay val="0"/>
+        </c:title>
+      </c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleItalic).toBeUndefined();
+  });
+
+  it("co-surfaces alongside titleBold, titleFontSize, titleRotation, and titleOverlay", () => {
+    const xml = `<c:chartSpace ${NS_TI}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr rot="-2700000"/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr sz="2400" b="1" i="1"/></a:pPr><a:r><a:t>Hero</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="1"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.title).toBe("Hero");
+    expect(chart?.titleItalic).toBe(true);
+    expect(chart?.titleBold).toBe(true);
+    expect(chart?.titleFontSize).toBe(24);
+    expect(chart?.titleRotation).toBe(-45);
+    expect(chart?.titleOverlay).toBe(true);
+  });
+});
+
 // ── parseChart — axis title rotation ─────────────────────────────────
 
 describe("parseChart — axis title rotation", () => {
