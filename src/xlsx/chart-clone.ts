@@ -314,6 +314,27 @@ export interface CloneChartOptions {
    * at the call site.
    */
   legendFontColor?: string | null;
+  /**
+   * Override `SheetChart.legendFontFamily`. `undefined` (or omitted)
+   * inherits the source's parsed `legendFontFamily`; `null` drops the
+   * inherited typeface (the writer emits no `<a:latin>` element on
+   * the legend's `<a:defRPr>`, falling back to the theme typeface);
+   * a non-empty string replaces it. The override is trimmed; empty /
+   * whitespace-only strings and non-string overrides (typed escapes
+   * from an untyped caller) collapse to `undefined` so the cloned
+   * `SheetChart` always carries a value the writer will accept.
+   *
+   * The override is silently dropped from the cloned `SheetChart`
+   * when the resolved legend is `false` (no `<c:legend>` element will
+   * be emitted) — there is no `<c:txPr>` slot to host the typeface on
+   * a hidden legend, so leaking the value into the output would carry
+   * a pin Excel never reads.
+   *
+   * The grammar mirrors `titleFontFamily` /
+   * `axes.x.axisTitleFontFamily` / `axes.x.labelFontFamily` so the
+   * typography knobs compose the same way at the call site.
+   */
+  legendFontFamily?: string | null;
   /** Override `SheetChart.barGrouping`. */
   barGrouping?: SheetChart["barGrouping"];
   /**
@@ -1610,6 +1631,17 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
       options.legendFontColor,
     );
     if (resolvedLegendFontColor !== undefined) out.legendFontColor = resolvedLegendFontColor;
+
+    // Same hidden-legend scoping for the font family — `<c:txPr>` is
+    // the shared host element. `undefined` inherits, `null` drops, a
+    // non-empty string replaces. Empty / whitespace-only / non-string
+    // overrides collapse via the normalizer so the cloned
+    // `SheetChart` always carries a value the writer will accept.
+    const resolvedLegendFontFamily = resolveLegendFontFamily(
+      source.legendFontFamily,
+      options.legendFontFamily,
+    );
+    if (resolvedLegendFontFamily !== undefined) out.legendFontFamily = resolvedLegendFontFamily;
   }
 
   const barGrouping = options.barGrouping !== undefined ? options.barGrouping : source.barGrouping;
@@ -2911,6 +2943,52 @@ function resolveLegendFontColor(
   if (override === undefined) return normalizeTitleColor(sourceValue);
   if (override === null) return undefined;
   return normalizeTitleColor(override);
+}
+
+/**
+ * Normalize a `legendFontFamily` value for the cloned `SheetChart`.
+ * Mirrors the writer's `normalizeLegendFontFamily` — non-empty
+ * strings pass through trimmed, every other token (empty /
+ * whitespace-only strings, typed escapes from an untyped caller)
+ * collapses to `undefined` so the cloned chart drops the field
+ * rather than carry a value the writer would silently elide back to
+ * absence.
+ */
+function normalizeLegendFontFamily(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
+}
+
+/**
+ * Resolve a `legendFontFamily` override.
+ *
+ * `undefined` → inherit the source's parsed `legendFontFamily` (after
+ *               running it through {@link normalizeLegendFontFamily}
+ *               so a malformed source value drops cleanly).
+ * `null`      → drop the inherited typeface (the writer falls back to
+ *               the theme typeface — no `<a:latin>` element on the
+ *               legend's `<a:defRPr>`).
+ * `string`    → replace, after running through
+ *               {@link normalizeLegendFontFamily} so the override
+ *               accepts any caller spelling that the writer will
+ *               accept (with surrounding whitespace trimmed; empty /
+ *               whitespace-only strings collapse to a drop).
+ *
+ * The grammar mirrors `titleFontFamily` /
+ * `axes.x.axisTitleFontFamily` / `axes.x.labelFontFamily` so the
+ * typography knobs compose the same way at the call site. Callers
+ * should gate the result on the resolved legend visibility — when no
+ * legend is emitted, the typeface has no slot in the rendered chart.
+ */
+function resolveLegendFontFamily(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeLegendFontFamily(sourceValue);
+  if (override === null) return undefined;
+  return normalizeLegendFontFamily(override);
 }
 
 /**

@@ -135,6 +135,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveLegendUnderline(chart),
         resolveLegendStrikethrough(chart),
         resolveLegendFontColor(chart),
+        resolveLegendFontFamily(chart),
       ),
     );
   }
@@ -4364,6 +4365,7 @@ function buildLegend(
   underline: boolean | undefined,
   strikethrough: boolean | undefined,
   rgbHex: string | undefined,
+  fontFamily: string | undefined,
 ): string {
   const children: string[] = [xmlSelfClose("c:legendPos", { val: pos })];
 
@@ -4393,11 +4395,19 @@ function buildLegend(
   // Excel's reference serialization byte-for-byte (Excel itself omits
   // the block whenever the legend renders at the theme-default style).
   // The block currently carries the legend font size, bold, italic,
-  // underline, strikethrough, and font color knobs. The `<a:bodyPr>`
-  // carries no rotation attribute — the legend is not rotatable in
-  // Excel's UI, mirroring how the axis tick-label `<c:txPr>` slot
-  // drops `rot` when only typography knobs are pinned.
-  const txPrXml = buildLegendTxPr(fontSizePt, bold, italic, underline, strikethrough, rgbHex);
+  // underline, strikethrough, font color, and font family knobs. The
+  // `<a:bodyPr>` carries no rotation attribute — the legend is not
+  // rotatable in Excel's UI, mirroring how the axis tick-label
+  // `<c:txPr>` slot drops `rot` when only typography knobs are pinned.
+  const txPrXml = buildLegendTxPr(
+    fontSizePt,
+    bold,
+    italic,
+    underline,
+    strikethrough,
+    rgbHex,
+    fontFamily,
+  );
   if (txPrXml !== undefined) {
     children.push(txPrXml);
   }
@@ -4436,6 +4446,7 @@ function buildLegendTxPr(
   underline: boolean | undefined,
   strikethrough: boolean | undefined,
   rgbHex: string | undefined,
+  fontFamily: string | undefined,
 ): string | undefined {
   if (
     fontSizePt === undefined &&
@@ -4443,7 +4454,8 @@ function buildLegendTxPr(
     italic === undefined &&
     underline === undefined &&
     strikethrough === undefined &&
-    rgbHex === undefined
+    rgbHex === undefined &&
+    fontFamily === undefined
   )
     return undefined;
   const defRPrAttrs: Record<string, string | number> = {};
@@ -4467,14 +4479,28 @@ function buildLegendTxPr(
   const solidFillChild = rgbHex
     ? xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: rgbHex })])
     : undefined;
-  // When a fill color is set the `<a:defRPr>` slot expands from
-  // self-closing to wrapping the `<a:solidFill>` child; otherwise the
+  // OOXML's `<a:defRPr><a:latin typeface=".."/></a:defRPr>` carries
+  // the legend font family. The `<a:latin>` element follows
+  // `<a:solidFill>` per the CT_TextCharacterProperties child sequence
+  // (ECMA-376 Part 1, §21.1.2.3.7). Absence (`undefined`) collapses
+  // to omitting the entire `<a:latin>` element so the legend inherits
+  // the theme typeface (Excel's reference behavior for a fresh legend
+  // that has not had a custom font picked).
+  const latinChild = fontFamily ? xmlSelfClose("a:latin", { typeface: fontFamily }) : undefined;
+  // When a fill color or a typeface is set the `<a:defRPr>` slot
+  // expands from self-closing to wrapping the children; otherwise the
   // writer keeps the existing self-closing form so a fresh legend
-  // with no custom color matches Excel's reference serialization
-  // byte-for-byte.
-  const defRPr = solidFillChild
-    ? xmlElement("a:defRPr", defRPrAttrs, [solidFillChild])
-    : xmlSelfClose("a:defRPr", defRPrAttrs);
+  // with no custom color or font matches Excel's reference
+  // serialization byte-for-byte. Children are emitted in
+  // CT_TextCharacterProperties' canonical schema order: solidFill
+  // first, then latin.
+  const defRPrChildren: string[] = [];
+  if (solidFillChild) defRPrChildren.push(solidFillChild);
+  if (latinChild) defRPrChildren.push(latinChild);
+  const defRPr =
+    defRPrChildren.length > 0
+      ? xmlElement("a:defRPr", defRPrAttrs, defRPrChildren)
+      : xmlSelfClose("a:defRPr", defRPrAttrs);
   return xmlElement("c:txPr", undefined, [
     xmlSelfClose("a:bodyPr"),
     xmlSelfClose("a:lstStyle"),
@@ -4618,6 +4644,46 @@ function resolveLegendStrikethrough(chart: SheetChart): boolean | undefined {
  */
 function resolveLegendFontColor(chart: SheetChart): string | undefined {
   return normalizeTitleColor(chart.legendFontColor);
+}
+
+/**
+ * Normalize a {@link SheetChart.legendFontFamily} value for the
+ * `<c:legend><c:txPr><a:p><a:pPr><a:defRPr><a:latin typeface=".."/>
+ * </a:defRPr></a:pPr></a:p></c:txPr></c:legend>` writer slot. Returns
+ * the trimmed typeface string when the input is a non-empty string,
+ * or `undefined` for any malformed token — empty / whitespace-only
+ * strings, or non-string escapes from an untyped caller (`null`,
+ * numbers, booleans, etc.).
+ *
+ * Absence and malformed tokens both collapse to `undefined` so the
+ * writer skips the entire `<a:latin>` element and the legend inherits
+ * the theme typeface (Excel's reference behavior for a fresh legend
+ * without a custom font picked).
+ */
+function normalizeLegendFontFamily(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
+}
+
+/**
+ * Resolve `<c:legend><c:txPr><a:p><a:pPr><a:defRPr><a:latin
+ * typeface=".."/></a:defRPr></a:pPr></a:p></c:txPr></c:legend>` from
+ * {@link SheetChart.legendFontFamily}.
+ *
+ * Returns the trimmed typeface string the writer emits, or
+ * `undefined` when the chart leaves the field unset / passed an empty
+ * or non-string token. Delegates to {@link normalizeLegendFontFamily}
+ * so the accept-and-trim grammar matches the chart-title /
+ * axis-title / axis tick-label font family resolvers exactly. The
+ * element is only meaningful when the chart actually emits a legend —
+ * the caller is expected to gate the call on the resolved legend
+ * visibility. A chart whose legend is suppressed has no `<c:txPr>`
+ * slot to host the typeface in either case.
+ */
+function resolveLegendFontFamily(chart: SheetChart): string | undefined {
+  return normalizeLegendFontFamily(chart.legendFontFamily);
 }
 
 interface ResolvedLegendEntry {

@@ -477,6 +477,13 @@ export function parseChart(xml: string): Chart | undefined {
     // tokens all collapse to `undefined`.
     const legendFontColor = parseLegendFontColor(chartEl);
     if (legendFontColor !== undefined) out.legendFontColor = legendFontColor;
+
+    // Same scoping for the font family — `<c:txPr>` is the shared host
+    // element. Empty / whitespace-only `typeface` attributes collapse
+    // to `undefined` so absence and the empty form round-trip
+    // identically through the writer.
+    const legendFontFamily = parseLegendFontFamily(chartEl);
+    if (legendFontFamily !== undefined) out.legendFontFamily = legendFontFamily;
   }
 
   const dispBlanksAs = parseDispBlanksAs(chartEl);
@@ -3485,6 +3492,47 @@ function parseLegendFontColor(chartEl: XmlElement): string | undefined {
   const srgbClr = findChild(solidFill, "srgbClr");
   if (!srgbClr) return undefined;
   return normalizeRgbHex(srgbClr.attrs.val);
+}
+
+/**
+ * Pull the legend font family off the canonical
+ * `<c:legend><c:txPr><a:p><a:pPr><a:defRPr><a:latin typeface=".."/>
+ * </a:defRPr></a:pPr></a:p></c:txPr></c:legend>` chain Excel writes
+ * when the user pins a typeface on the legend.
+ *
+ * The OOXML `<a:latin>` element carries the typeface name on
+ * `CT_TextFont` (ECMA-376 Part 1, §21.1.2.3.7). The reader trims
+ * surrounding whitespace and reports the trimmed typeface; empty /
+ * whitespace-only `typeface` attributes and missing `<a:latin>`
+ * elements both collapse to `undefined` so absence and the empty
+ * form round-trip identically through the writer. Non-string
+ * `typeface` tokens (defensive — the XML parser only ever surfaces
+ * strings) likewise drop to `undefined`.
+ *
+ * Returns `undefined` whenever the chart omits the `<c:legend>`
+ * element or the canonical `<c:txPr><a:p><a:pPr><a:defRPr><a:latin>`
+ * chain is malformed at any link. Mirrors the chart-title /
+ * axis-title / axis tick-label font family readers exactly so a
+ * parsed value slots straight back into the writer's emit path.
+ */
+function parseLegendFontFamily(chartEl: XmlElement): string | undefined {
+  const legend = findChild(chartEl, "legend");
+  if (!legend) return undefined;
+  const txPr = findChild(legend, "txPr");
+  if (!txPr) return undefined;
+  const p = findChild(txPr, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const latin = findChild(defRPr, "latin");
+  if (!latin) return undefined;
+  const raw = latin.attrs.typeface;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
 }
 
 /**

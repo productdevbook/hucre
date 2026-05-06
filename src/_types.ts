@@ -1693,6 +1693,48 @@ export interface SheetChart {
    * exposes.
    */
   legendFontColor?: string;
+  /**
+   * Legend font family / typeface. Maps to `<c:legend><c:txPr><a:p>
+   * <a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr></a:pPr>
+   * </a:p></c:txPr></c:legend>` — Excel's "Format Legend -> Font ->
+   * Font" picker. The OOXML `<a:latin typeface=".."/>` element carries
+   * the typeface name (`CT_TextFont`, ECMA-376 Part 1, §21.1.2.3.7);
+   * the writer lands the element on the default-paragraph
+   * `<a:defRPr>` slot inside the legend's `<c:txPr>` block so a re-
+   * parse picks the typeface up off the canonical slot the OOXML
+   * schema exposes.
+   *
+   * Accepts any non-empty string typeface name (e.g. `"Calibri"`,
+   * `"Arial"`, `"Times New Roman"`); the writer trims surrounding
+   * whitespace and emits the trimmed value verbatim (XML-escaped) so
+   * Excel can resolve the named font from the workbook's font scheme
+   * or the host system's installed fonts. Empty / whitespace-only
+   * strings and non-string tokens collapse to `undefined` so the
+   * writer skips the entire `<a:latin>` element and the legend
+   * inherits Excel's reference theme typeface.
+   *
+   * Default: omitted — the legend renders in Excel's reference theme
+   * typeface (no `<a:latin>` element, the writer skips the element
+   * entirely). Pin a typeface name to render the legend in that font
+   * (e.g. `"Arial"` for a corporate dashboard standard).
+   *
+   * Silently ignored when `legend === false` (no `<c:legend>` element
+   * is emitted) — there is no `<c:txPr>` slot to host the typeface in
+   * that case. Mirrors {@link titleFontFamily} /
+   * {@link axes.x.axisTitleFontFamily} /
+   * {@link axes.x.labelFontFamily} — same accept-and-trim grammar,
+   * same OOXML `<a:latin typeface=".."/>` mapping — so a caller can
+   * thread a single typeface string through every typography-pinning
+   * slot. Composes independently with {@link legend} /
+   * {@link legendOverlay} / {@link legendEntries} /
+   * {@link legendFontSize} / {@link legendBold} /
+   * {@link legendItalic} / {@link legendUnderline} /
+   * {@link legendStrikethrough} / {@link legendFontColor}: all ten
+   * fields land on the same `<c:legend>` element so a single
+   * configuration call threads cleanly through every legend knob
+   * Excel exposes.
+   */
+  legendFontFamily?: string;
   /** Show the chart-level title element. Default: `true` when `title` is set. */
   showTitle?: boolean;
   /**
@@ -5803,6 +5845,30 @@ export interface Chart {
    * value slots straight into {@link cloneChart} without conversion.
    */
   legendFontColor?: string;
+  /**
+   * Legend font family / typeface pulled from `<c:legend><c:txPr>
+   * <a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
+   * </a:pPr></a:p></c:txPr></c:legend>`. Reflects Excel's "Format
+   * Legend -> Font -> Font" picker. The OOXML `<a:latin
+   * typeface=".."/>` element carries the typeface name (`CT_TextFont`,
+   * ECMA-376 Part 1, §21.1.2.3.7).
+   *
+   * Reports the trimmed typeface string when the source chart pinned
+   * a non-empty typeface; absence and empty / whitespace-only
+   * `typeface` attributes both collapse to `undefined` so absence and
+   * `<a:latin typeface=""/>` round-trip identically through
+   * {@link cloneChart}. Non-string `typeface` tokens (defensive — the
+   * XML parser only ever surfaces strings) likewise drop to
+   * `undefined`.
+   *
+   * Reported as `undefined` whenever {@link legend} is `false` or the
+   * source chart has no `<c:legend>` element at all — there is no
+   * `<c:txPr>` slot to surface the typeface from in either case.
+   * Mirrors the writer-side {@link SheetChart.legendFontFamily} so a
+   * parsed value slots straight into {@link cloneChart} without
+   * conversion.
+   */
+  legendFontFamily?: string;
   /**
    * Title-overlay flag pulled from `<c:title><c:overlay val=".."/>`.
    * Reflects Excel's "Format Chart Title -> Show the title without

@@ -6210,6 +6210,192 @@ describe("parseChart — legendFontColor", () => {
   });
 });
 
+// ── parseChart — legendFontFamily ───────────────────────────────────
+
+describe("parseChart — legendFontFamily", () => {
+  const NS_LFF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withLegendTypeface(typeface: string | undefined): string {
+    const latin =
+      typeface === undefined
+        ? "<a:defRPr/>"
+        : `<a:defRPr><a:latin typeface="${typeface}"/></a:defRPr>`;
+    return `<c:chartSpace ${NS_LFF}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr>${latin}</a:pPr><a:endParaRPr lang="en-US"/></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces legendFontFamily as the trimmed typeface string", () => {
+    expect(parseChart(withLegendTypeface("Arial"))?.legendFontFamily).toBe("Arial");
+  });
+
+  it("trims surrounding whitespace from the typeface attribute", () => {
+    expect(parseChart(withLegendTypeface("   Calibri   "))?.legendFontFamily).toBe("Calibri");
+  });
+
+  it("surfaces a multi-word typeface verbatim", () => {
+    expect(parseChart(withLegendTypeface("Times New Roman"))?.legendFontFamily).toBe(
+      "Times New Roman",
+    );
+  });
+
+  it("returns undefined when the legend has no <a:latin> element at all", () => {
+    expect(parseChart(withLegendTypeface(undefined))?.legendFontFamily).toBeUndefined();
+  });
+
+  it("collapses an empty typeface attribute to undefined", () => {
+    expect(parseChart(withLegendTypeface(""))?.legendFontFamily).toBeUndefined();
+  });
+
+  it("collapses a whitespace-only typeface attribute to undefined", () => {
+    expect(parseChart(withLegendTypeface("   "))?.legendFontFamily).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:legend> element at all", () => {
+    const xml = `<c:chartSpace ${NS_LFF}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendFontFamily).toBeUndefined();
+  });
+
+  it("returns undefined when <c:legend> has no <c:txPr> body", () => {
+    const xml = `<c:chartSpace ${NS_LFF}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendFontFamily).toBeUndefined();
+  });
+
+  it("returns undefined when <c:txPr> has no <a:p><a:pPr><a:defRPr> chain", () => {
+    const xml = `<c:chartSpace ${NS_LFF}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendFontFamily).toBeUndefined();
+  });
+
+  it('drops the typeface when the legend is hidden via <c:delete val="1"/>', () => {
+    const xml = `<c:chartSpace ${NS_LFF}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:delete val="1"/>
+      <c:overlay val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr><a:latin typeface="Arial"/></a:defRPr></a:pPr></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe(false);
+    expect(chart?.legendFontFamily).toBeUndefined();
+  });
+
+  it("co-surfaces alongside legendOverlay / legendEntries / legendFontSize / legendUnderline / legendFontColor", () => {
+    const xml = `<c:chartSpace ${NS_LFF}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="b"/>
+      <c:legendEntry>
+        <c:idx val="0"/>
+        <c:delete val="1"/>
+      </c:legendEntry>
+      <c:overlay val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="1400" u="sng"><a:solidFill><a:srgbClr val="123456"/></a:solidFill><a:latin typeface="Verdana"/></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe("bottom");
+    expect(chart?.legendOverlay).toBe(true);
+    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }]);
+    expect(chart?.legendFontSize).toBe(14);
+    expect(chart?.legendUnderline).toBe(true);
+    expect(chart?.legendFontColor).toBe("123456");
+    expect(chart?.legendFontFamily).toBe("Verdana");
+  });
+
+  it("surfaces the typeface on every chart family that emits a legend", () => {
+    for (const kind of ["lineChart", "barChart", "pieChart", "doughnutChart"]) {
+      const xml = `<c:chartSpace ${NS_LFF}>
+  <c:chart>
+    <c:plotArea>
+      <c:${kind}><c:ser><c:idx val="0"/></c:ser></c:${kind}>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr><a:latin typeface="Calibri"/></a:defRPr></a:pPr></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+      expect(parseChart(xml)?.legendFontFamily).toBe("Calibri");
+    }
+  });
+});
+
 // ── parseChart — data labels showLegendKey ──────────────────────────
 
 describe("parseChart — data labels showLegendKey", () => {
