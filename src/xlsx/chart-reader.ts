@@ -533,6 +533,17 @@ function parseAxisInfo(
   // entirely or when the title is a `<c:strRef>` (formula reference)
   // with no `<c:rich>` body.
   const axisTitleRotation = parseAxisTitleRotation(axis);
+  // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p>
+  // </c:rich></c:tx></c:title>` — axis-title font size in 100ths of a
+  // point. Same `<c:title>` body scope as `axisTitleRotation` so a
+  // stray `<a:defRPr>` elsewhere on the axis (e.g. on the tick-label
+  // `<c:txPr>`) cannot leak in. The value comes back in points (range
+  // `1..400`); out-of-range / non-numeric inputs drop to `undefined`,
+  // and absence of `<c:title>` / `<c:rich>` / `<a:p>` / `<a:pPr>` /
+  // `<a:defRPr>` / the `sz` attribute likewise collapses to
+  // `undefined` for symmetry with the writer-side
+  // {@link SheetChart.axes.x.axisTitleFontSize}.
+  const axisTitleFontSize = parseAxisTitleFontSize(axis);
   const gridlines = parseAxisGridlines(axis);
   const scale = parseAxisScale(axis);
   const numberFormat = parseAxisNumberFormat(axis);
@@ -623,6 +634,7 @@ function parseAxisInfo(
   if (
     title === undefined &&
     axisTitleRotation === undefined &&
+    axisTitleFontSize === undefined &&
     gridlines === undefined &&
     scale === undefined &&
     numberFormat === undefined &&
@@ -648,6 +660,7 @@ function parseAxisInfo(
   const out: ChartAxisInfo = {};
   if (title !== undefined) out.title = title;
   if (axisTitleRotation !== undefined) out.axisTitleRotation = axisTitleRotation;
+  if (axisTitleFontSize !== undefined) out.axisTitleFontSize = axisTitleFontSize;
   if (gridlines !== undefined) out.gridlines = gridlines;
   if (scale !== undefined) out.scale = scale;
   if (numberFormat !== undefined) out.numberFormat = numberFormat;
@@ -1322,6 +1335,61 @@ function parseAxisTitleRotation(axis: XmlElement): number | undefined {
   if (degrees < LABEL_ROTATION_MIN_DEG) return LABEL_ROTATION_MIN_DEG;
   if (degrees > LABEL_ROTATION_MAX_DEG) return LABEL_ROTATION_MAX_DEG;
   return degrees;
+}
+
+/**
+ * Pull `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
+ * </a:p></c:rich></c:tx></c:title>` off an axis element. Returns the
+ * font size in points (range `1..400`).
+ *
+ * Mirrors {@link parseTitleFontSize} for axis titles — same 0.5pt
+ * half-step granularity, same `1..400`pt band, same drop-on-out-of-
+ * range / non-numeric / absence semantics. The lookup is scoped to
+ * the axis title's `<c:rich>` body so a stray `<a:defRPr>` elsewhere
+ * on the axis (e.g. on the tick-label `<c:txPr>` surfaced by
+ * {@link parseAxisLabelRotation}) cannot leak in.
+ *
+ * Returns `undefined` whenever the axis omits `<c:title>` entirely
+ * or when the title is a `<c:strRef>` (formula reference) with no
+ * `<c:rich>` body — there is no `<a:p>` slot to surface the size
+ * from in either case.
+ *
+ * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+ * `<c:dateAx>` / `<c:serAx>` all share the same `<c:title>` shape
+ * per the OOXML schema. Mirrors the chart-level title size
+ * {@link parseTitleFontSize} so a parsed value slots straight into
+ * the writer-side {@link SheetChart.axes}.x.axisTitleFontSize.
+ */
+function parseAxisTitleFontSize(axis: XmlElement): number | undefined {
+  const title = findChild(axis, "title");
+  if (!title) return undefined;
+  const tx = findChild(title, "tx");
+  if (!tx) return undefined;
+  const rich = findChild(tx, "rich");
+  if (!rich) return undefined;
+  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
+  // default-paragraph font size. The reader walks the canonical chain
+  // and bails on the first missing link so a malformed `<c:rich>`
+  // surfaces as absence rather than a fabricated value.
+  const p = findChild(rich, "p");
+  if (!p) return undefined;
+  const pPr = findChild(p, "pPr");
+  if (!pPr) return undefined;
+  const defRPr = findChild(pPr, "defRPr");
+  if (!defRPr) return undefined;
+  const raw = defRPr.attrs.sz;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  // Convert from 100ths of a point to points, rounding to the nearest
+  // 0.5pt to match the granularity Excel's UI exposes. Mirrors the
+  // chart-level `parseTitleFontSize` half-step normalisation.
+  const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2);
+  const points = halfSteps / 2;
+  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
+  return points;
 }
 
 // ── Series ────────────────────────────────────────────────────────

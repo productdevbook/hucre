@@ -1215,9 +1215,13 @@ describe("cloneChart — integration", () => {
     const zip = new ZipReader(xlsx);
     const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
     const reparsed = parseChart(written);
+    // The writer emits the hardcoded 10pt axis-title default
+    // (`sz="1000"`) on every axis whose title renders, so the reader
+    // surfaces `axisTitleFontSize: 10` literally — same shape contract
+    // as `titleFontSize` for the chart-level title.
     expect(reparsed?.axes).toEqual({
-      x: { title: "Quarter" },
-      y: { title: "Revenue (USD)" },
+      x: { title: "Quarter", axisTitleFontSize: 10 },
+      y: { title: "Revenue (USD)", axisTitleFontSize: 10 },
     });
   });
 
@@ -11196,5 +11200,280 @@ describe("cloneChart — axis title rotation", () => {
     const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
     const reparsed = parseChart(written);
     expect(reparsed?.axes?.x?.axisTitleRotation).toBe(-45);
+  });
+});
+
+// ── cloneChart — axis title font size ───────────────────────────────
+
+describe("cloneChart — axis title font size", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Sales",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's X-axis axisTitleFontSize by default", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleFontSize: 14 } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.x?.axisTitleFontSize).toBe(14);
+    expect(clone.axes?.x?.title).toBe("Period");
+  });
+
+  it("inherits the source's Y-axis axisTitleFontSize by default", () => {
+    const clone = cloneChart(source({ axes: { y: { title: "USD", axisTitleFontSize: 16 } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.y?.axisTitleFontSize).toBe(16);
+    expect(clone.axes?.y?.title).toBe("USD");
+  });
+
+  it("lets options.axes.x.axisTitleFontSize override the source's value", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleFontSize: 14 } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleFontSize: 18 } },
+    });
+    expect(clone.axes?.x?.axisTitleFontSize).toBe(18);
+  });
+
+  it("drops the inherited axisTitleFontSize when the override is null", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleFontSize: 14 } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleFontSize: null } },
+    });
+    expect(clone.axes?.x?.axisTitleFontSize).toBeUndefined();
+    expect(clone.axes?.x?.title).toBe("Period");
+  });
+
+  it("returns undefined axisTitleFontSize when neither source nor override sets it", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.x?.axisTitleFontSize).toBeUndefined();
+  });
+
+  it("rounds a fractional override to the nearest 0.5pt", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleFontSize: 14.8 } },
+    });
+    expect(clone.axes?.x?.axisTitleFontSize).toBe(15);
+  });
+
+  it("preserves a half-point override literally", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleFontSize: 10.5 } },
+    });
+    expect(clone.axes?.x?.axisTitleFontSize).toBe(10.5);
+  });
+
+  it("drops out-of-range overrides (below 1pt)", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleFontSize: 0.5 } },
+    });
+    expect(clone.axes?.x?.axisTitleFontSize).toBeUndefined();
+  });
+
+  it("drops out-of-range overrides (above 400pt)", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleFontSize: 401 } },
+    });
+    expect(clone.axes?.x?.axisTitleFontSize).toBeUndefined();
+  });
+
+  it("drops non-finite overrides (NaN / Infinity)", () => {
+    const a = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleFontSize: Number.NaN } },
+    });
+    expect(a.axes?.x?.axisTitleFontSize).toBeUndefined();
+    const b = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleFontSize: Number.POSITIVE_INFINITY } },
+    });
+    expect(b.axes?.x?.axisTitleFontSize).toBeUndefined();
+  });
+
+  it("normalises a parsed source size that is somehow out of range", () => {
+    // Defensive: a corrupt template parsed by an older reader could
+    // surface an out-of-band value. The clone normalizer drops it
+    // through the same `1..400`pt band so the writer never sees a
+    // bad token.
+    const clone = cloneChart(
+      source({
+        axes: { x: { title: "Period", axisTitleFontSize: 500 as number } },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.x?.axisTitleFontSize).toBeUndefined();
+  });
+
+  it("drops the inherited axisTitleFontSize when the resolved axis title is dropped", () => {
+    // `title: null` flattens the inherited axis title — no `<c:title>`
+    // block will be emitted, so the inherited size has no slot in
+    // the rendered axis and the clone collapses it.
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleFontSize: 14 } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { title: null } },
+    });
+    expect(clone.axes?.x?.title).toBeUndefined();
+    expect(clone.axes?.x?.axisTitleFontSize).toBeUndefined();
+  });
+
+  it("drops an override axisTitleFontSize when no axis title resolves", () => {
+    // The axis has no source title and the caller did not pin one —
+    // the writer would silently elide the size either way, so the
+    // clone-side resolver mirrors that by dropping the field.
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleFontSize: 14 } },
+    });
+    expect(clone.axes?.x).toBeUndefined();
+  });
+
+  it("preserves the override when the override also pins a title", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { title: "Period", axisTitleFontSize: 14 } },
+    });
+    expect(clone.axes?.x?.title).toBe("Period");
+    expect(clone.axes?.x?.axisTitleFontSize).toBe(14);
+  });
+
+  it("composes independently with the chart-level titleFontSize", () => {
+    const clone = cloneChart(
+      source({
+        titleFontSize: 24,
+        axes: { x: { title: "Period", axisTitleFontSize: 14 } },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+      },
+    );
+    expect(clone.titleFontSize).toBe(24);
+    expect(clone.axes?.x?.axisTitleFontSize).toBe(14);
+  });
+
+  it("composes independently with axisTitleRotation on the same axis", () => {
+    const clone = cloneChart(
+      source({
+        axes: {
+          x: { title: "Period", axisTitleRotation: 45, axisTitleFontSize: 14 },
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.x?.axisTitleRotation).toBe(45);
+    expect(clone.axes?.x?.axisTitleFontSize).toBe(14);
+  });
+
+  it("threads the size through both axes independently on the clone", () => {
+    const clone = cloneChart(
+      source({
+        axes: {
+          x: { title: "Period", axisTitleFontSize: 14 },
+          y: { title: "USD", axisTitleFontSize: 18 },
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.x?.axisTitleFontSize).toBe(14);
+    expect(clone.axes?.y?.axisTitleFontSize).toBe(18);
+  });
+
+  it("round-trips a templated chart's axis title size through parseChart -> cloneChart -> writeChart", () => {
+    const sourceXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:tx><c:v>Revenue</c:v></c:tx>
+          <c:cat><c:strRef><c:f>Tpl!$A$2:$A$5</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>Tpl!$B$2:$B$5</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:axId val="1"/>
+        <c:axId val="2"/>
+      </c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:title>
+          <c:tx><c:rich>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr sz="1400"/></a:pPr><a:r><a:t>Period</a:t></a:r></a:p>
+          </c:rich></c:tx>
+          <c:overlay val="0"/>
+        </c:title>
+      </c:catAx>
+      <c:valAx>
+        <c:axId val="2"/>
+        <c:title>
+          <c:tx><c:rich>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr sz="1600"/></a:pPr><a:r><a:t>USD</a:t></a:r></a:p>
+          </c:rich></c:tx>
+          <c:overlay val="0"/>
+        </c:title>
+      </c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const parsed = parseChart(sourceXml);
+    expect(parsed?.axes?.x?.axisTitleFontSize).toBe(14);
+    expect(parsed?.axes?.y?.axisTitleFontSize).toBe(16);
+
+    const sheetChart = cloneChart(parsed!, {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(sheetChart.axes?.x?.axisTitleFontSize).toBe(14);
+    expect(sheetChart.axes?.y?.axisTitleFontSize).toBe(16);
+
+    const written = writeChart(sheetChart, "Dashboard").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.axisTitleFontSize).toBe(14);
+    expect(reparsed?.axes?.y?.axisTitleFontSize).toBe(16);
+  });
+
+  it("propagates axisTitleFontSize into the rendered axis on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period", axisTitleFontSize: 14 } } }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.axisTitleFontSize).toBe(14);
   });
 });

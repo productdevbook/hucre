@@ -1923,6 +1923,39 @@ export interface SheetChart {
        * dropped on those families.
        */
       axisTitleRotation?: number;
+      /**
+       * Axis title font size in whole or half points. Maps to
+       * `<c:catAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
+       * <a:r><a:rPr sz="N"/></a:r></a:p></c:rich></c:tx></c:title></c:catAx>`
+       * (or `<c:valAx>` for scatter / value axes) — Excel's "Format Axis
+       * Title -> Font -> Size" knob. The OOXML attribute is in 100ths
+       * of a point, so 12pt serializes as `sz="1200"` and 10pt (Excel's
+       * reference default for axis titles) as `sz="1000"`; the writer
+       * performs the conversion at emit time and lands the value on
+       * both the default-paragraph `<a:defRPr>` and the literal run's
+       * `<a:rPr>` so a re-parse picks the size up off either canonical
+       * slot.
+       *
+       * Mirrors {@link SheetChart.titleFontSize} for axis titles — same
+       * `1..400`pt band the OOXML `ST_TextFontSize` schema exposes,
+       * same 0.5pt half-step granularity Excel's UI exposes, same
+       * out-of-range / non-finite drop semantics. Useful for shrinking
+       * a long Y-axis unit label so it fits a tight chart frame, or
+       * bumping the X-axis title up to match a presentation slide's
+       * typography.
+       *
+       * Default: omitted — the axis title renders at Excel's reference
+       * 10pt (the writer's hardcoded default before this field was
+       * surfaced). Silently dropped when the axis renders no title
+       * (the `<c:title>` element is absent in either case) and on
+       * `pie` / `doughnut` charts (no axes at all).
+       *
+       * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+       * `<c:dateAx>` / `<c:serAx>` all carry the same `<c:title>` shape
+       * per the OOXML schema, so the field round-trips on every chart
+       * family that has axes (bar / column / line / area / scatter).
+       */
+      axisTitleFontSize?: number;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -2191,6 +2224,23 @@ export interface SheetChart {
        * the rotation).
        */
       axisTitleRotation?: number;
+      /**
+       * Value-axis title font size in whole or half points. Maps to
+       * `<c:valAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
+       * <a:r><a:rPr sz="N"/></a:r></a:p></c:rich></c:tx></c:title></c:valAx>`.
+       * Mirrors {@link SheetChart.axes.x.axisTitleFontSize} for the
+       * value axis — see that field for the full semantics. The OOXML
+       * `sz` attribute is in 100ths of a point; the writer converts at
+       * emit time so callers pin the value in points. Range: `1..400`.
+       *
+       * Useful for shrinking a long Y-axis unit label so it fits a
+       * tight chart frame, or bumping the Y-axis title up to match
+       * the chart-level title's typography on a presentation slide.
+       * Silently dropped on `pie` / `doughnut` charts (no axes at all)
+       * and on any axis whose `title` is unset (no `<c:title>` block
+       * to host the size).
+       */
+      axisTitleFontSize?: number;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -3373,6 +3423,37 @@ export interface ChartAxisInfo {
    * whether the source axis was a category or value axis.
    */
   axisTitleRotation?: number;
+  /**
+   * Axis-title font size in points (range `1..400`), pulled from
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
+   * </a:p></c:rich></c:tx></c:title>` on the axis element. Reflects
+   * Excel's "Format Axis Title -> Font -> Size" knob.
+   *
+   * The OOXML attribute is in 100ths of a point; the reader converts
+   * to points and rounds to the nearest 0.5pt (Excel's UI exposes the
+   * same 0.5pt granularity, e.g. `sz="1000"` surfaces as `10`,
+   * `sz="1050"` as `10.5`). Out-of-range values (outside the `1..400`
+   * band the OOXML `ST_TextFontSize` schema exposes) drop to
+   * `undefined` rather than fabricate a value the writer would never
+   * emit. Absence of the attribute (or of `<a:defRPr>` / `<a:pPr>` /
+   * `<a:p>` / `<c:rich>` / `<c:tx>` / `<c:title>`) likewise collapses
+   * to `undefined`.
+   *
+   * Reported as `undefined` whenever the axis has no `<c:title>`
+   * element at all, or when the title is a `<c:strRef>` (formula
+   * reference) with no `<c:rich>` body — there is no `<a:p>` slot to
+   * surface the size from in either case. Mirrors the chart-level
+   * {@link Chart.titleFontSize} so a parsed value slots straight back
+   * into the writer-side {@link SheetChart.axes.x.axisTitleFontSize}
+   * without transformation.
+   *
+   * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+   * `<c:dateAx>` / `<c:serAx>` all carry the same `<c:title>` shape
+   * per the OOXML schema. The reader surfaces the value on every axis
+   * flavour so a parsed chart preserves the size regardless of
+   * whether the source axis was a category or value axis.
+   */
+  axisTitleFontSize?: number;
   /**
    * Major / minor gridline visibility. Omitted when neither
    * `<c:majorGridlines>` nor `<c:minorGridlines>` is declared on the

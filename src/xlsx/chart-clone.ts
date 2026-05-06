@@ -687,6 +687,24 @@ export interface CloneChartOptions {
        * rotation).
        */
       axisTitleRotation?: number | null;
+      /**
+       * Override `SheetChart.axes.x.axisTitleFontSize`. `undefined`
+       * (or omitted) inherits the source axis's parsed value; `null`
+       * drops the inherited size (the writer falls back to the
+       * hardcoded `1000` (10pt) default Excel itself emits on a fresh
+       * axis title); a number in the `1..400`pt band replaces it
+       * (out-of-range, non-finite, and non-numeric inputs collapse
+       * to `undefined`, and fractional inputs round to the nearest
+       * 0.5pt).
+       *
+       * `<c:title>` lives on every axis flavour per the OOXML schema,
+       * so the override carries through every chart family that has
+       * axes (bar / column / line / area / scatter). Silently
+       * dropped on `pie` / `doughnut` charts (no axes at all) and on
+       * any axis whose `title` is unset (no `<c:title>` block to
+       * host the size).
+       */
+      axisTitleFontSize?: number | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -869,6 +887,8 @@ export interface CloneChartOptions {
       title?: string | null;
       /** See {@link CloneChartOptions.axes.x.axisTitleRotation}. */
       axisTitleRotation?: number | null;
+      /** See {@link CloneChartOptions.axes.x.axisTitleFontSize}. */
+      axisTitleFontSize?: number | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -2514,6 +2534,24 @@ function resolveAxes(
     sourceAxes?.y?.axisTitleRotation,
     overrides?.y?.axisTitleRotation,
   );
+  // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p>
+  // </c:rich></c:tx></c:title>` — axis title font size in 100ths of a
+  // point. Sits on the same `<c:title>` body as `axisTitleRotation`,
+  // so the resolver applies on every chart family that has axes (pie /
+  // doughnut were short-circuited upstream). Out-of-range / non-finite
+  // / non-numeric values collapse to `undefined` so the writer falls
+  // back to the hardcoded 10pt axis-title default. Like the rotation,
+  // the writer drops the size when the matching axis title is unset,
+  // so a stray pin on an axis with no title silently disappears at
+  // emit time.
+  const xAxisTitleFontSize = applyAxisTitleFontSizeOverride(
+    sourceAxes?.x?.axisTitleFontSize,
+    overrides?.x?.axisTitleFontSize,
+  );
+  const yAxisTitleFontSize = applyAxisTitleFontSizeOverride(
+    sourceAxes?.y?.axisTitleFontSize,
+    overrides?.y?.axisTitleFontSize,
+  );
   const xGridlines = applyGridlinesOverride(sourceAxes?.x?.gridlines, overrides?.x?.gridlines);
   const yGridlines = applyGridlinesOverride(sourceAxes?.y?.gridlines, overrides?.y?.gridlines);
   const xScale = applyScaleOverride(sourceAxes?.x?.scale, overrides?.x?.scale);
@@ -2650,11 +2688,20 @@ function resolveAxes(
   // when `opts.xAxisTitle` / `opts.yAxisTitle` is set).
   const xAxisTitleRotationResolved = xTitle === undefined ? undefined : xAxisTitleRotation;
   const yAxisTitleRotationResolved = yTitle === undefined ? undefined : yAxisTitleRotation;
+  // The axis-title font size only renders when the axis carries a
+  // title — drop a stray inherited size when the resolved axis title
+  // is unset so the cloned `SheetChart` accurately reflects what the
+  // chart will paint. Symmetric with the writer's title-presence gate
+  // (the per-family axis builder only invokes `buildAxisTitle` when
+  // `opts.xAxisTitle` / `opts.yAxisTitle` is set).
+  const xAxisTitleFontSizeResolved = xTitle === undefined ? undefined : xAxisTitleFontSize;
+  const yAxisTitleFontSizeResolved = yTitle === undefined ? undefined : yAxisTitleFontSize;
 
   const out: NonNullable<SheetChart["axes"]> = {};
   if (
     xTitle !== undefined ||
     xAxisTitleRotationResolved !== undefined ||
+    xAxisTitleFontSizeResolved !== undefined ||
     xGridlines !== undefined ||
     xScale !== undefined ||
     xNumFmt !== undefined ||
@@ -2679,6 +2726,8 @@ function resolveAxes(
     if (xTitle !== undefined) out.x.title = xTitle;
     if (xAxisTitleRotationResolved !== undefined)
       out.x.axisTitleRotation = xAxisTitleRotationResolved;
+    if (xAxisTitleFontSizeResolved !== undefined)
+      out.x.axisTitleFontSize = xAxisTitleFontSizeResolved;
     if (xGridlines !== undefined) out.x.gridlines = xGridlines;
     if (xScale !== undefined) out.x.scale = xScale;
     if (xNumFmt !== undefined) out.x.numberFormat = xNumFmt;
@@ -2702,6 +2751,7 @@ function resolveAxes(
   if (
     yTitle !== undefined ||
     yAxisTitleRotationResolved !== undefined ||
+    yAxisTitleFontSizeResolved !== undefined ||
     yGridlines !== undefined ||
     yScale !== undefined ||
     yNumFmt !== undefined ||
@@ -2720,6 +2770,8 @@ function resolveAxes(
     if (yTitle !== undefined) out.y.title = yTitle;
     if (yAxisTitleRotationResolved !== undefined)
       out.y.axisTitleRotation = yAxisTitleRotationResolved;
+    if (yAxisTitleFontSizeResolved !== undefined)
+      out.y.axisTitleFontSize = yAxisTitleFontSizeResolved;
     if (yGridlines !== undefined) out.y.gridlines = yGridlines;
     if (yScale !== undefined) out.y.scale = yScale;
     if (yNumFmt !== undefined) out.y.numberFormat = yNumFmt;
@@ -3079,6 +3131,30 @@ function applyAxisTitleRotationOverride(
   if (override === null) return undefined;
   if (typeof override !== "number" || !Number.isFinite(override)) return undefined;
   return clampLabelRotationDeg(override);
+}
+
+/**
+ * Resolve an `axisTitleFontSize` override using the same `undefined`
+ * (inherit) / `null` (drop) / value (replace) grammar as the other
+ * axis helpers. The conversion / clamping rules delegate to
+ * {@link normalizeTitleFontSize} — out-of-range, non-finite, and
+ * non-numeric inputs all collapse to `undefined`, fractional inputs
+ * round to the nearest 0.5pt (Excel's UI granularity), and a `null`
+ * override always drops the inherited size.
+ *
+ * The caller is expected to additionally gate the resolved value on
+ * the matching axis title's presence so the cloned shape never
+ * carries a size that the writer would silently elide (the writer
+ * scopes the size emission to `<c:title>`, which is omitted when the
+ * axis renders no title).
+ */
+function applyAxisTitleFontSizeOverride(
+  source: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) return normalizeTitleFontSize(source);
+  if (override === null) return undefined;
+  return normalizeTitleFontSize(override);
 }
 
 /**

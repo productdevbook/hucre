@@ -10272,3 +10272,270 @@ describe("writeChart — axis title rotation", () => {
     expect(reparsed?.axes?.y?.axisTitleRotation).toBe(-90);
   });
 });
+
+// ── writeChart — axis title font size ───────────────────────────────
+
+describe("writeChart — axis title font size", () => {
+  function axisBlocks(xml: string): string[] {
+    return Array.from(xml.matchAll(/<c:(catAx|valAx|dateAx)>[\s\S]*?<\/c:\1>/g)).map((m) => m[0]);
+  }
+
+  function axisTitleDefRPrSzOf(axisBlock: string): string | undefined {
+    const titleMatch = axisBlock.match(/<c:title>[\s\S]*?<\/c:title>/);
+    if (!titleMatch) return undefined;
+    const m = titleMatch[0].match(/<a:defRPr\b[^/]*\/>/);
+    if (!m) return undefined;
+    const sz = m[0].match(/sz="([^"]+)"/);
+    return sz ? sz[1] : undefined;
+  }
+
+  function axisTitleRPrSzOf(axisBlock: string): string | undefined {
+    const titleMatch = axisBlock.match(/<c:title>[\s\S]*?<\/c:title>/);
+    if (!titleMatch) return undefined;
+    const m = titleMatch[0].match(/<a:rPr\b[^/]*\/>/);
+    if (!m) return undefined;
+    const sz = m[0].match(/sz="([^"]+)"/);
+    return sz ? sz[1] : undefined;
+  }
+
+  it('emits sz="1000" on the X-axis title by default (matches Excel\'s reference 10pt)', () => {
+    const result = writeChart(makeChart({ axes: { x: { title: "Period" } } }), "Sheet1");
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrSzOf(xAx)).toBe("1000");
+    expect(axisTitleRPrSzOf(xAx)).toBe("1000");
+  });
+
+  it("emits the size in 100ths of a point on a positive input", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleFontSize: 14 } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrSzOf(xAx)).toBe("1400");
+    expect(axisTitleRPrSzOf(xAx)).toBe("1400");
+  });
+
+  it("supports half-point granularity", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleFontSize: 10.5 } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrSzOf(xAx)).toBe("1050");
+    expect(axisTitleRPrSzOf(xAx)).toBe("1050");
+  });
+
+  it("rounds fractional inputs to the nearest 0.5pt", () => {
+    // 10.24pt rounds down to 10 -> sz="1000".
+    const a = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleFontSize: 10.24 } } }),
+      "Sheet1",
+    );
+    expect(axisTitleDefRPrSzOf(axisBlocks(a.chartXml)[0])).toBe("1000");
+    // 10.8pt rounds up to 11 -> sz="1100".
+    const b = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleFontSize: 10.8 } } }),
+      "Sheet1",
+    );
+    expect(axisTitleDefRPrSzOf(axisBlocks(b.chartXml)[0])).toBe("1100");
+  });
+
+  it("emits the 1pt minimum (sz=100)", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleFontSize: 1 } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrSzOf(xAx)).toBe("100");
+  });
+
+  it("emits the 400pt maximum (sz=40000)", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleFontSize: 400 } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrSzOf(xAx)).toBe("40000");
+  });
+
+  it("drops out-of-range values and falls back to the 10pt default (sz=1000)", () => {
+    // 0.49pt rounds to 0.5pt, below the OOXML ST_TextFontSize 1pt
+    // minimum — the writer falls back to the 10pt default.
+    const a = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleFontSize: 0.49 } } }),
+      "Sheet1",
+    );
+    expect(axisTitleDefRPrSzOf(axisBlocks(a.chartXml)[0])).toBe("1000");
+    // 401pt is above the OOXML ST_TextFontSize 400pt maximum.
+    const b = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleFontSize: 401 } } }),
+      "Sheet1",
+    );
+    expect(axisTitleDefRPrSzOf(axisBlocks(b.chartXml)[0])).toBe("1000");
+  });
+
+  it("drops non-finite inputs and falls back to the 10pt default", () => {
+    const nan = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleFontSize: Number.NaN } } }),
+      "Sheet1",
+    );
+    expect(axisTitleDefRPrSzOf(axisBlocks(nan.chartXml)[0])).toBe("1000");
+    const inf = writeChart(
+      makeChart({
+        axes: { x: { title: "Period", axisTitleFontSize: Number.POSITIVE_INFINITY } },
+      }),
+      "Sheet1",
+    );
+    expect(axisTitleDefRPrSzOf(axisBlocks(inf.chartXml)[0])).toBe("1000");
+  });
+
+  it("drops non-numeric inputs (defends against the type guard escaping)", () => {
+    const result = writeChart(
+      makeChart({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        axes: { x: { title: "Period", axisTitleFontSize: "12" as any } },
+      }),
+      "Sheet1",
+    );
+    expect(axisTitleDefRPrSzOf(axisBlocks(result.chartXml)[0])).toBe("1000");
+  });
+
+  it("ignores axisTitleFontSize when the axis renders no title", () => {
+    // No title means no `<c:title>` block — there is no slot for the
+    // size in either case.
+    const result = writeChart(makeChart({ axes: { x: { axisTitleFontSize: 14 } } }), "Sheet1");
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(xAx).not.toContain("<c:title>");
+  });
+
+  it("composes independently with axisTitleRotation on the same axis", () => {
+    const result = writeChart(
+      makeChart({
+        axes: { x: { title: "Period", axisTitleRotation: 45, axisTitleFontSize: 14 } },
+      }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const titleBlock = xAx.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(titleBlock).toContain('rot="2700000"');
+    expect(titleBlock).toContain('sz="1400"');
+  });
+
+  it("composes independently with the chart-level title font size", () => {
+    const result = writeChart(
+      makeChart({
+        titleFontSize: 24,
+        axes: { x: { title: "Period", axisTitleFontSize: 14 } },
+      }),
+      "Sheet1",
+    );
+    const chartTitle = result.chartXml.match(/<c:chart>[\s\S]*?<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(chartTitle).toContain('sz="2400"');
+    const [xAx] = axisBlocks(result.chartXml);
+    const xTitleBlock = xAx.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(xTitleBlock).toContain('sz="1400"');
+  });
+
+  it("threads the size through both axes independently", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: { title: "Period", axisTitleFontSize: 14 },
+          y: { title: "USD", axisTitleFontSize: 16 },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx, yAx] = axisBlocks(result.chartXml);
+    expect(axisTitleDefRPrSzOf(xAx)).toBe("1400");
+    expect(axisTitleDefRPrSzOf(yAx)).toBe("1600");
+  });
+
+  it("threads the size through line / area / scatter chart families", () => {
+    for (const type of ["line", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, axes: { x: { title: "Period", axisTitleFontSize: 12 } } }),
+        "Sheet1",
+      );
+      const [xAx] = axisBlocks(result.chartXml);
+      expect(axisTitleDefRPrSzOf(xAx)).toBe("1200");
+    }
+    // Scatter routes both axes through `<c:valAx>` — confirm the size
+    // still threads to the Y axis.
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { y: { title: "USD", axisTitleFontSize: 16 } },
+      }),
+      "Sheet1",
+    );
+    const blocks = axisBlocks(scatter.chartXml);
+    const yAx = blocks[1];
+    expect(axisTitleDefRPrSzOf(yAx)).toBe("1600");
+  });
+
+  it("preserves the axis title's other attributes (b='0', lang='en-US')", () => {
+    // The writer keeps `b="0"` (non-bold) and `lang="en-US"` on the
+    // run's `<a:rPr>` so a templated axis title only loses the size,
+    // not the surrounding font defaults.
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleFontSize: 14 } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const titleBlock = xAx.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(titleBlock).toContain('lang="en-US"');
+    expect(titleBlock.match(/b="0"/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("round-trips a non-default axis title size through parseChart", () => {
+    const written = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleFontSize: 14 } } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.title).toBe("Period");
+    expect(reparsed?.axes?.x?.axisTitleFontSize).toBe(14);
+  });
+
+  it("round-trips a defaulted axis title back to the writer's reference 10pt", () => {
+    // The writer emits sz="1000" by default; the reader surfaces it
+    // literally because 10pt is a valid pin (mirrors the chart-level
+    // titleFontSize round-trip behaviour).
+    const written = writeChart(makeChart({ axes: { x: { title: "Period" } } }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.title).toBe("Period");
+    expect(reparsed?.axes?.x?.axisTitleFontSize).toBe(10);
+  });
+
+  it("end-to-end: writeXlsx packages the axis title size into chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            axes: {
+              x: { title: "Period", axisTitleFontSize: 14 },
+              y: { title: "USD", axisTitleFontSize: 16 },
+            },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.x?.axisTitleFontSize).toBe(14);
+    expect(reparsed?.axes?.y?.axisTitleFontSize).toBe(16);
+  });
+});

@@ -10826,3 +10826,260 @@ describe("parseChart — axis title rotation", () => {
     });
   });
 });
+
+// ── parseChart — axis title font size ───────────────────────────────
+
+describe("parseChart — axis title font size", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withCatAxTitle(sz: string | undefined): string {
+    const defRPr = sz === undefined ? "<a:defRPr/>" : `<a:defRPr sz="${sz}"/>`;
+    return `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr>${defRPr}</a:pPr><a:r><a:t>Period</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces the axis-title size in points from the sz attribute (100ths of a point)", () => {
+    // 12pt * 100 = 1200.
+    const chart = parseChart(withCatAxTitle("1200"));
+    expect(chart?.axes?.x?.axisTitleFontSize).toBe(12);
+    expect(chart?.axes?.x?.title).toBe("Period");
+  });
+
+  it("surfaces the writer's reference 10pt size literally", () => {
+    // Excel writes sz="1000" on every fresh axis title — the reader
+    // surfaces it because it is a literal pin (no "default collapse"
+    // for a literal sz, mirroring `titleFontSize`).
+    const chart = parseChart(withCatAxTitle("1000"));
+    expect(chart?.axes?.x?.axisTitleFontSize).toBe(10);
+  });
+
+  it("rounds to the nearest 0.5pt", () => {
+    // sz="1050" = 10.5pt — surfaces literally.
+    const a = parseChart(withCatAxTitle("1050"));
+    expect(a?.axes?.x?.axisTitleFontSize).toBe(10.5);
+    // sz="1024" = 10.24pt — rounds down to 10.
+    const b = parseChart(withCatAxTitle("1024"));
+    expect(b?.axes?.x?.axisTitleFontSize).toBe(10);
+    // sz="1080" = 10.8pt — rounds up to 11.
+    const c = parseChart(withCatAxTitle("1080"));
+    expect(c?.axes?.x?.axisTitleFontSize).toBe(11);
+  });
+
+  it("returns undefined when <a:defRPr> omits the sz attribute", () => {
+    const chart = parseChart(withCatAxTitle(undefined));
+    expect(chart?.axes?.x?.axisTitleFontSize).toBeUndefined();
+    expect(chart?.axes?.x?.title).toBe("Period");
+  });
+
+  it("returns undefined when the axis omits <c:title>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when the title is a <c:strRef> (no <c:rich> body)", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:strRef>
+          <c:f>Sheet1!$A$1</c:f>
+          <c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Period</c:v></c:pt></c:strCache>
+        </c:strRef></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.title).toBe("Period");
+    expect(chart?.axes?.x?.axisTitleFontSize).toBeUndefined();
+  });
+
+  it("returns undefined when <a:p> has no <a:pPr> element", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:r><a:t>Period</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.title).toBe("Period");
+    expect(chart?.axes?.x?.axisTitleFontSize).toBeUndefined();
+  });
+
+  it("drops sz values below the 1pt minimum after rounding (sz=49)", () => {
+    // 49 / 100 = 0.49pt — half-step rounds to 0.5pt, below the OOXML
+    // ST_TextFontSize 1pt minimum.
+    const chart = parseChart(withCatAxTitle("49"));
+    expect(chart?.axes?.x?.axisTitleFontSize).toBeUndefined();
+  });
+
+  it("drops sz values above the 400pt maximum (sz=400001)", () => {
+    // 400001 / 100 = 4000.01pt — outside the OOXML band.
+    const chart = parseChart(withCatAxTitle("400001"));
+    expect(chart?.axes?.x?.axisTitleFontSize).toBeUndefined();
+  });
+
+  it("surfaces the 1pt minimum (sz=100)", () => {
+    const chart = parseChart(withCatAxTitle("100"));
+    expect(chart?.axes?.x?.axisTitleFontSize).toBe(1);
+  });
+
+  it("surfaces the 400pt maximum (sz=40000)", () => {
+    const chart = parseChart(withCatAxTitle("40000"));
+    expect(chart?.axes?.x?.axisTitleFontSize).toBe(400);
+  });
+
+  it("drops non-numeric sz tokens", () => {
+    expect(parseChart(withCatAxTitle("twelve"))?.axes?.x?.axisTitleFontSize).toBeUndefined();
+  });
+
+  it("drops empty sz tokens", () => {
+    expect(parseChart(withCatAxTitle(""))?.axes?.x?.axisTitleFontSize).toBeUndefined();
+  });
+
+  it("does not leak the tick-label <c:txPr> size into the title size", () => {
+    // The reader scopes the lookup to the title's <c:rich> body —
+    // the tick-label `<c:txPr>` is a sibling element on the axis and
+    // must not feed its `<a:defRPr sz>` into the title size.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:r><a:t>Period</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+      <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="800"/></a:pPr></a:p></c:txPr>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.title).toBe("Period");
+    expect(chart?.axes?.x?.axisTitleFontSize).toBeUndefined();
+  });
+
+  it("surfaces the size on the value axis", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr sz="1600"/></a:pPr><a:r><a:t>USD</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.y?.title).toBe("USD");
+    expect(chart?.axes?.y?.axisTitleFontSize).toBe(16);
+  });
+
+  it("surfaces independently on both axes", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr sz="900"/></a:pPr><a:r><a:t>Period</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr sz="1800"/></a:pPr><a:r><a:t>USD</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.axisTitleFontSize).toBe(9);
+    expect(chart?.axes?.y?.axisTitleFontSize).toBe(18);
+  });
+
+  it("co-surfaces alongside other axis fields", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich>
+          <a:bodyPr rot="2700000"/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr sz="1400"/></a:pPr><a:r><a:t>Period</a:t></a:r></a:p>
+        </c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x).toEqual({
+      title: "Period",
+      axisTitleRotation: 45,
+      axisTitleFontSize: 14,
+    });
+  });
+});
