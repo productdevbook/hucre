@@ -255,3 +255,50 @@ export function normalizeBorderDash(
   if (value === "solid") return undefined;
   return value;
 }
+
+/**
+ * Resolve a chart-frame border-width override.
+ *
+ * `undefined` → inherit the source value (after running it through
+ *               the writer-side clamp `clampStrokeWidthPt`, so a
+ *               malformed source value drops cleanly to `undefined`).
+ * `null`      → drop the inherited width (the writer falls back to
+ *               Excel's auto-stroke thickness — no `w` attribute on
+ *               `<a:ln>`).
+ * `number`    → replace with the clamped value. Out-of-range values
+ *               clamp to the `0.25..13.5` pt band Excel's UI exposes.
+ *               Non-finite / non-numeric overrides collapse to
+ *               `undefined` via the normalizer.
+ *
+ * Used by every chart-frame border-width slot the clone surface
+ * exposes — chart-space, axis-title, data table, data labels — and
+ * mirrors the existing host-specific resolvers for plot-area / legend /
+ * title border widths.
+ */
+export function resolveBorderWidthPt(
+  sourceValue: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) return clampStrokeWidthPt(sourceValue);
+  if (override === null) return undefined;
+  return clampStrokeWidthPt(override);
+}
+
+/**
+ * Resolve a chart-frame border-dash override.
+ *
+ * `undefined` → inherit the source value (after running it through
+ *               {@link normalizeBorderDash}).
+ * `null`      → drop the inherited dash (the writer renders solid).
+ * value       → replace with the normalized dash. Unrecognized tokens
+ *               and the OOXML default `"solid"` collapse to
+ *               `undefined`.
+ */
+export function resolveBorderDash(
+  sourceValue: ChartBorderDash | undefined,
+  override: ChartBorderDash | null | undefined,
+): ChartBorderDash | undefined {
+  if (override === undefined) return normalizeBorderDash(sourceValue);
+  if (override === null) return undefined;
+  return normalizeBorderDash(override);
+}

@@ -110,3 +110,18 @@ export function parseNumericChildVal(parent: XmlElement, localName: string): num
   const value = Number(trimmed);
   return Number.isFinite(value) ? value : undefined;
 }
+
+/**
+ * Generic clone-override resolver. `undefined` keeps the source value
+ * (inherit), `null` drops it (suppress), and any other value replaces.
+ * Used by every per-field clone resolver that does not need additional
+ * normalization on the value.
+ */
+export function applyOverride<T>(
+  sourceValue: T | undefined,
+  override: T | null | undefined,
+): T | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
