@@ -6579,6 +6579,159 @@ describe("parseChart — legendLayout", () => {
   });
 });
 
+// ── parseChart — plotAreaLayout (manual placement) ──────────────────
+
+describe("parseChart — plotAreaLayout", () => {
+  const NS_PL = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withPlotAreaLayout(body: string): string {
+    return `<c:chartSpace ${NS_PL}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout>
+        <c:manualLayout>${body}</c:manualLayout>
+      </c:layout>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces every coordinate when all four are pinned", () => {
+    const xml = withPlotAreaLayout(
+      `<c:xMode val="edge"/><c:yMode val="edge"/><c:wMode val="edge"/><c:hMode val="edge"/>
+       <c:x val="0.12"/><c:y val="0.18"/><c:w val="0.7"/><c:h val="0.6"/>`,
+    );
+    expect(parseChart(xml)?.plotAreaLayout).toEqual({ x: 0.12, y: 0.18, w: 0.7, h: 0.6 });
+  });
+
+  it("surfaces a partial layout (only x/y pinned)", () => {
+    const xml = withPlotAreaLayout(
+      `<c:xMode val="edge"/><c:yMode val="edge"/><c:x val="0.1"/><c:y val="0.25"/>`,
+    );
+    expect(parseChart(xml)?.plotAreaLayout).toEqual({ x: 0.1, y: 0.25 });
+  });
+
+  it("surfaces a partial layout (only w/h pinned)", () => {
+    const xml = withPlotAreaLayout(
+      `<c:wMode val="edge"/><c:hMode val="edge"/><c:w val="0.7"/><c:h val="0.6"/>`,
+    );
+    expect(parseChart(xml)?.plotAreaLayout).toEqual({ w: 0.7, h: 0.6 });
+  });
+
+  it('accepts xMode="factor" and surfaces the same shape', () => {
+    const xml = withPlotAreaLayout(
+      `<c:xMode val="factor"/><c:yMode val="factor"/><c:x val="0.15"/><c:y val="0.2"/>`,
+    );
+    expect(parseChart(xml)?.plotAreaLayout).toEqual({ x: 0.15, y: 0.2 });
+  });
+
+  it("drops out-of-range coordinates axis-by-axis", () => {
+    const xml = withPlotAreaLayout(
+      `<c:x val="-0.5"/><c:y val="2.0"/><c:w val="0.7"/><c:h val="0.6"/>`,
+    );
+    expect(parseChart(xml)?.plotAreaLayout).toEqual({ w: 0.7, h: 0.6 });
+  });
+
+  it("drops non-numeric coordinates axis-by-axis", () => {
+    const xml = withPlotAreaLayout(`<c:x val="not-a-number"/><c:y val="0.4"/>`);
+    expect(parseChart(xml)?.plotAreaLayout).toEqual({ y: 0.4 });
+  });
+
+  it("collapses an empty <c:manualLayout> to undefined", () => {
+    const xml = withPlotAreaLayout(``);
+    expect(parseChart(xml)?.plotAreaLayout).toBeUndefined();
+  });
+
+  it("collapses a layout where every coordinate dropped to undefined", () => {
+    const xml = withPlotAreaLayout(`<c:x val="-1"/><c:y val="2"/>`);
+    expect(parseChart(xml)?.plotAreaLayout).toBeUndefined();
+  });
+
+  it("returns undefined when <c:plotArea> has only the bare <c:layout/> placeholder", () => {
+    const xml = `<c:chartSpace ${NS_PL}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.plotAreaLayout).toBeUndefined();
+  });
+
+  it("returns undefined when <c:layout> has no <c:manualLayout> child", () => {
+    const xml = `<c:chartSpace ${NS_PL}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout></c:layout>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.plotAreaLayout).toBeUndefined();
+  });
+
+  it("returns undefined when <c:plotArea> has no <c:layout> element at all", () => {
+    const xml = `<c:chartSpace ${NS_PL}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.plotAreaLayout).toBeUndefined();
+  });
+
+  it("accepts the boundary values 0 and 1", () => {
+    const xml = withPlotAreaLayout(`<c:x val="0"/><c:y val="1"/><c:w val="0"/><c:h val="1"/>`);
+    expect(parseChart(xml)?.plotAreaLayout).toEqual({ x: 0, y: 1, w: 0, h: 1 });
+  });
+
+  it("surfaces independently of legendLayout (each lives on its own host)", () => {
+    const xml = `<c:chartSpace ${NS_PL}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout>
+        <c:manualLayout>
+          <c:xMode val="edge"/>
+          <c:yMode val="edge"/>
+          <c:x val="0.1"/>
+          <c:y val="0.18"/>
+        </c:manualLayout>
+      </c:layout>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:layout>
+        <c:manualLayout>
+          <c:xMode val="edge"/>
+          <c:yMode val="edge"/>
+          <c:x val="0.75"/>
+          <c:y val="0.2"/>
+        </c:manualLayout>
+      </c:layout>
+      <c:overlay val="0"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.plotAreaLayout).toEqual({ x: 0.1, y: 0.18 });
+    expect(chart?.legendLayout).toEqual({ x: 0.75, y: 0.2 });
+  });
+});
+
 // ── parseChart — data labels showLegendKey ──────────────────────────
 
 describe("parseChart — data labels showLegendKey", () => {

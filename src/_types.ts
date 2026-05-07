@@ -2155,6 +2155,51 @@ export interface SheetChart {
    * reference serialization byte-for-byte.
    */
   legendLayout?: ChartManualLayout;
+  /**
+   * Custom plot-area placement inside the chart frame. Maps to
+   * `<c:plotArea><c:layout><c:manualLayout>...</c:manualLayout></c:layout>
+   * </c:plotArea>` — Excel's "Format Plot Area -> Position -> Custom"
+   * placement (the same dialog the user gets by dragging the plot area's
+   * border). The block is the first child of `<c:plotArea>` per
+   * `CT_PlotArea` (ECMA-376 Part 1, §21.2.2.145), preceding every chart-type
+   * element and the axes.
+   *
+   * Each of {@link ChartManualLayout.x} / {@link ChartManualLayout.y} /
+   * {@link ChartManualLayout.w} / {@link ChartManualLayout.h} is a
+   * fraction of the chart frame in the range `0..1` — `(0, 0)` is the
+   * upper-left of the chart frame, `(1, 1)` is the lower-right. The
+   * coordinates compose independently — out-of-range / non-finite /
+   * non-numeric coordinates collapse to omitting the matching `<c:x>` /
+   * `<c:y>` / `<c:w>` / `<c:h>` slot so a caller can pin only the
+   * position ({@link ChartManualLayout.x} / {@link ChartManualLayout.y})
+   * and let the plot area keep its automatic size, only the size
+   * ({@link ChartManualLayout.w} / {@link ChartManualLayout.h}) and let
+   * it keep its automatic anchor, or any combination.
+   *
+   * The writer always emits the matching `<c:xMode>` / `<c:yMode>` /
+   * `<c:wMode>` / `<c:hMode>` children with `val="edge"` (Excel's
+   * reference shape when the user drags the plot area to a custom
+   * position — the coordinates are absolute fractions of the chart
+   * frame, not deltas from the auto-layout baseline).
+   *
+   * Default: omitted — the plot area renders at the auto-layout
+   * position Excel computes from the chart's dimensions, the title /
+   * legend slots, and the axis label widths. Pin a {@link ChartManualLayout}
+   * to align the plot area with neighbouring chart tiles, reserve a
+   * fixed margin for a wrapped axis label, or hand off vertical space
+   * to a tall legend.
+   *
+   * The writer always emits a `<c:layout>` element on `<c:plotArea>` —
+   * even when {@link plotAreaLayout} is omitted — because Excel's
+   * reference serialization always includes the (empty) auto-layout
+   * placeholder. When the field is omitted (or every coordinate dropped
+   * on normalization), the writer emits the bare `<c:layout/>`
+   * placeholder so a fresh chart matches Excel's reference shape
+   * byte-for-byte; pinning at least one coordinate replaces the
+   * placeholder with `<c:layout><c:manualLayout>...</c:manualLayout>
+   * </c:layout>`.
+   */
+  plotAreaLayout?: ChartManualLayout;
   /** Show the chart-level title element. Default: `true` when `title` is set. */
   showTitle?: boolean;
   /**
@@ -6507,6 +6552,35 @@ export interface Chart {
    * slots straight into {@link cloneChart} without conversion.
    */
   legendLayout?: ChartManualLayout;
+  /**
+   * Custom plot-area placement pulled from `<c:plotArea><c:layout>
+   * <c:manualLayout>...</c:manualLayout></c:layout></c:plotArea>`.
+   * Reflects Excel's "Format Plot Area -> Position -> Custom" placement —
+   * the `(x, y)` anchor and `(w, h)` size of the plot area as fractions
+   * of the chart frame in the `0..1` band.
+   *
+   * Each of {@link ChartManualLayout.x} / {@link ChartManualLayout.y} /
+   * {@link ChartManualLayout.w} / {@link ChartManualLayout.h} surfaces
+   * the literal `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` value when the
+   * source chart pins one; absence / non-numeric / non-finite tokens
+   * collapse to `undefined` on the matching field so absence and a
+   * malformed token round-trip identically through {@link cloneChart}.
+   * The reader accepts both `xMode="edge"` (absolute fraction of the
+   * chart frame) and `xMode="factor"` (delta from auto-layout) and
+   * surfaces the same shape; the writer normalizes to `"edge"` on emit
+   * since that is the form Excel itself emits when the user drags the
+   * plot area to a custom position.
+   *
+   * Reported as `undefined` whenever the source chart has no
+   * `<c:plotArea>` element at all, the `<c:plotArea>` carries only the
+   * bare `<c:layout/>` placeholder (Excel's reference shape for an
+   * auto-layout chart), or every coordinate the source pinned drops to
+   * `undefined` — there is no meaningful layout to surface in any of
+   * those cases. Mirrors the writer-side {@link SheetChart.plotAreaLayout}
+   * so a parsed value slots straight into {@link cloneChart} without
+   * conversion.
+   */
+  plotAreaLayout?: ChartManualLayout;
   /**
    * Title-overlay flag pulled from `<c:title><c:overlay val=".."/>`.
    * Reflects Excel's "Format Chart Title -> Show the title without

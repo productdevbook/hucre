@@ -362,6 +362,29 @@ export interface CloneChartOptions {
    * call site.
    */
   legendLayout?: ChartManualLayout | null;
+  /**
+   * Override `SheetChart.plotAreaLayout`. `undefined` (or omitted)
+   * inherits the source's parsed `plotAreaLayout`; `null` drops the
+   * inherited layout (the writer emits the bare `<c:layout/>`
+   * placeholder, falling back to Excel's auto-layout position); a
+   * {@link ChartManualLayout} replaces it.
+   *
+   * Each of {@link ChartManualLayout.x} / {@link ChartManualLayout.y} /
+   * {@link ChartManualLayout.w} / {@link ChartManualLayout.h} runs
+   * through the writer-side normalizer — coordinates outside the
+   * `0..1` band, `NaN`, `Infinity`, and non-numeric overrides all
+   * collapse to omitting the matching `<c:x>` / `<c:y>` / `<c:w>` /
+   * `<c:h>` slot so the cloned `SheetChart` always carries a value the
+   * writer will accept. An override whose every coordinate dropped on
+   * normalization collapses the entire layout to `undefined` so the
+   * writer emits the bare `<c:layout/>` placeholder.
+   *
+   * The grammar mirrors `legendLayout` so the manual-layout knobs
+   * compose the same way at the call site. Unlike `legendLayout`, the
+   * plot-area layout is never gated on a visibility flag — every chart
+   * has a `<c:plotArea>` element to host the layout.
+   */
+  plotAreaLayout?: ChartManualLayout | null;
   /** Override `SheetChart.barGrouping`. */
   barGrouping?: SheetChart["barGrouping"];
   /**
@@ -1784,6 +1807,21 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     const resolvedLegendLayout = resolveLegendLayout(source.legendLayout, options.legendLayout);
     if (resolvedLegendLayout !== undefined) out.legendLayout = resolvedLegendLayout;
   }
+
+  // Plot-area manual layout is independent of the legend visibility —
+  // every chart has a `<c:plotArea>` element to host `<c:layout>`. The
+  // resolution mirrors `resolveLegendLayout` exactly: `undefined`
+  // inherits the source's parsed `plotAreaLayout` (after normalization
+  // drops any out-of-range axes), `null` drops the inherited layout
+  // (the writer falls back to the bare `<c:layout/>` placeholder), a
+  // `ChartManualLayout` replaces it. An override whose every coordinate
+  // dropped on normalization collapses the entire layout to `undefined`
+  // so the writer skips the `<c:manualLayout>` body.
+  const resolvedPlotAreaLayout = resolvePlotAreaLayout(
+    source.plotAreaLayout,
+    options.plotAreaLayout,
+  );
+  if (resolvedPlotAreaLayout !== undefined) out.plotAreaLayout = resolvedPlotAreaLayout;
 
   const barGrouping = options.barGrouping !== undefined ? options.barGrouping : source.barGrouping;
   if (barGrouping !== undefined && (type === "bar" || type === "column")) {
@@ -3320,6 +3358,39 @@ function normalizeLayoutCoordinate(raw: unknown): number | undefined {
  * the rendered chart.
  */
 function resolveLegendLayout(
+  sourceValue: ChartManualLayout | undefined,
+  override: ChartManualLayout | null | undefined,
+): ChartManualLayout | undefined {
+  if (override === undefined) return normalizeLegendLayout(sourceValue);
+  if (override === null) return undefined;
+  return normalizeLegendLayout(override);
+}
+
+/**
+ * Resolve a `plotAreaLayout` override.
+ *
+ * `undefined` → inherit the source's parsed `plotAreaLayout` (after
+ *               running it through {@link normalizeLegendLayout} so a
+ *               malformed source value drops cleanly — the normalizer
+ *               is purely shape-based, no host-element awareness, so it
+ *               applies identically to legend / plot-area layouts).
+ * `null`      → drop the inherited layout (the writer falls back to the
+ *               bare `<c:layout/>` placeholder Excel itself emits on
+ *               every auto-layout chart).
+ * `ChartManualLayout` → replace, after running through
+ *               {@link normalizeLegendLayout}. Coordinates outside the
+ *               `0..1` band collapse on the matching axis so the
+ *               cloned `SheetChart` always carries a value the writer
+ *               will accept; an override whose every axis dropped
+ *               collapses to `undefined` so the writer skips the
+ *               `<c:manualLayout>` body.
+ *
+ * The grammar mirrors `resolveLegendLayout` so the manual-layout knobs
+ * compose the same way at the call site. Unlike the legend variant, the
+ * caller does not need to gate the result on any visibility flag —
+ * every chart has a `<c:plotArea>` element to host `<c:layout>`.
+ */
+function resolvePlotAreaLayout(
   sourceValue: ChartManualLayout | undefined,
   override: ChartManualLayout | null | undefined,
 ): ChartManualLayout | undefined {

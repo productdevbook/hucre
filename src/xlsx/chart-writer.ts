@@ -815,7 +815,19 @@ function resolveAutoTitleDeleted(chart: SheetChart): boolean {
 // ── Plot Area ────────────────────────────────────────────────────────
 
 function buildPlotArea(chart: SheetChart, sheetName: string): string {
-  const children: string[] = [xmlSelfClose("c:layout")];
+  // CT_PlotArea (ECMA-376 Part 1, §21.2.2.145) starts with `<c:layout>`
+  // before any chart-type element / axes / `<c:dTable>` / `<c:spPr>`. The
+  // writer always emits the element so the file's intent is explicit
+  // even on roundtrip — Excel itself includes the (empty) auto-layout
+  // placeholder in every reference serialization. When
+  // `chart.plotAreaLayout` is pinned the placeholder upgrades to
+  // `<c:layout><c:manualLayout>...</c:manualLayout></c:layout>` carrying
+  // the caller's `(x, y, w, h)` coordinates per `CT_ManualLayout`
+  // (§21.2.2.115). An empty layout (every coordinate dropped on
+  // normalization) collapses back to the bare placeholder so a fresh
+  // chart matches Excel's reference shape byte-for-byte.
+  const plotAreaLayoutXml = buildManualLayout(resolvePlotAreaLayout(chart));
+  const children: string[] = [plotAreaLayoutXml ?? xmlSelfClose("c:layout")];
 
   // Axis titles, gridlines, scaling, number format and tick rendering
   // surface for every chart family except pie/doughnut. Pull them once
@@ -5287,6 +5299,28 @@ interface ResolvedManualLayout {
  */
 function resolveLegendLayout(chart: SheetChart): ResolvedManualLayout | undefined {
   return normalizeManualLayout(chart.legendLayout);
+}
+
+/**
+ * Resolve `<c:plotArea><c:layout><c:manualLayout>...</c:manualLayout>
+ * </c:layout></c:plotArea>` from {@link SheetChart.plotAreaLayout}.
+ *
+ * Returns the normalized coordinate set, or `undefined` when every axis
+ * the caller pinned dropped to `undefined`. The caller emits the bare
+ * `<c:layout/>` placeholder in that case so a fresh chart matches
+ * Excel's reference shape byte-for-byte (Excel itself emits the empty
+ * placeholder on every auto-layout chart — the element is the first
+ * child of `<c:plotArea>` per `CT_PlotArea`, ECMA-376 Part 1,
+ * §21.2.2.145).
+ *
+ * Coordinates outside the OOXML `0..1` band, `NaN`, `Infinity`, and
+ * non-numeric inputs all collapse to `undefined` on the matching axis
+ * so the writer drops the matching `<c:x>` / `<c:y>` / `<c:w>` /
+ * `<c:h>` slot rather than emit a token Excel would reject — same
+ * accept-or-drop grammar as {@link resolveLegendLayout}.
+ */
+function resolvePlotAreaLayout(chart: SheetChart): ResolvedManualLayout | undefined {
+  return normalizeManualLayout(chart.plotAreaLayout);
 }
 
 /**

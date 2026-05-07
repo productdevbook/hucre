@@ -20097,3 +20097,220 @@ describe("cloneChart — legendLayout", () => {
     expect(parseChart(written)?.legendLayout).toEqual({ x: 0.2, y: 0.8 });
   });
 });
+
+// ── cloneChart — plotAreaLayout (manual placement) ──────────────────
+
+describe("cloneChart — plotAreaLayout", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's plotAreaLayout by default", () => {
+    const clone = cloneChart(source({ plotAreaLayout: { x: 0.1, y: 0.2 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.plotAreaLayout).toEqual({ x: 0.1, y: 0.2 });
+  });
+
+  it("lets options.plotAreaLayout override the source's value", () => {
+    const clone = cloneChart(source({ plotAreaLayout: { x: 0.1, y: 0.2 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaLayout: { x: 0.15, y: 0.25, w: 0.7, h: 0.6 },
+    });
+    expect(clone.plotAreaLayout).toEqual({ x: 0.15, y: 0.25, w: 0.7, h: 0.6 });
+  });
+
+  it("drops the inherited plotAreaLayout when the override is null", () => {
+    const clone = cloneChart(source({ plotAreaLayout: { x: 0.1, y: 0.2 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaLayout: null,
+    });
+    expect(clone.plotAreaLayout).toBeUndefined();
+  });
+
+  it("returns undefined plotAreaLayout when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.plotAreaLayout).toBeUndefined();
+  });
+
+  it("normalizes out-of-range overrides axis-by-axis", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaLayout: { x: -0.1, y: 1.2, w: 0.7, h: 0.6 },
+    });
+    expect(clone.plotAreaLayout).toEqual({ w: 0.7, h: 0.6 });
+  });
+
+  it("collapses an override whose every axis dropped to undefined", () => {
+    const clone = cloneChart(source({ plotAreaLayout: { x: 0.1 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      plotAreaLayout: { x: -1 as any, y: 2 as any, w: Number.NaN as any },
+    });
+    expect(clone.plotAreaLayout).toBeUndefined();
+  });
+
+  it("drops non-numeric coordinates leaking past the type guard", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      plotAreaLayout: { x: "0.5" as any, y: 0.4 },
+    });
+    expect(clone.plotAreaLayout).toEqual({ y: 0.4 });
+  });
+
+  it("drops a non-object plotAreaLayout (typed escape from an untyped caller)", () => {
+    const clone = cloneChart(source({ plotAreaLayout: { x: 0.1 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      plotAreaLayout: "auto" as any,
+    });
+    expect(clone.plotAreaLayout).toBeUndefined();
+  });
+
+  it("normalizes a malformed source value through the resolver", () => {
+    const clone = cloneChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      source({ plotAreaLayout: { x: 5 as any, y: -1 as any } }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.plotAreaLayout).toBeUndefined();
+  });
+
+  it("carries plotAreaLayout through a flatten (line → column)", () => {
+    const clone = cloneChart(source({ plotAreaLayout: { x: 0.1, y: 0.2 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.plotAreaLayout).toEqual({ x: 0.1, y: 0.2 });
+  });
+
+  it("carries plotAreaLayout through a doughnut flatten (line → doughnut)", () => {
+    const clone = cloneChart(source({ plotAreaLayout: { x: 0.1, y: 0.2 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.plotAreaLayout).toEqual({ x: 0.1, y: 0.2 });
+  });
+
+  it("retains plotAreaLayout independently of a hidden legend", () => {
+    const clone = cloneChart(source({ plotAreaLayout: { x: 0.1, y: 0.2 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+    });
+    expect(clone.legend).toBe(false);
+    // The plot-area layout lives on `<c:plotArea>`, not `<c:legend>`,
+    // so a hidden legend has no effect on its survival.
+    expect(clone.plotAreaLayout).toEqual({ x: 0.1, y: 0.2 });
+  });
+
+  it("composes independently with legendLayout (each lands on its own host)", () => {
+    const clone = cloneChart(
+      source({
+        plotAreaLayout: { x: 0.1, y: 0.15 },
+        legendLayout: { x: 0.75, y: 0.2 },
+        legend: "right",
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.plotAreaLayout).toEqual({ x: 0.1, y: 0.15 });
+    expect(clone.legendLayout).toEqual({ x: 0.75, y: 0.2 });
+  });
+
+  it("propagates plotAreaLayout into the rendered <c:plotArea><c:layout> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ plotAreaLayout: { x: 0.12, y: 0.18, w: 0.7, h: 0.6 } }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const plotArea = written.match(/<c:plotArea>[\s\S]*?<\/c:plotArea>/)![0];
+    expect(plotArea).toContain("<c:layout>");
+    expect(plotArea).toContain("<c:manualLayout>");
+    expect(plotArea).toContain('<c:x val="0.12"/>');
+    expect(plotArea).toContain('<c:y val="0.18"/>');
+    expect(plotArea).toContain('<c:w val="0.7"/>');
+    expect(plotArea).toContain('<c:h val="0.6"/>');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.plotAreaLayout).toEqual({ x: 0.12, y: 0.18, w: 0.7, h: 0.6 });
+  });
+
+  it("emits the bare <c:layout/> placeholder when both source and override are absent", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const plotArea = written.match(/<c:plotArea>[\s\S]*?<\/c:plotArea>/)![0];
+    expect(plotArea).toContain("<c:layout/>");
+    expect(plotArea).not.toContain("<c:manualLayout>");
+    expect(parseChart(written)?.plotAreaLayout).toBeUndefined();
+  });
+
+  it("an explicit override beats the source value through writeXlsx", async () => {
+    const clone = cloneChart(source({ plotAreaLayout: { x: 0.1, y: 0.2 } }), {
+      anchor: { from: { row: 5, col: 0 } },
+      plotAreaLayout: { x: 0.15, y: 0.25 },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(parseChart(written)?.plotAreaLayout).toEqual({ x: 0.15, y: 0.25 });
+  });
+});

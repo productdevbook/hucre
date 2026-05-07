@@ -410,6 +410,18 @@ export function parseChart(xml: string): Chart | undefined {
     // a slot for it; pie / doughnut have no axes at all.
     const dataTable = parseDataTable(plotArea);
     if (dataTable !== undefined) out.dataTable = dataTable;
+
+    // `<c:plotArea><c:layout><c:manualLayout>` carries Excel's "Format
+    // Plot Area -> Position -> Custom" placement. CT_PlotArea places the
+    // `<c:layout>` element first, before any chart-type element / axes /
+    // `<c:dTable>` / `<c:spPr>`. The reader surfaces the `<c:x>` /
+    // `<c:y>` / `<c:w>` / `<c:h>` coordinates off the canonical slot;
+    // absence of any meaningful coordinate (or the bare `<c:layout/>`
+    // placeholder Excel itself emits on auto-layout charts) collapses
+    // the field to `undefined` so a fresh chart and a chart that pinned
+    // an out-of-range layout both round-trip lossless.
+    const plotAreaLayout = parsePlotAreaLayout(plotArea);
+    if (plotAreaLayout !== undefined) out.plotAreaLayout = plotAreaLayout;
   }
 
   const legend = parseLegend(chartEl);
@@ -3716,6 +3728,60 @@ function parseLegendLayout(chartEl: XmlElement): ChartManualLayout | undefined {
   const legend = findChild(chartEl, "legend");
   if (!legend) return undefined;
   const layout = findChild(legend, "layout");
+  if (!layout) return undefined;
+  const manual = findChild(layout, "manualLayout");
+  if (!manual) return undefined;
+
+  const out: ChartManualLayout = {};
+  const x = readLayoutCoordinate(findChild(manual, "x"));
+  if (x !== undefined) out.x = x;
+  const y = readLayoutCoordinate(findChild(manual, "y"));
+  if (y !== undefined) out.y = y;
+  const w = readLayoutCoordinate(findChild(manual, "w"));
+  if (w !== undefined) out.w = w;
+  const h = readLayoutCoordinate(findChild(manual, "h"));
+  if (h !== undefined) out.h = h;
+
+  if (out.x === undefined && out.y === undefined && out.w === undefined && out.h === undefined) {
+    return undefined;
+  }
+  return out;
+}
+
+/**
+ * Pull `<c:plotArea><c:layout><c:manualLayout>` off the chart. Reflects
+ * Excel's "Format Plot Area -> Position -> Custom" placement — the
+ * `(x, y)` anchor and `(w, h)` size of the plot area as fractions of
+ * the chart frame in the `0..1` band.
+ *
+ * The OOXML schema (`CT_PlotArea`, ECMA-376 Part 1, §21.2.2.145) places
+ * `<c:layout>` as the first child of `<c:plotArea>`, before any
+ * chart-type element / axes / `<c:dTable>` / `<c:spPr>`. The
+ * `<c:manualLayout>` block (`CT_ManualLayout`, §21.2.2.115) exposes
+ * optional `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` children whose `val`
+ * attributes carry an `xsd:double`. The reader admits the coordinate
+ * only when `val` parses to a finite number in the `0..1` band;
+ * out-of-range / non-finite / non-numeric tokens drop to `undefined`
+ * on the matching axis so absence and a malformed token round-trip
+ * identically through {@link cloneChart}.
+ *
+ * Both `<c:xMode val="edge"/>` (absolute fraction of the chart frame)
+ * and `<c:xMode val="factor"/>` (delta from auto-layout) are accepted —
+ * the reader surfaces the same `ChartManualLayout` shape regardless,
+ * since the writer always normalizes to `"edge"` on emit (Excel itself
+ * emits the absolute form when the user drags an element to a custom
+ * position).
+ *
+ * Returns `undefined` whenever the plot area omits the `<c:layout>` /
+ * `<c:manualLayout>` chain at any link (the bare `<c:layout/>`
+ * placeholder Excel emits on auto-layout charts has no `<c:manualLayout>`
+ * child, so it collapses cleanly here), or when every coordinate
+ * dropped on normalization — the field is omitted entirely on a clean
+ * parse so absence and an empty layout round-trip identically through
+ * the writer.
+ */
+function parsePlotAreaLayout(plotArea: XmlElement): ChartManualLayout | undefined {
+  const layout = findChild(plotArea, "layout");
   if (!layout) return undefined;
   const manual = findChild(layout, "manualLayout");
   if (!manual) return undefined;
