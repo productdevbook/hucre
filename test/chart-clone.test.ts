@@ -23711,3 +23711,177 @@ describe("cloneChart — legendBorderColor", () => {
     expect(parseChart(written)?.legendBorderColor).toBe("1F77B4");
   });
 });
+
+// ── cloneChart — legendBorderWidth (line stroke thickness) ───────────
+
+describe("cloneChart — legendBorderWidth", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      legend: "right",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's legendBorderWidth by default", () => {
+    const clone = cloneChart(source({ legendBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.legendBorderWidth).toBe(1.5);
+  });
+
+  it("lets options.legendBorderWidth override the source's value", () => {
+    const clone = cloneChart(source({ legendBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendBorderWidth: 2.5,
+    });
+    expect(clone.legendBorderWidth).toBe(2.5);
+  });
+
+  it("drops the inherited legendBorderWidth when the override is null", () => {
+    const clone = cloneChart(source({ legendBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendBorderWidth: null,
+    });
+    expect(clone.legendBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined legendBorderWidth when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.legendBorderWidth).toBeUndefined();
+  });
+
+  it("snaps the override to the 0.25 pt grid (1.4 → 1.5)", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendBorderWidth: 1.4,
+    });
+    expect(clone.legendBorderWidth).toBe(1.5);
+  });
+
+  it("clamps the override below the minimum (0.1 → 0.25)", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendBorderWidth: 0.1,
+    });
+    expect(clone.legendBorderWidth).toBe(0.25);
+  });
+
+  it("clamps the override above the maximum (50 → 13.5)", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendBorderWidth: 50,
+    });
+    expect(clone.legendBorderWidth).toBe(13.5);
+  });
+
+  it("drops a NaN override", () => {
+    const clone = cloneChart(source({ legendBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendBorderWidth: Number.NaN,
+    });
+    expect(clone.legendBorderWidth).toBeUndefined();
+  });
+
+  it("drops an Infinity override", () => {
+    const clone = cloneChart(source({ legendBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendBorderWidth: Number.POSITIVE_INFINITY,
+    });
+    expect(clone.legendBorderWidth).toBeUndefined();
+  });
+
+  it("drops a non-number override (typed escape from an untyped caller)", () => {
+    const clone = cloneChart(source({ legendBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      legendBorderWidth: "1.5" as any,
+    });
+    expect(clone.legendBorderWidth).toBeUndefined();
+  });
+
+  it("normalizes a malformed source value through the resolver", () => {
+    const clone = cloneChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      source({ legendBorderWidth: Number.NaN as any }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.legendBorderWidth).toBeUndefined();
+  });
+
+  it("carries legendBorderWidth through a flatten (line → column)", () => {
+    const clone = cloneChart(source({ legendBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.legendBorderWidth).toBe(1.5);
+  });
+
+  it("drops legendBorderWidth when the legend is hidden (legend=false)", () => {
+    const clone = cloneChart(source({ legendBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendBorderWidth).toBeUndefined();
+  });
+
+  it("composes independently with legendBorderColor (each lands on its own slot)", () => {
+    const clone = cloneChart(
+      source({
+        legendBorderColor: "1F77B4",
+        legendBorderWidth: 1.5,
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.legendBorderColor).toBe("1F77B4");
+    expect(clone.legendBorderWidth).toBe(1.5);
+  });
+
+  it("composes independently with legendFillColor", () => {
+    const clone = cloneChart(
+      source({
+        legendFillColor: "F2F2F2",
+        legendBorderWidth: 1.5,
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.legendFillColor).toBe("F2F2F2");
+    expect(clone.legendBorderWidth).toBe(1.5);
+  });
+
+  it("survives a writeXlsx round trip — legendBorderWidth lands in the cloned chart XML", async () => {
+    const clone = cloneChart(source({ legendBorderWidth: 0.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendBorderWidth: 1.75,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(parseChart(written)?.legendBorderWidth).toBe(1.75);
+  });
+});

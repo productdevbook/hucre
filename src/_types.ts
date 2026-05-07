@@ -2468,6 +2468,47 @@ export interface SheetChart {
    */
   legendBorderColor?: string;
   /**
+   * Legend border (stroke) thickness in points (e.g. `1.5`). Maps to
+   * the `w` attribute on `<c:legend><c:spPr><a:ln w="EMU">` — Excel's
+   * "Format Legend -> Border -> Width" spinner. The OOXML `w`
+   * attribute carries the stroke width in English Metric Units
+   * (`1 pt = 12 700 EMU`) per `CT_LineProperties` (ECMA-376 Part 1,
+   * §20.1.2.3.24). The writer multiplies the input by 12 700 and rounds
+   * to the nearest integer because the schema types `w` as `xsd:int`.
+   *
+   * Accepts any finite number; values are clamped to the `0.25..13.5`
+   * pt band Excel's UI exposes (the same band used by the series
+   * stroke knob `series[i].stroke.width` and the plot-area border
+   * width knob {@link plotAreaBorderWidth}) and snapped to the
+   * 0.25 pt grid so a parsed-then-written width does not drift across
+   * round-trips. Non-finite / non-numeric / `NaN` values collapse to
+   * `undefined` and the writer omits the `w` attribute (the line keeps
+   * Excel's auto-thickness — typically 0.75 pt).
+   *
+   * Default: omitted — the legend border inherits Excel's
+   * auto-thickness. Pin a value to thicken the border around the legend
+   * block (a hairline at 0.25 pt, a heavy frame at several points) or
+   * to match the stroke width of neighboring chart tiles.
+   *
+   * Composes independently with {@link legendBorderColor} — the width
+   * attribute lands on the same `<a:ln>` element as the color's
+   * `<a:solidFill>` child, but the writer authors `<a:ln>` whenever
+   * either knob is set. A caller can pin a width without a color (the
+   * border picks Excel's auto-color), pin a color without a width (the
+   * border picks Excel's auto-thickness), or pin both. Setting only the
+   * width is valid Excel UI — the user can drag the "Width" spinner
+   * without picking a custom color.
+   *
+   * Silently ignored when `legend === false` (no `<c:legend>` element
+   * is emitted) — there is no slot to host the stroke in that case.
+   * Mirrors {@link plotAreaBorderWidth} — same accept-finite-number
+   * grammar, same `<a:ln w="EMU">` host attribute on a different parent
+   * (`<c:legend>` rather than `<c:plotArea>`), and shares the same
+   * 0.25..13.5 pt clamp + 0.25 pt snap so width values compose the same
+   * way at the call site.
+   */
+  legendBorderWidth?: number;
+  /**
    * Custom plot-area placement inside the chart frame. Maps to
    * `<c:plotArea><c:layout><c:manualLayout>...</c:manualLayout></c:layout>
    * </c:plotArea>` — Excel's "Format Plot Area -> Position -> Custom"
@@ -7615,6 +7656,33 @@ export interface Chart {
    * (`<a:solidFill>` for fill, `<a:ln><a:solidFill>` for stroke).
    */
   legendBorderColor?: string;
+  /**
+   * Legend border (stroke) thickness in points pulled from the `w`
+   * attribute on `<c:legend><c:spPr><a:ln w="EMU">`. Reflects Excel's
+   * "Format Legend -> Border -> Width" spinner. The OOXML `w`
+   * attribute stores the stroke width in English Metric Units
+   * (1 pt = 12 700 EMU) per `CT_LineProperties` (ECMA-376 Part 1,
+   * §20.1.2.3.24); the reader divides by 12 700 and snaps the result
+   * to the 0.25 pt grid Excel's UI exposes so a parsed-then-cloned
+   * width does not drift across round-trips.
+   *
+   * Reports the point value clamped to the `0.25..13.5` pt band Excel
+   * accepts in the UI when the source chart pinned a finite, positive
+   * `w` attribute. Absence (no `<a:ln>` or `<a:ln>` without a `w`
+   * attribute), zero, negative, and non-numeric `w` values all collapse
+   * to `undefined` so absence and an unrenderable width round-trip
+   * identically through {@link cloneChart}. Mirrors the writer-side
+   * {@link SheetChart.legendBorderWidth} so a parsed value slots
+   * straight into {@link cloneChart} without conversion.
+   *
+   * Reported as `undefined` whenever {@link legend} is `false` or the
+   * source chart has no `<c:legend>` element at all — there is no
+   * `<c:spPr>` slot to surface the stroke from in either case. Composes
+   * independently with {@link legendBorderColor} — both fields surface
+   * from the same `<a:ln>` element but on a different slot (the color
+   * child versus the width attribute).
+   */
+  legendBorderWidth?: number;
   /**
    * Custom plot-area placement pulled from `<c:plotArea><c:layout>
    * <c:manualLayout>...</c:manualLayout></c:layout></c:plotArea>`.

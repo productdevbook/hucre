@@ -193,6 +193,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveLegendLayout(chart),
         resolveLegendFillColor(chart),
         resolveLegendBorderColor(chart),
+        resolveLegendBorderWidth(chart),
       ),
     );
   }
@@ -5574,6 +5575,7 @@ function buildLegend(
   layout: ResolvedManualLayout | undefined,
   fillRgbHex: string | undefined,
   borderRgbHex: string | undefined,
+  borderWidthPt: number | undefined,
 ): string {
   const children: string[] = [xmlSelfClose("c:legendPos", { val: pos })];
 
@@ -5621,7 +5623,7 @@ function buildLegend(
   // children (`<a:effectLst>` effects, gradient / pattern / picture
   // fills, line dash / width / compound styles) are not modelled at
   // this layer.
-  const legendSpPrXml = buildLegendSpPr(fillRgbHex, borderRgbHex);
+  const legendSpPrXml = buildLegendSpPr(fillRgbHex, borderRgbHex, borderWidthPt);
   if (legendSpPrXml !== undefined) {
     children.push(legendSpPrXml);
   }
@@ -5654,21 +5656,24 @@ function buildLegend(
 
 /**
  * Build the `<c:spPr>` element on `<c:legend>` that carries the
- * legend's background fill and / or border (line stroke) colors.
- * Returns `undefined` when no knob is pinned so the caller can elide
- * the entire block — Excel's reference serialization omits `<c:spPr>`
- * from `<c:legend>` whenever the legend renders at the theme default
- * fill / stroke (typically a transparent legend background with no
- * `<c:spPr>` block).
+ * legend's background fill, border (line stroke) color, and border
+ * width. Returns `undefined` when no knob is pinned so the caller can
+ * elide the entire block — Excel's reference serialization omits
+ * `<c:spPr>` from `<c:legend>` whenever the legend renders at the
+ * theme default fill / stroke (typically a transparent legend
+ * background with no `<c:spPr>` block).
  *
  * The emitted block mirrors the minimal `<c:spPr>` shape Excel writes
  * when the user pins "Format Legend -> Fill -> Solid fill -> Color"
- * and / or "Format Legend -> Border -> Solid line -> Color":
+ * and / or "Format Legend -> Border -> Solid line -> Color" / "Width":
  * `<c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill>
- * <a:ln><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:ln>
- * </c:spPr>`. The `val` attribute holds the canonical 6-character
- * uppercase hex form (the writer normalizes the input ahead of this
- * call so a malformed source value never reaches emit). When at least
+ * <a:ln w="EMU"><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill>
+ * </a:ln></c:spPr>`. The `val` attribute holds the canonical
+ * 6-character uppercase hex form (the writer normalizes the input
+ * ahead of this call so a malformed source value never reaches emit).
+ * The width attribute lands on `<a:ln>` (EMU; 1 pt = 12 700 EMU)
+ * authored together with the border-color child so a stroke-only or
+ * color-only legend still emits a single `<a:ln>` block. When at least
  * one knob lands on the wire, the children are emitted in
  * `CT_ShapeProperties` schema order: `<a:solidFill>` (fill) then
  * `<a:ln>` (line / stroke).
@@ -5680,19 +5685,34 @@ function buildLegend(
 function buildLegendSpPr(
   fillRgbHex: string | undefined,
   borderRgbHex: string | undefined,
+  borderWidthPt: number | undefined,
 ): string | undefined {
-  if (fillRgbHex === undefined && borderRgbHex === undefined) return undefined;
+  if (fillRgbHex === undefined && borderRgbHex === undefined && borderWidthPt === undefined) {
+    return undefined;
+  }
   const children: string[] = [];
   if (fillRgbHex !== undefined) {
     children.push(
       xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillRgbHex })]),
     );
   }
-  if (borderRgbHex !== undefined) {
-    children.push(
-      xmlElement("a:ln", undefined, [
+  if (borderRgbHex !== undefined || borderWidthPt !== undefined) {
+    const lnAttrs: Record<string, string | number> = {};
+    if (borderWidthPt !== undefined) {
+      // OOXML stores stroke width in EMU (1 pt = 12 700 EMU). Round to
+      // the nearest integer because the schema types `w` as `xsd:int`.
+      lnAttrs.w = Math.round(borderWidthPt * EMU_PER_PT);
+    }
+    const lnChildren: string[] = [];
+    if (borderRgbHex !== undefined) {
+      lnChildren.push(
         xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: borderRgbHex })]),
-      ]),
+      );
+    }
+    children.push(
+      lnChildren.length === 0
+        ? xmlSelfClose("a:ln", lnAttrs)
+        : xmlElement("a:ln", Object.keys(lnAttrs).length > 0 ? lnAttrs : undefined, lnChildren),
     );
   }
   return xmlElement("c:spPr", undefined, children);
@@ -6124,6 +6144,34 @@ function resolveLegendFillColor(chart: SheetChart): string | undefined {
  */
 function resolveLegendBorderColor(chart: SheetChart): string | undefined {
   return normalizeTitleColor(chart.legendBorderColor);
+}
+
+/**
+ * Resolve `<c:legend><c:spPr><a:ln w="EMU"/></c:spPr></c:legend>` from
+ * {@link SheetChart.legendBorderWidth}.
+ *
+ * Returns the point value clamped to the `0.25..13.5` pt band Excel's
+ * UI exposes and snapped to the 0.25 pt grid, or `undefined` when the
+ * chart leaves the field unset / passed a malformed token (`NaN`,
+ * `Infinity`, non-finite). Delegates to {@link clampStrokeWidthPt} so
+ * the snap / clamp grammar matches every other `<a:ln w=..>` slot the
+ * writer authors (the series stroke knob `series[i].stroke.width`,
+ * the plot-area border width knob {@link SheetChart.plotAreaBorderWidth}).
+ * The width is only meaningful when the chart actually emits a
+ * legend — the caller is expected to gate the call on the resolved
+ * legend visibility (`resolveLegendPosition` returning a non-null
+ * value). A chart whose legend is suppressed has no `<c:legend>`
+ * block to host the `<c:spPr>` slot in either case.
+ *
+ * Independent of {@link resolveLegendBorderColor}: both knobs land on
+ * the same `<a:ln>` element but on a different slot (the color child
+ * `<a:solidFill>` versus the line's `w` attribute). Mirrors the
+ * chart-title / axis-title / chart-space / plot-area `<c:spPr>` slots —
+ * same EMU encoding, same `<a:ln>` host — but lands on `<c:legend>`'s
+ * own `<c:spPr>` block.
+ */
+function resolveLegendBorderWidth(chart: SheetChart): number | undefined {
+  return clampStrokeWidthPt(chart.legendBorderWidth);
 }
 
 /**

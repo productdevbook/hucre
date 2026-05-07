@@ -22415,3 +22415,182 @@ describe("parseChart — legendBorderColor", () => {
     expect(parseChart(xml)?.legendBorderColor).toBeUndefined();
   });
 });
+
+// ── parseChart — legendBorderWidth (line stroke thickness) ───────────
+
+describe("parseChart — legendBorderWidth", () => {
+  const NS_LBW = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withLegendSpPr(spPrBody: string): string {
+    return `<c:chartSpace ${NS_LBW}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:spPr>${spPrBody}</c:spPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces the stroke width in points (12700 EMU = 1 pt)", () => {
+    const xml = withLegendSpPr(`<a:ln w="12700"/>`);
+    expect(parseChart(xml)?.legendBorderWidth).toBe(1);
+  });
+
+  it("surfaces a fractional stroke width (19050 EMU = 1.5 pt)", () => {
+    const xml = withLegendSpPr(`<a:ln w="19050"/>`);
+    expect(parseChart(xml)?.legendBorderWidth).toBe(1.5);
+  });
+
+  it("surfaces the minimum width (3175 EMU = 0.25 pt)", () => {
+    const xml = withLegendSpPr(`<a:ln w="3175"/>`);
+    expect(parseChart(xml)?.legendBorderWidth).toBe(0.25);
+  });
+
+  it("snaps an exotic EMU value to the nearest 0.25 pt grid", () => {
+    // 14000 EMU ≈ 1.10 pt → snaps to 1.0 pt.
+    const xml = withLegendSpPr(`<a:ln w="14000"/>`);
+    expect(parseChart(xml)?.legendBorderWidth).toBe(1);
+  });
+
+  it("clamps below the minimum band (1000 EMU → 0.25 pt)", () => {
+    const xml = withLegendSpPr(`<a:ln w="1000"/>`);
+    expect(parseChart(xml)?.legendBorderWidth).toBe(0.25);
+  });
+
+  it("clamps above the maximum band (1000000 EMU → 13.5 pt)", () => {
+    const xml = withLegendSpPr(`<a:ln w="1000000"/>`);
+    expect(parseChart(xml)?.legendBorderWidth).toBe(13.5);
+  });
+
+  it("surfaces both border color and width when both are pinned on <a:ln>", () => {
+    const xml = withLegendSpPr(
+      `<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
+    );
+    const parsed = parseChart(xml);
+    expect(parsed?.legendBorderWidth).toBe(2);
+    expect(parsed?.legendBorderColor).toBe("1F77B4");
+  });
+
+  it("returns undefined when the chart has no <c:legend>", () => {
+    const xml = `<c:chartSpace ${NS_LBW}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when <c:legend> has no <c:spPr>", () => {
+    const xml = `<c:chartSpace ${NS_LBW}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when <c:spPr> has no <a:ln>", () => {
+    const xml = withLegendSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`);
+    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln> has no w attribute", () => {
+    const xml = withLegendSpPr(`<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`);
+    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when the w attribute is malformed (non-numeric)", () => {
+    const xml = withLegendSpPr(`<a:ln w="thick"/>`);
+    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when the w attribute is zero (Excel's 'no border' marker)", () => {
+    const xml = withLegendSpPr(`<a:ln w="0"/>`);
+    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when the w attribute is negative", () => {
+    const xml = withLegendSpPr(`<a:ln w="-12700"/>`);
+    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined();
+  });
+
+  it('drops the width when the legend is hidden via <c:delete val="1"/>', () => {
+    const xml = `<c:chartSpace ${NS_LBW}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:delete val="1"/>
+      <c:overlay val="1"/>
+      <c:spPr><a:ln w="19050"/></c:spPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe(false);
+    expect(chart?.legendBorderWidth).toBeUndefined();
+  });
+
+  it("ignores a stray <a:ln w=..> on a series <c:spPr> (not the legend)", () => {
+    const xml = `<c:chartSpace ${NS_LBW}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:spPr><a:ln w="50800"><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill></a:ln></c:spPr>
+        </c:ser>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined();
+  });
+
+  it("ignores a stray <a:ln w=..> on a plot-area <c:spPr> (not the legend)", () => {
+    const xml = `<c:chartSpace ${NS_LBW}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+      <c:spPr><a:ln w="50800"/></c:spPr>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined();
+  });
+});
