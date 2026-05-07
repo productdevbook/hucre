@@ -25,8 +25,10 @@ import type {
   ChartBorderDash,
   ChartDataLabels,
   ChartDataLabelsInfo,
+  ChartDataPoint,
   ChartDataTable,
   ChartDisplayBlanksAs,
+  ChartErrorBars,
   ChartKind,
   ChartLegendEntry,
   ChartLineStroke,
@@ -36,6 +38,8 @@ import type {
   ChartScatterStyle,
   ChartSeries,
   ChartSeriesInfo,
+  ChartShape3D,
+  ChartTrendline,
   ChartView3D,
   SheetChart,
   WriteChartKind,
@@ -213,6 +217,35 @@ export interface CloneChartSeriesOverride {
    * from the output when the resolved chart type is anything else.
    */
   explosion?: number | null;
+  /**
+   * Per-data-point override array. `undefined` inherits the source
+   * series' `dataPoints`; `null` drops them; an array replaces.
+   */
+  dataPoints?: ChartDataPoint[] | null;
+  /**
+   * Per-series trendline override array. `undefined` inherits the
+   * source series' `trendlines`; `null` drops them; an array replaces.
+   * Silently dropped on pie / doughnut clones.
+   */
+  trendlines?: ChartTrendline[] | null;
+  /**
+   * Per-series error-bar override array. `undefined` inherits the
+   * source series' `errorBars`; `null` drops them; an array replaces.
+   * Silently dropped on pie / doughnut clones.
+   */
+  errorBars?: ChartErrorBars[] | null;
+  /**
+   * Bubble-size A1 range override. `undefined` inherits the source
+   * series' parsed `bubbleSizeRef`; `null` drops it; a string replaces.
+   * Silently dropped on every family except `bubble`.
+   */
+  bubbleSize?: string | null;
+  /**
+   * 3D shape variant override. `undefined` inherits the source series'
+   * `shape3D`; `null` drops it; a {@link ChartShape3D} replaces.
+   * Silently dropped on every family except `bar3D`.
+   */
+  shape3D?: ChartShape3D | null;
 }
 
 /**
@@ -2279,6 +2312,31 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   if (type !== "pie" && type !== "doughnut") {
     for (const s of series) {
       if (s.explosion !== undefined) delete s.explosion;
+    }
+  }
+
+  // `<c:trendline>` and `<c:errBars>` live on bar / column / line /
+  // area / scatter / bubble series — never on pie / doughnut. Drop
+  // the fields when the resolved family is pie / doughnut so a pie →
+  // line clone (or any other coercion) does not leak the inherited
+  // arrays into the cloned chart.
+  if (type === "pie" || type === "doughnut") {
+    for (const s of series) {
+      if (s.trendlines !== undefined) delete s.trendlines;
+      if (s.errorBars !== undefined) delete s.errorBars;
+    }
+  }
+
+  // `<c:bubbleSize>` and `<c:shape>` are family-scoped: bubbleSize on
+  // bubble series, shape on bar3D series. Hucre's writer authors
+  // neither family today, but the fields live in the cloned `SheetChart`
+  // so a templated chart's metadata round-trips. Drop bubbleSize on
+  // every family except `bubble`-coerced clones (none exist on the
+  // writer); the writer in series.ts ignores both fields when the
+  // chart kind cannot host them.
+  if (type !== "bar" && type !== "column") {
+    for (const s of series) {
+      if (s.shape3D !== undefined) delete s.shape3D;
     }
   }
 

@@ -1271,8 +1271,41 @@ export function parseAxisDispUnits(axis: XmlElement): ChartAxisDispUnits | undef
     }
   }
   if (out.unit === undefined && out.custUnit === undefined) return undefined;
-  if (findChild(dispUnits, "dispUnitsLbl")) {
+  const lbl = findChild(dispUnits, "dispUnitsLbl");
+  if (lbl) {
     out.showLabel = true;
+    // Walk `<c:dispUnitsLbl><c:tx><c:rich><a:p><a:r><a:t>...</a:t>` for
+    // an optional custom label. Multiple paragraphs / runs concatenate
+    // with newlines so a richly-formatted label round-trips as plain
+    // text. Empty / whitespace-only strings collapse to absence.
+    const tx = findChild(lbl, "tx");
+    if (tx) {
+      const rich = findChild(tx, "rich");
+      if (rich) {
+        const buf: string[] = [];
+        for (const p of rich.children) {
+          if (typeof p === "string") continue;
+          if (p.local !== "p") continue;
+          const paraBuf: string[] = [];
+          for (const r of p.children) {
+            if (typeof r === "string") continue;
+            if (r.local !== "r") continue;
+            for (const t of r.children) {
+              if (typeof t === "string") continue;
+              if (t.local !== "t") continue;
+              let text = "";
+              for (const c of t.children) {
+                if (typeof c === "string") text += c;
+              }
+              paraBuf.push(text);
+            }
+          }
+          if (paraBuf.length > 0) buf.push(paraBuf.join(""));
+        }
+        const joined = buf.join("\n").trim();
+        if (joined.length > 0) out.customLabel = joined;
+      }
+    }
   }
   return out;
 }
@@ -3407,6 +3440,10 @@ export function normalizeAxisDispUnits(
   // is rejected by Excel's reference renderer).
   if (out.unit === undefined && out.custUnit === undefined) return undefined;
   if (value.showLabel === true) out.showLabel = true;
+  if (typeof value.customLabel === "string") {
+    const trimmed = value.customLabel.trim();
+    if (trimmed.length > 0) out.customLabel = trimmed;
+  }
   return out;
 }
 
@@ -3440,8 +3477,35 @@ export function buildAxisDispUnits(dispUnits: ChartAxisDispUnits | undefined): s
     // boundary.
     return [];
   }
-  if (dispUnits.showLabel === true) {
-    children.push(xmlSelfClose("c:dispUnitsLbl"));
+  if (
+    dispUnits.showLabel === true ||
+    (typeof dispUnits.customLabel === "string" && dispUnits.customLabel.trim().length > 0)
+  ) {
+    const customLabel =
+      typeof dispUnits.customLabel === "string" ? dispUnits.customLabel.trim() : "";
+    if (customLabel.length > 0) {
+      // Build `<c:dispUnitsLbl><c:tx><c:rich><a:bodyPr/><a:lstStyle/>
+      // <a:p><a:r><a:t>...</a:t></a:r></a:p></c:rich></c:tx></c:dispUnitsLbl>`.
+      // Excel's reference serialization for a custom display-unit label
+      // emits a bare `<a:bodyPr/>` and `<a:lstStyle/>` placeholder
+      // before the paragraph — mirror that minimal shape so a re-parse
+      // walks the canonical path.
+      const escaped = customLabel
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      const richBlock = xmlElement("c:rich", undefined, [
+        xmlSelfClose("a:bodyPr"),
+        xmlSelfClose("a:lstStyle"),
+        xmlElement("a:p", undefined, [
+          xmlElement("a:r", undefined, [xmlElement("a:t", undefined, escaped)]),
+        ]),
+      ]);
+      const txBlock = xmlElement("c:tx", undefined, [richBlock]);
+      children.push(xmlElement("c:dispUnitsLbl", undefined, [txBlock]));
+    } else {
+      children.push(xmlSelfClose("c:dispUnitsLbl"));
+    }
   }
   return [xmlElement("c:dispUnits", undefined, children)];
 }
@@ -6068,6 +6132,10 @@ export function normalizeDispUnits(
   }
   if (out.unit === undefined && out.custUnit === undefined) return undefined;
   if (value.showLabel === true) out.showLabel = true;
+  if (typeof value.customLabel === "string") {
+    const trimmed = value.customLabel.trim();
+    if (trimmed.length > 0) out.customLabel = trimmed;
+  }
   return out;
 }
 

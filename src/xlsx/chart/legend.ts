@@ -56,6 +56,13 @@ export type LegendPos = "t" | "b" | "l" | "r" | "tr";
 export interface ResolvedLegendEntry {
   idx: number;
   delete: boolean;
+  fontSize?: number;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strikethrough?: boolean;
+  color?: string;
+  fontFamily?: string;
 }
 
 // ── Constants (legend-scope aliases) ──────────────────────────────
@@ -197,7 +204,76 @@ export function parseLegendEntries(chartEl: XmlElement): ChartLegendEntry[] | un
 
     const deleteEl = findChild(child, "delete");
     const deleteFlag = deleteEl !== undefined ? readBoolVal(deleteEl.attrs.val) === true : false;
-    out.push({ idx, delete: deleteFlag });
+    const entry: ChartLegendEntry = { idx, delete: deleteFlag };
+
+    // Walk `<c:legendEntry><c:txPr><a:p><a:pPr><a:defRPr ...>` for the
+    // per-entry typography overrides. Mirror the same path the
+    // chart-level legend font-size / bold / italic readers use.
+    const txPr = findChild(child, "txPr");
+    if (txPr) {
+      const p = findChild(txPr, "p");
+      if (p) {
+        const pPr = findChild(p, "pPr");
+        if (pPr) {
+          const defRPr = findChild(pPr, "defRPr");
+          if (defRPr) {
+            const sz = defRPr.attrs.sz;
+            if (typeof sz === "string") {
+              const trimmed = sz.trim();
+              if (trimmed.length > 0) {
+                const parsed = Number.parseInt(trimmed, 10);
+                if (Number.isFinite(parsed)) {
+                  const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2);
+                  const points = halfSteps / 2;
+                  if (points >= TITLE_FONT_SIZE_MIN_PT && points <= TITLE_FONT_SIZE_MAX_PT) {
+                    entry.fontSize = points;
+                  }
+                }
+              }
+            }
+            const b = defRPr.attrs.b;
+            if (typeof b === "string") {
+              const v = readBoolVal(b);
+              if (v === true) entry.bold = true;
+            }
+            const i = defRPr.attrs.i;
+            if (typeof i === "string") {
+              const v = readBoolVal(i);
+              if (v === true) entry.italic = true;
+            }
+            const u = defRPr.attrs.u;
+            if (typeof u === "string" && u === "sng") entry.underline = true;
+            const strike = defRPr.attrs.strike;
+            if (typeof strike === "string" && strike === "sngStrike") entry.strikethrough = true;
+
+            // Font color
+            const solidFill = findChild(defRPr, "solidFill");
+            if (solidFill) {
+              const srgb = findChild(solidFill, "srgbClr");
+              if (srgb) {
+                const v = srgb.attrs.val;
+                if (typeof v === "string") {
+                  const hex = v.replace(/^#/, "").toUpperCase();
+                  if (/^[0-9A-F]{6}$/.test(hex)) entry.color = hex;
+                }
+              }
+            }
+
+            // Font family
+            const latin = findChild(defRPr, "latin");
+            if (latin) {
+              const tf = latin.attrs.typeface;
+              if (typeof tf === "string") {
+                const trimmed = tf.trim();
+                if (trimmed.length > 0) entry.fontFamily = trimmed;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    out.push(entry);
   }
 
   return out.length > 0 ? out : undefined;
@@ -696,12 +772,23 @@ export function buildLegend(
   // `false` value (an explicit `<c:delete val="0"/>` round-trips
   // cleanly through `parseChart`).
   for (const entry of entries) {
-    children.push(
-      xmlElement("c:legendEntry", undefined, [
-        xmlSelfClose("c:idx", { val: entry.idx }),
-        xmlSelfClose("c:delete", { val: entry.delete ? 1 : 0 }),
-      ]),
+    const entryChildren: string[] = [
+      xmlSelfClose("c:idx", { val: entry.idx }),
+      xmlSelfClose("c:delete", { val: entry.delete ? 1 : 0 }),
+    ];
+    // Per-entry typography overrides — `<c:txPr>` lands inside
+    // `<c:legendEntry>` after `<c:delete>` per CT_LegendEntry.
+    const entryTxPr = buildLegendTxPr(
+      entry.fontSize,
+      entry.bold,
+      entry.italic,
+      entry.underline,
+      entry.strikethrough,
+      entry.color,
+      entry.fontFamily,
     );
+    if (entryTxPr !== undefined) entryChildren.push(entryTxPr);
+    children.push(xmlElement("c:legendEntry", undefined, entryChildren));
   }
 
   // CT_Legend sequence places `<c:layout>` between `<c:legendEntry>`
@@ -1143,7 +1230,32 @@ export function resolveLegendEntries(chart: SheetChart): ResolvedLegendEntry[] {
     const idx = entry.idx;
     if (typeof idx !== "number" || !Number.isFinite(idx)) continue;
     if (!Number.isInteger(idx) || idx < 0) continue;
-    byIdx.set(idx, { idx, delete: entry.delete === true });
+    const resolved: ResolvedLegendEntry = { idx, delete: entry.delete === true };
+    if (typeof entry.fontSize === "number" && Number.isFinite(entry.fontSize)) {
+      // Same half-step / range clamp as resolveLegendFontSize.
+      const halfSteps = Math.round(entry.fontSize * 2);
+      const points = halfSteps / 2;
+      if (points >= TITLE_FONT_SIZE_MIN_PT && points <= TITLE_FONT_SIZE_MAX_PT) {
+        resolved.fontSize = points;
+      }
+    }
+    if (entry.bold === true) resolved.bold = true;
+    else if (entry.bold === false) resolved.bold = false;
+    if (entry.italic === true) resolved.italic = true;
+    else if (entry.italic === false) resolved.italic = false;
+    if (entry.underline === true) resolved.underline = true;
+    else if (entry.underline === false) resolved.underline = false;
+    if (entry.strikethrough === true) resolved.strikethrough = true;
+    else if (entry.strikethrough === false) resolved.strikethrough = false;
+    if (typeof entry.color === "string") {
+      const hex = entry.color.replace(/^#/, "").trim().toUpperCase();
+      if (/^[0-9A-F]{6}$/.test(hex)) resolved.color = hex;
+    }
+    if (typeof entry.fontFamily === "string") {
+      const trimmed = entry.fontFamily.trim();
+      if (trimmed.length > 0) resolved.fontFamily = trimmed;
+    }
+    byIdx.set(idx, resolved);
   }
 
   return Array.from(byIdx.values()).sort((a, b) => a.idx - b.idx);

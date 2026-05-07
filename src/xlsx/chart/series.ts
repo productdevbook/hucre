@@ -19,13 +19,19 @@ import type {
   Chart,
   ChartDataLabels,
   ChartDataLabelsInfo,
+  ChartDataPoint,
+  ChartErrorBars,
   ChartKind,
+  ChartLineCap,
+  ChartLineCompound,
   ChartLineDashStyle,
   ChartLineStroke,
   ChartMarker,
   ChartMarkerSymbol,
   ChartSeries,
   ChartSeriesInfo,
+  ChartShape3D,
+  ChartTrendline,
   WriteChartKind,
 } from "../../_types";
 import type { XmlElement } from "../../xml/parser";
@@ -49,6 +55,20 @@ import {
 } from "./util";
 import { buildSeriesDataLabels, parseDataLabels, resolveSeriesDataLabels } from "./dataLabels";
 import type { CloneChartSeriesOverride } from "../chart-clone";
+import {
+  buildAllErrorBars,
+  buildDataPoints,
+  buildShape3D,
+  buildTrendlines,
+  parseBubbleSizeRef,
+  parseDataPoints,
+  parseErrorBars,
+  parseShape3D,
+  parseTrendlines,
+  resolveDataPoints,
+  resolveErrorBars,
+  resolveTrendlines,
+} from "./seriesExtras";
 
 // ── Marker / explosion constants ──────────────────────────────────
 
@@ -71,6 +91,32 @@ const VALID_MARKER_SYMBOLS: ReadonlySet<ChartMarkerSymbol> = new Set([
 
 const MARKER_SIZE_MIN = 2;
 const MARKER_SIZE_MAX = 72;
+
+/** Recognized line cap tokens — mirrors OOXML `ST_LineCap`. */
+const VALID_LINE_CAPS: ReadonlySet<ChartLineCap> = new Set(["rnd", "sq", "flat"]);
+
+/** Recognized line compound tokens — mirrors OOXML `ST_CompoundLine`. */
+const VALID_LINE_COMPOUNDS: ReadonlySet<ChartLineCompound> = new Set([
+  "sng",
+  "dbl",
+  "thickThin",
+  "thinThick",
+  "tri",
+]);
+
+/** Validate a line cap token. */
+export function normalizeLineCap(value: ChartLineCap | undefined): ChartLineCap | undefined {
+  if (typeof value !== "string") return undefined;
+  return VALID_LINE_CAPS.has(value) ? value : undefined;
+}
+
+/** Validate a line compound token. */
+export function normalizeLineCompound(
+  value: ChartLineCompound | undefined,
+): ChartLineCompound | undefined {
+  if (typeof value !== "string") return undefined;
+  return VALID_LINE_COMPOUNDS.has(value) ? value : undefined;
+}
 
 // ── Series options (writer) ───────────────────────────────────────
 
@@ -127,6 +173,32 @@ export interface SeriesOptions {
    * default and absence round-trips identically.
    */
   explosion?: number;
+  /**
+   * Per-data-point overrides. Only emitted on chart families that
+   * accept `<c:dPt>` (every family except scatter without overrides).
+   */
+  dataPoints?: ChartDataPoint[];
+  /**
+   * Per-series trendlines. Only emitted on bar / column / line / area
+   * / scatter / bubble families per the OOXML schema. Pie / doughnut
+   * callers leave this field undefined.
+   */
+  trendlines?: ChartTrendline[];
+  /**
+   * Per-series error bars. Only emitted on bar / column / line / area
+   * / scatter / bubble families per the OOXML schema. Pie / doughnut
+   * callers leave this field undefined.
+   */
+  errorBars?: ChartErrorBars[];
+  /**
+   * Bubble size A1-style range. Only emitted on bubble series.
+   */
+  bubbleSize?: string;
+  /**
+   * 3D shape variant for `bar3D` series. Only honored when the parent
+   * chart is `bar3D`; the writer drops the field otherwise.
+   */
+  shape3D?: ChartShape3D;
 }
 
 // ── Reference qualification (writer) ──────────────────────────────
@@ -229,6 +301,46 @@ export function parseSeries(ser: XmlElement, kind: ChartKind, index: number): Ch
   if (kind === "pie" || kind === "pie3D" || kind === "doughnut" || kind === "ofPie") {
     const explosion = parseExplosion(ser);
     if (explosion !== undefined) out.explosion = explosion;
+  }
+
+  // Per-data-point overrides — `<c:dPt>` blocks. Surface on every
+  // family Excel allows them on (which is every family except pure
+  // surface charts; the OOXML schema places `<c:dPt>` on every series
+  // type hucre's reader handles).
+  const dataPoints = parseDataPoints(ser);
+  if (dataPoints !== undefined) out.dataPoints = dataPoints;
+
+  // Trendlines — `<c:trendline>` blocks. Surface only on families
+  // the OOXML schema allows them on (bar / line / area / scatter /
+  // bubble). Pie / doughnut have no `<c:trendline>` slot, so a stray
+  // element on a pie template is dropped rather than surfaced.
+  if (
+    kind === "bar" ||
+    kind === "bar3D" ||
+    kind === "line" ||
+    kind === "line3D" ||
+    kind === "area" ||
+    kind === "area3D" ||
+    kind === "scatter" ||
+    kind === "bubble"
+  ) {
+    const trendlines = parseTrendlines(ser);
+    if (trendlines !== undefined) out.trendlines = trendlines;
+
+    const errorBars = parseErrorBars(ser);
+    if (errorBars !== undefined) out.errorBars = errorBars;
+  }
+
+  // Bubble size reference — bubble only.
+  if (kind === "bubble") {
+    const bubbleRef = parseBubbleSizeRef(ser);
+    if (bubbleRef !== undefined) out.bubbleSizeRef = bubbleRef;
+  }
+
+  // 3D shape variant — bar3D only.
+  if (kind === "bar3D") {
+    const shape3D = parseShape3D(ser);
+    if (shape3D !== undefined) out.shape3D = shape3D;
   }
 
   return out;
@@ -452,7 +564,35 @@ export function parseSeriesStroke(ser: XmlElement): ChartLineStroke | undefined 
     }
   }
 
-  if (out.dash === undefined && out.width === undefined) return undefined;
+  // Line cap (`cap` attribute on `<a:ln>`). The OOXML default is
+  // `"flat"` — collapse it to `undefined` so absence and the default
+  // round-trip identically.
+  const capAttr = ln.attrs.cap;
+  if (typeof capAttr === "string") {
+    const trimmed = capAttr.trim() as ChartLineCap;
+    if (VALID_LINE_CAPS.has(trimmed) && trimmed !== "flat") {
+      out.cap = trimmed;
+    }
+  }
+
+  // Line compound (`cmpd` attribute on `<a:ln>`). The OOXML default
+  // is `"sng"` — collapse it to `undefined` so absence and the default
+  // round-trip identically.
+  const cmpdAttr = ln.attrs.cmpd;
+  if (typeof cmpdAttr === "string") {
+    const trimmed = cmpdAttr.trim() as ChartLineCompound;
+    if (VALID_LINE_COMPOUNDS.has(trimmed) && trimmed !== "sng") {
+      out.compound = trimmed;
+    }
+  }
+
+  if (
+    out.dash === undefined &&
+    out.width === undefined &&
+    out.cap === undefined &&
+    out.compound === undefined
+  )
+    return undefined;
   return out;
 }
 
@@ -539,6 +679,12 @@ export function buildSeries(
     children.push(xmlSelfClose("c:explosion", { val: explosion }));
   }
 
+  // Per-data-point overrides — `<c:dPt>` blocks. Schema sequence
+  // places `<c:dPt>` between `<c:explosion>` (pie family) /
+  // `<c:invertIfNegative>` (bar family) and `<c:dLbls>`.
+  const dPtXml = buildDataPoints(options.dataPoints, options.chartType);
+  for (const xml of dPtXml) children.push(xml);
+
   // Data labels — series-level override always wins over the chart-level
   // default. `<c:dLbls>` sits between <c:spPr> and <c:cat>/<c:val> per
   // the OOXML series schema (CT_BarSer, CT_LineSer, ...). The chart
@@ -550,6 +696,31 @@ export function buildSeries(
     options.chartType,
   );
   if (seriesDLblsXml) children.push(seriesDLblsXml);
+
+  // Trendlines — `<c:trendline>` blocks. Schema sequence places
+  // `<c:trendline>` between `<c:dLbls>` and `<c:errBars>` on
+  // CT_BarSer / CT_LineSer / CT_AreaSer / CT_ScatterSer. Pie / doughnut
+  // series have no slot — the writer drops the field there because
+  // pie / doughnut callers leave `options.trendlines` undefined.
+  if (options.trendlines && options.trendlines.length > 0) {
+    const isPieFamily = options.chartType === "pie" || options.chartType === "doughnut";
+    if (!isPieFamily) {
+      const trendXmls = buildTrendlines(options.trendlines);
+      for (const xml of trendXmls) children.push(xml);
+    }
+  }
+
+  // Error bars — `<c:errBars>` blocks. Schema sequence places
+  // `<c:errBars>` between `<c:trendline>` and `<c:cat>` on
+  // CT_BarSer / CT_LineSer / CT_AreaSer / CT_ScatterSer. Pie / doughnut
+  // series have no slot — the writer drops the field there.
+  if (options.errorBars && options.errorBars.length > 0) {
+    const isPieFamily = options.chartType === "pie" || options.chartType === "doughnut";
+    if (!isPieFamily) {
+      const errXmls = buildAllErrorBars(options.errorBars);
+      for (const xml of errXmls) children.push(xml);
+    }
+  }
 
   // Categories (skipped for pie when omitted; allowed for all)
   if (series.categories) {
@@ -587,6 +758,26 @@ export function buildSeries(
 
   if (options?.smooth !== undefined) {
     children.push(xmlSelfClose("c:smooth", { val: options.smooth ? 1 : 0 }));
+  }
+
+  // `<c:shape>` — bar3D only. Per CT_BarSer the element sits at the
+  // tail of the sequence after `<c:val>`. Non-bar3D callers leave the
+  // field undefined.
+  if (options.shape3D !== undefined) {
+    const shapeXml = buildShape3D(options.shape3D);
+    if (shapeXml) children.push(shapeXml);
+  }
+
+  // `<c:bubbleSize>` — bubble only. Sits after `<c:yVal>` on
+  // CT_BubbleSer per the OOXML schema. Non-bubble callers leave the
+  // field undefined.
+  if (typeof options.bubbleSize === "string" && options.bubbleSize.length > 0) {
+    const ref = qualifyRef(options.bubbleSize, sheetName);
+    children.push(
+      xmlElement("c:bubbleSize", undefined, [
+        xmlElement("c:numRef", undefined, [xmlElement("c:f", undefined, xmlEscape(ref))]),
+      ]),
+    );
   }
 
   return xmlElement("c:ser", undefined, children);
@@ -627,8 +818,21 @@ export function buildSeriesSpPr(
   const fillHex = rgbHex ? rgbHex.replace(/^#/, "").toUpperCase() : undefined;
   const dash = normalizeDashStyle(stroke?.dash);
   const widthPt = clampStrokeWidthPt(stroke?.width);
+  // The OOXML defaults — `cap="flat"` and `cmpd="sng"` — round-trip as
+  // absence so the writer skips emitting the attribute when the value
+  // matches the default. The reader does the same.
+  const capRaw = normalizeLineCap(stroke?.cap);
+  const cap = capRaw === "flat" ? undefined : capRaw;
+  const compoundRaw = normalizeLineCompound(stroke?.compound);
+  const compound = compoundRaw === "sng" ? undefined : compoundRaw;
 
-  if (!fillHex && dash === undefined && widthPt === undefined) {
+  if (
+    !fillHex &&
+    dash === undefined &&
+    widthPt === undefined &&
+    cap === undefined &&
+    compound === undefined
+  ) {
     return undefined;
   }
 
@@ -641,14 +845,23 @@ export function buildSeriesSpPr(
 
   // `<a:ln>` carries stroke metadata. Emit it whenever a fill color is
   // set (so the connecting line picks up the same color, matching the
-  // legacy behavior) or whenever stroke width / dash is configured.
-  if (fillHex || dash !== undefined || widthPt !== undefined) {
+  // legacy behavior) or whenever stroke width / dash / cap / compound
+  // is configured.
+  if (
+    fillHex ||
+    dash !== undefined ||
+    widthPt !== undefined ||
+    cap !== undefined ||
+    compound !== undefined
+  ) {
     const lnAttrs: Record<string, string | number> = {};
     if (widthPt !== undefined) {
       // OOXML stores stroke width in EMU (1 pt = 12 700 EMU). Round to
       // the nearest integer because the schema types `w` as `xsd:int`.
       lnAttrs.w = Math.round(widthPt * EMU_PER_PT);
     }
+    if (cap !== undefined) lnAttrs.cap = cap;
+    if (compound !== undefined) lnAttrs.cmpd = compound;
     const lnChildren: string[] = [];
     if (fillHex) {
       lnChildren.push(
@@ -766,6 +979,10 @@ export function cloneStroke(source: ChartLineStroke): ChartLineStroke | undefine
   const out: ChartLineStroke = {};
   if (source.dash !== undefined) out.dash = source.dash;
   if (typeof source.width === "number" && Number.isFinite(source.width)) out.width = source.width;
+  if (typeof source.cap === "string" && VALID_LINE_CAPS.has(source.cap)) out.cap = source.cap;
+  if (typeof source.compound === "string" && VALID_LINE_COMPOUNDS.has(source.compound)) {
+    out.compound = source.compound;
+  }
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -965,6 +1182,31 @@ export function mergeSeries(
 
   const explosion = resolveExplosion(src?.explosion, ov?.explosion);
   if (explosion !== undefined) out.explosion = explosion;
+
+  const dataPoints = resolveDataPoints(src?.dataPoints, ov?.dataPoints);
+  if (dataPoints !== undefined) out.dataPoints = dataPoints;
+
+  const trendlines = resolveTrendlines(src?.trendlines, ov?.trendlines);
+  if (trendlines !== undefined) out.trendlines = trendlines;
+
+  const errorBars = resolveErrorBars(src?.errorBars, ov?.errorBars);
+  if (errorBars !== undefined) out.errorBars = errorBars;
+
+  if (ov && Object.prototype.hasOwnProperty.call(ov, "bubbleSize")) {
+    if (ov.bubbleSize !== null && typeof ov.bubbleSize === "string") {
+      out.bubbleSize = ov.bubbleSize;
+    }
+  } else if (typeof src?.bubbleSizeRef === "string") {
+    out.bubbleSize = src.bubbleSizeRef;
+  }
+
+  if (ov && Object.prototype.hasOwnProperty.call(ov, "shape3D")) {
+    if (ov.shape3D !== null && ov.shape3D !== undefined) {
+      out.shape3D = ov.shape3D;
+    }
+  } else if (src?.shape3D !== undefined) {
+    out.shape3D = src.shape3D;
+  }
 
   return out;
 }

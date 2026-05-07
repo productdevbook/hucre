@@ -1222,6 +1222,9 @@ export function buildBarChart(chart: SheetChart, sheetName: string): string {
         chartType: chart.type,
         dataLabels: chart.dataLabels,
         invertIfNegative: chart.series[i].invertIfNegative === true,
+        dataPoints: chart.series[i].dataPoints,
+        trendlines: chart.series[i].trendlines,
+        errorBars: chart.series[i].errorBars,
       }),
     );
   }
@@ -1329,6 +1332,9 @@ export function buildLineChart(chart: SheetChart, sheetName: string): string {
       dataLabels: chart.dataLabels,
       stroke: chart.series[i].stroke,
       marker: chart.series[i].marker,
+      dataPoints: chart.series[i].dataPoints,
+      trendlines: chart.series[i].trendlines,
+      errorBars: chart.series[i].errorBars,
     });
     children.push(seriesXml);
   }
@@ -1433,6 +1439,9 @@ export function buildAreaChart(chart: SheetChart, sheetName: string): string {
       buildSeries(chart.series[i], i, sheetName, /* numericCategories */ false, {
         chartType: chart.type,
         dataLabels: chart.dataLabels,
+        dataPoints: chart.series[i].dataPoints,
+        trendlines: chart.series[i].trendlines,
+        errorBars: chart.series[i].errorBars,
       }),
     );
   }
@@ -1468,6 +1477,7 @@ export function buildPieChart(chart: SheetChart, sheetName: string): string {
         chartType: chart.type,
         dataLabels: chart.dataLabels,
         explosion: chart.series[0].explosion,
+        dataPoints: chart.series[0].dataPoints,
       }),
     );
   }
@@ -1500,6 +1510,7 @@ export function buildDoughnutChart(chart: SheetChart, sheetName: string): string
         chartType: chart.type,
         dataLabels: chart.dataLabels,
         explosion: chart.series[i].explosion,
+        dataPoints: chart.series[i].dataPoints,
       }),
     );
   }
@@ -1573,6 +1584,9 @@ export function buildScatterChart(chart: SheetChart, sheetName: string): string 
         dataLabels: chart.dataLabels,
         stroke: chart.series[i].stroke,
         marker: chart.series[i].marker,
+        dataPoints: chart.series[i].dataPoints,
+        trendlines: chart.series[i].trendlines,
+        errorBars: chart.series[i].errorBars,
       }),
     );
   }

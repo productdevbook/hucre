@@ -587,7 +587,45 @@ export interface ChartLineStroke {
    * dropped so the writer can elide the attribute entirely.
    */
   width?: number;
+  /**
+   * Line end-cap style. Maps to the `cap` attribute on `<a:ln>`
+   * (CT_LineProperties, ECMA-376 Part 1, §20.1.2.3.24). Mirrors the
+   * OOXML `ST_LineCap` enum. The OOXML default is `"flat"`; absence
+   * and `"flat"` round-trip identically.
+   */
+  cap?: ChartLineCap;
+  /**
+   * Line compound style. Maps to the `cmpd` attribute on `<a:ln>`
+   * (CT_LineProperties). Mirrors the OOXML `ST_CompoundLine` enum.
+   * The OOXML default is `"sng"`; absence and `"sng"` round-trip
+   * identically.
+   */
+  compound?: ChartLineCompound;
 }
+
+/**
+ * Line end-cap style for a chart-frame stroke.
+ *
+ * Mirrors the OOXML `ST_LineCap` enum (ECMA-376 Part 1, §20.1.10.32):
+ *
+ * - `"rnd"`  — rounded cap.
+ * - `"sq"`   — square cap (extends past the line end).
+ * - `"flat"` — flat cap, ends precisely at the line end (default).
+ */
+export type ChartLineCap = "rnd" | "sq" | "flat";
+
+/**
+ * Line compound style for a chart-frame stroke.
+ *
+ * Mirrors the OOXML `ST_CompoundLine` enum (ECMA-376 Part 1, §20.1.10.15):
+ *
+ * - `"sng"`        — single line (default).
+ * - `"dbl"`        — two parallel lines.
+ * - `"thickThin"`  — a thick line followed by a thin line.
+ * - `"thinThick"`  — a thin line followed by a thick line.
+ * - `"tri"`        — three parallel lines.
+ */
+export type ChartLineCompound = "sng" | "dbl" | "thickThin" | "thinThick" | "tri";
 
 /**
  * Marker symbol shape rendered at each data point on a line / scatter
@@ -1367,10 +1405,367 @@ export interface ChartSeries {
    * exposes 0–400% under "Format Data Point → Series Options → Pie
    * Explosion"; values outside that band are clamped on write so a
    * round-trip stays inside the range Excel will render. Per-data-point
-   * explosion (one slice pulled away while the rest stay flush) is not
-   * yet supported — the field applies to every slice in the series.
+   * explosion (one slice pulled away while the rest stay flush) is
+   * supported via {@link dataPoints} — `dataPoints[k].explosion`.
    */
   explosion?: number;
+  /**
+   * Per-data-point overrides. Maps to `<c:ser><c:dPt>` (CT_DPt,
+   * ECMA-376 Part 1, §21.2.2.52). Each element pins overrides for a
+   * single data point identified by its 0-based `idx`. Useful for
+   * pie / doughnut accent slices, highlighting a single bar in a
+   * column chart, or pinning a unique marker on one scatter point.
+   *
+   * The writer emits one `<c:dPt>` per entry in schema order; entries
+   * with the same `idx` collapse last-wins to mirror Excel's UI
+   * behaviour. See {@link ChartDataPoint} for the per-field shape.
+   */
+  dataPoints?: ChartDataPoint[];
+  /**
+   * Per-series trendlines. Maps to `<c:ser><c:trendline>` (CT_Trendline,
+   * ECMA-376 Part 1, §21.2.2.211). Multiple trendlines may be attached
+   * to a single series (e.g. a linear trend plus a 3-period moving
+   * average); the writer emits one `<c:trendline>` per entry in
+   * declaration order.
+   *
+   * Only meaningful for `bar` / `column` / `line` / `area` / `scatter`
+   * series — the OOXML schema places `<c:trendline>` on `CT_BarSer`,
+   * `CT_LineSer`, `CT_AreaSer`, `CT_ScatterSer`. Pie / doughnut series
+   * have no trendline slot and the writer drops the field there.
+   */
+  trendlines?: ChartTrendline[];
+  /**
+   * Per-series error bars. Maps to `<c:ser><c:errBars>` (CT_ErrBars,
+   * ECMA-376 Part 1, §21.2.2.55). A series may carry separate X and Y
+   * error bars (scatter and bubble only) — pin both entries on the
+   * array; non-scatter / non-bubble families honour only the Y entry.
+   *
+   * Only meaningful for `bar` / `column` / `line` / `area` / `scatter`
+   * / `bubble` series. The writer emits one `<c:errBars>` block per
+   * entry in declaration order; pie / doughnut series have no slot
+   * and the writer drops the field there.
+   */
+  errorBars?: ChartErrorBars[];
+  /**
+   * Bubble-size reference for `bubble` series. Maps to
+   * `<c:ser><c:bubbleSize>` (CT_NumDataSource, ECMA-376 Part 1,
+   * §21.2.2.30). The third numeric reference on a bubble series
+   * (after `<c:xVal>` and `<c:yVal>`) — Excel reads each row of the
+   * range as a bubble radius. Accepts the same A1-style range syntax
+   * as {@link values}; bare ranges are auto-qualified with the owning
+   * sheet's name.
+   *
+   * Only meaningful for `bubble` series; the writer drops the field
+   * on every other family. The writer authors `bubble` charts on a
+   * follow-up — until then, the field surfaces on parse-side
+   * {@link ChartSeriesInfo.bubbleSizeRef} so a templated bubble chart
+   * can round-trip through {@link cloneChart}.
+   */
+  bubbleSize?: string;
+  /**
+   * Per-series 3D shape variant for `bar3D` charts. Maps to
+   * `<c:ser><c:shape val=".."/>` (CT_Shape, ECMA-376 Part 1,
+   * §21.2.2.177). Excel's UI exposes the same six presets under
+   * "Change Chart Type → Bar / Column → 3-D" sub-options:
+   *
+   * - `"box"`           — flat-topped rectangular bar (Excel's default)
+   * - `"cone"`          — tapered cone, apex at the value
+   * - `"coneToMax"`     — tapered cone scaled to the chart maximum
+   * - `"cylinder"`      — straight-sided cylinder
+   * - `"pyramid"`       — square pyramid, apex at the value
+   * - `"pyramidToMax"`  — square pyramid scaled to the chart maximum
+   *
+   * Only meaningful for `bar3D` series — the OOXML schema places
+   * `<c:shape>` exclusively on `CT_BarSer` inside `<c:bar3DChart>`.
+   * The writer drops the field on every other chart family.
+   */
+  shape3D?: ChartShape3D;
+}
+
+/**
+ * 3-D shape variant for a bar / column 3D series.
+ *
+ * Mirrors the OOXML `ST_Shape` enum (ECMA-376 Part 1, §21.2.3.34).
+ * Only meaningful inside `<c:bar3DChart><c:ser><c:shape val=".."/>`.
+ *
+ * - `"box"`           — flat-topped rectangular bar (default).
+ * - `"cone"`          — tapered cone, apex at the data value.
+ * - `"coneToMax"`     — tapered cone scaled so the apex hits the chart maximum.
+ * - `"cylinder"`      — straight-sided cylinder.
+ * - `"pyramid"`       — square-base pyramid, apex at the data value.
+ * - `"pyramidToMax"`  — square-base pyramid scaled to the chart maximum.
+ */
+export type ChartShape3D = "cone" | "coneToMax" | "box" | "cylinder" | "pyramid" | "pyramidToMax";
+
+/**
+ * Per-data-point override inside a series.
+ *
+ * Maps to `<c:ser><c:dPt>` per CT_DPt (ECMA-376 Part 1, §21.2.2.52).
+ * Each field is optional — a `ChartDataPoint` with only `idx` set
+ * collapses to a bare `<c:dPt><c:idx val="N"/><c:bubble3D val="0"/></c:dPt>`
+ * shell, matching what Excel itself emits on a "no override" anchor.
+ *
+ * Useful for highlighting a single point: pin a different fill on a
+ * single bar to call out a record-breaking month, give a single pie
+ * slice a custom explosion, or pin a colored marker on a single
+ * scatter outlier.
+ */
+export interface ChartDataPoint {
+  /**
+   * 0-based index of the target data point inside the series. Maps
+   * to `<c:dPt><c:idx val="N"/></c:dPt>`. Required — entries without
+   * an index drop on emit since Excel uses the index to anchor the
+   * override on the matching point.
+   */
+  idx: number;
+  /**
+   * Pie / doughnut per-slice explosion (percent of radius). Maps to
+   * `<c:dPt><c:explosion val="N"/></c:dPt>`. Range `0..400` per
+   * Excel's UI; values outside that band clamp on emit so a round-trip
+   * stays inside the range Excel will render. Only meaningful on pie /
+   * doughnut series; the writer drops the field on every other family.
+   */
+  explosion?: number;
+  /**
+   * Bubble-3D toggle. Maps to `<c:dPt><c:bubble3D val=".."/></c:dPt>`.
+   * Surfaces the OOXML default `false` on a fresh writer because the
+   * schema lists the element as required on `CT_DPt` — the writer always
+   * emits `val="0"` unless the caller pins `true`.
+   */
+  bubble3D?: boolean;
+  /**
+   * Per-point fill color as a 6-digit RGB hex string. Maps to
+   * `<c:dPt><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></c:spPr></c:dPt>`.
+   * Mirrors the series-level fill grammar — accepts a leading `#` and
+   * any case; malformed input drops to `undefined`.
+   */
+  fillColor?: string;
+  /**
+   * Per-point border (line) color as a 6-digit RGB hex string. Maps to
+   * `<c:dPt><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:ln></c:spPr></c:dPt>`.
+   * Same hex grammar as {@link fillColor}.
+   */
+  borderColor?: string;
+  /**
+   * Per-point border width in points. Maps to the `w` attribute on
+   * `<c:dPt><c:spPr><a:ln w="EMU"/></c:spPr></c:dPt>`. Same
+   * `0.25..13.5` pt clamp as every other chart-frame border-width slot.
+   */
+  borderWidth?: number;
+  /**
+   * Per-point border preset dash. Maps to
+   * `<c:dPt><c:spPr><a:ln><a:prstDash val=".."/></a:ln></c:spPr></c:dPt>`.
+   * Same accept-or-drop grammar as {@link ChartBorderDash}.
+   */
+  borderDash?: ChartBorderDash;
+  /**
+   * Per-point marker styling override (line / scatter only). Maps to
+   * `<c:dPt><c:marker>`. Mirrors {@link ChartMarker} field semantics.
+   */
+  marker?: ChartMarker;
+}
+
+/**
+ * Trendline type variant.
+ *
+ * Mirrors the OOXML `ST_TrendlineType` enum (ECMA-376 Part 1,
+ * §21.2.3.49). Each token corresponds to one of Excel's "Add Chart
+ * Element → Trendline" presets:
+ *
+ * - `"linear"`     — linear least-squares fit, `y = mx + b`.
+ * - `"log"`        — logarithmic fit, `y = a + b ln(x)`.
+ * - `"exp"`        — exponential fit, `y = a * exp(bx)`.
+ * - `"power"`      — power-curve fit, `y = a * x^b`.
+ * - `"poly"`       — polynomial fit, set `order` 2..6.
+ * - `"movingAvg"`  — `n`-period moving average, set `period` 2..n-1.
+ */
+export type ChartTrendlineType = "linear" | "log" | "exp" | "power" | "poly" | "movingAvg";
+
+/**
+ * Per-series trendline configuration. Maps to `<c:ser><c:trendline>`
+ * per CT_Trendline (ECMA-376 Part 1, §21.2.2.211).
+ *
+ * Multiple trendlines per series are supported — pin the array on
+ * {@link ChartSeries.trendlines}. Each entry emits a `<c:trendline>`
+ * block in schema order:
+ *
+ * `<c:name>?` → `<c:spPr>?` → `<c:trendlineType>` → `<c:order>?`
+ *  → `<c:period>?` → `<c:forward>?` → `<c:backward>?` → `<c:intercept>?`
+ *  → `<c:dispRSqr>?` → `<c:dispEq>?`
+ *
+ * Empty trendlines (no type) drop on emit since `<c:trendlineType>`
+ * is required on `CT_Trendline`. Style fields ({@link lineColor} /
+ * {@link lineWidth} / {@link lineDash}) land inside the optional
+ * `<c:spPr>` block alongside the schema-required type.
+ */
+export interface ChartTrendline {
+  /**
+   * Trendline type. Maps to `<c:trendlineType val=".."/>`. Required —
+   * entries without a type drop on emit since the OOXML schema lists
+   * `<c:trendlineType>` as required on `CT_Trendline`.
+   */
+  type: ChartTrendlineType;
+  /**
+   * Custom name shown in the chart legend. Maps to
+   * `<c:name>STRING</c:name>`. When omitted, Excel synthesises a
+   * default name (e.g. "Linear (Series 1)").
+   */
+  name?: string;
+  /**
+   * Polynomial order — only honored when {@link type} is `"poly"`.
+   * Maps to `<c:order val="N"/>`. Range `2..6` per Excel's UI;
+   * out-of-range values clamp on emit so a round-trip stays inside
+   * the range Excel will render.
+   */
+  order?: number;
+  /**
+   * Moving-average period — only honored when {@link type} is
+   * `"movingAvg"`. Maps to `<c:period val="N"/>`. Range `2..N-1`
+   * where `N` is the number of points; out-of-range values clamp.
+   */
+  period?: number;
+  /**
+   * Forward forecast — number of category-axis units to project the
+   * trendline forward beyond the last data point. Maps to
+   * `<c:forward val="N"/>` (CT_Double per OOXML).
+   */
+  forward?: number;
+  /**
+   * Backward forecast — number of category-axis units to project the
+   * trendline backward before the first data point. Maps to
+   * `<c:backward val="N"/>` (CT_Double).
+   */
+  backward?: number;
+  /**
+   * Pin the y-intercept of the fit. Maps to `<c:intercept val="N"/>`
+   * (CT_Double). Only meaningful for `"linear"`, `"poly"`, and `"exp"`
+   * trendlines; ignored for the others.
+   */
+  intercept?: number;
+  /**
+   * Whether to display the trendline equation on the chart. Maps to
+   * `<c:dispEq val=".."/>`. The OOXML default `false` collapses to
+   * `undefined` on parse so absence and the default round-trip
+   * identically through {@link cloneChart}.
+   */
+  dispEquation?: boolean;
+  /**
+   * Whether to display the R-squared value on the chart. Maps to
+   * `<c:dispRSqr val=".."/>`. The OOXML default `false` collapses to
+   * `undefined` on parse so absence and the default round-trip
+   * identically through {@link cloneChart}.
+   */
+  dispRSquared?: boolean;
+  /**
+   * Trendline stroke color. Maps to
+   * `<c:trendline><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:ln></c:spPr></c:trendline>`.
+   * Same hex grammar as every other chart-frame stroke color.
+   */
+  lineColor?: string;
+  /**
+   * Trendline stroke width in points. Same `0.25..13.5` pt clamp as
+   * every other chart-frame border-width slot.
+   */
+  lineWidth?: number;
+  /**
+   * Trendline stroke preset dash. Same accept-or-drop grammar as
+   * {@link ChartBorderDash}.
+   */
+  lineDash?: ChartBorderDash;
+}
+
+/**
+ * Error-bar direction.
+ *
+ * Mirrors the OOXML `ST_ErrDir` enum (ECMA-376 Part 1, §21.2.3.5):
+ *
+ * - `"x"` — error bars on the category axis (scatter / bubble only).
+ * - `"y"` — error bars on the value axis.
+ */
+export type ChartErrorBarDirection = "x" | "y";
+
+/**
+ * Error-bar polarity.
+ *
+ * Mirrors the OOXML `ST_ErrBarType` enum (ECMA-376 Part 1, §21.2.3.6):
+ *
+ * - `"both"`  — bars extend in both directions from the data point.
+ * - `"minus"` — bars extend below / left only.
+ * - `"plus"`  — bars extend above / right only.
+ */
+export type ChartErrorBarType = "both" | "minus" | "plus";
+
+/**
+ * Error-bar value source.
+ *
+ * Mirrors the OOXML `ST_ErrValType` enum (ECMA-376 Part 1, §21.2.3.7):
+ *
+ * - `"cust"`        — custom plus / minus references (not modelled here).
+ * - `"fixedVal"`    — every bar has the same fixed length (use {@link ChartErrorBars.value}).
+ * - `"percentage"`  — bars are a percentage of the data value.
+ * - `"stdDev"`      — bars are `n` standard deviations.
+ * - `"stdErr"`      — bars are the standard error.
+ */
+export type ChartErrorBarValType = "cust" | "fixedVal" | "percentage" | "stdDev" | "stdErr";
+
+/**
+ * Per-series error-bar configuration. Maps to `<c:ser><c:errBars>`
+ * per CT_ErrBars (ECMA-376 Part 1, §21.2.2.55).
+ *
+ * Excel paints error bars next to every data point; the bar length is
+ * computed from the {@link valType} formula, optionally scaled by the
+ * fixed numeric {@link value}. A series can carry separate X and Y
+ * error-bar entries on scatter / bubble charts; non-scatter / non-bubble
+ * families honour only the `direction: "y"` entry per the OOXML schema.
+ *
+ * `<c:errBars>` schema sequence:
+ *  `<c:errDir>` → `<c:errBarType>` → `<c:errValType>` → `<c:noEndCap>?`
+ *   → `<c:plus>?` → `<c:minus>?` → `<c:val>?` → `<c:spPr>?`
+ *
+ * Custom plus / minus reference data sources (`<c:plus>` /
+ * `<c:minus>`) are not modelled here — pass `valType: "cust"` only
+ * when the source data should round-trip via {@link cloneChart}.
+ */
+export interface ChartErrorBars {
+  /**
+   * Direction the bars extend on. Maps to `<c:errDir val=".."/>`.
+   * Required.
+   */
+  direction: ChartErrorBarDirection;
+  /**
+   * Polarity. Maps to `<c:errBarType val=".."/>`. Required.
+   */
+  type: ChartErrorBarType;
+  /**
+   * Value source. Maps to `<c:errValType val=".."/>`. Required.
+   */
+  valType: ChartErrorBarValType;
+  /**
+   * Fixed numeric value used by `valType: "fixedVal" | "percentage" |
+   * "stdDev"`. Maps to `<c:val val="N"/>` (CT_Double). Ignored when
+   * `valType` is `"stdErr"` or `"cust"`.
+   */
+  value?: number;
+  /**
+   * Whether to suppress the cross-bar end caps. Maps to
+   * `<c:noEndCap val=".."/>`. Default `false` (caps drawn).
+   */
+  noEndCap?: boolean;
+  /**
+   * Stroke color for the error-bar line. Maps to
+   * `<c:errBars><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:ln></c:spPr></c:errBars>`.
+   */
+  lineColor?: string;
+  /**
+   * Stroke width in points. Same `0.25..13.5` pt clamp as every other
+   * chart-frame border-width slot.
+   */
+  lineWidth?: number;
+  /**
+   * Stroke preset dash pattern. Same accept-or-drop grammar as
+   * {@link ChartBorderDash}.
+   */
+  lineDash?: ChartBorderDash;
 }
 
 /**
@@ -1413,6 +1808,49 @@ export interface ChartLegendEntry {
    * `<c:delete>` child explicitly so a re-parse sees the same flag.
    */
   delete?: boolean;
+  /**
+   * Per-entry font size (in points) override. Maps to
+   * `<c:legendEntry><c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p></c:txPr></c:legendEntry>`.
+   * Mirrors the chart-level {@link SheetChart.legendFontSize}; the OOXML
+   * `sz` attribute is in 100ths of a point — the writer multiplies by 100
+   * at emit time. Out-of-range values (`< 1` or `> 400`) and non-numeric
+   * tokens collapse to `undefined`.
+   */
+  fontSize?: number;
+  /**
+   * Per-entry bold flag. Maps to `<a:defRPr b=".."/>` inside the entry's
+   * `<c:txPr>`. Mirrors {@link SheetChart.legendBold}.
+   */
+  bold?: boolean;
+  /**
+   * Per-entry italic flag. Maps to `<a:defRPr i=".."/>`. Mirrors
+   * {@link SheetChart.legendItalic}.
+   */
+  italic?: boolean;
+  /**
+   * Per-entry underline flag. Maps to `<a:defRPr u=".."/>`. Mirrors
+   * {@link SheetChart.legendUnderline} — only `u="sng"` round-trips
+   * cleanly.
+   */
+  underline?: boolean;
+  /**
+   * Per-entry strikethrough flag. Maps to `<a:defRPr strike=".."/>`.
+   * Mirrors {@link SheetChart.legendStrikethrough} — only `strike="sngStrike"`
+   * round-trips cleanly.
+   */
+  strikethrough?: boolean;
+  /**
+   * Per-entry font color (6-digit RGB hex). Maps to
+   * `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr>`
+   * inside the entry's `<c:txPr>`.
+   */
+  color?: string;
+  /**
+   * Per-entry font family / typeface name. Maps to
+   * `<a:defRPr><a:latin typeface=".."/></a:defRPr>` inside the entry's
+   * `<c:txPr>`.
+   */
+  fontFamily?: string;
 }
 
 /**
@@ -5221,6 +5659,37 @@ export interface ChartSeriesInfo {
    * round-trip identically through the writer's elision logic.
    */
   explosion?: number;
+  /**
+   * Per-data-point overrides parsed from `<c:ser><c:dPt>` (CT_DPt,
+   * ECMA-376 Part 1, §21.2.2.52). Empty array collapses to `undefined`.
+   * See {@link ChartDataPoint} for the per-field shape.
+   */
+  dataPoints?: ChartDataPoint[];
+  /**
+   * Per-series trendlines parsed from `<c:ser><c:trendline>`
+   * (CT_Trendline, ECMA-376 Part 1, §21.2.2.211). Empty array collapses
+   * to `undefined`. See {@link ChartTrendline} for the per-field shape.
+   */
+  trendlines?: ChartTrendline[];
+  /**
+   * Per-series error bars parsed from `<c:ser><c:errBars>`
+   * (CT_ErrBars, ECMA-376 Part 1, §21.2.2.55). Empty array collapses to
+   * `undefined`. See {@link ChartErrorBars} for the per-field shape.
+   */
+  errorBars?: ChartErrorBars[];
+  /**
+   * Bubble size reference (third numeric reference) parsed from
+   * `<c:ser><c:bubbleSize>` on bubble series. Surfaces only on `bubble`
+   * series — the OOXML schema places `<c:bubbleSize>` exclusively on
+   * `CT_BubbleSer`.
+   */
+  bubbleSizeRef?: string;
+  /**
+   * 3D shape variant parsed from `<c:ser><c:shape val=".."/>` on bar3D
+   * series. Surfaces only on `bar3D` series. See {@link ChartShape3D}
+   * for the accepted tokens.
+   */
+  shape3D?: ChartShape3D;
 }
 
 /**
@@ -5788,6 +6257,23 @@ export interface ChartAxisDispUnits {
    * Default: `false` (no label rendered, the divisor still applies).
    */
   showLabel?: boolean;
+  /**
+   * Optional custom annotation text for the display-unit label. Maps
+   * to `<c:dispUnitsLbl><c:tx><c:rich><a:p><a:r><a:t>...</a:t></a:r></a:p></c:rich></c:tx></c:dispUnitsLbl>`.
+   * When pinned, the writer emits the full rich-text block (instead of
+   * the bare `<c:dispUnitsLbl/>` placeholder used when only `showLabel`
+   * is `true`) so Excel paints the caller-supplied string in place of
+   * the default "Millions" / "Thousands" / etc. annotation.
+   *
+   * Default: omitted — the writer falls back to the bare placeholder
+   * when {@link showLabel} is `true`, or skips the label entirely when
+   * {@link showLabel} is unset.
+   *
+   * Empty / whitespace-only strings collapse to `undefined` so the
+   * writer never emits an empty `<a:t/>` Excel would render as a
+   * zero-width annotation.
+   */
+  customLabel?: string;
 }
 
 export interface ChartAxisInfo {

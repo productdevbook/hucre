@@ -19,6 +19,7 @@ export * from "./legend";
 export * from "./dataLabels";
 export * from "./dataTable";
 export * from "./series";
+export * from "./seriesExtras";
 export * from "./axis";
 export * from "./plotArea";
 export * from "./chartSpace";
