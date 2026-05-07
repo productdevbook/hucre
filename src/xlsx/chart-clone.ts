@@ -45,6 +45,12 @@ import {
   normalizeBorderDash,
   normalizeRgbHex,
 } from "./chart/shape";
+import {
+  resolveBackWallThickness,
+  resolveFloorThickness,
+  resolveSideWallThickness,
+  resolveView3D,
+} from "./chart/walls";
 
 // ── Public API ───────────────────────────────────────────────────────
 
@@ -3554,127 +3560,6 @@ function resolveProtection(
   return override;
 }
 
-/**
- * Resolve a `view3D` override.
- *
- * `undefined` → inherit the source's parsed {@link Chart.view3D}. The
- *               source's parsed object is defensively shallow-copied
- *               so a downstream mutation to the cloned SheetChart
- *               never leaks back into the parsed Chart.
- * `null`      → drop the inherited block so the writer skips
- *               `<c:view3D>` entirely (no chart-level 3D pin).
- * `object`    → replace the inherited block wholesale (no per-field
- *               merge with the source — pass every field the cloned
- *               view3D should pin). An empty object emits a bare
- *               `<c:view3D/>` shell at the writer side.
- *
- * The grammar mirrors {@link resolveProtection} / {@link resolveDataTable}
- * so the chart-level block toggles compose the same way at the call
- * site. Unlike `dataTable`, `<c:view3D>` lives on `<c:chart>` (not
- * inside `<c:plotArea>`) so the resolver applies to every chart family
- * — pie / doughnut included.
- */
-function resolveView3D(
-  sourceValue: ChartView3D | undefined,
-  override: ChartView3D | null | undefined,
-): ChartView3D | undefined {
-  if (override === undefined) {
-    // Inherit — defensively shallow-copy the source so a downstream
-    // mutation to the cloned SheetChart never leaks back into the
-    // parsed Chart. The CT_View3D children are all scalars (numbers
-    // and a boolean), so a single-level spread is enough.
-    if (sourceValue === undefined) return undefined;
-    return { ...sourceValue };
-  }
-  if (override === null) {
-    // Drop the inherited block. The writer treats `undefined` as
-    // suppression and skips `<c:view3D>` entirely.
-    return undefined;
-  }
-  // Replace the inherited block wholesale. The writer accepts the
-  // empty-object shape and emits a bare `<c:view3D/>` shell, mirroring
-  // how `resolveProtection` handles the `true` / `{}` forms.
-  return { ...override };
-}
-
-/**
- * Resolve a `floorThickness` override.
- *
- * `undefined` → inherit the source's parsed `floorThickness`.
- * `null`      → drop the inherited value (the writer skips `<c:floor>`
- *               entirely — Excel falls back to no extrusion).
- * `number`    → replace. Out-of-range, `0`, or non-finite values still
- *               surface in the cloned `SheetChart` for symmetry with
- *               the other override helpers; the writer's
- *               `buildFloorThickness` then drops them at emit time so
- *               a fresh chart matches Excel's reference serialization.
- *
- * The grammar mirrors `upDownBarsGapWidth` / `gapWidth` / `holeSize` /
- * `firstSliceAng` so the numeric chart-level knobs compose the same
- * way at the call site.
- */
-function resolveFloorThickness(
-  sourceValue: number | undefined,
-  override: number | null | undefined,
-): number | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
-}
-
-/**
- * Resolve a `sideWallThickness` override.
- *
- * `undefined` → inherit the source's parsed `sideWallThickness`.
- * `null`      → drop the inherited value (the writer skips
- *               `<c:sideWall>` entirely — Excel falls back to no
- *               extrusion).
- * `number`    → replace. Out-of-range, `0`, or non-finite values still
- *               surface in the cloned `SheetChart` for symmetry with
- *               the other override helpers; the writer's
- *               `buildSideWallThickness` then drops them at emit time
- *               so a fresh chart matches Excel's reference
- *               serialization.
- *
- * The grammar mirrors `upDownBarsGapWidth` / `gapWidth` / `holeSize` /
- * `firstSliceAng` so the numeric chart-level knobs compose the same
- * way at the call site.
- */
-function resolveSideWallThickness(
-  sourceValue: number | undefined,
-  override: number | null | undefined,
-): number | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
-}
-
-/**
- * Resolve a `backWallThickness` override.
- *
- * `undefined` → inherit the source's parsed `backWallThickness`.
- * `null`      → drop the inherited value (the writer skips
- *               `<c:backWall>` entirely — Excel falls back to no
- *               extrusion).
- * `number`    → replace. Out-of-range, `0`, or non-finite values still
- *               surface in the cloned `SheetChart` for symmetry with
- *               the other override helpers; the writer's
- *               `buildBackWallThickness` then drops them at emit time
- *               so a fresh chart matches Excel's reference
- *               serialization.
- *
- * The grammar mirrors `floorThickness` / `upDownBarsGapWidth` /
- * `gapWidth` / `holeSize` / `firstSliceAng` so the numeric chart-level
- * knobs compose the same way at the call site.
- */
-function resolveBackWallThickness(
-  sourceValue: number | undefined,
-  override: number | null | undefined,
-): number | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
-}
 
 /**
  * Resolve an `upDownBars` override.

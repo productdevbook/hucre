@@ -40,6 +40,12 @@ import {
   normalizeBorderDash,
   normalizeRgbHex as normalizeRgbHexShared,
 } from "./chart/shape";
+import {
+  buildBackWallThickness,
+  buildFloorThickness,
+  buildSideWallThickness,
+  buildView3D,
+} from "./chart/walls";
 
 // ── Namespaces ───────────────────────────────────────────────────────
 
@@ -2263,178 +2269,6 @@ function buildProtection(protection: {
 
 // ── 3-D View ─────────────────────────────────────────────────────────
 
-/**
- * Serialize a {@link ChartView3D} into `<c:view3D>` with one self-
- * closing child per pinned field, in the order CT_View3D mandates:
- * `<c:rotX>`, `<c:hPercent>`, `<c:rotY>`, `<c:depthPercent>`,
- * `<c:rAngAx>`, `<c:perspective>`. Returns `undefined` when the
- * caller did not opt in (`view3D` is `undefined`) so the writer can
- * skip the element entirely; returns the bare `<c:view3D/>` shell
- * when an empty object is passed (round-trips a template that
- * authored the element with no children pinned).
- *
- * Each numeric field is clamped against the matching OOXML simple-
- * type range — out-of-range and non-finite inputs drop silently
- * rather than emit a token Excel's strict validator would reject.
- * The boolean field surfaces only as a literal `0` / `1` `val`
- * attribute; non-boolean inputs collapse to `false` (the OOXML
- * default), mirroring how every other chart-level boolean writer
- * treats its input.
- */
-function buildView3D(view3D: ChartView3D | undefined): string | undefined {
-  if (view3D === undefined) return undefined;
-  const children: string[] = [];
-  // CT_View3D children sequence per ECMA-376 §21.2.2.228:
-  // rotX?, hPercent?, rotY?, depthPercent?, rAngAx?, perspective?,
-  // extLst?
-  const rotX = clampView3DInt(view3D.rotX, -90, 90);
-  if (rotX !== undefined) children.push(xmlSelfClose("c:rotX", { val: rotX }));
-  const hPercent = clampView3DInt(view3D.hPercent, 5, 500);
-  if (hPercent !== undefined) {
-    // `<c:hPercent>` accepts the bare integer per ST_HPercent — Excel
-    // emits a plain percent value with no `%` suffix.
-    children.push(xmlSelfClose("c:hPercent", { val: hPercent }));
-  }
-  const rotY = clampView3DInt(view3D.rotY, 0, 360);
-  if (rotY !== undefined) children.push(xmlSelfClose("c:rotY", { val: rotY }));
-  const depthPercent = clampView3DInt(view3D.depthPercent, 20, 2000);
-  if (depthPercent !== undefined) {
-    children.push(xmlSelfClose("c:depthPercent", { val: depthPercent }));
-  }
-  if (view3D.rAngAx === true) {
-    children.push(xmlSelfClose("c:rAngAx", { val: 1 }));
-  } else if (view3D.rAngAx === false) {
-    // Explicit `false` round-trips as `<c:rAngAx val="0"/>` so the
-    // caller can pin the OOXML default literally — useful for parity
-    // with templates that author the explicit value.
-    children.push(xmlSelfClose("c:rAngAx", { val: 0 }));
-  }
-  const perspective = clampView3DInt(view3D.perspective, 0, 240);
-  if (perspective !== undefined) {
-    children.push(xmlSelfClose("c:perspective", { val: perspective }));
-  }
-  // Empty object (`{}`) collapses to a bare `<c:view3D/>` shell —
-  // `xmlElement` with an empty child array emits the self-closing form.
-  return xmlElement("c:view3D", undefined, children);
-}
-
-/**
- * Clamp a `<c:view3D>` numeric field against the matching OOXML
- * simple-type range. Returns `undefined` when the input is non-finite,
- * non-integer, or out-of-range — the writer drops the matching child
- * rather than emit a token Excel's strict validator would reject.
- *
- * The strict integer check rejects fractional inputs (`15.5`) so the
- * round-trip stays lossless — `parseView3DInt` on the reader side
- * also rejects fractional `val` attributes, and a fractional input
- * here would silently mismatch on the next parse.
- */
-function clampView3DInt(value: number | undefined, min: number, max: number): number | undefined {
-  if (typeof value !== "number") return undefined;
-  if (!Number.isFinite(value)) return undefined;
-  if (!Number.isInteger(value)) return undefined;
-  if (value < min || value > max) return undefined;
-  return value;
-}
-
-/**
- * Serialize {@link SheetChart.floorThickness} into
- * `<c:floor><c:thickness val="N"/></c:floor>`. Returns `undefined`
- * when the caller did not opt in (`floorThickness` is `undefined`,
- * `0`, non-finite, non-integer, negative, or out of the Excel UI
- * band `1..100`) so the writer can skip the `<c:floor>` element
- * entirely — Excel renders no floor extrusion on a fresh chart and
- * absence matches the reference serialization byte-for-byte.
- *
- * The OOXML schema (`ST_Thickness`, `xsd:unsignedInt`) accepts any
- * non-negative integer, but Excel's "Format Floor -> Floor ->
- * Thickness" pane only exposes `0..100` — values above that band
- * render but trigger Excel's repair dialog. Drop out-of-range and
- * non-integer inputs rather than emit a token Excel rejects, mirroring
- * how every other chart-level numeric writer ({@link clampView3DInt}
- * / {@link clampHoleSize} / {@link clampFirstSliceAng}) treats its
- * input.
- *
- * The element only carries the `<c:thickness>` child — other
- * `CT_Surface` children (`<c:spPr>`, `<c:pictureOptions>`,
- * `<c:extLst>`) are not modelled at this layer, so the emitted
- * `<c:floor>` block is the minimal shape Excel itself emits when the
- * user pins a thickness with no other floor styling.
- */
-function buildFloorThickness(value: number | undefined): string | undefined {
-  if (typeof value !== "number") return undefined;
-  if (!Number.isFinite(value)) return undefined;
-  if (!Number.isInteger(value)) return undefined;
-  if (value <= 0) return undefined;
-  if (value > 100) return undefined;
-  return xmlElement("c:floor", undefined, [xmlSelfClose("c:thickness", { val: value })]);
-}
-
-/**
- * Serialize {@link SheetChart.sideWallThickness} into
- * `<c:sideWall><c:thickness val="N"/></c:sideWall>`. Returns
- * `undefined` when the caller did not opt in
- * (`sideWallThickness` is `undefined`, `0`, non-finite, non-integer,
- * negative, or out of the Excel UI band `1..100`) so the writer can
- * skip the `<c:sideWall>` element entirely — Excel renders no side-
- * wall extrusion on a fresh chart and absence matches the reference
- * serialization byte-for-byte.
- *
- * The OOXML schema (`ST_Thickness`, `xsd:unsignedInt`) accepts any
- * non-negative integer, but Excel's "Format Side Wall -> Side Wall ->
- * Thickness" pane only exposes `0..100` — values above that band
- * render but trigger Excel's repair dialog. Drop out-of-range and
- * non-integer inputs rather than emit a token Excel rejects, mirroring
- * how every other chart-level numeric writer ({@link clampView3DInt}
- * / {@link clampHoleSize} / {@link clampFirstSliceAng}) treats its
- * input.
- *
- * The element only carries the `<c:thickness>` child — other
- * `CT_Surface` children (`<c:spPr>`, `<c:pictureOptions>`,
- * `<c:extLst>`) are not modelled at this layer, so the emitted
- * `<c:sideWall>` block is the minimal shape Excel itself emits when
- * the user pins a thickness with no other side-wall styling.
- */
-function buildSideWallThickness(value: number | undefined): string | undefined {
-  if (typeof value !== "number") return undefined;
-  if (!Number.isFinite(value)) return undefined;
-  if (!Number.isInteger(value)) return undefined;
-  if (value <= 0) return undefined;
-  if (value > 100) return undefined;
-  return xmlElement("c:sideWall", undefined, [xmlSelfClose("c:thickness", { val: value })]);
-}
-
-/**
- * Serialize {@link SheetChart.backWallThickness} into
- * `<c:backWall><c:thickness val="N"/></c:backWall>`. Returns
- * `undefined` when the caller did not opt in (`backWallThickness` is
- * `undefined`, `0`, non-finite, non-integer, negative, or out of the
- * Excel UI band `1..100`) so the writer can skip the `<c:backWall>`
- * element entirely — Excel renders no back-wall extrusion on a fresh
- * chart and absence matches the reference serialization byte-for-byte.
- *
- * The OOXML schema (`ST_Thickness`, `xsd:unsignedInt`) accepts any
- * non-negative integer, but Excel's "Format Back Wall -> Back Wall ->
- * Thickness" pane only exposes `0..100` — values above that band
- * render but trigger Excel's repair dialog. Drop out-of-range and
- * non-integer inputs rather than emit a token Excel rejects, mirroring
- * how every other chart-level numeric writer ({@link buildFloorThickness}
- * / {@link clampView3DInt} / {@link clampHoleSize}) treats its input.
- *
- * The element only carries the `<c:thickness>` child — other
- * `CT_Surface` children (`<c:spPr>`, `<c:pictureOptions>`,
- * `<c:extLst>`) are not modelled at this layer, so the emitted
- * `<c:backWall>` block is the minimal shape Excel itself emits when
- * the user pins a thickness with no other back-wall styling.
- */
-function buildBackWallThickness(value: number | undefined): string | undefined {
-  if (typeof value !== "number") return undefined;
-  if (!Number.isFinite(value)) return undefined;
-  if (!Number.isInteger(value)) return undefined;
-  if (value <= 0) return undefined;
-  if (value > 100) return undefined;
-  return xmlElement("c:backWall", undefined, [xmlSelfClose("c:thickness", { val: value })]);
-}
 
 interface AxisRenderOptions {
   xAxisTitle: string | undefined;

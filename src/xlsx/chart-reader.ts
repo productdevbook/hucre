@@ -59,6 +59,12 @@ import {
   parseSpPrFill,
 } from "./chart/shape";
 import { parseManualLayout } from "./chart/layout";
+import {
+  parseBackWallThickness,
+  parseFloorThickness,
+  parseSideWallThickness,
+  parseView3D,
+} from "./chart/walls";
 
 /** All chart-type element local names recognized by Excel. */
 const CHART_KIND_TAGS: ReadonlyMap<string, ChartKind> = new Map([
@@ -6061,265 +6067,15 @@ function parseProtectionFlag(protection: XmlElement, local: string): boolean | u
 
 // ── 3-D View ──────────────────────────────────────────────────────
 
-/**
- * Pull `<c:view3D>` (CT_View3D) off `<c:chart>`. Surfaces a
- * {@link ChartView3D} object whenever the source chart declares the
- * element. Each of the six children (`<c:rotX>`, `<c:hPercent>`,
- * `<c:rotY>`, `<c:depthPercent>`, `<c:rAngAx>`, `<c:perspective>`)
- * is independently optional on CT_View3D, so the reader only surfaces
- * the fields the file actually pinned. A child that is missing or
- * carries an out-of-range / unparseable `val` attribute drops to
- * `undefined` for that field rather than fabricate a value the file
- * did not declare.
- *
- * The element itself is the gating signal — a `<c:view3D>` block with
- * no resolvable children surfaces as an empty `{}`, mirroring how
- * `dataTable` / `protection` handle a malformed inner block. This
- * keeps a chart that authors the bare element (Excel's "default 3D
- * view" preset) from silently disappearing through the parse loop.
- *
- * Note: `<c:view3D>` lives on `<c:chart>` (between `<c:autoTitleDeleted>`
- * / `<c:pivotFmts>` and `<c:floor>` / `<c:plotArea>` per CT_Chart
- * §21.2.2.4), not on `<c:chartSpace>` — the toggle governs the 3D
- * projection of the rendered chart, not the outer chart frame.
- */
-function parseView3D(chartEl: XmlElement): ChartView3D | undefined {
-  const el = findChild(chartEl, "view3D");
-  if (!el) return undefined;
-  const out: ChartView3D = {};
-  // `<c:rotX>` (CT_RotX, ST_RotX) is a signed byte in the range
-  // -90..90. Out-of-range values drop rather than emit a token Excel
-  // would clamp at parse time.
-  const rotX = parseView3DInt(el, "rotX", -90, 90);
-  if (rotX !== undefined) out.rotX = rotX;
-  // `<c:hPercent>` (CT_HPercent, ST_HPercent) is a percent value in
-  // the range 5..500. Same drop-on-out-of-range rule.
-  const hPercent = parseView3DInt(el, "hPercent", 5, 500);
-  if (hPercent !== undefined) out.hPercent = hPercent;
-  // `<c:rotY>` (CT_RotY, ST_RotY) is an unsigned short in the range
-  // 0..360.
-  const rotY = parseView3DInt(el, "rotY", 0, 360);
-  if (rotY !== undefined) out.rotY = rotY;
-  // `<c:depthPercent>` (CT_DepthPercent, ST_DepthPercent) is a percent
-  // value in the range 20..2000.
-  const depthPercent = parseView3DInt(el, "depthPercent", 20, 2000);
-  if (depthPercent !== undefined) out.depthPercent = depthPercent;
-  // `<c:rAngAx>` (CT_Boolean) — accepts the OOXML truthy / falsy
-  // spellings; unknown values and missing `val` attributes drop to
-  // `undefined`. Mirrors the parsing semantics of the chartSpace-level
-  // `<c:protection>` boolean children.
-  const rAngAx = parseView3DBoolean(el, "rAngAx");
-  if (rAngAx !== undefined) out.rAngAx = rAngAx;
-  // `<c:perspective>` (CT_Perspective, ST_Perspective) is a percent
-  // value in the range 0..240.
-  const perspective = parseView3DInt(el, "perspective", 0, 240);
-  if (perspective !== undefined) out.perspective = perspective;
-  return out;
-}
-
-/**
- * Pull a single integer child off `<c:view3D>`. Surfaces the value
- * only when `val` parses as an integer inside the matching OOXML
- * simple-type range; absence and out-of-range / non-integer values
- * collapse to `undefined`.
- *
- * Accepts an optional leading `-` so signed types (`<c:rotX>`) round-
- * trip cleanly. The strict integer regex rejects fractional values
- * (`"15.5"`) and non-numeric tokens (`"15px"`) — `parseInt` would
- * coerce both into a number Excel never emits.
- */
-function parseView3DInt(
-  view3D: XmlElement,
-  local: string,
-  min: number,
-  max: number,
-): number | undefined {
-  const el = findChild(view3D, local);
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  if (!/^-?\d+$/.test(raw)) return undefined;
-  const n = Number(raw);
-  if (!Number.isInteger(n)) return undefined;
-  if (n < min || n > max) return undefined;
-  return n;
-}
-
-/**
- * Pull a single boolean child off `<c:view3D>`. Accepts the OOXML
- * truthy / falsy spellings (`"1"` / `"true"` / `"0"` / `"false"`);
- * unknown tokens, missing `val` attributes, and missing elements all
- * collapse to `undefined` rather than fabricate a flag the file did
- * not pin. Mirrors {@link parseProtectionFlag} — the same OOXML
- * `<xsd:boolean>` lexical-space rule.
- */
-function parseView3DBoolean(view3D: XmlElement, local: string): boolean | undefined {
-  const el = findChild(view3D, local);
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  switch (raw) {
-    case "1":
-    case "true":
-      return true;
-    case "0":
-    case "false":
-      return false;
-    default:
-      return undefined;
-  }
-}
 
 // ── Floor Thickness ───────────────────────────────────────────────
 
-/**
- * Pull `<c:chart><c:floor><c:thickness val=".."/></c:floor>` off
- * `<c:chart>`. The `<c:floor>` element (CT_Surface, ECMA-376 Part 1,
- * §21.2.2.69) sits on `<c:chart>` between `<c:view3D>` and
- * `<c:sideWall>` / `<c:backWall>` / `<c:plotArea>` per CT_Chart and
- * carries an optional `<c:thickness>` child whose `val` attribute is
- * an `xsd:unsignedInt` — Excel's "Format Floor -> Floor -> Thickness"
- * pin on 3D chart families.
- *
- * Returns the integer pinned by the source chart. The OOXML default
- * `0` (and absence of the `<c:thickness>` child or the parent
- * `<c:floor>` element) collapses to `undefined` so absence and the
- * default round-trip identically through {@link cloneChart} — only an
- * explicit positive thickness surfaces here. Out-of-range or
- * unparseable values also drop to `undefined` rather than fabricate a
- * value the file did not declare.
- *
- * The `<c:thickness>` element only carries the `val` attribute on
- * `CT_Thickness` — other floor styling (`<c:spPr>`, `<c:pictureOptions>`,
- * `<c:extLst>`) is not modelled at this layer, so a stray styling
- * block on the floor passes through the parse loop without surfacing.
- */
-function parseFloorThickness(chartEl: XmlElement): number | undefined {
-  const floor = findChild(chartEl, "floor");
-  if (!floor) return undefined;
-  const thickness = findChild(floor, "thickness");
-  if (!thickness) return undefined;
-  const raw = thickness.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  // ST_Thickness is `xsd:unsignedInt` — strict integer regex rejects
-  // fractional / negative / non-numeric tokens.
-  if (!/^\d+$/.test(raw)) return undefined;
-  const n = Number(raw);
-  if (!Number.isInteger(n)) return undefined;
-  // Collapse the OOXML default `0` to undefined so absence and the
-  // default round-trip identically through cloneChart — only an
-  // explicit positive thickness surfaces here. Mirrors how the writer
-  // skips emission entirely for `0` / undefined.
-  if (n === 0) return undefined;
-  // Cap at Excel's UI band ceiling (`100`) — the OOXML schema accepts
-  // the full `xsd:unsignedInt` range but Excel's "Format Floor"
-  // dialogue rejects values above 100 with a repair warning. Anything
-  // larger drops here so a corrupt template does not silently rewrite
-  // as an absurd thickness; absence keeps the round-trip stable.
-  if (n > 100) return undefined;
-  return n;
-}
 
 // ── Side Wall Thickness ───────────────────────────────────────────
 
-/**
- * Pull `<c:chart><c:sideWall><c:thickness val=".."/></c:sideWall>` off
- * `<c:chart>`. The `<c:sideWall>` element (CT_Surface, ECMA-376 Part 1,
- * §21.2.2.187) sits on `<c:chart>` between `<c:floor>` and
- * `<c:backWall>` / `<c:plotArea>` per CT_Chart and carries an optional
- * `<c:thickness>` child whose `val` attribute is an `xsd:unsignedInt` —
- * Excel's "Format Side Wall -> Side Wall -> Thickness" pin on 3D chart
- * families.
- *
- * Returns the integer pinned by the source chart. The OOXML default
- * `0` (and absence of the `<c:thickness>` child or the parent
- * `<c:sideWall>` element) collapses to `undefined` so absence and the
- * default round-trip identically through {@link cloneChart} — only an
- * explicit positive thickness surfaces here. Out-of-range or
- * unparseable values also drop to `undefined` rather than fabricate a
- * value the file did not declare.
- *
- * The `<c:thickness>` element only carries the `val` attribute on
- * `CT_Thickness` — other side-wall styling (`<c:spPr>`,
- * `<c:pictureOptions>`, `<c:extLst>`) is not modelled at this layer,
- * so a stray styling block on the wall passes through the parse loop
- * without surfacing.
- */
-function parseSideWallThickness(chartEl: XmlElement): number | undefined {
-  const sideWall = findChild(chartEl, "sideWall");
-  if (!sideWall) return undefined;
-  const thickness = findChild(sideWall, "thickness");
-  if (!thickness) return undefined;
-  const raw = thickness.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  // ST_Thickness is `xsd:unsignedInt` — strict integer regex rejects
-  // fractional / negative / non-numeric tokens.
-  if (!/^\d+$/.test(raw)) return undefined;
-  const n = Number(raw);
-  if (!Number.isInteger(n)) return undefined;
-  // Collapse the OOXML default `0` to undefined so absence and the
-  // default round-trip identically through cloneChart — only an
-  // explicit positive thickness surfaces here. Mirrors how the writer
-  // skips emission entirely for `0` / undefined.
-  if (n === 0) return undefined;
-  // Cap at Excel's UI band ceiling (`100`) — the OOXML schema accepts
-  // the full `xsd:unsignedInt` range but Excel's "Format Side Wall"
-  // dialogue rejects values above 100 with a repair warning. Anything
-  // larger drops here so a corrupt template does not silently rewrite
-  // as an absurd thickness; absence keeps the round-trip stable.
-  if (n > 100) return undefined;
-  return n;
-}
 
 // ── Back Wall Thickness ───────────────────────────────────────────
 
-/**
- * Pull `<c:chart><c:backWall><c:thickness val=".."/></c:backWall>` off
- * `<c:chart>`. The `<c:backWall>` element (CT_Surface, ECMA-376 Part 1,
- * §21.2.2.31) sits on `<c:chart>` between `<c:sideWall>` and
- * `<c:plotArea>` per CT_Chart and carries an optional `<c:thickness>`
- * child whose `val` attribute is an `xsd:unsignedInt` — Excel's
- * "Format Back Wall -> Back Wall -> Thickness" pin on 3D chart families.
- *
- * Returns the integer pinned by the source chart. The OOXML default
- * `0` (and absence of the `<c:thickness>` child or the parent
- * `<c:backWall>` element) collapses to `undefined` so absence and the
- * default round-trip identically through {@link cloneChart} — only an
- * explicit positive thickness surfaces here. Out-of-range or
- * unparseable values also drop to `undefined` rather than fabricate a
- * value the file did not declare.
- *
- * The `<c:thickness>` element only carries the `val` attribute on
- * `CT_Thickness` — other back-wall styling (`<c:spPr>`,
- * `<c:pictureOptions>`, `<c:extLst>`) is not modelled at this layer,
- * so a stray styling block on the back wall passes through the parse
- * loop without surfacing.
- */
-function parseBackWallThickness(chartEl: XmlElement): number | undefined {
-  const backWall = findChild(chartEl, "backWall");
-  if (!backWall) return undefined;
-  const thickness = findChild(backWall, "thickness");
-  if (!thickness) return undefined;
-  const raw = thickness.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  // ST_Thickness is `xsd:unsignedInt` — strict integer regex rejects
-  // fractional / negative / non-numeric tokens.
-  if (!/^\d+$/.test(raw)) return undefined;
-  const n = Number(raw);
-  if (!Number.isInteger(n)) return undefined;
-  // Collapse the OOXML default `0` to undefined so absence and the
-  // default round-trip identically through cloneChart — only an
-  // explicit positive thickness surfaces here. Mirrors how the writer
-  // skips emission entirely for `0` / undefined.
-  if (n === 0) return undefined;
-  // Cap at Excel's UI band ceiling (`100`) — the OOXML schema accepts
-  // the full `xsd:unsignedInt` range but Excel's "Format Back Wall"
-  // dialogue rejects values above 100 with a repair warning. Anything
-  // larger drops here so a corrupt template does not silently rewrite
-  // as an absurd thickness; absence keeps the round-trip stable.
-  if (n > 100) return undefined;
-  return n;
-}
 
 // ── Vary Colors ────────────────────────────────────────────────────
 
