@@ -21235,10 +21235,7 @@ describe("writeChart — legendBorderColor", () => {
   });
 
   it("does not emit any <c:legend> when legend=false, even with legendBorderColor set", () => {
-    const result = writeChart(
-      makeChart({ legend: false, legendBorderColor: "1F77B4" }),
-      "Sheet1",
-    );
+    const result = writeChart(makeChart({ legend: false, legendBorderColor: "1F77B4" }), "Sheet1");
     expect(result.chartXml).not.toContain("<c:legend>");
   });
 
