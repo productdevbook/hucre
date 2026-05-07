@@ -18,3 +18,4 @@ export * from "./title";
 export * from "./legend";
 export * from "./dataLabels";
 export * from "./dataTable";
+export * from "./series";

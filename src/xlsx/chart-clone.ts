@@ -71,6 +71,16 @@ import {
   normalizeLegendStrikethrough,
   normalizeLegendUnderline,
 } from "./chart/legend";
+import {
+  cloneMarker,
+  cloneStroke,
+  resolveExplosion,
+  resolveInvertIfNegative,
+  resolveMarker,
+  resolveShowLineMarkers,
+  resolveSmooth,
+  resolveStroke,
+} from "./chart/series";
 
 // ── Public API ───────────────────────────────────────────────────────
 
@@ -3148,146 +3158,6 @@ function mergeSeries(
   return out;
 }
 
-/**
- * Resolve a per-series line-stroke override.
- *
- * `undefined` → inherit the source series' `stroke` (a fresh shallow
- *               copy so the caller cannot mutate the parsed source).
- * `null`      → drop the inherited block.
- * object      → replace the inherited block wholesale (no per-field
- *               merge; pass the full shape you want).
- *
- * An empty stroke block (no dash, no width) collapses to `undefined`
- * so the writer can elide the element rather than emit a bare
- * `<a:ln/>` that Excel paints with the inherited default.
- */
-function resolveStroke(
-  sourceStroke: ChartLineStroke | undefined,
-  override: ChartLineStroke | null | undefined,
-): ChartLineStroke | undefined {
-  if (override === undefined) {
-    if (!sourceStroke) return undefined;
-    return cloneStroke(sourceStroke);
-  }
-  if (override === null) return undefined;
-  return cloneStroke(override);
-}
-
-function cloneStroke(source: ChartLineStroke): ChartLineStroke | undefined {
-  const out: ChartLineStroke = {};
-  if (source.dash !== undefined) out.dash = source.dash;
-  if (typeof source.width === "number" && Number.isFinite(source.width)) out.width = source.width;
-  return Object.keys(out).length > 0 ? out : undefined;
-}
-
-/**
- * Resolve a per-series smooth-line override.
- *
- * `undefined` → inherit the source series' `smooth`.
- * `null`      → drop the inherited flag (the cloned series renders straight).
- * `boolean`   → replace.
- *
- * Only the `true` outcome materializes on the result — `false` collapses
- * to `undefined` so absence and the OOXML default round-trip identically
- * (the writer emits straight segments either way).
- */
-function resolveSmooth(
-  sourceSmooth: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) {
-    return sourceSmooth === true ? true : undefined;
-  }
-  if (override === null) return undefined;
-  return override === true ? true : undefined;
-}
-
-/**
- * Resolve a per-series invert-if-negative override.
- *
- * `undefined` → inherit the source series' `invertIfNegative`.
- * `null`      → drop the inherited flag (the cloned series renders
- *               negatives in the series fill color).
- * `boolean`   → replace.
- *
- * Only the `true` outcome materializes on the result — `false` collapses
- * to `undefined` so absence and the OOXML default round-trip identically
- * (the writer omits `<c:invertIfNegative>` either way).
- */
-function resolveInvertIfNegative(
-  sourceFlag: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) {
-    return sourceFlag === true ? true : undefined;
-  }
-  if (override === null) return undefined;
-  return override === true ? true : undefined;
-}
-
-/**
- * Resolve a per-series slice-explosion override.
- *
- * `undefined` → inherit the source series' `explosion`.
- * `null`      → drop the inherited value (the cloned series renders
- *               flush against its neighbors).
- * `number`    → replace.
- *
- * Non-finite or non-positive numbers (and the OOXML default `0`)
- * collapse to `undefined` so absence and the default round-trip
- * identically through the writer's elision logic. Out-of-band values
- * (the writer also clamps) are passed through here — the writer
- * applies the final `0..400` clamp at emit time so a parsed-then-cloned
- * value remains visible on the resulting `SheetChart` object.
- */
-function resolveExplosion(
-  sourceValue: number | undefined,
-  override: number | null | undefined,
-): number | undefined {
-  if (override === undefined) {
-    if (sourceValue === undefined || !Number.isFinite(sourceValue) || sourceValue <= 0) {
-      return undefined;
-    }
-    return sourceValue;
-  }
-  if (override === null) return undefined;
-  if (!Number.isFinite(override) || override <= 0) return undefined;
-  return override;
-}
-
-/**
- * Resolve a per-series marker override.
- *
- * `undefined` → inherit the source series' `marker` (a fresh shallow
- * copy so the caller cannot mutate the parsed source).
- * `null`      → drop the inherited block (the cloned series falls back
- *               to Excel's series-rotation default).
- * object      → replace the inherited block wholesale.
- *
- * An empty marker block (no symbol, size, or color) collapses to
- * `undefined` so the writer can elide the element rather than emit a
- * bare `<c:marker/>` that Excel paints with the inherited default.
- */
-function resolveMarker(
-  sourceMarker: ChartMarker | undefined,
-  override: ChartMarker | null | undefined,
-): ChartMarker | undefined {
-  if (override === undefined) {
-    if (!sourceMarker) return undefined;
-    return cloneMarker(sourceMarker);
-  }
-  if (override === null) return undefined;
-  return cloneMarker(override);
-}
-
-function cloneMarker(source: ChartMarker): ChartMarker | undefined {
-  const out: ChartMarker = {};
-  if (source.symbol !== undefined) out.symbol = source.symbol;
-  if (typeof source.size === "number" && Number.isFinite(source.size)) out.size = source.size;
-  if (typeof source.fill === "string" && source.fill.length > 0) out.fill = source.fill;
-  if (typeof source.line === "string" && source.line.length > 0) out.line = source.line;
-  return Object.keys(out).length > 0 ? out : undefined;
-}
 
 /**
  * Resolve a `dispBlanksAs` override.
@@ -3632,29 +3502,6 @@ function resolveUpDownBarsGapWidth(
   return override;
 }
 
-/**
- * Resolve a `showLineMarkers` override.
- *
- * `undefined` → inherit the source's parsed `showLineMarkers`.
- * `null`      → drop the inherited value (the writer falls back to the
- *               Excel default — `<c:marker val="1"/>`, markers shown).
- * `boolean`   → replace.
- *
- * The grammar mirrors `upDownBars` / `dropLines` / `hiLowLines` so the
- * chart-level line-only toggles compose the same way at the call site.
- * `true` collapses to `undefined` on the writer side because the writer
- * already emits `val="1"` by default; the `true` value still surfaces
- * in the cloned `SheetChart` for symmetry with other resolve helpers,
- * leaving the renderer to fold it back into the default during emit.
- */
-function resolveShowLineMarkers(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
-}
 
 /**
  * Resolve a `legendOverlay` override.

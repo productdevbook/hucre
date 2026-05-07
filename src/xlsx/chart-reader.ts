@@ -101,6 +101,7 @@ import {
 } from "./chart/legend";
 import { parseDataTable } from "./chart/dataTable";
 import { parseDataLabels } from "./chart/dataLabels";
+import { parseSeries } from "./chart/series";
 
 /** All chart-type element local names recognized by Excel. */
 const CHART_KIND_TAGS: ReadonlyMap<string, ChartKind> = new Map([
@@ -2809,137 +2810,6 @@ function parseAxisTitleLayout(axis: XmlElement): ChartManualLayout | undefined {
 
 // ── Series ────────────────────────────────────────────────────────
 
-/**
- * Pull the metadata fields {@link ChartSeriesInfo} surfaces out of a
- * single `<c:ser>` element. Missing pieces (no name, no categories,
- * literal numbers instead of a range) are simply omitted.
- */
-function parseSeries(ser: XmlElement, kind: ChartKind, index: number): ChartSeriesInfo {
-  const out: ChartSeriesInfo = { kind, index };
-
-  const name = parseSeriesName(ser);
-  if (name !== undefined) out.name = name;
-
-  // Numeric values land in <c:val> for most chart types; scatter and
-  // bubble use <c:yVal> instead.
-  const valuesRef = formulaText(findChild(ser, "val")) ?? formulaText(findChild(ser, "yVal"));
-  if (valuesRef !== undefined) out.valuesRef = valuesRef;
-
-  // Categories live in <c:cat> for category-axis charts and in
-  // <c:xVal> for scatter/bubble.
-  const catRef = formulaText(findChild(ser, "cat")) ?? formulaText(findChild(ser, "xVal"));
-  if (catRef !== undefined) out.categoriesRef = catRef;
-
-  const color = parseSeriesColor(ser);
-  if (color !== undefined) out.color = color;
-
-  const dLbls = findChild(ser, "dLbls");
-  if (dLbls) {
-    const parsed = parseDataLabels(dLbls);
-    if (parsed) out.dataLabels = parsed;
-  }
-
-  // `<c:smooth>` lives on `CT_LineSer` and `CT_ScatterSer` only — every
-  // other chart family rejects the element. Surface it just for those
-  // two kinds so a corrupt template carrying `<c:smooth>` on a bar/pie
-  // series does not silently flip a flag that the writer would never
-  // emit anyway.
-  if (kind === "line" || kind === "line3D" || kind === "scatter") {
-    const smooth = parseSmooth(ser);
-    if (smooth !== undefined) out.smooth = smooth;
-
-    // Stroke (dash + width) lives in `<c:spPr><a:ln>`. The same
-    // schema-only-on-line/scatter rule applies — bar / pie / area
-    // never paint a connecting line, so surfacing a stroke field
-    // there would mislead a clone consumer about what the chart
-    // actually renders.
-    const stroke = parseSeriesStroke(ser);
-    if (stroke !== undefined) out.stroke = stroke;
-
-    // `<c:marker>` mirrors the same scope — CT_LineSer / CT_ScatterSer
-    // only. Skip the element on every other family so a stray
-    // `<c:marker>` on a bar / pie / area template does not surface a
-    // setting that the writer would never emit anyway.
-    const marker = parseMarker(ser);
-    if (marker !== undefined) out.marker = marker;
-  }
-
-  // `<c:invertIfNegative>` lives on `CT_BarSer` / `CT_Bar3DSer` only —
-  // every other chart family rejects the element. Surface the flag
-  // just for those two kinds so a corrupt template carrying
-  // `<c:invertIfNegative>` on a line/pie/area/scatter series does not
-  // silently flip a flag that the writer would never emit anyway.
-  if (kind === "bar" || kind === "bar3D") {
-    const invertIfNegative = parseInvertIfNegative(ser);
-    if (invertIfNegative !== undefined) out.invertIfNegative = invertIfNegative;
-  }
-
-  // `<c:explosion>` lives on `CT_PieSer` only — the OOXML schema
-  // shares the type across every pie-family chart (`<c:pieChart>`,
-  // `<c:pie3DChart>`, `<c:doughnutChart>`, `<c:ofPieChart>`) so
-  // surface the value for any of those kinds. A stray element on a
-  // bar / line / area / scatter template is dropped rather than
-  // surfaced — the writer would never emit it back anyway.
-  if (kind === "pie" || kind === "pie3D" || kind === "doughnut" || kind === "ofPie") {
-    const explosion = parseExplosion(ser);
-    if (explosion !== undefined) out.explosion = explosion;
-  }
-
-  return out;
-}
-
-/**
- * Pull `<c:smooth val=".."/>` off a series element. Returns `undefined`
- * when the attribute is absent, malformed, or carries the OOXML default
- * `false` — absence and `false` round-trip identically through the
- * writer's elision logic, so collapsing them keeps the parsed shape
- * minimal.
- */
-function parseSmooth(ser: XmlElement): boolean | undefined {
-  const el = findChild(ser, "smooth");
-  if (!el) return undefined;
-  const v = readBoolAttr(el);
-  if (v !== true) return undefined;
-  return true;
-}
-
-/**
- * Pull `<c:invertIfNegative val=".."/>` off a bar/column series
- * element. Returns `undefined` when the attribute is absent,
- * malformed, or carries the OOXML default `false` — absence and
- * `false` round-trip identically through the writer's elision logic,
- * so collapsing them keeps the parsed shape minimal.
- */
-function parseInvertIfNegative(ser: XmlElement): boolean | undefined {
-  const el = findChild(ser, "invertIfNegative");
-  if (!el) return undefined;
-  const v = readBoolAttr(el);
-  if (v !== true) return undefined;
-  return true;
-}
-
-/**
- * Pull `<c:explosion val=".."/>` off a pie / doughnut series element.
- * The element's `val` attribute is `xsd:unsignedInt` per the OOXML
- * schema (CT_UnsignedInt) — the slice is pulled away from the chart
- * center by `val` percent of the radius. Returns `undefined` when the
- * attribute is absent, malformed, negative, or carries the OOXML
- * default `0` — absence and `0` round-trip identically through the
- * writer's elision logic, so collapsing them keeps the parsed shape
- * minimal. Non-integer input rounds to the nearest integer for parity
- * with the writer (Excel's UI accepts integer percentages only).
- */
-function parseExplosion(ser: XmlElement): number | undefined {
-  const el = findChild(ser, "explosion");
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const n = Number.parseFloat(raw);
-  if (!Number.isFinite(n) || n < 0) return undefined;
-  const rounded = Math.round(n);
-  if (rounded === 0) return undefined;
-  return rounded;
-}
 
 // ── Marker ────────────────────────────────────────────────────────
 
@@ -2957,84 +2827,6 @@ const VALID_MARKER_SYMBOLS: ReadonlySet<ChartMarkerSymbol> = new Set([
   "plus",
 ]);
 
-/**
- * Pull `<c:marker>` off a line / scatter series. Returns `undefined`
- * when the marker block is absent or carries no meaningful settings —
- * an empty `<c:marker/>` element collapses identically to absence
- * through the writer's elision logic, so omitting it keeps the parsed
- * shape minimal.
- *
- * Field semantics mirror {@link ChartMarker}: an unknown `<c:symbol>`
- * value is dropped (rather than surfaced), `<c:size>` outside the
- * 2..72 band is clamped, and the fill / outline colors come from
- * `<c:spPr><a:solidFill>` and `<c:spPr><a:ln><a:solidFill>`
- * respectively.
- */
-function parseMarker(ser: XmlElement): ChartMarker | undefined {
-  const el = findChild(ser, "marker");
-  if (!el) return undefined;
-
-  const out: ChartMarker = {};
-
-  const sym = findChild(el, "symbol");
-  if (sym) {
-    const v = sym.attrs.val;
-    if (typeof v === "string" && VALID_MARKER_SYMBOLS.has(v as ChartMarkerSymbol)) {
-      out.symbol = v as ChartMarkerSymbol;
-    }
-  }
-
-  const sizeEl = findChild(el, "size");
-  if (sizeEl) {
-    const v = sizeEl.attrs.val;
-    if (typeof v === "string") {
-      const n = Number.parseInt(v, 10);
-      if (Number.isFinite(n)) {
-        // OOXML ST_MarkerSize is `xsd:unsignedByte` constrained to
-        // 2..72; clamp anything outside that band on the way in so a
-        // template with an out-of-range value still round-trips.
-        if (n < 2) out.size = 2;
-        else if (n > 72) out.size = 72;
-        else out.size = n;
-      }
-    }
-  }
-
-  const spPr = findChild(el, "spPr");
-  if (spPr) {
-    const fill = findChild(spPr, "solidFill");
-    if (fill) {
-      const srgb = findChild(fill, "srgbClr");
-      const v = srgb?.attrs.val;
-      if (typeof v === "string") {
-        const hex = v.replace(/^#/, "").toUpperCase();
-        if (/^[0-9A-F]{6}$/.test(hex)) out.fill = hex;
-      }
-    }
-    const ln = findChild(spPr, "ln");
-    if (ln) {
-      const lnFill = findChild(ln, "solidFill");
-      if (lnFill) {
-        const srgb = findChild(lnFill, "srgbClr");
-        const v = srgb?.attrs.val;
-        if (typeof v === "string") {
-          const hex = v.replace(/^#/, "").toUpperCase();
-          if (/^[0-9A-F]{6}$/.test(hex)) out.line = hex;
-        }
-      }
-    }
-  }
-
-  if (
-    out.symbol === undefined &&
-    out.size === undefined &&
-    out.fill === undefined &&
-    out.line === undefined
-  ) {
-    return undefined;
-  }
-  return out;
-}
 
 // ── Data Labels ───────────────────────────────────────────────────
 
@@ -3050,33 +2842,6 @@ function readBoolAttr(el: XmlElement): boolean | undefined {
 }
 
 /** Read the `<c:tx>` series-name element (literal or strRef cache). */
-function parseSeriesName(ser: XmlElement): string | undefined {
-  const tx = findChild(ser, "tx");
-  if (!tx) return undefined;
-  const literal = findChild(tx, "v");
-  if (literal) {
-    const text = elementText(literal).trim();
-    if (text.length > 0) return text;
-  }
-  const strRef = findChild(tx, "strRef");
-  if (strRef) {
-    const cache = findChild(strRef, "strCache");
-    if (cache) {
-      for (const pt of childElements(cache)) {
-        if (pt.local !== "pt") continue;
-        const v = findChild(pt, "v");
-        if (v) {
-          const text = elementText(v).trim();
-          if (text.length > 0) return text;
-        }
-      }
-    }
-    // Fall back to the formula reference itself when no cached value.
-    const f = formulaText(strRef);
-    if (f) return f;
-  }
-  return undefined;
-}
 
 /**
  * Walk `<c:val>` / `<c:cat>` / `<c:xVal>` / `<c:yVal>` to its inner
@@ -3104,18 +2869,6 @@ function formulaText(wrapper: XmlElement | undefined): string | undefined {
 }
 
 /** Pull the first `<a:srgbClr val="RRGGBB">` under `<c:spPr>`. */
-function parseSeriesColor(ser: XmlElement): string | undefined {
-  const spPr = findChild(ser, "spPr");
-  if (!spPr) return undefined;
-  const fill = findChild(spPr, "solidFill");
-  if (!fill) return undefined;
-  const srgb = findChild(fill, "srgbClr");
-  if (!srgb) return undefined;
-  const val = srgb.attrs.val;
-  if (typeof val !== "string") return undefined;
-  const normalized = val.replace(/^#/, "").toUpperCase();
-  return /^[0-9A-F]{6}$/.test(normalized) ? normalized : undefined;
-}
 
 // ── Stroke ────────────────────────────────────────────────────────
 //
@@ -3126,54 +2879,6 @@ function parseSeriesColor(ser: XmlElement): string | undefined {
 // using the same generic primitives without duplicating the OOXML
 // schema knowledge across reader / writer / clone.
 
-/**
- * Pull `<c:spPr><a:ln>` off a series and surface its dash + width as
- * a {@link ChartLineStroke}. Returns `undefined` when the block is
- * absent or carries no meaningful settings — an empty `<a:ln/>`
- * collapses identically to absence through the writer's elision
- * logic, so omitting it keeps the parsed shape minimal.
- *
- * `<a:ln>` also nests the line color (`<a:solidFill>`) which mirrors
- * the series fill — parseSeriesColor already surfaces that as
- * {@link ChartSeriesInfo.color}, so the stroke object intentionally
- * does not duplicate the field.
- */
-function parseSeriesStroke(ser: XmlElement): ChartLineStroke | undefined {
-  const spPr = findChild(ser, "spPr");
-  if (!spPr) return undefined;
-  const ln = findChild(spPr, "ln");
-  if (!ln) return undefined;
-
-  const out: ChartLineStroke = {};
-
-  // Stroke width is on the `w` attribute of `<a:ln>` (EMU). Convert
-  // back to points and clamp to the band Excel's UI exposes so a
-  // template carrying an exotic width still round-trips through the
-  // writer's clamp.
-  const wAttr = ln.attrs.w;
-  if (typeof wAttr === "string") {
-    const emu = Number.parseFloat(wAttr);
-    if (Number.isFinite(emu) && emu > 0) {
-      // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
-      const pt = Math.round((emu / EMU_PER_PT) * 4) / 4;
-      if (pt < STROKE_WIDTH_MIN_PT) out.width = STROKE_WIDTH_MIN_PT;
-      else if (pt > STROKE_WIDTH_MAX_PT) out.width = STROKE_WIDTH_MAX_PT;
-      else out.width = pt;
-    }
-  }
-
-  // Dash style is `<a:prstDash val="..."/>` inside `<a:ln>`.
-  const dashEl = findChild(ln, "prstDash");
-  if (dashEl) {
-    const v = dashEl.attrs.val;
-    if (typeof v === "string" && VALID_DASH_STYLES.has(v as ChartLineDashStyle)) {
-      out.dash = v as ChartLineDashStyle;
-    }
-  }
-
-  if (out.dash === undefined && out.width === undefined) return undefined;
-  return out;
-}
 
 // ── Legend ────────────────────────────────────────────────────────
 
