@@ -22242,6 +22242,202 @@ describe("cloneChart — chartSpaceFillColor", () => {
   });
 });
 
+// ── cloneChart — chartSpaceBorderColor (entire chart border) ────────
+
+describe("cloneChart — chartSpaceBorderColor", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's chartSpaceBorderColor by default", () => {
+    const clone = cloneChart(source({ chartSpaceBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.chartSpaceBorderColor).toBe("1F77B4");
+  });
+
+  it("lets options.chartSpaceBorderColor override the source's value", () => {
+    const clone = cloneChart(source({ chartSpaceBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceBorderColor: "ABCDEF",
+    });
+    expect(clone.chartSpaceBorderColor).toBe("ABCDEF");
+  });
+
+  it("drops the inherited chartSpaceBorderColor when the override is null", () => {
+    const clone = cloneChart(source({ chartSpaceBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceBorderColor: null,
+    });
+    expect(clone.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined chartSpaceBorderColor when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("normalizes a leading # in the override hex string", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceBorderColor: "#1f77b4",
+    });
+    expect(clone.chartSpaceBorderColor).toBe("1F77B4");
+  });
+
+  it("normalizes a lowercase override hex string to uppercase", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceBorderColor: "ff8800",
+    });
+    expect(clone.chartSpaceBorderColor).toBe("FF8800");
+  });
+
+  it("normalizes a malformed source value through the resolver (drops to undefined)", () => {
+    const clone = cloneChart(source({ chartSpaceBorderColor: "ZZZ" as string }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("collapses malformed override hex tokens (wrong length)", () => {
+    const clone = cloneChart(source({ chartSpaceBorderColor: "ABCDEF" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceBorderColor: "FFF",
+    });
+    expect(clone.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("collapses malformed override hex tokens (non-hex characters)", () => {
+    const clone = cloneChart(source({ chartSpaceBorderColor: "ABCDEF" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceBorderColor: "GGGGGG",
+    });
+    expect(clone.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("collapses alpha-channel override hex tokens", () => {
+    const clone = cloneChart(source({ chartSpaceBorderColor: "ABCDEF" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceBorderColor: "FFAA0080",
+    });
+    expect(clone.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("collapses non-string overrides (number leaking past the type guard)", () => {
+    const clone = cloneChart(source({ chartSpaceBorderColor: "ABCDEF" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      chartSpaceBorderColor: 0xff_ff_ff as any,
+    });
+    expect(clone.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("collapses an empty string override", () => {
+    const clone = cloneChart(source({ chartSpaceBorderColor: "ABCDEF" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceBorderColor: "",
+    });
+    expect(clone.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("carries chartSpaceBorderColor through a flatten (line → column)", () => {
+    const clone = cloneChart(source({ chartSpaceBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.chartSpaceBorderColor).toBe("1F77B4");
+  });
+
+  it("composes independently with chartSpaceFillColor (both inherited from source)", () => {
+    const clone = cloneChart(
+      source({ chartSpaceFillColor: "F2F2F2", chartSpaceBorderColor: "1F77B4" }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.chartSpaceFillColor).toBe("F2F2F2");
+    expect(clone.chartSpaceBorderColor).toBe("1F77B4");
+  });
+
+  it("composes independently with chartSpaceFillColor (override only the border)", () => {
+    const clone = cloneChart(
+      source({ chartSpaceFillColor: "F2F2F2", chartSpaceBorderColor: "1F77B4" }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        chartSpaceBorderColor: "ABCDEF",
+      },
+    );
+    expect(clone.chartSpaceFillColor).toBe("F2F2F2");
+    expect(clone.chartSpaceBorderColor).toBe("ABCDEF");
+  });
+
+  it("propagates chartSpaceBorderColor into the rendered <c:chartSpace><c:spPr><a:ln> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ chartSpaceBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const chartSpaceSpPr = written.match(/<\/c:chart>\s*(<c:spPr>[\s\S]*?<\/c:spPr>)/);
+    expect(chartSpaceSpPr).not.toBeNull();
+    expect(chartSpaceSpPr![1]).toContain("<a:ln>");
+    expect(chartSpaceSpPr![1]).toContain('<a:srgbClr val="1F77B4"/>');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.chartSpaceBorderColor).toBe("1F77B4");
+  });
+
+  it("a null override drops the inherited stroke on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ chartSpaceBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 5, col: 0 } },
+      chartSpaceBorderColor: null,
+    });
+    expect(clone.chartSpaceBorderColor).toBeUndefined();
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const chartSpaceSpPr = written.match(/<\/c:chart>\s*(<c:spPr>[\s\S]*?<\/c:spPr>)/);
+    expect(chartSpaceSpPr).toBeNull();
+  });
+});
+
 // ── cloneChart — axisTitleFillColor ──────────────────────────────────
 
 describe("cloneChart — axisTitleFillColor", () => {

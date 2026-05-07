@@ -20884,6 +20884,174 @@ describe("parseChart — chartSpaceFillColor", () => {
   });
 });
 
+// ── parseChart — chartSpaceBorderColor (entire chart border) ────────
+
+describe("parseChart — chartSpaceBorderColor", () => {
+  const NS_CSB = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withChartSpaceSpPr(spPrBody: string): string {
+    return `<c:chartSpace ${NS_CSB}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+  <c:spPr>${spPrBody}</c:spPr>
+</c:chartSpace>`;
+  }
+
+  it("surfaces the literal sRGB stroke when <c:chartSpace><c:spPr><a:ln><a:solidFill><a:srgbClr> is pinned", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
+    );
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBe("1F77B4");
+  });
+
+  it("normalizes lowercase hex to canonical uppercase form", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:ln><a:solidFill><a:srgbClr val="abcdef"/></a:solidFill></a:ln>`,
+    );
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBe("ABCDEF");
+  });
+
+  it("admits a leading # on the val attribute", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:ln><a:solidFill><a:srgbClr val="#1F77B4"/></a:solidFill></a:ln>`,
+    );
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBe("1F77B4");
+  });
+
+  it("returns undefined when the chartSpace has no <c:spPr>", () => {
+    const xml = `<c:chartSpace ${NS_CSB}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when <c:spPr> has no <a:ln> child", () => {
+    const xml = withChartSpaceSpPr(`<a:solidFill><a:srgbClr val="000000"/></a:solidFill>`);
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln> has no <a:solidFill>", () => {
+    const xml = withChartSpaceSpPr(`<a:ln><a:noFill/></a:ln>`);
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln><a:solidFill> uses <a:schemeClr> (theme reference)", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:ln><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:ln>`,
+    );
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln> uses <a:gradFill>", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:ln><a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FFFFFF"/></a:gs></a:gsLst></a:gradFill></a:ln>`,
+    );
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln> uses <a:pattFill>", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:ln><a:pattFill prst="pct5"><a:fgClr><a:srgbClr val="000000"/></a:fgClr><a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr></a:pattFill></a:ln>`,
+    );
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when the val attribute is malformed (wrong length)", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:ln><a:solidFill><a:srgbClr val="ABC"/></a:solidFill></a:ln>`,
+    );
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when the val attribute is malformed (non-hex characters)", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:ln><a:solidFill><a:srgbClr val="GGGGGG"/></a:solidFill></a:ln>`,
+    );
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when the val attribute is missing", () => {
+    const xml = withChartSpaceSpPr(`<a:ln><a:solidFill><a:srgbClr/></a:solidFill></a:ln>`);
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("drops alpha-channel hex forms", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:ln><a:solidFill><a:srgbClr val="FF0000FF"/></a:solidFill></a:ln>`,
+    );
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("does not leak a stray <c:spPr> from <c:plotArea> into chartSpaceBorderColor", () => {
+    const xml = `<c:chartSpace ${NS_CSB}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+      <c:spPr><a:ln><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill></a:ln></c:spPr>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    // The plot-area stroke is a different field; the chart-space stroke is absent.
+    expect(chart?.plotAreaBorderColor).toBe("ABCDEF");
+    expect(chart?.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("does not leak a stray <c:spPr> from <c:legend> into chartSpaceBorderColor", () => {
+    const xml = `<c:chartSpace ${NS_CSB}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:spPr><a:ln><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill></a:ln></c:spPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legendBorderColor).toBe("ABCDEF");
+    expect(chart?.chartSpaceBorderColor).toBeUndefined();
+  });
+
+  it("composes independently with chartSpaceFillColor — same <c:spPr> block, distinct children", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill><a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
+    );
+    const chart = parseChart(xml);
+    expect(chart?.chartSpaceFillColor).toBe("F2F2F2");
+    expect(chart?.chartSpaceBorderColor).toBe("1F77B4");
+  });
+
+  it("surfaces the stroke independently when only <a:ln> is pinned (no <a:solidFill> sibling)", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
+    );
+    const chart = parseChart(xml);
+    expect(chart?.chartSpaceFillColor).toBeUndefined();
+    expect(chart?.chartSpaceBorderColor).toBe("1F77B4");
+  });
+});
+
 // ── parseChart — axisTitleFillColor ──────────────────────────────────
 
 describe("parseChart — axisTitleFillColor", () => {

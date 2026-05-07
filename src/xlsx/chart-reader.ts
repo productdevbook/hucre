@@ -711,6 +711,17 @@ export function parseChart(xml: string): Chart | undefined {
   const chartSpaceFillColor = parseChartSpaceFillColor(chartSpace);
   if (chartSpaceFillColor !== undefined) out.chartSpaceFillColor = chartSpaceFillColor;
 
+  // `<c:chartSpace><c:spPr><a:ln><a:solidFill><a:srgbClr val=".."/>
+  // </a:solidFill></a:ln></c:spPr></c:chartSpace>` carries Excel's
+  // "Format Chart Area -> Border -> Solid line -> Color" pin (the outer
+  // border around the entire chart frame, distinct from the inner
+  // `<c:plotArea>` stroke). The reader surfaces only the literal
+  // `<a:srgbClr>` form so absence, malformed hex tokens, non-solid line
+  // fills, and theme-color references all collapse to `undefined` so a
+  // round-trip never fabricates a stroke Excel cannot render.
+  const chartSpaceBorderColor = parseChartSpaceBorderColor(chartSpace);
+  if (chartSpaceBorderColor !== undefined) out.chartSpaceBorderColor = chartSpaceBorderColor;
+
   return out;
 }
 
@@ -4311,6 +4322,51 @@ function parseChartSpaceFillColor(chartSpace: XmlElement): string | undefined {
   const spPr = findChild(chartSpace, "spPr");
   if (!spPr) return undefined;
   const solidFill = findChild(spPr, "solidFill");
+  if (!solidFill) return undefined;
+  const srgbClr = findChild(solidFill, "srgbClr");
+  if (!srgbClr) return undefined;
+  return normalizeRgbHex(srgbClr.attrs.val);
+}
+
+/**
+ * Pull `<c:chartSpace><c:spPr><a:ln><a:solidFill><a:srgbClr val=".."/>
+ * </a:solidFill></a:ln></c:spPr></c:chartSpace>` off the chart-space
+ * document root. Returns the entire chart frame's border (stroke)
+ * color as a 6-character uppercase hex string.
+ *
+ * The OOXML `<a:srgbClr>` element carries the literal sRGB color
+ * (`CT_SRgbColor`, ECMA-376 Part 1, §20.1.2.3.32) inside the line's
+ * solid fill choice (`CT_LineProperties`' `<a:solidFill>` child —
+ * §20.1.2.3.24). The `<a:ln>` slot follows the optional
+ * `<a:solidFill>` (fill) child inside `<c:spPr>` per
+ * `CT_ShapeProperties` (§20.1.2.3.13). The `<c:spPr>` slot itself
+ * sits at the tail of `<c:chartSpace>` per CT_ChartSpace (§21.2.2.29).
+ *
+ * The reader surfaces only the literal `<a:srgbClr>` form — absence,
+ * non-solid line fills (`<a:noFill>` / `<a:gradFill>` / `<a:pattFill>` /
+ * `<a:blipFill>`), and theme-color references (`<a:schemeClr>`) all
+ * collapse to `undefined` so a chart that pinned a stroke the writer
+ * cannot reproduce on emit drops the field rather than fabricate one
+ * Excel would render differently. Malformed `val` tokens (wrong
+ * length, non-hex characters, alpha-channel forms, non-string escapes)
+ * likewise drop to `undefined`.
+ *
+ * Mirrors the writer-side {@link SheetChart.chartSpaceBorderColor} so
+ * a parsed value slots straight into {@link cloneChart} without
+ * conversion. The lookup is scoped to direct children of
+ * `<c:chartSpace>` so a stray `<c:spPr>` elsewhere (e.g. on
+ * `<c:plotArea>` / `<c:legend>` / `<c:title>` / a series) cannot leak
+ * into this field. Mirrors {@link parsePlotAreaBorderColor} /
+ * {@link parseLegendBorderColor} / {@link parseTitleBorderColor} —
+ * same `<c:spPr><a:ln><a:solidFill><a:srgbClr>` chain on a different
+ * host element.
+ */
+function parseChartSpaceBorderColor(chartSpace: XmlElement): string | undefined {
+  const spPr = findChild(chartSpace, "spPr");
+  if (!spPr) return undefined;
+  const ln = findChild(spPr, "ln");
+  if (!ln) return undefined;
+  const solidFill = findChild(ln, "solidFill");
   if (!solidFill) return undefined;
   const srgbClr = findChild(solidFill, "srgbClr");
   if (!srgbClr) return undefined;
