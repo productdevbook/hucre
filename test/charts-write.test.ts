@@ -20018,3 +20018,199 @@ describe("writeChart — legendFillColor", () => {
     expect(legend).toContain('<a:srgbClr val="0F0F0F"/>');
   });
 });
+
+// ── writeChart — chartSpaceFillColor (entire chart background) ──────
+
+describe("writeChart — chartSpaceFillColor", () => {
+  // The chart-space `<c:spPr>` lives at the tail of `<c:chartSpace>`,
+  // not inside `<c:chart>`. The writer never emits `<c:plotArea>` /
+  // `<c:legend>` / `<c:title>` `<c:spPr>` blocks unless the matching
+  // knob is pinned, so when only `chartSpaceFillColor` is set the
+  // chart XML carries exactly one `<c:spPr>` — the chart-space block.
+  function chartSpaceSpPrOf(xml: string): string | undefined {
+    // Match the trailing <c:spPr> block that sits as a direct child of
+    // <c:chartSpace> (i.e. after </c:chart>).
+    const m = xml.match(/<\/c:chart>\s*(<c:spPr>[\s\S]*?<\/c:spPr>)/);
+    return m ? m[1] : undefined;
+  }
+
+  it("does NOT emit <c:spPr> on <c:chartSpace> when chartSpaceFillColor is unset (matches Excel reference)", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(chartSpaceSpPrOf(result.chartXml)).toBeUndefined();
+  });
+
+  it('threads chartSpaceFillColor through to <c:chartSpace><c:spPr> as <a:srgbClr val="RRGGBB"/>', () => {
+    const result = writeChart(makeChart({ chartSpaceFillColor: "F2F2F2" }), "Sheet1");
+    const spPr = chartSpaceSpPrOf(result.chartXml);
+    expect(spPr).toBeDefined();
+    expect(spPr).toContain("<a:solidFill>");
+    expect(spPr).toContain('<a:srgbClr val="F2F2F2"/>');
+  });
+
+  it("normalizes a leading # in the input hex string", () => {
+    const result = writeChart(makeChart({ chartSpaceFillColor: "#1F77B4" }), "Sheet1");
+    expect(chartSpaceSpPrOf(result.chartXml)).toContain('<a:srgbClr val="1F77B4"/>');
+  });
+
+  it("normalizes a lowercase hex string to the OOXML uppercase canonical form", () => {
+    const result = writeChart(makeChart({ chartSpaceFillColor: "abcdef" }), "Sheet1");
+    expect(chartSpaceSpPrOf(result.chartXml)).toContain('<a:srgbClr val="ABCDEF"/>');
+  });
+
+  it("places <c:spPr> after </c:chart> per CT_ChartSpace sequence", () => {
+    const result = writeChart(makeChart({ chartSpaceFillColor: "F2F2F2" }), "Sheet1");
+    const xml = result.chartXml;
+    const chartCloseIdx = xml.indexOf("</c:chart>");
+    // Find the chart-space-level <c:spPr>: it sits after </c:chart>
+    // (every plot-area / legend / title <c:spPr> would land before
+    // </c:chart>). For a chart with no other fill knobs pinned the
+    // first <c:spPr> in the document is the chart-space one.
+    const spPrIdx = xml.indexOf("<c:spPr>", chartCloseIdx);
+    expect(chartCloseIdx).toBeGreaterThan(0);
+    expect(spPrIdx).toBeGreaterThan(chartCloseIdx);
+  });
+
+  it("only emits one <c:spPr> at the chart-space level", () => {
+    const result = writeChart(makeChart({ chartSpaceFillColor: "FFAA00" }), "Sheet1");
+    // For a chart with no plot-area / legend / title fill knobs set,
+    // the only <c:spPr> in the document is the chart-space one.
+    const occurrences = result.chartXml.match(/<c:spPr>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads chartSpaceFillColor through every chart family", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, chartSpaceFillColor: "ABCDEF" }), "Sheet1");
+      expect(chartSpaceSpPrOf(result.chartXml)).toContain('<a:srgbClr val="ABCDEF"/>');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        chartSpaceFillColor: "ABCDEF",
+      }),
+      "Sheet1",
+    );
+    expect(chartSpaceSpPrOf(scatter.chartXml)).toContain('<a:srgbClr val="ABCDEF"/>');
+  });
+
+  it("drops a malformed hex (wrong length)", () => {
+    const result = writeChart(makeChart({ chartSpaceFillColor: "FFF" }), "Sheet1");
+    expect(chartSpaceSpPrOf(result.chartXml)).toBeUndefined();
+  });
+
+  it("drops a malformed hex (non-hex characters)", () => {
+    const result = writeChart(makeChart({ chartSpaceFillColor: "GGGGGG" }), "Sheet1");
+    expect(chartSpaceSpPrOf(result.chartXml)).toBeUndefined();
+  });
+
+  it("drops an alpha-channel form (8 chars)", () => {
+    const result = writeChart(makeChart({ chartSpaceFillColor: "FFAA0080" }), "Sheet1");
+    expect(chartSpaceSpPrOf(result.chartXml)).toBeUndefined();
+  });
+
+  it("drops empty / whitespace-only strings", () => {
+    expect(
+      chartSpaceSpPrOf(writeChart(makeChart({ chartSpaceFillColor: "" }), "Sheet1").chartXml),
+    ).toBeUndefined();
+    expect(
+      chartSpaceSpPrOf(writeChart(makeChart({ chartSpaceFillColor: "   " }), "Sheet1").chartXml),
+    ).toBeUndefined();
+  });
+
+  it("drops non-string escapes (typed escape from an untyped caller)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const a = writeChart(makeChart({ chartSpaceFillColor: 0xff_ff_ff as any }), "Sheet1");
+    expect(chartSpaceSpPrOf(a.chartXml)).toBeUndefined();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const b = writeChart(makeChart({ chartSpaceFillColor: null as any }), "Sheet1");
+    expect(chartSpaceSpPrOf(b.chartXml)).toBeUndefined();
+  });
+
+  it("emits a minimal <c:spPr> block (single solidFill child)", () => {
+    const result = writeChart(makeChart({ chartSpaceFillColor: "ABCDEF" }), "Sheet1");
+    const spPr = chartSpaceSpPrOf(result.chartXml);
+    expect(spPr).toBe('<c:spPr><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill></c:spPr>');
+  });
+
+  it("composes independently with plotAreaFillColor (each lands on its own slot)", () => {
+    const result = writeChart(
+      makeChart({
+        chartSpaceFillColor: "F2F2F2",
+        plotAreaFillColor: "ABCDEF",
+      }),
+      "Sheet1",
+    );
+    const xml = result.chartXml;
+    // Two distinct <c:spPr> blocks: one inside <c:plotArea>, one on <c:chartSpace>.
+    const occurrences = xml.match(/<c:spPr>/g) ?? [];
+    expect(occurrences).toHaveLength(2);
+    const plotAreaMatch = xml.match(/<c:plotArea>[\s\S]*?<\/c:plotArea>/);
+    expect(plotAreaMatch).not.toBeNull();
+    expect(plotAreaMatch![0]).toContain('<a:srgbClr val="ABCDEF"/>');
+    expect(plotAreaMatch![0]).not.toContain('<a:srgbClr val="F2F2F2"/>');
+    expect(chartSpaceSpPrOf(xml)).toContain('<a:srgbClr val="F2F2F2"/>');
+  });
+
+  it("composes with legendFillColor and titleFillColor (each on a distinct host)", () => {
+    const result = writeChart(
+      makeChart({
+        chartSpaceFillColor: "111111",
+        legendFillColor: "222222",
+      }),
+      "Sheet1",
+    );
+    const xml = result.chartXml;
+    const legend = xml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain('<a:srgbClr val="222222"/>');
+    expect(legend).not.toContain("111111");
+    expect(chartSpaceSpPrOf(xml)).toContain('<a:srgbClr val="111111"/>');
+  });
+
+  it("places <c:spPr> after <c:chart> in the chart-space sequence", () => {
+    const result = writeChart(makeChart({ chartSpaceFillColor: "F2F2F2" }), "Sheet1");
+    const xml = result.chartXml;
+    // Verify ordering: the chart-space-level <c:spPr> sits after </c:chart>.
+    const chartCloseIdx = xml.indexOf("</c:chart>");
+    // No <c:spPr> after </c:chart> would mean we put it before, which would be wrong.
+    const spPrAfter = xml.indexOf("<c:spPr>", chartCloseIdx);
+    expect(spPrAfter).toBeGreaterThan(chartCloseIdx);
+  });
+
+  it("round-trips chartSpaceFillColor through parseChart", () => {
+    const written = writeChart(makeChart({ chartSpaceFillColor: "1F77B4" }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.chartSpaceFillColor).toBe("1F77B4");
+  });
+
+  it("collapses an unset chartSpaceFillColor round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    expect(parseChart(written)?.chartSpaceFillColor).toBeUndefined();
+  });
+
+  it("survives a writeXlsx round trip — chartSpaceFillColor lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            chartSpaceFillColor: "F2F2F2",
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.chartSpaceFillColor).toBe("F2F2F2");
+  });
+});

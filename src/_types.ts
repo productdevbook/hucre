@@ -2280,6 +2280,54 @@ export interface SheetChart {
    * always carries a literal hex Excel will render byte-for-byte.
    */
   plotAreaFillColor?: string;
+  /**
+   * Chart-space (entire chart background) solid fill color as a 6-digit
+   * RGB hex string (e.g. `"F2F2F2"`). Maps to `<c:chartSpace><c:spPr>
+   * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></c:spPr>
+   * </c:chartSpace>` (CT_ChartSpace, ECMA-376 Part 1, §21.2.2.29) —
+   * Excel's "Format Chart Area -> Fill -> Solid fill -> Color" picker
+   * (the same dialog the user reaches by right-clicking the chart's
+   * outer frame). The OOXML `<a:srgbClr val=".."/>` carries the
+   * 6-character uppercase hex sRGB color (`CT_SRgbColor` inside
+   * `CT_ShapeProperties`' fill choice — ECMA-376 Part 1, §20.1.2.3.32 /
+   * §20.1.2.3.13). The `<c:spPr>` slot lives at the tail of
+   * `<c:chartSpace>` per CT_ChartSpace, after `<c:chart>` /
+   * `<c:externalData>` / `<c:printSettings>` / `<c:userShapes>` and
+   * before the optional `<c:txPr>` / `<c:extLst>`.
+   *
+   * Distinct from {@link plotAreaFillColor} — the plot area is the
+   * inner band that hosts the series, while chartSpace covers the full
+   * frame including the title slot, the legend slot, the axis label
+   * margins, and the plot area itself. A caller can pin both knobs
+   * (e.g. an off-white frame and a brand-color plot area) since the
+   * two `<c:spPr>` blocks land on different host elements.
+   *
+   * Accepts a leading `#` and any case; the writer collapses to the
+   * OOXML canonical uppercase form. Malformed inputs (wrong length,
+   * non-hex characters, alpha-channel forms, non-string escapes from
+   * an untyped caller) collapse to `undefined` and the writer omits
+   * the entire `<c:spPr>` block (Excel's reference serialization for
+   * a chart that inherits the auto-fill — typically opaque white from
+   * the workbook theme).
+   *
+   * Default: omitted — the chart inherits the auto-fill Excel picks
+   * from the workbook theme. Pin a hex color to mirror Excel's
+   * "Format Chart Area -> Fill -> Solid fill" knob and paint a flat
+   * background behind the entire chart — useful for dashboard tiles
+   * where the chart frame should pick up a brand color or contrast
+   * with the surrounding sheet cells.
+   *
+   * Patterned / gradient / picture fills are not modelled — only the
+   * solid sRGB form lands on the wire. Theme-color references
+   * (`<a:schemeClr>`) likewise drop to `undefined` so a parsed value
+   * always carries a literal hex Excel will render byte-for-byte.
+   * Mirrors `plotAreaFillColor` / `legendFillColor` / `titleFillColor`
+   * — same accept-with-or-without-`#` hex grammar, same OOXML
+   * `<c:spPr><a:solidFill><a:srgbClr val=".."/></a:solidFill>
+   * </c:spPr>` mapping — so a caller can thread a single hex string
+   * through every `<c:spPr>`-based fill slot.
+   */
+  chartSpaceFillColor?: string;
   /** Show the chart-level title element. Default: `true` when `title` is set. */
   showTitle?: boolean;
   /**
@@ -6865,6 +6913,40 @@ export interface Chart {
    * surface the fill from in that case.
    */
   plotAreaFillColor?: string;
+  /**
+   * Chart-space (entire chart background) solid fill color pulled
+   * from `<c:chartSpace><c:spPr><a:solidFill><a:srgbClr val=".."/>
+   * </a:solidFill></c:spPr></c:chartSpace>`. Reflects Excel's
+   * "Format Chart Area -> Fill -> Solid fill -> Color" picker — the
+   * fill that paints the entire chart frame (title slot, legend slot,
+   * axis label margins, and plot area together). The OOXML
+   * `<a:srgbClr val=".."/>` carries the 6-character uppercase hex
+   * sRGB color (`CT_SRgbColor` inside `CT_ShapeProperties`' fill
+   * choice — ECMA-376 Part 1, §20.1.2.3.32 / §20.1.2.3.13). The
+   * `<c:spPr>` slot lives at the tail of `<c:chartSpace>` per
+   * CT_ChartSpace (§21.2.2.29), after `<c:chart>` and the optional
+   * `<c:externalData>` / `<c:printSettings>` / `<c:userShapes>` and
+   * before the optional `<c:txPr>` / `<c:extLst>`.
+   *
+   * Reports the 6-character uppercase hex form when the source chart
+   * pinned a literal `<a:srgbClr>` color; absence, malformed `val`
+   * tokens (wrong length, non-hex characters, alpha-channel forms),
+   * non-solid fills (`<a:noFill>`, `<a:gradFill>`, `<a:pattFill>`,
+   * `<a:blipFill>`), and theme-color references (`<a:schemeClr>`) all
+   * collapse to `undefined` so absence and an unrenderable fill
+   * round-trip identically through {@link cloneChart}. Mirrors the
+   * writer-side {@link SheetChart.chartSpaceFillColor} so a parsed
+   * value slots straight into {@link cloneChart} without conversion.
+   *
+   * Distinct from {@link plotAreaFillColor} — the lookup is scoped to
+   * direct children of `<c:chartSpace>` (the document root) so a
+   * stray `<c:spPr>` on `<c:plotArea>` / `<c:legend>` / `<c:title>`
+   * cannot leak into this field. Mirrors the chart-title /
+   * plot-area / legend `<c:spPr>` slots — same accept-or-drop grammar
+   * — so a parsed value flows through the same hex shape regardless
+   * of which `<c:spPr>`-based fill slot the source chart pinned.
+   */
+  chartSpaceFillColor?: string;
   /**
    * Title-overlay flag pulled from `<c:title><c:overlay val=".."/>`.
    * Reflects Excel's "Format Chart Title -> Show the title without

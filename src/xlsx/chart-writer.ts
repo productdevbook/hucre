@@ -253,6 +253,22 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
   }
   chartSpaceChildren.push(chartElement);
 
+  // `<c:chartSpace><c:spPr><a:solidFill><a:srgbClr val=".."/></a:solidFill>
+  // </c:spPr></c:chartSpace>` — Excel's "Format Chart Area -> Fill ->
+  // Solid fill -> Color" pin (the same dialog the user reaches by
+  // right-clicking the chart's outer frame). The slot sits at the tail
+  // of `<c:chartSpace>` per CT_ChartSpace (ECMA-376 Part 1, §21.2.2.29),
+  // after `<c:chart>` / `<c:externalData>` / `<c:printSettings>` /
+  // `<c:userShapes>` and before the optional `<c:txPr>` / `<c:extLst>`.
+  // The writer emits the block only when `chart.chartSpaceFillColor`
+  // normalizes to a literal hex; absence and every malformed token
+  // collapse to no `<c:spPr>` so a fresh chart matches Excel's
+  // reference shape byte-for-byte.
+  const chartSpaceSpPrXml = buildChartSpaceSpPr(chart);
+  if (chartSpaceSpPrXml !== undefined) {
+    chartSpaceChildren.push(chartSpaceSpPrXml);
+  }
+
   const chartXml = xmlDocument(
     "c:chartSpace",
     {
@@ -1230,6 +1246,53 @@ function buildPlotAreaSpPr(chart: SheetChart): string | undefined {
  * sRGB grammar.
  */
 function normalizePlotAreaFillColor(value: string | undefined): string | undefined {
+  return normalizeTitleColor(value);
+}
+
+/**
+ * Build the optional `<c:spPr>` block at the tail of `<c:chartSpace>`
+ * (the document root). Currently surfaces only the solid fill color
+ * knob ({@link SheetChart.chartSpaceFillColor}) — every other
+ * `<c:spPr>` child (`<a:ln>` stroke, `<a:effectLst>` effects, gradient
+ * / pattern / picture fills) is intentionally not modelled at this
+ * layer.
+ *
+ * Returns `undefined` when the chart leaves the field unset / passed a
+ * malformed token so the writer skips the entire `<c:spPr>` block — an
+ * empty `<c:spPr/>` collapses to the inherited theme fill Excel picks
+ * anyway, and omitting it keeps untouched chart XML byte-clean.
+ *
+ * Mirrors {@link buildPlotAreaSpPr} but on a distinct host element —
+ * the chart-space fill paints the entire chart frame (title slot,
+ * legend slot, axis label margins, plot area together), while the
+ * plot-area fill paints only the inner band that hosts the series.
+ */
+function buildChartSpaceSpPr(chart: SheetChart): string | undefined {
+  const fillHex = normalizeChartSpaceFillColor(chart.chartSpaceFillColor);
+  if (fillHex === undefined) return undefined;
+  const solidFill = xmlElement("a:solidFill", undefined, [
+    xmlSelfClose("a:srgbClr", { val: fillHex }),
+  ]);
+  return xmlElement("c:spPr", undefined, [solidFill]);
+}
+
+/**
+ * Normalize a {@link SheetChart.chartSpaceFillColor} value for the
+ * `<c:chartSpace><c:spPr><a:solidFill><a:srgbClr val=".."/></a:solidFill>
+ * </c:spPr></c:chartSpace>` writer slot. Returns the 6-character
+ * uppercase hex form when the input is a valid sRGB triple (with or
+ * without a leading `#`), or `undefined` for any malformed token —
+ * wrong length, non-hex characters, alpha-channel forms, or non-string
+ * escapes from an untyped caller.
+ *
+ * Absence and malformed tokens both collapse to `undefined` so the
+ * writer skips the entire `<c:spPr>` block and the chart inherits
+ * the auto-fill Excel picks from the workbook theme (Excel's reference
+ * behavior for a fresh chart without a custom frame color). Delegates
+ * to the chart-level {@link normalizeTitleColor} so every `<a:srgbClr>`
+ * fill slot shares the same sRGB grammar.
+ */
+function normalizeChartSpaceFillColor(value: string | undefined): string | undefined {
   return normalizeTitleColor(value);
 }
 
