@@ -15,3 +15,4 @@ export * from "./layout";
 export * from "./util";
 export * from "./walls";
 export * from "./title";
+export * from "./legend";

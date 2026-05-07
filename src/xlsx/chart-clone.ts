@@ -62,6 +62,15 @@ import {
   normalizeTitleStrike,
   normalizeTitleUnderline,
 } from "./chart/title";
+import {
+  normalizeLegendBold,
+  normalizeLegendBorderWidth,
+  normalizeLegendFontFamily,
+  normalizeLegendItalic,
+  normalizeLegendLayout,
+  normalizeLegendStrikethrough,
+  normalizeLegendUnderline,
+} from "./chart/legend";
 
 // ── Public API ───────────────────────────────────────────────────────
 
@@ -3732,20 +3741,6 @@ function resolveLegendFontSize(
   return normalizeTitleFontSize(override);
 }
 
-/**
- * Normalize a `legendBold` value for the cloned `SheetChart`. Mirrors
- * the writer's `resolveLegendBold` — the cloned shape is guaranteed to
- * round-trip through the writer without surprise: `true` / `false`
- * pass through literally, every other token (typed escape from an
- * untyped caller) collapses to `undefined` so the cloned chart drops
- * the field rather than carry a value the writer would silently elide
- * back to absence.
- */
-function normalizeLegendBold(value: boolean | undefined): boolean | undefined {
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
-}
 
 /**
  * Resolve a `legendBold` override.
@@ -3773,17 +3768,6 @@ function resolveLegendBold(
   return normalizeLegendBold(override);
 }
 
-/**
- * Normalize a `legendItalic` value for the cloned `SheetChart`. Mirrors
- * the writer's `resolveLegendItalic` — `true` / `false` pass through
- * literally, every other token (typed escape from an untyped caller)
- * collapses to `undefined`.
- */
-function normalizeLegendItalic(value: boolean | undefined): boolean | undefined {
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
-}
 
 /**
  * Resolve a `legendItalic` override.
@@ -3811,16 +3795,6 @@ function resolveLegendItalic(
   return normalizeLegendItalic(override);
 }
 
-/**
- * Normalize a `legendUnderline` value for the cloned `SheetChart`.
- * Mirrors the writer's `resolveLegendUnderline` — `true` / `false`
- * pass through literally, every other token collapses to `undefined`.
- */
-function normalizeLegendUnderline(value: boolean | undefined): boolean | undefined {
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
-}
 
 /**
  * Resolve a `legendUnderline` override.
@@ -3848,25 +3822,6 @@ function resolveLegendUnderline(
   return normalizeLegendUnderline(override);
 }
 
-/**
- * Normalize a `legendStrikethrough` value for the cloned `SheetChart`.
- * Mirrors the writer's `resolveLegendStrikethrough` — `true` / `false`
- * pass through literally, every other token collapses to `undefined`.
- *
- * The cloned `SheetChart` retains a literal `false` (the writer drops
- * `false` to absence at emit time, so pinning `false` on the cloned
- * chart is functionally identical to omission, but it lets a downstream
- * consumer that re-clones the chart distinguish "explicit no-strike
- * pin" from "field never set"). The chart-title / axis-title / axis
- * tick-label strike clone resolvers use the same shape — only at the
- * writer's `<a:defRPr>` slot does the `false` collapse to attribute
- * omission.
- */
-function normalizeLegendStrikethrough(value: boolean | undefined): boolean | undefined {
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
-}
 
 /**
  * Resolve a `legendStrikethrough` override.
@@ -3925,22 +3880,6 @@ function resolveLegendFontColor(
 }
 
 /**
- * Normalize a `legendFontFamily` value for the cloned `SheetChart`.
- * Mirrors the writer's `normalizeLegendFontFamily` — non-empty
- * strings pass through trimmed, every other token (empty /
- * whitespace-only strings, typed escapes from an untyped caller)
- * collapses to `undefined` so the cloned chart drops the field
- * rather than carry a value the writer would silently elide back to
- * absence.
- */
-function normalizeLegendFontFamily(value: string | undefined): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return undefined;
-  return trimmed;
-}
-
-/**
  * Resolve a `legendFontFamily` override.
  *
  * `undefined` → inherit the source's parsed `legendFontFamily` (after
@@ -3970,34 +3909,6 @@ function resolveLegendFontFamily(
   return normalizeLegendFontFamily(override);
 }
 
-/**
- * Normalize a {@link ChartManualLayout} for the cloned `SheetChart`.
- * Drops every axis whose input is non-numeric / non-finite / outside
- * the `0..1` band; returns `undefined` when every axis dropped so the
- * cloned shape elides the field entirely (mirrors the writer-side
- * normalization so a parsed value flows through {@link cloneChart}
- * without bookkeeping the units). Coordinates outside the `0..1` band
- * collapse rather than clamp — same accept-or-drop grammar as
- * `titleFontSize` / `axisTitleFontSize` / `legendFontSize`.
- */
-function normalizeLegendLayout(
-  value: ChartManualLayout | undefined,
-): ChartManualLayout | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const out: ChartManualLayout = {};
-  const x = normalizeLayoutCoordinate(value.x);
-  if (x !== undefined) out.x = x;
-  const y = normalizeLayoutCoordinate(value.y);
-  if (y !== undefined) out.y = y;
-  const w = normalizeLayoutCoordinate(value.w);
-  if (w !== undefined) out.w = w;
-  const h = normalizeLayoutCoordinate(value.h);
-  if (h !== undefined) out.h = h;
-  if (out.x === undefined && out.y === undefined && out.w === undefined && out.h === undefined) {
-    return undefined;
-  }
-  return out;
-}
 
 /**
  * Resolve a `legendLayout` override.
@@ -4103,28 +4014,6 @@ function resolveLegendBorderColor(
   if (override === undefined) return normalizeTitleColor(sourceValue);
   if (override === null) return undefined;
   return normalizeTitleColor(override);
-}
-
-const LEGEND_BORDER_WIDTH_MIN_PT = 0.25;
-const LEGEND_BORDER_WIDTH_MAX_PT = 13.5;
-
-/**
- * Normalize a `legendBorderWidth` value for the cloned `SheetChart`.
- * Mirrors the writer's `clampStrokeWidthPt` — values are clamped to the
- * `0.25..13.5` pt band Excel's UI exposes and snapped to the 0.25 pt
- * grid so a parsed-then-cloned-then-written width does not drift across
- * round-trips (Excel rounds in the UI anyway). Non-finite / non-numeric
- * tokens (`NaN`, `Infinity`, strings, `null` from an untyped caller)
- * collapse to `undefined` so the cloned chart drops the field rather
- * than carry a value the writer would silently elide back to absence.
- */
-function normalizeLegendBorderWidth(value: number | undefined): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
-  const snapped = Math.round(value * 4) / 4;
-  if (snapped < LEGEND_BORDER_WIDTH_MIN_PT) return LEGEND_BORDER_WIDTH_MIN_PT;
-  if (snapped > LEGEND_BORDER_WIDTH_MAX_PT) return LEGEND_BORDER_WIDTH_MAX_PT;
-  return snapped;
 }
 
 /**
