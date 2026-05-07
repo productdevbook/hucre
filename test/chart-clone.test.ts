@@ -24046,3 +24046,207 @@ describe("cloneChart — legendBorderWidth", () => {
     expect(parseChart(written)?.legendBorderWidth).toBe(1.75);
   });
 });
+
+// ── cloneChart — titleBorderWidth ────────────────────────────────────
+
+describe("cloneChart — titleBorderWidth", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Sales",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's titleBorderWidth by default", () => {
+    const clone = cloneChart(source({ titleBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleBorderWidth).toBe(1.5);
+  });
+
+  it("lets options.titleBorderWidth override the source's value", () => {
+    const clone = cloneChart(source({ titleBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleBorderWidth: 2.5,
+    });
+    expect(clone.titleBorderWidth).toBe(2.5);
+  });
+
+  it("drops the inherited titleBorderWidth when the override is null", () => {
+    const clone = cloneChart(source({ titleBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleBorderWidth: null,
+    });
+    expect(clone.titleBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined titleBorderWidth when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.titleBorderWidth).toBeUndefined();
+  });
+
+  it("snaps the override to the 0.25 pt grid (1.4 → 1.5)", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleBorderWidth: 1.4,
+    });
+    expect(clone.titleBorderWidth).toBe(1.5);
+  });
+
+  it("clamps the override below the minimum (0.1 → 0.25)", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleBorderWidth: 0.1,
+    });
+    expect(clone.titleBorderWidth).toBe(0.25);
+  });
+
+  it("clamps the override above the maximum (50 → 13.5)", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleBorderWidth: 50,
+    });
+    expect(clone.titleBorderWidth).toBe(13.5);
+  });
+
+  it("drops a NaN override", () => {
+    const clone = cloneChart(source({ titleBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleBorderWidth: Number.NaN,
+    });
+    expect(clone.titleBorderWidth).toBeUndefined();
+  });
+
+  it("drops an Infinity override", () => {
+    const clone = cloneChart(source({ titleBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleBorderWidth: Number.POSITIVE_INFINITY,
+    });
+    expect(clone.titleBorderWidth).toBeUndefined();
+  });
+
+  it("drops a non-number override (typed escape from an untyped caller)", () => {
+    const clone = cloneChart(source({ titleBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      titleBorderWidth: "1.5" as any,
+    });
+    expect(clone.titleBorderWidth).toBeUndefined();
+  });
+
+  it("normalizes a malformed source value through the resolver", () => {
+    const clone = cloneChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      source({ titleBorderWidth: Number.NaN as any }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.titleBorderWidth).toBeUndefined();
+  });
+
+  it("carries titleBorderWidth through a flatten (line → column)", () => {
+    const clone = cloneChart(source({ titleBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.titleBorderWidth).toBe(1.5);
+  });
+
+  it("drops the inherited titleBorderWidth when title is dropped (title=null)", () => {
+    const clone = cloneChart(source({ titleBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      title: null,
+    });
+    expect(clone.title).toBeUndefined();
+    expect(clone.titleBorderWidth).toBeUndefined();
+  });
+
+  it("drops the titleBorderWidth override when showTitle is false", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      showTitle: false,
+      titleBorderWidth: 1.5,
+    });
+    expect(clone.titleBorderWidth).toBeUndefined();
+  });
+
+  it("retains titleBorderWidth when override re-introduces a title on a sourceless chart", () => {
+    const noTitle = source();
+    delete noTitle.title;
+    const clone = cloneChart(noTitle, {
+      anchor: { from: { row: 0, col: 0 } },
+      title: "Replacement",
+      titleBorderWidth: 1.5,
+    });
+    expect(clone.title).toBe("Replacement");
+    expect(clone.titleBorderWidth).toBe(1.5);
+  });
+
+  it("composes independently with titleBorderColor (each lands on its own slot)", () => {
+    const clone = cloneChart(
+      source({
+        titleBorderColor: "1F77B4",
+        titleBorderWidth: 1.5,
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.titleBorderColor).toBe("1F77B4");
+    expect(clone.titleBorderWidth).toBe(1.5);
+  });
+
+  it("composes independently with titleFillColor", () => {
+    const clone = cloneChart(
+      source({
+        titleFillColor: "F2F2F2",
+        titleBorderWidth: 1.5,
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.titleFillColor).toBe("F2F2F2");
+    expect(clone.titleBorderWidth).toBe(1.5);
+  });
+
+  it("retains titleBorderWidth independently of a hidden legend", () => {
+    const clone = cloneChart(source({ titleBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.titleBorderWidth).toBe(1.5);
+  });
+
+  it("survives a writeXlsx round trip — titleBorderWidth lands in the cloned chart XML", async () => {
+    const clone = cloneChart(source({ titleBorderWidth: 0.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleBorderWidth: 1.75,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(parseChart(written)?.titleBorderWidth).toBe(1.75);
+  });
+});

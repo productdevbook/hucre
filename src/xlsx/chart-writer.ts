@@ -83,6 +83,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveTitleLayout(chart),
         resolveTitleFillColor(chart),
         resolveTitleBorderColor(chart),
+        resolveTitleBorderWidth(chart),
       ),
     );
   }
@@ -308,6 +309,7 @@ function buildTitle(
   layout: ResolvedManualLayout | undefined,
   fillRgbHex: string | undefined,
   borderRgbHex: string | undefined,
+  borderWidthPt: number | undefined,
 ): string {
   // OOXML's `<a:bodyPr rot="N"/>` attribute is in 60000ths of a degree.
   // The writer holds `titleRotation` in whole degrees and converts at
@@ -480,7 +482,7 @@ function buildTitle(
   // {@link SheetChart.titleColor} pins — the typography knobs target
   // different children of `<c:title>` so a caller can pin both
   // without conflict.
-  const titleSpPrXml = buildTitleSpPr(fillRgbHex, borderRgbHex);
+  const titleSpPrXml = buildTitleSpPr(fillRgbHex, borderRgbHex, borderWidthPt);
   if (titleSpPrXml !== undefined) {
     titleChildren.push(titleSpPrXml);
   }
@@ -489,23 +491,27 @@ function buildTitle(
 
 /**
  * Build the `<c:spPr>` element on `<c:title>` that carries the
- * title's background fill ({@link SheetChart.titleFillColor}) and /
- * or border-stroke color ({@link SheetChart.titleBorderColor}).
- * Returns `undefined` when neither knob is pinned so the caller can
- * elide the entire block — Excel's reference serialization omits
- * `<c:spPr>` from `<c:title>` whenever the title renders at the theme
- * default fill / stroke (typically a transparent title background
- * with no visible border).
+ * title's background fill ({@link SheetChart.titleFillColor}),
+ * border-stroke color ({@link SheetChart.titleBorderColor}), and
+ * border width ({@link SheetChart.titleBorderWidth}). Returns
+ * `undefined` when no knob is pinned so the caller can elide the
+ * entire block — Excel's reference serialization omits `<c:spPr>`
+ * from `<c:title>` whenever the title renders at the theme default
+ * fill / stroke (typically a transparent title background with no
+ * visible border).
  *
  * When at least one knob lands on the wire, the children are emitted
  * in `CT_ShapeProperties` (ECMA-376 Part 1, §20.1.2.3.13) schema
  * order: `<a:solidFill>` (fill) first, then `<a:ln>` (line / stroke).
  * The fill block has the form `<a:solidFill><a:srgbClr val="RRGGBB"/>
- * </a:solidFill>`; the stroke block has the form `<a:ln><a:solidFill>
- * <a:srgbClr val="RRGGBB"/></a:solidFill></a:ln>`. The `val`
- * attribute holds the canonical 6-character uppercase hex form (the
- * writer normalizes the inputs ahead of this call so malformed source
- * values never reach emit).
+ * </a:solidFill>`; the stroke block has the form `<a:ln w="EMU">
+ * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:ln>`. The
+ * `val` attribute holds the canonical 6-character uppercase hex form
+ * (the writer normalizes the inputs ahead of this call so malformed
+ * source values never reach emit). The width attribute lands on
+ * `<a:ln>` (EMU; 1 pt = 12 700 EMU) authored together with the
+ * border-color child so a stroke-only or color-only title still emits
+ * a single `<a:ln>` block.
  *
  * Mirrors the plot-area / legend `<c:spPr>` slots so a single hex
  * string threads cleanly through every fill / stroke knob the writer
@@ -514,19 +520,34 @@ function buildTitle(
 function buildTitleSpPr(
   fillRgbHex: string | undefined,
   borderRgbHex: string | undefined,
+  borderWidthPt: number | undefined,
 ): string | undefined {
-  if (fillRgbHex === undefined && borderRgbHex === undefined) return undefined;
+  if (fillRgbHex === undefined && borderRgbHex === undefined && borderWidthPt === undefined) {
+    return undefined;
+  }
   const children: string[] = [];
   if (fillRgbHex !== undefined) {
     children.push(
       xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillRgbHex })]),
     );
   }
-  if (borderRgbHex !== undefined) {
-    children.push(
-      xmlElement("a:ln", undefined, [
+  if (borderRgbHex !== undefined || borderWidthPt !== undefined) {
+    const lnAttrs: Record<string, string | number> = {};
+    if (borderWidthPt !== undefined) {
+      // OOXML stores stroke width in EMU (1 pt = 12 700 EMU). Round to
+      // the nearest integer because the schema types `w` as `xsd:int`.
+      lnAttrs.w = Math.round(borderWidthPt * EMU_PER_PT);
+    }
+    const lnChildren: string[] = [];
+    if (borderRgbHex !== undefined) {
+      lnChildren.push(
         xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: borderRgbHex })]),
-      ]),
+      );
+    }
+    children.push(
+      lnChildren.length === 0
+        ? xmlSelfClose("a:ln", lnAttrs)
+        : xmlElement("a:ln", Object.keys(lnAttrs).length > 0 ? lnAttrs : undefined, lnChildren),
     );
   }
   return xmlElement("c:spPr", undefined, children);
@@ -800,6 +821,33 @@ function resolveTitleFillColor(chart: SheetChart): string | undefined {
  */
 function resolveTitleBorderColor(chart: SheetChart): string | undefined {
   return normalizeTitleColor(chart.titleBorderColor);
+}
+
+/**
+ * Resolve `<c:title><c:spPr><a:ln w="EMU"/></c:spPr></c:title>` from
+ * {@link SheetChart.titleBorderWidth}.
+ *
+ * Returns the point value clamped to the `0.25..13.5` pt band Excel's
+ * UI exposes and snapped to the 0.25 pt grid, or `undefined` when the
+ * chart leaves the field unset / passed a malformed token (`NaN`,
+ * `Infinity`, non-finite). Delegates to {@link clampStrokeWidthPt} so
+ * the snap / clamp grammar matches every other `<a:ln w=..>` slot the
+ * writer authors (the series stroke knob `series[i].stroke.width`,
+ * the plot-area border width knob {@link SheetChart.plotAreaBorderWidth},
+ * and the legend border width knob {@link SheetChart.legendBorderWidth}).
+ * The width is only meaningful when the chart actually emits a
+ * title — the caller is expected to gate the call on
+ * `showTitle && chart.title`. A chart whose title is suppressed has no
+ * `<c:title>` block to host the `<c:spPr>` slot in either case.
+ *
+ * Independent of {@link resolveTitleBorderColor}: both knobs land on
+ * the same `<a:ln>` element but on a different slot (the color child
+ * `<a:solidFill>` versus the line's `w` attribute). Mirrors the
+ * plot-area / legend `<c:spPr>` slots — same EMU encoding, same
+ * `<a:ln>` host — but lands on `<c:title>`'s own `<c:spPr>` block.
+ */
+function resolveTitleBorderWidth(chart: SheetChart): number | undefined {
+  return clampStrokeWidthPt(chart.titleBorderWidth);
 }
 
 /**
@@ -4518,7 +4566,7 @@ function buildAxisTitle(
   // {@link SheetChart.axes.x.axisTitleColor} pins — the typography
   // knobs target different children of `<c:title>` so a caller can
   // pin all three without conflict.
-  const titleSpPrXml = buildTitleSpPr(fillRgbHex, borderRgbHex);
+  const titleSpPrXml = buildTitleSpPr(fillRgbHex, borderRgbHex, undefined);
   if (titleSpPrXml !== undefined) titleChildren.push(titleSpPrXml);
   return xmlElement("c:title", undefined, titleChildren);
 }

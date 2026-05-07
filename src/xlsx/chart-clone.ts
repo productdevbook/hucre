@@ -921,6 +921,35 @@ export interface CloneChartOptions {
    */
   titleBorderColor?: string | null;
   /**
+   * Override `SheetChart.titleBorderWidth`. `undefined` (or omitted)
+   * inherits the source's parsed `titleBorderWidth`; `null` drops the
+   * inherited width (the writer emits `<a:ln>` without a `w` attribute,
+   * the line keeps Excel's auto-thickness — typically 0.75 pt); a
+   * finite point value (e.g. `1.5`) replaces it.
+   *
+   * The override runs through the same clamp / snap as the writer —
+   * values are clamped to the `0.25..13.5` pt band Excel's UI exposes
+   * and snapped to the 0.25 pt grid so a parsed-then-written width does
+   * not drift across round-trips. Non-finite / non-numeric tokens
+   * (`NaN`, `Infinity`, strings, `null` from an untyped caller) collapse
+   * to `undefined` so the cloned `SheetChart` drops the field rather
+   * than carry a value the writer would silently elide back to absence.
+   *
+   * Composes independently with `titleBorderColor` — both knobs land
+   * on the same `<a:ln>` element but on a different slot (the color's
+   * `<a:solidFill>` child versus the line's `w` attribute). A caller
+   * can pin a width without a color (the border picks Excel's
+   * auto-color), pin a color without a width (the border picks Excel's
+   * auto-thickness), or pin both. The override is silently dropped
+   * from the cloned `SheetChart` when the resolved chart renders no
+   * title (`title` resolved to `undefined` or `showTitle === false`) —
+   * there is no `<c:title>` block to host the stroke on a hidden
+   * title. Mirrors `plotAreaBorderWidth` and `legendBorderWidth` —
+   * same accept-finite-number / clamp / snap grammar — but on the
+   * title's own `<c:spPr>` block.
+   */
+  titleBorderWidth?: number | null;
+  /**
    * Override `<c:autoTitleDeleted>` (the "user explicitly deleted the
    * auto-generated title" flag).
    *
@@ -2598,6 +2627,25 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
       options.titleBorderColor,
     );
     if (resolvedTitleBorderColor !== undefined) out.titleBorderColor = resolvedTitleBorderColor;
+
+    // Same hidden-title scoping for the border (line) stroke width —
+    // `<a:ln w=..>` lives inside `<c:title><c:spPr>` per
+    // CT_ShapeProperties, so a clone whose title is hidden has no slot
+    // for the width. `undefined` inherits the source's parsed
+    // `titleBorderWidth` (after the writer-side clamp collapses any
+    // malformed token), `null` drops the inherited width (the writer
+    // emits `<a:ln>` without the `w` attribute, the line keeps Excel's
+    // auto-thickness), a finite point value replaces it. Malformed
+    // overrides collapse to `undefined` via the normalizer. Composes
+    // independently with `titleBorderColor` — both knobs land on the
+    // same `<a:ln>` element but on a different attribute (color is
+    // `<a:solidFill><a:srgbClr>`, width is the `w` attribute on
+    // `<a:ln>`).
+    const resolvedTitleBorderWidth = resolveTitleBorderWidth(
+      source.titleBorderWidth,
+      options.titleBorderWidth,
+    );
+    if (resolvedTitleBorderWidth !== undefined) out.titleBorderWidth = resolvedTitleBorderWidth;
   }
 
   // `<c:autoTitleDeleted>` sits on `<c:chart>` directly, not inside
@@ -4721,6 +4769,63 @@ function resolveTitleBorderColor(
   if (override === undefined) return normalizeTitleColor(sourceValue);
   if (override === null) return undefined;
   return normalizeTitleColor(override);
+}
+
+const TITLE_BORDER_WIDTH_MIN_PT = 0.25;
+const TITLE_BORDER_WIDTH_MAX_PT = 13.5;
+
+/**
+ * Normalize a `titleBorderWidth` value for the cloned `SheetChart`.
+ * Mirrors the writer's `clampStrokeWidthPt` — values are clamped to the
+ * `0.25..13.5` pt band Excel's UI exposes and snapped to the 0.25 pt
+ * grid so a parsed-then-cloned-then-written width does not drift across
+ * round-trips (Excel rounds in the UI anyway). Non-finite / non-numeric
+ * tokens (`NaN`, `Infinity`, strings, `null` from an untyped caller)
+ * collapse to `undefined` so the cloned chart drops the field rather
+ * than carry a value the writer would silently elide back to absence.
+ */
+function normalizeTitleBorderWidth(value: number | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
+  const snapped = Math.round(value * 4) / 4;
+  if (snapped < TITLE_BORDER_WIDTH_MIN_PT) return TITLE_BORDER_WIDTH_MIN_PT;
+  if (snapped > TITLE_BORDER_WIDTH_MAX_PT) return TITLE_BORDER_WIDTH_MAX_PT;
+  return snapped;
+}
+
+/**
+ * Resolve a `titleBorderWidth` override.
+ *
+ * `undefined` → inherit the source's parsed `titleBorderWidth` (after
+ *               running it through {@link normalizeTitleBorderWidth}
+ *               so a malformed source value drops cleanly).
+ * `null`      → drop the inherited width (the writer emits `<a:ln>`
+ *               without a `w` attribute, the line keeps Excel's
+ *               auto-thickness).
+ * `number`    → replace with the clamped / snapped point value.
+ *               Non-finite / non-numeric overrides collapse to
+ *               `undefined` via the normalizer so the cloned
+ *               `SheetChart` always carries a value the writer will
+ *               accept.
+ *
+ * The grammar mirrors `plotAreaBorderWidth` / `legendBorderWidth` /
+ * the series-line stroke width so the chart `<a:ln w=..>` knobs
+ * compose the same way at the call site. Callers should gate the
+ * result on the resolved title visibility — when no title is emitted,
+ * the width has no slot in the rendered chart.
+ *
+ * Independent of `titleBorderColor`: both knobs land on the same
+ * `<a:ln>` element but on a different slot (color is
+ * `<a:solidFill><a:srgbClr>`, width is the `w` attribute on `<a:ln>`),
+ * so a caller can pin both without conflict.
+ */
+function resolveTitleBorderWidth(
+  sourceValue: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) return normalizeTitleBorderWidth(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleBorderWidth(override);
 }
 
 /**

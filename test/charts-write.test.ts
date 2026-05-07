@@ -23252,3 +23252,214 @@ describe("writeChart — legendBorderWidth", () => {
     expect(reparsed?.legendBorderWidth).toBe(1.75);
   });
 });
+
+// ── writeChart — titleBorderWidth (chart-title line stroke thickness) ─
+
+describe("writeChart — titleBorderWidth", () => {
+  function titleOf(xml: string): string {
+    // Anchor on `<c:chart>` so we never grab an axis title.
+    const m = xml.match(/<c:chart>[\s\S]*?<c:title>[\s\S]*?<\/c:title>/);
+    if (!m) throw new Error("No chart-level <c:title> block found in chart XML");
+    const titleMatch = m[0].match(/<c:title>[\s\S]*?<\/c:title>/);
+    if (!titleMatch) throw new Error("No <c:title> in chart subtree");
+    return titleMatch[0];
+  }
+
+  it("does not emit <c:spPr> when titleBorderWidth is unset (matches Excel reference)", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    const title = titleOf(result.chartXml);
+    expect(title).not.toContain("<c:spPr>");
+    expect(title).not.toContain("<a:ln");
+  });
+
+  it("emits <c:spPr><a:ln w=..> when titleBorderWidth is set without a color", () => {
+    const result = writeChart(makeChart({ titleBorderWidth: 1.5 }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    expect(title).toContain("<c:spPr>");
+    // 1.5 pt = 19050 EMU.
+    expect(title).toContain('<a:ln w="19050"');
+    // No solid-fill child when only width is pinned.
+    expect(title).not.toContain("<a:solidFill><a:srgbClr");
+  });
+
+  it("snaps to the 0.25 pt grid (1.4 → 1.5 pt → 19050 EMU)", () => {
+    const result = writeChart(makeChart({ titleBorderWidth: 1.4 }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    expect(title).toContain('<a:ln w="19050"');
+  });
+
+  it("clamps below the minimum (0.1 pt → 0.25 pt → 3175 EMU)", () => {
+    const result = writeChart(makeChart({ titleBorderWidth: 0.1 }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    expect(title).toContain('<a:ln w="3175"');
+  });
+
+  it("clamps above the maximum (50 pt → 13.5 pt → 171450 EMU)", () => {
+    const result = writeChart(makeChart({ titleBorderWidth: 50 }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    expect(title).toContain('<a:ln w="171450"');
+  });
+
+  it("places <c:spPr> after <c:overlay> inside <c:title> (CT_Title sequence)", () => {
+    const result = writeChart(makeChart({ titleBorderWidth: 2 }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    const overlayIdx = title.indexOf("<c:overlay");
+    const spPrIdx = title.indexOf("<c:spPr>");
+    expect(overlayIdx).toBeGreaterThan(0);
+    expect(spPrIdx).toBeGreaterThan(overlayIdx);
+  });
+
+  it("only emits one <c:spPr> inside <c:title>", () => {
+    const result = writeChart(makeChart({ titleBorderWidth: 2 }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    const occurrences = title.match(/<c:spPr>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads titleBorderWidth through every chart family that owns a <c:title>", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, titleBorderWidth: 1 }), "Sheet1");
+      const title = titleOf(result.chartXml);
+      expect(title).toContain('<a:ln w="12700"');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        titleBorderWidth: 1,
+      }),
+      "Sheet1",
+    );
+    expect(titleOf(scatter.chartXml)).toContain('<a:ln w="12700"');
+  });
+
+  it("does not emit any <c:title> when showTitle=false, even with titleBorderWidth set", () => {
+    const result = writeChart(makeChart({ showTitle: false, titleBorderWidth: 1.5 }), "Sheet1");
+    // No chart-level <c:title> regardless of the border-width pin.
+    const m = result.chartXml.match(/<c:chart>[\s\S]*?<c:title>[\s\S]*?<\/c:title>/);
+    expect(m).toBeNull();
+  });
+
+  it("drops a NaN value", () => {
+    const result = writeChart(makeChart({ titleBorderWidth: Number.NaN }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    expect(title).not.toContain("<c:spPr>");
+  });
+
+  it("drops a non-finite value (Infinity)", () => {
+    const result = writeChart(makeChart({ titleBorderWidth: Number.POSITIVE_INFINITY }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    expect(title).not.toContain("<c:spPr>");
+  });
+
+  it("drops non-number escapes (typed escape from an untyped caller)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const a = writeChart(makeChart({ titleBorderWidth: "1.5" as any }), "Sheet1");
+    expect(titleOf(a.chartXml)).not.toContain("<c:spPr>");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const b = writeChart(makeChart({ titleBorderWidth: null as any }), "Sheet1");
+    expect(titleOf(b.chartXml)).not.toContain("<c:spPr>");
+  });
+
+  it("composes independently with titleBorderColor — width on <a:ln>, color inside it", () => {
+    const result = writeChart(
+      makeChart({
+        titleBorderColor: "1F77B4",
+        titleBorderWidth: 2,
+      }),
+      "Sheet1",
+    );
+    const title = titleOf(result.chartXml);
+    expect(title).toContain('<a:ln w="25400">');
+    expect(title).toContain('<a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill>');
+    // Width attribute hosts the color child.
+    expect(title).toContain(
+      '<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>',
+    );
+  });
+
+  it("composes independently with titleFillColor — fill in <a:solidFill>, width on <a:ln>", () => {
+    const result = writeChart(
+      makeChart({
+        titleFillColor: "F2F2F2",
+        titleBorderWidth: 1,
+      }),
+      "Sheet1",
+    );
+    const title = titleOf(result.chartXml);
+    // Single <c:spPr> hosts both knobs.
+    const spPrCount = title.match(/<c:spPr>/g) ?? [];
+    expect(spPrCount).toHaveLength(1);
+    expect(title).toContain('<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>');
+    expect(title).toContain('<a:ln w="12700"');
+    // CT_ShapeProperties order: <a:solidFill> precedes <a:ln>.
+    const spPrBlock = title.match(/<c:spPr>[\s\S]*?<\/c:spPr>/)?.[0] ?? "";
+    expect(spPrBlock.indexOf("<a:solidFill>")).toBeLessThan(spPrBlock.indexOf("<a:ln "));
+  });
+
+  it("does not pollute axis titles with the chart-title border width", () => {
+    // Make the chart carry an axis title alongside a chart-title border width.
+    const result = writeChart(
+      makeChart({
+        titleBorderWidth: 1,
+        axes: { x: { title: "X" } },
+      }),
+      "Sheet1",
+    );
+    // The axis-title block must not carry an <a:ln w=..> on its <c:spPr>.
+    // Find the axis title (inside <c:catAx><c:title> ...).
+    const axisTitleMatch = result.chartXml.match(/<c:catAx>[\s\S]*?<c:title>[\s\S]*?<\/c:title>/);
+    if (axisTitleMatch) {
+      // The axis title may have a <c:spPr> if the caller pinned axis-title-fill /
+      // border-color / etc., but it must not carry the chart-title's width.
+      expect(axisTitleMatch[0]).not.toContain('<a:ln w="12700"');
+    }
+  });
+
+  it("round-trips titleBorderWidth through parseChart", () => {
+    const written = writeChart(makeChart({ titleBorderWidth: 2.25 }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleBorderWidth).toBe(2.25);
+  });
+
+  it("collapses an unset titleBorderWidth round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    expect(parseChart(written)?.titleBorderWidth).toBeUndefined();
+  });
+
+  it("round-trips both border color and width together through parseChart", () => {
+    const written = writeChart(
+      makeChart({ titleBorderColor: "1F77B4", titleBorderWidth: 1.5 }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleBorderColor).toBe("1F77B4");
+    expect(reparsed?.titleBorderWidth).toBe(1.5);
+  });
+
+  it("survives a writeXlsx round trip — titleBorderWidth lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            titleBorderWidth: 1.75,
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.titleBorderWidth).toBe(1.75);
+  });
+});

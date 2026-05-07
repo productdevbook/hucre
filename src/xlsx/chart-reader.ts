@@ -246,6 +246,18 @@ export function parseChart(xml: string): Chart | undefined {
   const titleBorderColor = parseTitleBorderColor(chartEl);
   if (titleBorderColor !== undefined) out.titleBorderColor = titleBorderColor;
 
+  // `<c:title><c:spPr><a:ln w="EMU">` carries Excel's "Format Chart
+  // Title -> Border -> Width" pin. The OOXML `w` attribute stores the
+  // stroke width in English Metric Units (1 pt = 12 700 EMU) per
+  // CT_LineProperties (ECMA-376 Part 1, §20.1.2.3.24); the reader
+  // converts back to points and clamps to the same 0.25..13.5 pt band
+  // Excel's UI exposes so a template carrying an exotic width still
+  // round-trips through the writer's clamp. Scoped to the title's
+  // `<c:spPr>` so a stray `<a:ln w=..>` elsewhere (series stroke, axis
+  // line, plot-area / legend border) cannot leak into this field.
+  const titleBorderWidth = parseTitleBorderWidth(chartEl);
+  if (titleBorderWidth !== undefined) out.titleBorderWidth = titleBorderWidth;
+
   // `<c:autoTitleDeleted>` records whether the user explicitly deleted
   // the auto-generated title — independent of whether a literal
   // `<c:title>` is present. The element sits on `<c:chart>` directly
@@ -4988,6 +5000,48 @@ function parseTitleBorderColor(chartEl: XmlElement): string | undefined {
   const srgbClr = findChild(solidFill, "srgbClr");
   if (!srgbClr) return undefined;
   return normalizeRgbHex(srgbClr.attrs.val);
+}
+
+/**
+ * Pull the `w` attribute off `<c:title><c:spPr><a:ln w="EMU"/>` and
+ * return the stroke width in points after clamping to the
+ * `0.25..13.5` pt band Excel's UI exposes. The OOXML `w` attribute
+ * carries the stroke width in English Metric Units (1 pt = 12 700 EMU)
+ * per `CT_LineProperties` (ECMA-376 Part 1, §20.1.2.3.24); the reader
+ * snaps the result to the 0.25 pt grid so a parsed-then-written width
+ * does not drift across round-trips (Excel rounds in the UI anyway).
+ *
+ * Returns `undefined` when the chart omits `<c:title>`, when the
+ * title has no `<c:spPr><a:ln w=..>` slot, when the attribute is
+ * missing, when the value cannot be parsed as a finite positive
+ * number, or when it parses to zero (Excel's "no border" marker — the
+ * writer-side knob does not model that state). Mirrors the writer-side
+ * {@link SheetChart.titleBorderWidth} so a parsed value slots
+ * straight into {@link cloneChart} without conversion.
+ *
+ * The lookup is scoped to direct children of `<c:title>` so a stray
+ * `<a:ln w=..>` elsewhere (on a series stroke, on an axis line, on the
+ * plot-area / legend border) cannot leak in. Mirrors {@link parseTitleBorderColor} —
+ * same `<c:spPr>` host on the same `<c:title>` parent — but lands on
+ * the `w` attribute rather than the `<a:solidFill><a:srgbClr>` color
+ * child.
+ */
+function parseTitleBorderWidth(chartEl: XmlElement): number | undefined {
+  const title = findChild(chartEl, "title");
+  if (!title) return undefined;
+  const spPr = findChild(title, "spPr");
+  if (!spPr) return undefined;
+  const ln = findChild(spPr, "ln");
+  if (!ln) return undefined;
+  const wAttr = ln.attrs.w;
+  if (typeof wAttr !== "string") return undefined;
+  const emu = Number.parseFloat(wAttr);
+  if (!Number.isFinite(emu) || emu <= 0) return undefined;
+  // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
+  const pt = Math.round((emu / EMU_PER_PT) * 4) / 4;
+  if (pt < STROKE_WIDTH_MIN_PT) return STROKE_WIDTH_MIN_PT;
+  if (pt > STROKE_WIDTH_MAX_PT) return STROKE_WIDTH_MAX_PT;
+  return pt;
 }
 
 /**

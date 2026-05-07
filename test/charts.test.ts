@@ -22719,3 +22719,184 @@ describe("parseChart — legendBorderWidth", () => {
     expect(parseChart(xml)?.legendBorderWidth).toBeUndefined();
   });
 });
+
+// ── parseChart — titleBorderWidth ────────────────────────────────────
+
+describe("parseChart — titleBorderWidth", () => {
+  const NS_TBW = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withTitleSpPr(spPrBody: string): string {
+    return `<c:chartSpace ${NS_TBW}>
+  <c:chart>
+    <c:title>
+      <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Hero</a:t></a:r></a:p></c:rich></c:tx>
+      <c:overlay val="0"/>
+      <c:spPr>${spPrBody}</c:spPr>
+    </c:title>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces the stroke width in points (12700 EMU = 1 pt)", () => {
+    const xml = withTitleSpPr(`<a:ln w="12700"/>`);
+    expect(parseChart(xml)?.titleBorderWidth).toBe(1);
+  });
+
+  it("surfaces a fractional stroke width (19050 EMU = 1.5 pt)", () => {
+    const xml = withTitleSpPr(`<a:ln w="19050"/>`);
+    expect(parseChart(xml)?.titleBorderWidth).toBe(1.5);
+  });
+
+  it("surfaces the minimum width (3175 EMU = 0.25 pt)", () => {
+    const xml = withTitleSpPr(`<a:ln w="3175"/>`);
+    expect(parseChart(xml)?.titleBorderWidth).toBe(0.25);
+  });
+
+  it("snaps an exotic EMU value to the nearest 0.25 pt grid", () => {
+    // 14000 EMU ≈ 1.10 pt → snaps to 1.0 pt.
+    const xml = withTitleSpPr(`<a:ln w="14000"/>`);
+    expect(parseChart(xml)?.titleBorderWidth).toBe(1);
+  });
+
+  it("clamps below the minimum band (1000 EMU → 0.25 pt)", () => {
+    const xml = withTitleSpPr(`<a:ln w="1000"/>`);
+    expect(parseChart(xml)?.titleBorderWidth).toBe(0.25);
+  });
+
+  it("clamps above the maximum band (1000000 EMU → 13.5 pt)", () => {
+    const xml = withTitleSpPr(`<a:ln w="1000000"/>`);
+    expect(parseChart(xml)?.titleBorderWidth).toBe(13.5);
+  });
+
+  it("surfaces both border color and width when both are pinned on <a:ln>", () => {
+    const xml = withTitleSpPr(
+      `<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
+    );
+    const parsed = parseChart(xml);
+    expect(parsed?.titleBorderWidth).toBe(2);
+    expect(parsed?.titleBorderColor).toBe("1F77B4");
+  });
+
+  it("returns undefined when the chart has no <c:title>", () => {
+    const xml = `<c:chartSpace ${NS_TBW}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`;
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when <c:title> has no <c:spPr>", () => {
+    const xml = `<c:chartSpace ${NS_TBW}>
+  <c:chart>
+    <c:title>
+      <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Hero</a:t></a:r></a:p></c:rich></c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when <c:spPr> has no <a:ln>", () => {
+    const xml = withTitleSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`);
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln> has no w attribute", () => {
+    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`);
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when the w attribute is malformed (non-numeric)", () => {
+    const xml = withTitleSpPr(`<a:ln w="thick"/>`);
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when the w attribute is zero (Excel's 'no border' marker)", () => {
+    const xml = withTitleSpPr(`<a:ln w="0"/>`);
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when the w attribute is negative", () => {
+    const xml = withTitleSpPr(`<a:ln w="-12700"/>`);
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
+  });
+
+  it("ignores a stray <a:ln w=..> on a series <c:spPr> (not the title)", () => {
+    const xml = `<c:chartSpace ${NS_TBW}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:spPr><a:ln w="50800"><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill></a:ln></c:spPr>
+        </c:ser>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
+  });
+
+  it("ignores a stray <a:ln w=..> on a plot-area <c:spPr> (not the title)", () => {
+    const xml = `<c:chartSpace ${NS_TBW}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+      <c:spPr><a:ln w="50800"/></c:spPr>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
+  });
+
+  it("ignores a stray <a:ln w=..> on the legend (not the title)", () => {
+    const xml = `<c:chartSpace ${NS_TBW}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:spPr><a:ln w="50800"/></c:spPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
+  });
+
+  it("surfaces titleBorderWidth on a strRef-bodied title (no <c:rich>)", () => {
+    const xml = `<c:chartSpace ${NS_TBW}>
+  <c:chart>
+    <c:title>
+      <c:tx><c:strRef><c:f>Sheet1!$A$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Hero</c:v></c:pt></c:strCache></c:strRef></c:tx>
+      <c:overlay val="0"/>
+      <c:spPr><a:ln w="19050"/></c:spPr>
+    </c:title>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.titleBorderWidth).toBe(1.5);
+  });
+});
