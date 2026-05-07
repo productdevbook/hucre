@@ -23463,3 +23463,847 @@ describe("writeChart — titleBorderWidth", () => {
     expect(reparsed?.titleBorderWidth).toBe(1.75);
   });
 });
+
+// ── writeChart — chartSpaceBorderWidth ──────────────────────────────
+
+describe("writeChart — chartSpaceBorderWidth", () => {
+  function chartSpaceSpPrOf(xml: string): string | undefined {
+    // Find <c:spPr> direct child of <c:chartSpace> (not inside <c:chart>).
+    // The chart-space spPr sits at the tail after </c:chart>.
+    const m = xml.match(/<\/c:chart>\s*<c:spPr>([\s\S]*?)<\/c:spPr>/);
+    return m ? m[0] : undefined;
+  }
+
+  it("does not emit chart-space <c:spPr> when chartSpaceBorderWidth is unset", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(chartSpaceSpPrOf(result.chartXml)).toBeUndefined();
+  });
+
+  it("emits <c:spPr><a:ln w=..> when chartSpaceBorderWidth is set", () => {
+    const result = writeChart(makeChart({ chartSpaceBorderWidth: 1.5 }), "Sheet1");
+    const sp = chartSpaceSpPrOf(result.chartXml);
+    expect(sp).toContain('<a:ln w="19050"');
+  });
+
+  it("snaps to 0.25 grid", () => {
+    const result = writeChart(makeChart({ chartSpaceBorderWidth: 0.4 }), "Sheet1");
+    expect(chartSpaceSpPrOf(result.chartXml)).toContain('<a:ln w="6350"');
+  });
+
+  it("clamps below minimum (0.1 → 0.25 → 3175 EMU)", () => {
+    const result = writeChart(makeChart({ chartSpaceBorderWidth: 0.1 }), "Sheet1");
+    expect(chartSpaceSpPrOf(result.chartXml)).toContain('<a:ln w="3175"');
+  });
+
+  it("clamps above maximum (50 → 13.5 → 171450 EMU)", () => {
+    const result = writeChart(makeChart({ chartSpaceBorderWidth: 50 }), "Sheet1");
+    expect(chartSpaceSpPrOf(result.chartXml)).toContain('<a:ln w="171450"');
+  });
+
+  it("composes with chartSpaceBorderColor on the same <a:ln>", () => {
+    const result = writeChart(
+      makeChart({ chartSpaceBorderColor: "FF0000", chartSpaceBorderWidth: 2 }),
+      "Sheet1",
+    );
+    const sp = chartSpaceSpPrOf(result.chartXml);
+    expect(sp).toContain(
+      '<a:ln w="25400"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:ln>',
+    );
+  });
+
+  it("composes with chartSpaceFillColor + chartSpaceBorderColor + chartSpaceBorderWidth in CT_ShapeProperties order", () => {
+    const result = writeChart(
+      makeChart({
+        chartSpaceFillColor: "F2F2F2",
+        chartSpaceBorderColor: "1F77B4",
+        chartSpaceBorderWidth: 1,
+      }),
+      "Sheet1",
+    );
+    const sp = chartSpaceSpPrOf(result.chartXml);
+    const fillIdx = sp?.indexOf("<a:solidFill>") ?? -1;
+    const lnIdx = sp?.indexOf("<a:ln") ?? -1;
+    expect(fillIdx).toBeGreaterThanOrEqual(0);
+    expect(lnIdx).toBeGreaterThan(fillIdx);
+  });
+
+  it("drops NaN", () => {
+    const result = writeChart(makeChart({ chartSpaceBorderWidth: Number.NaN }), "Sheet1");
+    expect(chartSpaceSpPrOf(result.chartXml)).toBeUndefined();
+  });
+
+  it("drops Infinity", () => {
+    const result = writeChart(
+      makeChart({ chartSpaceBorderWidth: Number.POSITIVE_INFINITY }),
+      "Sheet1",
+    );
+    expect(chartSpaceSpPrOf(result.chartXml)).toBeUndefined();
+  });
+
+  it("round-trips through writeXlsx -> parseChart", async () => {
+    const sheet: WriteSheet = {
+      name: "Sheet1",
+      rows: [
+        ["A", "B"],
+        ["Q1", 100],
+      ],
+      charts: [makeChart({ chartSpaceBorderWidth: 1.75 })],
+    };
+    const out = await writeXlsx({ sheets: [sheet] });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.chartSpaceBorderWidth).toBe(1.75);
+  });
+});
+
+// ── writeChart — axisTitleBorderWidth ───────────────────────────────
+
+describe("writeChart — axisTitleBorderWidth", () => {
+  function xAxisTitleOf(xml: string): string {
+    const m = xml.match(/<c:catAx>[\s\S]*?<c:title>[\s\S]*?<\/c:title>/);
+    if (!m) throw new Error("No catAx title found");
+    return m[0];
+  }
+  function yAxisTitleOf(xml: string): string {
+    const m = xml.match(/<c:valAx>[\s\S]*?<c:title>[\s\S]*?<\/c:title>/);
+    if (!m) throw new Error("No valAx title found");
+    return m[0];
+  }
+
+  function makeWithAxisTitles(overrides: Partial<SheetChart["axes"]> = {}) {
+    return makeChart({
+      axes: {
+        x: { title: "X" },
+        y: { title: "Y" },
+        ...overrides,
+      },
+    });
+  }
+
+  it("does not emit <c:spPr> when axisTitleBorderWidth is unset", () => {
+    const result = writeChart(makeWithAxisTitles(), "Sheet1");
+    const xTitle = xAxisTitleOf(result.chartXml);
+    expect(xTitle).not.toContain("<c:spPr>");
+  });
+
+  it("emits <a:ln w=..> on the X axis", () => {
+    const result = writeChart(
+      makeWithAxisTitles({ x: { title: "X", axisTitleBorderWidth: 1.5 } }),
+      "Sheet1",
+    );
+    expect(xAxisTitleOf(result.chartXml)).toContain('<a:ln w="19050"');
+  });
+
+  it("emits <a:ln w=..> on the Y axis", () => {
+    const result = writeChart(
+      makeWithAxisTitles({ y: { title: "Y", axisTitleBorderWidth: 2 } }),
+      "Sheet1",
+    );
+    expect(yAxisTitleOf(result.chartXml)).toContain('<a:ln w="25400"');
+  });
+
+  it("clamps below the minimum on the X axis", () => {
+    const result = writeChart(
+      makeWithAxisTitles({ x: { title: "X", axisTitleBorderWidth: 0.1 } }),
+      "Sheet1",
+    );
+    expect(xAxisTitleOf(result.chartXml)).toContain('<a:ln w="3175"');
+  });
+
+  it("clamps above the maximum on the X axis", () => {
+    const result = writeChart(
+      makeWithAxisTitles({ x: { title: "X", axisTitleBorderWidth: 50 } }),
+      "Sheet1",
+    );
+    expect(xAxisTitleOf(result.chartXml)).toContain('<a:ln w="171450"');
+  });
+
+  it("composes axisTitleBorderColor + axisTitleBorderWidth on a single <a:ln>", () => {
+    const result = writeChart(
+      makeWithAxisTitles({
+        x: { title: "X", axisTitleBorderColor: "1F77B4", axisTitleBorderWidth: 2 },
+      }),
+      "Sheet1",
+    );
+    expect(xAxisTitleOf(result.chartXml)).toContain(
+      '<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>',
+    );
+  });
+
+  it("does not emit when the axis has no title", () => {
+    const result = writeChart(makeChart({ axes: { x: { axisTitleBorderWidth: 2 } } }), "Sheet1");
+    expect(result.chartXml).not.toContain("<a:ln w=");
+  });
+
+  it("drops NaN", () => {
+    const result = writeChart(
+      makeWithAxisTitles({ x: { title: "X", axisTitleBorderWidth: Number.NaN } }),
+      "Sheet1",
+    );
+    expect(xAxisTitleOf(result.chartXml)).not.toContain("<c:spPr>");
+  });
+
+  it("round-trips through writeXlsx -> parseChart", async () => {
+    const sheet: WriteSheet = {
+      name: "Sheet1",
+      rows: [
+        ["A", "B"],
+        ["Q1", 100],
+      ],
+      charts: [
+        makeWithAxisTitles({
+          x: { title: "X", axisTitleBorderWidth: 1.75 },
+          y: { title: "Y", axisTitleBorderWidth: 0.5 },
+        }),
+      ],
+    };
+    const out = await writeXlsx({ sheets: [sheet] });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.x?.axisTitleBorderWidth).toBe(1.75);
+    expect(reparsed?.axes?.y?.axisTitleBorderWidth).toBe(0.5);
+  });
+});
+
+// ── writeChart — dataTableBorderWidth ───────────────────────────────
+
+describe("writeChart — dataTableBorderWidth", () => {
+  function dTableOf(xml: string): string {
+    const m = xml.match(/<c:dTable>[\s\S]*?<\/c:dTable>/);
+    if (!m) throw new Error("No <c:dTable> found");
+    return m[0];
+  }
+
+  it("emits <a:ln w=..> when dataTable.borderWidth is set", () => {
+    const result = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: true,
+          showOutline: true,
+          showKeys: true,
+          borderWidth: 1.5,
+        },
+      }),
+      "Sheet1",
+    );
+    expect(dTableOf(result.chartXml)).toContain('<a:ln w="19050"');
+  });
+
+  it("does not emit <c:spPr> when only the four boolean toggles are pinned", () => {
+    const result = writeChart(makeChart({ dataTable: true }), "Sheet1");
+    expect(dTableOf(result.chartXml)).not.toContain("<c:spPr>");
+  });
+
+  it("composes borderColor + borderWidth", () => {
+    const result = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: true,
+          showOutline: true,
+          showKeys: true,
+          borderColor: "FF0000",
+          borderWidth: 2,
+        },
+      }),
+      "Sheet1",
+    );
+    expect(dTableOf(result.chartXml)).toContain(
+      '<a:ln w="25400"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:ln>',
+    );
+  });
+
+  it("clamps borderWidth", () => {
+    const result = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: true,
+          showOutline: true,
+          showKeys: true,
+          borderWidth: 99,
+        },
+      }),
+      "Sheet1",
+    );
+    expect(dTableOf(result.chartXml)).toContain('<a:ln w="171450"');
+  });
+
+  it("drops borderWidth on pie / doughnut (no <c:dTable>)", () => {
+    const result = writeChart(
+      makeChart({
+        type: "pie",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: true,
+          showOutline: true,
+          showKeys: true,
+          borderWidth: 2,
+        },
+      }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:dTable>");
+  });
+
+  it("round-trips dataTable.borderWidth", async () => {
+    const sheet: WriteSheet = {
+      name: "Sheet1",
+      rows: [
+        ["A", "B"],
+        ["Q1", 100],
+      ],
+      charts: [
+        makeChart({
+          dataTable: {
+            showHorzBorder: true,
+            showVertBorder: true,
+            showOutline: true,
+            showKeys: true,
+            borderWidth: 1.25,
+          },
+        }),
+      ],
+    };
+    const out = await writeXlsx({ sheets: [sheet] });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(
+      typeof reparsed?.dataTable === "object" ? reparsed.dataTable.borderWidth : undefined,
+    ).toBe(1.25);
+  });
+});
+
+// ── writeChart — dataLabelsBorderWidth ──────────────────────────────
+
+describe("writeChart — dataLabelsBorderWidth", () => {
+  function dLblsOf(xml: string): string | undefined {
+    const m = xml.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/);
+    return m ? m[0] : undefined;
+  }
+
+  it("emits <a:ln w=..> on chart-level dataLabels when borderWidth is set", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, borderWidth: 1.5 } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).toContain('<a:ln w="19050"');
+  });
+
+  it("composes borderColor + borderWidth on data labels", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, borderColor: "ABCDEF", borderWidth: 2 } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).toContain(
+      '<a:ln w="25400"><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill></a:ln>',
+    );
+  });
+
+  it("clamps borderWidth on data labels", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, borderWidth: 50 } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).toContain('<a:ln w="171450"');
+  });
+
+  it("drops NaN", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, borderWidth: Number.NaN } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<a:ln");
+  });
+
+  it("round-trips dataLabels.borderWidth", async () => {
+    const sheet: WriteSheet = {
+      name: "Sheet1",
+      rows: [
+        ["A", "B"],
+        ["Q1", 100],
+      ],
+      charts: [
+        makeChart({
+          series: [
+            {
+              name: "Revenue",
+              values: "B2:B4",
+              categories: "A2:A4",
+              dataLabels: { showValue: true, borderWidth: 1.25 },
+            },
+          ],
+        }),
+      ],
+    };
+    const out = await writeXlsx({ sheets: [sheet] });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.series?.[0]?.dataLabels?.borderWidth).toBe(1.25);
+  });
+});
+
+// ── writeChart — *BorderDash family ─────────────────────────────────
+
+describe("writeChart — plotAreaBorderDash", () => {
+  function plotAreaOf(xml: string): string {
+    const m = xml.match(/<c:plotArea>[\s\S]*?<\/c:plotArea>/);
+    if (!m) throw new Error("No <c:plotArea>");
+    return m[0];
+  }
+
+  it("emits <a:prstDash> for 'dash'", () => {
+    const result = writeChart(makeChart({ plotAreaBorderDash: "dash" }), "Sheet1");
+    expect(plotAreaOf(result.chartXml)).toContain('<a:prstDash val="dash"/>');
+  });
+
+  it("emits <a:prstDash> for 'dashDot'", () => {
+    const result = writeChart(makeChart({ plotAreaBorderDash: "dashDot" }), "Sheet1");
+    expect(plotAreaOf(result.chartXml)).toContain('<a:prstDash val="dashDot"/>');
+  });
+
+  it("collapses 'solid' to no <a:prstDash>", () => {
+    const result = writeChart(makeChart({ plotAreaBorderDash: "solid" }), "Sheet1");
+    expect(plotAreaOf(result.chartXml)).not.toContain("<a:prstDash");
+  });
+
+  it("drops unrecognized tokens", () => {
+    const result = writeChart(makeChart({ plotAreaBorderDash: "weirdo" as any }), "Sheet1");
+    expect(plotAreaOf(result.chartXml)).not.toContain("<a:prstDash");
+  });
+
+  it("emits <a:prstDash> after <a:solidFill> per CT_LineProperties", () => {
+    const result = writeChart(
+      makeChart({ plotAreaBorderColor: "FF0000", plotAreaBorderDash: "dash" }),
+      "Sheet1",
+    );
+    const pa = plotAreaOf(result.chartXml);
+    const fillIdx = pa.indexOf("<a:solidFill>");
+    const dashIdx = pa.indexOf("<a:prstDash");
+    expect(fillIdx).toBeGreaterThan(0);
+    expect(dashIdx).toBeGreaterThan(fillIdx);
+  });
+
+  it("composes color + width + dash on the same <a:ln>", () => {
+    const result = writeChart(
+      makeChart({
+        plotAreaBorderColor: "1F77B4",
+        plotAreaBorderWidth: 2,
+        plotAreaBorderDash: "dot",
+      }),
+      "Sheet1",
+    );
+    const pa = plotAreaOf(result.chartXml);
+    expect(pa).toContain(
+      '<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill><a:prstDash val="dot"/></a:ln>',
+    );
+  });
+
+  it("round-trips plotAreaBorderDash", async () => {
+    const sheet: WriteSheet = {
+      name: "Sheet1",
+      rows: [
+        ["A", "B"],
+        ["Q1", 100],
+      ],
+      charts: [makeChart({ plotAreaBorderDash: "dash" })],
+    };
+    const out = await writeXlsx({ sheets: [sheet] });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.plotAreaBorderDash).toBe("dash");
+  });
+});
+
+describe("writeChart — legendBorderDash", () => {
+  function legendOf(xml: string): string {
+    const m = xml.match(/<c:legend>[\s\S]*?<\/c:legend>/);
+    if (!m) throw new Error("No <c:legend>");
+    return m[0];
+  }
+
+  it("emits <a:prstDash> on legend", () => {
+    const result = writeChart(makeChart({ legend: "right", legendBorderDash: "dash" }), "Sheet1");
+    expect(legendOf(result.chartXml)).toContain('<a:prstDash val="dash"/>');
+  });
+
+  it("collapses 'solid' to no <a:prstDash>", () => {
+    const result = writeChart(makeChart({ legend: "right", legendBorderDash: "solid" }), "Sheet1");
+    expect(legendOf(result.chartXml)).not.toContain("<a:prstDash");
+  });
+
+  it("composes color + width + dash on the legend", () => {
+    const result = writeChart(
+      makeChart({
+        legend: "right",
+        legendBorderColor: "FF0000",
+        legendBorderWidth: 1.5,
+        legendBorderDash: "dot",
+      }),
+      "Sheet1",
+    );
+    expect(legendOf(result.chartXml)).toContain(
+      '<a:ln w="19050"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:prstDash val="dot"/></a:ln>',
+    );
+  });
+
+  it("does not emit when legend is hidden", () => {
+    const result = writeChart(makeChart({ legend: false, legendBorderDash: "dash" }), "Sheet1");
+    expect(result.chartXml).not.toContain("<a:prstDash");
+  });
+
+  it("round-trips legendBorderDash", async () => {
+    const sheet: WriteSheet = {
+      name: "Sheet1",
+      rows: [
+        ["A", "B"],
+        ["Q1", 100],
+      ],
+      charts: [makeChart({ legend: "right", legendBorderDash: "lgDash" })],
+    };
+    const out = await writeXlsx({ sheets: [sheet] });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.legendBorderDash).toBe("lgDash");
+  });
+});
+
+describe("writeChart — titleBorderDash", () => {
+  function titleOf(xml: string): string {
+    const m = xml.match(/<c:chart>[\s\S]*?<c:title>[\s\S]*?<\/c:title>/);
+    if (!m) throw new Error("No chart-level <c:title>");
+    const titleMatch = m[0].match(/<c:title>[\s\S]*?<\/c:title>/);
+    if (!titleMatch) throw new Error("No <c:title>");
+    return titleMatch[0];
+  }
+
+  it("emits <a:prstDash> on title", () => {
+    const result = writeChart(makeChart({ titleBorderDash: "dash" }), "Sheet1");
+    expect(titleOf(result.chartXml)).toContain('<a:prstDash val="dash"/>');
+  });
+
+  it("collapses 'solid' to no <a:prstDash>", () => {
+    const result = writeChart(makeChart({ titleBorderDash: "solid" }), "Sheet1");
+    expect(titleOf(result.chartXml)).not.toContain("<a:prstDash");
+  });
+
+  it("composes color + width + dash on title", () => {
+    const result = writeChart(
+      makeChart({ titleBorderColor: "1F77B4", titleBorderWidth: 1, titleBorderDash: "sysDash" }),
+      "Sheet1",
+    );
+    expect(titleOf(result.chartXml)).toContain(
+      '<a:ln w="12700"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill><a:prstDash val="sysDash"/></a:ln>',
+    );
+  });
+
+  it("does not emit when title is hidden", () => {
+    const result = writeChart(makeChart({ showTitle: false, titleBorderDash: "dash" }), "Sheet1");
+    const m = result.chartXml.match(/<c:chart>[\s\S]*?<c:title>[\s\S]*?<\/c:title>/);
+    expect(m).toBeNull();
+  });
+
+  it("round-trips titleBorderDash", async () => {
+    const sheet: WriteSheet = {
+      name: "Sheet1",
+      rows: [
+        ["A", "B"],
+        ["Q1", 100],
+      ],
+      charts: [makeChart({ titleBorderDash: "dashDot" })],
+    };
+    const out = await writeXlsx({ sheets: [sheet] });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.titleBorderDash).toBe("dashDot");
+  });
+});
+
+describe("writeChart — chartSpaceBorderDash", () => {
+  function chartSpaceSpPrOf(xml: string): string | undefined {
+    const m = xml.match(/<\/c:chart>\s*<c:spPr>([\s\S]*?)<\/c:spPr>/);
+    return m ? m[0] : undefined;
+  }
+
+  it("emits <a:prstDash> on chartSpace", () => {
+    const result = writeChart(makeChart({ chartSpaceBorderDash: "dash" }), "Sheet1");
+    expect(chartSpaceSpPrOf(result.chartXml)).toContain('<a:prstDash val="dash"/>');
+  });
+
+  it("collapses 'solid' to no <a:prstDash>", () => {
+    const result = writeChart(makeChart({ chartSpaceBorderDash: "solid" }), "Sheet1");
+    expect(chartSpaceSpPrOf(result.chartXml)).toBeUndefined();
+  });
+
+  it("composes color + width + dash on chartSpace", () => {
+    const result = writeChart(
+      makeChart({
+        chartSpaceBorderColor: "F2F2F2",
+        chartSpaceBorderWidth: 0.5,
+        chartSpaceBorderDash: "lgDashDot",
+      }),
+      "Sheet1",
+    );
+    expect(chartSpaceSpPrOf(result.chartXml)).toContain(
+      '<a:ln w="6350"><a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill><a:prstDash val="lgDashDot"/></a:ln>',
+    );
+  });
+
+  it("round-trips chartSpaceBorderDash", async () => {
+    const sheet: WriteSheet = {
+      name: "Sheet1",
+      rows: [
+        ["A", "B"],
+        ["Q1", 100],
+      ],
+      charts: [makeChart({ chartSpaceBorderDash: "sysDashDot" })],
+    };
+    const out = await writeXlsx({ sheets: [sheet] });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.chartSpaceBorderDash).toBe("sysDashDot");
+  });
+});
+
+describe("writeChart — axisTitleBorderDash", () => {
+  function xAxisTitleOf(xml: string): string {
+    const m = xml.match(/<c:catAx>[\s\S]*?<c:title>[\s\S]*?<\/c:title>/);
+    if (!m) throw new Error("No catAx title");
+    return m[0];
+  }
+  function yAxisTitleOf(xml: string): string {
+    const m = xml.match(/<c:valAx>[\s\S]*?<c:title>[\s\S]*?<\/c:title>/);
+    if (!m) throw new Error("No valAx title");
+    return m[0];
+  }
+
+  it("emits <a:prstDash> on X axis title", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "X", axisTitleBorderDash: "dash" }, y: { title: "Y" } } }),
+      "Sheet1",
+    );
+    expect(xAxisTitleOf(result.chartXml)).toContain('<a:prstDash val="dash"/>');
+  });
+
+  it("emits <a:prstDash> on Y axis title", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "X" }, y: { title: "Y", axisTitleBorderDash: "dot" } } }),
+      "Sheet1",
+    );
+    expect(yAxisTitleOf(result.chartXml)).toContain('<a:prstDash val="dot"/>');
+  });
+
+  it("collapses 'solid' to no <a:prstDash>", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "X", axisTitleBorderDash: "solid" }, y: { title: "Y" } } }),
+      "Sheet1",
+    );
+    expect(xAxisTitleOf(result.chartXml)).not.toContain("<a:prstDash");
+  });
+
+  it("composes axis title color + width + dash", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: {
+            title: "X",
+            axisTitleBorderColor: "ABCDEF",
+            axisTitleBorderWidth: 2,
+            axisTitleBorderDash: "dashDot",
+          },
+          y: { title: "Y" },
+        },
+      }),
+      "Sheet1",
+    );
+    expect(xAxisTitleOf(result.chartXml)).toContain(
+      '<a:ln w="25400"><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill><a:prstDash val="dashDot"/></a:ln>',
+    );
+  });
+
+  it("drops axis title dash when no axis title", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { axisTitleBorderDash: "dash" } } }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<a:prstDash");
+  });
+
+  it("round-trips axisTitleBorderDash", async () => {
+    const sheet: WriteSheet = {
+      name: "Sheet1",
+      rows: [
+        ["A", "B"],
+        ["Q1", 100],
+      ],
+      charts: [
+        makeChart({
+          axes: {
+            x: { title: "X", axisTitleBorderDash: "lgDash" },
+            y: { title: "Y", axisTitleBorderDash: "sysDot" },
+          },
+        }),
+      ],
+    };
+    const out = await writeXlsx({ sheets: [sheet] });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.x?.axisTitleBorderDash).toBe("lgDash");
+    expect(reparsed?.axes?.y?.axisTitleBorderDash).toBe("sysDot");
+  });
+});
+
+describe("writeChart — dataTableBorderDash", () => {
+  function dTableOf(xml: string): string {
+    const m = xml.match(/<c:dTable>[\s\S]*?<\/c:dTable>/);
+    if (!m) throw new Error("No <c:dTable>");
+    return m[0];
+  }
+
+  it("emits <a:prstDash> on data table", () => {
+    const result = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: true,
+          showOutline: true,
+          showKeys: true,
+          borderDash: "dash",
+        },
+      }),
+      "Sheet1",
+    );
+    expect(dTableOf(result.chartXml)).toContain('<a:prstDash val="dash"/>');
+  });
+
+  it("collapses 'solid' to no <a:prstDash>", () => {
+    const result = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: true,
+          showOutline: true,
+          showKeys: true,
+          borderDash: "solid",
+        },
+      }),
+      "Sheet1",
+    );
+    expect(dTableOf(result.chartXml)).not.toContain("<a:prstDash");
+  });
+
+  it("composes data-table color + width + dash", () => {
+    const result = writeChart(
+      makeChart({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: true,
+          showOutline: true,
+          showKeys: true,
+          borderColor: "FF0000",
+          borderWidth: 1.5,
+          borderDash: "lgDashDotDot",
+        },
+      }),
+      "Sheet1",
+    );
+    expect(dTableOf(result.chartXml)).toContain(
+      '<a:ln w="19050"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:prstDash val="lgDashDotDot"/></a:ln>',
+    );
+  });
+
+  it("round-trips dataTable.borderDash", async () => {
+    const sheet: WriteSheet = {
+      name: "Sheet1",
+      rows: [
+        ["A", "B"],
+        ["Q1", 100],
+      ],
+      charts: [
+        makeChart({
+          dataTable: {
+            showHorzBorder: true,
+            showVertBorder: true,
+            showOutline: true,
+            showKeys: true,
+            borderDash: "sysDashDotDot",
+          },
+        }),
+      ],
+    };
+    const out = await writeXlsx({ sheets: [sheet] });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(
+      typeof reparsed?.dataTable === "object" ? reparsed.dataTable.borderDash : undefined,
+    ).toBe("sysDashDotDot");
+  });
+});
+
+describe("writeChart — dataLabelsBorderDash", () => {
+  function dLblsOf(xml: string): string | undefined {
+    const m = xml.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/);
+    return m ? m[0] : undefined;
+  }
+
+  it("emits <a:prstDash> on data labels", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, borderDash: "dash" } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).toContain('<a:prstDash val="dash"/>');
+  });
+
+  it("collapses 'solid' to no <a:prstDash>", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, borderDash: "solid" } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<a:prstDash");
+  });
+
+  it("composes data-labels color + width + dash", () => {
+    const result = writeChart(
+      makeChart({
+        dataLabels: {
+          showValue: true,
+          borderColor: "ABCDEF",
+          borderWidth: 2,
+          borderDash: "dashDot",
+        },
+      }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).toContain(
+      '<a:ln w="25400"><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill><a:prstDash val="dashDot"/></a:ln>',
+    );
+  });
+
+  it("round-trips per-series dataLabels.borderDash", async () => {
+    const sheet: WriteSheet = {
+      name: "Sheet1",
+      rows: [
+        ["A", "B"],
+        ["Q1", 100],
+      ],
+      charts: [
+        makeChart({
+          series: [
+            {
+              name: "Revenue",
+              values: "B2:B4",
+              categories: "A2:A4",
+              dataLabels: { showValue: true, borderDash: "lgDash" },
+            },
+          ],
+        }),
+      ],
+    };
+    const out = await writeXlsx({ sheets: [sheet] });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.series?.[0]?.dataLabels?.borderDash).toBe("lgDash");
+  });
+});

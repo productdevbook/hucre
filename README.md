@@ -508,72 +508,74 @@ or any sibling sheet, and accept either `rows` (raw 2-D arrays) or
 ### Charts
 
 Charts (`xl/charts/chartN.xml` plus the optional `styleN.xml` /
-`colorsN.xml` companions) are read into a per-sheet `sheet.charts`
-array surfacing the chart kind(s), series count, plain-text title,
-and per-series metadata (name, value/category ranges, fill color).
-On `saveXlsx` the chart parts are re-declared in
-`[Content_Types].xml`, the chart-bearing drawing and its rels are
-force-preserved, and the regenerated worksheet body gets a
-`<drawing r:id="..."/>` re-anchor — without these wirings Excel
-previously saw the chart parts as orphans and dropped them on next
-open.
+`colorsN.xml` companions) round-trip through three layers:
+
+- `parseChart(xml)` / `readXlsx().sheets[].charts[]` — surfaces a
+  read-side `Chart` record (kinds, title, series, axes, legend, data
+  labels, fills / borders, manual layout, view3D, etc.).
+- `writeXlsx({ sheets: [{ charts: [SheetChart] }] })` — emits the
+  chart parts and re-anchors the drawing in the regenerated worksheet
+  body so Excel never sees the chart as an orphan.
+- `cloneChart(source, options)` — bridges the two: it converts a
+  parsed `Chart` into a writable `SheetChart`, applies a typed override
+  bag (`undefined` = inherit, `null` = drop, value = replace), and
+  returns the result ready for `writeXlsx`.
+
+`getCharts(workbook)` flattens every chart anchored on the workbook's
+sheets into a single array; `addChart(sheet, chart)` is the symmetric
+writer-side helper that appends a `SheetChart` to a `WriteSheet`.
+
+#### Capability matrix
+
+The table summarises which knobs flow through each layer. "Read"
+means `parseChart` surfaces the field on `Chart` (or
+`ChartAxisInfo` / `ChartDataLabelsInfo` / `ChartDataTable` for nested
+slots); "Write" means `writeXlsx` emits it from the matching
+`SheetChart` field; "Clone" means `cloneChart` carries it through
+with the standard `undefined` / `null` / value override grammar.
+
+| Family                                                                                                                       | Read | Write | Clone |
+| ---------------------------------------------------------------------------------------------------------------------------- | :--: | :---: | :---: |
+| Chart kinds (bar / column / line / pie / doughnut / area / scatter / bubble / combo)                                         |  x   |   x   |   x   |
+| Title text + visibility (`title`, `showTitle`, `autoTitleDeleted`)                                                           |  x   |   x   |   x   |
+| Title typography (size / bold / italic / strike / underline / color / family)                                                |  x   |   x   |   x   |
+| Title rotation, manual layout                                                                                                |  x   |   x   |   x   |
+| Title fill / border color / border width / border dash                                                                       |  x   |   x   |   x   |
+| Legend position, overlay, font knobs, manual layout                                                                          |  x   |   x   |   x   |
+| Legend fill / border color / border width / border dash, per-entry hide                                                      |  x   |   x   |   x   |
+| Plot-area manual layout, fill / border color / border width / border dash                                                    |  x   |   x   |   x   |
+| Chart-space fill / border color / border width / border dash, rounded corners, style preset                                  |  x   |   x   |   x   |
+| Axis title text + typography (per-axis), rotation, manual layout, fill / border knobs                                        |  x   |   x   |   x   |
+| Axis label rotation, font size, bold / italic / underline / strike, color, font family                                       |  x   |   x   |   x   |
+| Axis scale (min / max / logBase / majorUnit / minorUnit), reverse, hidden, crosses, dispUnits                                |  x   |   x   |   x   |
+| Axis number format, tick marks, tick-label position / skip, label offset / alignment                                         |  x   |   x   |   x   |
+| Axis gridlines (major / minor)                                                                                               |  x   |   x   |   x   |
+| Series name, value/category refs, fill color, line stroke (width / dash)                                                     |  x   |   x   |   x   |
+| Series markers (symbol / size / fill / outline)                                                                              |  x   |   x   |   x   |
+| Data labels — chart-level + per-series (show\*, position, separator, number format, leader lines, typography, fill / border) |  x   |   x   |   x   |
+| Data table (showHorzBorder / showVertBorder / showOutline / showKeys, typography, fill / border)                             |  x   |   x   |   x   |
+| Bar / column gap-width and overlap                                                                                           |  x   |   x   |   x   |
+| Pie / doughnut hole size, vary-colors, first-slice angle                                                                     |  x   |   x   |   x   |
+| Display blanks-as, plot-vis-only, show-data-labels-over-max, lang, date1904                                                  |  x   |   x   |   x   |
+| 3D walls / floor / view3D                                                                                                    |  x   |   x   |   x   |
+| Chart-space protection block                                                                                                 |  x   |   x   |   x   |
+| Anchor (twoCellAnchor / oneCellAnchor) + relative offsets                                                                    |  x   |   x   |   x   |
+
+#### Read side — `parseChart` / `getCharts`
 
 ```ts
-import { readXlsx, parseChart } from "hucre";
+import { getCharts, openXlsx, parseChart } from "hucre";
 
-const wb = await readXlsx(buf);
+const wb = await openXlsx(buf);
 
-for (const sheet of wb.sheets) {
-  for (const chart of sheet.charts ?? []) {
-    console.log(chart.kinds, chart.seriesCount, chart.title);
-    // e.g. ["bar"], 2, "Quarterly Sales"
+for (const { sheetName, chart } of getCharts(wb)) {
+  console.log(sheetName, chart.kinds, chart.title);
+  // e.g. "Sales" ["bar"] "Quarterly Sales"
+  console.log(chart.anchor); // { from: { row: 1, col: 3 }, to: { row: 16, col: 10 } }
+  console.log(chart.axes?.x?.title, chart.axes?.y?.scale);
 
-    // chart.anchor surfaces the drawing-layer cell anchor that pins
-    // the chart to the host sheet (twoCellAnchor / oneCellAnchor).
-    console.log(chart.anchor);
-    // e.g. { from: { row: 1, col: 3 }, to: { row: 16, col: 10 } }
-
-    // chart.legend / chart.barGrouping / chart.lineGrouping /
-    // chart.areaGrouping mirror the writer-side fields so a parsed chart
-    // slots straight back into cloneChart without remapping. `legend: false`
-    // means the source chart explicitly hid the legend; `barGrouping` only
-    // surfaces on bar/column charts, `lineGrouping` only on line charts,
-    // and `areaGrouping` only on area charts.
-    console.log(chart.legend, chart.barGrouping, chart.lineGrouping, chart.areaGrouping);
-    // e.g. "bottom" "stacked" undefined undefined
-
-    // chart.axes carries per-axis labels, gridline visibility, numeric
-    // scaling, tick-label number format and tick rendering (major /
-    // minor tick mark style and tick-label position) pulled from
-    // <c:catAx>/<c:valAx>. Only populated axes show up — pie/doughnut
-    // never do, and OOXML defaults collapse to undefined so absence
-    // and the default round-trip identically.
-    console.log(chart.axes);
-    // e.g. {
-    //   x: { title: "Quarter" },
-    //   y: {
-    //     title: "Revenue (USD)",
-    //     gridlines: { major: true },
-    //     scale: { min: 0, max: 100, majorUnit: 25 },
-    //     numberFormat: { formatCode: "$#,##0" },
-    //     majorTickMark: "cross",
-    //     tickLblPos: "low",
-    //   },
-    // }
-
-    // chart.dataLabels surfaces the chart-type-level <c:dLbls> block.
-    // showValue / showCategoryName / showSeriesName / showPercent /
-    // showLegendKey and position / separator round-trip through
-    // cloneChart unchanged.
-    console.log(chart.dataLabels);
-    // e.g. { showValue: true, showLegendKey: true, position: "outEnd" }
-
-    for (const s of chart.series ?? []) {
-      console.log(s.kind, s.index, s.name, s.valuesRef, s.categoriesRef, s.color);
-      // e.g. "bar" 0 "Revenue" "Sheet1!$B$2:$B$10" "Sheet1!$A$2:$A$10" "1F77B4"
-      // s.dataLabels (when present) overrides the chart-level default
-      // for that single series.
-    }
+  for (const s of chart.series ?? []) {
+    console.log(s.kind, s.name, s.valuesRef, s.color, s.dataLabels);
   }
 }
 
@@ -581,1424 +583,124 @@ for (const sheet of wb.sheets) {
 const chart = parseChart(xml);
 ```
 
-`Chart.kinds` lists every chart-type element present under
-`<c:plotArea>` in declaration order, so combo charts surface as e.g.
-`["bar", "line"]`. `Chart.series` mirrors the field shape that
-`ChartSeries` accepts on the write side — a parsed series can be
-fed back into `WriteSheet.charts` to clone or re-bind a chart.
-Bubble/scatter `<c:numLit>` series (literal embedded data, no
-formula) intentionally surface no `valuesRef`/`categoriesRef`.
-`Chart.anchor` mirrors `SheetChart.anchor` on the writer side —
-`twoCellAnchor` charts surface both `from` and `to`,
-`oneCellAnchor` charts surface `from` only (intrinsic size lives in
-`<xdr:ext>`), and `absoluteAnchor` charts (EMU-positioned, no cell
-anchor) report `anchor` as `undefined`. `Chart.legend` and
-`Chart.barGrouping` mirror the writer-side fields of the same name:
-`legend` reports `false` when the chart explicitly suppresses the
-legend (`<c:delete val="1"/>`), `right` when `<c:legend>` is present
-without a `legendPos`, and the matching writer label otherwise;
-`barGrouping` is pulled from the first `<c:barChart>` and only
-surfaces the stacked variants (the OOXML `standard` value collapses
-to `undefined` since the writer treats it as the unspecified default,
-and non-bar charts never report a grouping). `lineGrouping` and
-`areaGrouping` apply the same convention to `<c:lineChart>` and
-`<c:areaChart>` respectively, surfacing only `stacked` /
-`percentStacked` so combo workbooks can declare both alongside a bar
-grouping without colliding. `Chart.axes` mirrors
-the writer-side `SheetChart.axes` and surfaces per-axis labels,
-gridline visibility, numeric scaling, tick-label number format and
-tick rendering: `x` is the category axis (or, for scatter, the first
-value axis) and `y` is the value axis. Empty / whitespace-only
-`<c:title>` text is dropped, `gridlines: { major, minor }` flips on
-when the matching `<c:majorGridlines>` / `<c:minorGridlines>`
-element is present (any nested styling is tolerated),
-`scale: { min, max, majorUnit, minorUnit, logBase }` captures the
-explicit `<c:min>` / `<c:max>` / `<c:logBase>` (under `<c:scaling>`)
-and `<c:majorUnit>` / `<c:minorUnit>` (direct axis children) —
-fields Excel auto-computes are left off so the round trip never
-accidentally pins a value, and zero or negative tick spacings are
-filtered out — and `numberFormat: { formatCode, sourceLinked }`
-mirrors `<c:numFmt>` (an empty `formatCode` collapses the record).
-`majorTickMark` / `minorTickMark` / `tickLblPos` mirror the
-matching axis children, surfacing only non-default values: the
-OOXML defaults `"out"` (major) / `"none"` (minor) / `"nextTo"` (tick
-labels) collapse to `undefined` so absence and the default
-round-trip identically through `cloneChart`. Unknown enum tokens
-are dropped rather than fabricated. Charts without any axis label,
-gridline, scale, number format, or tick override leave `axes`
-undefined, and pie/doughnut charts (which have no axes in OOXML)
-never report one.
-`Chart.dataLabels` mirrors the writer-side `SheetChart.dataLabels`
-and surfaces the toggles Excel carries inside `<c:dLbls>`
-(`showValue`, `showCategoryName`, `showSeriesName`, `showPercent`,
-`showLegendKey`, plus `position` and `separator`). Series-level
-overrides land on `ChartSeriesInfo.dataLabels`; a `<c:dLbls>` block
-that only contains `<c:delete val="1"/>` (Excel's "labels off" idiom)
-collapses to `undefined` rather than a record so callers see the
-absence cleanly. `showLegendKey` mirrors Excel's "Format Data Labels
--> Legend Key" checkbox: pin it `true` to paint the legend's color
-swatch beside every label. The OOXML default `false` collapses to
-`undefined` on the read side so absence and `<c:showLegendKey val="0"/>`
-round-trip identically through `cloneChart`.
-`Chart.holeSize` surfaces `<c:doughnutChart><c:holeSize val=".."/>`
-on doughnut charts so a parsed template can round-trip its hole back
-through `cloneChart`; non-doughnut charts (and doughnut charts that
-omit the element) never report it.
-`Chart.gapWidth` and `Chart.overlap` surface the bar / column
-spacing knobs (`<c:barChart><c:gapWidth val=".."/>` and
-`<c:overlap val=".."/>`). `gapWidth` (0 – 500 % of the bar width)
-controls the gap between category groups and `overlap` (-100..100 %)
-controls how much series within a group separate or stack. The OOXML
-defaults (`gapWidth=150`, `overlap=0`) collapse to `undefined`;
-non-bar / non-column charts never report either.
-`Chart.firstSliceAng` surfaces the
-`<c:pieChart><c:firstSliceAng val=".."/>` /
-`<c:doughnutChart><c:firstSliceAng val=".."/>` rotation (degrees
-clockwise from 12 o'clock) on pie and doughnut charts. The OOXML
-default `0` (and the schema-equivalent `360`) collapses to
-`undefined` so absence and the default round-trip identically;
-non-pie / non-doughnut charts never report it.
-`Chart.dispBlanksAs` surfaces the chart-level
-`<c:chart><c:dispBlanksAs val=".."/>` element — Excel's "Select Data
-Source → Hidden and Empty Cells" knob — and reports the literal
-`"zero"` or `"span"` token. The OOXML default `"gap"` collapses to
-`undefined` so absence and the default round-trip identically;
-unknown / malformed values (and a missing `val` attribute) drop to
-`undefined` rather than fabricate a token Excel rejects.
-`Chart.varyColors` surfaces the chart-type element's
-`<c:varyColors val=".."/>` flag — Excel's "Format Data Series → Fill →
-Vary colors by point" toggle — and reports the literal `true` or
-`false` value when it differs from the per-family OOXML default. Pie /
-doughnut / pie3D / ofPie default to `true` (every slice paints in a
-unique color), so absence and `<c:varyColors val="1"/>` both collapse
-to `undefined`; only an explicit `val="0"` surfaces `false` (the
-single-color override). Every other chart family defaults to `false`,
-so absence and `<c:varyColors val="0"/>` both collapse to `undefined`
-and only an explicit `val="1"` surfaces `true`. Unknown / malformed
-values and a missing `val` attribute drop to `undefined`.
-`Chart.scatterStyle` surfaces `<c:scatterChart><c:scatterStyle
-val=".."/></c:scatterChart>` — the chart-level XY-scatter preset
-Excel selects in the chart-type picker (`"none"`, `"line"`,
-`"lineMarker"`, `"marker"`, `"smooth"`, or `"smoothMarker"`). Every
-recognized token surfaces literally so a clone preserves the exact
-preset; missing elements, missing `val` attributes, and tokens
-outside the OOXML enum drop to `undefined`. Only `scatter` charts
-report the field — the schema places the element exclusively on
-`<c:scatterChart>`.
-`Chart.plotVisOnly` surfaces the chart-level
-`<c:chart><c:plotVisOnly val=".."/>` flag — the inverse of Excel's
-"Hidden and Empty Cells → Show data in hidden rows and columns"
-checkbox. The OOXML default `true` (hidden cells drop out) collapses
-to `undefined` so absence and `<c:plotVisOnly val="1"/>` round-trip
-identically; only an explicit `val="0"` surfaces `false` (the
-non-default that keeps hidden cells in the chart). The reader accepts
-the OOXML truthy / falsy spellings (`"1"` / `"true"` / `"0"` /
-`"false"`); unknown values and missing `val` attributes drop to
-`undefined`.
-`Chart.showDLblsOverMax` surfaces the chart-level
-`<c:chart><c:showDLblsOverMax val=".."/>` flag — Excel's "Format Axis
-→ Labels → Show data labels for values over maximum scale" checkbox.
-The OOXML default `true` (labels render for every point) collapses to
-`undefined` so absence and `<c:showDLblsOverMax val="1"/>` round-trip
-identically; only an explicit `val="0"` surfaces `false` (the
-non-default that strips labels off any point whose value exceeds the
-pinned `<c:max>`). The reader accepts the OOXML truthy / falsy
-spellings (`"1"` / `"true"` / `"0"` / `"false"`); unknown values and
-missing `val` attributes drop to `undefined`.
-`Chart.dataTable` surfaces the chart-level
-`<c:plotArea><c:dTable>...</c:dTable></c:plotArea>` block — Excel's
-"Add Chart Element → Data Table" toggle (the small grid of underlying
-series values painted beneath the plot area). The reader returns a
-`ChartDataTable` object with up to four boolean children
-(`showHorzBorder`, `showVertBorder`, `showOutline`, `showKeys`); each
-flag round-trips literally because all four are required on
-`CT_DTable` and Excel always emits every one. Children with missing or
-unknown `val` attributes drop to `undefined` rather than fabricate a
-flag the file did not pin, and absence of the `<c:dTable>` element
-collapses the whole field to `undefined`. Only chart families with
-axes (`bar`, `column`, `line`, `area`, `scatter`) carry a slot for the
-element — the OOXML schema places `<c:dTable>` inside `<c:plotArea>`
-alongside the axes, so pie / doughnut surface `undefined`.
-`Chart.protection` surfaces the chart-space-level
-`<c:chartSpace><c:protection>...</c:protection>` block — Excel's
-chart-level lock that pairs with the host worksheet's
-`<sheetProtection>` to decide which interactions remain allowed when
-the parent sheet is protected. The reader returns a `ChartProtection`
-object with up to five independently optional boolean children
-(`chartObject`, `data`, `formatting`, `selection`, `userInterface`);
-each flag is independently optional on `CT_Protection`, so the reader
-only surfaces the flags the file actually pinned. Children with
-missing or unknown `val` attributes drop to `undefined` rather than
-fabricate a flag the file did not pin. The element itself is the
-gating signal — a `<c:protection>` block with no resolvable children
-surfaces as an empty `{}`, and absence of the element collapses the
-field to `undefined`. Every chart family carries a slot — the element
-lives on `<c:chartSpace>` (a sibling of `<c:chart>`), not inside
-`<c:plotArea>`, so pie / doughnut still surface the block.
-`Chart.view3D` surfaces the chart-level `<c:chart><c:view3D>` block
-(CT_View3D, ECMA-376 Part 1, §21.2.2.228) — Excel's "3-D Rotation"
-pane on 3D chart families. The reader returns a `ChartView3D` object
-with up to six independently optional fields (`rotX`, `hPercent`,
-`rotY`, `depthPercent`, `rAngAx`, `perspective`); each child is
-independently optional on `CT_View3D`, so the reader only surfaces
-the fields the file actually pinned. Numeric fields are validated
-against the matching OOXML simple-type range
-(`ST_RotX` / `ST_HPercent` / `ST_RotY` / `ST_DepthPercent` /
-`ST_Perspective`) — out-of-range, fractional, and non-numeric `val`
-attributes drop rather than fabricate a clamped value. The boolean
-`<c:rAngAx>` accepts the OOXML truthy / falsy spellings (`"1"` /
-`"true"` / `"0"` / `"false"`); unknown tokens drop to `undefined`.
-The element itself is the gating signal — a `<c:view3D>` block with
-no resolvable children surfaces as an empty `{}`, and absence of the
-element collapses the field to `undefined`. The element lives on
-`<c:chart>` (between `<c:autoTitleDeleted>` and `<c:plotArea>`), so
-the OOXML schema accepts it on every chart family — though it is
-only meaningful on 3D families (`bar3D`, `line3D`, `pie3D`, `area3D`,
-`surface3D`); a stray element on a 2D chart still surfaces here so
-the round-trip through `cloneChart` stays lossless.
-`ChartAxisInfo.tickLblSkip` and `ChartAxisInfo.tickMarkSkip` surface
-the category-axis tick-thinning knobs (`<c:catAx><c:tickLblSkip val=".."/>`
-and `<c:catAx><c:tickMarkSkip val=".."/>`). Both elements live on
-`CT_CatAx` / `CT_DateAx` only — the reader skips the parse on
-`<c:valAx>` so a corrupt template carrying a stray skip on a value
-axis does not surface a field the writer would never emit anyway. The
-OOXML default `1` (show every label / mark) collapses to `undefined`;
-out-of-range values (non-positive or > 32767) drop rather than clamp
-so a malformed input cannot leak into the writer.
-`ChartAxisInfo.lblOffset` surfaces the category-axis label-offset
-percentage (`<c:catAx><c:lblOffset val=".."/>`). Same scope as the
-tick skips above — `CT_CatAx` / `CT_DateAx` only — and the same
-default-collapse semantics: the OOXML default `100` (Excel's
-reference label spacing) collapses to `undefined` so absence and the
-default round-trip identically; out-of-range values (negative or
-greater than 1000) drop rather than clamp.
-`ChartAxisInfo.lblAlgn` surfaces the category-axis tick-label
-horizontal alignment (`<c:catAx><c:lblAlgn val=".."/>`) — Excel's
-"Format Axis → Alignment → Text alignment" preset. Same scope as
-`lblOffset` (`CT_CatAx` / `CT_DateAx` only — `<c:valAx>` /
-`<c:serAx>` reject the element) and the same default-collapse
-semantics: the OOXML default `"ctr"` (centered) collapses to
-`undefined` so absence and the default round-trip identically.
-Unknown tokens (anything outside the `ST_LblAlgn` enumeration of
-`"ctr"` / `"l"` / `"r"`) drop rather than fabricate a value the
-writer would never emit.
-`ChartAxisInfo.hidden` surfaces the per-axis `<c:delete val=".."/>`
-flag — Excel's "Format Axis -> Show axis" toggle. Only an explicit
-`val="1"` (axis hidden) surfaces `true`; the OOXML default `val="0"`,
-absence, missing `val`, and unknown tokens all collapse to `undefined`
-so absence and the default round-trip identically. The reader accepts
-the OOXML truthy / falsy spellings (`"1"` / `"true"` / `"0"` /
-`"false"`).
-`ChartAxisInfo.noMultiLvlLbl` surfaces the per-axis
-`<c:noMultiLvlLbl val=".."/>` flag — Excel's "Format Axis ->
-Multi-level Category Labels" checkbox (the checkbox is the inverse:
-checked means tiered labels, i.e. `noMultiLvlLbl: false`). The OOXML
-schema places the element on `CT_CatAx` exclusively (even
-`<c:dateAx>`, `<c:valAx>`, and `<c:serAx>` reject it), so the parser
-ignores the element on every other axis flavour. Only an explicit
-`val="1"` (multi-tier labels collapsed onto a single line) surfaces
-`true`; the OOXML default `val="0"`, absence, missing `val`, and
-unknown tokens all collapse to `undefined` so absence and the default
-round-trip identically. The reader accepts the OOXML truthy / falsy
-spellings (`"1"` / `"true"` / `"0"` / `"false"`).
-`ChartAxisInfo.auto` surfaces the per-axis `<c:auto val=".."/>` flag
-— Excel's "Format Axis -> Axis Options -> Axis Type" radio (the
-"Text axis" choice flips the value to `0`). The OOXML default `true`
-lets Excel inspect the axis labels and decide at render time whether
-to treat the axis as a discrete category axis or a chronological
-date axis; `false` pins the axis as a literal category axis so a
-date-shaped category range still renders as a flat category axis
-without any chronological grouping. The OOXML schema places the
-element on `CT_CatAx` exclusively, so the parser ignores it on every
-other axis flavour. Only an explicit `val="0"` surfaces `false`; the
-OOXML default `val="1"`, absence, missing `val`, and unknown tokens
-all collapse to `undefined` so absence and the default round-trip
-identically. The reader accepts the OOXML truthy / falsy spellings
-(`"1"` / `"true"` / `"0"` / `"false"`).
-`ChartAxisInfo.reverse` surfaces the per-axis
-`<c:scaling><c:orientation val="maxMin"/></c:scaling>` flag — Excel's
-"Categories / Values in reverse order" toggle. Only `"maxMin"` surfaces
-`true`; the OOXML default `"minMax"` (and unknown tokens, missing `val`
-attributes, missing `<c:orientation>` / `<c:scaling>` elements) all
-collapse to `undefined` so absence and the default round-trip
-identically through `cloneChart`. Reverse can fire on either or both
-axes independently — bar / column / line / area / scatter all support
-it; pie / doughnut never report it because they have no axes.
-`ChartAxisInfo.crosses` and `ChartAxisInfo.crossesAt` surface the
-per-axis crossing pin — where the perpendicular axis crosses this axis
-along its own range. `crosses` mirrors the OOXML `ST_Crosses`
-enumeration (`"autoZero"` / `"min"` / `"max"`) on `<c:crosses>`;
-`crossesAt` carries the literal numeric pin from `<c:crossesAt>`. The
-two elements live in an XSD choice (only one may legally appear at a
-time), and the reader honours that schema by preferring `crossesAt`
-when both surface on a malformed template — mirroring the writer's
-emit order. The OOXML default `crosses: "autoZero"` collapses to
-`undefined`, but `crossesAt: 0` is preserved (a numeric pin at zero is
-distinct from the `"autoZero"` default which defers to Excel's
-auto-placement). Unknown semantic tokens and non-numeric `val`
-attributes drop rather than fabricate values the writer would reject.
-`ChartAxisInfo.dispUnits` surfaces the per-value-axis display-unit
-configuration pulled from `<c:valAx><c:dispUnits>...</c:dispUnits></c:valAx>`
-— Excel's "Format Axis -> Display units" dropdown. The element rescales
-the numeric tick labels by the chosen divisor (e.g. `"millions"` divides
-every label by 1e6) so a chart whose source range stores raw amounts
-can show compact tick labels without modifying the underlying cells.
-The OOXML schema places the element exclusively on `CT_ValAx`, so
-`dispUnits` only surfaces on the value-axis side of bar / column / line
-/ area charts (the Y axis) and on both axes of scatter charts (both are
-value axes); category axes (`<c:catAx>`) and pie / doughnut never
-surface the field. The reader keeps both choices the OOXML schema
-allows: the named `unit` token from `<c:builtInUnit val=".."/>` and the
-arbitrary numeric divisor from `<c:custUnit val=".."/>` (Excel's
-"Display units → Other" path — e.g. `86400` to convert seconds to
-days). The OOXML schema places the two children in an `xsd:choice`
-(exactly one may appear); on emit hucre prefers `custUnit` when both
-fields are pinned so a clone can layer a custom divisor on top of an
-inherited preset without manually pruning the original. The
-`showLabel: true` flag tracks the presence of `<c:dispUnitsLbl>`
-(Excel paints its automatic annotation alongside the axis); the rich-
-text `<c:dispUnitsLbl>` body is intentionally not surfaced. The OOXML
-schema accepts the nine `ST_BuiltInUnit` tokens (`"hundreds"`,
-`"thousands"`, `"tenThousands"`, `"hundredThousands"`, `"millions"`,
-`"tenMillions"`, `"hundredMillions"`, `"billions"`, `"trillions"`);
-unknown tokens drop to `undefined` rather than fabricate a value the
-writer would never emit. Non-positive / non-finite `custUnit` values
-drop at the same boundary.
-`ChartAxisInfo.crossBetween` surfaces the per-value-axis cross-between
-mode pulled from `<c:valAx><c:crossBetween val=".."/></c:valAx>` — the
-OOXML `ST_CrossBetween` enum (`"between"` / `"midCat"`) that controls
-whether the perpendicular axis crosses BETWEEN data points (a half-
-category gap on each end of the plot area) or AT the midpoint of each
-category (data points sit ON the perpendicular-axis ticks). The element
-is required on every `<c:valAx>` and Excel emits a per-family default
-on every freshly-drawn chart — `"between"` on bar / column / line /
-area Y axes; `"midCat"` on both scatter axes — so the reader collapses
-the family-default value to `undefined` and only surfaces a non-default
-override (e.g. a template that pinned `"midCat"` on a line chart's Y
-axis to land the first / last data point flush with the value-axis
-line). The OOXML schema places the element exclusively on `CT_ValAx`,
-so `crossBetween` only surfaces on value-axis sides; category axes
-(`<c:catAx>`) and pie / doughnut never carry one. Unknown tokens drop
-to `undefined`.
-`Chart.roundedCorners` surfaces the chart-frame
-`<c:chartSpace><c:roundedCorners val=".."/>` flag — Excel's "Format
-Chart Area → Border → Rounded corners" toggle. The element sits on
-`<c:chartSpace>` (a sibling of `<c:chart>`) because it styles the
-outer frame rather than the plot area. The OOXML default `false`
-collapses to `undefined` so absence and `<c:roundedCorners val="0"/>`
-round-trip identically; only an explicit `val="1"` surfaces `true`.
-The reader accepts the OOXML truthy / falsy spellings (`"1"` / `"true"`
-/ `"0"` / `"false"`); unknown values and missing `val` attributes drop
-to `undefined`.
-`Chart.legendOverlay` surfaces the legend-overlay flag pulled from
-`<c:legend><c:overlay val=".."/></c:legend>` — Excel's "Format Legend →
-Show the legend without overlapping the chart" toggle (the checkbox is
-the inverse of this flag — checked means `false`, unchecked means
-`true`). The OOXML default `false` collapses to `undefined` so absence
-and `<c:overlay val="0"/>` round-trip identically; only an explicit
-`val="1"` surfaces `true`. The reader accepts the OOXML truthy / falsy
-spellings (`"1"` / `"true"` / `"0"` / `"false"`); unknown values and
-missing `val` attributes drop to `undefined`. The flag is dropped
-whenever `Chart.legend` is `false` or the chart omits the legend
-element entirely — there is no overlay slot on a hidden legend, so the
-parsed shape stays minimal.
-`Chart.legendEntries` surfaces the per-series legend-entry overrides
-pulled from `<c:legend><c:legendEntry>` children — Excel's "Format
-Legend Entries → Hide" action surfaces the same elements. Each entry
-exposes the 0-based series `idx` selector and the `delete` flag (the
-hide-bit pulled from `<c:delete val=".."/>`); per-entry text styling
-(`<c:txPr>`) is intentionally not modelled at this layer. Entries
-without a valid `<c:idx>` selector drop on parse rather than surface a
-fabricated index, and duplicate `<c:idx>` values keep only the first
-occurrence so a re-emit stays canonical. Absence collapses to
-`undefined` so a chart with no overrides round-trips minimally — the
-field is dropped whenever `Chart.legend` is `false` or the chart omits
-the legend element entirely.
-`Chart.titleOverlay` surfaces the title-overlay flag pulled from
-`<c:title><c:overlay val=".."/></c:title>` — Excel's "Format Chart
-Title → Show the title without overlapping the chart" toggle (the
-checkbox is the inverse of this flag — checked means `false`, unchecked
-means `true`). The OOXML default `false` collapses to `undefined` so
-absence and `<c:overlay val="0"/>` round-trip identically; only an
-explicit `val="1"` surfaces `true`. The reader accepts the OOXML
-truthy / falsy spellings (`"1"` / `"true"` / `"0"` / `"false"`);
-unknown values and missing `val` attributes drop to `undefined`. The
-flag is dropped whenever the chart omits the `<c:title>` element
-entirely — there is no overlay slot to surface in that case.
-`Chart.titleRotation` surfaces the chart-title rotation pulled from
-`<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title>`
-— Excel's "Format Chart Title → Size & Properties → Alignment → Custom
-angle" knob. The OOXML attribute is in 60000ths of a degree; the reader
-divides by 60000 (rounding) to surface a whole-degree value in the
-`-90..90` band Excel's UI exposes. The OOXML default `0` (and absence
-of the `<a:bodyPr>` element / `rot` attribute) collapses to `undefined`
-so absence and the default round-trip identically through `cloneChart`.
-Out-of-range values clamp to the nearest endpoint of the `-90..90` band;
-non-numeric tokens drop back to `undefined`. The field is dropped
-whenever the chart omits the `<c:title>` element entirely — there is no
-rotation to surface in that case. Mirrors the axis-side
-`ChartAxisInfo.labelRotation` field — same range, same conversion
-factor — so a parsed value threads straight back into the writer-side
-`SheetChart.titleRotation`.
-`Chart.autoTitleDeleted` surfaces the chart-level
-`<c:chart><c:autoTitleDeleted val=".."/>` flag — Excel's record of
-whether the user explicitly deleted the auto-generated title that
-single-series charts synthesise from the series name. The element sits
-on `<c:chart>` directly (between `<c:title>` and `<c:plotArea>` per
-CT_Chart, ECMA-376 Part 1, §21.2.2.4), not nested inside `<c:title>`,
-so a chart with no `<c:title>` may still pin the flag. The OOXML
-default `false` collapses to `undefined` so absence and
-`<c:autoTitleDeleted val="0"/>` round-trip identically; only an
-explicit `val="1"` surfaces `true`. The reader accepts the OOXML
-truthy / falsy spellings (`"1"` / `"true"` / `"0"` / `"false"`);
-unknown values and missing `val` attributes drop to `undefined`.
-`Chart.dropLines` surfaces the chart-type-level `<c:dropLines/>` flag
-on the first `<c:lineChart>` / `<c:line3DChart>` / `<c:areaChart>` /
-`<c:area3DChart>` element — Excel's "Add Chart Element → Lines → Drop
-Lines" toggle (vertical reference lines connecting each data point to
-the category axis). The element is bare (no `val` attribute), so its
-mere presence surfaces `true` and absence collapses to `undefined`.
-The reader does not surface `dropLines` for chart families whose OOXML
-schema rejects the element (bar / column / pie / doughnut / scatter /
-stock / radar / surface / bubble) — a stray element on those parents
-is ignored.
-`Chart.hiLowLines` surfaces the chart-type-level `<c:hiLowLines/>`
-flag on the first `<c:lineChart>` / `<c:line3DChart>` / `<c:stockChart>`
-element — Excel's "Add Chart Element → Lines → High-Low Lines" toggle
-(vertical connectors between the highest and lowest series values at
-each category position). Same bare-element shape as `dropLines`:
-presence surfaces `true`, absence collapses to `undefined`. The
-element has no slot on `<c:areaChart>` / `<c:area3DChart>` per the
-OOXML schema, so the reader ignores it on those parents and on every
-non-line / non-stock family.
-`Chart.serLines` surfaces the chart-type-level `<c:serLines/>` flag on
-the first `<c:barChart>` / `<c:ofPieChart>` element — Excel's "Add
-Chart Element → Lines → Series Lines" toggle (connector lines drawn
-between paired data points across consecutive series in a stacked bar
-/ column chart). Same bare-element shape as `dropLines` / `hiLowLines`:
-presence surfaces `true`, absence collapses to `undefined`. The reader
-does not surface `serLines` for chart families whose OOXML schema
-rejects the element (line / pie / doughnut / area / scatter / stock /
-radar / surface / bubble) — a stray element on those parents is
-ignored.
-`ChartSeriesInfo.smooth` surfaces the per-series
-`<c:ser><c:smooth val=".."/>` flag — Excel's "Format Data Series →
-Line → Smoothed line" toggle — only on `line` / `line3D` / `scatter`
-series (the OOXML schema places `<c:smooth>` exclusively on
-`CT_LineSer` and `CT_ScatterSer`). Absence and the OOXML default
-`val="0"` both collapse to `undefined`, so only an explicit
-`<c:smooth val="1"/>` round-trips as `smooth: true`.
-`ChartSeriesInfo.marker` surfaces the per-series `<c:ser><c:marker>`
-glyph configuration on `line` / `line3D` / `scatter` series (the
-schema places `<c:marker>` only on `CT_LineSer` and `CT_ScatterSer`).
-The reader pulls `symbol` (`circle` / `square` / `diamond` /
-`triangle` / `x` / `star` / `dot` / `dash` / `plus` / `auto` /
-`none`), `size` (clamped to the OOXML 2..72 band), and the marker's
-fill / outline colors out of `<c:spPr><a:solidFill>` and
-`<c:spPr><a:ln><a:solidFill>` — empty `<c:marker/>` elements collapse
-to `undefined` so absence and a bare element round-trip identically.
-`ChartSeriesInfo.stroke` surfaces the per-series
-`<c:ser><c:spPr><a:ln>` line styling on the same `line` / `line3D` /
-`scatter` series — `dash` mirrors the OOXML `ST_PresetLineDashVal`
-enum (`solid`, `dot`, `dash`, `lgDash`, `dashDot`, `lgDashDot`,
-`lgDashDotDot`, `sysDash`, `sysDot`, `sysDashDot`, `sysDashDotDot`)
-and `width` is reported in points after converting from EMU and
-clamping to Excel's 0.25 – 13.5 pt UI band. Empty `<a:ln/>` blocks,
-unknown dash tokens, and out-of-band widths collapse to `undefined`
-so the parsed shape stays minimal.
-`ChartSeriesInfo.invertIfNegative` surfaces the per-series
-`<c:ser><c:invertIfNegative val=".."/>` flag — Excel's "Format Data
-Series → Fill → Invert if negative" toggle — only on `bar` / `bar3D`
-series (the OOXML schema places `<c:invertIfNegative>` exclusively on
-`CT_BarSer` / `CT_Bar3DSer`). Absence and the OOXML default
-`val="0"` both collapse to `undefined`, so only an explicit
-`<c:invertIfNegative val="1"/>` round-trips as `invertIfNegative: true`.
-`Chart.upDownBars` surfaces the line-chart up / down bars flag pulled
-from `<c:lineChart><c:upDownBars>...</c:upDownBars></c:lineChart>` —
-Excel's "Add Chart Element -> Up/Down Bars" toggle. The element
-paints a vertical bar at each category whose top tracks the higher
-series value and bottom tracks the lower one (typically used to
-visualize open / close differences on a line-style stock chart).
-Surfaces `true` whenever the element is present (with or without the
-optional `<c:gapWidth>` / `<c:upBars>` / `<c:downBars>` children — the
-model is a plain presence flag at this layer); absence collapses to
-`undefined`. Only line-flavored chart-type bodies surface the field —
-`CT_LineChart` / `CT_Line3DChart` / `CT_StockChart` per the OOXML
-schema; a stray `<c:upDownBars>` on a bar / column / pie / doughnut /
-area / scatter chart is ignored.
-`Chart.showLineMarkers` surfaces the chart-level marker visibility
-flag pulled from `<c:lineChart><c:marker val=".."/></c:lineChart>` —
-Excel's "Line vs. Line with Markers" chart-type distinction. The flag
-gates whether per-series markers paint at all on a line chart;
-per-series `<c:marker>` blocks (CT_Marker, with `<c:symbol>` /
-`<c:size>`) still pick the symbol / size / fill that paints when the
-gate is open. The Excel-default `val="1"` and absence both collapse to
-`undefined` so absence and the default round-trip identically through
-{@link cloneChart} — only an explicit `val="0"` surfaces `false`. The
-chart-level slot lives exclusively on `CT_LineChart` per the OOXML
-schema; `CT_Line3DChart` / `CT_StockChart` and every non-line family
-have no slot for the chart-level CT_Boolean variant, so a stray
-`<c:marker val=".."/>` on those bodies is ignored.
-Sheets that hucre actively regenerates because they
-also carry hucre-managed images currently keep the chart bodies but
-lose the in-drawing chart anchor — merging hucre's drawing output
-with the original chart graphicFrames is a follow-up.
+`Chart.kinds` lists every chart-type element under `<c:plotArea>` in
+declaration order, so combo charts surface as e.g. `["bar", "line"]`.
+`Chart.series` mirrors the field shape that `ChartSeries` accepts on
+the write side — a parsed series can be fed straight back into
+`SheetChart.series`. Bubble/scatter `<c:numLit>` series (literal
+embedded data, no formula) intentionally surface no
+`valuesRef` / `categoriesRef`. `Chart.anchor` mirrors
+`SheetChart.anchor`: `twoCellAnchor` charts surface both `from` and
+`to`, `oneCellAnchor` charts surface `from` only,
+`absoluteAnchor` charts (EMU-positioned, no cell anchor) report
+`anchor` as `undefined`.
 
-#### Authoring charts with `writeXlsx`
-
-The writer covers seven chart families — bar, column, line, pie,
-doughnut, scatter, and area — through the `WriteSheet.charts` field.
-Each chart is anchored to cells like an image and serialized as
-`xl/charts/chartN.xml`:
+#### Write side — `writeXlsx` + `addChart`
 
 ```ts
-import { writeXlsx } from "hucre";
+import { addChart, writeXlsx } from "hucre";
 
-const xlsx = await writeXlsx({
-  sheets: [
-    {
-      name: "Sales",
-      rows: [
-        ["Quarter", "Revenue", "Cost"],
-        ["Q1", 12000, 7000],
-        ["Q2", 15500, 8500],
-        ["Q3", 14000, 7800],
-      ],
-      charts: [
-        {
-          type: "column",
-          title: "Quarterly Performance",
-          series: [
-            { name: "Revenue", values: "B2:B4", categories: "A2:A4", color: "1F77B4" },
-            { name: "Cost", values: "C2:C4", categories: "A2:A4", color: "FF7F0E" },
-          ],
-          anchor: { from: { row: 6, col: 0 }, to: { row: 22, col: 8 } },
-          legend: "bottom",
-        },
-      ],
-    },
+const dashboard = {
+  name: "Dashboard",
+  rows: [
+    ["Quarter", "Revenue", "Forecast"],
+    ["Q1", 12000, 11500],
+    ["Q2", 15500, 15000],
+    ["Q3", 14000, 14500],
+    ["Q4", 17800, 17200],
+  ],
+};
+
+addChart(dashboard, {
+  type: "column",
+  title: "Quarterly Revenue",
+  titleFontSize: 14,
+  titleBold: true,
+  titleColor: "1F77B4",
+  titleBorderColor: "1F77B4",
+  titleBorderWidth: 1.5,
+  titleBorderDash: "dash",
+  series: [
+    { name: "Revenue", values: "B2:B5", categories: "A2:A5", color: "1F77B4" },
+    { name: "Forecast", values: "C2:C5", categories: "A2:A5", color: "FF7F0E" },
+  ],
+  axes: {
+    x: { title: "Quarter" },
+    y: { title: "Revenue (USD)", numberFormat: { formatCode: "$#,##0" } },
+  },
+  legend: "bottom",
+  legendFillColor: "F2F2F2",
+  legendBorderDash: "dot",
+  plotAreaBorderColor: "DDDDDD",
+  plotAreaBorderWidth: 0.75,
+  dataLabels: { showValue: true, position: "outEnd", fontSize: 9 },
+  anchor: { from: { row: 6, col: 0 }, to: { row: 22, col: 7 } },
+});
+
+const xlsx = await writeXlsx({ sheets: [dashboard] });
+```
+
+Every knob the writer accepts lives on the `SheetChart` type — see
+[`SheetChart` in `src/_types.ts`](./src/_types.ts) for the full
+field list with per-field semantics, OOXML mapping, and clamp /
+default behavior. The capability table above lists the families
+covered.
+
+#### Clone — `cloneChart(source, options)`
+
+`cloneChart` takes a parsed `Chart` and a `CloneChartOptions` override
+bag and returns a `SheetChart` ready for `writeXlsx`. Every override
+field uses the same grammar:
+
+- `undefined` (or omitted) — inherit the source value.
+- `null` — drop the source value (writer falls back to the OOXML
+  default for that slot).
+- a typed value — replace the source value (after running through the
+  same clamp / normalize as the writer).
+
+Per-series overrides are supplied as a positional `series` array;
+each entry merges with the source series at the matching index.
+
+```ts
+import { cloneChart, openXlsx, parseChart, writeXlsx } from "hucre";
+
+const wb = await openXlsx(templateBytes);
+const sourceChart = wb.sheets[0].charts?.[0];
+if (!sourceChart) throw new Error("template missing chart");
+
+// Re-bind the template chart to a new data range and recolour series.
+const cloned = cloneChart(sourceChart, {
+  anchor: { from: { row: 0, col: 0 }, to: { row: 18, col: 8 } },
+  title: "FY 2026 Revenue by Region",
+  titleColor: "1F77B4",
+  legend: "right",
+  series: [
+    { values: "B2:B13", categories: "A2:A13", color: "1F77B4" },
+    { values: "C2:C13", categories: "A2:A13", color: null /* drop template tint */ },
   ],
 });
-```
 
-Bare `B2:B4` series ranges are auto-qualified with the owning sheet
-name (sheet names containing whitespace or punctuation are quoted and
-embedded apostrophes are doubled per the OOXML spec). `barGrouping`
-toggles `clustered` / `stacked` / `percentStacked` on bar/column
-charts; `lineGrouping` and `areaGrouping` accept
-`standard` / `stacked` / `percentStacked` for line and area charts
-(`standard` is the writer default and matches Excel's plain layout).
-`legend` accepts
-`top` / `bottom` / `left` / `right` / `topRight` / `false`, and
-`altText` / `frameTitle` flow through to the drawing's `xdr:cNvPr`
-attributes for screen readers.
-`axes: { x: { title, axisTitleRotation, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, labelRotation, reverse, crosses, crossesAt, dispUnits, crossBetween }, y: { title, axisTitleRotation, gridlines, scale, numberFormat, majorTickMark, minorTickMark, tickLblPos, labelRotation, reverse, crosses, crossesAt, dispUnits, crossBetween } }`
-attaches per-axis labels, gridlines, numeric scaling, the tick-label
-number format and the tick-rendering trio — `x` lands inside
-`<c:catAx>` (or the X value axis for scatter), `y` inside the value
-axis. Empty or whitespace-only titles are silently dropped,
-`gridlines: { major, minor }` emits
-`<c:majorGridlines>` / `<c:minorGridlines>` in the spec-required
-position (after `<c:axPos>`, before any `<c:title>`, major before
-minor), `scale: { min, max, majorUnit, minorUnit, logBase }` pins
-explicit axis bounds (`<c:min>` / `<c:max>` / `<c:logBase>` go inside
-`<c:scaling>`; `<c:majorUnit>` / `<c:minorUnit>` are emitted after
-`<c:crossBetween>` per CT_ValAx) — non-finite numbers, zero/negative
-tick spacings, log bases outside `2..1000`, and `min >= max` ranges
-are filtered out so Excel never sees a value it would reject — and
-`numberFormat: { formatCode, sourceLinked }` emits
-`<c:numFmt formatCode=".." sourceLinked="0|1"/>` between the axis
-title and `<c:crossAx>` (an empty `formatCode` skips emission).
-`majorTickMark` / `minorTickMark` accept `"none"` / `"in"` / `"out"`
-/ `"cross"` (the OOXML `ST_TickMark` enum) and emit
-`<c:majorTickMark val=".."/>` / `<c:minorTickMark val=".."/>` right
-after `<c:numFmt>`; absent fields fall back to Excel's reference
-defaults (`"out"` for major, `"none"` for minor) so a chart that
-omits both renders identically to one a freshly-drawn Excel chart
-would emit. `tickLblPos` accepts `"nextTo"` / `"low"` / `"high"` /
-`"none"` and lands in `<c:tickLblPos val=".."/>` immediately after
-the tick-mark elements — useful for pinning numeric axis labels to
-the chart edge when the value axis crosses elsewhere
-(`tickLblPos: "low"`) or hiding labels entirely
-(`tickLblPos: "none"`). Unknown enum values on either field are
-dropped silently so the writer never emits a token Excel rejects.
-Pie / doughnut charts ignore the entire `axes` field because OOXML
-defines no axes for them.
-`dataLabels: { showValue, showCategoryName, showSeriesName, showPercent, showLegendKey, position, separator }`
-attaches Excel's small in-chart annotations: set at the chart level
-to label every series, or set on a single `series[i].dataLabels` to
-override (passing `false` suppresses labels for that series alone
-even when the chart-level default has them on). `showLegendKey` repeats
-the legend's color swatch inside each label slot (Excel's "Format
-Data Labels -> Legend Key" checkbox); the OOXML default is `false`
-so omit the field for the standard label shape. For doughnut charts,
-`holeSize` (10 – 90, Excel's UI band; default 50) controls the
-diameter of the inner hole — values outside the band are clamped to
-the closest end and non-doughnut kinds silently ignore the field.
-For bar and column charts, `gapWidth` (0 – 500 % of the bar width;
-default `150` for unstacked, omitted for stacked) controls the empty
-space between adjacent category groups and `overlap` (-100..100 %;
-default `0` for clustered, `100` for stacked) controls how series
-within a group separate or stack. Out-of-band values clamp to the
-schema bounds, and non-bar / non-column kinds silently ignore both.
-For pie and doughnut charts, `firstSliceAng` (0 – 360 degrees, default
-0 = 12 o'clock) rotates the first wedge clockwise — useful for
-aligning paired charts in a dashboard. Out-of-band values wrap modulo
-360 (380 → 20, -90 → 270) the same way Excel's chart-formatting pane
-does, and non-pie / non-doughnut kinds silently ignore the field.
-The chart-level `dispBlanksAs` field maps to
-`<c:chart><c:dispBlanksAs val=".."/>` — Excel's "Select Data Source →
-Hidden and Empty Cells" toggle — and accepts `"gap"` (leave a break),
-`"zero"` (drop missing points to the X axis) or `"span"` (connect
-across the gap; line / scatter only). The writer always emits the
-element, defaulting to `"gap"` (the OOXML default Excel itself emits)
-and clamping unknown tokens back to `"gap"` so a malformed input
-cannot produce invalid OOXML.
-The chart-level `varyColors` field maps to `<c:varyColors val=".."/>`
-on the chart-type element — Excel's "Format Data Series → Fill → Vary
-colors by point" toggle. Absent it, the writer falls back to Excel's
-per-family defaults (`true` on pie / doughnut, `false` on bar / column
-/ line / area / scatter), so a fresh chart matches Excel's reference
-serialization. Pin `varyColors: true` on a single-series column or
-bar chart to paint each bar a different color, or pin `false` on a
-doughnut to collapse every wedge to one color (Excel's "single color"
-preset).
-The chart-level `scatterStyle` field maps to `<c:scatterStyle val=".."/>`
-on `<c:scatterChart>` and picks one of Excel's six XY-scatter presets:
-`"none"` / `"marker"` (markers only), `"line"` (straight lines, no
-markers), `"lineMarker"` (Excel's chart-picker default — straight
-lines with markers; the writer's fallback when the field is absent),
-`"smooth"` (smoothed curves, no markers), or `"smoothMarker"`
-(smoothed curves with markers). The element is required by the OOXML
-schema on `<c:scatterChart>` and the writer always emits it; values
-outside the enum fall back to `"lineMarker"` so a malformed input
-cannot produce invalid OOXML. Other chart kinds silently ignore the
-field — the schema places `<c:scatterStyle>` exclusively on
-`<c:scatterChart>`.
-The chart-level `plotVisOnly` field maps to `<c:plotVisOnly val=".."/>`
-on `<c:chart>` — the inverse of Excel's "Hidden and Empty Cells →
-Show data in hidden rows and columns" checkbox. Absent it, the writer
-emits the OOXML default `val="1"` (hidden rows / columns drop out of
-the chart), matching Excel's reference serialization. Pin
-`plotVisOnly: false` to keep hidden helper cells in the rendered
-chart (`val="0"`). The writer always emits the element so the
-rendered intent is explicit on roundtrip — no chart family is special-
-cased.
-The chart-level `showDLblsOverMax` field maps to
-`<c:showDLblsOverMax val=".."/>` on `<c:chart>` — Excel's "Format
-Axis → Labels → Show data labels for values over maximum scale"
-checkbox. Absent it, the writer emits the OOXML default `val="1"`
-(labels render for every point regardless of the axis ceiling),
-matching Excel's reference serialization. Pin `showDLblsOverMax: false`
-to strip labels off any point whose value exceeds the pinned `<c:max>`
-(`val="0"`). The writer always emits the element so the rendered
-intent is explicit on roundtrip — no chart family is special-cased,
-since the toggle lives on `<c:chart>` and is valid on every chart
-family.
-The chart-level `dataTable` field maps to
-`<c:plotArea><c:dTable>...</c:dTable></c:plotArea>` — Excel's "Add
-Chart Element → Data Table" toggle. The field accepts a
-`boolean | ChartDataTable` discriminated union: pass `true` for
-Excel's reference defaults (every border drawn, the outline frame on,
-and the legend keys shown next to each series row), pass an object to
-opt individual children in or out (each field maps to the matching
-`<c:dTable>` boolean child — `showHorzBorder`, `showVertBorder`,
-`showOutline`, `showKeys`), or omit it (or pass `false`) to suppress
-the element entirely. When emitted, the writer always serializes all
-four children in `CT_DTable` schema order, falling back to the OOXML
-reference default `true` for any flag the caller leaves unset. The
-field is silently dropped on `pie` / `doughnut` charts because those
-families have no axes and the OOXML schema places no slot for
-`<c:dTable>` on their plot areas.
-The chart-level `protection` field maps to
-`<c:chartSpace><c:protection>...</c:protection>` — Excel's chart-level
-lock that pairs with the host worksheet's `<sheetProtection>` to
-decide which interactions remain allowed when the parent sheet is
-protected. The field accepts a `boolean | ChartProtection`
-discriminated union: pass `true` for the bare `<c:protection>` shell
-with every flag at the OOXML default `false` (action permitted), pass
-an object to opt individual children in (each field maps to the
-matching `<c:protection>` boolean child — `chartObject`, `data`,
-`formatting`, `selection`, `userInterface`), or omit it (or pass
-`false`) to suppress the element entirely. When emitted, the writer
-always serializes all five children in `CT_Protection` schema order,
-falling back to the OOXML default `false` (action permitted) for any
-flag the caller leaves unset. The element sits on `<c:chartSpace>`
-(not inside `<c:plotArea>`), so every chart family — including pie /
-doughnut — carries a slot for it. Excel only enforces these flags
-when the host worksheet is itself protected; on an unprotected sheet
-the element round-trips literally but has no observable runtime
-effect.
-The chart-level `view3D` field maps to `<c:chart><c:view3D>` (CT_View3D,
-ECMA-376 Part 1, §21.2.2.228) — Excel's "3-D Rotation" pane on 3D
-chart families. The field accepts a `ChartView3D` object with up to
-six independently optional fields (`rotX`, `hPercent`, `rotY`,
-`depthPercent`, `rAngAx`, `perspective`); pass an object to pin any
-subset of the children, pass `{}` to declare a bare `<c:view3D/>`
-shell (useful for round-trip parity with templates that author the
-empty element), or omit the field to suppress the element entirely so
-the writer skips emission and Excel falls back to the per-family
-default. Each numeric field is clamped against the matching OOXML
-simple-type range (`rotX` -90..90, `hPercent` 5..500, `rotY` 0..360,
-`depthPercent` 20..2000, `perspective` 0..240); out-of-range,
-fractional, and non-finite inputs drop silently rather than emit a
-token Excel's strict validator would reject. The writer emits the
-six children in `CT_View3D` schema order, slots the block between
-`<c:autoTitleDeleted>` and `<c:plotArea>` per `CT_Chart`, and accepts
-the element on every chart family — though it is only meaningful on
-3D families (`bar3D`, `line3D`, `pie3D`, `area3D`, `surface3D`); on
-2D families the element round-trips literally but Excel ignores it.
-Useful primarily for round-tripping a 3D template chart through
-`cloneChart`.
-The chart-level `roundedCorners` field maps to
-`<c:roundedCorners val=".."/>` on `<c:chartSpace>` (a sibling of
-`<c:chart>`, not a child) — Excel's "Format Chart Area → Border →
-Rounded corners" toggle. Absent it, the writer emits the OOXML default
-`val="0"` (square chart frame), matching Excel's reference
-serialization. Pin `roundedCorners: true` to soften the chart frame's
-outer edge (`val="1"`). The writer always emits the element so the
-rendered intent is explicit on roundtrip — no chart family is
-special-cased, since the toggle styles the outer wrapper rather than
-any chart-family-specific markup.
-The chart-level `legendOverlay` field maps to `<c:overlay val=".."/>`
-inside `<c:legend>` — Excel's "Format Legend → Show the legend without
-overlapping the chart" toggle (the checkbox is the inverse of this
-flag — checked means `false`, unchecked means `true`). Absent it, the
-writer emits the OOXML default `val="0"` (the legend reserves its own
-slot and the plot area shrinks to make room), matching Excel's
-reference serialization. Pin `legendOverlay: true` to draw the legend
-on top of the plot area so the chart series get the full frame
-(`val="1"`). The flag is silently ignored when `legend: false`
-suppresses the entire legend element — there is no overlay slot on a
-hidden legend, so the writer skips emitting any orphaned `<c:overlay>`.
-The chart-level `legendEntries` field maps to `<c:legendEntry>` children
-inside `<c:legend>` — Excel's "Format Legend Entries → Hide" action
-surfaces the same elements. Each entry pins a 0-based series `idx` and
-a `delete` flag (defaults to `false` — the entry renders); the writer
-emits both `<c:idx>` and `<c:delete>` children explicitly so a re-parse
-sees the canonical CT_LegendEntry shape. Entries whose `idx` is
-non-finite, negative, or non-integer drop at write time rather than emit
-a token Excel rejects, and duplicate `idx` values are deduplicated with
-last-wins semantics so a clone-through that appends an override naturally
-beats the source's parsed value. The writer slots `<c:legendEntry>`
-between `<c:legendPos>` and `<c:overlay>` (CT_Legend sequence) and
-emits entries in ascending `idx` order so the file matches Excel's
-reference serialization. The list is silently ignored when `legend:
-false` suppresses the entire legend element — there is no slot for
-entries on a hidden legend, so the writer skips emission entirely.
-The chart-level `titleOverlay` field maps to `<c:overlay val=".."/>`
-inside `<c:title>` — Excel's "Format Chart Title → Show the title
-without overlapping the chart" toggle (the checkbox is the inverse of
-this flag — checked means `false`, unchecked means `true`). Absent it,
-the writer emits the OOXML default `val="0"` (the title reserves its
-own slot above the plot area and the plot area shrinks to make room),
-matching Excel's reference serialization. Pin `titleOverlay: true` to
-draw the title on top of the plot area so the chart series get the
-full frame (`val="1"`). The flag is silently ignored when no title is
-emitted (no `title` set or `showTitle: false`) — there is no `<c:title>`
-block to host the overlay child in either case. Independent of
-`legendOverlay`: the legend and title `<c:overlay>` elements live on
-different parents, so the two flags compose freely.
-The chart-level `titleRotation` field maps to `<a:bodyPr rot="N"/>`
-inside `<c:title><c:tx><c:rich>` — Excel's "Format Chart Title → Size &
-Properties → Alignment → Custom angle" knob. The OOXML attribute is in
-60000ths of a degree, so `titleRotation: 45` serializes as
-`rot="2700000"` and `titleRotation: -90` as `rot="-5400000"`; the writer
-performs the conversion at emit time. Accepted range: `-90..90` (Excel's
-UI band) — out-of-range inputs clamp to the nearest endpoint, non-integer
-inputs round to the nearest whole degree, and `0` / `NaN` / `Infinity` /
-non-numeric inputs collapse to absence so the writer falls back to the
-OOXML default `rot="0"` (horizontal). The flag is silently ignored when
-no title is emitted (no `title` set or `showTitle: false`) — there is no
-`<c:title>` block to host the rotation in either case. Mirrors the axis-
-side `axes.x.labelRotation` / `axes.y.labelRotation` fields — same
-range, same conversion factor — so a caller can thread a single rotation
-value through both the chart title and an axis label set without
-bookkeeping the units.
-The chart-level `autoTitleDeleted` field maps to
-`<c:autoTitleDeleted val=".."/>` inside `<c:chart>` — Excel's record of
-whether the user explicitly deleted the auto-generated title that
-single-series charts synthesise from the series name. The element sits
-on `<c:chart>` directly (between `<c:title>` and `<c:plotArea>` per
-CT_Chart, ECMA-376 Part 1, §21.2.2.4), not nested inside `<c:title>`,
-and is independent of whether a literal `<c:title>` is emitted. Absent
-it, the writer derives the value from the title presence: a chart with
-a literal title (and `showTitle !== false`) emits `val="0"` so Excel
-keeps the literal visible; a chart with no literal title emits
-`val="1"` so Excel does not silently grow an auto-title from the
-series name. Pin `autoTitleDeleted: true` to suppress Excel's
-auto-title even on a charted dashboard tile that should stay anonymous,
-or `autoTitleDeleted: false` on a titleless single-series column chart
-to let Excel synthesise the series-name title. The writer always emits
-the element so the rendered intent is explicit on roundtrip — Excel
-itself includes it on every reference serialization.
-The chart-level `dropLines` field maps to a bare `<c:dropLines/>`
-inside `<c:lineChart>` / `<c:areaChart>` — Excel's "Add Chart Element
-→ Lines → Drop Lines" toggle (vertical reference lines from each data
-point down to the category axis). Default: `false` — the writer emits
-no element so untouched line / area charts match Excel's reference
-serialization byte-for-byte. Set `true` to paint the connector lines.
-Only literal `true` emits the element; `false`, absence, and
-non-boolean inputs all drop to the default. The flag is silently
-ignored on chart families whose schema rejects `<c:dropLines>` (bar /
-column / pie / doughnut / scatter) — the writer never leaks the element
-into a host that cannot accept it.
-The chart-level `hiLowLines` field maps to a bare `<c:hiLowLines/>`
-inside `<c:lineChart>` only — Excel's "Add Chart Element → Lines →
-High-Low Lines" toggle (vertical connectors between the highest and
-lowest series values at each category position; the same connector
-painted on stock charts). Same default and emit grammar as
-`dropLines`. The element has no slot on `<c:areaChart>` per the OOXML
-schema, so the area writer ignores `hiLowLines` entirely; same for
-bar / column / pie / doughnut / scatter. The two flags compose freely
-on a line chart and the writer pins `<c:dropLines>` before
-`<c:hiLowLines>` to honour the CT_LineChart sequence.
-The chart-level `serLines` field maps to a bare `<c:serLines/>` inside
-`<c:barChart>` — Excel's "Add Chart Element → Lines → Series Lines"
-toggle (connector lines between paired data points across consecutive
-series in a stacked bar / column chart). Same default and emit grammar
-as `dropLines` / `hiLowLines`: only literal `true` emits the element;
-`false`, absence, and non-boolean inputs all drop to the default. The
-flag is silently ignored on chart families whose schema rejects
-`<c:serLines>` (line / pie / doughnut / area / scatter). Excel only
-renders the connectors on the `stacked` / `percentStacked` groupings,
-but the writer honours the toggle on a clustered chart too — the
-element pins, the renderer paints nothing (matches Excel's own
-behavior when the toggle is flipped on a clustered chart). The writer
-slots `<c:serLines>` after `<c:overlap>` (when emitted on a stacked
-chart) and before the first `<c:axId>` to honour the CT_BarChart
-sequence.
-The chart-level `upDownBars` field maps to `<c:upDownBars>` inside
-`<c:lineChart>` — Excel's "Add Chart Element -> Up/Down Bars" toggle
-on a line chart. The element paints a vertical bar at each category
-whose top tracks the higher series value and bottom tracks the lower
-one (typically used to visualize open / close differences on a
-line-style stock chart). The OOXML default is absence, so the writer
-omits the element on a fresh chart. Pin `upDownBars: true` on a
-`type: "line"` chart to emit the element with Excel's reference
-`<c:gapWidth val="150"/>` child. The flag is silently ignored on
-every other chart family — `<c:upDownBars>` lives exclusively on
-`CT_LineChart` / `CT_Line3DChart` / `CT_StockChart` per the OOXML
-schema, and the writer never authors the 3D / stock variants.
-The chart-level `showLineMarkers` field maps to `<c:marker val=".."/>`
-inside `<c:lineChart>` — the chart-level CT_Boolean variant that gates
-whether per-series markers paint at all on a line chart (Excel's
-"Line vs. Line with Markers" chart-type distinction). The writer
-always emits the element (Excel's reference behavior — every authored
-line chart includes one), defaulting to `val="1"` when the field is
-unset or `true`. Pin `showLineMarkers: false` to suppress markers
-chart-wide so the line renders as a clean stroke without the
-per-point dots. The flag is silently ignored on every other chart
-family — the OOXML schema places the chart-level `<c:marker>`
-exclusively on `CT_LineChart`, and `CT_Line3DChart` / `CT_StockChart`
-and every non-line family have no slot for it. Independent of any
-per-series marker styling: this gate sits at the chart level and
-decides whether markers paint, while the per-series block picks the
-symbol / size / fill that paints when the gate is open.
-The `axes.{x,y}.dispUnits` field controls the per-value-axis
-display-unit configuration (`<c:valAx><c:dispUnits>...</c:dispUnits></c:valAx>`)
-— Excel's "Format Axis -> Display units" dropdown. Each numeric tick
-label is divided by the chosen divisor before rendering, so a chart
-whose source range stores raw amounts (e.g. `1_500_000`) can show
-compact tick labels (`1.5` with an optional "Millions" annotation)
-without modifying the underlying cells. Pass a `ChartAxisDispUnit`
-shorthand (e.g. `"millions"`) or a `{ unit?, custUnit?, showLabel? }`
-object: pin `unit` for one of the named OOXML presets, or pin
-`custUnit` for an arbitrary positive divisor (Excel's "Display units →
-Other" path — e.g. `86400` to convert seconds to days). The two
-fields are mutually exclusive in the OOXML schema's `xsd:choice`; when
-both are set, `custUnit` wins on emit so a clone can layer a custom
-divisor on top of an inherited preset without manually pruning the
-original. Set `showLabel: true` to opt into the automatic unit
-annotation (the writer emits a bare `<c:dispUnitsLbl/>` so Excel
-paints its default label alongside the axis). Accepted unit tokens:
-`"hundreds"`, `"thousands"`, `"tenThousands"`, `"hundredThousands"`,
-`"millions"`, `"tenMillions"`, `"hundredMillions"`, `"billions"`,
-`"trillions"`. The OOXML schema places `<c:dispUnits>` exclusively on
-`CT_ValAx`, so the field only takes effect on the value-axis side of
-bar / column / line / area charts (the Y axis) and on both axes of
-scatter charts (both are value axes); category axes (`<c:catAx>`)
-silently drop the field and pie / doughnut have no axes at all.
-Unknown tokens drop silently rather than fabricate a value the OOXML
-`ST_BuiltInUnit` enum would reject; non-positive / non-finite
-`custUnit` values drop at the same boundary. The rich-text
-`<c:dispUnitsLbl>` body is intentionally not surfaced.
-The `axes.{x,y}.crossBetween` field controls the per-value-axis
-cross-between mode (`<c:valAx><c:crossBetween val=".."/></c:valAx>`) —
-the OOXML `ST_CrossBetween` enum that picks between `"between"` (the
-perpendicular axis crosses BETWEEN data points, leaving a half-category
-gap on each end of the plot area; Excel's default on bar / column /
-line / area Y axes) and `"midCat"` (the perpendicular axis crosses AT
-the midpoint of each category, so data points sit ON the
-perpendicular-axis ticks; Excel's default on both scatter axes). The
-writer pins the per-family default when no override is set so untouched
-charts match Excel's reference serialization byte-for-byte; pass
-`crossBetween: "midCat"` on a line / area Y axis to land the first /
-last data point flush with the value-axis line, or `crossBetween:
-"between"` on a scatter axis to leave a margin around the outermost
-points. The OOXML schema places `<c:crossBetween>` exclusively on
-`CT_ValAx`, so category axes (`<c:catAx>`) silently drop the field and
-pie / doughnut have no axes at all. Unknown tokens drop silently rather
-than fabricate a value the enum would reject — the writer falls back to
-the family default in that case.
-The `axes.x.tickLblSkip` and `axes.x.tickMarkSkip` fields thin out a
-crowded category axis (`<c:catAx><c:tickLblSkip val=".."/>` and
-`<c:catAx><c:tickMarkSkip val=".."/>`). Pass a positive integer to
-show every Nth label or mark; the OOXML default `1` (show every tick)
-is omitted from the rendered XML so untouched charts match Excel's
-reference serialization byte-for-byte. Out-of-range values
-(non-positive or > 32767) drop silently rather than clamp. Both
-fields live on category axes only — bar / column / line / area
-honour them; scatter (whose two axes are value axes) and pie /
-doughnut (no axes at all) silently ignore them. Non-integer inputs
-round to the nearest integer.
-The `axes.x.lblOffset` field controls the distance between the tick
-labels and the axis line on a category axis (`<c:catAx><c:lblOffset
-val=".."/>`), expressed as a percentage of Excel's default spacing.
-Pass a value in the `0..1000` band to pull labels in towards the axis
-or push them out. The writer always emits `<c:lblOffset>` because
-Excel's reference serialization includes it on every category axis;
-absence (and the OOXML default `100`) emit `val="100"` so untouched
-charts match the reference output byte-for-byte. Out-of-range values
-(negative or greater than 1000) drop silently rather than clamp — the
-writer falls back to the default `100`. Same scope as the tick skips
-above: bar / column / line / area honour the override; scatter and
-pie / doughnut silently ignore it. Non-integer inputs round to the
-nearest integer.
-The `axes.x.lblAlgn` field pins the horizontal alignment of the tick
-labels along a category axis (`<c:catAx><c:lblAlgn val=".."/>`) —
-Excel's "Format Axis → Alignment → Text alignment" preset. Pass
-`"l"` (flush left), `"r"` (flush right), or `"ctr"` (centered, the
-OOXML default) to override the default; useful when wrapped multi-line
-labels look ragged against a column chart's left-aligned bars. The
-writer always emits `<c:lblAlgn>` because Excel's reference
-serialization includes it on every category axis; absence (and the
-default `"ctr"`) emit `val="ctr"` so untouched charts match the
-reference output byte-for-byte. Unknown tokens (anything outside the
-`ST_LblAlgn` enumeration) drop silently — the writer falls back to
-the default. Same scope as `lblOffset`: bar / column / line / area
-honour the override; scatter and pie / doughnut silently ignore it.
-The per-axis `axes.x.hidden` and `axes.y.hidden` flags toggle
-`<c:catAx><c:delete val=".."/>` / `<c:valAx><c:delete val=".."/>` —
-Excel's "Format Axis -> Show axis" toggle. Set `true` to collapse the
-axis line, tick marks, and tick labels off the rendered chart (handy
-for sparkline-style dashboard tiles). The writer always emits the
-element because Excel's reference serialization includes
-`<c:delete val="0"/>` on every axis; `false` and absence both produce
-that default, while only an explicit `true` emits `val="1"`. The flag
-threads through bar / column / line / area / scatter; pie / doughnut
-silently ignore it because OOXML defines no axes for those families.
-The `axes.x.noMultiLvlLbl` flag maps to
-`<c:catAx><c:noMultiLvlLbl val=".."/>` — Excel's "Format Axis ->
-Multi-level Category Labels" checkbox (the checkbox is the inverse:
-checked means tiered labels, i.e. `noMultiLvlLbl: false`). When a
-category range spans multiple columns / rows Excel groups the labels
-into tiers; setting `true` flattens every category onto a single line
-regardless of the source range's shape. The writer always emits the
-element because Excel's reference serialization includes
-`<c:noMultiLvlLbl val="0"/>` on every category axis; `false`, absence,
-and non-boolean inputs all collapse to the default `val="0"`, while
-only an explicit `true` emits `val="1"`. The element lives on
-`CT_CatAx` exclusively (even `<c:dateAx>`, `<c:valAx>`, and
-`<c:serAx>` reject it), so the flag threads through bar / column /
-line / area but is silently dropped on scatter (both axes are value
-axes) and pie / doughnut (no axes at all).
-The `axes.x.auto` flag maps to `<c:catAx><c:auto val=".."/>` — Excel's
-"Format Axis -> Axis Options -> Axis Type" radio (the "Text axis"
-choice flips the value to `0`). Excel's default `true` lets the
-renderer inspect the axis labels and decide at render time whether to
-treat the axis as a discrete category axis or a chronological date
-axis; `false` pins the axis as a literal category axis so a
-date-shaped category range still renders as a flat category axis
-without any chronological grouping. The writer always emits the
-element because Excel's reference serialization includes
-`<c:auto val="1"/>` on every category axis; `true`, absence, and
-non-boolean inputs all collapse to the default `val="1"`, while only
-an explicit `false` emits `val="0"`. The element lives on `CT_CatAx`
-exclusively (even `<c:dateAx>`, `<c:valAx>`, and `<c:serAx>` reject
-it), so the flag threads through bar / column / line / area but is
-silently dropped on scatter (both axes are value axes) and pie /
-doughnut (no axes at all).
-The `axes.x.labelRotation` and `axes.y.labelRotation` fields pin the
-tick-label rotation in whole degrees, mapping to
-`<c:txPr><a:bodyPr rot="N"/></c:txPr>` on the matching axis — Excel's
-"Format Axis -> Alignment -> Custom angle" knob. The OOXML `rot`
-attribute is in 60000ths of a degree; the writer converts at emit
-time so callers pin the value in degrees. Useful for rotating long
-category labels diagonally so they fit underneath a column chart's
-bars without overlapping their neighbours, or for tilting a value
-axis's number labels when a tight chart frame would otherwise crowd
-them. Range: `-90..90` (Excel's UI band — out-of-range values clamp
-to the nearest endpoint, fractional inputs round to the nearest whole
-degree, non-finite / non-numeric inputs drop). The writer omits the
-entire `<c:txPr>` block on the OOXML default `0` (and on absence) so a
-fresh chart matches Excel's minimal serialization. The element sits on
-every axis flavour per the OOXML schema (`<c:catAx>` / `<c:valAx>` /
-`<c:dateAx>` / `<c:serAx>` all carry an optional `<c:txPr>`), so the
-field threads through every chart family that has axes (bar / column /
-line / area / scatter); pie / doughnut have no axes at all and the
-field is silently dropped there.
-The `axes.x.axisTitleRotation` and `axes.y.axisTitleRotation` fields
-pin the rotation of the axis title in whole degrees, mapping to
-`<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title>`
-on the matching axis — Excel's "Format Axis Title -> Size & Properties
--> Alignment -> Custom angle" knob. Mirrors the chart-level
-`titleRotation` field for axis titles: same `-90..90` band, same
-60000ths-of-a-degree on-the-wire conversion, same `0` / absence /
-non-finite collapse to the OOXML default `rot="0"`. Useful for
-standing the Y-axis title vertically next to the value labels (the
-typical "rotated axis label" dashboard look) or pinning a custom angle
-on a long X-axis title that would otherwise crowd the plot area. The
-field is silently dropped when the matching axis has no title (no
-`<c:title>` block to host the rotation in either case) and on
-`pie` / `doughnut` charts (no axes at all). Out-of-range inputs clamp
-to the nearest endpoint, fractional inputs round to the nearest whole
-degree, and non-finite / non-numeric inputs collapse to absence so a
-corrupt input never leaks through to a token Excel's strict validator
-would reject.
-The `axes.x.reverse` and `axes.y.reverse` flags map to
-`<c:scaling><c:orientation val="maxMin"/></c:scaling>` — Excel's
-"Categories / Values in reverse order" toggle. On a category axis,
-reversing flips the order in which categories are drawn (right-to-left
-on a column chart, top-to-bottom on a bar chart); on a value axis it
-flips the numeric direction so the maximum sits at the origin and the
-minimum at the far end. The writer always emits `<c:orientation>`
-because Excel requires it inside `<c:scaling>`, pinning `"maxMin"` only
-when `reverse === true` — `false`, absent, or non-boolean inputs all
-collapse to the forward `"minMax"` default. Each axis carries its own
-flag so reversing X never propagates to Y. Bar / column / line / area /
-scatter all honour both axes; pie / doughnut silently ignore the entire
-`axes` block since OOXML defines no axes for them.
-The `axes.x.crosses` / `axes.x.crossesAt` (and the matching `axes.y.*`)
-fields control where the perpendicular axis crosses this axis along its
-own range. `crosses` accepts the OOXML `ST_Crosses` tokens
-(`"autoZero"` / `"min"` / `"max"`) — Excel's "Format Axis -> Vertical
-axis crosses" toggle — and `crossesAt` accepts a literal numeric pin
-(useful when the perpendicular axis should cross at a specific value
-like `crossesAt: 100`). The two fields share an XSD choice in the
-schema (only `<c:crosses>` or `<c:crossesAt>` may legally appear at a
-time), so the writer favours `crossesAt` whenever it is set to a
-finite number — including `crossesAt: 0`, which pins the crossing
-point to the numeric value zero, distinct from the `"autoZero"`
-default. Non-finite numeric inputs and unknown semantic tokens drop
-silently to the `"autoZero"` default. The pin threads through bar /
-column / line / area / scatter; pie / doughnut silently ignore it
-because OOXML defines no axes for those families.
-For line and scatter charts, each `series[i].smooth` flag toggles
-Excel's curved-line variant (`<c:smooth val="..">` inside `<c:ser>`).
-Line series always emit the element — `smooth: true` writes `val="1"`,
-absence or `false` writes the OOXML default `val="0"`; scatter series
-only emit `<c:smooth val="1"/>` when `smooth` is explicitly `true` so
-untouched scatter charts stay byte-clean. Bar / column / pie /
-doughnut / area kinds silently ignore the flag.
-For line and scatter charts, each `series[i].marker` block also
-controls the per-point glyph: `symbol`
-(`circle` / `square` / `diamond` / `triangle` / `x` / `star` / `dot` /
-`dash` / `plus` / `auto` / `none`) picks the shape, `size` (2 – 72)
-sets the diameter, and `fill` / `line` (6-digit RGB hex) tint the
-glyph fill and outline. Out-of-range sizes clamp to the schema band,
-unknown symbols and malformed hex values are dropped so Excel never
-receives an attribute it would reject, and an empty marker (`{}`)
-collapses to no `<c:marker>` at all. Bar / column / pie / doughnut /
-area kinds silently ignore the field.
-The same line / scatter series accept a `stroke` block that maps to
-`<c:ser><c:spPr><a:ln>`: `dash` selects a preset pattern (mirroring
-`ST_PresetLineDashVal`: `solid`, `dot`, `dash`, `lgDash`, `dashDot`,
-`lgDashDot`, `lgDashDotDot`, `sysDash`, `sysDot`, `sysDashDot`,
-`sysDashDotDot`) and `width` sets the stroke thickness in points
-(clamped to Excel's 0.25 – 13.5 pt UI band, snapped to the 0.25 pt
-grid, and converted to integer EMU on the wire). The writer layers
-the stroke onto the existing `<c:spPr>` that carries `series.color`
-so a `color + stroke` combo behaves like Excel's UI: the line picks
-up the fill color, and dash / width override visibility-only
-attributes. Bar / column / pie / doughnut / area kinds silently
-ignore the field.
-For bar and column charts, each `series[i].invertIfNegative` flag
-mirrors Excel's "Format Data Series → Fill → Invert if negative"
-toggle (`<c:invertIfNegative val=".."/>` inside `<c:ser>`). The
-writer only emits the element when `invertIfNegative` is explicitly
-`true` — `false` and absence both round-trip as the OOXML default
-(omission), so untouched bar charts stay byte-clean. Line / pie /
-doughnut / area / scatter kinds silently ignore the flag.
-Radar, stock, 3D variants, trendlines, and combo charts are out of
-scope today.
-
-#### Cloning a parsed chart with `cloneChart`
-
-`cloneChart(source, options)` bridges the read-side `Chart` produced by
-`parseChart` to the write-side `SheetChart` consumed by `writeXlsx`, so
-a template workbook can supply the visual styling for a new export and
-the caller only needs to swap the data ranges:
-
-```ts
-import { parseChart, cloneChart, writeXlsx } from "hucre";
-
-const template = parseChart(templateChartXml)!;
-
-const chart = cloneChart(template, {
-  anchor: { from: { row: 14, col: 0 }, to: { row: 28, col: 8 } },
-  title: "Q1 Revenue",
-  seriesOverrides: [{ values: "Dashboard!$B$2:$B$13", color: "1070CA" }],
-});
-
-await writeXlsx({
-  sheets: [{ name: "Dashboard", rows: dashboardRows, charts: [chart] }],
+const out = await writeXlsx({
+  sheets: [{ name: "Sheet1", rows: dashboardRows, charts: [cloned] }],
 });
 ```
 
-`anchor` is required (the read side has no placement metadata).
-Per-series overrides accept `null` to drop an inherited value (e.g.
-`color: null` strips the template tint), can append new series past
-the source length, and fall back to the source's `valuesRef` /
-`categoriesRef` / `name` / `color` when omitted. Source kinds the
-writer can author collapse onto their write counterparts (`bar` /
-`bar3D` → `column`, `pie3D` → `pie`, `doughnut` → `doughnut` (kept as
-its own kind so the hole survives), `line3D` → `line`, `area3D` →
-`area`); kinds with no analog (`bubble`, `radar`, `surface`, `stock`,
-`ofPie`) require an explicit `options.type` override. Axis titles,
-gridlines, scaling, tick-label number format and the tick-rendering
-trio (`majorTickMark` / `minorTickMark` / `tickLblPos`) inherit
-from the source by default; pass `axes: { y: { title: "Revenue" } }`
-to replace one side, `null` to drop an inherited label,
-`axes: { y: { gridlines: { major: true, minor: true } } }` to
-replace inherited gridlines, `axes: { y: { scale: { min: 0, max: 50 } } }`
-to replace the inherited scale wholesale (overrides do **not** merge
-field-by-field — `{ min: 0 }` plus `{ max: 50 }` yields `{ max: 50 }`,
-not `{ min: 0, max: 50 }`), `axes: { y: { numberFormat: { formatCode: "0.00%" } } }`
-to replace the format,
-`axes: { y: { majorTickMark: "cross", tickLblPos: "low" } }` to
-pin the tick-mark style or anchor labels to the chart edge, or
-`null` on any of the seven to drop the inherited value (the writer
-falls back to the OOXML default — `"out"` for major, `"none"` for
-minor, `"nextTo"` for tick labels). The writer drops the entire
-`axes` block automatically when the resolved type is `pie` or
-`doughnut`, so a template that happened to carry stray scale,
-numberFormat or tick values does not poison a pie/doughnut clone. Per-family stacking
-(`barGrouping`, `lineGrouping`, `areaGrouping`) is carried over only
-when the resolved clone target matches that family — flattening a
-stacked line template into a column drops the inherited grouping
-rather than silently emitting a value the writer would ignore.
-Doughnut clones also inherit the parsed `holeSize` from the template;
-pass `holeSize: 60` to override or `type: "pie"` to flatten into a
-plain pie (the hole hint is dropped silently in that case). Pie and
-doughnut clones inherit the parsed `firstSliceAng` from the template;
-the rotation also survives a `type: "pie"` flattening of a doughnut
-source (the element lives on both pie and doughnut), but is dropped
-when the resolved clone target is anything else. Data labels inherit
-too: omit `dataLabels`
-to carry the source's chart-level labels through, pass an object to
-replace, or `null` to drop them; per-series overrides accept the same
-`undefined`/`null`/object grammar plus `false` to suppress labels on
-a single series. Per-series smooth-line state inherits from the
-template by default; `seriesOverrides[i].smooth` accepts the same
-`undefined` (inherit) / `null` (drop) / `boolean` (replace) grammar,
-and the inherited flag is dropped automatically when the resolved
-clone target is anything other than `line` or `scatter`. Per-series
-markers carry over the same way: `seriesOverrides[i].marker` accepts
-`undefined` (inherit), `null` (drop the inherited block), or a
-`ChartMarker` object (replace wholesale — there is no per-field
-merge, so pass every field you want preserved). The inherited block
-is also dropped automatically when the resolved clone target is
-anything other than `line` or `scatter`.
-Per-series line strokes follow the same grammar:
-`seriesOverrides[i].stroke` accepts `undefined` (inherit), `null`
-(drop the inherited `<a:ln>` block), or a `ChartLineStroke` object
-(replace wholesale — `dash` and `width` together, no per-field
-merge). The inherited stroke is also dropped automatically when the
-resolved clone target is anything other than `line` or `scatter`.
-Per-series `invertIfNegative` follows the same grammar:
-`seriesOverrides[i].invertIfNegative` accepts `undefined` (inherit),
-`null` (drop the inherited flag), or a `boolean` (replace). `false`
-collapses to `undefined` for symmetry with the OOXML default — the
-writer omits `<c:invertIfNegative>` either way. The inherited flag
-is also dropped automatically when the resolved clone target is
-anything other than `bar` or `column`, since the schema rejects the
-element on every other chart family.
-The chart-level `dispBlanksAs` follows the standard
-`undefined` (inherit) / `null` (drop the inherited value, falling
-back to the writer's `"gap"` default) / value (`"gap"` / `"zero"` /
-`"span"`) override grammar. Unlike smooth and marker, this field
-lives on `<c:chart>` and is valid on every chart family, so a
-coercion (line → column, doughnut → pie, etc.) preserves the
-inherited value rather than dropping it.
-The chart-level `varyColors` flag follows the same grammar: pass
-`undefined` to inherit the source's parsed value, `null` to drop it
-back to the writer's per-family default (`true` for pie / doughnut,
-`false` everywhere else), or a `boolean` to replace it. The OOXML
-schema places `<c:varyColors>` on every chart-type element hucre
-authors, so the inherited value carries through every coercion
-(column → pie, doughnut → line, etc.) without being silently dropped.
-The chart-level `scatterStyle` follows the same grammar: pass
-`undefined` to inherit the source's parsed preset, `null` to drop it
-back to the writer's `"lineMarker"` default, or a {@link
-ChartScatterStyle} value to replace it. The inherited value is also
-dropped automatically when the resolved clone target is anything
-other than `scatter`, since the schema rejects `<c:scatterStyle>` on
-every other chart family.
-The chart-level `plotVisOnly` flag follows the same grammar: pass
-`undefined` to inherit the source's parsed value, `null` to drop it
-back to the writer's OOXML `true` default (hidden cells drop out), or
-a `boolean` to replace it. Like `dispBlanksAs` and `varyColors`, the
-field lives on `<c:chart>` and is valid on every chart family, so a
-coercion (line → column, doughnut → pie, etc.) preserves the
-inherited value rather than dropping it.
-The chart-level `showDLblsOverMax` flag follows the same grammar:
-pass `undefined` to inherit the source's parsed value, `null` to drop
-it back to the writer's OOXML `true` default (labels render for every
-point regardless of axis ceiling), or a `boolean` to replace it. Like
-`plotVisOnly` / `dispBlanksAs`, the field lives on `<c:chart>` and is
-valid on every chart family, so a coercion (line → column, doughnut →
-pie, etc.) preserves the inherited value rather than dropping it.
-The chart-level `dataTable` field follows the standard
-`object | boolean | null` override grammar: pass `undefined` (or omit
-it) to inherit the source's parsed `ChartDataTable`, `null` (or
-`false`) to drop the inherited block so the writer skips `<c:dTable>`
-entirely, `true` to pin every flag to its OOXML default `true`, or a
-`ChartDataTable` object to replace the block wholesale (no per-field
-merge with the source — pass every flag the cloned table should
-render). Unlike the chart-level toggles that live on `<c:chart>`, the
-data-table block lives inside `<c:plotArea>` alongside the axes, so
-the field is silently dropped from the cloned `SheetChart` whenever
-the resolved chart type is `pie` or `doughnut` — those families have
-no axes and the OOXML schema places no slot for the element on their
-plot areas. Coercions between axis-bearing families (line → column,
-scatter → area, etc.) preserve the inherited block.
-The chart-level `protection` field follows the standard
-`object | boolean | null` override grammar: pass `undefined` (or omit
-it) to inherit the source's parsed `ChartProtection`, `null` (or
-`false`) to drop the inherited block so the writer skips
-`<c:protection>` entirely, `true` to pin every flag to its OOXML
-default `false` (the bare `<c:protection>` shell), or a
-`ChartProtection` object to replace the block wholesale (no per-field
-merge with the source — pass every flag the cloned protection should
-pin). Unlike `dataTable`, the field lives on `<c:chartSpace>` (not
-inside `<c:plotArea>`), so every chart family — pie / doughnut
-included — carries a slot for it. Coercions between any chart
-families preserve the inherited block.
-The chart-level `view3D` field follows the standard `object | null`
-override grammar: pass `undefined` (or omit it) to inherit the
-source's parsed `ChartView3D` (defensively shallow-copied so a clone
-mutation never leaks back into the parsed `Chart`), `null` to drop
-the inherited block so the writer skips `<c:view3D>` entirely, or a
-`ChartView3D` object to replace the block wholesale (no per-field
-merge with the source — pass every field the cloned 3D view should
-pin). An empty object (`{}`) collapses to a bare `<c:view3D/>` shell
-on emit. Unlike `dataTable`, the field lives on `<c:chart>` (not
-inside `<c:plotArea>`), so every chart family — pie / doughnut
-included — carries a slot for it. Coercions between any chart
-families (line → column, doughnut → pie, etc.) preserve the inherited
-block, mirroring how `protection` composes across the type-coercion
-flow.
-The chart-level `roundedCorners` flag follows the same grammar: pass
-`undefined` to inherit the source's parsed value, `null` to drop it
-back to the writer's OOXML `false` default (square chart frame), or a
-`boolean` to replace it. Like `plotVisOnly` / `varyColors`, the field
-lives on `<c:chartSpace>` and is valid on every chart family, so a
-coercion (line → column, doughnut → pie, etc.) preserves the
-inherited value rather than dropping it.
-The chart-level `legendOverlay` flag follows the same grammar: pass
-`undefined` to inherit the source's parsed value, `null` to drop it
-back to the writer's OOXML `false` default (no overlap with the plot
-area), or a `boolean` to replace it. The flag lives on `<c:legend>` so
-the field is valid on every chart family, but it is silently dropped
-from the cloned `SheetChart` whenever the resolved `legend` is `false`
-— a hidden legend has no overlay slot in the rendered chart, so an
-inherited `true` would carry no on-screen effect. Re-enabling a hidden
-source legend through `legend: "top"` (or any visible position) on the
-override re-opens the slot, and an explicit `legendOverlay: true`
-override threads through.
-The chart-level `legendEntries` list follows the same `undefined`
-(inherit) / `null` (drop) / `array` (replace) grammar as the other
-list-shaped overrides. An empty-array override collapses to `undefined`
-just like `null` because the writer skips emission for empty lists,
-matching Excel's omit-default serialization. The list lives on
-`<c:legend>` so the field is valid on every chart family, but it is
-silently dropped from the cloned `SheetChart` whenever the resolved
-`legend` is `false` — a hidden legend has no slot for entries in the
-rendered chart, so inherited overrides would carry no on-screen effect.
-Each inherited entry is defensively copied so a downstream mutation to
-the cloned `SheetChart` never leaks back into the parsed `Chart` the
-caller passed in. Re-enabling a hidden source legend through `legend:
-"top"` (or any visible position) on the override re-opens the slot, and
-an explicit `legendEntries: [...]` override threads through.
-The chart-level `titleOverlay` flag follows the same grammar: pass
-`undefined` to inherit the source's parsed value, `null` to drop it
-back to the writer's OOXML `false` default (no overlap with the plot
-area), or a `boolean` to replace it. The flag lives on `<c:title>` so
-the field is valid on every chart family, but it is silently dropped
-from the cloned `SheetChart` whenever the resolved chart renders no
-title (`title` resolved to `undefined` or `showTitle: false`) — there
-is no `<c:title>` block to host the overlay flag in either case.
-Re-introducing a missing source title through an explicit `title:
-"..."` override re-opens the slot, and an explicit `titleOverlay: true`
-override threads through.
-The chart-level `titleRotation` field follows the same grammar: pass
-`undefined` to inherit the source's parsed value, `null` to drop it
-back to the writer's OOXML `0` default (horizontal title), or a
-`number` to replace it. Out-of-range overrides clamp to the `-90..90`
-band Excel's UI exposes; non-integer overrides round to the nearest
-whole degree; `0` / `NaN` / `Infinity` / non-numeric overrides collapse
-to a drop so the cloned `SheetChart` always carries a value the writer
-will accept. Same scope rule as `titleOverlay`: the rotation lives on
-`<c:title>` so the field is valid on every chart family, but it is
-silently dropped from the cloned `SheetChart` whenever the resolved
-chart renders no title — there is no `<a:bodyPr rot="N"/>` slot to host
-the rotation in either case.
-The per-axis `axes.x.axisTitleRotation` and `axes.y.axisTitleRotation`
-fields follow the same grammar: pass `undefined` to inherit the source
-axis's parsed rotation, `null` to drop it back to the writer's OOXML
-`0` default (horizontal axis title), or a `number` to replace it.
-Range, clamp, rounding, and non-finite-collapse semantics mirror the
-chart-level `titleRotation` knob exactly, so a single rotation value
-threads cleanly through both the chart title and either axis title.
-The override is silently dropped from the cloned `SheetChart` whenever
-the resolved axis title is unset (no `<c:title>` block to host the
-rotation) and on `pie` / `doughnut` charts (no axes at all). Re-
-introducing a missing axis title through an explicit
-`axes.x.title: "..."` override re-opens the slot for the matching
-`axisTitleRotation` to take effect.
-The chart-level `autoTitleDeleted` flag follows the same grammar: pass
-`undefined` to inherit the source's parsed value, `null` to drop it
-back to the writer's title-presence-derived default, or a `boolean` to
-replace it. Unlike `titleOverlay`, this flag is independent of the
-resolved title presence — `<c:autoTitleDeleted>` sits on `<c:chart>`
-directly (not nested inside `<c:title>`), so a clone with no literal
-title can still pin `false` to let Excel synthesise the series-name
-auto-title and a clone with a literal title can pin `true` to suppress
-the synthesis even though the literal renders. The override carries
-through every chart family because the element has no per-family
-restriction in the OOXML schema.
-The chart-level `dropLines` and `hiLowLines` flags follow the same
-`undefined` (inherit) / `null` (drop) / `boolean` (replace) grammar
-as the other chart-level toggles. An override of `false` is equivalent
-to `null` — the writer treats both as the OOXML default of no element,
-so the cloned `SheetChart` collapses both shapes to `undefined`.
-Non-boolean overrides drop rather than fall through to the inherited
-value. Both flags are silently dropped from the cloned `SheetChart`
-when the resolved clone target's chart-type element has no slot for
-the corresponding OOXML element: `dropLines` carries through line ↔
-area coercions but flattens on bar / column / pie / doughnut /
-scatter clones, while `hiLowLines` carries through line resolutions
-only and flattens on every other family (including area, where
-`<c:hiLowLines>` has no schema slot). Flattening a line template into
-a column clone therefore never leaks the connector lines into a host
-that cannot host them.
-The chart-level `upDownBars` flag follows the same grammar: pass
-`undefined` to inherit the source's parsed value, `null` to drop it
-back to the writer's OOXML default (no `<c:upDownBars>` element), or a
-`boolean` to replace it. The element renders inside `<c:lineChart>`
-so the field is silently dropped from the cloned `SheetChart`
-whenever the resolved chart type is anything but `line` — flattening
-a stock or line template into a column / pie / doughnut / area /
-scatter clone therefore never leaks a stale up / down bars block into
-a chart-type element whose schema rejects the element.
-The chart-level `serLines` flag follows the same `undefined` (inherit)
-/ `null` (drop) / `boolean` (replace) grammar as the other connector-
-line toggles. An override of `false` is equivalent to `null` — the
-writer treats both as the OOXML default of no element. The element
-renders inside `<c:barChart>` so the field is silently dropped from
-the cloned `SheetChart` whenever the resolved chart type is anything
-other than `bar` / `column` — flattening a stacked-bar template into a
-line / area / pie / doughnut / scatter clone therefore never leaks the
-series-line connectors into a chart-type element whose schema rejects
-the element. The flag does carry through the bar ↔ column coercion
-unchanged (both write to `<c:barChart>` with a different `barDir`).
-The chart-level `showLineMarkers` flag follows the same grammar:
-`undefined` inherits, `null` drops the inherited value (the writer
-falls back to Excel's default `<c:marker val="1"/>`), and a `boolean`
-replaces it. Like `upDownBars`, the element renders exclusively
-inside `<c:lineChart>` per the OOXML schema, so the field is silently
-dropped from the cloned `SheetChart` whenever the resolved chart
-type is anything but `line` — flattening a line template into a
-column / pie / doughnut / area / scatter clone never leaks the
-chart-level marker gate into a host that cannot carry it.
-The per-axis `axes.x.tickLblSkip` and `axes.x.tickMarkSkip` overrides
-follow the same `undefined` (inherit) / `null` (drop) / number
-(replace) grammar as `gridlines` / `scale` / `numberFormat`. The
-inherited values are dropped silently when the resolved clone target
-is `scatter` (its X axis is a value axis, so the skip would have no
-slot in the rendered chart) and when the target is `pie` or
-`doughnut` (no axes at all) — flattening a column template into a
-scatter clone therefore never leaks a stale catAx skip into the
-output.
-The per-axis `axes.x.lblOffset` override follows the same `undefined`
-(inherit) / `null` (drop) / number (replace) grammar. An explicit
-override of `100` (the OOXML default) collapses to `undefined` so it
-behaves identically to `null` — both leave the cloned chart with
-Excel's default label spacing. Same scope-restriction as the tick
-skips: the inherited offset is dropped silently when the resolved
-clone target is `scatter` or `pie` / `doughnut`, so flattening a
-column template into a scatter clone never leaks a stale catAx offset
-into the output.
-The per-axis `axes.x.lblAlgn` override follows the same `undefined`
-(inherit) / `null` (drop) / token (replace) grammar. An explicit
-override of `"ctr"` (the OOXML default) collapses to `undefined` so
-it behaves identically to `null` — both leave the cloned chart with
-Excel's default centered alignment. Unknown tokens drop rather than
-fall through, so a malformed override surfaces as "no alignment
-emitted" instead of silently snapping to the default. Same scope-
-restriction as `lblOffset`: the inherited alignment is dropped
-silently when the resolved clone target is `scatter` or `pie` /
-`doughnut`, so flattening a column template into a scatter clone
-never leaks a stale catAx alignment into the output.
-The per-axis `axes.x.hidden` and `axes.y.hidden` overrides follow the
-same `undefined` (inherit) / `null` (drop) / `boolean` (replace)
-grammar. Because `<c:delete>` lives on every axis flavour, the flag
-threads through every coercion that has axes (bar / column / line /
-area / scatter); pie / doughnut clones drop the entire `axes` block
-because OOXML defines no axes for them. An override of `false` is
-equivalent to `null` — the writer treats both as the OOXML default
-`val="0"`, so the cloned `SheetChart` collapses both shapes to
-`undefined`.
-The per-axis `axes.x.noMultiLvlLbl` override follows the same
-`undefined` (inherit) / `null` (drop) / `boolean` (replace) grammar.
-Because `<c:noMultiLvlLbl>` lives exclusively on `CT_CatAx`, the flag
-threads through bar / column / line / area coercions but is dropped
-silently when the resolved clone target is `scatter` (its X axis is a
-value axis, so the element has no slot) or `pie` / `doughnut` (no
-axes at all) — flattening a column template into a scatter clone
-therefore never leaks a stale catAx flag into the output. An override
-of `false` is equivalent to `null` — the writer treats both as the
-OOXML default `val="0"`, so the cloned `SheetChart` collapses both
-shapes to `undefined`. Non-boolean overrides drop rather than fall
-through to the inherited value.
-The per-axis `axes.x.reverse` / `axes.y.reverse` overrides follow the
-same `undefined` (inherit) / `null` (drop) / boolean (replace) grammar
-as the other axis fields. A literal `false` override behaves
-identically to `null` because the OOXML default and an explicit
-`false` produce the same forward `"minMax"` orientation on the wire.
-The inherited flag is dropped silently when the resolved clone target
-is `pie` or `doughnut` so flattening a bar template into a pie clone
-never leaks a stale orientation into the output.
-The per-axis `axes.x.crosses` / `axes.x.crossesAt` (and the matching
-`axes.y.*`) overrides follow the same `undefined` (inherit) / `null`
-(drop) / value (replace) grammar as the other axis fields, applied
-independently to each side of the XSD choice between `<c:crosses>` and
-`<c:crossesAt>`. The writer enforces the schema's mutual exclusion
-downstream by preferring the numeric pin when both fields are set —
-inheriting `crosses: "max"` and overriding only `crossesAt: 50`
-therefore leaves the numeric pin in the cloned shape and surfaces the
-inherited semantic value alongside it; the writer picks `crossesAt`,
-matching how the parser handles the same pair on a malformed input.
-Drop only one side by passing `null`; the other side then inherits
-normally. The inherited pin is dropped silently when the resolved
-clone target is `pie` or `doughnut` because OOXML defines no axes for
-those families.
+A common pattern is "template -> override -> write" — keep one
+chart-of-each-flavour template and use `cloneChart` to spawn many
+variants without re-encoding the whole `<c:chartSpace>` tree by
+hand. See [`CloneChartOptions` in
+`src/xlsx/chart-clone.ts`](./src/xlsx/chart-clone.ts) for the full
+override surface (every knob on `SheetChart` has a matching
+`undefined | null | value` override field).
 
-#### Walking and adding charts with `getCharts` / `addChart`
-
-`getCharts(workbook)` flattens every chart anchored on the workbook's
-sheets into a single array, attaching the sheet name and indexes so
-callers don't have to walk `workbook.sheets[].charts` themselves.
-`addChart(sheet, chart)` is the symmetric writer-side helper that
-appends a `SheetChart` to a `WriteSheet`, lazily allocating the
-`charts` array on the first call:
+#### Walking and adding charts
 
 ```ts
 import { addChart, getCharts, openXlsx, writeXlsx } from "hucre";
 
-// Read side — find every chart in a template workbook.
 const wb = await openXlsx(templateBytes);
+
+// Read side — find every chart in a template workbook.
 for (const { sheetName, chart } of getCharts(wb)) {
   console.log(sheetName, chart.kinds, chart.title);
 }

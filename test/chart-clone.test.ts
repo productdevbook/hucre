@@ -24250,3 +24250,745 @@ describe("cloneChart — titleBorderWidth", () => {
     expect(parseChart(written)?.titleBorderWidth).toBe(1.75);
   });
 });
+
+// ── cloneChart — chartSpaceBorderWidth ───────────────────────────────
+
+describe("cloneChart — chartSpaceBorderWidth", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [{ kind: "line", index: 0, name: "Revenue", valuesRef: "Sheet1!$B$2:$B$5" }],
+      ...extra,
+    };
+  }
+
+  it("inherits the source value by default", () => {
+    const clone = cloneChart(source({ chartSpaceBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.chartSpaceBorderWidth).toBe(1.5);
+  });
+
+  it("override replaces the source", () => {
+    const clone = cloneChart(source({ chartSpaceBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceBorderWidth: 2,
+    });
+    expect(clone.chartSpaceBorderWidth).toBe(2);
+  });
+
+  it("null override drops the inherited width", () => {
+    const clone = cloneChart(source({ chartSpaceBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceBorderWidth: null,
+    });
+    expect(clone.chartSpaceBorderWidth).toBeUndefined();
+  });
+
+  it("clamps and snaps the override", () => {
+    const clone1 = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceBorderWidth: 0.1,
+    });
+    expect(clone1.chartSpaceBorderWidth).toBe(0.25);
+    const clone2 = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceBorderWidth: 50,
+    });
+    expect(clone2.chartSpaceBorderWidth).toBe(13.5);
+    const clone3 = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceBorderWidth: 1.4,
+    });
+    expect(clone3.chartSpaceBorderWidth).toBe(1.5);
+  });
+
+  it("drops NaN / Infinity overrides", () => {
+    const clone1 = cloneChart(source({ chartSpaceBorderWidth: 1 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceBorderWidth: Number.NaN,
+    });
+    expect(clone1.chartSpaceBorderWidth).toBeUndefined();
+    const clone2 = cloneChart(source({ chartSpaceBorderWidth: 1 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceBorderWidth: Number.POSITIVE_INFINITY,
+    });
+    expect(clone2.chartSpaceBorderWidth).toBeUndefined();
+  });
+
+  it("composes with chartSpaceBorderColor", () => {
+    const clone = cloneChart(
+      source({ chartSpaceBorderColor: "FF0000", chartSpaceBorderWidth: 1.5 }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.chartSpaceBorderColor).toBe("FF0000");
+    expect(clone.chartSpaceBorderWidth).toBe(1.5);
+  });
+
+  it("survives a writeXlsx round trip", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceBorderWidth: 1.75,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(parseChart(written)?.chartSpaceBorderWidth).toBe(1.75);
+  });
+});
+
+// ── cloneChart — axisTitleBorderWidth ────────────────────────────────
+
+describe("cloneChart — axisTitleBorderWidth", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [{ kind: "line", index: 0, name: "Revenue", valuesRef: "Sheet1!$B$2:$B$5" }],
+      axes: { x: { title: "X" }, y: { title: "Y" } },
+      ...extra,
+    };
+  }
+
+  it("inherits source axisTitleBorderWidth on x and y", () => {
+    const clone = cloneChart(
+      source({
+        axes: {
+          x: { title: "X", axisTitleBorderWidth: 1.5 },
+          y: { title: "Y", axisTitleBorderWidth: 0.5 },
+        },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+      },
+    );
+    expect(clone.axes?.x?.axisTitleBorderWidth).toBe(1.5);
+    expect(clone.axes?.y?.axisTitleBorderWidth).toBe(0.5);
+  });
+
+  it("override replaces source on x", () => {
+    const clone = cloneChart(
+      source({ axes: { x: { title: "X", axisTitleBorderWidth: 1 }, y: { title: "Y" } } }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { axisTitleBorderWidth: 2 } },
+      },
+    );
+    expect(clone.axes?.x?.axisTitleBorderWidth).toBe(2);
+  });
+
+  it("null override drops inherited width", () => {
+    const clone = cloneChart(
+      source({ axes: { x: { title: "X", axisTitleBorderWidth: 1 }, y: { title: "Y" } } }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { axisTitleBorderWidth: null } },
+      },
+    );
+    expect(clone.axes?.x?.axisTitleBorderWidth).toBeUndefined();
+  });
+
+  it("drops the inherited width when the axis title is dropped", () => {
+    const clone = cloneChart(
+      source({ axes: { x: { title: "X", axisTitleBorderWidth: 1.5 }, y: { title: "Y" } } }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { title: null } },
+      },
+    );
+    expect(clone.axes?.x?.axisTitleBorderWidth).toBeUndefined();
+  });
+
+  it("clamps / snaps the override", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleBorderWidth: 100 } },
+    });
+    expect(clone.axes?.x?.axisTitleBorderWidth).toBe(13.5);
+  });
+
+  it("drops NaN", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleBorderWidth: Number.NaN } },
+    });
+    expect(clone.axes?.x?.axisTitleBorderWidth).toBeUndefined();
+  });
+
+  it("composes with axisTitleBorderColor", () => {
+    const clone = cloneChart(
+      source({
+        axes: {
+          x: { title: "X", axisTitleBorderColor: "FF0000", axisTitleBorderWidth: 2 },
+          y: { title: "Y" },
+        },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+      },
+    );
+    expect(clone.axes?.x?.axisTitleBorderColor).toBe("FF0000");
+    expect(clone.axes?.x?.axisTitleBorderWidth).toBe(2);
+  });
+
+  it("round-trips through writeXlsx", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleBorderWidth: 1.75 }, y: { axisTitleBorderWidth: 0.75 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const re = parseChart(written);
+    expect(re?.axes?.x?.axisTitleBorderWidth).toBe(1.75);
+    expect(re?.axes?.y?.axisTitleBorderWidth).toBe(0.75);
+  });
+});
+
+// ── cloneChart — *BorderDash family ─────────────────────────────────
+
+describe("cloneChart — plotAreaBorderDash", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [{ kind: "line", index: 0, name: "Revenue", valuesRef: "Sheet1!$B$2:$B$5" }],
+      ...extra,
+    };
+  }
+
+  it("inherits source plotAreaBorderDash", () => {
+    const clone = cloneChart(source({ plotAreaBorderDash: "dash" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.plotAreaBorderDash).toBe("dash");
+  });
+
+  it("override replaces source", () => {
+    const clone = cloneChart(source({ plotAreaBorderDash: "dash" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderDash: "dot",
+    });
+    expect(clone.plotAreaBorderDash).toBe("dot");
+  });
+
+  it("null override drops the inherited dash", () => {
+    const clone = cloneChart(source({ plotAreaBorderDash: "dash" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderDash: null,
+    });
+    expect(clone.plotAreaBorderDash).toBeUndefined();
+  });
+
+  it("collapses 'solid' override to undefined", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderDash: "solid",
+    });
+    expect(clone.plotAreaBorderDash).toBeUndefined();
+  });
+
+  it("drops unrecognized override tokens", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderDash: "weirdo" as any,
+    });
+    expect(clone.plotAreaBorderDash).toBeUndefined();
+  });
+
+  it("round-trips through writeXlsx", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderDash: "lgDashDot",
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(parseChart(written)?.plotAreaBorderDash).toBe("lgDashDot");
+  });
+});
+
+describe("cloneChart — legendBorderDash", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [{ kind: "line", index: 0, name: "Revenue", valuesRef: "Sheet1!$B$2:$B$5" }],
+      legend: "right",
+      ...extra,
+    };
+  }
+
+  it("inherits source legendBorderDash", () => {
+    const clone = cloneChart(source({ legendBorderDash: "dash" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.legendBorderDash).toBe("dash");
+  });
+
+  it("override replaces", () => {
+    const clone = cloneChart(source({ legendBorderDash: "dash" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendBorderDash: "dot",
+    });
+    expect(clone.legendBorderDash).toBe("dot");
+  });
+
+  it("null override drops dash", () => {
+    const clone = cloneChart(source({ legendBorderDash: "dash" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendBorderDash: null,
+    });
+    expect(clone.legendBorderDash).toBeUndefined();
+  });
+
+  it("dropped when legend hidden", () => {
+    const clone = cloneChart(source({ legendBorderDash: "dash" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendBorderDash).toBeUndefined();
+  });
+
+  it("round-trips through writeXlsx", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendBorderDash: "sysDot",
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(parseChart(written)?.legendBorderDash).toBe("sysDot");
+  });
+});
+
+describe("cloneChart — titleBorderDash", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [{ kind: "line", index: 0, name: "Revenue", valuesRef: "Sheet1!$B$2:$B$5" }],
+      title: "Sales",
+      ...extra,
+    };
+  }
+
+  it("inherits source titleBorderDash", () => {
+    const clone = cloneChart(source({ titleBorderDash: "dashDot" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleBorderDash).toBe("dashDot");
+  });
+
+  it("override replaces", () => {
+    const clone = cloneChart(source({ titleBorderDash: "dash" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleBorderDash: "dot",
+    });
+    expect(clone.titleBorderDash).toBe("dot");
+  });
+
+  it("null override drops dash", () => {
+    const clone = cloneChart(source({ titleBorderDash: "dash" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleBorderDash: null,
+    });
+    expect(clone.titleBorderDash).toBeUndefined();
+  });
+
+  it("collapses 'solid' override to undefined", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleBorderDash: "solid",
+    });
+    expect(clone.titleBorderDash).toBeUndefined();
+  });
+
+  it("drops dash when title is dropped", () => {
+    const clone = cloneChart(source({ titleBorderDash: "dash" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      title: null,
+    });
+    expect(clone.titleBorderDash).toBeUndefined();
+  });
+
+  it("dropped when showTitle is false", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      showTitle: false,
+      titleBorderDash: "dash",
+    });
+    expect(clone.titleBorderDash).toBeUndefined();
+  });
+
+  it("round-trips through writeXlsx", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleBorderDash: "sysDashDotDot",
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(parseChart(written)?.titleBorderDash).toBe("sysDashDotDot");
+  });
+});
+
+describe("cloneChart — chartSpaceBorderDash", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [{ kind: "line", index: 0, name: "Revenue", valuesRef: "Sheet1!$B$2:$B$5" }],
+      ...extra,
+    };
+  }
+
+  it("inherits source value", () => {
+    const clone = cloneChart(source({ chartSpaceBorderDash: "dash" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.chartSpaceBorderDash).toBe("dash");
+  });
+
+  it("override replaces", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceBorderDash: "lgDash",
+    });
+    expect(clone.chartSpaceBorderDash).toBe("lgDash");
+  });
+
+  it("null override drops dash", () => {
+    const clone = cloneChart(source({ chartSpaceBorderDash: "dash" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceBorderDash: null,
+    });
+    expect(clone.chartSpaceBorderDash).toBeUndefined();
+  });
+
+  it("round-trips through writeXlsx", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceBorderDash: "sysDash",
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(parseChart(written)?.chartSpaceBorderDash).toBe("sysDash");
+  });
+});
+
+describe("cloneChart — axisTitleBorderDash", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [{ kind: "line", index: 0, name: "Revenue", valuesRef: "Sheet1!$B$2:$B$5" }],
+      axes: { x: { title: "X" }, y: { title: "Y" } },
+      ...extra,
+    };
+  }
+
+  it("inherits source value on x and y", () => {
+    const clone = cloneChart(
+      source({
+        axes: {
+          x: { title: "X", axisTitleBorderDash: "dash" },
+          y: { title: "Y", axisTitleBorderDash: "dot" },
+        },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+      },
+    );
+    expect(clone.axes?.x?.axisTitleBorderDash).toBe("dash");
+    expect(clone.axes?.y?.axisTitleBorderDash).toBe("dot");
+  });
+
+  it("override replaces on x", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleBorderDash: "lgDash" } },
+    });
+    expect(clone.axes?.x?.axisTitleBorderDash).toBe("lgDash");
+  });
+
+  it("null override drops dash on x", () => {
+    const clone = cloneChart(
+      source({ axes: { x: { title: "X", axisTitleBorderDash: "dash" }, y: { title: "Y" } } }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { axisTitleBorderDash: null } },
+      },
+    );
+    expect(clone.axes?.x?.axisTitleBorderDash).toBeUndefined();
+  });
+
+  it("drops when axis title is dropped", () => {
+    const clone = cloneChart(
+      source({ axes: { x: { title: "X", axisTitleBorderDash: "dash" }, y: { title: "Y" } } }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { title: null } },
+      },
+    );
+    expect(clone.axes?.x?.axisTitleBorderDash).toBeUndefined();
+  });
+
+  it("round-trips through writeXlsx", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleBorderDash: "dashDot" }, y: { axisTitleBorderDash: "dot" } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const re = parseChart(written);
+    expect(re?.axes?.x?.axisTitleBorderDash).toBe("dashDot");
+    expect(re?.axes?.y?.axisTitleBorderDash).toBe("dot");
+  });
+});
+
+// dataTable.borderWidth/Dash and dataLabels.borderWidth/Dash are
+// handled via the wholesale-replace `dataTable` / `dataLabels` clone
+// override semantics (the resolver passes the entire object through),
+// so the round-trip lives implicitly under those override flows.
+
+describe("cloneChart — dataTable.borderWidth / borderDash", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, name: "Revenue", valuesRef: "Sheet1!$B$2:$B$5" }],
+      ...extra,
+    };
+  }
+
+  it("inherits dataTable.borderWidth from source", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: true,
+          showOutline: true,
+          showKeys: true,
+          borderWidth: 1.25,
+          borderDash: "dash",
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } }, type: "column" },
+    );
+    expect(typeof clone.dataTable === "object" ? clone.dataTable.borderWidth : undefined).toBe(
+      1.25,
+    );
+    expect(typeof clone.dataTable === "object" ? clone.dataTable.borderDash : undefined).toBe(
+      "dash",
+    );
+  });
+
+  it("override object replaces dataTable wholesale", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: true,
+          showOutline: true,
+          showKeys: true,
+          borderWidth: 1,
+          borderDash: "dash",
+        },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        type: "column",
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: true,
+          showOutline: true,
+          showKeys: true,
+          borderWidth: 2.5,
+          borderDash: "sysDash",
+        },
+      },
+    );
+    expect(typeof clone.dataTable === "object" ? clone.dataTable.borderWidth : undefined).toBe(2.5);
+    expect(typeof clone.dataTable === "object" ? clone.dataTable.borderDash : undefined).toBe(
+      "sysDash",
+    );
+  });
+
+  it("round-trips through writeXlsx", async () => {
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: true,
+          showOutline: true,
+          showKeys: true,
+          borderWidth: 1.5,
+          borderDash: "lgDashDot",
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } }, type: "column" },
+    );
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const re = parseChart(written);
+    expect(typeof re?.dataTable === "object" ? re.dataTable.borderWidth : undefined).toBe(1.5);
+    expect(typeof re?.dataTable === "object" ? re.dataTable.borderDash : undefined).toBe(
+      "lgDashDot",
+    );
+  });
+});
+
+describe("cloneChart — dataLabels.borderWidth / borderDash", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, name: "Revenue", valuesRef: "Sheet1!$B$2:$B$5" }],
+      ...extra,
+    };
+  }
+
+  it("inherits dataLabels.borderWidth/Dash from source (chart-level)", () => {
+    const clone = cloneChart(
+      source({ dataLabels: { showValue: true, borderWidth: 1, borderDash: "dot" } }),
+      { anchor: { from: { row: 0, col: 0 } }, type: "column" },
+    );
+    expect(clone.dataLabels?.borderWidth).toBe(1);
+    expect(clone.dataLabels?.borderDash).toBe("dot");
+  });
+
+  it("override replaces dataLabels wholesale", () => {
+    const clone = cloneChart(
+      source({ dataLabels: { showValue: true, borderWidth: 1, borderDash: "dot" } }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        type: "column",
+        dataLabels: { showValue: true, borderWidth: 2, borderDash: "lgDashDotDot" },
+      },
+    );
+    expect(clone.dataLabels?.borderWidth).toBe(2);
+    expect(clone.dataLabels?.borderDash).toBe("lgDashDotDot");
+  });
+
+  it("round-trips dataLabels.borderWidth/Dash through writeXlsx", async () => {
+    const clone = cloneChart(
+      source({ dataLabels: { showValue: true, borderWidth: 0.75, borderDash: "sysDashDot" } }),
+      { anchor: { from: { row: 0, col: 0 } }, type: "column" },
+    );
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const re = parseChart(written);
+    // Chart-level <c:dLbls> may be surfaced as `re.dataLabels` (chart
+    // level) or on the first series — accept either since the writer's
+    // emit shape and the OOXML schema let both happen.
+    const labels = re?.dataLabels ?? re?.series?.[0]?.dataLabels;
+    expect(labels?.borderWidth).toBe(0.75);
+    expect(labels?.borderDash).toBe("sysDashDot");
+  });
+});

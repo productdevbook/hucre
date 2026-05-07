@@ -26,6 +26,7 @@ import type {
   ChartAxisTickLabelPosition,
   ChartAxisTickMark,
   ChartBarGrouping,
+  ChartBorderDash,
   ChartDataLabelPosition,
   ChartDataLabelsInfo,
   ChartDataTable,
@@ -257,6 +258,16 @@ export function parseChart(xml: string): Chart | undefined {
   // line, plot-area / legend border) cannot leak into this field.
   const titleBorderWidth = parseTitleBorderWidth(chartEl);
   if (titleBorderWidth !== undefined) out.titleBorderWidth = titleBorderWidth;
+
+  // `<c:title><c:spPr><a:ln><a:prstDash val=".."/></a:ln></c:spPr>
+  // </c:title>` carries Excel's "Format Chart Title -> Border -> Dash
+  // type" pin. Same accept-or-drop grammar as every other chart-frame
+  // border-dash slot — `"solid"` collapses to `undefined` so absence
+  // and the OOXML default round-trip identically. Scoped to the
+  // title's `<c:spPr>` so a stray `<a:prstDash>` elsewhere cannot leak
+  // in.
+  const titleBorderDash = parseTitleBorderDash(chartEl);
+  if (titleBorderDash !== undefined) out.titleBorderDash = titleBorderDash;
 
   // `<c:autoTitleDeleted>` records whether the user explicitly deleted
   // the auto-generated title — independent of whether a literal
@@ -509,6 +520,13 @@ export function parseChart(xml: string): Chart | undefined {
     // axis line) cannot leak into this field.
     const plotAreaBorderWidth = parsePlotAreaBorderWidth(plotArea);
     if (plotAreaBorderWidth !== undefined) out.plotAreaBorderWidth = plotAreaBorderWidth;
+
+    // `<c:plotArea><c:spPr><a:ln><a:prstDash val=".."/></a:ln></c:spPr>
+    // </c:plotArea>` carries Excel's "Format Plot Area -> Border ->
+    // Dash type" pin. Same accept-or-drop grammar as every other
+    // chart-frame border-dash slot.
+    const plotAreaBorderDash = parseBorderDashFromSpPr(plotArea);
+    if (plotAreaBorderDash !== undefined) out.plotAreaBorderDash = plotAreaBorderDash;
   }
 
   const legend = parseLegend(chartEl);
@@ -631,6 +649,13 @@ export function parseChart(xml: string): Chart | undefined {
     // knobs.
     const legendBorderWidth = parseLegendBorderWidth(chartEl);
     if (legendBorderWidth !== undefined) out.legendBorderWidth = legendBorderWidth;
+
+    // `<c:legend><c:spPr><a:ln><a:prstDash val=".."/></a:ln></c:spPr>
+    // </c:legend>` carries Excel's "Format Legend -> Border -> Dash
+    // type" pin. Same accept-or-drop grammar as every other chart-
+    // frame border-dash slot.
+    const legendBorderDash = parseLegendBorderDash(chartEl);
+    if (legendBorderDash !== undefined) out.legendBorderDash = legendBorderDash;
   }
 
   const dispBlanksAs = parseDispBlanksAs(chartEl);
@@ -759,6 +784,22 @@ export function parseChart(xml: string): Chart | undefined {
   // round-trip never fabricates a stroke Excel cannot render.
   const chartSpaceBorderColor = parseChartSpaceBorderColor(chartSpace);
   if (chartSpaceBorderColor !== undefined) out.chartSpaceBorderColor = chartSpaceBorderColor;
+
+  // `<c:chartSpace><c:spPr><a:ln w="EMU">` carries Excel's "Format
+  // Chart Area -> Border -> Width" pin. Same EMU encoding and clamp /
+  // snap grammar as every other chart-frame border-width slot. Scoped
+  // to direct children of `<c:chartSpace>` so a stray `<a:ln w=..>`
+  // elsewhere cannot leak in.
+  const chartSpaceBorderWidth = parseBorderWidthFromSpPr(chartSpace);
+  if (chartSpaceBorderWidth !== undefined) out.chartSpaceBorderWidth = chartSpaceBorderWidth;
+
+  // `<c:chartSpace><c:spPr><a:ln><a:prstDash val=".."/>` carries
+  // Excel's "Format Chart Area -> Border -> Dash type" pin. Same
+  // accept-or-drop grammar as every other chart-frame border-dash
+  // slot — `"solid"` collapses to `undefined` so absence and the OOXML
+  // default round-trip identically.
+  const chartSpaceBorderDash = parseBorderDashFromSpPr(chartSpace);
+  if (chartSpaceBorderDash !== undefined) out.chartSpaceBorderDash = chartSpaceBorderDash;
 
   return out;
 }
@@ -982,6 +1023,19 @@ function parseAxisInfo(
   // three readers walk disjoint paths so a caller can pin all three
   // knobs without conflict.
   const axisTitleBorderColor = parseAxisTitleBorderColor(axis);
+  // `<c:catAx><c:title><c:spPr><a:ln w="EMU"/>` (or `<c:valAx>` /
+  // `<c:dateAx>` / `<c:serAx>`) carries Excel's "Format Axis Title ->
+  // Border -> Width" pin. Same EMU encoding and clamp / snap grammar
+  // as every other chart-frame border-width slot. Independent of
+  // `axisTitleBorderColor` (color child) and `axisTitleBorderDash`
+  // (`<a:prstDash>` child) — the three readers walk disjoint slots of
+  // the shared `<a:ln>` element so a caller can pin all three knobs
+  // without conflict.
+  const axisTitleBorderWidth = parseAxisTitleBorderWidth(axis);
+  // `<c:catAx><c:title><c:spPr><a:ln><a:prstDash val=".."/>` (or
+  // `<c:valAx>` / `<c:dateAx>` / `<c:serAx>`) carries Excel's "Format
+  // Axis Title -> Border -> Dash type" pin.
+  const axisTitleBorderDash = parseAxisTitleBorderDash(axis);
   const gridlines = parseAxisGridlines(axis);
   const scale = parseAxisScale(axis);
   const numberFormat = parseAxisNumberFormat(axis);
@@ -1144,6 +1198,8 @@ function parseAxisInfo(
     axisTitleLayout === undefined &&
     axisTitleFillColor === undefined &&
     axisTitleBorderColor === undefined &&
+    axisTitleBorderWidth === undefined &&
+    axisTitleBorderDash === undefined &&
     gridlines === undefined &&
     scale === undefined &&
     numberFormat === undefined &&
@@ -1187,6 +1243,8 @@ function parseAxisInfo(
   if (axisTitleLayout !== undefined) out.axisTitleLayout = axisTitleLayout;
   if (axisTitleFillColor !== undefined) out.axisTitleFillColor = axisTitleFillColor;
   if (axisTitleBorderColor !== undefined) out.axisTitleBorderColor = axisTitleBorderColor;
+  if (axisTitleBorderWidth !== undefined) out.axisTitleBorderWidth = axisTitleBorderWidth;
+  if (axisTitleBorderDash !== undefined) out.axisTitleBorderDash = axisTitleBorderDash;
   if (gridlines !== undefined) out.gridlines = gridlines;
   if (scale !== undefined) out.scale = scale;
   if (numberFormat !== undefined) out.numberFormat = numberFormat;
@@ -3133,6 +3191,19 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
   const borderColor = parseDataLabelsBorderColor(el);
   if (borderColor !== undefined) out.borderColor = borderColor;
 
+  // `<c:dLbls><c:spPr><a:ln w="EMU">` carries Excel's "Format Data
+  // Labels -> Border -> Width" pin. Delegates to the shared
+  // {@link parseBorderWidthFromSpPr} so the EMU encoding and snap /
+  // clamp grammar match every other chart-frame border-width slot.
+  const borderWidth = parseBorderWidthFromSpPr(el);
+  if (borderWidth !== undefined) out.borderWidth = borderWidth;
+
+  // `<c:dLbls><c:spPr><a:ln><a:prstDash val=".."/>` carries Excel's
+  // "Format Data Labels -> Border -> Dash type" pin. Delegates to the
+  // shared {@link parseBorderDashFromSpPr} helper.
+  const borderDash = parseBorderDashFromSpPr(el);
+  if (borderDash !== undefined) out.borderDash = borderDash;
+
   // Empty record is meaningless to a consumer — collapse to undefined.
   if (
     out.position === undefined &&
@@ -3152,7 +3223,9 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
     out.strikethrough === undefined &&
     out.fontFamily === undefined &&
     out.fillColor === undefined &&
-    out.borderColor === undefined
+    out.borderColor === undefined &&
+    out.borderWidth === undefined &&
+    out.borderDash === undefined
   ) {
     return undefined;
   }
@@ -3603,6 +3676,91 @@ const VALID_DASH_STYLES: ReadonlySet<ChartLineDashStyle> = new Set([
 const STROKE_WIDTH_MIN_PT = 0.25;
 const STROKE_WIDTH_MAX_PT = 13.5;
 const EMU_PER_PT = 12700;
+
+/**
+ * Recognized values of {@link ChartBorderDash} — the chart-frame
+ * preset dash enum. Mirrors the OOXML `ST_PresetLineDashVal` set
+ * exactly (see {@link VALID_DASH_STYLES} on the per-series side); the
+ * reader collapses `"solid"` (the OOXML default) to `undefined` for
+ * round-trip symmetry with the writer.
+ */
+const VALID_BORDER_DASHES: ReadonlySet<ChartBorderDash> = new Set([
+  "solid",
+  "dash",
+  "dashDot",
+  "dot",
+  "lgDash",
+  "lgDashDot",
+  "lgDashDotDot",
+  "sysDash",
+  "sysDashDot",
+  "sysDashDotDot",
+  "sysDot",
+]);
+
+/**
+ * Pull the `w` attribute off a `<c:spPr><a:ln w="EMU"/>` block scoped
+ * to the supplied parent (`<c:plotArea>` / `<c:legend>` / `<c:title>` /
+ * `<c:chartSpace>` / `<c:dTable>` / `<c:dLbls>`). Returns the stroke
+ * width in points after clamping to the `0.25..13.5` pt band Excel's
+ * UI exposes; the OOXML `w` attribute carries the value in EMU
+ * (1 pt = 12 700 EMU) per CT_LineProperties (ECMA-376 Part 1,
+ * §20.1.2.3.24). Snaps to the 0.25 pt grid Excel's UI exposes so a
+ * parsed-then-written width does not drift across round-trips.
+ *
+ * Returns `undefined` when there is no `<c:spPr><a:ln>` block, when
+ * the attribute is missing, when the value cannot be parsed as a
+ * finite positive number, or when it parses to zero (Excel's "no
+ * border" marker — the writer-side knob does not model that state).
+ * Mirrors the {@link parsePlotAreaBorderWidth} /
+ * {@link parseLegendBorderWidth} / {@link parseTitleBorderWidth}
+ * helpers — used by every chart-frame border-width slot the reader
+ * surfaces.
+ */
+function parseBorderWidthFromSpPr(parent: XmlElement): number | undefined {
+  const spPr = findChild(parent, "spPr");
+  if (!spPr) return undefined;
+  const ln = findChild(spPr, "ln");
+  if (!ln) return undefined;
+  const wAttr = ln.attrs.w;
+  if (typeof wAttr !== "string") return undefined;
+  const emu = Number.parseFloat(wAttr);
+  if (!Number.isFinite(emu) || emu <= 0) return undefined;
+  // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
+  const pt = Math.round((emu / EMU_PER_PT) * 4) / 4;
+  if (pt < STROKE_WIDTH_MIN_PT) return STROKE_WIDTH_MIN_PT;
+  if (pt > STROKE_WIDTH_MAX_PT) return STROKE_WIDTH_MAX_PT;
+  return pt;
+}
+
+/**
+ * Pull the `val` attribute off a `<c:spPr><a:ln><a:prstDash val=".."/>`
+ * chain scoped to the supplied parent. Returns the {@link ChartBorderDash}
+ * value when the chain is present and the value is a recognized
+ * `ST_PresetLineDashVal` token other than the OOXML default `"solid"`.
+ *
+ * Returns `undefined` when the chain is missing at any link, when the
+ * attribute is absent, when the value is unrecognized, or when it
+ * matches the OOXML default `"solid"` (so absence and the default
+ * round-trip identically through {@link cloneChart}). Mirrors the
+ * writer-side {@link normalizeBorderDash} so the accept-or-drop
+ * grammar matches every chart-frame border-dash slot the writer
+ * authors.
+ */
+function parseBorderDashFromSpPr(parent: XmlElement): ChartBorderDash | undefined {
+  const spPr = findChild(parent, "spPr");
+  if (!spPr) return undefined;
+  const ln = findChild(spPr, "ln");
+  if (!ln) return undefined;
+  const prstDash = findChild(ln, "prstDash");
+  if (!prstDash) return undefined;
+  const raw = prstDash.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim() as ChartBorderDash;
+  if (!VALID_BORDER_DASHES.has(trimmed)) return undefined;
+  if (trimmed === "solid") return undefined;
+  return trimmed;
+}
 
 /**
  * Pull `<c:spPr><a:ln>` off a series and surface its dash + width as
@@ -4258,6 +4416,22 @@ function parseLegendBorderWidth(chartEl: XmlElement): number | undefined {
   if (pt < STROKE_WIDTH_MIN_PT) return STROKE_WIDTH_MIN_PT;
   if (pt > STROKE_WIDTH_MAX_PT) return STROKE_WIDTH_MAX_PT;
   return pt;
+}
+
+/**
+ * Pull `<c:legend><c:spPr><a:ln><a:prstDash val=".."/></a:ln></c:spPr>
+ * </c:legend>` off a chart. Returns the recognized
+ * {@link ChartBorderDash} value when the chain is present and the
+ * value is a valid `ST_PresetLineDashVal` token other than the OOXML
+ * default `"solid"`. Returns `undefined` when the chart omits
+ * `<c:legend>`, when the chain is broken, or when the value matches
+ * the default. Mirrors {@link parseTitleBorderDash} on a different
+ * host element.
+ */
+function parseLegendBorderDash(chartEl: XmlElement): ChartBorderDash | undefined {
+  const legend = findChild(chartEl, "legend");
+  if (!legend) return undefined;
+  return parseBorderDashFromSpPr(legend);
 }
 
 /**
@@ -5045,6 +5219,24 @@ function parseTitleBorderWidth(chartEl: XmlElement): number | undefined {
 }
 
 /**
+ * Pull the `val` attribute off `<c:title><c:spPr><a:ln><a:prstDash
+ * val=".."/></a:ln></c:spPr></c:title>` and return the recognized
+ * {@link ChartBorderDash} value. Returns `undefined` when the chain
+ * is missing at any link, when the attribute is absent / unrecognized,
+ * or when it matches the OOXML default `"solid"` (so absence and the
+ * default round-trip identically through {@link cloneChart}).
+ *
+ * Delegates to {@link parseBorderDashFromSpPr} so the accept-or-drop
+ * grammar matches every chart-frame border-dash slot the reader
+ * surfaces.
+ */
+function parseTitleBorderDash(chartEl: XmlElement): ChartBorderDash | undefined {
+  const title = findChild(chartEl, "title");
+  if (!title) return undefined;
+  return parseBorderDashFromSpPr(title);
+}
+
+/**
  * Pull `<c:title><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
  * </a:solidFill></c:spPr></c:title>` off an axis element. Returns the
  * axis title's solid fill color as a 6-character uppercase hex string
@@ -5159,6 +5351,42 @@ function parseAxisTitleBorderColor(axis: XmlElement): string | undefined {
   const srgbClr = findChild(solidFill, "srgbClr");
   if (!srgbClr) return undefined;
   return normalizeRgbHex(srgbClr.attrs.val);
+}
+
+/**
+ * Pull the `w` attribute off `<c:catAx><c:title><c:spPr><a:ln w="EMU">`
+ * (or `<c:valAx>` / `<c:dateAx>` / `<c:serAx>`) and return the stroke
+ * width in points after clamping to the `0.25..13.5` pt band Excel's
+ * UI exposes. Same EMU encoding (1 pt = 12 700 EMU) and snap / clamp
+ * grammar as every other chart-frame border-width slot. Delegates to
+ * {@link parseBorderWidthFromSpPr} so the implementation stays
+ * uniform across all hosts.
+ *
+ * Returns `undefined` when the axis omits `<c:title>`, when the title
+ * has no `<c:spPr><a:ln w=..>` slot, when the attribute is absent,
+ * when the value cannot be parsed as a finite positive number, or
+ * when it parses to zero. Independent of {@link parseAxisTitleBorderColor}
+ * and {@link parseAxisTitleBorderDash}: all three readers walk
+ * disjoint slots of the shared `<a:ln>` element.
+ */
+function parseAxisTitleBorderWidth(axis: XmlElement): number | undefined {
+  const title = findChild(axis, "title");
+  if (!title) return undefined;
+  return parseBorderWidthFromSpPr(title);
+}
+
+/**
+ * Pull the `val` attribute off `<c:catAx><c:title><c:spPr><a:ln>
+ * <a:prstDash val=".."/></a:ln></c:spPr></c:title></c:catAx>` (or
+ * `<c:valAx>` / `<c:dateAx>` / `<c:serAx>`) and return the recognized
+ * {@link ChartBorderDash} value. Returns `undefined` when the chain
+ * is missing at any link, when the attribute is absent / unrecognized,
+ * or when it matches the OOXML default `"solid"`.
+ */
+function parseAxisTitleBorderDash(axis: XmlElement): ChartBorderDash | undefined {
+  const title = findChild(axis, "title");
+  if (!title) return undefined;
+  return parseBorderDashFromSpPr(title);
 }
 
 /**
@@ -5687,6 +5915,18 @@ function parseDataTable(plotArea: XmlElement): ChartDataTable | undefined {
   if (fillColor !== undefined) out.fillColor = fillColor;
   const borderColor = parseDataTableBorderColor(el);
   if (borderColor !== undefined) out.borderColor = borderColor;
+  // `<c:dTable><c:spPr><a:ln w="EMU">` carries Excel's "Format Data
+  // Table -> Border -> Width" pin. Delegates to the shared
+  // {@link parseBorderWidthFromSpPr} so the EMU encoding and snap /
+  // clamp grammar match every other chart-frame border-width slot.
+  const borderWidth = parseBorderWidthFromSpPr(el);
+  if (borderWidth !== undefined) out.borderWidth = borderWidth;
+  // `<c:dTable><c:spPr><a:ln><a:prstDash val=".."/>` carries Excel's
+  // "Format Data Table -> Border -> Dash type" pin. Delegates to the
+  // shared {@link parseBorderDashFromSpPr} so the accept-or-drop
+  // grammar matches every chart-frame border-dash slot.
+  const borderDash = parseBorderDashFromSpPr(el);
+  if (borderDash !== undefined) out.borderDash = borderDash;
   return out;
 }
 

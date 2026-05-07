@@ -995,6 +995,46 @@ export interface ChartDataLabels {
    * {@link fontColor} / {@link fontFamily} / {@link fillColor}.
    */
   borderColor?: string;
+  /**
+   * Data-labels border (stroke) thickness in points (e.g. `1.5`). Maps
+   * to the `w` attribute on `<c:dLbls><c:spPr><a:ln w="EMU">` — Excel's
+   * "Format Data Labels -> Border -> Width" spinner. The OOXML `w`
+   * attribute carries the stroke width in English Metric Units
+   * (1 pt = 12 700 EMU) per `CT_LineProperties` (ECMA-376 Part 1,
+   * §20.1.2.3.24). The writer multiplies by 12 700 and rounds to the
+   * nearest integer because the schema types `w` as `xsd:int`.
+   *
+   * Accepts any finite number; values are clamped to the `0.25..13.5`
+   * pt band Excel's UI exposes (the same band used by every other
+   * chart-frame border-width knob) and snapped to the 0.25 pt grid so
+   * a parsed-then-written width does not drift across round-trips.
+   * Non-finite / non-numeric / `NaN` values collapse to `undefined`
+   * and the writer omits the `w` attribute (the line keeps Excel's
+   * auto-thickness — typically 0.75 pt).
+   *
+   * Default: omitted — the data-label border inherits Excel's
+   * auto-thickness.
+   *
+   * Composes independently with {@link borderColor} — the width
+   * attribute lands on the same `<a:ln>` element as the color's
+   * `<a:solidFill>` child, but the writer authors `<a:ln>` whenever
+   * either knob is set.
+   */
+  borderWidth?: number;
+  /**
+   * Data-labels border (stroke) preset dash pattern. Maps to the `val`
+   * attribute on `<c:dLbls><c:spPr><a:ln><a:prstDash val=".."/>`.
+   * Mirrors Excel's "Format Data Labels -> Border -> Dash type"
+   * picker. Same {@link ChartBorderDash} accept-or-drop grammar as the
+   * chart-level {@link SheetChart.plotAreaBorderDash} — `"solid"`
+   * collapses to `undefined` so absence and the OOXML default
+   * round-trip identically.
+   *
+   * Composes independently with {@link borderColor} and
+   * {@link borderWidth} — all three knobs share the same `<a:ln>`
+   * element.
+   */
+  borderDash?: ChartBorderDash;
 }
 
 /**
@@ -1017,6 +1057,32 @@ export type ChartLineDashStyle =
   | "sysDot"
   | "sysDashDot"
   | "sysDashDotDot";
+
+/**
+ * Preset dash pattern for a chart-frame border stroke (plot-area /
+ * legend / title / chart-space / axis-title / data-table / data-label
+ * borders). Mirrors the OOXML `ST_PresetLineDashVal` enum exactly —
+ * the same set of preset patterns the per-series
+ * {@link ChartLineDashStyle} carries — but lands on `<c:spPr><a:ln>
+ * <a:prstDash val="..">` for chart-frame borders.
+ *
+ * The OOXML default is `"solid"` (no `<a:prstDash>` child); the writer
+ * omits the element when `"solid"` (or `undefined`) is passed so a
+ * fresh chart matches Excel's reference shape byte-for-byte. Excel
+ * ignores any unrecognized value.
+ */
+export type ChartBorderDash =
+  | "solid"
+  | "dash"
+  | "dashDot"
+  | "dot"
+  | "lgDash"
+  | "lgDashDot"
+  | "lgDashDotDot"
+  | "sysDash"
+  | "sysDashDot"
+  | "sysDashDotDot"
+  | "sysDot";
 
 /**
  * Per-series line stroke styling for line / scatter charts.
@@ -1542,6 +1608,51 @@ export interface ChartDataTable {
    * pie / doughnut along with the rest of the data-table configuration.
    */
   borderColor?: string;
+  /**
+   * Data-table border (stroke) thickness in points (e.g. `1.5`). Maps
+   * to the `w` attribute on `<c:dTable><c:spPr><a:ln w="EMU">` — Excel's
+   * "Format Data Table -> Border -> Width" spinner. The OOXML `w`
+   * attribute carries the stroke width in English Metric Units
+   * (1 pt = 12 700 EMU) per `CT_LineProperties` (ECMA-376 Part 1,
+   * §20.1.2.3.24). The writer multiplies by 12 700 and rounds to the
+   * nearest integer because the schema types `w` as `xsd:int`.
+   *
+   * Accepts any finite number; values are clamped to the `0.25..13.5`
+   * pt band Excel's UI exposes (the same band used by every other
+   * chart-frame border-width knob) and snapped to the 0.25 pt grid so
+   * a parsed-then-written width does not drift across round-trips.
+   * Non-finite / non-numeric / `NaN` values collapse to `undefined`
+   * and the writer omits the `w` attribute (the line keeps Excel's
+   * auto-thickness — typically 0.75 pt).
+   *
+   * Default: omitted — the data-table border inherits Excel's
+   * auto-thickness.
+   *
+   * Composes independently with {@link borderColor} — the width
+   * attribute lands on the same `<a:ln>` element as the color's
+   * `<a:solidFill>` child, but the writer authors `<a:ln>` whenever
+   * either knob is set.
+   *
+   * Only meaningful for chart families with axes; silently dropped on
+   * pie / doughnut along with the rest of the data-table configuration.
+   */
+  borderWidth?: number;
+  /**
+   * Data-table border (stroke) preset dash pattern. Maps to the `val`
+   * attribute on `<c:dTable><c:spPr><a:ln><a:prstDash val=".."/>`.
+   * Mirrors Excel's "Format Data Table -> Border -> Dash type" picker.
+   * Same {@link ChartBorderDash} accept-or-drop grammar as the
+   * chart-level {@link SheetChart.plotAreaBorderDash} — `"solid"`
+   * collapses to `undefined` so absence and the OOXML default
+   * round-trip identically.
+   *
+   * Composes independently with {@link borderColor} and
+   * {@link borderWidth} — all three knobs share the same `<a:ln>`
+   * element. Only meaningful for chart families with axes; silently
+   * dropped on pie / doughnut along with the rest of the data-table
+   * configuration.
+   */
+  borderDash?: ChartBorderDash;
 }
 
 /**
@@ -2509,6 +2620,20 @@ export interface SheetChart {
    */
   legendBorderWidth?: number;
   /**
+   * Chart legend border (stroke) preset dash pattern. Maps to the
+   * `val` attribute on `<c:legend><c:spPr><a:ln><a:prstDash val=".."/>`.
+   * Mirrors Excel's "Format Legend -> Border -> Dash type" picker. Same
+   * {@link ChartBorderDash} accept-or-drop grammar as
+   * {@link plotAreaBorderDash} — `"solid"` collapses to `undefined`
+   * so absence and the OOXML default round-trip identically.
+   *
+   * Composes independently with {@link legendBorderColor} and
+   * {@link legendBorderWidth} — all three knobs share the same `<a:ln>`
+   * element. Silently ignored when `legend === false` (no `<c:legend>`
+   * element is emitted).
+   */
+  legendBorderDash?: ChartBorderDash;
+  /**
    * Custom plot-area placement inside the chart frame. Maps to
    * `<c:plotArea><c:layout><c:manualLayout>...</c:manualLayout></c:layout>
    * </c:plotArea>` — Excel's "Format Plot Area -> Position -> Custom"
@@ -2670,6 +2795,34 @@ export interface SheetChart {
    */
   plotAreaBorderWidth?: number;
   /**
+   * Plot-area border (stroke) preset dash pattern. Maps to the `val`
+   * attribute on `<c:plotArea><c:spPr><a:ln><a:prstDash val=".."/>` —
+   * Excel's "Format Plot Area -> Border -> Dash type" picker. The OOXML
+   * `<a:prstDash>` element carries the `ST_PresetLineDashVal` enum on
+   * `CT_PresetLineDashProperties` (ECMA-376 Part 1, §20.1.8.48). Per
+   * `CT_LineProperties` schema sequence (§20.1.2.3.24), `<a:prstDash>`
+   * follows `<a:solidFill>` and precedes `<a:headEnd>` / `<a:tailEnd>`.
+   *
+   * Accepts any {@link ChartBorderDash} value; `"solid"` (the OOXML
+   * default) collapses to `undefined` for round-trip symmetry — the
+   * writer skips the `<a:prstDash>` element entirely so a fresh plot
+   * area matches Excel's reference shape byte-for-byte. Unrecognized
+   * tokens drop to `undefined` rather than fabricate a value Excel
+   * would reject.
+   *
+   * Default: omitted — the border renders solid. Pin a value to dash /
+   * dot the plot-area border, useful for distinguishing the inner band
+   * from the outer chart frame.
+   *
+   * Composes independently with {@link plotAreaBorderColor} and
+   * {@link plotAreaBorderWidth} — all three knobs land on the same
+   * `<a:ln>` element but on different children / attributes (the color
+   * `<a:solidFill>` child, the `w` attribute, and the dash
+   * `<a:prstDash>` child); the writer authors `<a:ln>` whenever any
+   * of them is set.
+   */
+  plotAreaBorderDash?: ChartBorderDash;
+  /**
    * Chart-space (entire chart background) solid fill color as a 6-digit
    * RGB hex string (e.g. `"F2F2F2"`). Maps to `<c:chartSpace><c:spPr>
    * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></c:spPr>
@@ -2764,6 +2917,60 @@ export interface SheetChart {
    * hex string through every `<a:ln>`-based stroke slot.
    */
   chartSpaceBorderColor?: string;
+  /**
+   * Chart-space (entire chart frame) border (stroke) thickness in
+   * points (e.g. `1.5`). Maps to the `w` attribute on
+   * `<c:chartSpace><c:spPr><a:ln w="EMU">` — Excel's "Format Chart
+   * Area -> Border -> Width" spinner (the same dialog the user reaches
+   * by right-clicking the chart's outer frame). The OOXML `w`
+   * attribute carries the stroke width in English Metric Units
+   * (1 pt = 12 700 EMU) per `CT_LineProperties` (ECMA-376 Part 1,
+   * §20.1.2.3.24). The writer multiplies the input by 12 700 and rounds
+   * to the nearest integer because the schema types `w` as `xsd:int`.
+   *
+   * Accepts any finite number; values are clamped to the `0.25..13.5`
+   * pt band Excel's UI exposes (the same band used by
+   * {@link plotAreaBorderWidth} / {@link legendBorderWidth} /
+   * {@link titleBorderWidth} / the series stroke knob) and snapped to
+   * the 0.25 pt grid so a parsed-then-written width does not drift
+   * across round-trips. Non-finite / non-numeric / `NaN` values
+   * collapse to `undefined` and the writer omits the `w` attribute
+   * (the line keeps Excel's auto-thickness — typically 0.75 pt).
+   *
+   * Default: omitted — the chart-frame border inherits Excel's
+   * auto-thickness.
+   *
+   * Composes independently with {@link chartSpaceBorderColor} — the
+   * width attribute lands on the same `<a:ln>` element as the color's
+   * `<a:solidFill>` child, but the writer authors `<a:ln>` whenever
+   * either knob is set. A caller can pin a width without a color (the
+   * border picks Excel's auto-color), pin a color without a width (the
+   * border picks Excel's auto-thickness), or pin both. Setting only
+   * the width is valid Excel UI — the user can drag the "Width"
+   * spinner without picking a custom color.
+   *
+   * Mirrors {@link plotAreaBorderWidth} / {@link legendBorderWidth} /
+   * {@link titleBorderWidth} — same accept-finite-number / clamp /
+   * snap grammar, same `<a:ln w="EMU">` host attribute on a different
+   * parent (`<c:chartSpace>` rather than `<c:plotArea>` / `<c:legend>`
+   * / `<c:title>`).
+   */
+  chartSpaceBorderWidth?: number;
+  /**
+   * Chart-space (entire chart frame) border (stroke) preset dash
+   * pattern. Maps to the `val` attribute on `<c:chartSpace><c:spPr>
+   * <a:ln><a:prstDash val=".."/>`. Mirrors Excel's "Format Chart Area
+   * -> Border -> Dash type" picker. Same {@link ChartBorderDash}
+   * accept-or-drop grammar as {@link plotAreaBorderDash} — `"solid"`
+   * collapses to `undefined` so absence and the OOXML default round-
+   * trip identically.
+   *
+   * Composes independently with {@link chartSpaceBorderColor} and
+   * {@link chartSpaceBorderWidth} — all three knobs share the same
+   * `<a:ln>` element. Mirrors {@link plotAreaBorderDash} and lands on
+   * `<c:chartSpace>`'s own `<c:spPr>` block.
+   */
+  chartSpaceBorderDash?: ChartBorderDash;
   /** Show the chart-level title element. Default: `true` when `title` is set. */
   showTitle?: boolean;
   /**
@@ -3268,6 +3475,20 @@ export interface SheetChart {
    * compose the same way at the call site.
    */
   titleBorderWidth?: number;
+  /**
+   * Chart title border (stroke) preset dash pattern. Maps to the `val`
+   * attribute on `<c:title><c:spPr><a:ln><a:prstDash val=".."/>`.
+   * Mirrors Excel's "Format Chart Title -> Border -> Dash type" picker.
+   * Same {@link ChartBorderDash} accept-or-drop grammar as
+   * {@link plotAreaBorderDash} — `"solid"` collapses to `undefined`
+   * so absence and the OOXML default round-trip identically.
+   *
+   * Composes independently with {@link titleBorderColor} and
+   * {@link titleBorderWidth} — all three knobs share the same `<a:ln>`
+   * element. Silently ignored when no title is rendered
+   * (`showTitle === false` or `title` is absent).
+   */
+  titleBorderDash?: ChartBorderDash;
   /**
    * Auto-title-deleted flag. Maps to `<c:chart><c:autoTitleDeleted
    * val=".."/>` — Excel's record of whether the user explicitly deleted
@@ -4355,6 +4576,56 @@ export interface SheetChart {
        * area / scatter).
        */
       axisTitleBorderColor?: string;
+      /**
+       * Axis-title border (stroke) thickness in points (e.g. `1.5`).
+       * Maps to the `w` attribute on `<c:catAx><c:title><c:spPr>
+       * <a:ln w="EMU">` (or `<c:valAx>` / `<c:dateAx>` / `<c:serAx>`).
+       * Mirrors Excel's "Format Axis Title -> Border -> Width"
+       * spinner. The OOXML `w` attribute carries the stroke width in
+       * English Metric Units (1 pt = 12 700 EMU) per
+       * `CT_LineProperties` (ECMA-376 Part 1, §20.1.2.3.24); the
+       * writer multiplies by 12 700 and rounds to the nearest integer
+       * because the schema types `w` as `xsd:int`.
+       *
+       * Accepts any finite number; values are clamped to the
+       * `0.25..13.5` pt band Excel's UI exposes (the same band used by
+       * {@link SheetChart.plotAreaBorderWidth} / {@link SheetChart.legendBorderWidth} /
+       * {@link SheetChart.titleBorderWidth} / the series stroke knob)
+       * and snapped to the 0.25 pt grid so a parsed-then-written width
+       * does not drift across round-trips. Non-finite / non-numeric /
+       * `NaN` values collapse to `undefined` and the writer omits the
+       * `w` attribute (the line keeps Excel's auto-thickness —
+       * typically 0.75 pt).
+       *
+       * Default: omitted — the border inherits Excel's auto-thickness.
+       *
+       * Composes independently with {@link axisTitleBorderColor} —
+       * the width attribute lands on the same `<a:ln>` element as the
+       * color's `<a:solidFill>` child, but the writer authors `<a:ln>`
+       * whenever either knob is set.
+       *
+       * Silently dropped when the axis renders no title (no `<c:title>`
+       * to host `<c:spPr>`) and on `pie` / `doughnut` charts (no axes
+       * at all).
+       */
+      axisTitleBorderWidth?: number;
+      /**
+       * Axis-title border (stroke) preset dash pattern. Maps to the
+       * `val` attribute on `<c:catAx><c:title><c:spPr><a:ln>
+       * <a:prstDash val=".."/>` (or `<c:valAx>` / `<c:dateAx>` /
+       * `<c:serAx>`). Mirrors Excel's "Format Axis Title -> Border ->
+       * Dash type" picker. Same {@link ChartBorderDash}
+       * accept-or-drop grammar as the chart-level
+       * {@link SheetChart.titleBorderDash} — `"solid"` collapses to
+       * `undefined` so absence and the OOXML default round-trip
+       * identically.
+       *
+       * Composes independently with {@link axisTitleBorderColor} and
+       * {@link axisTitleBorderWidth} — all three knobs share the same
+       * `<a:ln>` element. Silently dropped when the axis renders no
+       * title and on `pie` / `doughnut` charts.
+       */
+      axisTitleBorderDash?: ChartBorderDash;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -5140,6 +5411,22 @@ export interface SheetChart {
        * `<c:catAx>`. See the X-axis variant for the full semantics.
        */
       axisTitleBorderColor?: string;
+      /**
+       * Value-axis-title border (stroke) thickness in points. Same
+       * canonical `<c:title><c:spPr><a:ln w="EMU">` slot and grammar
+       * as {@link SheetChart.axes.x.axisTitleBorderWidth} — the field
+       * round-trips on `<c:valAx>` exactly as it does on `<c:catAx>`.
+       * See the X-axis variant for the full semantics.
+       */
+      axisTitleBorderWidth?: number;
+      /**
+       * Value-axis-title border (stroke) preset dash pattern. Same
+       * canonical `<c:title><c:spPr><a:ln><a:prstDash val=".."/>` slot
+       * and grammar as {@link SheetChart.axes.x.axisTitleBorderDash} —
+       * the field round-trips on `<c:valAx>` exactly as it does on
+       * `<c:catAx>`. See the X-axis variant for the full semantics.
+       */
+      axisTitleBorderDash?: ChartBorderDash;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -6269,6 +6556,36 @@ export interface ChartDataLabelsInfo {
    * conflict.
    */
   borderColor?: string;
+  /**
+   * Data-labels border (stroke) thickness in points pulled from the
+   * `w` attribute on `<c:dLbls><c:spPr><a:ln w="EMU">`. Reflects
+   * Excel's "Format Data Labels -> Border -> Width" spinner. The OOXML
+   * `w` attribute carries the stroke width in English Metric Units
+   * (1 pt = 12 700 EMU) per `CT_LineProperties` (ECMA-376 Part 1,
+   * §20.1.2.3.24); the reader divides by 12 700 and snaps to the
+   * 0.25 pt grid Excel's UI exposes so a parsed-then-cloned width
+   * does not drift across round-trips.
+   *
+   * Reports the point value clamped to the `0.25..13.5` pt band Excel
+   * accepts in the UI when the source labels pinned a finite, positive
+   * `w` attribute. Absence (no `<a:ln>` or no `w` attribute), zero,
+   * negative, and non-numeric `w` values all collapse to `undefined`
+   * so absence and an unrenderable width round-trip identically through
+   * {@link cloneChart}. Mirrors the writer-side
+   * {@link ChartDataLabels.borderWidth} so a parsed value slots
+   * straight into {@link cloneChart} without conversion.
+   */
+  borderWidth?: number;
+  /**
+   * Data-labels border (stroke) preset dash pattern pulled from the
+   * `val` attribute on `<c:dLbls><c:spPr><a:ln><a:prstDash val=".."/>`.
+   * Reflects Excel's "Format Data Labels -> Border -> Dash type"
+   * picker. Reports the {@link ChartBorderDash} value pinned by the
+   * source, or `undefined` when the element is absent / the OOXML
+   * default `"solid"` was authored / the value is unrecognized. Mirrors
+   * the writer-side {@link ChartDataLabels.borderDash}.
+   */
+  borderDash?: ChartBorderDash;
 }
 
 /**
@@ -6996,6 +7313,49 @@ export interface ChartAxisInfo {
    * of whether the source axis was a category or value axis.
    */
   axisTitleBorderColor?: string;
+  /**
+   * Axis-title border (stroke) thickness in points pulled from the
+   * `w` attribute on `<c:catAx><c:title><c:spPr><a:ln w="EMU">` (or
+   * `<c:valAx>` / `<c:dateAx>` / `<c:serAx>`). Reflects Excel's
+   * "Format Axis Title -> Border -> Width" spinner. The OOXML `w`
+   * attribute stores the stroke width in English Metric Units
+   * (1 pt = 12 700 EMU) per `CT_LineProperties` (ECMA-376 Part 1,
+   * §20.1.2.3.24); the reader divides by 12 700 and snaps the result
+   * to the 0.25 pt grid Excel's UI exposes so a parsed-then-cloned
+   * width does not drift across round-trips.
+   *
+   * Reports the point value clamped to the `0.25..13.5` pt band
+   * Excel accepts in the UI when the source axis pinned a finite,
+   * positive `w` attribute. Absence (no `<a:ln>` or no `w`
+   * attribute), zero, negative, and non-numeric `w` values all
+   * collapse to `undefined` so absence and an unrenderable width
+   * round-trip identically through {@link cloneChart}. Mirrors the
+   * writer-side {@link SheetChart.axes.x.axisTitleBorderWidth} so a
+   * parsed value slots straight into {@link cloneChart} without
+   * conversion.
+   *
+   * Reported as `undefined` whenever the axis omits `<c:title>`
+   * entirely. Composes independently with {@link axisTitleBorderColor} —
+   * both fields surface from the same `<a:ln>` element but on a
+   * different slot (color child vs the width attribute). Mirrors the
+   * chart-level {@link Chart.titleBorderWidth} on a different host
+   * element.
+   */
+  axisTitleBorderWidth?: number;
+  /**
+   * Axis-title border (stroke) preset dash pattern pulled from the
+   * `val` attribute on `<c:catAx><c:title><c:spPr><a:ln><a:prstDash
+   * val=".."/>` (or `<c:valAx>` / `<c:dateAx>` / `<c:serAx>`). Reflects
+   * Excel's "Format Axis Title -> Border -> Dash type" picker. Reports
+   * the {@link ChartBorderDash} value pinned by the source, or
+   * `undefined` when the element is absent / the OOXML default
+   * `"solid"` was authored / the value is unrecognized.
+   *
+   * Mirrors the writer-side {@link SheetChart.axes.x.axisTitleBorderDash}
+   * so a parsed value slots straight into {@link cloneChart} without
+   * conversion.
+   */
+  axisTitleBorderDash?: ChartBorderDash;
   /**
    * Major / minor gridline visibility. Omitted when neither
    * `<c:majorGridlines>` nor `<c:minorGridlines>` is declared on the
@@ -7765,6 +8125,19 @@ export interface Chart {
    */
   legendBorderWidth?: number;
   /**
+   * Chart legend border (stroke) preset dash pattern pulled from the
+   * `val` attribute on `<c:legend><c:spPr><a:ln><a:prstDash val=".."/>`.
+   * Reflects Excel's "Format Legend -> Border -> Dash type" picker.
+   * Reports the {@link ChartBorderDash} value pinned by the source, or
+   * `undefined` when the element is absent / the OOXML default
+   * `"solid"` was authored / the value is unrecognized.
+   *
+   * Mirrors the writer-side {@link SheetChart.legendBorderDash} so a
+   * parsed value slots straight into {@link cloneChart} without
+   * conversion.
+   */
+  legendBorderDash?: ChartBorderDash;
+  /**
    * Custom plot-area placement pulled from `<c:plotArea><c:layout>
    * <c:manualLayout>...</c:manualLayout></c:layout></c:plotArea>`.
    * Reflects Excel's "Format Plot Area -> Position -> Custom" placement —
@@ -7880,6 +8253,20 @@ export interface Chart {
    */
   plotAreaBorderWidth?: number;
   /**
+   * Plot-area border (stroke) preset dash pattern pulled from the
+   * `val` attribute on `<c:plotArea><c:spPr><a:ln><a:prstDash
+   * val=".."/>`. Reflects Excel's "Format Plot Area -> Border -> Dash
+   * type" picker. Reports the {@link ChartBorderDash} value that the
+   * source chart pinned, or `undefined` when the element is absent /
+   * the source chart authored the OOXML default `"solid"` / the value
+   * is unrecognized.
+   *
+   * Mirrors the writer-side {@link SheetChart.plotAreaBorderDash} so a
+   * parsed value slots straight into {@link cloneChart} without
+   * conversion.
+   */
+  plotAreaBorderDash?: ChartBorderDash;
+  /**
    * Chart-space (entire chart background) solid fill color pulled
    * from `<c:chartSpace><c:spPr><a:solidFill><a:srgbClr val=".."/>
    * </a:solidFill></c:spPr></c:chartSpace>`. Reflects Excel's
@@ -7948,6 +8335,51 @@ export interface Chart {
    * a series) cannot leak into this field.
    */
   chartSpaceBorderColor?: string;
+  /**
+   * Chart-space (entire chart frame) border (stroke) thickness in
+   * points pulled from the `w` attribute on `<c:chartSpace><c:spPr>
+   * <a:ln w="EMU">`. Reflects Excel's "Format Chart Area -> Border ->
+   * Width" spinner. The OOXML `w` attribute stores the stroke width
+   * in English Metric Units (1 pt = 12 700 EMU) per
+   * `CT_LineProperties` (ECMA-376 Part 1, §20.1.2.3.24); the reader
+   * divides by 12 700 and snaps the result to the 0.25 pt grid Excel's
+   * UI exposes so a parsed-then-cloned width does not drift across
+   * round-trips.
+   *
+   * Reports the point value clamped to the `0.25..13.5` pt band Excel
+   * accepts in the UI when the source chart pinned a finite, positive
+   * `w` attribute. Absence (no `<a:ln>` or no `w` attribute), zero,
+   * negative, and non-numeric `w` values all collapse to `undefined`
+   * so absence and an unrenderable width round-trip identically
+   * through {@link cloneChart}. Mirrors the writer-side
+   * {@link SheetChart.chartSpaceBorderWidth} so a parsed value slots
+   * straight into {@link cloneChart} without conversion.
+   *
+   * Reported as `undefined` whenever the source chart has no
+   * `<c:chartSpace><c:spPr>` block at all — there is no `<a:ln>` slot
+   * to surface the width from in that case. Composes independently
+   * with {@link chartSpaceBorderColor} — both fields surface from the
+   * same `<a:ln>` element but on a different slot (the color child
+   * versus the width attribute). Mirrors {@link plotAreaBorderWidth} /
+   * {@link legendBorderWidth} / {@link titleBorderWidth} — same EMU
+   * encoding, same `<a:ln>` host — but lands on `<c:chartSpace>`'s own
+   * `<c:spPr>` block.
+   */
+  chartSpaceBorderWidth?: number;
+  /**
+   * Chart-space (entire chart frame) border (stroke) preset dash
+   * pattern pulled from the `val` attribute on `<c:chartSpace><c:spPr>
+   * <a:ln><a:prstDash val=".."/>`. Reflects Excel's "Format Chart Area
+   * -> Border -> Dash type" picker. Reports the {@link ChartBorderDash}
+   * value that the source chart pinned, or `undefined` when the element
+   * is absent / the source chart authored the OOXML default `"solid"` /
+   * the value is unrecognized.
+   *
+   * Mirrors the writer-side {@link SheetChart.chartSpaceBorderDash} so
+   * a parsed value slots straight into {@link cloneChart} without
+   * conversion.
+   */
+  chartSpaceBorderDash?: ChartBorderDash;
   /**
    * Title-overlay flag pulled from `<c:title><c:overlay val=".."/>`.
    * Reflects Excel's "Format Chart Title -> Show the title without
@@ -8292,6 +8724,19 @@ export interface Chart {
    * but lands on `<c:title>`'s own `<c:spPr>` block.
    */
   titleBorderWidth?: number;
+  /**
+   * Chart title border (stroke) preset dash pattern pulled from the
+   * `val` attribute on `<c:title><c:spPr><a:ln><a:prstDash val=".."/>`.
+   * Reflects Excel's "Format Chart Title -> Border -> Dash type"
+   * picker. Reports the {@link ChartBorderDash} value pinned by the
+   * source, or `undefined` when the element is absent / the OOXML
+   * default `"solid"` was authored / the value is unrecognized.
+   *
+   * Mirrors the writer-side {@link SheetChart.titleBorderDash} so a
+   * parsed value slots straight into {@link cloneChart} without
+   * conversion.
+   */
+  titleBorderDash?: ChartBorderDash;
   /**
    * Auto-title-deleted flag pulled from `<c:chart><c:autoTitleDeleted
    * val=".."/>`. Reflects Excel's "the user explicitly deleted the

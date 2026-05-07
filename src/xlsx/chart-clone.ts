@@ -22,6 +22,7 @@ import type {
   ChartAxisScale,
   ChartAxisTickLabelPosition,
   ChartAxisTickMark,
+  ChartBorderDash,
   ChartDataLabels,
   ChartDataLabelsInfo,
   ChartDataTable,
@@ -447,6 +448,17 @@ export interface CloneChartOptions {
    */
   legendBorderWidth?: number | null;
   /**
+   * Override `SheetChart.legendBorderDash`. `undefined` (or omitted)
+   * inherits the source's parsed dash; `null` drops the inherited
+   * dash (the writer renders solid); a {@link ChartBorderDash} value
+   * replaces it.
+   *
+   * Composes independently with `legendBorderColor` and
+   * `legendBorderWidth`. Silently dropped from the cloned `SheetChart`
+   * when the resolved legend is `false`.
+   */
+  legendBorderDash?: ChartBorderDash | null;
+  /**
    * Override `SheetChart.plotAreaLayout`. `undefined` (or omitted)
    * inherits the source's parsed `plotAreaLayout`; `null` drops the
    * inherited layout (the writer emits the bare `<c:layout/>`
@@ -542,6 +554,19 @@ export interface CloneChartOptions {
    */
   plotAreaBorderWidth?: number | null;
   /**
+   * Override `SheetChart.plotAreaBorderDash`. `undefined` (or omitted)
+   * inherits the source's parsed dash; `null` drops the inherited
+   * dash (the writer renders solid); a {@link ChartBorderDash} value
+   * replaces it. Unrecognized tokens (and the OOXML default `"solid"`)
+   * collapse to `undefined` so the cloned `SheetChart` drops the field.
+   *
+   * Composes independently with `plotAreaBorderColor` and
+   * `plotAreaBorderWidth` — all three knobs share the same `<a:ln>`
+   * element. Like the color / width knobs, the dash is never gated on
+   * a visibility flag — every chart has a `<c:plotArea>` element.
+   */
+  plotAreaBorderDash?: ChartBorderDash | null;
+  /**
    * Override `SheetChart.chartSpaceFillColor`. `undefined` (or omitted)
    * inherits the source's parsed `chartSpaceFillColor`; `null` drops
    * the inherited fill (the writer emits no `<c:spPr>` block on
@@ -593,6 +618,27 @@ export interface CloneChartOptions {
    * a `<c:chartSpace>` document root to host the stroke.
    */
   chartSpaceBorderColor?: string | null;
+  /**
+   * Override `SheetChart.chartSpaceBorderWidth`. `undefined` (or
+   * omitted) inherits the source's parsed width; `null` drops the
+   * inherited width (the writer emits `<a:ln>` without a `w` attribute,
+   * the line keeps Excel's auto-thickness — typically 0.75 pt); a
+   * finite point value (e.g. `1.5`) replaces it. Values are clamped
+   * to the `0.25..13.5` pt band Excel's UI exposes and snapped to the
+   * 0.25 pt grid; non-finite / non-numeric overrides collapse to
+   * `undefined`. Composes independently with `chartSpaceBorderColor`
+   * and `chartSpaceBorderDash` — all three knobs share the same
+   * `<a:ln>` element.
+   */
+  chartSpaceBorderWidth?: number | null;
+  /**
+   * Override `SheetChart.chartSpaceBorderDash`. `undefined` (or
+   * omitted) inherits the source's parsed dash style; `null` drops
+   * the inherited dash (the writer renders solid); a
+   * {@link ChartBorderDash} value replaces it. Unrecognized tokens
+   * (and the OOXML default `"solid"`) collapse to `undefined`.
+   */
+  chartSpaceBorderDash?: ChartBorderDash | null;
   /** Override `SheetChart.barGrouping`. */
   barGrouping?: SheetChart["barGrouping"];
   /**
@@ -949,6 +995,19 @@ export interface CloneChartOptions {
    * title's own `<c:spPr>` block.
    */
   titleBorderWidth?: number | null;
+  /**
+   * Override `SheetChart.titleBorderDash`. `undefined` (or omitted)
+   * inherits the source's parsed dash; `null` drops the inherited
+   * dash (the writer renders solid); a {@link ChartBorderDash} value
+   * replaces it. Unrecognized tokens (and the OOXML default `"solid"`)
+   * collapse to `undefined`.
+   *
+   * Composes independently with `titleBorderColor` and
+   * `titleBorderWidth` — all three knobs share the same `<a:ln>`
+   * element. Silently dropped from the cloned `SheetChart` when the
+   * resolved chart renders no title.
+   */
+  titleBorderDash?: ChartBorderDash | null;
   /**
    * Override `<c:autoTitleDeleted>` (the "user explicitly deleted the
    * auto-generated title" flag).
@@ -1619,6 +1678,24 @@ export interface CloneChartOptions {
        * canonical OOXML slots.
        */
       axisTitleBorderColor?: string | null;
+      /**
+       * Override `SheetChart.axes.x.axisTitleBorderWidth`. Same
+       * `undefined` / `null` / number grammar as the chart-level
+       * `titleBorderWidth` knob — values are clamped to the
+       * `0.25..13.5` pt band Excel's UI exposes and snapped to the
+       * 0.25 pt grid; non-finite / non-numeric overrides collapse to
+       * `undefined`. Silently dropped on `pie` / `doughnut` charts
+       * (no axes) and on any axis whose `title` is unset.
+       */
+      axisTitleBorderWidth?: number | null;
+      /**
+       * Override `SheetChart.axes.x.axisTitleBorderDash`. Same
+       * `undefined` / `null` / value grammar as the chart-level
+       * `titleBorderDash` knob — `"solid"` and unrecognized tokens
+       * collapse to `undefined`. Silently dropped on `pie` /
+       * `doughnut` charts and on any axis whose `title` is unset.
+       */
+      axisTitleBorderDash?: ChartBorderDash | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -1965,6 +2042,10 @@ export interface CloneChartOptions {
       axisTitleFillColor?: string | null;
       /** See {@link CloneChartOptions.axes.x.axisTitleBorderColor}. */
       axisTitleBorderColor?: string | null;
+      /** See {@link CloneChartOptions.axes.x.axisTitleBorderWidth}. */
+      axisTitleBorderWidth?: number | null;
+      /** See {@link CloneChartOptions.axes.x.axisTitleBorderDash}. */
+      axisTitleBorderDash?: ChartBorderDash | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -2272,6 +2353,16 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     if (resolvedLegendBorderWidth !== undefined) {
       out.legendBorderWidth = resolvedLegendBorderWidth;
     }
+
+    // Legend border preset dash pattern — same hidden-legend scoping
+    // as the color / width knobs above.
+    const resolvedLegendBorderDash = resolveBorderDash(
+      source.legendBorderDash,
+      options.legendBorderDash,
+    );
+    if (resolvedLegendBorderDash !== undefined) {
+      out.legendBorderDash = resolvedLegendBorderDash;
+    }
   }
 
   // Plot-area manual layout is independent of the legend visibility —
@@ -2340,6 +2431,18 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     out.plotAreaBorderWidth = resolvedPlotAreaBorderWidth;
   }
 
+  // Plot-area border preset dash pattern. Same `<a:ln>` host as the
+  // color and width knobs above, but lands on the `<a:prstDash>` child.
+  // `"solid"` collapses to `undefined` so absence and the OOXML default
+  // round-trip identically.
+  const resolvedPlotAreaBorderDash = resolveBorderDash(
+    source.plotAreaBorderDash,
+    options.plotAreaBorderDash,
+  );
+  if (resolvedPlotAreaBorderDash !== undefined) {
+    out.plotAreaBorderDash = resolvedPlotAreaBorderDash;
+  }
+
   // Chart-space solid fill color is independent of every visibility
   // flag — every chart has a `<c:chartSpace>` document root to host the
   // `<c:spPr>` slot. `undefined` inherits the source's parsed
@@ -2378,6 +2481,35 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   );
   if (resolvedChartSpaceBorderColor !== undefined) {
     out.chartSpaceBorderColor = resolvedChartSpaceBorderColor;
+  }
+
+  // Chart-space border (stroke) thickness shares the same `<a:ln>`
+  // host as the color knob above, but lands on the `w` attribute
+  // rather than the `<a:solidFill>` child. Independent of every
+  // visibility flag — every chart has a `<c:chartSpace>` document root
+  // to host the slot. `undefined` inherits the source's parsed width
+  // (after clamp / snap), `null` drops the inherited width (the writer
+  // omits the `w` attribute, the line keeps Excel's auto-thickness),
+  // a finite number replaces it. Composes independently with
+  // `chartSpaceBorderColor` and `chartSpaceBorderDash`.
+  const resolvedChartSpaceBorderWidth = resolveBorderWidthPt(
+    source.chartSpaceBorderWidth,
+    options.chartSpaceBorderWidth,
+  );
+  if (resolvedChartSpaceBorderWidth !== undefined) {
+    out.chartSpaceBorderWidth = resolvedChartSpaceBorderWidth;
+  }
+
+  // Chart-space border preset dash pattern. Same `<a:ln>` host as the
+  // color and width knobs above, but lands on the `<a:prstDash>` child.
+  // `"solid"` collapses to `undefined` so absence and the OOXML default
+  // round-trip identically.
+  const resolvedChartSpaceBorderDash = resolveBorderDash(
+    source.chartSpaceBorderDash,
+    options.chartSpaceBorderDash,
+  );
+  if (resolvedChartSpaceBorderDash !== undefined) {
+    out.chartSpaceBorderDash = resolvedChartSpaceBorderDash;
   }
 
   const barGrouping = options.barGrouping !== undefined ? options.barGrouping : source.barGrouping;
@@ -2646,6 +2778,19 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
       options.titleBorderWidth,
     );
     if (resolvedTitleBorderWidth !== undefined) out.titleBorderWidth = resolvedTitleBorderWidth;
+
+    // Title border preset dash pattern. Same hidden-title scoping as
+    // the border color / width knobs above — the writer drops the
+    // dash when no title is rendered. `undefined` inherits the
+    // source's parsed dash, `null` drops the inherited dash (the
+    // writer renders solid), a {@link ChartBorderDash} value replaces
+    // it. Unrecognized tokens (and the OOXML default `"solid"`)
+    // collapse to `undefined` via the shared normalizer.
+    const resolvedTitleBorderDash = resolveBorderDash(
+      source.titleBorderDash,
+      options.titleBorderDash,
+    );
+    if (resolvedTitleBorderDash !== undefined) out.titleBorderDash = resolvedTitleBorderDash;
   }
 
   // `<c:autoTitleDeleted>` sits on `<c:chart>` directly, not inside
@@ -4449,6 +4594,109 @@ function resolveChartSpaceBorderColor(
   return normalizeChartSpaceBorderColor(override);
 }
 
+const BORDER_WIDTH_MIN_PT = 0.25;
+const BORDER_WIDTH_MAX_PT = 13.5;
+
+/**
+ * Normalize a chart-frame border-width value (points) for the cloned
+ * `SheetChart`. Mirrors the writer's `clampStrokeWidthPt` — values are
+ * clamped to the `0.25..13.5` pt band Excel's UI exposes and snapped
+ * to the 0.25 pt grid so a parsed-then-cloned-then-written width does
+ * not drift across round-trips. Non-finite / non-numeric tokens
+ * (`NaN`, `Infinity`, strings, escapes from an untyped caller) collapse
+ * to `undefined` so the cloned chart drops the field rather than carry
+ * a value the writer would silently elide back to absence. Used by
+ * every chart-frame border-width slot — chart-space, axis-title, data
+ * table, data labels — alongside the host-specific normalizers
+ * inherited from the earlier plot-area / legend / title surface.
+ */
+function normalizeBorderWidthPt(value: number | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
+  const snapped = Math.round(value * 4) / 4;
+  if (snapped < BORDER_WIDTH_MIN_PT) return BORDER_WIDTH_MIN_PT;
+  if (snapped > BORDER_WIDTH_MAX_PT) return BORDER_WIDTH_MAX_PT;
+  return snapped;
+}
+
+/**
+ * Resolve a chart-frame border-width override.
+ *
+ * `undefined` → inherit the source value (after running it through
+ *               {@link normalizeBorderWidthPt} so a malformed source
+ *               value drops cleanly).
+ * `null`      → drop the inherited width (the writer emits `<a:ln>`
+ *               without a `w` attribute, the line keeps Excel's
+ *               auto-thickness).
+ * `number`    → replace with the clamped / snapped point value.
+ *               Non-finite / non-numeric overrides collapse to
+ *               `undefined` via the normalizer.
+ *
+ * Used by every chart-frame border-width slot the clone surface
+ * exposes — chart-space, axis-title, data table, data labels — and
+ * mirrors the existing host-specific resolvers for plot-area / legend /
+ * title border widths.
+ */
+function resolveBorderWidthPt(
+  sourceValue: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) return normalizeBorderWidthPt(sourceValue);
+  if (override === null) return undefined;
+  return normalizeBorderWidthPt(override);
+}
+
+const VALID_BORDER_DASHES_CLONE: ReadonlySet<ChartBorderDash> = new Set([
+  "solid",
+  "dash",
+  "dashDot",
+  "dot",
+  "lgDash",
+  "lgDashDot",
+  "lgDashDotDot",
+  "sysDash",
+  "sysDashDot",
+  "sysDashDotDot",
+  "sysDot",
+]);
+
+/**
+ * Normalize a chart-frame border-dash value for the cloned
+ * `SheetChart`. Mirrors the writer's `normalizeBorderDash` — drops the
+ * OOXML default `"solid"` to `undefined` so absence and the default
+ * round-trip identically, and drops every unrecognized
+ * `ST_PresetLineDashVal` token so a malformed source / override does
+ * not surface a value Excel would reject. Used by every chart-frame
+ * border-dash slot — plot-area, legend, title, chart-space, axis-title,
+ * data table, data labels.
+ */
+function normalizeBorderDash(value: ChartBorderDash | undefined): ChartBorderDash | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") return undefined;
+  if (!VALID_BORDER_DASHES_CLONE.has(value)) return undefined;
+  if (value === "solid") return undefined;
+  return value;
+}
+
+/**
+ * Resolve a chart-frame border-dash override.
+ *
+ * `undefined` → inherit the source value (after running it through
+ *               {@link normalizeBorderDash}).
+ * `null`      → drop the inherited dash (the writer renders solid).
+ * value       → replace with the normalized dash. Unrecognized tokens
+ *               and the OOXML default `"solid"` collapse to
+ *               `undefined`.
+ */
+function resolveBorderDash(
+  sourceValue: ChartBorderDash | undefined,
+  override: ChartBorderDash | null | undefined,
+): ChartBorderDash | undefined {
+  if (override === undefined) return normalizeBorderDash(sourceValue);
+  if (override === null) return undefined;
+  return normalizeBorderDash(override);
+}
+
 /**
  * Resolve a `titleOverlay` override.
  *
@@ -5363,6 +5611,32 @@ function resolveAxes(
     sourceAxes?.y?.axisTitleBorderColor,
     overrides?.y?.axisTitleBorderColor,
   );
+  // `<c:title><c:spPr><a:ln w="EMU"/></c:spPr></c:title>` —
+  // axis-title border (line stroke) thickness. Reuse the shared
+  // {@link resolveBorderWidthPt} helper so the snap / clamp grammar
+  // matches every other chart-frame border-width slot. Like every
+  // other axis-title knob, the writer drops the width when the
+  // matching axis title is unset, so a stray pin on an axis with no
+  // title silently disappears at emit time.
+  const xAxisTitleBorderWidth = resolveBorderWidthPt(
+    sourceAxes?.x?.axisTitleBorderWidth,
+    overrides?.x?.axisTitleBorderWidth,
+  );
+  const yAxisTitleBorderWidth = resolveBorderWidthPt(
+    sourceAxes?.y?.axisTitleBorderWidth,
+    overrides?.y?.axisTitleBorderWidth,
+  );
+  // `<c:title><c:spPr><a:ln><a:prstDash val=".."/></a:ln></c:spPr>
+  // </c:title>` — axis-title border preset dash pattern. Same accept-
+  // or-drop grammar as every other chart-frame border-dash slot.
+  const xAxisTitleBorderDash = resolveBorderDash(
+    sourceAxes?.x?.axisTitleBorderDash,
+    overrides?.x?.axisTitleBorderDash,
+  );
+  const yAxisTitleBorderDash = resolveBorderDash(
+    sourceAxes?.y?.axisTitleBorderDash,
+    overrides?.y?.axisTitleBorderDash,
+  );
   const xGridlines = applyGridlinesOverride(sourceAxes?.x?.gridlines, overrides?.x?.gridlines);
   const yGridlines = applyGridlinesOverride(sourceAxes?.y?.gridlines, overrides?.y?.gridlines);
   const xScale = applyScaleOverride(sourceAxes?.x?.scale, overrides?.x?.scale);
@@ -5678,6 +5952,13 @@ function resolveAxes(
   // both the fill and border are absent).
   const xAxisTitleBorderColorResolved = xTitle === undefined ? undefined : xAxisTitleBorderColor;
   const yAxisTitleBorderColorResolved = yTitle === undefined ? undefined : yAxisTitleBorderColor;
+  // Same hidden-axis-title scoping as the color knob — drop the
+  // inherited width / dash on an axis whose title is unset so the
+  // cloned `SheetChart` accurately reflects what the chart will paint.
+  const xAxisTitleBorderWidthResolved = xTitle === undefined ? undefined : xAxisTitleBorderWidth;
+  const yAxisTitleBorderWidthResolved = yTitle === undefined ? undefined : yAxisTitleBorderWidth;
+  const xAxisTitleBorderDashResolved = xTitle === undefined ? undefined : xAxisTitleBorderDash;
+  const yAxisTitleBorderDashResolved = yTitle === undefined ? undefined : yAxisTitleBorderDash;
 
   const out: NonNullable<SheetChart["axes"]> = {};
   if (
@@ -5694,6 +5975,8 @@ function resolveAxes(
     xAxisTitleLayoutResolved !== undefined ||
     xAxisTitleFillColorResolved !== undefined ||
     xAxisTitleBorderColorResolved !== undefined ||
+    xAxisTitleBorderWidthResolved !== undefined ||
+    xAxisTitleBorderDashResolved !== undefined ||
     xGridlines !== undefined ||
     xScale !== undefined ||
     xNumFmt !== undefined ||
@@ -5741,6 +6024,10 @@ function resolveAxes(
       out.x.axisTitleFillColor = xAxisTitleFillColorResolved;
     if (xAxisTitleBorderColorResolved !== undefined)
       out.x.axisTitleBorderColor = xAxisTitleBorderColorResolved;
+    if (xAxisTitleBorderWidthResolved !== undefined)
+      out.x.axisTitleBorderWidth = xAxisTitleBorderWidthResolved;
+    if (xAxisTitleBorderDashResolved !== undefined)
+      out.x.axisTitleBorderDash = xAxisTitleBorderDashResolved;
     if (xGridlines !== undefined) out.x.gridlines = xGridlines;
     if (xScale !== undefined) out.x.scale = xScale;
     if (xNumFmt !== undefined) out.x.numberFormat = xNumFmt;
@@ -5782,6 +6069,8 @@ function resolveAxes(
     yAxisTitleLayoutResolved !== undefined ||
     yAxisTitleFillColorResolved !== undefined ||
     yAxisTitleBorderColorResolved !== undefined ||
+    yAxisTitleBorderWidthResolved !== undefined ||
+    yAxisTitleBorderDashResolved !== undefined ||
     yGridlines !== undefined ||
     yScale !== undefined ||
     yNumFmt !== undefined ||
@@ -5823,6 +6112,10 @@ function resolveAxes(
       out.y.axisTitleFillColor = yAxisTitleFillColorResolved;
     if (yAxisTitleBorderColorResolved !== undefined)
       out.y.axisTitleBorderColor = yAxisTitleBorderColorResolved;
+    if (yAxisTitleBorderWidthResolved !== undefined)
+      out.y.axisTitleBorderWidth = yAxisTitleBorderWidthResolved;
+    if (yAxisTitleBorderDashResolved !== undefined)
+      out.y.axisTitleBorderDash = yAxisTitleBorderDashResolved;
     if (yGridlines !== undefined) out.y.gridlines = yGridlines;
     if (yScale !== undefined) out.y.scale = yScale;
     if (yNumFmt !== undefined) out.y.numberFormat = yNumFmt;

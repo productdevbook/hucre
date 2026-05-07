@@ -22900,3 +22900,831 @@ describe("parseChart — titleBorderWidth", () => {
     expect(parseChart(xml)?.titleBorderWidth).toBe(1.5);
   });
 });
+
+// ── parseChart — chartSpaceBorderWidth ───────────────────────────────
+
+describe("parseChart — chartSpaceBorderWidth", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withChartSpaceSpPr(spPrBody: string): string {
+    return `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+  <c:spPr>${spPrBody}</c:spPr>
+</c:chartSpace>`;
+  }
+
+  it("surfaces the stroke width in points (12700 EMU = 1 pt)", () => {
+    expect(parseChart(withChartSpaceSpPr(`<a:ln w="12700"/>`))?.chartSpaceBorderWidth).toBe(1);
+  });
+
+  it("surfaces a fractional stroke width (19050 EMU = 1.5 pt)", () => {
+    expect(parseChart(withChartSpaceSpPr(`<a:ln w="19050"/>`))?.chartSpaceBorderWidth).toBe(1.5);
+  });
+
+  it("surfaces the minimum width (3175 EMU = 0.25 pt)", () => {
+    expect(parseChart(withChartSpaceSpPr(`<a:ln w="3175"/>`))?.chartSpaceBorderWidth).toBe(0.25);
+  });
+
+  it("snaps an exotic EMU value to the nearest 0.25 pt grid", () => {
+    expect(parseChart(withChartSpaceSpPr(`<a:ln w="14000"/>`))?.chartSpaceBorderWidth).toBe(1);
+  });
+
+  it("clamps below the minimum band (1000 EMU → 0.25 pt)", () => {
+    expect(parseChart(withChartSpaceSpPr(`<a:ln w="1000"/>`))?.chartSpaceBorderWidth).toBe(0.25);
+  });
+
+  it("clamps above the maximum band (1000000 EMU → 13.5 pt)", () => {
+    expect(parseChart(withChartSpaceSpPr(`<a:ln w="1000000"/>`))?.chartSpaceBorderWidth).toBe(13.5);
+  });
+
+  it("surfaces both border color and width when both are pinned on <a:ln>", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
+    );
+    const parsed = parseChart(xml);
+    expect(parsed?.chartSpaceBorderWidth).toBe(2);
+    expect(parsed?.chartSpaceBorderColor).toBe("1F77B4");
+  });
+
+  it("returns undefined when chartSpace has no <c:spPr>", () => {
+    const xml = `<c:chartSpace ${NS}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`;
+    expect(parseChart(xml)?.chartSpaceBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when <c:spPr> has no <a:ln>", () => {
+    expect(
+      parseChart(withChartSpaceSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`))
+        ?.chartSpaceBorderWidth,
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln> has no w attribute", () => {
+    expect(
+      parseChart(
+        withChartSpaceSpPr(`<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`),
+      )?.chartSpaceBorderWidth,
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when w is malformed", () => {
+    expect(
+      parseChart(withChartSpaceSpPr(`<a:ln w="thick"/>`))?.chartSpaceBorderWidth,
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when w is zero", () => {
+    expect(parseChart(withChartSpaceSpPr(`<a:ln w="0"/>`))?.chartSpaceBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when w is negative", () => {
+    expect(
+      parseChart(withChartSpaceSpPr(`<a:ln w="-12700"/>`))?.chartSpaceBorderWidth,
+    ).toBeUndefined();
+  });
+
+  it("ignores a stray <a:ln w=..> on a series <c:spPr>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:spPr><a:ln w="50800"/></c:spPr>
+        </c:ser>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.chartSpaceBorderWidth).toBeUndefined();
+  });
+});
+
+// ── parseChart — axisTitleBorderWidth ────────────────────────────────
+
+describe("parseChart — axisTitleBorderWidth", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withAxisTitleSpPr(spPrBody: string, axis: "catAx" | "valAx" = "catAx"): string {
+    return `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:${axis}>
+        <c:axId val="1"/>
+        <c:title>
+          <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Axis</a:t></a:r></a:p></c:rich></c:tx>
+          <c:overlay val="0"/>
+          <c:spPr>${spPrBody}</c:spPr>
+        </c:title>
+      </c:${axis}>
+      <c:${axis === "catAx" ? "valAx" : "catAx"}><c:axId val="2"/></c:${axis === "catAx" ? "valAx" : "catAx"}>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces width on the X axis (catAx)", () => {
+    const parsed = parseChart(withAxisTitleSpPr(`<a:ln w="12700"/>`, "catAx"));
+    expect(parsed?.axes?.x?.axisTitleBorderWidth).toBe(1);
+  });
+
+  it("surfaces width on the Y axis (valAx)", () => {
+    const parsed = parseChart(withAxisTitleSpPr(`<a:ln w="19050"/>`, "valAx"));
+    expect(parsed?.axes?.y?.axisTitleBorderWidth).toBe(1.5);
+  });
+
+  it("surfaces both color and width on the same <a:ln>", () => {
+    const xml = withAxisTitleSpPr(
+      `<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
+    );
+    const parsed = parseChart(xml);
+    expect(parsed?.axes?.x?.axisTitleBorderWidth).toBe(2);
+    expect(parsed?.axes?.x?.axisTitleBorderColor).toBe("1F77B4");
+  });
+
+  it("clamps to the minimum (0.25 pt)", () => {
+    expect(parseChart(withAxisTitleSpPr(`<a:ln w="100"/>`))?.axes?.x?.axisTitleBorderWidth).toBe(
+      0.25,
+    );
+  });
+
+  it("clamps to the maximum (13.5 pt)", () => {
+    expect(
+      parseChart(withAxisTitleSpPr(`<a:ln w="1000000"/>`))?.axes?.x?.axisTitleBorderWidth,
+    ).toBe(13.5);
+  });
+
+  it("returns undefined when axis has no <c:title>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.axes?.x?.axisTitleBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when title has no <c:spPr>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:title>
+          <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>X</a:t></a:r></a:p></c:rich></c:tx>
+          <c:overlay val="0"/>
+        </c:title>
+      </c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.axes?.x?.axisTitleBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when w is missing", () => {
+    expect(parseChart(withAxisTitleSpPr(`<a:ln/>`))?.axes?.x?.axisTitleBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when w is zero", () => {
+    expect(
+      parseChart(withAxisTitleSpPr(`<a:ln w="0"/>`))?.axes?.x?.axisTitleBorderWidth,
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when w is malformed", () => {
+    expect(
+      parseChart(withAxisTitleSpPr(`<a:ln w="bold"/>`))?.axes?.x?.axisTitleBorderWidth,
+    ).toBeUndefined();
+  });
+});
+
+// ── parseChart — dataTableBorderWidth ────────────────────────────────
+
+describe("parseChart — dataTableBorderWidth", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withDTableSpPr(spPrBody: string): string {
+    return `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:dTable>
+        <c:showHorzBorder val="1"/>
+        <c:showVertBorder val="1"/>
+        <c:showOutline val="1"/>
+        <c:showKeys val="1"/>
+        <c:spPr>${spPrBody}</c:spPr>
+      </c:dTable>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces width (12700 EMU = 1 pt)", () => {
+    const parsed = parseChart(withDTableSpPr(`<a:ln w="12700"/>`));
+    expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderWidth : undefined).toBe(
+      1,
+    );
+  });
+
+  it("surfaces fractional width (19050 EMU = 1.5 pt)", () => {
+    const parsed = parseChart(withDTableSpPr(`<a:ln w="19050"/>`));
+    expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderWidth : undefined).toBe(
+      1.5,
+    );
+  });
+
+  it("clamps to minimum 0.25", () => {
+    const parsed = parseChart(withDTableSpPr(`<a:ln w="100"/>`));
+    expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderWidth : undefined).toBe(
+      0.25,
+    );
+  });
+
+  it("clamps to maximum 13.5", () => {
+    const parsed = parseChart(withDTableSpPr(`<a:ln w="9999999"/>`));
+    expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderWidth : undefined).toBe(
+      13.5,
+    );
+  });
+
+  it("returns undefined when w is zero", () => {
+    const parsed = parseChart(withDTableSpPr(`<a:ln w="0"/>`));
+    expect(
+      typeof parsed?.dataTable === "object" ? parsed.dataTable.borderWidth : undefined,
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when w is missing", () => {
+    const parsed = parseChart(withDTableSpPr(`<a:ln/>`));
+    expect(
+      typeof parsed?.dataTable === "object" ? parsed.dataTable.borderWidth : undefined,
+    ).toBeUndefined();
+  });
+
+  it("surfaces both color and width together", () => {
+    const parsed = parseChart(
+      withDTableSpPr(`<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`),
+    );
+    expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderWidth : undefined).toBe(
+      2,
+    );
+    expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderColor : undefined).toBe(
+      "1F77B4",
+    );
+  });
+});
+
+// ── parseChart — dataLabelsBorderWidth ───────────────────────────────
+
+describe("parseChart — dataLabelsBorderWidth", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withDLblsSpPr(spPrBody: string): string {
+    return `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:dLbls>
+            <c:spPr>${spPrBody}</c:spPr>
+            <c:showLegendKey val="0"/>
+            <c:showVal val="1"/>
+            <c:showCatName val="0"/>
+            <c:showSerName val="0"/>
+            <c:showPercent val="0"/>
+            <c:showBubbleSize val="0"/>
+          </c:dLbls>
+        </c:ser>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces width on series-level data labels", () => {
+    const parsed = parseChart(withDLblsSpPr(`<a:ln w="12700"/>`));
+    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBe(1);
+  });
+
+  it("surfaces fractional width on series-level data labels", () => {
+    const parsed = parseChart(withDLblsSpPr(`<a:ln w="19050"/>`));
+    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBe(1.5);
+  });
+
+  it("clamps to minimum 0.25", () => {
+    const parsed = parseChart(withDLblsSpPr(`<a:ln w="100"/>`));
+    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBe(0.25);
+  });
+
+  it("clamps to maximum 13.5", () => {
+    const parsed = parseChart(withDLblsSpPr(`<a:ln w="9999999"/>`));
+    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBe(13.5);
+  });
+
+  it("returns undefined when w is zero", () => {
+    const parsed = parseChart(withDLblsSpPr(`<a:ln w="0"/>`));
+    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBeUndefined();
+  });
+
+  it("surfaces both color and width on the same <a:ln>", () => {
+    const parsed = parseChart(
+      withDLblsSpPr(`<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`),
+    );
+    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBe(2);
+    expect(parsed?.series?.[0]?.dataLabels?.borderColor).toBe("1F77B4");
+  });
+});
+
+// ── parseChart — *BorderDash family ──────────────────────────────────
+
+describe("parseChart — plotAreaBorderDash", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withPlotAreaSpPr(spPrBody: string): string {
+    return `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+      <c:spPr>${spPrBody}</c:spPr>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces a 'dash' preset", () => {
+    expect(
+      parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="dash"/></a:ln>`))?.plotAreaBorderDash,
+    ).toBe("dash");
+  });
+
+  it("surfaces a 'dashDot' preset", () => {
+    expect(
+      parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="dashDot"/></a:ln>`))?.plotAreaBorderDash,
+    ).toBe("dashDot");
+  });
+
+  it("surfaces a 'dot' preset", () => {
+    expect(
+      parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="dot"/></a:ln>`))?.plotAreaBorderDash,
+    ).toBe("dot");
+  });
+
+  it("surfaces a 'lgDash' preset", () => {
+    expect(
+      parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="lgDash"/></a:ln>`))?.plotAreaBorderDash,
+    ).toBe("lgDash");
+  });
+
+  it("surfaces 'lgDashDot' / 'lgDashDotDot'", () => {
+    expect(
+      parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="lgDashDot"/></a:ln>`))
+        ?.plotAreaBorderDash,
+    ).toBe("lgDashDot");
+    expect(
+      parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="lgDashDotDot"/></a:ln>`))
+        ?.plotAreaBorderDash,
+    ).toBe("lgDashDotDot");
+  });
+
+  it("surfaces 'sysDash' / 'sysDashDot' / 'sysDashDotDot' / 'sysDot'", () => {
+    expect(
+      parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="sysDash"/></a:ln>`))?.plotAreaBorderDash,
+    ).toBe("sysDash");
+    expect(
+      parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="sysDashDot"/></a:ln>`))
+        ?.plotAreaBorderDash,
+    ).toBe("sysDashDot");
+    expect(
+      parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="sysDashDotDot"/></a:ln>`))
+        ?.plotAreaBorderDash,
+    ).toBe("sysDashDotDot");
+    expect(
+      parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="sysDot"/></a:ln>`))?.plotAreaBorderDash,
+    ).toBe("sysDot");
+  });
+
+  it("collapses 'solid' (the OOXML default) to undefined", () => {
+    expect(
+      parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="solid"/></a:ln>`))?.plotAreaBorderDash,
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when no <c:spPr> is present", () => {
+    const xml = `<c:chartSpace ${NS}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`;
+    expect(parseChart(xml)?.plotAreaBorderDash).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln> has no <a:prstDash>", () => {
+    expect(parseChart(withPlotAreaSpPr(`<a:ln/>`))?.plotAreaBorderDash).toBeUndefined();
+  });
+
+  it("returns undefined when val is missing", () => {
+    expect(
+      parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash/></a:ln>`))?.plotAreaBorderDash,
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when val is unrecognized", () => {
+    expect(
+      parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="weirdToken"/></a:ln>`))
+        ?.plotAreaBorderDash,
+    ).toBeUndefined();
+  });
+
+  it("composes with border color and width", () => {
+    const xml = withPlotAreaSpPr(
+      `<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill><a:prstDash val="dash"/></a:ln>`,
+    );
+    const parsed = parseChart(xml);
+    expect(parsed?.plotAreaBorderDash).toBe("dash");
+    expect(parsed?.plotAreaBorderColor).toBe("1F77B4");
+    expect(parsed?.plotAreaBorderWidth).toBe(2);
+  });
+});
+
+describe("parseChart — legendBorderDash", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withLegendSpPr(spPrBody: string): string {
+    return `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:spPr>${spPrBody}</c:spPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces 'dash' on legend", () => {
+    expect(
+      parseChart(withLegendSpPr(`<a:ln><a:prstDash val="dash"/></a:ln>`))?.legendBorderDash,
+    ).toBe("dash");
+  });
+
+  it("surfaces 'dot' on legend", () => {
+    expect(
+      parseChart(withLegendSpPr(`<a:ln><a:prstDash val="dot"/></a:ln>`))?.legendBorderDash,
+    ).toBe("dot");
+  });
+
+  it("collapses 'solid' to undefined", () => {
+    expect(
+      parseChart(withLegendSpPr(`<a:ln><a:prstDash val="solid"/></a:ln>`))?.legendBorderDash,
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when chart has no legend", () => {
+    const xml = `<c:chartSpace ${NS}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`;
+    expect(parseChart(xml)?.legendBorderDash).toBeUndefined();
+  });
+
+  it("ignores stray prstDash on the plot area when reading legendBorderDash", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+      <c:spPr><a:ln><a:prstDash val="dot"/></a:ln></c:spPr>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendBorderDash).toBeUndefined();
+  });
+});
+
+describe("parseChart — titleBorderDash", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withTitleSpPr(spPrBody: string): string {
+    return `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:title>
+      <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Hero</a:t></a:r></a:p></c:rich></c:tx>
+      <c:overlay val="0"/>
+      <c:spPr>${spPrBody}</c:spPr>
+    </c:title>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces 'dash' on title", () => {
+    expect(
+      parseChart(withTitleSpPr(`<a:ln><a:prstDash val="dash"/></a:ln>`))?.titleBorderDash,
+    ).toBe("dash");
+  });
+
+  it("surfaces 'sysDash' on title", () => {
+    expect(
+      parseChart(withTitleSpPr(`<a:ln><a:prstDash val="sysDash"/></a:ln>`))?.titleBorderDash,
+    ).toBe("sysDash");
+  });
+
+  it("collapses 'solid' to undefined", () => {
+    expect(
+      parseChart(withTitleSpPr(`<a:ln><a:prstDash val="solid"/></a:ln>`))?.titleBorderDash,
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when chart has no title", () => {
+    const xml = `<c:chartSpace ${NS}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`;
+    expect(parseChart(xml)?.titleBorderDash).toBeUndefined();
+  });
+
+  it("composes with border color, width, and dash on the same <a:ln>", () => {
+    const xml = withTitleSpPr(
+      `<a:ln w="25400"><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill><a:prstDash val="dashDot"/></a:ln>`,
+    );
+    const parsed = parseChart(xml);
+    expect(parsed?.titleBorderDash).toBe("dashDot");
+    expect(parsed?.titleBorderColor).toBe("ABCDEF");
+    expect(parsed?.titleBorderWidth).toBe(2);
+  });
+});
+
+describe("parseChart — chartSpaceBorderDash", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withChartSpaceSpPr(spPrBody: string): string {
+    return `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+  <c:spPr>${spPrBody}</c:spPr>
+</c:chartSpace>`;
+  }
+
+  it("surfaces 'dash' on chartSpace", () => {
+    expect(
+      parseChart(withChartSpaceSpPr(`<a:ln><a:prstDash val="dash"/></a:ln>`))?.chartSpaceBorderDash,
+    ).toBe("dash");
+  });
+
+  it("collapses 'solid' to undefined", () => {
+    expect(
+      parseChart(withChartSpaceSpPr(`<a:ln><a:prstDash val="solid"/></a:ln>`))
+        ?.chartSpaceBorderDash,
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when chartSpace has no <c:spPr>", () => {
+    const xml = `<c:chartSpace ${NS}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`;
+    expect(parseChart(xml)?.chartSpaceBorderDash).toBeUndefined();
+  });
+
+  it("composes with chartSpaceBorderColor and chartSpaceBorderWidth", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill><a:prstDash val="dot"/></a:ln>`,
+    );
+    const parsed = parseChart(xml);
+    expect(parsed?.chartSpaceBorderDash).toBe("dot");
+    expect(parsed?.chartSpaceBorderColor).toBe("1F77B4");
+    expect(parsed?.chartSpaceBorderWidth).toBe(2);
+  });
+
+  it("ignores a stray prstDash on the plot area", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+      <c:spPr><a:ln><a:prstDash val="dash"/></a:ln></c:spPr>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.chartSpaceBorderDash).toBeUndefined();
+  });
+});
+
+describe("parseChart — axisTitleBorderDash", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withAxisTitleSpPr(spPrBody: string, axis: "catAx" | "valAx" = "catAx"): string {
+    return `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:${axis}>
+        <c:axId val="1"/>
+        <c:title>
+          <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Axis</a:t></a:r></a:p></c:rich></c:tx>
+          <c:overlay val="0"/>
+          <c:spPr>${spPrBody}</c:spPr>
+        </c:title>
+      </c:${axis}>
+      <c:${axis === "catAx" ? "valAx" : "catAx"}><c:axId val="2"/></c:${axis === "catAx" ? "valAx" : "catAx"}>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces 'dash' on the X axis (catAx)", () => {
+    expect(
+      parseChart(withAxisTitleSpPr(`<a:ln><a:prstDash val="dash"/></a:ln>`, "catAx"))?.axes?.x
+        ?.axisTitleBorderDash,
+    ).toBe("dash");
+  });
+
+  it("surfaces 'dot' on the Y axis (valAx)", () => {
+    expect(
+      parseChart(withAxisTitleSpPr(`<a:ln><a:prstDash val="dot"/></a:ln>`, "valAx"))?.axes?.y
+        ?.axisTitleBorderDash,
+    ).toBe("dot");
+  });
+
+  it("collapses 'solid' to undefined", () => {
+    expect(
+      parseChart(withAxisTitleSpPr(`<a:ln><a:prstDash val="solid"/></a:ln>`))?.axes?.x
+        ?.axisTitleBorderDash,
+    ).toBeUndefined();
+  });
+
+  it("returns undefined for unrecognized values", () => {
+    expect(
+      parseChart(withAxisTitleSpPr(`<a:ln><a:prstDash val="bogus"/></a:ln>`))?.axes?.x
+        ?.axisTitleBorderDash,
+    ).toBeUndefined();
+  });
+
+  it("composes with axisTitleBorderColor and axisTitleBorderWidth", () => {
+    const xml = withAxisTitleSpPr(
+      `<a:ln w="25400"><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill><a:prstDash val="dashDot"/></a:ln>`,
+    );
+    const parsed = parseChart(xml);
+    expect(parsed?.axes?.x?.axisTitleBorderDash).toBe("dashDot");
+    expect(parsed?.axes?.x?.axisTitleBorderColor).toBe("ABCDEF");
+    expect(parsed?.axes?.x?.axisTitleBorderWidth).toBe(2);
+  });
+});
+
+describe("parseChart — dataTableBorderDash", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withDTableSpPr(spPrBody: string): string {
+    return `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:dTable>
+        <c:showHorzBorder val="1"/>
+        <c:showVertBorder val="1"/>
+        <c:showOutline val="1"/>
+        <c:showKeys val="1"/>
+        <c:spPr>${spPrBody}</c:spPr>
+      </c:dTable>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces 'dash' on data table", () => {
+    const parsed = parseChart(withDTableSpPr(`<a:ln><a:prstDash val="dash"/></a:ln>`));
+    expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderDash : undefined).toBe(
+      "dash",
+    );
+  });
+
+  it("collapses 'solid' to undefined", () => {
+    const parsed = parseChart(withDTableSpPr(`<a:ln><a:prstDash val="solid"/></a:ln>`));
+    expect(
+      typeof parsed?.dataTable === "object" ? parsed.dataTable.borderDash : undefined,
+    ).toBeUndefined();
+  });
+
+  it("returns undefined for unrecognized value", () => {
+    const parsed = parseChart(withDTableSpPr(`<a:ln><a:prstDash val="weirdo"/></a:ln>`));
+    expect(
+      typeof parsed?.dataTable === "object" ? parsed.dataTable.borderDash : undefined,
+    ).toBeUndefined();
+  });
+
+  it("composes with dTable border color and width", () => {
+    const parsed = parseChart(
+      withDTableSpPr(
+        `<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill><a:prstDash val="dot"/></a:ln>`,
+      ),
+    );
+    expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderDash : undefined).toBe(
+      "dot",
+    );
+    expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderColor : undefined).toBe(
+      "1F77B4",
+    );
+    expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderWidth : undefined).toBe(
+      2,
+    );
+  });
+});
+
+describe("parseChart — dataLabelsBorderDash", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withDLblsSpPr(spPrBody: string): string {
+    return `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:dLbls>
+            <c:spPr>${spPrBody}</c:spPr>
+            <c:showLegendKey val="0"/>
+            <c:showVal val="1"/>
+            <c:showCatName val="0"/>
+            <c:showSerName val="0"/>
+            <c:showPercent val="0"/>
+            <c:showBubbleSize val="0"/>
+          </c:dLbls>
+        </c:ser>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces 'dash' on data labels", () => {
+    expect(
+      parseChart(withDLblsSpPr(`<a:ln><a:prstDash val="dash"/></a:ln>`))?.series?.[0]?.dataLabels
+        ?.borderDash,
+    ).toBe("dash");
+  });
+
+  it("collapses 'solid' to undefined", () => {
+    expect(
+      parseChart(withDLblsSpPr(`<a:ln><a:prstDash val="solid"/></a:ln>`))?.series?.[0]?.dataLabels
+        ?.borderDash,
+    ).toBeUndefined();
+  });
+
+  it("composes with data-labels border color and width", () => {
+    const parsed = parseChart(
+      withDLblsSpPr(
+        `<a:ln w="25400"><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill><a:prstDash val="dashDot"/></a:ln>`,
+      ),
+    );
+    expect(parsed?.series?.[0]?.dataLabels?.borderDash).toBe("dashDot");
+    expect(parsed?.series?.[0]?.dataLabels?.borderColor).toBe("ABCDEF");
+    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBe(2);
+  });
+});

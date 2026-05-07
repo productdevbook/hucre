@@ -17,6 +17,7 @@ import type {
   ChartAxisScale,
   ChartAxisTickLabelPosition,
   ChartAxisTickMark,
+  ChartBorderDash,
   ChartDataLabels,
   ChartDisplayBlanksAs,
   ChartLineDashStyle,
@@ -84,6 +85,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveTitleFillColor(chart),
         resolveTitleBorderColor(chart),
         resolveTitleBorderWidth(chart),
+        resolveTitleBorderDash(chart),
       ),
     );
   }
@@ -195,6 +197,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveLegendFillColor(chart),
         resolveLegendBorderColor(chart),
         resolveLegendBorderWidth(chart),
+        resolveLegendBorderDash(chart),
       ),
     );
   }
@@ -310,6 +313,7 @@ function buildTitle(
   fillRgbHex: string | undefined,
   borderRgbHex: string | undefined,
   borderWidthPt: number | undefined,
+  borderDash: ChartBorderDash | undefined,
 ): string {
   // OOXML's `<a:bodyPr rot="N"/>` attribute is in 60000ths of a degree.
   // The writer holds `titleRotation` in whole degrees and converts at
@@ -482,7 +486,7 @@ function buildTitle(
   // {@link SheetChart.titleColor} pins — the typography knobs target
   // different children of `<c:title>` so a caller can pin both
   // without conflict.
-  const titleSpPrXml = buildTitleSpPr(fillRgbHex, borderRgbHex, borderWidthPt);
+  const titleSpPrXml = buildTitleSpPr(fillRgbHex, borderRgbHex, borderWidthPt, borderDash);
   if (titleSpPrXml !== undefined) {
     titleChildren.push(titleSpPrXml);
   }
@@ -521,8 +525,14 @@ function buildTitleSpPr(
   fillRgbHex: string | undefined,
   borderRgbHex: string | undefined,
   borderWidthPt: number | undefined,
+  borderDash: ChartBorderDash | undefined,
 ): string | undefined {
-  if (fillRgbHex === undefined && borderRgbHex === undefined && borderWidthPt === undefined) {
+  if (
+    fillRgbHex === undefined &&
+    borderRgbHex === undefined &&
+    borderWidthPt === undefined &&
+    borderDash === undefined
+  ) {
     return undefined;
   }
   const children: string[] = [];
@@ -531,7 +541,7 @@ function buildTitleSpPr(
       xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillRgbHex })]),
     );
   }
-  if (borderRgbHex !== undefined || borderWidthPt !== undefined) {
+  if (borderRgbHex !== undefined || borderWidthPt !== undefined || borderDash !== undefined) {
     const lnAttrs: Record<string, string | number> = {};
     if (borderWidthPt !== undefined) {
       // OOXML stores stroke width in EMU (1 pt = 12 700 EMU). Round to
@@ -543,6 +553,11 @@ function buildTitleSpPr(
       lnChildren.push(
         xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: borderRgbHex })]),
       );
+    }
+    // `<a:prstDash>` follows `<a:solidFill>` per CT_LineProperties
+    // schema sequence (ECMA-376 Part 1, §20.1.2.3.24).
+    if (borderDash !== undefined) {
+      lnChildren.push(xmlSelfClose("a:prstDash", { val: borderDash }));
     }
     children.push(
       lnChildren.length === 0
@@ -848,6 +863,27 @@ function resolveTitleBorderColor(chart: SheetChart): string | undefined {
  */
 function resolveTitleBorderWidth(chart: SheetChart): number | undefined {
   return clampStrokeWidthPt(chart.titleBorderWidth);
+}
+
+/**
+ * Resolve `<c:title><c:spPr><a:ln><a:prstDash val=".."/></a:ln></c:spPr>
+ * </c:title>` from {@link SheetChart.titleBorderDash}.
+ *
+ * Returns the recognized {@link ChartBorderDash} value, or `undefined`
+ * for the OOXML default `"solid"` and every unrecognized token —
+ * delegates to {@link normalizeBorderDash} so the accept / drop grammar
+ * matches every other `<a:prstDash>` slot the writer authors. The
+ * caller is expected to gate the call on `showTitle && chart.title`
+ * since a chart whose title is suppressed has no `<c:title>` block to
+ * host the `<c:spPr>` slot.
+ *
+ * Independent of {@link resolveTitleBorderColor} and
+ * {@link resolveTitleBorderWidth}: all three knobs land on the same
+ * `<a:ln>` element but on different children / attributes — color is
+ * `<a:solidFill>`, width is the `w` attribute, dash is `<a:prstDash>`.
+ */
+function resolveTitleBorderDash(chart: SheetChart): ChartBorderDash | undefined {
+  return normalizeBorderDash(chart.titleBorderDash);
 }
 
 /**
@@ -1188,6 +1224,22 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // border).
     xAxisTitleBorderColor: normalizeTitleColor(chart.axes?.x?.axisTitleBorderColor),
     yAxisTitleBorderColor: normalizeTitleColor(chart.axes?.y?.axisTitleBorderColor),
+    // `<c:title><c:spPr><a:ln w="EMU"/></c:spPr></c:title>` —
+    // axis-title border (line stroke) thickness. Reuse the chart-level
+    // {@link clampStrokeWidthPt} so the snap / clamp grammar matches
+    // every other `<a:ln w=..>` slot the writer authors. Only
+    // meaningful when the axis actually emits a title; the per-family
+    // axis builder gates the value on the `xAxisTitle` / `yAxisTitle`
+    // field.
+    xAxisTitleBorderWidth: clampStrokeWidthPt(chart.axes?.x?.axisTitleBorderWidth),
+    yAxisTitleBorderWidth: clampStrokeWidthPt(chart.axes?.y?.axisTitleBorderWidth),
+    // `<c:title><c:spPr><a:ln><a:prstDash val=".."/></a:ln></c:spPr>
+    // </c:title>` — axis-title border preset dash pattern. The
+    // {@link normalizeBorderDash} helper drops `"solid"` and any
+    // unrecognized value to `undefined` so a fresh axis title matches
+    // Excel's reference shape byte-for-byte.
+    xAxisTitleBorderDash: normalizeBorderDash(chart.axes?.x?.axisTitleBorderDash),
+    yAxisTitleBorderDash: normalizeBorderDash(chart.axes?.y?.axisTitleBorderDash),
     xGridlines: normalizeAxisGridlines(chart.axes?.x?.gridlines),
     yGridlines: normalizeAxisGridlines(chart.axes?.y?.gridlines),
     xScale: normalizeAxisScale(chart.axes?.x?.scale),
@@ -1435,7 +1487,13 @@ function buildPlotAreaSpPr(chart: SheetChart): string | undefined {
   const fillHex = normalizePlotAreaFillColor(chart.plotAreaFillColor);
   const borderHex = normalizePlotAreaBorderColor(chart.plotAreaBorderColor);
   const borderWidthPt = clampStrokeWidthPt(chart.plotAreaBorderWidth);
-  if (fillHex === undefined && borderHex === undefined && borderWidthPt === undefined) {
+  const borderDash = normalizeBorderDash(chart.plotAreaBorderDash);
+  if (
+    fillHex === undefined &&
+    borderHex === undefined &&
+    borderWidthPt === undefined &&
+    borderDash === undefined
+  ) {
     return undefined;
   }
 
@@ -1445,7 +1503,7 @@ function buildPlotAreaSpPr(chart: SheetChart): string | undefined {
       xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillHex })]),
     );
   }
-  if (borderHex !== undefined || borderWidthPt !== undefined) {
+  if (borderHex !== undefined || borderWidthPt !== undefined || borderDash !== undefined) {
     const lnAttrs: Record<string, string | number> = {};
     if (borderWidthPt !== undefined) {
       // OOXML stores stroke width in EMU (1 pt = 12 700 EMU). Round to
@@ -1457,6 +1515,13 @@ function buildPlotAreaSpPr(chart: SheetChart): string | undefined {
       lnChildren.push(
         xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: borderHex })]),
       );
+    }
+    // `<a:prstDash>` follows `<a:solidFill>` per CT_LineProperties
+    // (ECMA-376 Part 1, §20.1.2.3.24) — fill before dash before
+    // headEnd / tailEnd. Skip emission for `"solid"` and unset values
+    // so a fresh chart matches Excel's reference shape byte-for-byte.
+    if (borderDash !== undefined) {
+      lnChildren.push(xmlSelfClose("a:prstDash", { val: borderDash }));
     }
     children.push(
       lnChildren.length === 0
@@ -1534,7 +1599,16 @@ function normalizePlotAreaBorderColor(value: string | undefined): string | undef
 function buildChartSpaceSpPr(chart: SheetChart): string | undefined {
   const fillHex = normalizeChartSpaceFillColor(chart.chartSpaceFillColor);
   const borderHex = normalizeChartSpaceBorderColor(chart.chartSpaceBorderColor);
-  if (fillHex === undefined && borderHex === undefined) return undefined;
+  const borderWidthPt = clampStrokeWidthPt(chart.chartSpaceBorderWidth);
+  const borderDash = normalizeBorderDash(chart.chartSpaceBorderDash);
+  if (
+    fillHex === undefined &&
+    borderHex === undefined &&
+    borderWidthPt === undefined &&
+    borderDash === undefined
+  ) {
+    return undefined;
+  }
 
   const children: string[] = [];
   if (fillHex !== undefined) {
@@ -1542,11 +1616,28 @@ function buildChartSpaceSpPr(chart: SheetChart): string | undefined {
       xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillHex })]),
     );
   }
-  if (borderHex !== undefined) {
-    children.push(
-      xmlElement("a:ln", undefined, [
+  if (borderHex !== undefined || borderWidthPt !== undefined || borderDash !== undefined) {
+    const lnAttrs: Record<string, string | number> = {};
+    if (borderWidthPt !== undefined) {
+      // OOXML stores stroke width in EMU (1 pt = 12 700 EMU). Round to
+      // the nearest integer because the schema types `w` as `xsd:int`.
+      lnAttrs.w = Math.round(borderWidthPt * EMU_PER_PT);
+    }
+    const lnChildren: string[] = [];
+    if (borderHex !== undefined) {
+      lnChildren.push(
         xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: borderHex })]),
-      ]),
+      );
+    }
+    // `<a:prstDash>` follows `<a:solidFill>` per CT_LineProperties
+    // schema sequence (ECMA-376 Part 1, §20.1.2.3.24).
+    if (borderDash !== undefined) {
+      lnChildren.push(xmlSelfClose("a:prstDash", { val: borderDash }));
+    }
+    children.push(
+      lnChildren.length === 0
+        ? xmlSelfClose("a:ln", lnAttrs)
+        : xmlElement("a:ln", Object.keys(lnAttrs).length > 0 ? lnAttrs : undefined, lnChildren),
     );
   }
   return xmlElement("c:spPr", undefined, children);
@@ -1628,6 +1719,8 @@ function resolveDataTable(chart: SheetChart):
       fontFamily: string | undefined;
       fillColor: string | undefined;
       borderColor: string | undefined;
+      borderWidth: number | undefined;
+      borderDash: ChartBorderDash | undefined;
     }
   | undefined {
   // Pie / doughnut have no axes — the OOXML schema places `<c:dTable>`
@@ -1654,6 +1747,8 @@ function resolveDataTable(chart: SheetChart):
       fontFamily: undefined,
       fillColor: undefined,
       borderColor: undefined,
+      borderWidth: undefined,
+      borderDash: undefined,
     };
   }
 
@@ -1675,6 +1770,8 @@ function resolveDataTable(chart: SheetChart):
     fontFamily: resolveDataTableFontFamily(raw.fontFamily),
     fillColor: resolveDataTableFillColor(raw.fillColor),
     borderColor: resolveDataTableBorderColor(raw.borderColor),
+    borderWidth: clampStrokeWidthPt(raw.borderWidth),
+    borderDash: normalizeBorderDash(raw.borderDash),
   };
 }
 
@@ -1873,6 +1970,8 @@ function buildDataTable(table: {
   fontFamily: string | undefined;
   fillColor: string | undefined;
   borderColor: string | undefined;
+  borderWidth: number | undefined;
+  borderDash: ChartBorderDash | undefined;
 }): string {
   const children: string[] = [
     xmlSelfClose("c:showHorzBorder", { val: table.showHorzBorder ? 1 : 0 }),
@@ -1885,7 +1984,12 @@ function buildDataTable(table: {
   // (ECMA-376 Part 1, §21.2.2.54). The writer skips emission entirely
   // when no fill / border knob is pinned so a fresh chart matches
   // Excel's reference serialization byte-for-byte.
-  const spPrXml = buildDataTableSpPr(table.fillColor, table.borderColor);
+  const spPrXml = buildDataTableSpPr(
+    table.fillColor,
+    table.borderColor,
+    table.borderWidth,
+    table.borderDash,
+  );
   if (spPrXml !== undefined) children.push(spPrXml);
   // CT_DTable schema places `<c:txPr>` after `<c:spPr>` and before
   // the optional `<c:extLst>` (ECMA-376 Part 1, §21.2.2.54). The writer
@@ -1929,19 +2033,45 @@ function buildDataTable(table: {
 function buildDataTableSpPr(
   fillColor: string | undefined,
   borderColor: string | undefined,
+  borderWidthPt: number | undefined,
+  borderDash: ChartBorderDash | undefined,
 ): string | undefined {
-  if (fillColor === undefined && borderColor === undefined) return undefined;
+  if (
+    fillColor === undefined &&
+    borderColor === undefined &&
+    borderWidthPt === undefined &&
+    borderDash === undefined
+  ) {
+    return undefined;
+  }
   const children: string[] = [];
   if (fillColor !== undefined) {
     children.push(
       xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillColor })]),
     );
   }
-  if (borderColor !== undefined) {
-    children.push(
-      xmlElement("a:ln", undefined, [
+  if (borderColor !== undefined || borderWidthPt !== undefined || borderDash !== undefined) {
+    const lnAttrs: Record<string, string | number> = {};
+    if (borderWidthPt !== undefined) {
+      // OOXML stores stroke width in EMU (1 pt = 12 700 EMU). Round to
+      // the nearest integer because the schema types `w` as `xsd:int`.
+      lnAttrs.w = Math.round(borderWidthPt * EMU_PER_PT);
+    }
+    const lnChildren: string[] = [];
+    if (borderColor !== undefined) {
+      lnChildren.push(
         xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: borderColor })]),
-      ]),
+      );
+    }
+    // `<a:prstDash>` follows `<a:solidFill>` per CT_LineProperties
+    // schema sequence (ECMA-376 Part 1, §20.1.2.3.24).
+    if (borderDash !== undefined) {
+      lnChildren.push(xmlSelfClose("a:prstDash", { val: borderDash }));
+    }
+    children.push(
+      lnChildren.length === 0
+        ? xmlSelfClose("a:ln", lnAttrs)
+        : xmlElement("a:ln", Object.keys(lnAttrs).length > 0 ? lnAttrs : undefined, lnChildren),
     );
   }
   return xmlElement("c:spPr", undefined, children);
@@ -2542,6 +2672,38 @@ interface AxisRenderOptions {
    * semantics as {@link xAxisTitleBorderColor}.
    */
   yAxisTitleBorderColor: string | undefined;
+  /**
+   * Axis-title border (line stroke) thickness emitted on the X axis
+   * via `<c:title><c:spPr><a:ln w="EMU"/></c:spPr></c:title>`. The
+   * OOXML `w` attribute is in EMU (1 pt = 12 700 EMU); the writer
+   * converts at emit time. `undefined` collapses to omitting the
+   * attribute (Excel's reference auto-thickness, typically 0.75 pt).
+   * Composes independently with {@link xAxisTitleBorderColor} and
+   * {@link xAxisTitleBorderDash} on the same `<a:ln>` element.
+   * Only meaningful when the axis renders a title.
+   */
+  xAxisTitleBorderWidth: number | undefined;
+  /**
+   * Axis-title border thickness emitted on the Y axis. Same shape and
+   * emit semantics as {@link xAxisTitleBorderWidth}.
+   */
+  yAxisTitleBorderWidth: number | undefined;
+  /**
+   * Axis-title border (line stroke) preset dash pattern emitted on the
+   * X axis via `<c:title><c:spPr><a:ln><a:prstDash val=".."/></a:ln>
+   * </c:spPr></c:title>`. The OOXML `<a:prstDash>` element follows
+   * `<a:solidFill>` per CT_LineProperties schema sequence (ECMA-376
+   * Part 1, §20.1.2.3.24). `undefined` (and the OOXML default
+   * `"solid"`) collapses to omitting the element so a fresh axis
+   * title renders solid. Composes independently with
+   * {@link xAxisTitleBorderColor} and {@link xAxisTitleBorderWidth}.
+   */
+  xAxisTitleBorderDash: ChartBorderDash | undefined;
+  /**
+   * Axis-title border dash emitted on the Y axis. Same shape and emit
+   * semantics as {@link xAxisTitleBorderDash}.
+   */
+  yAxisTitleBorderDash: ChartBorderDash | undefined;
   xGridlines: { major: boolean; minor: boolean } | undefined;
   yGridlines: { major: boolean; minor: boolean } | undefined;
   xScale: ChartAxisScale | undefined;
@@ -3775,6 +3937,8 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
         opts.xAxisTitleLayout,
         opts.xAxisTitleFillColor,
         opts.xAxisTitleBorderColor,
+        opts.xAxisTitleBorderWidth,
+        opts.xAxisTitleBorderDash,
       ),
     );
   catAxChildren.push(
@@ -3854,6 +4018,8 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
         opts.yAxisTitleLayout,
         opts.yAxisTitleFillColor,
         opts.yAxisTitleBorderColor,
+        opts.yAxisTitleBorderWidth,
+        opts.yAxisTitleBorderDash,
       ),
     );
   valAxChildren.push(
@@ -4234,6 +4400,8 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.xAxisTitleLayout,
         opts.xAxisTitleFillColor,
         opts.xAxisTitleBorderColor,
+        opts.xAxisTitleBorderWidth,
+        opts.xAxisTitleBorderDash,
       ),
     );
   xAxChildren.push(
@@ -4292,6 +4460,8 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.yAxisTitleLayout,
         opts.yAxisTitleFillColor,
         opts.yAxisTitleBorderColor,
+        opts.yAxisTitleBorderWidth,
+        opts.yAxisTitleBorderDash,
       ),
     );
   yAxChildren.push(
@@ -4397,6 +4567,8 @@ function buildAxisTitle(
   layout: ResolvedManualLayout | undefined,
   fillRgbHex: string | undefined,
   borderRgbHex: string | undefined,
+  borderWidthPt: number | undefined,
+  borderDash: ChartBorderDash | undefined,
 ): string {
   const rot = rotationDeg === undefined ? 0 : rotationDeg * TITLE_ROT_PER_DEGREE;
   // OOXML's `<a:defRPr sz="N"/>` / `<a:rPr sz="N"/>` attribute is in
@@ -4566,7 +4738,7 @@ function buildAxisTitle(
   // {@link SheetChart.axes.x.axisTitleColor} pins — the typography
   // knobs target different children of `<c:title>` so a caller can
   // pin all three without conflict.
-  const titleSpPrXml = buildTitleSpPr(fillRgbHex, borderRgbHex, undefined);
+  const titleSpPrXml = buildTitleSpPr(fillRgbHex, borderRgbHex, borderWidthPt, borderDash);
   if (titleSpPrXml !== undefined) titleChildren.push(titleSpPrXml);
   return xmlElement("c:title", undefined, titleChildren);
 }
@@ -4910,6 +5082,50 @@ function normalizeDashStyle(value: ChartLineDashStyle | undefined): ChartLineDas
 }
 
 /**
+ * Recognized values of {@link ChartBorderDash} — the chart-frame
+ * border-dash enum that lands on `<c:spPr><a:ln><a:prstDash val=".."/>`.
+ * Mirrors {@link VALID_DASH_STYLES} since the enum mirrors
+ * `ST_PresetLineDashVal` exactly. Listed independently so the writer
+ * stays explicit about which slot the value targets (the chart-frame
+ * `<c:spPr>` rather than the per-series `<c:ser>` block).
+ */
+const VALID_BORDER_DASHES: ReadonlySet<ChartBorderDash> = new Set([
+  "solid",
+  "dash",
+  "dashDot",
+  "dot",
+  "lgDash",
+  "lgDashDot",
+  "lgDashDotDot",
+  "sysDash",
+  "sysDashDot",
+  "sysDashDotDot",
+  "sysDot",
+]);
+
+/**
+ * Validate a chart-frame border dash style against
+ * {@link ChartBorderDash}. Returns `undefined` for unrecognized values
+ * and for the OOXML default `"solid"` so the writer can elide the
+ * `<a:prstDash>` element entirely — Excel paints solid by default and
+ * absence / `"solid"` round-trip identically through {@link cloneChart}.
+ *
+ * Mirrors {@link normalizeDashStyle} for the per-series stroke variant
+ * but collapses `"solid"` to `undefined` for symmetry with the reader
+ * side: the reader drops `"solid"` to surface absence, so the writer
+ * must skip it on emit too. Used by every chart-frame `<c:spPr>` /
+ * `<a:ln>` slot — plot-area, legend, title, chart-space, axis-title,
+ * data-table, and data-labels borders.
+ */
+function normalizeBorderDash(value: ChartBorderDash | undefined): ChartBorderDash | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") return undefined;
+  if (!VALID_BORDER_DASHES.has(value)) return undefined;
+  if (value === "solid") return undefined;
+  return value;
+}
+
+/**
  * Convert a stroke width in points to the integer EMU value the OOXML
  * `w` attribute requires. Excel's UI exposes 0.25..13.5 pt — values
  * outside that band are clamped to keep round-trips inside the range
@@ -5191,6 +5407,8 @@ function buildDataLabelsBody(dl: ChartDataLabels, chartType: WriteChartKind): st
   const spPrXml = buildDataLabelsSpPr(
     resolveDataLabelsFillColor(dl.fillColor),
     resolveDataLabelsBorderColor(dl.borderColor),
+    clampStrokeWidthPt(dl.borderWidth),
+    normalizeBorderDash(dl.borderDash),
   );
   if (spPrXml !== undefined) {
     children.push(spPrXml);
@@ -5478,19 +5696,45 @@ function resolveDataLabelsBorderColor(value: string | undefined): string | undef
 function buildDataLabelsSpPr(
   fillRgbHex: string | undefined,
   borderRgbHex: string | undefined,
+  borderWidthPt: number | undefined,
+  borderDash: ChartBorderDash | undefined,
 ): string | undefined {
-  if (fillRgbHex === undefined && borderRgbHex === undefined) return undefined;
+  if (
+    fillRgbHex === undefined &&
+    borderRgbHex === undefined &&
+    borderWidthPt === undefined &&
+    borderDash === undefined
+  ) {
+    return undefined;
+  }
   const children: string[] = [];
   if (fillRgbHex !== undefined) {
     children.push(
       xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillRgbHex })]),
     );
   }
-  if (borderRgbHex !== undefined) {
-    children.push(
-      xmlElement("a:ln", undefined, [
+  if (borderRgbHex !== undefined || borderWidthPt !== undefined || borderDash !== undefined) {
+    const lnAttrs: Record<string, string | number> = {};
+    if (borderWidthPt !== undefined) {
+      // OOXML stores stroke width in EMU (1 pt = 12 700 EMU). Round to
+      // the nearest integer because the schema types `w` as `xsd:int`.
+      lnAttrs.w = Math.round(borderWidthPt * EMU_PER_PT);
+    }
+    const lnChildren: string[] = [];
+    if (borderRgbHex !== undefined) {
+      lnChildren.push(
         xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: borderRgbHex })]),
-      ]),
+      );
+    }
+    // `<a:prstDash>` follows `<a:solidFill>` per CT_LineProperties
+    // schema sequence (ECMA-376 Part 1, §20.1.2.3.24).
+    if (borderDash !== undefined) {
+      lnChildren.push(xmlSelfClose("a:prstDash", { val: borderDash }));
+    }
+    children.push(
+      lnChildren.length === 0
+        ? xmlSelfClose("a:ln", lnAttrs)
+        : xmlElement("a:ln", Object.keys(lnAttrs).length > 0 ? lnAttrs : undefined, lnChildren),
     );
   }
   return xmlElement("c:spPr", undefined, children);
@@ -5643,6 +5887,7 @@ function buildLegend(
   fillRgbHex: string | undefined,
   borderRgbHex: string | undefined,
   borderWidthPt: number | undefined,
+  borderDash: ChartBorderDash | undefined,
 ): string {
   const children: string[] = [xmlSelfClose("c:legendPos", { val: pos })];
 
@@ -5690,7 +5935,7 @@ function buildLegend(
   // children (`<a:effectLst>` effects, gradient / pattern / picture
   // fills, line dash / width / compound styles) are not modelled at
   // this layer.
-  const legendSpPrXml = buildLegendSpPr(fillRgbHex, borderRgbHex, borderWidthPt);
+  const legendSpPrXml = buildLegendSpPr(fillRgbHex, borderRgbHex, borderWidthPt, borderDash);
   if (legendSpPrXml !== undefined) {
     children.push(legendSpPrXml);
   }
@@ -5753,8 +5998,14 @@ function buildLegendSpPr(
   fillRgbHex: string | undefined,
   borderRgbHex: string | undefined,
   borderWidthPt: number | undefined,
+  borderDash: ChartBorderDash | undefined,
 ): string | undefined {
-  if (fillRgbHex === undefined && borderRgbHex === undefined && borderWidthPt === undefined) {
+  if (
+    fillRgbHex === undefined &&
+    borderRgbHex === undefined &&
+    borderWidthPt === undefined &&
+    borderDash === undefined
+  ) {
     return undefined;
   }
   const children: string[] = [];
@@ -5763,7 +6014,7 @@ function buildLegendSpPr(
       xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillRgbHex })]),
     );
   }
-  if (borderRgbHex !== undefined || borderWidthPt !== undefined) {
+  if (borderRgbHex !== undefined || borderWidthPt !== undefined || borderDash !== undefined) {
     const lnAttrs: Record<string, string | number> = {};
     if (borderWidthPt !== undefined) {
       // OOXML stores stroke width in EMU (1 pt = 12 700 EMU). Round to
@@ -5775,6 +6026,11 @@ function buildLegendSpPr(
       lnChildren.push(
         xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: borderRgbHex })]),
       );
+    }
+    // `<a:prstDash>` follows `<a:solidFill>` per CT_LineProperties
+    // schema sequence (ECMA-376 Part 1, §20.1.2.3.24).
+    if (borderDash !== undefined) {
+      lnChildren.push(xmlSelfClose("a:prstDash", { val: borderDash }));
     }
     children.push(
       lnChildren.length === 0
@@ -6239,6 +6495,25 @@ function resolveLegendBorderColor(chart: SheetChart): string | undefined {
  */
 function resolveLegendBorderWidth(chart: SheetChart): number | undefined {
   return clampStrokeWidthPt(chart.legendBorderWidth);
+}
+
+/**
+ * Resolve `<c:legend><c:spPr><a:ln><a:prstDash val=".."/></a:ln></c:spPr>
+ * </c:legend>` from {@link SheetChart.legendBorderDash}.
+ *
+ * Returns the recognized {@link ChartBorderDash} value, or `undefined`
+ * for the OOXML default `"solid"` and every unrecognized token —
+ * delegates to {@link normalizeBorderDash} so absence and the OOXML
+ * default round-trip identically. The dash is only meaningful when the
+ * chart actually emits a legend; the caller gates this on the resolved
+ * legend visibility.
+ *
+ * Independent of {@link resolveLegendBorderColor} and
+ * {@link resolveLegendBorderWidth}: all three knobs land on the same
+ * `<a:ln>` element but on different children / attributes.
+ */
+function resolveLegendBorderDash(chart: SheetChart): ChartBorderDash | undefined {
+  return normalizeBorderDash(chart.legendBorderDash);
 }
 
 /**
