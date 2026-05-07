@@ -4,7 +4,14 @@ import { parseChart } from "../src/xlsx/chart-reader";
 import { writeChart } from "../src/xlsx/chart-writer";
 import { writeXlsx } from "../src/xlsx/writer";
 import { ZipReader } from "../src/zip/reader";
-import type { Chart, ChartLineStroke, ChartMarker, ChartView3D, SheetChart } from "../src/_types";
+import type {
+  Chart,
+  ChartDataTable,
+  ChartLineStroke,
+  ChartMarker,
+  ChartView3D,
+  SheetChart,
+} from "../src/_types";
 
 const decoder = new TextDecoder("utf-8");
 
@@ -11230,6 +11237,188 @@ describe("cloneChart — data table", () => {
     const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
     const reparsed = parseChart(written);
     expect(reparsed?.dataTable?.fontFamily).toBe("Calibri");
+  });
+
+  // ── data-table fill color ────────────────────────────────────────
+
+  it("inherits the source's dataTable.fillColor by default", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+          fillColor: "F2F2F2",
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+      fillColor: "F2F2F2",
+    });
+  });
+
+  it("lets options.dataTable: object override the inherited fillColor", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, fillColor: "F2F2F2" },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        dataTable: { showVertBorder: false, fillColor: "ABCDEF" },
+      },
+    );
+    expect(clone.dataTable).toEqual({ showVertBorder: false, fillColor: "ABCDEF" });
+  });
+
+  it("drops the inherited fillColor when override clears the fill pin", () => {
+    // The override is wholesale-replace, not per-field merge — passing
+    // an object without fillColor drops the inherited value.
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, fillColor: "F2F2F2" },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        dataTable: { showVertBorder: false },
+      },
+    );
+    expect(clone.dataTable).toEqual({ showVertBorder: false });
+  });
+
+  it("drops the inherited fillColor when flattening into a pie clone", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, fillColor: "F2F2F2" },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        type: "pie",
+      },
+    );
+    expect(clone.type).toBe("pie");
+    expect(clone.dataTable).toBeUndefined();
+  });
+
+  it("drops the inherited fillColor when flattening into a doughnut clone", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, fillColor: "F2F2F2" },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        type: "doughnut",
+      },
+    );
+    expect(clone.type).toBe("doughnut");
+    expect(clone.dataTable).toBeUndefined();
+  });
+
+  it("drops the inherited fillColor when override clears the entire dataTable block (null)", () => {
+    const clone = cloneChart(
+      source({
+        dataTable: { showKeys: false, fillColor: "F2F2F2" },
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        dataTable: null,
+      },
+    );
+    expect(clone.dataTable).toBeUndefined();
+  });
+
+  it("propagates dataTable.fillColor into the rendered <c:dTable> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(
+      source({
+        dataTable: {
+          showHorzBorder: true,
+          showVertBorder: false,
+          showOutline: true,
+          showKeys: false,
+          fillColor: "1070CA",
+        },
+      }),
+      { anchor: { from: { row: 5, col: 0 } } },
+    );
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:dTable>");
+    expect(written).toContain(
+      '<c:spPr><a:solidFill><a:srgbClr val="1070CA"/></a:solidFill></c:spPr>',
+    );
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: false,
+      showOutline: true,
+      showKeys: false,
+      fillColor: "1070CA",
+    });
+  });
+
+  it("composes dataTable.fillColor and fontColor through the clone-through path", () => {
+    // The fill (background) and font (foreground text) pins land on
+    // different host elements (<c:spPr> vs <c:txPr>), so a caller can
+    // pin both with no conflict.
+    const clone = cloneChart(
+      source({
+        dataTable: { fillColor: "F2F2F2", fontColor: "1070CA" },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.dataTable).toEqual({ fillColor: "F2F2F2", fontColor: "1070CA" });
+  });
+
+  it("a parsed dataTable.fillColor round-trips through parseChart -> cloneChart -> writeChart -> parseChart", async () => {
+    const seed: SheetChart = {
+      type: "column",
+      series: [{ name: "Revenue", values: "B2:B4", categories: "A2:A4" }],
+      anchor: { from: { row: 0, col: 0 } },
+      dataTable: { showKeys: false, fillColor: "AABBCC" },
+    };
+    const xml = writeChart(seed, "Sheet1").chartXml;
+    const parsed = parseChart(xml)!;
+    expect(parsed.dataTable?.fillColor).toBe("AABBCC");
+    const clone = cloneChart(parsed, { anchor: { from: { row: 0, col: 0 } } });
+    // `cloneChart` widens `dataTable` to `boolean | ChartDataTable` so a
+    // type-narrowing assertion lets us probe the object form.
+    expect(typeof clone.dataTable === "object").toBe(true);
+    expect((clone.dataTable as ChartDataTable | undefined)?.fillColor).toBe("AABBCC");
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(parseChart(written)?.dataTable?.fillColor).toBe("AABBCC");
   });
 });
 

@@ -1326,6 +1326,57 @@ export interface ChartDataTable {
    * pie / doughnut along with the rest of the data-table configuration.
    */
   fontFamily?: string;
+  /**
+   * Data-table background fill color as a 6-digit RGB hex string (e.g.
+   * `"F2F2F2"`). Maps to `<c:dTable><c:spPr><a:solidFill><a:srgbClr
+   * val="RRGGBB"/></a:solidFill></c:spPr></c:dTable>` (CT_DTable,
+   * ECMA-376 Part 1, §21.2.2.54) — Excel's "Format Data Table -> Fill
+   * -> Solid fill -> Color" picker (the same dialog the user reaches
+   * by right-clicking the data table grid). The OOXML `<a:srgbClr
+   * val=".."/>` carries the 6-character uppercase hex sRGB color
+   * (`CT_SRgbColor` inside `CT_ShapeProperties`' fill choice — ECMA-376
+   * Part 1, §20.1.2.3.32 / §20.1.2.3.13). The `<c:spPr>` slot lives
+   * after the four required boolean children (`<c:showHorzBorder>`,
+   * `<c:showVertBorder>`, `<c:showOutline>`, `<c:showKeys>`) and before
+   * the optional `<c:txPr>` per CT_DTable — distinct from the typography
+   * `<c:txPr>` block which carries the font color knobs.
+   *
+   * Distinct from {@link fontColor} — the fill color paints the cell
+   * backgrounds of the data table, while the font color tints the
+   * series-name / value text drawn inside those cells. A caller can
+   * pin both knobs (e.g. a brand-color background with white text)
+   * since they land on different host elements (`<c:spPr>` for the
+   * fill, `<c:txPr>` for the typography).
+   *
+   * Accepts a leading `#` and any case; the writer collapses to the
+   * OOXML canonical uppercase form. Malformed inputs (wrong length,
+   * non-hex characters, alpha-channel forms, non-string escapes from
+   * an untyped caller) collapse to `undefined` and the writer omits
+   * the entire `<c:spPr>` block (Excel's reference serialization for
+   * a data table that inherits the auto-fill — typically transparent
+   * on top of the plot area).
+   *
+   * Default: omitted — the data table inherits the auto-fill Excel
+   * picks from the workbook theme (typically transparent so the plot
+   * area's fill shows through). Pin a hex color to mirror Excel's
+   * "Format Data Table -> Fill -> Solid fill" knob and paint a flat
+   * background behind the table grid.
+   *
+   * Patterned / gradient / picture fills are not modelled — only the
+   * solid sRGB form lands on the wire. Theme-color references
+   * (`<a:schemeClr>`) likewise drop to `undefined` so a parsed value
+   * always carries a literal hex Excel will render byte-for-byte.
+   * Mirrors `plotAreaFillColor` / `legendFillColor` / `titleFillColor`
+   * / `chartSpaceFillColor` / `axisTitleFillColor` — same accept-with-
+   * or-without-`#` hex grammar, same OOXML `<c:spPr><a:solidFill>
+   * <a:srgbClr val=".."/></a:solidFill></c:spPr>` mapping — so a
+   * caller can thread a single hex string through every `<c:spPr>`-
+   * based fill slot.
+   *
+   * Only meaningful for chart families with axes; silently dropped on
+   * pie / doughnut along with the rest of the data-table configuration.
+   */
+  fillColor?: string;
 }
 
 /**

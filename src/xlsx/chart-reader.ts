@@ -5018,6 +5018,8 @@ function parseDataTable(plotArea: XmlElement): ChartDataTable | undefined {
   if (strikethrough !== undefined) out.strikethrough = strikethrough;
   const fontFamily = parseDataTableFontFamily(el);
   if (fontFamily !== undefined) out.fontFamily = fontFamily;
+  const fillColor = parseDataTableFillColor(el);
+  if (fillColor !== undefined) out.fillColor = fillColor;
   return out;
 }
 
@@ -5206,6 +5208,48 @@ function parseDataTableFontFamily(dTable: XmlElement): string | undefined {
   const trimmed = raw.trim();
   if (trimmed.length === 0) return undefined;
   return trimmed;
+}
+
+/**
+ * Pull `<c:dTable><c:spPr><a:solidFill><a:srgbClr val=".."/>
+ * </a:solidFill></c:spPr></c:dTable>` off a data-table block.
+ * Returns the data-table background fill color as a 6-character
+ * uppercase hex string.
+ *
+ * The OOXML `<a:srgbClr>` element carries the literal sRGB color
+ * (`CT_SRgbColor`, ECMA-376 Part 1, §20.1.2.3.32) inside the fill
+ * choice of `<c:spPr>` (`CT_ShapeProperties`, §20.1.2.3.13). The
+ * `<c:spPr>` slot sits inside `<c:dTable>` after the four required
+ * boolean children (`<c:showHorzBorder>`, `<c:showVertBorder>`,
+ * `<c:showOutline>`, `<c:showKeys>`) and before the optional
+ * `<c:txPr>` per CT_DTable (ECMA-376 Part 1, §21.2.2.54).
+ *
+ * The reader surfaces only the literal `<a:srgbClr>` form — absence,
+ * non-solid fills (`<a:noFill>` / `<a:gradFill>` / `<a:pattFill>` /
+ * `<a:blipFill>`), and theme-color references (`<a:schemeClr>`) all
+ * collapse to `undefined` so a chart that pinned a fill the writer
+ * cannot reproduce on emit drops the field rather than fabricate one
+ * Excel would render differently. Malformed `val` tokens (wrong
+ * length, non-hex characters, alpha-channel forms, non-string escapes)
+ * likewise drop to `undefined`.
+ *
+ * Mirrors the writer-side {@link ChartDataTable.fillColor} so a parsed
+ * value slots straight into {@link cloneChart} without conversion.
+ * The lookup is scoped to direct children of `<c:dTable>` so a stray
+ * `<c:spPr>` elsewhere (e.g. on `<c:plotArea>` / `<c:legend>` /
+ * `<c:title>` / a series) cannot leak into this field. Mirrors
+ * {@link parsePlotAreaFillColor} / {@link parseLegendFillColor} —
+ * same `<c:spPr><a:solidFill><a:srgbClr>` chain on a different host
+ * element.
+ */
+function parseDataTableFillColor(dTable: XmlElement): string | undefined {
+  const spPr = findChild(dTable, "spPr");
+  if (!spPr) return undefined;
+  const solidFill = findChild(spPr, "solidFill");
+  if (!solidFill) return undefined;
+  const srgbClr = findChild(solidFill, "srgbClr");
+  if (!srgbClr) return undefined;
+  return normalizeRgbHex(srgbClr.attrs.val);
 }
 
 /**

@@ -11051,6 +11051,213 @@ describe("parseChart — data table", () => {
       fontFamily: "Calibri",
     });
   });
+
+  // ── data-table fill color (parseDataTableFillColor) ────────────────
+
+  it("surfaces a pinned dataTable.fillColor from <c:spPr><a:solidFill><a:srgbClr val='RRGGBB'/>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:spPr><a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill></c:spPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.fillColor).toBe("F2F2F2");
+  });
+
+  it("uppercases a lower-case srgbClr val on the <c:dTable><c:spPr> slot", () => {
+    // The reader collapses any case to OOXML canonical uppercase so a
+    // parsed value flows directly into cloneChart without conversion.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:spPr><a:solidFill><a:srgbClr val="abcdef"/></a:solidFill></c:spPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.fillColor).toBe("ABCDEF");
+  });
+
+  it("surfaces undefined when <c:spPr> is absent on <c:dTable>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.fillColor).toBeUndefined();
+  });
+
+  it("collapses malformed srgbClr val tokens to undefined", () => {
+    // Wrong length (4 hex chars) and non-hex chars both drop the field.
+    const wrongLen = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:barDir val="col"/><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:spPr><a:solidFill><a:srgbClr val="ABCD"/></a:solidFill></c:spPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(wrongLen)?.dataTable?.fillColor).toBeUndefined();
+    const nonHex = wrongLen.replace('val="ABCD"', 'val="ZZZZZZ"');
+    expect(parseChart(nonHex)?.dataTable?.fillColor).toBeUndefined();
+  });
+
+  it("collapses an alpha-channel srgbClr val to undefined", () => {
+    // The OOXML schema places alpha on <a:alpha>, not on the val token,
+    // so an 8-char val token is malformed for srgbClr.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:barDir val="col"/><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:spPr><a:solidFill><a:srgbClr val="FF0000FF"/></a:solidFill></c:spPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.fillColor).toBeUndefined();
+  });
+
+  it("collapses theme-color <a:schemeClr> references to undefined", () => {
+    // Theme references cannot round-trip losslessly to <a:srgbClr> so
+    // the reader drops them rather than fabricate a value Excel would
+    // render differently.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:barDir val="col"/><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:spPr><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></c:spPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.fillColor).toBeUndefined();
+  });
+
+  it("collapses non-solid fills to undefined (noFill / gradFill / pattFill / blipFill)", () => {
+    const head = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:barDir val="col"/><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>`;
+    const tail = `</c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const noFill = `${head}<c:spPr><a:noFill/></c:spPr>${tail}`;
+    expect(parseChart(noFill)?.dataTable?.fillColor).toBeUndefined();
+    const gradFill = `${head}<c:spPr><a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs></a:gsLst></a:gradFill></c:spPr>${tail}`;
+    expect(parseChart(gradFill)?.dataTable?.fillColor).toBeUndefined();
+    const pattFill = `${head}<c:spPr><a:pattFill prst="dkDnDiag"><a:fgClr><a:srgbClr val="FF0000"/></a:fgClr></a:pattFill></c:spPr>${tail}`;
+    expect(parseChart(pattFill)?.dataTable?.fillColor).toBeUndefined();
+    const blipFill = `${head}<c:spPr><a:blipFill><a:blip/></a:blipFill></c:spPr>${tail}`;
+    expect(parseChart(blipFill)?.dataTable?.fillColor).toBeUndefined();
+  });
+
+  it("does not leak a sibling plotArea / chartSpace <c:spPr> into dataTable.fillColor", () => {
+    // The reader scopes the lookup to direct children of <c:dTable> so
+    // a stray <c:spPr> on <c:plotArea> / <c:chartSpace> cannot leak in.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:barDir val="col"/><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+    </c:dTable>
+    <c:spPr><a:solidFill><a:srgbClr val="111111"/></a:solidFill></c:spPr>
+  </c:plotArea></c:chart>
+  <c:spPr><a:solidFill><a:srgbClr val="222222"/></a:solidFill></c:spPr>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataTable?.fillColor).toBeUndefined();
+    expect(chart?.plotAreaFillColor).toBe("111111");
+    expect(chart?.chartSpaceFillColor).toBe("222222");
+  });
+
+  it("composes dataTable.fillColor with the four boolean toggles and typography knobs in a single dTable block", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:barDir val="col"/><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="0"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="0"/>
+      <c:showKeys val="1"/>
+      <c:spPr><a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill></c:spPr>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr b="1"><a:solidFill><a:srgbClr val="1070CA"/></a:solidFill></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p>
+      </c:txPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable).toEqual({
+      showHorzBorder: false,
+      showVertBorder: true,
+      showOutline: false,
+      showKeys: true,
+      fillColor: "F2F2F2",
+      fontColor: "1070CA",
+      bold: true,
+    });
+  });
 });
 
 // ── parseChart — chart-space protection ──────────────────────────────
