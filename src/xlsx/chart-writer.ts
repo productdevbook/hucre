@@ -1055,6 +1055,24 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // gate the value on the `xAxisTitle` / `yAxisTitle` field.
     xAxisTitleLayout: normalizeManualLayout(chart.axes?.x?.axisTitleLayout),
     yAxisTitleLayout: normalizeManualLayout(chart.axes?.y?.axisTitleLayout),
+    // `<c:title><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+    // </a:solidFill></c:spPr></c:title>` — axis-title background fill.
+    // The OOXML `<c:spPr>` block sits on `CT_Title` between
+    // `<c:overlay>` and `<c:txPr>` / `<c:extLst>` (ECMA-376 Part 1,
+    // §21.2.2.210). Mirrors the chart-level `titleFillColor` writer
+    // path so a single hex string threads cleanly through both
+    // call sites; reuses {@link normalizeTitleColor} so the
+    // accept-with-or-without-`#` grammar matches the chart-title
+    // fill / plot-area fill / legend fill resolvers exactly.
+    // Malformed inputs (wrong length, non-hex characters,
+    // alpha-channel forms, empty / whitespace-only strings,
+    // non-string escapes from an untyped caller) collapse to
+    // `undefined` and the writer omits the entire `<c:spPr>` block
+    // (Excel's reference serialization for an axis title that
+    // inherits the theme default fill — typically a transparent
+    // title background with no `<c:spPr>` block).
+    xAxisTitleFillColor: normalizeTitleColor(chart.axes?.x?.axisTitleFillColor),
+    yAxisTitleFillColor: normalizeTitleColor(chart.axes?.y?.axisTitleFillColor),
     xGridlines: normalizeAxisGridlines(chart.axes?.x?.gridlines),
     yGridlines: normalizeAxisGridlines(chart.axes?.y?.gridlines),
     xScale: normalizeAxisScale(chart.axes?.x?.scale),
@@ -2167,6 +2185,27 @@ interface AxisRenderOptions {
    * and emit semantics as {@link xAxisTitleLayout}.
    */
   yAxisTitleLayout: ResolvedManualLayout | undefined;
+  /**
+   * Axis-title background fill emitted on the X axis via
+   * `<c:title><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+   * </a:solidFill></c:spPr></c:title>`. The OOXML `<a:srgbClr
+   * val=".."/>` carries the 6-character uppercase hex sRGB color
+   * (CT_SRgbColor inside CT_ShapeProperties' fill choice — ECMA-376
+   * Part 1, §20.1.2.3.32 / §20.1.8.54). `undefined` collapses to
+   * omitting the entire `<c:spPr>` block (Excel's reference
+   * serialization for an axis title that inherits the theme default
+   * fill — typically a transparent title background); any
+   * non-`undefined` value is the normalized uppercase hex string the
+   * writer lands on the title's `<c:spPr>` slot. Only meaningful
+   * when the axis renders a title — the per-family axis builders
+   * gate the value on the `xAxisTitle` / `yAxisTitle` field.
+   */
+  xAxisTitleFillColor: string | undefined;
+  /**
+   * Axis-title background fill emitted on the Y axis. Same shape and
+   * emit semantics as {@link xAxisTitleFillColor}.
+   */
+  yAxisTitleFillColor: string | undefined;
   xGridlines: { major: boolean; minor: boolean } | undefined;
   yGridlines: { major: boolean; minor: boolean } | undefined;
   xScale: ChartAxisScale | undefined;
@@ -3398,6 +3437,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
         opts.xAxisTitleFontFamily,
         opts.xAxisTitleOverlay,
         opts.xAxisTitleLayout,
+        opts.xAxisTitleFillColor,
       ),
     );
   catAxChildren.push(
@@ -3475,6 +3515,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
         opts.yAxisTitleFontFamily,
         opts.yAxisTitleOverlay,
         opts.yAxisTitleLayout,
+        opts.yAxisTitleFillColor,
       ),
     );
   valAxChildren.push(
@@ -3853,6 +3894,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.xAxisTitleFontFamily,
         opts.xAxisTitleOverlay,
         opts.xAxisTitleLayout,
+        opts.xAxisTitleFillColor,
       ),
     );
   xAxChildren.push(
@@ -3909,6 +3951,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.yAxisTitleFontFamily,
         opts.yAxisTitleOverlay,
         opts.yAxisTitleLayout,
+        opts.yAxisTitleFillColor,
       ),
     );
   yAxChildren.push(
@@ -4012,6 +4055,7 @@ function buildAxisTitle(
   fontFamily: string | undefined,
   overlay: boolean,
   layout: ResolvedManualLayout | undefined,
+  fillRgbHex: string | undefined,
 ): string {
   const rot = rotationDeg === undefined ? 0 : rotationDeg * TITLE_ROT_PER_DEGREE;
   // OOXML's `<a:defRPr sz="N"/>` / `<a:rPr sz="N"/>` attribute is in
@@ -4162,6 +4206,22 @@ function buildAxisTitle(
   ];
   if (layoutXml) titleChildren.push(layoutXml);
   titleChildren.push(xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }));
+  // CT_Title (ECMA-376 Part 1, §21.2.2.210) places the optional
+  // `<c:spPr>` between `<c:overlay>` and `<c:txPr>` / `<c:extLst>`.
+  // Mirrors `buildTitle`: the writer skips emission entirely when the
+  // caller did not pin a fill color so a fresh axis title matches
+  // Excel's reference shape byte-for-byte (Excel itself omits the
+  // block whenever the title renders at the theme default fill —
+  // typically a transparent title background with no `<c:spPr>`
+  // block). Currently the writer only authors `<a:solidFill>` here;
+  // stroke (`<a:ln>`) and other CT_ShapeProperties children are not
+  // modelled at this layer. Distinct from the
+  // `<a:defRPr><a:solidFill>` font-color slot inside `<c:tx><c:rich>`
+  // that {@link SheetChart.axes.x.axisTitleColor} pins — the two knobs
+  // target different children of `<c:title>` so a caller can pin both
+  // without conflict.
+  const titleSpPrXml = buildTitleSpPr(fillRgbHex);
+  if (titleSpPrXml !== undefined) titleChildren.push(titleSpPrXml);
   return xmlElement("c:title", undefined, titleChildren);
 }
 

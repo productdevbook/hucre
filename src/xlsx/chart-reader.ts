@@ -861,6 +861,25 @@ function parseAxisInfo(
   // `legendLayout` / `plotAreaLayout` parsers — same accept-or-drop
   // grammar, same `xMode="edge"` / `xMode="factor"` admission.
   const axisTitleLayout = parseAxisTitleLayout(axis);
+  // `<c:title><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+  // </a:solidFill></c:spPr></c:title>` — axis-title background fill.
+  // Sits on the axis's `<c:title>` directly per CT_Title schema (the
+  // `<c:spPr>` block follows `<c:overlay>` in the schema sequence,
+  // ECMA-376 Part 1, §21.2.2.210). The reader surfaces only the
+  // literal `<a:srgbClr val="RRGGBB"/>` form; theme references
+  // (`<a:schemeClr>`), non-solid fills (`<a:noFill>` / `<a:gradFill>` /
+  // `<a:pattFill>` / `<a:blipFill>`), and malformed `val` tokens all
+  // collapse to `undefined` so a round-trip never fabricates a fill the
+  // writer cannot reproduce on emit. Independent of `axisTitleColor`
+  // (which lives on the inner `<a:defRPr><a:solidFill>` slot for the
+  // font color) — the two readers walk disjoint paths so a caller can
+  // pin both knobs without conflict. Returns `undefined` when the axis
+  // omits `<c:title>` entirely; unlike `axisTitleColor`, the lookup is
+  // not gated on `<c:rich>` so a title authored as a `<c:strRef>`
+  // formula reference can still surface its background fill — Excel's
+  // "Format Axis Title -> Fill" dialog is independent of whether the
+  // text body is rich or a formula.
+  const axisTitleFillColor = parseAxisTitleFillColor(axis);
   const gridlines = parseAxisGridlines(axis);
   const scale = parseAxisScale(axis);
   const numberFormat = parseAxisNumberFormat(axis);
@@ -1021,6 +1040,7 @@ function parseAxisInfo(
     axisTitleFontFamily === undefined &&
     axisTitleOverlay === undefined &&
     axisTitleLayout === undefined &&
+    axisTitleFillColor === undefined &&
     gridlines === undefined &&
     scale === undefined &&
     numberFormat === undefined &&
@@ -1062,6 +1082,7 @@ function parseAxisInfo(
   if (axisTitleFontFamily !== undefined) out.axisTitleFontFamily = axisTitleFontFamily;
   if (axisTitleOverlay !== undefined) out.axisTitleOverlay = axisTitleOverlay;
   if (axisTitleLayout !== undefined) out.axisTitleLayout = axisTitleLayout;
+  if (axisTitleFillColor !== undefined) out.axisTitleFillColor = axisTitleFillColor;
   if (gridlines !== undefined) out.gridlines = gridlines;
   if (scale !== undefined) out.scale = scale;
   if (numberFormat !== undefined) out.numberFormat = numberFormat;
@@ -4486,6 +4507,62 @@ function parseTitleColor(chartEl: XmlElement): string | undefined {
  */
 function parseTitleFillColor(chartEl: XmlElement): string | undefined {
   const title = findChild(chartEl, "title");
+  if (!title) return undefined;
+  const spPr = findChild(title, "spPr");
+  if (!spPr) return undefined;
+  const solidFill = findChild(spPr, "solidFill");
+  if (!solidFill) return undefined;
+  const srgbClr = findChild(solidFill, "srgbClr");
+  if (!srgbClr) return undefined;
+  return normalizeRgbHex(srgbClr.attrs.val);
+}
+
+/**
+ * Pull `<c:title><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+ * </a:solidFill></c:spPr></c:title>` off an axis element. Returns the
+ * axis title's solid fill color as a 6-character uppercase hex string
+ * the writer can round-trip via
+ * {@link SheetChart.axes.x.axisTitleFillColor}. Mirrors
+ * {@link parseTitleFillColor} for axis titles — same canonical
+ * `<c:spPr><a:solidFill><a:srgbClr>` chain, same drop-on-non-sRGB
+ * semantics.
+ *
+ * Returns the 6-character uppercase hex string when the parser walks
+ * the full chain and lands on an `<a:srgbClr val="RRGGBB"/>`. Theme
+ * references (`<a:schemeClr>`), `<a:hslClr>`, `<a:sysClr>`, and
+ * `<a:prstClr>` all collapse to `undefined` — only the literal RGB
+ * triple round-trips losslessly through {@link writeChart}. Non-solid
+ * fills (`<a:noFill>`, `<a:gradFill>`, `<a:pattFill>`, `<a:blipFill>`)
+ * likewise drop to `undefined` so a round-trip never fabricates a
+ * fill the writer cannot reproduce on emit. Malformed `val` tokens
+ * (wrong length, non-hex characters) drop to `undefined` rather than
+ * fabricate a value the writer would round-trip into a malformed
+ * `<a:srgbClr>`.
+ *
+ * The lookup is scoped to direct children of the axis's `<c:title>`
+ * so a stray `<c:spPr>` elsewhere on the axis (e.g. on a `<c:txPr>`
+ * tick-label block, or on the axis itself) cannot leak in. Returns
+ * `undefined` whenever the axis omits the `<c:title>` element or the
+ * `<c:spPr><a:solidFill><a:srgbClr>` chain is malformed at any link.
+ *
+ * Independent of {@link parseAxisTitleColor}: the fill lives on
+ * `<c:title><c:spPr>`, the font color lives on
+ * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>` — the
+ * two readers walk disjoint paths so a caller can pin both knobs
+ * without conflict. Unlike {@link parseAxisTitleColor}, the lookup is
+ * on `<c:title>` directly rather than gated on `<c:rich>` so a title
+ * authored as a `<c:strRef>` formula reference can still surface its
+ * background fill — Excel's "Format Axis Title -> Fill" dialog is
+ * independent of whether the text body is rich or a formula.
+ *
+ * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+ * `<c:dateAx>` / `<c:serAx>` all share the same `<c:title>` shape
+ * per the OOXML schema. Mirrors the chart-level title fill
+ * {@link parseTitleFillColor} so a parsed value slots straight into
+ * the writer-side {@link SheetChart.axes.x.axisTitleFillColor}.
+ */
+function parseAxisTitleFillColor(axis: XmlElement): string | undefined {
+  const title = findChild(axis, "title");
   if (!title) return undefined;
   const spPr = findChild(title, "spPr");
   if (!spPr) return undefined;

@@ -3714,6 +3714,55 @@ export interface SheetChart {
        * area / scatter).
        */
       axisTitleLayout?: ChartManualLayout;
+      /**
+       * Axis-title background fill (solid). Maps to
+       * `<c:catAx><c:title><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+       * </a:solidFill></c:spPr></c:title></c:catAx>` (or `<c:valAx>` /
+       * `<c:dateAx>` / `<c:serAx>`) — Excel's "Format Axis Title -> Fill
+       * -> Solid fill -> Color" picker. The OOXML `<c:spPr>` block on
+       * `CT_Title` (ECMA-376 Part 1, §21.2.2.210) carries the title's
+       * shape properties and sits between `<c:overlay>` and `<c:txPr>` /
+       * `<c:extLst>` per the schema sequence.
+       *
+       * Accepts a 6-character hex string with or without a leading `#`,
+       * any case (`"FF0000"`, `"#1070ca"`, `"abcdef"`); the writer
+       * normalizes to the OOXML canonical 6-character uppercase form
+       * (`"FF0000"`, `"1070CA"`, `"ABCDEF"`) so a re-parse round-trips
+       * losslessly. Malformed inputs (wrong length, non-hex characters,
+       * alpha-channel forms like `"FFAA0080"`, empty / whitespace-only
+       * strings, non-string escapes from an untyped caller) collapse to
+       * `undefined` and the writer skips the entire `<c:spPr>` block —
+       * the axis title inherits the theme default fill (typically a
+       * transparent title background with no `<c:spPr>` block, matching
+       * Excel's reference shape byte-for-byte).
+       *
+       * Mirrors {@link SheetChart.titleFillColor} for axis titles —
+       * same `<c:spPr><a:solidFill><a:srgbClr>` slot, same accept-
+       * with-or-without-`#` grammar, same drop-on-malformed semantics.
+       * Lands in the same `<c:spPr>` family as
+       * {@link SheetChart.plotAreaFillColor} /
+       * {@link SheetChart.legendFillColor} but on a distinct host
+       * element. Composes independently with
+       * {@link axisTitleColor} (the font color) — the two knobs target
+       * different children of `<c:title>` (`<c:spPr>` for the
+       * background fill, `<c:tx><c:rich><a:p><a:pPr><a:defRPr>
+       * <a:solidFill>` for the font color).
+       *
+       * Default: omitted — no `<c:spPr>` block on the axis title (the
+       * title inherits the theme default fill, matching Excel's
+       * reference shape byte-for-byte).
+       *
+       * Silently dropped when the axis renders no title (the
+       * `<c:title>` element is absent in either case) and on `pie` /
+       * `doughnut` charts (no axes at all).
+       *
+       * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+       * `<c:dateAx>` / `<c:serAx>` all carry the same `<c:title>`
+       * shape per the OOXML schema, so the field round-trips on
+       * every chart family that has axes (bar / column / line /
+       * area / scatter).
+       */
+      axisTitleFillColor?: string;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -4481,6 +4530,15 @@ export interface SheetChart {
        * See the X-axis variant for the full semantics.
        */
       axisTitleLayout?: ChartManualLayout;
+      /**
+       * Value-axis-title background fill (solid). Same canonical
+       * `<c:title><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+       * </a:solidFill></c:spPr></c:title>` slot and grammar as
+       * {@link SheetChart.axes.x.axisTitleFillColor} — the field
+       * round-trips on `<c:valAx>` exactly as it does on `<c:catAx>`.
+       * See the X-axis variant for the full semantics.
+       */
+      axisTitleFillColor?: string;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -6197,6 +6255,49 @@ export interface ChartAxisInfo {
    * whether the source axis was a category or value axis.
    */
   axisTitleLayout?: ChartManualLayout;
+  /**
+   * Axis-title background fill (solid sRGB) pulled from
+   * `<c:catAx><c:title><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+   * </a:solidFill></c:spPr></c:title></c:catAx>` (or `<c:valAx>` /
+   * `<c:dateAx>` / `<c:serAx>`). Reflects Excel's "Format Axis Title
+   * -> Fill -> Solid fill -> Color" picker.
+   *
+   * Surfaced as the 6-character uppercase hex string the writer round-
+   * trips (`"FFFF00"` / `"1070CA"`) — the leading `#` is stripped on
+   * read so the value threads straight into the writer-side
+   * {@link SheetChart.axes.x.axisTitleFillColor} without
+   * transformation. Color picks other than the literal sRGB form
+   * (`<a:schemeClr>` theme references, `<a:hslClr>`, `<a:sysClr>`,
+   * `<a:prstClr>`) collapse to `undefined` — the reader records only
+   * the resolvable RGB triple to keep the round-trip lossless against
+   * {@link cloneChart} -> {@link writeXlsx}. Non-solid fills
+   * (`<a:noFill>`, `<a:gradFill>`, `<a:pattFill>`, `<a:blipFill>`)
+   * likewise drop to `undefined`. Malformed `val` tokens (wrong
+   * length, non-hex characters) drop to `undefined` rather than
+   * fabricate a value the writer would round-trip into a malformed
+   * `<a:srgbClr>`.
+   *
+   * Independent of {@link ChartAxisInfo.axisTitleColor}: the fill
+   * lives on `<c:title><c:spPr>`, the font color lives on
+   * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>` —
+   * the two readers walk disjoint paths so a caller can pin both
+   * knobs without conflict.
+   *
+   * Reported as `undefined` whenever the axis omits `<c:title>`
+   * entirely or when the `<c:spPr><a:solidFill><a:srgbClr>` chain is
+   * malformed at any link. Mirrors the chart-level
+   * {@link Chart.titleFillColor} so a parsed value slots straight
+   * back into the writer-side
+   * {@link SheetChart.axes.x.axisTitleFillColor} without
+   * transformation.
+   *
+   * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+   * `<c:dateAx>` / `<c:serAx>` all carry the same `<c:title>` shape
+   * per the OOXML schema. The reader surfaces the value on every
+   * axis flavour so a parsed chart preserves the fill regardless of
+   * whether the source axis was a category or value axis.
+   */
+  axisTitleFillColor?: string;
   /**
    * Major / minor gridline visibility. Omitted when neither
    * `<c:majorGridlines>` nor `<c:minorGridlines>` is declared on the
