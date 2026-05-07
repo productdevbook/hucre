@@ -34,6 +34,7 @@ import {
 import {
   type ResolvedManualLayout,
   buildManualLayout,
+  normalizeChartManualLayout,
   normalizeLayoutCoordinate,
   normalizeManualLayout,
   parseManualLayout,
@@ -1364,20 +1365,7 @@ export function normalizeLegendStrikethrough(value: boolean | undefined): boolea
 export function normalizeLegendLayout(
   value: ChartManualLayout | undefined,
 ): ChartManualLayout | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const out: ChartManualLayout = {};
-  const x = normalizeLayoutCoordinate(value.x);
-  if (x !== undefined) out.x = x;
-  const y = normalizeLayoutCoordinate(value.y);
-  if (y !== undefined) out.y = y;
-  const w = normalizeLayoutCoordinate(value.w);
-  if (w !== undefined) out.w = w;
-  const h = normalizeLayoutCoordinate(value.h);
-  if (h !== undefined) out.h = h;
-  if (out.x === undefined && out.y === undefined && out.w === undefined && out.h === undefined) {
-    return undefined;
-  }
-  return out;
+  return normalizeChartManualLayout(value);
 }
 
 /**
@@ -1397,4 +1385,397 @@ export function normalizeLegendBorderWidth(value: number | undefined): number | 
   if (snapped < LEGEND_BORDER_WIDTH_MIN_PT) return LEGEND_BORDER_WIDTH_MIN_PT;
   if (snapped > LEGEND_BORDER_WIDTH_MAX_PT) return LEGEND_BORDER_WIDTH_MAX_PT;
   return snapped;
+}
+
+
+// ── Clone resolvers (3-arg source/override) ───────────────────────
+
+/**
+ * Resolve a `legendOverlay` override.
+ *
+ * `undefined` → inherit the source's parsed `legendOverlay`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               OOXML `false` default — the legend reserves its own
+ *               slot, no overlap with the plot area).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `plotVisOnly` / `roundedCorners` so the chart-
+ * level toggles compose the same way at the call site. Callers should
+ * gate the result on the resolved legend visibility — when no legend
+ * is emitted, the overlay flag has no slot in the rendered chart.
+ */
+export function resolveCloneLegendOverlay(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve a `legendEntries` override.
+ *
+ * `undefined` → inherit the source's parsed `legendEntries`.
+ * `null`      → drop the inherited list (the writer emits no
+ *               `<c:legendEntry>` children).
+ * `array`     → replace the inherited list outright. Empty arrays
+ *               collapse to `undefined` so the writer never emits an
+ *               empty selector block — Excel's reference serialization
+ *               omits the children entirely when no entry is hidden.
+ *
+ * Callers should gate the result on the resolved legend visibility —
+ * when no legend is emitted, the entry list has no slot in the rendered
+ * chart. Mirrors the `legendOverlay` grammar so the legend-scoped
+ * fields compose the same way at the call site.
+ *
+ * The returned array is always a fresh copy of the source / override
+ * (never a shared reference) so a downstream mutation to the cloned
+ * `SheetChart` never leaks back into the parsed `Chart` the caller
+ * passed in. Each entry is also copied to keep the writer's resolution
+ * pass free to dedupe / sort without touching the inputs.
+ */
+export function resolveCloneLegendEntries(
+  sourceValue: ChartLegendEntry[] | undefined,
+  override: ChartLegendEntry[] | null | undefined,
+): ChartLegendEntry[] | undefined {
+  if (override === undefined) {
+    if (!sourceValue || sourceValue.length === 0) return undefined;
+    return sourceValue.map((entry) => ({ ...entry }));
+  }
+  if (override === null) return undefined;
+  if (!Array.isArray(override) || override.length === 0) return undefined;
+  return override.map((entry) => ({ ...entry }));
+}
+
+/**
+ * Resolve a `legendFontSize` override.
+ *
+ * `undefined` → inherit the source's parsed `legendFontSize` (after
+ *               running it through {@link normalizeTitleFontSize} so
+ *               an out-of-range parsed value drops cleanly).
+ * `null`      → drop the inherited value (the writer falls back to
+ *               Excel's theme-default 9pt — no `<c:txPr>` block on
+ *               the legend).
+ * `number`    → replace, after clamping / rounding through
+ *               {@link normalizeTitleFontSize}.
+ *
+ * The grammar mirrors `titleFontSize` / `axisTitleFontSize` /
+ * `axes.x.labelFontSize` so the typography knobs compose the same way
+ * at the call site. Callers should gate the result on the resolved
+ * legend visibility — when no legend is emitted, the size has no slot
+ * in the rendered chart.
+ */
+export function resolveCloneLegendFontSize(
+  sourceValue: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) return normalizeTitleFontSize(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleFontSize(override);
+}
+
+/**
+ * Resolve a `legendBold` override.
+ *
+ * `undefined` → inherit the source's parsed `legendBold` (after
+ *               running it through {@link normalizeLegendBold} so a
+ *               typed escape on the source path drops cleanly).
+ * `null`      → drop the inherited flag (the writer falls back to the
+ *               OOXML default — no `b` attribute, equivalent to
+ *               non-bold).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `titleBold` / `axisTitleBold` /
+ * `axes.x.labelBold` so the typography knobs compose the same way at
+ * the call site. Callers should gate the result on the resolved legend
+ * visibility — when no legend is emitted, the flag has no slot in the
+ * rendered chart.
+ */
+export function resolveCloneLegendBold(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return normalizeLegendBold(sourceValue);
+  if (override === null) return undefined;
+  return normalizeLegendBold(override);
+}
+
+/**
+ * Resolve a `legendItalic` override.
+ *
+ * `undefined` → inherit the source's parsed `legendItalic` (after
+ *               running it through {@link normalizeLegendItalic} so a
+ *               typed escape on the source path drops cleanly).
+ * `null`      → drop the inherited flag (the writer falls back to the
+ *               OOXML default — no `i` attribute, equivalent to
+ *               non-italic).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `titleItalic` / `axisTitleItalic` /
+ * `axes.x.labelItalic` so the typography knobs compose the same way at
+ * the call site. Callers should gate the result on the resolved legend
+ * visibility — when no legend is emitted, the flag has no slot in the
+ * rendered chart.
+ */
+export function resolveCloneLegendItalic(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return normalizeLegendItalic(sourceValue);
+  if (override === null) return undefined;
+  return normalizeLegendItalic(override);
+}
+
+/**
+ * Resolve a `legendUnderline` override.
+ *
+ * `undefined` → inherit the source's parsed `legendUnderline` (after
+ *               running it through {@link normalizeLegendUnderline}
+ *               so a typed escape on the source path drops cleanly).
+ * `null`      → drop the inherited flag (the writer falls back to the
+ *               OOXML default — no `u` attribute, equivalent to
+ *               non-underlined).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `titleUnderline` / `axisTitleUnderline` /
+ * `axes.x.labelUnderline` so the typography knobs compose the same way
+ * at the call site. Callers should gate the result on the resolved
+ * legend visibility — when no legend is emitted, the flag has no slot
+ * in the rendered chart.
+ */
+export function resolveCloneLegendUnderline(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return normalizeLegendUnderline(sourceValue);
+  if (override === null) return undefined;
+  return normalizeLegendUnderline(override);
+}
+
+/**
+ * Resolve a `legendStrikethrough` override.
+ *
+ * `undefined` → inherit the source's parsed `legendStrikethrough`
+ *               (after running it through
+ *               {@link normalizeLegendStrikethrough} so a typed escape
+ *               on the source path drops cleanly).
+ * `null`      → drop the inherited flag (the writer falls back to the
+ *               OOXML default — no `strike` attribute, equivalent to
+ *               non-strikethrough).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `titleStrikethrough` / `axisTitleStrike` /
+ * `axes.x.labelStrikethrough` so the typography knobs compose the same
+ * way at the call site. Callers should gate the result on the resolved
+ * legend visibility — when no legend is emitted, the flag has no slot
+ * in the rendered chart.
+ */
+export function resolveCloneLegendStrikethrough(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return normalizeLegendStrikethrough(sourceValue);
+  if (override === null) return undefined;
+  return normalizeLegendStrikethrough(override);
+}
+
+/**
+ * Resolve a `legendFontColor` override.
+ *
+ * `undefined` → inherit the source's parsed `legendFontColor` (after
+ *               running it through {@link normalizeTitleColor} so a
+ *               malformed source value drops cleanly).
+ * `null`      → drop the inherited fill (the writer falls back to the
+ *               theme text color — no `<a:solidFill>` block on the
+ *               legend's `<a:defRPr>`).
+ * `string`    → replace, after running through
+ *               {@link normalizeTitleColor} so the override accepts
+ *               `"FF0000"` / `"#FF0000"` / `"ff0000"` and collapses
+ *               malformed tokens to `undefined`.
+ *
+ * The grammar mirrors `titleColor` / `axisTitleColor` /
+ * `axes.x.labelColor` so the typography knobs compose the same way at
+ * the call site. Callers should gate the result on the resolved
+ * legend visibility — when no legend is emitted, the fill has no slot
+ * in the rendered chart.
+ */
+export function resolveCloneLegendFontColor(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeTitleColor(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleColor(override);
+}
+
+/**
+ * Resolve a `legendFontFamily` override.
+ *
+ * `undefined` → inherit the source's parsed `legendFontFamily` (after
+ *               running it through {@link normalizeLegendFontFamily}
+ *               so a malformed source value drops cleanly).
+ * `null`      → drop the inherited typeface (the writer falls back to
+ *               the theme typeface — no `<a:latin>` element on the
+ *               legend's `<a:defRPr>`).
+ * `string`    → replace, after running through
+ *               {@link normalizeLegendFontFamily} so the override
+ *               accepts any caller spelling that the writer will
+ *               accept (with surrounding whitespace trimmed; empty /
+ *               whitespace-only strings collapse to a drop).
+ *
+ * The grammar mirrors `titleFontFamily` /
+ * `axes.x.axisTitleFontFamily` / `axes.x.labelFontFamily` so the
+ * typography knobs compose the same way at the call site. Callers
+ * should gate the result on the resolved legend visibility — when no
+ * legend is emitted, the typeface has no slot in the rendered chart.
+ */
+export function resolveCloneLegendFontFamily(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeLegendFontFamily(sourceValue);
+  if (override === null) return undefined;
+  return normalizeLegendFontFamily(override);
+}
+
+/**
+ * Resolve a `legendLayout` override.
+ *
+ * `undefined` → inherit the source's parsed `legendLayout` (after
+ *               running it through {@link normalizeLegendLayout} so a
+ *               malformed source value drops cleanly).
+ * `null`      → drop the inherited layout (the writer falls back to
+ *               Excel's auto-layout position — no `<c:layout>` block
+ *               on the legend).
+ * `ChartManualLayout` → replace, after running through
+ *               {@link normalizeLegendLayout}. Coordinates outside the
+ *               `0..1` band collapse on the matching axis so the
+ *               cloned `SheetChart` always carries a value the writer
+ *               will accept; an override whose every axis dropped
+ *               collapses to `undefined` so the writer skips the
+ *               `<c:layout>` block entirely.
+ *
+ * The grammar mirrors `legendOverlay` / `legendEntries` /
+ * `legendFontSize` so the legend knobs compose the same way at the
+ * call site. Callers should gate the result on the resolved legend
+ * visibility — when no legend is emitted, the layout has no slot in
+ * the rendered chart.
+ */
+export function resolveCloneLegendLayout(
+  sourceValue: ChartManualLayout | undefined,
+  override: ChartManualLayout | null | undefined,
+): ChartManualLayout | undefined {
+  if (override === undefined) return normalizeLegendLayout(sourceValue);
+  if (override === null) return undefined;
+  return normalizeLegendLayout(override);
+}
+
+/**
+ * Resolve a `legendFillColor` override.
+ *
+ * `undefined` → inherit the source's parsed `legendFillColor` (after
+ *               running it through {@link normalizeTitleColor} so a
+ *               malformed source value drops cleanly — the hex
+ *               normalizer is purely shape-based and applies
+ *               identically to every `<a:srgbClr val="RRGGBB"/>`
+ *               slot).
+ * `null`      → drop the inherited fill (the writer emits no
+ *               `<c:spPr>` block on `<c:legend>`, falling back to the
+ *               theme default — typically a transparent legend
+ *               background).
+ * `string`    → replace, after running through
+ *               {@link normalizeTitleColor} so the override accepts
+ *               `"FF0000"` / `"#FF0000"` / `"ff0000"` and collapses
+ *               malformed tokens to `undefined`.
+ *
+ * The grammar mirrors `plotAreaFillColor` / `titleColor` /
+ * `axisTitleColor` / `legendFontColor` so the fill / color knobs
+ * compose the same way at the call site. Callers should gate the
+ * result on the resolved legend visibility — when no legend is
+ * emitted, the fill has no slot in the rendered chart.
+ *
+ * Independent of `legendFontColor`: the two knobs target different
+ * children of `<c:legend>` (`<c:spPr>` for the background fill,
+ * `<c:txPr>` for the font color), so a caller can pin both without
+ * conflict.
+ */
+export function resolveCloneLegendFillColor(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeTitleColor(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleColor(override);
+}
+
+/**
+ * Resolve a `legendBorderColor` override.
+ *
+ * `undefined` → inherit the source's parsed `legendBorderColor` (after
+ *               running it through {@link normalizeTitleColor} so a
+ *               malformed source value drops cleanly — the hex
+ *               normalizer is purely shape-based and applies
+ *               identically to every `<a:srgbClr val="RRGGBB"/>`
+ *               slot).
+ * `null`      → drop the inherited stroke (the writer emits no
+ *               `<a:ln>` block on `<c:legend><c:spPr>`, the legend
+ *               inherits the auto-stroke Excel picks from the chart's
+ *               theme).
+ * `string`    → replace with the normalized 6-character uppercase hex
+ *               form. Malformed overrides collapse to `undefined` via
+ *               the normalizer so the cloned `SheetChart` always
+ *               carries a value the writer will accept.
+ *
+ * The grammar mirrors `legendFillColor` so the legend `<c:spPr>` knobs
+ * compose the same way at the call site. Callers should gate the
+ * result on the resolved legend visibility — when no legend is
+ * emitted, the stroke has no slot in the rendered chart.
+ *
+ * Independent of `legendFillColor`: the two knobs target different
+ * children of `<c:legend><c:spPr>` (`<a:solidFill>` for fill,
+ * `<a:ln>` for stroke), so a caller can pin both without conflict.
+ */
+export function resolveCloneLegendBorderColor(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeTitleColor(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleColor(override);
+}
+
+/**
+ * Resolve a `legendBorderWidth` override.
+ *
+ * `undefined` → inherit the source's parsed `legendBorderWidth` (after
+ *               running it through {@link normalizeLegendBorderWidth}
+ *               so a malformed source value drops cleanly).
+ * `null`      → drop the inherited width (the writer emits `<a:ln>`
+ *               without a `w` attribute, the line keeps Excel's
+ *               auto-thickness).
+ * `number`    → replace with the clamped / snapped point value.
+ *               Non-finite / non-numeric overrides collapse to
+ *               `undefined` via the normalizer so the cloned
+ *               `SheetChart` always carries a value the writer will
+ *               accept.
+ *
+ * The grammar mirrors `plotAreaBorderWidth` / the series-line stroke
+ * width so the chart `<a:ln w=..>` knobs compose the same way at the
+ * call site. Callers should gate the result on the resolved legend
+ * visibility — when no legend is emitted, the width has no slot in the
+ * rendered chart.
+ *
+ * Independent of `legendBorderColor`: both knobs land on the same
+ * `<a:ln>` element but on a different slot (color is
+ * `<a:solidFill><a:srgbClr>`, width is the `w` attribute on `<a:ln>`),
+ * so a caller can pin both without conflict.
+ */
+export function resolveCloneLegendBorderWidth(
+  sourceValue: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) return normalizeLegendBorderWidth(sourceValue);
+  if (override === null) return undefined;
+  return normalizeLegendBorderWidth(override);
 }

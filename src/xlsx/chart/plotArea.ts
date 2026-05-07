@@ -37,8 +37,9 @@ import {
 import {
   type ResolvedManualLayout,
   buildManualLayout,
-  parseManualLayout,
+  normalizeChartManualLayout,
   normalizeManualLayout,
+  parseManualLayout,
 } from "./layout";
 import {
   childElements,
@@ -1617,4 +1618,306 @@ export function resolveScatterStyle(chart: SheetChart): ChartScatterStyle {
   const raw = chart.scatterStyle;
   if (raw && SCATTER_STYLE_VALUES.has(raw)) return raw;
   return "lineMarker";
+}
+
+
+// ── Clone-side plot-area constants ────────────────────────────────
+
+const PLOT_AREA_BORDER_WIDTH_MIN_PT = 0.25;
+const PLOT_AREA_BORDER_WIDTH_MAX_PT = 13.5;
+
+// ── Clone resolvers (3-arg source/override) ───────────────────────
+
+/**
+ * Resolve a `varyColors` override.
+ *
+ * `undefined` → inherit the source's parsed `varyColors`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               per-family default — `true` for pie / doughnut, `false`
+ *               everywhere else).
+ * `boolean`   → replace.
+ *
+ * The override grammar mirrors `dispBlanksAs` so the two chart-level
+ * toggles compose the same way at the call site.
+ */
+export function resolveCloneVaryColors(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve an `upDownBars` override.
+ *
+ * `undefined` → inherit the source's parsed `upDownBars`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               OOXML default — no `<c:upDownBars>` element emitted).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `roundedCorners` / `plotVisOnly` so the chart-
+ * level line-only toggle composes the same way at the call site.
+ * `false` collapses to absence on the writer side because the writer
+ * only emits `<c:upDownBars>` when the flag is literally `true`; the
+ * `false` value still surfaces in the cloned `SheetChart` for
+ * symmetry with other resolve helpers, leaving the renderer to drop
+ * it during emit.
+ */
+export function resolveCloneUpDownBars(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve an `upDownBarsGapWidth` override.
+ *
+ * `undefined` → inherit the source's parsed `upDownBarsGapWidth`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               OOXML default `150` Excel itself emits on a fresh
+ *               toggle).
+ * `number`    → replace. Out-of-range or non-finite values still
+ *               surface in the cloned `SheetChart` for symmetry with
+ *               the other override helpers; the writer's
+ *               `clampUpDownBarsGapWidth` then drops them at emit
+ *               time so a fresh chart matches Excel's reference
+ *               serialization.
+ *
+ * The grammar mirrors `gapWidth` / `holeSize` / `firstSliceAng` so the
+ * numeric chart-level knobs compose the same way at the call site.
+ */
+export function resolveCloneUpDownBarsGapWidth(
+  sourceValue: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve a `plotAreaLayout` override.
+ *
+ * `undefined` → inherit the source's parsed `plotAreaLayout` (after
+ *               running it through {@link normalizeLegendLayout} so a
+ *               malformed source value drops cleanly — the normalizer
+ *               is purely shape-based, no host-element awareness, so it
+ *               applies identically to legend / plot-area layouts).
+ * `null`      → drop the inherited layout (the writer falls back to the
+ *               bare `<c:layout/>` placeholder Excel itself emits on
+ *               every auto-layout chart).
+ * `ChartManualLayout` → replace, after running through
+ *               {@link normalizeLegendLayout}. Coordinates outside the
+ *               `0..1` band collapse on the matching axis so the
+ *               cloned `SheetChart` always carries a value the writer
+ *               will accept; an override whose every axis dropped
+ *               collapses to `undefined` so the writer skips the
+ *               `<c:manualLayout>` body.
+ *
+ * The grammar mirrors `resolveCloneLegendLayout` so the manual-layout knobs
+ * compose the same way at the call site. Unlike the legend variant, the
+ * caller does not need to gate the result on any visibility flag —
+ * every chart has a `<c:plotArea>` element to host `<c:layout>`.
+ */
+export function resolveClonePlotAreaLayout(
+  sourceValue: ChartManualLayout | undefined,
+  override: ChartManualLayout | null | undefined,
+): ChartManualLayout | undefined {
+  if (override === undefined) return normalizeChartManualLayout(sourceValue);
+  if (override === null) return undefined;
+  return normalizeChartManualLayout(override);
+}
+
+/**
+ * Resolve a `plotAreaFillColor` override.
+ *
+ * `undefined` → inherit the source's parsed `plotAreaFillColor` (after
+ *               running it through {@link normalizePlotAreaFillColor}
+ *               so a malformed source value drops cleanly).
+ * `null`      → drop the inherited fill (the writer emits no `<c:spPr>`
+ *               block, the plot area inherits the auto-fill Excel
+ *               picks from the chart's theme).
+ * `string`    → replace with the normalized 6-character uppercase hex
+ *               form. Malformed overrides collapse to `undefined` via
+ *               the normalizer so the cloned `SheetChart` always
+ *               carries a value the writer will accept.
+ *
+ * The grammar mirrors `titleColor` / `axes.x.axisTitleColor` /
+ * `axes.x.labelColor` so the chart `<a:srgbClr>` knobs compose the
+ * same way at the call site. Unlike those text-color knobs, the
+ * plot-area fill is never gated on a visibility flag — every chart has
+ * a `<c:plotArea>` element to host the fill.
+ */
+export function resolveClonePlotAreaFillColor(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizePlotAreaFillColor(sourceValue);
+  if (override === null) return undefined;
+  return normalizePlotAreaFillColor(override);
+}
+
+/**
+ * Resolve a `plotAreaBorderColor` override.
+ *
+ * `undefined` → inherit the source's parsed `plotAreaBorderColor`
+ *               (after running it through
+ *               {@link normalizePlotAreaBorderColor} so a malformed
+ *               source value drops cleanly).
+ * `null`      → drop the inherited stroke (the writer emits no
+ *               `<a:ln>` block on `<c:plotArea><c:spPr>`, the plot
+ *               area inherits the auto-stroke Excel picks from the
+ *               chart's theme).
+ * `string`    → replace with the normalized 6-character uppercase hex
+ *               form. Malformed overrides collapse to `undefined` via
+ *               the normalizer so the cloned `SheetChart` always
+ *               carries a value the writer will accept.
+ *
+ * The grammar mirrors `plotAreaFillColor` so the chart `<c:spPr>`
+ * knobs compose the same way at the call site. Like the fill knob,
+ * the border is never gated on a visibility flag — every chart has a
+ * `<c:plotArea>` element to host the stroke.
+ */
+export function resolveClonePlotAreaBorderColor(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizePlotAreaBorderColor(sourceValue);
+  if (override === null) return undefined;
+  return normalizePlotAreaBorderColor(override);
+}
+
+/**
+ * Normalize a `plotAreaBorderWidth` value for the cloned `SheetChart`.
+ * Mirrors the writer's `clampStrokeWidthPt` — values are clamped to the
+ * `0.25..13.5` pt band Excel's UI exposes and snapped to the 0.25 pt
+ * grid so a parsed-then-cloned-then-written width does not drift across
+ * round-trips (Excel rounds in the UI anyway). Non-finite / non-numeric
+ * tokens (`NaN`, `Infinity`, strings, `null` from an untyped caller)
+ * collapse to `undefined` so the cloned chart drops the field rather
+ * than carry a value the writer would silently elide back to absence.
+ */
+export function normalizeClonePlotAreaBorderWidth(value: number | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
+  const snapped = Math.round(value * 4) / 4;
+  if (snapped < PLOT_AREA_BORDER_WIDTH_MIN_PT) return PLOT_AREA_BORDER_WIDTH_MIN_PT;
+  if (snapped > PLOT_AREA_BORDER_WIDTH_MAX_PT) return PLOT_AREA_BORDER_WIDTH_MAX_PT;
+  return snapped;
+}
+
+/**
+ * Resolve a `plotAreaBorderWidth` override.
+ *
+ * `undefined` → inherit the source's parsed `plotAreaBorderWidth`
+ *               (after running it through
+ *               {@link normalizeClonePlotAreaBorderWidth} so a malformed
+ *               source value drops cleanly).
+ * `null`      → drop the inherited width (the writer emits `<a:ln>`
+ *               without a `w` attribute, the line keeps Excel's
+ *               auto-thickness).
+ * `number`    → replace with the clamped / snapped point value.
+ *               Non-finite / non-numeric overrides collapse to
+ *               `undefined` via the normalizer so the cloned
+ *               `SheetChart` always carries a value the writer will
+ *               accept.
+ *
+ * The grammar mirrors the series-line stroke width so the chart
+ * `<a:ln w=..>` knobs compose the same way at the call site. Like the
+ * border-color knob, the width is never gated on a visibility flag —
+ * every chart has a `<c:plotArea>` element to host the stroke.
+ */
+export function resolveClonePlotAreaBorderWidth(
+  sourceValue: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) return normalizeClonePlotAreaBorderWidth(sourceValue);
+  if (override === null) return undefined;
+  return normalizeClonePlotAreaBorderWidth(override);
+}
+
+/**
+ * Resolve a `dropLines` override.
+ *
+ * `undefined` → inherit the source's parsed `dropLines`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               OOXML default — no `<c:dropLines>` element).
+ * `boolean`   → replace. Only `true` round-trips into the cloned
+ *               `SheetChart`; `false` collapses to `undefined` because
+ *               the writer treats absence and `false` identically (no
+ *               element emitted).
+ *
+ * The grammar mirrors `plotVisOnly` / `roundedCorners` so the chart-
+ * level toggles compose the same way at the call site. Callers should
+ * gate the result on the resolved chart family — `<c:dropLines>` has
+ * no slot on `<c:barChart>` / `<c:pieChart>` / `<c:scatterChart>`.
+ */
+export function resolveCloneDropLines(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) {
+    return sourceValue === true ? true : undefined;
+  }
+  if (override === null) return undefined;
+  return override === true ? true : undefined;
+}
+
+/**
+ * Resolve a `hiLowLines` override. Mirrors {@link resolveCloneDropLines};
+ * the only difference is the per-family scope — `<c:hiLowLines>` has
+ * no slot on `<c:areaChart>`.
+ */
+export function resolveCloneHiLowLines(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) {
+    return sourceValue === true ? true : undefined;
+  }
+  if (override === null) return undefined;
+  return override === true ? true : undefined;
+}
+
+/**
+ * Resolve a `serLines` override. Mirrors {@link resolveCloneDropLines} /
+ * {@link resolveCloneHiLowLines}; the only difference is the per-family
+ * scope — `<c:serLines>` has no slot on `<c:lineChart>` /
+ * `<c:areaChart>` / `<c:pieChart>` / `<c:doughnutChart>` /
+ * `<c:scatterChart>`.
+ */
+export function resolveCloneSerLines(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) {
+    return sourceValue === true ? true : undefined;
+  }
+  if (override === null) return undefined;
+  return override === true ? true : undefined;
+}
+
+/**
+ * Resolve a `scatterStyle` override.
+ *
+ * `undefined` → inherit the source's parsed `scatterStyle`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               default `"lineMarker"`).
+ * value       → replace.
+ *
+ * The grammar mirrors `dispBlanksAs` / `varyColors` so the chart-level
+ * toggles compose the same way at the call site.
+ */
+export function resolveCloneScatterStyle(
+  sourceValue: ChartScatterStyle | undefined,
+  override: ChartScatterStyle | null | undefined,
+): ChartScatterStyle | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
 }

@@ -951,3 +951,59 @@ export function buildDataTableTxPr(
     ]),
   ]);
 }
+
+
+// ── Clone resolvers (3-arg source/override) ───────────────────────
+
+/**
+ * Resolve a `dataTable` (plot-area data-table) override.
+ *
+ * `undefined` → inherit the source's parsed {@link Chart.dataTable}.
+ * `null`      → drop the inherited block so the writer skips
+ *               `<c:dTable>` entirely (no data table rendered).
+ * `false`     → equivalent to `null` (suppression); kept distinct in
+ *               the API surface so callers can write `dataTable: false`
+ *               for symmetry with the writer's `boolean | object` shape.
+ * `true`      → enable with the OOXML reference defaults (every flag
+ *               `true`).
+ * `object`    → replace the inherited block wholesale (no per-field
+ *               merge with the source — pass every flag the cloned
+ *               table should render). Each unspecified field falls back
+ *               to `true` at the writer side because every `<c:dTable>`
+ *               boolean child is required on `CT_DTable` and Excel
+ *               always emits all four.
+ *
+ * The grammar mirrors {@link CloneChartSeriesOverride.marker} (and the
+ * other `object | null` / wholesale-replace patterns) so the
+ * chart-level block toggles compose the same way at the call site.
+ *
+ * The caller already short-circuits this for pie / doughnut clones
+ * because the OOXML schema places `<c:dTable>` inside `<c:plotArea>`
+ * alongside the axes, and pie / doughnut have no axes at all.
+ */
+export function resolveCloneDataTable(
+  sourceValue: ChartDataTable | undefined,
+  override: ChartDataTable | boolean | null | undefined,
+): ChartDataTable | boolean | undefined {
+  if (override === undefined) {
+    // Inherit — pass the source through verbatim. The writer accepts
+    // both the boolean and object shapes, so a parsed `ChartDataTable`
+    // round-trips directly.
+    return sourceValue;
+  }
+  if (override === null) {
+    // Drop the inherited block. The writer treats `undefined` as
+    // suppression and skips `<c:dTable>` entirely.
+    return undefined;
+  }
+  if (override === false) {
+    // Symmetric with `null` — kept distinct in the API surface for
+    // ergonomic alignment with the writer's `boolean | object` shape,
+    // but emits the same on-the-wire result (no `<c:dTable>`).
+    return undefined;
+  }
+  // `true` or a {@link ChartDataTable} object — replace the inherited
+  // block wholesale. The writer accepts both forms and falls back to
+  // the OOXML reference defaults for any field the object leaves unset.
+  return override;
+}

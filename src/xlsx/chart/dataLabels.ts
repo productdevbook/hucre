@@ -1152,3 +1152,46 @@ export function buildDataLabelsTxPr(
     ]),
   ]);
 }
+
+
+// ── Clone resolvers (3-arg source/override) ───────────────────────
+
+/**
+ * Resolve a chart-level data-labels override.
+ *
+ * `undefined` → inherit the source's parsed `dataLabels` (downcast from
+ * the read-side {@link ChartDataLabelsInfo} to the write-side
+ * {@link ChartDataLabels} shape — they share field semantics).
+ * `null`      → drop the inherited block.
+ * object      → replace.
+ */
+export function resolveChartDataLabels(
+  sourceLabels: ChartDataLabelsInfo | undefined,
+  override: ChartDataLabels | null | undefined,
+): ChartDataLabels | undefined {
+  if (override === undefined) {
+    return sourceLabels ? { ...sourceLabels } : undefined;
+  }
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve a per-series data-labels override.
+ *
+ * `undefined` → inherit the source series' `dataLabels`.
+ * `null`      → drop the inherited block (series will fall back to
+ *               whatever the chart-level default is at write time).
+ * `false`     → suppress labels on this series alone.
+ * object      → replace.
+ */
+export function resolveSeriesDataLabels(
+  sourceLabels: ChartDataLabelsInfo | undefined,
+  override: ChartDataLabels | false | null | undefined,
+): ChartDataLabels | false | undefined {
+  if (override === undefined) {
+    return sourceLabels ? { ...sourceLabels } : undefined;
+  }
+  if (override === null) return undefined;
+  return override;
+}

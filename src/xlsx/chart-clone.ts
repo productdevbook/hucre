@@ -63,6 +63,19 @@ import {
   normalizeTitleRotation,
   normalizeTitleStrike,
   normalizeTitleUnderline,
+  resolveCloneTitleBold,
+  resolveCloneTitleBorderColor,
+  resolveCloneTitleBorderWidth,
+  resolveCloneTitleColor,
+  resolveCloneTitleFillColor,
+  resolveCloneTitleFontFamily,
+  resolveCloneTitleFontSize,
+  resolveCloneTitleItalic,
+  resolveCloneTitleLayout,
+  resolveCloneTitleOverlay,
+  resolveCloneTitleRotation,
+  resolveCloneTitleStrike,
+  resolveCloneTitleUnderline,
 } from "./chart/title";
 import {
   normalizeLegendBold,
@@ -72,6 +85,19 @@ import {
   normalizeLegendLayout,
   normalizeLegendStrikethrough,
   normalizeLegendUnderline,
+  resolveCloneLegendBold,
+  resolveCloneLegendBorderColor,
+  resolveCloneLegendBorderWidth,
+  resolveCloneLegendEntries,
+  resolveCloneLegendFillColor,
+  resolveCloneLegendFontColor,
+  resolveCloneLegendFontFamily,
+  resolveCloneLegendFontSize,
+  resolveCloneLegendItalic,
+  resolveCloneLegendLayout,
+  resolveCloneLegendOverlay,
+  resolveCloneLegendStrikethrough,
+  resolveCloneLegendUnderline,
 } from "./chart/legend";
 import {
   cloneMarker,
@@ -85,6 +111,21 @@ import {
 } from "./chart/series";
 import { applyOverride } from "./chart/util";
 import { resolveAxes, resolveCloneAutoTitleDeleted } from "./chart/axis";
+import {
+  resolveCloneDropLines,
+  resolveCloneHiLowLines,
+  resolveClonePlotAreaBorderColor,
+  resolveClonePlotAreaBorderWidth,
+  resolveClonePlotAreaFillColor,
+  resolveClonePlotAreaLayout,
+  resolveCloneScatterStyle,
+  resolveCloneSerLines,
+  resolveCloneUpDownBars,
+  resolveCloneUpDownBarsGapWidth,
+  resolveCloneVaryColors,
+} from "./chart/plotArea";
+import { resolveCloneDataTable } from "./chart/dataTable";
+import { resolveChartDataLabels, resolveSeriesDataLabels } from "./chart/dataLabels";
 
 // ── Public API ───────────────────────────────────────────────────────
 
@@ -2255,7 +2296,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // for the writer to populate. The override wins over the source's
   // parsed value; absence inherits, `null` drops, a `boolean` replaces.
   if (legend !== false) {
-    const resolvedLegendOverlay = resolveLegendOverlay(source.legendOverlay, options.legendOverlay);
+    const resolvedLegendOverlay = resolveCloneLegendOverlay(source.legendOverlay, options.legendOverlay);
     if (resolvedLegendOverlay !== undefined) out.legendOverlay = resolvedLegendOverlay;
 
     // `<c:legendEntry>` lives inside `<c:legend>`, so the same hidden /
@@ -2264,7 +2305,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // `undefined` inherits the parsed value, `null` drops it (the writer
     // emits no `<c:legendEntry>` children), a `ChartLegendEntry[]`
     // replaces it outright.
-    const resolvedLegendEntries = resolveLegendEntries(source.legendEntries, options.legendEntries);
+    const resolvedLegendEntries = resolveCloneLegendEntries(source.legendEntries, options.legendEntries);
     if (resolvedLegendEntries !== undefined) out.legendEntries = resolvedLegendEntries;
 
     // `<c:txPr>` only renders inside `<c:legend>`, so the same hidden /
@@ -2275,7 +2316,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // inherits the parsed value (after running it through the
     // half-step / range normalizer), `null` drops it (the writer
     // emits no `<c:txPr>` block), a number replaces.
-    const resolvedLegendFontSize = resolveLegendFontSize(
+    const resolvedLegendFontSize = resolveCloneLegendFontSize(
       source.legendFontSize,
       options.legendFontSize,
     );
@@ -2286,24 +2327,24 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // `titleBold` / `axisTitleBold` grammar: `undefined` inherits
     // (after running through the boolean normalizer), `null` drops it
     // (the writer emits no `<c:txPr>` block), a `boolean` replaces.
-    const resolvedLegendBold = resolveLegendBold(source.legendBold, options.legendBold);
+    const resolvedLegendBold = resolveCloneLegendBold(source.legendBold, options.legendBold);
     if (resolvedLegendBold !== undefined) out.legendBold = resolvedLegendBold;
 
     // Same hidden-legend scoping for the italic flag: `undefined`
     // inherits (after the boolean normalizer), `null` drops, a
     // `boolean` replaces.
-    const resolvedLegendItalic = resolveLegendItalic(source.legendItalic, options.legendItalic);
+    const resolvedLegendItalic = resolveCloneLegendItalic(source.legendItalic, options.legendItalic);
     if (resolvedLegendItalic !== undefined) out.legendItalic = resolvedLegendItalic;
 
     // Same hidden-legend scoping for the underline flag.
-    const resolvedLegendUnderline = resolveLegendUnderline(
+    const resolvedLegendUnderline = resolveCloneLegendUnderline(
       source.legendUnderline,
       options.legendUnderline,
     );
     if (resolvedLegendUnderline !== undefined) out.legendUnderline = resolvedLegendUnderline;
 
     // Same hidden-legend scoping for the strikethrough flag.
-    const resolvedLegendStrikethrough = resolveLegendStrikethrough(
+    const resolvedLegendStrikethrough = resolveCloneLegendStrikethrough(
       source.legendStrikethrough,
       options.legendStrikethrough,
     );
@@ -2314,7 +2355,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // Same hidden-legend scoping for the font color — `<c:txPr>` is
     // the shared host element. `undefined` inherits, `null` drops, a
     // hex string replaces.
-    const resolvedLegendFontColor = resolveLegendFontColor(
+    const resolvedLegendFontColor = resolveCloneLegendFontColor(
       source.legendFontColor,
       options.legendFontColor,
     );
@@ -2325,7 +2366,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // non-empty string replaces. Empty / whitespace-only / non-string
     // overrides collapse via the normalizer so the cloned
     // `SheetChart` always carries a value the writer will accept.
-    const resolvedLegendFontFamily = resolveLegendFontFamily(
+    const resolvedLegendFontFamily = resolveCloneLegendFontFamily(
       source.legendFontFamily,
       options.legendFontFamily,
     );
@@ -2340,7 +2381,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // `ChartManualLayout` replaces it. An override whose every
     // coordinate dropped on normalization collapses the entire layout
     // to `undefined` so the writer skips the `<c:layout>` block.
-    const resolvedLegendLayout = resolveLegendLayout(source.legendLayout, options.legendLayout);
+    const resolvedLegendLayout = resolveCloneLegendLayout(source.legendLayout, options.legendLayout);
     if (resolvedLegendLayout !== undefined) out.legendLayout = resolvedLegendLayout;
 
     // Same hidden-legend scoping for the background fill — `<c:spPr>`
@@ -2353,7 +2394,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // independently with `legendFontColor` — the two knobs target
     // different children of `<c:legend>` (`<c:spPr>` for the fill,
     // `<c:txPr>` for the font color).
-    const resolvedLegendFillColor = resolveLegendFillColor(
+    const resolvedLegendFillColor = resolveCloneLegendFillColor(
       source.legendFillColor,
       options.legendFillColor,
     );
@@ -2370,7 +2411,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // independently with `legendFillColor` — the two knobs share the
     // `<c:spPr>` host but land on different children (`<a:solidFill>`
     // for fill, `<a:ln>` for stroke).
-    const resolvedLegendBorderColor = resolveLegendBorderColor(
+    const resolvedLegendBorderColor = resolveCloneLegendBorderColor(
       source.legendBorderColor,
       options.legendBorderColor,
     );
@@ -2391,7 +2432,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // same `<a:ln>` element but on a different attribute (color is
     // `<a:solidFill><a:srgbClr>`, width is the `w` attribute on
     // `<a:ln>`).
-    const resolvedLegendBorderWidth = resolveLegendBorderWidth(
+    const resolvedLegendBorderWidth = resolveCloneLegendBorderWidth(
       source.legendBorderWidth,
       options.legendBorderWidth,
     );
@@ -2412,14 +2453,14 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
 
   // Plot-area manual layout is independent of the legend visibility —
   // every chart has a `<c:plotArea>` element to host `<c:layout>`. The
-  // resolution mirrors `resolveLegendLayout` exactly: `undefined`
+  // resolution mirrors `resolveCloneLegendLayout` exactly: `undefined`
   // inherits the source's parsed `plotAreaLayout` (after normalization
   // drops any out-of-range axes), `null` drops the inherited layout
   // (the writer falls back to the bare `<c:layout/>` placeholder), a
   // `ChartManualLayout` replaces it. An override whose every coordinate
   // dropped on normalization collapses the entire layout to `undefined`
   // so the writer skips the `<c:manualLayout>` body.
-  const resolvedPlotAreaLayout = resolvePlotAreaLayout(
+  const resolvedPlotAreaLayout = resolveClonePlotAreaLayout(
     source.plotAreaLayout,
     options.plotAreaLayout,
   );
@@ -2435,7 +2476,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // it. Malformed overrides collapse to `undefined` via the normalizer
   // so the cloned `SheetChart` always carries a value the writer will
   // accept.
-  const resolvedPlotAreaFillColor = resolvePlotAreaFillColor(
+  const resolvedPlotAreaFillColor = resolveClonePlotAreaFillColor(
     source.plotAreaFillColor,
     options.plotAreaFillColor,
   );
@@ -2451,7 +2492,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // independently with `plotAreaFillColor` — the two knobs share the
   // `<c:spPr>` host but land on different children (`<a:solidFill>`
   // for fill, `<a:ln>` for stroke).
-  const resolvedPlotAreaBorderColor = resolvePlotAreaBorderColor(
+  const resolvedPlotAreaBorderColor = resolveClonePlotAreaBorderColor(
     source.plotAreaBorderColor,
     options.plotAreaBorderColor,
   );
@@ -2468,7 +2509,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // emits `<a:ln>` without the `w` attribute, the line keeps Excel's
   // auto-thickness), a finite point value replaces it. Malformed
   // overrides collapse to `undefined` via the normalizer.
-  const resolvedPlotAreaBorderWidth = resolvePlotAreaBorderWidth(
+  const resolvedPlotAreaBorderWidth = resolveClonePlotAreaBorderWidth(
     source.plotAreaBorderWidth,
     options.plotAreaBorderWidth,
   );
@@ -2594,7 +2635,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // therefore never leaks the connector lines into a chart kind whose
   // schema rejects the element.
   if (type === "line" || type === "area") {
-    const dropLines = resolveDropLines(source.dropLines, options.dropLines);
+    const dropLines = resolveCloneDropLines(source.dropLines, options.dropLines);
     if (dropLines !== undefined) out.dropLines = dropLines;
   }
 
@@ -2605,7 +2646,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // into an area clone therefore never leaks the connector lines into
   // a chart kind whose schema rejects the element.
   if (type === "line") {
-    const hiLowLines = resolveHiLowLines(source.hiLowLines, options.hiLowLines);
+    const hiLowLines = resolveCloneHiLowLines(source.hiLowLines, options.hiLowLines);
     if (hiLowLines !== undefined) out.hiLowLines = hiLowLines;
   }
 
@@ -2618,7 +2659,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // never leaks the connector lines into a chart kind whose schema
   // rejects the element.
   if (type === "bar" || type === "column") {
-    const serLines = resolveSerLines(source.serLines, options.serLines);
+    const serLines = resolveCloneSerLines(source.serLines, options.serLines);
     if (serLines !== undefined) out.serLines = serLines;
   }
 
@@ -2655,7 +2696,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // replaces. Mirrors the legendOverlay scoping rule.
   const titleRendered = (out.showTitle ?? Boolean(out.title)) && out.title !== undefined;
   if (titleRendered) {
-    const resolvedTitleOverlay = resolveTitleOverlay(source.titleOverlay, options.titleOverlay);
+    const resolvedTitleOverlay = resolveCloneTitleOverlay(source.titleOverlay, options.titleOverlay);
     if (resolvedTitleOverlay !== undefined) out.titleOverlay = resolvedTitleOverlay;
 
     // `titleRotation` only renders inside `<c:title>` — a clone that
@@ -2665,7 +2706,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // a `number` replaces. Out-of-range / non-finite / non-numeric
     // overrides collapse via the writer's normalizer so the cloned
     // `SheetChart` always carries a value the writer will accept.
-    const resolvedTitleRotation = resolveTitleRotation(source.titleRotation, options.titleRotation);
+    const resolvedTitleRotation = resolveCloneTitleRotation(source.titleRotation, options.titleRotation);
     if (resolvedTitleRotation !== undefined) out.titleRotation = resolvedTitleRotation;
 
     // `titleFontSize` only renders inside `<c:title>` — a clone that
@@ -2677,7 +2718,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // exposes) / non-finite / non-numeric overrides collapse via the
     // normalizer so the cloned `SheetChart` always carries a value the
     // writer will accept.
-    const resolvedTitleFontSize = resolveTitleFontSize(source.titleFontSize, options.titleFontSize);
+    const resolvedTitleFontSize = resolveCloneTitleFontSize(source.titleFontSize, options.titleFontSize);
     if (resolvedTitleFontSize !== undefined) out.titleFontSize = resolvedTitleFontSize;
 
     // `titleBold` only renders inside `<c:title>` — a clone that
@@ -2687,7 +2728,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // value; absence inherits, `null` drops, a `boolean` replaces.
     // Non-boolean overrides collapse via the normalizer so the cloned
     // `SheetChart` always carries a value the writer will accept.
-    const resolvedTitleBold = resolveTitleBold(source.titleBold, options.titleBold);
+    const resolvedTitleBold = resolveCloneTitleBold(source.titleBold, options.titleBold);
     if (resolvedTitleBold !== undefined) out.titleBold = resolvedTitleBold;
 
     // `titleItalic` only renders inside `<c:title>` — a clone that
@@ -2698,7 +2739,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // `boolean` replaces. Non-boolean overrides collapse via the
     // normalizer so the cloned `SheetChart` always carries a value
     // the writer will accept.
-    const resolvedTitleItalic = resolveTitleItalic(source.titleItalic, options.titleItalic);
+    const resolvedTitleItalic = resolveCloneTitleItalic(source.titleItalic, options.titleItalic);
     if (resolvedTitleItalic !== undefined) out.titleItalic = resolvedTitleItalic;
 
     // `titleColor` only renders inside `<c:title>` — a clone that
@@ -2709,7 +2750,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // inherits, `null` drops, a hex string replaces. Malformed
     // overrides collapse via the normalizer so the cloned
     // `SheetChart` always carries a value the writer will accept.
-    const resolvedTitleColor = resolveTitleColor(source.titleColor, options.titleColor);
+    const resolvedTitleColor = resolveCloneTitleColor(source.titleColor, options.titleColor);
     if (resolvedTitleColor !== undefined) out.titleColor = resolvedTitleColor;
 
     // `titleStrike` only renders inside `<c:title>` — a clone that
@@ -2720,7 +2761,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // value; absence inherits, `null` drops, a `boolean` replaces.
     // Non-boolean overrides collapse via the normalizer so the cloned
     // `SheetChart` always carries a value the writer will accept.
-    const resolvedTitleStrike = resolveTitleStrike(source.titleStrike, options.titleStrike);
+    const resolvedTitleStrike = resolveCloneTitleStrike(source.titleStrike, options.titleStrike);
     if (resolvedTitleStrike !== undefined) out.titleStrike = resolvedTitleStrike;
 
     // `titleUnderline` only renders inside `<c:title>` — a clone that
@@ -2732,7 +2773,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // `boolean` replaces. Non-boolean overrides collapse via the
     // normalizer so the cloned `SheetChart` always carries a value
     // the writer will accept.
-    const resolvedTitleUnderline = resolveTitleUnderline(
+    const resolvedTitleUnderline = resolveCloneTitleUnderline(
       source.titleUnderline,
       options.titleUnderline,
     );
@@ -2748,7 +2789,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // Empty / whitespace-only strings and non-string overrides
     // collapse via the normalizer so the cloned `SheetChart` always
     // carries a value the writer will accept.
-    const resolvedTitleFontFamily = resolveTitleFontFamily(
+    const resolvedTitleFontFamily = resolveCloneTitleFontFamily(
       source.titleFontFamily,
       options.titleFontFamily,
     );
@@ -2767,7 +2808,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // grammar — both manual-layout slots use the same
     // `ChartManualLayout` shape, so a caller can thread a single
     // layout value through both call sites.
-    const resolvedTitleLayout = resolveTitleLayout(source.titleLayout, options.titleLayout);
+    const resolvedTitleLayout = resolveCloneTitleLayout(source.titleLayout, options.titleLayout);
     if (resolvedTitleLayout !== undefined) out.titleLayout = resolvedTitleLayout;
 
     // `titleFillColor` only renders inside `<c:title>` — a clone that
@@ -2782,7 +2823,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // children of `<c:title>` (`<c:spPr>` for the background fill,
     // `<c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>` for the
     // font color).
-    const resolvedTitleFillColor = resolveTitleFillColor(
+    const resolvedTitleFillColor = resolveCloneTitleFillColor(
       source.titleFillColor,
       options.titleFillColor,
     );
@@ -2799,7 +2840,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // Composes independently with `titleFillColor` — the two knobs
     // share the `<c:spPr>` host but land on different children
     // (`<a:solidFill>` for fill, `<a:ln>` for stroke).
-    const resolvedTitleBorderColor = resolveTitleBorderColor(
+    const resolvedTitleBorderColor = resolveCloneTitleBorderColor(
       source.titleBorderColor,
       options.titleBorderColor,
     );
@@ -2818,7 +2859,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // same `<a:ln>` element but on a different attribute (color is
     // `<a:solidFill><a:srgbClr>`, width is the `w` attribute on
     // `<a:ln>`).
-    const resolvedTitleBorderWidth = resolveTitleBorderWidth(
+    const resolvedTitleBorderWidth = resolveCloneTitleBorderWidth(
       source.titleBorderWidth,
       options.titleBorderWidth,
     );
@@ -2858,7 +2899,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   const resolvedDispBlanks = resolveDispBlanksAs(source.dispBlanksAs, options.dispBlanksAs);
   if (resolvedDispBlanks !== undefined) out.dispBlanksAs = resolvedDispBlanks;
 
-  const resolvedVaryColors = resolveVaryColors(source.varyColors, options.varyColors);
+  const resolvedVaryColors = resolveCloneVaryColors(source.varyColors, options.varyColors);
   if (resolvedVaryColors !== undefined) out.varyColors = resolvedVaryColors;
 
   const resolvedPlotVisOnly = resolvePlotVisOnly(source.plotVisOnly, options.plotVisOnly);
@@ -2893,7 +2934,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // whose schema rejects it. Override wins over the source's parsed
   // value.
   if (type !== "pie" && type !== "doughnut") {
-    const resolvedDataTable = resolveDataTable(source.dataTable, options.dataTable);
+    const resolvedDataTable = resolveCloneDataTable(source.dataTable, options.dataTable);
     if (resolvedDataTable !== undefined) out.dataTable = resolvedDataTable;
   }
 
@@ -2971,7 +3012,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // to line / column does not leak the preset into a chart kind whose
   // schema rejects it. Override wins over the source's parsed value.
   if (type === "scatter") {
-    const resolvedScatterStyle = resolveScatterStyle(source.scatterStyle, options.scatterStyle);
+    const resolvedScatterStyle = resolveCloneScatterStyle(source.scatterStyle, options.scatterStyle);
     if (resolvedScatterStyle !== undefined) out.scatterStyle = resolvedScatterStyle;
   }
 
@@ -2983,7 +3024,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // line-flavored chart-type elements. Override wins over the source's
   // parsed value.
   if (type === "line") {
-    const resolvedUpDownBars = resolveUpDownBars(source.upDownBars, options.upDownBars);
+    const resolvedUpDownBars = resolveCloneUpDownBars(source.upDownBars, options.upDownBars);
     if (resolvedUpDownBars !== undefined) out.upDownBars = resolvedUpDownBars;
 
     // `<c:upDownBars><c:gapWidth>` only makes sense when the parent
@@ -2993,7 +3034,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // the cloned `SheetChart` would surface a setting the writer would
     // never emit anyway.
     if (resolvedUpDownBars === true) {
-      const resolvedUpDownBarsGapWidth = resolveUpDownBarsGapWidth(
+      const resolvedUpDownBarsGapWidth = resolveCloneUpDownBarsGapWidth(
         source.upDownBarsGapWidth,
         options.upDownBarsGapWidth,
       );
@@ -3183,26 +3224,6 @@ function resolveDispBlanksAs(
   return override;
 }
 
-/**
- * Resolve a `varyColors` override.
- *
- * `undefined` → inherit the source's parsed `varyColors`.
- * `null`      → drop the inherited value (the writer falls back to the
- *               per-family default — `true` for pie / doughnut, `false`
- *               everywhere else).
- * `boolean`   → replace.
- *
- * The override grammar mirrors `dispBlanksAs` so the two chart-level
- * toggles compose the same way at the call site.
- */
-function resolveVaryColors(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
-}
 
 /**
  * Resolve a `plotVisOnly` override.
@@ -3347,58 +3368,6 @@ function resolveDate1904(
   return undefined;
 }
 
-/**
- * Resolve a `dataTable` (plot-area data-table) override.
- *
- * `undefined` → inherit the source's parsed {@link Chart.dataTable}.
- * `null`      → drop the inherited block so the writer skips
- *               `<c:dTable>` entirely (no data table rendered).
- * `false`     → equivalent to `null` (suppression); kept distinct in
- *               the API surface so callers can write `dataTable: false`
- *               for symmetry with the writer's `boolean | object` shape.
- * `true`      → enable with the OOXML reference defaults (every flag
- *               `true`).
- * `object`    → replace the inherited block wholesale (no per-field
- *               merge with the source — pass every flag the cloned
- *               table should render). Each unspecified field falls back
- *               to `true` at the writer side because every `<c:dTable>`
- *               boolean child is required on `CT_DTable` and Excel
- *               always emits all four.
- *
- * The grammar mirrors {@link CloneChartSeriesOverride.marker} (and the
- * other `object | null` / wholesale-replace patterns) so the
- * chart-level block toggles compose the same way at the call site.
- *
- * The caller already short-circuits this for pie / doughnut clones
- * because the OOXML schema places `<c:dTable>` inside `<c:plotArea>`
- * alongside the axes, and pie / doughnut have no axes at all.
- */
-function resolveDataTable(
-  sourceValue: ChartDataTable | undefined,
-  override: ChartDataTable | boolean | null | undefined,
-): ChartDataTable | boolean | undefined {
-  if (override === undefined) {
-    // Inherit — pass the source through verbatim. The writer accepts
-    // both the boolean and object shapes, so a parsed `ChartDataTable`
-    // round-trips directly.
-    return sourceValue;
-  }
-  if (override === null) {
-    // Drop the inherited block. The writer treats `undefined` as
-    // suppression and skips `<c:dTable>` entirely.
-    return undefined;
-  }
-  if (override === false) {
-    // Symmetric with `null` — kept distinct in the API surface for
-    // ergonomic alignment with the writer's `boolean | object` shape,
-    // but emits the same on-the-wire result (no `<c:dTable>`).
-    return undefined;
-  }
-  // `true` or a {@link ChartDataTable} object — replace the inherited
-  // block wholesale. The writer accepts both forms and falls back to
-  // the OOXML reference defaults for any field the object leaves unset.
-  return override;
-}
 
 /**
  * Resolve a `protection` (chart-space protection) override.
@@ -3420,7 +3389,7 @@ function resolveDataTable(
  *               optional and Excel treats a missing child as
  *               `false`.
  *
- * The grammar mirrors {@link resolveDataTable} so the chart-level
+ * The grammar mirrors {@link resolveCloneDataTable} so the chart-level
  * block toggles compose the same way at the call site. Unlike
  * `dataTable`, `<c:protection>` lives on `<c:chartSpace>` (not inside
  * `<c:plotArea>`) so the resolver applies to every chart family —
@@ -3456,518 +3425,6 @@ function resolveProtection(
 
 
 /**
- * Resolve an `upDownBars` override.
- *
- * `undefined` → inherit the source's parsed `upDownBars`.
- * `null`      → drop the inherited value (the writer falls back to the
- *               OOXML default — no `<c:upDownBars>` element emitted).
- * `boolean`   → replace.
- *
- * The grammar mirrors `roundedCorners` / `plotVisOnly` so the chart-
- * level line-only toggle composes the same way at the call site.
- * `false` collapses to absence on the writer side because the writer
- * only emits `<c:upDownBars>` when the flag is literally `true`; the
- * `false` value still surfaces in the cloned `SheetChart` for
- * symmetry with other resolve helpers, leaving the renderer to drop
- * it during emit.
- */
-function resolveUpDownBars(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
-}
-
-/**
- * Resolve an `upDownBarsGapWidth` override.
- *
- * `undefined` → inherit the source's parsed `upDownBarsGapWidth`.
- * `null`      → drop the inherited value (the writer falls back to the
- *               OOXML default `150` Excel itself emits on a fresh
- *               toggle).
- * `number`    → replace. Out-of-range or non-finite values still
- *               surface in the cloned `SheetChart` for symmetry with
- *               the other override helpers; the writer's
- *               `clampUpDownBarsGapWidth` then drops them at emit
- *               time so a fresh chart matches Excel's reference
- *               serialization.
- *
- * The grammar mirrors `gapWidth` / `holeSize` / `firstSliceAng` so the
- * numeric chart-level knobs compose the same way at the call site.
- */
-function resolveUpDownBarsGapWidth(
-  sourceValue: number | undefined,
-  override: number | null | undefined,
-): number | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
-}
-
-
-/**
- * Resolve a `legendOverlay` override.
- *
- * `undefined` → inherit the source's parsed `legendOverlay`.
- * `null`      → drop the inherited value (the writer falls back to the
- *               OOXML `false` default — the legend reserves its own
- *               slot, no overlap with the plot area).
- * `boolean`   → replace.
- *
- * The grammar mirrors `plotVisOnly` / `roundedCorners` so the chart-
- * level toggles compose the same way at the call site. Callers should
- * gate the result on the resolved legend visibility — when no legend
- * is emitted, the overlay flag has no slot in the rendered chart.
- */
-function resolveLegendOverlay(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
-}
-
-/**
- * Resolve a `legendEntries` override.
- *
- * `undefined` → inherit the source's parsed `legendEntries`.
- * `null`      → drop the inherited list (the writer emits no
- *               `<c:legendEntry>` children).
- * `array`     → replace the inherited list outright. Empty arrays
- *               collapse to `undefined` so the writer never emits an
- *               empty selector block — Excel's reference serialization
- *               omits the children entirely when no entry is hidden.
- *
- * Callers should gate the result on the resolved legend visibility —
- * when no legend is emitted, the entry list has no slot in the rendered
- * chart. Mirrors the `legendOverlay` grammar so the legend-scoped
- * fields compose the same way at the call site.
- *
- * The returned array is always a fresh copy of the source / override
- * (never a shared reference) so a downstream mutation to the cloned
- * `SheetChart` never leaks back into the parsed `Chart` the caller
- * passed in. Each entry is also copied to keep the writer's resolution
- * pass free to dedupe / sort without touching the inputs.
- */
-function resolveLegendEntries(
-  sourceValue: ChartLegendEntry[] | undefined,
-  override: ChartLegendEntry[] | null | undefined,
-): ChartLegendEntry[] | undefined {
-  if (override === undefined) {
-    if (!sourceValue || sourceValue.length === 0) return undefined;
-    return sourceValue.map((entry) => ({ ...entry }));
-  }
-  if (override === null) return undefined;
-  if (!Array.isArray(override) || override.length === 0) return undefined;
-  return override.map((entry) => ({ ...entry }));
-}
-
-/**
- * Resolve a `legendFontSize` override.
- *
- * `undefined` → inherit the source's parsed `legendFontSize` (after
- *               running it through {@link normalizeTitleFontSize} so
- *               an out-of-range parsed value drops cleanly).
- * `null`      → drop the inherited value (the writer falls back to
- *               Excel's theme-default 9pt — no `<c:txPr>` block on
- *               the legend).
- * `number`    → replace, after clamping / rounding through
- *               {@link normalizeTitleFontSize}.
- *
- * The grammar mirrors `titleFontSize` / `axisTitleFontSize` /
- * `axes.x.labelFontSize` so the typography knobs compose the same way
- * at the call site. Callers should gate the result on the resolved
- * legend visibility — when no legend is emitted, the size has no slot
- * in the rendered chart.
- */
-function resolveLegendFontSize(
-  sourceValue: number | undefined,
-  override: number | null | undefined,
-): number | undefined {
-  if (override === undefined) return normalizeTitleFontSize(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleFontSize(override);
-}
-
-
-/**
- * Resolve a `legendBold` override.
- *
- * `undefined` → inherit the source's parsed `legendBold` (after
- *               running it through {@link normalizeLegendBold} so a
- *               typed escape on the source path drops cleanly).
- * `null`      → drop the inherited flag (the writer falls back to the
- *               OOXML default — no `b` attribute, equivalent to
- *               non-bold).
- * `boolean`   → replace.
- *
- * The grammar mirrors `titleBold` / `axisTitleBold` /
- * `axes.x.labelBold` so the typography knobs compose the same way at
- * the call site. Callers should gate the result on the resolved legend
- * visibility — when no legend is emitted, the flag has no slot in the
- * rendered chart.
- */
-function resolveLegendBold(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) return normalizeLegendBold(sourceValue);
-  if (override === null) return undefined;
-  return normalizeLegendBold(override);
-}
-
-
-/**
- * Resolve a `legendItalic` override.
- *
- * `undefined` → inherit the source's parsed `legendItalic` (after
- *               running it through {@link normalizeLegendItalic} so a
- *               typed escape on the source path drops cleanly).
- * `null`      → drop the inherited flag (the writer falls back to the
- *               OOXML default — no `i` attribute, equivalent to
- *               non-italic).
- * `boolean`   → replace.
- *
- * The grammar mirrors `titleItalic` / `axisTitleItalic` /
- * `axes.x.labelItalic` so the typography knobs compose the same way at
- * the call site. Callers should gate the result on the resolved legend
- * visibility — when no legend is emitted, the flag has no slot in the
- * rendered chart.
- */
-function resolveLegendItalic(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) return normalizeLegendItalic(sourceValue);
-  if (override === null) return undefined;
-  return normalizeLegendItalic(override);
-}
-
-
-/**
- * Resolve a `legendUnderline` override.
- *
- * `undefined` → inherit the source's parsed `legendUnderline` (after
- *               running it through {@link normalizeLegendUnderline}
- *               so a typed escape on the source path drops cleanly).
- * `null`      → drop the inherited flag (the writer falls back to the
- *               OOXML default — no `u` attribute, equivalent to
- *               non-underlined).
- * `boolean`   → replace.
- *
- * The grammar mirrors `titleUnderline` / `axisTitleUnderline` /
- * `axes.x.labelUnderline` so the typography knobs compose the same way
- * at the call site. Callers should gate the result on the resolved
- * legend visibility — when no legend is emitted, the flag has no slot
- * in the rendered chart.
- */
-function resolveLegendUnderline(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) return normalizeLegendUnderline(sourceValue);
-  if (override === null) return undefined;
-  return normalizeLegendUnderline(override);
-}
-
-
-/**
- * Resolve a `legendStrikethrough` override.
- *
- * `undefined` → inherit the source's parsed `legendStrikethrough`
- *               (after running it through
- *               {@link normalizeLegendStrikethrough} so a typed escape
- *               on the source path drops cleanly).
- * `null`      → drop the inherited flag (the writer falls back to the
- *               OOXML default — no `strike` attribute, equivalent to
- *               non-strikethrough).
- * `boolean`   → replace.
- *
- * The grammar mirrors `titleStrikethrough` / `axisTitleStrike` /
- * `axes.x.labelStrikethrough` so the typography knobs compose the same
- * way at the call site. Callers should gate the result on the resolved
- * legend visibility — when no legend is emitted, the flag has no slot
- * in the rendered chart.
- */
-function resolveLegendStrikethrough(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) return normalizeLegendStrikethrough(sourceValue);
-  if (override === null) return undefined;
-  return normalizeLegendStrikethrough(override);
-}
-
-/**
- * Resolve a `legendFontColor` override.
- *
- * `undefined` → inherit the source's parsed `legendFontColor` (after
- *               running it through {@link normalizeTitleColor} so a
- *               malformed source value drops cleanly).
- * `null`      → drop the inherited fill (the writer falls back to the
- *               theme text color — no `<a:solidFill>` block on the
- *               legend's `<a:defRPr>`).
- * `string`    → replace, after running through
- *               {@link normalizeTitleColor} so the override accepts
- *               `"FF0000"` / `"#FF0000"` / `"ff0000"` and collapses
- *               malformed tokens to `undefined`.
- *
- * The grammar mirrors `titleColor` / `axisTitleColor` /
- * `axes.x.labelColor` so the typography knobs compose the same way at
- * the call site. Callers should gate the result on the resolved
- * legend visibility — when no legend is emitted, the fill has no slot
- * in the rendered chart.
- */
-function resolveLegendFontColor(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
-  if (override === undefined) return normalizeTitleColor(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleColor(override);
-}
-
-/**
- * Resolve a `legendFontFamily` override.
- *
- * `undefined` → inherit the source's parsed `legendFontFamily` (after
- *               running it through {@link normalizeLegendFontFamily}
- *               so a malformed source value drops cleanly).
- * `null`      → drop the inherited typeface (the writer falls back to
- *               the theme typeface — no `<a:latin>` element on the
- *               legend's `<a:defRPr>`).
- * `string`    → replace, after running through
- *               {@link normalizeLegendFontFamily} so the override
- *               accepts any caller spelling that the writer will
- *               accept (with surrounding whitespace trimmed; empty /
- *               whitespace-only strings collapse to a drop).
- *
- * The grammar mirrors `titleFontFamily` /
- * `axes.x.axisTitleFontFamily` / `axes.x.labelFontFamily` so the
- * typography knobs compose the same way at the call site. Callers
- * should gate the result on the resolved legend visibility — when no
- * legend is emitted, the typeface has no slot in the rendered chart.
- */
-function resolveLegendFontFamily(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
-  if (override === undefined) return normalizeLegendFontFamily(sourceValue);
-  if (override === null) return undefined;
-  return normalizeLegendFontFamily(override);
-}
-
-
-/**
- * Resolve a `legendLayout` override.
- *
- * `undefined` → inherit the source's parsed `legendLayout` (after
- *               running it through {@link normalizeLegendLayout} so a
- *               malformed source value drops cleanly).
- * `null`      → drop the inherited layout (the writer falls back to
- *               Excel's auto-layout position — no `<c:layout>` block
- *               on the legend).
- * `ChartManualLayout` → replace, after running through
- *               {@link normalizeLegendLayout}. Coordinates outside the
- *               `0..1` band collapse on the matching axis so the
- *               cloned `SheetChart` always carries a value the writer
- *               will accept; an override whose every axis dropped
- *               collapses to `undefined` so the writer skips the
- *               `<c:layout>` block entirely.
- *
- * The grammar mirrors `legendOverlay` / `legendEntries` /
- * `legendFontSize` so the legend knobs compose the same way at the
- * call site. Callers should gate the result on the resolved legend
- * visibility — when no legend is emitted, the layout has no slot in
- * the rendered chart.
- */
-function resolveLegendLayout(
-  sourceValue: ChartManualLayout | undefined,
-  override: ChartManualLayout | null | undefined,
-): ChartManualLayout | undefined {
-  if (override === undefined) return normalizeLegendLayout(sourceValue);
-  if (override === null) return undefined;
-  return normalizeLegendLayout(override);
-}
-
-/**
- * Resolve a `legendFillColor` override.
- *
- * `undefined` → inherit the source's parsed `legendFillColor` (after
- *               running it through {@link normalizeTitleColor} so a
- *               malformed source value drops cleanly — the hex
- *               normalizer is purely shape-based and applies
- *               identically to every `<a:srgbClr val="RRGGBB"/>`
- *               slot).
- * `null`      → drop the inherited fill (the writer emits no
- *               `<c:spPr>` block on `<c:legend>`, falling back to the
- *               theme default — typically a transparent legend
- *               background).
- * `string`    → replace, after running through
- *               {@link normalizeTitleColor} so the override accepts
- *               `"FF0000"` / `"#FF0000"` / `"ff0000"` and collapses
- *               malformed tokens to `undefined`.
- *
- * The grammar mirrors `plotAreaFillColor` / `titleColor` /
- * `axisTitleColor` / `legendFontColor` so the fill / color knobs
- * compose the same way at the call site. Callers should gate the
- * result on the resolved legend visibility — when no legend is
- * emitted, the fill has no slot in the rendered chart.
- *
- * Independent of `legendFontColor`: the two knobs target different
- * children of `<c:legend>` (`<c:spPr>` for the background fill,
- * `<c:txPr>` for the font color), so a caller can pin both without
- * conflict.
- */
-function resolveLegendFillColor(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
-  if (override === undefined) return normalizeTitleColor(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleColor(override);
-}
-
-/**
- * Resolve a `legendBorderColor` override.
- *
- * `undefined` → inherit the source's parsed `legendBorderColor` (after
- *               running it through {@link normalizeTitleColor} so a
- *               malformed source value drops cleanly — the hex
- *               normalizer is purely shape-based and applies
- *               identically to every `<a:srgbClr val="RRGGBB"/>`
- *               slot).
- * `null`      → drop the inherited stroke (the writer emits no
- *               `<a:ln>` block on `<c:legend><c:spPr>`, the legend
- *               inherits the auto-stroke Excel picks from the chart's
- *               theme).
- * `string`    → replace with the normalized 6-character uppercase hex
- *               form. Malformed overrides collapse to `undefined` via
- *               the normalizer so the cloned `SheetChart` always
- *               carries a value the writer will accept.
- *
- * The grammar mirrors `legendFillColor` so the legend `<c:spPr>` knobs
- * compose the same way at the call site. Callers should gate the
- * result on the resolved legend visibility — when no legend is
- * emitted, the stroke has no slot in the rendered chart.
- *
- * Independent of `legendFillColor`: the two knobs target different
- * children of `<c:legend><c:spPr>` (`<a:solidFill>` for fill,
- * `<a:ln>` for stroke), so a caller can pin both without conflict.
- */
-function resolveLegendBorderColor(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
-  if (override === undefined) return normalizeTitleColor(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleColor(override);
-}
-
-/**
- * Resolve a `legendBorderWidth` override.
- *
- * `undefined` → inherit the source's parsed `legendBorderWidth` (after
- *               running it through {@link normalizeLegendBorderWidth}
- *               so a malformed source value drops cleanly).
- * `null`      → drop the inherited width (the writer emits `<a:ln>`
- *               without a `w` attribute, the line keeps Excel's
- *               auto-thickness).
- * `number`    → replace with the clamped / snapped point value.
- *               Non-finite / non-numeric overrides collapse to
- *               `undefined` via the normalizer so the cloned
- *               `SheetChart` always carries a value the writer will
- *               accept.
- *
- * The grammar mirrors `plotAreaBorderWidth` / the series-line stroke
- * width so the chart `<a:ln w=..>` knobs compose the same way at the
- * call site. Callers should gate the result on the resolved legend
- * visibility — when no legend is emitted, the width has no slot in the
- * rendered chart.
- *
- * Independent of `legendBorderColor`: both knobs land on the same
- * `<a:ln>` element but on a different slot (color is
- * `<a:solidFill><a:srgbClr>`, width is the `w` attribute on `<a:ln>`),
- * so a caller can pin both without conflict.
- */
-function resolveLegendBorderWidth(
-  sourceValue: number | undefined,
-  override: number | null | undefined,
-): number | undefined {
-  if (override === undefined) return normalizeLegendBorderWidth(sourceValue);
-  if (override === null) return undefined;
-  return normalizeLegendBorderWidth(override);
-}
-
-/**
- * Resolve a `titleLayout` override.
- *
- * `undefined` → inherit the source's parsed `titleLayout` (after
- *               running it through {@link normalizeLegendLayout} so a
- *               malformed source value drops cleanly — both manual-
- *               layout slots share the same normalizer).
- * `null`      → drop the inherited layout (the writer falls back to
- *               Excel's auto-layout position above the plot area —
- *               no `<c:layout>` block on `<c:title>`).
- * `ChartManualLayout` → replace, after running through
- *               {@link normalizeLegendLayout}. Coordinates outside the
- *               `0..1` band collapse on the matching axis so the
- *               cloned `SheetChart` always carries a value the writer
- *               will accept; an override whose every axis dropped
- *               collapses to `undefined` so the writer skips the
- *               `<c:layout>` block entirely.
- *
- * The grammar mirrors `legendLayout` — both manual-layout slots
- * compose the same way at the call site. Callers should gate the
- * result on the resolved title visibility — when no title is emitted,
- * the layout has no slot in the rendered chart.
- */
-function resolveTitleLayout(
-  sourceValue: ChartManualLayout | undefined,
-  override: ChartManualLayout | null | undefined,
-): ChartManualLayout | undefined {
-  if (override === undefined) return normalizeLegendLayout(sourceValue);
-  if (override === null) return undefined;
-  return normalizeLegendLayout(override);
-}
-
-/**
- * Resolve a `plotAreaLayout` override.
- *
- * `undefined` → inherit the source's parsed `plotAreaLayout` (after
- *               running it through {@link normalizeLegendLayout} so a
- *               malformed source value drops cleanly — the normalizer
- *               is purely shape-based, no host-element awareness, so it
- *               applies identically to legend / plot-area layouts).
- * `null`      → drop the inherited layout (the writer falls back to the
- *               bare `<c:layout/>` placeholder Excel itself emits on
- *               every auto-layout chart).
- * `ChartManualLayout` → replace, after running through
- *               {@link normalizeLegendLayout}. Coordinates outside the
- *               `0..1` band collapse on the matching axis so the
- *               cloned `SheetChart` always carries a value the writer
- *               will accept; an override whose every axis dropped
- *               collapses to `undefined` so the writer skips the
- *               `<c:manualLayout>` body.
- *
- * The grammar mirrors `resolveLegendLayout` so the manual-layout knobs
- * compose the same way at the call site. Unlike the legend variant, the
- * caller does not need to gate the result on any visibility flag —
- * every chart has a `<c:plotArea>` element to host `<c:layout>`.
- */
-function resolvePlotAreaLayout(
-  sourceValue: ChartManualLayout | undefined,
-  override: ChartManualLayout | null | undefined,
-): ChartManualLayout | undefined {
-  if (override === undefined) return normalizeLegendLayout(sourceValue);
-  if (override === null) return undefined;
-  return normalizeLegendLayout(override);
-}
-
-/**
  * Normalize a `plotAreaFillColor` value for the cloned `SheetChart`.
  * Mirrors the writer's `normalizePlotAreaFillColor` — the cloned shape
  * is guaranteed to round-trip through the writer without surprise: a
@@ -3982,34 +3439,6 @@ function normalizePlotAreaFillColor(value: string | undefined): string | undefin
   return normalizeRgbHex(value);
 }
 
-/**
- * Resolve a `plotAreaFillColor` override.
- *
- * `undefined` → inherit the source's parsed `plotAreaFillColor` (after
- *               running it through {@link normalizePlotAreaFillColor}
- *               so a malformed source value drops cleanly).
- * `null`      → drop the inherited fill (the writer emits no `<c:spPr>`
- *               block, the plot area inherits the auto-fill Excel
- *               picks from the chart's theme).
- * `string`    → replace with the normalized 6-character uppercase hex
- *               form. Malformed overrides collapse to `undefined` via
- *               the normalizer so the cloned `SheetChart` always
- *               carries a value the writer will accept.
- *
- * The grammar mirrors `titleColor` / `axes.x.axisTitleColor` /
- * `axes.x.labelColor` so the chart `<a:srgbClr>` knobs compose the
- * same way at the call site. Unlike those text-color knobs, the
- * plot-area fill is never gated on a visibility flag — every chart has
- * a `<c:plotArea>` element to host the fill.
- */
-function resolvePlotAreaFillColor(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
-  if (override === undefined) return normalizePlotAreaFillColor(sourceValue);
-  if (override === null) return undefined;
-  return normalizePlotAreaFillColor(override);
-}
 
 /**
  * Normalize a `plotAreaBorderColor` value for the cloned `SheetChart`.
@@ -4027,87 +3456,6 @@ function normalizePlotAreaBorderColor(value: string | undefined): string | undef
   return normalizeRgbHex(value);
 }
 
-/**
- * Resolve a `plotAreaBorderColor` override.
- *
- * `undefined` → inherit the source's parsed `plotAreaBorderColor`
- *               (after running it through
- *               {@link normalizePlotAreaBorderColor} so a malformed
- *               source value drops cleanly).
- * `null`      → drop the inherited stroke (the writer emits no
- *               `<a:ln>` block on `<c:plotArea><c:spPr>`, the plot
- *               area inherits the auto-stroke Excel picks from the
- *               chart's theme).
- * `string`    → replace with the normalized 6-character uppercase hex
- *               form. Malformed overrides collapse to `undefined` via
- *               the normalizer so the cloned `SheetChart` always
- *               carries a value the writer will accept.
- *
- * The grammar mirrors `plotAreaFillColor` so the chart `<c:spPr>`
- * knobs compose the same way at the call site. Like the fill knob,
- * the border is never gated on a visibility flag — every chart has a
- * `<c:plotArea>` element to host the stroke.
- */
-function resolvePlotAreaBorderColor(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
-  if (override === undefined) return normalizePlotAreaBorderColor(sourceValue);
-  if (override === null) return undefined;
-  return normalizePlotAreaBorderColor(override);
-}
-
-/**
- * Normalize a `plotAreaBorderWidth` value for the cloned `SheetChart`.
- * Mirrors the writer's `clampStrokeWidthPt` — values are clamped to the
- * `0.25..13.5` pt band Excel's UI exposes and snapped to the 0.25 pt
- * grid so a parsed-then-cloned-then-written width does not drift across
- * round-trips (Excel rounds in the UI anyway). Non-finite / non-numeric
- * tokens (`NaN`, `Infinity`, strings, `null` from an untyped caller)
- * collapse to `undefined` so the cloned chart drops the field rather
- * than carry a value the writer would silently elide back to absence.
- */
-function normalizePlotAreaBorderWidth(value: number | undefined): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
-  const snapped = Math.round(value * 4) / 4;
-  if (snapped < PLOT_AREA_BORDER_WIDTH_MIN_PT) return PLOT_AREA_BORDER_WIDTH_MIN_PT;
-  if (snapped > PLOT_AREA_BORDER_WIDTH_MAX_PT) return PLOT_AREA_BORDER_WIDTH_MAX_PT;
-  return snapped;
-}
-
-const PLOT_AREA_BORDER_WIDTH_MIN_PT = 0.25;
-const PLOT_AREA_BORDER_WIDTH_MAX_PT = 13.5;
-
-/**
- * Resolve a `plotAreaBorderWidth` override.
- *
- * `undefined` → inherit the source's parsed `plotAreaBorderWidth`
- *               (after running it through
- *               {@link normalizePlotAreaBorderWidth} so a malformed
- *               source value drops cleanly).
- * `null`      → drop the inherited width (the writer emits `<a:ln>`
- *               without a `w` attribute, the line keeps Excel's
- *               auto-thickness).
- * `number`    → replace with the clamped / snapped point value.
- *               Non-finite / non-numeric overrides collapse to
- *               `undefined` via the normalizer so the cloned
- *               `SheetChart` always carries a value the writer will
- *               accept.
- *
- * The grammar mirrors the series-line stroke width so the chart
- * `<a:ln w=..>` knobs compose the same way at the call site. Like the
- * border-color knob, the width is never gated on a visibility flag —
- * every chart has a `<c:plotArea>` element to host the stroke.
- */
-function resolvePlotAreaBorderWidth(
-  sourceValue: number | undefined,
-  override: number | null | undefined,
-): number | undefined {
-  if (override === undefined) return normalizePlotAreaBorderWidth(sourceValue);
-  if (override === null) return undefined;
-  return normalizePlotAreaBorderWidth(override);
-}
 
 /**
  * Normalize a `chartSpaceFillColor` value for the cloned `SheetChart`.
@@ -4207,508 +3555,4 @@ function resolveChartSpaceBorderColor(
 // and `normalizeBorderDash` now live in `./chart/shape.ts`. Imported at
 // the top of this module so every chart-frame slot the clone surface
 // exposes shares one EMU encoding and one accept-or-drop dash grammar.
-
-/**
- * Resolve a `titleOverlay` override.
- *
- * `undefined` → inherit the source's parsed `titleOverlay`.
- * `null`      → drop the inherited value (the writer falls back to the
- *               OOXML `false` default — the title reserves its own slot
- *               above the plot area, no overlap with it).
- * `boolean`   → replace.
- *
- * The grammar mirrors `legendOverlay` / `roundedCorners` so the chart-
- * level overlay toggles compose the same way at the call site. Callers
- * should gate the result on the resolved title visibility — when no
- * title is emitted, the overlay flag has no slot in the rendered chart.
- */
-function resolveTitleOverlay(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
-}
-
-/**
- * Conversion bookkeeping for the chart-title rotation override. Same
- * `-90..90` band the writer enforces so the cloned `SheetChart` always
- * carries a value the writer will accept.
- */
-const TITLE_ROTATION_MIN_DEG = -90;
-const TITLE_ROTATION_MAX_DEG = 90;
-
-
-/**
- * Resolve a `titleRotation` override.
- *
- * `undefined` → inherit the source's parsed `titleRotation`.
- * `null`      → drop the inherited value (the writer falls back to the
- *               OOXML `0` default — the title renders horizontally).
- * `number`    → replace, after clamping / rounding through
- *               {@link normalizeTitleRotation}.
- *
- * The grammar mirrors `titleOverlay` / `legendOverlay` so the chart-
- * level title knobs compose the same way at the call site. Callers
- * should gate the result on the resolved title visibility — when no
- * title is emitted, the rotation has no slot in the rendered chart.
- */
-function resolveTitleRotation(
-  sourceValue: number | undefined,
-  override: number | null | undefined,
-): number | undefined {
-  if (override === undefined) return normalizeTitleRotation(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleRotation(override);
-}
-
-/**
- * Conversion bookkeeping for the chart-title font-size override. Same
- * `1..400`pt band the writer enforces (mirroring the OOXML
- * `ST_TextFontSize` schema, `100..400000` in 100ths of a point) so the
- * cloned `SheetChart` always carries a value the writer will accept.
- */
-const TITLE_FONT_SIZE_MIN_PT = 1;
-const TITLE_FONT_SIZE_MAX_PT = 400;
-
-
-/**
- * Resolve a `titleFontSize` override.
- *
- * `undefined` → inherit the source's parsed `titleFontSize`.
- * `null`      → drop the inherited value (the writer falls back to
- *               Excel's default 14pt).
- * `number`    → replace, after clamping / rounding through
- *               {@link normalizeTitleFontSize}.
- *
- * The grammar mirrors `titleRotation` / `titleOverlay` /
- * `legendOverlay` so the chart-level title knobs compose the same way
- * at the call site. Callers should gate the result on the resolved
- * title visibility — when no title is emitted, the size has no slot
- * in the rendered chart.
- */
-function resolveTitleFontSize(
-  sourceValue: number | undefined,
-  override: number | null | undefined,
-): number | undefined {
-  if (override === undefined) return normalizeTitleFontSize(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleFontSize(override);
-}
-
-
-/**
- * Resolve a `titleBold` override.
- *
- * `undefined` → inherit the source's parsed `titleBold`.
- * `null`      → drop the inherited flag (the writer falls back to the
- *               OOXML default `b="0"`, non-bold).
- * `boolean`   → replace.
- *
- * The grammar mirrors `titleFontSize` / `titleRotation` /
- * `titleOverlay` so the chart-level title knobs compose the same way
- * at the call site. Callers should gate the result on the resolved
- * title visibility — when no title is emitted, the flag has no slot
- * in the rendered chart.
- */
-function resolveTitleBold(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) return normalizeTitleBold(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleBold(override);
-}
-
-
-/**
- * Resolve a `titleItalic` override.
- *
- * `undefined` → inherit the source's parsed `titleItalic`.
- * `null`      → drop the inherited flag (the writer falls back to the
- *               OOXML default — no `i` attribute, equivalent to
- *               non-italic).
- * `boolean`   → replace.
- *
- * The grammar mirrors `titleBold` / `titleFontSize` / `titleRotation`
- * / `titleOverlay` so the chart-level title knobs compose the same way
- * at the call site. Callers should gate the result on the resolved
- * title visibility — when no title is emitted, the flag has no slot
- * in the rendered chart.
- */
-function resolveTitleItalic(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) return normalizeTitleItalic(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleItalic(override);
-}
-
-
-/**
- * Resolve a `titleColor` override.
- *
- * `undefined` → inherit the source's parsed `titleColor`.
- * `null`      → drop the inherited fill (the writer falls back to the
- *               theme text color — no `<a:solidFill>` block on the
- *               title's default-paragraph properties).
- * `string`    → replace with the normalized 6-character uppercase
- *               hex form.
- *
- * The grammar mirrors `titleBold` / `titleItalic` / `titleFontSize` /
- * `titleRotation` / `titleOverlay` so the chart-level title knobs
- * compose the same way at the call site. Callers should gate the
- * result on the resolved title visibility — when no title is
- * emitted, the fill has no slot in the rendered chart.
- */
-function resolveTitleColor(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
-  if (override === undefined) return normalizeTitleColor(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleColor(override);
-}
-
-/**
- * Resolve a `titleFillColor` override.
- *
- * `undefined` → inherit the source's parsed `titleFillColor` (after
- *               running it through {@link normalizeTitleColor} so a
- *               malformed source value drops cleanly — the hex
- *               normalizer is purely shape-based and applies
- *               identically to every `<a:srgbClr val="RRGGBB"/>`
- *               slot).
- * `null`      → drop the inherited fill (the writer emits no
- *               `<c:spPr>` block on `<c:title>`, falling back to the
- *               theme default — typically a transparent title
- *               background).
- * `string`    → replace, after running through
- *               {@link normalizeTitleColor} so the override accepts
- *               `"FF0000"` / `"#FF0000"` / `"ff0000"` and collapses
- *               malformed tokens to `undefined`.
- *
- * The grammar mirrors `plotAreaFillColor` / `legendFillColor` /
- * `titleColor` / `axisTitleColor` so the fill / color knobs compose
- * the same way at the call site. Callers should gate the result on
- * the resolved title visibility — when no title is emitted, the fill
- * has no slot in the rendered chart.
- *
- * Independent of `titleColor`: the two knobs target different
- * children of `<c:title>` (`<c:spPr>` for the background fill,
- * `<c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>` for the font
- * color), so a caller can pin both without conflict.
- */
-function resolveTitleFillColor(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
-  if (override === undefined) return normalizeTitleColor(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleColor(override);
-}
-
-/**
- * Resolve a `titleBorderColor` override.
- *
- * `undefined` → inherit the source's parsed `titleBorderColor` (after
- *               running it through {@link normalizeTitleColor} so a
- *               malformed source value drops cleanly — the hex
- *               normalizer is purely shape-based and applies
- *               identically to every `<a:srgbClr val="RRGGBB"/>`
- *               slot).
- * `null`      → drop the inherited stroke (the writer emits no
- *               `<a:ln>` block on `<c:title><c:spPr>`, falling back
- *               to the theme default — typically no visible border).
- * `string`    → replace, after running through
- *               {@link normalizeTitleColor} so the override accepts
- *               `"1F77B4"` / `"#1F77B4"` / `"1f77b4"` and collapses
- *               malformed tokens to `undefined`.
- *
- * The grammar mirrors `plotAreaBorderColor` / `titleFillColor` so the
- * chart `<c:spPr>` knobs compose the same way at the call site.
- * Callers should gate the result on the resolved title visibility —
- * when no title is emitted, the stroke has no slot in the rendered
- * chart.
- *
- * Independent of `titleFillColor`: the two knobs target different
- * children of the shared `<c:spPr>` block on `<c:title>`
- * (`<a:solidFill>` for the fill, `<a:ln>` for the stroke), so a
- * caller can pin both without conflict.
- */
-function resolveTitleBorderColor(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
-  if (override === undefined) return normalizeTitleColor(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleColor(override);
-}
-
-const TITLE_BORDER_WIDTH_MIN_PT = 0.25;
-const TITLE_BORDER_WIDTH_MAX_PT = 13.5;
-
-/**
- * Normalize a `titleBorderWidth` value for the cloned `SheetChart`.
- * Mirrors the writer's `clampStrokeWidthPt` — values are clamped to the
- * `0.25..13.5` pt band Excel's UI exposes and snapped to the 0.25 pt
- * grid so a parsed-then-cloned-then-written width does not drift across
- * round-trips (Excel rounds in the UI anyway). Non-finite / non-numeric
- * tokens (`NaN`, `Infinity`, strings, `null` from an untyped caller)
- * collapse to `undefined` so the cloned chart drops the field rather
- * than carry a value the writer would silently elide back to absence.
- */
-function normalizeTitleBorderWidth(value: number | undefined): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
-  const snapped = Math.round(value * 4) / 4;
-  if (snapped < TITLE_BORDER_WIDTH_MIN_PT) return TITLE_BORDER_WIDTH_MIN_PT;
-  if (snapped > TITLE_BORDER_WIDTH_MAX_PT) return TITLE_BORDER_WIDTH_MAX_PT;
-  return snapped;
-}
-
-/**
- * Resolve a `titleBorderWidth` override.
- *
- * `undefined` → inherit the source's parsed `titleBorderWidth` (after
- *               running it through {@link normalizeTitleBorderWidth}
- *               so a malformed source value drops cleanly).
- * `null`      → drop the inherited width (the writer emits `<a:ln>`
- *               without a `w` attribute, the line keeps Excel's
- *               auto-thickness).
- * `number`    → replace with the clamped / snapped point value.
- *               Non-finite / non-numeric overrides collapse to
- *               `undefined` via the normalizer so the cloned
- *               `SheetChart` always carries a value the writer will
- *               accept.
- *
- * The grammar mirrors `plotAreaBorderWidth` / `legendBorderWidth` /
- * the series-line stroke width so the chart `<a:ln w=..>` knobs
- * compose the same way at the call site. Callers should gate the
- * result on the resolved title visibility — when no title is emitted,
- * the width has no slot in the rendered chart.
- *
- * Independent of `titleBorderColor`: both knobs land on the same
- * `<a:ln>` element but on a different slot (color is
- * `<a:solidFill><a:srgbClr>`, width is the `w` attribute on `<a:ln>`),
- * so a caller can pin both without conflict.
- */
-function resolveTitleBorderWidth(
-  sourceValue: number | undefined,
-  override: number | null | undefined,
-): number | undefined {
-  if (override === undefined) return normalizeTitleBorderWidth(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleBorderWidth(override);
-}
-
-
-/**
- * Resolve a `titleStrike` override.
- *
- * `undefined` → inherit the source's parsed `titleStrike`.
- * `null`      → drop the inherited flag (the writer falls back to the
- *               OOXML default — no `strike` attribute, equivalent to
- *               no strikethrough).
- * `boolean`   → replace.
- *
- * The grammar mirrors `titleBold` / `titleItalic` / `titleColor` /
- * `titleFontSize` / `titleRotation` / `titleOverlay` so the chart-level
- * title knobs compose the same way at the call site. Callers should
- * gate the result on the resolved title visibility — when no title is
- * emitted, the flag has no slot in the rendered chart.
- */
-function resolveTitleStrike(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) return normalizeTitleStrike(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleStrike(override);
-}
-
-
-/**
- * Resolve a `titleUnderline` override.
- *
- * `undefined` → inherit the source's parsed `titleUnderline`.
- * `null`      → drop the inherited flag (the writer falls back to the
- *               OOXML default — no `u` attribute, equivalent to no
- *               underline).
- * `boolean`   → replace.
- *
- * The grammar mirrors `titleBold` / `titleItalic` / `titleStrike` /
- * `titleColor` / `titleFontSize` / `titleRotation` / `titleOverlay`
- * so the chart-level title knobs compose the same way at the call
- * site. Callers should gate the result on the resolved title
- * visibility — when no title is emitted, the flag has no slot in the
- * rendered chart.
- */
-function resolveTitleUnderline(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) return normalizeTitleUnderline(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleUnderline(override);
-}
-
-
-/**
- * Resolve a `titleFontFamily` override.
- *
- * `undefined` → inherit the source's parsed `titleFontFamily`,
- *               running it through {@link normalizeTitleFontFamily}
- *               so a malformed source value cannot leak through to
- *               the cloned chart.
- * `null`      → drop the inherited typeface (the writer falls back to
- *               the OOXML default — no `<a:latin>` element, the title
- *               inherits the theme typeface).
- * `string`    → replace, running it through
- *               {@link normalizeTitleFontFamily} so the override
- *               accepts any caller spelling that the writer will
- *               accept (with surrounding whitespace trimmed; empty /
- *               whitespace-only strings collapse to a drop).
- *
- * The grammar mirrors `titleColor` (the other string-typed knob) /
- * `titleBold` / `titleItalic` / `titleStrike` / `titleUnderline` /
- * `titleFontSize` / `titleRotation` / `titleOverlay` so the chart-
- * level title knobs compose the same way at the call site. Callers
- * should gate the result on the resolved title visibility — when no
- * title is emitted, the typeface has no slot in the rendered chart.
- */
-function resolveTitleFontFamily(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
-  if (override === undefined) return normalizeTitleFontFamily(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleFontFamily(override);
-}
-
-
-/**
- * Resolve a `dropLines` override.
- *
- * `undefined` → inherit the source's parsed `dropLines`.
- * `null`      → drop the inherited value (the writer falls back to the
- *               OOXML default — no `<c:dropLines>` element).
- * `boolean`   → replace. Only `true` round-trips into the cloned
- *               `SheetChart`; `false` collapses to `undefined` because
- *               the writer treats absence and `false` identically (no
- *               element emitted).
- *
- * The grammar mirrors `plotVisOnly` / `roundedCorners` so the chart-
- * level toggles compose the same way at the call site. Callers should
- * gate the result on the resolved chart family — `<c:dropLines>` has
- * no slot on `<c:barChart>` / `<c:pieChart>` / `<c:scatterChart>`.
- */
-function resolveDropLines(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) {
-    return sourceValue === true ? true : undefined;
-  }
-  if (override === null) return undefined;
-  return override === true ? true : undefined;
-}
-
-/**
- * Resolve a `hiLowLines` override. Mirrors {@link resolveDropLines};
- * the only difference is the per-family scope — `<c:hiLowLines>` has
- * no slot on `<c:areaChart>`.
- */
-function resolveHiLowLines(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) {
-    return sourceValue === true ? true : undefined;
-  }
-  if (override === null) return undefined;
-  return override === true ? true : undefined;
-}
-
-/**
- * Resolve a `serLines` override. Mirrors {@link resolveDropLines} /
- * {@link resolveHiLowLines}; the only difference is the per-family
- * scope — `<c:serLines>` has no slot on `<c:lineChart>` /
- * `<c:areaChart>` / `<c:pieChart>` / `<c:doughnutChart>` /
- * `<c:scatterChart>`.
- */
-function resolveSerLines(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) {
-    return sourceValue === true ? true : undefined;
-  }
-  if (override === null) return undefined;
-  return override === true ? true : undefined;
-}
-
-/**
- * Resolve a `scatterStyle` override.
- *
- * `undefined` → inherit the source's parsed `scatterStyle`.
- * `null`      → drop the inherited value (the writer falls back to the
- *               default `"lineMarker"`).
- * value       → replace.
- *
- * The grammar mirrors `dispBlanksAs` / `varyColors` so the chart-level
- * toggles compose the same way at the call site.
- */
-function resolveScatterStyle(
-  sourceValue: ChartScatterStyle | undefined,
-  override: ChartScatterStyle | null | undefined,
-): ChartScatterStyle | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
-}
-
-/**
- * Resolve a chart-level data-labels override.
- *
- * `undefined` → inherit the source's parsed `dataLabels` (downcast from
- * the read-side {@link ChartDataLabelsInfo} to the write-side
- * {@link ChartDataLabels} shape — they share field semantics).
- * `null`      → drop the inherited block.
- * object      → replace.
- */
-function resolveChartDataLabels(
-  sourceLabels: ChartDataLabelsInfo | undefined,
-  override: ChartDataLabels | null | undefined,
-): ChartDataLabels | undefined {
-  if (override === undefined) {
-    return sourceLabels ? { ...sourceLabels } : undefined;
-  }
-  if (override === null) return undefined;
-  return override;
-}
-
-/**
- * Resolve a per-series data-labels override.
- *
- * `undefined` → inherit the source series' `dataLabels`.
- * `null`      → drop the inherited block (series will fall back to
- *               whatever the chart-level default is at write time).
- * `false`     → suppress labels on this series alone.
- * object      → replace.
- */
-function resolveSeriesDataLabels(
-  sourceLabels: ChartDataLabelsInfo | undefined,
-  override: ChartDataLabels | false | null | undefined,
-): ChartDataLabels | false | undefined {
-  if (override === undefined) {
-    return sourceLabels ? { ...sourceLabels } : undefined;
-  }
-  if (override === null) return undefined;
-  return override;
-}
-
-
 

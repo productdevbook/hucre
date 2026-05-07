@@ -132,6 +132,40 @@ export function normalizeLayoutCoordinate(raw: unknown): number | undefined {
 }
 
 /**
+ * Normalize a {@link ChartManualLayout} for a cloned `SheetChart`.
+ * Drops every axis whose input is non-numeric / non-finite / outside
+ * the `0..1` band; returns `undefined` when every axis dropped so the
+ * cloned shape elides the field entirely (mirrors the writer-side
+ * normalization so a parsed value flows through `cloneChart` without
+ * bookkeeping the units). Coordinates outside the `0..1` band collapse
+ * rather than clamp — same accept-or-drop grammar as `titleFontSize` /
+ * `axisTitleFontSize` / `legendFontSize`.
+ *
+ * Distinct from {@link normalizeManualLayout} which returns
+ * {@link ResolvedManualLayout} for the writer; this variant preserves
+ * the public {@link ChartManualLayout} surface so the cloned
+ * `SheetChart` carries the same shape consumers passed in.
+ */
+export function normalizeChartManualLayout(
+  value: ChartManualLayout | undefined,
+): ChartManualLayout | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const out: ChartManualLayout = {};
+  const x = normalizeLayoutCoordinate(value.x);
+  if (x !== undefined) out.x = x;
+  const y = normalizeLayoutCoordinate(value.y);
+  if (y !== undefined) out.y = y;
+  const w = normalizeLayoutCoordinate(value.w);
+  if (w !== undefined) out.w = w;
+  const h = normalizeLayoutCoordinate(value.h);
+  if (h !== undefined) out.h = h;
+  if (out.x === undefined && out.y === undefined && out.w === undefined && out.h === undefined) {
+    return undefined;
+  }
+  return out;
+}
+
+/**
  * Build the `<c:layout><c:manualLayout>...</c:manualLayout></c:layout>`
  * block for a resolved layout. Returns `undefined` when the input is
  * `undefined` so the caller can elide the entire block.

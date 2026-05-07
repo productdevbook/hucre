@@ -42,6 +42,7 @@ import {
 import {
   type ResolvedManualLayout,
   buildManualLayout,
+  normalizeChartManualLayout,
   normalizeManualLayout,
   parseManualLayout,
 } from "./layout";
@@ -1460,4 +1461,397 @@ export function resolveTitleOverlay(chart: SheetChart): boolean {
  */
 export function resolveTitleLayout(chart: SheetChart): ResolvedManualLayout | undefined {
   return normalizeManualLayout(chart.titleLayout);
+}
+
+
+// ── Clone-side title constants ────────────────────────────────────
+
+const TITLE_BORDER_WIDTH_MIN_PT = 0.25;
+const TITLE_BORDER_WIDTH_MAX_PT = 13.5;
+
+
+// ── Clone resolvers (3-arg source/override) ───────────────────────
+
+/**
+ * Resolve a `titleLayout` override.
+ *
+ * `undefined` → inherit the source's parsed `titleLayout` (after
+ *               running it through {@link normalizeLegendLayout} so a
+ *               malformed source value drops cleanly — both manual-
+ *               layout slots share the same normalizer).
+ * `null`      → drop the inherited layout (the writer falls back to
+ *               Excel's auto-layout position above the plot area —
+ *               no `<c:layout>` block on `<c:title>`).
+ * `ChartManualLayout` → replace, after running through
+ *               {@link normalizeLegendLayout}. Coordinates outside the
+ *               `0..1` band collapse on the matching axis so the
+ *               cloned `SheetChart` always carries a value the writer
+ *               will accept; an override whose every axis dropped
+ *               collapses to `undefined` so the writer skips the
+ *               `<c:layout>` block entirely.
+ *
+ * The grammar mirrors `legendLayout` — both manual-layout slots
+ * compose the same way at the call site. Callers should gate the
+ * result on the resolved title visibility — when no title is emitted,
+ * the layout has no slot in the rendered chart.
+ */
+export function resolveCloneTitleLayout(
+  sourceValue: ChartManualLayout | undefined,
+  override: ChartManualLayout | null | undefined,
+): ChartManualLayout | undefined {
+  if (override === undefined) return normalizeChartManualLayout(sourceValue);
+  if (override === null) return undefined;
+  return normalizeChartManualLayout(override);
+}
+
+/**
+ * Resolve a `titleOverlay` override.
+ *
+ * `undefined` → inherit the source's parsed `titleOverlay`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               OOXML `false` default — the title reserves its own slot
+ *               above the plot area, no overlap with it).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `legendOverlay` / `roundedCorners` so the chart-
+ * level overlay toggles compose the same way at the call site. Callers
+ * should gate the result on the resolved title visibility — when no
+ * title is emitted, the overlay flag has no slot in the rendered chart.
+ */
+export function resolveCloneTitleOverlay(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
+}
+
+/**
+ * Resolve a `titleRotation` override.
+ *
+ * `undefined` → inherit the source's parsed `titleRotation`.
+ * `null`      → drop the inherited value (the writer falls back to the
+ *               OOXML `0` default — the title renders horizontally).
+ * `number`    → replace, after clamping / rounding through
+ *               {@link normalizeTitleRotation}.
+ *
+ * The grammar mirrors `titleOverlay` / `legendOverlay` so the chart-
+ * level title knobs compose the same way at the call site. Callers
+ * should gate the result on the resolved title visibility — when no
+ * title is emitted, the rotation has no slot in the rendered chart.
+ */
+export function resolveCloneTitleRotation(
+  sourceValue: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) return normalizeTitleRotation(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleRotation(override);
+}
+
+/**
+ * Resolve a `titleFontSize` override.
+ *
+ * `undefined` → inherit the source's parsed `titleFontSize`.
+ * `null`      → drop the inherited value (the writer falls back to
+ *               Excel's default 14pt).
+ * `number`    → replace, after clamping / rounding through
+ *               {@link normalizeTitleFontSize}.
+ *
+ * The grammar mirrors `titleRotation` / `titleOverlay` /
+ * `legendOverlay` so the chart-level title knobs compose the same way
+ * at the call site. Callers should gate the result on the resolved
+ * title visibility — when no title is emitted, the size has no slot
+ * in the rendered chart.
+ */
+export function resolveCloneTitleFontSize(
+  sourceValue: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) return normalizeTitleFontSize(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleFontSize(override);
+}
+
+/**
+ * Resolve a `titleBold` override.
+ *
+ * `undefined` → inherit the source's parsed `titleBold`.
+ * `null`      → drop the inherited flag (the writer falls back to the
+ *               OOXML default `b="0"`, non-bold).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `titleFontSize` / `titleRotation` /
+ * `titleOverlay` so the chart-level title knobs compose the same way
+ * at the call site. Callers should gate the result on the resolved
+ * title visibility — when no title is emitted, the flag has no slot
+ * in the rendered chart.
+ */
+export function resolveCloneTitleBold(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return normalizeTitleBold(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleBold(override);
+}
+
+/**
+ * Resolve a `titleItalic` override.
+ *
+ * `undefined` → inherit the source's parsed `titleItalic`.
+ * `null`      → drop the inherited flag (the writer falls back to the
+ *               OOXML default — no `i` attribute, equivalent to
+ *               non-italic).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `titleBold` / `titleFontSize` / `titleRotation`
+ * / `titleOverlay` so the chart-level title knobs compose the same way
+ * at the call site. Callers should gate the result on the resolved
+ * title visibility — when no title is emitted, the flag has no slot
+ * in the rendered chart.
+ */
+export function resolveCloneTitleItalic(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return normalizeTitleItalic(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleItalic(override);
+}
+
+/**
+ * Resolve a `titleColor` override.
+ *
+ * `undefined` → inherit the source's parsed `titleColor`.
+ * `null`      → drop the inherited fill (the writer falls back to the
+ *               theme text color — no `<a:solidFill>` block on the
+ *               title's default-paragraph properties).
+ * `string`    → replace with the normalized 6-character uppercase
+ *               hex form.
+ *
+ * The grammar mirrors `titleBold` / `titleItalic` / `titleFontSize` /
+ * `titleRotation` / `titleOverlay` so the chart-level title knobs
+ * compose the same way at the call site. Callers should gate the
+ * result on the resolved title visibility — when no title is
+ * emitted, the fill has no slot in the rendered chart.
+ */
+export function resolveCloneTitleColor(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeTitleColor(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleColor(override);
+}
+
+/**
+ * Resolve a `titleFillColor` override.
+ *
+ * `undefined` → inherit the source's parsed `titleFillColor` (after
+ *               running it through {@link normalizeTitleColor} so a
+ *               malformed source value drops cleanly — the hex
+ *               normalizer is purely shape-based and applies
+ *               identically to every `<a:srgbClr val="RRGGBB"/>`
+ *               slot).
+ * `null`      → drop the inherited fill (the writer emits no
+ *               `<c:spPr>` block on `<c:title>`, falling back to the
+ *               theme default — typically a transparent title
+ *               background).
+ * `string`    → replace, after running through
+ *               {@link normalizeTitleColor} so the override accepts
+ *               `"FF0000"` / `"#FF0000"` / `"ff0000"` and collapses
+ *               malformed tokens to `undefined`.
+ *
+ * The grammar mirrors `plotAreaFillColor` / `legendFillColor` /
+ * `titleColor` / `axisTitleColor` so the fill / color knobs compose
+ * the same way at the call site. Callers should gate the result on
+ * the resolved title visibility — when no title is emitted, the fill
+ * has no slot in the rendered chart.
+ *
+ * Independent of `titleColor`: the two knobs target different
+ * children of `<c:title>` (`<c:spPr>` for the background fill,
+ * `<c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>` for the font
+ * color), so a caller can pin both without conflict.
+ */
+export function resolveCloneTitleFillColor(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeTitleColor(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleColor(override);
+}
+
+/**
+ * Resolve a `titleBorderColor` override.
+ *
+ * `undefined` → inherit the source's parsed `titleBorderColor` (after
+ *               running it through {@link normalizeTitleColor} so a
+ *               malformed source value drops cleanly — the hex
+ *               normalizer is purely shape-based and applies
+ *               identically to every `<a:srgbClr val="RRGGBB"/>`
+ *               slot).
+ * `null`      → drop the inherited stroke (the writer emits no
+ *               `<a:ln>` block on `<c:title><c:spPr>`, falling back
+ *               to the theme default — typically no visible border).
+ * `string`    → replace, after running through
+ *               {@link normalizeTitleColor} so the override accepts
+ *               `"1F77B4"` / `"#1F77B4"` / `"1f77b4"` and collapses
+ *               malformed tokens to `undefined`.
+ *
+ * The grammar mirrors `plotAreaBorderColor` / `titleFillColor` so the
+ * chart `<c:spPr>` knobs compose the same way at the call site.
+ * Callers should gate the result on the resolved title visibility —
+ * when no title is emitted, the stroke has no slot in the rendered
+ * chart.
+ *
+ * Independent of `titleFillColor`: the two knobs target different
+ * children of the shared `<c:spPr>` block on `<c:title>`
+ * (`<a:solidFill>` for the fill, `<a:ln>` for the stroke), so a
+ * caller can pin both without conflict.
+ */
+export function resolveCloneTitleBorderColor(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeTitleColor(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleColor(override);
+}
+
+/**
+ * Normalize a `titleBorderWidth` value for the cloned `SheetChart`.
+ * Mirrors the writer's `clampStrokeWidthPt` — values are clamped to the
+ * `0.25..13.5` pt band Excel's UI exposes and snapped to the 0.25 pt
+ * grid so a parsed-then-cloned-then-written width does not drift across
+ * round-trips (Excel rounds in the UI anyway). Non-finite / non-numeric
+ * tokens (`NaN`, `Infinity`, strings, `null` from an untyped caller)
+ * collapse to `undefined` so the cloned chart drops the field rather
+ * than carry a value the writer would silently elide back to absence.
+ */
+export function normalizeTitleBorderWidth(value: number | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
+  const snapped = Math.round(value * 4) / 4;
+  if (snapped < TITLE_BORDER_WIDTH_MIN_PT) return TITLE_BORDER_WIDTH_MIN_PT;
+  if (snapped > TITLE_BORDER_WIDTH_MAX_PT) return TITLE_BORDER_WIDTH_MAX_PT;
+  return snapped;
+}
+
+/**
+ * Resolve a `titleBorderWidth` override.
+ *
+ * `undefined` → inherit the source's parsed `titleBorderWidth` (after
+ *               running it through {@link normalizeTitleBorderWidth}
+ *               so a malformed source value drops cleanly).
+ * `null`      → drop the inherited width (the writer emits `<a:ln>`
+ *               without a `w` attribute, the line keeps Excel's
+ *               auto-thickness).
+ * `number`    → replace with the clamped / snapped point value.
+ *               Non-finite / non-numeric overrides collapse to
+ *               `undefined` via the normalizer so the cloned
+ *               `SheetChart` always carries a value the writer will
+ *               accept.
+ *
+ * The grammar mirrors `plotAreaBorderWidth` / `legendBorderWidth` /
+ * the series-line stroke width so the chart `<a:ln w=..>` knobs
+ * compose the same way at the call site. Callers should gate the
+ * result on the resolved title visibility — when no title is emitted,
+ * the width has no slot in the rendered chart.
+ *
+ * Independent of `titleBorderColor`: both knobs land on the same
+ * `<a:ln>` element but on a different slot (color is
+ * `<a:solidFill><a:srgbClr>`, width is the `w` attribute on `<a:ln>`),
+ * so a caller can pin both without conflict.
+ */
+export function resolveCloneTitleBorderWidth(
+  sourceValue: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) return normalizeTitleBorderWidth(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleBorderWidth(override);
+}
+
+/**
+ * Resolve a `titleStrike` override.
+ *
+ * `undefined` → inherit the source's parsed `titleStrike`.
+ * `null`      → drop the inherited flag (the writer falls back to the
+ *               OOXML default — no `strike` attribute, equivalent to
+ *               no strikethrough).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `titleBold` / `titleItalic` / `titleColor` /
+ * `titleFontSize` / `titleRotation` / `titleOverlay` so the chart-level
+ * title knobs compose the same way at the call site. Callers should
+ * gate the result on the resolved title visibility — when no title is
+ * emitted, the flag has no slot in the rendered chart.
+ */
+export function resolveCloneTitleStrike(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return normalizeTitleStrike(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleStrike(override);
+}
+
+/**
+ * Resolve a `titleUnderline` override.
+ *
+ * `undefined` → inherit the source's parsed `titleUnderline`.
+ * `null`      → drop the inherited flag (the writer falls back to the
+ *               OOXML default — no `u` attribute, equivalent to no
+ *               underline).
+ * `boolean`   → replace.
+ *
+ * The grammar mirrors `titleBold` / `titleItalic` / `titleStrike` /
+ * `titleColor` / `titleFontSize` / `titleRotation` / `titleOverlay`
+ * so the chart-level title knobs compose the same way at the call
+ * site. Callers should gate the result on the resolved title
+ * visibility — when no title is emitted, the flag has no slot in the
+ * rendered chart.
+ */
+export function resolveCloneTitleUnderline(
+  sourceValue: boolean | undefined,
+  override: boolean | null | undefined,
+): boolean | undefined {
+  if (override === undefined) return normalizeTitleUnderline(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleUnderline(override);
+}
+
+/**
+ * Resolve a `titleFontFamily` override.
+ *
+ * `undefined` → inherit the source's parsed `titleFontFamily`,
+ *               running it through {@link normalizeTitleFontFamily}
+ *               so a malformed source value cannot leak through to
+ *               the cloned chart.
+ * `null`      → drop the inherited typeface (the writer falls back to
+ *               the OOXML default — no `<a:latin>` element, the title
+ *               inherits the theme typeface).
+ * `string`    → replace, running it through
+ *               {@link normalizeTitleFontFamily} so the override
+ *               accepts any caller spelling that the writer will
+ *               accept (with surrounding whitespace trimmed; empty /
+ *               whitespace-only strings collapse to a drop).
+ *
+ * The grammar mirrors `titleColor` (the other string-typed knob) /
+ * `titleBold` / `titleItalic` / `titleStrike` / `titleUnderline` /
+ * `titleFontSize` / `titleRotation` / `titleOverlay` so the chart-
+ * level title knobs compose the same way at the call site. Callers
+ * should gate the result on the resolved title visibility — when no
+ * title is emitted, the typeface has no slot in the rendered chart.
+ */
+export function resolveCloneTitleFontFamily(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeTitleFontFamily(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleFontFamily(override);
 }
