@@ -2598,6 +2598,54 @@ export interface SheetChart {
    */
   titleLayout?: ChartManualLayout;
   /**
+   * Chart title background fill color. Maps to `<c:title><c:spPr>
+   * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></c:spPr>
+   * </c:title>` (CT_Title, ECMA-376 Part 1, §21.2.2.210) — Excel's
+   * "Format Chart Title -> Fill -> Solid fill -> Color" picker (the
+   * same dialog the user reaches by right-clicking the title block).
+   * The element sits on `<c:title>` between `<c:overlay>` and
+   * `<c:txPr>` per the CT_Title schema sequence — distinct from
+   * {@link titleColor}, which lands on the run / default-paragraph's
+   * `<a:defRPr><a:solidFill>` text-character-properties slot.
+   *
+   * Accepts a 6-character hex sRGB triple with or without a leading
+   * `#` (e.g. `"FFFF00"`, `"#FFFF00"`, `"ffff00"`); the writer
+   * normalizes to OOXML's canonical 6-character uppercase form before
+   * emit. Empty / whitespace-only strings, alpha-channel forms,
+   * non-hex characters, and non-string escapes from an untyped caller
+   * all collapse to `undefined` so the writer skips the entire
+   * `<c:spPr>` block and the title renders at the theme default fill
+   * (Excel's reference behavior for a fresh title that has not had a
+   * custom background fill picked — typically a transparent
+   * background with no `<c:spPr>` block).
+   *
+   * Default: omitted — the title renders at the theme default fill
+   * (no `<c:spPr>` block, matching Excel's reference serialization
+   * for a fresh chart title whose background has not been
+   * customized). Pin a hex color to render the title background in
+   * that color (e.g. `"FFFF00"` for a highlighted title on a
+   * dashboard tile, or `"FFFFFF"` for an opaque white title on a
+   * non-white plot area).
+   *
+   * Silently ignored when no title is rendered (`showTitle === false`
+   * or `title` is absent) — there is no `<c:title>` block to host the
+   * fill in either case. Mirrors `plotAreaFillColor` /
+   * `legendFillColor` — same accept-with-or-without-`#` hex grammar,
+   * same OOXML `<c:spPr><a:solidFill><a:srgbClr val=".."/>
+   * </a:solidFill></c:spPr>` mapping — so a caller can thread a
+   * single hex string through every `<c:spPr>`-based fill slot.
+   * Composes independently with {@link titleBold} / {@link titleItalic}
+   * / {@link titleStrike} / {@link titleUnderline} / {@link titleColor}
+   * / {@link titleFontSize} / {@link titleFontFamily} /
+   * {@link titleRotation} / {@link titleOverlay} / {@link titleLayout}:
+   * the fill lands on the title's `<c:spPr>` block, the typography
+   * knobs on the title's `<c:tx><c:rich><a:p>` rich-text body, the
+   * layout on the title's `<c:layout>` block, and the overlay flag on
+   * `<c:overlay>` — every knob targets a different child of
+   * `<c:title>`.
+   */
+  titleFillColor?: string;
+  /**
    * Auto-title-deleted flag. Maps to `<c:chart><c:autoTitleDeleted
    * val=".."/>` — Excel's record of whether the user explicitly deleted
    * the auto-generated title that single-series charts synthesise from
@@ -7033,6 +7081,37 @@ export interface Chart {
    * into {@link cloneChart} without conversion.
    */
   titleLayout?: ChartManualLayout;
+  /**
+   * Chart title background fill color pulled from `<c:title><c:spPr>
+   * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></c:spPr>
+   * </c:title>`. Reflects Excel's "Format Chart Title -> Fill -> Solid
+   * fill -> Color" picker (the same dialog the user reaches by
+   * right-clicking the title block). The element sits on `<c:title>`
+   * between `<c:overlay>` and `<c:txPr>` per the CT_Title schema
+   * sequence (ECMA-376 Part 1, §21.2.2.210).
+   *
+   * Reports the 6-character uppercase hex string when the source
+   * chart pins a literal `<a:srgbClr val="RRGGBB"/>` fill on the
+   * title's `<c:spPr>` block. Theme references (`<a:schemeClr>`),
+   * non-solid fills (`<a:noFill>` / `<a:gradFill>` / `<a:pattFill>` /
+   * `<a:blipFill>`), and the OOXML system / preset color forms
+   * (`<a:sysClr>` / `<a:hslClr>` / `<a:prstClr>`) all collapse to
+   * `undefined` — only the literal RGB triple round-trips losslessly
+   * through {@link writeChart}. Malformed `val` tokens (wrong length,
+   * non-hex characters) likewise drop to `undefined` rather than
+   * fabricate a value the writer would round-trip into a malformed
+   * `<a:srgbClr>`.
+   *
+   * Reported as `undefined` whenever the source chart has no
+   * `<c:title>` element at all, or when the title is a `<c:strRef>`
+   * (formula reference) with no `<c:rich>` body — Excel's "Format
+   * Title -> Fill" dialog is still authored against `<c:spPr>` even
+   * when the text body is a formula reference, so the lookup is on
+   * `<c:title>` directly rather than gated on `<c:rich>`. Mirrors the
+   * writer-side {@link SheetChart.titleFillColor} so a parsed value
+   * slots straight into {@link cloneChart} without conversion.
+   */
+  titleFillColor?: string;
   /**
    * Auto-title-deleted flag pulled from `<c:chart><c:autoTitleDeleted
    * val=".."/>`. Reflects Excel's "the user explicitly deleted the

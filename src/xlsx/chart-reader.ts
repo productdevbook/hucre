@@ -217,6 +217,22 @@ export function parseChart(xml: string): Chart | undefined {
   const titleLayout = parseTitleLayout(chartEl);
   if (titleLayout !== undefined) out.titleLayout = titleLayout;
 
+  // `<c:title><c:spPr><a:solidFill>` carries Excel's "Format Chart
+  // Title -> Fill -> Solid fill -> Color" picker. CT_Title places the
+  // `<c:spPr>` block between `<c:overlay>` and `<c:txPr>` per the
+  // schema sequence (ECMA-376 Part 1, §21.2.2.210). The reader
+  // surfaces only literal `<a:srgbClr val="RRGGBB"/>` fills; theme
+  // references and non-solid fills (`<a:noFill>` / `<a:gradFill>` /
+  // `<a:pattFill>` / `<a:blipFill>` / `<a:schemeClr>`) drop to
+  // `undefined` so a round-trip never fabricates a fill the writer
+  // cannot reproduce on emit. The lookup is on `<c:title>` directly
+  // rather than gated on `<c:rich>` so a title authored as a
+  // `<c:strRef>` formula reference can still surface its background
+  // fill — Excel's "Format Title -> Fill" dialog is independent of
+  // whether the text body is rich or a formula.
+  const titleFillColor = parseTitleFillColor(chartEl);
+  if (titleFillColor !== undefined) out.titleFillColor = titleFillColor;
+
   // `<c:autoTitleDeleted>` records whether the user explicitly deleted
   // the auto-generated title — independent of whether a literal
   // `<c:title>` is present. The element sits on `<c:chart>` directly
@@ -4318,6 +4334,53 @@ function parseTitleColor(chartEl: XmlElement): string | undefined {
   if (!srgbClr) return undefined;
   const raw = srgbClr.attrs.val;
   return normalizeRgbHex(raw);
+}
+
+/**
+ * Pull the chart-title background fill color off the canonical
+ * `<c:title><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+ * </a:solidFill></c:spPr></c:title>` chain Excel writes when the
+ * user pins "Format Chart Title -> Fill -> Solid fill -> Color".
+ *
+ * Returns the 6-character uppercase hex string when the parser walks
+ * the full chain and lands on an `<a:srgbClr val="RRGGBB"/>`. Theme
+ * references (`<a:schemeClr>`), `<a:hslClr>`, `<a:sysClr>`, and
+ * `<a:prstClr>` all collapse to `undefined` — only the literal RGB
+ * triple round-trips losslessly through {@link writeChart}. Non-solid
+ * fills (`<a:noFill>`, `<a:gradFill>`, `<a:pattFill>`, `<a:blipFill>`)
+ * likewise drop to `undefined` so a round-trip never fabricates a
+ * fill the writer cannot reproduce on emit. Malformed `val` tokens
+ * (wrong length, non-hex characters) drop to `undefined` rather than
+ * fabricate a value the writer would round-trip into a malformed
+ * `<a:srgbClr>`.
+ *
+ * The lookup is scoped to direct children of `<c:title>` so a stray
+ * `<c:spPr>` elsewhere in the chart (e.g. on the plot area, a series,
+ * or the legend) cannot leak in. Returns `undefined` whenever the
+ * chart omits the `<c:title>` element or the
+ * `<c:spPr><a:solidFill><a:srgbClr>` chain is malformed at any link.
+ * Mirrors the legend / plot-area fill readers exactly so a parsed
+ * value slots straight back into the writer's emit path.
+ *
+ * Independent of {@link parseTitleColor}: the fill lives on
+ * `<c:title><c:spPr>`, the font color lives on
+ * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>` — the
+ * two readers walk disjoint paths so a caller can pin both knobs
+ * without conflict. Unlike {@link parseTitleColor}, the lookup is on
+ * `<c:title>` directly rather than gated on `<c:rich>` so a title
+ * authored as a `<c:strRef>` formula reference can still surface its
+ * background fill.
+ */
+function parseTitleFillColor(chartEl: XmlElement): string | undefined {
+  const title = findChild(chartEl, "title");
+  if (!title) return undefined;
+  const spPr = findChild(title, "spPr");
+  if (!spPr) return undefined;
+  const solidFill = findChild(spPr, "solidFill");
+  if (!solidFill) return undefined;
+  const srgbClr = findChild(solidFill, "srgbClr");
+  if (!srgbClr) return undefined;
+  return normalizeRgbHex(srgbClr.attrs.val);
 }
 
 /**

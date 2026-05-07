@@ -676,6 +676,36 @@ export interface CloneChartOptions {
    */
   titleLayout?: ChartManualLayout | null;
   /**
+   * Override `SheetChart.titleFillColor`. `undefined` (or omitted)
+   * inherits the source's parsed `titleFillColor`; `null` drops the
+   * inherited fill (the writer emits no `<c:spPr>` block on
+   * `<c:title>`, falling back to the theme default — typically a
+   * transparent title background); a hex string replaces it. The
+   * override is normalized through the writer-side hex-color path —
+   * accepts `"FFFF00"` / `"#FFFF00"` / `"ffff00"` and collapses
+   * malformed tokens (wrong length, non-hex characters, alpha-channel
+   * forms, empty / whitespace-only strings, non-string escapes from
+   * an untyped caller) to `undefined`. The cloned `SheetChart` always
+   * carries a value the writer will accept; malformed source values
+   * likewise collapse on the resolver path.
+   *
+   * The override is silently dropped from the cloned `SheetChart`
+   * when the resolved chart renders no title (`title` resolved to
+   * `undefined` or `showTitle === false`) — there is no `<c:title>`
+   * block to host the fill on a hidden title, so leaking the value
+   * into the output would carry a pin Excel never reads.
+   *
+   * The grammar mirrors `plotAreaFillColor` / `legendFillColor` /
+   * `titleColor` / `axes.x.axisTitleColor` so the fill / color knobs
+   * compose the same way at the call site. The override lands on the
+   * title's `<c:spPr>` block and composes independently with
+   * `titleColor` (which lands on the title's
+   * `<c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>` slot) — the
+   * two knobs target different children of `<c:title>` so a caller
+   * can pin both without conflict.
+   */
+  titleFillColor?: string | null;
+  /**
    * Override `<c:autoTitleDeleted>` (the "user explicitly deleted the
    * auto-generated title" flag).
    *
@@ -2124,6 +2154,24 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // layout value through both call sites.
     const resolvedTitleLayout = resolveTitleLayout(source.titleLayout, options.titleLayout);
     if (resolvedTitleLayout !== undefined) out.titleLayout = resolvedTitleLayout;
+
+    // `titleFillColor` only renders inside `<c:title>` — a clone that
+    // omits the title has no `<c:spPr>` slot for the writer to
+    // populate. Same scope rule as the typography knobs / title
+    // layout: the override wins over the source's parsed value;
+    // absence inherits, `null` drops, a hex string replaces. Malformed
+    // overrides collapse via the normalizer so the cloned `SheetChart`
+    // always carries a value the writer will accept; malformed source
+    // values likewise collapse on the resolver path. Composes
+    // independently with `titleColor` — the two knobs target different
+    // children of `<c:title>` (`<c:spPr>` for the background fill,
+    // `<c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>` for the
+    // font color).
+    const resolvedTitleFillColor = resolveTitleFillColor(
+      source.titleFillColor,
+      options.titleFillColor,
+    );
+    if (resolvedTitleFillColor !== undefined) out.titleFillColor = resolvedTitleFillColor;
   }
 
   // `<c:autoTitleDeleted>` sits on `<c:chart>` directly, not inside
@@ -3825,6 +3873,44 @@ function normalizeTitleColor(value: string | undefined): string | undefined {
  * emitted, the fill has no slot in the rendered chart.
  */
 function resolveTitleColor(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeTitleColor(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleColor(override);
+}
+
+/**
+ * Resolve a `titleFillColor` override.
+ *
+ * `undefined` → inherit the source's parsed `titleFillColor` (after
+ *               running it through {@link normalizeTitleColor} so a
+ *               malformed source value drops cleanly — the hex
+ *               normalizer is purely shape-based and applies
+ *               identically to every `<a:srgbClr val="RRGGBB"/>`
+ *               slot).
+ * `null`      → drop the inherited fill (the writer emits no
+ *               `<c:spPr>` block on `<c:title>`, falling back to the
+ *               theme default — typically a transparent title
+ *               background).
+ * `string`    → replace, after running through
+ *               {@link normalizeTitleColor} so the override accepts
+ *               `"FF0000"` / `"#FF0000"` / `"ff0000"` and collapses
+ *               malformed tokens to `undefined`.
+ *
+ * The grammar mirrors `plotAreaFillColor` / `legendFillColor` /
+ * `titleColor` / `axisTitleColor` so the fill / color knobs compose
+ * the same way at the call site. Callers should gate the result on
+ * the resolved title visibility — when no title is emitted, the fill
+ * has no slot in the rendered chart.
+ *
+ * Independent of `titleColor`: the two knobs target different
+ * children of `<c:title>` (`<c:spPr>` for the background fill,
+ * `<c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>` for the font
+ * color), so a caller can pin both without conflict.
+ */
+function resolveTitleFillColor(
   sourceValue: string | undefined,
   override: string | null | undefined,
 ): string | undefined {

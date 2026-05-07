@@ -81,6 +81,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveTitleUnderline(chart),
         resolveTitleFontFamily(chart),
         resolveTitleLayout(chart),
+        resolveTitleFillColor(chart),
       ),
     );
   }
@@ -285,6 +286,7 @@ function buildTitle(
   underline: boolean | undefined,
   fontFamily: string | undefined,
   layout: ResolvedManualLayout | undefined,
+  fillRgbHex: string | undefined,
 ): string {
   // OOXML's `<a:bodyPr rot="N"/>` attribute is in 60000ths of a degree.
   // The writer holds `titleRotation` in whole degrees and converts at
@@ -441,7 +443,49 @@ function buildTitle(
     titleChildren.push(layoutXml);
   }
   titleChildren.push(xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }));
+  // CT_Title (ECMA-376 Part 1, §21.2.2.210) places the optional
+  // `<c:spPr>` between `<c:overlay>` and `<c:txPr>` / `<c:extLst>`.
+  // The writer skips emission entirely when the caller did not pin a
+  // fill color so a fresh chart matches Excel's reference
+  // serialization byte-for-byte — Excel itself omits the block
+  // whenever the title renders at the theme default fill (typically a
+  // transparent title background with no `<c:spPr>` block). Currently
+  // the writer only authors `<a:solidFill>` here; stroke (`<a:ln>`)
+  // and other CT_ShapeProperties children are not modelled at this
+  // layer. Distinct from the `<a:defRPr><a:solidFill>` font-color slot
+  // inside `<c:tx><c:rich>` that {@link SheetChart.titleColor} pins —
+  // the two knobs target different children of `<c:title>` so a
+  // caller can pin both without conflict.
+  const titleSpPrXml = buildTitleSpPr(fillRgbHex);
+  if (titleSpPrXml !== undefined) {
+    titleChildren.push(titleSpPrXml);
+  }
   return xmlElement("c:title", undefined, titleChildren);
+}
+
+/**
+ * Build the `<c:spPr>` element on `<c:title>` that carries the
+ * title's background fill. Returns `undefined` when no fill color is
+ * pinned so the caller can elide the entire block — Excel's reference
+ * serialization omits `<c:spPr>` from `<c:title>` whenever the title
+ * renders at the theme default fill (typically a transparent title
+ * background).
+ *
+ * The emitted block mirrors the minimal `<c:spPr>` shape Excel writes
+ * when the user pins "Format Chart Title -> Fill -> Solid fill ->
+ * Color": `<c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+ * </a:solidFill></c:spPr>`. The `val` attribute holds the canonical
+ * 6-character uppercase hex form (the writer normalizes the input
+ * ahead of this call so a malformed source value never reaches emit).
+ *
+ * Mirrors the plot-area / legend `<c:spPr>` slots so a single hex
+ * string threads cleanly through every fill knob the writer authors.
+ */
+function buildTitleSpPr(fillRgbHex: string | undefined): string | undefined {
+  if (fillRgbHex === undefined) return undefined;
+  return xmlElement("c:spPr", undefined, [
+    xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillRgbHex })]),
+  ]);
 }
 
 /**
@@ -660,6 +704,31 @@ function normalizeTitleColor(value: string | undefined): string | undefined {
  */
 function resolveTitleColor(chart: SheetChart): string | undefined {
   return normalizeTitleColor(chart.titleColor);
+}
+
+/**
+ * Resolve `<c:title><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+ * </a:solidFill></c:spPr></c:title>` from
+ * {@link SheetChart.titleFillColor}.
+ *
+ * Returns the 6-character uppercase hex string the writer emits, or
+ * `undefined` when the chart leaves the field unset / passed a
+ * malformed token. Delegates to {@link normalizeTitleColor} so the
+ * accept-with-or-without-`#` grammar matches the chart-title font
+ * color / plot-area fill / legend fill resolvers exactly. The fill
+ * is only meaningful when the chart actually emits a title — the
+ * caller is expected to gate the call on `showTitle && chart.title`.
+ * A chart whose title is suppressed has no `<c:title>` block to host
+ * the `<c:spPr>` slot in either case.
+ *
+ * Independent of {@link resolveTitleColor}: the fill lands on
+ * `<c:title><c:spPr>`, the font color lands on the
+ * `<a:defRPr><a:solidFill>` slot inside `<c:tx><c:rich><a:p><a:pPr>`
+ * — the two resolvers target different children of `<c:title>` so a
+ * single configuration call can pin both.
+ */
+function resolveTitleFillColor(chart: SheetChart): string | undefined {
+  return normalizeTitleColor(chart.titleFillColor);
 }
 
 /**
