@@ -19,3 +19,4 @@ export * from "./legend";
 export * from "./dataLabels";
 export * from "./dataTable";
 export * from "./series";
+export * from "./axis";
