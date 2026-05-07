@@ -385,6 +385,28 @@ export interface CloneChartOptions {
    * has a `<c:plotArea>` element to host the layout.
    */
   plotAreaLayout?: ChartManualLayout | null;
+  /**
+   * Override `SheetChart.plotAreaFillColor`. `undefined` (or omitted)
+   * inherits the source's parsed `plotAreaFillColor`; `null` drops the
+   * inherited fill (the writer falls back to the auto-fill Excel picks
+   * from the chart's theme — no `<c:spPr>` block on the plot area); a
+   * 6-digit RGB hex string replaces it.
+   *
+   * The override runs through the same sRGB normalizer as the writer —
+   * the leading `#` and case are accepted, then the value collapses to
+   * the OOXML canonical uppercase form. Malformed tokens (wrong length,
+   * non-hex characters, alpha-channel forms, non-string escapes from
+   * an untyped caller) collapse to `undefined` so the cloned
+   * `SheetChart` drops the field rather than carry a value the writer
+   * would silently elide back to absence.
+   *
+   * The grammar mirrors `titleColor` / `axes.x.axisTitleColor` /
+   * `axes.x.labelColor` so the chart `<a:srgbClr>` knobs compose the
+   * same way at the call site. Unlike the title / axis-title color
+   * knobs, the plot-area fill is never gated on a visibility flag —
+   * every chart has a `<c:plotArea>` element to host the fill.
+   */
+  plotAreaFillColor?: string | null;
   /** Override `SheetChart.barGrouping`. */
   barGrouping?: SheetChart["barGrouping"];
   /**
@@ -1846,6 +1868,22 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     options.plotAreaLayout,
   );
   if (resolvedPlotAreaLayout !== undefined) out.plotAreaLayout = resolvedPlotAreaLayout;
+
+  // Plot-area solid fill color is independent of the legend / title
+  // visibility — every chart has a `<c:plotArea>` element to host the
+  // `<c:spPr>` slot. `undefined` inherits the source's parsed
+  // `plotAreaFillColor` (after the writer-side normalizer collapses any
+  // malformed token), `null` drops the inherited fill (the writer
+  // emits no `<c:spPr>` block, the plot area inherits the auto-fill
+  // Excel picks from the chart's theme), a 6-digit hex string replaces
+  // it. Malformed overrides collapse to `undefined` via the normalizer
+  // so the cloned `SheetChart` always carries a value the writer will
+  // accept.
+  const resolvedPlotAreaFillColor = resolvePlotAreaFillColor(
+    source.plotAreaFillColor,
+    options.plotAreaFillColor,
+  );
+  if (resolvedPlotAreaFillColor !== undefined) out.plotAreaFillColor = resolvedPlotAreaFillColor;
 
   const barGrouping = options.barGrouping !== undefined ? options.barGrouping : source.barGrouping;
   if (barGrouping !== undefined && (type === "bar" || type === "column")) {
@@ -3469,6 +3507,56 @@ function resolvePlotAreaLayout(
   if (override === undefined) return normalizeLegendLayout(sourceValue);
   if (override === null) return undefined;
   return normalizeLegendLayout(override);
+}
+
+/**
+ * Normalize a `plotAreaFillColor` value for the cloned `SheetChart`.
+ * Mirrors the writer's `normalizePlotAreaFillColor` — the cloned shape
+ * is guaranteed to round-trip through the writer without surprise: a
+ * leading `#` and any case are accepted, then the value collapses to
+ * the OOXML canonical uppercase form. Malformed inputs (wrong length,
+ * non-hex characters, alpha-channel forms, non-string escapes from an
+ * untyped caller) collapse to `undefined` so the cloned chart drops
+ * the field rather than carry a value the writer would silently elide
+ * back to absence.
+ */
+function normalizePlotAreaFillColor(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  const hex = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
+  if (hex.length !== 6) return undefined;
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return undefined;
+  return hex.toUpperCase();
+}
+
+/**
+ * Resolve a `plotAreaFillColor` override.
+ *
+ * `undefined` → inherit the source's parsed `plotAreaFillColor` (after
+ *               running it through {@link normalizePlotAreaFillColor}
+ *               so a malformed source value drops cleanly).
+ * `null`      → drop the inherited fill (the writer emits no `<c:spPr>`
+ *               block, the plot area inherits the auto-fill Excel
+ *               picks from the chart's theme).
+ * `string`    → replace with the normalized 6-character uppercase hex
+ *               form. Malformed overrides collapse to `undefined` via
+ *               the normalizer so the cloned `SheetChart` always
+ *               carries a value the writer will accept.
+ *
+ * The grammar mirrors `titleColor` / `axes.x.axisTitleColor` /
+ * `axes.x.labelColor` so the chart `<a:srgbClr>` knobs compose the
+ * same way at the call site. Unlike those text-color knobs, the
+ * plot-area fill is never gated on a visibility flag — every chart has
+ * a `<c:plotArea>` element to host the fill.
+ */
+function resolvePlotAreaFillColor(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizePlotAreaFillColor(sourceValue);
+  if (override === null) return undefined;
+  return normalizePlotAreaFillColor(override);
 }
 
 /**

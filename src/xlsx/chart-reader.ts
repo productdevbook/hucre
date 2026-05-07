@@ -434,6 +434,18 @@ export function parseChart(xml: string): Chart | undefined {
     // an out-of-range layout both round-trip lossless.
     const plotAreaLayout = parsePlotAreaLayout(plotArea);
     if (plotAreaLayout !== undefined) out.plotAreaLayout = plotAreaLayout;
+
+    // `<c:plotArea><c:spPr><a:solidFill><a:srgbClr val=".."/></a:solidFill>
+    // </c:spPr></c:plotArea>` carries Excel's "Format Plot Area -> Fill ->
+    // Solid fill -> Color" pin. CT_PlotArea places the `<c:spPr>` slot at
+    // the tail of `<c:plotArea>` after every chart-type element / axes /
+    // `<c:dTable>`. The reader surfaces only the literal `<a:srgbClr>`
+    // form so absence, malformed hex tokens, non-solid fills (`<a:noFill>`
+    // / `<a:gradFill>` / `<a:pattFill>` / `<a:blipFill>`), and theme-color
+    // references (`<a:schemeClr>`) all collapse to `undefined` so a
+    // round-trip never fabricates a color Excel cannot render.
+    const plotAreaFillColor = parsePlotAreaFillColor(plotArea);
+    if (plotAreaFillColor !== undefined) out.plotAreaFillColor = plotAreaFillColor;
   }
 
   const legend = parseLegend(chartEl);
@@ -3865,6 +3877,42 @@ function parsePlotAreaLayout(plotArea: XmlElement): ChartManualLayout | undefine
     return undefined;
   }
   return out;
+}
+
+/**
+ * Pull `<c:plotArea><c:spPr><a:solidFill><a:srgbClr val=".."/></a:solidFill>
+ * </c:spPr></c:plotArea>` off the plot area. Returns the plot-area solid
+ * fill color as a 6-character uppercase hex string.
+ *
+ * The OOXML `<a:srgbClr>` element carries the literal sRGB color
+ * (`CT_SRgbColor`, ECMA-376 Part 1, §20.1.2.3.32) inside the fill choice
+ * of `<c:spPr>` (`CT_ShapeProperties`, §20.1.2.3.13). The `<c:spPr>` slot
+ * sits at the tail of `<c:plotArea>` per `CT_PlotArea` (§21.2.2.145),
+ * after every chart-type element / axes / `<c:dTable>`.
+ *
+ * The reader surfaces only the literal `<a:srgbClr>` form — absence,
+ * non-solid fills (`<a:noFill>` / `<a:gradFill>` / `<a:pattFill>` /
+ * `<a:blipFill>`), and theme-color references (`<a:schemeClr>`) all
+ * collapse to `undefined` so a chart that pinned a fill the writer
+ * cannot reproduce on emit drops the field rather than fabricate one
+ * Excel would render differently. Malformed `val` tokens (wrong length,
+ * non-hex characters, alpha-channel forms, non-string escapes) likewise
+ * drop to `undefined`.
+ *
+ * Mirrors the writer-side {@link SheetChart.plotAreaFillColor} so a
+ * parsed value slots straight into {@link cloneChart} without
+ * conversion. The lookup is scoped to direct children of `<c:plotArea>`
+ * so a stray `<c:spPr>` elsewhere (e.g. on a series, on an axis, on the
+ * `<c:dTable>` block) cannot leak in.
+ */
+function parsePlotAreaFillColor(plotArea: XmlElement): string | undefined {
+  const spPr = findChild(plotArea, "spPr");
+  if (!spPr) return undefined;
+  const solidFill = findChild(spPr, "solidFill");
+  if (!solidFill) return undefined;
+  const srgbClr = findChild(solidFill, "srgbClr");
+  if (!srgbClr) return undefined;
+  return normalizeRgbHex(srgbClr.attrs.val);
 }
 
 /**

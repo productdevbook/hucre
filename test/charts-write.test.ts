@@ -19263,3 +19263,157 @@ describe("writeChart — plotAreaLayout", () => {
     expect(reparsed?.plotAreaLayout).toEqual({ x: 0.1, y: 0.2, w: 0.8, h: 0.6 });
   });
 });
+
+// ── writeChart — plotAreaFillColor (solid fill) ─────────────────────
+
+describe("writeChart — plotAreaFillColor", () => {
+  function plotAreaOf(xml: string): string {
+    const m = xml.match(/<c:plotArea>[\s\S]*?<\/c:plotArea>/);
+    if (!m) throw new Error("No <c:plotArea> block found in chart XML");
+    return m[0];
+  }
+
+  it("does not emit <c:spPr> when plotAreaFillColor is unset (matches Excel reference)", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    const plotArea = plotAreaOf(result.chartXml);
+    expect(plotArea).not.toContain("<c:spPr>");
+    expect(plotArea).not.toContain("<a:solidFill>");
+  });
+
+  it("emits <c:spPr><a:solidFill><a:srgbClr> when plotAreaFillColor is set", () => {
+    const result = writeChart(makeChart({ plotAreaFillColor: "F2F2F2" }), "Sheet1");
+    const plotArea = plotAreaOf(result.chartXml);
+    expect(plotArea).toContain("<c:spPr>");
+    expect(plotArea).toContain("<a:solidFill>");
+    expect(plotArea).toContain('<a:srgbClr val="F2F2F2"/>');
+  });
+
+  it("normalizes a leading # and lowercase hex to the canonical uppercase form", () => {
+    const result = writeChart(makeChart({ plotAreaFillColor: "#1f77b4" }), "Sheet1");
+    const plotArea = plotAreaOf(result.chartXml);
+    expect(plotArea).toContain('<a:srgbClr val="1F77B4"/>');
+  });
+
+  it("places <c:spPr> at the tail of <c:plotArea> (CT_PlotArea sequence)", () => {
+    const result = writeChart(makeChart({ plotAreaFillColor: "F2F2F2" }), "Sheet1");
+    const plotArea = plotAreaOf(result.chartXml);
+    // <c:spPr> must come after every chart-type element / axes / <c:dTable>.
+    // For a column chart that means after <c:barChart>, <c:catAx>, <c:valAx>.
+    const spPrIdx = plotArea.indexOf("<c:spPr>");
+    expect(spPrIdx).toBeGreaterThan(plotArea.indexOf("<c:barChart"));
+    expect(spPrIdx).toBeGreaterThan(plotArea.indexOf("<c:catAx"));
+    expect(spPrIdx).toBeGreaterThan(plotArea.indexOf("<c:valAx"));
+  });
+
+  it("only emits one <c:spPr> inside <c:plotArea>", () => {
+    const result = writeChart(makeChart({ plotAreaFillColor: "FFAA00" }), "Sheet1");
+    const plotArea = plotAreaOf(result.chartXml);
+    const occurrences = plotArea.match(/<c:spPr>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads plotAreaFillColor through every chart family that owns a <c:plotArea>", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, plotAreaFillColor: "ABCDEF" }), "Sheet1");
+      const plotArea = plotAreaOf(result.chartXml);
+      expect(plotArea).toContain('<a:srgbClr val="ABCDEF"/>');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        plotAreaFillColor: "ABCDEF",
+      }),
+      "Sheet1",
+    );
+    expect(plotAreaOf(scatter.chartXml)).toContain('<a:srgbClr val="ABCDEF"/>');
+  });
+
+  it("drops a malformed hex (wrong length)", () => {
+    const result = writeChart(makeChart({ plotAreaFillColor: "FFF" }), "Sheet1");
+    const plotArea = plotAreaOf(result.chartXml);
+    expect(plotArea).not.toContain("<c:spPr>");
+  });
+
+  it("drops a malformed hex (non-hex characters)", () => {
+    const result = writeChart(makeChart({ plotAreaFillColor: "GGGGGG" }), "Sheet1");
+    const plotArea = plotAreaOf(result.chartXml);
+    expect(plotArea).not.toContain("<c:spPr>");
+  });
+
+  it("drops an alpha-channel form (8 chars)", () => {
+    const result = writeChart(makeChart({ plotAreaFillColor: "FFAA0080" }), "Sheet1");
+    const plotArea = plotAreaOf(result.chartXml);
+    expect(plotArea).not.toContain("<c:spPr>");
+  });
+
+  it("drops an empty / whitespace-only string", () => {
+    expect(
+      plotAreaOf(writeChart(makeChart({ plotAreaFillColor: "" }), "Sheet1").chartXml),
+    ).not.toContain("<c:spPr>");
+    expect(
+      plotAreaOf(writeChart(makeChart({ plotAreaFillColor: "   " }), "Sheet1").chartXml),
+    ).not.toContain("<c:spPr>");
+  });
+
+  it("drops non-string escapes (typed escape from an untyped caller)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const a = writeChart(makeChart({ plotAreaFillColor: 0xff_ff_ff as any }), "Sheet1");
+    expect(plotAreaOf(a.chartXml)).not.toContain("<c:spPr>");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const b = writeChart(makeChart({ plotAreaFillColor: null as any }), "Sheet1");
+    expect(plotAreaOf(b.chartXml)).not.toContain("<c:spPr>");
+  });
+
+  it("composes independently with plotAreaLayout (each lands on its own slot)", () => {
+    const result = writeChart(
+      makeChart({
+        plotAreaLayout: { x: 0.1, y: 0.15, w: 0.7, h: 0.6 },
+        plotAreaFillColor: "F2F2F2",
+      }),
+      "Sheet1",
+    );
+    const plotArea = plotAreaOf(result.chartXml);
+    expect(plotArea).toContain('<c:x val="0.1"/>');
+    expect(plotArea).toContain('<a:srgbClr val="F2F2F2"/>');
+    // Layout precedes spPr per CT_PlotArea sequence.
+    expect(plotArea.indexOf("<c:layout>")).toBeLessThan(plotArea.indexOf("<c:spPr>"));
+  });
+
+  it("round-trips plotAreaFillColor through parseChart", () => {
+    const written = writeChart(makeChart({ plotAreaFillColor: "1F77B4" }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.plotAreaFillColor).toBe("1F77B4");
+  });
+
+  it("collapses an unset plotAreaFillColor round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    expect(parseChart(written)?.plotAreaFillColor).toBeUndefined();
+  });
+
+  it("survives a writeXlsx round trip — plotAreaFillColor lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            plotAreaFillColor: "F2F2F2",
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.plotAreaFillColor).toBe("F2F2F2");
+  });
+});

@@ -1150,16 +1150,71 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
 
   // `<c:dTable>` sits inside `<c:plotArea>` after the axes per
   // CT_PlotArea (ECMA-376 Part 1, §21.2.2.145) — between the last
-  // `<c:valAx>` / `<c:catAx>` and the optional `<c:spPr>` that the
-  // writer never emits. Pie / doughnut have no axes at all, so the
-  // OOXML schema places no slot for `<c:dTable>` on those families;
-  // `resolveDataTable` short-circuits them by returning `undefined`.
+  // `<c:valAx>` / `<c:catAx>` and the optional `<c:spPr>` that
+  // `buildPlotAreaSpPr` below emits. Pie / doughnut have no axes at
+  // all, so the OOXML schema places no slot for `<c:dTable>` on those
+  // families; `resolveDataTable` short-circuits them by returning
+  // `undefined`.
   const dTable = resolveDataTable(chart);
   if (dTable !== undefined) {
     children.push(buildDataTable(dTable));
   }
 
+  // `<c:plotArea><c:spPr><a:solidFill><a:srgbClr val=".."/></a:solidFill>
+  // </c:spPr></c:plotArea>` — Excel's "Format Plot Area -> Fill -> Solid
+  // fill -> Color" pin. The slot sits at the tail of `<c:plotArea>` per
+  // `CT_PlotArea` (ECMA-376 Part 1, §21.2.2.145), after every chart-type
+  // element / axes / `<c:dTable>`. The writer emits the block only when
+  // `chart.plotAreaFillColor` normalizes to a literal hex; absence and
+  // every malformed token collapse to no `<c:spPr>` so a fresh chart
+  // matches Excel's reference shape byte-for-byte.
+  const plotAreaSpPr = buildPlotAreaSpPr(chart);
+  if (plotAreaSpPr !== undefined) {
+    children.push(plotAreaSpPr);
+  }
+
   return xmlElement("c:plotArea", undefined, children);
+}
+
+/**
+ * Build the optional `<c:spPr>` block at the tail of `<c:plotArea>`.
+ * Currently surfaces only the solid fill color knob
+ * ({@link SheetChart.plotAreaFillColor}) — every other `<c:spPr>` child
+ * (`<a:ln>` stroke, `<a:effectLst>` effects, gradient / pattern / picture
+ * fills) is intentionally not modelled at this layer.
+ *
+ * Returns `undefined` when the chart leaves the field unset / passed a
+ * malformed token so the writer skips the entire `<c:spPr>` block — an
+ * empty `<c:spPr/>` collapses to the inherited theme fill Excel picks
+ * anyway, and omitting it keeps untouched chart XML byte-clean.
+ */
+function buildPlotAreaSpPr(chart: SheetChart): string | undefined {
+  const fillHex = normalizePlotAreaFillColor(chart.plotAreaFillColor);
+  if (fillHex === undefined) return undefined;
+  const solidFill = xmlElement("a:solidFill", undefined, [
+    xmlSelfClose("a:srgbClr", { val: fillHex }),
+  ]);
+  return xmlElement("c:spPr", undefined, [solidFill]);
+}
+
+/**
+ * Normalize a {@link SheetChart.plotAreaFillColor} value for the
+ * `<c:plotArea><c:spPr><a:solidFill><a:srgbClr val=".."/></a:solidFill>
+ * </c:spPr></c:plotArea>` writer slot. Returns the 6-character uppercase
+ * hex form when the input is a valid sRGB triple (with or without a
+ * leading `#`), or `undefined` for any malformed token — wrong length,
+ * non-hex characters, alpha-channel forms, or non-string escapes from an
+ * untyped caller.
+ *
+ * Absence and malformed tokens both collapse to `undefined` so the
+ * writer skips the entire `<c:spPr>` block and the plot area inherits
+ * the auto-fill Excel picks from the chart's theme (Excel's reference
+ * behavior for a fresh plot area without a custom color). Delegates to
+ * the chart-level {@link normalizeTitleColor} so the two share the same
+ * sRGB grammar.
+ */
+function normalizePlotAreaFillColor(value: string | undefined): string | undefined {
+  return normalizeTitleColor(value);
 }
 
 // ── Data Table ───────────────────────────────────────────────────────

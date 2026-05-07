@@ -19475,3 +19475,116 @@ describe("parseChart — titleLayout", () => {
     expect(chart?.legendLayout).toEqual({ x: 0.7, y: 0.2 });
   });
 });
+
+// ── parseChart — plotAreaFillColor (solid fill) ─────────────────────
+
+describe("parseChart — plotAreaFillColor", () => {
+  const NS_PFC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withPlotAreaSpPr(spPrBody: string): string {
+    return `<c:chartSpace ${NS_PFC}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+      <c:spPr>${spPrBody}</c:spPr>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces the literal sRGB color when <c:plotArea><c:spPr><a:solidFill><a:srgbClr> is pinned", () => {
+    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`);
+    expect(parseChart(xml)?.plotAreaFillColor).toBe("F2F2F2");
+  });
+
+  it("normalizes lowercase hex to canonical uppercase form", () => {
+    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="abcdef"/></a:solidFill>`);
+    expect(parseChart(xml)?.plotAreaFillColor).toBe("ABCDEF");
+  });
+
+  it("returns undefined when the chart has no <c:plotArea>", () => {
+    const xml = `<c:chartSpace ${NS_PFC}><c:chart></c:chart></c:chartSpace>`;
+    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
+  });
+
+  it("returns undefined when <c:plotArea> has no <c:spPr>", () => {
+    const xml = `<c:chartSpace ${NS_PFC}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
+  });
+
+  it("returns undefined when <c:spPr> has no <a:solidFill>", () => {
+    const xml = withPlotAreaSpPr(
+      `<a:ln><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>`,
+    );
+    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
+  });
+
+  it("returns undefined when <a:solidFill> uses <a:schemeClr> (theme reference)", () => {
+    const xml = withPlotAreaSpPr(`<a:solidFill><a:schemeClr val="bg1"/></a:solidFill>`);
+    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
+  });
+
+  it("returns undefined when fill is <a:noFill>", () => {
+    const xml = withPlotAreaSpPr(`<a:noFill/>`);
+    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
+  });
+
+  it("returns undefined when fill is <a:gradFill>", () => {
+    const xml = withPlotAreaSpPr(
+      `<a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FFFFFF"/></a:gs></a:gsLst></a:gradFill>`,
+    );
+    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
+  });
+
+  it("returns undefined when the val attribute is malformed (wrong length)", () => {
+    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="ABC"/></a:solidFill>`);
+    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
+  });
+
+  it("returns undefined when the val attribute is malformed (non-hex characters)", () => {
+    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="GGGGGG"/></a:solidFill>`);
+    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
+  });
+
+  it("returns undefined when the val attribute is missing", () => {
+    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr/></a:solidFill>`);
+    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
+  });
+
+  it("ignores a stray <c:spPr> elsewhere on the chart (e.g. on a series)", () => {
+    // Series-level <c:spPr> must not leak into plotAreaFillColor.
+    const xml = `<c:chartSpace ${NS_PFC}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:spPr><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill></c:spPr>
+        </c:ser>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
+  });
+
+  it("admits a leading # on the val attribute", () => {
+    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="#1F77B4"/></a:solidFill>`);
+    expect(parseChart(xml)?.plotAreaFillColor).toBe("1F77B4");
+  });
+});

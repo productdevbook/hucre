@@ -20576,3 +20576,165 @@ describe("cloneChart — plotAreaLayout", () => {
     expect(parseChart(written)?.plotAreaLayout).toEqual({ x: 0.15, y: 0.25 });
   });
 });
+
+// ── cloneChart — plotAreaFillColor (solid fill) ─────────────────────
+
+describe("cloneChart — plotAreaFillColor", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's plotAreaFillColor by default", () => {
+    const clone = cloneChart(source({ plotAreaFillColor: "F2F2F2" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.plotAreaFillColor).toBe("F2F2F2");
+  });
+
+  it("lets options.plotAreaFillColor override the source's value", () => {
+    const clone = cloneChart(source({ plotAreaFillColor: "F2F2F2" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaFillColor: "ABCDEF",
+    });
+    expect(clone.plotAreaFillColor).toBe("ABCDEF");
+  });
+
+  it("drops the inherited plotAreaFillColor when the override is null", () => {
+    const clone = cloneChart(source({ plotAreaFillColor: "F2F2F2" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaFillColor: null,
+    });
+    expect(clone.plotAreaFillColor).toBeUndefined();
+  });
+
+  it("returns undefined plotAreaFillColor when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.plotAreaFillColor).toBeUndefined();
+  });
+
+  it("normalizes a leading # and lowercase input through the override", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaFillColor: "#1f77b4",
+    });
+    expect(clone.plotAreaFillColor).toBe("1F77B4");
+  });
+
+  it("drops a malformed override (wrong length)", () => {
+    const clone = cloneChart(source({ plotAreaFillColor: "ABCDEF" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaFillColor: "FFF",
+    });
+    expect(clone.plotAreaFillColor).toBeUndefined();
+  });
+
+  it("drops a malformed override (non-hex characters)", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaFillColor: "GGGGGG",
+    });
+    expect(clone.plotAreaFillColor).toBeUndefined();
+  });
+
+  it("drops a malformed override (alpha-channel form)", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaFillColor: "FFAA0080",
+    });
+    expect(clone.plotAreaFillColor).toBeUndefined();
+  });
+
+  it("drops a non-string override (typed escape from an untyped caller)", () => {
+    const clone = cloneChart(source({ plotAreaFillColor: "ABCDEF" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      plotAreaFillColor: 0xff_ff_ff as any,
+    });
+    expect(clone.plotAreaFillColor).toBeUndefined();
+  });
+
+  it("normalizes a malformed source value through the resolver", () => {
+    const clone = cloneChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      source({ plotAreaFillColor: "GGGGGG" as any }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.plotAreaFillColor).toBeUndefined();
+  });
+
+  it("carries plotAreaFillColor through a flatten (line → column)", () => {
+    const clone = cloneChart(source({ plotAreaFillColor: "F2F2F2" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.plotAreaFillColor).toBe("F2F2F2");
+  });
+
+  it("carries plotAreaFillColor through a doughnut flatten (line → doughnut)", () => {
+    const clone = cloneChart(source({ plotAreaFillColor: "F2F2F2" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.plotAreaFillColor).toBe("F2F2F2");
+  });
+
+  it("retains plotAreaFillColor independently of a hidden legend", () => {
+    const clone = cloneChart(source({ plotAreaFillColor: "F2F2F2" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.plotAreaFillColor).toBe("F2F2F2");
+  });
+
+  it("composes independently with plotAreaLayout (each lands on its own slot)", () => {
+    const clone = cloneChart(
+      source({
+        plotAreaLayout: { x: 0.1, y: 0.2 },
+        plotAreaFillColor: "F2F2F2",
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.plotAreaLayout).toEqual({ x: 0.1, y: 0.2 });
+    expect(clone.plotAreaFillColor).toBe("F2F2F2");
+  });
+
+  it("survives a writeXlsx round trip — plotAreaFillColor lands in the cloned chart XML", async () => {
+    const clone = cloneChart(source({ plotAreaFillColor: "F2F2F2" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaFillColor: "1F77B4",
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(parseChart(written)?.plotAreaFillColor).toBe("1F77B4");
+  });
+});
