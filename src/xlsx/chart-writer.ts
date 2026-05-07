@@ -1508,6 +1508,7 @@ function resolveDataTable(chart: SheetChart):
       strikethrough: boolean | undefined;
       fontFamily: string | undefined;
       fillColor: string | undefined;
+      borderColor: string | undefined;
     }
   | undefined {
   // Pie / doughnut have no axes — the OOXML schema places `<c:dTable>`
@@ -1533,6 +1534,7 @@ function resolveDataTable(chart: SheetChart):
       strikethrough: undefined,
       fontFamily: undefined,
       fillColor: undefined,
+      borderColor: undefined,
     };
   }
 
@@ -1553,6 +1555,7 @@ function resolveDataTable(chart: SheetChart):
     strikethrough: resolveDataTableStrikethrough(raw.strikethrough),
     fontFamily: resolveDataTableFontFamily(raw.fontFamily),
     fillColor: resolveDataTableFillColor(raw.fillColor),
+    borderColor: resolveDataTableBorderColor(raw.borderColor),
   };
 }
 
@@ -1700,6 +1703,28 @@ function resolveDataTableFillColor(value: string | undefined): string | undefine
 }
 
 /**
+ * Resolve `<c:dTable><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/>
+ * </a:solidFill></a:ln></c:spPr></c:dTable>` from
+ * {@link ChartDataTable.borderColor}.
+ *
+ * Returns the 6-character uppercase hex string the writer emits, or
+ * `undefined` when the caller leaves the field unset / passed a
+ * malformed token. Delegates to {@link normalizeTitleColor} so the
+ * accept-with-or-without-`#` grammar matches every other `<a:srgbClr>`
+ * fill / line slot exactly. Composes independently with
+ * {@link ChartDataTable.fillColor} — the two knobs share the same
+ * `<c:spPr>` host on `<c:dTable>` but land on different children
+ * (`<a:solidFill>` for the fill, `<a:ln><a:solidFill>` for the stroke).
+ * Mirrors the chart-title / axis-title / chart-space / plot-area /
+ * legend `<c:spPr>` border slots — same hex grammar, same `<a:ln>`
+ * slot on the `CT_ShapeProperties` schema — but lands on `<c:dTable>`'s
+ * own `<c:spPr>` block.
+ */
+function resolveDataTableBorderColor(value: string | undefined): string | undefined {
+  return normalizeTitleColor(value);
+}
+
+/**
  * Serialize a resolved data-table into `<c:dTable>` with its four
  * required boolean children, in the order CT_DTable mandates:
  * `showHorzBorder`, `showVertBorder`, `showOutline`, `showKeys`. When
@@ -1728,6 +1753,7 @@ function buildDataTable(table: {
   strikethrough: boolean | undefined;
   fontFamily: string | undefined;
   fillColor: string | undefined;
+  borderColor: string | undefined;
 }): string {
   const children: string[] = [
     xmlSelfClose("c:showHorzBorder", { val: table.showHorzBorder ? 1 : 0 }),
@@ -1738,9 +1764,9 @@ function buildDataTable(table: {
   // CT_DTable schema places `<c:spPr>` after the four required
   // boolean children, before `<c:txPr>` and the optional `<c:extLst>`
   // (ECMA-376 Part 1, §21.2.2.54). The writer skips emission entirely
-  // when no fill knob is pinned so a fresh chart matches Excel's
-  // reference serialization byte-for-byte.
-  const spPrXml = buildDataTableSpPr(table.fillColor);
+  // when no fill / border knob is pinned so a fresh chart matches
+  // Excel's reference serialization byte-for-byte.
+  const spPrXml = buildDataTableSpPr(table.fillColor, table.borderColor);
   if (spPrXml !== undefined) children.push(spPrXml);
   // CT_DTable schema places `<c:txPr>` after `<c:spPr>` and before
   // the optional `<c:extLst>` (ECMA-376 Part 1, §21.2.2.54). The writer
@@ -1760,28 +1786,46 @@ function buildDataTable(table: {
 }
 
 /**
- * Build the optional `<c:spPr>` block inside `<c:dTable>`. Currently
- * surfaces only the solid fill color knob ({@link
- * ChartDataTable.fillColor}) — every other `<c:spPr>` child (`<a:ln>`
- * stroke, `<a:effectLst>` effects, gradient / pattern / picture fills)
- * is intentionally not modelled at this layer.
+ * Build the optional `<c:spPr>` block inside `<c:dTable>`. Surfaces
+ * the solid fill color knob ({@link ChartDataTable.fillColor}) and
+ * the border (line) color knob ({@link ChartDataTable.borderColor}) —
+ * every other `<c:spPr>` child (`<a:effectLst>` effects, gradient /
+ * pattern / picture fills, line dash / width / compound styles) is
+ * intentionally not modelled at this layer.
  *
- * Returns `undefined` when the caller leaves the field unset / passed
- * a malformed token so the writer skips the entire `<c:spPr>` block —
- * an empty `<c:spPr/>` collapses to the inherited theme fill Excel
- * picks anyway, and omitting it keeps untouched chart XML byte-clean.
+ * Returns `undefined` when both fields are unset / malformed so the
+ * writer skips the entire `<c:spPr>` block — an empty `<c:spPr/>`
+ * collapses to the inherited theme fill / stroke Excel picks anyway,
+ * and omitting it keeps untouched chart XML byte-clean. When at least
+ * one knob lands on the wire, the children are emitted in
+ * `CT_ShapeProperties` schema order: `<a:solidFill>` (fill) then
+ * `<a:ln>` (line / stroke).
  *
  * Mirrors {@link buildPlotAreaSpPr} / {@link buildChartSpaceSpPr}
- * but on a distinct host element — the data-table fill paints the
- * background of the table grid, while the plot-area / chart-space
- * fills paint the inner band / entire chart frame.
+ * but on a distinct host element — the data-table fill / stroke
+ * paint the background and outline of the table grid, while the
+ * plot-area / chart-space variants paint the inner band / entire
+ * chart frame.
  */
-function buildDataTableSpPr(fillColor: string | undefined): string | undefined {
-  if (fillColor === undefined) return undefined;
-  const solidFill = xmlElement("a:solidFill", undefined, [
-    xmlSelfClose("a:srgbClr", { val: fillColor }),
-  ]);
-  return xmlElement("c:spPr", undefined, [solidFill]);
+function buildDataTableSpPr(
+  fillColor: string | undefined,
+  borderColor: string | undefined,
+): string | undefined {
+  if (fillColor === undefined && borderColor === undefined) return undefined;
+  const children: string[] = [];
+  if (fillColor !== undefined) {
+    children.push(
+      xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillColor })]),
+    );
+  }
+  if (borderColor !== undefined) {
+    children.push(
+      xmlElement("a:ln", undefined, [
+        xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: borderColor })]),
+      ]),
+    );
+  }
+  return xmlElement("c:spPr", undefined, children);
 }
 
 /**

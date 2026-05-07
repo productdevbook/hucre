@@ -5327,6 +5327,8 @@ function parseDataTable(plotArea: XmlElement): ChartDataTable | undefined {
   if (fontFamily !== undefined) out.fontFamily = fontFamily;
   const fillColor = parseDataTableFillColor(el);
   if (fillColor !== undefined) out.fillColor = fillColor;
+  const borderColor = parseDataTableBorderColor(el);
+  if (borderColor !== undefined) out.borderColor = borderColor;
   return out;
 }
 
@@ -5547,12 +5549,64 @@ function parseDataTableFontFamily(dTable: XmlElement): string | undefined {
  * `<c:title>` / a series) cannot leak into this field. Mirrors
  * {@link parsePlotAreaFillColor} / {@link parseLegendFillColor} —
  * same `<c:spPr><a:solidFill><a:srgbClr>` chain on a different host
- * element.
+ * element. Independent of {@link parseDataTableBorderColor}: the fill
+ * lives on `<c:dTable><c:spPr><a:solidFill>`, the stroke lives on
+ * `<c:dTable><c:spPr><a:ln><a:solidFill>` — the two readers walk
+ * disjoint children of the same `<c:spPr>` block so a caller can pin
+ * both knobs without conflict.
  */
 function parseDataTableFillColor(dTable: XmlElement): string | undefined {
   const spPr = findChild(dTable, "spPr");
   if (!spPr) return undefined;
   const solidFill = findChild(spPr, "solidFill");
+  if (!solidFill) return undefined;
+  const srgbClr = findChild(solidFill, "srgbClr");
+  if (!srgbClr) return undefined;
+  return normalizeRgbHex(srgbClr.attrs.val);
+}
+
+/**
+ * Pull `<c:dTable><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/>
+ * </a:solidFill></a:ln></c:spPr></c:dTable>` off a data-table block.
+ * Returns the data-table border (line) color as a 6-character uppercase
+ * hex string.
+ *
+ * The OOXML `<a:srgbClr>` element carries the literal sRGB color
+ * (`CT_SRgbColor`, ECMA-376 Part 1, §20.1.2.3.32) inside the line's
+ * solid fill choice (`CT_LineProperties`'s solid fill — §20.1.2.3.24).
+ * The `<a:ln>` slot sits inside the `<c:spPr>` block on `<c:dTable>`
+ * alongside the optional `<a:solidFill>` fill child, in
+ * `CT_ShapeProperties` schema order (fill before stroke). The
+ * `<c:spPr>` itself sits between the four required boolean children
+ * (`<c:showHorzBorder>`, `<c:showVertBorder>`, `<c:showOutline>`,
+ * `<c:showKeys>`) and the optional `<c:txPr>` per CT_DTable
+ * (ECMA-376 Part 1, §21.2.2.54).
+ *
+ * The reader surfaces only the literal `<a:srgbClr>` form — absence,
+ * non-solid line fills (`<a:noFill>` / `<a:gradFill>` / `<a:pattFill>`),
+ * and theme-color references (`<a:schemeClr>`) all collapse to
+ * `undefined` so a chart that pinned a stroke the writer cannot
+ * reproduce on emit drops the field rather than fabricate one Excel
+ * would render differently. Malformed `val` tokens (wrong length,
+ * non-hex characters, alpha-channel forms, non-string escapes)
+ * likewise drop to `undefined`.
+ *
+ * Mirrors the writer-side {@link ChartDataTable.borderColor} so a
+ * parsed value slots straight into {@link cloneChart} without
+ * conversion. The lookup is scoped to direct children of `<c:dTable>`
+ * so a stray `<c:spPr>` elsewhere (e.g. on `<c:plotArea>` /
+ * `<c:legend>` / `<c:title>` / a series) cannot leak in. Mirrors
+ * {@link parseDataTableFillColor} — same `<c:spPr>` host element on
+ * the same `<c:dTable>` parent — but lands on the line
+ * (`<a:ln><a:solidFill>`) child rather than the fill (`<a:solidFill>`)
+ * child.
+ */
+function parseDataTableBorderColor(dTable: XmlElement): string | undefined {
+  const spPr = findChild(dTable, "spPr");
+  if (!spPr) return undefined;
+  const ln = findChild(spPr, "ln");
+  if (!ln) return undefined;
+  const solidFill = findChild(ln, "solidFill");
   if (!solidFill) return undefined;
   const srgbClr = findChild(solidFill, "srgbClr");
   if (!srgbClr) return undefined;

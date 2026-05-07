@@ -11258,6 +11258,212 @@ describe("parseChart — data table", () => {
       bold: true,
     });
   });
+
+  // ── data-table border color (parseDataTableBorderColor) ────────────
+
+  it("surfaces a pinned dataTable.borderColor from <c:spPr><a:ln><a:solidFill><a:srgbClr val='RRGGBB'/>", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:spPr><a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln></c:spPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.borderColor).toBe("1F77B4");
+  });
+
+  it("uppercases a lower-case srgbClr val on the <c:dTable><c:spPr><a:ln> slot", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:spPr><a:ln><a:solidFill><a:srgbClr val="abcdef"/></a:solidFill></a:ln></c:spPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.borderColor).toBe("ABCDEF");
+  });
+
+  it("surfaces undefined when <a:ln> is absent on the <c:dTable><c:spPr> block", () => {
+    // Only a fill knob — no <a:ln> child means no border color to
+    // surface. The reader walks disjoint children of <c:spPr> so
+    // absence of <a:ln> drops borderColor to undefined while keeping
+    // fillColor intact.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:spPr><a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill></c:spPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataTable?.borderColor).toBeUndefined();
+    expect(chart?.dataTable?.fillColor).toBe("F2F2F2");
+  });
+
+  it("surfaces undefined when <c:spPr> is absent on <c:dTable> for borderColor", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.borderColor).toBeUndefined();
+  });
+
+  it("collapses malformed borderColor srgbClr val tokens to undefined", () => {
+    const wrongLen = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:barDir val="col"/><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:spPr><a:ln><a:solidFill><a:srgbClr val="ABCD"/></a:solidFill></a:ln></c:spPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(wrongLen)?.dataTable?.borderColor).toBeUndefined();
+    const nonHex = wrongLen.replace('val="ABCD"', 'val="ZZZZZZ"');
+    expect(parseChart(nonHex)?.dataTable?.borderColor).toBeUndefined();
+    const alpha = wrongLen.replace('val="ABCD"', 'val="FF0000FF"');
+    expect(parseChart(alpha)?.dataTable?.borderColor).toBeUndefined();
+  });
+
+  it("collapses theme-color <a:schemeClr> references to undefined for borderColor", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:barDir val="col"/><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:spPr><a:ln><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:ln></c:spPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable?.borderColor).toBeUndefined();
+  });
+
+  it("collapses non-solid line fills to undefined (noFill / gradFill / pattFill)", () => {
+    const head = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:barDir val="col"/><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>`;
+    const tail = `</c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const noFill = `${head}<c:spPr><a:ln><a:noFill/></a:ln></c:spPr>${tail}`;
+    expect(parseChart(noFill)?.dataTable?.borderColor).toBeUndefined();
+    const gradFill = `${head}<c:spPr><a:ln><a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs></a:gsLst></a:gradFill></a:ln></c:spPr>${tail}`;
+    expect(parseChart(gradFill)?.dataTable?.borderColor).toBeUndefined();
+    const pattFill = `${head}<c:spPr><a:ln><a:pattFill prst="dkDnDiag"><a:fgClr><a:srgbClr val="FF0000"/></a:fgClr></a:pattFill></a:ln></c:spPr>${tail}`;
+    expect(parseChart(pattFill)?.dataTable?.borderColor).toBeUndefined();
+  });
+
+  it("does not leak a sibling plotArea / legend <a:ln> into dataTable.borderColor", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:barDir val="col"/><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+    </c:dTable>
+    <c:spPr><a:ln><a:solidFill><a:srgbClr val="111111"/></a:solidFill></a:ln></c:spPr>
+  </c:plotArea>
+  <c:legend><c:spPr><a:ln><a:solidFill><a:srgbClr val="222222"/></a:solidFill></a:ln></c:spPr></c:legend></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataTable?.borderColor).toBeUndefined();
+    expect(chart?.plotAreaBorderColor).toBe("111111");
+    expect(chart?.legendBorderColor).toBe("222222");
+  });
+
+  it("composes dataTable.fillColor and borderColor from a single <c:spPr> block", () => {
+    // The fill and stroke share the <c:spPr> host but land on
+    // different children — the reader walks disjoint children so a
+    // caller can pin both knobs without conflict.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:barDir val="col"/><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+    <c:dTable>
+      <c:showHorzBorder val="1"/>
+      <c:showVertBorder val="1"/>
+      <c:showOutline val="1"/>
+      <c:showKeys val="1"/>
+      <c:spPr>
+        <a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>
+        <a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>
+      </c:spPr>
+    </c:dTable>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataTable).toEqual({
+      showHorzBorder: true,
+      showVertBorder: true,
+      showOutline: true,
+      showKeys: true,
+      fillColor: "F2F2F2",
+      borderColor: "1F77B4",
+    });
+  });
 });
 
 // ── parseChart — chart-space protection ──────────────────────────────

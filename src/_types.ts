@@ -1420,6 +1420,67 @@ export interface ChartDataTable {
    * pie / doughnut along with the rest of the data-table configuration.
    */
   fillColor?: string;
+  /**
+   * Data-table border (line) color as a 6-digit RGB hex string (e.g.
+   * `"1F77B4"`). Maps to `<c:dTable><c:spPr><a:ln><a:solidFill>
+   * <a:srgbClr val="RRGGBB"/></a:solidFill></a:ln></c:spPr></c:dTable>`
+   * (CT_DTable, ECMA-376 Part 1, §21.2.2.54) — Excel's "Format Data
+   * Table -> Border -> Solid line -> Color" picker (the same dialog
+   * the user reaches by right-clicking the data table grid). The
+   * OOXML `<a:srgbClr val=".."/>` carries the 6-character uppercase
+   * hex sRGB color (`CT_SRgbColor` inside `<a:ln>`'s solid fill choice
+   * — ECMA-376 Part 1, §20.1.2.3.32 / §20.1.2.3.24). The `<a:ln>`
+   * child sits inside the `<c:spPr>` block alongside the optional
+   * `<a:solidFill>` fill child, in `CT_ShapeProperties` schema order
+   * (fill before stroke).
+   *
+   * Distinct from {@link fillColor} — the border color paints the
+   * outline around the data-table block, while the fill color paints
+   * the cell backgrounds inside. The two knobs share the `<c:spPr>`
+   * host but land on different children (`<a:solidFill>` for the
+   * fill, `<a:ln>` for the stroke), and the writer authors a single
+   * `<c:spPr>` whenever either knob is set. A caller can pin one
+   * without the other; pinning both produces a filled data table
+   * with a colored border.
+   *
+   * Distinct from the four boolean toggles ({@link showHorzBorder} /
+   * {@link showVertBorder} / {@link showOutline}) which govern the
+   * inner grid lines and outer outline visibility (rendered with the
+   * theme's automatic stroke). The {@link borderColor} knob colors
+   * the entire `<c:spPr>` outline — Excel applies the color to the
+   * outer border and the grid lines together when the matching
+   * toggles are on.
+   *
+   * Accepts a leading `#` and any case; the writer collapses to the
+   * OOXML canonical uppercase form. Malformed inputs (wrong length,
+   * non-hex characters, alpha-channel forms, non-string escapes from
+   * an untyped caller) collapse to `undefined` and the writer omits
+   * the `<a:ln>` block (Excel's reference serialization for a data
+   * table that inherits the auto-stroke — typically the theme's
+   * default line color).
+   *
+   * Default: omitted — the data table inherits the auto-stroke Excel
+   * picks from the workbook theme. Pin a hex color to mirror Excel's
+   * "Format Data Table -> Border -> Solid line" knob and paint a
+   * flat outline around the table grid — useful for dashboard tiles
+   * where the data table should be visually framed against the
+   * surrounding chart frame.
+   *
+   * Patterned / gradient strokes are not modelled — only the solid
+   * sRGB form lands on the wire. Theme-color references
+   * (`<a:schemeClr>`) likewise drop to `undefined` so a parsed value
+   * always carries a literal hex Excel will render byte-for-byte.
+   * Mirrors `plotAreaBorderColor` / `legendBorderColor` /
+   * `titleBorderColor` / `axisTitleBorderColor` — same accept-with-
+   * or-without-`#` hex grammar, same OOXML `<a:ln><a:solidFill>
+   * <a:srgbClr val=".."/></a:solidFill></a:ln>` mapping — so a
+   * caller can thread a single hex string through every `<a:ln>`-
+   * based stroke slot.
+   *
+   * Only meaningful for chart families with axes; silently dropped on
+   * pie / doughnut along with the rest of the data-table configuration.
+   */
+  borderColor?: string;
 }
 
 /**
