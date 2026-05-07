@@ -5066,18 +5066,26 @@ function buildDataLabelsBody(dl: ChartDataLabels, chartType: WriteChartKind): st
   }
 
   // `<c:spPr>` sits between `<c:numFmt>` and `<c:txPr>` in the
-  // CT_DLbls schema sequence (ECMA-376 Part 1, §21.2.2.50). Currently
-  // the writer only authors `<a:solidFill>` here from
-  // {@link ChartDataLabels.fillColor}; stroke (`<a:ln>`) and other
-  // `CT_ShapeProperties` children are not modelled at this layer. The
-  // builder skips emission entirely when no fill is pinned so a fresh
-  // chart matches Excel's reference shape (no `<c:spPr>` block on a
-  // theme-default data-labels rendering — typically a transparent label
-  // background). Distinct from the `<a:defRPr><a:solidFill>` font-color
-  // slot inside `<c:txPr>` that {@link ChartDataLabels.fontColor} pins
-  // — the two knobs target different children of `<c:dLbls>` so a
-  // caller can pin both without conflict.
-  const spPrXml = buildDataLabelsSpPr(resolveDataLabelsFillColor(dl.fillColor));
+  // CT_DLbls schema sequence (ECMA-376 Part 1, §21.2.2.50). The writer
+  // authors `<a:solidFill>` here from {@link ChartDataLabels.fillColor}
+  // and `<a:ln>` here from {@link ChartDataLabels.borderColor}; other
+  // `CT_ShapeProperties` children (gradient / pattern fills, line dash
+  // / width / compound styles, `<a:effectLst>` effects) are not
+  // modelled at this layer. The builder skips emission entirely when
+  // no fill / border is pinned so a fresh chart matches Excel's
+  // reference shape (no `<c:spPr>` block on a theme-default data-
+  // labels rendering — typically a transparent label background with
+  // no border). When at least one knob lands on the wire, the children
+  // are emitted in `CT_ShapeProperties` schema order: `<a:solidFill>`
+  // (fill) then `<a:ln>` (line / stroke). Distinct from the
+  // `<a:defRPr><a:solidFill>` font-color slot inside `<c:txPr>` that
+  // {@link ChartDataLabels.fontColor} pins — the three knobs target
+  // different children of `<c:dLbls>` so a caller can pin them all
+  // without conflict.
+  const spPrXml = buildDataLabelsSpPr(
+    resolveDataLabelsFillColor(dl.fillColor),
+    resolveDataLabelsBorderColor(dl.borderColor),
+  );
   if (spPrXml !== undefined) {
     children.push(spPrXml);
   }
@@ -5309,28 +5317,77 @@ function resolveDataLabelsFillColor(value: string | undefined): string | undefin
 }
 
 /**
- * Build the `<c:spPr>` block that carries a data-labels' background
- * fill. Returns `undefined` when no fill is pinned so the caller can
- * elide the entire block — Excel's reference serialization omits
- * `<c:spPr>` from `<c:dLbls>` whenever the labels render at the theme
- * default fill (typically a transparent label background).
+ * Resolve `<c:dLbls><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/>
+ * </a:solidFill></a:ln></c:spPr></c:dLbls>` from
+ * {@link ChartDataLabels.borderColor}.
+ *
+ * Returns the 6-character uppercase hex string the writer emits, or
+ * `undefined` when the caller leaves the field unset / passed a
+ * malformed token. Delegates to {@link normalizeTitleColor} so the
+ * accept-with-or-without-`#` grammar matches every other `<a:srgbClr>`
+ * fill / line slot exactly. Composes independently with
+ * {@link ChartDataLabels.fillColor} — the two knobs share the same
+ * `<c:spPr>` host on `<c:dLbls>` but land on different children
+ * (`<a:solidFill>` for the fill, `<a:ln><a:solidFill>` for the
+ * stroke). Mirrors the chart-title / axis-title / chart-space /
+ * plot-area / legend / data-table `<c:spPr>` border slots — same hex
+ * grammar, same `<a:ln>` slot on the `CT_ShapeProperties` schema —
+ * but lands on `<c:dLbls>`'s own `<c:spPr>` block.
+ */
+function resolveDataLabelsBorderColor(value: string | undefined): string | undefined {
+  return normalizeTitleColor(value);
+}
+
+/**
+ * Build the optional `<c:spPr>` block inside `<c:dLbls>`. Surfaces the
+ * solid fill color knob ({@link ChartDataLabels.fillColor}) and the
+ * border (line) color knob ({@link ChartDataLabels.borderColor}) —
+ * every other `<c:spPr>` child (`<a:effectLst>` effects, gradient /
+ * pattern / picture fills, line dash / width / compound styles) is
+ * intentionally not modelled at this layer.
+ *
+ * Returns `undefined` when both fields are unset / malformed so the
+ * writer skips the entire `<c:spPr>` block — an empty `<c:spPr/>`
+ * collapses to the inherited theme fill / stroke Excel picks anyway,
+ * and omitting it keeps untouched chart XML byte-clean. When at least
+ * one knob lands on the wire, the children are emitted in
+ * `CT_ShapeProperties` schema order: `<a:solidFill>` (fill) then
+ * `<a:ln>` (line / stroke).
  *
  * The emitted block mirrors the minimal `<c:spPr>` shape Excel writes
  * when the user pins "Format Data Labels -> Fill -> Solid fill ->
+ * Color" and / or "Format Data Labels -> Border -> Solid line ->
  * Color": `<c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
- * </a:solidFill></c:spPr>`. The `val` attribute holds the canonical
- * 6-character uppercase hex form (the writer normalizes the input
- * ahead of this call so a malformed source value never reaches emit).
+ * </a:solidFill><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/>
+ * </a:solidFill></a:ln></c:spPr>`. The `val` attribute holds the
+ * canonical 6-character uppercase hex form (the writer normalizes the
+ * input ahead of this call so a malformed source value never reaches
+ * emit).
  *
- * Mirrors the chart-title / axis-title / plot-area / legend
- * `<c:spPr>` slots so a single hex string threads cleanly through
- * every fill knob the writer authors.
+ * Mirrors {@link buildLegendSpPr} / {@link buildDataTableSpPr} but
+ * on a distinct host element — the data-labels fill / stroke paint
+ * the background and outline of each label box, while the legend /
+ * data-table variants paint a different chart-frame element.
  */
-function buildDataLabelsSpPr(fillRgbHex: string | undefined): string | undefined {
-  if (fillRgbHex === undefined) return undefined;
-  return xmlElement("c:spPr", undefined, [
-    xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillRgbHex })]),
-  ]);
+function buildDataLabelsSpPr(
+  fillRgbHex: string | undefined,
+  borderRgbHex: string | undefined,
+): string | undefined {
+  if (fillRgbHex === undefined && borderRgbHex === undefined) return undefined;
+  const children: string[] = [];
+  if (fillRgbHex !== undefined) {
+    children.push(
+      xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillRgbHex })]),
+    );
+  }
+  if (borderRgbHex !== undefined) {
+    children.push(
+      xmlElement("a:ln", undefined, [
+        xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: borderRgbHex })]),
+      ]),
+    );
+  }
+  return xmlElement("c:spPr", undefined, children);
 }
 
 /**

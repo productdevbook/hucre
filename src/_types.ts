@@ -934,6 +934,67 @@ export interface ChartDataLabels {
    * {@link fontColor} / {@link fontFamily}.
    */
   fillColor?: string;
+  /**
+   * Data-labels border (line) color as a 6-digit RGB hex string (e.g.
+   * `"1F77B4"`). Maps to `<c:dLbls><c:spPr><a:ln><a:solidFill>
+   * <a:srgbClr val="RRGGBB"/></a:solidFill></a:ln></c:spPr></c:dLbls>`
+   * (CT_DLbls, ECMA-376 Part 1, §21.2.2.50) — Excel's "Format Data
+   * Labels -> Border -> Solid line -> Color" picker. The OOXML
+   * `<a:srgbClr val=".."/>` carries the 6-character uppercase hex
+   * sRGB color (`CT_SRgbColor` inside `<a:ln>`'s solid fill choice —
+   * ECMA-376 Part 1, §20.1.2.3.32 / §20.1.2.3.24). The `<a:ln>` child
+   * sits inside the `<c:spPr>` block alongside the optional
+   * `<a:solidFill>` fill child, in `CT_ShapeProperties` schema order
+   * (fill before stroke).
+   *
+   * Distinct from {@link fillColor} — the border color paints the
+   * outline around each data label box, while the fill color paints
+   * the label box background. The two knobs share the `<c:spPr>` host
+   * but land on different children (`<a:solidFill>` for the fill,
+   * `<a:ln>` for the stroke), and the writer authors a single
+   * `<c:spPr>` whenever either knob is set. A caller can pin one
+   * without the other; pinning both produces a filled label box with
+   * a colored border.
+   *
+   * Distinct from {@link fontColor} (the typography color living on
+   * `<c:txPr><a:p><a:pPr><a:defRPr><a:solidFill>`); the three knobs
+   * target different children of `<c:dLbls>` so a caller can pin all
+   * of them without conflict — {@link fillColor} paints the label box
+   * background, {@link borderColor} paints its outline, and
+   * {@link fontColor} paints the text glyphs.
+   *
+   * Accepts a leading `#` and any case; the writer collapses to the
+   * OOXML canonical uppercase form. Malformed inputs (wrong length,
+   * non-hex characters, alpha-channel forms, non-string escapes from
+   * an untyped caller) collapse to `undefined` and the writer omits
+   * the `<a:ln>` block (Excel's reference serialization for data
+   * labels that inherit the auto-stroke — typically no border).
+   *
+   * Default: omitted — the data labels render with no `<c:spPr>`
+   * border (Excel's reference serialization for fresh data labels
+   * whose border has not been pinned). Pin a hex color to mirror
+   * Excel's "Format Data Labels -> Border -> Solid line" knob and
+   * paint a flat outline around each label — useful for dashboard
+   * tiles where the data labels need to stand out against a busy
+   * plot-area background.
+   *
+   * Patterned / gradient strokes are not modelled — only the solid
+   * sRGB form lands on the wire. Theme-color references
+   * (`<a:schemeClr>`) likewise drop to `undefined` so a parsed value
+   * always carries a literal hex Excel will render byte-for-byte.
+   * Mirrors `plotAreaBorderColor` / `legendBorderColor` /
+   * `titleBorderColor` / `axisTitleBorderColor` /
+   * `dataTableBorderColor` — same accept-with-or-without-`#` hex
+   * grammar, same OOXML `<a:ln><a:solidFill><a:srgbClr val=".."/>
+   * </a:solidFill></a:ln>` mapping — so a caller can thread a single
+   * hex string through every `<a:ln>`-based stroke slot. Composes
+   * independently with the other dLbls knobs — {@link position} /
+   * {@link separator} / {@link numberFormat} / {@link showLeaderLines}
+   * / the `show*` toggles / {@link bold} / {@link italic} /
+   * {@link underline} / {@link strikethrough} / {@link fontSize} /
+   * {@link fontColor} / {@link fontFamily} / {@link fillColor}.
+   */
+  borderColor?: string;
 }
 
 /**
@@ -6010,6 +6071,35 @@ export interface ChartDataLabelsInfo {
    * slots straight into {@link cloneChart} without conversion.
    */
   fillColor?: string;
+  /**
+   * Data-labels border (line) color pulled from `<c:dLbls><c:spPr>
+   * <a:ln><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:ln>
+   * </c:spPr></c:dLbls>`. The OOXML `<c:spPr>` block sits on
+   * `CT_DLbls` between `<c:numFmt>` and `<c:txPr>` per the schema
+   * sequence (ECMA-376 Part 1, §21.2.2.50); the `<a:ln>` child sits
+   * inside the `<c:spPr>` block alongside the optional `<a:solidFill>`
+   * fill child, and the `<a:srgbClr val=".."/>` carries the
+   * 6-character uppercase hex sRGB color (`CT_SRgbColor` inside
+   * `<a:ln>`'s solid fill choice — ECMA-376 Part 1, §20.1.2.3.32 /
+   * §20.1.2.3.24).
+   *
+   * Returned as the canonical 6-character uppercase hex string when
+   * the parser walks the full chain and lands on an `<a:srgbClr
+   * val="RRGGBB"/>`. Theme references (`<a:schemeClr>`),
+   * `<a:hslClr>`, `<a:sysClr>`, `<a:prstClr>`, non-solid line fills
+   * (`<a:noFill>` / `<a:gradFill>` / `<a:pattFill>`), and malformed
+   * `val` tokens (wrong length, non-hex characters) all collapse to
+   * `undefined` since only the literal RGB triple round-trips
+   * losslessly through {@link writeChart}. Mirrors the writer-side
+   * {@link ChartDataLabels.borderColor} so a parsed value slots
+   * straight into {@link cloneChart} without conversion. Independent
+   * of {@link fillColor}: the fill lives on `<c:dLbls><c:spPr>
+   * <a:solidFill>`, the stroke lives on `<c:dLbls><c:spPr><a:ln>
+   * <a:solidFill>` — the two readers walk disjoint children of the
+   * same `<c:spPr>` block so a caller can pin both knobs without
+   * conflict.
+   */
+  borderColor?: string;
 }
 
 /**

@@ -3071,6 +3071,19 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
   const fillColor = parseDataLabelsFillColor(el);
   if (fillColor !== undefined) out.fillColor = fillColor;
 
+  // `<c:spPr><a:ln><a:solidFill><a:srgbClr val=".."/></a:solidFill>
+  // </a:ln></c:spPr>` — data-labels border (line) color pinned via
+  // Excel's "Format Data Labels -> Border -> Solid line -> Color"
+  // picker. Theme references (`<a:schemeClr>`), non-solid line fills
+  // (`<a:noFill>` / `<a:gradFill>` / `<a:pattFill>`), and malformed
+  // `val` tokens collapse to `undefined` since only the literal RGB
+  // triple round-trips losslessly through `writeChart`. Distinct from
+  // `fillColor` (which lives on `<c:spPr><a:solidFill>`); the two
+  // knobs target different children of the same `<c:spPr>` so a
+  // caller can pin both without conflict.
+  const borderColor = parseDataLabelsBorderColor(el);
+  if (borderColor !== undefined) out.borderColor = borderColor;
+
   // Empty record is meaningless to a consumer — collapse to undefined.
   if (
     out.position === undefined &&
@@ -3089,7 +3102,8 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
     out.underline === undefined &&
     out.strikethrough === undefined &&
     out.fontFamily === undefined &&
-    out.fillColor === undefined
+    out.fillColor === undefined &&
+    out.borderColor === undefined
   ) {
     return undefined;
   }
@@ -3361,6 +3375,52 @@ function parseDataLabelsFillColor(dLbls: XmlElement): string | undefined {
   const spPr = findChild(dLbls, "spPr");
   if (!spPr) return undefined;
   const solidFill = findChild(spPr, "solidFill");
+  if (!solidFill) return undefined;
+  const srgbClr = findChild(solidFill, "srgbClr");
+  if (!srgbClr) return undefined;
+  return normalizeRgbHex(srgbClr.attrs.val);
+}
+
+/**
+ * Pull `<c:dLbls><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/>
+ * </a:solidFill></a:ln></c:spPr></c:dLbls>` off a data-labels block.
+ * Returns the data-labels border (line) color as a 6-character
+ * uppercase hex string.
+ *
+ * The OOXML `<a:srgbClr>` element carries the literal sRGB color
+ * (`CT_SRgbColor`, ECMA-376 Part 1, §20.1.2.3.32) inside the line's
+ * solid fill choice (`CT_LineProperties`'s solid fill — §20.1.2.3.24).
+ * The `<a:ln>` slot sits inside the `<c:spPr>` block on `<c:dLbls>`
+ * alongside the optional `<a:solidFill>` fill child, in
+ * `CT_ShapeProperties` schema order (fill before stroke). The
+ * `<c:spPr>` itself sits between `<c:numFmt>` and `<c:txPr>` per
+ * CT_DLbls (ECMA-376 Part 1, §21.2.2.50).
+ *
+ * The reader surfaces only the literal `<a:srgbClr>` form — absence,
+ * non-solid line fills (`<a:noFill>` / `<a:gradFill>` / `<a:pattFill>`),
+ * and theme-color references (`<a:schemeClr>`) all collapse to
+ * `undefined` so a chart that pinned a stroke the writer cannot
+ * reproduce on emit drops the field rather than fabricate one Excel
+ * would render differently. Malformed `val` tokens (wrong length,
+ * non-hex characters, alpha-channel forms, non-string escapes)
+ * likewise drop to `undefined`.
+ *
+ * Mirrors the writer-side {@link ChartDataLabels.borderColor} so a
+ * parsed value slots straight into {@link cloneChart} without
+ * conversion. The lookup is scoped to direct children of `<c:dLbls>`
+ * so a stray `<c:spPr>` elsewhere (e.g. on `<c:plotArea>` /
+ * `<c:legend>` / `<c:title>` / a series) cannot leak in. Mirrors
+ * {@link parseDataLabelsFillColor} — same `<c:spPr>` host element on
+ * the same `<c:dLbls>` parent — but lands on the line
+ * (`<a:ln><a:solidFill>`) child rather than the fill (`<a:solidFill>`)
+ * child.
+ */
+function parseDataLabelsBorderColor(dLbls: XmlElement): string | undefined {
+  const spPr = findChild(dLbls, "spPr");
+  if (!spPr) return undefined;
+  const ln = findChild(spPr, "ln");
+  if (!ln) return undefined;
+  const solidFill = findChild(ln, "solidFill");
   if (!solidFill) return undefined;
   const srgbClr = findChild(solidFill, "srgbClr");
   if (!srgbClr) return undefined;

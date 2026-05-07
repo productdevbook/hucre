@@ -22202,6 +22202,292 @@ describe("writeChart — dataLabels.fillColor", () => {
   });
 });
 
+// ── writeChart — dataLabels.borderColor (line stroke) ───────────────
+
+describe("writeChart — dataLabels.borderColor", () => {
+  function dLblsOf(xml: string): string {
+    const m = xml.match(/<c:dLbls>[\s\S]*?<\/c:dLbls>/);
+    if (!m) throw new Error("No <c:dLbls> block found in chart XML");
+    return m[0];
+  }
+
+  it("does NOT emit <c:spPr> on <c:dLbls> when borderColor is unset (matches Excel reference)", () => {
+    const result = writeChart(makeChart({ dataLabels: { showValue: true } }), "Sheet1");
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).not.toContain("<c:spPr>");
+    expect(dLbls).not.toContain("<a:ln>");
+  });
+
+  it("emits <c:spPr><a:ln><a:solidFill><a:srgbClr> when borderColor is set", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, borderColor: "1F77B4" } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain("<c:spPr>");
+    expect(dLbls).toContain("<a:ln>");
+    expect(dLbls).toContain('<a:srgbClr val="1F77B4"/>');
+    // The border color must land inside <a:ln>, not as a top-level
+    // <a:solidFill> (that slot is reserved for the fill color knob).
+    const lnIdx = dLbls.indexOf("<a:ln>");
+    const lnEndIdx = dLbls.indexOf("</a:ln>");
+    expect(lnIdx).toBeGreaterThan(-1);
+    expect(lnEndIdx).toBeGreaterThan(lnIdx);
+    expect(dLbls.slice(lnIdx, lnEndIdx)).toContain('<a:srgbClr val="1F77B4"/>');
+  });
+
+  it("normalizes a leading # in the input hex string", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, borderColor: "#1070CA" } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).toContain('<a:srgbClr val="1070CA"/>');
+  });
+
+  it("normalizes a lowercase hex string to the OOXML uppercase canonical form", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, borderColor: "abcdef" } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).toContain('<a:srgbClr val="ABCDEF"/>');
+  });
+
+  it("places <c:spPr> after <c:numFmt> and before <c:txPr> inside <c:dLbls> (CT_DLbls order)", () => {
+    const result = writeChart(
+      makeChart({
+        dataLabels: {
+          showValue: true,
+          borderColor: "FFEEDD",
+          fontColor: "112233",
+          numberFormat: { formatCode: "0.00" },
+        },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls.indexOf("c:numFmt")).toBeLessThan(dLbls.indexOf("c:spPr"));
+    expect(dLbls.indexOf("c:spPr")).toBeLessThan(dLbls.indexOf("c:txPr"));
+  });
+
+  it("places <c:spPr> before <c:dLblPos> (CT_DLbls order)", () => {
+    const result = writeChart(
+      makeChart({
+        dataLabels: { showValue: true, borderColor: "112233", position: "outEnd" },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls.indexOf("c:spPr")).toBeLessThan(dLbls.indexOf("c:dLblPos"));
+  });
+
+  it("only emits <c:spPr> once inside <c:dLbls>", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, borderColor: "112233" } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    const occurrences = dLbls.match(/<c:spPr>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads borderColor through every chart family that emits dLbls", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(
+        makeChart({ type, dataLabels: { showValue: true, borderColor: "445566" } }),
+        "Sheet1",
+      );
+      const dLbls = dLblsOf(result.chartXml);
+      expect(dLbls).toContain("<c:spPr>");
+      expect(dLbls).toContain("<a:ln>");
+      expect(dLbls).toContain('<a:srgbClr val="445566"/>');
+    }
+  });
+
+  it("composes independently with fillColor on the same <c:spPr> in CT_ShapeProperties order", () => {
+    const result = writeChart(
+      makeChart({
+        dataLabels: { showValue: true, fillColor: "FFEEDD", borderColor: "112233" },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain("<c:spPr>");
+    expect(dLbls).toContain("<a:solidFill>");
+    expect(dLbls).toContain("<a:ln>");
+    expect(dLbls).toContain('<a:srgbClr val="FFEEDD"/>');
+    expect(dLbls).toContain('<a:srgbClr val="112233"/>');
+    // Fill must precede stroke on the same <c:spPr> per CT_ShapeProperties
+    // schema order — the fill color comes first, then the border color.
+    expect(dLbls.indexOf('<a:srgbClr val="FFEEDD"/>')).toBeLessThan(
+      dLbls.indexOf('<a:srgbClr val="112233"/>'),
+    );
+    expect(dLbls.indexOf("<a:solidFill>")).toBeLessThan(dLbls.indexOf("<a:ln>"));
+  });
+
+  it("composes independently with fontColor (different children of <c:dLbls>)", () => {
+    const result = writeChart(
+      makeChart({
+        dataLabels: { showValue: true, borderColor: "FFEEDD", fontColor: "112233" },
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain("<c:spPr>");
+    expect(dLbls).toContain("<c:txPr>");
+    expect(dLbls).toContain('<a:srgbClr val="FFEEDD"/>');
+    expect(dLbls).toContain('<a:srgbClr val="112233"/>');
+  });
+
+  it("drops malformed hex inputs (wrong length)", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, borderColor: "FF00" } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:spPr>");
+  });
+
+  it("drops malformed hex inputs (non-hex characters)", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, borderColor: "ZZZZZZ" } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:spPr>");
+  });
+
+  it("drops alpha-channel hex forms", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, borderColor: "#FF0000FF" } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:spPr>");
+  });
+
+  it("drops empty / whitespace-only string inputs", () => {
+    expect(
+      dLblsOf(
+        writeChart(makeChart({ dataLabels: { showValue: true, borderColor: "" } }), "Sheet1")
+          .chartXml,
+      ),
+    ).not.toContain("<c:spPr>");
+    expect(
+      dLblsOf(
+        writeChart(makeChart({ dataLabels: { showValue: true, borderColor: "   " } }), "Sheet1")
+          .chartXml,
+      ),
+    ).not.toContain("<c:spPr>");
+  });
+
+  it("drops non-string inputs (null leaking past the type guard)", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ dataLabels: { showValue: true, borderColor: null as any } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:spPr>");
+  });
+
+  it("drops non-string inputs (number leaking past the type guard)", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ dataLabels: { showValue: true, borderColor: 0xff0000 as any } }),
+      "Sheet1",
+    );
+    expect(dLblsOf(result.chartXml)).not.toContain("<c:spPr>");
+  });
+
+  it("does not emit <c:txPr> when only borderColor is set (typography slot stays empty)", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, borderColor: "ABCDEF" } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain("<c:spPr>");
+    expect(dLbls).not.toContain("<c:txPr>");
+  });
+
+  it("does not emit <a:solidFill> as a sibling of <a:ln> when only borderColor is set", () => {
+    const result = writeChart(
+      makeChart({ dataLabels: { showValue: true, borderColor: "ABCDEF" } }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain("<c:spPr><a:ln>");
+  });
+
+  it("threads borderColor through a per-series dLbls block", () => {
+    const result = writeChart(
+      makeChart({
+        series: [
+          {
+            name: "Revenue",
+            values: "B2:B4",
+            categories: "A2:A4",
+            dataLabels: { showValue: true, borderColor: "ABCDEF" },
+          },
+        ],
+      }),
+      "Sheet1",
+    );
+    const dLbls = dLblsOf(result.chartXml);
+    expect(dLbls).toContain("<a:ln>");
+    expect(dLbls).toContain('<a:srgbClr val="ABCDEF"/>');
+  });
+
+  it("round-trips a borderColor through parseChart", () => {
+    const written = writeChart(
+      makeChart({ dataLabels: { showValue: true, borderColor: "FF8800" } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataLabels?.borderColor).toBe("FF8800");
+  });
+
+  it("round-trips fillColor + borderColor together through parseChart", () => {
+    const written = writeChart(
+      makeChart({
+        dataLabels: { showValue: true, fillColor: "FF8800", borderColor: "1F77B4" },
+      }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataLabels?.fillColor).toBe("FF8800");
+    expect(reparsed?.dataLabels?.borderColor).toBe("1F77B4");
+  });
+
+  it("collapses an unset borderColor round-trip back to undefined", () => {
+    const written = writeChart(makeChart({ dataLabels: { showValue: true } }), "Sheet1").chartXml;
+    expect(parseChart(written)?.dataLabels?.borderColor).toBeUndefined();
+  });
+
+  it("survives a writeXlsx round trip — dataLabels.borderColor lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            dataLabels: { showValue: true, borderColor: "0F0F0F" },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain('<a:srgbClr val="0F0F0F"/>');
+    expect(chartXml).toContain("<a:ln>");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.dataLabels?.borderColor).toBe("0F0F0F");
+  });
+});
+
 // ── writeChart — legendBorderColor (line stroke) ────────────────────
 
 describe("writeChart — legendBorderColor", () => {

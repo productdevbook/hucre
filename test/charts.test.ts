@@ -21841,6 +21841,245 @@ describe("parseChart — dataLabelsFillColor", () => {
   });
 });
 
+// ── parseChart — dataLabelsBorderColor (line stroke) ────────────────
+
+describe("parseChart — dataLabelsBorderColor", () => {
+  const NS_DLBC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withDLblsSpPr(spPrBody: string): string {
+    return `<c:chartSpace ${NS_DLBC}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:spPr>${spPrBody}</c:spPr>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces borderColor as the canonical 6-character uppercase hex", () => {
+    expect(
+      parseChart(
+        withDLblsSpPr(`<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`),
+      )?.dataLabels?.borderColor,
+    ).toBe("1F77B4");
+  });
+
+  it("normalizes a lowercase srgbClr val to the OOXML uppercase canonical form", () => {
+    expect(
+      parseChart(
+        withDLblsSpPr(`<a:ln><a:solidFill><a:srgbClr val="abcdef"/></a:solidFill></a:ln>`),
+      )?.dataLabels?.borderColor,
+    ).toBe("ABCDEF");
+  });
+
+  it("returns undefined when the dLbls block has no <c:spPr>", () => {
+    const xml = `<c:chartSpace ${NS_DLBC}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataLabels?.borderColor).toBeUndefined();
+  });
+
+  it("returns undefined when <c:spPr> has no <a:ln> child (fillColor-only block)", () => {
+    expect(
+      parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val="FFEEDD"/></a:solidFill>`))?.dataLabels
+        ?.borderColor,
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln> exists but lacks a solid fill", () => {
+    expect(
+      parseChart(withDLblsSpPr(`<a:ln><a:noFill/></a:ln>`))?.dataLabels?.borderColor,
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:dLbls> element at all", () => {
+    const xml = `<c:chartSpace ${NS_DLBC}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataLabels).toBeUndefined();
+  });
+
+  it("collapses theme references (<a:schemeClr>) inside <a:ln> to undefined", () => {
+    expect(
+      parseChart(
+        withDLblsSpPr(`<a:ln><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:ln>`),
+      )?.dataLabels?.borderColor,
+    ).toBeUndefined();
+  });
+
+  it("collapses non-solid line fills (<a:gradFill>) to undefined", () => {
+    expect(
+      parseChart(
+        withDLblsSpPr(`<a:ln><a:gradFill><a:gsLst/><a:lin ang="0" scaled="1"/></a:gradFill></a:ln>`),
+      )?.dataLabels?.borderColor,
+    ).toBeUndefined();
+  });
+
+  it("collapses pattern line fills (<a:pattFill>) to undefined", () => {
+    expect(
+      parseChart(
+        withDLblsSpPr(
+          `<a:ln><a:pattFill prst="pct5"><a:fgClr><a:srgbClr val="000000"/></a:fgClr><a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr></a:pattFill></a:ln>`,
+        ),
+      )?.dataLabels?.borderColor,
+    ).toBeUndefined();
+  });
+
+  it("collapses malformed val tokens (wrong length / non-hex / alpha) to undefined", () => {
+    expect(
+      parseChart(withDLblsSpPr(`<a:ln><a:solidFill><a:srgbClr val=""/></a:solidFill></a:ln>`))
+        ?.dataLabels?.borderColor,
+    ).toBeUndefined();
+    expect(
+      parseChart(withDLblsSpPr(`<a:ln><a:solidFill><a:srgbClr val="FF00"/></a:solidFill></a:ln>`))
+        ?.dataLabels?.borderColor,
+    ).toBeUndefined();
+    expect(
+      parseChart(
+        withDLblsSpPr(`<a:ln><a:solidFill><a:srgbClr val="FF0000FF"/></a:solidFill></a:ln>`),
+      )?.dataLabels?.borderColor,
+    ).toBeUndefined();
+    expect(
+      parseChart(withDLblsSpPr(`<a:ln><a:solidFill><a:srgbClr val="ZZZZZZ"/></a:solidFill></a:ln>`))
+        ?.dataLabels?.borderColor,
+    ).toBeUndefined();
+  });
+
+  it("co-surfaces alongside fillColor on the same <c:spPr>", () => {
+    const chart = parseChart(
+      withDLblsSpPr(
+        `<a:solidFill><a:srgbClr val="FFEEDD"/></a:solidFill><a:ln><a:solidFill><a:srgbClr val="112233"/></a:solidFill></a:ln>`,
+      ),
+    );
+    expect(chart?.dataLabels?.fillColor).toBe("FFEEDD");
+    expect(chart?.dataLabels?.borderColor).toBe("112233");
+  });
+
+  it("co-surfaces alongside the other dLbls fields (showVal / position / fontColor)", () => {
+    const xml = `<c:chartSpace ${NS_DLBC}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:numFmt formatCode="0.00" sourceLinked="0"/>
+          <c:spPr><a:ln><a:solidFill><a:srgbClr val="445566"/></a:solidFill></a:ln></c:spPr>
+          <c:txPr>
+            <a:bodyPr/>
+            <a:lstStyle/>
+            <a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="112233"/></a:solidFill></a:defRPr></a:pPr></a:p>
+          </c:txPr>
+          <c:dLblPos val="outEnd"/>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="1"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.dataLabels?.borderColor).toBe("445566");
+    expect(chart?.dataLabels?.fontColor).toBe("112233");
+    expect(chart?.dataLabels?.position).toBe("outEnd");
+    expect(chart?.dataLabels?.showValue).toBe(true);
+    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" });
+  });
+
+  it("surfaces the borderColor on a borderColor-only dLbls block (no other show* toggles)", () => {
+    const xml = `<c:chartSpace ${NS_DLBC}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser><c:idx val="0"/></c:ser>
+        <c:dLbls>
+          <c:spPr><a:ln><a:solidFill><a:srgbClr val="00FF00"/></a:solidFill></a:ln></c:spPr>
+          <c:showLegendKey val="0"/>
+          <c:showVal val="0"/>
+          <c:showCatName val="0"/>
+          <c:showSerName val="0"/>
+          <c:showPercent val="0"/>
+          <c:showBubbleSize val="0"/>
+        </c:dLbls>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.dataLabels?.borderColor).toBe("00FF00");
+  });
+
+  it("surfaces borderColor on a per-series <c:dLbls> block", () => {
+    const xml = `<c:chartSpace ${NS_DLBC}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:dLbls>
+            <c:spPr><a:ln><a:solidFill><a:srgbClr val="A1B2C3"/></a:solidFill></a:ln></c:spPr>
+            <c:showLegendKey val="0"/>
+            <c:showVal val="1"/>
+            <c:showCatName val="0"/>
+            <c:showSerName val="0"/>
+            <c:showPercent val="0"/>
+            <c:showBubbleSize val="0"/>
+          </c:dLbls>
+        </c:ser>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.series?.[0]?.dataLabels?.borderColor).toBe("A1B2C3");
+  });
+});
+
 // ── parseChart — legendBorderColor (line stroke) ────────────────────
 
 describe("parseChart — legendBorderColor", () => {
