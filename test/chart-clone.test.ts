@@ -12427,6 +12427,222 @@ describe("cloneChart — view3D", () => {
   });
 });
 
+// ── cloneChart — side-wall thickness ─────────────────────────────────
+
+describe("cloneChart — sideWallThickness", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's sideWallThickness by default", () => {
+    const clone = cloneChart(source({ sideWallThickness: 25 }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.sideWallThickness).toBe(25);
+  });
+
+  it("lets options.sideWallThickness replace the inherited value", () => {
+    const clone = cloneChart(source({ sideWallThickness: 25 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      sideWallThickness: 50,
+    });
+    expect(clone.sideWallThickness).toBe(50);
+  });
+
+  it("drops the inherited sideWallThickness when the override is null", () => {
+    // null collapses to absence — the cloned SheetChart drops the
+    // field so the writer skips <c:sideWall> entirely on emit. Mirrors
+    // resolveUpDownBarsGapWidth / resolveView3D's null grammar.
+    const clone = cloneChart(source({ sideWallThickness: 25 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      sideWallThickness: null,
+    });
+    expect(clone.sideWallThickness).toBeUndefined();
+  });
+
+  it("returns undefined sideWallThickness when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.sideWallThickness).toBeUndefined();
+  });
+
+  it("carries sideWallThickness through a flatten (line → column)", () => {
+    // <c:sideWall> lives on <c:chart>, so a chart-type coercion
+    // preserves the pinned value — the element has no axis dependency.
+    const clone = cloneChart(source({ sideWallThickness: 35 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.sideWallThickness).toBe(35);
+  });
+
+  it("preserves sideWallThickness when flattening into a doughnut clone", () => {
+    // Unlike <c:dTable>, <c:sideWall> has no axis dependency — it
+    // lives on <c:chart> so pie / doughnut still carry the slot.
+    const clone = cloneChart(source({ sideWallThickness: 20 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.sideWallThickness).toBe(20);
+  });
+
+  it("preserves sideWallThickness when flattening into a pie clone", () => {
+    const clone = cloneChart(source({ sideWallThickness: 40 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "pie",
+    });
+    expect(clone.type).toBe("pie");
+    expect(clone.sideWallThickness).toBe(40);
+  });
+
+  it("composes independently with view3D (both sit on <c:chart>)", () => {
+    // Both knobs land on <c:chart> directly — one should not leak into
+    // the other through the resolver pair.
+    const clone = cloneChart(source({ view3D: { rotX: 15, rotY: 20 }, sideWallThickness: 30 }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.view3D).toEqual({ rotX: 15, rotY: 20 });
+    expect(clone.sideWallThickness).toBe(30);
+  });
+
+  it("override does not leak into view3D when both fields are pinned independently", () => {
+    // The view3D resolver and the sideWallThickness resolver are
+    // independent. Overriding one should not affect the other.
+    const clone = cloneChart(source({ view3D: { rotX: 15 }, sideWallThickness: 25 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      sideWallThickness: 60,
+    });
+    expect(clone.view3D).toEqual({ rotX: 15 });
+    expect(clone.sideWallThickness).toBe(60);
+  });
+
+  it("propagates sideWallThickness into the rendered <c:sideWall> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ sideWallThickness: 45 }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:sideWall>");
+    expect(written).toContain('<c:thickness val="45"/>');
+
+    // Re-parsing the rendered chart returns the same value — closes
+    // the template → clone → write → read loop.
+    const reparsed = parseChart(written);
+    expect(reparsed?.sideWallThickness).toBe(45);
+  });
+
+  it("propagates the override-drop (null) into absence on roundtrip", async () => {
+    // null on the override drops the inherited value so the writer
+    // skips the element entirely — Excel falls back to no extrusion.
+    // The round-trip closes with no <c:sideWall> present in the
+    // rendered file.
+    const clone = cloneChart(source({ sideWallThickness: 25 }), {
+      anchor: { from: { row: 5, col: 0 } },
+      sideWallThickness: null,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Q", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).not.toContain("<c:sideWall");
+    expect(parseChart(written)?.sideWallThickness).toBeUndefined();
+  });
+
+  it("override-replace into a positive value emits the new <c:thickness val>", async () => {
+    // The override replaces the inherited value — the writer emits the
+    // override at the canonical slot.
+    const clone = cloneChart(source({ sideWallThickness: 10 }), {
+      anchor: { from: { row: 5, col: 0 } },
+      sideWallThickness: 75,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Q", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('<c:thickness val="75"/>');
+    expect(written).not.toContain('<c:thickness val="10"/>');
+    expect(parseChart(written)?.sideWallThickness).toBe(75);
+  });
+
+  it("composes independently with view3D on the writeXlsx roundtrip", async () => {
+    // Both knobs sit on <c:chart>; the round-trip preserves both.
+    const clone = cloneChart(source({ view3D: { rotX: 20, rotY: 30 }, sideWallThickness: 50 }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Q", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('<c:rotX val="20"/>');
+    expect(written).toContain('<c:rotY val="30"/>');
+    expect(written).toContain('<c:thickness val="50"/>');
+    const reparsed = parseChart(written);
+    expect(reparsed?.view3D).toEqual({ rotX: 20, rotY: 30 });
+    expect(reparsed?.sideWallThickness).toBe(50);
+  });
+});
+
 // ── cloneChart — axis label rotation ───────────────────────────────
 
 describe("cloneChart — axis labelRotation", () => {
