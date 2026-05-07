@@ -40,6 +40,10 @@ import type {
   SheetChart,
   WriteChartKind,
 } from "../_types";
+import {
+  clampStrokeWidthPt as normalizeBorderWidthPt,
+  normalizeBorderDash,
+} from "./chart/shape";
 
 // ── Public API ───────────────────────────────────────────────────────
 
@@ -4594,30 +4598,10 @@ function resolveChartSpaceBorderColor(
   return normalizeChartSpaceBorderColor(override);
 }
 
-const BORDER_WIDTH_MIN_PT = 0.25;
-const BORDER_WIDTH_MAX_PT = 13.5;
-
-/**
- * Normalize a chart-frame border-width value (points) for the cloned
- * `SheetChart`. Mirrors the writer's `clampStrokeWidthPt` — values are
- * clamped to the `0.25..13.5` pt band Excel's UI exposes and snapped
- * to the 0.25 pt grid so a parsed-then-cloned-then-written width does
- * not drift across round-trips. Non-finite / non-numeric tokens
- * (`NaN`, `Infinity`, strings, escapes from an untyped caller) collapse
- * to `undefined` so the cloned chart drops the field rather than carry
- * a value the writer would silently elide back to absence. Used by
- * every chart-frame border-width slot — chart-space, axis-title, data
- * table, data labels — alongside the host-specific normalizers
- * inherited from the earlier plot-area / legend / title surface.
- */
-function normalizeBorderWidthPt(value: number | undefined): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
-  const snapped = Math.round(value * 4) / 4;
-  if (snapped < BORDER_WIDTH_MIN_PT) return BORDER_WIDTH_MIN_PT;
-  if (snapped > BORDER_WIDTH_MAX_PT) return BORDER_WIDTH_MAX_PT;
-  return snapped;
-}
+// `normalizeBorderWidthPt` (aliased to the shared `clampStrokeWidthPt`)
+// and `normalizeBorderDash` now live in `./chart/shape.ts`. Imported at
+// the top of this module so every chart-frame slot the clone surface
+// exposes shares one EMU encoding and one accept-or-drop dash grammar.
 
 /**
  * Resolve a chart-frame border-width override.
@@ -4644,38 +4628,6 @@ function resolveBorderWidthPt(
   if (override === undefined) return normalizeBorderWidthPt(sourceValue);
   if (override === null) return undefined;
   return normalizeBorderWidthPt(override);
-}
-
-const VALID_BORDER_DASHES_CLONE: ReadonlySet<ChartBorderDash> = new Set([
-  "solid",
-  "dash",
-  "dashDot",
-  "dot",
-  "lgDash",
-  "lgDashDot",
-  "lgDashDotDot",
-  "sysDash",
-  "sysDashDot",
-  "sysDashDotDot",
-  "sysDot",
-]);
-
-/**
- * Normalize a chart-frame border-dash value for the cloned
- * `SheetChart`. Mirrors the writer's `normalizeBorderDash` — drops the
- * OOXML default `"solid"` to `undefined` so absence and the default
- * round-trip identically, and drops every unrecognized
- * `ST_PresetLineDashVal` token so a malformed source / override does
- * not surface a value Excel would reject. Used by every chart-frame
- * border-dash slot — plot-area, legend, title, chart-space, axis-title,
- * data table, data labels.
- */
-function normalizeBorderDash(value: ChartBorderDash | undefined): ChartBorderDash | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "string") return undefined;
-  if (!VALID_BORDER_DASHES_CLONE.has(value)) return undefined;
-  if (value === "solid") return undefined;
-  return value;
 }
 
 /**

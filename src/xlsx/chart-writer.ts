@@ -33,6 +33,12 @@ import type {
   WriteChartKind,
 } from "../_types";
 import { xmlDocument, xmlElement, xmlEscape, xmlSelfClose } from "../xml/writer";
+import {
+  EMU_PER_PT,
+  VALID_DASH_STYLES,
+  clampStrokeWidthPt,
+  normalizeBorderDash,
+} from "./chart/shape";
 
 // ── Namespaces ───────────────────────────────────────────────────────
 
@@ -5052,24 +5058,13 @@ function buildSeries(
 }
 
 // ── Stroke ───────────────────────────────────────────────────────────
-
-const VALID_DASH_STYLES: ReadonlySet<ChartLineDashStyle> = new Set([
-  "solid",
-  "dot",
-  "dash",
-  "lgDash",
-  "dashDot",
-  "lgDashDot",
-  "lgDashDotDot",
-  "sysDash",
-  "sysDot",
-  "sysDashDot",
-  "sysDashDotDot",
-]);
-
-const STROKE_WIDTH_MIN_PT = 0.25;
-const STROKE_WIDTH_MAX_PT = 13.5;
-const EMU_PER_PT = 12700;
+//
+// `EMU_PER_PT`, `VALID_DASH_STYLES`, `VALID_BORDER_DASHES`,
+// `clampStrokeWidthPt`, and `normalizeBorderDash` now live in
+// `./chart/shape.ts`. Imported at the top of this module so the chart-
+// space / plot-area / legend / title / axis-title / data-labels /
+// data-table writers all share the same EMU encoding and accept-or-
+// drop dash grammar.
 
 /**
  * Validate a dash style against `ST_PresetLineDashVal`. Returns
@@ -5079,68 +5074,6 @@ const EMU_PER_PT = 12700;
 function normalizeDashStyle(value: ChartLineDashStyle | undefined): ChartLineDashStyle | undefined {
   if (value === undefined) return undefined;
   return VALID_DASH_STYLES.has(value) ? value : undefined;
-}
-
-/**
- * Recognized values of {@link ChartBorderDash} — the chart-frame
- * border-dash enum that lands on `<c:spPr><a:ln><a:prstDash val=".."/>`.
- * Mirrors {@link VALID_DASH_STYLES} since the enum mirrors
- * `ST_PresetLineDashVal` exactly. Listed independently so the writer
- * stays explicit about which slot the value targets (the chart-frame
- * `<c:spPr>` rather than the per-series `<c:ser>` block).
- */
-const VALID_BORDER_DASHES: ReadonlySet<ChartBorderDash> = new Set([
-  "solid",
-  "dash",
-  "dashDot",
-  "dot",
-  "lgDash",
-  "lgDashDot",
-  "lgDashDotDot",
-  "sysDash",
-  "sysDashDot",
-  "sysDashDotDot",
-  "sysDot",
-]);
-
-/**
- * Validate a chart-frame border dash style against
- * {@link ChartBorderDash}. Returns `undefined` for unrecognized values
- * and for the OOXML default `"solid"` so the writer can elide the
- * `<a:prstDash>` element entirely — Excel paints solid by default and
- * absence / `"solid"` round-trip identically through {@link cloneChart}.
- *
- * Mirrors {@link normalizeDashStyle} for the per-series stroke variant
- * but collapses `"solid"` to `undefined` for symmetry with the reader
- * side: the reader drops `"solid"` to surface absence, so the writer
- * must skip it on emit too. Used by every chart-frame `<c:spPr>` /
- * `<a:ln>` slot — plot-area, legend, title, chart-space, axis-title,
- * data-table, and data-labels borders.
- */
-function normalizeBorderDash(value: ChartBorderDash | undefined): ChartBorderDash | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "string") return undefined;
-  if (!VALID_BORDER_DASHES.has(value)) return undefined;
-  if (value === "solid") return undefined;
-  return value;
-}
-
-/**
- * Convert a stroke width in points to the integer EMU value the OOXML
- * `w` attribute requires. Excel's UI exposes 0.25..13.5 pt — values
- * outside that band are clamped to keep round-trips inside the range
- * Excel will render. Non-finite values collapse to `undefined` so the
- * writer can omit the attribute entirely. The point value is also
- * snapped to the nearest quarter-point so a parsed-then-written stroke
- * does not drift across round-trips (Excel rounds in the UI anyway).
- */
-function clampStrokeWidthPt(value: number | undefined): number | undefined {
-  if (value === undefined || !Number.isFinite(value)) return undefined;
-  // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
-  const snapped = Math.round(value * 4) / 4;
-  if (snapped < STROKE_WIDTH_MIN_PT) return STROKE_WIDTH_MIN_PT;
-  if (snapped > STROKE_WIDTH_MAX_PT) return STROKE_WIDTH_MAX_PT;
-  return snapped;
 }
 
 /**
