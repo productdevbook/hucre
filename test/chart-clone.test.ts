@@ -22127,9 +22127,10 @@ describe("cloneChart — dataLabels.fillColor", () => {
     const parsed = parseChart(written)!;
     expect(parsed.series?.[0]?.dataLabels?.fillColor).toBe("A1B2C3");
     const clone = cloneChart(parsed, { anchor: { from: { row: 0, col: 0 } } });
-    expect(clone.series?.[0]?.dataLabels).toBeTruthy();
-    if (clone.series?.[0]?.dataLabels && clone.series[0].dataLabels !== false) {
-      expect(clone.series[0].dataLabels.fillColor).toBe("A1B2C3");
+    const cloneDataLabels = clone.series?.[0]?.dataLabels;
+    expect(cloneDataLabels).toBeTruthy();
+    if (cloneDataLabels) {
+      expect(cloneDataLabels.fillColor).toBe("A1B2C3");
     }
   });
 });

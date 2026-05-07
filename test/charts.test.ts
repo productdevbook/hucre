@@ -20631,15 +20631,17 @@ describe("parseChart — dataLabelsFillColor", () => {
   }
 
   it("surfaces fillColor as the canonical 6-character uppercase hex", () => {
-    expect(parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill>`))?.dataLabels?.fillColor).toBe(
-      "FFFF00",
-    );
+    expect(
+      parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill>`))?.dataLabels
+        ?.fillColor,
+    ).toBe("FFFF00");
   });
 
   it("normalizes a lowercase srgbClr val to the OOXML uppercase canonical form", () => {
-    expect(parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val="abcdef"/></a:solidFill>`))?.dataLabels?.fillColor).toBe(
-      "ABCDEF",
-    );
+    expect(
+      parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val="abcdef"/></a:solidFill>`))?.dataLabels
+        ?.fillColor,
+    ).toBe("ABCDEF");
   });
 
   it("returns undefined when the dLbls block has no <c:spPr>", () => {
@@ -20682,7 +20684,8 @@ describe("parseChart — dataLabelsFillColor", () => {
 
   it("collapses theme references (<a:schemeClr>) to undefined — only literal RGB round-trips", () => {
     expect(
-      parseChart(withDLblsSpPr(`<a:solidFill><a:schemeClr val="accent1"/></a:solidFill>`))?.dataLabels?.fillColor,
+      parseChart(withDLblsSpPr(`<a:solidFill><a:schemeClr val="accent1"/></a:solidFill>`))
+        ?.dataLabels?.fillColor,
     ).toBeUndefined();
   });
 
@@ -20692,30 +20695,37 @@ describe("parseChart — dataLabelsFillColor", () => {
 
   it("collapses gradient fills (<a:gradFill>) to undefined", () => {
     expect(
-      parseChart(withDLblsSpPr(`<a:gradFill><a:gsLst/><a:lin ang="0" scaled="1"/></a:gradFill>`))?.dataLabels
-        ?.fillColor,
+      parseChart(withDLblsSpPr(`<a:gradFill><a:gsLst/><a:lin ang="0" scaled="1"/></a:gradFill>`))
+        ?.dataLabels?.fillColor,
     ).toBeUndefined();
   });
 
   it("collapses pattern fills (<a:pattFill>) to undefined", () => {
     expect(
-      parseChart(withDLblsSpPr(`<a:pattFill prst="pct5"><a:fgClr><a:srgbClr val="000000"/></a:fgClr><a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr></a:pattFill>`))
-        ?.dataLabels?.fillColor,
+      parseChart(
+        withDLblsSpPr(
+          `<a:pattFill prst="pct5"><a:fgClr><a:srgbClr val="000000"/></a:fgClr><a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr></a:pattFill>`,
+        ),
+      )?.dataLabels?.fillColor,
     ).toBeUndefined();
   });
 
   it("collapses malformed val tokens (wrong length / non-hex / alpha) to undefined", () => {
     expect(
-      parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val=""/></a:solidFill>`))?.dataLabels?.fillColor,
+      parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val=""/></a:solidFill>`))?.dataLabels
+        ?.fillColor,
     ).toBeUndefined();
     expect(
-      parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val="FF00"/></a:solidFill>`))?.dataLabels?.fillColor,
+      parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val="FF00"/></a:solidFill>`))?.dataLabels
+        ?.fillColor,
     ).toBeUndefined();
     expect(
-      parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val="FF0000FF"/></a:solidFill>`))?.dataLabels?.fillColor,
+      parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val="FF0000FF"/></a:solidFill>`))
+        ?.dataLabels?.fillColor,
     ).toBeUndefined();
     expect(
-      parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val="ZZZZZZ"/></a:solidFill>`))?.dataLabels?.fillColor,
+      parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val="ZZZZZZ"/></a:solidFill>`))?.dataLabels
+        ?.fillColor,
     ).toBeUndefined();
   });
 

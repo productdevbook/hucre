@@ -20815,7 +20815,8 @@ describe("writeChart — dataLabels.fillColor", () => {
   it("drops empty / whitespace-only string inputs", () => {
     expect(
       dLblsOf(
-        writeChart(makeChart({ dataLabels: { showValue: true, fillColor: "" } }), "Sheet1").chartXml,
+        writeChart(makeChart({ dataLabels: { showValue: true, fillColor: "" } }), "Sheet1")
+          .chartXml,
       ),
     ).not.toContain("<c:spPr>");
     expect(
