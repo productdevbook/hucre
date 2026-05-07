@@ -565,6 +565,18 @@ export function parseChart(xml: string): Chart | undefined {
   const floorThickness = parseFloorThickness(chartEl);
   if (floorThickness !== undefined) out.floorThickness = floorThickness;
 
+  // `<c:sideWall>` (CT_Surface, ECMA-376 Part 1, §21.2.2.187) sits on
+  // `<c:chart>` between `<c:floor>` and `<c:backWall>` /
+  // `<c:plotArea>` per CT_Chart. The reader surfaces only the
+  // `<c:thickness>` child here — `<c:spPr>` / `<c:pictureOptions>` /
+  // `<c:extLst>` styling on the side-wall block is not modelled at
+  // this layer. Like `<c:view3D>` / `<c:floor>`, the schema accepts
+  // `<c:sideWall>` on every CT_Chart even though it is only
+  // meaningful on 3D families, so a stray element on a 2D chart still
+  // surfaces the value for round-trip parity.
+  const sideWallThickness = parseSideWallThickness(chartEl);
+  if (sideWallThickness !== undefined) out.sideWallThickness = sideWallThickness;
+
   // `<c:backWall>` (CT_Surface, ECMA-376 Part 1, §21.2.2.31) sits on
   // `<c:chart>` between `<c:sideWall>` and `<c:plotArea>` per CT_Chart.
   // Like `<c:floor>`, the reader surfaces only the `<c:thickness>`
@@ -5002,6 +5014,57 @@ function parseFloorThickness(chartEl: XmlElement): number | undefined {
   if (n === 0) return undefined;
   // Cap at Excel's UI band ceiling (`100`) — the OOXML schema accepts
   // the full `xsd:unsignedInt` range but Excel's "Format Floor"
+  // dialogue rejects values above 100 with a repair warning. Anything
+  // larger drops here so a corrupt template does not silently rewrite
+  // as an absurd thickness; absence keeps the round-trip stable.
+  if (n > 100) return undefined;
+  return n;
+}
+
+// ── Side Wall Thickness ───────────────────────────────────────────
+
+/**
+ * Pull `<c:chart><c:sideWall><c:thickness val=".."/></c:sideWall>` off
+ * `<c:chart>`. The `<c:sideWall>` element (CT_Surface, ECMA-376 Part 1,
+ * §21.2.2.187) sits on `<c:chart>` between `<c:floor>` and
+ * `<c:backWall>` / `<c:plotArea>` per CT_Chart and carries an optional
+ * `<c:thickness>` child whose `val` attribute is an `xsd:unsignedInt` —
+ * Excel's "Format Side Wall -> Side Wall -> Thickness" pin on 3D chart
+ * families.
+ *
+ * Returns the integer pinned by the source chart. The OOXML default
+ * `0` (and absence of the `<c:thickness>` child or the parent
+ * `<c:sideWall>` element) collapses to `undefined` so absence and the
+ * default round-trip identically through {@link cloneChart} — only an
+ * explicit positive thickness surfaces here. Out-of-range or
+ * unparseable values also drop to `undefined` rather than fabricate a
+ * value the file did not declare.
+ *
+ * The `<c:thickness>` element only carries the `val` attribute on
+ * `CT_Thickness` — other side-wall styling (`<c:spPr>`,
+ * `<c:pictureOptions>`, `<c:extLst>`) is not modelled at this layer,
+ * so a stray styling block on the wall passes through the parse loop
+ * without surfacing.
+ */
+function parseSideWallThickness(chartEl: XmlElement): number | undefined {
+  const sideWall = findChild(chartEl, "sideWall");
+  if (!sideWall) return undefined;
+  const thickness = findChild(sideWall, "thickness");
+  if (!thickness) return undefined;
+  const raw = thickness.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  // ST_Thickness is `xsd:unsignedInt` — strict integer regex rejects
+  // fractional / negative / non-numeric tokens.
+  if (!/^\d+$/.test(raw)) return undefined;
+  const n = Number(raw);
+  if (!Number.isInteger(n)) return undefined;
+  // Collapse the OOXML default `0` to undefined so absence and the
+  // default round-trip identically through cloneChart — only an
+  // explicit positive thickness surfaces here. Mirrors how the writer
+  // skips emission entirely for `0` / undefined.
+  if (n === 0) return undefined;
+  // Cap at Excel's UI band ceiling (`100`) — the OOXML schema accepts
+  // the full `xsd:unsignedInt` range but Excel's "Format Side Wall"
   // dialogue rejects values above 100 with a repair warning. Anything
   // larger drops here so a corrupt template does not silently rewrite
   // as an absurd thickness; absence keeps the round-trip stable.
