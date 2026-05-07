@@ -58,6 +58,7 @@ import {
   parseSpPrBorderColor,
   parseSpPrFill,
 } from "./chart/shape";
+import { parseManualLayout } from "./chart/layout";
 
 /** All chart-type element local names recognized by Excel. */
 const CHART_KIND_TAGS: ReadonlyMap<string, ChartKind> = new Map([
@@ -2761,25 +2762,7 @@ function parseAxisTitleOverlay(axis: XmlElement): boolean | undefined {
 function parseAxisTitleLayout(axis: XmlElement): ChartManualLayout | undefined {
   const title = findChild(axis, "title");
   if (!title) return undefined;
-  const layout = findChild(title, "layout");
-  if (!layout) return undefined;
-  const manual = findChild(layout, "manualLayout");
-  if (!manual) return undefined;
-
-  const out: ChartManualLayout = {};
-  const x = readLayoutCoordinate(findChild(manual, "x"));
-  if (x !== undefined) out.x = x;
-  const y = readLayoutCoordinate(findChild(manual, "y"));
-  if (y !== undefined) out.y = y;
-  const w = readLayoutCoordinate(findChild(manual, "w"));
-  if (w !== undefined) out.w = w;
-  const h = readLayoutCoordinate(findChild(manual, "h"));
-  if (h !== undefined) out.h = h;
-
-  if (out.x === undefined && out.y === undefined && out.w === undefined && out.h === undefined) {
-    return undefined;
-  }
-  return out;
+  return parseManualLayout(title);
 }
 
 // ── Series ────────────────────────────────────────────────────────
@@ -4162,25 +4145,7 @@ function parseLegendFontFamily(chartEl: XmlElement): string | undefined {
 function parseLegendLayout(chartEl: XmlElement): ChartManualLayout | undefined {
   const legend = findChild(chartEl, "legend");
   if (!legend) return undefined;
-  const layout = findChild(legend, "layout");
-  if (!layout) return undefined;
-  const manual = findChild(layout, "manualLayout");
-  if (!manual) return undefined;
-
-  const out: ChartManualLayout = {};
-  const x = readLayoutCoordinate(findChild(manual, "x"));
-  if (x !== undefined) out.x = x;
-  const y = readLayoutCoordinate(findChild(manual, "y"));
-  if (y !== undefined) out.y = y;
-  const w = readLayoutCoordinate(findChild(manual, "w"));
-  if (w !== undefined) out.w = w;
-  const h = readLayoutCoordinate(findChild(manual, "h"));
-  if (h !== undefined) out.h = h;
-
-  if (out.x === undefined && out.y === undefined && out.w === undefined && out.h === undefined) {
-    return undefined;
-  }
-  return out;
+  return parseManualLayout(legend);
 }
 
 /**
@@ -4341,25 +4306,7 @@ function parseLegendBorderDash(chartEl: XmlElement): ChartBorderDash | undefined
 function parseTitleLayout(chartEl: XmlElement): ChartManualLayout | undefined {
   const title = findChild(chartEl, "title");
   if (!title) return undefined;
-  const layout = findChild(title, "layout");
-  if (!layout) return undefined;
-  const manual = findChild(layout, "manualLayout");
-  if (!manual) return undefined;
-
-  const out: ChartManualLayout = {};
-  const x = readLayoutCoordinate(findChild(manual, "x"));
-  if (x !== undefined) out.x = x;
-  const y = readLayoutCoordinate(findChild(manual, "y"));
-  if (y !== undefined) out.y = y;
-  const w = readLayoutCoordinate(findChild(manual, "w"));
-  if (w !== undefined) out.w = w;
-  const h = readLayoutCoordinate(findChild(manual, "h"));
-  if (h !== undefined) out.h = h;
-
-  if (out.x === undefined && out.y === undefined && out.w === undefined && out.h === undefined) {
-    return undefined;
-  }
-  return out;
+  return parseManualLayout(title);
 }
 
 /**
@@ -4395,25 +4342,7 @@ function parseTitleLayout(chartEl: XmlElement): ChartManualLayout | undefined {
  * the writer.
  */
 function parsePlotAreaLayout(plotArea: XmlElement): ChartManualLayout | undefined {
-  const layout = findChild(plotArea, "layout");
-  if (!layout) return undefined;
-  const manual = findChild(layout, "manualLayout");
-  if (!manual) return undefined;
-
-  const out: ChartManualLayout = {};
-  const x = readLayoutCoordinate(findChild(manual, "x"));
-  if (x !== undefined) out.x = x;
-  const y = readLayoutCoordinate(findChild(manual, "y"));
-  if (y !== undefined) out.y = y;
-  const w = readLayoutCoordinate(findChild(manual, "w"));
-  if (w !== undefined) out.w = w;
-  const h = readLayoutCoordinate(findChild(manual, "h"));
-  if (h !== undefined) out.h = h;
-
-  if (out.x === undefined && out.y === undefined && out.w === undefined && out.h === undefined) {
-    return undefined;
-  }
-  return out;
+  return parseManualLayout(plotArea);
 }
 
 /**
@@ -4581,25 +4510,10 @@ function parseChartSpaceBorderColor(chartSpace: XmlElement): string | undefined 
   return parseSpPrBorderColor(chartSpace);
 }
 
-/**
- * Parse a single `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` element off a
- * `<c:manualLayout>` block. Returns the `val` attribute as a finite
- * number in the `0..1` band; everything else (missing element, missing
- * attribute, non-numeric / non-finite / out-of-range token) collapses
- * to `undefined` so the matching axis on {@link parseLegendLayout}'s
- * return value is omitted.
- */
-function readLayoutCoordinate(el: XmlElement | undefined): number | undefined {
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  const parsed = Number(trimmed);
-  if (!Number.isFinite(parsed)) return undefined;
-  if (parsed < 0 || parsed > 1) return undefined;
-  return parsed;
-}
+// `readLayoutCoordinate` and the `<c:layout><c:manualLayout>` walk now
+// live in `./chart/layout.ts`. Imported at the top of this module so
+// every per-host `parseXxxLayout` wrapper shares one accept-or-drop
+// grammar.
 
 /**
  * Pull `<c:title><c:overlay val=".."/></c:title>` off the chart. The

@@ -11,3 +11,4 @@
 export type * from "./types";
 export * from "./shape";
 export * from "./text";
+export * from "./layout";
