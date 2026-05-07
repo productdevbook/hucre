@@ -47,6 +47,17 @@ import type {
 } from "../_types";
 import { parseXml } from "../xml/parser";
 import type { XmlElement } from "../xml/parser";
+import {
+  EMU_PER_PT,
+  STROKE_WIDTH_MAX_PT,
+  STROKE_WIDTH_MIN_PT,
+  VALID_DASH_STYLES,
+  normalizeRgbHex,
+  parseBorderDashFromSpPr,
+  parseBorderWidthFromSpPr,
+  parseSpPrBorderColor,
+  parseSpPrFill,
+} from "./chart/shape";
 
 /** All chart-type element local names recognized by Excel. */
 const CHART_KIND_TAGS: ReadonlyMap<string, ChartKind> = new Map([
@@ -3494,13 +3505,7 @@ function parseDataLabelsFontFamily(dLbls: XmlElement): string | undefined {
  * the writer-side {@link ChartDataLabels.fillColor}.
  */
 function parseDataLabelsFillColor(dLbls: XmlElement): string | undefined {
-  const spPr = findChild(dLbls, "spPr");
-  if (!spPr) return undefined;
-  const solidFill = findChild(spPr, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  return normalizeRgbHex(srgbClr.attrs.val);
+  return parseSpPrFill(dLbls);
 }
 
 /**
@@ -3538,15 +3543,7 @@ function parseDataLabelsFillColor(dLbls: XmlElement): string | undefined {
  * child.
  */
 function parseDataLabelsBorderColor(dLbls: XmlElement): string | undefined {
-  const spPr = findChild(dLbls, "spPr");
-  if (!spPr) return undefined;
-  const ln = findChild(spPr, "ln");
-  if (!ln) return undefined;
-  const solidFill = findChild(ln, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  return normalizeRgbHex(srgbClr.attrs.val);
+  return parseSpPrBorderColor(dLbls);
 }
 
 /**
@@ -3658,109 +3655,13 @@ function parseSeriesColor(ser: XmlElement): string | undefined {
 }
 
 // ── Stroke ────────────────────────────────────────────────────────
-
-const VALID_DASH_STYLES: ReadonlySet<ChartLineDashStyle> = new Set([
-  "solid",
-  "dot",
-  "dash",
-  "lgDash",
-  "dashDot",
-  "lgDashDot",
-  "lgDashDotDot",
-  "sysDash",
-  "sysDot",
-  "sysDashDot",
-  "sysDashDotDot",
-]);
-
-const STROKE_WIDTH_MIN_PT = 0.25;
-const STROKE_WIDTH_MAX_PT = 13.5;
-const EMU_PER_PT = 12700;
-
-/**
- * Recognized values of {@link ChartBorderDash} — the chart-frame
- * preset dash enum. Mirrors the OOXML `ST_PresetLineDashVal` set
- * exactly (see {@link VALID_DASH_STYLES} on the per-series side); the
- * reader collapses `"solid"` (the OOXML default) to `undefined` for
- * round-trip symmetry with the writer.
- */
-const VALID_BORDER_DASHES: ReadonlySet<ChartBorderDash> = new Set([
-  "solid",
-  "dash",
-  "dashDot",
-  "dot",
-  "lgDash",
-  "lgDashDot",
-  "lgDashDotDot",
-  "sysDash",
-  "sysDashDot",
-  "sysDashDotDot",
-  "sysDot",
-]);
-
-/**
- * Pull the `w` attribute off a `<c:spPr><a:ln w="EMU"/>` block scoped
- * to the supplied parent (`<c:plotArea>` / `<c:legend>` / `<c:title>` /
- * `<c:chartSpace>` / `<c:dTable>` / `<c:dLbls>`). Returns the stroke
- * width in points after clamping to the `0.25..13.5` pt band Excel's
- * UI exposes; the OOXML `w` attribute carries the value in EMU
- * (1 pt = 12 700 EMU) per CT_LineProperties (ECMA-376 Part 1,
- * §20.1.2.3.24). Snaps to the 0.25 pt grid Excel's UI exposes so a
- * parsed-then-written width does not drift across round-trips.
- *
- * Returns `undefined` when there is no `<c:spPr><a:ln>` block, when
- * the attribute is missing, when the value cannot be parsed as a
- * finite positive number, or when it parses to zero (Excel's "no
- * border" marker — the writer-side knob does not model that state).
- * Mirrors the {@link parsePlotAreaBorderWidth} /
- * {@link parseLegendBorderWidth} / {@link parseTitleBorderWidth}
- * helpers — used by every chart-frame border-width slot the reader
- * surfaces.
- */
-function parseBorderWidthFromSpPr(parent: XmlElement): number | undefined {
-  const spPr = findChild(parent, "spPr");
-  if (!spPr) return undefined;
-  const ln = findChild(spPr, "ln");
-  if (!ln) return undefined;
-  const wAttr = ln.attrs.w;
-  if (typeof wAttr !== "string") return undefined;
-  const emu = Number.parseFloat(wAttr);
-  if (!Number.isFinite(emu) || emu <= 0) return undefined;
-  // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
-  const pt = Math.round((emu / EMU_PER_PT) * 4) / 4;
-  if (pt < STROKE_WIDTH_MIN_PT) return STROKE_WIDTH_MIN_PT;
-  if (pt > STROKE_WIDTH_MAX_PT) return STROKE_WIDTH_MAX_PT;
-  return pt;
-}
-
-/**
- * Pull the `val` attribute off a `<c:spPr><a:ln><a:prstDash val=".."/>`
- * chain scoped to the supplied parent. Returns the {@link ChartBorderDash}
- * value when the chain is present and the value is a recognized
- * `ST_PresetLineDashVal` token other than the OOXML default `"solid"`.
- *
- * Returns `undefined` when the chain is missing at any link, when the
- * attribute is absent, when the value is unrecognized, or when it
- * matches the OOXML default `"solid"` (so absence and the default
- * round-trip identically through {@link cloneChart}). Mirrors the
- * writer-side {@link normalizeBorderDash} so the accept-or-drop
- * grammar matches every chart-frame border-dash slot the writer
- * authors.
- */
-function parseBorderDashFromSpPr(parent: XmlElement): ChartBorderDash | undefined {
-  const spPr = findChild(parent, "spPr");
-  if (!spPr) return undefined;
-  const ln = findChild(spPr, "ln");
-  if (!ln) return undefined;
-  const prstDash = findChild(ln, "prstDash");
-  if (!prstDash) return undefined;
-  const raw = prstDash.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim() as ChartBorderDash;
-  if (!VALID_BORDER_DASHES.has(trimmed)) return undefined;
-  if (trimmed === "solid") return undefined;
-  return trimmed;
-}
+//
+// `STROKE_WIDTH_MIN_PT`, `STROKE_WIDTH_MAX_PT`, `EMU_PER_PT`,
+// `VALID_DASH_STYLES`, `VALID_BORDER_DASHES`, `parseBorderWidthFromSpPr`
+// and `parseBorderDashFromSpPr` now live in `./chart/shape.ts`. Imported
+// at the top of this module so every host-specific helper can keep
+// using the same generic primitives without duplicating the OOXML
+// schema knowledge across reader / writer / clone.
 
 /**
  * Pull `<c:spPr><a:ln>` off a series and surface its dash + width as
@@ -4318,13 +4219,7 @@ function parseLegendLayout(chartEl: XmlElement): ChartManualLayout | undefined {
 function parseLegendFillColor(chartEl: XmlElement): string | undefined {
   const legend = findChild(chartEl, "legend");
   if (!legend) return undefined;
-  const spPr = findChild(legend, "spPr");
-  if (!spPr) return undefined;
-  const solidFill = findChild(spPr, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  return normalizeRgbHex(srgbClr.attrs.val);
+  return parseSpPrFill(legend);
 }
 
 /**
@@ -4365,15 +4260,7 @@ function parseLegendFillColor(chartEl: XmlElement): string | undefined {
 function parseLegendBorderColor(chartEl: XmlElement): string | undefined {
   const legend = findChild(chartEl, "legend");
   if (!legend) return undefined;
-  const spPr = findChild(legend, "spPr");
-  if (!spPr) return undefined;
-  const ln = findChild(spPr, "ln");
-  if (!ln) return undefined;
-  const solidFill = findChild(ln, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  return normalizeRgbHex(srgbClr.attrs.val);
+  return parseSpPrBorderColor(legend);
 }
 
 /**
@@ -4403,19 +4290,7 @@ function parseLegendBorderColor(chartEl: XmlElement): string | undefined {
 function parseLegendBorderWidth(chartEl: XmlElement): number | undefined {
   const legend = findChild(chartEl, "legend");
   if (!legend) return undefined;
-  const spPr = findChild(legend, "spPr");
-  if (!spPr) return undefined;
-  const ln = findChild(spPr, "ln");
-  if (!ln) return undefined;
-  const wAttr = ln.attrs.w;
-  if (typeof wAttr !== "string") return undefined;
-  const emu = Number.parseFloat(wAttr);
-  if (!Number.isFinite(emu) || emu <= 0) return undefined;
-  // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
-  const pt = Math.round((emu / EMU_PER_PT) * 4) / 4;
-  if (pt < STROKE_WIDTH_MIN_PT) return STROKE_WIDTH_MIN_PT;
-  if (pt > STROKE_WIDTH_MAX_PT) return STROKE_WIDTH_MAX_PT;
-  return pt;
+  return parseBorderWidthFromSpPr(legend);
 }
 
 /**
@@ -4568,13 +4443,7 @@ function parsePlotAreaLayout(plotArea: XmlElement): ChartManualLayout | undefine
  * `<c:dTable>` block) cannot leak in.
  */
 function parsePlotAreaFillColor(plotArea: XmlElement): string | undefined {
-  const spPr = findChild(plotArea, "spPr");
-  if (!spPr) return undefined;
-  const solidFill = findChild(spPr, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  return normalizeRgbHex(srgbClr.attrs.val);
+  return parseSpPrFill(plotArea);
 }
 
 /**
@@ -4610,15 +4479,7 @@ function parsePlotAreaFillColor(plotArea: XmlElement): string | undefined {
  * (`<a:solidFill>`) child.
  */
 function parsePlotAreaBorderColor(plotArea: XmlElement): string | undefined {
-  const spPr = findChild(plotArea, "spPr");
-  if (!spPr) return undefined;
-  const ln = findChild(spPr, "ln");
-  if (!ln) return undefined;
-  const solidFill = findChild(ln, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  return normalizeRgbHex(srgbClr.attrs.val);
+  return parseSpPrBorderColor(plotArea);
 }
 
 /**
@@ -4644,19 +4505,7 @@ function parsePlotAreaBorderColor(plotArea: XmlElement): string | undefined {
  * attribute rather than the `<a:solidFill><a:srgbClr>` color child.
  */
 function parsePlotAreaBorderWidth(plotArea: XmlElement): number | undefined {
-  const spPr = findChild(plotArea, "spPr");
-  if (!spPr) return undefined;
-  const ln = findChild(spPr, "ln");
-  if (!ln) return undefined;
-  const wAttr = ln.attrs.w;
-  if (typeof wAttr !== "string") return undefined;
-  const emu = Number.parseFloat(wAttr);
-  if (!Number.isFinite(emu) || emu <= 0) return undefined;
-  // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
-  const pt = Math.round((emu / EMU_PER_PT) * 4) / 4;
-  if (pt < STROKE_WIDTH_MIN_PT) return STROKE_WIDTH_MIN_PT;
-  if (pt > STROKE_WIDTH_MAX_PT) return STROKE_WIDTH_MAX_PT;
-  return pt;
+  return parseBorderWidthFromSpPr(plotArea);
 }
 
 /**
@@ -4692,13 +4541,7 @@ function parsePlotAreaBorderWidth(plotArea: XmlElement): number | undefined {
  * <a:srgbClr>` chain on a different host element.
  */
 function parseChartSpaceFillColor(chartSpace: XmlElement): string | undefined {
-  const spPr = findChild(chartSpace, "spPr");
-  if (!spPr) return undefined;
-  const solidFill = findChild(spPr, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  return normalizeRgbHex(srgbClr.attrs.val);
+  return parseSpPrFill(chartSpace);
 }
 
 /**
@@ -4735,15 +4578,7 @@ function parseChartSpaceFillColor(chartSpace: XmlElement): string | undefined {
  * host element.
  */
 function parseChartSpaceBorderColor(chartSpace: XmlElement): string | undefined {
-  const spPr = findChild(chartSpace, "spPr");
-  if (!spPr) return undefined;
-  const ln = findChild(spPr, "ln");
-  if (!ln) return undefined;
-  const solidFill = findChild(ln, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  return normalizeRgbHex(srgbClr.attrs.val);
+  return parseSpPrBorderColor(chartSpace);
 }
 
 /**
@@ -5114,13 +4949,7 @@ function parseTitleColor(chartEl: XmlElement): string | undefined {
 function parseTitleFillColor(chartEl: XmlElement): string | undefined {
   const title = findChild(chartEl, "title");
   if (!title) return undefined;
-  const spPr = findChild(title, "spPr");
-  if (!spPr) return undefined;
-  const solidFill = findChild(spPr, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  return normalizeRgbHex(srgbClr.attrs.val);
+  return parseSpPrFill(title);
 }
 
 /**
@@ -5165,15 +4994,7 @@ function parseTitleFillColor(chartEl: XmlElement): string | undefined {
 function parseTitleBorderColor(chartEl: XmlElement): string | undefined {
   const title = findChild(chartEl, "title");
   if (!title) return undefined;
-  const spPr = findChild(title, "spPr");
-  if (!spPr) return undefined;
-  const ln = findChild(spPr, "ln");
-  if (!ln) return undefined;
-  const solidFill = findChild(ln, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  return normalizeRgbHex(srgbClr.attrs.val);
+  return parseSpPrBorderColor(title);
 }
 
 /**
@@ -5203,19 +5024,7 @@ function parseTitleBorderColor(chartEl: XmlElement): string | undefined {
 function parseTitleBorderWidth(chartEl: XmlElement): number | undefined {
   const title = findChild(chartEl, "title");
   if (!title) return undefined;
-  const spPr = findChild(title, "spPr");
-  if (!spPr) return undefined;
-  const ln = findChild(spPr, "ln");
-  if (!ln) return undefined;
-  const wAttr = ln.attrs.w;
-  if (typeof wAttr !== "string") return undefined;
-  const emu = Number.parseFloat(wAttr);
-  if (!Number.isFinite(emu) || emu <= 0) return undefined;
-  // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
-  const pt = Math.round((emu / EMU_PER_PT) * 4) / 4;
-  if (pt < STROKE_WIDTH_MIN_PT) return STROKE_WIDTH_MIN_PT;
-  if (pt > STROKE_WIDTH_MAX_PT) return STROKE_WIDTH_MAX_PT;
-  return pt;
+  return parseBorderWidthFromSpPr(title);
 }
 
 /**
@@ -5283,13 +5092,7 @@ function parseTitleBorderDash(chartEl: XmlElement): ChartBorderDash | undefined 
 function parseAxisTitleFillColor(axis: XmlElement): string | undefined {
   const title = findChild(axis, "title");
   if (!title) return undefined;
-  const spPr = findChild(title, "spPr");
-  if (!spPr) return undefined;
-  const solidFill = findChild(spPr, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  return normalizeRgbHex(srgbClr.attrs.val);
+  return parseSpPrFill(title);
 }
 
 /**
@@ -5342,15 +5145,7 @@ function parseAxisTitleFillColor(axis: XmlElement): string | undefined {
 function parseAxisTitleBorderColor(axis: XmlElement): string | undefined {
   const title = findChild(axis, "title");
   if (!title) return undefined;
-  const spPr = findChild(title, "spPr");
-  if (!spPr) return undefined;
-  const ln = findChild(spPr, "ln");
-  if (!ln) return undefined;
-  const solidFill = findChild(ln, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  return normalizeRgbHex(srgbClr.attrs.val);
+  return parseSpPrBorderColor(title);
 }
 
 /**
@@ -5389,21 +5184,10 @@ function parseAxisTitleBorderDash(axis: XmlElement): ChartBorderDash | undefined
   return parseBorderDashFromSpPr(title);
 }
 
-/**
- * Normalize an sRGB hex token. Returns the 6-character uppercase form
- * when the input is a valid 6-character hex string (with or without a
- * leading `#`), or `undefined` for any malformed input — wrong length,
- * non-hex characters, alpha-channel forms, or non-string tokens.
- */
-function normalizeRgbHex(raw: unknown): string | undefined {
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  const hex = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
-  if (hex.length !== 6) return undefined;
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return undefined;
-  return hex.toUpperCase();
-}
+// `normalizeRgbHex` now lives in `./chart/shape.ts` and is imported at
+// the top of this module so every host-specific helper (title, axis
+// title, legend, plot area, chart space, data labels, data table)
+// shares the same accept-or-drop hex grammar.
 
 // ── Title Strike ────────────────────────────────────────────────────
 
@@ -6154,13 +5938,7 @@ function parseDataTableFontFamily(dTable: XmlElement): string | undefined {
  * both knobs without conflict.
  */
 function parseDataTableFillColor(dTable: XmlElement): string | undefined {
-  const spPr = findChild(dTable, "spPr");
-  if (!spPr) return undefined;
-  const solidFill = findChild(spPr, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  return normalizeRgbHex(srgbClr.attrs.val);
+  return parseSpPrFill(dTable);
 }
 
 /**
@@ -6200,15 +5978,7 @@ function parseDataTableFillColor(dTable: XmlElement): string | undefined {
  * child.
  */
 function parseDataTableBorderColor(dTable: XmlElement): string | undefined {
-  const spPr = findChild(dTable, "spPr");
-  if (!spPr) return undefined;
-  const ln = findChild(spPr, "ln");
-  if (!ln) return undefined;
-  const solidFill = findChild(ln, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  return normalizeRgbHex(srgbClr.attrs.val);
+  return parseSpPrBorderColor(dTable);
 }
 
 /**
