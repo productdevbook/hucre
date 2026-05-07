@@ -43,6 +43,7 @@ import type {
 import {
   clampStrokeWidthPt as normalizeBorderWidthPt,
   normalizeBorderDash,
+  normalizeRgbHex,
 } from "./chart/shape";
 
 // ── Public API ───────────────────────────────────────────────────────
@@ -4350,13 +4351,7 @@ function resolvePlotAreaLayout(
  * back to absence.
  */
 function normalizePlotAreaFillColor(value: string | undefined): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return undefined;
-  const hex = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
-  if (hex.length !== 6) return undefined;
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return undefined;
-  return hex.toUpperCase();
+  return normalizeRgbHex(value);
 }
 
 /**
@@ -4401,13 +4396,7 @@ function resolvePlotAreaFillColor(
  * {@link normalizePlotAreaFillColor} — same hex grammar.
  */
 function normalizePlotAreaBorderColor(value: string | undefined): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return undefined;
-  const hex = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
-  if (hex.length !== 6) return undefined;
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return undefined;
-  return hex.toUpperCase();
+  return normalizeRgbHex(value);
 }
 
 /**
@@ -4505,13 +4494,7 @@ function resolvePlotAreaBorderWidth(
  * writer would silently elide back to absence.
  */
 function normalizeChartSpaceFillColor(value: string | undefined): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return undefined;
-  const hex = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
-  if (hex.length !== 6) return undefined;
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return undefined;
-  return hex.toUpperCase();
+  return normalizeRgbHex(value);
 }
 
 /**
@@ -4558,13 +4541,7 @@ function resolveChartSpaceFillColor(
  * writer would silently elide back to absence.
  */
 function normalizeChartSpaceBorderColor(value: string | undefined): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return undefined;
-  const hex = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
-  if (hex.length !== 6) return undefined;
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return undefined;
-  return hex.toUpperCase();
+  return normalizeRgbHex(value);
 }
 
 /**
@@ -4862,13 +4839,7 @@ function resolveTitleItalic(
  * field rather than carry a value the writer would silently elide.
  */
 function normalizeTitleColor(value: string | undefined): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return undefined;
-  const hex = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
-  if (hex.length !== 6) return undefined;
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return undefined;
-  return hex.toUpperCase();
+  return normalizeRgbHex(value);
 }
 
 /**

@@ -38,6 +38,7 @@ import {
   VALID_DASH_STYLES,
   clampStrokeWidthPt,
   normalizeBorderDash,
+  normalizeRgbHex as normalizeRgbHexShared,
 } from "./chart/shape";
 
 // ── Namespaces ───────────────────────────────────────────────────────
@@ -767,13 +768,7 @@ function resolveTitleItalic(chart: SheetChart): boolean | undefined {
  * fresh chart title without a custom color).
  */
 function normalizeTitleColor(value: string | undefined): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return undefined;
-  const hex = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
-  if (hex.length !== 6) return undefined;
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return undefined;
-  return hex.toUpperCase();
+  return normalizeRgbHexShared(value);
 }
 
 /**
