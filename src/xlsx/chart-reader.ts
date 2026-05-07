@@ -205,6 +205,18 @@ export function parseChart(xml: string): Chart | undefined {
   const titleFontFamily = parseTitleFontFamily(chartEl);
   if (titleFontFamily !== undefined) out.titleFontFamily = titleFontFamily;
 
+  // `<c:title><c:layout><c:manualLayout>` carries Excel's "Format Chart
+  // Title -> Title Options -> Position -> Custom" placement. CT_Title
+  // (ECMA-376 Part 1, §21.2.2.210) places the block between `<c:tx>`
+  // and `<c:overlay>`. The reader surfaces the `<c:x>` / `<c:y>` /
+  // `<c:w>` / `<c:h>` coordinates off the canonical slot; absence of
+  // any meaningful coordinate collapses the field to `undefined` so a
+  // fresh chart and a chart that pinned an out-of-range layout both
+  // round-trip lossless. Same accept-or-drop grammar as
+  // {@link parseLegendLayout}.
+  const titleLayout = parseTitleLayout(chartEl);
+  if (titleLayout !== undefined) out.titleLayout = titleLayout;
+
   // `<c:autoTitleDeleted>` records whether the user explicitly deleted
   // the auto-generated title — independent of whether a literal
   // `<c:title>` is present. The element sits on `<c:chart>` directly
@@ -3716,6 +3728,59 @@ function parseLegendLayout(chartEl: XmlElement): ChartManualLayout | undefined {
   const legend = findChild(chartEl, "legend");
   if (!legend) return undefined;
   const layout = findChild(legend, "layout");
+  if (!layout) return undefined;
+  const manual = findChild(layout, "manualLayout");
+  if (!manual) return undefined;
+
+  const out: ChartManualLayout = {};
+  const x = readLayoutCoordinate(findChild(manual, "x"));
+  if (x !== undefined) out.x = x;
+  const y = readLayoutCoordinate(findChild(manual, "y"));
+  if (y !== undefined) out.y = y;
+  const w = readLayoutCoordinate(findChild(manual, "w"));
+  if (w !== undefined) out.w = w;
+  const h = readLayoutCoordinate(findChild(manual, "h"));
+  if (h !== undefined) out.h = h;
+
+  if (out.x === undefined && out.y === undefined && out.w === undefined && out.h === undefined) {
+    return undefined;
+  }
+  return out;
+}
+
+/**
+ * Pull `<c:title><c:layout><c:manualLayout>` off the chart. Reflects
+ * Excel's "Format Chart Title -> Title Options -> Position -> Custom"
+ * knob — the `(x, y)` anchor and `(w, h)` size of the title block as
+ * fractions of the chart frame in the `0..1` band.
+ *
+ * The OOXML schema (`CT_ManualLayout`, ECMA-376 Part 1, §21.2.2.115)
+ * exposes optional `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` children whose
+ * `val` attributes carry an `xsd:double`. The reader admits the
+ * coordinate only when `val` parses to a finite number in the `0..1`
+ * band; out-of-range / non-finite / non-numeric tokens drop to
+ * `undefined` on the matching axis so absence and a malformed token
+ * round-trip identically through {@link cloneChart}.
+ *
+ * Both `<c:xMode val="edge"/>` (absolute fraction of the chart frame)
+ * and `<c:xMode val="factor"/>` (delta from auto-layout) are accepted
+ * — the reader surfaces the same `ChartManualLayout` shape regardless,
+ * since the writer always normalizes to `"edge"` on emit (Excel itself
+ * emits the absolute form when the user drags the title to a custom
+ * position).
+ *
+ * Returns `undefined` whenever the chart omits the `<c:title>` /
+ * `<c:layout>` / `<c:manualLayout>` chain at any link, or when every
+ * coordinate dropped on normalization — the field is omitted entirely
+ * on a clean parse so absence and an empty layout round-trip identically
+ * through the writer. Mirrors {@link parseLegendLayout} so a parsed
+ * value flows through the same `ChartManualLayout` shape regardless of
+ * which manual-layout slot the source chart pinned.
+ */
+function parseTitleLayout(chartEl: XmlElement): ChartManualLayout | undefined {
+  const title = findChild(chartEl, "title");
+  if (!title) return undefined;
+  const layout = findChild(title, "layout");
   if (!layout) return undefined;
   const manual = findChild(layout, "manualLayout");
   if (!manual) return undefined;

@@ -20097,3 +20097,266 @@ describe("cloneChart — legendLayout", () => {
     expect(parseChart(written)?.legendLayout).toEqual({ x: 0.2, y: 0.8 });
   });
 });
+
+// ── cloneChart — titleLayout (manual placement) ─────────────────────
+
+describe("cloneChart — titleLayout", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Sales",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's titleLayout by default", () => {
+    const clone = cloneChart(source({ titleLayout: { x: 0.4, y: 0.05 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleLayout).toEqual({ x: 0.4, y: 0.05 });
+  });
+
+  it("lets options.titleLayout override the source's value", () => {
+    const clone = cloneChart(source({ titleLayout: { x: 0.4, y: 0.05 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleLayout: { x: 0.2, y: 0.02, w: 0.3, h: 0.1 },
+    });
+    expect(clone.titleLayout).toEqual({ x: 0.2, y: 0.02, w: 0.3, h: 0.1 });
+  });
+
+  it("drops the inherited titleLayout when the override is null", () => {
+    const clone = cloneChart(source({ titleLayout: { x: 0.4, y: 0.05 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleLayout: null,
+    });
+    expect(clone.titleLayout).toBeUndefined();
+  });
+
+  it("returns undefined titleLayout when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.titleLayout).toBeUndefined();
+  });
+
+  it("normalizes out-of-range overrides axis-by-axis", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleLayout: { x: -0.1, y: 1.2, w: 0.3, h: 0.1 },
+    });
+    // x and y dropped; w and h survive.
+    expect(clone.titleLayout).toEqual({ w: 0.3, h: 0.1 });
+  });
+
+  it("collapses an override whose every axis dropped to undefined", () => {
+    const clone = cloneChart(source({ titleLayout: { x: 0.5 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      titleLayout: { x: -1 as any, y: 2 as any, w: Number.NaN as any },
+    });
+    expect(clone.titleLayout).toBeUndefined();
+  });
+
+  it("drops non-numeric coordinates leaking past the type guard", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      titleLayout: { x: "0.5" as any, y: 0.05 },
+    });
+    expect(clone.titleLayout).toEqual({ y: 0.05 });
+  });
+
+  it("drops a non-object titleLayout (typed escape from an untyped caller)", () => {
+    const clone = cloneChart(source({ titleLayout: { x: 0.5 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      titleLayout: "top" as any,
+    });
+    expect(clone.titleLayout).toBeUndefined();
+  });
+
+  it("normalizes a malformed source value through the resolver", () => {
+    const clone = cloneChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      source({ titleLayout: { x: 5 as any, y: -1 as any } }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.titleLayout).toBeUndefined();
+  });
+
+  it("carries titleLayout through a flatten (line → column)", () => {
+    const clone = cloneChart(source({ titleLayout: { x: 0.4, y: 0.05 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.titleLayout).toEqual({ x: 0.4, y: 0.05 });
+  });
+
+  it("carries titleLayout through a doughnut flatten (line → doughnut)", () => {
+    const clone = cloneChart(source({ titleLayout: { x: 0.4, y: 0.05 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.titleLayout).toEqual({ x: 0.4, y: 0.05 });
+  });
+
+  it("drops the inherited titleLayout when the resolved title is dropped", () => {
+    const clone = cloneChart(source({ titleLayout: { x: 0.4, y: 0.05 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      title: null,
+    });
+    expect(clone.title).toBeUndefined();
+    expect(clone.titleLayout).toBeUndefined();
+  });
+
+  it("drops the inherited titleLayout when showTitle is set to false", () => {
+    const clone = cloneChart(source({ titleLayout: { x: 0.4, y: 0.05 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      showTitle: false,
+    });
+    expect(clone.showTitle).toBe(false);
+    expect(clone.titleLayout).toBeUndefined();
+  });
+
+  it("drops the titleLayout override when the resolved chart has no title", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      title: null,
+      titleLayout: { x: 0.4, y: 0.05 },
+    });
+    expect(clone.title).toBeUndefined();
+    expect(clone.titleLayout).toBeUndefined();
+  });
+
+  it("retains the titleLayout override when the override re-enables a missing source title", () => {
+    const clone = cloneChart(source({ title: undefined }), {
+      anchor: { from: { row: 0, col: 0 } },
+      title: "Sales",
+      titleLayout: { x: 0.4, y: 0.05 },
+    });
+    expect(clone.title).toBe("Sales");
+    expect(clone.titleLayout).toEqual({ x: 0.4, y: 0.05 });
+  });
+
+  it("composes with other title knobs on the cloned SheetChart", () => {
+    const clone = cloneChart(
+      source({
+        titleLayout: { x: 0.4, y: 0.05 },
+        titleFontFamily: "Arial",
+        titleFontSize: 18,
+        titleOverlay: true,
+        titleBold: true,
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.titleLayout).toEqual({ x: 0.4, y: 0.05 });
+    expect(clone.titleFontFamily).toBe("Arial");
+    expect(clone.titleFontSize).toBe(18);
+    expect(clone.titleOverlay).toBe(true);
+    expect(clone.titleBold).toBe(true);
+  });
+
+  it("composes independently with legendLayout (different <c:layout> slots)", () => {
+    const clone = cloneChart(
+      source({
+        titleLayout: { x: 0.4, y: 0.05 },
+        legendLayout: { x: 0.7, y: 0.2 },
+        legend: "right",
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.titleLayout).toEqual({ x: 0.4, y: 0.05 });
+    expect(clone.legendLayout).toEqual({ x: 0.7, y: 0.2 });
+  });
+
+  it("propagates titleLayout into the rendered <c:title><c:layout> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ titleLayout: { x: 0.35, y: 0.05, w: 0.3, h: 0.1 } }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const title = written.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(title).toContain("<c:layout>");
+    expect(title).toContain("<c:manualLayout>");
+    expect(title).toContain('<c:x val="0.35"/>');
+    expect(title).toContain('<c:y val="0.05"/>');
+    expect(title).toContain('<c:w val="0.3"/>');
+    expect(title).toContain('<c:h val="0.1"/>');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleLayout).toEqual({ x: 0.35, y: 0.05, w: 0.3, h: 0.1 });
+  });
+
+  it("emits no <c:layout> on <c:title> when both source and override are absent (round-trips to undefined)", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const title = written.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    expect(title).not.toContain("<c:layout>");
+    expect(parseChart(written)?.titleLayout).toBeUndefined();
+  });
+
+  it("an explicit override beats the source value through writeXlsx", async () => {
+    const clone = cloneChart(source({ titleLayout: { x: 0.4, y: 0.05 } }), {
+      anchor: { from: { row: 5, col: 0 } },
+      titleLayout: { x: 0.2, y: 0.02 },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(parseChart(written)?.titleLayout).toEqual({ x: 0.2, y: 0.02 });
+  });
+});

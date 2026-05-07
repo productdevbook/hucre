@@ -18661,3 +18661,326 @@ describe("writeChart — legendLayout", () => {
     expect(reparsed?.legendLayout).toEqual({ x: 0.4, y: 0.3 });
   });
 });
+
+// ── writeChart — titleLayout (manual placement) ─────────────────────
+
+describe("writeChart — titleLayout", () => {
+  function titleOf(xml: string): string {
+    const m = xml.match(/<c:title>[\s\S]*?<\/c:title>/);
+    if (!m) throw new Error("No <c:title> block found in chart XML");
+    return m[0];
+  }
+
+  it("does NOT emit <c:layout> on <c:title> when titleLayout is unset (matches Excel reference)", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    const title = titleOf(result.chartXml);
+    expect(title).not.toContain("<c:layout>");
+    expect(title).not.toContain("<c:manualLayout>");
+  });
+
+  it("threads x/y anchor through to <c:title><c:layout><c:manualLayout>", () => {
+    const result = writeChart(makeChart({ titleLayout: { x: 0.4, y: 0.05 } }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    expect(title).toContain("<c:layout>");
+    expect(title).toContain("<c:manualLayout>");
+    expect(title).toContain('<c:xMode val="edge"/>');
+    expect(title).toContain('<c:yMode val="edge"/>');
+    expect(title).toContain('<c:x val="0.4"/>');
+    expect(title).toContain('<c:y val="0.05"/>');
+    // No w/h pinned -> writer skips those slots and their modes.
+    expect(title).not.toContain("<c:wMode");
+    expect(title).not.toContain("<c:hMode");
+    expect(title).not.toContain("<c:w ");
+    expect(title).not.toContain("<c:h ");
+  });
+
+  it("threads w/h size through to <c:title><c:layout><c:manualLayout>", () => {
+    const result = writeChart(makeChart({ titleLayout: { w: 0.3, h: 0.1 } }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    expect(title).toContain('<c:wMode val="edge"/>');
+    expect(title).toContain('<c:hMode val="edge"/>');
+    expect(title).toContain('<c:w val="0.3"/>');
+    expect(title).toContain('<c:h val="0.1"/>');
+    expect(title).not.toContain("<c:xMode");
+    expect(title).not.toContain("<c:yMode");
+  });
+
+  it("threads all four coordinates when every axis is pinned", () => {
+    const result = writeChart(
+      makeChart({ titleLayout: { x: 0.35, y: 0.05, w: 0.3, h: 0.1 } }),
+      "Sheet1",
+    );
+    const title = titleOf(result.chartXml);
+    expect(title).toContain('<c:x val="0.35"/>');
+    expect(title).toContain('<c:y val="0.05"/>');
+    expect(title).toContain('<c:w val="0.3"/>');
+    expect(title).toContain('<c:h val="0.1"/>');
+    // Mode children precede value children inside <c:manualLayout>.
+    const ml = title.match(/<c:manualLayout>[\s\S]*?<\/c:manualLayout>/)![0];
+    expect(ml.indexOf("c:xMode")).toBeLessThan(ml.indexOf("<c:x "));
+    expect(ml.indexOf("c:yMode")).toBeLessThan(ml.indexOf("<c:y "));
+    expect(ml.indexOf("c:wMode")).toBeLessThan(ml.indexOf("<c:w "));
+    expect(ml.indexOf("c:hMode")).toBeLessThan(ml.indexOf("<c:h "));
+  });
+
+  it("places <c:layout> after <c:tx> and before <c:overlay> (CT_Title order)", () => {
+    const result = writeChart(makeChart({ titleLayout: { x: 0.5 } }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    expect(title.indexOf("c:tx")).toBeLessThan(title.indexOf("c:layout"));
+    expect(title.indexOf("c:layout")).toBeLessThan(title.indexOf("c:overlay"));
+  });
+
+  it("only emits <c:layout> once inside <c:title>", () => {
+    const result = writeChart(makeChart({ titleLayout: { x: 0.4, y: 0.1 } }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    const occurrences = title.match(/<c:layout\b/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("does not emit any <c:title> when showTitle=false, even with titleLayout set", () => {
+    const result = writeChart(
+      makeChart({ showTitle: false, titleLayout: { x: 0.5, y: 0.5 } }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:title>");
+  });
+
+  it("does not emit any <c:title> when title is absent, even with titleLayout set", () => {
+    const result = writeChart(
+      makeChart({ title: undefined, titleLayout: { x: 0.5, y: 0.5 } }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:title>");
+  });
+
+  it("threads titleLayout through every chart family", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, titleLayout: { x: 0.4, y: 0.05 } }), "Sheet1");
+      const title = titleOf(result.chartXml);
+      expect(title).toContain('<c:x val="0.4"/>');
+      expect(title).toContain('<c:y val="0.05"/>');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        titleLayout: { x: 0.4, y: 0.05 },
+      }),
+      "Sheet1",
+    );
+    expect(titleOf(scatter.chartXml)).toContain('<c:x val="0.4"/>');
+  });
+
+  it("drops out-of-range coordinates (negative / above 1)", () => {
+    const result = writeChart(
+      makeChart({ titleLayout: { x: -0.1, y: 1.2, w: 0.3, h: 0.1 } }),
+      "Sheet1",
+    );
+    const title = titleOf(result.chartXml);
+    expect(title).not.toContain("<c:xMode");
+    expect(title).not.toContain("<c:yMode");
+    expect(title).not.toContain("<c:x ");
+    expect(title).not.toContain("<c:y ");
+    expect(title).toContain('<c:w val="0.3"/>');
+    expect(title).toContain('<c:h val="0.1"/>');
+  });
+
+  it("accepts the boundary values 0 and 1", () => {
+    const result = writeChart(makeChart({ titleLayout: { x: 0, y: 1, w: 0, h: 1 } }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    expect(title).toContain('<c:x val="0"/>');
+    expect(title).toContain('<c:y val="1"/>');
+    expect(title).toContain('<c:w val="0"/>');
+    expect(title).toContain('<c:h val="1"/>');
+  });
+
+  it("drops non-finite coordinates (NaN / Infinity)", () => {
+    const result = writeChart(
+      makeChart({ titleLayout: { x: Number.NaN, y: Number.POSITIVE_INFINITY, w: 0.3 } }),
+      "Sheet1",
+    );
+    const title = titleOf(result.chartXml);
+    expect(title).not.toContain("<c:xMode");
+    expect(title).not.toContain("<c:yMode");
+    expect(title).toContain('<c:w val="0.3"/>');
+  });
+
+  it("drops non-numeric coordinates (string leaking past the type guard)", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ titleLayout: { x: "0.4" as any, y: 0.05 } }),
+      "Sheet1",
+    );
+    const title = titleOf(result.chartXml);
+    expect(title).not.toContain("<c:xMode");
+    expect(title).toContain('<c:y val="0.05"/>');
+  });
+
+  it("collapses an empty layout (every axis dropped) to no <c:layout> block", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ titleLayout: { x: -1 as any, y: 2 as any } }),
+      "Sheet1",
+    );
+    const title = titleOf(result.chartXml);
+    expect(title).not.toContain("<c:layout>");
+    expect(title).not.toContain("<c:manualLayout>");
+  });
+
+  it("collapses a layout with no coordinates to no <c:layout> block", () => {
+    const result = writeChart(makeChart({ titleLayout: {} }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    expect(title).not.toContain("<c:layout>");
+  });
+
+  it("ignores a non-object titleLayout (typed escape from an untyped caller)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = writeChart(makeChart({ titleLayout: "custom" as any }), "Sheet1");
+    expect(titleOf(result.chartXml)).not.toContain("<c:layout>");
+  });
+
+  it("round-trips titleLayout through parseChart", () => {
+    const written = writeChart(
+      makeChart({ titleLayout: { x: 0.35, y: 0.05, w: 0.3, h: 0.1 } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleLayout).toEqual({ x: 0.35, y: 0.05, w: 0.3, h: 0.1 });
+  });
+
+  it("round-trips a partial titleLayout (only x/y) through parseChart", () => {
+    const written = writeChart(makeChart({ titleLayout: { x: 0.5, y: 0.05 } }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleLayout).toEqual({ x: 0.5, y: 0.05 });
+  });
+
+  it("collapses an unset titleLayout round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    expect(parseChart(written)?.titleLayout).toBeUndefined();
+  });
+
+  it("does not surface titleLayout when the chart hides the title", () => {
+    const written = writeChart(makeChart({ showTitle: false })).chartXml ?? "";
+    // Calling writeChart returns chartXml; ensure no <c:title> at all.
+    const written2 = writeChart(makeChart({ showTitle: false }), "Sheet1").chartXml;
+    expect(written2).not.toContain("<c:title>");
+    void written; // suppress unused
+  });
+
+  it("composes with other title knobs on the same <c:title>", () => {
+    const result = writeChart(
+      makeChart({
+        titleLayout: { x: 0.4, y: 0.05 },
+        titleFontSize: 18,
+        titleOverlay: true,
+        titleBold: true,
+      }),
+      "Sheet1",
+    );
+    const title = titleOf(result.chartXml);
+    expect(title).toContain('<c:x val="0.4"/>');
+    expect(title).toContain('sz="1800"');
+    expect(title).toContain('c:overlay val="1"');
+    expect(title).toContain('b="1"');
+    // CT_Title order: tx / layout / overlay
+    expect(title.indexOf("c:tx")).toBeLessThan(title.indexOf("c:layout"));
+    expect(title.indexOf("c:layout")).toBeLessThan(title.indexOf("c:overlay"));
+  });
+
+  it("composes independently with legendLayout (different <c:layout> slots)", () => {
+    const result = writeChart(
+      makeChart({
+        titleLayout: { x: 0.4, y: 0.05 },
+        legendLayout: { x: 0.7, y: 0.2 },
+      }),
+      "Sheet1",
+    );
+    const title = result.chartXml.match(/<c:title>[\s\S]*?<\/c:title>/)![0];
+    const legend = result.chartXml.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(title).toContain('<c:x val="0.4"/>');
+    expect(legend).toContain('<c:x val="0.7"/>');
+    // The two layouts are independent — pinning one does not leak into
+    // the other slot.
+    expect(title).not.toContain('<c:x val="0.7"/>');
+    expect(legend).not.toContain('<c:x val="0.4"/>');
+  });
+
+  it("survives a writeXlsx round trip — titleLayout lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            titleLayout: { x: 0.45, y: 0.02, w: 0.3, h: 0.08 },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.titleLayout).toEqual({ x: 0.45, y: 0.02, w: 0.3, h: 0.08 });
+  });
+
+  it('normalizes <c:xMode val="factor"/> back to the same shape on parse', () => {
+    // A templated chart that pinned the alternate `factor` mode still
+    // round-trips through parseChart — the writer normalizes to `edge`
+    // on emit, but the reader admits both.
+    const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" wrap="square" anchor="ctr" anchorCtr="1"/>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr><a:defRPr sz="1400" b="0"/></a:pPr>
+            <a:r><a:rPr lang="en-US" sz="1400" b="0"/><a:t>Sales</a:t></a:r>
+          </a:p>
+        </c:rich>
+      </c:tx>
+      <c:layout>
+        <c:manualLayout>
+          <c:xMode val="factor"/>
+          <c:yMode val="factor"/>
+          <c:x val="0.45"/>
+          <c:y val="0.02"/>
+        </c:manualLayout>
+      </c:layout>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:autoTitleDeleted val="0"/>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="clustered"/>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:order val="0"/>
+          <c:val><c:numRef><c:f>Sheet1!$B$2:$B$4</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:axId val="1"/>
+        <c:axId val="2"/>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:crossAx val="2"/></c:catAx>
+      <c:valAx><c:axId val="2"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:crossAx val="1"/></c:valAx>
+    </c:plotArea>
+    <c:plotVisOnly val="1"/>
+    <c:dispBlanksAs val="gap"/>
+  </c:chart>
+</c:chartSpace>`;
+    const reparsed = parseChart(xml);
+    expect(reparsed?.titleLayout).toEqual({ x: 0.45, y: 0.02 });
+  });
+});

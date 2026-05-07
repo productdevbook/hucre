@@ -19116,3 +19116,209 @@ describe("parseChart — axis title overlay", () => {
     expect(chart?.axes?.y?.axisTitleOverlay).toBeUndefined();
   });
 });
+
+// ── parseChart — titleLayout (manual placement) ─────────────────────
+
+describe("parseChart — titleLayout", () => {
+  const NS_TL = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withTitleLayout(body: string): string {
+    return `<c:chartSpace ${NS_TL}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" wrap="square" anchor="ctr" anchorCtr="1"/>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr><a:defRPr sz="1400" b="0"/></a:pPr>
+            <a:r><a:rPr lang="en-US" sz="1400" b="0"/><a:t>Title</a:t></a:r>
+          </a:p>
+        </c:rich>
+      </c:tx>
+      <c:layout>
+        <c:manualLayout>${body}</c:manualLayout>
+      </c:layout>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces every coordinate when all four are pinned", () => {
+    const xml = withTitleLayout(
+      `<c:xMode val="edge"/><c:yMode val="edge"/><c:wMode val="edge"/><c:hMode val="edge"/>
+       <c:x val="0.35"/><c:y val="0.05"/><c:w val="0.3"/><c:h val="0.1"/>`,
+    );
+    expect(parseChart(xml)?.titleLayout).toEqual({ x: 0.35, y: 0.05, w: 0.3, h: 0.1 });
+  });
+
+  it("surfaces a partial layout (only x/y pinned)", () => {
+    const xml = withTitleLayout(
+      `<c:xMode val="edge"/><c:yMode val="edge"/><c:x val="0.5"/><c:y val="0.05"/>`,
+    );
+    expect(parseChart(xml)?.titleLayout).toEqual({ x: 0.5, y: 0.05 });
+  });
+
+  it('accepts xMode="factor" and surfaces the same shape', () => {
+    const xml = withTitleLayout(
+      `<c:xMode val="factor"/><c:yMode val="factor"/><c:x val="0.4"/><c:y val="0.02"/>`,
+    );
+    expect(parseChart(xml)?.titleLayout).toEqual({ x: 0.4, y: 0.02 });
+  });
+
+  it("drops out-of-range coordinates axis-by-axis", () => {
+    const xml = withTitleLayout(
+      `<c:x val="-0.5"/><c:y val="2.0"/><c:w val="0.3"/><c:h val="0.1"/>`,
+    );
+    expect(parseChart(xml)?.titleLayout).toEqual({ w: 0.3, h: 0.1 });
+  });
+
+  it("drops non-numeric coordinates axis-by-axis", () => {
+    const xml = withTitleLayout(`<c:x val="not-a-number"/><c:y val="0.05"/>`);
+    expect(parseChart(xml)?.titleLayout).toEqual({ y: 0.05 });
+  });
+
+  it("collapses an empty <c:manualLayout> to undefined", () => {
+    const xml = withTitleLayout(``);
+    expect(parseChart(xml)?.titleLayout).toBeUndefined();
+  });
+
+  it("collapses a layout where every coordinate dropped to undefined", () => {
+    const xml = withTitleLayout(`<c:x val="-1"/><c:y val="2"/>`);
+    expect(parseChart(xml)?.titleLayout).toBeUndefined();
+  });
+
+  it("returns undefined when <c:title> has no <c:layout> block", () => {
+    const xml = `<c:chartSpace ${NS_TL}>
+  <c:chart>
+    <c:title>
+      <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>T</a:t></a:r></a:p></c:rich></c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.titleLayout).toBeUndefined();
+  });
+
+  it("returns undefined when <c:layout> has no <c:manualLayout> child", () => {
+    const xml = `<c:chartSpace ${NS_TL}>
+  <c:chart>
+    <c:title>
+      <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>T</a:t></a:r></a:p></c:rich></c:tx>
+      <c:layout/>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.titleLayout).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:title> element at all", () => {
+    const xml = `<c:chartSpace ${NS_TL}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.titleLayout).toBeUndefined();
+  });
+
+  it("accepts the boundary values 0 and 1", () => {
+    const xml = withTitleLayout(`<c:x val="0"/><c:y val="1"/><c:w val="0"/><c:h val="1"/>`);
+    expect(parseChart(xml)?.titleLayout).toEqual({ x: 0, y: 1, w: 0, h: 1 });
+  });
+
+  it("co-surfaces alongside titleOverlay / titleFontSize / titleBold", () => {
+    const xml = `<c:chartSpace ${NS_TL}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" wrap="square" anchor="ctr" anchorCtr="1"/>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr><a:defRPr sz="1800" b="1"/></a:pPr>
+            <a:r><a:rPr lang="en-US" sz="1800" b="1"/><a:t>Bold Title</a:t></a:r>
+          </a:p>
+        </c:rich>
+      </c:tx>
+      <c:layout>
+        <c:manualLayout>
+          <c:xMode val="edge"/><c:yMode val="edge"/>
+          <c:x val="0.4"/><c:y val="0.02"/>
+        </c:manualLayout>
+      </c:layout>
+      <c:overlay val="1"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleLayout).toEqual({ x: 0.4, y: 0.02 });
+    expect(chart?.titleOverlay).toBe(true);
+    expect(chart?.titleFontSize).toBe(18);
+    expect(chart?.titleBold).toBe(true);
+  });
+
+  it("co-surfaces alongside legendLayout (independent <c:layout> slots)", () => {
+    const xml = `<c:chartSpace ${NS_TL}>
+  <c:chart>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>T</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:layout>
+        <c:manualLayout>
+          <c:xMode val="edge"/><c:yMode val="edge"/>
+          <c:x val="0.4"/><c:y val="0.02"/>
+        </c:manualLayout>
+      </c:layout>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:layout>
+        <c:manualLayout>
+          <c:xMode val="edge"/><c:yMode val="edge"/>
+          <c:x val="0.7"/><c:y val="0.2"/>
+        </c:manualLayout>
+      </c:layout>
+      <c:overlay val="0"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleLayout).toEqual({ x: 0.4, y: 0.02 });
+    expect(chart?.legendLayout).toEqual({ x: 0.7, y: 0.2 });
+  });
+});

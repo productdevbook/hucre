@@ -607,6 +607,30 @@ export interface CloneChartOptions {
    */
   titleFontFamily?: string | null;
   /**
+   * Override the chart-level title manual layout. `undefined` (or
+   * omitted) inherits the source's parsed `titleLayout`; `null` drops
+   * the inherited layout so the writer falls back to Excel's auto-
+   * layout position (the title renders above the plot area, no
+   * `<c:layout>` block on `<c:title>`); a {@link ChartManualLayout}
+   * replaces it.
+   *
+   * Each of {@link ChartManualLayout.x} / {@link ChartManualLayout.y} /
+   * {@link ChartManualLayout.w} / {@link ChartManualLayout.h} runs
+   * through the writer-side `0..1` band — out-of-range / non-finite /
+   * non-numeric coordinates collapse to `undefined` on the matching
+   * axis so the cloned `SheetChart` always carries a value the writer
+   * will accept; an override whose every axis dropped collapses to
+   * `undefined` so the writer skips the `<c:layout>` block entirely.
+   *
+   * The override is silently dropped from the cloned `SheetChart` when
+   * the resolved chart renders no title (`title` resolved to `undefined`
+   * or `showTitle === false`) — there is no `<c:title>` block to host
+   * the layout in either case. The grammar mirrors `legendLayout` so
+   * the chart-level manual-layout knobs compose the same way at the
+   * call site.
+   */
+  titleLayout?: ChartManualLayout | null;
+  /**
    * Override `<c:autoTitleDeleted>` (the "user explicitly deleted the
    * auto-generated title" flag).
    *
@@ -1981,6 +2005,22 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
       options.titleFontFamily,
     );
     if (resolvedTitleFontFamily !== undefined) out.titleFontFamily = resolvedTitleFontFamily;
+
+    // `titleLayout` only renders inside `<c:title>` — a clone that
+    // omits the title has no `<c:layout>` slot for the writer to
+    // populate. Same scope rule as the other title knobs:
+    // `undefined` inherits the parsed value (after the writer-side
+    // normalizer drops out-of-range axes), `null` drops it (the writer
+    // emits no `<c:layout>` block, falling back to Excel's auto-
+    // layout position above the plot area), a `ChartManualLayout`
+    // replaces it. An override whose every coordinate dropped on
+    // normalization collapses the entire layout to `undefined` so the
+    // writer skips the `<c:layout>` block. Mirrors the legendLayout
+    // grammar — both manual-layout slots use the same
+    // `ChartManualLayout` shape, so a caller can thread a single
+    // layout value through both call sites.
+    const resolvedTitleLayout = resolveTitleLayout(source.titleLayout, options.titleLayout);
+    if (resolvedTitleLayout !== undefined) out.titleLayout = resolvedTitleLayout;
   }
 
   // `<c:autoTitleDeleted>` sits on `<c:chart>` directly, not inside
@@ -3320,6 +3360,38 @@ function normalizeLayoutCoordinate(raw: unknown): number | undefined {
  * the rendered chart.
  */
 function resolveLegendLayout(
+  sourceValue: ChartManualLayout | undefined,
+  override: ChartManualLayout | null | undefined,
+): ChartManualLayout | undefined {
+  if (override === undefined) return normalizeLegendLayout(sourceValue);
+  if (override === null) return undefined;
+  return normalizeLegendLayout(override);
+}
+
+/**
+ * Resolve a `titleLayout` override.
+ *
+ * `undefined` → inherit the source's parsed `titleLayout` (after
+ *               running it through {@link normalizeLegendLayout} so a
+ *               malformed source value drops cleanly — both manual-
+ *               layout slots share the same normalizer).
+ * `null`      → drop the inherited layout (the writer falls back to
+ *               Excel's auto-layout position above the plot area —
+ *               no `<c:layout>` block on `<c:title>`).
+ * `ChartManualLayout` → replace, after running through
+ *               {@link normalizeLegendLayout}. Coordinates outside the
+ *               `0..1` band collapse on the matching axis so the
+ *               cloned `SheetChart` always carries a value the writer
+ *               will accept; an override whose every axis dropped
+ *               collapses to `undefined` so the writer skips the
+ *               `<c:layout>` block entirely.
+ *
+ * The grammar mirrors `legendLayout` — both manual-layout slots
+ * compose the same way at the call site. Callers should gate the
+ * result on the resolved title visibility — when no title is emitted,
+ * the layout has no slot in the rendered chart.
+ */
+function resolveTitleLayout(
   sourceValue: ChartManualLayout | undefined,
   override: ChartManualLayout | null | undefined,
 ): ChartManualLayout | undefined {

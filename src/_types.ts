@@ -2472,6 +2472,54 @@ export interface SheetChart {
    */
   titleFontFamily?: string;
   /**
+   * Custom chart-title placement inside the chart frame. Maps to
+   * `<c:title><c:layout><c:manualLayout>...</c:manualLayout></c:layout>
+   * </c:title>` — Excel's "Format Chart Title -> Title Options ->
+   * Position -> Custom" knob (the same drag-handle a user sees when
+   * grabbing the title block in Excel's chart editor). The block sits
+   * between `<c:tx>` and `<c:overlay>` per `CT_Title` (ECMA-376 Part 1,
+   * §21.2.2.210).
+   *
+   * Each of {@link ChartManualLayout.x} / {@link ChartManualLayout.y} /
+   * {@link ChartManualLayout.w} / {@link ChartManualLayout.h} is a
+   * fraction of the chart frame in the range `0..1` — `(0, 0)` is the
+   * upper-left of the chart frame, `(1, 1)` is the lower-right. The
+   * coordinates compose independently with {@link titleOverlay} (the
+   * overlay flag still records whether the title overlaps the plot
+   * area, the manual layout merely overrides where the title block
+   * draws). Out-of-range / non-finite / non-numeric coordinates
+   * collapse to omitting the matching `<c:x>` / `<c:y>` / `<c:w>` /
+   * `<c:h>` slot so a caller can pin only the position
+   * ({@link ChartManualLayout.x} / {@link ChartManualLayout.y}) and
+   * let the title keep its automatic size, only the size
+   * ({@link ChartManualLayout.w} / {@link ChartManualLayout.h}) and
+   * let it keep its automatic anchor, or any combination.
+   *
+   * The writer always emits the matching `<c:xMode>` / `<c:yMode>` /
+   * `<c:wMode>` / `<c:hMode>` children with `val="edge"` (Excel's
+   * reference shape when the user drags the title to a custom
+   * position — the coordinates are absolute fractions of the chart
+   * frame, not deltas from the auto-layout baseline).
+   *
+   * Default: omitted — the title renders at the auto-layout position
+   * Excel computes (above the plot area, horizontally centred). Pin a
+   * {@link ChartManualLayout} to place the title in a specific
+   * quadrant of the chart frame — useful for composing a templated
+   * dashboard whose chart title needs to align with an outer header
+   * row, or a hero chart whose title should sit in a corner the
+   * auto-layout would not pick.
+   *
+   * Silently ignored when no title is rendered (`showTitle === false`
+   * or `title` is absent) — there is no `<c:title>` block to host the
+   * layout in that case. An empty layout (every coordinate undefined)
+   * collapses to omitting the entire `<c:layout>` block so a fresh
+   * chart matches Excel's reference serialization byte-for-byte.
+   * Mirrors the writer-side {@link legendLayout} so a caller can
+   * thread the same `(x, y, w, h)` 0..1 fractions through both manual-
+   * layout slots without bookkeeping a second type.
+   */
+  titleLayout?: ChartManualLayout;
+  /**
    * Auto-title-deleted flag. Maps to `<c:chart><c:autoTitleDeleted
    * val=".."/>` — Excel's record of whether the user explicitly deleted
    * the auto-generated title that single-series charts synthesise from
@@ -6723,6 +6771,33 @@ export interface Chart {
    * {@link SheetChart.titleFontFamily} without transformation.
    */
   titleFontFamily?: string;
+  /**
+   * Custom chart-title placement pulled from `<c:title><c:layout>
+   * <c:manualLayout>...</c:manualLayout></c:layout></c:title>`. Reflects
+   * Excel's "Format Chart Title -> Title Options -> Position -> Custom"
+   * knob — the `(x, y)` anchor and `(w, h)` size of the title block as
+   * fractions of the chart frame in the `0..1` band.
+   *
+   * Each of {@link ChartManualLayout.x} / {@link ChartManualLayout.y} /
+   * {@link ChartManualLayout.w} / {@link ChartManualLayout.h} surfaces
+   * the literal `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` value when the
+   * source chart pins one; absence / non-numeric / non-finite tokens
+   * collapse to `undefined` on the matching field so absence and a
+   * malformed token round-trip identically through {@link cloneChart}.
+   * The reader accepts both `xMode="edge"` (absolute fraction of the
+   * chart frame) and `xMode="factor"` (delta from auto-layout) and
+   * surfaces the same shape; the writer normalizes to `"edge"` on emit
+   * since that is the form Excel itself emits when the user drags a
+   * title to a custom position.
+   *
+   * Reported as `undefined` whenever the source chart has no
+   * `<c:title>` element at all, or when every coordinate the source
+   * pinned drops to `undefined` — there is no meaningful layout to
+   * surface in either case. Mirrors the writer-side
+   * {@link SheetChart.titleLayout} so a parsed value slots straight
+   * into {@link cloneChart} without conversion.
+   */
+  titleLayout?: ChartManualLayout;
   /**
    * Auto-title-deleted flag pulled from `<c:chart><c:autoTitleDeleted
    * val=".."/>`. Reflects Excel's "the user explicitly deleted the

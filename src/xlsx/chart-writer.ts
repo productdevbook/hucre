@@ -80,6 +80,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveTitleStrike(chart),
         resolveTitleUnderline(chart),
         resolveTitleFontFamily(chart),
+        resolveTitleLayout(chart),
       ),
     );
   }
@@ -283,6 +284,7 @@ function buildTitle(
   strike: boolean | undefined,
   underline: boolean | undefined,
   fontFamily: string | undefined,
+  layout: ResolvedManualLayout | undefined,
 ): string {
   // OOXML's `<a:bodyPr rot="N"/>` attribute is in 60000ths of a degree.
   // The writer holds `titleRotation` in whole degrees and converts at
@@ -403,7 +405,16 @@ function buildTitle(
           u: underlineAttr,
           strike: strikeAttr,
         });
-  return xmlElement("c:title", undefined, [
+  // CT_Title (ECMA-376 Part 1, §21.2.2.210) places the optional
+  // `<c:layout>` between `<c:tx>` and `<c:overlay>`. The writer skips
+  // emission entirely when the caller pinned no coordinates so a fresh
+  // chart matches Excel's reference serialization byte-for-byte (Excel
+  // itself omits the block when the title renders at the auto-layout
+  // position above the plot area). Each axis is independently optional
+  // so the helper drops `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` slots
+  // whose value did not survive normalization.
+  const layoutXml = buildManualLayout(layout);
+  const titleChildren: string[] = [
     xmlElement("c:tx", undefined, [
       xmlElement("c:rich", undefined, [
         xmlElement(
@@ -425,8 +436,12 @@ function buildTitle(
         ]),
       ]),
     ]),
-    xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }),
-  ]);
+  ];
+  if (layoutXml !== undefined) {
+    titleChildren.push(layoutXml);
+  }
+  titleChildren.push(xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }));
+  return xmlElement("c:title", undefined, titleChildren);
 }
 
 /**
@@ -5287,6 +5302,31 @@ interface ResolvedManualLayout {
  */
 function resolveLegendLayout(chart: SheetChart): ResolvedManualLayout | undefined {
   return normalizeManualLayout(chart.legendLayout);
+}
+
+/**
+ * Resolve `<c:title><c:layout><c:manualLayout>...</c:manualLayout>
+ * </c:layout></c:title>` from {@link SheetChart.titleLayout}.
+ *
+ * Returns the normalized coordinate set, or `undefined` when every
+ * axis the caller pinned dropped to `undefined` (so the writer can
+ * elide the entire `<c:layout>` block — Excel's reference serialization
+ * omits the element when the title renders at the auto-layout position
+ * above the plot area). The element is only meaningful when the chart
+ * actually emits a title — the caller is expected to gate the call on
+ * the resolved title visibility (showTitle && chart.title).
+ *
+ * Coordinates outside the OOXML `0..1` band, `NaN`, `Infinity`, and
+ * non-numeric inputs all collapse to `undefined` on the matching axis
+ * so the writer drops the matching `<c:x>` / `<c:y>` / `<c:w>` /
+ * `<c:h>` slot rather than emit a token Excel would reject. Mirrors
+ * {@link resolveLegendLayout} — same accept-or-drop grammar, same
+ * `ChartManualLayout` shape — so a caller can thread a single layout
+ * value through both the chart title and the legend without
+ * bookkeeping a second type.
+ */
+function resolveTitleLayout(chart: SheetChart): ResolvedManualLayout | undefined {
+  return normalizeManualLayout(chart.titleLayout);
 }
 
 /**
