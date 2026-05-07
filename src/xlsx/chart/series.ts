@@ -39,6 +39,7 @@ import {
   normalizeRgbHex,
 } from "./shape";
 import {
+  applyOverride,
   childElements,
   elementText,
   findChild,
@@ -46,7 +47,8 @@ import {
   parseBoolAttr,
   readBoolAttr,
 } from "./util";
-import { buildSeriesDataLabels, parseDataLabels } from "./dataLabels";
+import { buildSeriesDataLabels, parseDataLabels, resolveSeriesDataLabels } from "./dataLabels";
+import type { CloneChartSeriesOverride } from "../chart-clone";
 
 // ── Marker / explosion constants ──────────────────────────────────
 
@@ -898,4 +900,72 @@ export function resolveShowLineMarkers(
   if (override === undefined) return sourceValue;
   if (override === null) return undefined;
   return override;
+}
+
+
+// ── Clone-side series merge ────────────────────────────────────────
+
+export function buildSeriesFromSource(
+  source: Chart,
+  overrides: ReadonlyArray<CloneChartSeriesOverride | undefined> | undefined,
+): ChartSeries[] {
+  const sourceSeries = source.series ?? [];
+  // The override array can be longer than the source (caller wants to
+  // append a fully-specified series). Walk the union of both lengths.
+  const length = Math.max(sourceSeries.length, overrides?.length ?? 0);
+  const out: ChartSeries[] = [];
+
+  for (let i = 0; i < length; i++) {
+    const src: ChartSeriesInfo | undefined = sourceSeries[i];
+    const ov = overrides?.[i];
+    const merged = mergeSeries(src, ov, i);
+    out.push(merged);
+  }
+
+  return out;
+}
+
+export function mergeSeries(
+  src: ChartSeriesInfo | undefined,
+  ov: CloneChartSeriesOverride | undefined,
+  index: number,
+): ChartSeries {
+  // Resolve `values` first — it's the only mandatory field.
+  const values = ov?.values ?? src?.valuesRef;
+  if (!values) {
+    throw new Error(
+      `cloneChart: series #${index} has no values reference; provide \`seriesOverrides[${index}].values\``,
+    );
+  }
+
+  const out: ChartSeries = { values };
+
+  const name = applyOverride(src?.name, ov?.name);
+  if (name !== undefined) out.name = name;
+
+  const categories = applyOverride(src?.categoriesRef, ov?.categories);
+  if (categories !== undefined) out.categories = categories;
+
+  const color = applyOverride(src?.color, ov?.color);
+  if (color !== undefined) out.color = color;
+
+  const dataLabels = resolveSeriesDataLabels(src?.dataLabels, ov?.dataLabels);
+  if (dataLabels !== undefined) out.dataLabels = dataLabels;
+
+  const smooth = resolveSmooth(src?.smooth, ov?.smooth);
+  if (smooth !== undefined) out.smooth = smooth;
+
+  const stroke = resolveStroke(src?.stroke, ov?.stroke);
+  if (stroke !== undefined) out.stroke = stroke;
+
+  const marker = resolveMarker(src?.marker, ov?.marker);
+  if (marker !== undefined) out.marker = marker;
+
+  const invertIfNegative = resolveInvertIfNegative(src?.invertIfNegative, ov?.invertIfNegative);
+  if (invertIfNegative !== undefined) out.invertIfNegative = invertIfNegative;
+
+  const explosion = resolveExplosion(src?.explosion, ov?.explosion);
+  if (explosion !== undefined) out.explosion = explosion;
+
+  return out;
 }
