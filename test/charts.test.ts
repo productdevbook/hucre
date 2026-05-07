@@ -21871,17 +21871,15 @@ describe("parseChart — dataLabelsBorderColor", () => {
 
   it("surfaces borderColor as the canonical 6-character uppercase hex", () => {
     expect(
-      parseChart(
-        withDLblsSpPr(`<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`),
-      )?.dataLabels?.borderColor,
+      parseChart(withDLblsSpPr(`<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`))
+        ?.dataLabels?.borderColor,
     ).toBe("1F77B4");
   });
 
   it("normalizes a lowercase srgbClr val to the OOXML uppercase canonical form", () => {
     expect(
-      parseChart(
-        withDLblsSpPr(`<a:ln><a:solidFill><a:srgbClr val="abcdef"/></a:solidFill></a:ln>`),
-      )?.dataLabels?.borderColor,
+      parseChart(withDLblsSpPr(`<a:ln><a:solidFill><a:srgbClr val="abcdef"/></a:solidFill></a:ln>`))
+        ?.dataLabels?.borderColor,
     ).toBe("ABCDEF");
   });
 
@@ -21947,7 +21945,9 @@ describe("parseChart — dataLabelsBorderColor", () => {
   it("collapses non-solid line fills (<a:gradFill>) to undefined", () => {
     expect(
       parseChart(
-        withDLblsSpPr(`<a:ln><a:gradFill><a:gsLst/><a:lin ang="0" scaled="1"/></a:gradFill></a:ln>`),
+        withDLblsSpPr(
+          `<a:ln><a:gradFill><a:gsLst/><a:lin ang="0" scaled="1"/></a:gradFill></a:ln>`,
+        ),
       )?.dataLabels?.borderColor,
     ).toBeUndefined();
   });
