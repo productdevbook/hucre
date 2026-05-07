@@ -954,6 +954,21 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // type guard never produces `<c:overlay val="1"/>`.
     xAxisTitleOverlay: chart.axes?.x?.axisTitleOverlay === true,
     yAxisTitleOverlay: chart.axes?.y?.axisTitleOverlay === true,
+    // `<c:title><c:layout><c:manualLayout>...</c:manualLayout></c:layout>
+    // </c:title>` — axis-title manual placement. The OOXML
+    // `CT_ManualLayout` block (ECMA-376 Part 1, §21.2.2.115) sits
+    // inside `CT_Title` between `<c:tx>` and `<c:overlay>` and carries
+    // the title's `(x, y)` anchor and `(w, h)` size as fractions of
+    // the chart frame in the `0..1` band. Reuses the same
+    // `normalizeManualLayout` helper as the chart-level legend /
+    // plot-area layouts — out-of-range / non-finite / non-numeric
+    // coordinates collapse to `undefined` axis-by-axis, and an empty
+    // layout (every coordinate dropped) collapses to `undefined` so
+    // the writer skips the entire `<c:layout>` block. Only meaningful
+    // when the axis renders a title — the per-family axis builders
+    // gate the value on the `xAxisTitle` / `yAxisTitle` field.
+    xAxisTitleLayout: normalizeManualLayout(chart.axes?.x?.axisTitleLayout),
+    yAxisTitleLayout: normalizeManualLayout(chart.axes?.y?.axisTitleLayout),
     xGridlines: normalizeAxisGridlines(chart.axes?.x?.gridlines),
     yGridlines: normalizeAxisGridlines(chart.axes?.y?.gridlines),
     xScale: normalizeAxisScale(chart.axes?.x?.scale),
@@ -1943,6 +1958,27 @@ interface AxisRenderOptions {
    * emit semantics as {@link xAxisTitleOverlay}.
    */
   yAxisTitleOverlay: boolean;
+  /**
+   * Axis-title manual placement emitted on the X axis via
+   * `<c:title><c:layout><c:manualLayout>...</c:manualLayout></c:layout>
+   * </c:title>`. The OOXML `CT_ManualLayout` block (ECMA-376 Part 1,
+   * §21.2.2.115) sits inside `CT_Title` between `<c:tx>` and
+   * `<c:overlay>` and carries the title's `(x, y)` anchor and
+   * `(w, h)` size as fractions of the chart frame in the `0..1` band.
+   * Absence (`undefined`) collapses to omitting the entire `<c:layout>`
+   * block so the axis title renders at Excel's auto-layout position.
+   * Only meaningful when the axis renders a title — the per-family
+   * axis builders gate the value on the `xAxisTitle` / `yAxisTitle`
+   * field. Mirrors the chart-level `titleLayout` / `legendLayout` /
+   * `plotAreaLayout` slots so the four manual-layout knobs share a
+   * normalization grammar (`normalizeManualLayout`).
+   */
+  xAxisTitleLayout: ResolvedManualLayout | undefined;
+  /**
+   * Axis-title manual placement emitted on the Y axis. Same shape
+   * and emit semantics as {@link xAxisTitleLayout}.
+   */
+  yAxisTitleLayout: ResolvedManualLayout | undefined;
   xGridlines: { major: boolean; minor: boolean } | undefined;
   yGridlines: { major: boolean; minor: boolean } | undefined;
   xScale: ChartAxisScale | undefined;
@@ -3173,6 +3209,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
         opts.xAxisTitleUnderline,
         opts.xAxisTitleFontFamily,
         opts.xAxisTitleOverlay,
+        opts.xAxisTitleLayout,
       ),
     );
   catAxChildren.push(
@@ -3249,6 +3286,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
         opts.yAxisTitleUnderline,
         opts.yAxisTitleFontFamily,
         opts.yAxisTitleOverlay,
+        opts.yAxisTitleLayout,
       ),
     );
   valAxChildren.push(
@@ -3626,6 +3664,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.xAxisTitleUnderline,
         opts.xAxisTitleFontFamily,
         opts.xAxisTitleOverlay,
+        opts.xAxisTitleLayout,
       ),
     );
   xAxChildren.push(
@@ -3681,6 +3720,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.yAxisTitleUnderline,
         opts.yAxisTitleFontFamily,
         opts.yAxisTitleOverlay,
+        opts.yAxisTitleLayout,
       ),
     );
   yAxChildren.push(
@@ -3783,6 +3823,7 @@ function buildAxisTitle(
   underline: boolean | undefined,
   fontFamily: string | undefined,
   overlay: boolean,
+  layout: ResolvedManualLayout | undefined,
 ): string {
   const rot = rotationDeg === undefined ? 0 : rotationDeg * TITLE_ROT_PER_DEGREE;
   // OOXML's `<a:defRPr sz="N"/>` / `<a:rPr sz="N"/>` attribute is in
@@ -3901,7 +3942,14 @@ function buildAxisTitle(
           u: underlineAttr,
           strike: strikeAttr,
         });
-  return xmlElement("c:title", undefined, [
+  // `<c:layout>` sits between `<c:tx>` and `<c:overlay>` per CT_Title
+  // (ECMA-376 Part 1, §21.2.2.210) — the schema sequence is
+  // `<c:tx>?` / `<c:layout>?` / `<c:overlay>?` / `<c:spPr>?` /
+  // `<c:txPr>?`. Skip the entire block when `layout` is `undefined`
+  // (every coordinate either unset or dropped on normalization) so a
+  // fresh axis title matches Excel's reference shape byte-for-byte.
+  const layoutXml = buildManualLayout(layout);
+  const titleChildren: string[] = [
     xmlElement("c:tx", undefined, [
       xmlElement("c:rich", undefined, [
         xmlElement(
@@ -3923,8 +3971,10 @@ function buildAxisTitle(
         ]),
       ]),
     ]),
-    xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }),
-  ]);
+  ];
+  if (layoutXml) titleChildren.push(layoutXml);
+  titleChildren.push(xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }));
+  return xmlElement("c:title", undefined, titleChildren);
 }
 
 /**

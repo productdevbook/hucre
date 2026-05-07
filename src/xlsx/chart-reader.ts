@@ -790,6 +790,23 @@ function parseAxisInfo(
   // {@link cloneChart}. Returns `undefined` when the axis omits
   // `<c:title>` entirely.
   const axisTitleOverlay = parseAxisTitleOverlay(axis);
+  // `<c:title><c:layout><c:manualLayout>...</c:manualLayout></c:layout>
+  // </c:title>` — axis-title manual placement. Sits inside `<c:title>`
+  // between `<c:tx>` and `<c:overlay>` per CT_Title schema (ECMA-376
+  // Part 1, §21.2.2.210), so the lookup is scoped to the `<c:layout>`
+  // child of `<c:title>` (a stray `<c:layout>` elsewhere on the axis
+  // — e.g. on `<c:plotArea>` — cannot leak in). The OOXML
+  // `<c:manualLayout>` block (`CT_ManualLayout`, §21.2.2.115) carries
+  // the `(x, y)` anchor and `(w, h)` size as fractions of the chart
+  // frame in the `0..1` band; out-of-range / non-finite / non-numeric
+  // tokens drop on the matching axis so absence and a malformed token
+  // round-trip identically through {@link cloneChart}. Returns
+  // `undefined` whenever the axis omits the `<c:title>` /
+  // `<c:layout>` / `<c:manualLayout>` chain at any link or when every
+  // coordinate dropped on normalization. Mirrors the chart-level
+  // `legendLayout` / `plotAreaLayout` parsers — same accept-or-drop
+  // grammar, same `xMode="edge"` / `xMode="factor"` admission.
+  const axisTitleLayout = parseAxisTitleLayout(axis);
   const gridlines = parseAxisGridlines(axis);
   const scale = parseAxisScale(axis);
   const numberFormat = parseAxisNumberFormat(axis);
@@ -949,6 +966,7 @@ function parseAxisInfo(
     axisTitleUnderline === undefined &&
     axisTitleFontFamily === undefined &&
     axisTitleOverlay === undefined &&
+    axisTitleLayout === undefined &&
     gridlines === undefined &&
     scale === undefined &&
     numberFormat === undefined &&
@@ -989,6 +1007,7 @@ function parseAxisInfo(
   if (axisTitleUnderline !== undefined) out.axisTitleUnderline = axisTitleUnderline;
   if (axisTitleFontFamily !== undefined) out.axisTitleFontFamily = axisTitleFontFamily;
   if (axisTitleOverlay !== undefined) out.axisTitleOverlay = axisTitleOverlay;
+  if (axisTitleLayout !== undefined) out.axisTitleLayout = axisTitleLayout;
   if (gridlines !== undefined) out.gridlines = gridlines;
   if (scale !== undefined) out.scale = scale;
   if (numberFormat !== undefined) out.numberFormat = numberFormat;
@@ -2457,6 +2476,62 @@ function parseAxisTitleOverlay(axis: XmlElement): boolean | undefined {
     default:
       return undefined;
   }
+}
+
+/**
+ * Pull `<c:title><c:layout><c:manualLayout>` off an axis element.
+ * Reflects Excel's "Format Axis Title -> Title Options -> Position ->
+ * Custom" placement — the `(x, y)` anchor and `(w, h)` size of the
+ * axis-title block as fractions of the chart frame in the `0..1`
+ * band.
+ *
+ * The OOXML schema (`CT_Title`, ECMA-376 Part 1, §21.2.2.210) places
+ * `<c:layout>` inside `<c:title>` between `<c:tx>` and `<c:overlay>`,
+ * and the `<c:manualLayout>` block (`CT_ManualLayout`, §21.2.2.115)
+ * exposes optional `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` children
+ * whose `val` attributes carry an `xsd:double`. The reader admits
+ * the coordinate only when `val` parses to a finite number in the
+ * `0..1` band; out-of-range / non-finite / non-numeric tokens drop
+ * to `undefined` on the matching axis so absence and a malformed
+ * token round-trip identically through {@link cloneChart}.
+ *
+ * Both `<c:xMode val="edge"/>` (absolute fraction of the chart frame)
+ * and `<c:xMode val="factor"/>` (delta from auto-layout) are accepted
+ * — the reader surfaces the same `ChartManualLayout` shape regardless,
+ * since the writer always normalizes to `"edge"` on emit (Excel itself
+ * emits the absolute form when the user drags an element to a custom
+ * position).
+ *
+ * Returns `undefined` whenever the axis omits the `<c:title>` /
+ * `<c:layout>` / `<c:manualLayout>` chain at any link, or when every
+ * coordinate dropped on normalization — the field is omitted entirely
+ * on a clean parse so absence and an empty layout round-trip
+ * identically through the writer. Mirrors the chart-level
+ * {@link parseLegendLayout} / {@link parsePlotAreaLayout} so the
+ * three layout knobs share parsing semantics.
+ */
+function parseAxisTitleLayout(axis: XmlElement): ChartManualLayout | undefined {
+  const title = findChild(axis, "title");
+  if (!title) return undefined;
+  const layout = findChild(title, "layout");
+  if (!layout) return undefined;
+  const manual = findChild(layout, "manualLayout");
+  if (!manual) return undefined;
+
+  const out: ChartManualLayout = {};
+  const x = readLayoutCoordinate(findChild(manual, "x"));
+  if (x !== undefined) out.x = x;
+  const y = readLayoutCoordinate(findChild(manual, "y"));
+  if (y !== undefined) out.y = y;
+  const w = readLayoutCoordinate(findChild(manual, "w"));
+  if (w !== undefined) out.w = w;
+  const h = readLayoutCoordinate(findChild(manual, "h"));
+  if (h !== undefined) out.h = h;
+
+  if (out.x === undefined && out.y === undefined && out.w === undefined && out.h === undefined) {
+    return undefined;
+  }
+  return out;
 }
 
 // ── Series ────────────────────────────────────────────────────────

@@ -19263,3 +19263,404 @@ describe("writeChart — plotAreaLayout", () => {
     expect(reparsed?.plotAreaLayout).toEqual({ x: 0.1, y: 0.2, w: 0.8, h: 0.6 });
   });
 });
+
+// ── writeChart — axisTitleLayout (manual placement) ─────────────────
+
+describe("writeChart — axisTitleLayout", () => {
+  function axisBlocks(xml: string): string[] {
+    return Array.from(xml.matchAll(/<c:(catAx|valAx|dateAx)>[\s\S]*?<\/c:\1>/g)).map((m) => m[0]);
+  }
+
+  function axisTitleBlock(axisBlock: string): string | undefined {
+    const m = axisBlock.match(/<c:title>[\s\S]*?<\/c:title>/);
+    return m ? m[0] : undefined;
+  }
+
+  it("does NOT emit <c:layout> on an axis title when axisTitleLayout is unset (matches Excel reference)", () => {
+    const result = writeChart(makeChart({ axes: { x: { title: "Period" } } }), "Sheet1");
+    const [xAx] = axisBlocks(result.chartXml);
+    const title = axisTitleBlock(xAx)!;
+    expect(title).not.toContain("<c:layout>");
+    expect(title).not.toContain("<c:manualLayout>");
+  });
+
+  it("threads x/y anchor through to <c:layout><c:manualLayout> on the X axis title", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleLayout: { x: 0.4, y: 0.9 } } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const title = axisTitleBlock(xAx)!;
+    expect(title).toContain("<c:layout>");
+    expect(title).toContain("<c:manualLayout>");
+    expect(title).toContain('<c:xMode val="edge"/>');
+    expect(title).toContain('<c:yMode val="edge"/>');
+    expect(title).toContain('<c:x val="0.4"/>');
+    expect(title).toContain('<c:y val="0.9"/>');
+    expect(title).not.toContain("<c:wMode");
+    expect(title).not.toContain("<c:hMode");
+    expect(title).not.toContain("<c:w ");
+    expect(title).not.toContain("<c:h ");
+  });
+
+  it("threads w/h size through to <c:layout><c:manualLayout> on the Y axis title", () => {
+    const result = writeChart(
+      makeChart({ axes: { y: { title: "USD", axisTitleLayout: { w: 0.15, h: 0.45 } } } }),
+      "Sheet1",
+    );
+    const [, yAx] = axisBlocks(result.chartXml);
+    const title = axisTitleBlock(yAx)!;
+    expect(title).toContain('<c:wMode val="edge"/>');
+    expect(title).toContain('<c:hMode val="edge"/>');
+    expect(title).toContain('<c:w val="0.15"/>');
+    expect(title).toContain('<c:h val="0.45"/>');
+    expect(title).not.toContain("<c:xMode");
+    expect(title).not.toContain("<c:yMode");
+  });
+
+  it("threads all four coordinates when every axis is pinned", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: { title: "Period", axisTitleLayout: { x: 0.3, y: 0.85, w: 0.4, h: 0.1 } },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const title = axisTitleBlock(xAx)!;
+    expect(title).toContain('<c:x val="0.3"/>');
+    expect(title).toContain('<c:y val="0.85"/>');
+    expect(title).toContain('<c:w val="0.4"/>');
+    expect(title).toContain('<c:h val="0.1"/>');
+    // Mode children precede value children inside <c:manualLayout>.
+    const ml = title.match(/<c:manualLayout>[\s\S]*?<\/c:manualLayout>/)![0];
+    expect(ml.indexOf("c:xMode")).toBeLessThan(ml.indexOf("<c:x "));
+    expect(ml.indexOf("c:yMode")).toBeLessThan(ml.indexOf("<c:y "));
+    expect(ml.indexOf("c:wMode")).toBeLessThan(ml.indexOf("<c:w "));
+    expect(ml.indexOf("c:hMode")).toBeLessThan(ml.indexOf("<c:h "));
+  });
+
+  it("places <c:layout> after <c:tx> and before <c:overlay> (CT_Title order)", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleLayout: { x: 0.5 } } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const title = axisTitleBlock(xAx)!;
+    expect(title.indexOf("c:tx")).toBeLessThan(title.indexOf("c:layout"));
+    expect(title.indexOf("c:layout")).toBeLessThan(title.indexOf("c:overlay"));
+  });
+
+  it("emits <c:layout> exactly once inside each axis title", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleLayout: { x: 0.5, y: 0.5 } } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const title = axisTitleBlock(xAx)!;
+    const occurrences = title.match(/<c:layout\b/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("does not emit any axis-title <c:layout> when the axis renders no title", () => {
+    // Without a `title` field, the writer skips `<c:title>` entirely so
+    // the layout has no slot in the rendered chart.
+    const result = writeChart(
+      makeChart({ axes: { x: { axisTitleLayout: { x: 0.5, y: 0.5 } } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    expect(axisTitleBlock(xAx)).toBeUndefined();
+  });
+
+  it("threads axisTitleLayout independently across the X and Y axes", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: { title: "Period", axisTitleLayout: { x: 0.4, y: 0.9 } },
+          y: { title: "USD", axisTitleLayout: { w: 0.05, h: 0.5 } },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx, yAx] = axisBlocks(result.chartXml);
+    const xTitle = axisTitleBlock(xAx)!;
+    const yTitle = axisTitleBlock(yAx)!;
+    expect(xTitle).toContain('<c:x val="0.4"/>');
+    expect(xTitle).toContain('<c:y val="0.9"/>');
+    expect(xTitle).not.toContain("<c:w ");
+    expect(yTitle).toContain('<c:w val="0.05"/>');
+    expect(yTitle).toContain('<c:h val="0.5"/>');
+    expect(yTitle).not.toContain("<c:x ");
+  });
+
+  it("threads axisTitleLayout through every chart family that has axes", () => {
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(
+        makeChart({
+          type,
+          axes: { x: { title: "Period", axisTitleLayout: { x: 0.5, y: 0.9 } } },
+        }),
+        "Sheet1",
+      );
+      const [xAx] = axisBlocks(result.chartXml);
+      const title = axisTitleBlock(xAx)!;
+      expect(title).toContain('<c:x val="0.5"/>');
+      expect(title).toContain('<c:y val="0.9"/>');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        axes: { x: { title: "Period", axisTitleLayout: { x: 0.5, y: 0.9 } } },
+      }),
+      "Sheet1",
+    );
+    const [xAxScatter] = Array.from(scatter.chartXml.matchAll(/<c:valAx>[\s\S]*?<\/c:valAx>/g)).map(
+      (m) => m[0],
+    );
+    const title = axisTitleBlock(xAxScatter)!;
+    expect(title).toContain('<c:x val="0.5"/>');
+    expect(title).toContain('<c:y val="0.9"/>');
+  });
+
+  it("drops out-of-range coordinates (negative / above 1)", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: {
+            title: "Period",
+            axisTitleLayout: { x: -0.1, y: 1.2, w: 0.4, h: 0.1 },
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const title = axisTitleBlock(xAx)!;
+    expect(title).not.toContain("<c:xMode");
+    expect(title).not.toContain("<c:yMode");
+    expect(title).not.toContain("<c:x ");
+    expect(title).not.toContain("<c:y ");
+    expect(title).toContain('<c:w val="0.4"/>');
+    expect(title).toContain('<c:h val="0.1"/>');
+  });
+
+  it("accepts the boundary values 0 and 1", () => {
+    const result = writeChart(
+      makeChart({
+        axes: { x: { title: "Period", axisTitleLayout: { x: 0, y: 1, w: 0, h: 1 } } },
+      }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const title = axisTitleBlock(xAx)!;
+    expect(title).toContain('<c:x val="0"/>');
+    expect(title).toContain('<c:y val="1"/>');
+    expect(title).toContain('<c:w val="0"/>');
+    expect(title).toContain('<c:h val="1"/>');
+  });
+
+  it("drops non-finite coordinates (NaN / Infinity)", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: {
+            title: "Period",
+            axisTitleLayout: { x: Number.NaN, y: Number.POSITIVE_INFINITY, w: 0.4 },
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const title = axisTitleBlock(xAx)!;
+    expect(title).not.toContain("<c:xMode");
+    expect(title).not.toContain("<c:yMode");
+    expect(title).toContain('<c:w val="0.4"/>');
+  });
+
+  it("drops non-numeric coordinates (string leaking past the type guard)", () => {
+    const result = writeChart(
+      makeChart({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        axes: { x: { title: "Period", axisTitleLayout: { x: "0.5" as any, y: 0.4 } } },
+      }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const title = axisTitleBlock(xAx)!;
+    expect(title).not.toContain("<c:xMode");
+    expect(title).toContain('<c:y val="0.4"/>');
+  });
+
+  it("collapses an empty layout (every axis dropped) to no <c:layout> block", () => {
+    const result = writeChart(
+      makeChart({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        axes: { x: { title: "Period", axisTitleLayout: { x: -1 as any, y: 2 as any } } },
+      }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const title = axisTitleBlock(xAx)!;
+    expect(title).not.toContain("<c:layout>");
+    expect(title).not.toContain("<c:manualLayout>");
+  });
+
+  it("collapses a layout with no coordinates to no <c:layout> block", () => {
+    const result = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleLayout: {} } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const title = axisTitleBlock(xAx)!;
+    expect(title).not.toContain("<c:layout>");
+  });
+
+  it("ignores a non-object axisTitleLayout (typed escape from an untyped caller)", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ axes: { x: { title: "Period", axisTitleLayout: "custom" as any } } }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const title = axisTitleBlock(xAx)!;
+    expect(title).not.toContain("<c:layout>");
+  });
+
+  it("composes with axisTitleOverlay / axisTitleBold on the same <c:title> body", () => {
+    const result = writeChart(
+      makeChart({
+        axes: {
+          x: {
+            title: "Period",
+            axisTitleLayout: { x: 0.3, y: 0.9 },
+            axisTitleOverlay: true,
+            axisTitleBold: true,
+          },
+        },
+      }),
+      "Sheet1",
+    );
+    const [xAx] = axisBlocks(result.chartXml);
+    const title = axisTitleBlock(xAx)!;
+    expect(title).toContain('<c:x val="0.3"/>');
+    expect(title).toContain('<c:overlay val="1"/>');
+    expect(title).toContain('b="1"');
+    // CT_Title order: tx / layout / overlay
+    expect(title.indexOf("c:tx")).toBeLessThan(title.indexOf("c:layout"));
+    expect(title.indexOf("c:layout")).toBeLessThan(title.indexOf("c:overlay"));
+  });
+
+  it("round-trips axisTitleLayout through parseChart", () => {
+    const written = writeChart(
+      makeChart({
+        axes: { x: { title: "Period", axisTitleLayout: { x: 0.4, y: 0.85, w: 0.3, h: 0.1 } } },
+      }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.axisTitleLayout).toEqual({ x: 0.4, y: 0.85, w: 0.3, h: 0.1 });
+  });
+
+  it("round-trips a partial axisTitleLayout (only x/y) through parseChart", () => {
+    const written = writeChart(
+      makeChart({ axes: { x: { title: "Period", axisTitleLayout: { x: 0.5, y: 0.25 } } } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.axes?.x?.axisTitleLayout).toEqual({ x: 0.5, y: 0.25 });
+  });
+
+  it("collapses an unset axisTitleLayout round-trip back to undefined", () => {
+    const written = writeChart(makeChart({ axes: { x: { title: "Period" } } }), "Sheet1").chartXml;
+    expect(parseChart(written)?.axes?.x?.axisTitleLayout).toBeUndefined();
+  });
+
+  it("does not surface axisTitleLayout when the axis has no title", () => {
+    const written = writeChart(makeChart({ axes: { x: {} } }), "Sheet1").chartXml;
+    expect(parseChart(written)?.axes?.x?.axisTitleLayout).toBeUndefined();
+  });
+
+  it("survives a writeXlsx round trip — axisTitleLayout lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            axes: {
+              x: { title: "Region", axisTitleLayout: { x: 0.4, y: 0.9 } },
+              y: { title: "USD", axisTitleLayout: { w: 0.05, h: 0.5 } },
+            },
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.axes?.x?.axisTitleLayout).toEqual({ x: 0.4, y: 0.9 });
+    expect(reparsed?.axes?.y?.axisTitleLayout).toEqual({ w: 0.05, h: 0.5 });
+  });
+
+  it('normalizes <c:xMode val="factor"/> back to the same shape on parse', () => {
+    // A templated chart that pinned the alternate `factor` mode still
+    // round-trips through parseChart — the writer normalizes to `edge`
+    // on emit, but the reader admits both.
+    const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <c:chart>
+    <c:autoTitleDeleted val="1"/>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="clustered"/>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:order val="0"/>
+          <c:val><c:numRef><c:f>Sheet1!$B$2:$B$4</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:axId val="1"/>
+        <c:axId val="2"/>
+      </c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:scaling><c:orientation val="minMax"/></c:scaling>
+        <c:delete val="0"/>
+        <c:axPos val="b"/>
+        <c:title>
+          <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Region</a:t></a:r></a:p></c:rich></c:tx>
+          <c:layout>
+            <c:manualLayout>
+              <c:xMode val="factor"/>
+              <c:yMode val="factor"/>
+              <c:x val="0.4"/>
+              <c:y val="0.3"/>
+            </c:manualLayout>
+          </c:layout>
+          <c:overlay val="0"/>
+        </c:title>
+        <c:crossAx val="2"/>
+      </c:catAx>
+      <c:valAx><c:axId val="2"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:crossAx val="1"/></c:valAx>
+    </c:plotArea>
+    <c:plotVisOnly val="1"/>
+    <c:dispBlanksAs val="gap"/>
+  </c:chart>
+</c:chartSpace>`;
+    const reparsed = parseChart(xml);
+    expect(reparsed?.axes?.x?.axisTitleLayout).toEqual({ x: 0.4, y: 0.3 });
+  });
+});

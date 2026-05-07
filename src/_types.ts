@@ -3486,6 +3486,58 @@ export interface SheetChart {
        * area / scatter).
        */
       axisTitleOverlay?: boolean;
+      /**
+       * Axis-title manual placement. Maps to
+       * `<c:catAx><c:title><c:layout><c:manualLayout>...</c:manualLayout>
+       * </c:layout></c:title></c:catAx>` (or `<c:valAx>` / `<c:dateAx>` /
+       * `<c:serAx>`) — Excel's "Format Axis Title -> Title Options ->
+       * Position -> Custom" placement, the same drag-handle a user sees
+       * when grabbing the axis-title block in Excel's chart editor.
+       *
+       * The OOXML `CT_ManualLayout` block (ECMA-376 Part 1, §21.2.2.115)
+       * sits inside `CT_Title` between `<c:tx>` and `<c:overlay>` and
+       * carries the title's `(x, y)` anchor and `(w, h)` size as
+       * fractions of the chart frame in the `0..1` band. Each of
+       * {@link ChartManualLayout.x} / {@link ChartManualLayout.y} /
+       * {@link ChartManualLayout.w} / {@link ChartManualLayout.h} is
+       * independently optional — pin only the position
+       * ({@link ChartManualLayout.x} / {@link ChartManualLayout.y}) and
+       * let the title keep its automatic size, only the size
+       * ({@link ChartManualLayout.w} / {@link ChartManualLayout.h}) and
+       * let it keep its automatic anchor, or any combination.
+       *
+       * Mirrors {@link SheetChart.legendLayout} /
+       * {@link SheetChart.plotAreaLayout} for axis titles — same
+       * {@link ChartManualLayout} shape, same accept-or-drop grammar
+       * (out-of-range / non-finite / non-numeric coordinates collapse
+       * to `undefined` axis-by-axis), same canonical `xMode="edge"`
+       * normalization on emit. The writer always emits
+       * `xMode="edge"` / `yMode="edge"` / `wMode="edge"` /
+       * `hMode="edge"` next to the matching `<c:x>` / `<c:y>` / `<c:w>` /
+       * `<c:h>` slot — `"edge"` is Excel's reference shape when the
+       * user drags an element to a custom position (the coordinates
+       * are absolute fractions of the chart frame, not deltas from
+       * the auto-layout baseline).
+       *
+       * Default: omitted — the writer skips the entire `<c:layout>`
+       * block so the axis title renders at Excel's auto-layout
+       * position (adjacent to the matching axis, with the plot area
+       * shrunk to make room). An empty layout (every coordinate
+       * dropped on normalization) collapses back to no `<c:layout>`
+       * block so a fresh chart matches Excel's reference shape
+       * byte-for-byte.
+       *
+       * Silently dropped when the axis renders no title (the
+       * `<c:title>` element is absent in either case) and on `pie` /
+       * `doughnut` charts (no axes at all).
+       *
+       * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+       * `<c:dateAx>` / `<c:serAx>` all carry the same `<c:title>`
+       * shape per the OOXML schema, so the field round-trips on
+       * every chart family that has axes (bar / column / line /
+       * area / scatter).
+       */
+      axisTitleLayout?: ChartManualLayout;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -4244,6 +4296,15 @@ export interface SheetChart {
        * See the X-axis variant for the full semantics.
        */
       axisTitleOverlay?: boolean;
+      /**
+       * Value-axis-title manual placement. Same canonical
+       * `<c:title><c:layout><c:manualLayout>...</c:manualLayout>
+       * </c:layout></c:title>` slot and grammar as
+       * {@link SheetChart.axes.x.axisTitleLayout} — the field
+       * round-trips on `<c:valAx>` exactly as it does on `<c:catAx>`.
+       * See the X-axis variant for the full semantics.
+       */
+      axisTitleLayout?: ChartManualLayout;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -5919,6 +5980,47 @@ export interface ChartAxisInfo {
    * without transformation.
    */
   axisTitleOverlay?: boolean;
+  /**
+   * Axis-title manual placement pulled from
+   * `<c:catAx><c:title><c:layout><c:manualLayout>...</c:manualLayout>
+   * </c:layout></c:title></c:catAx>` (or `<c:valAx>` / `<c:dateAx>` /
+   * `<c:serAx>`). Reflects Excel's "Format Axis Title -> Title Options
+   * -> Position -> Custom" placement — the `(x, y)` anchor and
+   * `(w, h)` size of the axis-title block as fractions of the chart
+   * frame in the `0..1` band.
+   *
+   * Each of {@link ChartManualLayout.x} / {@link ChartManualLayout.y} /
+   * {@link ChartManualLayout.w} / {@link ChartManualLayout.h} surfaces
+   * only when the matching `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` child
+   * is present and parses to a finite number in the `0..1` band; out-of-
+   * range / non-finite / non-numeric tokens drop on the matching axis
+   * so absence and a malformed token round-trip identically through
+   * {@link cloneChart}.
+   *
+   * Both `<c:xMode val="edge"/>` (absolute fraction of the chart frame)
+   * and `<c:xMode val="factor"/>` (delta from auto-layout) are accepted
+   * — the reader surfaces the same {@link ChartManualLayout} shape
+   * regardless, since the writer always normalizes to `"edge"` on emit
+   * (Excel itself emits the absolute form when the user drags an
+   * element to a custom position).
+   *
+   * Returned as `undefined` whenever the axis omits the `<c:title>` /
+   * `<c:layout>` / `<c:manualLayout>` chain at any link, or when every
+   * coordinate dropped on normalization — the field is omitted entirely
+   * on a clean parse so absence and an empty layout round-trip
+   * identically through the writer. Mirrors the chart-level
+   * {@link Chart.titleLayout} (when set on the same chart) and
+   * {@link Chart.legendLayout} / {@link Chart.plotAreaLayout} so a
+   * parsed value slots straight back into the writer-side
+   * {@link SheetChart.axes.x.axisTitleLayout} without transformation.
+   *
+   * Sits on every axis flavour — `<c:catAx>` / `<c:valAx>` /
+   * `<c:dateAx>` / `<c:serAx>` all carry the same `<c:title>` shape
+   * per the OOXML schema. The reader surfaces the value on every axis
+   * flavour so a parsed chart preserves the placement regardless of
+   * whether the source axis was a category or value axis.
+   */
+  axisTitleLayout?: ChartManualLayout;
   /**
    * Major / minor gridline visibility. Omitted when neither
    * `<c:majorGridlines>` nor `<c:minorGridlines>` is declared on the

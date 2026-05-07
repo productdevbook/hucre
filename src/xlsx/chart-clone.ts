@@ -1239,6 +1239,31 @@ export interface CloneChartOptions {
        * same way at the call site.
        */
       axisTitleOverlay?: boolean | null;
+      /**
+       * Override `SheetChart.axes.x.axisTitleLayout`. `undefined` (or
+       * omitted) inherits the source axis's parsed `axisTitleLayout`;
+       * `null` drops the inherited layout (the writer falls back to
+       * Excel's auto-layout position — no `<c:layout>` block on the
+       * axis title); a {@link ChartManualLayout} replaces it.
+       *
+       * Each of {@link ChartManualLayout.x} / {@link ChartManualLayout.y} /
+       * {@link ChartManualLayout.w} / {@link ChartManualLayout.h} runs
+       * through the same `0..1` filter as the writer-side
+       * normalization: out-of-range / non-finite / non-numeric tokens
+       * collapse on the matching axis. An override whose every
+       * coordinate dropped collapses to `undefined` so the cloned
+       * `SheetChart` skips the entire `<c:layout>` block.
+       *
+       * The override is silently dropped from the cloned `SheetChart`
+       * when the axis renders no title (the resolved `title` is
+       * `undefined`) — there is no `<c:title>` block to host the
+       * layout in either case.
+       *
+       * The grammar mirrors the chart-level `titleLayout` /
+       * `legendLayout` / `plotAreaLayout` so the four manual-layout
+       * knobs compose the same way at the call site.
+       */
+      axisTitleLayout?: ChartManualLayout | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -1579,6 +1604,8 @@ export interface CloneChartOptions {
       axisTitleFontFamily?: string | null;
       /** See {@link CloneChartOptions.axes.x.axisTitleOverlay}. */
       axisTitleOverlay?: boolean | null;
+      /** See {@link CloneChartOptions.axes.x.axisTitleLayout}. */
+      axisTitleLayout?: ChartManualLayout | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -4187,6 +4214,25 @@ function resolveAxes(
     sourceAxes?.y?.axisTitleOverlay,
     overrides?.y?.axisTitleOverlay,
   );
+  // `<c:title><c:layout><c:manualLayout>...</c:manualLayout></c:layout>
+  // </c:title>` — axis-title manual placement. Sits inside `<c:title>`
+  // between `<c:tx>` and `<c:overlay>` per CT_Title schema, so the
+  // resolver applies on every chart family that has axes (pie /
+  // doughnut were short-circuited upstream). Out-of-range / non-finite /
+  // non-numeric coordinates collapse on the matching axis via the
+  // resolver; an override whose every coordinate dropped collapses to
+  // `undefined` so the cloned `SheetChart` skips the entire `<c:layout>`
+  // block. Like the other axis-title knobs, the writer drops the layout
+  // when the matching axis title is unset, so a stray pin on an axis
+  // with no title silently disappears at emit time.
+  const xAxisTitleLayout = resolveAxisTitleLayout(
+    sourceAxes?.x?.axisTitleLayout,
+    overrides?.x?.axisTitleLayout,
+  );
+  const yAxisTitleLayout = resolveAxisTitleLayout(
+    sourceAxes?.y?.axisTitleLayout,
+    overrides?.y?.axisTitleLayout,
+  );
   const xGridlines = applyGridlinesOverride(sourceAxes?.x?.gridlines, overrides?.x?.gridlines);
   const yGridlines = applyGridlinesOverride(sourceAxes?.y?.gridlines, overrides?.y?.gridlines);
   const xScale = applyScaleOverride(sourceAxes?.x?.scale, overrides?.x?.scale);
@@ -4476,6 +4522,12 @@ function resolveAxes(
   // reflects what the chart will paint.
   const xAxisTitleOverlayResolved = xTitle === undefined ? undefined : xAxisTitleOverlay;
   const yAxisTitleOverlayResolved = yTitle === undefined ? undefined : yAxisTitleOverlay;
+  // Same title-presence gate as the other axis-title knobs — the writer
+  // skips the entire `<c:layout>` block (and the surrounding `<c:title>`
+  // element) when the matching axis title is unset, so the cloned
+  // `SheetChart` accurately reflects what the chart will paint.
+  const xAxisTitleLayoutResolved = xTitle === undefined ? undefined : xAxisTitleLayout;
+  const yAxisTitleLayoutResolved = yTitle === undefined ? undefined : yAxisTitleLayout;
 
   const out: NonNullable<SheetChart["axes"]> = {};
   if (
@@ -4489,6 +4541,7 @@ function resolveAxes(
     xAxisTitleUnderlineResolved !== undefined ||
     xAxisTitleFontFamilyResolved !== undefined ||
     xAxisTitleOverlayResolved !== undefined ||
+    xAxisTitleLayoutResolved !== undefined ||
     xGridlines !== undefined ||
     xScale !== undefined ||
     xNumFmt !== undefined ||
@@ -4531,6 +4584,7 @@ function resolveAxes(
     if (xAxisTitleFontFamilyResolved !== undefined)
       out.x.axisTitleFontFamily = xAxisTitleFontFamilyResolved;
     if (xAxisTitleOverlayResolved !== undefined) out.x.axisTitleOverlay = xAxisTitleOverlayResolved;
+    if (xAxisTitleLayoutResolved !== undefined) out.x.axisTitleLayout = xAxisTitleLayoutResolved;
     if (xGridlines !== undefined) out.x.gridlines = xGridlines;
     if (xScale !== undefined) out.x.scale = xScale;
     if (xNumFmt !== undefined) out.x.numberFormat = xNumFmt;
@@ -4569,6 +4623,7 @@ function resolveAxes(
     yAxisTitleUnderlineResolved !== undefined ||
     yAxisTitleFontFamilyResolved !== undefined ||
     yAxisTitleOverlayResolved !== undefined ||
+    yAxisTitleLayoutResolved !== undefined ||
     yGridlines !== undefined ||
     yScale !== undefined ||
     yNumFmt !== undefined ||
@@ -4605,6 +4660,7 @@ function resolveAxes(
     if (yAxisTitleFontFamilyResolved !== undefined)
       out.y.axisTitleFontFamily = yAxisTitleFontFamilyResolved;
     if (yAxisTitleOverlayResolved !== undefined) out.y.axisTitleOverlay = yAxisTitleOverlayResolved;
+    if (yAxisTitleLayoutResolved !== undefined) out.y.axisTitleLayout = yAxisTitleLayoutResolved;
     if (yGridlines !== undefined) out.y.gridlines = yGridlines;
     if (yScale !== undefined) out.y.scale = yScale;
     if (yNumFmt !== undefined) out.y.numberFormat = yNumFmt;
@@ -5415,6 +5471,43 @@ function applyAxisTitleOverlayOverride(
   if (override === true) return true;
   if (override === false) return false;
   return undefined;
+}
+
+/**
+ * Resolve an `axisTitleLayout` override.
+ *
+ * `undefined` → inherit the source axis's parsed `axisTitleLayout`
+ *               (after running through {@link normalizeLegendLayout}
+ *               so a malformed source value drops cleanly — the
+ *               normalizer is purely shape-based, no host-element
+ *               awareness, so it applies identically to legend /
+ *               plot-area / title / axis-title layouts).
+ * `null`      → drop the inherited layout (the writer falls back to
+ *               Excel's auto-layout position — no `<c:layout>` block
+ *               on the axis title).
+ * `ChartManualLayout` → replace, after running through
+ *               {@link normalizeLegendLayout}. Coordinates outside the
+ *               `0..1` band collapse on the matching axis so the
+ *               cloned `SheetChart` always carries a value the writer
+ *               will accept; an override whose every axis dropped
+ *               collapses to `undefined` so the cloned shape skips
+ *               the entire `<c:layout>` block.
+ *
+ * The grammar mirrors `resolveLegendLayout` / `resolvePlotAreaLayout`
+ * so the manual-layout knobs compose the same way at the call site.
+ * The caller is expected to additionally gate the resolved value on
+ * the matching axis title's presence so the cloned shape never carries
+ * a layout that the writer would silently elide (the writer scopes the
+ * `<c:layout>` emission to `<c:title>`, which is omitted when the axis
+ * renders no title).
+ */
+function resolveAxisTitleLayout(
+  sourceValue: ChartManualLayout | undefined,
+  override: ChartManualLayout | null | undefined,
+): ChartManualLayout | undefined {
+  if (override === undefined) return normalizeLegendLayout(sourceValue);
+  if (override === null) return undefined;
+  return normalizeLegendLayout(override);
 }
 
 /**
