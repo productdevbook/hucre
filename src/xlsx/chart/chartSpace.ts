@@ -12,10 +12,7 @@
 // chart-writer.ts and stay there because their signatures and call
 // patterns remain orchestration-shape rather than per-host.
 
-import type {
-  ChartDisplayBlanksAs,
-  ChartProtection,
-} from "../../_types";
+import type { ChartDisplayBlanksAs, ChartProtection } from "../../_types";
 import { normalizeRgbHex } from "./shape";
 
 /**

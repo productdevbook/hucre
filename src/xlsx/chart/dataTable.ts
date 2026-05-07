@@ -10,11 +10,7 @@
 // `chart-clone.ts` because its signature is shape-incompatible with the
 // writer-side single-arg resolver.
 
-import type {
-  ChartBorderDash,
-  ChartDataTable,
-  SheetChart,
-} from "../../_types";
+import type { ChartBorderDash, ChartDataTable, SheetChart } from "../../_types";
 import type { XmlElement } from "../../xml/parser";
 import { xmlElement, xmlSelfClose } from "../../xml/writer";
 import {
@@ -29,10 +25,7 @@ import {
 } from "./shape";
 import { findChild, parseBoolAttr } from "./util";
 import { FONT_SIZE_MAX_PT, FONT_SIZE_MIN_PT, FONT_SZ_PER_POINT } from "./text";
-import {
-  normalizeTitleColor,
-  normalizeTitleFontSize,
-} from "./title";
+import { normalizeTitleColor, normalizeTitleFontSize } from "./title";
 
 const TITLE_FONT_SZ_PER_POINT = FONT_SZ_PER_POINT;
 const TITLE_FONT_SIZE_MIN_PT = FONT_SIZE_MIN_PT;
@@ -465,7 +458,6 @@ export function parseDataTableFlag(dTable: XmlElement, local: string): boolean |
       return undefined;
   }
 }
-
 
 // ── Writer ────────────────────────────────────────────────────────
 
@@ -951,7 +943,6 @@ export function buildDataTableTxPr(
     ]),
   ]);
 }
-
 
 // ── Clone resolvers (3-arg source/override) ───────────────────────
 

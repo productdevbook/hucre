@@ -21,11 +21,7 @@
 // per-host commentary remains meaningful at the call site even after
 // relocation.
 
-import type {
-  ChartBorderDash,
-  ChartManualLayout,
-  SheetChart,
-} from "../../_types";
+import type { ChartBorderDash, ChartManualLayout, SheetChart } from "../../_types";
 import type { XmlElement } from "../../xml/parser";
 import { xmlElement, xmlEscape, xmlSelfClose } from "../../xml/writer";
 import {
@@ -46,13 +42,7 @@ import {
   normalizeManualLayout,
   parseManualLayout,
 } from "./layout";
-import {
-  childElements,
-  collectTextRuns,
-  elementText,
-  findChild,
-  parseBoolAttr,
-} from "./util";
+import { childElements, collectTextRuns, elementText, findChild, parseBoolAttr } from "./util";
 import {
   FONT_SIZE_MAX_PT,
   FONT_SIZE_MIN_PT,
@@ -754,7 +744,6 @@ export function parseTitle(chartEl: XmlElement): string | undefined {
   }
   return undefined;
 }
-
 
 // ── Writer ────────────────────────────────────────────────────────
 
@@ -1463,12 +1452,10 @@ export function resolveTitleLayout(chart: SheetChart): ResolvedManualLayout | un
   return normalizeManualLayout(chart.titleLayout);
 }
 
-
 // ── Clone-side title constants ────────────────────────────────────
 
 const TITLE_BORDER_WIDTH_MIN_PT = 0.25;
 const TITLE_BORDER_WIDTH_MAX_PT = 13.5;
-
 
 // ── Clone resolvers (3-arg source/override) ───────────────────────
 

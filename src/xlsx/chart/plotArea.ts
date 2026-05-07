@@ -134,7 +134,10 @@ const DOUGHNUT_HOLE_MAX = 90;
  * defaults (the writer cares about the writable-kind `WriteChartKind`
  * subset, the reader cares about every parsed `ChartKind`).
  */
-const VARY_COLORS_DEFAULT_TRUE_TYPES: ReadonlySet<import("../../_types").WriteChartKind> = new Set(["pie", "doughnut"]);
+const VARY_COLORS_DEFAULT_TRUE_TYPES: ReadonlySet<import("../../_types").WriteChartKind> = new Set([
+  "pie",
+  "doughnut",
+]);
 
 /**
  * Recognized values of `<c:scatterStyle>` per the OOXML
@@ -185,7 +188,9 @@ function resolvePlotAreaLayout(chart: SheetChart): ResolvedManualLayout | undefi
  * Returns `undefined` when neither axis surfaces a title — keeps the
  * default `Chart` shape lean.
  */
-export function parseAxes(plotArea: XmlElement): { x?: ChartAxisInfo; y?: ChartAxisInfo } | undefined {
+export function parseAxes(
+  plotArea: XmlElement,
+): { x?: ChartAxisInfo; y?: ChartAxisInfo } | undefined {
   let catAx: XmlElement | undefined;
   const valAxes: XmlElement[] = [];
   for (const child of childElements(plotArea)) {
@@ -676,7 +681,6 @@ export function parseLineAreaGrouping(chartType: XmlElement): ChartLineAreaGroup
       return undefined;
   }
 }
-
 
 // ── Writer ────────────────────────────────────────────────────────
 
@@ -1619,7 +1623,6 @@ export function resolveScatterStyle(chart: SheetChart): ChartScatterStyle {
   if (raw && SCATTER_STYLE_VALUES.has(raw)) return raw;
   return "lineMarker";
 }
-
 
 // ── Clone-side plot-area constants ────────────────────────────────
 

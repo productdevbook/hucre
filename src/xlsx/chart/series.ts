@@ -456,7 +456,6 @@ export function parseSeriesStroke(ser: XmlElement): ChartLineStroke | undefined 
   return out;
 }
 
-
 // ── Writer ────────────────────────────────────────────────────────
 
 /**
@@ -598,7 +597,9 @@ export function buildSeries(
  * `undefined` for unrecognized values so the writer can elide
  * `<a:prstDash>` rather than emit a token Excel will reject.
  */
-export function normalizeDashStyle(value: ChartLineDashStyle | undefined): ChartLineDashStyle | undefined {
+export function normalizeDashStyle(
+  value: ChartLineDashStyle | undefined,
+): ChartLineDashStyle | undefined {
   if (value === undefined) return undefined;
   return VALID_DASH_STYLES.has(value) ? value : undefined;
 }
@@ -733,7 +734,6 @@ export function buildSeriesMarker(marker: ChartMarker | undefined): string | und
 
   return xmlElement("c:marker", undefined, children);
 }
-
 
 // ── Clone ─────────────────────────────────────────────────────────
 
@@ -901,7 +901,6 @@ export function resolveShowLineMarkers(
   if (override === null) return undefined;
   return override;
 }
-
 
 // ── Clone-side series merge ────────────────────────────────────────
 

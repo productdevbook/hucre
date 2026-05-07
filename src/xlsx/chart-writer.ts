@@ -109,10 +109,7 @@ import {
   resolveTitleUnderline,
 } from "./chart/title";
 import { buildDataTable, resolveDataTable } from "./chart/dataTable";
-import {
-  buildChartLevelDataLabels,
-  buildSeriesDataLabels,
-} from "./chart/dataLabels";
+import { buildChartLevelDataLabels, buildSeriesDataLabels } from "./chart/dataLabels";
 import { buildSeries } from "./chart/series";
 import {
   AXIS_ID_CAT,
@@ -419,7 +416,6 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
 
 // ── Title ────────────────────────────────────────────────────────────
 
-
 /**
  * OOXML's `<a:bodyPr rot="N"/>` attribute is in 60000ths of a degree —
  * the writer holds `titleRotation` in whole degrees and converts at
@@ -436,7 +432,6 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
 const TITLE_ROT_PER_DEGREE = TXPR_ROT_PER_DEGREE;
 const TITLE_ROTATION_MIN_DEG = ROTATION_MIN_DEG;
 const TITLE_ROTATION_MAX_DEG = ROTATION_MAX_DEG;
-
 
 /**
  * OOXML's `<a:defRPr sz="N"/>` / `<a:rPr sz="N"/>` attribute is in
@@ -464,9 +459,7 @@ const TITLE_FONT_SIZE_MAX_PT = FONT_SIZE_MAX_PT;
  */
 const TITLE_DEFAULT_FONT_SIZE_SZ = 1400;
 
-
 // ── Plot Area ────────────────────────────────────────────────────────
-
 
 /**
  * Build the optional `<c:spPr>` block at the tail of `<c:chartSpace>`
@@ -581,7 +574,6 @@ function normalizeChartSpaceBorderColor(value: string | undefined): string | und
 
 // ── Data Table ───────────────────────────────────────────────────────
 
-
 // ── Protection ───────────────────────────────────────────────────────
 
 /**
@@ -674,20 +666,13 @@ function buildProtection(protection: {
 
 // ── 3-D View ─────────────────────────────────────────────────────────
 
-
 // ── Bar / Column ─────────────────────────────────────────────────────
-
 
 // ── Line ─────────────────────────────────────────────────────────────
 
-
 // ── Area ─────────────────────────────────────────────────────────────
 
-
 // ── Pie ──────────────────────────────────────────────────────────────
-
-
-
 
 // ── Display Blanks As ────────────────────────────────────────────────
 
@@ -848,7 +833,6 @@ function resolveLang(chart: SheetChart): string | undefined {
   if (!/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(raw)) return undefined;
   return raw;
 }
-
 
 // ── Reference qualification ──────────────────────────────────────────
 

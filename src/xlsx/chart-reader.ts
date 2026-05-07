@@ -882,7 +882,6 @@ export function parseChart(xml: string): Chart | undefined {
 
 // ── Axes ──────────────────────────────────────────────────────────
 
-
 /**
  * Pull a finite numeric `val=".."` attribute off a named child of
  * `parent`. Tolerates whitespace and trailing zeros; returns
@@ -909,9 +908,7 @@ function parseBoolAttr(value: unknown): boolean | undefined {
   return undefined;
 }
 
-
 // ── Series ────────────────────────────────────────────────────────
-
 
 // ── Marker ────────────────────────────────────────────────────────
 
@@ -928,7 +925,6 @@ const VALID_MARKER_SYMBOLS: ReadonlySet<ChartMarkerSymbol> = new Set([
   "dash",
   "plus",
 ]);
-
 
 // ── Data Labels ───────────────────────────────────────────────────
 
@@ -981,9 +977,7 @@ function formulaText(wrapper: XmlElement | undefined): string | undefined {
 // using the same generic primitives without duplicating the OOXML
 // schema knowledge across reader / writer / clone.
 
-
 // ── Legend ────────────────────────────────────────────────────────
-
 
 /**
  * Pull `<c:chartSpace><c:spPr><a:solidFill><a:srgbClr val=".."/>
@@ -1063,7 +1057,6 @@ function parseChartSpaceBorderColor(chartSpace: XmlElement): string | undefined 
 // every per-host `parseXxxLayout` wrapper shares one accept-or-drop
 // grammar.
 
-
 /**
  * Conversion factor between OOXML's `rot` attribute (60000ths of a
  * degree, the integer Excel writes inside `<a:bodyPr rot="N"/>`) and
@@ -1074,7 +1067,6 @@ function parseChartSpaceBorderColor(chartSpace: XmlElement): string | undefined 
 const TITLE_ROT_PER_DEGREE = 60000;
 const TITLE_ROTATION_MIN_DEG = -90;
 const TITLE_ROTATION_MAX_DEG = 90;
-
 
 /**
  * Conversion factor between OOXML's `sz` attribute (100ths of a point,
@@ -1090,12 +1082,9 @@ const TITLE_FONT_SZ_PER_POINT = 100;
 const TITLE_FONT_SIZE_MIN_PT = 1;
 const TITLE_FONT_SIZE_MAX_PT = 400;
 
-
 // ── Title Italic ─────────────────────────────────────────────────────
 
-
 // ── Title Color ─────────────────────────────────────────────────────
-
 
 // `normalizeRgbHex` now lives in `./chart/shape.ts` and is imported at
 // the top of this module so every host-specific helper (title, axis
@@ -1104,15 +1093,11 @@ const TITLE_FONT_SIZE_MAX_PT = 400;
 
 // ── Title Strike ────────────────────────────────────────────────────
 
-
 // ── Title Underline ─────────────────────────────────────────────────
-
 
 // ── Title Font Family ───────────────────────────────────────────────
 
-
 // ── Auto Title Deleted ────────────────────────────────────────────
-
 
 // ── Display Blanks As ─────────────────────────────────────────────
 
@@ -1363,7 +1348,6 @@ function parseDate1904(chartSpace: XmlElement): boolean | undefined {
 
 // ── Data Table ─────────────────────────────────────────────────────
 
-
 // ── Protection ────────────────────────────────────────────────────
 
 /**
@@ -1430,29 +1414,21 @@ function parseProtectionFlag(protection: XmlElement, local: string): boolean | u
 
 // ── 3-D View ──────────────────────────────────────────────────────
 
-
 // ── Floor Thickness ───────────────────────────────────────────────
-
 
 // ── Side Wall Thickness ───────────────────────────────────────────
 
-
 // ── Back Wall Thickness ───────────────────────────────────────────
-
 
 // ── Vary Colors ────────────────────────────────────────────────────
 
 // ── Bar Grouping ──────────────────────────────────────────────────
 
-
 // ── Doughnut Hole ─────────────────────────────────────────────────
-
 
 // ── Bar / Column gap width & overlap ──────────────────────────────
 
-
 // ── First Slice Angle ─────────────────────────────────────────────
-
 
 /**
  * Parse an OOXML boolean attribute. The spec allows `"1"` / `"0"` /
@@ -1466,7 +1442,6 @@ function readBoolVal(raw: string | undefined): boolean | undefined {
 }
 
 // ── Internals ─────────────────────────────────────────────────────
-
 
 function collectTextRuns(el: XmlElement, out: string[]): void {
   for (const child of el.children) {

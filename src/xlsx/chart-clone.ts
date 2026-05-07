@@ -2309,7 +2309,10 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // for the writer to populate. The override wins over the source's
   // parsed value; absence inherits, `null` drops, a `boolean` replaces.
   if (legend !== false) {
-    const resolvedLegendOverlay = resolveCloneLegendOverlay(source.legendOverlay, options.legendOverlay);
+    const resolvedLegendOverlay = resolveCloneLegendOverlay(
+      source.legendOverlay,
+      options.legendOverlay,
+    );
     if (resolvedLegendOverlay !== undefined) out.legendOverlay = resolvedLegendOverlay;
 
     // `<c:legendEntry>` lives inside `<c:legend>`, so the same hidden /
@@ -2318,7 +2321,10 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // `undefined` inherits the parsed value, `null` drops it (the writer
     // emits no `<c:legendEntry>` children), a `ChartLegendEntry[]`
     // replaces it outright.
-    const resolvedLegendEntries = resolveCloneLegendEntries(source.legendEntries, options.legendEntries);
+    const resolvedLegendEntries = resolveCloneLegendEntries(
+      source.legendEntries,
+      options.legendEntries,
+    );
     if (resolvedLegendEntries !== undefined) out.legendEntries = resolvedLegendEntries;
 
     // `<c:txPr>` only renders inside `<c:legend>`, so the same hidden /
@@ -2346,7 +2352,10 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // Same hidden-legend scoping for the italic flag: `undefined`
     // inherits (after the boolean normalizer), `null` drops, a
     // `boolean` replaces.
-    const resolvedLegendItalic = resolveCloneLegendItalic(source.legendItalic, options.legendItalic);
+    const resolvedLegendItalic = resolveCloneLegendItalic(
+      source.legendItalic,
+      options.legendItalic,
+    );
     if (resolvedLegendItalic !== undefined) out.legendItalic = resolvedLegendItalic;
 
     // Same hidden-legend scoping for the underline flag.
@@ -2394,7 +2403,10 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // `ChartManualLayout` replaces it. An override whose every
     // coordinate dropped on normalization collapses the entire layout
     // to `undefined` so the writer skips the `<c:layout>` block.
-    const resolvedLegendLayout = resolveCloneLegendLayout(source.legendLayout, options.legendLayout);
+    const resolvedLegendLayout = resolveCloneLegendLayout(
+      source.legendLayout,
+      options.legendLayout,
+    );
     if (resolvedLegendLayout !== undefined) out.legendLayout = resolvedLegendLayout;
 
     // Same hidden-legend scoping for the background fill — `<c:spPr>`
@@ -2709,7 +2721,10 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // replaces. Mirrors the legendOverlay scoping rule.
   const titleRendered = (out.showTitle ?? Boolean(out.title)) && out.title !== undefined;
   if (titleRendered) {
-    const resolvedTitleOverlay = resolveCloneTitleOverlay(source.titleOverlay, options.titleOverlay);
+    const resolvedTitleOverlay = resolveCloneTitleOverlay(
+      source.titleOverlay,
+      options.titleOverlay,
+    );
     if (resolvedTitleOverlay !== undefined) out.titleOverlay = resolvedTitleOverlay;
 
     // `titleRotation` only renders inside `<c:title>` — a clone that
@@ -2719,7 +2734,10 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // a `number` replaces. Out-of-range / non-finite / non-numeric
     // overrides collapse via the writer's normalizer so the cloned
     // `SheetChart` always carries a value the writer will accept.
-    const resolvedTitleRotation = resolveCloneTitleRotation(source.titleRotation, options.titleRotation);
+    const resolvedTitleRotation = resolveCloneTitleRotation(
+      source.titleRotation,
+      options.titleRotation,
+    );
     if (resolvedTitleRotation !== undefined) out.titleRotation = resolvedTitleRotation;
 
     // `titleFontSize` only renders inside `<c:title>` — a clone that
@@ -2731,7 +2749,10 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // exposes) / non-finite / non-numeric overrides collapse via the
     // normalizer so the cloned `SheetChart` always carries a value the
     // writer will accept.
-    const resolvedTitleFontSize = resolveCloneTitleFontSize(source.titleFontSize, options.titleFontSize);
+    const resolvedTitleFontSize = resolveCloneTitleFontSize(
+      source.titleFontSize,
+      options.titleFontSize,
+    );
     if (resolvedTitleFontSize !== undefined) out.titleFontSize = resolvedTitleFontSize;
 
     // `titleBold` only renders inside `<c:title>` — a clone that
@@ -3025,7 +3046,10 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // to line / column does not leak the preset into a chart kind whose
   // schema rejects it. Override wins over the source's parsed value.
   if (type === "scatter") {
-    const resolvedScatterStyle = resolveCloneScatterStyle(source.scatterStyle, options.scatterStyle);
+    const resolvedScatterStyle = resolveCloneScatterStyle(
+      source.scatterStyle,
+      options.scatterStyle,
+    );
     if (resolvedScatterStyle !== undefined) out.scatterStyle = resolvedScatterStyle;
   }
 
@@ -3151,9 +3175,7 @@ function resolveTitle(
   return override;
 }
 
-
 // `normalizeBorderWidthPt` (aliased to the shared `clampStrokeWidthPt`)
 // and `normalizeBorderDash` now live in `./chart/shape.ts`. Imported at
 // the top of this module so every chart-frame slot the clone surface
 // exposes shares one EMU encoding and one accept-or-drop dash grammar.
-

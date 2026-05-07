@@ -34,10 +34,7 @@ import {
 } from "./shape";
 import { childElements, elementText, findChild, parseBoolAttr, readBoolAttr } from "./util";
 import { FONT_SIZE_MAX_PT, FONT_SIZE_MIN_PT, FONT_SZ_PER_POINT } from "./text";
-import {
-  normalizeTitleColor,
-  normalizeTitleFontSize,
-} from "./title";
+import { normalizeTitleColor, normalizeTitleFontSize } from "./title";
 import type { SheetChart } from "../../_types";
 
 const TITLE_FONT_SZ_PER_POINT = FONT_SZ_PER_POINT;
@@ -609,7 +606,6 @@ export function parseDataLabelsNumberFormat(el: XmlElement): ChartAxisNumberForm
   return out;
 }
 
-
 // ── Writer ────────────────────────────────────────────────────────
 
 /**
@@ -1152,7 +1148,6 @@ export function buildDataLabelsTxPr(
     ]),
   ]);
 }
-
 
 // ── Clone resolvers (3-arg source/override) ───────────────────────
 

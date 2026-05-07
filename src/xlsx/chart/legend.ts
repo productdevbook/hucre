@@ -646,7 +646,6 @@ export function parseLegendBorderDash(chartEl: XmlElement): ChartBorderDash | un
   return parseBorderDashFromSpPr(legend);
 }
 
-
 // ── Writer ────────────────────────────────────────────────────────
 
 export function resolveLegendPosition(chart: SheetChart): LegendPos | null {
@@ -1291,7 +1290,6 @@ export function resolveLegendBorderDash(chart: SheetChart): ChartBorderDash | un
   return normalizeBorderDash(chart.legendBorderDash);
 }
 
-
 // ── Clone normalizers ─────────────────────────────────────────────
 
 /**
@@ -1386,7 +1384,6 @@ export function normalizeLegendBorderWidth(value: number | undefined): number | 
   if (snapped > LEGEND_BORDER_WIDTH_MAX_PT) return LEGEND_BORDER_WIDTH_MAX_PT;
   return snapped;
 }
-
 
 // ── Clone resolvers (3-arg source/override) ───────────────────────
 

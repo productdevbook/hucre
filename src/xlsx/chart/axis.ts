@@ -2145,7 +2145,6 @@ export function parseAutoTitleDeleted(chartEl: XmlElement): boolean | undefined 
   }
 }
 
-
 // ── Writer-side axis types and constants ──────────────────────────
 
 export interface AxisRenderOptions {
@@ -2747,7 +2746,6 @@ const TICK_LBL_POS_VALUES: ReadonlySet<ChartAxisTickLabelPosition> = new Set([
   "none",
 ]);
 
-
 // ── Writer ────────────────────────────────────────────────────────
 
 /**
@@ -2818,7 +2816,9 @@ export function normalizeAxisGridlines(
  * before the optional `<c:title>`. Excel's strict-validator rejects
  * any other position.
  */
-export function buildAxisGridlines(gridlines: { major: boolean; minor: boolean } | undefined): string[] {
+export function buildAxisGridlines(
+  gridlines: { major: boolean; minor: boolean } | undefined,
+): string[] {
   if (!gridlines) return [];
   const out: string[] = [];
   if (gridlines.major) out.push(xmlElement("c:majorGridlines", undefined, []));
@@ -3331,7 +3331,10 @@ export function buildAxisScalingExtras(scale: ChartAxisScale | undefined): {
  * `"minMax"` (the OOXML default) for a forward axis, `"maxMin"` when
  * the caller pinned `reverse: true` to flip the plotting order.
  */
-export function buildAxisScaling(scale: ChartAxisScale | undefined, reverse: boolean = false): string {
+export function buildAxisScaling(
+  scale: ChartAxisScale | undefined,
+  reverse: boolean = false,
+): string {
   const { before, after } = buildAxisScalingExtras(scale);
   const children: string[] = [
     ...before,
@@ -3480,7 +3483,9 @@ export function buildAxisNumFmt(numFmt: ChartAxisNumberFormat | undefined): stri
  * inputs collapse to `undefined` so the writer never emits a value the
  * OOXML `ST_TickMark` enum rejects.
  */
-export function normalizeTickMark(value: ChartAxisTickMark | undefined): ChartAxisTickMark | undefined {
+export function normalizeTickMark(
+  value: ChartAxisTickMark | undefined,
+): ChartAxisTickMark | undefined {
   if (value === undefined) return undefined;
   return TICK_MARK_VALUES.has(value) ? value : undefined;
 }
@@ -4210,7 +4215,6 @@ export function normalizeAxisTitleFontFamily(value: string | undefined): string 
   return trimmed;
 }
 
-
 // ── Clone-side axis constants ─────────────────────────────────────
 
 /** Recognized values of `<c:majorTickMark>` / `<c:minorTickMark>` (clone-side). */
@@ -4265,7 +4269,6 @@ const VALID_CROSS_BETWEEN_VALUES: ReadonlySet<ChartAxisCrossBetween> = new Set([
   "between",
   "midCat",
 ]);
-
 
 // ── Clone ─────────────────────────────────────────────────────────
 
