@@ -565,6 +565,17 @@ export function parseChart(xml: string): Chart | undefined {
   const floorThickness = parseFloorThickness(chartEl);
   if (floorThickness !== undefined) out.floorThickness = floorThickness;
 
+  // `<c:backWall>` (CT_Surface, ECMA-376 Part 1, §21.2.2.31) sits on
+  // `<c:chart>` between `<c:sideWall>` and `<c:plotArea>` per CT_Chart.
+  // Like `<c:floor>`, the reader surfaces only the `<c:thickness>`
+  // child here — `<c:spPr>` / `<c:pictureOptions>` / `<c:extLst>`
+  // styling on the back-wall block is not modelled at this layer. The
+  // schema accepts `<c:backWall>` on every CT_Chart even though it is
+  // only meaningful on 3D families, so a stray element on a 2D chart
+  // still surfaces the value for round-trip parity.
+  const backWallThickness = parseBackWallThickness(chartEl);
+  if (backWallThickness !== undefined) out.backWallThickness = backWallThickness;
+
   return out;
 }
 
@@ -4991,6 +5002,56 @@ function parseFloorThickness(chartEl: XmlElement): number | undefined {
   if (n === 0) return undefined;
   // Cap at Excel's UI band ceiling (`100`) — the OOXML schema accepts
   // the full `xsd:unsignedInt` range but Excel's "Format Floor"
+  // dialogue rejects values above 100 with a repair warning. Anything
+  // larger drops here so a corrupt template does not silently rewrite
+  // as an absurd thickness; absence keeps the round-trip stable.
+  if (n > 100) return undefined;
+  return n;
+}
+
+// ── Back Wall Thickness ───────────────────────────────────────────
+
+/**
+ * Pull `<c:chart><c:backWall><c:thickness val=".."/></c:backWall>` off
+ * `<c:chart>`. The `<c:backWall>` element (CT_Surface, ECMA-376 Part 1,
+ * §21.2.2.31) sits on `<c:chart>` between `<c:sideWall>` and
+ * `<c:plotArea>` per CT_Chart and carries an optional `<c:thickness>`
+ * child whose `val` attribute is an `xsd:unsignedInt` — Excel's
+ * "Format Back Wall -> Back Wall -> Thickness" pin on 3D chart families.
+ *
+ * Returns the integer pinned by the source chart. The OOXML default
+ * `0` (and absence of the `<c:thickness>` child or the parent
+ * `<c:backWall>` element) collapses to `undefined` so absence and the
+ * default round-trip identically through {@link cloneChart} — only an
+ * explicit positive thickness surfaces here. Out-of-range or
+ * unparseable values also drop to `undefined` rather than fabricate a
+ * value the file did not declare.
+ *
+ * The `<c:thickness>` element only carries the `val` attribute on
+ * `CT_Thickness` — other back-wall styling (`<c:spPr>`,
+ * `<c:pictureOptions>`, `<c:extLst>`) is not modelled at this layer,
+ * so a stray styling block on the back wall passes through the parse
+ * loop without surfacing.
+ */
+function parseBackWallThickness(chartEl: XmlElement): number | undefined {
+  const backWall = findChild(chartEl, "backWall");
+  if (!backWall) return undefined;
+  const thickness = findChild(backWall, "thickness");
+  if (!thickness) return undefined;
+  const raw = thickness.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  // ST_Thickness is `xsd:unsignedInt` — strict integer regex rejects
+  // fractional / negative / non-numeric tokens.
+  if (!/^\d+$/.test(raw)) return undefined;
+  const n = Number(raw);
+  if (!Number.isInteger(n)) return undefined;
+  // Collapse the OOXML default `0` to undefined so absence and the
+  // default round-trip identically through cloneChart — only an
+  // explicit positive thickness surfaces here. Mirrors how the writer
+  // skips emission entirely for `0` / undefined.
+  if (n === 0) return undefined;
+  // Cap at Excel's UI band ceiling (`100`) — the OOXML schema accepts
+  // the full `xsd:unsignedInt` range but Excel's "Format Back Wall"
   // dialogue rejects values above 100 with a repair warning. Anything
   // larger drops here so a corrupt template does not silently rewrite
   // as an absurd thickness; absence keeps the round-trip stable.

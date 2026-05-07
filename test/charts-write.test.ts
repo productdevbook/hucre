@@ -11447,6 +11447,209 @@ describe("writeChart — floorThickness", () => {
   });
 });
 
+// ── writeChart — back-wall thickness ────────────────────────────────
+
+describe("writeChart — backWallThickness", () => {
+  it("skips <c:backWall> entirely when the field is unset (writer default)", () => {
+    // Excel renders no back-wall extrusion on a fresh chart — the
+    // writer skips the element so the file stays minimal. Absence and
+    // the unset default round-trip identically through cloneChart.
+    const result = writeChart(makeChart(), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:backWall");
+  });
+
+  it('emits <c:backWall><c:thickness val="N"/></c:backWall> when backWallThickness is positive', () => {
+    const result = writeChart(makeChart({ backWallThickness: 25 }), "Sheet1");
+    expect(result.chartXml).toContain("<c:backWall>");
+    expect(result.chartXml).toContain('<c:thickness val="25"/>');
+    expect(result.chartXml).toContain("</c:backWall>");
+  });
+
+  it("emits the boundary value 100 (Excel UI band ceiling)", () => {
+    const result = writeChart(makeChart({ backWallThickness: 100 }), "Sheet1");
+    expect(result.chartXml).toContain('<c:thickness val="100"/>');
+  });
+
+  it("emits the minimum positive value 1", () => {
+    const result = writeChart(makeChart({ backWallThickness: 1 }), "Sheet1");
+    expect(result.chartXml).toContain('<c:thickness val="1"/>');
+  });
+
+  it("skips emission when backWallThickness is 0 (the OOXML default)", () => {
+    // The OOXML default `0` matches absence — drop the element so a
+    // fresh chart matches Excel's reference serialization byte-for-byte.
+    const result = writeChart(makeChart({ backWallThickness: 0 }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:backWall");
+  });
+
+  it("drops out-of-range values (above the Excel UI ceiling 100) rather than emit", () => {
+    // Excel's UI tops out at 100 — values above the band drop here so
+    // a fresh chart never emits a token Excel's repair dialog would
+    // flag. Mirrors how buildFloorThickness / clampView3DInt /
+    // clampHoleSize handle out-of-range numeric inputs.
+    const result = writeChart(makeChart({ backWallThickness: 500 }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:backWall");
+  });
+
+  it("drops negative values (ST_Thickness is xsd:unsignedInt)", () => {
+    const result = writeChart(makeChart({ backWallThickness: -10 }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:backWall");
+  });
+
+  it("drops fractional values rather than truncate", () => {
+    // ST_Thickness is `xsd:unsignedInt` — a fractional input drops
+    // rather than silently truncate. Mirrors clampView3DInt's strict
+    // integer check.
+    const result = writeChart(makeChart({ backWallThickness: 25.5 }), "Sheet1");
+    expect(result.chartXml).not.toContain("<c:backWall");
+  });
+
+  it("drops non-finite values (NaN, Infinity, -Infinity)", () => {
+    expect(
+      writeChart(makeChart({ backWallThickness: Number.NaN }), "Sheet1").chartXml,
+    ).not.toContain("<c:backWall");
+    expect(
+      writeChart(makeChart({ backWallThickness: Number.POSITIVE_INFINITY }), "Sheet1").chartXml,
+    ).not.toContain("<c:backWall");
+    expect(
+      writeChart(makeChart({ backWallThickness: Number.NEGATIVE_INFINITY }), "Sheet1").chartXml,
+    ).not.toContain("<c:backWall");
+  });
+
+  it("drops a non-number backWallThickness rather than emit invalid token", () => {
+    // A non-number leaking through the type guard drops the element —
+    // mirrors how every other chart-level numeric writer treats its
+    // input.
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ backWallThickness: "25" as any }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:backWall");
+  });
+
+  it("places <c:backWall> after <c:floor> and before <c:plotArea> per CT_Chart", () => {
+    // CT_Chart sequence (ECMA-376 Part 1, §21.2.2.4):
+    //   title?, autoTitleDeleted?, pivotFmts?, view3D?, floor?,
+    //   sideWall?, backWall?, plotArea, ...
+    const result = writeChart(
+      makeChart({ view3D: { rotX: 15 }, floorThickness: 25, backWallThickness: 30 }),
+      "Sheet1",
+    );
+    const view3DIdx = result.chartXml.indexOf("<c:view3D");
+    const floorIdx = result.chartXml.indexOf("<c:floor");
+    const backWallIdx = result.chartXml.indexOf("<c:backWall");
+    const plotAreaIdx = result.chartXml.indexOf("<c:plotArea>");
+    expect(view3DIdx).toBeGreaterThan(-1);
+    expect(floorIdx).toBeGreaterThan(view3DIdx);
+    expect(backWallIdx).toBeGreaterThan(floorIdx);
+    expect(backWallIdx).toBeLessThan(plotAreaIdx);
+  });
+
+  it("places <c:backWall> after <c:autoTitleDeleted> when <c:view3D> / <c:floor> are absent", () => {
+    // With no view3D / floor pinned, <c:backWall> still slots between
+    // <c:autoTitleDeleted> and <c:plotArea> per CT_Chart.
+    const result = writeChart(makeChart({ backWallThickness: 30 }), "Sheet1");
+    const autoIdx = result.chartXml.indexOf("<c:autoTitleDeleted");
+    const backWallIdx = result.chartXml.indexOf("<c:backWall");
+    const plotAreaIdx = result.chartXml.indexOf("<c:plotArea>");
+    expect(autoIdx).toBeGreaterThan(-1);
+    expect(backWallIdx).toBeGreaterThan(autoIdx);
+    expect(backWallIdx).toBeLessThan(plotAreaIdx);
+  });
+
+  it("only emits <c:backWall> once on a chart that pins it", () => {
+    // Guard against any regression that would double-emit the element.
+    const result = writeChart(makeChart({ backWallThickness: 25 }), "Sheet1");
+    const occurrences = result.chartXml.match(/<c:backWall[\s/>]/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads backWallThickness through every chart family (the schema accepts it on every CT_Chart)", () => {
+    // <c:backWall> is only meaningful on 3D families but the OOXML
+    // schema accepts it on every CT_Chart. The writer emits it on
+    // every family the caller pins it on — Excel silently ignores it
+    // on 2D families.
+    for (const type of ["bar", "column", "line", "area"] as const) {
+      const result = writeChart(makeChart({ type, backWallThickness: 20 }), "Sheet1");
+      expect(result.chartXml).toContain('<c:thickness val="20"/>');
+    }
+    for (const type of ["pie", "doughnut"] as const) {
+      const result = writeChart(
+        {
+          type,
+          series: [{ values: "B2:B4", categories: "A2:A4" }],
+          anchor: { from: { row: 5, col: 0 } },
+          backWallThickness: 20,
+        },
+        "Sheet1",
+      );
+      expect(result.chartXml).toContain('<c:thickness val="20"/>');
+    }
+    const scatter = writeChart(
+      {
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        anchor: { from: { row: 5, col: 0 } },
+        backWallThickness: 20,
+      },
+      "Sheet1",
+    );
+    expect(scatter.chartXml).toContain('<c:thickness val="20"/>');
+  });
+
+  it("round-trips a positive backWallThickness through parseChart", () => {
+    const written = writeChart(makeChart({ backWallThickness: 35 }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.backWallThickness).toBe(35);
+  });
+
+  it("round-trips backWallThickness independently of view3D and floorThickness", () => {
+    // All three knobs sit on <c:chart> as independent siblings — one
+    // should not leak into the others through the writer / reader pair.
+    const written = writeChart(
+      makeChart({
+        view3D: { rotX: 15, rotY: 20 },
+        floorThickness: 30,
+        backWallThickness: 40,
+      }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.view3D).toEqual({ rotX: 15, rotY: 20 });
+    expect(reparsed?.floorThickness).toBe(30);
+    expect(reparsed?.backWallThickness).toBe(40);
+  });
+
+  it("threads backWallThickness through writeXlsx into xl/charts/chart1.xml", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Back Wall Test",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            backWallThickness: 50,
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    expect(chartXml).toContain("<c:backWall>");
+    expect(chartXml).toContain('<c:thickness val="50"/>');
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.backWallThickness).toBe(50);
+  });
+});
+
 // ── writeChart — axis label rotation ────────────────────────────────
 
 describe("writeChart — axis labelRotation", () => {

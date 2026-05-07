@@ -12643,6 +12643,250 @@ describe("cloneChart — floorThickness", () => {
   });
 });
 
+// ── cloneChart — back-wall thickness ────────────────────────────────
+
+describe("cloneChart — backWallThickness", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's backWallThickness by default", () => {
+    const clone = cloneChart(source({ backWallThickness: 25 }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.backWallThickness).toBe(25);
+  });
+
+  it("lets options.backWallThickness replace the inherited value", () => {
+    const clone = cloneChart(source({ backWallThickness: 25 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      backWallThickness: 50,
+    });
+    expect(clone.backWallThickness).toBe(50);
+  });
+
+  it("drops the inherited backWallThickness when the override is null", () => {
+    // null collapses to absence — the cloned SheetChart drops the
+    // field so the writer skips <c:backWall> entirely on emit. Mirrors
+    // resolveFloorThickness / resolveUpDownBarsGapWidth /
+    // resolveView3D's null grammar.
+    const clone = cloneChart(source({ backWallThickness: 25 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      backWallThickness: null,
+    });
+    expect(clone.backWallThickness).toBeUndefined();
+  });
+
+  it("returns undefined backWallThickness when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.backWallThickness).toBeUndefined();
+  });
+
+  it("carries backWallThickness through a flatten (line → column)", () => {
+    // <c:backWall> lives on <c:chart>, so a chart-type coercion
+    // preserves the pinned value — the element has no axis dependency.
+    const clone = cloneChart(source({ backWallThickness: 35 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.backWallThickness).toBe(35);
+  });
+
+  it("preserves backWallThickness when flattening into a doughnut clone", () => {
+    // Unlike <c:dTable>, <c:backWall> has no axis dependency — it
+    // lives on <c:chart> so pie / doughnut still carry the slot.
+    const clone = cloneChart(source({ backWallThickness: 20 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.backWallThickness).toBe(20);
+  });
+
+  it("preserves backWallThickness when flattening into a pie clone", () => {
+    const clone = cloneChart(source({ backWallThickness: 40 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "pie",
+    });
+    expect(clone.type).toBe("pie");
+    expect(clone.backWallThickness).toBe(40);
+  });
+
+  it("composes independently with view3D and floorThickness (all sit on <c:chart>)", () => {
+    // All three knobs land on <c:chart> directly as independent
+    // siblings — overrides of one should not leak into the others
+    // through the resolver pair.
+    const clone = cloneChart(
+      source({
+        view3D: { rotX: 15, rotY: 20 },
+        floorThickness: 30,
+        backWallThickness: 40,
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+      },
+    );
+    expect(clone.view3D).toEqual({ rotX: 15, rotY: 20 });
+    expect(clone.floorThickness).toBe(30);
+    expect(clone.backWallThickness).toBe(40);
+  });
+
+  it("override does not leak into view3D / floorThickness when fields are pinned independently", () => {
+    // The view3D / floorThickness / backWallThickness resolvers are
+    // independent. Overriding one should not affect the others.
+    const clone = cloneChart(
+      source({
+        view3D: { rotX: 15 },
+        floorThickness: 25,
+        backWallThickness: 30,
+      }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        backWallThickness: 60,
+      },
+    );
+    expect(clone.view3D).toEqual({ rotX: 15 });
+    expect(clone.floorThickness).toBe(25);
+    expect(clone.backWallThickness).toBe(60);
+  });
+
+  it("propagates backWallThickness into the rendered <c:backWall> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ backWallThickness: 45 }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:backWall>");
+    expect(written).toContain('<c:thickness val="45"/>');
+
+    // Re-parsing the rendered chart returns the same value — closes
+    // the template → clone → write → read loop.
+    const reparsed = parseChart(written);
+    expect(reparsed?.backWallThickness).toBe(45);
+  });
+
+  it("propagates the override-drop (null) into absence on roundtrip", async () => {
+    // null on the override drops the inherited value so the writer
+    // skips the element entirely — Excel falls back to no extrusion.
+    // The round-trip closes with no <c:backWall> present in the
+    // rendered file.
+    const clone = cloneChart(source({ backWallThickness: 25 }), {
+      anchor: { from: { row: 5, col: 0 } },
+      backWallThickness: null,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Q", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).not.toContain("<c:backWall");
+    expect(parseChart(written)?.backWallThickness).toBeUndefined();
+  });
+
+  it("override-replace into a positive value emits the new <c:thickness val>", async () => {
+    // The override replaces the inherited value — the writer emits the
+    // override at the canonical slot.
+    const clone = cloneChart(source({ backWallThickness: 10 }), {
+      anchor: { from: { row: 5, col: 0 } },
+      backWallThickness: 75,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Q", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('<c:thickness val="75"/>');
+    expect(written).not.toContain('<c:thickness val="10"/>');
+    expect(parseChart(written)?.backWallThickness).toBe(75);
+  });
+
+  it("composes independently with view3D and floorThickness on the writeXlsx roundtrip", async () => {
+    // All three knobs sit on <c:chart>; the round-trip preserves all
+    // three independently.
+    const clone = cloneChart(
+      source({
+        view3D: { rotX: 20, rotY: 30 },
+        floorThickness: 35,
+        backWallThickness: 50,
+      }),
+      {
+        anchor: { from: { row: 5, col: 0 } },
+      },
+    );
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["Q", "Revenue"],
+            ["Q1", 100],
+            ["Q2", 200],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('<c:rotX val="20"/>');
+    expect(written).toContain('<c:rotY val="30"/>');
+    expect(written).toContain('<c:thickness val="35"/>');
+    expect(written).toContain('<c:thickness val="50"/>');
+    const reparsed = parseChart(written);
+    expect(reparsed?.view3D).toEqual({ rotX: 20, rotY: 30 });
+    expect(reparsed?.floorThickness).toBe(35);
+    expect(reparsed?.backWallThickness).toBe(50);
+  });
+});
+
 // ── cloneChart — axis label rotation ───────────────────────────────
 
 describe("cloneChart — axis labelRotation", () => {

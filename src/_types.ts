@@ -2783,6 +2783,38 @@ export interface SheetChart {
    */
   floorThickness?: number;
   /**
+   * 3-D back-wall thickness, in points. Maps to
+   * `<c:chart><c:backWall><c:thickness val="N"/></c:backWall>` —
+   * Excel's "Format Back Wall -> Back Wall" pane (the `<c:thickness>`
+   * child of `CT_Surface`, ECMA-376 Part 1, §21.2.2.214). Excel renders
+   * the back wall as a flat plate behind the plot area on 3D chart
+   * families; pinning a positive value extrudes the plate to that depth
+   * so the wall reads as a solid slab. Default: omitted — Excel renders
+   * no `<c:backWall>` element on a fresh chart and the per-family
+   * back-wall default (no extrusion) applies.
+   *
+   * The OOXML schema (`ST_Thickness`, `xsd:unsignedInt`) accepts any
+   * non-negative integer; Excel's UI exposes `0..100` under
+   * "Format Back Wall -> Back Wall -> Thickness". Out-of-range or
+   * non-finite inputs drop at write time rather than emit a token
+   * Excel's strict validator would reject. The OOXML default `0`
+   * collapses to `undefined` for symmetry with the writer's
+   * {@link SheetChart.backWallThickness} default — absence and `0` mean
+   * the same thing on roundtrip.
+   *
+   * Although `<c:backWall>` is only meaningful on 3D chart families
+   * (`bar3D`, `line3D`, `pie3D`, `area3D`, `surface3D`) and hucre's
+   * writer authors only 2D families, the OOXML schema accepts the
+   * element on every CT_Chart, so the writer pins it whenever the
+   * caller provides a positive thickness — Excel silently ignores it
+   * on 2D families. Useful primarily for round-tripping a 3D template
+   * chart through {@link cloneChart}. The element sits on `<c:chart>`
+   * between `<c:sideWall>` and `<c:plotArea>` per CT_Chart — `<c:floor>`
+   * /  `<c:sideWall>` / `<c:backWall>` are independent siblings on
+   * `<c:chart>`.
+   */
+  backWallThickness?: number;
+  /**
    * Per-axis configuration rendered alongside the plot area. The `x`
    * axis is the category axis for bar/column/line/area (or the bottom
    * value axis for scatter); the `y` axis is the value axis. Ignored
@@ -7011,6 +7043,29 @@ export interface Chart {
    * lossless.
    */
   floorThickness?: number;
+  /**
+   * 3-D back-wall thickness pulled from
+   * `<c:chart><c:backWall><c:thickness val="N"/></c:backWall>` (the
+   * `<c:thickness>` child of `CT_Surface`, ECMA-376 Part 1, §21.2.2.214).
+   * Reflects Excel's "Format Back Wall -> Back Wall -> Thickness" pin
+   * on 3D chart families.
+   *
+   * Surfaces the integer pinned by the source chart. The OOXML default
+   * `0` (and absence of the element) collapses to `undefined` so absence
+   * and the default round-trip identically through {@link cloneChart} —
+   * only an explicit positive thickness surfaces here. Out-of-range or
+   * unparseable values also drop to `undefined` rather than fabricate a
+   * value the file did not declare.
+   *
+   * The element lives on `<c:chart>` between `<c:sideWall>` and
+   * `<c:plotArea>` per CT_Chart, so the OOXML schema accepts it on every
+   * chart family — though it is only meaningful on 3D families (`bar3D`,
+   * `line3D`, `pie3D`, `area3D`, `surface3D`); a stray element on a 2D
+   * chart still surfaces here so the round-trip through
+   * {@link cloneChart} stays lossless. `<c:floor>` / `<c:sideWall>` /
+   * `<c:backWall>` are independent siblings on `<c:chart>`.
+   */
+  backWallThickness?: number;
 }
 
 // ── Workbook ───────────────────────────────────────────────────────

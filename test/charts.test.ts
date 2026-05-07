@@ -12004,6 +12004,300 @@ describe("parseChart — floorThickness", () => {
   });
 });
 
+// ── parseChart — back-wall thickness ──────────────────────────────
+
+describe("parseChart — backWallThickness", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+
+  it("surfaces a positive thickness pinned by <c:backWall><c:thickness>", () => {
+    // Excel's "Format Back Wall -> Back Wall -> Thickness" pane writes
+    // `<c:backWall><c:thickness val="N"/></c:backWall>` when the user
+    // pins a non-zero value. The reader surfaces the integer literally
+    // so a clone can replay the exact extrusion depth.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:backWall>
+      <c:thickness val="25"/>
+    </c:backWall>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.backWallThickness).toBe(25);
+  });
+
+  it("collapses the OOXML default 0 to undefined", () => {
+    // The OOXML default `0` (no extrusion) is the writer's default
+    // shape — absence and `0` round-trip identically. Only an explicit
+    // positive thickness surfaces here.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:backWall>
+      <c:thickness val="0"/>
+    </c:backWall>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.backWallThickness).toBeUndefined();
+  });
+
+  it("surfaces the boundary value 100 (Excel UI band ceiling)", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:backWall>
+      <c:thickness val="100"/>
+    </c:backWall>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.backWallThickness).toBe(100);
+  });
+
+  it("drops out-of-range values rather than fabricate a clamped thickness", () => {
+    // Excel's UI tops out at 100 — a stray value above the band drops
+    // rather than silently rewrite as a different thickness, mirroring
+    // how the other chart-level numeric readers (gapWidth / overlap /
+    // firstSliceAng / view3D children / floor-thickness) handle out-of-
+    // range tokens.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:backWall>
+      <c:thickness val="500"/>
+    </c:backWall>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.backWallThickness).toBeUndefined();
+  });
+
+  it("drops fractional / non-integer values rather than fabricate floats", () => {
+    // ST_Thickness is `xsd:unsignedInt` — `parseInt` would coerce
+    // "25.5" → 25, but Excel never emits the fractional spelling.
+    // Drop the field so a hand-edited file with a fractional `val`
+    // stays unrecognised rather than silently round-trip a value Excel
+    // would not author.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:backWall>
+      <c:thickness val="25.5"/>
+    </c:backWall>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.backWallThickness).toBeUndefined();
+  });
+
+  it("drops negative values (ST_Thickness is xsd:unsignedInt)", () => {
+    // The unsigned simple type rejects a leading `-`.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:backWall>
+      <c:thickness val="-10"/>
+    </c:backWall>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.backWallThickness).toBeUndefined();
+  });
+
+  it("drops a missing val attribute rather than fabricate a value", () => {
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:backWall>
+      <c:thickness/>
+    </c:backWall>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.backWallThickness).toBeUndefined();
+  });
+
+  it("drops non-numeric val tokens rather than coerce", () => {
+    // `parseInt` would coerce "30abc" → 30, but Excel never emits the
+    // mixed spelling. The strict integer regex rejects the token.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:backWall>
+      <c:thickness val="30abc"/>
+    </c:backWall>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.backWallThickness).toBeUndefined();
+  });
+
+  it("returns undefined when <c:backWall> is present but <c:thickness> is missing", () => {
+    // CT_Surface's `<c:thickness>` is optional. A `<c:backWall>` block
+    // with only `<c:spPr>` styling carries no thickness pin.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:backWall>
+      <c:spPr/>
+    </c:backWall>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.backWallThickness).toBeUndefined();
+  });
+
+  it("returns undefined on a bare <c:backWall/> element", () => {
+    // A self-closing element with no children — same minimal-shape
+    // result as a back wall with `<c:spPr>` only.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:backWall/>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.backWallThickness).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:backWall> element", () => {
+    // Absence is the writer's default — Excel renders no back-wall
+    // extrusion on a fresh chart. The reader surfaces nothing so a
+    // fresh chart and a chart that omits the element round-trip
+    // identically through cloneChart.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart><c:plotArea>
+    <c:barChart>
+      <c:barDir val="col"/>
+      <c:ser><c:idx val="0"/></c:ser>
+    </c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.backWallThickness).toBeUndefined();
+  });
+
+  it("surfaces backWallThickness on a 2D chart family (the schema accepts it on every CT_Chart)", () => {
+    // <c:backWall> is only meaningful on 3D families but the OOXML
+    // schema accepts it on every CT_Chart. A stray element on a 2D
+    // chart surfaces here so the round-trip through cloneChart stays
+    // lossless even when the template authors a no-op.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:backWall>
+      <c:thickness val="15"/>
+    </c:backWall>
+    <c:plotArea>
+      <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.backWallThickness).toBe(15);
+  });
+
+  it("surfaces backWallThickness on a pie chart (no axes, but the element lives on <c:chart>)", () => {
+    // <c:backWall> lives on <c:chart>, not inside <c:plotArea>, so
+    // axis-shape has no bearing on whether the slot exists. Pie /
+    // doughnut still carry the element when the file pins it.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:backWall>
+      <c:thickness val="10"/>
+    </c:backWall>
+    <c:plotArea>
+      <c:pieChart>
+        <c:varyColors val="1"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:pieChart>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.backWallThickness).toBe(10);
+  });
+
+  it("co-exists with sibling chart-level toggles (view3D, floor)", () => {
+    // The backWallThickness reader should not interfere with sibling
+    // fields parsed off <c:chart> (autoTitleDeleted / view3D /
+    // floorThickness / plotVisOnly / dispBlanksAs). All three of
+    // <c:floor>, <c:sideWall>, and <c:backWall> are independent
+    // siblings on <c:chart>, so the reader pulls them off
+    // independently.
+    const xml = `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:autoTitleDeleted val="1"/>
+    <c:view3D>
+      <c:rotX val="20"/>
+    </c:view3D>
+    <c:floor>
+      <c:thickness val="30"/>
+    </c:floor>
+    <c:backWall>
+      <c:thickness val="40"/>
+    </c:backWall>
+    <c:plotArea>
+      <c:bar3DChart>
+        <c:barDir val="col"/>
+        <c:ser><c:idx val="0"/></c:ser>
+      </c:bar3DChart>
+    </c:plotArea>
+    <c:plotVisOnly val="0"/>
+    <c:dispBlanksAs val="zero"/>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.autoTitleDeleted).toBe(true);
+    expect(chart?.view3D).toEqual({ rotX: 20 });
+    expect(chart?.floorThickness).toBe(30);
+    expect(chart?.backWallThickness).toBe(40);
+    expect(chart?.plotVisOnly).toBe(false);
+    expect(chart?.dispBlanksAs).toBe("zero");
+  });
+});
+
 // ── parseChart — legend entries ────────────────────────────────────
 
 describe("parseChart — legend entries", () => {
