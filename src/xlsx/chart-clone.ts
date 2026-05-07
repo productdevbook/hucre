@@ -126,6 +126,18 @@ import {
 } from "./chart/plotArea";
 import { resolveCloneDataTable } from "./chart/dataTable";
 import { resolveChartDataLabels, resolveSeriesDataLabels } from "./chart/dataLabels";
+import {
+  resolveCloneChartSpaceBorderColor,
+  resolveCloneChartSpaceFillColor,
+  resolveCloneDate1904,
+  resolveCloneDispBlanksAs,
+  resolveCloneLang,
+  resolveClonePlotVisOnly,
+  resolveCloneProtection,
+  resolveCloneRoundedCorners,
+  resolveCloneShowDLblsOverMax,
+  resolveCloneStyle,
+} from "./chart/chartSpace";
 
 // ── Public API ───────────────────────────────────────────────────────
 
@@ -2542,7 +2554,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // Composes independently with `plotAreaFillColor` — the two knobs
   // land on different host elements (`<c:chartSpace>` for the entire
   // frame, `<c:plotArea>` for the inner band that hosts the series).
-  const resolvedChartSpaceFillColor = resolveChartSpaceFillColor(
+  const resolvedChartSpaceFillColor = resolveCloneChartSpaceFillColor(
     source.chartSpaceFillColor,
     options.chartSpaceFillColor,
   );
@@ -2561,7 +2573,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // the cloned `SheetChart` always carries a value the writer will
   // accept. Composes independently with `chartSpaceFillColor` — the two
   // knobs land on different children of the same `<c:spPr>` block.
-  const resolvedChartSpaceBorderColor = resolveChartSpaceBorderColor(
+  const resolvedChartSpaceBorderColor = resolveCloneChartSpaceBorderColor(
     source.chartSpaceBorderColor,
     options.chartSpaceBorderColor,
   );
@@ -2896,34 +2908,34 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   const resolvedDataLabels = resolveChartDataLabels(source.dataLabels, options.dataLabels);
   if (resolvedDataLabels !== undefined) out.dataLabels = resolvedDataLabels;
 
-  const resolvedDispBlanks = resolveDispBlanksAs(source.dispBlanksAs, options.dispBlanksAs);
+  const resolvedDispBlanks = resolveCloneDispBlanksAs(source.dispBlanksAs, options.dispBlanksAs);
   if (resolvedDispBlanks !== undefined) out.dispBlanksAs = resolvedDispBlanks;
 
   const resolvedVaryColors = resolveCloneVaryColors(source.varyColors, options.varyColors);
   if (resolvedVaryColors !== undefined) out.varyColors = resolvedVaryColors;
 
-  const resolvedPlotVisOnly = resolvePlotVisOnly(source.plotVisOnly, options.plotVisOnly);
+  const resolvedPlotVisOnly = resolveClonePlotVisOnly(source.plotVisOnly, options.plotVisOnly);
   if (resolvedPlotVisOnly !== undefined) out.plotVisOnly = resolvedPlotVisOnly;
 
-  const resolvedShowDLblsOverMax = resolveShowDLblsOverMax(
+  const resolvedShowDLblsOverMax = resolveCloneShowDLblsOverMax(
     source.showDLblsOverMax,
     options.showDLblsOverMax,
   );
   if (resolvedShowDLblsOverMax !== undefined) out.showDLblsOverMax = resolvedShowDLblsOverMax;
 
-  const resolvedRoundedCorners = resolveRoundedCorners(
+  const resolvedRoundedCorners = resolveCloneRoundedCorners(
     source.roundedCorners,
     options.roundedCorners,
   );
   if (resolvedRoundedCorners !== undefined) out.roundedCorners = resolvedRoundedCorners;
 
-  const resolvedStyle = resolveStyle(source.style, options.style);
+  const resolvedStyle = resolveCloneStyle(source.style, options.style);
   if (resolvedStyle !== undefined) out.style = resolvedStyle;
 
-  const resolvedLang = resolveLang(source.lang, options.lang);
+  const resolvedLang = resolveCloneLang(source.lang, options.lang);
   if (resolvedLang !== undefined) out.lang = resolvedLang;
 
-  const resolvedDate1904 = resolveDate1904(source.date1904, options.date1904);
+  const resolvedDate1904 = resolveCloneDate1904(source.date1904, options.date1904);
   if (resolvedDate1904 !== undefined) out.date1904 = resolvedDate1904;
 
   // `<c:dTable>` only renders inside `<c:plotArea>` alongside the axes
@@ -2944,7 +2956,7 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   // value, and the grammar follows the same `object | boolean | null`
   // shape as `dataTable` so the chart-level block toggles compose
   // identically at the call site.
-  const resolvedProtection = resolveProtection(source.protection, options.protection);
+  const resolvedProtection = resolveCloneProtection(source.protection, options.protection);
   if (resolvedProtection !== undefined) out.protection = resolvedProtection;
 
   // `<c:view3D>` lives on `<c:chart>` directly, so the OOXML schema
@@ -3203,353 +3215,6 @@ function mergeSeries(
   return out;
 }
 
-
-/**
- * Resolve a `dispBlanksAs` override.
- *
- * `undefined` → inherit the source's parsed `dispBlanksAs`.
- * `null`      → drop the inherited value (the writer falls back to
- *               the OOXML `"gap"` default).
- * value       → replace.
- *
- * Unknown strings are ignored (treated as `undefined`); only the three
- * OOXML-defined tokens propagate through to the writer.
- */
-function resolveDispBlanksAs(
-  sourceValue: ChartDisplayBlanksAs | undefined,
-  override: ChartDisplayBlanksAs | null | undefined,
-): ChartDisplayBlanksAs | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
-}
-
-
-/**
- * Resolve a `plotVisOnly` override.
- *
- * `undefined` → inherit the source's parsed `plotVisOnly`.
- * `null`      → drop the inherited value (the writer falls back to the
- *               OOXML `true` default — hidden cells drop out of the chart).
- * `boolean`   → replace.
- *
- * The grammar mirrors `dispBlanksAs` / `varyColors` so the chart-level
- * toggles compose the same way at the call site.
- */
-function resolvePlotVisOnly(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
-}
-
-/**
- * Resolve a `showDLblsOverMax` override.
- *
- * `undefined` → inherit the source's parsed `showDLblsOverMax`.
- * `null`      → drop the inherited value (the writer falls back to the
- *               OOXML `true` default — labels render for every point
- *               regardless of the pinned axis ceiling).
- * `boolean`   → replace.
- *
- * The grammar mirrors `plotVisOnly` / `dispBlanksAs` so the chart-level
- * toggles compose the same way at the call site.
- */
-function resolveShowDLblsOverMax(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
-}
-
-/**
- * Resolve a `roundedCorners` override.
- *
- * `undefined` → inherit the source's parsed `roundedCorners`.
- * `null`      → drop the inherited value (the writer falls back to the
- *               OOXML `false` default — square chart frame).
- * `boolean`   → replace.
- *
- * The grammar mirrors `plotVisOnly` / `varyColors` so the chart-frame
- * toggles compose the same way at the call site.
- */
-function resolveRoundedCorners(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
-}
-
-/**
- * Resolve a `style` (built-in chart preset) override.
- *
- * `undefined` → inherit the source's parsed `style`.
- * `null`      → drop the inherited value (the writer skips `<c:style>`
- *               so Excel falls back to its application default look).
- * `number`    → replace. Out-of-range / non-integer values are not
- *               filtered here — the writer's `resolveStyle` performs
- *               the same shape check on emit, so a stray value never
- *               reaches the rendered XML regardless of the path it
- *               took through clone.
- *
- * The grammar mirrors `roundedCorners` / `plotVisOnly` so the chart-
- * frame toggles compose the same way at the call site.
- */
-function resolveStyle(
-  sourceValue: number | undefined,
-  override: number | null | undefined,
-): number | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
-}
-
-/**
- * Resolve a `lang` (chart-space editing-locale hint) override.
- *
- * `undefined` → inherit the source's parsed `lang`.
- * `null`      → drop the inherited value (the writer skips `<c:lang>`
- *               so Excel falls back to the host workbook's editing
- *               language).
- * `string`    → replace. Malformed culture names are not filtered
- *               here — the writer's `resolveLang` performs the same
- *               BCP-47 shape check on emit, so a stray value never
- *               reaches the rendered XML regardless of the path it
- *               took through clone.
- *
- * The grammar mirrors `style` / `roundedCorners` / `plotVisOnly` so
- * the chart-space toggles compose the same way at the call site.
- */
-function resolveLang(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
-}
-
-/**
- * Resolve a `date1904` (chart-space date-system) override.
- *
- * `undefined` → inherit the source's parsed `date1904`.
- * `null`      → drop the inherited value (the writer skips
- *               `<c:date1904>` so Excel falls back to the host
- *               workbook's date system).
- * `boolean`   → replace. `false` collapses to absence on the writer
- *               side because `<c:date1904 val="0"/>` is the OOXML
- *               default and the writer follows the minimal-shape
- *               contract every other chart-space toggle uses.
- *
- * The grammar mirrors `roundedCorners` / `plotVisOnly` so the
- * chart-space toggles compose the same way at the call site. `false`
- * here means "explicitly pin the 1900 base" — but because absence
- * and `val="0"` round-trip identically the resolved value still
- * collapses to `undefined` (the writer would emit nothing either
- * way).
- */
-function resolveDate1904(
-  sourceValue: boolean | undefined,
-  override: boolean | null | undefined,
-): boolean | undefined {
-  const merged = override === undefined ? sourceValue : override === null ? undefined : override;
-  if (merged === true) return true;
-  // `false` and `undefined` both collapse to `undefined` — absence
-  // and the OOXML default `<c:date1904 val="0"/>` round-trip the
-  // same way through parseChart -> cloneChart -> writeChart, so the
-  // resolved chart drops the field rather than carry a value the
-  // writer would skip on emit anyway.
-  return undefined;
-}
-
-
-/**
- * Resolve a `protection` (chart-space protection) override.
- *
- * `undefined` → inherit the source's parsed {@link Chart.protection}.
- * `null`      → drop the inherited block so the writer skips
- *               `<c:protection>` entirely (no chart-level lock).
- * `false`     → equivalent to `null` (suppression); kept distinct in
- *               the API surface so callers can write `protection:
- *               false` for symmetry with the writer's `boolean |
- *               object` shape.
- * `true`      → enable with the OOXML reference defaults (every flag
- *               `false` — the bare `<c:protection>` shell).
- * `object`    → replace the inherited block wholesale (no per-field
- *               merge with the source — pass every flag the cloned
- *               protection should pin). Each unspecified field falls
- *               back to `false` at the writer side because every
- *               `<c:protection>` boolean child is independently
- *               optional and Excel treats a missing child as
- *               `false`.
- *
- * The grammar mirrors {@link resolveCloneDataTable} so the chart-level
- * block toggles compose the same way at the call site. Unlike
- * `dataTable`, `<c:protection>` lives on `<c:chartSpace>` (not inside
- * `<c:plotArea>`) so the resolver applies to every chart family —
- * pie / doughnut included.
- */
-function resolveProtection(
-  sourceValue: ChartProtection | undefined,
-  override: ChartProtection | boolean | null | undefined,
-): ChartProtection | boolean | undefined {
-  if (override === undefined) {
-    // Inherit — pass the source through verbatim. The writer accepts
-    // both the boolean and object shapes, so a parsed
-    // {@link ChartProtection} round-trips directly.
-    return sourceValue;
-  }
-  if (override === null) {
-    // Drop the inherited block. The writer treats `undefined` as
-    // suppression and skips `<c:protection>` entirely.
-    return undefined;
-  }
-  if (override === false) {
-    // Symmetric with `null` — kept distinct in the API surface for
-    // ergonomic alignment with the writer's `boolean | object` shape,
-    // but emits the same on-the-wire result (no `<c:protection>`).
-    return undefined;
-  }
-  // `true` or a {@link ChartProtection} object — replace the inherited
-  // block wholesale. The writer accepts both forms and falls back to
-  // the OOXML reference default `false` for any field the object
-  // leaves unset.
-  return override;
-}
-
-
-/**
- * Normalize a `plotAreaFillColor` value for the cloned `SheetChart`.
- * Mirrors the writer's `normalizePlotAreaFillColor` — the cloned shape
- * is guaranteed to round-trip through the writer without surprise: a
- * leading `#` and any case are accepted, then the value collapses to
- * the OOXML canonical uppercase form. Malformed inputs (wrong length,
- * non-hex characters, alpha-channel forms, non-string escapes from an
- * untyped caller) collapse to `undefined` so the cloned chart drops
- * the field rather than carry a value the writer would silently elide
- * back to absence.
- */
-function normalizePlotAreaFillColor(value: string | undefined): string | undefined {
-  return normalizeRgbHex(value);
-}
-
-
-/**
- * Normalize a `plotAreaBorderColor` value for the cloned `SheetChart`.
- * Mirrors the writer's `normalizePlotAreaBorderColor` — the cloned
- * shape is guaranteed to round-trip through the writer without
- * surprise: a leading `#` and any case are accepted, then the value
- * collapses to the OOXML canonical uppercase form. Malformed inputs
- * (wrong length, non-hex characters, alpha-channel forms, non-string
- * escapes from an untyped caller) collapse to `undefined` so the
- * cloned chart drops the field rather than carry a value the writer
- * would silently elide back to absence. Mirrors
- * {@link normalizePlotAreaFillColor} — same hex grammar.
- */
-function normalizePlotAreaBorderColor(value: string | undefined): string | undefined {
-  return normalizeRgbHex(value);
-}
-
-
-/**
- * Normalize a `chartSpaceFillColor` value for the cloned `SheetChart`.
- * Mirrors the writer's `normalizeChartSpaceFillColor` (which itself
- * delegates to the chart-title / plot-area / legend hex normalizer) —
- * the cloned shape is guaranteed to round-trip through the writer
- * without surprise: a leading `#` and any case are accepted, then the
- * value collapses to the OOXML canonical uppercase form. Malformed
- * inputs (wrong length, non-hex characters, alpha-channel forms,
- * non-string escapes from an untyped caller) collapse to `undefined`
- * so the cloned chart drops the field rather than carry a value the
- * writer would silently elide back to absence.
- */
-function normalizeChartSpaceFillColor(value: string | undefined): string | undefined {
-  return normalizeRgbHex(value);
-}
-
-/**
- * Resolve a `chartSpaceFillColor` override.
- *
- * `undefined` → inherit the source's parsed `chartSpaceFillColor`
- *               (after running it through
- *               {@link normalizeChartSpaceFillColor} so a malformed
- *               source value drops cleanly).
- * `null`      → drop the inherited fill (the writer emits no
- *               `<c:spPr>` block on `<c:chartSpace>`, the chart
- *               inherits the auto-fill Excel picks from the workbook
- *               theme).
- * `string`    → replace with the normalized 6-character uppercase hex
- *               form. Malformed overrides collapse to `undefined` via
- *               the normalizer so the cloned `SheetChart` always
- *               carries a value the writer will accept.
- *
- * The grammar mirrors `plotAreaFillColor` / `legendFillColor` /
- * `titleColor` so the chart `<a:srgbClr>` fill / color knobs compose
- * the same way at the call site. Unlike the title / legend variants,
- * the chart-space fill is never gated on a visibility flag — every
- * chart has a `<c:chartSpace>` document root to host the fill.
- */
-function resolveChartSpaceFillColor(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
-  if (override === undefined) return normalizeChartSpaceFillColor(sourceValue);
-  if (override === null) return undefined;
-  return normalizeChartSpaceFillColor(override);
-}
-
-/**
- * Normalize a `chartSpaceBorderColor` value for the cloned `SheetChart`.
- * Mirrors the writer's `normalizeChartSpaceBorderColor` (which itself
- * delegates to the chart-title / plot-area / legend hex normalizer) —
- * the cloned shape is guaranteed to round-trip through the writer
- * without surprise: a leading `#` and any case are accepted, then the
- * value collapses to the OOXML canonical uppercase form. Malformed
- * inputs (wrong length, non-hex characters, alpha-channel forms,
- * non-string escapes from an untyped caller) collapse to `undefined`
- * so the cloned chart drops the field rather than carry a value the
- * writer would silently elide back to absence.
- */
-function normalizeChartSpaceBorderColor(value: string | undefined): string | undefined {
-  return normalizeRgbHex(value);
-}
-
-/**
- * Resolve a `chartSpaceBorderColor` override.
- *
- * `undefined` → inherit the source's parsed `chartSpaceBorderColor`
- *               (after running it through
- *               {@link normalizeChartSpaceBorderColor} so a malformed
- *               source value drops cleanly).
- * `null`      → drop the inherited stroke (the writer emits no
- *               `<a:ln>` block on `<c:chartSpace>`'s `<c:spPr>`, the
- *               chart inherits the auto-stroke Excel picks from the
- *               workbook theme).
- * `string`    → replace with the normalized 6-character uppercase hex
- *               form. Malformed overrides collapse to `undefined` via
- *               the normalizer so the cloned `SheetChart` always
- *               carries a value the writer will accept.
- *
- * The grammar mirrors `plotAreaBorderColor` / `legendBorderColor` /
- * `titleBorderColor` so the chart `<a:ln>` stroke knobs compose the
- * same way at the call site. Unlike the title / legend variants, the
- * chart-space border is never gated on a visibility flag — every chart
- * has a `<c:chartSpace>` document root to host the stroke.
- */
-function resolveChartSpaceBorderColor(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
-  if (override === undefined) return normalizeChartSpaceBorderColor(sourceValue);
-  if (override === null) return undefined;
-  return normalizeChartSpaceBorderColor(override);
-}
 
 // `normalizeBorderWidthPt` (aliased to the shared `clampStrokeWidthPt`)
 // and `normalizeBorderDash` now live in `./chart/shape.ts`. Imported at

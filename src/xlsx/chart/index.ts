@@ -21,3 +21,4 @@ export * from "./dataTable";
 export * from "./series";
 export * from "./axis";
 export * from "./plotArea";
+export * from "./chartSpace";
