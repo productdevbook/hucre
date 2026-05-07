@@ -363,6 +363,36 @@ export interface CloneChartOptions {
    */
   legendLayout?: ChartManualLayout | null;
   /**
+   * Override `SheetChart.legendFillColor`. `undefined` (or omitted)
+   * inherits the source's parsed `legendFillColor`; `null` drops the
+   * inherited fill (the writer emits no `<c:spPr>` block on
+   * `<c:legend>`, falling back to the theme default — typically a
+   * transparent background); a hex string replaces it. The override
+   * is normalized through the writer-side hex-color path — accepts
+   * `"FFFF00"` / `"#FFFF00"` / `"ffff00"` and collapses malformed
+   * tokens (wrong length, non-hex characters, alpha-channel forms,
+   * empty / whitespace-only strings, non-string escapes from an
+   * untyped caller) to `undefined`. The cloned `SheetChart` always
+   * carries a value the writer will accept; malformed source values
+   * likewise collapse on the resolver path.
+   *
+   * The override is silently dropped from the cloned `SheetChart`
+   * when the resolved legend is `false` (no `<c:legend>` element will
+   * be emitted) — there is no slot to host the fill on a hidden
+   * legend, so leaking the value into the output would carry a pin
+   * Excel never reads.
+   *
+   * The grammar mirrors `plotAreaFillColor` / `titleColor` /
+   * `axes.x.axisTitleColor` / `axes.x.labelColor` /
+   * `legendFontColor` so the fill / color knobs compose the same way
+   * at the call site. The override lands on the legend's `<c:spPr>`
+   * block and composes independently with `legendFontColor` (which
+   * lands on the legend's `<c:txPr>` block) — the two knobs target
+   * different children of `<c:legend>` so a caller can pin both
+   * without conflict.
+   */
+  legendFillColor?: string | null;
+  /**
    * Override `SheetChart.plotAreaLayout`. `undefined` (or omitted)
    * inherits the source's parsed `plotAreaLayout`; `null` drops the
    * inherited layout (the writer emits the bare `<c:layout/>`
@@ -1909,6 +1939,22 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     // to `undefined` so the writer skips the `<c:layout>` block.
     const resolvedLegendLayout = resolveLegendLayout(source.legendLayout, options.legendLayout);
     if (resolvedLegendLayout !== undefined) out.legendLayout = resolvedLegendLayout;
+
+    // Same hidden-legend scoping for the background fill — `<c:spPr>`
+    // is a direct child of `<c:legend>` per CT_Legend, so a clone whose
+    // legend is hidden has no slot for the fill. `undefined` inherits,
+    // `null` drops, a hex string replaces. The override runs through
+    // the same hex normalizer as the writer so the cloned `SheetChart`
+    // always carries a value the writer will accept; malformed source
+    // values likewise collapse on the resolver path. Composes
+    // independently with `legendFontColor` — the two knobs target
+    // different children of `<c:legend>` (`<c:spPr>` for the fill,
+    // `<c:txPr>` for the font color).
+    const resolvedLegendFillColor = resolveLegendFillColor(
+      source.legendFillColor,
+      options.legendFillColor,
+    );
+    if (resolvedLegendFillColor !== undefined) out.legendFillColor = resolvedLegendFillColor;
   }
 
   // Plot-area manual layout is independent of the legend visibility —
@@ -3517,6 +3563,44 @@ function resolveLegendLayout(
   if (override === undefined) return normalizeLegendLayout(sourceValue);
   if (override === null) return undefined;
   return normalizeLegendLayout(override);
+}
+
+/**
+ * Resolve a `legendFillColor` override.
+ *
+ * `undefined` → inherit the source's parsed `legendFillColor` (after
+ *               running it through {@link normalizeTitleColor} so a
+ *               malformed source value drops cleanly — the hex
+ *               normalizer is purely shape-based and applies
+ *               identically to every `<a:srgbClr val="RRGGBB"/>`
+ *               slot).
+ * `null`      → drop the inherited fill (the writer emits no
+ *               `<c:spPr>` block on `<c:legend>`, falling back to the
+ *               theme default — typically a transparent legend
+ *               background).
+ * `string`    → replace, after running through
+ *               {@link normalizeTitleColor} so the override accepts
+ *               `"FF0000"` / `"#FF0000"` / `"ff0000"` and collapses
+ *               malformed tokens to `undefined`.
+ *
+ * The grammar mirrors `plotAreaFillColor` / `titleColor` /
+ * `axisTitleColor` / `legendFontColor` so the fill / color knobs
+ * compose the same way at the call site. Callers should gate the
+ * result on the resolved legend visibility — when no legend is
+ * emitted, the fill has no slot in the rendered chart.
+ *
+ * Independent of `legendFontColor`: the two knobs target different
+ * children of `<c:legend>` (`<c:spPr>` for the background fill,
+ * `<c:txPr>` for the font color), so a caller can pin both without
+ * conflict.
+ */
+function resolveLegendFillColor(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeTitleColor(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleColor(override);
 }
 
 /**

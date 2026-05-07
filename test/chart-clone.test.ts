@@ -21224,3 +21224,217 @@ describe("cloneChart — titleFillColor", () => {
     expect(clone.titleFillColor).toBe("FFFF00");
   });
 });
+
+// ── cloneChart — legendFillColor ─────────────────────────────────────
+
+describe("cloneChart — legendFillColor", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      legend: "right",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's legendFillColor by default", () => {
+    const clone = cloneChart(source({ legendFillColor: "FFFF00" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.legendFillColor).toBe("FFFF00");
+  });
+
+  it("lets options.legendFillColor override the source's value", () => {
+    const clone = cloneChart(source({ legendFillColor: "FFFF00" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendFillColor: "00FF00",
+    });
+    expect(clone.legendFillColor).toBe("00FF00");
+  });
+
+  it("drops the inherited legendFillColor when the override is null", () => {
+    const clone = cloneChart(source({ legendFillColor: "FFFF00" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendFillColor: null,
+    });
+    expect(clone.legendFillColor).toBeUndefined();
+  });
+
+  it("returns undefined legendFillColor when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.legendFillColor).toBeUndefined();
+  });
+
+  it("normalizes a leading # in the override hex string", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendFillColor: "#abcdef",
+    });
+    expect(clone.legendFillColor).toBe("ABCDEF");
+  });
+
+  it("normalizes a lowercase override hex string to uppercase", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendFillColor: "ff8800",
+    });
+    expect(clone.legendFillColor).toBe("FF8800");
+  });
+
+  it("normalizes a malformed source value through the resolver (drops to undefined)", () => {
+    const clone = cloneChart(source({ legendFillColor: "ZZZ" as string }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.legendFillColor).toBeUndefined();
+  });
+
+  it("collapses malformed override hex tokens (typed escape from an untyped caller)", () => {
+    const clone = cloneChart(source({ legendFillColor: "FFFF00" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendFillColor: "ZZZZZZ",
+    });
+    expect(clone.legendFillColor).toBeUndefined();
+  });
+
+  it("collapses non-string overrides (number leaking past the type guard)", () => {
+    const clone = cloneChart(source({ legendFillColor: "FFFF00" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      legendFillColor: 0xff0000 as any,
+    });
+    expect(clone.legendFillColor).toBeUndefined();
+  });
+
+  it("carries legendFillColor through a flatten (line → column)", () => {
+    const clone = cloneChart(source({ legendFillColor: "FFFF00" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.legendFillColor).toBe("FFFF00");
+  });
+
+  it("carries legendFillColor through a doughnut flatten (line → doughnut)", () => {
+    const clone = cloneChart(source({ legendFillColor: "FFFF00" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.legendFillColor).toBe("FFFF00");
+  });
+
+  it("drops the inherited legendFillColor when the resolved legend is hidden", () => {
+    const clone = cloneChart(source({ legendFillColor: "FFFF00" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendFillColor).toBeUndefined();
+  });
+
+  it("drops the legendFillColor override when the resolved legend is hidden", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+      legendFillColor: "FFFF00",
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendFillColor).toBeUndefined();
+  });
+
+  it("retains the legendFillColor override when the override re-enables a hidden source legend", () => {
+    const clone = cloneChart(source({ legend: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: "top",
+      legendFillColor: "FFFF00",
+    });
+    expect(clone.legend).toBe("top");
+    expect(clone.legendFillColor).toBe("FFFF00");
+  });
+
+  it("composes independently with legendFontColor — distinct slots inside <c:legend>", () => {
+    const clone = cloneChart(source({ legendFillColor: "FFFF00", legendFontColor: "000000" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.legendFillColor).toBe("FFFF00");
+    expect(clone.legendFontColor).toBe("000000");
+  });
+
+  it("composes with legendOverlay / legendEntries / legendLayout / legendFontFamily on the cloned SheetChart", () => {
+    const clone = cloneChart(
+      source({
+        legendFillColor: "FFFF00",
+        legendOverlay: true,
+        legendEntries: [{ idx: 0, delete: true }],
+        legendLayout: { x: 0.1, y: 0.2 },
+        legendFontFamily: "Arial",
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.legendFillColor).toBe("FFFF00");
+    expect(clone.legendOverlay).toBe(true);
+    expect(clone.legendEntries).toEqual([{ idx: 0, delete: true }]);
+    expect(clone.legendLayout).toEqual({ x: 0.1, y: 0.2 });
+    expect(clone.legendFontFamily).toBe("Arial");
+  });
+
+  it("propagates legendFillColor into the rendered <c:legend><c:spPr> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ legendFillColor: "FFFF00" }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain("<c:spPr>");
+    expect(legend).toContain('<a:srgbClr val="FFFF00"/>');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.legendFillColor).toBe("FFFF00");
+  });
+
+  it("emits no <c:spPr> when both source and override are absent (round-trips to undefined)", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).not.toContain("<c:spPr>");
+    expect(parseChart(written)?.legendFillColor).toBeUndefined();
+  });
+});
