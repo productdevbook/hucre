@@ -82,6 +82,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveTitleFontFamily(chart),
         resolveTitleLayout(chart),
         resolveTitleFillColor(chart),
+        resolveTitleBorderColor(chart),
       ),
     );
   }
@@ -304,6 +305,7 @@ function buildTitle(
   fontFamily: string | undefined,
   layout: ResolvedManualLayout | undefined,
   fillRgbHex: string | undefined,
+  borderRgbHex: string | undefined,
 ): string {
   // OOXML's `<a:bodyPr rot="N"/>` attribute is in 60000ths of a degree.
   // The writer holds `titleRotation` in whole degrees and converts at
@@ -463,17 +465,20 @@ function buildTitle(
   // CT_Title (ECMA-376 Part 1, §21.2.2.210) places the optional
   // `<c:spPr>` between `<c:overlay>` and `<c:txPr>` / `<c:extLst>`.
   // The writer skips emission entirely when the caller did not pin a
-  // fill color so a fresh chart matches Excel's reference
+  // fill or border color so a fresh chart matches Excel's reference
   // serialization byte-for-byte — Excel itself omits the block
-  // whenever the title renders at the theme default fill (typically a
-  // transparent title background with no `<c:spPr>` block). Currently
-  // the writer only authors `<a:solidFill>` here; stroke (`<a:ln>`)
-  // and other CT_ShapeProperties children are not modelled at this
-  // layer. Distinct from the `<a:defRPr><a:solidFill>` font-color slot
-  // inside `<c:tx><c:rich>` that {@link SheetChart.titleColor} pins —
-  // the two knobs target different children of `<c:title>` so a
-  // caller can pin both without conflict.
-  const titleSpPrXml = buildTitleSpPr(fillRgbHex);
+  // whenever the title renders at the theme defaults (typically a
+  // transparent title background with no visible border, no
+  // `<c:spPr>` block). Authors `<a:solidFill>` for the fill and
+  // `<a:ln>` for the stroke in CT_ShapeProperties schema order;
+  // other CT_ShapeProperties children (effects, gradient / pattern /
+  // picture fills, line dash / width / compound styles) are not
+  // modelled at this layer. Distinct from the `<a:defRPr><a:solidFill>`
+  // font-color slot inside `<c:tx><c:rich>` that
+  // {@link SheetChart.titleColor} pins — the typography knobs target
+  // different children of `<c:title>` so a caller can pin both
+  // without conflict.
+  const titleSpPrXml = buildTitleSpPr(fillRgbHex, borderRgbHex);
   if (titleSpPrXml !== undefined) {
     titleChildren.push(titleSpPrXml);
   }
@@ -482,27 +487,47 @@ function buildTitle(
 
 /**
  * Build the `<c:spPr>` element on `<c:title>` that carries the
- * title's background fill. Returns `undefined` when no fill color is
- * pinned so the caller can elide the entire block — Excel's reference
- * serialization omits `<c:spPr>` from `<c:title>` whenever the title
- * renders at the theme default fill (typically a transparent title
- * background).
+ * title's background fill ({@link SheetChart.titleFillColor}) and /
+ * or border-stroke color ({@link SheetChart.titleBorderColor}).
+ * Returns `undefined` when neither knob is pinned so the caller can
+ * elide the entire block — Excel's reference serialization omits
+ * `<c:spPr>` from `<c:title>` whenever the title renders at the theme
+ * default fill / stroke (typically a transparent title background
+ * with no visible border).
  *
- * The emitted block mirrors the minimal `<c:spPr>` shape Excel writes
- * when the user pins "Format Chart Title -> Fill -> Solid fill ->
- * Color": `<c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
- * </a:solidFill></c:spPr>`. The `val` attribute holds the canonical
- * 6-character uppercase hex form (the writer normalizes the input
- * ahead of this call so a malformed source value never reaches emit).
+ * When at least one knob lands on the wire, the children are emitted
+ * in `CT_ShapeProperties` (ECMA-376 Part 1, §20.1.2.3.13) schema
+ * order: `<a:solidFill>` (fill) first, then `<a:ln>` (line / stroke).
+ * The fill block has the form `<a:solidFill><a:srgbClr val="RRGGBB"/>
+ * </a:solidFill>`; the stroke block has the form `<a:ln><a:solidFill>
+ * <a:srgbClr val="RRGGBB"/></a:solidFill></a:ln>`. The `val`
+ * attribute holds the canonical 6-character uppercase hex form (the
+ * writer normalizes the inputs ahead of this call so malformed source
+ * values never reach emit).
  *
  * Mirrors the plot-area / legend `<c:spPr>` slots so a single hex
- * string threads cleanly through every fill knob the writer authors.
+ * string threads cleanly through every fill / stroke knob the writer
+ * authors.
  */
-function buildTitleSpPr(fillRgbHex: string | undefined): string | undefined {
-  if (fillRgbHex === undefined) return undefined;
-  return xmlElement("c:spPr", undefined, [
-    xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillRgbHex })]),
-  ]);
+function buildTitleSpPr(
+  fillRgbHex: string | undefined,
+  borderRgbHex: string | undefined,
+): string | undefined {
+  if (fillRgbHex === undefined && borderRgbHex === undefined) return undefined;
+  const children: string[] = [];
+  if (fillRgbHex !== undefined) {
+    children.push(
+      xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillRgbHex })]),
+    );
+  }
+  if (borderRgbHex !== undefined) {
+    children.push(
+      xmlElement("a:ln", undefined, [
+        xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: borderRgbHex })]),
+      ]),
+    );
+  }
+  return xmlElement("c:spPr", undefined, children);
 }
 
 /**
@@ -746,6 +771,33 @@ function resolveTitleColor(chart: SheetChart): string | undefined {
  */
 function resolveTitleFillColor(chart: SheetChart): string | undefined {
   return normalizeTitleColor(chart.titleFillColor);
+}
+
+/**
+ * Resolve `<c:title><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/>
+ * </a:solidFill></a:ln></c:spPr></c:title>` from
+ * {@link SheetChart.titleBorderColor}.
+ *
+ * Returns the 6-character uppercase hex string the writer emits, or
+ * `undefined` when the chart leaves the field unset / passed a
+ * malformed token. Delegates to {@link normalizeTitleColor} so the
+ * accept-with-or-without-`#` grammar matches every other
+ * `<a:srgbClr>` slot the writer authors. The stroke is only
+ * meaningful when the chart actually emits a title — the caller is
+ * expected to gate the call on `showTitle && chart.title`. A chart
+ * whose title is suppressed has no `<c:title>` block to host the
+ * `<c:spPr>` slot in either case.
+ *
+ * Independent of {@link resolveTitleFillColor}: the stroke lands on
+ * `<c:title><c:spPr><a:ln>`, the fill lands on
+ * `<c:title><c:spPr><a:solidFill>` — the two resolvers target
+ * different children of the shared `<c:spPr>` block so a single
+ * configuration call can pin both. Mirrors
+ * {@link normalizePlotAreaBorderColor} — same hex grammar, distinct
+ * host element (`<c:title>` vs `<c:plotArea>`).
+ */
+function resolveTitleBorderColor(chart: SheetChart): string | undefined {
+  return normalizeTitleColor(chart.titleBorderColor);
 }
 
 /**
@@ -4306,14 +4358,16 @@ function buildAxisTitle(
   // Excel's reference shape byte-for-byte (Excel itself omits the
   // block whenever the title renders at the theme default fill —
   // typically a transparent title background with no `<c:spPr>`
-  // block). Currently the writer only authors `<a:solidFill>` here;
-  // stroke (`<a:ln>`) and other CT_ShapeProperties children are not
-  // modelled at this layer. Distinct from the
-  // `<a:defRPr><a:solidFill>` font-color slot inside `<c:tx><c:rich>`
-  // that {@link SheetChart.axes.x.axisTitleColor} pins — the two knobs
-  // target different children of `<c:title>` so a caller can pin both
-  // without conflict.
-  const titleSpPrXml = buildTitleSpPr(fillRgbHex);
+  // block). Currently the writer only authors `<a:solidFill>` here
+  // for axis titles; stroke (`<a:ln>`) and other CT_ShapeProperties
+  // children are not modelled at this layer (the chart-level
+  // {@link SheetChart.titleBorderColor} knob lands on `<c:title>` —
+  // the axis-title border counterpart is a separate gap). Distinct
+  // from the `<a:defRPr><a:solidFill>` font-color slot inside
+  // `<c:tx><c:rich>` that {@link SheetChart.axes.x.axisTitleColor}
+  // pins — the two knobs target different children of `<c:title>` so
+  // a caller can pin both without conflict.
+  const titleSpPrXml = buildTitleSpPr(fillRgbHex, undefined);
   if (titleSpPrXml !== undefined) titleChildren.push(titleSpPrXml);
   return xmlElement("c:title", undefined, titleChildren);
 }

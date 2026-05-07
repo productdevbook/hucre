@@ -21568,6 +21568,221 @@ describe("cloneChart — titleFillColor", () => {
   });
 });
 
+// ── cloneChart — titleBorderColor (line stroke) ─────────────────────
+
+describe("cloneChart — titleBorderColor", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Sales",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's titleBorderColor by default", () => {
+    const clone = cloneChart(source({ titleBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleBorderColor).toBe("1F77B4");
+  });
+
+  it("lets options.titleBorderColor override the source's value", () => {
+    const clone = cloneChart(source({ titleBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleBorderColor: "ABCDEF",
+    });
+    expect(clone.titleBorderColor).toBe("ABCDEF");
+  });
+
+  it("drops the inherited titleBorderColor when the override is null", () => {
+    const clone = cloneChart(source({ titleBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleBorderColor: null,
+    });
+    expect(clone.titleBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined titleBorderColor when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.titleBorderColor).toBeUndefined();
+  });
+
+  it("normalizes a leading # in the override hex string", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleBorderColor: "#abcdef",
+    });
+    expect(clone.titleBorderColor).toBe("ABCDEF");
+  });
+
+  it("normalizes a lowercase override hex string to uppercase", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleBorderColor: "ff8800",
+    });
+    expect(clone.titleBorderColor).toBe("FF8800");
+  });
+
+  it("normalizes a malformed source value through the resolver (drops to undefined)", () => {
+    const clone = cloneChart(source({ titleBorderColor: "ZZZ" as string }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleBorderColor).toBeUndefined();
+  });
+
+  it("collapses malformed override hex tokens (typed escape from an untyped caller)", () => {
+    const clone = cloneChart(source({ titleBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleBorderColor: "ZZZZZZ",
+    });
+    expect(clone.titleBorderColor).toBeUndefined();
+  });
+
+  it("collapses non-string overrides (number leaking past the type guard)", () => {
+    const clone = cloneChart(source({ titleBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      titleBorderColor: 0xff_ff_ff as any,
+    });
+    expect(clone.titleBorderColor).toBeUndefined();
+  });
+
+  it("collapses an alpha-channel form override (8 chars)", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleBorderColor: "FFAA0080",
+    });
+    expect(clone.titleBorderColor).toBeUndefined();
+  });
+
+  it("carries titleBorderColor through a flatten (line → column)", () => {
+    const clone = cloneChart(source({ titleBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.titleBorderColor).toBe("1F77B4");
+  });
+
+  it("carries titleBorderColor through a doughnut flatten (line → doughnut)", () => {
+    const clone = cloneChart(source({ titleBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.titleBorderColor).toBe("1F77B4");
+  });
+
+  it("drops the inherited titleBorderColor when title is dropped (title=null)", () => {
+    const clone = cloneChart(source({ titleBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      title: null,
+    });
+    expect(clone.title).toBeUndefined();
+    expect(clone.titleBorderColor).toBeUndefined();
+  });
+
+  it("drops the titleBorderColor override when showTitle is false", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      showTitle: false,
+      titleBorderColor: "1F77B4",
+    });
+    expect(clone.titleBorderColor).toBeUndefined();
+  });
+
+  it("retains titleBorderColor when override re-introduces a title on a sourceless chart", () => {
+    const noTitle = source();
+    delete noTitle.title;
+    const clone = cloneChart(noTitle, {
+      anchor: { from: { row: 0, col: 0 } },
+      title: "Replacement",
+      titleBorderColor: "1F77B4",
+    });
+    expect(clone.title).toBe("Replacement");
+    expect(clone.titleBorderColor).toBe("1F77B4");
+  });
+
+  it("composes independently with titleFillColor (each lands on its own slot in the clone)", () => {
+    const clone = cloneChart(source({ titleFillColor: "FFFF00", titleBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleFillColor).toBe("FFFF00");
+    expect(clone.titleBorderColor).toBe("1F77B4");
+  });
+
+  it("composes independently with titleColor (font color lands on its own slot)", () => {
+    const clone = cloneChart(source({ titleColor: "FF0000", titleBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.titleColor).toBe("FF0000");
+    expect(clone.titleBorderColor).toBe("1F77B4");
+  });
+
+  it("retains titleBorderColor independently of a hidden legend", () => {
+    const clone = cloneChart(source({ titleBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.titleBorderColor).toBe("1F77B4");
+  });
+
+  it("survives a writeXlsx round trip — titleBorderColor lands in the cloned chart XML", async () => {
+    const clone = cloneChart(source({ titleBorderColor: "ABCDEF" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      titleBorderColor: "1F77B4",
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(parseChart(written)?.titleBorderColor).toBe("1F77B4");
+  });
+
+  it("round-trips both fill and border together — write → parse → clone", async () => {
+    const written = writeChart(
+      {
+        type: "line",
+        title: "Sales",
+        series: [{ values: "B2:B5", categories: "A2:A5" }],
+        anchor: { from: { row: 0, col: 0 } },
+        titleFillColor: "FFFF00",
+        titleBorderColor: "1F77B4",
+      },
+      "Sheet1",
+    ).chartXml;
+    const parsed = parseChart(written)!;
+    expect(parsed.titleFillColor).toBe("FFFF00");
+    expect(parsed.titleBorderColor).toBe("1F77B4");
+    const clone = cloneChart(parsed, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.titleFillColor).toBe("FFFF00");
+    expect(clone.titleBorderColor).toBe("1F77B4");
+  });
+});
+
 // ── cloneChart — legendFillColor ─────────────────────────────────────
 
 describe("cloneChart — legendFillColor", () => {

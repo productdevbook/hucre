@@ -20317,6 +20317,204 @@ describe("parseChart — titleFillColor", () => {
   });
 });
 
+// ── parseChart — titleBorderColor (line stroke) ─────────────────────
+
+describe("parseChart — titleBorderColor", () => {
+  const NS_TBC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withTitleSpPr(spPrBody: string): string {
+    return `<c:chartSpace ${NS_TBC}>
+  <c:chart>
+    <c:title>
+      <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Hero</a:t></a:r></a:p></c:rich></c:tx>
+      <c:overlay val="0"/>
+      <c:spPr>${spPrBody}</c:spPr>
+    </c:title>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces the literal sRGB color when <c:title><c:spPr><a:ln><a:solidFill><a:srgbClr> is pinned", () => {
+    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`);
+    expect(parseChart(xml)?.titleBorderColor).toBe("1F77B4");
+  });
+
+  it("normalizes lowercase hex to canonical uppercase form", () => {
+    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="abcdef"/></a:solidFill></a:ln>`);
+    expect(parseChart(xml)?.titleBorderColor).toBe("ABCDEF");
+  });
+
+  it("surfaces fill and border independently when both are pinned", () => {
+    const xml = withTitleSpPr(
+      `<a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill>` +
+        `<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
+    );
+    const parsed = parseChart(xml);
+    expect(parsed?.titleFillColor).toBe("FFFF00");
+    expect(parsed?.titleBorderColor).toBe("1F77B4");
+  });
+
+  it("returns undefined when the chart has no <c:title>", () => {
+    const xml = `<c:chartSpace ${NS_TBC}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`;
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when <c:title> has no <c:spPr>", () => {
+    const xml = `<c:chartSpace ${NS_TBC}>
+  <c:chart>
+    <c:title>
+      <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Hero</a:t></a:r></a:p></c:rich></c:tx>
+      <c:overlay val="0"/>
+    </c:title>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when <c:spPr> has no <a:ln>", () => {
+    const xml = withTitleSpPr(`<a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill>`);
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln> has no <a:solidFill>", () => {
+    const xml = withTitleSpPr(`<a:ln w="12700"/>`);
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln><a:solidFill> uses <a:schemeClr> (theme reference)", () => {
+    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:schemeClr val="bg1"/></a:solidFill></a:ln>`);
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln> stroke is <a:noFill>", () => {
+    const xml = withTitleSpPr(`<a:ln><a:noFill/></a:ln>`);
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln> stroke is <a:gradFill>", () => {
+    const xml = withTitleSpPr(
+      `<a:ln><a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FFFFFF"/></a:gs></a:gsLst></a:gradFill></a:ln>`,
+    );
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln> stroke is <a:pattFill>", () => {
+    const xml = withTitleSpPr(
+      `<a:ln><a:pattFill prst="dkUpDiag"><a:fgClr><a:srgbClr val="000000"/></a:fgClr><a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr></a:pattFill></a:ln>`,
+    );
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when the val attribute is malformed (wrong length)", () => {
+    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="ABC"/></a:solidFill></a:ln>`);
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when the val attribute is malformed (non-hex characters)", () => {
+    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="GGGGGG"/></a:solidFill></a:ln>`);
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when the val attribute is missing", () => {
+    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr/></a:solidFill></a:ln>`);
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
+  });
+
+  it("ignores a stray <a:ln> on the plot area (not the title)", () => {
+    const xml = `<c:chartSpace ${NS_TBC}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+      <c:spPr><a:ln><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill></a:ln></c:spPr>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
+  });
+
+  it("ignores a stray <a:ln> on a series <c:spPr> (not the title)", () => {
+    const xml = `<c:chartSpace ${NS_TBC}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:spPr><a:ln><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill></a:ln></c:spPr>
+        </c:ser>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
+  });
+
+  it("admits a leading # on the val attribute", () => {
+    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="#1F77B4"/></a:solidFill></a:ln>`);
+    expect(parseChart(xml)?.titleBorderColor).toBe("1F77B4");
+  });
+
+  it("surfaces titleBorderColor independently of titleColor (font color slot)", () => {
+    const xml = `<c:chartSpace ${NS_TBC}>
+  <c:chart>
+    <c:title>
+      <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p>
+        <a:pPr><a:defRPr><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:defRPr></a:pPr>
+        <a:r><a:rPr lang="en-US"/><a:t>Hero</a:t></a:r>
+      </a:p></c:rich></c:tx>
+      <c:overlay val="0"/>
+      <c:spPr><a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln></c:spPr>
+    </c:title>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleColor).toBe("FF0000");
+    expect(chart?.titleBorderColor).toBe("1F77B4");
+  });
+
+  it("surfaces titleBorderColor on a strRef-bodied title (no <c:rich>)", () => {
+    const xml = `<c:chartSpace ${NS_TBC}>
+  <c:chart>
+    <c:title>
+      <c:tx><c:strRef><c:f>Sheet1!$A$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Hero</c:v></c:pt></c:strCache></c:strRef></c:tx>
+      <c:overlay val="0"/>
+      <c:spPr><a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln></c:spPr>
+    </c:title>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.titleBorderColor).toBe("1F77B4");
+  });
+});
+
 // ── parseChart — legendFillColor ─────────────────────────────────────
 
 describe("parseChart — legendFillColor", () => {

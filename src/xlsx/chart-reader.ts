@@ -233,6 +233,19 @@ export function parseChart(xml: string): Chart | undefined {
   const titleFillColor = parseTitleFillColor(chartEl);
   if (titleFillColor !== undefined) out.titleFillColor = titleFillColor;
 
+  // `<c:title><c:spPr><a:ln><a:solidFill>` carries Excel's "Format
+  // Chart Title -> Border -> Solid line -> Color" picker. The
+  // `<a:ln>` block lives inside the same `<c:spPr>` slot as the fill
+  // (`<a:solidFill>`), per CT_ShapeProperties — the reader scopes the
+  // lookup to direct children of `<c:title>` so a stray `<c:spPr>`
+  // elsewhere (on the plot area, a series, on the legend) cannot
+  // leak into this field. Theme references (`<a:schemeClr>`) and
+  // non-solid line fills (`<a:noFill>` / `<a:gradFill>` /
+  // `<a:pattFill>`) all collapse to `undefined` so a round-trip
+  // never fabricates a stroke the writer cannot reproduce on emit.
+  const titleBorderColor = parseTitleBorderColor(chartEl);
+  if (titleBorderColor !== undefined) out.titleBorderColor = titleBorderColor;
+
   // `<c:autoTitleDeleted>` records whether the user explicitly deleted
   // the auto-generated title — independent of whether a literal
   // `<c:title>` is present. The element sits on `<c:chart>` directly
@@ -4615,6 +4628,59 @@ function parseTitleFillColor(chartEl: XmlElement): string | undefined {
   const spPr = findChild(title, "spPr");
   if (!spPr) return undefined;
   const solidFill = findChild(spPr, "solidFill");
+  if (!solidFill) return undefined;
+  const srgbClr = findChild(solidFill, "srgbClr");
+  if (!srgbClr) return undefined;
+  return normalizeRgbHex(srgbClr.attrs.val);
+}
+
+/**
+ * Pull `<c:title><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/>
+ * </a:solidFill></a:ln></c:spPr></c:title>` off the chart-level
+ * `<c:title>` block. Returns the title border (line) stroke color as
+ * a 6-character uppercase hex string the writer can round-trip via
+ * {@link SheetChart.titleBorderColor}.
+ *
+ * The OOXML `<a:srgbClr>` element carries the literal sRGB color
+ * (`CT_SRgbColor`, ECMA-376 Part 1, §20.1.2.3.32) inside the line's
+ * solid fill choice (`CT_LineProperties`, §20.1.2.3.24) which itself
+ * sits inside `<c:spPr>` (`CT_ShapeProperties`, §20.1.2.3.13). The
+ * `<c:spPr>` slot lives between `<c:overlay>` and `<c:txPr>` /
+ * `<c:extLst>` per CT_Title (§21.2.2.210); `<a:ln>` follows the
+ * optional `<a:solidFill>` (fill) child inside `<c:spPr>`.
+ *
+ * The reader surfaces only the literal `<a:srgbClr>` form — absence,
+ * non-solid line fills (`<a:noFill>` / `<a:gradFill>` / `<a:pattFill>`),
+ * and theme-color references (`<a:schemeClr>`) all collapse to
+ * `undefined` so a chart that pinned a stroke the writer cannot
+ * reproduce on emit drops the field rather than fabricate one Excel
+ * would render differently. Malformed `val` tokens (wrong length,
+ * non-hex characters, alpha-channel forms, non-string escapes)
+ * likewise drop to `undefined`.
+ *
+ * The lookup is scoped to direct children of `<c:title>` so a stray
+ * `<c:spPr>` elsewhere in the chart (e.g. on the plot area, a
+ * series, or the legend) cannot leak in. Returns `undefined`
+ * whenever the chart omits the `<c:title>` element or the
+ * `<c:spPr><a:ln><a:solidFill><a:srgbClr>` chain is malformed at
+ * any link. Mirrors {@link parsePlotAreaBorderColor} — same
+ * `<a:ln>` chain on a different host element. Independent of
+ * {@link parseTitleFillColor}: the two readers walk disjoint
+ * children of the shared `<c:spPr>` block (`<a:solidFill>` for the
+ * fill, `<a:ln>` for the stroke) so a caller can pin both knobs
+ * without conflict. Unlike {@link parseTitleColor}, the lookup is
+ * on `<c:title>` directly rather than gated on `<c:rich>` so a
+ * title authored as a `<c:strRef>` formula reference can still
+ * surface its border color.
+ */
+function parseTitleBorderColor(chartEl: XmlElement): string | undefined {
+  const title = findChild(chartEl, "title");
+  if (!title) return undefined;
+  const spPr = findChild(title, "spPr");
+  if (!spPr) return undefined;
+  const ln = findChild(spPr, "ln");
+  if (!ln) return undefined;
+  const solidFill = findChild(ln, "solidFill");
   if (!solidFill) return undefined;
   const srgbClr = findChild(solidFill, "srgbClr");
   if (!srgbClr) return undefined;

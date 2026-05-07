@@ -20446,6 +20446,231 @@ describe("writeChart — titleFillColor", () => {
   });
 });
 
+// ── writeChart — titleBorderColor (line stroke) ──────────────────────
+
+describe("writeChart — titleBorderColor", () => {
+  function titleOf(xml: string): string {
+    // Root chart-level title sits directly inside `<c:chart>`. Anchor
+    // the regex on `<c:chart>` to avoid matching axis titles.
+    const m = xml.match(/<c:chart>[\s\S]*?<c:title>[\s\S]*?<\/c:title>/);
+    if (!m) throw new Error("No chart-level <c:title> block found in chart XML");
+    const titleMatch = m[0].match(/<c:title>[\s\S]*?<\/c:title>/);
+    if (!titleMatch) throw new Error("No <c:title> in chart subtree");
+    return titleMatch[0];
+  }
+
+  it("does not emit <c:spPr> on <c:title> when titleBorderColor is unset (matches Excel reference)", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    const title = titleOf(result.chartXml);
+    expect(title).not.toContain("<c:spPr>");
+    expect(title).not.toContain("<a:ln>");
+  });
+
+  it("emits <c:spPr><a:ln><a:solidFill><a:srgbClr> on <c:title> when titleBorderColor is set", () => {
+    const result = writeChart(makeChart({ titleBorderColor: "1F77B4" }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    expect(title).toContain("<c:spPr>");
+    expect(title).toContain("<a:ln>");
+    expect(title).toContain('<a:srgbClr val="1F77B4"/>');
+    // The border color must land inside <a:ln>, not as a top-level
+    // <a:solidFill> (that slot is reserved for the fill color knob).
+    const lnIdx = title.indexOf("<a:ln>");
+    const srgbIdx = title.indexOf('<a:srgbClr val="1F77B4"/>');
+    expect(srgbIdx).toBeGreaterThan(lnIdx);
+  });
+
+  it("normalizes a leading # and lowercase hex to the canonical uppercase form", () => {
+    const result = writeChart(makeChart({ titleBorderColor: "#1f77b4" }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    expect(title).toContain('<a:srgbClr val="1F77B4"/>');
+  });
+
+  it("places <c:spPr> after <c:overlay> on <c:title> (CT_Title sequence)", () => {
+    const result = writeChart(makeChart({ titleBorderColor: "1F77B4" }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    const overlayIdx = title.indexOf("<c:overlay");
+    const spPrIdx = title.indexOf("<c:spPr>");
+    expect(overlayIdx).toBeGreaterThan(0);
+    expect(spPrIdx).toBeGreaterThan(overlayIdx);
+  });
+
+  it("only emits one <c:spPr> inside <c:title>", () => {
+    const result = writeChart(makeChart({ titleBorderColor: "FFAA00" }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    const occurrences = title.match(/<c:spPr>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads titleBorderColor through every chart family that owns a <c:title>", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, titleBorderColor: "ABCDEF" }), "Sheet1");
+      const title = titleOf(result.chartXml);
+      expect(title).toContain('<a:srgbClr val="ABCDEF"/>');
+      expect(title).toContain("<a:ln>");
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        titleBorderColor: "ABCDEF",
+      }),
+      "Sheet1",
+    );
+    expect(titleOf(scatter.chartXml)).toContain('<a:srgbClr val="ABCDEF"/>');
+  });
+
+  it("drops a malformed hex (wrong length)", () => {
+    const result = writeChart(makeChart({ titleBorderColor: "FFF" }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    expect(title).not.toContain("<c:spPr>");
+  });
+
+  it("drops a malformed hex (non-hex characters)", () => {
+    const result = writeChart(makeChart({ titleBorderColor: "GGGGGG" }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    expect(title).not.toContain("<c:spPr>");
+  });
+
+  it("drops an alpha-channel form (8 chars)", () => {
+    const result = writeChart(makeChart({ titleBorderColor: "FFAA0080" }), "Sheet1");
+    const title = titleOf(result.chartXml);
+    expect(title).not.toContain("<c:spPr>");
+  });
+
+  it("drops an empty / whitespace-only string", () => {
+    expect(
+      titleOf(writeChart(makeChart({ titleBorderColor: "" }), "Sheet1").chartXml),
+    ).not.toContain("<c:spPr>");
+    expect(
+      titleOf(writeChart(makeChart({ titleBorderColor: "   " }), "Sheet1").chartXml),
+    ).not.toContain("<c:spPr>");
+  });
+
+  it("drops non-string escapes (typed escape from an untyped caller)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const a = writeChart(makeChart({ titleBorderColor: 0xff_ff_ff as any }), "Sheet1");
+    expect(titleOf(a.chartXml)).not.toContain("<c:spPr>");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const b = writeChart(makeChart({ titleBorderColor: null as any }), "Sheet1");
+    expect(titleOf(b.chartXml)).not.toContain("<c:spPr>");
+  });
+
+  it("does not emit any <c:title> at all when no title is rendered (showTitle=false)", () => {
+    const result = writeChart(
+      makeChart({ showTitle: false, title: "", titleBorderColor: "1F77B4" }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:title>");
+  });
+
+  it("composes independently with titleFillColor — fill and stroke share one <c:spPr>", () => {
+    const result = writeChart(
+      makeChart({
+        titleFillColor: "FFFF00",
+        titleBorderColor: "1F77B4",
+      }),
+      "Sheet1",
+    );
+    const title = titleOf(result.chartXml);
+    // Single <c:spPr> hosts both knobs.
+    const spPrCount = title.match(/<c:spPr>/g) ?? [];
+    expect(spPrCount).toHaveLength(1);
+    // Fill color lands on the top-level <a:solidFill>.
+    expect(title).toContain('<a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill>');
+    // Border color lands inside <a:ln>.
+    expect(title).toContain('<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>');
+    // CT_ShapeProperties order: fill <a:solidFill> precedes <a:ln>.
+    // (Use the spPr-scoped indices so the title-color font fill on
+    // <a:defRPr> does not skew the comparison.)
+    const spPrIdx = title.indexOf("<c:spPr>");
+    expect(title.indexOf("<a:solidFill>", spPrIdx)).toBeLessThan(title.indexOf("<a:ln>", spPrIdx));
+  });
+
+  it("composes independently with titleColor (each lands on its own slot)", () => {
+    const result = writeChart(
+      makeChart({
+        title: "Hero",
+        titleColor: "FF0000",
+        titleBorderColor: "1F77B4",
+      }),
+      "Sheet1",
+    );
+    const title = titleOf(result.chartXml);
+    // Font color in <a:defRPr><a:solidFill> slot.
+    expect(title).toMatch(/<a:defRPr[^>]*>\s*<a:solidFill><a:srgbClr val="FF0000"\/>/);
+    // Border color on the title's <c:spPr><a:ln>.
+    expect(title).toContain('<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>');
+    // Font color slot precedes the spPr stroke slot per CT_Title schema.
+    const fontFillPos = title.indexOf('<a:srgbClr val="FF0000"/>');
+    const strokePos = title.indexOf('<a:srgbClr val="1F77B4"/>');
+    expect(fontFillPos).toBeGreaterThan(0);
+    expect(strokePos).toBeGreaterThan(fontFillPos);
+  });
+
+  it("composes independently with titleLayout (layout precedes spPr)", () => {
+    const result = writeChart(
+      makeChart({
+        titleLayout: { x: 0.1, y: 0.05 },
+        titleBorderColor: "1F77B4",
+      }),
+      "Sheet1",
+    );
+    const title = titleOf(result.chartXml);
+    expect(title).toContain('<c:x val="0.1"/>');
+    expect(title).toContain('<a:srgbClr val="1F77B4"/>');
+    // CT_Title sequence: <c:layout> precedes <c:overlay> precedes <c:spPr>.
+    expect(title.indexOf("<c:layout>")).toBeLessThan(title.indexOf("<c:overlay"));
+    expect(title.indexOf("<c:overlay")).toBeLessThan(title.indexOf("<c:spPr>"));
+  });
+
+  it("round-trips titleBorderColor through parseChart", () => {
+    const written = writeChart(makeChart({ titleBorderColor: "1F77B4" }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleBorderColor).toBe("1F77B4");
+  });
+
+  it("collapses an unset titleBorderColor round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    expect(parseChart(written)?.titleBorderColor).toBeUndefined();
+  });
+
+  it("round-trips both fill and border together through parseChart", () => {
+    const written = writeChart(
+      makeChart({ titleFillColor: "FFFF00", titleBorderColor: "1F77B4" }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.titleFillColor).toBe("FFFF00");
+    expect(reparsed?.titleBorderColor).toBe("1F77B4");
+  });
+
+  it("survives a writeXlsx round trip — titleBorderColor lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            titleBorderColor: "1F77B4",
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.titleBorderColor).toBe("1F77B4");
+  });
+});
+
 // ── writeChart — legendFillColor ─────────────────────────────────────
 
 describe("writeChart — legendFillColor", () => {

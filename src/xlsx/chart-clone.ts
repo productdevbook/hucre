@@ -788,6 +788,35 @@ export interface CloneChartOptions {
    */
   titleFillColor?: string | null;
   /**
+   * Override `SheetChart.titleBorderColor`. `undefined` (or omitted)
+   * inherits the source's parsed `titleBorderColor`; `null` drops the
+   * inherited stroke (the writer emits no `<a:ln>` block on
+   * `<c:title><c:spPr>`, falling back to the theme default — typically
+   * no visible border); a hex string replaces it. The override is
+   * normalized through the writer-side hex-color path — accepts
+   * `"1F77B4"` / `"#1F77B4"` / `"1f77b4"` and collapses malformed
+   * tokens (wrong length, non-hex characters, alpha-channel forms,
+   * empty / whitespace-only strings, non-string escapes from an
+   * untyped caller) to `undefined`. The cloned `SheetChart` always
+   * carries a value the writer will accept; malformed source values
+   * likewise collapse on the resolver path.
+   *
+   * The override is silently dropped from the cloned `SheetChart`
+   * when the resolved chart renders no title (`title` resolved to
+   * `undefined` or `showTitle === false`) — there is no `<c:title>`
+   * block to host the stroke on a hidden title, so leaking the
+   * value into the output would carry a pin Excel never reads.
+   *
+   * The grammar mirrors `plotAreaBorderColor` so the chart `<c:spPr>`
+   * stroke knobs compose the same way at the call site. The override
+   * lands on the title's `<c:spPr><a:ln>` block and composes
+   * independently with `titleFillColor` — the two knobs share the
+   * `<c:spPr>` host but land on different children
+   * (`<a:solidFill>` for fill, `<a:ln>` for stroke), and the writer
+   * authors a `<c:spPr>` whenever either knob resolves to a value.
+   */
+  titleBorderColor?: string | null;
+  /**
    * Override `<c:autoTitleDeleted>` (the "user explicitly deleted the
    * auto-generated title" flag).
    *
@@ -2339,6 +2368,23 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
       options.titleFillColor,
     );
     if (resolvedTitleFillColor !== undefined) out.titleFillColor = resolvedTitleFillColor;
+
+    // `titleBorderColor` only renders inside `<c:title>` — a clone
+    // that omits the title has no `<c:spPr><a:ln>` slot for the writer
+    // to populate. Same scope rule as the typography knobs / title
+    // layout / title fill: the override wins over the source's parsed
+    // value; absence inherits, `null` drops, a hex string replaces.
+    // Malformed overrides collapse via the normalizer so the cloned
+    // `SheetChart` always carries a value the writer will accept;
+    // malformed source values likewise collapse on the resolver path.
+    // Composes independently with `titleFillColor` — the two knobs
+    // share the `<c:spPr>` host but land on different children
+    // (`<a:solidFill>` for fill, `<a:ln>` for stroke).
+    const resolvedTitleBorderColor = resolveTitleBorderColor(
+      source.titleBorderColor,
+      options.titleBorderColor,
+    );
+    if (resolvedTitleBorderColor !== undefined) out.titleBorderColor = resolvedTitleBorderColor;
   }
 
   // `<c:autoTitleDeleted>` sits on `<c:chart>` directly, not inside
@@ -4221,6 +4267,43 @@ function resolveTitleColor(
  * color), so a caller can pin both without conflict.
  */
 function resolveTitleFillColor(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeTitleColor(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleColor(override);
+}
+
+/**
+ * Resolve a `titleBorderColor` override.
+ *
+ * `undefined` → inherit the source's parsed `titleBorderColor` (after
+ *               running it through {@link normalizeTitleColor} so a
+ *               malformed source value drops cleanly — the hex
+ *               normalizer is purely shape-based and applies
+ *               identically to every `<a:srgbClr val="RRGGBB"/>`
+ *               slot).
+ * `null`      → drop the inherited stroke (the writer emits no
+ *               `<a:ln>` block on `<c:title><c:spPr>`, falling back
+ *               to the theme default — typically no visible border).
+ * `string`    → replace, after running through
+ *               {@link normalizeTitleColor} so the override accepts
+ *               `"1F77B4"` / `"#1F77B4"` / `"1f77b4"` and collapses
+ *               malformed tokens to `undefined`.
+ *
+ * The grammar mirrors `plotAreaBorderColor` / `titleFillColor` so the
+ * chart `<c:spPr>` knobs compose the same way at the call site.
+ * Callers should gate the result on the resolved title visibility —
+ * when no title is emitted, the stroke has no slot in the rendered
+ * chart.
+ *
+ * Independent of `titleFillColor`: the two knobs target different
+ * children of the shared `<c:spPr>` block on `<c:title>`
+ * (`<a:solidFill>` for the fill, `<a:ln>` for the stroke), so a
+ * caller can pin both without conflict.
+ */
+function resolveTitleBorderColor(
   sourceValue: string | undefined,
   override: string | null | undefined,
 ): string | undefined {
