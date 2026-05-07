@@ -1297,23 +1297,40 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
 
 /**
  * Build the optional `<c:spPr>` block at the tail of `<c:plotArea>`.
- * Currently surfaces only the solid fill color knob
- * ({@link SheetChart.plotAreaFillColor}) — every other `<c:spPr>` child
- * (`<a:ln>` stroke, `<a:effectLst>` effects, gradient / pattern / picture
- * fills) is intentionally not modelled at this layer.
+ * Surfaces the solid fill color knob
+ * ({@link SheetChart.plotAreaFillColor}) and the border (line) color
+ * knob ({@link SheetChart.plotAreaBorderColor}) — every other `<c:spPr>`
+ * child (`<a:effectLst>` effects, gradient / pattern / picture fills,
+ * line dash / width / compound styles) is intentionally not modelled
+ * at this layer.
  *
- * Returns `undefined` when the chart leaves the field unset / passed a
- * malformed token so the writer skips the entire `<c:spPr>` block — an
- * empty `<c:spPr/>` collapses to the inherited theme fill Excel picks
- * anyway, and omitting it keeps untouched chart XML byte-clean.
+ * Returns `undefined` when both fields are unset / malformed so the
+ * writer skips the entire `<c:spPr>` block — an empty `<c:spPr/>`
+ * collapses to the inherited theme fill / stroke Excel picks anyway,
+ * and omitting it keeps untouched chart XML byte-clean. When at least
+ * one knob lands on the wire, the children are emitted in
+ * `CT_ShapeProperties` schema order: `<a:solidFill>` (fill) then
+ * `<a:ln>` (line / stroke).
  */
 function buildPlotAreaSpPr(chart: SheetChart): string | undefined {
   const fillHex = normalizePlotAreaFillColor(chart.plotAreaFillColor);
-  if (fillHex === undefined) return undefined;
-  const solidFill = xmlElement("a:solidFill", undefined, [
-    xmlSelfClose("a:srgbClr", { val: fillHex }),
-  ]);
-  return xmlElement("c:spPr", undefined, [solidFill]);
+  const borderHex = normalizePlotAreaBorderColor(chart.plotAreaBorderColor);
+  if (fillHex === undefined && borderHex === undefined) return undefined;
+
+  const children: string[] = [];
+  if (fillHex !== undefined) {
+    children.push(
+      xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillHex })]),
+    );
+  }
+  if (borderHex !== undefined) {
+    children.push(
+      xmlElement("a:ln", undefined, [
+        xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: borderHex })]),
+      ]),
+    );
+  }
+  return xmlElement("c:spPr", undefined, children);
 }
 
 /**
@@ -1333,6 +1350,28 @@ function buildPlotAreaSpPr(chart: SheetChart): string | undefined {
  * sRGB grammar.
  */
 function normalizePlotAreaFillColor(value: string | undefined): string | undefined {
+  return normalizeTitleColor(value);
+}
+
+/**
+ * Normalize a {@link SheetChart.plotAreaBorderColor} value for the
+ * `<c:plotArea><c:spPr><a:ln><a:solidFill><a:srgbClr val=".."/>
+ * </a:solidFill></a:ln></c:spPr></c:plotArea>` writer slot. Returns
+ * the 6-character uppercase hex form when the input is a valid sRGB
+ * triple (with or without a leading `#`), or `undefined` for any
+ * malformed token — wrong length, non-hex characters, alpha-channel
+ * forms, or non-string escapes from an untyped caller.
+ *
+ * Absence and malformed tokens both collapse to `undefined` so the
+ * writer skips the `<a:ln>` block and the plot area inherits the
+ * auto-stroke Excel picks from the chart's theme (Excel's reference
+ * behavior for a fresh plot area without a custom border). Delegates
+ * to the chart-level {@link normalizeTitleColor} so every `<a:srgbClr>`
+ * fill / line slot shares the same sRGB grammar. Mirrors
+ * {@link normalizePlotAreaFillColor} — same hex grammar, distinct
+ * writer slot (`<a:ln>` rather than `<a:solidFill>`).
+ */
+function normalizePlotAreaBorderColor(value: string | undefined): string | undefined {
   return normalizeTitleColor(value);
 }
 

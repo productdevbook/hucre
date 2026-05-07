@@ -438,6 +438,31 @@ export interface CloneChartOptions {
    */
   plotAreaFillColor?: string | null;
   /**
+   * Override `SheetChart.plotAreaBorderColor`. `undefined` (or omitted)
+   * inherits the source's parsed `plotAreaBorderColor`; `null` drops
+   * the inherited stroke (the writer falls back to the auto-stroke
+   * Excel picks from the chart's theme — no `<a:ln>` block on the plot
+   * area's `<c:spPr>`); a 6-digit RGB hex string replaces it.
+   *
+   * The override runs through the same sRGB normalizer as the writer —
+   * the leading `#` and case are accepted, then the value collapses to
+   * the OOXML canonical uppercase form. Malformed tokens (wrong length,
+   * non-hex characters, alpha-channel forms, non-string escapes from
+   * an untyped caller) collapse to `undefined` so the cloned
+   * `SheetChart` drops the field rather than carry a value the writer
+   * would silently elide back to absence.
+   *
+   * The grammar mirrors `plotAreaFillColor` so the chart `<c:spPr>`
+   * knobs compose the same way at the call site. Composes
+   * independently with `plotAreaFillColor` — the two knobs land on
+   * the same `<c:spPr>` block but on different children
+   * (`<a:solidFill>` for fill, `<a:ln>` for stroke), and the writer
+   * emits `<c:spPr>` whenever either knob is set. Like the fill knob,
+   * the border is never gated on a visibility flag — every chart has
+   * a `<c:plotArea>` element to host the stroke.
+   */
+  plotAreaBorderColor?: string | null;
+  /**
    * Override `SheetChart.chartSpaceFillColor`. `undefined` (or omitted)
    * inherits the source's parsed `chartSpaceFillColor`; `null` drops
    * the inherited fill (the writer emits no `<c:spPr>` block on
@@ -2044,6 +2069,24 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     options.plotAreaFillColor,
   );
   if (resolvedPlotAreaFillColor !== undefined) out.plotAreaFillColor = resolvedPlotAreaFillColor;
+
+  // Plot-area border (stroke) color is independent of the fill — every
+  // chart has a `<c:plotArea>` element to host the `<c:spPr><a:ln>`
+  // slot. `undefined` inherits the source's parsed `plotAreaBorderColor`
+  // (after the writer-side normalizer collapses any malformed token),
+  // `null` drops the inherited stroke (the writer emits no `<a:ln>`
+  // block, the plot area inherits the auto-stroke Excel picks from
+  // the chart's theme), a 6-digit hex string replaces it. Composes
+  // independently with `plotAreaFillColor` — the two knobs share the
+  // `<c:spPr>` host but land on different children (`<a:solidFill>`
+  // for fill, `<a:ln>` for stroke).
+  const resolvedPlotAreaBorderColor = resolvePlotAreaBorderColor(
+    source.plotAreaBorderColor,
+    options.plotAreaBorderColor,
+  );
+  if (resolvedPlotAreaBorderColor !== undefined) {
+    out.plotAreaBorderColor = resolvedPlotAreaBorderColor;
+  }
 
   // Chart-space solid fill color is independent of every visibility
   // flag — every chart has a `<c:chartSpace>` document root to host the
@@ -3794,6 +3837,58 @@ function resolvePlotAreaFillColor(
   if (override === undefined) return normalizePlotAreaFillColor(sourceValue);
   if (override === null) return undefined;
   return normalizePlotAreaFillColor(override);
+}
+
+/**
+ * Normalize a `plotAreaBorderColor` value for the cloned `SheetChart`.
+ * Mirrors the writer's `normalizePlotAreaBorderColor` — the cloned
+ * shape is guaranteed to round-trip through the writer without
+ * surprise: a leading `#` and any case are accepted, then the value
+ * collapses to the OOXML canonical uppercase form. Malformed inputs
+ * (wrong length, non-hex characters, alpha-channel forms, non-string
+ * escapes from an untyped caller) collapse to `undefined` so the
+ * cloned chart drops the field rather than carry a value the writer
+ * would silently elide back to absence. Mirrors
+ * {@link normalizePlotAreaFillColor} — same hex grammar.
+ */
+function normalizePlotAreaBorderColor(value: string | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  const hex = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
+  if (hex.length !== 6) return undefined;
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return undefined;
+  return hex.toUpperCase();
+}
+
+/**
+ * Resolve a `plotAreaBorderColor` override.
+ *
+ * `undefined` → inherit the source's parsed `plotAreaBorderColor`
+ *               (after running it through
+ *               {@link normalizePlotAreaBorderColor} so a malformed
+ *               source value drops cleanly).
+ * `null`      → drop the inherited stroke (the writer emits no
+ *               `<a:ln>` block on `<c:plotArea><c:spPr>`, the plot
+ *               area inherits the auto-stroke Excel picks from the
+ *               chart's theme).
+ * `string`    → replace with the normalized 6-character uppercase hex
+ *               form. Malformed overrides collapse to `undefined` via
+ *               the normalizer so the cloned `SheetChart` always
+ *               carries a value the writer will accept.
+ *
+ * The grammar mirrors `plotAreaFillColor` so the chart `<c:spPr>`
+ * knobs compose the same way at the call site. Like the fill knob,
+ * the border is never gated on a visibility flag — every chart has a
+ * `<c:plotArea>` element to host the stroke.
+ */
+function resolvePlotAreaBorderColor(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizePlotAreaBorderColor(sourceValue);
+  if (override === null) return undefined;
+  return normalizePlotAreaBorderColor(override);
 }
 
 /**

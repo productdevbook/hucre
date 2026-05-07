@@ -2332,6 +2332,51 @@ export interface SheetChart {
    */
   plotAreaFillColor?: string;
   /**
+   * Plot-area border (stroke) solid color as a 6-digit RGB hex string
+   * (e.g. `"1F77B4"`). Maps to `<c:plotArea><c:spPr><a:ln><a:solidFill>
+   * <a:srgbClr val="RRGGBB"/></a:solidFill></a:ln></c:spPr></c:plotArea>`
+   * — Excel's "Format Plot Area -> Border -> Solid line -> Color"
+   * picker. The OOXML `<a:srgbClr val=".."/>` carries the 6-character
+   * uppercase hex sRGB color (`CT_SRgbColor` inside the line's solid
+   * fill choice — ECMA-376 Part 1, §20.1.2.3.32 / §20.1.2.3.24). The
+   * `<c:spPr>` slot lives at the tail of `<c:plotArea>` per
+   * `CT_PlotArea` (ECMA-376 Part 1, §21.2.2.145), after every chart-type
+   * element / axes / `<c:dTable>`; `<a:ln>` follows the optional
+   * `<a:solidFill>` (fill) child inside `<c:spPr>` per
+   * `CT_ShapeProperties` (ECMA-376 Part 1, §20.1.2.3.13).
+   *
+   * Accepts a leading `#` and any case; the writer collapses to the
+   * OOXML canonical uppercase form. Malformed inputs (wrong length,
+   * non-hex characters, alpha-channel forms, non-string escapes from
+   * an untyped caller) collapse to `undefined` and the writer omits
+   * the `<a:ln>` block (Excel's reference serialization for a plot
+   * area that inherits the auto-stroke — typically a translucent gray
+   * border or no border depending on the theme).
+   *
+   * Default: omitted — the plot area inherits the auto-stroke Excel
+   * picks from the chart's theme. Pin a hex color to mirror Excel's
+   * "Format Plot Area -> Border -> Solid line" knob and paint a flat
+   * border around the series band — useful for dashboard tiles where
+   * the plot area should be visually framed against the surrounding
+   * chart frame, or to highlight a series band against a busy theme.
+   *
+   * Composes independently with {@link plotAreaFillColor} — the two
+   * knobs land on the same `<c:spPr>` block but on different children
+   * (`<a:solidFill>` for the fill, `<a:ln>` for the stroke), and the
+   * writer authors a `<c:spPr>` whenever either knob is set. A caller
+   * can pin one without the other; pinning both produces a filled
+   * plot area with a colored border.
+   *
+   * Patterned / gradient strokes are not modelled — only the solid
+   * sRGB form lands on the wire. Theme-color references
+   * (`<a:schemeClr>`) likewise drop to `undefined` so a parsed value
+   * always carries a literal hex Excel will render byte-for-byte.
+   * Mirrors `plotAreaFillColor` — same accept-with-or-without-`#` hex
+   * grammar, same `<c:spPr>` host element, but lands on the line
+   * (`<a:ln>`) child rather than the fill (`<a:solidFill>`) child.
+   */
+  plotAreaBorderColor?: string;
+  /**
    * Chart-space (entire chart background) solid fill color as a 6-digit
    * RGB hex string (e.g. `"F2F2F2"`). Maps to `<c:chartSpace><c:spPr>
    * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></c:spPr>
@@ -7113,6 +7158,39 @@ export interface Chart {
    * surface the fill from in that case.
    */
   plotAreaFillColor?: string;
+  /**
+   * Plot-area border (stroke) solid color pulled from
+   * `<c:plotArea><c:spPr><a:ln><a:solidFill><a:srgbClr val=".."/>
+   * </a:solidFill></a:ln></c:spPr></c:plotArea>`. Reflects Excel's
+   * "Format Plot Area -> Border -> Solid line -> Color" picker. The
+   * OOXML `<a:srgbClr val=".."/>` carries the 6-character uppercase
+   * hex sRGB color (`CT_SRgbColor` inside the line's solid fill choice
+   * — ECMA-376 Part 1, §20.1.2.3.32 / §20.1.2.3.24). The `<c:spPr>`
+   * slot lives at the tail of `<c:plotArea>` per `CT_PlotArea`
+   * (ECMA-376 Part 1, §21.2.2.145), after every chart-type element /
+   * axes / `<c:dTable>`; `<a:ln>` follows the optional `<a:solidFill>`
+   * fill child inside `<c:spPr>` per `CT_ShapeProperties` (ECMA-376
+   * Part 1, §20.1.2.3.13).
+   *
+   * Reports the 6-character uppercase hex form when the source chart
+   * pinned a literal `<a:srgbClr>` color on `<a:ln>`; absence,
+   * malformed `val` tokens (wrong length, non-hex characters,
+   * alpha-channel forms), non-solid line fills (`<a:noFill>`,
+   * `<a:gradFill>`, `<a:pattFill>`), and theme-color references
+   * (`<a:schemeClr>`) all collapse to `undefined` so absence and an
+   * unrenderable stroke round-trip identically through
+   * {@link cloneChart}. Mirrors the writer-side
+   * {@link SheetChart.plotAreaBorderColor} so a parsed value slots
+   * straight into {@link cloneChart} without conversion.
+   *
+   * Reported as `undefined` whenever the source chart has no
+   * `<c:plotArea>` element at all — there is no `<c:spPr>` slot to
+   * surface the stroke from in that case. Composes independently with
+   * {@link plotAreaFillColor} — the two fields surface from the same
+   * `<c:spPr>` block but on different children (`<a:solidFill>` for
+   * fill, `<a:ln><a:solidFill>` for stroke).
+   */
+  plotAreaBorderColor?: string;
   /**
    * Chart-space (entire chart background) solid fill color pulled
    * from `<c:chartSpace><c:spPr><a:solidFill><a:srgbClr val=".."/>

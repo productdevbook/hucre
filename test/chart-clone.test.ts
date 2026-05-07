@@ -20926,6 +20926,160 @@ describe("cloneChart — plotAreaFillColor", () => {
     expect(parseChart(written)?.plotAreaFillColor).toBe("1F77B4");
   });
 });
+
+// ── cloneChart — plotAreaBorderColor (line stroke) ──────────────────
+
+describe("cloneChart — plotAreaBorderColor", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's plotAreaBorderColor by default", () => {
+    const clone = cloneChart(source({ plotAreaBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.plotAreaBorderColor).toBe("1F77B4");
+  });
+
+  it("lets options.plotAreaBorderColor override the source's value", () => {
+    const clone = cloneChart(source({ plotAreaBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderColor: "ABCDEF",
+    });
+    expect(clone.plotAreaBorderColor).toBe("ABCDEF");
+  });
+
+  it("drops the inherited plotAreaBorderColor when the override is null", () => {
+    const clone = cloneChart(source({ plotAreaBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderColor: null,
+    });
+    expect(clone.plotAreaBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined plotAreaBorderColor when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.plotAreaBorderColor).toBeUndefined();
+  });
+
+  it("normalizes a leading # and lowercase input through the override", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderColor: "#1f77b4",
+    });
+    expect(clone.plotAreaBorderColor).toBe("1F77B4");
+  });
+
+  it("drops a malformed override (wrong length)", () => {
+    const clone = cloneChart(source({ plotAreaBorderColor: "ABCDEF" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderColor: "FFF",
+    });
+    expect(clone.plotAreaBorderColor).toBeUndefined();
+  });
+
+  it("drops a malformed override (non-hex characters)", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderColor: "GGGGGG",
+    });
+    expect(clone.plotAreaBorderColor).toBeUndefined();
+  });
+
+  it("drops a malformed override (alpha-channel form)", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderColor: "FFAA0080",
+    });
+    expect(clone.plotAreaBorderColor).toBeUndefined();
+  });
+
+  it("drops a non-string override (typed escape from an untyped caller)", () => {
+    const clone = cloneChart(source({ plotAreaBorderColor: "ABCDEF" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      plotAreaBorderColor: 0xff_ff_ff as any,
+    });
+    expect(clone.plotAreaBorderColor).toBeUndefined();
+  });
+
+  it("normalizes a malformed source value through the resolver", () => {
+    const clone = cloneChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      source({ plotAreaBorderColor: "GGGGGG" as any }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.plotAreaBorderColor).toBeUndefined();
+  });
+
+  it("carries plotAreaBorderColor through a flatten (line → column)", () => {
+    const clone = cloneChart(source({ plotAreaBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.plotAreaBorderColor).toBe("1F77B4");
+  });
+
+  it("retains plotAreaBorderColor independently of a hidden legend", () => {
+    const clone = cloneChart(source({ plotAreaBorderColor: "1F77B4" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.plotAreaBorderColor).toBe("1F77B4");
+  });
+
+  it("composes independently with plotAreaFillColor (each lands on its own slot)", () => {
+    const clone = cloneChart(
+      source({
+        plotAreaFillColor: "F2F2F2",
+        plotAreaBorderColor: "1F77B4",
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.plotAreaFillColor).toBe("F2F2F2");
+    expect(clone.plotAreaBorderColor).toBe("1F77B4");
+  });
+
+  it("survives a writeXlsx round trip — plotAreaBorderColor lands in the cloned chart XML", async () => {
+    const clone = cloneChart(source({ plotAreaBorderColor: "F2F2F2" }), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderColor: "1F77B4",
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(parseChart(written)?.plotAreaBorderColor).toBe("1F77B4");
+  });
+});
+
 // ── cloneChart — axisTitleLayout (manual placement) ─────────────────
 
 describe("cloneChart — axisTitleLayout", () => {
