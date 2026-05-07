@@ -22488,6 +22488,263 @@ describe("cloneChart — axisTitleFillColor", () => {
   });
 });
 
+// ── cloneChart — axisTitleBorderColor ────────────────────────────────
+
+describe("cloneChart — axisTitleBorderColor", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      title: "Sales",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's X-axis axisTitleBorderColor by default", () => {
+    const clone = cloneChart(
+      source({ axes: { x: { title: "Period", axisTitleBorderColor: "1F77B4" } } }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.x?.axisTitleBorderColor).toBe("1F77B4");
+    expect(clone.axes?.x?.title).toBe("Period");
+  });
+
+  it("inherits the source's Y-axis axisTitleBorderColor by default", () => {
+    const clone = cloneChart(
+      source({ axes: { y: { title: "USD", axisTitleBorderColor: "00C586" } } }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.y?.axisTitleBorderColor).toBe("00C586");
+    expect(clone.axes?.y?.title).toBe("USD");
+  });
+
+  it("lets options.axes.x.axisTitleBorderColor replace the source's value", () => {
+    const clone = cloneChart(
+      source({ axes: { x: { title: "Period", axisTitleBorderColor: "1F77B4" } } }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { axisTitleBorderColor: "1070CA" } },
+      },
+    );
+    expect(clone.axes?.x?.axisTitleBorderColor).toBe("1070CA");
+  });
+
+  it("normalizes a lowercase hex override to uppercase", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleBorderColor: "abcdef" } },
+    });
+    expect(clone.axes?.x?.axisTitleBorderColor).toBe("ABCDEF");
+  });
+
+  it("strips a leading '#' on override input", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleBorderColor: "#1070CA" } },
+    });
+    expect(clone.axes?.x?.axisTitleBorderColor).toBe("1070CA");
+  });
+
+  it("drops the inherited axisTitleBorderColor when the override is null", () => {
+    const clone = cloneChart(
+      source({ axes: { x: { title: "Period", axisTitleBorderColor: "1F77B4" } } }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { axisTitleBorderColor: null } },
+      },
+    );
+    expect(clone.axes?.x?.axisTitleBorderColor).toBeUndefined();
+    expect(clone.axes?.x?.title).toBe("Period");
+  });
+
+  it("returns undefined axisTitleBorderColor when neither source nor override sets it", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.axes?.x?.axisTitleBorderColor).toBeUndefined();
+  });
+
+  it("replaces an unset source axisTitleBorderColor with the override", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleBorderColor: "1070CA" } },
+    });
+    expect(clone.axes?.x?.axisTitleBorderColor).toBe("1070CA");
+  });
+
+  it("drops malformed hex overrides (defends against the type guard escaping)", () => {
+    for (const bad of ["", "FFF", "ZZZZZZ", "FF0000FF"]) {
+      const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { axisTitleBorderColor: bad } },
+      });
+      expect(clone.axes?.x?.axisTitleBorderColor).toBeUndefined();
+    }
+  });
+
+  it("drops non-string overrides (defends against the type guard escaping)", () => {
+    const clone = cloneChart(source({ axes: { x: { title: "Period" } } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      axes: { x: { axisTitleBorderColor: 123 as any } },
+    });
+    expect(clone.axes?.x?.axisTitleBorderColor).toBeUndefined();
+  });
+
+  it("normalises a parsed source value that is malformed", () => {
+    const clone = cloneChart(
+      source({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        axes: { x: { title: "Period", axisTitleBorderColor: "ZZZZZZ" as any } },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.x?.axisTitleBorderColor).toBeUndefined();
+  });
+
+  it("drops the inherited axisTitleBorderColor when the resolved axis title is dropped", () => {
+    const clone = cloneChart(
+      source({ axes: { x: { title: "Period", axisTitleBorderColor: "1F77B4" } } }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { title: null } },
+      },
+    );
+    expect(clone.axes?.x?.title).toBeUndefined();
+    expect(clone.axes?.x?.axisTitleBorderColor).toBeUndefined();
+  });
+
+  it("drops an override axisTitleBorderColor when no axis title resolves", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { axisTitleBorderColor: "1F77B4" } },
+    });
+    expect(clone.axes?.x).toBeUndefined();
+  });
+
+  it("preserves the override when the override also pins a title", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      axes: { x: { title: "Period", axisTitleBorderColor: "1070CA" } },
+    });
+    expect(clone.axes?.x?.title).toBe("Period");
+    expect(clone.axes?.x?.axisTitleBorderColor).toBe("1070CA");
+  });
+
+  it("composes independently with axisTitleFillColor on the same axis title", () => {
+    const clone = cloneChart(
+      source({
+        axes: {
+          x: {
+            title: "Period",
+            axisTitleFillColor: "FFFF00",
+            axisTitleBorderColor: "1F77B4",
+          },
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.x?.axisTitleFillColor).toBe("FFFF00");
+    expect(clone.axes?.x?.axisTitleBorderColor).toBe("1F77B4");
+  });
+
+  it("composes independently with axisTitleColor (font color slot) on the same axis title", () => {
+    const clone = cloneChart(
+      source({
+        axes: {
+          x: {
+            title: "Period",
+            axisTitleColor: "FF0000",
+            axisTitleBorderColor: "1F77B4",
+          },
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.x?.axisTitleColor).toBe("FF0000");
+    expect(clone.axes?.x?.axisTitleBorderColor).toBe("1F77B4");
+  });
+
+  it("composes independently with the chart-level titleBorderColor", () => {
+    const clone = cloneChart(
+      source({
+        titleBorderColor: "1070CA",
+        axes: { x: { title: "Period", axisTitleBorderColor: "1F77B4" } },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.titleBorderColor).toBe("1070CA");
+    expect(clone.axes?.x?.axisTitleBorderColor).toBe("1F77B4");
+  });
+
+  it("threads the border through both axes independently on the clone", () => {
+    const clone = cloneChart(
+      source({
+        axes: {
+          x: { title: "Period", axisTitleBorderColor: "FF0000" },
+          y: { title: "USD", axisTitleBorderColor: "00C586" },
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.axes?.x?.axisTitleBorderColor).toBe("FF0000");
+    expect(clone.axes?.y?.axisTitleBorderColor).toBe("00C586");
+  });
+
+  it("survives a writeXlsx round trip — axisTitleBorderColor lands in the cloned chart XML", async () => {
+    const clone = cloneChart(
+      source({ axes: { x: { title: "Period", axisTitleBorderColor: "1F77B4" } } }),
+      {
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { axisTitleBorderColor: "1070CA" } },
+      },
+    );
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(parseChart(written)?.axes?.x?.axisTitleBorderColor).toBe("1070CA");
+  });
+
+  it("round-trips a parsed axisTitleBorderColor straight back through cloneChart", () => {
+    const written = writeChart(
+      {
+        type: "column",
+        title: "Sales",
+        series: [{ values: "B2:B5", categories: "A2:A5" }],
+        anchor: { from: { row: 0, col: 0 } },
+        axes: { x: { title: "Period", axisTitleBorderColor: "1F77B4" } },
+      },
+      "Sheet1",
+    ).chartXml;
+    const parsed = parseChart(written)!;
+    expect(parsed.axes?.x?.axisTitleBorderColor).toBe("1F77B4");
+    const clone = cloneChart(parsed, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.axes?.x?.axisTitleBorderColor).toBe("1F77B4");
+  });
+});
+
 // ── cloneChart — dataLabels.fillColor ───────────────────────────────
 
 describe("cloneChart — dataLabels.fillColor", () => {

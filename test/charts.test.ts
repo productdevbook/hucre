@@ -21143,6 +21143,283 @@ describe("parseChart — axisTitleFillColor", () => {
   });
 });
 
+// ── parseChart — axisTitleBorderColor (line stroke) ──────────────────
+
+describe("parseChart — axisTitleBorderColor", () => {
+  const NS_ATBC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withCatAxTitleSpPr(spPrBody: string): string {
+    return `<c:chartSpace ${NS_ATBC}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Period</a:t></a:r></a:p></c:rich></c:tx>
+        <c:overlay val="0"/>
+        <c:spPr>${spPrBody}</c:spPr>
+      </c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+  }
+
+  function withValAxTitleSpPr(spPrBody: string): string {
+    return `<c:chartSpace ${NS_ATBC}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:title>
+        <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>USD</a:t></a:r></a:p></c:rich></c:tx>
+        <c:overlay val="0"/>
+        <c:spPr>${spPrBody}</c:spPr>
+      </c:title>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces the literal sRGB color when <c:title><c:spPr><a:ln><a:solidFill><a:srgbClr> is pinned (catAx)", () => {
+    const chart = parseChart(
+      withCatAxTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`),
+    );
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBe("1F77B4");
+    expect(chart?.axes?.x?.title).toBe("Period");
+  });
+
+  it("surfaces the literal sRGB color on the value axis (valAx)", () => {
+    const chart = parseChart(
+      withValAxTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="00C586"/></a:solidFill></a:ln>`),
+    );
+    expect(chart?.axes?.y?.axisTitleBorderColor).toBe("00C586");
+    expect(chart?.axes?.y?.title).toBe("USD");
+  });
+
+  it("normalizes lowercase hex to canonical uppercase form", () => {
+    const chart = parseChart(
+      withCatAxTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="abcdef"/></a:solidFill></a:ln>`),
+    );
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBe("ABCDEF");
+  });
+
+  it("admits a leading # on the val attribute", () => {
+    const chart = parseChart(
+      withCatAxTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="#1F77B4"/></a:solidFill></a:ln>`),
+    );
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBe("1F77B4");
+  });
+
+  it("surfaces fill and border independently when both are pinned on the same axis title", () => {
+    const chart = parseChart(
+      withCatAxTitleSpPr(
+        `<a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill>` +
+          `<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
+      ),
+    );
+    expect(chart?.axes?.x?.axisTitleFillColor).toBe("FFFF00");
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBe("1F77B4");
+  });
+
+  it("returns undefined when the axis omits <c:title>", () => {
+    const xml = `<c:chartSpace ${NS_ATBC}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.axes).toBeUndefined();
+  });
+
+  it("returns undefined when <c:title> has no <c:spPr>", () => {
+    const xml = `<c:chartSpace ${NS_ATBC}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Period</a:t></a:r></a:p></c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.title).toBe("Period");
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when <c:spPr> has no <a:ln>", () => {
+    const chart = parseChart(
+      withCatAxTitleSpPr(`<a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill>`),
+    );
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln> has no <a:solidFill>", () => {
+    const chart = parseChart(withCatAxTitleSpPr(`<a:ln w="12700"/>`));
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln><a:solidFill> uses <a:schemeClr> (theme reference)", () => {
+    const chart = parseChart(
+      withCatAxTitleSpPr(`<a:ln><a:solidFill><a:schemeClr val="bg1"/></a:solidFill></a:ln>`),
+    );
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln> stroke is <a:noFill>", () => {
+    const chart = parseChart(withCatAxTitleSpPr(`<a:ln><a:noFill/></a:ln>`));
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln> stroke is <a:gradFill>", () => {
+    const chart = parseChart(
+      withCatAxTitleSpPr(
+        `<a:ln><a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FFFFFF"/></a:gs></a:gsLst></a:gradFill></a:ln>`,
+      ),
+    );
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln> stroke is <a:pattFill>", () => {
+    const chart = parseChart(
+      withCatAxTitleSpPr(
+        `<a:ln><a:pattFill prst="dkUpDiag"><a:fgClr><a:srgbClr val="000000"/></a:fgClr><a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr></a:pattFill></a:ln>`,
+      ),
+    );
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
+  });
+
+  it("drops malformed val tokens (wrong length / non-hex / 8-char alpha form)", () => {
+    expect(
+      parseChart(withCatAxTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val=""/></a:solidFill></a:ln>`))
+        ?.axes?.x?.axisTitleBorderColor,
+    ).toBeUndefined();
+    expect(
+      parseChart(
+        withCatAxTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="FFF"/></a:solidFill></a:ln>`),
+      )?.axes?.x?.axisTitleBorderColor,
+    ).toBeUndefined();
+    expect(
+      parseChart(
+        withCatAxTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="ZZZZZZ"/></a:solidFill></a:ln>`),
+      )?.axes?.x?.axisTitleBorderColor,
+    ).toBeUndefined();
+    // 8-character alpha form (Excel uses <a:alpha> sibling for that).
+    expect(
+      parseChart(
+        withCatAxTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="FF0000FF"/></a:solidFill></a:ln>`),
+      )?.axes?.x?.axisTitleBorderColor,
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when the val attribute is missing", () => {
+    const chart = parseChart(
+      withCatAxTitleSpPr(`<a:ln><a:solidFill><a:srgbClr/></a:solidFill></a:ln>`),
+    );
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
+  });
+
+  it("does not leak the chart-level title <c:spPr><a:ln> stroke into the axis title border", () => {
+    // Chart-level <c:title> has the spPr/ln; the axis title doesn't.
+    const xml = `<c:chartSpace ${NS_ATBC}>
+  <c:chart>
+    <c:title>
+      <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Hero</a:t></a:r></a:p></c:rich></c:tx>
+      <c:overlay val="0"/>
+      <c:spPr><a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln></c:spPr>
+    </c:title>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx>
+        <c:axId val="1"/>
+        <c:title>
+          <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Period</a:t></a:r></a:p></c:rich></c:tx>
+          <c:overlay val="0"/>
+        </c:title>
+      </c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.titleBorderColor).toBe("1F77B4");
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
+  });
+
+  it("does not leak a stray <a:ln> on a sibling axis (catAx vs valAx scope)", () => {
+    const xml = `<c:chartSpace ${NS_ATBC}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>Period</a:t></a:r></a:p></c:rich></c:tx>
+        <c:overlay val="0"/>
+      </c:title>
+    </c:catAx>
+    <c:valAx>
+      <c:axId val="2"/>
+      <c:title>
+        <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:r><a:t>USD</a:t></a:r></a:p></c:rich></c:tx>
+        <c:overlay val="0"/>
+        <c:spPr><a:ln><a:solidFill><a:srgbClr val="00C586"/></a:solidFill></a:ln></c:spPr>
+      </c:title>
+    </c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
+    expect(chart?.axes?.y?.axisTitleBorderColor).toBe("00C586");
+  });
+
+  it("surfaces axisTitleBorderColor independently of axisTitleColor (font color slot)", () => {
+    const xml = `<c:chartSpace ${NS_ATBC}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p>
+          <a:pPr><a:defRPr><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:defRPr></a:pPr>
+          <a:r><a:rPr lang="en-US"/><a:t>Period</a:t></a:r>
+        </a:p></c:rich></c:tx>
+        <c:overlay val="0"/>
+        <c:spPr><a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln></c:spPr>
+      </c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.axes?.x?.axisTitleColor).toBe("FF0000");
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBe("1F77B4");
+  });
+
+  it("surfaces axisTitleBorderColor on a strRef-bodied title (no <c:rich>)", () => {
+    const xml = `<c:chartSpace ${NS_ATBC}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx>
+      <c:axId val="1"/>
+      <c:title>
+        <c:tx><c:strRef><c:f>Sheet1!$A$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Period</c:v></c:pt></c:strCache></c:strRef></c:tx>
+        <c:overlay val="0"/>
+        <c:spPr><a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln></c:spPr>
+      </c:title>
+    </c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.axes?.x?.axisTitleBorderColor).toBe("1F77B4");
+  });
+});
+
 // ── parseChart — dataLabelsFillColor ────────────────────────────────
 
 describe("parseChart — dataLabelsFillColor", () => {

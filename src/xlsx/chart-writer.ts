@@ -1126,6 +1126,19 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // title background with no `<c:spPr>` block).
     xAxisTitleFillColor: normalizeTitleColor(chart.axes?.x?.axisTitleFillColor),
     yAxisTitleFillColor: normalizeTitleColor(chart.axes?.y?.axisTitleFillColor),
+    // `<c:title><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/>
+    // </a:solidFill></a:ln></c:spPr></c:title>` — axis-title border
+    // (line stroke) color. Same accept-with-or-without-`#` /
+    // case-insensitive hex grammar as the chart-level
+    // `titleBorderColor` knob. Malformed inputs (wrong length,
+    // non-hex characters, alpha-channel forms, empty / whitespace-
+    // only strings, non-string escapes from an untyped caller)
+    // collapse to `undefined` and the writer omits the entire
+    // `<a:ln>` block (Excel's reference serialization for an axis
+    // title that inherits the auto-stroke — typically no visible
+    // border).
+    xAxisTitleBorderColor: normalizeTitleColor(chart.axes?.x?.axisTitleBorderColor),
+    yAxisTitleBorderColor: normalizeTitleColor(chart.axes?.y?.axisTitleBorderColor),
     xGridlines: normalizeAxisGridlines(chart.axes?.x?.gridlines),
     yGridlines: normalizeAxisGridlines(chart.axes?.y?.gridlines),
     xScale: normalizeAxisScale(chart.axes?.x?.scale),
@@ -2352,6 +2365,33 @@ interface AxisRenderOptions {
    * emit semantics as {@link xAxisTitleFillColor}.
    */
   yAxisTitleFillColor: string | undefined;
+  /**
+   * Axis-title border (line stroke) color emitted on the X axis via
+   * `<c:title><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/>
+   * </a:solidFill></a:ln></c:spPr></c:title>`. The OOXML
+   * `<a:srgbClr val=".."/>` carries the 6-character uppercase hex
+   * sRGB color (CT_SRgbColor inside the line's solid fill choice —
+   * ECMA-376 Part 1, §20.1.2.3.32 / §20.1.2.3.24). `undefined`
+   * collapses to omitting the `<a:ln>` block (Excel's reference
+   * serialization for an axis title that inherits the auto-stroke —
+   * typically no visible border); any non-`undefined` value is the
+   * normalized uppercase hex string the writer lands on the title's
+   * `<c:spPr><a:ln>` slot. Composes independently with
+   * {@link xAxisTitleFillColor} — the fill lands on
+   * `<c:spPr><a:solidFill>`, the stroke lands on
+   * `<c:spPr><a:ln><a:solidFill>`; the writer authors a single
+   * `<c:spPr>` whenever either knob is set with children in
+   * CT_ShapeProperties schema order (fill before stroke). Only
+   * meaningful when the axis renders a title — the per-family axis
+   * builders gate the value on the `xAxisTitle` / `yAxisTitle`
+   * field.
+   */
+  xAxisTitleBorderColor: string | undefined;
+  /**
+   * Axis-title border emitted on the Y axis. Same shape and emit
+   * semantics as {@link xAxisTitleBorderColor}.
+   */
+  yAxisTitleBorderColor: string | undefined;
   xGridlines: { major: boolean; minor: boolean } | undefined;
   yGridlines: { major: boolean; minor: boolean } | undefined;
   xScale: ChartAxisScale | undefined;
@@ -3584,6 +3624,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
         opts.xAxisTitleOverlay,
         opts.xAxisTitleLayout,
         opts.xAxisTitleFillColor,
+        opts.xAxisTitleBorderColor,
       ),
     );
   catAxChildren.push(
@@ -3662,6 +3703,7 @@ function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): s
         opts.yAxisTitleOverlay,
         opts.yAxisTitleLayout,
         opts.yAxisTitleFillColor,
+        opts.yAxisTitleBorderColor,
       ),
     );
   valAxChildren.push(
@@ -4041,6 +4083,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.xAxisTitleOverlay,
         opts.xAxisTitleLayout,
         opts.xAxisTitleFillColor,
+        opts.xAxisTitleBorderColor,
       ),
     );
   xAxChildren.push(
@@ -4098,6 +4141,7 @@ function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.yAxisTitleOverlay,
         opts.yAxisTitleLayout,
         opts.yAxisTitleFillColor,
+        opts.yAxisTitleBorderColor,
       ),
     );
   yAxChildren.push(
@@ -4202,6 +4246,7 @@ function buildAxisTitle(
   overlay: boolean,
   layout: ResolvedManualLayout | undefined,
   fillRgbHex: string | undefined,
+  borderRgbHex: string | undefined,
 ): string {
   const rot = rotationDeg === undefined ? 0 : rotationDeg * TITLE_ROT_PER_DEGREE;
   // OOXML's `<a:defRPr sz="N"/>` / `<a:rPr sz="N"/>` attribute is in
@@ -4354,21 +4399,24 @@ function buildAxisTitle(
   titleChildren.push(xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }));
   // CT_Title (ECMA-376 Part 1, §21.2.2.210) places the optional
   // `<c:spPr>` between `<c:overlay>` and `<c:txPr>` / `<c:extLst>`.
-  // Mirrors `buildTitle`: the writer skips emission entirely when the
-  // caller did not pin a fill color so a fresh axis title matches
-  // Excel's reference shape byte-for-byte (Excel itself omits the
-  // block whenever the title renders at the theme default fill —
-  // typically a transparent title background with no `<c:spPr>`
-  // block). Currently the writer only authors `<a:solidFill>` here
-  // for axis titles; stroke (`<a:ln>`) and other CT_ShapeProperties
-  // children are not modelled at this layer (the chart-level
-  // {@link SheetChart.titleBorderColor} knob lands on `<c:title>` —
-  // the axis-title border counterpart is a separate gap). Distinct
-  // from the `<a:defRPr><a:solidFill>` font-color slot inside
-  // `<c:tx><c:rich>` that {@link SheetChart.axes.x.axisTitleColor}
-  // pins — the two knobs target different children of `<c:title>` so
-  // a caller can pin both without conflict.
-  const titleSpPrXml = buildTitleSpPr(fillRgbHex, undefined);
+  // Mirrors `buildTitle`: the writer skips emission entirely when
+  // neither the fill nor the border color is pinned so a fresh axis
+  // title matches Excel's reference shape byte-for-byte (Excel
+  // itself omits the block whenever the title renders at the theme
+  // defaults — typically a transparent title background with no
+  // visible border, no `<c:spPr>` block). Authors `<a:solidFill>`
+  // for the fill ({@link SheetChart.axes.x.axisTitleFillColor}) and
+  // `<a:ln>` for the stroke
+  // ({@link SheetChart.axes.x.axisTitleBorderColor}) in
+  // CT_ShapeProperties schema order; other CT_ShapeProperties
+  // children (effects, gradient / pattern / picture fills, line
+  // dash / width / compound styles) are not modelled at this layer.
+  // Distinct from the `<a:defRPr><a:solidFill>` font-color slot
+  // inside `<c:tx><c:rich>` that
+  // {@link SheetChart.axes.x.axisTitleColor} pins — the typography
+  // knobs target different children of `<c:title>` so a caller can
+  // pin all three without conflict.
+  const titleSpPrXml = buildTitleSpPr(fillRgbHex, borderRgbHex);
   if (titleSpPrXml !== undefined) titleChildren.push(titleSpPrXml);
   return xmlElement("c:title", undefined, titleChildren);
 }

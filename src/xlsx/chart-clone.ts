@@ -1481,6 +1481,37 @@ export interface CloneChartOptions {
        * slots.
        */
       axisTitleFillColor?: string | null;
+      /**
+       * Override `SheetChart.axes.x.axisTitleBorderColor`. `undefined`
+       * (or omitted) inherits the source axis's parsed value; `null`
+       * drops the inherited stroke so the writer falls back to the
+       * theme-default auto-stroke (no `<a:ln>` block on the axis
+       * title, typically no visible border); a 6-character hex string
+       * (with or without a leading `#`, any case) replaces it.
+       *
+       * Malformed overrides (wrong length, non-hex characters,
+       * alpha-channel forms, non-string escapes from an untyped
+       * caller) collapse to a drop so the cloned `SheetChart` always
+       * carries a value the writer will accept.
+       *
+       * `<c:title>` lives on every axis flavour per the OOXML schema,
+       * so the override carries through every chart family that has
+       * axes (bar / column / line / area / scatter). Silently dropped
+       * on `pie` / `doughnut` charts (no axes at all) and on any
+       * axis whose `title` is unset (no `<c:title>` block to host
+       * the stroke). Composes independently with `axisTitleFillColor`
+       * (the background fill on `<c:spPr><a:solidFill>`) and
+       * `axisTitleColor` (the font color on the inner
+       * `<a:defRPr><a:solidFill>`) — the three knobs target different
+       * children of `<c:title>` so a caller can pin all three without
+       * conflict.
+       *
+       * Mirrors the chart-level `titleBorderColor` so a single
+       * configuration call can thread a border color through the
+       * chart title and either axis title without bookkeeping the
+       * canonical OOXML slots.
+       */
+      axisTitleBorderColor?: string | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -1825,6 +1856,8 @@ export interface CloneChartOptions {
       axisTitleLayout?: ChartManualLayout | null;
       /** See {@link CloneChartOptions.axes.x.axisTitleFillColor}. */
       axisTitleFillColor?: string | null;
+      /** See {@link CloneChartOptions.axes.x.axisTitleBorderColor}. */
+      axisTitleBorderColor?: string | null;
       gridlines?: ChartAxisGridlines | null;
       scale?: ChartAxisScale | null;
       numberFormat?: ChartAxisNumberFormat | null;
@@ -4904,6 +4937,30 @@ function resolveAxes(
     sourceAxes?.y?.axisTitleFillColor,
     overrides?.y?.axisTitleFillColor,
   );
+  // `<c:title><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/>
+  // </a:solidFill></a:ln></c:spPr></c:title>` — axis-title border
+  // (line stroke) color. Lives on the axis's `<c:title>` directly per
+  // CT_Title schema, on the same `<c:spPr>` block as the background
+  // fill but on a sibling child (`<a:ln>` for the stroke,
+  // `<a:solidFill>` for the fill). Independent of `axisTitleFillColor`
+  // and `axisTitleColor` (font color on the inner `<a:defRPr>
+  // <a:solidFill>` slot) — the three resolvers walk disjoint paths so
+  // a caller can pin all three knobs without conflict. Malformed
+  // overrides (wrong length, non-hex characters, alpha-channel forms,
+  // empty / whitespace-only strings, non-string escapes from an
+  // untyped caller) collapse to a drop via the normalizer so the
+  // cloned `SheetChart` always carries a value the writer will
+  // accept. Like the other axis-title knobs, the writer drops the
+  // stroke when the matching axis title is unset, so a stray pin on
+  // an axis with no title silently disappears at emit time.
+  const xAxisTitleBorderColor = applyAxisTitleBorderColorOverride(
+    sourceAxes?.x?.axisTitleBorderColor,
+    overrides?.x?.axisTitleBorderColor,
+  );
+  const yAxisTitleBorderColor = applyAxisTitleBorderColorOverride(
+    sourceAxes?.y?.axisTitleBorderColor,
+    overrides?.y?.axisTitleBorderColor,
+  );
   const xGridlines = applyGridlinesOverride(sourceAxes?.x?.gridlines, overrides?.x?.gridlines);
   const yGridlines = applyGridlinesOverride(sourceAxes?.y?.gridlines, overrides?.y?.gridlines);
   const xScale = applyScaleOverride(sourceAxes?.x?.scale, overrides?.x?.scale);
@@ -5208,6 +5265,17 @@ function resolveAxes(
   // the `<c:spPr>` block entirely when no fill is pinned).
   const xAxisTitleFillColorResolved = xTitle === undefined ? undefined : xAxisTitleFillColor;
   const yAxisTitleFillColorResolved = yTitle === undefined ? undefined : yAxisTitleFillColor;
+  // The axis-title border (line stroke) only renders when the axis
+  // carries a title — drop a stray inherited stroke when the resolved
+  // axis title is unset so the cloned `SheetChart` accurately reflects
+  // what the chart will paint. Symmetric with the writer's title-
+  // presence gate (the per-family axis builder only invokes
+  // `buildAxisTitle` when `opts.xAxisTitle` / `opts.yAxisTitle` is
+  // set, and the writer skips the `<a:ln>` block entirely when no
+  // border is pinned — and skips the entire `<c:spPr>` block when
+  // both the fill and border are absent).
+  const xAxisTitleBorderColorResolved = xTitle === undefined ? undefined : xAxisTitleBorderColor;
+  const yAxisTitleBorderColorResolved = yTitle === undefined ? undefined : yAxisTitleBorderColor;
 
   const out: NonNullable<SheetChart["axes"]> = {};
   if (
@@ -5223,6 +5291,7 @@ function resolveAxes(
     xAxisTitleOverlayResolved !== undefined ||
     xAxisTitleLayoutResolved !== undefined ||
     xAxisTitleFillColorResolved !== undefined ||
+    xAxisTitleBorderColorResolved !== undefined ||
     xGridlines !== undefined ||
     xScale !== undefined ||
     xNumFmt !== undefined ||
@@ -5268,6 +5337,8 @@ function resolveAxes(
     if (xAxisTitleLayoutResolved !== undefined) out.x.axisTitleLayout = xAxisTitleLayoutResolved;
     if (xAxisTitleFillColorResolved !== undefined)
       out.x.axisTitleFillColor = xAxisTitleFillColorResolved;
+    if (xAxisTitleBorderColorResolved !== undefined)
+      out.x.axisTitleBorderColor = xAxisTitleBorderColorResolved;
     if (xGridlines !== undefined) out.x.gridlines = xGridlines;
     if (xScale !== undefined) out.x.scale = xScale;
     if (xNumFmt !== undefined) out.x.numberFormat = xNumFmt;
@@ -5308,6 +5379,7 @@ function resolveAxes(
     yAxisTitleOverlayResolved !== undefined ||
     yAxisTitleLayoutResolved !== undefined ||
     yAxisTitleFillColorResolved !== undefined ||
+    yAxisTitleBorderColorResolved !== undefined ||
     yGridlines !== undefined ||
     yScale !== undefined ||
     yNumFmt !== undefined ||
@@ -5347,6 +5419,8 @@ function resolveAxes(
     if (yAxisTitleLayoutResolved !== undefined) out.y.axisTitleLayout = yAxisTitleLayoutResolved;
     if (yAxisTitleFillColorResolved !== undefined)
       out.y.axisTitleFillColor = yAxisTitleFillColorResolved;
+    if (yAxisTitleBorderColorResolved !== undefined)
+      out.y.axisTitleBorderColor = yAxisTitleBorderColorResolved;
     if (yGridlines !== undefined) out.y.gridlines = yGridlines;
     if (yScale !== undefined) out.y.scale = yScale;
     if (yNumFmt !== undefined) out.y.numberFormat = yNumFmt;
@@ -6051,6 +6125,46 @@ function applyAxisTitleColorOverride(
  * the axis renders no title).
  */
 function applyAxisTitleFillColorOverride(
+  source: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeTitleColor(source);
+  if (override === null) return undefined;
+  return normalizeTitleColor(override);
+}
+
+/**
+ * Resolve an `axisTitleBorderColor` override using the same `undefined`
+ * (inherit) / `null` (drop) / value (replace) grammar as the other
+ * axis helpers. Non-string overrides and malformed hex tokens (typed
+ * escapes from an untyped caller, wrong length, non-hex characters,
+ * alpha-channel forms) collapse to `undefined` via
+ * {@link normalizeTitleColor} so the cloned `SheetChart` always
+ * carries a value the writer will accept. A `null` override always
+ * drops the inherited stroke (the writer falls back to the theme-
+ * default auto-stroke — no `<a:ln>` block on the axis title's
+ * `<c:spPr>`, typically no visible border matching Excel's reference
+ * shape).
+ *
+ * Independent of {@link applyAxisTitleFillColorOverride}: this
+ * resolver targets the axis title's stroke
+ * `<c:spPr><a:ln><a:solidFill>` slot, while the fill targets the
+ * sibling `<c:spPr><a:solidFill>` slot — the two knobs land on
+ * different children of the shared `<c:spPr>` block so a caller can
+ * pin both without conflict. Independent of
+ * {@link applyAxisTitleColorOverride}: the font color targets the
+ * inner `<a:defRPr><a:solidFill>` slot inside `<c:tx><c:rich><a:p>
+ * <a:pPr>` — disjoint from both the fill and the stroke. Mirrors
+ * {@link applyTitleBorderColorOverride} for axis titles — same
+ * accept-with-or-without-`#` hex grammar, distinct host element.
+ *
+ * The caller is expected to additionally gate the resolved value on
+ * the matching axis title's presence so the cloned shape never
+ * carries a stroke that the writer would silently elide (the writer
+ * scopes the stroke emission to `<c:title>`, which is omitted when
+ * the axis renders no title).
+ */
+function applyAxisTitleBorderColorOverride(
   source: string | undefined,
   override: string | null | undefined,
 ): string | undefined {
