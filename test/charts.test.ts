@@ -20138,6 +20138,131 @@ describe("parseChart — plotAreaBorderColor", () => {
   });
 });
 
+// ── parseChart — plotAreaBorderWidth (line stroke thickness) ─────────
+
+describe("parseChart — plotAreaBorderWidth", () => {
+  const NS_PBW = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withPlotAreaSpPr(spPrBody: string): string {
+    return `<c:chartSpace ${NS_PBW}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+      <c:spPr>${spPrBody}</c:spPr>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces the stroke width in points (12700 EMU = 1 pt)", () => {
+    const xml = withPlotAreaSpPr(`<a:ln w="12700"/>`);
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBe(1);
+  });
+
+  it("surfaces a fractional stroke width (19050 EMU = 1.5 pt)", () => {
+    const xml = withPlotAreaSpPr(`<a:ln w="19050"/>`);
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBe(1.5);
+  });
+
+  it("surfaces the minimum width (3175 EMU = 0.25 pt)", () => {
+    const xml = withPlotAreaSpPr(`<a:ln w="3175"/>`);
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBe(0.25);
+  });
+
+  it("snaps an exotic EMU value to the nearest 0.25 pt grid", () => {
+    // 14000 EMU ≈ 1.10 pt → snaps to 1.0 pt.
+    const xml = withPlotAreaSpPr(`<a:ln w="14000"/>`);
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBe(1);
+  });
+
+  it("clamps below the minimum band (1000 EMU → 0.25 pt)", () => {
+    const xml = withPlotAreaSpPr(`<a:ln w="1000"/>`);
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBe(0.25);
+  });
+
+  it("clamps above the maximum band (1000000 EMU → 13.5 pt)", () => {
+    const xml = withPlotAreaSpPr(`<a:ln w="1000000"/>`);
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBe(13.5);
+  });
+
+  it("surfaces both border color and width when both are pinned on <a:ln>", () => {
+    const xml = withPlotAreaSpPr(
+      `<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
+    );
+    const parsed = parseChart(xml);
+    expect(parsed?.plotAreaBorderWidth).toBe(2);
+    expect(parsed?.plotAreaBorderColor).toBe("1F77B4");
+  });
+
+  it("returns undefined when the chart has no <c:plotArea>", () => {
+    const xml = `<c:chartSpace ${NS_PBW}><c:chart></c:chart></c:chartSpace>`;
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when <c:plotArea> has no <c:spPr>", () => {
+    const xml = `<c:chartSpace ${NS_PBW}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when <c:spPr> has no <a:ln>", () => {
+    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`);
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when <a:ln> has no w attribute", () => {
+    const xml = withPlotAreaSpPr(
+      `<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
+    );
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when the w attribute is malformed (non-numeric)", () => {
+    const xml = withPlotAreaSpPr(`<a:ln w="thick"/>`);
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when the w attribute is zero (Excel's 'no border' marker)", () => {
+    const xml = withPlotAreaSpPr(`<a:ln w="0"/>`);
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined when the w attribute is negative", () => {
+    const xml = withPlotAreaSpPr(`<a:ln w="-12700"/>`);
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined();
+  });
+
+  it("ignores a stray <a:ln w=..> on a series <c:spPr> (not the plotArea)", () => {
+    const xml = `<c:chartSpace ${NS_PBW}>
+  <c:chart>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:spPr><a:ln w="50800"><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill></a:ln></c:spPr>
+        </c:ser>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined();
+  });
+});
+
 // ── parseChart — axisTitleLayout (manual placement) ─────────────────
 
 describe("parseChart — axisTitleLayout", () => {

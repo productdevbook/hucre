@@ -489,6 +489,31 @@ export interface CloneChartOptions {
    */
   plotAreaBorderColor?: string | null;
   /**
+   * Override `SheetChart.plotAreaBorderWidth`. `undefined` (or omitted)
+   * inherits the source's parsed `plotAreaBorderWidth`; `null` drops
+   * the inherited width (the writer emits `<a:ln>` without a `w`
+   * attribute, the line keeps Excel's auto-thickness — typically
+   * 0.75 pt); a finite point value (e.g. `1.5`) replaces it.
+   *
+   * The override runs through the same clamp / snap as the writer —
+   * values are clamped to the `0.25..13.5` pt band Excel's UI exposes
+   * and snapped to the 0.25 pt grid so a parsed-then-written width does
+   * not drift across round-trips. Non-finite / non-numeric tokens
+   * (`NaN`, `Infinity`, strings, `null` from an untyped caller) collapse
+   * to `undefined` so the cloned `SheetChart` drops the field rather
+   * than carry a value the writer would silently elide back to absence.
+   *
+   * Composes independently with `plotAreaBorderColor` — both knobs land
+   * on the same `<a:ln>` element but on a different slot (the color's
+   * `<a:solidFill>` child versus the line's `w` attribute). A caller
+   * can pin a width without a color (the border picks Excel's
+   * auto-color), pin a color without a width (the border picks Excel's
+   * auto-thickness), or pin both. Like the color knob, the width is
+   * never gated on a visibility flag — every chart has a `<c:plotArea>`
+   * element to host the stroke.
+   */
+  plotAreaBorderWidth?: number | null;
+  /**
    * Override `SheetChart.chartSpaceFillColor`. `undefined` (or omitted)
    * inherits the source's parsed `chartSpaceFillColor`; `null` drops
    * the inherited fill (the writer emits no `<c:spPr>` block on
@@ -2218,6 +2243,23 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   );
   if (resolvedPlotAreaBorderColor !== undefined) {
     out.plotAreaBorderColor = resolvedPlotAreaBorderColor;
+  }
+
+  // Plot-area border thickness composes independently with the border
+  // color — both lands on the same `<a:ln>` element but on a different
+  // attribute (color is `<a:solidFill><a:srgbClr>`, width is the `w`
+  // attribute on `<a:ln>`). `undefined` inherits the source's parsed
+  // `plotAreaBorderWidth` (after the writer-side clamp collapses any
+  // malformed token), `null` drops the inherited width (the writer
+  // emits `<a:ln>` without the `w` attribute, the line keeps Excel's
+  // auto-thickness), a finite point value replaces it. Malformed
+  // overrides collapse to `undefined` via the normalizer.
+  const resolvedPlotAreaBorderWidth = resolvePlotAreaBorderWidth(
+    source.plotAreaBorderWidth,
+    options.plotAreaBorderWidth,
+  );
+  if (resolvedPlotAreaBorderWidth !== undefined) {
+    out.plotAreaBorderWidth = resolvedPlotAreaBorderWidth;
   }
 
   // Chart-space solid fill color is independent of every visibility
@@ -4093,6 +4135,58 @@ function resolvePlotAreaBorderColor(
   if (override === undefined) return normalizePlotAreaBorderColor(sourceValue);
   if (override === null) return undefined;
   return normalizePlotAreaBorderColor(override);
+}
+
+/**
+ * Normalize a `plotAreaBorderWidth` value for the cloned `SheetChart`.
+ * Mirrors the writer's `clampStrokeWidthPt` — values are clamped to the
+ * `0.25..13.5` pt band Excel's UI exposes and snapped to the 0.25 pt
+ * grid so a parsed-then-cloned-then-written width does not drift across
+ * round-trips (Excel rounds in the UI anyway). Non-finite / non-numeric
+ * tokens (`NaN`, `Infinity`, strings, `null` from an untyped caller)
+ * collapse to `undefined` so the cloned chart drops the field rather
+ * than carry a value the writer would silently elide back to absence.
+ */
+function normalizePlotAreaBorderWidth(value: number | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
+  const snapped = Math.round(value * 4) / 4;
+  if (snapped < PLOT_AREA_BORDER_WIDTH_MIN_PT) return PLOT_AREA_BORDER_WIDTH_MIN_PT;
+  if (snapped > PLOT_AREA_BORDER_WIDTH_MAX_PT) return PLOT_AREA_BORDER_WIDTH_MAX_PT;
+  return snapped;
+}
+
+const PLOT_AREA_BORDER_WIDTH_MIN_PT = 0.25;
+const PLOT_AREA_BORDER_WIDTH_MAX_PT = 13.5;
+
+/**
+ * Resolve a `plotAreaBorderWidth` override.
+ *
+ * `undefined` → inherit the source's parsed `plotAreaBorderWidth`
+ *               (after running it through
+ *               {@link normalizePlotAreaBorderWidth} so a malformed
+ *               source value drops cleanly).
+ * `null`      → drop the inherited width (the writer emits `<a:ln>`
+ *               without a `w` attribute, the line keeps Excel's
+ *               auto-thickness).
+ * `number`    → replace with the clamped / snapped point value.
+ *               Non-finite / non-numeric overrides collapse to
+ *               `undefined` via the normalizer so the cloned
+ *               `SheetChart` always carries a value the writer will
+ *               accept.
+ *
+ * The grammar mirrors the series-line stroke width so the chart
+ * `<a:ln w=..>` knobs compose the same way at the call site. Like the
+ * border-color knob, the width is never gated on a visibility flag —
+ * every chart has a `<c:plotArea>` element to host the stroke.
+ */
+function resolvePlotAreaBorderWidth(
+  sourceValue: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) return normalizePlotAreaBorderWidth(sourceValue);
+  if (override === null) return undefined;
+  return normalizePlotAreaBorderWidth(override);
 }
 
 /**

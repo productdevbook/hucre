@@ -20167,6 +20167,191 @@ describe("writeChart — plotAreaBorderColor", () => {
     expect(reparsed?.plotAreaBorderColor).toBe("1F77B4");
   });
 });
+
+// ── writeChart — plotAreaBorderWidth (line stroke thickness) ─────────
+
+describe("writeChart — plotAreaBorderWidth", () => {
+  function plotAreaOf(xml: string): string {
+    const m = xml.match(/<c:plotArea>[\s\S]*?<\/c:plotArea>/);
+    if (!m) throw new Error("No <c:plotArea> block found in chart XML");
+    return m[0];
+  }
+
+  it("does not emit <c:spPr> when plotAreaBorderWidth is unset (matches Excel reference)", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    const plotArea = plotAreaOf(result.chartXml);
+    expect(plotArea).not.toContain("<c:spPr>");
+    expect(plotArea).not.toContain("<a:ln");
+  });
+
+  it("emits <c:spPr><a:ln w=..> when plotAreaBorderWidth is set without a color", () => {
+    const result = writeChart(makeChart({ plotAreaBorderWidth: 1.5 }), "Sheet1");
+    const plotArea = plotAreaOf(result.chartXml);
+    expect(plotArea).toContain("<c:spPr>");
+    // 1.5 pt = 19050 EMU.
+    expect(plotArea).toContain('<a:ln w="19050"');
+    // No solid-fill child when only width is pinned.
+    expect(plotArea).not.toContain("<a:solidFill>");
+  });
+
+  it("snaps to the 0.25 pt grid (1.4 → 1.5 pt → 19050 EMU)", () => {
+    const result = writeChart(makeChart({ plotAreaBorderWidth: 1.4 }), "Sheet1");
+    const plotArea = plotAreaOf(result.chartXml);
+    expect(plotArea).toContain('<a:ln w="19050"');
+  });
+
+  it("clamps below the minimum (0.1 pt → 0.25 pt → 3175 EMU)", () => {
+    const result = writeChart(makeChart({ plotAreaBorderWidth: 0.1 }), "Sheet1");
+    const plotArea = plotAreaOf(result.chartXml);
+    expect(plotArea).toContain('<a:ln w="3175"');
+  });
+
+  it("clamps above the maximum (50 pt → 13.5 pt → 171450 EMU)", () => {
+    const result = writeChart(makeChart({ plotAreaBorderWidth: 50 }), "Sheet1");
+    const plotArea = plotAreaOf(result.chartXml);
+    expect(plotArea).toContain('<a:ln w="171450"');
+  });
+
+  it("places <c:spPr> at the tail of <c:plotArea> (CT_PlotArea sequence)", () => {
+    const result = writeChart(makeChart({ plotAreaBorderWidth: 2 }), "Sheet1");
+    const plotArea = plotAreaOf(result.chartXml);
+    const spPrIdx = plotArea.indexOf("<c:spPr>");
+    expect(spPrIdx).toBeGreaterThan(plotArea.indexOf("<c:barChart"));
+    expect(spPrIdx).toBeGreaterThan(plotArea.indexOf("<c:catAx"));
+    expect(spPrIdx).toBeGreaterThan(plotArea.indexOf("<c:valAx"));
+  });
+
+  it("only emits one <c:spPr> inside <c:plotArea>", () => {
+    const result = writeChart(makeChart({ plotAreaBorderWidth: 2 }), "Sheet1");
+    const plotArea = plotAreaOf(result.chartXml);
+    const occurrences = plotArea.match(/<c:spPr>/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("threads plotAreaBorderWidth through every chart family that owns a <c:plotArea>", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, plotAreaBorderWidth: 1 }), "Sheet1");
+      const plotArea = plotAreaOf(result.chartXml);
+      expect(plotArea).toContain('<a:ln w="12700"');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        plotAreaBorderWidth: 1,
+      }),
+      "Sheet1",
+    );
+    expect(plotAreaOf(scatter.chartXml)).toContain('<a:ln w="12700"');
+  });
+
+  it("drops a NaN value", () => {
+    const result = writeChart(makeChart({ plotAreaBorderWidth: Number.NaN }), "Sheet1");
+    const plotArea = plotAreaOf(result.chartXml);
+    expect(plotArea).not.toContain("<c:spPr>");
+  });
+
+  it("drops a non-finite value (Infinity)", () => {
+    const result = writeChart(
+      makeChart({ plotAreaBorderWidth: Number.POSITIVE_INFINITY }),
+      "Sheet1",
+    );
+    const plotArea = plotAreaOf(result.chartXml);
+    expect(plotArea).not.toContain("<c:spPr>");
+  });
+
+  it("drops non-number escapes (typed escape from an untyped caller)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const a = writeChart(makeChart({ plotAreaBorderWidth: "1.5" as any }), "Sheet1");
+    expect(plotAreaOf(a.chartXml)).not.toContain("<c:spPr>");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const b = writeChart(makeChart({ plotAreaBorderWidth: null as any }), "Sheet1");
+    expect(plotAreaOf(b.chartXml)).not.toContain("<c:spPr>");
+  });
+
+  it("composes independently with plotAreaBorderColor — width on <a:ln>, color inside it", () => {
+    const result = writeChart(
+      makeChart({
+        plotAreaBorderColor: "1F77B4",
+        plotAreaBorderWidth: 2,
+      }),
+      "Sheet1",
+    );
+    const plotArea = plotAreaOf(result.chartXml);
+    expect(plotArea).toContain('<a:ln w="25400">');
+    expect(plotArea).toContain('<a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill>');
+    // Width attribute hosts the color child.
+    expect(plotArea).toContain(
+      '<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>',
+    );
+  });
+
+  it("composes independently with plotAreaFillColor — fill in <a:solidFill>, width on <a:ln>", () => {
+    const result = writeChart(
+      makeChart({
+        plotAreaFillColor: "F2F2F2",
+        plotAreaBorderWidth: 1,
+      }),
+      "Sheet1",
+    );
+    const plotArea = plotAreaOf(result.chartXml);
+    // Single <c:spPr> hosts both knobs.
+    const spPrCount = plotArea.match(/<c:spPr>/g) ?? [];
+    expect(spPrCount).toHaveLength(1);
+    expect(plotArea).toContain('<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>');
+    expect(plotArea).toContain('<a:ln w="12700"');
+    // CT_ShapeProperties order: <a:solidFill> precedes <a:ln>.
+    expect(plotArea.indexOf("<a:solidFill>")).toBeLessThan(plotArea.indexOf("<a:ln "));
+  });
+
+  it("round-trips plotAreaBorderWidth through parseChart", () => {
+    const written = writeChart(makeChart({ plotAreaBorderWidth: 2.25 }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.plotAreaBorderWidth).toBe(2.25);
+  });
+
+  it("collapses an unset plotAreaBorderWidth round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    expect(parseChart(written)?.plotAreaBorderWidth).toBeUndefined();
+  });
+
+  it("round-trips both border color and width together through parseChart", () => {
+    const written = writeChart(
+      makeChart({ plotAreaBorderColor: "1F77B4", plotAreaBorderWidth: 1.5 }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.plotAreaBorderColor).toBe("1F77B4");
+    expect(reparsed?.plotAreaBorderWidth).toBe(1.5);
+  });
+
+  it("survives a writeXlsx round trip — plotAreaBorderWidth lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            plotAreaBorderWidth: 1.75,
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.plotAreaBorderWidth).toBe(1.75);
+  });
+});
+
 // ── writeChart — axisTitleLayout (manual placement) ─────────────────
 
 describe("writeChart — axisTitleLayout", () => {

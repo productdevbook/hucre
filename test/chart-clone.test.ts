@@ -21258,6 +21258,167 @@ describe("cloneChart — plotAreaBorderColor", () => {
   });
 });
 
+// ── cloneChart — plotAreaBorderWidth (line stroke thickness) ─────────
+
+describe("cloneChart — plotAreaBorderWidth", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's plotAreaBorderWidth by default", () => {
+    const clone = cloneChart(source({ plotAreaBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.plotAreaBorderWidth).toBe(1.5);
+  });
+
+  it("lets options.plotAreaBorderWidth override the source's value", () => {
+    const clone = cloneChart(source({ plotAreaBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderWidth: 2.5,
+    });
+    expect(clone.plotAreaBorderWidth).toBe(2.5);
+  });
+
+  it("drops the inherited plotAreaBorderWidth when the override is null", () => {
+    const clone = cloneChart(source({ plotAreaBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderWidth: null,
+    });
+    expect(clone.plotAreaBorderWidth).toBeUndefined();
+  });
+
+  it("returns undefined plotAreaBorderWidth when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.plotAreaBorderWidth).toBeUndefined();
+  });
+
+  it("snaps the override to the 0.25 pt grid (1.4 → 1.5)", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderWidth: 1.4,
+    });
+    expect(clone.plotAreaBorderWidth).toBe(1.5);
+  });
+
+  it("clamps the override below the minimum (0.1 → 0.25)", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderWidth: 0.1,
+    });
+    expect(clone.plotAreaBorderWidth).toBe(0.25);
+  });
+
+  it("clamps the override above the maximum (50 → 13.5)", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderWidth: 50,
+    });
+    expect(clone.plotAreaBorderWidth).toBe(13.5);
+  });
+
+  it("drops a NaN override", () => {
+    const clone = cloneChart(source({ plotAreaBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderWidth: Number.NaN,
+    });
+    expect(clone.plotAreaBorderWidth).toBeUndefined();
+  });
+
+  it("drops an Infinity override", () => {
+    const clone = cloneChart(source({ plotAreaBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderWidth: Number.POSITIVE_INFINITY,
+    });
+    expect(clone.plotAreaBorderWidth).toBeUndefined();
+  });
+
+  it("drops a non-number override (typed escape from an untyped caller)", () => {
+    const clone = cloneChart(source({ plotAreaBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      plotAreaBorderWidth: "1.5" as any,
+    });
+    expect(clone.plotAreaBorderWidth).toBeUndefined();
+  });
+
+  it("normalizes a malformed source value through the resolver", () => {
+    const clone = cloneChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      source({ plotAreaBorderWidth: Number.NaN as any }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.plotAreaBorderWidth).toBeUndefined();
+  });
+
+  it("carries plotAreaBorderWidth through a flatten (line → column)", () => {
+    const clone = cloneChart(source({ plotAreaBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.plotAreaBorderWidth).toBe(1.5);
+  });
+
+  it("retains plotAreaBorderWidth independently of a hidden legend", () => {
+    const clone = cloneChart(source({ plotAreaBorderWidth: 1.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.plotAreaBorderWidth).toBe(1.5);
+  });
+
+  it("composes independently with plotAreaBorderColor (each lands on its own slot)", () => {
+    const clone = cloneChart(
+      source({
+        plotAreaBorderColor: "1F77B4",
+        plotAreaBorderWidth: 1.5,
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.plotAreaBorderColor).toBe("1F77B4");
+    expect(clone.plotAreaBorderWidth).toBe(1.5);
+  });
+
+  it("survives a writeXlsx round trip — plotAreaBorderWidth lands in the cloned chart XML", async () => {
+    const clone = cloneChart(source({ plotAreaBorderWidth: 0.5 }), {
+      anchor: { from: { row: 0, col: 0 } },
+      plotAreaBorderWidth: 1.75,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(parseChart(written)?.plotAreaBorderWidth).toBe(1.75);
+  });
+});
+
 // ── cloneChart — axisTitleLayout (manual placement) ─────────────────
 
 describe("cloneChart — axisTitleLayout", () => {

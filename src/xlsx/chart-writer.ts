@@ -1364,24 +1364,31 @@ function buildPlotArea(chart: SheetChart, sheetName: string): string {
 /**
  * Build the optional `<c:spPr>` block at the tail of `<c:plotArea>`.
  * Surfaces the solid fill color knob
- * ({@link SheetChart.plotAreaFillColor}) and the border (line) color
- * knob ({@link SheetChart.plotAreaBorderColor}) — every other `<c:spPr>`
+ * ({@link SheetChart.plotAreaFillColor}), the border (line) color
+ * knob ({@link SheetChart.plotAreaBorderColor}) and the border width
+ * knob ({@link SheetChart.plotAreaBorderWidth}) — every other `<c:spPr>`
  * child (`<a:effectLst>` effects, gradient / pattern / picture fills,
- * line dash / width / compound styles) is intentionally not modelled
- * at this layer.
+ * line dash / compound styles) is intentionally not modelled at this
+ * layer.
  *
- * Returns `undefined` when both fields are unset / malformed so the
+ * Returns `undefined` when every field is unset / malformed so the
  * writer skips the entire `<c:spPr>` block — an empty `<c:spPr/>`
  * collapses to the inherited theme fill / stroke Excel picks anyway,
  * and omitting it keeps untouched chart XML byte-clean. When at least
  * one knob lands on the wire, the children are emitted in
  * `CT_ShapeProperties` schema order: `<a:solidFill>` (fill) then
- * `<a:ln>` (line / stroke).
+ * `<a:ln>` (line / stroke). The width knob lands on the `w` attribute
+ * of `<a:ln>` (EMU; 1 pt = 12 700 EMU), authored together with the
+ * border-color child so a stroke-only or color-only chart still emits a
+ * single `<a:ln>` block.
  */
 function buildPlotAreaSpPr(chart: SheetChart): string | undefined {
   const fillHex = normalizePlotAreaFillColor(chart.plotAreaFillColor);
   const borderHex = normalizePlotAreaBorderColor(chart.plotAreaBorderColor);
-  if (fillHex === undefined && borderHex === undefined) return undefined;
+  const borderWidthPt = clampStrokeWidthPt(chart.plotAreaBorderWidth);
+  if (fillHex === undefined && borderHex === undefined && borderWidthPt === undefined) {
+    return undefined;
+  }
 
   const children: string[] = [];
   if (fillHex !== undefined) {
@@ -1389,11 +1396,23 @@ function buildPlotAreaSpPr(chart: SheetChart): string | undefined {
       xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillHex })]),
     );
   }
-  if (borderHex !== undefined) {
-    children.push(
-      xmlElement("a:ln", undefined, [
+  if (borderHex !== undefined || borderWidthPt !== undefined) {
+    const lnAttrs: Record<string, string | number> = {};
+    if (borderWidthPt !== undefined) {
+      // OOXML stores stroke width in EMU (1 pt = 12 700 EMU). Round to
+      // the nearest integer because the schema types `w` as `xsd:int`.
+      lnAttrs.w = Math.round(borderWidthPt * EMU_PER_PT);
+    }
+    const lnChildren: string[] = [];
+    if (borderHex !== undefined) {
+      lnChildren.push(
         xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: borderHex })]),
-      ]),
+      );
+    }
+    children.push(
+      lnChildren.length === 0
+        ? xmlSelfClose("a:ln", lnAttrs)
+        : xmlElement("a:ln", Object.keys(lnAttrs).length > 0 ? lnAttrs : undefined, lnChildren),
     );
   }
   return xmlElement("c:spPr", undefined, children);

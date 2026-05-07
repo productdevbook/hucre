@@ -2530,6 +2530,44 @@ export interface SheetChart {
    */
   plotAreaBorderColor?: string;
   /**
+   * Plot-area border (stroke) thickness in points (e.g. `1.5`). Maps to
+   * the `w` attribute on `<c:plotArea><c:spPr><a:ln w="EMU">` — Excel's
+   * "Format Plot Area -> Border -> Width" spinner. The OOXML `w`
+   * attribute carries the stroke width in EMU (English Metric Units;
+   * `1 pt = 12 700 EMU`) per `CT_LineProperties` (ECMA-376 Part 1,
+   * §20.1.2.3.24). The writer multiplies the input by 12 700 and rounds
+   * to the nearest integer because the schema types `w` as `xsd:int`.
+   *
+   * Accepts any finite number; values are clamped to the `0.25..13.5`
+   * pt band Excel's UI exposes (the same band used by the series
+   * stroke knob `series[i].stroke.width`) and snapped to the
+   * 0.25 pt grid so a parsed-then-written width does not drift across
+   * round-trips. Non-finite / non-numeric / `NaN` values collapse to
+   * `undefined` and the writer omits the `w` attribute (the line keeps
+   * Excel's auto-thickness — typically 0.75 pt).
+   *
+   * Default: omitted — the plot-area border inherits Excel's
+   * auto-thickness. Pin a value to thicken the border around the series
+   * band (a hairline at 0.25 pt, a heavy frame at several points) or to
+   * match the stroke width of neighboring chart tiles.
+   *
+   * Composes independently with {@link plotAreaBorderColor} — the
+   * width attribute lands on the same `<a:ln>` element as the color's
+   * `<a:solidFill>` child, but the writer authors `<a:ln>` whenever
+   * either knob is set. A caller can pin a width without a color (the
+   * border picks Excel's auto-color), pin a color without a width (the
+   * border picks Excel's auto-thickness), or pin both. Setting only the
+   * width is valid Excel UI — the user can drag the "Width" spinner
+   * without picking a custom color.
+   *
+   * Mirrors the series-line stroke width grammar (`series[i].stroke.width`)
+   * and shares the same clamp / snap behavior so width values compose
+   * the same way at the call site. The OOXML `w` attribute is also used
+   * for axis lines and other strokes — this knob covers only the
+   * plot-area border slot.
+   */
+  plotAreaBorderWidth?: number;
+  /**
    * Chart-space (entire chart background) solid fill color as a 6-digit
    * RGB hex string (e.g. `"F2F2F2"`). Maps to `<c:chartSpace><c:spPr>
    * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></c:spPr>
@@ -7613,6 +7651,33 @@ export interface Chart {
    * fill, `<a:ln><a:solidFill>` for stroke).
    */
   plotAreaBorderColor?: string;
+  /**
+   * Plot-area border (stroke) thickness in points pulled from the `w`
+   * attribute on `<c:plotArea><c:spPr><a:ln w="EMU">`. Reflects Excel's
+   * "Format Plot Area -> Border -> Width" spinner. The OOXML `w`
+   * attribute stores the stroke width in English Metric Units
+   * (1 pt = 12 700 EMU) per `CT_LineProperties` (ECMA-376 Part 1,
+   * §20.1.2.3.24); the reader divides by 12 700 and snaps the result
+   * to the 0.25 pt grid Excel's UI exposes so a parsed-then-cloned
+   * width does not drift across round-trips.
+   *
+   * Reports the point value clamped to the `0.25..13.5` pt band Excel
+   * accepts in the UI when the source chart pinned a finite, positive
+   * `w` attribute. Absence (no `<a:ln>` or `<a:ln>` without a `w`
+   * attribute), zero, negative, and non-numeric `w` values all collapse
+   * to `undefined` so absence and an unrenderable width round-trip
+   * identically through {@link cloneChart}. Mirrors the writer-side
+   * {@link SheetChart.plotAreaBorderWidth} so a parsed value slots
+   * straight into {@link cloneChart} without conversion.
+   *
+   * Reported as `undefined` whenever the source chart has no
+   * `<c:plotArea>` element at all — there is no `<c:spPr>` slot to
+   * surface the stroke from in that case. Composes independently with
+   * {@link plotAreaBorderColor} — both fields surface from the same
+   * `<a:ln>` element but on a different slot (the color child versus
+   * the width attribute).
+   */
+  plotAreaBorderWidth?: number;
   /**
    * Chart-space (entire chart background) solid fill color pulled
    * from `<c:chartSpace><c:spPr><a:solidFill><a:srgbClr val=".."/>
