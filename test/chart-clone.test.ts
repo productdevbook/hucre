@@ -21929,3 +21929,207 @@ describe("cloneChart — axisTitleFillColor", () => {
     expect(clone.axes?.x?.axisTitleFillColor).toBe("FFFF00");
   });
 });
+
+// ── cloneChart — dataLabels.fillColor ───────────────────────────────
+
+describe("cloneChart — dataLabels.fillColor", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "bar",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      ...extra,
+    };
+  }
+
+  it("inherits the source's chart-level dataLabels.fillColor by default", () => {
+    const clone = cloneChart(source({ dataLabels: { showValue: true, fillColor: "FFFF00" } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.dataLabels?.fillColor).toBe("FFFF00");
+  });
+
+  it("lets options.dataLabels override the source's value (replaces the whole block)", () => {
+    const clone = cloneChart(source({ dataLabels: { showValue: true, fillColor: "FFFF00" } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      dataLabels: { showValue: true, fillColor: "00C586" },
+    });
+    expect(clone.dataLabels?.fillColor).toBe("00C586");
+  });
+
+  it("drops the inherited dataLabels block when the override is null", () => {
+    const clone = cloneChart(source({ dataLabels: { showValue: true, fillColor: "FFFF00" } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      dataLabels: null,
+    });
+    expect(clone.dataLabels).toBeUndefined();
+  });
+
+  it("returns undefined dataLabels when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.dataLabels).toBeUndefined();
+  });
+
+  it("composes independently with fontColor on the cloned SheetChart", () => {
+    const clone = cloneChart(
+      source({
+        dataLabels: {
+          showValue: true,
+          fillColor: "FFEEDD",
+          fontColor: "112233",
+          position: "outEnd",
+        },
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.dataLabels?.fillColor).toBe("FFEEDD");
+    expect(clone.dataLabels?.fontColor).toBe("112233");
+    expect(clone.dataLabels?.position).toBe("outEnd");
+    expect(clone.dataLabels?.showValue).toBe(true);
+  });
+
+  it("propagates dataLabels.fillColor into the rendered <c:dLbls><c:spPr> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ dataLabels: { showValue: true, fillColor: "FFFF00" } }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain("<c:spPr>");
+    expect(written).toContain('<a:srgbClr val="FFFF00"/>');
+    const reparsed = parseChart(written);
+    expect(reparsed?.dataLabels?.fillColor).toBe("FFFF00");
+  });
+
+  it("an explicit override beats the source value through writeXlsx", async () => {
+    const clone = cloneChart(source({ dataLabels: { showValue: true, fillColor: "FFFF00" } }), {
+      anchor: { from: { row: 5, col: 0 } },
+      dataLabels: { showValue: true, fillColor: "00C586" },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).toContain('<a:srgbClr val="00C586"/>');
+    expect(written).not.toContain('<a:srgbClr val="FFFF00"/>');
+    expect(parseChart(written)?.dataLabels?.fillColor).toBe("00C586");
+  });
+
+  it("a null override drops the source value through writeXlsx (no <c:spPr> on dLbls)", async () => {
+    const clone = cloneChart(source({ dataLabels: { showValue: true, fillColor: "FFFF00" } }), {
+      anchor: { from: { row: 5, col: 0 } },
+      dataLabels: null,
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(written).not.toContain("<c:dLbls>");
+    expect(parseChart(written)?.dataLabels).toBeUndefined();
+  });
+
+  it("carries dataLabels.fillColor through a flatten (bar → line)", () => {
+    const clone = cloneChart(source({ dataLabels: { showValue: true, fillColor: "FFFF00" } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "line",
+    });
+    expect(clone.type).toBe("line");
+    expect(clone.dataLabels?.fillColor).toBe("FFFF00");
+  });
+
+  it("carries dataLabels.fillColor through a doughnut flatten (bar → doughnut)", () => {
+    const clone = cloneChart(source({ dataLabels: { showValue: true, fillColor: "FFFF00" } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.dataLabels?.fillColor).toBe("FFFF00");
+  });
+
+  it("round-trips a parsed dataLabels.fillColor straight back through cloneChart", () => {
+    const written = writeChart(
+      {
+        type: "column",
+        title: "Sales",
+        series: [{ values: "B2:B5", categories: "A2:A5" }],
+        anchor: { from: { row: 0, col: 0 } },
+        dataLabels: { showValue: true, fillColor: "FFFF00" },
+      },
+      "Sheet1",
+    ).chartXml;
+    const parsed = parseChart(written)!;
+    expect(parsed.dataLabels?.fillColor).toBe("FFFF00");
+    const clone = cloneChart(parsed, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.dataLabels?.fillColor).toBe("FFFF00");
+  });
+
+  it("round-trips a per-series dataLabels.fillColor through cloneChart", async () => {
+    const written = writeChart(
+      {
+        type: "column",
+        title: "Sales",
+        series: [
+          {
+            values: "B2:B5",
+            categories: "A2:A5",
+            dataLabels: { showValue: true, fillColor: "A1B2C3" },
+          },
+        ],
+        anchor: { from: { row: 0, col: 0 } },
+      },
+      "Sheet1",
+    ).chartXml;
+    const parsed = parseChart(written)!;
+    expect(parsed.series?.[0]?.dataLabels?.fillColor).toBe("A1B2C3");
+    const clone = cloneChart(parsed, { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.series?.[0]?.dataLabels).toBeTruthy();
+    if (clone.series?.[0]?.dataLabels && clone.series[0].dataLabels !== false) {
+      expect(clone.series[0].dataLabels.fillColor).toBe("A1B2C3");
+    }
+  });
+});

@@ -4825,10 +4825,25 @@ function buildDataLabelsBody(dl: ChartDataLabels, chartType: WriteChartKind): st
     );
   }
 
+  // `<c:spPr>` sits between `<c:numFmt>` and `<c:txPr>` in the
+  // CT_DLbls schema sequence (ECMA-376 Part 1, §21.2.2.50). Currently
+  // the writer only authors `<a:solidFill>` here from
+  // {@link ChartDataLabels.fillColor}; stroke (`<a:ln>`) and other
+  // `CT_ShapeProperties` children are not modelled at this layer. The
+  // builder skips emission entirely when no fill is pinned so a fresh
+  // chart matches Excel's reference shape (no `<c:spPr>` block on a
+  // theme-default data-labels rendering — typically a transparent label
+  // background). Distinct from the `<a:defRPr><a:solidFill>` font-color
+  // slot inside `<c:txPr>` that {@link ChartDataLabels.fontColor} pins
+  // — the two knobs target different children of `<c:dLbls>` so a
+  // caller can pin both without conflict.
+  const spPrXml = buildDataLabelsSpPr(resolveDataLabelsFillColor(dl.fillColor));
+  if (spPrXml !== undefined) {
+    children.push(spPrXml);
+  }
+
   // CT_DLbls schema places `<c:txPr>` between `<c:spPr>` and
-  // `<c:dLblPos>` (ECMA-376 Part 1, §21.2.2.50). The writer currently
-  // skips `<c:spPr>` (not yet authored), so `<c:txPr>` lands directly
-  // after `<c:numFmt>` and before `<c:dLblPos>`. The block currently
+  // `<c:dLblPos>` (ECMA-376 Part 1, §21.2.2.50). The block currently
   // carries the data-label font size, font color, bold flag, italic
   // flag, underline flag, strikethrough flag, and font family — every
   // typography pin lands on the same `<a:defRPr>` slot. The writer
@@ -5032,6 +5047,50 @@ function resolveDataLabelsFontFamily(value: string | undefined): string | undefi
   const trimmed = value.trim();
   if (trimmed.length === 0) return undefined;
   return trimmed;
+}
+
+/**
+ * Resolve `<c:dLbls><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+ * </a:solidFill></c:spPr></c:dLbls>` from {@link ChartDataLabels.fillColor}.
+ *
+ * Returns the 6-character uppercase hex string the writer emits, or
+ * `undefined` when the caller leaves the field unset / passed a
+ * malformed token. Delegates to {@link normalizeTitleColor} so the
+ * accept-with-or-without-`#` grammar matches the chart-title /
+ * axis-title / plot-area / legend / data-label color resolvers
+ * exactly. Distinct from {@link resolveDataLabelsFontColor}: the fill
+ * lives on `<c:dLbls><c:spPr>`, the font color lives on
+ * `<c:dLbls><c:txPr><a:p><a:pPr><a:defRPr><a:solidFill>` — the two
+ * resolvers feed disjoint slots so a caller can pin both without
+ * conflict.
+ */
+function resolveDataLabelsFillColor(value: string | undefined): string | undefined {
+  return normalizeTitleColor(value);
+}
+
+/**
+ * Build the `<c:spPr>` block that carries a data-labels' background
+ * fill. Returns `undefined` when no fill is pinned so the caller can
+ * elide the entire block — Excel's reference serialization omits
+ * `<c:spPr>` from `<c:dLbls>` whenever the labels render at the theme
+ * default fill (typically a transparent label background).
+ *
+ * The emitted block mirrors the minimal `<c:spPr>` shape Excel writes
+ * when the user pins "Format Data Labels -> Fill -> Solid fill ->
+ * Color": `<c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+ * </a:solidFill></c:spPr>`. The `val` attribute holds the canonical
+ * 6-character uppercase hex form (the writer normalizes the input
+ * ahead of this call so a malformed source value never reaches emit).
+ *
+ * Mirrors the chart-title / axis-title / plot-area / legend
+ * `<c:spPr>` slots so a single hex string threads cleanly through
+ * every fill knob the writer authors.
+ */
+function buildDataLabelsSpPr(fillRgbHex: string | undefined): string | undefined {
+  if (fillRgbHex === undefined) return undefined;
+  return xmlElement("c:spPr", undefined, [
+    xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillRgbHex })]),
+  ]);
 }
 
 /**

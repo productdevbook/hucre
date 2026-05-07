@@ -891,6 +891,49 @@ export interface ChartDataLabels {
    * {@link strikethrough} / {@link fontSize} / {@link fontColor}.
    */
   fontFamily?: string;
+  /**
+   * Data-labels background fill (solid). Maps to `<c:dLbls><c:spPr>
+   * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></c:spPr>
+   * </c:dLbls>` — Excel's "Format Data Labels -> Fill -> Solid fill ->
+   * Color" picker. The OOXML `<c:spPr>` block sits on `CT_DLbls` between
+   * `<c:numFmt>` and `<c:txPr>` per the schema sequence (ECMA-376
+   * Part 1, §21.2.2.50); the `<a:srgbClr val=".."/>` carries the
+   * 6-character uppercase hex sRGB color (`CT_SRgbColor` inside
+   * `CT_ShapeProperties`' fill choice — ECMA-376 Part 1, §20.1.2.3.32 /
+   * §20.1.8.54).
+   *
+   * Accepts a 6-character hex string with or without a leading `#`,
+   * any case (`"FF0000"`, `"#1070ca"`, `"abcdef"`); the writer
+   * normalizes to the OOXML canonical 6-character uppercase form
+   * (`"FF0000"`, `"1070CA"`, `"ABCDEF"`) so a re-parse round-trips
+   * losslessly. Malformed inputs (wrong length, non-hex characters,
+   * alpha-channel forms like `"FFAA0080"`, empty / whitespace-only
+   * strings, non-string escapes from an untyped caller) collapse to
+   * `undefined` and the writer skips the entire `<c:spPr>` block —
+   * the data labels render with no background fill (Excel's reference
+   * shape for fresh data labels whose fill has not been pinned).
+   *
+   * Default: omitted — the data labels render with no `<c:spPr>` block
+   * (Excel's reference serialization for fresh data labels whose fill
+   * has not been customized — typically a transparent label background).
+   *
+   * Distinct from {@link fontColor} (the typography color living on
+   * `<c:txPr><a:p><a:pPr><a:defRPr><a:solidFill>`); the two knobs target
+   * different children of `<c:dLbls>` so a caller can pin both without
+   * conflict — {@link fillColor} paints the label box background while
+   * {@link fontColor} paints the text glyphs. Mirrors the chart-title
+   * `titleFillColor` / axis-title `axisTitleFillColor` / plot-area
+   * `plotAreaFillColor` / legend `legendFillColor` knobs — same
+   * accept-with-or-without-`#` hex grammar, same OOXML
+   * `<c:spPr><a:solidFill><a:srgbClr val=".."/>` mapping — so a caller
+   * can thread a single hex string through every fill-pinning slot.
+   * Composes independently with the other dLbls knobs — {@link position}
+   * / {@link separator} / {@link numberFormat} / {@link showLeaderLines}
+   * / the `show*` toggles / {@link bold} / {@link italic} /
+   * {@link underline} / {@link strikethrough} / {@link fontSize} /
+   * {@link fontColor} / {@link fontFamily}.
+   */
+  fillColor?: string;
 }
 
 /**
@@ -5617,6 +5660,28 @@ export interface ChartDataLabelsInfo {
    * straight into {@link cloneChart} without conversion.
    */
   fontFamily?: string;
+  /**
+   * Data-labels background fill pulled from `<c:dLbls><c:spPr>
+   * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></c:spPr>
+   * </c:dLbls>`. The OOXML `<c:spPr>` block sits on `CT_DLbls` between
+   * `<c:numFmt>` and `<c:txPr>` per the schema sequence (ECMA-376
+   * Part 1, §21.2.2.50); the `<a:srgbClr val=".."/>` carries the
+   * 6-character uppercase hex sRGB color (`CT_SRgbColor` inside
+   * `CT_ShapeProperties`' fill choice — ECMA-376 Part 1, §20.1.2.3.32 /
+   * §20.1.8.54).
+   *
+   * Returned as the canonical 6-character uppercase hex string when
+   * the parser walks the full chain and lands on an `<a:srgbClr
+   * val="RRGGBB"/>`. Theme references (`<a:schemeClr>`),
+   * `<a:hslClr>`, `<a:sysClr>`, `<a:prstClr>`, non-solid fills
+   * (`<a:noFill>` / `<a:gradFill>` / `<a:pattFill>` / `<a:blipFill>`),
+   * and malformed `val` tokens (wrong length, non-hex characters) all
+   * collapse to `undefined` since only the literal RGB triple
+   * round-trips losslessly through {@link writeChart}. Mirrors the
+   * writer-side {@link ChartDataLabels.fillColor} so a parsed value
+   * slots straight into {@link cloneChart} without conversion.
+   */
+  fillColor?: string;
 }
 
 /**

@@ -3003,6 +3003,19 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
   const fontFamily = parseDataLabelsFontFamily(el);
   if (fontFamily !== undefined) out.fontFamily = fontFamily;
 
+  // `<c:spPr><a:solidFill><a:srgbClr val=".."/></a:solidFill></c:spPr>`
+  // — data-labels background fill pinned via Excel's "Format Data Labels
+  // -> Fill -> Solid fill -> Color" picker. Theme references
+  // (`<a:schemeClr>`), non-solid fills (`<a:noFill>` / `<a:gradFill>` /
+  // `<a:pattFill>` / `<a:blipFill>`), and malformed `val` tokens
+  // collapse to `undefined` since only the literal RGB triple
+  // round-trips losslessly through `writeChart`. Distinct from
+  // `fontColor` (which lives on `<c:txPr><a:p><a:pPr><a:defRPr>
+  // <a:solidFill>`); the two knobs target different children of
+  // `<c:dLbls>` so a caller can pin both without conflict.
+  const fillColor = parseDataLabelsFillColor(el);
+  if (fillColor !== undefined) out.fillColor = fillColor;
+
   // Empty record is meaningless to a consumer — collapse to undefined.
   if (
     out.position === undefined &&
@@ -3020,7 +3033,8 @@ function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined {
     out.italic === undefined &&
     out.underline === undefined &&
     out.strikethrough === undefined &&
-    out.fontFamily === undefined
+    out.fontFamily === undefined &&
+    out.fillColor === undefined
   ) {
     return undefined;
   }
@@ -3260,6 +3274,42 @@ function parseDataLabelsFontFamily(dLbls: XmlElement): string | undefined {
   const trimmed = raw.trim();
   if (trimmed.length === 0) return undefined;
   return trimmed;
+}
+
+/**
+ * Pull `<c:dLbls><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+ * </a:solidFill></c:spPr></c:dLbls>` off a data-labels block. Returns
+ * the 6-character uppercase hex string when the parser walks the full
+ * chain and lands on an `<a:srgbClr val="RRGGBB"/>`. Theme references
+ * (`<a:schemeClr>`), `<a:hslClr>`, `<a:sysClr>`, and `<a:prstClr>`
+ * all collapse to `undefined` — only the literal RGB triple
+ * round-trips losslessly through {@link writeChart}. Non-solid fills
+ * (`<a:noFill>`, `<a:gradFill>`, `<a:pattFill>`, `<a:blipFill>`)
+ * likewise drop to `undefined` so a round-trip never fabricates a fill
+ * the writer cannot reproduce on emit. Malformed `val` tokens (wrong
+ * length, non-hex characters) drop to `undefined` rather than fabricate
+ * a value the writer would round-trip into a malformed `<a:srgbClr>`.
+ *
+ * The OOXML `<c:spPr>` block sits on `CT_DLbls` between `<c:numFmt>`
+ * and `<c:txPr>` per the schema sequence (ECMA-376 Part 1,
+ * §21.2.2.50). Distinct from {@link parseDataLabelsFontColor}: the
+ * fill lives on `<c:dLbls><c:spPr>`, the font color lives on
+ * `<c:dLbls><c:txPr><a:p><a:pPr><a:defRPr><a:solidFill>` — the two
+ * readers walk disjoint paths so a caller can pin both knobs without
+ * conflict. Mirrors the chart-title fill {@link parseTitleFillColor} /
+ * axis-title fill {@link parseAxisTitleFillColor} / plot-area fill
+ * {@link parsePlotAreaFillColor} / legend fill
+ * {@link parseLegendFillColor} so a parsed value slots straight into
+ * the writer-side {@link ChartDataLabels.fillColor}.
+ */
+function parseDataLabelsFillColor(dLbls: XmlElement): string | undefined {
+  const spPr = findChild(dLbls, "spPr");
+  if (!spPr) return undefined;
+  const solidFill = findChild(spPr, "solidFill");
+  if (!solidFill) return undefined;
+  const srgbClr = findChild(solidFill, "srgbClr");
+  if (!srgbClr) return undefined;
+  return normalizeRgbHex(srgbClr.attrs.val);
 }
 
 /**
