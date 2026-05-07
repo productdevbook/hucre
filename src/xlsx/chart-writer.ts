@@ -119,6 +119,23 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
     chartChildren.push(view3DXml);
   }
 
+  // `<c:floor>` (CT_Surface, ECMA-376 Part 1, §21.2.2.69) sits on
+  // `<c:chart>` between `<c:view3D>` and `<c:sideWall>` /
+  // `<c:backWall>` / `<c:plotArea>` per CT_Chart. The writer pins only
+  // the `<c:thickness>` child here — `<c:spPr>` / `<c:pictureOptions>`
+  // / `<c:extLst>` styling on the floor block is not modelled at this
+  // layer. Like `<c:view3D>`, the schema accepts `<c:floor>` on every
+  // CT_Chart even though it is only meaningful on 3D families
+  // (`bar3D`, `line3D`, `pie3D`, `area3D`, `surface3D`); Excel
+  // silently ignores it on 2D families. The writer skips emission
+  // entirely when the caller leaves `floorThickness` unset (or pins
+  // `0`) so a fresh chart matches Excel's reference serialization
+  // byte-for-byte.
+  const floorXml = buildFloorThickness(chart.floorThickness);
+  if (floorXml !== undefined) {
+    chartChildren.push(floorXml);
+  }
+
   // ── Plot Area ──
   chartChildren.push(buildPlotArea(chart, sheetName));
 
@@ -1595,6 +1612,39 @@ function clampView3DInt(value: number | undefined, min: number, max: number): nu
   if (!Number.isInteger(value)) return undefined;
   if (value < min || value > max) return undefined;
   return value;
+}
+
+/**
+ * Serialize {@link SheetChart.floorThickness} into
+ * `<c:floor><c:thickness val="N"/></c:floor>`. Returns `undefined`
+ * when the caller did not opt in (`floorThickness` is `undefined`,
+ * `0`, non-finite, non-integer, negative, or out of the Excel UI
+ * band `1..100`) so the writer can skip the `<c:floor>` element
+ * entirely — Excel renders no floor extrusion on a fresh chart and
+ * absence matches the reference serialization byte-for-byte.
+ *
+ * The OOXML schema (`ST_Thickness`, `xsd:unsignedInt`) accepts any
+ * non-negative integer, but Excel's "Format Floor -> Floor ->
+ * Thickness" pane only exposes `0..100` — values above that band
+ * render but trigger Excel's repair dialog. Drop out-of-range and
+ * non-integer inputs rather than emit a token Excel rejects, mirroring
+ * how every other chart-level numeric writer ({@link clampView3DInt}
+ * / {@link clampHoleSize} / {@link clampFirstSliceAng}) treats its
+ * input.
+ *
+ * The element only carries the `<c:thickness>` child — other
+ * `CT_Surface` children (`<c:spPr>`, `<c:pictureOptions>`,
+ * `<c:extLst>`) are not modelled at this layer, so the emitted
+ * `<c:floor>` block is the minimal shape Excel itself emits when the
+ * user pins a thickness with no other floor styling.
+ */
+function buildFloorThickness(value: number | undefined): string | undefined {
+  if (typeof value !== "number") return undefined;
+  if (!Number.isFinite(value)) return undefined;
+  if (!Number.isInteger(value)) return undefined;
+  if (value <= 0) return undefined;
+  if (value > 100) return undefined;
+  return xmlElement("c:floor", undefined, [xmlSelfClose("c:thickness", { val: value })]);
 }
 
 interface AxisRenderOptions {

@@ -874,6 +874,31 @@ export interface CloneChartOptions {
    */
   view3D?: ChartView3D | null;
   /**
+   * Override `<c:chart><c:floor><c:thickness val="N"/></c:floor>`
+   * (the 3-D floor extrusion thickness on `CT_Surface`, ECMA-376
+   * Part 1, §21.2.2.69).
+   *
+   * `undefined` (or omitted) inherits the source's parsed
+   * {@link Chart.floorThickness}. `null` drops the inherited value so
+   * the writer skips `<c:floor>` entirely — Excel falls back to its
+   * per-family floor default (no extrusion). A `number` replaces it —
+   * pass any value in the inclusive `1..100` band Excel's "Format
+   * Floor -> Floor -> Thickness" pane exposes; out-of-range, `0`, or
+   * non-finite values fall through to absence at write time rather
+   * than emit a token Excel rejects.
+   *
+   * Applies to every chart family — `<c:floor>` lives on `<c:chart>`
+   * (between `<c:view3D>` and `<c:plotArea>`), so the OOXML schema
+   * accepts the element on both 2D and 3D families. The toggle is
+   * only meaningful on 3D families (`bar3D`, `line3D`, `pie3D`,
+   * `area3D`, `surface3D`), but the writer carries a templated value
+   * through every clone so a 3D template chart round-trips losslessly.
+   * The grammar mirrors {@link CloneChartOptions.upDownBarsGapWidth}
+   * so the chart-level numeric knobs compose the same way at the call
+   * site.
+   */
+  floorThickness?: number | null;
+  /**
    * Override `<c:scatterStyle>` (the chart-level XY-scatter preset).
    *
    * `undefined` (or omitted) inherits the source's parsed
@@ -1950,6 +1975,22 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   const resolvedView3D = resolveView3D(source.view3D, options.view3D);
   if (resolvedView3D !== undefined) out.view3D = resolvedView3D;
 
+  // `<c:floor>` lives on `<c:chart>` directly (between `<c:view3D>`
+  // and `<c:plotArea>` per CT_Chart), so the OOXML schema accepts it
+  // on every chart family — both 2D and 3D. The toggle is only
+  // meaningful on 3D families, but the resolver applies to every type
+  // so a 3D template chart round-trips losslessly through a clone
+  // (and a 2D clone of a 3D template that happens to inherit the
+  // value silently keeps the element — Excel ignores it on 2D).
+  // Override wins over the source's parsed value, and the grammar
+  // follows the standard `number | null` shape so the chart-level
+  // numeric knobs compose the same way at the call site.
+  const resolvedFloorThickness = resolveFloorThickness(
+    source.floorThickness,
+    options.floorThickness,
+  );
+  if (resolvedFloorThickness !== undefined) out.floorThickness = resolvedFloorThickness;
+
   // `<c:scatterStyle>` only renders inside `<c:scatterChart>`. Drop the
   // field on every other resolved type so a scatter template flattened
   // to line / column does not leak the preset into a chart kind whose
@@ -2619,6 +2660,31 @@ function resolveView3D(
   // empty-object shape and emits a bare `<c:view3D/>` shell, mirroring
   // how `resolveProtection` handles the `true` / `{}` forms.
   return { ...override };
+}
+
+/**
+ * Resolve a `floorThickness` override.
+ *
+ * `undefined` → inherit the source's parsed `floorThickness`.
+ * `null`      → drop the inherited value (the writer skips `<c:floor>`
+ *               entirely — Excel falls back to no extrusion).
+ * `number`    → replace. Out-of-range, `0`, or non-finite values still
+ *               surface in the cloned `SheetChart` for symmetry with
+ *               the other override helpers; the writer's
+ *               `buildFloorThickness` then drops them at emit time so
+ *               a fresh chart matches Excel's reference serialization.
+ *
+ * The grammar mirrors `upDownBarsGapWidth` / `gapWidth` / `holeSize` /
+ * `firstSliceAng` so the numeric chart-level knobs compose the same
+ * way at the call site.
+ */
+function resolveFloorThickness(
+  sourceValue: number | undefined,
+  override: number | null | undefined,
+): number | undefined {
+  if (override === undefined) return sourceValue;
+  if (override === null) return undefined;
+  return override;
 }
 
 /**

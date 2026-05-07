@@ -553,6 +553,18 @@ export function parseChart(xml: string): Chart | undefined {
   const view3D = parseView3D(chartEl);
   if (view3D !== undefined) out.view3D = view3D;
 
+  // `<c:floor>` (CT_Surface, ECMA-376 Part 1, §21.2.2.69) sits on
+  // `<c:chart>` between `<c:view3D>` and `<c:sideWall>` /
+  // `<c:backWall>` / `<c:plotArea>` per CT_Chart. The reader surfaces
+  // only the `<c:thickness>` child here — `<c:spPr>` / `<c:pictureOptions>`
+  // / `<c:extLst>` styling on the floor block is not modelled at this
+  // layer. Like `<c:view3D>`, the schema accepts `<c:floor>` on every
+  // CT_Chart even though it is only meaningful on 3D families, so a
+  // stray element on a 2D chart still surfaces the value for round-
+  // trip parity.
+  const floorThickness = parseFloorThickness(chartEl);
+  if (floorThickness !== undefined) out.floorThickness = floorThickness;
+
   return out;
 }
 
@@ -4934,6 +4946,56 @@ function parseView3DBoolean(view3D: XmlElement, local: string): boolean | undefi
     default:
       return undefined;
   }
+}
+
+// ── Floor Thickness ───────────────────────────────────────────────
+
+/**
+ * Pull `<c:chart><c:floor><c:thickness val=".."/></c:floor>` off
+ * `<c:chart>`. The `<c:floor>` element (CT_Surface, ECMA-376 Part 1,
+ * §21.2.2.69) sits on `<c:chart>` between `<c:view3D>` and
+ * `<c:sideWall>` / `<c:backWall>` / `<c:plotArea>` per CT_Chart and
+ * carries an optional `<c:thickness>` child whose `val` attribute is
+ * an `xsd:unsignedInt` — Excel's "Format Floor -> Floor -> Thickness"
+ * pin on 3D chart families.
+ *
+ * Returns the integer pinned by the source chart. The OOXML default
+ * `0` (and absence of the `<c:thickness>` child or the parent
+ * `<c:floor>` element) collapses to `undefined` so absence and the
+ * default round-trip identically through {@link cloneChart} — only an
+ * explicit positive thickness surfaces here. Out-of-range or
+ * unparseable values also drop to `undefined` rather than fabricate a
+ * value the file did not declare.
+ *
+ * The `<c:thickness>` element only carries the `val` attribute on
+ * `CT_Thickness` — other floor styling (`<c:spPr>`, `<c:pictureOptions>`,
+ * `<c:extLst>`) is not modelled at this layer, so a stray styling
+ * block on the floor passes through the parse loop without surfacing.
+ */
+function parseFloorThickness(chartEl: XmlElement): number | undefined {
+  const floor = findChild(chartEl, "floor");
+  if (!floor) return undefined;
+  const thickness = findChild(floor, "thickness");
+  if (!thickness) return undefined;
+  const raw = thickness.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  // ST_Thickness is `xsd:unsignedInt` — strict integer regex rejects
+  // fractional / negative / non-numeric tokens.
+  if (!/^\d+$/.test(raw)) return undefined;
+  const n = Number(raw);
+  if (!Number.isInteger(n)) return undefined;
+  // Collapse the OOXML default `0` to undefined so absence and the
+  // default round-trip identically through cloneChart — only an
+  // explicit positive thickness surfaces here. Mirrors how the writer
+  // skips emission entirely for `0` / undefined.
+  if (n === 0) return undefined;
+  // Cap at Excel's UI band ceiling (`100`) — the OOXML schema accepts
+  // the full `xsd:unsignedInt` range but Excel's "Format Floor"
+  // dialogue rejects values above 100 with a repair warning. Anything
+  // larger drops here so a corrupt template does not silently rewrite
+  // as an absurd thickness; absence keeps the round-trip stable.
+  if (n > 100) return undefined;
+  return n;
 }
 
 // ── Vary Colors ────────────────────────────────────────────────────
