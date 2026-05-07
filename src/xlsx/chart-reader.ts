@@ -36,6 +36,7 @@ import type {
   ChartLineAreaGrouping,
   ChartLineDashStyle,
   ChartLineStroke,
+  ChartManualLayout,
   ChartMarker,
   ChartMarkerSymbol,
   ChartProtection,
@@ -484,6 +485,16 @@ export function parseChart(xml: string): Chart | undefined {
     // identically through the writer.
     const legendFontFamily = parseLegendFontFamily(chartEl);
     if (legendFontFamily !== undefined) out.legendFontFamily = legendFontFamily;
+
+    // `<c:legend><c:layout><c:manualLayout>` carries Excel's "Format
+    // Legend -> Position -> Custom" placement. CT_Legend places the
+    // block between `<c:legendEntry>` and `<c:overlay>`. The reader
+    // surfaces the `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` coordinates
+    // off the canonical slot; absence of any meaningful coordinate
+    // collapses the field to `undefined` so a fresh chart and a chart
+    // that pinned an out-of-range layout both round-trip lossless.
+    const legendLayout = parseLegendLayout(chartEl);
+    if (legendLayout !== undefined) out.legendLayout = legendLayout;
   }
 
   const dispBlanksAs = parseDispBlanksAs(chartEl);
@@ -3672,6 +3683,77 @@ function parseLegendFontFamily(chartEl: XmlElement): string | undefined {
   const trimmed = raw.trim();
   if (trimmed.length === 0) return undefined;
   return trimmed;
+}
+
+/**
+ * Pull `<c:legend><c:layout><c:manualLayout>` off the chart. Reflects
+ * Excel's "Format Legend -> Position -> Custom" knob — the `(x, y)`
+ * anchor and `(w, h)` size of the legend block as fractions of the
+ * chart frame in the `0..1` band.
+ *
+ * The OOXML schema (`CT_ManualLayout`, ECMA-376 Part 1, §21.2.2.115)
+ * exposes optional `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` children whose
+ * `val` attributes carry an `xsd:double`. The reader admits the
+ * coordinate only when `val` parses to a finite number in the `0..1`
+ * band; out-of-range / non-finite / non-numeric tokens drop to
+ * `undefined` on the matching axis so absence and a malformed token
+ * round-trip identically through {@link cloneChart}.
+ *
+ * Both `<c:xMode val="edge"/>` (absolute fraction of the chart frame)
+ * and `<c:xMode val="factor"/>` (delta from auto-layout) are accepted
+ * — the reader surfaces the same `ChartManualLayout` shape regardless,
+ * since the writer always normalizes to `"edge"` on emit (Excel itself
+ * emits the absolute form when the user drags an element to a custom
+ * position).
+ *
+ * Returns `undefined` whenever the chart omits the `<c:legend>` /
+ * `<c:layout>` / `<c:manualLayout>` chain at any link, or when every
+ * coordinate dropped on normalization — the field is omitted entirely
+ * on a clean parse so absence and an empty layout round-trip identically
+ * through the writer.
+ */
+function parseLegendLayout(chartEl: XmlElement): ChartManualLayout | undefined {
+  const legend = findChild(chartEl, "legend");
+  if (!legend) return undefined;
+  const layout = findChild(legend, "layout");
+  if (!layout) return undefined;
+  const manual = findChild(layout, "manualLayout");
+  if (!manual) return undefined;
+
+  const out: ChartManualLayout = {};
+  const x = readLayoutCoordinate(findChild(manual, "x"));
+  if (x !== undefined) out.x = x;
+  const y = readLayoutCoordinate(findChild(manual, "y"));
+  if (y !== undefined) out.y = y;
+  const w = readLayoutCoordinate(findChild(manual, "w"));
+  if (w !== undefined) out.w = w;
+  const h = readLayoutCoordinate(findChild(manual, "h"));
+  if (h !== undefined) out.h = h;
+
+  if (out.x === undefined && out.y === undefined && out.w === undefined && out.h === undefined) {
+    return undefined;
+  }
+  return out;
+}
+
+/**
+ * Parse a single `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` element off a
+ * `<c:manualLayout>` block. Returns the `val` attribute as a finite
+ * number in the `0..1` band; everything else (missing element, missing
+ * attribute, non-numeric / non-finite / out-of-range token) collapses
+ * to `undefined` so the matching axis on {@link parseLegendLayout}'s
+ * return value is omitted.
+ */
+function readLayoutCoordinate(el: XmlElement | undefined): number | undefined {
+  if (!el) return undefined;
+  const raw = el.attrs.val;
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed)) return undefined;
+  if (parsed < 0 || parsed > 1) return undefined;
+  return parsed;
 }
 
 /**

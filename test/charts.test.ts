@@ -6396,6 +6396,189 @@ describe("parseChart — legendFontFamily", () => {
   });
 });
 
+// ── parseChart — legendLayout (manual placement) ────────────────────
+
+describe("parseChart — legendLayout", () => {
+  const NS_LL = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withManualLayout(body: string): string {
+    return `<c:chartSpace ${NS_LL}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:layout>
+        <c:manualLayout>${body}</c:manualLayout>
+      </c:layout>
+      <c:overlay val="0"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces every coordinate when all four are pinned", () => {
+    const xml = withManualLayout(
+      `<c:xMode val="edge"/><c:yMode val="edge"/><c:wMode val="edge"/><c:hMode val="edge"/>
+       <c:x val="0.65"/><c:y val="0.15"/><c:w val="0.3"/><c:h val="0.4"/>`,
+    );
+    expect(parseChart(xml)?.legendLayout).toEqual({ x: 0.65, y: 0.15, w: 0.3, h: 0.4 });
+  });
+
+  it("surfaces a partial layout (only x/y pinned)", () => {
+    const xml = withManualLayout(
+      `<c:xMode val="edge"/><c:yMode val="edge"/><c:x val="0.5"/><c:y val="0.25"/>`,
+    );
+    expect(parseChart(xml)?.legendLayout).toEqual({ x: 0.5, y: 0.25 });
+  });
+
+  it('accepts xMode="factor" and surfaces the same shape', () => {
+    // The reader admits both `factor` (delta from auto-layout) and
+    // `edge` (absolute fraction) — the writer normalizes to `edge` on
+    // emit, but a templated chart with `factor` still round-trips.
+    const xml = withManualLayout(
+      `<c:xMode val="factor"/><c:yMode val="factor"/><c:x val="0.4"/><c:y val="0.3"/>`,
+    );
+    expect(parseChart(xml)?.legendLayout).toEqual({ x: 0.4, y: 0.3 });
+  });
+
+  it("drops out-of-range coordinates axis-by-axis", () => {
+    const xml = withManualLayout(
+      `<c:x val="-0.5"/><c:y val="2.0"/><c:w val="0.5"/><c:h val="0.5"/>`,
+    );
+    expect(parseChart(xml)?.legendLayout).toEqual({ w: 0.5, h: 0.5 });
+  });
+
+  it("drops non-numeric coordinates axis-by-axis", () => {
+    const xml = withManualLayout(`<c:x val="not-a-number"/><c:y val="0.5"/>`);
+    expect(parseChart(xml)?.legendLayout).toEqual({ y: 0.5 });
+  });
+
+  it("collapses an empty <c:manualLayout> to undefined", () => {
+    const xml = withManualLayout(``);
+    expect(parseChart(xml)?.legendLayout).toBeUndefined();
+  });
+
+  it("collapses a layout where every coordinate dropped to undefined", () => {
+    const xml = withManualLayout(`<c:x val="-1"/><c:y val="2"/>`);
+    expect(parseChart(xml)?.legendLayout).toBeUndefined();
+  });
+
+  it("returns undefined when <c:legend> has no <c:layout> block", () => {
+    const xml = `<c:chartSpace ${NS_LL}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendLayout).toBeUndefined();
+  });
+
+  it("returns undefined when <c:layout> has no <c:manualLayout> child", () => {
+    const xml = `<c:chartSpace ${NS_LL}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:layout/>
+      <c:overlay val="0"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendLayout).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:legend> element at all", () => {
+    const xml = `<c:chartSpace ${NS_LL}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendLayout).toBeUndefined();
+  });
+
+  it('drops the layout when the legend is hidden via <c:delete val="1"/>', () => {
+    const xml = `<c:chartSpace ${NS_LL}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:delete val="1"/>
+      <c:layout><c:manualLayout><c:x val="0.5"/></c:manualLayout></c:layout>
+      <c:overlay val="0"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe(false);
+    expect(chart?.legendLayout).toBeUndefined();
+  });
+
+  it("accepts the boundary values 0 and 1", () => {
+    const xml = withManualLayout(`<c:x val="0"/><c:y val="1"/><c:w val="0"/><c:h val="1"/>`);
+    expect(parseChart(xml)?.legendLayout).toEqual({ x: 0, y: 1, w: 0, h: 1 });
+  });
+
+  it("co-surfaces alongside legendOverlay / legendEntries / legendFontSize", () => {
+    const xml = `<c:chartSpace ${NS_LL}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="b"/>
+      <c:legendEntry>
+        <c:idx val="0"/>
+        <c:delete val="1"/>
+      </c:legendEntry>
+      <c:layout>
+        <c:manualLayout>
+          <c:xMode val="edge"/>
+          <c:yMode val="edge"/>
+          <c:x val="0.6"/>
+          <c:y val="0.2"/>
+        </c:manualLayout>
+      </c:layout>
+      <c:overlay val="1"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="1400"/></a:pPr><a:endParaRPr lang="en-US"/></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe("bottom");
+    expect(chart?.legendOverlay).toBe(true);
+    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }]);
+    expect(chart?.legendFontSize).toBe(14);
+    expect(chart?.legendLayout).toEqual({ x: 0.6, y: 0.2 });
+  });
+});
+
 // ── parseChart — data labels showLegendKey ──────────────────────────
 
 describe("parseChart — data labels showLegendKey", () => {

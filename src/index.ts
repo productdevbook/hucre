@@ -153,6 +153,7 @@ export type {
   ChartLineAreaGrouping,
   ChartLineDashStyle,
   ChartLineStroke,
+  ChartManualLayout,
   ChartMarker,
   ChartMarkerSymbol,
   ChartProtection,

@@ -1616,6 +1616,70 @@ export interface ChartLegendEntry {
 }
 
 /**
+ * Manual placement of a chart sub-element (legend / plot area / title /
+ * data table) inside the chart frame. Maps to OOXML's `<c:manualLayout>`
+ * (`CT_ManualLayout`, ECMA-376 Part 1, §21.2.2.115) — the element block
+ * that backs Excel's "Format <element> -> Position -> Custom" knob and
+ * pins where the element draws inside the chart's drawing area.
+ *
+ * All four coordinates are fractions of the chart frame in the range
+ * `0..1` — `(0, 0)` is the upper-left of the chart frame, `(1, 1)` is
+ * the lower-right; widths / heights are sized as fractions of the chart
+ * frame width / height. Each axis is independently optional so a caller
+ * can pin only the position ({@link x} / {@link y}) and let the element
+ * keep its automatic size, only the size ({@link w} / {@link h}) and
+ * let the element keep its automatic anchor, or any combination.
+ *
+ * The writer always emits the matching `<c:xMode>` / `<c:yMode>` /
+ * `<c:wMode>` / `<c:hMode>` children with `val="edge"` (Excel's "Format
+ * Legend -> Position" reference shape — the coordinates are absolute
+ * fractions of the chart frame, not deltas from the auto-layout
+ * baseline). The reader collapses `val="factor"` (delta from
+ * auto-layout) onto the same shape so a templated chart that pinned
+ * the alternate mode still round-trips through {@link cloneChart}; the
+ * writer normalizes to `"edge"` on emit since Excel itself emits the
+ * absolute form when the user drags an element to a custom position.
+ *
+ * @see {@link SheetChart.legendLayout}
+ * @see {@link Chart.legendLayout}
+ */
+export interface ChartManualLayout {
+  /**
+   * Horizontal anchor as a fraction of the chart frame width. Maps to
+   * `<c:manualLayout><c:x val=".."/></c:manualLayout>`. Range: `0..1`
+   * (`0` is the chart frame's left edge, `1` is the right edge).
+   * Out-of-range / non-finite / non-numeric inputs collapse to
+   * `undefined` so the writer skips the `<c:x>` slot rather than emit a
+   * token Excel would reject.
+   */
+  x?: number;
+  /**
+   * Vertical anchor as a fraction of the chart frame height. Maps to
+   * `<c:manualLayout><c:y val=".."/></c:manualLayout>`. Range: `0..1`
+   * (`0` is the chart frame's top edge, `1` is the bottom edge).
+   * Out-of-range / non-finite / non-numeric inputs collapse to
+   * `undefined` so the writer skips the `<c:y>` slot.
+   */
+  y?: number;
+  /**
+   * Width as a fraction of the chart frame width. Maps to
+   * `<c:manualLayout><c:w val=".."/></c:manualLayout>`. Range: `0..1`
+   * (`0` collapses the element to a hairline, `1` spans the full chart
+   * frame width). Out-of-range / non-finite / non-numeric inputs
+   * collapse to `undefined` so the writer skips the `<c:w>` slot.
+   */
+  w?: number;
+  /**
+   * Height as a fraction of the chart frame height. Maps to
+   * `<c:manualLayout><c:h val=".."/></c:manualLayout>`. Range: `0..1`
+   * (`0` collapses the element to a hairline, `1` spans the full chart
+   * frame height). Out-of-range / non-finite / non-numeric inputs
+   * collapse to `undefined` so the writer skips the `<c:h>` slot.
+   */
+  h?: number;
+}
+
+/**
  * A chart embedded into a worksheet via the drawing layer.
  *
  * Excel anchors charts to cells using the same `xdr:twoCellAnchor`
@@ -2048,6 +2112,49 @@ export interface SheetChart {
    * Excel exposes.
    */
   legendFontFamily?: string;
+  /**
+   * Custom legend placement inside the chart frame. Maps to
+   * `<c:legend><c:layout><c:manualLayout>...</c:manualLayout></c:layout>
+   * </c:legend>` — Excel's "Format Legend -> Position -> Custom" knob.
+   * The block sits between `<c:legendEntry>` and `<c:overlay>` per
+   * `CT_Legend` (ECMA-376 Part 1, §21.2.2.114).
+   *
+   * Each of {@link ChartManualLayout.x} / {@link ChartManualLayout.y} /
+   * {@link ChartManualLayout.w} / {@link ChartManualLayout.h} is a
+   * fraction of the chart frame in the range `0..1` — `(0, 0)` is the
+   * upper-left of the chart frame, `(1, 1)` is the lower-right. The
+   * coordinates compose independently with {@link legend} (the legend
+   * still picks up its `<c:legendPos>` orientation hint, the manual
+   * layout merely overrides where the legend block draws). Out-of-range
+   * / non-finite / non-numeric coordinates collapse to omitting the
+   * matching `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` slot so a caller can
+   * pin only the position ({@link ChartManualLayout.x} /
+   * {@link ChartManualLayout.y}) and let the legend keep its automatic
+   * size, only the size ({@link ChartManualLayout.w} /
+   * {@link ChartManualLayout.h}) and let it keep its automatic anchor,
+   * or any combination.
+   *
+   * The writer always emits the matching `<c:xMode>` / `<c:yMode>` /
+   * `<c:wMode>` / `<c:hMode>` children with `val="edge"` (Excel's
+   * reference shape when the user drags the legend to a custom
+   * position — the coordinates are absolute fractions of the chart
+   * frame, not deltas from the auto-layout baseline).
+   *
+   * Default: omitted — the legend renders at the auto-layout position
+   * Excel computes from the chart's dimensions and the resolved
+   * `<c:legendPos>` orientation. Pin a {@link ChartManualLayout} to
+   * place the legend in a specific quadrant of the chart frame —
+   * useful for composing a templated dashboard whose legend needs to
+   * align with neighbouring tiles, or a hero chart whose legend should
+   * sit in a corner the auto-layout would not pick.
+   *
+   * Silently ignored when `legend === false` (no `<c:legend>` element
+   * is emitted) — there is no slot to host the layout in that case. An
+   * empty layout (every coordinate undefined) collapses to omitting the
+   * entire `<c:layout>` block so a fresh chart matches Excel's
+   * reference serialization byte-for-byte.
+   */
+  legendLayout?: ChartManualLayout;
   /** Show the chart-level title element. Default: `true` when `title` is set. */
   showTitle?: boolean;
   /**
@@ -6373,6 +6480,33 @@ export interface Chart {
    * conversion.
    */
   legendFontFamily?: string;
+  /**
+   * Custom legend placement pulled from `<c:legend><c:layout>
+   * <c:manualLayout>...</c:manualLayout></c:layout></c:legend>`.
+   * Reflects Excel's "Format Legend -> Position -> Custom" knob — the
+   * `(x, y)` anchor and `(w, h)` size of the legend block as fractions
+   * of the chart frame in the `0..1` band.
+   *
+   * Each of {@link ChartManualLayout.x} / {@link ChartManualLayout.y} /
+   * {@link ChartManualLayout.w} / {@link ChartManualLayout.h} surfaces
+   * the literal `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` value when the
+   * source chart pins one; absence / non-numeric / non-finite tokens
+   * collapse to `undefined` on the matching field so absence and a
+   * malformed token round-trip identically through {@link cloneChart}.
+   * The reader accepts both `xMode="edge"` (absolute fraction of the
+   * chart frame) and `xMode="factor"` (delta from auto-layout) and
+   * surfaces the same shape; the writer normalizes to `"edge"` on emit
+   * since that is the form Excel itself emits when the user drags a
+   * legend to a custom position.
+   *
+   * Reported as `undefined` whenever {@link legend} is `false`, the
+   * source chart has no `<c:legend>` element at all, or every
+   * coordinate the source pinned drops to `undefined` — there is no
+   * meaningful layout to surface in any of those cases. Mirrors the
+   * writer-side {@link SheetChart.legendLayout} so a parsed value
+   * slots straight into {@link cloneChart} without conversion.
+   */
+  legendLayout?: ChartManualLayout;
   /**
    * Title-overlay flag pulled from `<c:title><c:overlay val=".."/>`.
    * Reflects Excel's "Format Chart Title -> Show the title without

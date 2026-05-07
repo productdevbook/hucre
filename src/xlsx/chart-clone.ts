@@ -29,6 +29,7 @@ import type {
   ChartKind,
   ChartLegendEntry,
   ChartLineStroke,
+  ChartManualLayout,
   ChartMarker,
   ChartProtection,
   ChartScatterStyle,
@@ -335,6 +336,32 @@ export interface CloneChartOptions {
    * typography knobs compose the same way at the call site.
    */
   legendFontFamily?: string | null;
+  /**
+   * Override `SheetChart.legendLayout`. `undefined` (or omitted)
+   * inherits the source's parsed `legendLayout`; `null` drops the
+   * inherited layout (the writer emits no `<c:layout>` block on the
+   * legend, falling back to Excel's auto-layout position); a
+   * {@link ChartManualLayout} replaces it.
+   *
+   * Each of {@link ChartManualLayout.x} / {@link ChartManualLayout.y} /
+   * {@link ChartManualLayout.w} / {@link ChartManualLayout.h} runs
+   * through the writer-side normalizer — coordinates outside the
+   * `0..1` band, `NaN`, `Infinity`, and non-numeric overrides all
+   * collapse to omitting the matching `<c:x>` / `<c:y>` / `<c:w>` /
+   * `<c:h>` slot so the cloned `SheetChart` always carries a value the
+   * writer will accept. An override whose every coordinate dropped on
+   * normalization collapses the entire layout to `undefined` so the
+   * writer skips the `<c:layout>` block entirely.
+   *
+   * The override is silently dropped from the cloned `SheetChart` when
+   * the resolved legend is `false` (no `<c:legend>` element will be
+   * emitted) — there is no slot to host the layout on a hidden legend,
+   * so leaking the value into the output would carry a pin Excel never
+   * reads. The grammar mirrors `legendOverlay` / `legendEntries` /
+   * `legendFontSize` so the legend knobs compose the same way at the
+   * call site.
+   */
+  legendLayout?: ChartManualLayout | null;
   /** Override `SheetChart.barGrouping`. */
   barGrouping?: SheetChart["barGrouping"];
   /**
@@ -1744,6 +1771,18 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
       options.legendFontFamily,
     );
     if (resolvedLegendFontFamily !== undefined) out.legendFontFamily = resolvedLegendFontFamily;
+
+    // Same hidden-legend scoping for the manual layout — `<c:layout>`
+    // lives inside `<c:legend>` per CT_Legend, so a clone whose legend
+    // is hidden has no slot for the placement. `undefined` inherits the
+    // parsed value (after the writer-side normalizer drops out-of-range
+    // axes), `null` drops it (the writer emits no `<c:layout>` block,
+    // falling back to Excel's auto-layout position), a
+    // `ChartManualLayout` replaces it. An override whose every
+    // coordinate dropped on normalization collapses the entire layout
+    // to `undefined` so the writer skips the `<c:layout>` block.
+    const resolvedLegendLayout = resolveLegendLayout(source.legendLayout, options.legendLayout);
+    if (resolvedLegendLayout !== undefined) out.legendLayout = resolvedLegendLayout;
   }
 
   const barGrouping = options.barGrouping !== undefined ? options.barGrouping : source.barGrouping;
@@ -3218,6 +3257,75 @@ function resolveLegendFontFamily(
   if (override === undefined) return normalizeLegendFontFamily(sourceValue);
   if (override === null) return undefined;
   return normalizeLegendFontFamily(override);
+}
+
+/**
+ * Normalize a {@link ChartManualLayout} for the cloned `SheetChart`.
+ * Drops every axis whose input is non-numeric / non-finite / outside
+ * the `0..1` band; returns `undefined` when every axis dropped so the
+ * cloned shape elides the field entirely (mirrors the writer-side
+ * normalization so a parsed value flows through {@link cloneChart}
+ * without bookkeeping the units). Coordinates outside the `0..1` band
+ * collapse rather than clamp — same accept-or-drop grammar as
+ * `titleFontSize` / `axisTitleFontSize` / `legendFontSize`.
+ */
+function normalizeLegendLayout(
+  value: ChartManualLayout | undefined,
+): ChartManualLayout | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const out: ChartManualLayout = {};
+  const x = normalizeLayoutCoordinate(value.x);
+  if (x !== undefined) out.x = x;
+  const y = normalizeLayoutCoordinate(value.y);
+  if (y !== undefined) out.y = y;
+  const w = normalizeLayoutCoordinate(value.w);
+  if (w !== undefined) out.w = w;
+  const h = normalizeLayoutCoordinate(value.h);
+  if (h !== undefined) out.h = h;
+  if (out.x === undefined && out.y === undefined && out.w === undefined && out.h === undefined) {
+    return undefined;
+  }
+  return out;
+}
+
+/** Filter a single coordinate to a finite number in the `0..1` band. */
+function normalizeLayoutCoordinate(raw: unknown): number | undefined {
+  if (typeof raw !== "number") return undefined;
+  if (!Number.isFinite(raw)) return undefined;
+  if (raw < 0 || raw > 1) return undefined;
+  return raw;
+}
+
+/**
+ * Resolve a `legendLayout` override.
+ *
+ * `undefined` → inherit the source's parsed `legendLayout` (after
+ *               running it through {@link normalizeLegendLayout} so a
+ *               malformed source value drops cleanly).
+ * `null`      → drop the inherited layout (the writer falls back to
+ *               Excel's auto-layout position — no `<c:layout>` block
+ *               on the legend).
+ * `ChartManualLayout` → replace, after running through
+ *               {@link normalizeLegendLayout}. Coordinates outside the
+ *               `0..1` band collapse on the matching axis so the
+ *               cloned `SheetChart` always carries a value the writer
+ *               will accept; an override whose every axis dropped
+ *               collapses to `undefined` so the writer skips the
+ *               `<c:layout>` block entirely.
+ *
+ * The grammar mirrors `legendOverlay` / `legendEntries` /
+ * `legendFontSize` so the legend knobs compose the same way at the
+ * call site. Callers should gate the result on the resolved legend
+ * visibility — when no legend is emitted, the layout has no slot in
+ * the rendered chart.
+ */
+function resolveLegendLayout(
+  sourceValue: ChartManualLayout | undefined,
+  override: ChartManualLayout | null | undefined,
+): ChartManualLayout | undefined {
+  if (override === undefined) return normalizeLegendLayout(sourceValue);
+  if (override === null) return undefined;
+  return normalizeLegendLayout(override);
 }
 
 /**

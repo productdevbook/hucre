@@ -18359,3 +18359,305 @@ describe("writeChart — axis title overlay", () => {
     expect(reparsed?.axes?.y?.axisTitleOverlay).toBeUndefined();
   });
 });
+
+// ── writeChart — legendLayout (manual placement) ────────────────────
+
+describe("writeChart — legendLayout", () => {
+  function legendOf(xml: string): string {
+    const m = xml.match(/<c:legend>[\s\S]*?<\/c:legend>/);
+    if (!m) throw new Error("No <c:legend> block found in chart XML");
+    return m[0];
+  }
+
+  it("does NOT emit <c:layout> when legendLayout is unset (matches Excel reference)", () => {
+    const result = writeChart(makeChart(), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend).not.toContain("<c:layout>");
+    expect(legend).not.toContain("<c:manualLayout>");
+  });
+
+  it("threads x/y anchor through to <c:layout><c:manualLayout>", () => {
+    const result = writeChart(makeChart({ legendLayout: { x: 0.7, y: 0.1 } }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend).toContain("<c:layout>");
+    expect(legend).toContain("<c:manualLayout>");
+    expect(legend).toContain('<c:xMode val="edge"/>');
+    expect(legend).toContain('<c:yMode val="edge"/>');
+    expect(legend).toContain('<c:x val="0.7"/>');
+    expect(legend).toContain('<c:y val="0.1"/>');
+    // No w/h pinned -> writer skips those slots and their modes.
+    expect(legend).not.toContain("<c:wMode");
+    expect(legend).not.toContain("<c:hMode");
+    expect(legend).not.toContain("<c:w ");
+    expect(legend).not.toContain("<c:h ");
+  });
+
+  it("threads w/h size through to <c:layout><c:manualLayout>", () => {
+    const result = writeChart(makeChart({ legendLayout: { w: 0.25, h: 0.5 } }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend).toContain('<c:wMode val="edge"/>');
+    expect(legend).toContain('<c:hMode val="edge"/>');
+    expect(legend).toContain('<c:w val="0.25"/>');
+    expect(legend).toContain('<c:h val="0.5"/>');
+    expect(legend).not.toContain("<c:xMode");
+    expect(legend).not.toContain("<c:yMode");
+  });
+
+  it("threads all four coordinates when every axis is pinned", () => {
+    const result = writeChart(
+      makeChart({ legendLayout: { x: 0.6, y: 0.2, w: 0.3, h: 0.4 } }),
+      "Sheet1",
+    );
+    const legend = legendOf(result.chartXml);
+    expect(legend).toContain('<c:x val="0.6"/>');
+    expect(legend).toContain('<c:y val="0.2"/>');
+    expect(legend).toContain('<c:w val="0.3"/>');
+    expect(legend).toContain('<c:h val="0.4"/>');
+    // Mode children precede value children inside <c:manualLayout>.
+    const ml = legend.match(/<c:manualLayout>[\s\S]*?<\/c:manualLayout>/)![0];
+    expect(ml.indexOf("c:xMode")).toBeLessThan(ml.indexOf("<c:x "));
+    expect(ml.indexOf("c:yMode")).toBeLessThan(ml.indexOf("<c:y "));
+    expect(ml.indexOf("c:wMode")).toBeLessThan(ml.indexOf("<c:w "));
+    expect(ml.indexOf("c:hMode")).toBeLessThan(ml.indexOf("<c:h "));
+  });
+
+  it("places <c:layout> after <c:legendPos> and before <c:overlay> (CT_Legend order)", () => {
+    const result = writeChart(makeChart({ legendLayout: { x: 0.5 } }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend.indexOf("c:legendPos")).toBeLessThan(legend.indexOf("c:layout"));
+    expect(legend.indexOf("c:layout")).toBeLessThan(legend.indexOf("c:overlay"));
+  });
+
+  it("places <c:layout> after <c:legendEntry> when both are set (CT_Legend order)", () => {
+    const result = writeChart(
+      makeChart({
+        legendLayout: { x: 0.5 },
+        legendEntries: [{ idx: 0, delete: true }],
+      }),
+      "Sheet1",
+    );
+    const legend = legendOf(result.chartXml);
+    expect(legend.indexOf("c:legendEntry")).toBeLessThan(legend.indexOf("c:layout"));
+    expect(legend.indexOf("c:layout")).toBeLessThan(legend.indexOf("c:overlay"));
+  });
+
+  it("only emits <c:layout> once inside <c:legend>", () => {
+    const result = writeChart(makeChart({ legendLayout: { x: 0.5, y: 0.5 } }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    const occurrences = legend.match(/<c:layout\b/g) ?? [];
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("does not emit any <c:legend> when legend=false, even with legendLayout set", () => {
+    const result = writeChart(
+      makeChart({ legend: false, legendLayout: { x: 0.5, y: 0.5 } }),
+      "Sheet1",
+    );
+    expect(result.chartXml).not.toContain("<c:legend>");
+    expect(result.chartXml.match(/<c:legend\b/g)).toBeNull();
+  });
+
+  it("threads legendLayout through every chart family", () => {
+    for (const type of ["bar", "column", "line", "pie", "doughnut", "area"] as const) {
+      const result = writeChart(makeChart({ type, legendLayout: { x: 0.7, y: 0.2 } }), "Sheet1");
+      const legend = legendOf(result.chartXml);
+      expect(legend).toContain('<c:x val="0.7"/>');
+      expect(legend).toContain('<c:y val="0.2"/>');
+    }
+    const scatter = writeChart(
+      makeChart({
+        type: "scatter",
+        series: [{ values: "B2:B4", categories: "A2:A4" }],
+        legendLayout: { x: 0.7, y: 0.2 },
+      }),
+      "Sheet1",
+    );
+    expect(legendOf(scatter.chartXml)).toContain('<c:x val="0.7"/>');
+  });
+
+  it("drops out-of-range coordinates (negative / above 1)", () => {
+    const result = writeChart(
+      makeChart({ legendLayout: { x: -0.1, y: 1.2, w: 0.5, h: 0.5 } }),
+      "Sheet1",
+    );
+    const legend = legendOf(result.chartXml);
+    // x and y dropped; w and h survive.
+    expect(legend).not.toContain("<c:xMode");
+    expect(legend).not.toContain("<c:yMode");
+    expect(legend).not.toContain("<c:x ");
+    expect(legend).not.toContain("<c:y ");
+    expect(legend).toContain('<c:w val="0.5"/>');
+    expect(legend).toContain('<c:h val="0.5"/>');
+  });
+
+  it("accepts the boundary values 0 and 1", () => {
+    const result = writeChart(makeChart({ legendLayout: { x: 0, y: 1, w: 0, h: 1 } }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend).toContain('<c:x val="0"/>');
+    expect(legend).toContain('<c:y val="1"/>');
+    expect(legend).toContain('<c:w val="0"/>');
+    expect(legend).toContain('<c:h val="1"/>');
+  });
+
+  it("drops non-finite coordinates (NaN / Infinity)", () => {
+    const result = writeChart(
+      makeChart({ legendLayout: { x: Number.NaN, y: Number.POSITIVE_INFINITY, w: 0.5 } }),
+      "Sheet1",
+    );
+    const legend = legendOf(result.chartXml);
+    expect(legend).not.toContain("<c:xMode");
+    expect(legend).not.toContain("<c:yMode");
+    expect(legend).toContain('<c:w val="0.5"/>');
+  });
+
+  it("drops non-numeric coordinates (string leaking past the type guard)", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ legendLayout: { x: "0.5" as any, y: 0.4 } }),
+      "Sheet1",
+    );
+    const legend = legendOf(result.chartXml);
+    expect(legend).not.toContain("<c:xMode");
+    expect(legend).toContain('<c:y val="0.4"/>');
+  });
+
+  it("collapses an empty layout (every axis dropped) to no <c:layout> block", () => {
+    const result = writeChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      makeChart({ legendLayout: { x: -1 as any, y: 2 as any } }),
+      "Sheet1",
+    );
+    const legend = legendOf(result.chartXml);
+    expect(legend).not.toContain("<c:layout>");
+    expect(legend).not.toContain("<c:manualLayout>");
+  });
+
+  it("collapses a layout with no coordinates to no <c:layout> block", () => {
+    const result = writeChart(makeChart({ legendLayout: {} }), "Sheet1");
+    const legend = legendOf(result.chartXml);
+    expect(legend).not.toContain("<c:layout>");
+  });
+
+  it("ignores a non-object legendLayout (typed escape from an untyped caller)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = writeChart(makeChart({ legendLayout: "custom" as any }), "Sheet1");
+    expect(legendOf(result.chartXml)).not.toContain("<c:layout>");
+  });
+
+  it("round-trips legendLayout through parseChart", () => {
+    const written = writeChart(
+      makeChart({ legendLayout: { x: 0.65, y: 0.15, w: 0.3, h: 0.4 } }),
+      "Sheet1",
+    ).chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.legendLayout).toEqual({ x: 0.65, y: 0.15, w: 0.3, h: 0.4 });
+  });
+
+  it("round-trips a partial legendLayout (only x/y) through parseChart", () => {
+    const written = writeChart(makeChart({ legendLayout: { x: 0.5, y: 0.25 } }), "Sheet1").chartXml;
+    const reparsed = parseChart(written);
+    expect(reparsed?.legendLayout).toEqual({ x: 0.5, y: 0.25 });
+  });
+
+  it("collapses an unset legendLayout round-trip back to undefined", () => {
+    const written = writeChart(makeChart(), "Sheet1").chartXml;
+    expect(parseChart(written)?.legendLayout).toBeUndefined();
+  });
+
+  it("does not surface legendLayout when the chart hides the legend", () => {
+    const written = writeChart(makeChart({ legend: false }), "Sheet1").chartXml;
+    expect(parseChart(written)?.legendLayout).toBeUndefined();
+  });
+
+  it("composes with other legend knobs on the same <c:legend>", () => {
+    const result = writeChart(
+      makeChart({
+        legendLayout: { x: 0.6, y: 0.2 },
+        legendFontSize: 12,
+        legendOverlay: true,
+        legendEntries: [{ idx: 0, delete: true }],
+      }),
+      "Sheet1",
+    );
+    const legend = legendOf(result.chartXml);
+    expect(legend).toContain('<c:x val="0.6"/>');
+    expect(legend).toContain('sz="1200"');
+    expect(legend).toContain('c:overlay val="1"');
+    expect(legend).toContain("c:legendEntry");
+    // CT_Legend order: legendPos / legendEntry / layout / overlay / txPr
+    expect(legend.indexOf("c:legendPos")).toBeLessThan(legend.indexOf("c:legendEntry"));
+    expect(legend.indexOf("c:legendEntry")).toBeLessThan(legend.indexOf("c:layout"));
+    expect(legend.indexOf("c:layout")).toBeLessThan(legend.indexOf("c:overlay"));
+    expect(legend.indexOf("c:overlay")).toBeLessThan(legend.indexOf("c:txPr"));
+  });
+
+  it("survives a writeXlsx round trip — legendLayout lands in the packaged chart XML", async () => {
+    const sheets: WriteSheet[] = [
+      {
+        name: "Sheet1",
+        rows: [
+          ["Region", "Sales"],
+          ["North", 100],
+          ["South", 200],
+        ],
+        charts: [
+          {
+            type: "column",
+            title: "Sales",
+            series: [{ name: "Sales", values: "B2:B3", categories: "A2:A3" }],
+            anchor: { from: { row: 5, col: 0 }, to: { row: 20, col: 6 } },
+            legendLayout: { x: 0.75, y: 0.1, w: 0.2, h: 0.5 },
+          },
+        ],
+      },
+    ];
+    const out = await writeXlsx({ sheets });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.legendLayout).toEqual({ x: 0.75, y: 0.1, w: 0.2, h: 0.5 });
+  });
+
+  it('normalizes <c:xMode val="factor"/> back to the same shape on parse', () => {
+    // A templated chart that pinned the alternate `factor` mode still
+    // round-trips through parseChart — the writer normalizes to `edge`
+    // on emit, but the reader admits both.
+    const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <c:chart>
+    <c:autoTitleDeleted val="1"/>
+    <c:plotArea>
+      <c:layout/>
+      <c:barChart>
+        <c:barDir val="col"/>
+        <c:grouping val="clustered"/>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:order val="0"/>
+          <c:val><c:numRef><c:f>Sheet1!$B$2:$B$4</c:f></c:numRef></c:val>
+        </c:ser>
+        <c:axId val="1"/>
+        <c:axId val="2"/>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:crossAx val="2"/></c:catAx>
+      <c:valAx><c:axId val="2"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:crossAx val="1"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:layout>
+        <c:manualLayout>
+          <c:xMode val="factor"/>
+          <c:yMode val="factor"/>
+          <c:x val="0.4"/>
+          <c:y val="0.3"/>
+        </c:manualLayout>
+      </c:layout>
+      <c:overlay val="0"/>
+    </c:legend>
+    <c:plotVisOnly val="1"/>
+    <c:dispBlanksAs val="gap"/>
+  </c:chart>
+</c:chartSpace>`;
+    const reparsed = parseChart(xml);
+    expect(reparsed?.legendLayout).toEqual({ x: 0.4, y: 0.3 });
+  });
+});

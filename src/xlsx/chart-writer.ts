@@ -21,6 +21,7 @@ import type {
   ChartDisplayBlanksAs,
   ChartLineDashStyle,
   ChartLineStroke,
+  ChartManualLayout,
   ChartMarker,
   ChartMarkerSymbol,
   ChartProtection,
@@ -186,6 +187,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveLegendStrikethrough(chart),
         resolveLegendFontColor(chart),
         resolveLegendFontFamily(chart),
+        resolveLegendLayout(chart),
       ),
     );
   }
@@ -4850,18 +4852,18 @@ function buildLegend(
   strikethrough: boolean | undefined,
   rgbHex: string | undefined,
   fontFamily: string | undefined,
+  layout: ResolvedManualLayout | undefined,
 ): string {
   const children: string[] = [xmlSelfClose("c:legendPos", { val: pos })];
 
   // CT_Legend sequence places `<c:legendEntry>` after `<c:legendPos>`
   // and before `<c:layout>` / `<c:overlay>` (ECMA-376 Part 1,
-  // §21.2.2.114). The writer never emits `<c:layout>` here, so the
-  // entries collapse straight onto `<c:overlay>`. Each entry is emitted
-  // with both `<c:idx>` and `<c:delete>` so a re-parse sees the
-  // canonical shape — Excel itself emits `<c:delete val="1"/>` whenever
-  // the action is "Hide legend entry", and the writer mirrors that even
-  // for the OOXML default `false` value (an explicit `<c:delete val="0"/>`
-  // round-trips cleanly through `parseChart`).
+  // §21.2.2.114). Each entry is emitted with both `<c:idx>` and
+  // `<c:delete>` so a re-parse sees the canonical shape — Excel itself
+  // emits `<c:delete val="1"/>` whenever the action is "Hide legend
+  // entry", and the writer mirrors that even for the OOXML default
+  // `false` value (an explicit `<c:delete val="0"/>` round-trips
+  // cleanly through `parseChart`).
   for (const entry of entries) {
     children.push(
       xmlElement("c:legendEntry", undefined, [
@@ -4869,6 +4871,19 @@ function buildLegend(
         xmlSelfClose("c:delete", { val: entry.delete ? 1 : 0 }),
       ]),
     );
+  }
+
+  // CT_Legend sequence places `<c:layout>` between `<c:legendEntry>`
+  // and `<c:overlay>` per ECMA-376 Part 1, §21.2.2.114. The writer
+  // skips emission entirely when the caller pinned no coordinates so a
+  // fresh chart matches Excel's reference serialization byte-for-byte
+  // (Excel itself omits the block when the legend renders at the
+  // auto-layout position). Each axis is independently optional so the
+  // helper drops `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` slots whose
+  // value did not survive normalization.
+  const layoutXml = buildManualLayout(layout);
+  if (layoutXml !== undefined) {
+    children.push(layoutXml);
   }
 
   children.push(xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }));
@@ -5234,6 +5249,124 @@ function resolveLegendEntries(chart: SheetChart): ResolvedLegendEntry[] {
  */
 function resolveLegendOverlay(chart: SheetChart): boolean {
   return chart.legendOverlay === true;
+}
+
+// ── Manual Layout ────────────────────────────────────────────────────
+
+/**
+ * Normalized `<c:manualLayout>` coordinate set after the writer runs
+ * the caller's input through the `0..1` range filter. Each axis is
+ * independently optional — a caller can pin only the position
+ * (`x` / `y`) and let the element keep its automatic size, only the
+ * size (`w` / `h`) and let it keep its automatic anchor, or any
+ * combination.
+ */
+interface ResolvedManualLayout {
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+}
+
+/**
+ * Resolve `<c:legend><c:layout><c:manualLayout>...</c:manualLayout>
+ * </c:layout></c:legend>` from {@link SheetChart.legendLayout}.
+ *
+ * Returns the normalized coordinate set, or `undefined` when every
+ * axis the caller pinned dropped to `undefined` (so the writer can
+ * elide the entire `<c:layout>` block — Excel's reference
+ * serialization omits the element when the legend renders at the
+ * auto-layout position). The element is only meaningful when the chart
+ * actually emits a legend — the caller is expected to gate the call on
+ * the resolved legend visibility.
+ *
+ * Coordinates outside the OOXML `0..1` band, `NaN`, `Infinity`, and
+ * non-numeric inputs all collapse to `undefined` on the matching axis
+ * so the writer drops the matching `<c:x>` / `<c:y>` / `<c:w>` /
+ * `<c:h>` slot rather than emit a token Excel would reject.
+ */
+function resolveLegendLayout(chart: SheetChart): ResolvedManualLayout | undefined {
+  return normalizeManualLayout(chart.legendLayout);
+}
+
+/**
+ * Normalize a {@link ChartManualLayout} into the writer's emit-ready
+ * shape. Drops every axis whose input is non-numeric / non-finite /
+ * out of the `0..1` band; returns `undefined` when every axis dropped
+ * so the caller can elide the entire `<c:layout>` block.
+ *
+ * The accept-and-clamp grammar matches the OOXML `CT_ManualLayout`
+ * schema — `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` carry `xsd:double`
+ * values in the `0..1` band per Excel's reference serialization. The
+ * normalizer does not silently clamp out-of-range inputs to the
+ * endpoints — it drops them outright, mirroring how `titleFontSize` /
+ * `axisTitleFontSize` / `legendFontSize` collapse out-of-range numbers
+ * rather than emit a token Excel would reject.
+ */
+function normalizeManualLayout(
+  raw: ChartManualLayout | undefined,
+): ResolvedManualLayout | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: ResolvedManualLayout = {};
+  const x = normalizeLayoutCoordinate(raw.x);
+  if (x !== undefined) out.x = x;
+  const y = normalizeLayoutCoordinate(raw.y);
+  if (y !== undefined) out.y = y;
+  const w = normalizeLayoutCoordinate(raw.w);
+  if (w !== undefined) out.w = w;
+  const h = normalizeLayoutCoordinate(raw.h);
+  if (h !== undefined) out.h = h;
+  if (out.x === undefined && out.y === undefined && out.w === undefined && out.h === undefined) {
+    return undefined;
+  }
+  return out;
+}
+
+/**
+ * Normalize a single `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` coordinate.
+ * Accepts a finite number in the `0..1` band; everything else drops to
+ * `undefined`.
+ */
+function normalizeLayoutCoordinate(raw: unknown): number | undefined {
+  if (typeof raw !== "number") return undefined;
+  if (!Number.isFinite(raw)) return undefined;
+  if (raw < 0 || raw > 1) return undefined;
+  return raw;
+}
+
+/**
+ * Build the `<c:layout><c:manualLayout>...</c:manualLayout></c:layout>`
+ * block for a resolved layout. Returns `undefined` when the input is
+ * `undefined` so the caller can elide the entire block.
+ *
+ * The writer always emits the `<c:xMode>` / `<c:yMode>` / `<c:wMode>` /
+ * `<c:hMode>` children with `val="edge"` whenever the matching `<c:x>` /
+ * `<c:y>` / `<c:w>` / `<c:h>` slot is present — `"edge"` is Excel's
+ * reference shape when the user drags an element to a custom position
+ * (the coordinates are absolute fractions of the chart frame, not
+ * deltas from the auto-layout baseline). The `"factor"` form (delta
+ * from auto-layout) is read on parse but normalized to `"edge"` on
+ * emit so a re-parse after a clone-through stays canonical.
+ *
+ * The OOXML `CT_ManualLayout` sequence places the mode children before
+ * the value children: `<c:layoutTarget>?` / `<c:xMode>?` / `<c:yMode>?`
+ * / `<c:wMode>?` / `<c:hMode>?` / `<c:x>?` / `<c:y>?` / `<c:w>?` /
+ * `<c:h>?` (ECMA-376 Part 1, §21.2.2.115). The writer emits in that
+ * order so a re-parse sees the canonical shape.
+ */
+function buildManualLayout(layout: ResolvedManualLayout | undefined): string | undefined {
+  if (!layout) return undefined;
+  const children: string[] = [];
+  if (layout.x !== undefined) children.push(xmlSelfClose("c:xMode", { val: "edge" }));
+  if (layout.y !== undefined) children.push(xmlSelfClose("c:yMode", { val: "edge" }));
+  if (layout.w !== undefined) children.push(xmlSelfClose("c:wMode", { val: "edge" }));
+  if (layout.h !== undefined) children.push(xmlSelfClose("c:hMode", { val: "edge" }));
+  if (layout.x !== undefined) children.push(xmlSelfClose("c:x", { val: layout.x }));
+  if (layout.y !== undefined) children.push(xmlSelfClose("c:y", { val: layout.y }));
+  if (layout.w !== undefined) children.push(xmlSelfClose("c:w", { val: layout.w }));
+  if (layout.h !== undefined) children.push(xmlSelfClose("c:h", { val: layout.h }));
+  if (children.length === 0) return undefined;
+  return xmlElement("c:layout", undefined, [xmlElement("c:manualLayout", undefined, children)]);
 }
 
 // ── Display Blanks As ────────────────────────────────────────────────

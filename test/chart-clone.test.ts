@@ -19858,3 +19858,242 @@ describe("cloneChart — axis title overlay", () => {
     expect(reparsed?.axes?.x?.axisTitleOverlay).toBe(true);
   });
 });
+
+// ── cloneChart — legendLayout (manual placement) ─────────────────────
+
+describe("cloneChart — legendLayout", () => {
+  function source(extra?: Partial<Chart>): Chart {
+    return {
+      kinds: ["line"],
+      seriesCount: 1,
+      series: [
+        {
+          kind: "line",
+          index: 0,
+          name: "Revenue",
+          valuesRef: "Sheet1!$B$2:$B$5",
+          categoriesRef: "Sheet1!$A$2:$A$5",
+        },
+      ],
+      legend: "right",
+      ...extra,
+    };
+  }
+
+  it("inherits the source's legendLayout by default", () => {
+    const clone = cloneChart(source({ legendLayout: { x: 0.7, y: 0.1 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+    });
+    expect(clone.legendLayout).toEqual({ x: 0.7, y: 0.1 });
+  });
+
+  it("lets options.legendLayout override the source's value", () => {
+    const clone = cloneChart(source({ legendLayout: { x: 0.7, y: 0.1 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendLayout: { x: 0.2, y: 0.8, w: 0.3, h: 0.15 },
+    });
+    expect(clone.legendLayout).toEqual({ x: 0.2, y: 0.8, w: 0.3, h: 0.15 });
+  });
+
+  it("drops the inherited legendLayout when the override is null", () => {
+    const clone = cloneChart(source({ legendLayout: { x: 0.7, y: 0.1 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendLayout: null,
+    });
+    expect(clone.legendLayout).toBeUndefined();
+  });
+
+  it("returns undefined legendLayout when neither source nor override sets it", () => {
+    const clone = cloneChart(source(), { anchor: { from: { row: 0, col: 0 } } });
+    expect(clone.legendLayout).toBeUndefined();
+  });
+
+  it("normalizes out-of-range overrides axis-by-axis", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legendLayout: { x: -0.1, y: 1.2, w: 0.4, h: 0.5 },
+    });
+    // x and y dropped; w and h survive.
+    expect(clone.legendLayout).toEqual({ w: 0.4, h: 0.5 });
+  });
+
+  it("collapses an override whose every axis dropped to undefined", () => {
+    const clone = cloneChart(source({ legendLayout: { x: 0.5 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      legendLayout: { x: -1 as any, y: 2 as any, w: Number.NaN as any },
+    });
+    expect(clone.legendLayout).toBeUndefined();
+  });
+
+  it("drops non-numeric coordinates leaking past the type guard", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      legendLayout: { x: "0.5" as any, y: 0.4 },
+    });
+    expect(clone.legendLayout).toEqual({ y: 0.4 });
+  });
+
+  it("drops a non-object legendLayout (typed escape from an untyped caller)", () => {
+    const clone = cloneChart(source({ legendLayout: { x: 0.5 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      legendLayout: "right" as any,
+    });
+    expect(clone.legendLayout).toBeUndefined();
+  });
+
+  it("normalizes a malformed source value through the resolver", () => {
+    const clone = cloneChart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      source({ legendLayout: { x: 5 as any, y: -1 as any } }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.legendLayout).toBeUndefined();
+  });
+
+  it("carries legendLayout through a flatten (line → column)", () => {
+    const clone = cloneChart(source({ legendLayout: { x: 0.6, y: 0.2 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "column",
+    });
+    expect(clone.type).toBe("column");
+    expect(clone.legendLayout).toEqual({ x: 0.6, y: 0.2 });
+  });
+
+  it("carries legendLayout through a doughnut flatten (line → doughnut)", () => {
+    const clone = cloneChart(source({ legendLayout: { x: 0.6, y: 0.2 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      type: "doughnut",
+    });
+    expect(clone.type).toBe("doughnut");
+    expect(clone.legendLayout).toEqual({ x: 0.6, y: 0.2 });
+  });
+
+  it("drops the inherited legendLayout when the resolved legend is hidden", () => {
+    const clone = cloneChart(source({ legendLayout: { x: 0.6, y: 0.2 } }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendLayout).toBeUndefined();
+  });
+
+  it("drops the legendLayout override when the resolved legend is hidden", () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: false,
+      legendLayout: { x: 0.6, y: 0.2 },
+    });
+    expect(clone.legend).toBe(false);
+    expect(clone.legendLayout).toBeUndefined();
+  });
+
+  it("retains the legendLayout override when the override re-enables a hidden source legend", () => {
+    const clone = cloneChart(source({ legend: false }), {
+      anchor: { from: { row: 0, col: 0 } },
+      legend: "top",
+      legendLayout: { x: 0.6, y: 0.2 },
+    });
+    expect(clone.legend).toBe("top");
+    expect(clone.legendLayout).toEqual({ x: 0.6, y: 0.2 });
+  });
+
+  it("composes with other legend knobs on the cloned SheetChart", () => {
+    const clone = cloneChart(
+      source({
+        legendLayout: { x: 0.6, y: 0.2 },
+        legendFontFamily: "Arial",
+        legendFontSize: 12,
+        legendOverlay: true,
+      }),
+      { anchor: { from: { row: 0, col: 0 } } },
+    );
+    expect(clone.legendLayout).toEqual({ x: 0.6, y: 0.2 });
+    expect(clone.legendFontFamily).toBe("Arial");
+    expect(clone.legendFontSize).toBe(12);
+    expect(clone.legendOverlay).toBe(true);
+  });
+
+  it("propagates legendLayout into the rendered <c:legend><c:layout> on writeXlsx roundtrip", async () => {
+    const clone = cloneChart(source({ legendLayout: { x: 0.65, y: 0.15, w: 0.3, h: 0.4 } }), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).toContain("<c:layout>");
+    expect(legend).toContain("<c:manualLayout>");
+    expect(legend).toContain('<c:x val="0.65"/>');
+    expect(legend).toContain('<c:y val="0.15"/>');
+    expect(legend).toContain('<c:w val="0.3"/>');
+    expect(legend).toContain('<c:h val="0.4"/>');
+
+    const reparsed = parseChart(written);
+    expect(reparsed?.legendLayout).toEqual({ x: 0.65, y: 0.15, w: 0.3, h: 0.4 });
+  });
+
+  it("emits no <c:layout> when both source and override are absent (round-trips to undefined)", async () => {
+    const clone = cloneChart(source(), {
+      anchor: { from: { row: 5, col: 0 } },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    const legend = written.match(/<c:legend>[\s\S]*?<\/c:legend>/)![0];
+    expect(legend).not.toContain("<c:layout>");
+    expect(parseChart(written)?.legendLayout).toBeUndefined();
+  });
+
+  it("an explicit override beats the source value through writeXlsx", async () => {
+    const clone = cloneChart(source({ legendLayout: { x: 0.7, y: 0.1 } }), {
+      anchor: { from: { row: 5, col: 0 } },
+      legendLayout: { x: 0.2, y: 0.8 },
+    });
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [
+            ["A", "B"],
+            [1, 2],
+            [3, 4],
+            [5, 6],
+          ],
+          charts: [clone],
+        },
+      ],
+    });
+    const zip = new ZipReader(xlsx);
+    const written = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
+    expect(parseChart(written)?.legendLayout).toEqual({ x: 0.2, y: 0.8 });
+  });
+});
