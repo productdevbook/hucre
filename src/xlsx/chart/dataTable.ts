@@ -10,18 +10,34 @@
 // `chart-clone.ts` because its signature is shape-incompatible with the
 // writer-side single-arg resolver.
 
-import type { ChartBorderDash, ChartDataTable, SheetChart } from "../../_types";
+import type {
+  ChartBorderDash,
+  ChartColor,
+  ChartDataTable,
+  ChartLineCap,
+  ChartLineCompound,
+  SheetChart,
+} from "../../_types";
 import type { XmlElement } from "../../xml/parser";
 import { xmlElement, xmlSelfClose } from "../../xml/writer";
 import {
   EMU_PER_PT,
+  buildColorElement,
   clampStrokeWidthPt,
   normalizeBorderDash,
+  normalizeChartColor,
+  normalizeLineCap,
+  normalizeLineCompound,
   normalizeRgbHex,
+  parseBorderCapFromSpPr,
+  parseBorderCompoundFromSpPr,
   parseBorderDashFromSpPr,
   parseBorderWidthFromSpPr,
+  parseSchemeClr,
   parseSpPrBorderColor,
   parseSpPrFill,
+  resolveLineCap,
+  resolveLineCompound,
 } from "./shape";
 import { findChild, parseBoolAttr } from "./util";
 import { FONT_SIZE_MAX_PT, FONT_SIZE_MIN_PT, FONT_SZ_PER_POINT } from "./text";
@@ -89,6 +105,15 @@ export function parseDataTable(plotArea: XmlElement): ChartDataTable | undefined
   // grammar matches every chart-frame border-dash slot.
   const borderDash = parseBorderDashFromSpPr(el);
   if (borderDash !== undefined) out.borderDash = borderDash;
+  // `<c:dTable><c:spPr><a:ln cap=".."/>` and `<a:ln cmpd=".."/>` carry
+  // Excel's per-line cap / compound attributes. Delegate to the shared
+  // {@link parseBorderCapFromSpPr} / {@link parseBorderCompoundFromSpPr}
+  // helpers so the accept-or-drop grammar matches every other chart-
+  // frame `<a:ln>` slot the reader surfaces.
+  const borderCap = parseBorderCapFromSpPr(el);
+  if (borderCap !== undefined) out.borderCap = borderCap;
+  const borderCompound = parseBorderCompoundFromSpPr(el);
+  if (borderCompound !== undefined) out.borderCompound = borderCompound;
   return out;
 }
 
@@ -315,7 +340,7 @@ export function parseDataTableFontFamily(dTable: XmlElement): string | undefined
  * disjoint children of the same `<c:spPr>` block so a caller can pin
  * both knobs without conflict.
  */
-export function parseDataTableFillColor(dTable: XmlElement): string | undefined {
+export function parseDataTableFillColor(dTable: XmlElement): ChartColor | undefined {
   return parseSpPrFill(dTable);
 }
 
@@ -355,7 +380,7 @@ export function parseDataTableFillColor(dTable: XmlElement): string | undefined 
  * (`<a:ln><a:solidFill>`) child rather than the fill (`<a:solidFill>`)
  * child.
  */
-export function parseDataTableBorderColor(dTable: XmlElement): string | undefined {
+export function parseDataTableBorderColor(dTable: XmlElement): ChartColor | undefined {
   return parseSpPrBorderColor(dTable);
 }
 
@@ -378,7 +403,7 @@ export function parseDataTableBorderColor(dTable: XmlElement): string | undefine
  * color readers exactly so a parsed value slots straight back into the
  * writer's emit path.
  */
-export function parseDataTableFontColor(dTable: XmlElement): string | undefined {
+export function parseDataTableFontColor(dTable: XmlElement): ChartColor | undefined {
   const txPr = findChild(dTable, "txPr");
   if (!txPr) return undefined;
   const p = findChild(txPr, "p");
@@ -390,8 +415,10 @@ export function parseDataTableFontColor(dTable: XmlElement): string | undefined 
   const solidFill = findChild(defRPr, "solidFill");
   if (!solidFill) return undefined;
   const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  return normalizeRgbHex(srgbClr.attrs.val);
+  if (srgbClr) return normalizeRgbHex(srgbClr.attrs.val);
+  const schemeClr = findChild(solidFill, "schemeClr");
+  if (schemeClr) return parseSchemeClr(schemeClr);
+  return undefined;
 }
 
 /**
@@ -485,16 +512,18 @@ export function resolveDataTable(chart: SheetChart):
       showOutline: boolean;
       showKeys: boolean;
       fontSize: number | undefined;
-      fontColor: string | undefined;
+      fontColor: ChartColor | undefined;
       bold: boolean | undefined;
       italic: boolean | undefined;
       underline: boolean | undefined;
       strikethrough: boolean | undefined;
       fontFamily: string | undefined;
-      fillColor: string | undefined;
-      borderColor: string | undefined;
+      fillColor: ChartColor | undefined;
+      borderColor: ChartColor | undefined;
       borderWidth: number | undefined;
       borderDash: ChartBorderDash | undefined;
+      borderCap: ChartLineCap | undefined;
+      borderCompound: ChartLineCompound | undefined;
     }
   | undefined {
   // Pie / doughnut have no axes — the OOXML schema places `<c:dTable>`
@@ -523,6 +552,8 @@ export function resolveDataTable(chart: SheetChart):
       borderColor: undefined,
       borderWidth: undefined,
       borderDash: undefined,
+      borderCap: undefined,
+      borderCompound: undefined,
     };
   }
 
@@ -546,6 +577,8 @@ export function resolveDataTable(chart: SheetChart):
     borderColor: resolveDataTableBorderColor(raw.borderColor),
     borderWidth: clampStrokeWidthPt(raw.borderWidth),
     borderDash: normalizeBorderDash(raw.borderDash),
+    borderCap: normalizeLineCap(raw.borderCap),
+    borderCompound: normalizeLineCompound(raw.borderCompound),
   };
 }
 
@@ -577,7 +610,9 @@ export function resolveDataTableFontSize(value: number | undefined): number | un
  * axis-title / axis tick-label / legend / data-label color resolvers
  * exactly.
  */
-export function resolveDataTableFontColor(value: string | undefined): string | undefined {
+export function resolveDataTableFontColor(
+  value: ChartColor | undefined,
+): ChartColor | undefined {
   return normalizeTitleColor(value);
 }
 
@@ -688,7 +723,9 @@ export function resolveDataTableFontFamily(value: string | undefined): string | 
  * (ECMA-376 Part 1, §21.2.2.54), distinct from the `<c:txPr>` block
  * that carries {@link ChartDataTable.fontColor}.
  */
-export function resolveDataTableFillColor(value: string | undefined): string | undefined {
+export function resolveDataTableFillColor(
+  value: ChartColor | undefined,
+): ChartColor | undefined {
   return normalizeTitleColor(value);
 }
 
@@ -710,7 +747,9 @@ export function resolveDataTableFillColor(value: string | undefined): string | u
  * slot on the `CT_ShapeProperties` schema — but lands on `<c:dTable>`'s
  * own `<c:spPr>` block.
  */
-export function resolveDataTableBorderColor(value: string | undefined): string | undefined {
+export function resolveDataTableBorderColor(
+  value: ChartColor | undefined,
+): ChartColor | undefined {
   return normalizeTitleColor(value);
 }
 
@@ -736,16 +775,18 @@ export function buildDataTable(table: {
   showOutline: boolean;
   showKeys: boolean;
   fontSize: number | undefined;
-  fontColor: string | undefined;
+  fontColor: ChartColor | undefined;
   bold: boolean | undefined;
   italic: boolean | undefined;
   underline: boolean | undefined;
   strikethrough: boolean | undefined;
   fontFamily: string | undefined;
-  fillColor: string | undefined;
-  borderColor: string | undefined;
+  fillColor: ChartColor | undefined;
+  borderColor: ChartColor | undefined;
   borderWidth: number | undefined;
   borderDash: ChartBorderDash | undefined;
+  borderCap?: ChartLineCap | undefined;
+  borderCompound?: ChartLineCompound | undefined;
 }): string {
   const children: string[] = [
     xmlSelfClose("c:showHorzBorder", { val: table.showHorzBorder ? 1 : 0 }),
@@ -763,6 +804,8 @@ export function buildDataTable(table: {
     table.borderColor,
     table.borderWidth,
     table.borderDash,
+    table.borderCap,
+    table.borderCompound,
   );
   if (spPrXml !== undefined) children.push(spPrXml);
   // CT_DTable schema places `<c:txPr>` after `<c:spPr>` and before
@@ -805,37 +848,45 @@ export function buildDataTable(table: {
  * chart frame.
  */
 export function buildDataTableSpPr(
-  fillColor: string | undefined,
-  borderColor: string | undefined,
+  fillColor: ChartColor | undefined,
+  borderColor: ChartColor | undefined,
   borderWidthPt: number | undefined,
   borderDash: ChartBorderDash | undefined,
+  borderCap?: ChartLineCap | undefined,
+  borderCompound?: ChartLineCompound | undefined,
 ): string | undefined {
   if (
     fillColor === undefined &&
     borderColor === undefined &&
     borderWidthPt === undefined &&
-    borderDash === undefined
+    borderDash === undefined &&
+    borderCap === undefined &&
+    borderCompound === undefined
   ) {
     return undefined;
   }
   const children: string[] = [];
   if (fillColor !== undefined) {
-    children.push(
-      xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillColor })]),
-    );
+    children.push(xmlElement("a:solidFill", undefined, [buildColorElement(fillColor)]));
   }
-  if (borderColor !== undefined || borderWidthPt !== undefined || borderDash !== undefined) {
+  if (
+    borderColor !== undefined ||
+    borderWidthPt !== undefined ||
+    borderDash !== undefined ||
+    borderCap !== undefined ||
+    borderCompound !== undefined
+  ) {
     const lnAttrs: Record<string, string | number> = {};
     if (borderWidthPt !== undefined) {
       // OOXML stores stroke width in EMU (1 pt = 12 700 EMU). Round to
       // the nearest integer because the schema types `w` as `xsd:int`.
       lnAttrs.w = Math.round(borderWidthPt * EMU_PER_PT);
     }
+    if (borderCap !== undefined) lnAttrs.cap = borderCap;
+    if (borderCompound !== undefined) lnAttrs.cmpd = borderCompound;
     const lnChildren: string[] = [];
     if (borderColor !== undefined) {
-      lnChildren.push(
-        xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: borderColor })]),
-      );
+      lnChildren.push(xmlElement("a:solidFill", undefined, [buildColorElement(borderColor)]));
     }
     // `<a:prstDash>` follows `<a:solidFill>` per CT_LineProperties
     // schema sequence (ECMA-376 Part 1, §20.1.2.3.24).
@@ -874,7 +925,7 @@ export function buildDataTableSpPr(
  */
 export function buildDataTableTxPr(
   fontSizePt: number | undefined,
-  rgbHex: string | undefined,
+  rgbHex: ChartColor | undefined,
   bold: boolean | undefined,
   italic: boolean | undefined,
   underline: boolean | undefined,
@@ -909,8 +960,8 @@ export function buildDataTableTxPr(
   // child entirely so the data table inherits the theme text color
   // (Excel's reference behavior for fresh data tables that have not
   // had a custom color picked).
-  const solidFillChild = rgbHex
-    ? xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: rgbHex })])
+  const solidFillChild = rgbHex !== undefined
+    ? xmlElement("a:solidFill", undefined, [buildColorElement(rgbHex)])
     : undefined;
   // OOXML's `<a:defRPr><a:latin typeface=".."/></a:defRPr>` carries
   // the data-table font family. The `<a:latin>` element follows

@@ -6144,7 +6144,7 @@ describe("parseChart — legendFontColor", () => {
     </c:legend>
   </c:chart>
 </c:chartSpace>`;
-    expect(parseChart(xml)?.legendFontColor).toBeUndefined();
+    expect(parseChart(xml)?.legendFontColor).toEqual({ theme: "accent1" });
   });
 
   it("collapses malformed val tokens (wrong length, non-hex characters) to undefined", () => {
@@ -10127,7 +10127,7 @@ describe("parseChart — data table", () => {
     </c:dTable>
   </c:plotArea></c:chart>
 </c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fontColor).toBeUndefined();
+    expect(parseChart(xml)?.dataTable?.fontColor).toEqual({ theme: "dk1" });
   });
 
   it("returns undefined fontColor when <c:txPr> is missing entirely", () => {
@@ -11177,7 +11177,7 @@ describe("parseChart — data table", () => {
     </c:dTable>
   </c:plotArea></c:chart>
 </c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fillColor).toBeUndefined();
+    expect(parseChart(xml)?.dataTable?.fillColor).toEqual({ theme: "accent1" });
   });
 
   it("collapses non-solid fills to undefined (noFill / gradFill / pattFill / blipFill)", () => {
@@ -11387,7 +11387,7 @@ describe("parseChart — data table", () => {
     </c:dTable>
   </c:plotArea></c:chart>
 </c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.borderColor).toBeUndefined();
+    expect(parseChart(xml)?.dataTable?.borderColor).toEqual({ theme: "accent1" });
   });
 
   it("collapses non-solid line fills to undefined (noFill / gradFill / pattFill)", () => {
@@ -14890,7 +14890,7 @@ describe("parseChart — title color", () => {
   </c:chart>
 </c:chartSpace>`;
     const chart = parseChart(xml);
-    expect(chart?.titleColor).toBeUndefined();
+    expect(chart?.titleColor).toEqual({ theme: "tx1" });
   });
 
   it("drops malformed val tokens (wrong length / non-hex / 8-char alpha form)", () => {
@@ -16450,7 +16450,7 @@ describe("parseChart — axis title color", () => {
   </c:plotArea></c:chart>
 </c:chartSpace>`;
     const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleColor).toBeUndefined();
+    expect(chart?.axes?.x?.axisTitleColor).toEqual({ theme: "tx1" });
   });
 
   it("drops malformed val tokens (wrong length / non-hex / 8-char alpha form)", () => {
@@ -17549,7 +17549,7 @@ describe("parseChart — axis labelColor", () => {
     expect(parseChart(xml)?.axes).toBeUndefined();
   });
 
-  it("returns undefined when the fill uses <a:schemeClr> instead of <a:srgbClr>", () => {
+  it("surfaces <a:schemeClr> in tick-label color as a ChartThemeColor object", () => {
     const xml = `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -17560,7 +17560,7 @@ describe("parseChart — axis labelColor", () => {
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
 </c:chartSpace>`;
-    expect(parseChart(xml)?.axes).toBeUndefined();
+    expect(parseChart(xml)?.axes?.x?.labelColor).toEqual({ theme: "tx1" });
   });
 
   it("surfaces labelColor on the value axis", () => {
@@ -18302,7 +18302,7 @@ describe("parseChart — data labels fontColor", () => {
     </c:plotArea>
   </c:chart>
 </c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels?.fontColor).toBeUndefined();
+    expect(parseChart(xml)?.dataLabels?.fontColor).toEqual({ theme: "accent1" });
   });
 
   it("collapses malformed val tokens (wrong length, non-hex characters) to undefined", () => {
@@ -19944,9 +19944,9 @@ describe("parseChart — plotAreaFillColor", () => {
     expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
   });
 
-  it("returns undefined when <a:solidFill> uses <a:schemeClr> (theme reference)", () => {
+  it("surfaces <a:schemeClr> as a ChartThemeColor object", () => {
     const xml = withPlotAreaSpPr(`<a:solidFill><a:schemeClr val="bg1"/></a:solidFill>`);
-    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
+    expect(parseChart(xml)?.plotAreaFillColor).toEqual({ theme: "bg1" });
   });
 
   it("returns undefined when fill is <a:noFill>", () => {
@@ -20074,11 +20074,11 @@ describe("parseChart — plotAreaBorderColor", () => {
     expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined();
   });
 
-  it("returns undefined when <a:ln><a:solidFill> uses <a:schemeClr> (theme reference)", () => {
+  it("surfaces <a:ln><a:schemeClr> as a ChartThemeColor object", () => {
     const xml = withPlotAreaSpPr(
       `<a:ln><a:solidFill><a:schemeClr val="bg1"/></a:solidFill></a:ln>`,
     );
-    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined();
+    expect(parseChart(xml)?.plotAreaBorderColor).toEqual({ theme: "bg1" });
   });
 
   it("returns undefined when <a:ln> stroke is <a:noFill>", () => {
@@ -20541,7 +20541,7 @@ describe("parseChart — titleFillColor", () => {
 
   it("returns undefined when <a:solidFill> uses <a:schemeClr> (theme reference)", () => {
     const xml = withTitleSpPr(`<a:solidFill><a:schemeClr val="bg1"/></a:solidFill>`);
-    expect(parseChart(xml)?.titleFillColor).toBeUndefined();
+    expect(parseChart(xml)?.titleFillColor).toEqual({ theme: "bg1" });
   });
 
   it("returns undefined when fill is <a:noFill>", () => {
@@ -20726,7 +20726,7 @@ describe("parseChart — titleBorderColor", () => {
 
   it("returns undefined when <a:ln><a:solidFill> uses <a:schemeClr> (theme reference)", () => {
     const xml = withTitleSpPr(`<a:ln><a:solidFill><a:schemeClr val="bg1"/></a:solidFill></a:ln>`);
-    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
+    expect(parseChart(xml)?.titleBorderColor).toEqual({ theme: "bg1" });
   });
 
   it("returns undefined when <a:ln> stroke is <a:noFill>", () => {
@@ -20955,7 +20955,7 @@ describe("parseChart — legendFillColor", () => {
     </c:legend>
   </c:chart>
 </c:chartSpace>`;
-    expect(parseChart(xml)?.legendFillColor).toBeUndefined();
+    expect(parseChart(xml)?.legendFillColor).toEqual({ theme: "accent1" });
   });
 
   it("collapses <a:noFill> to undefined (non-solid fill)", () => {
@@ -21106,7 +21106,7 @@ describe("parseChart — chartSpaceFillColor", () => {
 
   it("returns undefined when <a:solidFill> uses <a:schemeClr> (theme reference)", () => {
     const xml = withChartSpaceSpPr(`<a:solidFill><a:schemeClr val="bg1"/></a:solidFill>`);
-    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined();
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "bg1" });
   });
 
   it("returns undefined when fill is <a:noFill>", () => {
@@ -21283,7 +21283,7 @@ describe("parseChart — chartSpaceBorderColor", () => {
     const xml = withChartSpaceSpPr(
       `<a:ln><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:ln>`,
     );
-    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
+    expect(parseChart(xml)?.chartSpaceBorderColor).toEqual({ theme: "accent1" });
   });
 
   it("returns undefined when <a:ln> uses <a:gradFill>", () => {
@@ -21493,7 +21493,7 @@ describe("parseChart — axisTitleFillColor", () => {
     const chart = parseChart(
       withCatAxTitleSpPr(`<a:solidFill><a:schemeClr val="bg1"/></a:solidFill>`),
     );
-    expect(chart?.axes?.x?.axisTitleFillColor).toBeUndefined();
+    expect(chart?.axes?.x?.axisTitleFillColor).toEqual({ theme: "bg1" });
   });
 
   it("returns undefined when fill is <a:noFill>", () => {
@@ -21768,7 +21768,7 @@ describe("parseChart — axisTitleBorderColor", () => {
     const chart = parseChart(
       withCatAxTitleSpPr(`<a:ln><a:solidFill><a:schemeClr val="bg1"/></a:solidFill></a:ln>`),
     );
-    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
+    expect(chart?.axes?.x?.axisTitleBorderColor).toEqual({ theme: "bg1" });
   });
 
   it("returns undefined when <a:ln> stroke is <a:noFill>", () => {
@@ -22003,7 +22003,7 @@ describe("parseChart — dataLabelsFillColor", () => {
     expect(
       parseChart(withDLblsSpPr(`<a:solidFill><a:schemeClr val="accent1"/></a:solidFill>`))
         ?.dataLabels?.fillColor,
-    ).toBeUndefined();
+    ).toEqual({ theme: "accent1" });
   });
 
   it("collapses non-solid fills (<a:noFill>) to undefined", () => {
@@ -22232,7 +22232,7 @@ describe("parseChart — dataLabelsBorderColor", () => {
       parseChart(
         withDLblsSpPr(`<a:ln><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:ln>`),
       )?.dataLabels?.borderColor,
-    ).toBeUndefined();
+    ).toEqual({ theme: "accent1" });
   });
 
   it("collapses non-solid line fills (<a:gradFill>) to undefined", () => {
@@ -22466,7 +22466,7 @@ describe("parseChart — legendBorderColor", () => {
     const xml = withLegendSpPr(
       `<a:ln><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:ln>`,
     );
-    expect(parseChart(xml)?.legendBorderColor).toBeUndefined();
+    expect(parseChart(xml)?.legendBorderColor).toEqual({ theme: "accent1" });
   });
 
   it("returns undefined when <a:ln> stroke is <a:noFill>", () => {
@@ -23726,5 +23726,213 @@ describe("parseChart — dataLabelsBorderDash", () => {
     expect(parsed?.series?.[0]?.dataLabels?.borderDash).toBe("dashDot");
     expect(parsed?.series?.[0]?.dataLabels?.borderColor).toBe("ABCDEF");
     expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBe(2);
+  });
+});
+
+// ── parseChart — theme color refs (<a:schemeClr>) ─────────────────
+//
+// Surface every theme color slot and modifier combination supported
+// by `parseSchemeClr` / `parseSpPrFill` / `parseSpPrBorderColor`.
+describe("parseChart — theme color refs", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withChartSpaceSpPr(spPrBody: string): string {
+    return `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+  <c:spPr>${spPrBody}</c:spPr>
+</c:chartSpace>`;
+  }
+
+  it("surfaces every theme color name on chartSpace fill", () => {
+    const names = [
+      "bg1", "tx1", "bg2", "tx2",
+      "accent1", "accent2", "accent3", "accent4", "accent5", "accent6",
+      "hlink", "folHlink", "phClr", "dk1", "lt1", "dk2", "lt2",
+    ];
+    for (const theme of names) {
+      const xml = withChartSpaceSpPr(`<a:solidFill><a:schemeClr val="${theme}"/></a:solidFill>`);
+      expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme });
+    }
+  });
+
+  it("drops unknown theme names to undefined", () => {
+    const xml = withChartSpaceSpPr(`<a:solidFill><a:schemeClr val="bogus"/></a:solidFill>`);
+    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined();
+  });
+
+  it("surfaces lumMod alone", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:solidFill><a:schemeClr val="accent1"><a:lumMod val="75000"/></a:schemeClr></a:solidFill>`,
+    );
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent1", lumMod: 75000 });
+  });
+
+  it("surfaces lumMod + lumOff", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:solidFill><a:schemeClr val="accent2"><a:lumMod val="40000"/><a:lumOff val="60000"/></a:schemeClr></a:solidFill>`,
+    );
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({
+      theme: "accent2",
+      lumMod: 40000,
+      lumOff: 60000,
+    });
+  });
+
+  it("surfaces tint", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:solidFill><a:schemeClr val="accent3"><a:tint val="20000"/></a:schemeClr></a:solidFill>`,
+    );
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent3", tint: 20000 });
+  });
+
+  it("surfaces shade", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:solidFill><a:schemeClr val="accent4"><a:shade val="50000"/></a:schemeClr></a:solidFill>`,
+    );
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent4", shade: 50000 });
+  });
+
+  it("surfaces alpha", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:solidFill><a:schemeClr val="accent5"><a:alpha val="80000"/></a:schemeClr></a:solidFill>`,
+    );
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent5", alpha: 80000 });
+  });
+
+  it("surfaces all modifiers together", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:solidFill><a:schemeClr val="accent6"><a:tint val="10000"/><a:shade val="20000"/><a:alpha val="90000"/><a:lumMod val="80000"/><a:lumOff val="20000"/></a:schemeClr></a:solidFill>`,
+    );
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({
+      theme: "accent6",
+      tint: 10000,
+      shade: 20000,
+      alpha: 90000,
+      lumMod: 80000,
+      lumOff: 20000,
+    });
+  });
+
+  it("drops out-of-range lumMod (negative)", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:solidFill><a:schemeClr val="accent1"><a:lumMod val="-5"/></a:schemeClr></a:solidFill>`,
+    );
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent1" });
+  });
+
+  it("drops out-of-range lumMod (over 100000)", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:solidFill><a:schemeClr val="accent1"><a:lumMod val="200000"/></a:schemeClr></a:solidFill>`,
+    );
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent1" });
+  });
+
+  it("accepts negative tint within ST_FixedPercentage range", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:solidFill><a:schemeClr val="accent1"><a:tint val="-50000"/></a:schemeClr></a:solidFill>`,
+    );
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent1", tint: -50000 });
+  });
+
+  it("drops malformed mod values to bare theme color", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:solidFill><a:schemeClr val="accent1"><a:lumMod val="abc"/><a:tint val=""/></a:schemeClr></a:solidFill>`,
+    );
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent1" });
+  });
+
+  it("surfaces theme color on chartSpace border (<a:ln>)", () => {
+    const xml = withChartSpaceSpPr(
+      `<a:ln><a:solidFill><a:schemeClr val="accent2"><a:lumMod val="50000"/></a:schemeClr></a:solidFill></a:ln>`,
+    );
+    expect(parseChart(xml)?.chartSpaceBorderColor).toEqual({ theme: "accent2", lumMod: 50000 });
+  });
+});
+
+// ── parseChart — line cap / compound on chart-space ────────────────
+describe("parseChart — line cap / compound", () => {
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withChartSpaceLn(lnAttrs: string, lnBody = ""): string {
+    return `<c:chartSpace ${NS}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+  </c:chart>
+  <c:spPr><a:ln${lnAttrs}>${lnBody}</a:ln></c:spPr>
+</c:chartSpace>`;
+  }
+
+  it("surfaces cap='rnd' on chartSpace border", () => {
+    expect(parseChart(withChartSpaceLn(` cap="rnd"`))?.chartSpaceBorderCap).toBe("rnd");
+  });
+
+  it("surfaces cap='sq' on chartSpace border", () => {
+    expect(parseChart(withChartSpaceLn(` cap="sq"`))?.chartSpaceBorderCap).toBe("sq");
+  });
+
+  it("collapses cap='flat' to undefined (OOXML default)", () => {
+    expect(parseChart(withChartSpaceLn(` cap="flat"`))?.chartSpaceBorderCap).toBeUndefined();
+  });
+
+  it("collapses unknown cap tokens to undefined", () => {
+    expect(parseChart(withChartSpaceLn(` cap="bogus"`))?.chartSpaceBorderCap).toBeUndefined();
+  });
+
+  it("surfaces cmpd='dbl' on chartSpace border", () => {
+    expect(parseChart(withChartSpaceLn(` cmpd="dbl"`))?.chartSpaceBorderCompound).toBe("dbl");
+  });
+
+  it("surfaces cmpd='thickThin'", () => {
+    expect(parseChart(withChartSpaceLn(` cmpd="thickThin"`))?.chartSpaceBorderCompound).toBe(
+      "thickThin",
+    );
+  });
+
+  it("surfaces cmpd='thinThick'", () => {
+    expect(parseChart(withChartSpaceLn(` cmpd="thinThick"`))?.chartSpaceBorderCompound).toBe(
+      "thinThick",
+    );
+  });
+
+  it("surfaces cmpd='tri'", () => {
+    expect(parseChart(withChartSpaceLn(` cmpd="tri"`))?.chartSpaceBorderCompound).toBe("tri");
+  });
+
+  it("collapses cmpd='sng' to undefined (OOXML default)", () => {
+    expect(parseChart(withChartSpaceLn(` cmpd="sng"`))?.chartSpaceBorderCompound).toBeUndefined();
+  });
+
+  it("collapses unknown cmpd tokens to undefined", () => {
+    expect(parseChart(withChartSpaceLn(` cmpd="bogus"`))?.chartSpaceBorderCompound).toBeUndefined();
+  });
+
+  it("surfaces cap and cmpd together", () => {
+    const c = parseChart(withChartSpaceLn(` cap="rnd" cmpd="dbl"`));
+    expect(c?.chartSpaceBorderCap).toBe("rnd");
+    expect(c?.chartSpaceBorderCompound).toBe("dbl");
+  });
+
+  it("composes with width / dash / color", () => {
+    const c = parseChart(
+      withChartSpaceLn(
+        ` w="25400" cap="rnd" cmpd="dbl"`,
+        `<a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:prstDash val="dash"/>`,
+      ),
+    );
+    expect(c?.chartSpaceBorderCap).toBe("rnd");
+    expect(c?.chartSpaceBorderCompound).toBe("dbl");
+    expect(c?.chartSpaceBorderWidth).toBe(2);
+    expect(c?.chartSpaceBorderDash).toBe("dash");
+    expect(c?.chartSpaceBorderColor).toBe("FF0000");
   });
 });

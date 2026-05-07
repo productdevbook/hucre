@@ -195,7 +195,7 @@ export interface ChartDataLabels {
    * `<a:solidFill><a:srgbClr val=".."/>` mapping — so a caller can
    * thread a single hex string through every typography-pinning slot.
    */
-  fontColor?: string;
+  fontColor?: ChartColor;
   /**
    * Data-label bold flag. Maps to `<c:dLbls><c:txPr><a:p><a:pPr>
    * <a:defRPr b=".."/></a:pPr></a:p></c:txPr></c:dLbls>` — Excel's
@@ -406,7 +406,7 @@ export interface ChartDataLabels {
    * {@link underline} / {@link strikethrough} / {@link fontSize} /
    * {@link fontColor} / {@link fontFamily}.
    */
-  fillColor?: string;
+  fillColor?: ChartColor;
   /**
    * Data-labels border (line) color as a 6-digit RGB hex string (e.g.
    * `"1F77B4"`). Maps to `<c:dLbls><c:spPr><a:ln><a:solidFill>
@@ -467,7 +467,7 @@ export interface ChartDataLabels {
    * {@link underline} / {@link strikethrough} / {@link fontSize} /
    * {@link fontColor} / {@link fontFamily} / {@link fillColor}.
    */
-  borderColor?: string;
+  borderColor?: ChartColor;
   /**
    * Data-labels border (stroke) thickness in points (e.g. `1.5`). Maps
    * to the `w` attribute on `<c:dLbls><c:spPr><a:ln w="EMU">` — Excel's
@@ -508,6 +508,19 @@ export interface ChartDataLabels {
    * element.
    */
   borderDash?: ChartBorderDash;
+  /**
+   * Border (stroke) line cap style. Maps to the `cap` attribute on
+   * `<c:dLbls><c:spPr><a:ln cap=".."/>`. Same accept-or-drop grammar
+   * as {@link ChartLineCap} — `"flat"` collapses to absence.
+   */
+  borderCap?: ChartLineCap;
+  /**
+   * Border (stroke) compound line style. Maps to the `cmpd` attribute
+   * on `<c:dLbls><c:spPr><a:ln cmpd=".."/>`. Same accept-or-drop
+   * grammar as {@link ChartLineCompound} — `"sng"` collapses to
+   * absence.
+   */
+  borderCompound?: ChartLineCompound;
 }
 
 /**
@@ -628,6 +641,110 @@ export type ChartLineCap = "rnd" | "sq" | "flat";
 export type ChartLineCompound = "sng" | "dbl" | "thickThin" | "thinThick" | "tri";
 
 /**
+ * Theme color slot name. Mirrors the named slots in OOXML
+ * `<a:schemeClr val="...">` (CT_SchemeColor, ECMA-376 Part 1,
+ * §20.1.2.3.29). The first ten names map to the workbook theme's
+ * `<a:clrScheme>` (background / text 1 + 2, the six accent colors,
+ * hyperlink / followed-hyperlink); `phClr` is the placeholder color
+ * used inside theme styles; `dk1` / `lt1` / `dk2` / `lt2` are the
+ * lower-level alternates of `bg1` / `tx1` / `bg2` / `tx2` that some
+ * authoring tools emit verbatim.
+ */
+export type ChartThemeColorName =
+  | "bg1"
+  | "tx1"
+  | "bg2"
+  | "tx2"
+  | "accent1"
+  | "accent2"
+  | "accent3"
+  | "accent4"
+  | "accent5"
+  | "accent6"
+  | "hlink"
+  | "folHlink"
+  | "phClr"
+  | "dk1"
+  | "lt1"
+  | "dk2"
+  | "lt2";
+
+/**
+ * Theme color reference for a chart fill / line / typography slot.
+ *
+ * Mirrors the OOXML `<a:schemeClr val="...">` element with optional
+ * luminance modulation, tint, shade, and alpha modifiers. Excel renders
+ * the named theme slot through the workbook theme's `<a:clrScheme>` —
+ * a parsed-then-written `ChartThemeColor` survives a round-trip
+ * regardless of the workbook theme and tracks Excel's UI behavior of
+ * preserving theme-anchored fills across theme switches.
+ *
+ * Each modifier child of `<a:schemeClr>` (`<a:lumMod>`, `<a:lumOff>`,
+ * `<a:tint>`, `<a:shade>`, `<a:alpha>`) carries a `val` integer in the
+ * 0..100000 band (or -100000..100000 for `tint`/`shade` per
+ * `ST_FixedPercentage`); the writer emits each modifier only when the
+ * corresponding field is set so absence and the OOXML defaults
+ * (`100000` for `lumMod` / `alpha`, `0` for the rest) round-trip
+ * identically.
+ */
+export interface ChartThemeColor {
+  /** Theme color slot name. See {@link ChartThemeColorName}. */
+  theme: ChartThemeColorName;
+  /**
+   * Optional luminance modulation, integer 0..100000 (the OOXML
+   * `ST_PositivePercentage` range, where `100000` represents 100% =
+   * no change). Excel's UI exposes the value as a percentage in the
+   * "More Colors" dialog.
+   */
+  lumMod?: number;
+  /**
+   * Optional luminance offset, integer 0..100000 (the OOXML
+   * `ST_PositivePercentage` range). Composes with `lumMod` to
+   * produce Excel's "Lighter / Darker" theme color tints.
+   */
+  lumOff?: number;
+  /**
+   * Optional tint amount, integer -100000..100000 (the OOXML
+   * `ST_FixedPercentage` range). Lightens the color toward white at
+   * positive values; the negative band collapses to no-op on emit per
+   * the schema but is preserved through the round-trip.
+   */
+  tint?: number;
+  /**
+   * Optional shade amount, integer -100000..100000 (the OOXML
+   * `ST_FixedPercentage` range). Darkens the color toward black at
+   * positive values.
+   */
+  shade?: number;
+  /**
+   * Optional alpha amount, integer 0..100000 (the OOXML
+   * `ST_PositivePercentage` range, where `100000` = fully opaque).
+   * Excel's UI exposes the value as a transparency percentage in the
+   * "More Colors" dialog.
+   */
+  alpha?: number;
+}
+
+/**
+ * Color reference for a chart fill / line / typography slot.
+ *
+ * - `string` — a literal sRGB triple (`<a:srgbClr val="RRGGBB"/>`).
+ *   The reader normalizes to a 6-character uppercase hex form (no
+ *   leading `#`) so a parsed value slots straight back into the writer
+ *   without further processing.
+ * - {@link ChartThemeColor} — a named theme color reference
+ *   (`<a:schemeClr val="..."/>`) with optional luminance / tint /
+ *   shade / alpha modifiers. Mirrors Excel's "Theme Colors" picker.
+ *
+ * The string and object forms compose interchangeably across every
+ * chart fill / line / typography slot; the type widens but never
+ * narrows. A caller passing a literal hex (e.g. `"FF0000"`) keeps
+ * working unchanged — the type signature widens to also accept the
+ * theme-color object.
+ */
+export type ChartColor = string | ChartThemeColor;
+
+/**
  * Marker symbol shape rendered at each data point on a line / scatter
  * series.
  *
@@ -676,15 +793,17 @@ export interface ChartMarker {
    */
   size?: number;
   /**
-   * Marker fill color as a 6-digit RGB hex string (e.g. `"1F77B4"`).
-   * Maps to `<c:marker><c:spPr><a:solidFill><a:srgbClr val="..">`.
+   * Marker fill color. Accepts a 6-digit RGB hex string (e.g.
+   * `"1F77B4"`) for `<a:srgbClr>` or a {@link ChartThemeColor} for
+   * `<a:schemeClr>`. Maps to `<c:marker><c:spPr><a:solidFill>...`.
    */
-  fill?: string;
+  fill?: ChartColor;
   /**
-   * Marker outline color as a 6-digit RGB hex string. Maps to
-   * `<c:marker><c:spPr><a:ln><a:solidFill><a:srgbClr val="..">`.
+   * Marker outline color. Accepts a 6-digit RGB hex string for
+   * `<a:srgbClr>` or a {@link ChartThemeColor} for `<a:schemeClr>`.
+   * Maps to `<c:marker><c:spPr><a:ln><a:solidFill>...`.
    */
-  line?: string;
+  line?: ChartColor;
 }
 
 /**
@@ -814,7 +933,7 @@ export interface ChartDataTable {
    * Only meaningful for chart families with axes; silently dropped on
    * pie / doughnut along with the rest of the data-table configuration.
    */
-  fontColor?: string;
+  fontColor?: ChartColor;
   /**
    * Data-table bold flag. Maps to `<c:dTable><c:txPr><a:p><a:pPr>
    * <a:defRPr b=".."/></a:pPr></a:p></c:txPr></c:dTable>` — Excel's
@@ -1057,7 +1176,7 @@ export interface ChartDataTable {
    * Only meaningful for chart families with axes; silently dropped on
    * pie / doughnut along with the rest of the data-table configuration.
    */
-  fillColor?: string;
+  fillColor?: ChartColor;
   /**
    * Data-table border (line) color as a 6-digit RGB hex string (e.g.
    * `"1F77B4"`). Maps to `<c:dTable><c:spPr><a:ln><a:solidFill>
@@ -1118,7 +1237,7 @@ export interface ChartDataTable {
    * Only meaningful for chart families with axes; silently dropped on
    * pie / doughnut along with the rest of the data-table configuration.
    */
-  borderColor?: string;
+  borderColor?: ChartColor;
   /**
    * Data-table border (stroke) thickness in points (e.g. `1.5`). Maps
    * to the `w` attribute on `<c:dTable><c:spPr><a:ln w="EMU">` — Excel's
@@ -1164,6 +1283,18 @@ export interface ChartDataTable {
    * configuration.
    */
   borderDash?: ChartBorderDash;
+  /**
+   * Data-table border (stroke) line cap style. Maps to the `cap`
+   * attribute on `<c:dTable><c:spPr><a:ln cap=".."/>`. Same
+   * accept-or-drop grammar as {@link ChartLineCap}.
+   */
+  borderCap?: ChartLineCap;
+  /**
+   * Data-table border (stroke) compound line style. Maps to the
+   * `cmpd` attribute on `<c:dTable><c:spPr><a:ln cmpd=".."/>`. Same
+   * accept-or-drop grammar as {@link ChartLineCompound}.
+   */
+  borderCompound?: ChartLineCompound;
 }
 
 /**
@@ -1345,7 +1476,7 @@ export interface ChartSeries {
   /** A1-style range with the category labels (e.g. "A2:A10"). */
   categories?: string;
   /** Optional fill color as a 6-digit RGB hex string (e.g. "1F77B4"). */
-  color?: string;
+  color?: ChartColor;
   /**
    * Per-series data label override. Pass `false` to suppress labels
    * for this series even when the chart-level
@@ -1539,13 +1670,13 @@ export interface ChartDataPoint {
    * Mirrors the series-level fill grammar — accepts a leading `#` and
    * any case; malformed input drops to `undefined`.
    */
-  fillColor?: string;
+  fillColor?: ChartColor;
   /**
    * Per-point border (line) color as a 6-digit RGB hex string. Maps to
    * `<c:dPt><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:ln></c:spPr></c:dPt>`.
    * Same hex grammar as {@link fillColor}.
    */
-  borderColor?: string;
+  borderColor?: ChartColor;
   /**
    * Per-point border width in points. Maps to the `w` attribute on
    * `<c:dPt><c:spPr><a:ln w="EMU"/></c:spPr></c:dPt>`. Same
@@ -1661,7 +1792,7 @@ export interface ChartTrendline {
    * `<c:trendline><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:ln></c:spPr></c:trendline>`.
    * Same hex grammar as every other chart-frame stroke color.
    */
-  lineColor?: string;
+  lineColor?: ChartColor;
   /**
    * Trendline stroke width in points. Same `0.25..13.5` pt clamp as
    * every other chart-frame border-width slot.
@@ -1755,7 +1886,7 @@ export interface ChartErrorBars {
    * Stroke color for the error-bar line. Maps to
    * `<c:errBars><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:ln></c:spPr></c:errBars>`.
    */
-  lineColor?: string;
+  lineColor?: ChartColor;
   /**
    * Stroke width in points. Same `0.25..13.5` pt clamp as every other
    * chart-frame border-width slot.
@@ -1844,7 +1975,7 @@ export interface ChartLegendEntry {
    * `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr>`
    * inside the entry's `<c:txPr>`.
    */
-  color?: string;
+  color?: ChartColor;
   /**
    * Per-entry font family / typeface name. Maps to
    * `<a:defRPr><a:latin typeface=".."/></a:defRPr>` inside the entry's
@@ -2307,7 +2438,7 @@ export interface SheetChart {
    * configuration call threads cleanly through every legend knob Excel
    * exposes.
    */
-  legendFontColor?: string;
+  legendFontColor?: ChartColor;
   /**
    * Legend font family / typeface. Maps to `<c:legend><c:txPr><a:p>
    * <a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr></a:pPr>
@@ -2439,7 +2570,7 @@ export interface SheetChart {
    * `<c:legendPos>` / `<c:overlay>` — every knob targets a different
    * child of `<c:legend>`.
    */
-  legendFillColor?: string;
+  legendFillColor?: ChartColor;
   /**
    * Legend border (stroke) solid color as a 6-digit RGB hex string
    * (e.g. `"1F77B4"`). Maps to `<c:legend><c:spPr><a:ln><a:solidFill>
@@ -2488,7 +2619,7 @@ export interface SheetChart {
    * (`<a:schemeClr>`) likewise drop to `undefined` so a parsed value
    * always carries a literal hex Excel will render byte-for-byte.
    */
-  legendBorderColor?: string;
+  legendBorderColor?: ChartColor;
   /**
    * Legend border (stroke) thickness in points (e.g. `1.5`). Maps to
    * the `w` attribute on `<c:legend><c:spPr><a:ln w="EMU">` — Excel's
@@ -2544,6 +2675,19 @@ export interface SheetChart {
    * element is emitted).
    */
   legendBorderDash?: ChartBorderDash;
+  /**
+   * Legend border (stroke) line cap style. Maps to the `cap` attribute
+   * on `<c:legend><c:spPr><a:ln cap=".."/>`. Same accept-or-drop
+   * grammar as {@link titleBorderCap} — `"flat"` collapses to absence.
+   */
+  legendBorderCap?: ChartLineCap;
+  /**
+   * Legend border (stroke) compound line style. Maps to the `cmpd`
+   * attribute on `<c:legend><c:spPr><a:ln cmpd=".."/>`. Same
+   * accept-or-drop grammar as {@link titleBorderCompound} — `"sng"`
+   * collapses to absence.
+   */
+  legendBorderCompound?: ChartLineCompound;
   /**
    * Custom plot-area placement inside the chart frame. Maps to
    * `<c:plotArea><c:layout><c:manualLayout>...</c:manualLayout></c:layout>
@@ -2621,7 +2765,7 @@ export interface SheetChart {
    * (`<a:schemeClr>`) likewise drop to `undefined` so a parsed value
    * always carries a literal hex Excel will render byte-for-byte.
    */
-  plotAreaFillColor?: string;
+  plotAreaFillColor?: ChartColor;
   /**
    * Plot-area border (stroke) solid color as a 6-digit RGB hex string
    * (e.g. `"1F77B4"`). Maps to `<c:plotArea><c:spPr><a:ln><a:solidFill>
@@ -2666,7 +2810,7 @@ export interface SheetChart {
    * grammar, same `<c:spPr>` host element, but lands on the line
    * (`<a:ln>`) child rather than the fill (`<a:solidFill>`) child.
    */
-  plotAreaBorderColor?: string;
+  plotAreaBorderColor?: ChartColor;
   /**
    * Plot-area border (stroke) thickness in points (e.g. `1.5`). Maps to
    * the `w` attribute on `<c:plotArea><c:spPr><a:ln w="EMU">` — Excel's
@@ -2734,6 +2878,20 @@ export interface SheetChart {
    */
   plotAreaBorderDash?: ChartBorderDash;
   /**
+   * Plot-area border (stroke) line cap style. Maps to the `cap`
+   * attribute on `<c:plotArea><c:spPr><a:ln cap=".."/>`. Same
+   * accept-or-drop grammar as {@link titleBorderCap} — `"flat"`
+   * collapses to absence.
+   */
+  plotAreaBorderCap?: ChartLineCap;
+  /**
+   * Plot-area border (stroke) compound line style. Maps to the `cmpd`
+   * attribute on `<c:plotArea><c:spPr><a:ln cmpd=".."/>`. Same
+   * accept-or-drop grammar as {@link titleBorderCompound} — `"sng"`
+   * collapses to absence.
+   */
+  plotAreaBorderCompound?: ChartLineCompound;
+  /**
    * Chart-space (entire chart background) solid fill color as a 6-digit
    * RGB hex string (e.g. `"F2F2F2"`). Maps to `<c:chartSpace><c:spPr>
    * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></c:spPr>
@@ -2780,7 +2938,7 @@ export interface SheetChart {
    * </c:spPr>` mapping — so a caller can thread a single hex string
    * through every `<c:spPr>`-based fill slot.
    */
-  chartSpaceFillColor?: string;
+  chartSpaceFillColor?: ChartColor;
   /**
    * Chart-space (entire chart frame) border (stroke) solid color as a
    * 6-digit RGB hex string (e.g. `"1F77B4"`). Maps to `<c:chartSpace>
@@ -2827,7 +2985,7 @@ export interface SheetChart {
    * </a:solidFill></a:ln>` mapping — so a caller can thread a single
    * hex string through every `<a:ln>`-based stroke slot.
    */
-  chartSpaceBorderColor?: string;
+  chartSpaceBorderColor?: ChartColor;
   /**
    * Chart-space (entire chart frame) border (stroke) thickness in
    * points (e.g. `1.5`). Maps to the `w` attribute on
@@ -2882,6 +3040,19 @@ export interface SheetChart {
    * `<c:chartSpace>`'s own `<c:spPr>` block.
    */
   chartSpaceBorderDash?: ChartBorderDash;
+  /**
+   * Chart-space (entire chart frame) border (stroke) line cap style.
+   * Maps to the `cap` attribute on `<c:chartSpace><c:spPr><a:ln
+   * cap=".."/>`. Same accept-or-drop grammar as {@link titleBorderCap}.
+   */
+  chartSpaceBorderCap?: ChartLineCap;
+  /**
+   * Chart-space (entire chart frame) border (stroke) compound line
+   * style. Maps to the `cmpd` attribute on `<c:chartSpace><c:spPr>
+   * <a:ln cmpd=".."/>`. Same accept-or-drop grammar as
+   * {@link titleBorderCompound}.
+   */
+  chartSpaceBorderCompound?: ChartLineCompound;
   /** Show the chart-level title element. Default: `true` when `title` is set. */
   showTitle?: boolean;
   /**
@@ -3054,7 +3225,7 @@ export interface SheetChart {
    * on the same `<c:title>` element so a single configuration call
    * threads cleanly through every chart-title knob Excel exposes.
    */
-  titleColor?: string;
+  titleColor?: ChartColor;
   /**
    * Chart title strikethrough flag. Maps to
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
@@ -3293,7 +3464,7 @@ export interface SheetChart {
    * `<c:overlay>` — every knob targets a different child of
    * `<c:title>`.
    */
-  titleFillColor?: string;
+  titleFillColor?: ChartColor;
   /**
    * Chart title border (stroke) solid color as a 6-digit RGB hex string
    * (e.g. `"1F77B4"`). Maps to `<c:title><c:spPr><a:ln><a:solidFill>
@@ -3342,7 +3513,7 @@ export interface SheetChart {
    * </c:spPr>` mapping — so a caller can thread a single hex string
    * through every `<c:spPr><a:ln>`-based stroke slot.
    */
-  titleBorderColor?: string;
+  titleBorderColor?: ChartColor;
   /**
    * Chart title border (stroke) thickness in points (e.g. `1.5`). Maps
    * to the `w` attribute on `<c:title><c:spPr><a:ln w="EMU">` —
@@ -3400,6 +3571,21 @@ export interface SheetChart {
    * (`showTitle === false` or `title` is absent).
    */
   titleBorderDash?: ChartBorderDash;
+  /**
+   * Chart title border (stroke) line cap style. Maps to the `cap`
+   * attribute on `<c:title><c:spPr><a:ln cap=".."/>`. Mirrors the OOXML
+   * `ST_LineCap` enum — `"flat"` (default), `"rnd"`, `"sq"`. Absence
+   * and `"flat"` round-trip identically.
+   */
+  titleBorderCap?: ChartLineCap;
+  /**
+   * Chart title border (stroke) compound line style. Maps to the `cmpd`
+   * attribute on `<c:title><c:spPr><a:ln cmpd=".."/>`. Mirrors the
+   * OOXML `ST_CompoundLine` enum — `"sng"` (default, single line),
+   * `"dbl"`, `"thickThin"`, `"thinThick"`, `"tri"`. Absence and
+   * `"sng"` round-trip identically.
+   */
+  titleBorderCompound?: ChartLineCompound;
   /**
    * Auto-title-deleted flag. Maps to `<c:chart><c:autoTitleDeleted
    * val=".."/>` — Excel's record of whether the user explicitly deleted
@@ -4115,7 +4301,7 @@ export interface SheetChart {
        * per the OOXML schema, so the field round-trips on every chart
        * family that has axes (bar / column / line / area / scatter).
        */
-      axisTitleColor?: string;
+      axisTitleColor?: ChartColor;
       /**
        * Axis title strikethrough flag. Maps to
        * `<c:catAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
@@ -4422,7 +4608,7 @@ export interface SheetChart {
        * every chart family that has axes (bar / column / line /
        * area / scatter).
        */
-      axisTitleFillColor?: string;
+      axisTitleFillColor?: ChartColor;
       /**
        * Axis-title border (line stroke) solid color as a 6-digit RGB
        * hex string (e.g. `"1F77B4"`). Maps to
@@ -4486,7 +4672,7 @@ export interface SheetChart {
        * every chart family that has axes (bar / column / line /
        * area / scatter).
        */
-      axisTitleBorderColor?: string;
+      axisTitleBorderColor?: ChartColor;
       /**
        * Axis-title border (stroke) thickness in points (e.g. `1.5`).
        * Maps to the `w` attribute on `<c:catAx><c:title><c:spPr>
@@ -4537,6 +4723,19 @@ export interface SheetChart {
        * title and on `pie` / `doughnut` charts.
        */
       axisTitleBorderDash?: ChartBorderDash;
+      /**
+       * Axis-title border (stroke) line cap style. Maps to the `cap`
+       * attribute on the axis title's `<c:spPr><a:ln cap=".."/>`. Same
+       * accept-or-drop grammar as {@link SheetChart.titleBorderCap}.
+       */
+      axisTitleBorderCap?: ChartLineCap;
+      /**
+       * Axis-title border (stroke) compound line style. Maps to the
+       * `cmpd` attribute on the axis title's `<c:spPr><a:ln
+       * cmpd=".."/>`. Same accept-or-drop grammar as
+       * {@link SheetChart.titleBorderCompound}.
+       */
+      axisTitleBorderCompound?: ChartLineCompound;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -4750,7 +4949,7 @@ export interface SheetChart {
        * doughnut have no axes at all, so the field is silently dropped
        * on those families.
        */
-      labelColor?: string;
+      labelColor?: ChartColor;
       /**
        * Tick-label underline flag. Maps to
        * `<c:catAx><c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr></c:catAx>`
@@ -5200,7 +5399,7 @@ export interface SheetChart {
        * whose `title` is unset (no `<c:title>` block to host the
        * fill).
        */
-      axisTitleColor?: string;
+      axisTitleColor?: ChartColor;
       /**
        * Value-axis title strikethrough flag. Maps to
        * `<c:valAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
@@ -5312,7 +5511,7 @@ export interface SheetChart {
        * round-trips on `<c:valAx>` exactly as it does on `<c:catAx>`.
        * See the X-axis variant for the full semantics.
        */
-      axisTitleFillColor?: string;
+      axisTitleFillColor?: ChartColor;
       /**
        * Value-axis-title border (line stroke) solid color. Same
        * canonical `<c:title><c:spPr><a:ln><a:solidFill><a:srgbClr
@@ -5321,7 +5520,7 @@ export interface SheetChart {
        * — the field round-trips on `<c:valAx>` exactly as it does on
        * `<c:catAx>`. See the X-axis variant for the full semantics.
        */
-      axisTitleBorderColor?: string;
+      axisTitleBorderColor?: ChartColor;
       /**
        * Value-axis-title border (stroke) thickness in points. Same
        * canonical `<c:title><c:spPr><a:ln w="EMU">` slot and grammar
@@ -5338,6 +5537,19 @@ export interface SheetChart {
        * `<c:catAx>`. See the X-axis variant for the full semantics.
        */
       axisTitleBorderDash?: ChartBorderDash;
+      /**
+       * Axis-title border (stroke) line cap style. Maps to the `cap`
+       * attribute on the axis title's `<c:spPr><a:ln cap=".."/>`. Same
+       * accept-or-drop grammar as {@link SheetChart.titleBorderCap}.
+       */
+      axisTitleBorderCap?: ChartLineCap;
+      /**
+       * Axis-title border (stroke) compound line style. Maps to the
+       * `cmpd` attribute on the axis title's `<c:spPr><a:ln
+       * cmpd=".."/>`. Same accept-or-drop grammar as
+       * {@link SheetChart.titleBorderCompound}.
+       */
+      axisTitleBorderCompound?: ChartLineCompound;
       gridlines?: ChartAxisGridlines;
       scale?: ChartAxisScale;
       numberFormat?: ChartAxisNumberFormat;
@@ -5442,7 +5654,7 @@ export interface SheetChart {
        * stylistic tint). Silently dropped on `pie` / `doughnut` charts
        * (no axes at all).
        */
-      labelColor?: string;
+      labelColor?: ChartColor;
       /**
        * Tick-label underline flag for the value axis. Maps to
        * `<c:valAx><c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr></c:valAx>`.
@@ -5606,7 +5818,7 @@ export interface ChartSeriesInfo {
   /** Raw `<c:f>` for `<c:cat>` / `<c:xVal>`. */
   categoriesRef?: string;
   /** 6-digit RGB hex from `<c:spPr><a:solidFill><a:srgbClr val>`. */
-  color?: string;
+  color?: ChartColor;
   /**
    * Series-level data labels parsed from the `<c:ser><c:dLbls>` block.
    * Falls back to the chart-level {@link Chart.dataLabels} when this
@@ -5780,7 +5992,7 @@ export interface ChartDataLabelsInfo {
    * {@link ChartDataLabels.fontColor} so a parsed value slots
    * straight into {@link cloneChart} without conversion.
    */
-  fontColor?: string;
+  fontColor?: ChartColor;
   /**
    * Data-label bold flag pulled from `<c:dLbls><c:txPr><a:p><a:pPr>
    * <a:defRPr b=".."/></a:pPr></a:p></c:txPr></c:dLbls>`. The OOXML
@@ -5887,7 +6099,7 @@ export interface ChartDataLabelsInfo {
    * writer-side {@link ChartDataLabels.fillColor} so a parsed value
    * slots straight into {@link cloneChart} without conversion.
    */
-  fillColor?: string;
+  fillColor?: ChartColor;
   /**
    * Data-labels border (line) color pulled from `<c:dLbls><c:spPr>
    * <a:ln><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:ln>
@@ -5916,7 +6128,7 @@ export interface ChartDataLabelsInfo {
    * same `<c:spPr>` block so a caller can pin both knobs without
    * conflict.
    */
-  borderColor?: string;
+  borderColor?: ChartColor;
   /**
    * Data-labels border (stroke) thickness in points pulled from the
    * `w` attribute on `<c:dLbls><c:spPr><a:ln w="EMU">`. Reflects
@@ -5947,6 +6159,18 @@ export interface ChartDataLabelsInfo {
    * the writer-side {@link ChartDataLabels.borderDash}.
    */
   borderDash?: ChartBorderDash;
+  /**
+   * Data-labels border (stroke) line cap style pulled from the `cap`
+   * attribute on `<c:dLbls><c:spPr><a:ln cap=".."/>`. Mirrors
+   * {@link ChartDataLabels.borderCap}.
+   */
+  borderCap?: ChartLineCap;
+  /**
+   * Data-labels border (stroke) compound line style pulled from the
+   * `cmpd` attribute on `<c:dLbls><c:spPr><a:ln cmpd=".."/>`. Mirrors
+   * {@link ChartDataLabels.borderCompound}.
+   */
+  borderCompound?: ChartLineCompound;
 }
 
 /**
@@ -6423,7 +6647,7 @@ export interface ChartAxisInfo {
    * flavour so a parsed chart preserves the color regardless of
    * whether the source axis was a category or value axis.
    */
-  axisTitleColor?: string;
+  axisTitleColor?: ChartColor;
   /**
    * Axis-title strikethrough flag pulled from
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
@@ -6644,7 +6868,7 @@ export interface ChartAxisInfo {
    * axis flavour so a parsed chart preserves the fill regardless of
    * whether the source axis was a category or value axis.
    */
-  axisTitleFillColor?: string;
+  axisTitleFillColor?: ChartColor;
   /**
    * Axis-title border (line stroke) solid sRGB color pulled from
    * `<c:catAx><c:title><c:spPr><a:ln><a:solidFill><a:srgbClr
@@ -6690,7 +6914,7 @@ export interface ChartAxisInfo {
    * axis flavour so a parsed chart preserves the stroke regardless
    * of whether the source axis was a category or value axis.
    */
-  axisTitleBorderColor?: string;
+  axisTitleBorderColor?: ChartColor;
   /**
    * Axis-title border (stroke) thickness in points pulled from the
    * `w` attribute on `<c:catAx><c:title><c:spPr><a:ln w="EMU">` (or
@@ -6734,6 +6958,20 @@ export interface ChartAxisInfo {
    * conversion.
    */
   axisTitleBorderDash?: ChartBorderDash;
+  /**
+   * Axis-title border (stroke) line cap style. Reports the
+   * {@link ChartLineCap} pinned by the source, or `undefined` for the
+   * OOXML default `"flat"`. Mirrors the writer-side
+   * {@link SheetChart.axes.x.axisTitleBorderCap}.
+   */
+  axisTitleBorderCap?: ChartLineCap;
+  /**
+   * Axis-title border (stroke) compound line style. Reports the
+   * {@link ChartLineCompound} pinned by the source, or `undefined` for
+   * the OOXML default `"sng"`. Mirrors the writer-side
+   * {@link SheetChart.axes.x.axisTitleBorderCompound}.
+   */
+  axisTitleBorderCompound?: ChartLineCompound;
   /**
    * Major / minor gridline visibility. Omitted when neither
    * `<c:majorGridlines>` nor `<c:minorGridlines>` is declared on the
@@ -6897,7 +7135,7 @@ export interface ChartAxisInfo {
    * {@link ChartAxisInfo.axisTitleColor}) or on a `<c:spPr>` series
    * fill cannot leak in.
    */
-  labelColor?: string;
+  labelColor?: ChartColor;
   /**
    * Tick-label underline flag pulled from
    * `<c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr>`
@@ -7363,7 +7601,7 @@ export interface Chart {
    * the writer-side {@link SheetChart.legendFontColor} so a parsed
    * value slots straight into {@link cloneChart} without conversion.
    */
-  legendFontColor?: string;
+  legendFontColor?: ChartColor;
   /**
    * Legend font family / typeface pulled from `<c:legend><c:txPr>
    * <a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
@@ -7442,7 +7680,7 @@ export interface Chart {
    * the writer-side {@link SheetChart.legendFillColor} so a parsed
    * value slots straight into {@link cloneChart} without conversion.
    */
-  legendFillColor?: string;
+  legendFillColor?: ChartColor;
   /**
    * Legend border (stroke) solid color pulled from `<c:legend><c:spPr>
    * <a:ln><a:solidFill><a:srgbClr val=".."/></a:solidFill></a:ln>
@@ -7474,7 +7712,7 @@ export interface Chart {
    * from the same `<c:spPr>` block but on different children
    * (`<a:solidFill>` for fill, `<a:ln><a:solidFill>` for stroke).
    */
-  legendBorderColor?: string;
+  legendBorderColor?: ChartColor;
   /**
    * Legend border (stroke) thickness in points pulled from the `w`
    * attribute on `<c:legend><c:spPr><a:ln w="EMU">`. Reflects Excel's
@@ -7515,6 +7753,18 @@ export interface Chart {
    * conversion.
    */
   legendBorderDash?: ChartBorderDash;
+  /**
+   * Legend border (stroke) line cap style. Mirrors the writer-side
+   * {@link SheetChart.legendBorderCap}. `undefined` for absence /
+   * OOXML default `"flat"`.
+   */
+  legendBorderCap?: ChartLineCap;
+  /**
+   * Legend border (stroke) compound line style. Mirrors the
+   * writer-side {@link SheetChart.legendBorderCompound}. `undefined`
+   * for absence / OOXML default `"sng"`.
+   */
+  legendBorderCompound?: ChartLineCompound;
   /**
    * Custom plot-area placement pulled from `<c:plotArea><c:layout>
    * <c:manualLayout>...</c:manualLayout></c:layout></c:plotArea>`.
@@ -7569,7 +7819,7 @@ export interface Chart {
    * `<c:plotArea>` element at all — there is no `<c:spPr>` slot to
    * surface the fill from in that case.
    */
-  plotAreaFillColor?: string;
+  plotAreaFillColor?: ChartColor;
   /**
    * Plot-area border (stroke) solid color pulled from
    * `<c:plotArea><c:spPr><a:ln><a:solidFill><a:srgbClr val=".."/>
@@ -7602,7 +7852,7 @@ export interface Chart {
    * `<c:spPr>` block but on different children (`<a:solidFill>` for
    * fill, `<a:ln><a:solidFill>` for stroke).
    */
-  plotAreaBorderColor?: string;
+  plotAreaBorderColor?: ChartColor;
   /**
    * Plot-area border (stroke) thickness in points pulled from the `w`
    * attribute on `<c:plotArea><c:spPr><a:ln w="EMU">`. Reflects Excel's
@@ -7645,6 +7895,18 @@ export interface Chart {
    */
   plotAreaBorderDash?: ChartBorderDash;
   /**
+   * Plot-area border (stroke) line cap style. Mirrors the writer-side
+   * {@link SheetChart.plotAreaBorderCap}. `undefined` for absence /
+   * OOXML default `"flat"`.
+   */
+  plotAreaBorderCap?: ChartLineCap;
+  /**
+   * Plot-area border (stroke) compound line style. Mirrors the
+   * writer-side {@link SheetChart.plotAreaBorderCompound}. `undefined`
+   * for absence / OOXML default `"sng"`.
+   */
+  plotAreaBorderCompound?: ChartLineCompound;
+  /**
    * Chart-space (entire chart background) solid fill color pulled
    * from `<c:chartSpace><c:spPr><a:solidFill><a:srgbClr val=".."/>
    * </a:solidFill></c:spPr></c:chartSpace>`. Reflects Excel's
@@ -7677,7 +7939,7 @@ export interface Chart {
    * — so a parsed value flows through the same hex shape regardless
    * of which `<c:spPr>`-based fill slot the source chart pinned.
    */
-  chartSpaceFillColor?: string;
+  chartSpaceFillColor?: ChartColor;
   /**
    * Chart-space (entire chart frame) border (stroke) color pulled
    * from `<c:chartSpace><c:spPr><a:ln><a:solidFill><a:srgbClr val=".."/>
@@ -7712,7 +7974,7 @@ export interface Chart {
    * elsewhere (e.g. on `<c:plotArea>` / `<c:legend>` / `<c:title>` /
    * a series) cannot leak into this field.
    */
-  chartSpaceBorderColor?: string;
+  chartSpaceBorderColor?: ChartColor;
   /**
    * Chart-space (entire chart frame) border (stroke) thickness in
    * points pulled from the `w` attribute on `<c:chartSpace><c:spPr>
@@ -7758,6 +8020,16 @@ export interface Chart {
    * conversion.
    */
   chartSpaceBorderDash?: ChartBorderDash;
+  /**
+   * Chart-space (entire chart frame) border (stroke) line cap style.
+   * Mirrors the writer-side {@link SheetChart.chartSpaceBorderCap}.
+   */
+  chartSpaceBorderCap?: ChartLineCap;
+  /**
+   * Chart-space (entire chart frame) border (stroke) compound line
+   * style. Mirrors the writer-side {@link SheetChart.chartSpaceBorderCompound}.
+   */
+  chartSpaceBorderCompound?: ChartLineCompound;
   /**
    * Title-overlay flag pulled from `<c:title><c:overlay val=".."/>`.
    * Reflects Excel's "Format Chart Title -> Show the title without
@@ -7890,7 +8162,7 @@ export interface Chart {
    * `val` is malformed (wrong length, non-hex characters). There is
    * no `<a:p>` to host the fill in any of those cases.
    */
-  titleColor?: string;
+  titleColor?: ChartColor;
   /**
    * Chart title strikethrough flag pulled from
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
@@ -8031,7 +8303,7 @@ export interface Chart {
    * writer-side {@link SheetChart.titleFillColor} so a parsed value
    * slots straight into {@link cloneChart} without conversion.
    */
-  titleFillColor?: string;
+  titleFillColor?: ChartColor;
   /**
    * Chart title border (stroke) solid color pulled from
    * `<c:title><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/>
@@ -8072,7 +8344,7 @@ export interface Chart {
    * {@link plotAreaBorderColor} — same `<a:ln><a:solidFill><a:srgbClr>`
    * chain on a different host element.
    */
-  titleBorderColor?: string;
+  titleBorderColor?: ChartColor;
   /**
    * Chart title border (stroke) thickness in points pulled from the
    * `w` attribute on `<c:title><c:spPr><a:ln w="EMU">`. Reflects
@@ -8115,6 +8387,16 @@ export interface Chart {
    * conversion.
    */
   titleBorderDash?: ChartBorderDash;
+  /**
+   * Chart title border (stroke) line cap style. Mirrors the
+   * writer-side {@link SheetChart.titleBorderCap}.
+   */
+  titleBorderCap?: ChartLineCap;
+  /**
+   * Chart title border (stroke) compound line style. Mirrors the
+   * writer-side {@link SheetChart.titleBorderCompound}.
+   */
+  titleBorderCompound?: ChartLineCompound;
   /**
    * Auto-title-deleted flag pulled from `<c:chart><c:autoTitleDeleted
    * val=".."/>`. Reflects Excel's "the user explicitly deleted the

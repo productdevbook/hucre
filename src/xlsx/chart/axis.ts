@@ -31,6 +31,9 @@ import type {
   ChartAxisTickLabelPosition,
   ChartAxisTickMark,
   ChartBorderDash,
+  ChartColor,
+  ChartLineCap,
+  ChartLineCompound,
   ChartManualLayout,
   WriteChartKind,
 } from "../../_types";
@@ -38,15 +41,25 @@ import type { CloneChartOptions } from "../chart-clone";
 import type { XmlElement } from "../../xml/parser";
 import {
   EMU_PER_PT,
+  buildColorElement,
   clampStrokeWidthPt,
   normalizeBorderDash,
+  normalizeChartColor,
+  normalizeLineCap,
+  normalizeLineCompound,
   normalizeRgbHex,
+  parseBorderCapFromSpPr,
+  parseBorderCompoundFromSpPr,
   parseBorderDashFromSpPr,
   parseBorderWidthFromSpPr,
+  parseSchemeClr,
   parseSpPrBorderColor,
   parseSpPrFill,
   resolveBorderDash,
   resolveBorderWidthPt,
+  resolveChartColor,
+  resolveLineCap,
+  resolveLineCompound,
 } from "./shape";
 import {
   type ResolvedManualLayout,
@@ -326,6 +339,11 @@ export function parseAxisInfo(
   // `<c:valAx>` / `<c:dateAx>` / `<c:serAx>`) carries Excel's "Format
   // Axis Title -> Border -> Dash type" pin.
   const axisTitleBorderDash = parseAxisTitleBorderDash(axis);
+  // `<c:title><c:spPr><a:ln cap=".."/>` / `<a:ln cmpd=".."/>` — Excel's
+  // axis-title border line cap and compound styles. Same accept-or-drop
+  // grammar as every other chart-frame `<a:ln>` slot.
+  const axisTitleBorderCap = parseAxisTitleBorderCap(axis);
+  const axisTitleBorderCompound = parseAxisTitleBorderCompound(axis);
   const gridlines = parseAxisGridlines(axis);
   const scale = parseAxisScale(axis);
   const numberFormat = parseAxisNumberFormat(axis);
@@ -490,6 +508,8 @@ export function parseAxisInfo(
     axisTitleBorderColor === undefined &&
     axisTitleBorderWidth === undefined &&
     axisTitleBorderDash === undefined &&
+    axisTitleBorderCap === undefined &&
+    axisTitleBorderCompound === undefined &&
     gridlines === undefined &&
     scale === undefined &&
     numberFormat === undefined &&
@@ -535,6 +555,10 @@ export function parseAxisInfo(
   if (axisTitleBorderColor !== undefined) out.axisTitleBorderColor = axisTitleBorderColor;
   if (axisTitleBorderWidth !== undefined) out.axisTitleBorderWidth = axisTitleBorderWidth;
   if (axisTitleBorderDash !== undefined) out.axisTitleBorderDash = axisTitleBorderDash;
+  if (axisTitleBorderCap !== undefined) out.axisTitleBorderCap = axisTitleBorderCap;
+  if (axisTitleBorderCompound !== undefined) {
+    out.axisTitleBorderCompound = axisTitleBorderCompound;
+  }
   if (gridlines !== undefined) out.gridlines = gridlines;
   if (scale !== undefined) out.scale = scale;
   if (numberFormat !== undefined) out.numberFormat = numberFormat;
@@ -998,7 +1022,7 @@ export function parseAxisLabelItalic(axis: XmlElement): boolean | undefined {
  * (surfaced by {@link parseAxisTitleColor}) or on a `<c:spPr>` series
  * fill cannot leak in.
  */
-export function parseAxisLabelColor(axis: XmlElement): string | undefined {
+export function parseAxisLabelColor(axis: XmlElement): ChartColor | undefined {
   const txPr = findChild(axis, "txPr");
   if (!txPr) return undefined;
   const p = findChild(txPr, "p");
@@ -1010,8 +1034,10 @@ export function parseAxisLabelColor(axis: XmlElement): string | undefined {
   const solidFill = findChild(defRPr, "solidFill");
   if (!solidFill) return undefined;
   const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  return normalizeRgbHex(srgbClr.attrs.val);
+  if (srgbClr) return normalizeRgbHex(srgbClr.attrs.val);
+  const schemeClr = findChild(solidFill, "schemeClr");
+  if (schemeClr) return parseSchemeClr(schemeClr);
+  return undefined;
 }
 
 /**
@@ -1696,7 +1722,7 @@ export function parseAxisTitleItalic(axis: XmlElement): boolean | undefined {
  * {@link parseTitleColor} so a parsed value slots straight into the
  * writer-side {@link SheetChart.axes}.x.axisTitleColor.
  */
-export function parseAxisTitleColor(axis: XmlElement): string | undefined {
+export function parseAxisTitleColor(axis: XmlElement): ChartColor | undefined {
   const title = findChild(axis, "title");
   if (!title) return undefined;
   const tx = findChild(title, "tx");
@@ -1717,9 +1743,10 @@ export function parseAxisTitleColor(axis: XmlElement): string | undefined {
   const solidFill = findChild(defRPr, "solidFill");
   if (!solidFill) return undefined;
   const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  const raw = srgbClr.attrs.val;
-  return normalizeRgbHex(raw);
+  if (srgbClr) return normalizeRgbHex(srgbClr.attrs.val);
+  const schemeClr = findChild(solidFill, "schemeClr");
+  if (schemeClr) return parseSchemeClr(schemeClr);
+  return undefined;
 }
 
 /**
@@ -2041,7 +2068,7 @@ export function parseAxisTitleLayout(axis: XmlElement): ChartManualLayout | unde
  * {@link parseTitleFillColor} so a parsed value slots straight into
  * the writer-side {@link SheetChart.axes.x.axisTitleFillColor}.
  */
-export function parseAxisTitleFillColor(axis: XmlElement): string | undefined {
+export function parseAxisTitleFillColor(axis: XmlElement): ChartColor | undefined {
   const title = findChild(axis, "title");
   if (!title) return undefined;
   return parseSpPrFill(title);
@@ -2094,7 +2121,7 @@ export function parseAxisTitleFillColor(axis: XmlElement): string | undefined {
  * {@link parseTitleBorderColor} so a parsed value slots straight
  * into the writer-side {@link SheetChart.axes.x.axisTitleBorderColor}.
  */
-export function parseAxisTitleBorderColor(axis: XmlElement): string | undefined {
+export function parseAxisTitleBorderColor(axis: XmlElement): ChartColor | undefined {
   const title = findChild(axis, "title");
   if (!title) return undefined;
   return parseSpPrBorderColor(title);
@@ -2134,6 +2161,30 @@ export function parseAxisTitleBorderDash(axis: XmlElement): ChartBorderDash | un
   const title = findChild(axis, "title");
   if (!title) return undefined;
   return parseBorderDashFromSpPr(title);
+}
+
+/**
+ * Pull the `cap` attribute off `<c:title><c:spPr><a:ln cap=".."/>`
+ * scoped to an axis element. Returns the {@link ChartLineCap} or
+ * `undefined` for absence / OOXML default `"flat"`.
+ */
+export function parseAxisTitleBorderCap(axis: XmlElement): ChartLineCap | undefined {
+  const title = findChild(axis, "title");
+  if (!title) return undefined;
+  return parseBorderCapFromSpPr(title);
+}
+
+/**
+ * Pull the `cmpd` attribute off `<c:title><c:spPr><a:ln cmpd=".."/>`
+ * scoped to an axis element. Returns the {@link ChartLineCompound} or
+ * `undefined` for absence / OOXML default `"sng"`.
+ */
+export function parseAxisTitleBorderCompound(
+  axis: XmlElement,
+): ChartLineCompound | undefined {
+  const title = findChild(axis, "title");
+  if (!title) return undefined;
+  return parseBorderCompoundFromSpPr(title);
 }
 
 /**
@@ -2266,12 +2317,12 @@ export interface AxisRenderOptions {
    * renders a title — the per-family axis builders gate the value on
    * the `xAxisTitle` / `yAxisTitle` field.
    */
-  xAxisTitleColor: string | undefined;
+  xAxisTitleColor: ChartColor | undefined;
   /**
    * Axis-title font color emitted on the Y axis. Same shape and emit
    * semantics as {@link xAxisTitleColor}.
    */
-  yAxisTitleColor: string | undefined;
+  yAxisTitleColor: ChartColor | undefined;
   /**
    * Axis-title strikethrough flag emitted on the X axis via
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
@@ -2384,12 +2435,12 @@ export interface AxisRenderOptions {
    * when the axis renders a title — the per-family axis builders
    * gate the value on the `xAxisTitle` / `yAxisTitle` field.
    */
-  xAxisTitleFillColor: string | undefined;
+  xAxisTitleFillColor: ChartColor | undefined;
   /**
    * Axis-title background fill emitted on the Y axis. Same shape and
    * emit semantics as {@link xAxisTitleFillColor}.
    */
-  yAxisTitleFillColor: string | undefined;
+  yAxisTitleFillColor: ChartColor | undefined;
   /**
    * Axis-title border (line stroke) color emitted on the X axis via
    * `<c:title><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/>
@@ -2411,12 +2462,12 @@ export interface AxisRenderOptions {
    * builders gate the value on the `xAxisTitle` / `yAxisTitle`
    * field.
    */
-  xAxisTitleBorderColor: string | undefined;
+  xAxisTitleBorderColor: ChartColor | undefined;
   /**
    * Axis-title border emitted on the Y axis. Same shape and emit
    * semantics as {@link xAxisTitleBorderColor}.
    */
-  yAxisTitleBorderColor: string | undefined;
+  yAxisTitleBorderColor: ChartColor | undefined;
   /**
    * Axis-title border (line stroke) thickness emitted on the X axis
    * via `<c:title><c:spPr><a:ln w="EMU"/></c:spPr></c:title>`. The
@@ -2449,6 +2500,28 @@ export interface AxisRenderOptions {
    * semantics as {@link xAxisTitleBorderDash}.
    */
   yAxisTitleBorderDash: ChartBorderDash | undefined;
+  /**
+   * Axis-title border line cap style emitted on the X axis via
+   * `<c:title><c:spPr><a:ln cap=".."/>`. Mirrors
+   * {@link SheetChart.titleBorderCap}.
+   */
+  xAxisTitleBorderCap: ChartLineCap | undefined;
+  /**
+   * Axis-title border line cap style emitted on the Y axis. Same shape
+   * and emit semantics as {@link xAxisTitleBorderCap}.
+   */
+  yAxisTitleBorderCap: ChartLineCap | undefined;
+  /**
+   * Axis-title border compound line style emitted on the X axis via
+   * `<c:title><c:spPr><a:ln cmpd=".."/>`. Mirrors
+   * {@link SheetChart.titleBorderCompound}.
+   */
+  xAxisTitleBorderCompound: ChartLineCompound | undefined;
+  /**
+   * Axis-title border compound emitted on the Y axis. Same shape and
+   * emit semantics as {@link xAxisTitleBorderCompound}.
+   */
+  yAxisTitleBorderCompound: ChartLineCompound | undefined;
   xGridlines: { major: boolean; minor: boolean } | undefined;
   yGridlines: { major: boolean; minor: boolean } | undefined;
   xScale: ChartAxisScale | undefined;
@@ -2544,12 +2617,12 @@ export interface AxisRenderOptions {
    * `xLabelItalic`, or `xLabelColor` is set so the OOXML schema's
    * `<c:txPr>` slot carries every pinned typography knob.
    */
-  xLabelColor: string | undefined;
+  xLabelColor: ChartColor | undefined;
   /**
    * Tick-label font color emitted on the Y axis. Same shape and
    * semantics as {@link xLabelColor}.
    */
-  yLabelColor: string | undefined;
+  yLabelColor: ChartColor | undefined;
   /**
    * Tick-label underline flag emitted on the X axis via
    * `<c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr>`.
@@ -3088,7 +3161,7 @@ export function normalizeAxisLabelItalic(value: boolean | undefined): boolean | 
  * color (Excel's reference behavior for fresh tick labels without a
  * custom color).
  */
-export function normalizeAxisLabelColor(value: string | undefined): string | undefined {
+export function normalizeAxisLabelColor(value: ChartColor | undefined): ChartColor | undefined {
   return normalizeTitleColor(value);
 }
 
@@ -3198,7 +3271,7 @@ export function buildAxisTxPr(
   fontSizePt: number | undefined,
   bold: boolean | undefined,
   italic: boolean | undefined,
-  rgbHex: string | undefined,
+  rgbHex: ChartColor | undefined,
   underline: boolean | undefined,
   strike: boolean | undefined,
   fontFamily: string | undefined,
@@ -3246,8 +3319,8 @@ export function buildAxisTxPr(
   // `<a:solidFill>` block so the labels inherit the theme text color
   // (Excel's reference behavior for a fresh axis that has not had a
   // custom tick-label color picked).
-  const solidFillChild = rgbHex
-    ? xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: rgbHex })])
+  const solidFillChild = rgbHex !== undefined
+    ? xmlElement("a:solidFill", undefined, [buildColorElement(rgbHex)])
     : undefined;
   // OOXML's `<a:defRPr><a:latin typeface=".."/></a:defRPr>` carries
   // the tick-label font family. The `<a:latin>` element follows
@@ -3659,6 +3732,8 @@ export function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOpti
         opts.xAxisTitleBorderColor,
         opts.xAxisTitleBorderWidth,
         opts.xAxisTitleBorderDash,
+        opts.xAxisTitleBorderCap,
+        opts.xAxisTitleBorderCompound,
       ),
     );
   catAxChildren.push(
@@ -3740,6 +3815,8 @@ export function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOpti
         opts.yAxisTitleBorderColor,
         opts.yAxisTitleBorderWidth,
         opts.yAxisTitleBorderDash,
+        opts.yAxisTitleBorderCap,
+        opts.yAxisTitleBorderCompound,
       ),
     );
   valAxChildren.push(
@@ -3811,6 +3888,8 @@ export function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.xAxisTitleBorderColor,
         opts.xAxisTitleBorderWidth,
         opts.xAxisTitleBorderDash,
+        opts.xAxisTitleBorderCap,
+        opts.xAxisTitleBorderCompound,
       ),
     );
   xAxChildren.push(
@@ -3871,6 +3950,8 @@ export function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.yAxisTitleBorderColor,
         opts.yAxisTitleBorderWidth,
         opts.yAxisTitleBorderDash,
+        opts.yAxisTitleBorderCap,
+        opts.yAxisTitleBorderCompound,
       ),
     );
   yAxChildren.push(
@@ -3968,16 +4049,18 @@ export function buildAxisTitle(
   fontSizePt: number | undefined,
   bold: boolean | undefined,
   italic: boolean | undefined,
-  rgbHex: string | undefined,
+  rgbHex: ChartColor | undefined,
   strike: boolean | undefined,
   underline: boolean | undefined,
   fontFamily: string | undefined,
   overlay: boolean,
   layout: ResolvedManualLayout | undefined,
-  fillRgbHex: string | undefined,
-  borderRgbHex: string | undefined,
+  fillRgbHex: ChartColor | undefined,
+  borderRgbHex: ChartColor | undefined,
   borderWidthPt: number | undefined,
   borderDash: ChartBorderDash | undefined,
+  borderCap?: ChartLineCap | undefined,
+  borderCompound?: ChartLineCompound | undefined,
 ): string {
   const rot = rotationDeg === undefined ? 0 : rotationDeg * TITLE_ROT_PER_DEGREE;
   // OOXML's `<a:defRPr sz="N"/>` / `<a:rPr sz="N"/>` attribute is in
@@ -4052,8 +4135,8 @@ export function buildAxisTitle(
   // `<a:solidFill>` block so the title inherits the theme text color
   // (Excel's reference behavior for a fresh axis title that has not
   // had a custom color picked).
-  const solidFillChild = rgbHex
-    ? xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: rgbHex })])
+  const solidFillChild = rgbHex !== undefined
+    ? xmlElement("a:solidFill", undefined, [buildColorElement(rgbHex)])
     : undefined;
   // OOXML's `<a:defRPr><a:latin typeface=".."/></a:defRPr>` carries the
   // axis title's font family. Mirrors the chart-level `buildTitle`
@@ -4147,7 +4230,14 @@ export function buildAxisTitle(
   // {@link SheetChart.axes.x.axisTitleColor} pins — the typography
   // knobs target different children of `<c:title>` so a caller can
   // pin all three without conflict.
-  const titleSpPrXml = buildTitleSpPr(fillRgbHex, borderRgbHex, borderWidthPt, borderDash);
+  const titleSpPrXml = buildTitleSpPr(
+    fillRgbHex,
+    borderRgbHex,
+    borderWidthPt,
+    borderDash,
+    borderCap,
+    borderCompound,
+  );
   if (titleSpPrXml !== undefined) titleChildren.push(titleSpPrXml);
   return xmlElement("c:title", undefined, titleChildren);
 }
@@ -4224,7 +4314,7 @@ export function normalizeAxisTitleItalic(value: boolean | undefined): boolean | 
  * and the axis title inherits the theme text color (Excel's
  * reference behavior for a fresh axis title without a custom color).
  */
-export function normalizeAxisTitleColor(value: string | undefined): string | undefined {
+export function normalizeAxisTitleColor(value: ChartColor | undefined): ChartColor | undefined {
   return normalizeTitleColor(value);
 }
 
@@ -5538,9 +5628,9 @@ export function applyLabelItalicOverride(
  * field on those families since neither has axes.
  */
 export function applyLabelColorOverride(
-  source: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
+  source: ChartColor | undefined,
+  override: ChartColor | null | undefined,
+): ChartColor | undefined {
   if (override === undefined) return normalizeTitleColor(source);
   if (override === null) return undefined;
   return normalizeTitleColor(override);
@@ -5768,9 +5858,9 @@ export function applyAxisTitleItalicOverride(
  * the axis renders no title).
  */
 export function applyAxisTitleColorOverride(
-  source: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
+  source: ChartColor | undefined,
+  override: ChartColor | null | undefined,
+): ChartColor | undefined {
   if (override === undefined) return normalizeTitleColor(source);
   if (override === null) return undefined;
   return normalizeTitleColor(override);
@@ -5801,9 +5891,9 @@ export function applyAxisTitleColorOverride(
  * the axis renders no title).
  */
 export function applyAxisTitleFillColorOverride(
-  source: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
+  source: ChartColor | undefined,
+  override: ChartColor | null | undefined,
+): ChartColor | undefined {
   if (override === undefined) return normalizeTitleColor(source);
   if (override === null) return undefined;
   return normalizeTitleColor(override);
@@ -5841,9 +5931,9 @@ export function applyAxisTitleFillColorOverride(
  * the axis renders no title).
  */
 export function applyAxisTitleBorderColorOverride(
-  source: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
+  source: ChartColor | undefined,
+  override: ChartColor | null | undefined,
+): ChartColor | undefined {
   if (override === undefined) return normalizeTitleColor(source);
   if (override === null) return undefined;
   return normalizeTitleColor(override);

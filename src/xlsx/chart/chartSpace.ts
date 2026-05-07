@@ -12,8 +12,12 @@
 // chart-writer.ts and stay there because their signatures and call
 // patterns remain orchestration-shape rather than per-host.
 
-import type { ChartDisplayBlanksAs, ChartProtection } from "../../_types";
-import { normalizeRgbHex } from "./shape";
+import type {
+  ChartColor,
+  ChartDisplayBlanksAs,
+  ChartProtection,
+} from "../../_types";
+import { normalizeChartColor, normalizeRgbHex } from "./shape";
 
 /**
  * Resolve a `dispBlanksAs` override.
@@ -243,8 +247,10 @@ export function resolveCloneProtection(
  * the field rather than carry a value the writer would silently elide
  * back to absence.
  */
-export function normalizeClonePlotAreaFillColor(value: string | undefined): string | undefined {
-  return normalizeRgbHex(value);
+export function normalizeClonePlotAreaFillColor(
+  value: ChartColor | undefined,
+): ChartColor | undefined {
+  return normalizeChartColor(value);
 }
 
 /**
@@ -259,8 +265,10 @@ export function normalizeClonePlotAreaFillColor(value: string | undefined): stri
  * would silently elide back to absence. Mirrors
  * {@link normalizeClonePlotAreaFillColor} — same hex grammar.
  */
-export function normalizeClonePlotAreaBorderColor(value: string | undefined): string | undefined {
-  return normalizeRgbHex(value);
+export function normalizeClonePlotAreaBorderColor(
+  value: ChartColor | undefined,
+): ChartColor | undefined {
+  return normalizeChartColor(value);
 }
 
 /**
@@ -275,8 +283,10 @@ export function normalizeClonePlotAreaBorderColor(value: string | undefined): st
  * so the cloned chart drops the field rather than carry a value the
  * writer would silently elide back to absence.
  */
-export function normalizeCloneChartSpaceFillColor(value: string | undefined): string | undefined {
-  return normalizeRgbHex(value);
+export function normalizeCloneChartSpaceFillColor(
+  value: ChartColor | undefined,
+): ChartColor | undefined {
+  return normalizeChartColor(value);
 }
 
 /**
@@ -302,9 +312,9 @@ export function normalizeCloneChartSpaceFillColor(value: string | undefined): st
  * chart has a `<c:chartSpace>` document root to host the fill.
  */
 export function resolveCloneChartSpaceFillColor(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
+  sourceValue: ChartColor | undefined,
+  override: ChartColor | null | undefined,
+): ChartColor | undefined {
   if (override === undefined) return normalizeCloneChartSpaceFillColor(sourceValue);
   if (override === null) return undefined;
   return normalizeCloneChartSpaceFillColor(override);
@@ -322,8 +332,10 @@ export function resolveCloneChartSpaceFillColor(
  * so the cloned chart drops the field rather than carry a value the
  * writer would silently elide back to absence.
  */
-export function normalizeCloneChartSpaceBorderColor(value: string | undefined): string | undefined {
-  return normalizeRgbHex(value);
+export function normalizeCloneChartSpaceBorderColor(
+  value: ChartColor | undefined,
+): ChartColor | undefined {
+  return normalizeChartColor(value);
 }
 
 /**
@@ -349,9 +361,9 @@ export function normalizeCloneChartSpaceBorderColor(value: string | undefined): 
  * has a `<c:chartSpace>` document root to host the stroke.
  */
 export function resolveCloneChartSpaceBorderColor(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
+  sourceValue: ChartColor | undefined,
+  override: ChartColor | null | undefined,
+): ChartColor | undefined {
   if (override === undefined) return normalizeCloneChartSpaceBorderColor(sourceValue);
   if (override === null) return undefined;
   return normalizeCloneChartSpaceBorderColor(override);

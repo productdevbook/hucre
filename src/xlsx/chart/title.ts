@@ -21,17 +21,31 @@
 // per-host commentary remains meaningful at the call site even after
 // relocation.
 
-import type { ChartBorderDash, ChartManualLayout, SheetChart } from "../../_types";
+import type {
+  ChartBorderDash,
+  ChartColor,
+  ChartLineCap,
+  ChartLineCompound,
+  ChartManualLayout,
+  SheetChart,
+} from "../../_types";
 import type { XmlElement } from "../../xml/parser";
 import { xmlElement, xmlEscape, xmlSelfClose } from "../../xml/writer";
 import {
   EMU_PER_PT,
+  buildColorElement,
   clampStrokeWidthPt,
   normalizeBorderDash,
+  normalizeChartColor,
+  normalizeLineCap,
+  normalizeLineCompound,
   normalizeRgbHex,
   normalizeRgbHex as normalizeRgbHexShared,
+  parseBorderCapFromSpPr,
+  parseBorderCompoundFromSpPr,
   parseBorderDashFromSpPr,
   parseBorderWidthFromSpPr,
+  parseSchemeClr,
   parseSpPrBorderColor,
   parseSpPrFill,
 } from "./shape";
@@ -384,17 +398,17 @@ export function parseTitleItalic(chartEl: XmlElement): boolean | undefined {
  * `<a:solidFill>` elsewhere in the chart (e.g. on an axis title or
  * a data-labels block) cannot leak in.
  */
-export function parseTitleColor(chartEl: XmlElement): string | undefined {
+export function parseTitleColor(chartEl: XmlElement): ChartColor | undefined {
   const title = findChild(chartEl, "title");
   if (!title) return undefined;
   const tx = findChild(title, "tx");
   if (!tx) return undefined;
   const rich = findChild(tx, "rich");
   if (!rich) return undefined;
-  // `<a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr>` is the OOXML path
-  // Excel writes for the default-paragraph font color. The reader
-  // walks the canonical chain and bails on the first missing link so
-  // a malformed `<c:rich>` surfaces as absence rather than a
+  // `<a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr>` (or `<a:schemeClr>`)
+  // is the OOXML path Excel writes for the default-paragraph font color.
+  // The reader walks the canonical chain and bails on the first missing
+  // link so a malformed `<c:rich>` surfaces as absence rather than a
   // fabricated value.
   const p = findChild(rich, "p");
   if (!p) return undefined;
@@ -405,9 +419,10 @@ export function parseTitleColor(chartEl: XmlElement): string | undefined {
   const solidFill = findChild(defRPr, "solidFill");
   if (!solidFill) return undefined;
   const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  const raw = srgbClr.attrs.val;
-  return normalizeRgbHex(raw);
+  if (srgbClr) return normalizeRgbHex(srgbClr.attrs.val);
+  const schemeClr = findChild(solidFill, "schemeClr");
+  if (schemeClr) return parseSchemeClr(schemeClr);
+  return undefined;
 }
 
 /**
@@ -445,7 +460,7 @@ export function parseTitleColor(chartEl: XmlElement): string | undefined {
  * authored as a `<c:strRef>` formula reference can still surface its
  * background fill.
  */
-export function parseTitleFillColor(chartEl: XmlElement): string | undefined {
+export function parseTitleFillColor(chartEl: XmlElement): ChartColor | undefined {
   const title = findChild(chartEl, "title");
   if (!title) return undefined;
   return parseSpPrFill(title);
@@ -490,7 +505,7 @@ export function parseTitleFillColor(chartEl: XmlElement): string | undefined {
  * title authored as a `<c:strRef>` formula reference can still
  * surface its border color.
  */
-export function parseTitleBorderColor(chartEl: XmlElement): string | undefined {
+export function parseTitleBorderColor(chartEl: XmlElement): ChartColor | undefined {
   const title = findChild(chartEl, "title");
   if (!title) return undefined;
   return parseSpPrBorderColor(title);
@@ -542,6 +557,33 @@ export function parseTitleBorderDash(chartEl: XmlElement): ChartBorderDash | und
   const title = findChild(chartEl, "title");
   if (!title) return undefined;
   return parseBorderDashFromSpPr(title);
+}
+
+/**
+ * Pull the `cap` attribute off `<c:title><c:spPr><a:ln cap=".."/>
+ * </c:spPr></c:title>` and return the recognized {@link ChartLineCap}
+ * value. Returns `undefined` when the chain is missing, when the
+ * attribute is absent / unrecognized, or when it matches the OOXML
+ * default `"flat"`. Delegates to {@link parseBorderCapFromSpPr}.
+ */
+export function parseTitleBorderCap(chartEl: XmlElement): ChartLineCap | undefined {
+  const title = findChild(chartEl, "title");
+  if (!title) return undefined;
+  return parseBorderCapFromSpPr(title);
+}
+
+/**
+ * Pull the `cmpd` attribute off `<c:title><c:spPr><a:ln cmpd=".."/>
+ * </c:spPr></c:title>` and return the recognized
+ * {@link ChartLineCompound} value. Returns `undefined` when the chain
+ * is missing, when the attribute is absent / unrecognized, or when it
+ * matches the OOXML default `"sng"`. Delegates to
+ * {@link parseBorderCompoundFromSpPr}.
+ */
+export function parseTitleBorderCompound(chartEl: XmlElement): ChartLineCompound | undefined {
+  const title = findChild(chartEl, "title");
+  if (!title) return undefined;
+  return parseBorderCompoundFromSpPr(title);
 }
 
 /**
@@ -754,15 +796,17 @@ export function buildTitle(
   fontSizePt: number | undefined,
   bold: boolean | undefined,
   italic: boolean | undefined,
-  rgbHex: string | undefined,
+  rgbHex: ChartColor | undefined,
   strike: boolean | undefined,
   underline: boolean | undefined,
   fontFamily: string | undefined,
   layout: ResolvedManualLayout | undefined,
-  fillRgbHex: string | undefined,
-  borderRgbHex: string | undefined,
+  fillRgbHex: ChartColor | undefined,
+  borderRgbHex: ChartColor | undefined,
   borderWidthPt: number | undefined,
   borderDash: ChartBorderDash | undefined,
+  borderCap?: ChartLineCap | undefined,
+  borderCompound?: ChartLineCompound | undefined,
 ): string {
   // OOXML's `<a:bodyPr rot="N"/>` attribute is in 60000ths of a degree.
   // The writer holds `titleRotation` in whole degrees and converts at
@@ -838,8 +882,8 @@ export function buildTitle(
   // collapses to omitting the entire `<a:solidFill>` block so the
   // title inherits the theme text color (Excel's reference behavior
   // for a fresh chart title that has not had a custom color picked).
-  const solidFillChild = rgbHex
-    ? xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: rgbHex })])
+  const solidFillChild = rgbHex !== undefined
+    ? xmlElement("a:solidFill", undefined, [buildColorElement(rgbHex)])
     : undefined;
   // OOXML's `<a:defRPr><a:latin typeface=".."/></a:defRPr>` carries the
   // title's font family. The writer holds `titleFontFamily` as a non-
@@ -935,7 +979,14 @@ export function buildTitle(
   // {@link SheetChart.titleColor} pins — the typography knobs target
   // different children of `<c:title>` so a caller can pin both
   // without conflict.
-  const titleSpPrXml = buildTitleSpPr(fillRgbHex, borderRgbHex, borderWidthPt, borderDash);
+  const titleSpPrXml = buildTitleSpPr(
+    fillRgbHex,
+    borderRgbHex,
+    borderWidthPt,
+    borderDash,
+    borderCap,
+    borderCompound,
+  );
   if (titleSpPrXml !== undefined) {
     titleChildren.push(titleSpPrXml);
   }
@@ -971,37 +1022,45 @@ export function buildTitle(
  * authors.
  */
 export function buildTitleSpPr(
-  fillRgbHex: string | undefined,
-  borderRgbHex: string | undefined,
+  fillRgbHex: ChartColor | undefined,
+  borderRgbHex: ChartColor | undefined,
   borderWidthPt: number | undefined,
   borderDash: ChartBorderDash | undefined,
+  borderCap?: ChartLineCap | undefined,
+  borderCompound?: ChartLineCompound | undefined,
 ): string | undefined {
   if (
     fillRgbHex === undefined &&
     borderRgbHex === undefined &&
     borderWidthPt === undefined &&
-    borderDash === undefined
+    borderDash === undefined &&
+    borderCap === undefined &&
+    borderCompound === undefined
   ) {
     return undefined;
   }
   const children: string[] = [];
   if (fillRgbHex !== undefined) {
-    children.push(
-      xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillRgbHex })]),
-    );
+    children.push(xmlElement("a:solidFill", undefined, [buildColorElement(fillRgbHex)]));
   }
-  if (borderRgbHex !== undefined || borderWidthPt !== undefined || borderDash !== undefined) {
+  if (
+    borderRgbHex !== undefined ||
+    borderWidthPt !== undefined ||
+    borderDash !== undefined ||
+    borderCap !== undefined ||
+    borderCompound !== undefined
+  ) {
     const lnAttrs: Record<string, string | number> = {};
     if (borderWidthPt !== undefined) {
       // OOXML stores stroke width in EMU (1 pt = 12 700 EMU). Round to
       // the nearest integer because the schema types `w` as `xsd:int`.
       lnAttrs.w = Math.round(borderWidthPt * EMU_PER_PT);
     }
+    if (borderCap !== undefined) lnAttrs.cap = borderCap;
+    if (borderCompound !== undefined) lnAttrs.cmpd = borderCompound;
     const lnChildren: string[] = [];
     if (borderRgbHex !== undefined) {
-      lnChildren.push(
-        xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: borderRgbHex })]),
-      );
+      lnChildren.push(xmlElement("a:solidFill", undefined, [buildColorElement(borderRgbHex)]));
     }
     // `<a:prstDash>` follows `<a:solidFill>` per CT_LineProperties
     // schema sequence (ECMA-376 Part 1, §20.1.2.3.24).
@@ -1176,8 +1235,11 @@ export function resolveTitleItalic(chart: SheetChart): boolean | undefined {
  * inherits the theme text color (Excel's reference behavior for a
  * fresh chart title without a custom color).
  */
-export function normalizeTitleColor(value: string | undefined): string | undefined {
-  return normalizeRgbHexShared(value);
+export function normalizeTitleColor(
+  value: ChartColor | undefined,
+): ChartColor | undefined {
+  if (typeof value === "string") return normalizeRgbHexShared(value);
+  return normalizeChartColor(value);
 }
 
 /**
@@ -1192,7 +1254,7 @@ export function normalizeTitleColor(value: string | undefined): string | undefin
  * on `showTitle && chart.title`. A chart whose title is suppressed
  * has no `<c:title>` block to host the fill in either case.
  */
-export function resolveTitleColor(chart: SheetChart): string | undefined {
+export function resolveTitleColor(chart: SheetChart): ChartColor | undefined {
   return normalizeTitleColor(chart.titleColor);
 }
 
@@ -1217,7 +1279,7 @@ export function resolveTitleColor(chart: SheetChart): string | undefined {
  * — the two resolvers target different children of `<c:title>` so a
  * single configuration call can pin both.
  */
-export function resolveTitleFillColor(chart: SheetChart): string | undefined {
+export function resolveTitleFillColor(chart: SheetChart): ChartColor | undefined {
   return normalizeTitleColor(chart.titleFillColor);
 }
 
@@ -1244,7 +1306,7 @@ export function resolveTitleFillColor(chart: SheetChart): string | undefined {
  * {@link normalizePlotAreaBorderColor} — same hex grammar, distinct
  * host element (`<c:title>` vs `<c:plotArea>`).
  */
-export function resolveTitleBorderColor(chart: SheetChart): string | undefined {
+export function resolveTitleBorderColor(chart: SheetChart): ChartColor | undefined {
   return normalizeTitleColor(chart.titleBorderColor);
 }
 
@@ -1294,6 +1356,28 @@ export function resolveTitleBorderWidth(chart: SheetChart): number | undefined {
  */
 export function resolveTitleBorderDash(chart: SheetChart): ChartBorderDash | undefined {
   return normalizeBorderDash(chart.titleBorderDash);
+}
+
+/**
+ * Resolve `<c:title><c:spPr><a:ln cap=".."/></c:spPr></c:title>` from
+ * {@link SheetChart.titleBorderCap}. Returns the recognized
+ * {@link ChartLineCap} or `undefined` for absence / the OOXML default
+ * `"flat"`. Delegates to {@link normalizeLineCap}.
+ */
+export function resolveTitleBorderCap(chart: SheetChart): ChartLineCap | undefined {
+  return normalizeLineCap(chart.titleBorderCap);
+}
+
+/**
+ * Resolve `<c:title><c:spPr><a:ln cmpd=".."/></c:spPr></c:title>` from
+ * {@link SheetChart.titleBorderCompound}. Returns the recognized
+ * {@link ChartLineCompound} or `undefined` for absence / the OOXML
+ * default `"sng"`. Delegates to {@link normalizeLineCompound}.
+ */
+export function resolveTitleBorderCompound(
+  chart: SheetChart,
+): ChartLineCompound | undefined {
+  return normalizeLineCompound(chart.titleBorderCompound);
 }
 
 /**
@@ -1625,9 +1709,9 @@ export function resolveCloneTitleItalic(
  * emitted, the fill has no slot in the rendered chart.
  */
 export function resolveCloneTitleColor(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
+  sourceValue: ChartColor | undefined,
+  override: ChartColor | null | undefined,
+): ChartColor | undefined {
   if (override === undefined) return normalizeTitleColor(sourceValue);
   if (override === null) return undefined;
   return normalizeTitleColor(override);
@@ -1663,9 +1747,9 @@ export function resolveCloneTitleColor(
  * color), so a caller can pin both without conflict.
  */
 export function resolveCloneTitleFillColor(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
+  sourceValue: ChartColor | undefined,
+  override: ChartColor | null | undefined,
+): ChartColor | undefined {
   if (override === undefined) return normalizeTitleColor(sourceValue);
   if (override === null) return undefined;
   return normalizeTitleColor(override);
@@ -1700,9 +1784,9 @@ export function resolveCloneTitleFillColor(
  * caller can pin both without conflict.
  */
 export function resolveCloneTitleBorderColor(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
+  sourceValue: ChartColor | undefined,
+  override: ChartColor | null | undefined,
+): ChartColor | undefined {
   if (override === undefined) return normalizeTitleColor(sourceValue);
   if (override === null) return undefined;
   return normalizeTitleColor(override);

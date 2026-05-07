@@ -14,8 +14,11 @@
 
 import type {
   ChartBorderDash,
+  ChartColor,
   ChartLegendEntry,
   ChartLegendPosition,
+  ChartLineCap,
+  ChartLineCompound,
   ChartManualLayout,
   SheetChart,
 } from "../../_types";
@@ -23,13 +26,22 @@ import type { XmlElement } from "../../xml/parser";
 import { xmlElement, xmlSelfClose } from "../../xml/writer";
 import {
   EMU_PER_PT,
+  buildColorElement,
   clampStrokeWidthPt,
   normalizeBorderDash,
+  normalizeChartColor,
+  normalizeLineCap,
+  normalizeLineCompound,
   normalizeRgbHex,
+  parseBorderCapFromSpPr,
+  parseBorderCompoundFromSpPr,
   parseBorderDashFromSpPr,
   parseBorderWidthFromSpPr,
+  parseSchemeClr,
   parseSpPrBorderColor,
   parseSpPrFill,
+  resolveLineCap,
+  resolveLineCompound,
 } from "./shape";
 import {
   type ResolvedManualLayout,
@@ -61,7 +73,7 @@ export interface ResolvedLegendEntry {
   italic?: boolean;
   underline?: boolean;
   strikethrough?: boolean;
-  color?: string;
+  color?: ChartColor;
   fontFamily?: string;
 }
 
@@ -504,7 +516,7 @@ export function parseLegendStrikethrough(chartEl: XmlElement): boolean | undefin
  * exactly so a parsed value slots straight back into the writer's
  * emit path.
  */
-export function parseLegendFontColor(chartEl: XmlElement): string | undefined {
+export function parseLegendFontColor(chartEl: XmlElement): ChartColor | undefined {
   const legend = findChild(chartEl, "legend");
   if (!legend) return undefined;
   const txPr = findChild(legend, "txPr");
@@ -518,8 +530,10 @@ export function parseLegendFontColor(chartEl: XmlElement): string | undefined {
   const solidFill = findChild(defRPr, "solidFill");
   if (!solidFill) return undefined;
   const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  return normalizeRgbHex(srgbClr.attrs.val);
+  if (srgbClr) return normalizeRgbHex(srgbClr.attrs.val);
+  const schemeClr = findChild(solidFill, "schemeClr");
+  if (schemeClr) return parseSchemeClr(schemeClr);
+  return undefined;
 }
 
 /**
@@ -629,7 +643,7 @@ export function parseLegendLayout(chartEl: XmlElement): ChartManualLayout | unde
  * `<c:legend><c:txPr>` — the two readers walk disjoint paths so a
  * caller can pin both knobs without conflict.
  */
-export function parseLegendFillColor(chartEl: XmlElement): string | undefined {
+export function parseLegendFillColor(chartEl: XmlElement): ChartColor | undefined {
   const legend = findChild(chartEl, "legend");
   if (!legend) return undefined;
   return parseSpPrFill(legend);
@@ -670,7 +684,7 @@ export function parseLegendFillColor(chartEl: XmlElement): string | undefined {
  * children of the same `<c:spPr>` block so a caller can pin both
  * knobs without conflict.
  */
-export function parseLegendBorderColor(chartEl: XmlElement): string | undefined {
+export function parseLegendBorderColor(chartEl: XmlElement): ChartColor | undefined {
   const legend = findChild(chartEl, "legend");
   if (!legend) return undefined;
   return parseSpPrBorderColor(legend);
@@ -722,6 +736,28 @@ export function parseLegendBorderDash(chartEl: XmlElement): ChartBorderDash | un
   return parseBorderDashFromSpPr(legend);
 }
 
+/**
+ * Pull the `cap` attribute off `<c:legend><c:spPr><a:ln cap=".."/>`.
+ * Returns the {@link ChartLineCap} or `undefined` for absence /
+ * malformed / OOXML default `"flat"`.
+ */
+export function parseLegendBorderCap(chartEl: XmlElement): ChartLineCap | undefined {
+  const legend = findChild(chartEl, "legend");
+  if (!legend) return undefined;
+  return parseBorderCapFromSpPr(legend);
+}
+
+/**
+ * Pull the `cmpd` attribute off `<c:legend><c:spPr><a:ln cmpd=".."/>`.
+ * Returns the {@link ChartLineCompound} or `undefined` for absence /
+ * malformed / OOXML default `"sng"`.
+ */
+export function parseLegendBorderCompound(chartEl: XmlElement): ChartLineCompound | undefined {
+  const legend = findChild(chartEl, "legend");
+  if (!legend) return undefined;
+  return parseBorderCompoundFromSpPr(legend);
+}
+
 // ── Writer ────────────────────────────────────────────────────────
 
 export function resolveLegendPosition(chart: SheetChart): LegendPos | null {
@@ -753,13 +789,15 @@ export function buildLegend(
   italic: boolean | undefined,
   underline: boolean | undefined,
   strikethrough: boolean | undefined,
-  rgbHex: string | undefined,
+  rgbHex: ChartColor | undefined,
   fontFamily: string | undefined,
   layout: ResolvedManualLayout | undefined,
-  fillRgbHex: string | undefined,
-  borderRgbHex: string | undefined,
+  fillRgbHex: ChartColor | undefined,
+  borderRgbHex: ChartColor | undefined,
   borderWidthPt: number | undefined,
   borderDash: ChartBorderDash | undefined,
+  borderCap?: ChartLineCap | undefined,
+  borderCompound?: ChartLineCompound | undefined,
 ): string {
   const children: string[] = [xmlSelfClose("c:legendPos", { val: pos })];
 
@@ -818,7 +856,14 @@ export function buildLegend(
   // children (`<a:effectLst>` effects, gradient / pattern / picture
   // fills, line dash / width / compound styles) are not modelled at
   // this layer.
-  const legendSpPrXml = buildLegendSpPr(fillRgbHex, borderRgbHex, borderWidthPt, borderDash);
+  const legendSpPrXml = buildLegendSpPr(
+    fillRgbHex,
+    borderRgbHex,
+    borderWidthPt,
+    borderDash,
+    borderCap,
+    borderCompound,
+  );
   if (legendSpPrXml !== undefined) {
     children.push(legendSpPrXml);
   }
@@ -878,37 +923,45 @@ export function buildLegend(
  * knob the writer authors.
  */
 export function buildLegendSpPr(
-  fillRgbHex: string | undefined,
-  borderRgbHex: string | undefined,
+  fillRgbHex: ChartColor | undefined,
+  borderRgbHex: ChartColor | undefined,
   borderWidthPt: number | undefined,
   borderDash: ChartBorderDash | undefined,
+  borderCap?: ChartLineCap | undefined,
+  borderCompound?: ChartLineCompound | undefined,
 ): string | undefined {
   if (
     fillRgbHex === undefined &&
     borderRgbHex === undefined &&
     borderWidthPt === undefined &&
-    borderDash === undefined
+    borderDash === undefined &&
+    borderCap === undefined &&
+    borderCompound === undefined
   ) {
     return undefined;
   }
   const children: string[] = [];
   if (fillRgbHex !== undefined) {
-    children.push(
-      xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillRgbHex })]),
-    );
+    children.push(xmlElement("a:solidFill", undefined, [buildColorElement(fillRgbHex)]));
   }
-  if (borderRgbHex !== undefined || borderWidthPt !== undefined || borderDash !== undefined) {
+  if (
+    borderRgbHex !== undefined ||
+    borderWidthPt !== undefined ||
+    borderDash !== undefined ||
+    borderCap !== undefined ||
+    borderCompound !== undefined
+  ) {
     const lnAttrs: Record<string, string | number> = {};
     if (borderWidthPt !== undefined) {
       // OOXML stores stroke width in EMU (1 pt = 12 700 EMU). Round to
       // the nearest integer because the schema types `w` as `xsd:int`.
       lnAttrs.w = Math.round(borderWidthPt * EMU_PER_PT);
     }
+    if (borderCap !== undefined) lnAttrs.cap = borderCap;
+    if (borderCompound !== undefined) lnAttrs.cmpd = borderCompound;
     const lnChildren: string[] = [];
     if (borderRgbHex !== undefined) {
-      lnChildren.push(
-        xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: borderRgbHex })]),
-      );
+      lnChildren.push(xmlElement("a:solidFill", undefined, [buildColorElement(borderRgbHex)]));
     }
     // `<a:prstDash>` follows `<a:solidFill>` per CT_LineProperties
     // schema sequence (ECMA-376 Part 1, §20.1.2.3.24).
@@ -954,7 +1007,7 @@ export function buildLegendTxPr(
   italic: boolean | undefined,
   underline: boolean | undefined,
   strikethrough: boolean | undefined,
-  rgbHex: string | undefined,
+  rgbHex: ChartColor | undefined,
   fontFamily: string | undefined,
 ): string | undefined {
   if (
@@ -985,8 +1038,8 @@ export function buildLegendTxPr(
   // `<a:solidFill>` block so the legend inherits the theme text
   // color (Excel's reference behavior for a fresh legend that has
   // not had a custom font color picked).
-  const solidFillChild = rgbHex
-    ? xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: rgbHex })])
+  const solidFillChild = rgbHex !== undefined
+    ? xmlElement("a:solidFill", undefined, [buildColorElement(rgbHex)])
     : undefined;
   // OOXML's `<a:defRPr><a:latin typeface=".."/></a:defRPr>` carries
   // the legend font family. The `<a:latin>` element follows
@@ -1151,7 +1204,7 @@ export function resolveLegendStrikethrough(chart: SheetChart): boolean | undefin
  * visibility. A chart whose legend is suppressed has no `<c:txPr>`
  * slot to host the fill in either case.
  */
-export function resolveLegendFontColor(chart: SheetChart): string | undefined {
+export function resolveLegendFontColor(chart: SheetChart): ChartColor | undefined {
   return normalizeTitleColor(chart.legendFontColor);
 }
 
@@ -1247,9 +1300,9 @@ export function resolveLegendEntries(chart: SheetChart): ResolvedLegendEntry[] {
     else if (entry.underline === false) resolved.underline = false;
     if (entry.strikethrough === true) resolved.strikethrough = true;
     else if (entry.strikethrough === false) resolved.strikethrough = false;
-    if (typeof entry.color === "string") {
-      const hex = entry.color.replace(/^#/, "").trim().toUpperCase();
-      if (/^[0-9A-F]{6}$/.test(hex)) resolved.color = hex;
+    if (entry.color !== undefined) {
+      const normalized = normalizeChartColor(entry.color);
+      if (normalized !== undefined) resolved.color = normalized;
     }
     if (typeof entry.fontFamily === "string") {
       const trimmed = entry.fontFamily.trim();
@@ -1323,7 +1376,7 @@ export function resolveLegendLayout(chart: SheetChart): ResolvedManualLayout | u
  * `<c:legend><c:txPr>` — the two resolvers target different children
  * of `<c:legend>` so a single configuration call can pin both.
  */
-export function resolveLegendFillColor(chart: SheetChart): string | undefined {
+export function resolveLegendFillColor(chart: SheetChart): ChartColor | undefined {
   return normalizeTitleColor(chart.legendFillColor);
 }
 
@@ -1351,7 +1404,7 @@ export function resolveLegendFillColor(chart: SheetChart): string | undefined {
  * on the `CT_ShapeProperties` schema — but lands on `<c:legend>`'s
  * own `<c:spPr>` block.
  */
-export function resolveLegendBorderColor(chart: SheetChart): string | undefined {
+export function resolveLegendBorderColor(chart: SheetChart): ChartColor | undefined {
   return normalizeTitleColor(chart.legendBorderColor);
 }
 
@@ -1710,9 +1763,9 @@ export function resolveCloneLegendStrikethrough(
  * in the rendered chart.
  */
 export function resolveCloneLegendFontColor(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
+  sourceValue: ChartColor | undefined,
+  override: ChartColor | null | undefined,
+): ChartColor | undefined {
   if (override === undefined) return normalizeTitleColor(sourceValue);
   if (override === null) return undefined;
   return normalizeTitleColor(override);
@@ -1810,9 +1863,9 @@ export function resolveCloneLegendLayout(
  * conflict.
  */
 export function resolveCloneLegendFillColor(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
+  sourceValue: ChartColor | undefined,
+  override: ChartColor | null | undefined,
+): ChartColor | undefined {
   if (override === undefined) return normalizeTitleColor(sourceValue);
   if (override === null) return undefined;
   return normalizeTitleColor(override);
@@ -1846,9 +1899,9 @@ export function resolveCloneLegendFillColor(
  * `<a:ln>` for stroke), so a caller can pin both without conflict.
  */
 export function resolveCloneLegendBorderColor(
-  sourceValue: string | undefined,
-  override: string | null | undefined,
-): string | undefined {
+  sourceValue: ChartColor | undefined,
+  override: ChartColor | null | undefined,
+): ChartColor | undefined {
   if (override === undefined) return normalizeTitleColor(sourceValue);
   if (override === null) return undefined;
   return normalizeTitleColor(override);

@@ -24307,3 +24307,272 @@ describe("writeChart — dataLabelsBorderDash", () => {
     expect(reparsed?.series?.[0]?.dataLabels?.borderDash).toBe("lgDash");
   });
 });
+
+// ── theme color refs (writer) ─────────────────────────────────────
+describe("writeChart — theme color refs", () => {
+  it("emits <a:schemeClr> for chartSpaceFillColor with theme reference", () => {
+    const chart = makeChart({ chartSpaceFillColor: { theme: "accent1" } });
+    const result = writeChart(chart, "Sheet1");
+    expect(result.chartXml).toContain('<a:solidFill><a:schemeClr val="accent1"/></a:solidFill>');
+  });
+
+  it("emits <a:schemeClr> with mods for chartSpaceFillColor", () => {
+    const chart = makeChart({
+      chartSpaceFillColor: { theme: "accent2", lumMod: 75000, lumOff: 25000 },
+    });
+    const result = writeChart(chart, "Sheet1");
+    expect(result.chartXml).toContain(
+      '<a:schemeClr val="accent2"><a:lumMod val="75000"/><a:lumOff val="25000"/></a:schemeClr>',
+    );
+  });
+
+  it("emits all five mods in OOXML schema order", () => {
+    const chart = makeChart({
+      chartSpaceFillColor: {
+        theme: "accent1",
+        lumMod: 60000,
+        lumOff: 40000,
+        tint: 10000,
+        shade: 20000,
+        alpha: 80000,
+      },
+    });
+    const result = writeChart(chart, "Sheet1");
+    // Schema order: tint, shade, alpha, lumMod, lumOff.
+    expect(result.chartXml).toContain(
+      '<a:schemeClr val="accent1"><a:tint val="10000"/><a:shade val="20000"/><a:alpha val="80000"/><a:lumMod val="60000"/><a:lumOff val="40000"/></a:schemeClr>',
+    );
+  });
+
+  it("string still emits <a:srgbClr> for backward compat", () => {
+    const chart = makeChart({ chartSpaceFillColor: "FF0000" });
+    const result = writeChart(chart, "Sheet1");
+    expect(result.chartXml).toContain('<a:solidFill><a:srgbClr val="FF0000"/></a:solidFill>');
+  });
+
+  it("round-trips theme color via parseChart", () => {
+    const chart = makeChart({
+      chartSpaceFillColor: { theme: "accent1", lumMod: 75000 },
+    });
+    const result = writeChart(chart, "Sheet1");
+    const reparsed = parseChart(result.chartXml);
+    expect(reparsed?.chartSpaceFillColor).toEqual({ theme: "accent1", lumMod: 75000 });
+  });
+
+  it("round-trips theme borderColor via parseChart", () => {
+    const chart = makeChart({
+      chartSpaceBorderColor: { theme: "accent2", shade: 50000 },
+      chartSpaceBorderWidth: 2,
+    });
+    const result = writeChart(chart, "Sheet1");
+    const reparsed = parseChart(result.chartXml);
+    expect(reparsed?.chartSpaceBorderColor).toEqual({ theme: "accent2", shade: 50000 });
+    expect(reparsed?.chartSpaceBorderWidth).toBe(2);
+  });
+
+  it("drops invalid theme name on emit", () => {
+    const chart = makeChart({ chartSpaceFillColor: { theme: "bogus" as never } });
+    const result = writeChart(chart, "Sheet1");
+    expect(result.chartXml).not.toContain('<a:schemeClr val="bogus"/>');
+  });
+
+  it("drops out-of-range mods on emit", () => {
+    const chart = makeChart({
+      chartSpaceFillColor: { theme: "accent1", lumMod: 999999 },
+    });
+    const result = writeChart(chart, "Sheet1");
+    // Mod is dropped — bare scheme color survives.
+    expect(result.chartXml).toContain('<a:solidFill><a:schemeClr val="accent1"/></a:solidFill>');
+    expect(result.chartXml).not.toContain('lumMod val="999999"');
+  });
+});
+
+// ── line cap / compound on chart-space border (writer) ────────────
+describe("writeChart — chart-space border cap / compound", () => {
+  it("emits cap='rnd' on <a:ln>", () => {
+    const chart = makeChart({
+      chartSpaceBorderColor: "000000",
+      chartSpaceBorderCap: "rnd",
+    });
+    const result = writeChart(chart, "Sheet1");
+    expect(result.chartXml).toContain('cap="rnd"');
+  });
+
+  it("collapses cap='flat' to no attribute (OOXML default)", () => {
+    const chart = makeChart({
+      chartSpaceBorderColor: "000000",
+      chartSpaceBorderCap: "flat",
+    });
+    const result = writeChart(chart, "Sheet1");
+    expect(result.chartXml).not.toContain('cap="flat"');
+  });
+
+  it("emits cmpd='dbl' on <a:ln>", () => {
+    const chart = makeChart({
+      chartSpaceBorderColor: "000000",
+      chartSpaceBorderCompound: "dbl",
+    });
+    const result = writeChart(chart, "Sheet1");
+    expect(result.chartXml).toContain('cmpd="dbl"');
+  });
+
+  it("collapses cmpd='sng' to no attribute", () => {
+    const chart = makeChart({
+      chartSpaceBorderColor: "000000",
+      chartSpaceBorderCompound: "sng",
+    });
+    const result = writeChart(chart, "Sheet1");
+    expect(result.chartXml).not.toContain('cmpd="sng"');
+  });
+
+  it("round-trips cap and cmpd together via parseChart", () => {
+    const chart = makeChart({
+      chartSpaceBorderColor: "FF0000",
+      chartSpaceBorderWidth: 1.5,
+      chartSpaceBorderDash: "dash",
+      chartSpaceBorderCap: "rnd",
+      chartSpaceBorderCompound: "thickThin",
+    });
+    const result = writeChart(chart, "Sheet1");
+    const reparsed = parseChart(result.chartXml);
+    expect(reparsed?.chartSpaceBorderColor).toBe("FF0000");
+    expect(reparsed?.chartSpaceBorderWidth).toBe(1.5);
+    expect(reparsed?.chartSpaceBorderDash).toBe("dash");
+    expect(reparsed?.chartSpaceBorderCap).toBe("rnd");
+    expect(reparsed?.chartSpaceBorderCompound).toBe("thickThin");
+  });
+
+  it("emits cap/cmpd on plotArea border", () => {
+    const chart = makeChart({
+      plotAreaBorderColor: "000000",
+      plotAreaBorderCap: "sq",
+      plotAreaBorderCompound: "dbl",
+    });
+    const result = writeChart(chart, "Sheet1");
+    expect(result.chartXml).toContain('cap="sq"');
+    expect(result.chartXml).toContain('cmpd="dbl"');
+  });
+
+  it("emits cap/cmpd on legend border", () => {
+    const chart = makeChart({
+      legend: "right",
+      legendBorderColor: "000000",
+      legendBorderCap: "rnd",
+      legendBorderCompound: "tri",
+    });
+    const result = writeChart(chart, "Sheet1");
+    expect(result.chartXml).toContain('cap="rnd"');
+    expect(result.chartXml).toContain('cmpd="tri"');
+  });
+
+  it("emits cap/cmpd on title border", () => {
+    const chart = makeChart({
+      title: "Chart Title",
+      titleBorderColor: "000000",
+      titleBorderCap: "sq",
+      titleBorderCompound: "thinThick",
+    });
+    const result = writeChart(chart, "Sheet1");
+    expect(result.chartXml).toContain('cap="sq"');
+    expect(result.chartXml).toContain('cmpd="thinThick"');
+  });
+
+  it("emits cap/cmpd on axis title border", () => {
+    const chart = makeChart({
+      axes: {
+        x: {
+          title: "X Axis",
+          axisTitleBorderColor: "000000",
+          axisTitleBorderCap: "rnd",
+          axisTitleBorderCompound: "dbl",
+        },
+      },
+    });
+    const result = writeChart(chart, "Sheet1");
+    expect(result.chartXml).toContain('cap="rnd"');
+    expect(result.chartXml).toContain('cmpd="dbl"');
+  });
+
+  it("emits cap/cmpd on data table border", () => {
+    const chart = makeChart({
+      dataTable: {
+        borderColor: "000000",
+        borderCap: "sq",
+        borderCompound: "dbl",
+      },
+    });
+    const result = writeChart(chart, "Sheet1");
+    expect(result.chartXml).toContain('cap="sq"');
+    expect(result.chartXml).toContain('cmpd="dbl"');
+  });
+
+  it("emits cap/cmpd on data labels border", () => {
+    const chart = makeChart({
+      dataLabels: {
+        showValue: true,
+        borderColor: "000000",
+        borderCap: "rnd",
+        borderCompound: "thickThin",
+      },
+    });
+    const result = writeChart(chart, "Sheet1");
+    expect(result.chartXml).toContain('cap="rnd"');
+    expect(result.chartXml).toContain('cmpd="thickThin"');
+  });
+});
+
+// ── writeXlsx round-trip for theme + cap/compound ─────────────────
+describe("writeXlsx — theme color + line cap/compound round-trip", () => {
+  it("round-trips chartSpace theme fill through writeXlsx + parseChart", async () => {
+    const sheet: WriteSheet = {
+      name: "Sheet1",
+      rows: [
+        ["Q", "Sales"],
+        ["Q1", 100],
+        ["Q2", 200],
+      ],
+      charts: [
+        makeChart({
+          chartSpaceFillColor: { theme: "accent1", lumMod: 80000 },
+          chartSpaceBorderColor: { theme: "tx1" },
+          chartSpaceBorderCap: "rnd",
+          chartSpaceBorderCompound: "dbl",
+          chartSpaceBorderWidth: 2,
+        }),
+      ],
+    };
+    const out = await writeXlsx({ sheets: [sheet] });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.chartSpaceFillColor).toEqual({ theme: "accent1", lumMod: 80000 });
+    expect(reparsed?.chartSpaceBorderColor).toEqual({ theme: "tx1" });
+    expect(reparsed?.chartSpaceBorderCap).toBe("rnd");
+    expect(reparsed?.chartSpaceBorderCompound).toBe("dbl");
+    expect(reparsed?.chartSpaceBorderWidth).toBe(2);
+  });
+
+  it("round-trips title theme color through writeXlsx + parseChart", async () => {
+    const sheet: WriteSheet = {
+      name: "Sheet1",
+      rows: [["A1"]],
+      charts: [
+        makeChart({
+          title: "Title",
+          titleColor: { theme: "accent2" },
+          titleFillColor: { theme: "bg2", tint: 50000 },
+          titleBorderColor: { theme: "tx1" },
+          titleBorderCap: "rnd",
+          titleBorderCompound: "dbl",
+        }),
+      ],
+    };
+    const out = await writeXlsx({ sheets: [sheet] });
+    const chartXml = await extractXml(out, "xl/charts/chart1.xml");
+    const reparsed = parseChart(chartXml);
+    expect(reparsed?.titleColor).toEqual({ theme: "accent2" });
+    expect(reparsed?.titleFillColor).toEqual({ theme: "bg2", tint: 50000 });
+    expect(reparsed?.titleBorderColor).toEqual({ theme: "tx1" });
+    expect(reparsed?.titleBorderCap).toBe("rnd");
+    expect(reparsed?.titleBorderCompound).toBe("dbl");
+  });
+});

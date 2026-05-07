@@ -24992,3 +24992,98 @@ describe("cloneChart — dataLabels.borderWidth / borderDash", () => {
     expect(labels?.borderDash).toBe("sysDashDot");
   });
 });
+
+// ── clone-through: theme color refs + line cap/compound ───────────
+describe("cloneChart — theme color refs + line cap/compound", () => {
+  function makeSourceChart(extras: Partial<Chart> = {}): Chart {
+    return {
+      kinds: ["bar"],
+      seriesCount: 1,
+      series: [{ kind: "bar", index: 0, valuesRef: "Sheet1!$B$2:$B$5" }],
+      ...extras,
+    };
+  }
+
+  it("inherits source theme color when override is undefined", () => {
+    const source = makeSourceChart({
+      chartSpaceFillColor: { theme: "accent1", lumMod: 75000 },
+    });
+    const cloned = cloneChart(source, { anchor: { from: { row: 0, col: 0 } } });
+    expect(cloned.chartSpaceFillColor).toEqual({ theme: "accent1", lumMod: 75000 });
+  });
+
+  it("drops source color when override is null", () => {
+    const source = makeSourceChart({
+      chartSpaceFillColor: { theme: "accent1" },
+    });
+    const cloned = cloneChart(source, { anchor: { from: { row: 0, col: 0 } }, chartSpaceFillColor: null });
+    expect(cloned.chartSpaceFillColor).toBeUndefined();
+  });
+
+  it("replaces source color with override theme color", () => {
+    const source = makeSourceChart({
+      chartSpaceFillColor: { theme: "accent1" },
+    });
+    const cloned = cloneChart(source, {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceFillColor: { theme: "accent6", tint: 50000 },
+    });
+    expect(cloned.chartSpaceFillColor).toEqual({ theme: "accent6", tint: 50000 });
+  });
+
+  it("schemeClr -> srgbClr override", () => {
+    const source = makeSourceChart({
+      chartSpaceFillColor: { theme: "accent1" },
+    });
+    const cloned = cloneChart(source, {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceFillColor: "FF0000",
+    });
+    expect(cloned.chartSpaceFillColor).toBe("FF0000");
+  });
+
+  it("srgbClr -> schemeClr override", () => {
+    const source = makeSourceChart({
+      chartSpaceFillColor: "FF0000",
+    });
+    const cloned = cloneChart(source, {
+      anchor: { from: { row: 0, col: 0 } },
+      chartSpaceFillColor: { theme: "accent1" },
+    });
+    expect(cloned.chartSpaceFillColor).toEqual({ theme: "accent1" });
+  });
+
+  it("inherits source line cap when override is undefined", () => {
+    const source = makeSourceChart({
+      chartSpaceBorderColor: "000000",
+      chartSpaceBorderCap: "rnd",
+    });
+    const cloned = cloneChart(source, { anchor: { from: { row: 0, col: 0 } } });
+    expect(cloned.chartSpaceBorderCap).toBe("rnd");
+  });
+
+  it("inherits source line compound when override is undefined", () => {
+    const source = makeSourceChart({
+      chartSpaceBorderColor: "000000",
+      chartSpaceBorderCompound: "dbl",
+    });
+    const cloned = cloneChart(source, { anchor: { from: { row: 0, col: 0 } } });
+    expect(cloned.chartSpaceBorderCompound).toBe("dbl");
+  });
+
+  it("end-to-end: clone with theme color writes correct XML", async () => {
+    const source = makeSourceChart({
+      chartSpaceFillColor: { theme: "accent1", lumMod: 75000 },
+      chartSpaceBorderColor: { theme: "tx1" },
+      chartSpaceBorderCap: "rnd",
+      chartSpaceBorderCompound: "dbl",
+    });
+    const cloned = cloneChart(source, { anchor: { from: { row: 0, col: 0 } } });
+    cloned.series = [{ name: "A", values: "B2:B3" }];
+    cloned.anchor = { from: { row: 0, col: 0 }, to: { row: 5, col: 5 } };
+    const result = writeChart(cloned, "Sheet1");
+    expect(result.chartXml).toContain('<a:schemeClr val="accent1">');
+    expect(result.chartXml).toContain('cap="rnd"');
+    expect(result.chartXml).toContain('cmpd="dbl"');
+  });
+});

@@ -23,6 +23,7 @@ import type {
   ChartAxisTickLabelPosition,
   ChartAxisTickMark,
   ChartBorderDash,
+  ChartColor,
   ChartDataLabels,
   ChartDataLabelsInfo,
   ChartDataPoint,
@@ -31,6 +32,8 @@ import type {
   ChartErrorBars,
   ChartKind,
   ChartLegendEntry,
+  ChartLineCap,
+  ChartLineCompound,
   ChartLineStroke,
   ChartManualLayout,
   ChartMarker,
@@ -50,6 +53,8 @@ import {
   normalizeRgbHex,
   resolveBorderDash,
   resolveBorderWidthPt,
+  resolveLineCap,
+  resolveLineCompound,
 } from "./chart/shape";
 import {
   resolveBackWallThickness,
@@ -161,7 +166,7 @@ export interface CloneChartSeriesOverride {
   /** A1 range for `<c:cat>` / `<c:xVal>`. */
   categories?: string | null;
   /** 6-digit RGB hex (e.g. `"1F77B4"`). */
-  color?: string | null;
+  color?: ChartColor | null;
   /**
    * Per-series data label override. `undefined` (or omitted) inherits
    * the source series' `dataLabels`; `null` drops the inherited block;
@@ -447,7 +452,7 @@ export interface CloneChartOptions {
    * `axes.x.labelColor` so the typography knobs compose the same way
    * at the call site.
    */
-  legendFontColor?: string | null;
+  legendFontColor?: ChartColor | null;
   /**
    * Override `SheetChart.legendFontFamily`. `undefined` (or omitted)
    * inherits the source's parsed `legendFontFamily`; `null` drops the
@@ -524,7 +529,7 @@ export interface CloneChartOptions {
    * different children of `<c:legend>` so a caller can pin both
    * without conflict.
    */
-  legendFillColor?: string | null;
+  legendFillColor?: ChartColor | null;
   /**
    * Override `SheetChart.legendBorderColor`. `undefined` (or omitted)
    * inherits the source's parsed `legendBorderColor`; `null` drops the
@@ -550,7 +555,7 @@ export interface CloneChartOptions {
    * `<c:legend>` element will be emitted) — there is no slot to host
    * the stroke on a hidden legend.
    */
-  legendBorderColor?: string | null;
+  legendBorderColor?: ChartColor | null;
   /**
    * Override `SheetChart.legendBorderWidth`. `undefined` (or omitted)
    * inherits the source's parsed `legendBorderWidth`; `null` drops the
@@ -590,6 +595,16 @@ export interface CloneChartOptions {
    * when the resolved legend is `false`.
    */
   legendBorderDash?: ChartBorderDash | null;
+  /**
+   * Override `SheetChart.legendBorderCap`. `undefined` inherits, `null`
+   * drops, a {@link ChartLineCap} value replaces.
+   */
+  legendBorderCap?: ChartLineCap | null;
+  /**
+   * Override `SheetChart.legendBorderCompound`. `undefined` inherits,
+   * `null` drops, a {@link ChartLineCompound} value replaces.
+   */
+  legendBorderCompound?: ChartLineCompound | null;
   /**
    * Override `SheetChart.plotAreaLayout`. `undefined` (or omitted)
    * inherits the source's parsed `plotAreaLayout`; `null` drops the
@@ -634,7 +649,7 @@ export interface CloneChartOptions {
    * knobs, the plot-area fill is never gated on a visibility flag —
    * every chart has a `<c:plotArea>` element to host the fill.
    */
-  plotAreaFillColor?: string | null;
+  plotAreaFillColor?: ChartColor | null;
   /**
    * Override `SheetChart.plotAreaBorderColor`. `undefined` (or omitted)
    * inherits the source's parsed `plotAreaBorderColor`; `null` drops
@@ -659,7 +674,7 @@ export interface CloneChartOptions {
    * the border is never gated on a visibility flag — every chart has
    * a `<c:plotArea>` element to host the stroke.
    */
-  plotAreaBorderColor?: string | null;
+  plotAreaBorderColor?: ChartColor | null;
   /**
    * Override `SheetChart.plotAreaBorderWidth`. `undefined` (or omitted)
    * inherits the source's parsed `plotAreaBorderWidth`; `null` drops
@@ -699,6 +714,16 @@ export interface CloneChartOptions {
    */
   plotAreaBorderDash?: ChartBorderDash | null;
   /**
+   * Override `SheetChart.plotAreaBorderCap`. `undefined` inherits,
+   * `null` drops, a {@link ChartLineCap} value replaces.
+   */
+  plotAreaBorderCap?: ChartLineCap | null;
+  /**
+   * Override `SheetChart.plotAreaBorderCompound`. `undefined`
+   * inherits, `null` drops, a {@link ChartLineCompound} value replaces.
+   */
+  plotAreaBorderCompound?: ChartLineCompound | null;
+  /**
    * Override `SheetChart.chartSpaceFillColor`. `undefined` (or omitted)
    * inherits the source's parsed `chartSpaceFillColor`; `null` drops
    * the inherited fill (the writer emits no `<c:spPr>` block on
@@ -724,7 +749,7 @@ export interface CloneChartOptions {
    * frame, `<c:plotArea>` for the inner band that hosts the series),
    * so a caller can pin both without conflict.
    */
-  chartSpaceFillColor?: string | null;
+  chartSpaceFillColor?: ChartColor | null;
   /**
    * Override `SheetChart.chartSpaceBorderColor`. `undefined` (or
    * omitted) inherits the source's parsed `chartSpaceBorderColor`;
@@ -749,7 +774,7 @@ export interface CloneChartOptions {
    * the border is never gated on a visibility flag — every chart has
    * a `<c:chartSpace>` document root to host the stroke.
    */
-  chartSpaceBorderColor?: string | null;
+  chartSpaceBorderColor?: ChartColor | null;
   /**
    * Override `SheetChart.chartSpaceBorderWidth`. `undefined` (or
    * omitted) inherits the source's parsed width; `null` drops the
@@ -771,6 +796,18 @@ export interface CloneChartOptions {
    * (and the OOXML default `"solid"`) collapse to `undefined`.
    */
   chartSpaceBorderDash?: ChartBorderDash | null;
+  /**
+   * Override `SheetChart.chartSpaceBorderCap`. `undefined` inherits,
+   * `null` drops, a {@link ChartLineCap} value replaces. The OOXML
+   * default `"flat"` collapses to `undefined`.
+   */
+  chartSpaceBorderCap?: ChartLineCap | null;
+  /**
+   * Override `SheetChart.chartSpaceBorderCompound`. `undefined`
+   * inherits, `null` drops, a {@link ChartLineCompound} value replaces.
+   * The OOXML default `"sng"` collapses to `undefined`.
+   */
+  chartSpaceBorderCompound?: ChartLineCompound | null;
   /** Override `SheetChart.barGrouping`. */
   barGrouping?: SheetChart["barGrouping"];
   /**
@@ -946,7 +983,7 @@ export interface CloneChartOptions {
    * / `titleOverlay` so the chart-level title knobs compose the same
    * way at the call site.
    */
-  titleColor?: string | null;
+  titleColor?: ChartColor | null;
   /**
    * Override the chart-level title strikethrough flag.
    * `undefined` (or omitted) inherits the source's parsed `titleStrike`.
@@ -1068,7 +1105,7 @@ export interface CloneChartOptions {
    * two knobs target different children of `<c:title>` so a caller
    * can pin both without conflict.
    */
-  titleFillColor?: string | null;
+  titleFillColor?: ChartColor | null;
   /**
    * Override `SheetChart.titleBorderColor`. `undefined` (or omitted)
    * inherits the source's parsed `titleBorderColor`; `null` drops the
@@ -1097,7 +1134,7 @@ export interface CloneChartOptions {
    * (`<a:solidFill>` for fill, `<a:ln>` for stroke), and the writer
    * authors a `<c:spPr>` whenever either knob resolves to a value.
    */
-  titleBorderColor?: string | null;
+  titleBorderColor?: ChartColor | null;
   /**
    * Override `SheetChart.titleBorderWidth`. `undefined` (or omitted)
    * inherits the source's parsed `titleBorderWidth`; `null` drops the
@@ -1140,6 +1177,16 @@ export interface CloneChartOptions {
    * resolved chart renders no title.
    */
   titleBorderDash?: ChartBorderDash | null;
+  /**
+   * Override `SheetChart.titleBorderCap`. `undefined` inherits, `null`
+   * drops, a {@link ChartLineCap} value replaces.
+   */
+  titleBorderCap?: ChartLineCap | null;
+  /**
+   * Override `SheetChart.titleBorderCompound`. `undefined` inherits,
+   * `null` drops, a {@link ChartLineCompound} value replaces.
+   */
+  titleBorderCompound?: ChartLineCompound | null;
   /**
    * Override `<c:autoTitleDeleted>` (the "user explicitly deleted the
    * auto-generated title" flag).
@@ -1629,7 +1676,7 @@ export interface CloneChartOptions {
        * `axisTitleFontSize` / `axisTitleBold` / `axisTitleItalic` so
        * the axis-title knobs compose the same way at the call site.
        */
-      axisTitleColor?: string | null;
+      axisTitleColor?: ChartColor | null;
       /**
        * Override `SheetChart.axes.x.axisTitleStrike`. `undefined` (or
        * omitted) inherits the source axis's parsed value; `null` drops
@@ -1778,7 +1825,7 @@ export interface CloneChartOptions {
        * and either axis title without bookkeeping the canonical OOXML
        * slots.
        */
-      axisTitleFillColor?: string | null;
+      axisTitleFillColor?: ChartColor | null;
       /**
        * Override `SheetChart.axes.x.axisTitleBorderColor`. `undefined`
        * (or omitted) inherits the source axis's parsed value; `null`
@@ -1809,7 +1856,7 @@ export interface CloneChartOptions {
        * chart title and either axis title without bookkeeping the
        * canonical OOXML slots.
        */
-      axisTitleBorderColor?: string | null;
+      axisTitleBorderColor?: ChartColor | null;
       /**
        * Override `SheetChart.axes.x.axisTitleBorderWidth`. Same
        * `undefined` / `null` / number grammar as the chart-level
@@ -1942,7 +1989,7 @@ export interface CloneChartOptions {
        * {@link labelBold} / {@link labelItalic}: all five knobs land
        * on the same `<c:txPr>` body.
        */
-      labelColor?: string | null;
+      labelColor?: ChartColor | null;
       /**
        * Override `SheetChart.axes.x.labelUnderline`. `undefined` (or
        * omitted) inherits the source axis's tick-label underline flag;
@@ -2159,7 +2206,7 @@ export interface CloneChartOptions {
       /** See {@link CloneChartOptions.axes.x.axisTitleItalic}. */
       axisTitleItalic?: boolean | null;
       /** See {@link CloneChartOptions.axes.x.axisTitleColor}. */
-      axisTitleColor?: string | null;
+      axisTitleColor?: ChartColor | null;
       /** See {@link CloneChartOptions.axes.x.axisTitleStrike}. */
       axisTitleStrike?: boolean | null;
       /** See {@link CloneChartOptions.axes.x.axisTitleUnderline}. */
@@ -2171,9 +2218,9 @@ export interface CloneChartOptions {
       /** See {@link CloneChartOptions.axes.x.axisTitleLayout}. */
       axisTitleLayout?: ChartManualLayout | null;
       /** See {@link CloneChartOptions.axes.x.axisTitleFillColor}. */
-      axisTitleFillColor?: string | null;
+      axisTitleFillColor?: ChartColor | null;
       /** See {@link CloneChartOptions.axes.x.axisTitleBorderColor}. */
-      axisTitleBorderColor?: string | null;
+      axisTitleBorderColor?: ChartColor | null;
       /** See {@link CloneChartOptions.axes.x.axisTitleBorderWidth}. */
       axisTitleBorderWidth?: number | null;
       /** See {@link CloneChartOptions.axes.x.axisTitleBorderDash}. */
@@ -2196,7 +2243,7 @@ export interface CloneChartOptions {
       /** See {@link CloneChartOptions.axes.x.labelItalic}. */
       labelItalic?: boolean | null;
       /** See {@link CloneChartOptions.axes.x.labelColor}. */
-      labelColor?: string | null;
+      labelColor?: ChartColor | null;
       /** See {@link CloneChartOptions.axes.x.labelUnderline}. */
       labelUnderline?: boolean | null;
       /** See {@link CloneChartOptions.axes.x.labelStrike}. */
@@ -2532,6 +2579,23 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     if (resolvedLegendBorderDash !== undefined) {
       out.legendBorderDash = resolvedLegendBorderDash;
     }
+
+    // Legend border line cap / compound styles — same hidden-legend
+    // scoping as the color / width / dash knobs above.
+    const resolvedLegendBorderCap = resolveLineCap(
+      source.legendBorderCap,
+      options.legendBorderCap,
+    );
+    if (resolvedLegendBorderCap !== undefined) {
+      out.legendBorderCap = resolvedLegendBorderCap;
+    }
+    const resolvedLegendBorderCompound = resolveLineCompound(
+      source.legendBorderCompound,
+      options.legendBorderCompound,
+    );
+    if (resolvedLegendBorderCompound !== undefined) {
+      out.legendBorderCompound = resolvedLegendBorderCompound;
+    }
   }
 
   // Plot-area manual layout is independent of the legend visibility —
@@ -2612,6 +2676,23 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
     out.plotAreaBorderDash = resolvedPlotAreaBorderDash;
   }
 
+  // Plot-area border line cap / compound styles. Same `<a:ln>` host as
+  // the color / width / dash knobs.
+  const resolvedPlotAreaBorderCap = resolveLineCap(
+    source.plotAreaBorderCap,
+    options.plotAreaBorderCap,
+  );
+  if (resolvedPlotAreaBorderCap !== undefined) {
+    out.plotAreaBorderCap = resolvedPlotAreaBorderCap;
+  }
+  const resolvedPlotAreaBorderCompound = resolveLineCompound(
+    source.plotAreaBorderCompound,
+    options.plotAreaBorderCompound,
+  );
+  if (resolvedPlotAreaBorderCompound !== undefined) {
+    out.plotAreaBorderCompound = resolvedPlotAreaBorderCompound;
+  }
+
   // Chart-space solid fill color is independent of every visibility
   // flag — every chart has a `<c:chartSpace>` document root to host the
   // `<c:spPr>` slot. `undefined` inherits the source's parsed
@@ -2679,6 +2760,25 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   );
   if (resolvedChartSpaceBorderDash !== undefined) {
     out.chartSpaceBorderDash = resolvedChartSpaceBorderDash;
+  }
+
+  // Chart-space border line cap / compound styles. Same `<a:ln>` host
+  // as the color / width / dash knobs, but lands on the `cap` / `cmpd`
+  // attributes. The OOXML defaults (`"flat"` / `"sng"`) collapse to
+  // `undefined` so absence and the defaults round-trip identically.
+  const resolvedChartSpaceBorderCap = resolveLineCap(
+    source.chartSpaceBorderCap,
+    options.chartSpaceBorderCap,
+  );
+  if (resolvedChartSpaceBorderCap !== undefined) {
+    out.chartSpaceBorderCap = resolvedChartSpaceBorderCap;
+  }
+  const resolvedChartSpaceBorderCompound = resolveLineCompound(
+    source.chartSpaceBorderCompound,
+    options.chartSpaceBorderCompound,
+  );
+  if (resolvedChartSpaceBorderCompound !== undefined) {
+    out.chartSpaceBorderCompound = resolvedChartSpaceBorderCompound;
   }
 
   const barGrouping = options.barGrouping !== undefined ? options.barGrouping : source.barGrouping;
@@ -2969,6 +3069,21 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
       options.titleBorderDash,
     );
     if (resolvedTitleBorderDash !== undefined) out.titleBorderDash = resolvedTitleBorderDash;
+
+    // Chart-title border line cap / compound styles — same hidden-title
+    // scoping as the color / width / dash knobs above.
+    const resolvedTitleBorderCap = resolveLineCap(
+      source.titleBorderCap,
+      options.titleBorderCap,
+    );
+    if (resolvedTitleBorderCap !== undefined) out.titleBorderCap = resolvedTitleBorderCap;
+    const resolvedTitleBorderCompound = resolveLineCompound(
+      source.titleBorderCompound,
+      options.titleBorderCompound,
+    );
+    if (resolvedTitleBorderCompound !== undefined) {
+      out.titleBorderCompound = resolvedTitleBorderCompound;
+    }
   }
 
   // `<c:autoTitleDeleted>` sits on `<c:chart>` directly, not inside

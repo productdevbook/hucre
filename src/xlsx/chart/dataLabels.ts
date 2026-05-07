@@ -15,22 +15,34 @@
 import type {
   ChartAxisNumberFormat,
   ChartBorderDash,
+  ChartColor,
   ChartDataLabels,
   ChartDataLabelPosition,
   ChartDataLabelsInfo,
+  ChartLineCap,
+  ChartLineCompound,
   WriteChartKind,
 } from "../../_types";
 import type { XmlElement } from "../../xml/parser";
 import { xmlElement, xmlEscape, xmlSelfClose } from "../../xml/writer";
 import {
   EMU_PER_PT,
+  buildColorElement,
   clampStrokeWidthPt,
   normalizeBorderDash,
+  normalizeChartColor,
+  normalizeLineCap,
+  normalizeLineCompound,
   normalizeRgbHex,
+  parseBorderCapFromSpPr,
+  parseBorderCompoundFromSpPr,
   parseBorderDashFromSpPr,
   parseBorderWidthFromSpPr,
+  parseSchemeClr,
   parseSpPrBorderColor,
   parseSpPrFill,
+  resolveLineCap,
+  resolveLineCompound,
 } from "./shape";
 import { childElements, elementText, findChild, parseBoolAttr, readBoolAttr } from "./util";
 import { FONT_SIZE_MAX_PT, FONT_SIZE_MIN_PT, FONT_SZ_PER_POINT } from "./text";
@@ -246,6 +258,19 @@ export function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined
   const borderDash = parseBorderDashFromSpPr(el);
   if (borderDash !== undefined) out.borderDash = borderDash;
 
+  // `<c:dLbls><c:spPr><a:ln cap=".."/>` carries Excel's per-line cap
+  // attribute. Delegates to the shared {@link parseBorderCapFromSpPr}
+  // helper so the accept-or-drop grammar matches every other chart-
+  // frame `<a:ln>` slot the reader surfaces.
+  const borderCap = parseBorderCapFromSpPr(el);
+  if (borderCap !== undefined) out.borderCap = borderCap;
+
+  // `<c:dLbls><c:spPr><a:ln cmpd=".."/>` carries Excel's per-line
+  // compound attribute. Delegates to the shared
+  // {@link parseBorderCompoundFromSpPr} helper.
+  const borderCompound = parseBorderCompoundFromSpPr(el);
+  if (borderCompound !== undefined) out.borderCompound = borderCompound;
+
   // Empty record is meaningless to a consumer — collapse to undefined.
   if (
     out.position === undefined &&
@@ -267,7 +292,9 @@ export function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined
     out.fillColor === undefined &&
     out.borderColor === undefined &&
     out.borderWidth === undefined &&
-    out.borderDash === undefined
+    out.borderDash === undefined &&
+    out.borderCap === undefined &&
+    out.borderCompound === undefined
   ) {
     return undefined;
   }
@@ -334,7 +361,7 @@ export function parseDataLabelsFontSize(dLbls: XmlElement): number | undefined {
  * readers exactly so a parsed value slots straight back into the
  * writer's emit path.
  */
-export function parseDataLabelsFontColor(dLbls: XmlElement): string | undefined {
+export function parseDataLabelsFontColor(dLbls: XmlElement): ChartColor | undefined {
   const txPr = findChild(dLbls, "txPr");
   if (!txPr) return undefined;
   const p = findChild(txPr, "p");
@@ -346,8 +373,10 @@ export function parseDataLabelsFontColor(dLbls: XmlElement): string | undefined 
   const solidFill = findChild(defRPr, "solidFill");
   if (!solidFill) return undefined;
   const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  return normalizeRgbHex(srgbClr.attrs.val);
+  if (srgbClr) return normalizeRgbHex(srgbClr.attrs.val);
+  const schemeClr = findChild(solidFill, "schemeClr");
+  if (schemeClr) return parseSchemeClr(schemeClr);
+  return undefined;
 }
 
 /**
@@ -535,7 +564,7 @@ export function parseDataLabelsFontFamily(dLbls: XmlElement): string | undefined
  * {@link parseLegendFillColor} so a parsed value slots straight into
  * the writer-side {@link ChartDataLabels.fillColor}.
  */
-export function parseDataLabelsFillColor(dLbls: XmlElement): string | undefined {
+export function parseDataLabelsFillColor(dLbls: XmlElement): ChartColor | undefined {
   return parseSpPrFill(dLbls);
 }
 
@@ -573,7 +602,7 @@ export function parseDataLabelsFillColor(dLbls: XmlElement): string | undefined 
  * (`<a:ln><a:solidFill>`) child rather than the fill (`<a:solidFill>`)
  * child.
  */
-export function parseDataLabelsBorderColor(dLbls: XmlElement): string | undefined {
+export function parseDataLabelsBorderColor(dLbls: XmlElement): ChartColor | undefined {
   return parseSpPrBorderColor(dLbls);
 }
 
@@ -710,6 +739,8 @@ export function buildDataLabelsBody(dl: ChartDataLabels, chartType: WriteChartKi
     resolveDataLabelsBorderColor(dl.borderColor),
     clampStrokeWidthPt(dl.borderWidth),
     normalizeBorderDash(dl.borderDash),
+    normalizeLineCap(dl.borderCap),
+    normalizeLineCompound(dl.borderCompound),
   );
   if (spPrXml !== undefined) {
     children.push(spPrXml);
@@ -828,7 +859,9 @@ export function resolveDataLabelsFontSize(value: number | undefined): number | u
  * accept-with-or-without-`#` grammar matches the chart-title /
  * axis-title / axis tick-label / legend color resolvers exactly.
  */
-export function resolveDataLabelsFontColor(value: string | undefined): string | undefined {
+export function resolveDataLabelsFontColor(
+  value: ChartColor | undefined,
+): ChartColor | undefined {
   return normalizeTitleColor(value);
 }
 
@@ -937,7 +970,9 @@ export function resolveDataLabelsFontFamily(value: string | undefined): string |
  * resolvers feed disjoint slots so a caller can pin both without
  * conflict.
  */
-export function resolveDataLabelsFillColor(value: string | undefined): string | undefined {
+export function resolveDataLabelsFillColor(
+  value: ChartColor | undefined,
+): ChartColor | undefined {
   return normalizeTitleColor(value);
 }
 
@@ -959,7 +994,9 @@ export function resolveDataLabelsFillColor(value: string | undefined): string | 
  * grammar, same `<a:ln>` slot on the `CT_ShapeProperties` schema —
  * but lands on `<c:dLbls>`'s own `<c:spPr>` block.
  */
-export function resolveDataLabelsBorderColor(value: string | undefined): string | undefined {
+export function resolveDataLabelsBorderColor(
+  value: ChartColor | undefined,
+): ChartColor | undefined {
   return normalizeTitleColor(value);
 }
 
@@ -995,37 +1032,45 @@ export function resolveDataLabelsBorderColor(value: string | undefined): string 
  * data-table variants paint a different chart-frame element.
  */
 export function buildDataLabelsSpPr(
-  fillRgbHex: string | undefined,
-  borderRgbHex: string | undefined,
+  fillRgbHex: ChartColor | undefined,
+  borderRgbHex: ChartColor | undefined,
   borderWidthPt: number | undefined,
   borderDash: ChartBorderDash | undefined,
+  borderCap?: ChartLineCap | undefined,
+  borderCompound?: ChartLineCompound | undefined,
 ): string | undefined {
   if (
     fillRgbHex === undefined &&
     borderRgbHex === undefined &&
     borderWidthPt === undefined &&
-    borderDash === undefined
+    borderDash === undefined &&
+    borderCap === undefined &&
+    borderCompound === undefined
   ) {
     return undefined;
   }
   const children: string[] = [];
   if (fillRgbHex !== undefined) {
-    children.push(
-      xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillRgbHex })]),
-    );
+    children.push(xmlElement("a:solidFill", undefined, [buildColorElement(fillRgbHex)]));
   }
-  if (borderRgbHex !== undefined || borderWidthPt !== undefined || borderDash !== undefined) {
+  if (
+    borderRgbHex !== undefined ||
+    borderWidthPt !== undefined ||
+    borderDash !== undefined ||
+    borderCap !== undefined ||
+    borderCompound !== undefined
+  ) {
     const lnAttrs: Record<string, string | number> = {};
     if (borderWidthPt !== undefined) {
       // OOXML stores stroke width in EMU (1 pt = 12 700 EMU). Round to
       // the nearest integer because the schema types `w` as `xsd:int`.
       lnAttrs.w = Math.round(borderWidthPt * EMU_PER_PT);
     }
+    if (borderCap !== undefined) lnAttrs.cap = borderCap;
+    if (borderCompound !== undefined) lnAttrs.cmpd = borderCompound;
     const lnChildren: string[] = [];
     if (borderRgbHex !== undefined) {
-      lnChildren.push(
-        xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: borderRgbHex })]),
-      );
+      lnChildren.push(xmlElement("a:solidFill", undefined, [buildColorElement(borderRgbHex)]));
     }
     // `<a:prstDash>` follows `<a:solidFill>` per CT_LineProperties
     // schema sequence (ECMA-376 Part 1, §20.1.2.3.24).
@@ -1079,7 +1124,7 @@ export function buildDataLabelsSpPr(
  */
 export function buildDataLabelsTxPr(
   fontSizePt: number | undefined,
-  rgbHex: string | undefined,
+  rgbHex: ChartColor | undefined,
   bold: boolean | undefined,
   italic: boolean | undefined,
   underline: boolean | undefined,
@@ -1114,8 +1159,8 @@ export function buildDataLabelsTxPr(
   // child entirely so the labels inherit the theme text color
   // (Excel's reference behavior for fresh data labels that have not
   // had a custom color picked).
-  const solidFillChild = rgbHex
-    ? xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: rgbHex })])
+  const solidFillChild = rgbHex !== undefined
+    ? xmlElement("a:solidFill", undefined, [buildColorElement(rgbHex)])
     : undefined;
   // OOXML's `<a:defRPr><a:latin typeface=".."/></a:defRPr>` carries
   // the data-label font family. The `<a:latin>` element follows

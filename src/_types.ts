@@ -547,6 +547,7 @@ import type { SheetChart } from "./xlsx/chart/types";
 
 export type {
   ChartBorderDash,
+  ChartColor,
   ChartDataLabelPosition,
   ChartDataLabels,
   ChartDataPoint,
@@ -568,6 +569,8 @@ export type {
   ChartScatterStyle,
   ChartSeries,
   ChartShape3D,
+  ChartThemeColor,
+  ChartThemeColorName,
   ChartTrendline,
   ChartTrendlineType,
   ChartView3D,
