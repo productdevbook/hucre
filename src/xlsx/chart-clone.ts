@@ -393,6 +393,32 @@ export interface CloneChartOptions {
    */
   legendFillColor?: string | null;
   /**
+   * Override `SheetChart.legendBorderColor`. `undefined` (or omitted)
+   * inherits the source's parsed `legendBorderColor`; `null` drops the
+   * inherited stroke (the writer falls back to the auto-stroke Excel
+   * picks from the chart's theme — no `<a:ln>` block on the legend's
+   * `<c:spPr>`); a 6-digit RGB hex string replaces it.
+   *
+   * The override runs through the same sRGB normalizer as the writer —
+   * the leading `#` and case are accepted, then the value collapses to
+   * the OOXML canonical uppercase form. Malformed tokens (wrong length,
+   * non-hex characters, alpha-channel forms, non-string escapes from
+   * an untyped caller) collapse to `undefined` so the cloned
+   * `SheetChart` drops the field rather than carry a value the writer
+   * would silently elide back to absence.
+   *
+   * The grammar mirrors `legendFillColor` so the legend `<c:spPr>`
+   * knobs compose the same way at the call site. Composes
+   * independently with `legendFillColor` — the two knobs land on the
+   * same `<c:spPr>` block but on different children (`<a:solidFill>`
+   * for fill, `<a:ln>` for stroke), and the writer emits `<c:spPr>`
+   * whenever either knob is set. The override is silently dropped from
+   * the cloned `SheetChart` when the resolved legend is `false` (no
+   * `<c:legend>` element will be emitted) — there is no slot to host
+   * the stroke on a hidden legend.
+   */
+  legendBorderColor?: string | null;
+  /**
    * Override `SheetChart.plotAreaLayout`. `undefined` (or omitted)
    * inherits the source's parsed `plotAreaLayout`; `null` drops the
    * inherited layout (the writer emits the bare `<c:layout/>`
@@ -2012,6 +2038,25 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
       options.legendFillColor,
     );
     if (resolvedLegendFillColor !== undefined) out.legendFillColor = resolvedLegendFillColor;
+
+    // Same hidden-legend scoping for the border (line) stroke —
+    // `<a:ln>` lives inside `<c:legend><c:spPr>` per CT_ShapeProperties,
+    // so a clone whose legend is hidden has no slot for the stroke.
+    // `undefined` inherits the source's parsed `legendBorderColor`
+    // (after the writer-side normalizer collapses any malformed token),
+    // `null` drops the inherited stroke (the writer emits no `<a:ln>`
+    // block, the legend inherits the auto-stroke Excel picks from the
+    // chart's theme), a 6-digit hex string replaces it. Composes
+    // independently with `legendFillColor` — the two knobs share the
+    // `<c:spPr>` host but land on different children (`<a:solidFill>`
+    // for fill, `<a:ln>` for stroke).
+    const resolvedLegendBorderColor = resolveLegendBorderColor(
+      source.legendBorderColor,
+      options.legendBorderColor,
+    );
+    if (resolvedLegendBorderColor !== undefined) {
+      out.legendBorderColor = resolvedLegendBorderColor;
+    }
   }
 
   // Plot-area manual layout is independent of the legend visibility —
@@ -3673,6 +3718,42 @@ function resolveLegendLayout(
  * conflict.
  */
 function resolveLegendFillColor(
+  sourceValue: string | undefined,
+  override: string | null | undefined,
+): string | undefined {
+  if (override === undefined) return normalizeTitleColor(sourceValue);
+  if (override === null) return undefined;
+  return normalizeTitleColor(override);
+}
+
+/**
+ * Resolve a `legendBorderColor` override.
+ *
+ * `undefined` → inherit the source's parsed `legendBorderColor` (after
+ *               running it through {@link normalizeTitleColor} so a
+ *               malformed source value drops cleanly — the hex
+ *               normalizer is purely shape-based and applies
+ *               identically to every `<a:srgbClr val="RRGGBB"/>`
+ *               slot).
+ * `null`      → drop the inherited stroke (the writer emits no
+ *               `<a:ln>` block on `<c:legend><c:spPr>`, the legend
+ *               inherits the auto-stroke Excel picks from the chart's
+ *               theme).
+ * `string`    → replace with the normalized 6-character uppercase hex
+ *               form. Malformed overrides collapse to `undefined` via
+ *               the normalizer so the cloned `SheetChart` always
+ *               carries a value the writer will accept.
+ *
+ * The grammar mirrors `legendFillColor` so the legend `<c:spPr>` knobs
+ * compose the same way at the call site. Callers should gate the
+ * result on the resolved legend visibility — when no legend is
+ * emitted, the stroke has no slot in the rendered chart.
+ *
+ * Independent of `legendFillColor`: the two knobs target different
+ * children of `<c:legend><c:spPr>` (`<a:solidFill>` for fill,
+ * `<a:ln>` for stroke), so a caller can pin both without conflict.
+ */
+function resolveLegendBorderColor(
   sourceValue: string | undefined,
   override: string | null | undefined,
 ): string | undefined {

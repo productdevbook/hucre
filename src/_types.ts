@@ -2297,6 +2297,55 @@ export interface SheetChart {
    */
   legendFillColor?: string;
   /**
+   * Legend border (stroke) solid color as a 6-digit RGB hex string
+   * (e.g. `"1F77B4"`). Maps to `<c:legend><c:spPr><a:ln><a:solidFill>
+   * <a:srgbClr val="RRGGBB"/></a:solidFill></a:ln></c:spPr></c:legend>`
+   * (CT_Legend, ECMA-376 Part 1, §21.2.2.114) — Excel's "Format Legend
+   * -> Border -> Solid line -> Color" picker. The OOXML `<a:srgbClr
+   * val=".."/>` carries the 6-character uppercase hex sRGB color
+   * (`CT_SRgbColor` inside the line's solid fill choice — ECMA-376
+   * Part 1, §20.1.2.3.32 / §20.1.2.3.24). The `<c:spPr>` slot sits
+   * between `<c:overlay>` and `<c:txPr>` per the CT_Legend schema
+   * sequence; `<a:ln>` follows the optional `<a:solidFill>` (fill)
+   * child inside `<c:spPr>` per `CT_ShapeProperties` (ECMA-376 Part 1,
+   * §20.1.2.3.13).
+   *
+   * Accepts a leading `#` and any case; the writer collapses to the
+   * OOXML canonical uppercase form. Malformed inputs (wrong length,
+   * non-hex characters, alpha-channel forms, non-string escapes from
+   * an untyped caller) collapse to `undefined` and the writer omits
+   * the `<a:ln>` block (Excel's reference serialization for a legend
+   * that inherits the auto-stroke — typically a translucent gray
+   * border or no border depending on the theme).
+   *
+   * Default: omitted — the legend inherits the auto-stroke Excel picks
+   * from the chart's theme. Pin a hex color to mirror Excel's "Format
+   * Legend -> Border -> Solid line" knob and paint a flat border around
+   * the legend block — useful for dashboard tiles where the legend
+   * should be visually framed against the surrounding chart frame, or
+   * to highlight a legend against a busy theme.
+   *
+   * Composes independently with {@link legendFillColor} — the two knobs
+   * land on the same `<c:spPr>` block but on different children
+   * (`<a:solidFill>` for the fill, `<a:ln>` for the stroke), and the
+   * writer authors a `<c:spPr>` whenever either knob is set. A caller
+   * can pin one without the other; pinning both produces a filled
+   * legend with a colored border.
+   *
+   * Silently ignored when `legend === false` (no `<c:legend>` element
+   * is emitted) — there is no slot to host the stroke in that case.
+   * Mirrors `plotAreaBorderColor` — same accept-with-or-without-`#`
+   * hex grammar, same `<c:spPr>` host element on a different parent
+   * (`<c:legend>` rather than `<c:plotArea>`), but lands on the line
+   * (`<a:ln>`) child rather than the fill (`<a:solidFill>`) child.
+   *
+   * Patterned / gradient strokes are not modelled — only the solid
+   * sRGB form lands on the wire. Theme-color references
+   * (`<a:schemeClr>`) likewise drop to `undefined` so a parsed value
+   * always carries a literal hex Excel will render byte-for-byte.
+   */
+  legendBorderColor?: string;
+  /**
    * Custom plot-area placement inside the chart frame. Maps to
    * `<c:plotArea><c:layout><c:manualLayout>...</c:manualLayout></c:layout>
    * </c:plotArea>` — Excel's "Format Plot Area -> Position -> Custom"
@@ -7123,6 +7172,38 @@ export interface Chart {
    * value slots straight into {@link cloneChart} without conversion.
    */
   legendFillColor?: string;
+  /**
+   * Legend border (stroke) solid color pulled from `<c:legend><c:spPr>
+   * <a:ln><a:solidFill><a:srgbClr val=".."/></a:solidFill></a:ln>
+   * </c:spPr></c:legend>`. Reflects Excel's "Format Legend -> Border
+   * -> Solid line -> Color" picker. The OOXML `<a:srgbClr val=".."/>`
+   * carries the 6-character uppercase hex sRGB color (`CT_SRgbColor`
+   * inside the line's solid fill choice — ECMA-376 Part 1, §20.1.2.3.32
+   * / §20.1.2.3.24). The `<c:spPr>` slot sits between `<c:overlay>` and
+   * `<c:txPr>` per the CT_Legend schema sequence (ECMA-376 Part 1,
+   * §21.2.2.114); `<a:ln>` follows the optional `<a:solidFill>` (fill)
+   * child inside `<c:spPr>` per `CT_ShapeProperties` (ECMA-376 Part 1,
+   * §20.1.2.3.13).
+   *
+   * Reports the 6-character uppercase hex form when the source chart
+   * pinned a literal `<a:srgbClr>` color on `<a:ln>`; absence,
+   * malformed `val` tokens (wrong length, non-hex characters,
+   * alpha-channel forms), non-solid line fills (`<a:noFill>`,
+   * `<a:gradFill>`, `<a:pattFill>`), and theme-color references
+   * (`<a:schemeClr>`) all collapse to `undefined` so absence and an
+   * unrenderable stroke round-trip identically through
+   * {@link cloneChart}. Mirrors the writer-side
+   * {@link SheetChart.legendBorderColor} so a parsed value slots
+   * straight into {@link cloneChart} without conversion.
+   *
+   * Reported as `undefined` whenever {@link legend} is `false` or the
+   * source chart has no `<c:legend>` element at all — there is no
+   * `<c:spPr>` slot to surface the stroke from in either case. Composes
+   * independently with {@link legendFillColor} — the two fields surface
+   * from the same `<c:spPr>` block but on different children
+   * (`<a:solidFill>` for fill, `<a:ln><a:solidFill>` for stroke).
+   */
+  legendBorderColor?: string;
   /**
    * Custom plot-area placement pulled from `<c:plotArea><c:layout>
    * <c:manualLayout>...</c:manualLayout></c:layout></c:plotArea>`.

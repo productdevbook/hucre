@@ -191,6 +191,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveLegendFontFamily(chart),
         resolveLegendLayout(chart),
         resolveLegendFillColor(chart),
+        resolveLegendBorderColor(chart),
       ),
     );
   }
@@ -5292,6 +5293,7 @@ function buildLegend(
   fontFamily: string | undefined,
   layout: ResolvedManualLayout | undefined,
   fillRgbHex: string | undefined,
+  borderRgbHex: string | undefined,
 ): string {
   const children: string[] = [xmlSelfClose("c:legendPos", { val: pos })];
 
@@ -5329,14 +5331,17 @@ function buildLegend(
 
   // CT_Legend sequence places `<c:spPr>` between `<c:overlay>` and
   // `<c:txPr>` (ECMA-376 Part 1, §21.2.2.114). The writer skips
-  // emission entirely when the caller did not pin a fill color so a
-  // fresh chart matches Excel's reference serialization byte-for-byte
-  // — Excel itself omits the block whenever the legend renders at the
-  // theme default fill (typically a transparent legend background
-  // with no `<c:spPr>` block). Currently the writer only authors
-  // `<a:solidFill>` here; stroke (`<a:ln>`) and other CT_ShapeProperties
-  // children are not modelled at this layer.
-  const legendSpPrXml = buildLegendSpPr(fillRgbHex);
+  // emission entirely when the caller did not pin a fill / border
+  // color so a fresh chart matches Excel's reference serialization
+  // byte-for-byte — Excel itself omits the block whenever the legend
+  // renders at the theme default fill / stroke (typically a transparent
+  // legend background with no `<c:spPr>` block). The writer authors
+  // `<a:solidFill>` (fill) and `<a:ln>` (stroke) here in
+  // `CT_ShapeProperties` schema order; other `CT_ShapeProperties`
+  // children (`<a:effectLst>` effects, gradient / pattern / picture
+  // fills, line dash / width / compound styles) are not modelled at
+  // this layer.
+  const legendSpPrXml = buildLegendSpPr(fillRgbHex, borderRgbHex);
   if (legendSpPrXml !== undefined) {
     children.push(legendSpPrXml);
   }
@@ -5369,28 +5374,48 @@ function buildLegend(
 
 /**
  * Build the `<c:spPr>` element on `<c:legend>` that carries the
- * legend's background fill. Returns `undefined` when no fill color is
- * pinned so the caller can elide the entire block — Excel's reference
- * serialization omits `<c:spPr>` from `<c:legend>` whenever the legend
- * renders at the theme default fill (typically a transparent legend
- * background).
+ * legend's background fill and / or border (line stroke) colors.
+ * Returns `undefined` when no knob is pinned so the caller can elide
+ * the entire block — Excel's reference serialization omits `<c:spPr>`
+ * from `<c:legend>` whenever the legend renders at the theme default
+ * fill / stroke (typically a transparent legend background with no
+ * `<c:spPr>` block).
  *
  * The emitted block mirrors the minimal `<c:spPr>` shape Excel writes
- * when the user pins "Format Legend -> Fill -> Solid fill -> Color":
+ * when the user pins "Format Legend -> Fill -> Solid fill -> Color"
+ * and / or "Format Legend -> Border -> Solid line -> Color":
  * `<c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill>
+ * <a:ln><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:ln>
  * </c:spPr>`. The `val` attribute holds the canonical 6-character
  * uppercase hex form (the writer normalizes the input ahead of this
- * call so a malformed source value never reaches emit).
+ * call so a malformed source value never reaches emit). When at least
+ * one knob lands on the wire, the children are emitted in
+ * `CT_ShapeProperties` schema order: `<a:solidFill>` (fill) then
+ * `<a:ln>` (line / stroke).
  *
  * Mirrors the chart-title / plot-area / axis-title `<c:spPr>` slots
- * so a single hex string threads cleanly through every fill knob the
- * writer authors.
+ * so a single hex string threads cleanly through every fill / stroke
+ * knob the writer authors.
  */
-function buildLegendSpPr(fillRgbHex: string | undefined): string | undefined {
-  if (fillRgbHex === undefined) return undefined;
-  return xmlElement("c:spPr", undefined, [
-    xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillRgbHex })]),
-  ]);
+function buildLegendSpPr(
+  fillRgbHex: string | undefined,
+  borderRgbHex: string | undefined,
+): string | undefined {
+  if (fillRgbHex === undefined && borderRgbHex === undefined) return undefined;
+  const children: string[] = [];
+  if (fillRgbHex !== undefined) {
+    children.push(
+      xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillRgbHex })]),
+    );
+  }
+  if (borderRgbHex !== undefined) {
+    children.push(
+      xmlElement("a:ln", undefined, [
+        xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: borderRgbHex })]),
+      ]),
+    );
+  }
+  return xmlElement("c:spPr", undefined, children);
 }
 
 /**
@@ -5791,6 +5816,34 @@ function resolveLegendLayout(chart: SheetChart): ResolvedManualLayout | undefine
  */
 function resolveLegendFillColor(chart: SheetChart): string | undefined {
   return normalizeTitleColor(chart.legendFillColor);
+}
+
+/**
+ * Resolve `<c:legend><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/>
+ * </a:solidFill></a:ln></c:spPr></c:legend>` from
+ * {@link SheetChart.legendBorderColor}.
+ *
+ * Returns the 6-character uppercase hex string the writer emits, or
+ * `undefined` when the chart leaves the field unset / passed a
+ * malformed token. Delegates to {@link normalizeTitleColor} so the
+ * accept-with-or-without-`#` grammar matches every other `<a:srgbClr>`
+ * fill / line slot exactly. The stroke is only meaningful when the
+ * chart actually emits a legend — the caller is expected to gate the
+ * call on the resolved legend visibility (`resolveLegendPosition`
+ * returning a non-null value). A chart whose legend is suppressed has
+ * no `<c:legend>` block to host the `<c:spPr>` slot in either case.
+ *
+ * Independent of {@link resolveLegendFillColor}: the fill lands on
+ * `<c:legend><c:spPr><a:solidFill>`, the stroke lands on
+ * `<c:legend><c:spPr><a:ln><a:solidFill>` — the two resolvers feed
+ * disjoint children of `<c:spPr>` so a single configuration call can
+ * pin both. Mirrors the chart-title / axis-title / chart-space /
+ * plot-area `<c:spPr>` slots — same hex grammar, same `<a:ln>` slot
+ * on the `CT_ShapeProperties` schema — but lands on `<c:legend>`'s
+ * own `<c:spPr>` block.
+ */
+function resolveLegendBorderColor(chart: SheetChart): string | undefined {
+  return normalizeTitleColor(chart.legendBorderColor);
 }
 
 /**
