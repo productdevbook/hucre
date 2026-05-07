@@ -20,3 +20,4 @@ export * from "./dataLabels";
 export * from "./dataTable";
 export * from "./series";
 export * from "./axis";
+export * from "./plotArea";
