@@ -19690,3 +19690,211 @@ describe("parseChart — axisTitleLayout", () => {
     expect(chart?.axes?.y?.axisTitleLayout).toEqual({ w: 0.05, h: 0.5 });
   });
 });
+
+// ── parseChart — legendFillColor ─────────────────────────────────────
+
+describe("parseChart — legendFillColor", () => {
+  const NS_LFB = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+
+  function withLegendFill(srgbVal: string | undefined): string {
+    const spPr =
+      srgbVal === undefined
+        ? ""
+        : `<c:spPr><a:solidFill><a:srgbClr val="${srgbVal}"/></a:solidFill></c:spPr>`;
+    return `<c:chartSpace ${NS_LFB}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      ${spPr}
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+  }
+
+  it("surfaces legendFillColor as the canonical 6-character uppercase hex", () => {
+    expect(parseChart(withLegendFill("FFFF00"))?.legendFillColor).toBe("FFFF00");
+  });
+
+  it("normalizes a lowercase srgbClr val to the OOXML uppercase canonical form", () => {
+    expect(parseChart(withLegendFill("ff8800"))?.legendFillColor).toBe("FF8800");
+  });
+
+  it("normalizes a leading # in the srgbClr val to the bare hex form", () => {
+    expect(parseChart(withLegendFill("#abcdef"))?.legendFillColor).toBe("ABCDEF");
+  });
+
+  it("returns undefined when the legend has no <c:spPr> block at all", () => {
+    expect(parseChart(withLegendFill(undefined))?.legendFillColor).toBeUndefined();
+  });
+
+  it("returns undefined when the chart has no <c:legend> element at all", () => {
+    const xml = `<c:chartSpace ${NS_LFB}>
+  <c:chart><c:plotArea>
+    <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+    <c:catAx><c:axId val="1"/></c:catAx>
+    <c:valAx><c:axId val="2"/></c:valAx>
+  </c:plotArea></c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendFillColor).toBeUndefined();
+  });
+
+  it("returns undefined when <c:spPr> has no <a:solidFill> child", () => {
+    const xml = `<c:chartSpace ${NS_LFB}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:spPr><a:ln><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:ln></c:spPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    // The <a:solidFill> here is nested inside <a:ln> (stroke), not a
+    // direct child of <c:spPr> — the reader should ignore it.
+    expect(parseChart(xml)?.legendFillColor).toBeUndefined();
+  });
+
+  it('drops the fill when the legend is hidden via <c:delete val="1"/>', () => {
+    const xml = `<c:chartSpace ${NS_LFB}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:delete val="1"/>
+      <c:overlay val="1"/>
+      <c:spPr><a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill></c:spPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legend).toBe(false);
+    expect(chart?.legendFillColor).toBeUndefined();
+  });
+
+  it("collapses theme references (<a:schemeClr>) to undefined — only literal RGB round-trips", () => {
+    const xml = `<c:chartSpace ${NS_LFB}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:spPr><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></c:spPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendFillColor).toBeUndefined();
+  });
+
+  it("collapses <a:noFill> to undefined (non-solid fill)", () => {
+    const xml = `<c:chartSpace ${NS_LFB}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:spPr><a:noFill/></c:spPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendFillColor).toBeUndefined();
+  });
+
+  it("collapses <a:gradFill> to undefined (non-solid fill)", () => {
+    const xml = `<c:chartSpace ${NS_LFB}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:spPr><a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs></a:gsLst></a:gradFill></c:spPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendFillColor).toBeUndefined();
+  });
+
+  it("drops malformed <a:srgbClr val/> tokens (wrong length)", () => {
+    expect(parseChart(withLegendFill("FF00"))?.legendFillColor).toBeUndefined();
+  });
+
+  it("drops malformed <a:srgbClr val/> tokens (non-hex characters)", () => {
+    expect(parseChart(withLegendFill("ZZZZZZ"))?.legendFillColor).toBeUndefined();
+  });
+
+  it("drops alpha-channel hex forms in <a:srgbClr val/>", () => {
+    expect(parseChart(withLegendFill("FF0000FF"))?.legendFillColor).toBeUndefined();
+  });
+
+  it("does not leak a stray <c:spPr> from a series into legendFillColor", () => {
+    const xml = `<c:chartSpace ${NS_LFB}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart>
+        <c:ser>
+          <c:idx val="0"/>
+          <c:spPr><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill></c:spPr>
+        </c:ser>
+      </c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    expect(parseChart(xml)?.legendFillColor).toBeUndefined();
+  });
+
+  it("composes independently with legendFontColor — distinct paths inside <c:legend>", () => {
+    const xml = `<c:chartSpace ${NS_LFB}>
+  <c:chart>
+    <c:plotArea>
+      <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
+      <c:catAx><c:axId val="1"/></c:catAx>
+      <c:valAx><c:axId val="2"/></c:valAx>
+    </c:plotArea>
+    <c:legend>
+      <c:legendPos val="r"/>
+      <c:overlay val="0"/>
+      <c:spPr><a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill></c:spPr>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p>
+      </c:txPr>
+    </c:legend>
+  </c:chart>
+</c:chartSpace>`;
+    const chart = parseChart(xml);
+    expect(chart?.legendFillColor).toBe("FFFF00");
+    expect(chart?.legendFontColor).toBe("000000");
+  });
+});

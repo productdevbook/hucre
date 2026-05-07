@@ -189,6 +189,7 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
         resolveLegendFontColor(chart),
         resolveLegendFontFamily(chart),
         resolveLegendLayout(chart),
+        resolveLegendFillColor(chart),
       ),
     );
   }
@@ -4930,6 +4931,7 @@ function buildLegend(
   rgbHex: string | undefined,
   fontFamily: string | undefined,
   layout: ResolvedManualLayout | undefined,
+  fillRgbHex: string | undefined,
 ): string {
   const children: string[] = [xmlSelfClose("c:legendPos", { val: pos })];
 
@@ -4965,11 +4967,25 @@ function buildLegend(
 
   children.push(xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }));
 
-  // CT_Legend sequence places `<c:txPr>` after `<c:overlay>` (and
-  // before the optional `<c:extLst>`). The writer skips emission
-  // entirely when no typography knob is pinned so a fresh chart matches
-  // Excel's reference serialization byte-for-byte (Excel itself omits
-  // the block whenever the legend renders at the theme-default style).
+  // CT_Legend sequence places `<c:spPr>` between `<c:overlay>` and
+  // `<c:txPr>` (ECMA-376 Part 1, §21.2.2.114). The writer skips
+  // emission entirely when the caller did not pin a fill color so a
+  // fresh chart matches Excel's reference serialization byte-for-byte
+  // — Excel itself omits the block whenever the legend renders at the
+  // theme default fill (typically a transparent legend background
+  // with no `<c:spPr>` block). Currently the writer only authors
+  // `<a:solidFill>` here; stroke (`<a:ln>`) and other CT_ShapeProperties
+  // children are not modelled at this layer.
+  const legendSpPrXml = buildLegendSpPr(fillRgbHex);
+  if (legendSpPrXml !== undefined) {
+    children.push(legendSpPrXml);
+  }
+
+  // CT_Legend sequence places `<c:txPr>` after `<c:spPr>` (and before
+  // the optional `<c:extLst>`). The writer skips emission entirely
+  // when no typography knob is pinned so a fresh chart matches Excel's
+  // reference serialization byte-for-byte (Excel itself omits the
+  // block whenever the legend renders at the theme-default style).
   // The block currently carries the legend font size, bold, italic,
   // underline, strikethrough, font color, and font family knobs. The
   // `<a:bodyPr>` carries no rotation attribute — the legend is not
@@ -4989,6 +5005,32 @@ function buildLegend(
   }
 
   return xmlElement("c:legend", undefined, children);
+}
+
+/**
+ * Build the `<c:spPr>` element on `<c:legend>` that carries the
+ * legend's background fill. Returns `undefined` when no fill color is
+ * pinned so the caller can elide the entire block — Excel's reference
+ * serialization omits `<c:spPr>` from `<c:legend>` whenever the legend
+ * renders at the theme default fill (typically a transparent legend
+ * background).
+ *
+ * The emitted block mirrors the minimal `<c:spPr>` shape Excel writes
+ * when the user pins "Format Legend -> Fill -> Solid fill -> Color":
+ * `<c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill>
+ * </c:spPr>`. The `val` attribute holds the canonical 6-character
+ * uppercase hex form (the writer normalizes the input ahead of this
+ * call so a malformed source value never reaches emit).
+ *
+ * Mirrors the chart-title / plot-area / axis-title `<c:spPr>` slots
+ * so a single hex string threads cleanly through every fill knob the
+ * writer authors.
+ */
+function buildLegendSpPr(fillRgbHex: string | undefined): string | undefined {
+  if (fillRgbHex === undefined) return undefined;
+  return xmlElement("c:spPr", undefined, [
+    xmlElement("a:solidFill", undefined, [xmlSelfClose("a:srgbClr", { val: fillRgbHex })]),
+  ]);
 }
 
 /**
@@ -5364,6 +5406,31 @@ interface ResolvedManualLayout {
  */
 function resolveLegendLayout(chart: SheetChart): ResolvedManualLayout | undefined {
   return normalizeManualLayout(chart.legendLayout);
+}
+
+/**
+ * Resolve `<c:legend><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+ * </a:solidFill></c:spPr></c:legend>` from
+ * {@link SheetChart.legendFillColor}.
+ *
+ * Returns the 6-character uppercase hex string the writer emits, or
+ * `undefined` when the chart leaves the field unset / passed a
+ * malformed token. Delegates to {@link normalizeTitleColor} so the
+ * accept-with-or-without-`#` grammar matches the chart-title /
+ * axis-title / axis tick-label / legend font color resolvers exactly.
+ * The fill is only meaningful when the chart actually emits a
+ * legend — the caller is expected to gate the call on the resolved
+ * legend visibility (`resolveLegendPosition` returning a non-null
+ * value). A chart whose legend is suppressed has no `<c:legend>`
+ * block to host the `<c:spPr>` slot in either case.
+ *
+ * Independent of {@link resolveLegendFontColor}: the fill lands on
+ * `<c:legend><c:spPr>`, the font color lands on
+ * `<c:legend><c:txPr>` — the two resolvers target different children
+ * of `<c:legend>` so a single configuration call can pin both.
+ */
+function resolveLegendFillColor(chart: SheetChart): string | undefined {
+  return normalizeTitleColor(chart.legendFillColor);
 }
 
 /**

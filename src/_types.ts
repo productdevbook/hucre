@@ -2156,6 +2156,53 @@ export interface SheetChart {
    */
   legendLayout?: ChartManualLayout;
   /**
+   * Legend background fill color. Maps to `<c:legend><c:spPr>
+   * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></c:spPr>
+   * </c:legend>` (CT_Legend, ECMA-376 Part 1, §21.2.2.114) — Excel's
+   * "Format Legend -> Fill -> Solid fill -> Color" picker (the same
+   * dialog the user reaches by right-clicking the legend background).
+   * The element sits between `<c:overlay>` and `<c:txPr>` per the
+   * CT_Legend schema sequence — distinct from `legendFontColor`,
+   * which lands on the legend's `<c:txPr>` text-character-properties
+   * slot.
+   *
+   * Accepts a 6-character hex sRGB triple with or without a leading
+   * `#` (e.g. `"FFFF00"`, `"#FFFF00"`, `"ffff00"`); the writer
+   * normalizes to OOXML's canonical 6-character uppercase form before
+   * emit. Empty / whitespace-only strings, alpha-channel forms,
+   * non-hex characters, and non-string escapes from an untyped caller
+   * all collapse to `undefined` so the writer skips the entire
+   * `<c:spPr>` block and the legend renders at the theme default fill
+   * (Excel's reference behavior for a fresh legend that has not had a
+   * custom fill picked — typically a transparent background with no
+   * `<c:spPr>` block).
+   *
+   * Default: omitted — the legend renders at the theme default fill
+   * (no `<c:spPr>` block, matching Excel's reference serialization
+   * for a fresh chart legend whose background has not been
+   * customized). Pin a hex color to render the legend background in
+   * that color (e.g. `"FFFF00"` for a highlighted legend on a
+   * dashboard tile, or `"FFFFFF"` for an opaque white legend on a
+   * non-white plot area).
+   *
+   * Silently ignored when `legend === false` (no `<c:legend>` element
+   * is emitted) — there is no slot to host the fill in that case.
+   * Mirrors `plotAreaFillColor` — same accept-with-or-without-`#` hex
+   * grammar, same OOXML `<c:spPr><a:solidFill><a:srgbClr val=".."/>
+   * </a:solidFill></c:spPr>` mapping — so a caller can thread a
+   * single hex string through every `<c:spPr>`-based fill slot.
+   * Composes independently with `legend` / `legendOverlay` /
+   * `legendEntries` / `legendFontSize` / `legendBold` /
+   * `legendItalic` / `legendUnderline` / `legendStrikethrough` /
+   * `legendFontColor` / `legendFontFamily` / `legendLayout`: the fill
+   * lands on the legend's `<c:spPr>` block, the typography knobs on
+   * the legend's `<c:txPr>` block, the layout on the legend's
+   * `<c:layout>` block, and the visibility / position toggles on
+   * `<c:legendPos>` / `<c:overlay>` — every knob targets a different
+   * child of `<c:legend>`.
+   */
+  legendFillColor?: string;
+  /**
    * Custom plot-area placement inside the chart frame. Maps to
    * `<c:plotArea><c:layout><c:manualLayout>...</c:manualLayout></c:layout>
    * </c:plotArea>` — Excel's "Format Plot Area -> Position -> Custom"
@@ -6702,6 +6749,34 @@ export interface Chart {
    * slots straight into {@link cloneChart} without conversion.
    */
   legendLayout?: ChartManualLayout;
+  /**
+   * Legend background fill color pulled from `<c:legend><c:spPr>
+   * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></c:spPr>
+   * </c:legend>`. Reflects Excel's "Format Legend -> Fill -> Solid
+   * fill -> Color" picker (the same dialog the user reaches by
+   * right-clicking the legend background). The element sits on
+   * `<c:legend>` between `<c:overlay>` and `<c:txPr>` per the
+   * CT_Legend schema sequence (ECMA-376 Part 1, §21.2.2.114).
+   *
+   * Reports the 6-character uppercase hex string when the source
+   * chart pins a literal `<a:srgbClr val="RRGGBB"/>` fill on the
+   * legend's `<c:spPr>` block. Theme references (`<a:schemeClr>`),
+   * non-solid fills (`<a:noFill>` / `<a:gradFill>` / `<a:pattFill>` /
+   * `<a:blipFill>`), and the OOXML system / preset color forms
+   * (`<a:sysClr>` / `<a:hslClr>` / `<a:prstClr>`) all collapse to
+   * `undefined` — only the literal RGB triple round-trips losslessly
+   * through {@link writeChart}. Malformed `val` tokens (wrong length,
+   * non-hex characters) likewise drop to `undefined` rather than
+   * fabricate a value the writer would round-trip into a malformed
+   * `<a:srgbClr>`.
+   *
+   * Reported as `undefined` whenever {@link legend} is `false` or the
+   * source chart has no `<c:legend>` element at all — there is no
+   * `<c:spPr>` slot to surface the fill from in either case. Mirrors
+   * the writer-side {@link SheetChart.legendFillColor} so a parsed
+   * value slots straight into {@link cloneChart} without conversion.
+   */
+  legendFillColor?: string;
   /**
    * Custom plot-area placement pulled from `<c:plotArea><c:layout>
    * <c:manualLayout>...</c:manualLayout></c:layout></c:plotArea>`.

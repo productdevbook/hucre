@@ -519,6 +519,18 @@ export function parseChart(xml: string): Chart | undefined {
     // that pinned an out-of-range layout both round-trip lossless.
     const legendLayout = parseLegendLayout(chartEl);
     if (legendLayout !== undefined) out.legendLayout = legendLayout;
+
+    // `<c:legend><c:spPr><a:solidFill>` carries Excel's "Format Legend
+    // -> Fill -> Solid fill -> Color" picker. CT_Legend places the
+    // `<c:spPr>` block between `<c:overlay>` and `<c:txPr>`. The
+    // reader surfaces only literal `<a:srgbClr val="RRGGBB"/>` fills;
+    // theme references and non-solid fills (`<a:noFill>` /
+    // `<a:gradFill>` / `<a:pattFill>` / `<a:blipFill>` /
+    // `<a:schemeClr>`) drop to `undefined` so a round-trip never
+    // fabricates a fill the writer cannot reproduce on emit. Same
+    // hidden-legend scoping as the typography knobs.
+    const legendFillColor = parseLegendFillColor(chartEl);
+    if (legendFillColor !== undefined) out.legendFillColor = legendFillColor;
   }
 
   const dispBlanksAs = parseDispBlanksAs(chartEl);
@@ -3833,6 +3845,51 @@ function parseLegendLayout(chartEl: XmlElement): ChartManualLayout | undefined {
     return undefined;
   }
   return out;
+}
+
+/**
+ * Pull the legend background fill color off the canonical
+ * `<c:legend><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
+ * </a:solidFill></c:spPr></c:legend>` chain Excel writes when the
+ * user pins "Format Legend -> Fill -> Solid fill -> Color".
+ *
+ * Returns the 6-character uppercase hex string when the parser walks
+ * the full chain and lands on an `<a:srgbClr val="RRGGBB"/>`. Theme
+ * references (`<a:schemeClr>`), `<a:hslClr>`, `<a:sysClr>`, and
+ * `<a:prstClr>` all collapse to `undefined` — only the literal RGB
+ * triple round-trips losslessly through {@link writeChart}. Non-solid
+ * fills (`<a:noFill>`, `<a:gradFill>`, `<a:pattFill>`, `<a:blipFill>`)
+ * likewise drop to `undefined` so a round-trip never fabricates a
+ * fill the writer cannot reproduce on emit. Malformed `val` tokens
+ * (wrong length, non-hex characters) drop to `undefined` rather than
+ * fabricate a value the writer would round-trip into a malformed
+ * `<a:srgbClr>`.
+ *
+ * The lookup is scoped to direct children of `<c:legend>` so a stray
+ * `<c:spPr>` elsewhere (e.g. on a series or on the legend's
+ * `<c:txPr>` block — the latter is purely text-character-properties,
+ * but a malformed source might place a `<c:spPr>` there in error)
+ * cannot leak in. Returns `undefined` whenever the chart omits the
+ * `<c:legend>` element or the `<c:spPr><a:solidFill><a:srgbClr>`
+ * chain is malformed at any link. Mirrors the chart-title /
+ * axis-title / axis tick-label / legend font color readers exactly
+ * so a parsed value slots straight back into the writer's emit path.
+ *
+ * Independent of {@link parseLegendFontColor}: the fill lives on
+ * `<c:legend><c:spPr>`, the font color lives on
+ * `<c:legend><c:txPr>` — the two readers walk disjoint paths so a
+ * caller can pin both knobs without conflict.
+ */
+function parseLegendFillColor(chartEl: XmlElement): string | undefined {
+  const legend = findChild(chartEl, "legend");
+  if (!legend) return undefined;
+  const spPr = findChild(legend, "spPr");
+  if (!spPr) return undefined;
+  const solidFill = findChild(spPr, "solidFill");
+  if (!solidFill) return undefined;
+  const srgbClr = findChild(solidFill, "srgbClr");
+  if (!srgbClr) return undefined;
+  return normalizeRgbHex(srgbClr.attrs.val);
 }
 
 /**
