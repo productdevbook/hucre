@@ -65,6 +65,23 @@ import {
   parseSideWallThickness,
   parseView3D,
 } from "./chart/walls";
+import {
+  parseTitle,
+  parseTitleBold,
+  parseTitleBorderColor,
+  parseTitleBorderDash,
+  parseTitleBorderWidth,
+  parseTitleColor,
+  parseTitleFillColor,
+  parseTitleFontFamily,
+  parseTitleFontSize,
+  parseTitleItalic,
+  parseTitleLayout,
+  parseTitleOverlay,
+  parseTitleRotation,
+  parseTitleStrike,
+  parseTitleUnderline,
+} from "./chart/title";
 
 /** All chart-type element local names recognized by Excel. */
 const CHART_KIND_TAGS: ReadonlyMap<string, ChartKind> = new Map([
@@ -4280,40 +4297,6 @@ function parseLegendBorderDash(chartEl: XmlElement): ChartBorderDash | undefined
   return parseBorderDashFromSpPr(legend);
 }
 
-/**
- * Pull `<c:title><c:layout><c:manualLayout>` off the chart. Reflects
- * Excel's "Format Chart Title -> Title Options -> Position -> Custom"
- * knob — the `(x, y)` anchor and `(w, h)` size of the title block as
- * fractions of the chart frame in the `0..1` band.
- *
- * The OOXML schema (`CT_ManualLayout`, ECMA-376 Part 1, §21.2.2.115)
- * exposes optional `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` children whose
- * `val` attributes carry an `xsd:double`. The reader admits the
- * coordinate only when `val` parses to a finite number in the `0..1`
- * band; out-of-range / non-finite / non-numeric tokens drop to
- * `undefined` on the matching axis so absence and a malformed token
- * round-trip identically through {@link cloneChart}.
- *
- * Both `<c:xMode val="edge"/>` (absolute fraction of the chart frame)
- * and `<c:xMode val="factor"/>` (delta from auto-layout) are accepted
- * — the reader surfaces the same `ChartManualLayout` shape regardless,
- * since the writer always normalizes to `"edge"` on emit (Excel itself
- * emits the absolute form when the user drags the title to a custom
- * position).
- *
- * Returns `undefined` whenever the chart omits the `<c:title>` /
- * `<c:layout>` / `<c:manualLayout>` chain at any link, or when every
- * coordinate dropped on normalization — the field is omitted entirely
- * on a clean parse so absence and an empty layout round-trip identically
- * through the writer. Mirrors {@link parseLegendLayout} so a parsed
- * value flows through the same `ChartManualLayout` shape regardless of
- * which manual-layout slot the source chart pinned.
- */
-function parseTitleLayout(chartEl: XmlElement): ChartManualLayout | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  return parseManualLayout(title);
-}
 
 /**
  * Pull `<c:plotArea><c:layout><c:manualLayout>` off the chart. Reflects
@@ -4521,43 +4504,6 @@ function parseChartSpaceBorderColor(chartSpace: XmlElement): string | undefined 
 // every per-host `parseXxxLayout` wrapper shares one accept-or-drop
 // grammar.
 
-/**
- * Pull `<c:title><c:overlay val=".."/></c:title>` off the chart. The
- * OOXML default `false` (the title reserves its own slot above the plot
- * area, no overlap) collapses to `undefined` so absence and
- * `<c:overlay val="0"/>` round-trip identically through
- * {@link cloneChart} — only an explicit `<c:overlay val="1"/>` surfaces
- * `true`.
- *
- * Returns `undefined` whenever the chart omits the `<c:title>` element
- * — there is no overlay slot to surface in that case. The element is a
- * sibling of `<c:tx>` inside `<c:title>` per the CT_Title schema, so the
- * lookup is scoped to direct title children.
- *
- * Accepts the OOXML truthy / falsy spellings (`"1"` / `"true"` / `"0"`
- * / `"false"`); unknown values and missing `val` attributes drop to
- * `undefined` rather than fabricate a flag Excel would not emit.
- */
-function parseTitleOverlay(chartEl: XmlElement): boolean | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const overlay = findChild(title, "overlay");
-  if (!overlay) return undefined;
-  const raw = overlay.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  switch (raw) {
-    case "1":
-    case "true":
-      return true;
-    case "0":
-    case "false":
-      // OOXML default — collapse to undefined for symmetry with the
-      // writer's `titleOverlay` field.
-      return undefined;
-    default:
-      return undefined;
-  }
-}
 
 /**
  * Conversion factor between OOXML's `rot` attribute (60000ths of a
@@ -4570,46 +4516,6 @@ const TITLE_ROT_PER_DEGREE = 60000;
 const TITLE_ROTATION_MIN_DEG = -90;
 const TITLE_ROTATION_MAX_DEG = 90;
 
-/**
- * Pull `<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx>
- * </c:title>` off the chart. Returns the rotation in whole degrees
- * (range `-90..90`).
- *
- * The OOXML default `0` (and absence of the `<a:bodyPr>` element /
- * `rot` attribute) all collapse to `undefined` so absence and the
- * default round-trip identically through {@link cloneChart}.
- * Non-integer / non-numeric / out-of-range values clamp to the nearest
- * endpoint of the `-90..90` band Excel's UI exposes; non-finite
- * (`NaN`, `Infinity`) inputs drop to `undefined`.
- *
- * Returns `undefined` whenever the chart omits the `<c:title>` element
- * — there is no rotation slot to surface in that case. The
- * `<a:bodyPr>` lives inside `<c:tx><c:rich>` per the CT_Title schema
- * (the rich-text body's body-properties); the lookup is scoped to that
- * path so a stray `<a:bodyPr>` elsewhere in the chart cannot leak in.
- */
-function parseTitleRotation(chartEl: XmlElement): number | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
-  const bodyPr = findChild(rich, "bodyPr");
-  if (!bodyPr) return undefined;
-  const raw = bodyPr.attrs.rot;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  const parsed = Number.parseInt(trimmed, 10);
-  if (!Number.isFinite(parsed)) return undefined;
-  // Convert from 60000ths of a degree to whole degrees.
-  const degrees = Math.round(parsed / TITLE_ROT_PER_DEGREE);
-  if (degrees === 0) return undefined;
-  if (degrees < TITLE_ROTATION_MIN_DEG) return TITLE_ROTATION_MIN_DEG;
-  if (degrees > TITLE_ROTATION_MAX_DEG) return TITLE_ROTATION_MAX_DEG;
-  return degrees;
-}
 
 /**
  * Conversion factor between OOXML's `sz` attribute (100ths of a point,
@@ -4625,345 +4531,12 @@ const TITLE_FONT_SZ_PER_POINT = 100;
 const TITLE_FONT_SIZE_MIN_PT = 1;
 const TITLE_FONT_SIZE_MAX_PT = 400;
 
-/**
- * Pull `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
- * </a:p></c:rich></c:tx></c:title>` off the chart. Returns the font
- * size in points (range `1..400`).
- *
- * The OOXML `sz` attribute is in 100ths of a point — the reader
- * converts to points and rounds to the nearest 0.5pt (Excel's UI
- * exposes the same 0.5pt granularity). Absence of the element /
- * attribute and out-of-range / non-numeric / non-finite values all
- * collapse to `undefined` so a fresh chart and a chart that pinned an
- * out-of-range size both round-trip to the writer's "skip the size
- * attribute" path.
- *
- * Returns `undefined` whenever the chart omits the `<c:title>` element
- * — there is no `<a:p>` slot to surface the size from in that case —
- * or when the title is a `<c:strRef>` (formula reference) with no
- * `<c:rich>` body. The `<a:defRPr>` lives inside
- * `<c:tx><c:rich><a:p><a:pPr>` per the CT_Title schema (the
- * default-paragraph properties on the rich-text body's first
- * paragraph); the lookup is scoped to that path so a stray
- * `<a:defRPr>` elsewhere in the chart (e.g. on an axis title or a
- * data-labels block) cannot leak in.
- */
-function parseTitleFontSize(chartEl: XmlElement): number | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
-  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
-  // default-paragraph font size. The reader walks the canonical chain
-  // and bails on the first missing link so a malformed `<c:rich>`
-  // surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const raw = defRPr.attrs.sz;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  const parsed = Number.parseInt(trimmed, 10);
-  if (!Number.isFinite(parsed)) return undefined;
-  // Convert from 100ths of a point to points, rounding to the nearest
-  // 0.5pt to match the granularity Excel's UI exposes. `Math.round`
-  // on `2 * (parsed / 100)` and dividing by 2 gives a clean half-step
-  // band that mirrors the writer's emit-time normalization.
-  const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2);
-  const points = halfSteps / 2;
-  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
-  return points;
-}
-
-/**
- * Pull `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr>
- * </a:p></c:rich></c:tx></c:title>` off the chart. Returns the bold
- * flag.
- *
- * The OOXML `b` attribute is the `xsd:boolean` bold flag on
- * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7). The
- * OOXML default `false` collapses to `undefined` so absence and
- * `b="0"` round-trip identically — only an explicit `b="1"` surfaces
- * `true`. Unknown / malformed `b` tokens drop to `undefined` rather
- * than fabricate a value the writer would never emit.
- *
- * Returns `undefined` whenever the chart omits the `<c:title>` element
- * — there is no `<a:p>` slot to surface the flag from in that case —
- * or when the title is a `<c:strRef>` (formula reference) with no
- * `<c:rich>` body. The `<a:defRPr>` lives inside
- * `<c:tx><c:rich><a:p><a:pPr>` per the CT_Title schema (the
- * default-paragraph properties on the rich-text body's first
- * paragraph); the lookup is scoped to that path so a stray
- * `<a:defRPr>` elsewhere in the chart (e.g. on an axis title or a
- * data-labels block) cannot leak in.
- */
-function parseTitleBold(chartEl: XmlElement): boolean | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
-  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
-  // default-paragraph bold flag. The reader walks the canonical chain
-  // and bails on the first missing link so a malformed `<c:rich>`
-  // surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const parsed = parseBoolAttr(defRPr.attrs.b);
-  // The OOXML default `false` collapses to `undefined` so absence and
-  // `b="0"` round-trip identically through the writer — only an
-  // explicit `b="1"` surfaces `true`.
-  if (parsed === true) return true;
-  return undefined;
-}
 
 // ── Title Italic ─────────────────────────────────────────────────────
 
-/**
- * Pull `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr>
- * </a:p></c:rich></c:tx></c:title>` off the chart. Returns the italic
- * flag.
- *
- * The OOXML `i` attribute is the `xsd:boolean` italic flag on
- * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7). The
- * OOXML default `false` collapses to `undefined` so absence and
- * `i="0"` round-trip identically — only an explicit `i="1"` surfaces
- * `true`. Unknown / malformed `i` tokens drop to `undefined` rather
- * than fabricate a value the writer would never emit.
- *
- * Returns `undefined` whenever the chart omits the `<c:title>` element
- * — there is no `<a:p>` slot to surface the flag from in that case —
- * or when the title is a `<c:strRef>` (formula reference) with no
- * `<c:rich>` body. The `<a:defRPr>` lives inside
- * `<c:tx><c:rich><a:p><a:pPr>` per the CT_Title schema (the
- * default-paragraph properties on the rich-text body's first
- * paragraph); the lookup is scoped to that path so a stray
- * `<a:defRPr>` elsewhere in the chart (e.g. on an axis title or a
- * data-labels block) cannot leak in.
- */
-function parseTitleItalic(chartEl: XmlElement): boolean | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
-  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
-  // default-paragraph italic flag. The reader walks the canonical chain
-  // and bails on the first missing link so a malformed `<c:rich>`
-  // surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const parsed = parseBoolAttr(defRPr.attrs.i);
-  // The OOXML default `false` collapses to `undefined` so absence and
-  // `i="0"` round-trip identically through the writer — only an
-  // explicit `i="1"` surfaces `true`.
-  if (parsed === true) return true;
-  return undefined;
-}
 
 // ── Title Color ─────────────────────────────────────────────────────
 
-/**
- * Pull `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>
- * <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
- * </c:rich></c:tx></c:title>` off the chart. Returns the title's
- * sRGB font color as a 6-character uppercase hex string.
- *
- * The OOXML `<a:srgbClr val=".."/>` is the literal sRGB triple Excel
- * lands on the title's default-paragraph properties when the user
- * picks a custom font color. Theme references (`<a:schemeClr>`),
- * `<a:hslClr>`, `<a:sysClr>`, and `<a:prstClr>` all collapse to
- * `undefined` — only the literal RGB triple round-trips losslessly
- * through {@link writeChart}. Malformed `val` tokens (wrong length,
- * non-hex characters) likewise drop to `undefined` rather than
- * fabricate a value the writer would round-trip into a malformed
- * `<a:srgbClr>`.
- *
- * Returns `undefined` whenever the chart omits the `<c:title>`
- * element — there is no `<a:p>` slot to surface the fill from in
- * that case — or when the title is a `<c:strRef>` (formula
- * reference) with no `<c:rich>` body. The `<a:solidFill>` lives
- * inside `<c:tx><c:rich><a:p><a:pPr><a:defRPr>` per the CT_Title
- * schema (the default-paragraph properties on the rich-text body's
- * first paragraph); the lookup is scoped to that path so a stray
- * `<a:solidFill>` elsewhere in the chart (e.g. on an axis title or
- * a data-labels block) cannot leak in.
- */
-function parseTitleColor(chartEl: XmlElement): string | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
-  // `<a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr>` is the OOXML path
-  // Excel writes for the default-paragraph font color. The reader
-  // walks the canonical chain and bails on the first missing link so
-  // a malformed `<c:rich>` surfaces as absence rather than a
-  // fabricated value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const solidFill = findChild(defRPr, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
-  if (!srgbClr) return undefined;
-  const raw = srgbClr.attrs.val;
-  return normalizeRgbHex(raw);
-}
-
-/**
- * Pull the chart-title background fill color off the canonical
- * `<c:title><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
- * </a:solidFill></c:spPr></c:title>` chain Excel writes when the
- * user pins "Format Chart Title -> Fill -> Solid fill -> Color".
- *
- * Returns the 6-character uppercase hex string when the parser walks
- * the full chain and lands on an `<a:srgbClr val="RRGGBB"/>`. Theme
- * references (`<a:schemeClr>`), `<a:hslClr>`, `<a:sysClr>`, and
- * `<a:prstClr>` all collapse to `undefined` — only the literal RGB
- * triple round-trips losslessly through {@link writeChart}. Non-solid
- * fills (`<a:noFill>`, `<a:gradFill>`, `<a:pattFill>`, `<a:blipFill>`)
- * likewise drop to `undefined` so a round-trip never fabricates a
- * fill the writer cannot reproduce on emit. Malformed `val` tokens
- * (wrong length, non-hex characters) drop to `undefined` rather than
- * fabricate a value the writer would round-trip into a malformed
- * `<a:srgbClr>`.
- *
- * The lookup is scoped to direct children of `<c:title>` so a stray
- * `<c:spPr>` elsewhere in the chart (e.g. on the plot area, a series,
- * or the legend) cannot leak in. Returns `undefined` whenever the
- * chart omits the `<c:title>` element or the
- * `<c:spPr><a:solidFill><a:srgbClr>` chain is malformed at any link.
- * Mirrors the legend / plot-area fill readers exactly so a parsed
- * value slots straight back into the writer's emit path.
- *
- * Independent of {@link parseTitleColor}: the fill lives on
- * `<c:title><c:spPr>`, the font color lives on
- * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>` — the
- * two readers walk disjoint paths so a caller can pin both knobs
- * without conflict. Unlike {@link parseTitleColor}, the lookup is on
- * `<c:title>` directly rather than gated on `<c:rich>` so a title
- * authored as a `<c:strRef>` formula reference can still surface its
- * background fill.
- */
-function parseTitleFillColor(chartEl: XmlElement): string | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  return parseSpPrFill(title);
-}
-
-/**
- * Pull `<c:title><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/>
- * </a:solidFill></a:ln></c:spPr></c:title>` off the chart-level
- * `<c:title>` block. Returns the title border (line) stroke color as
- * a 6-character uppercase hex string the writer can round-trip via
- * {@link SheetChart.titleBorderColor}.
- *
- * The OOXML `<a:srgbClr>` element carries the literal sRGB color
- * (`CT_SRgbColor`, ECMA-376 Part 1, §20.1.2.3.32) inside the line's
- * solid fill choice (`CT_LineProperties`, §20.1.2.3.24) which itself
- * sits inside `<c:spPr>` (`CT_ShapeProperties`, §20.1.2.3.13). The
- * `<c:spPr>` slot lives between `<c:overlay>` and `<c:txPr>` /
- * `<c:extLst>` per CT_Title (§21.2.2.210); `<a:ln>` follows the
- * optional `<a:solidFill>` (fill) child inside `<c:spPr>`.
- *
- * The reader surfaces only the literal `<a:srgbClr>` form — absence,
- * non-solid line fills (`<a:noFill>` / `<a:gradFill>` / `<a:pattFill>`),
- * and theme-color references (`<a:schemeClr>`) all collapse to
- * `undefined` so a chart that pinned a stroke the writer cannot
- * reproduce on emit drops the field rather than fabricate one Excel
- * would render differently. Malformed `val` tokens (wrong length,
- * non-hex characters, alpha-channel forms, non-string escapes)
- * likewise drop to `undefined`.
- *
- * The lookup is scoped to direct children of `<c:title>` so a stray
- * `<c:spPr>` elsewhere in the chart (e.g. on the plot area, a
- * series, or the legend) cannot leak in. Returns `undefined`
- * whenever the chart omits the `<c:title>` element or the
- * `<c:spPr><a:ln><a:solidFill><a:srgbClr>` chain is malformed at
- * any link. Mirrors {@link parsePlotAreaBorderColor} — same
- * `<a:ln>` chain on a different host element. Independent of
- * {@link parseTitleFillColor}: the two readers walk disjoint
- * children of the shared `<c:spPr>` block (`<a:solidFill>` for the
- * fill, `<a:ln>` for the stroke) so a caller can pin both knobs
- * without conflict. Unlike {@link parseTitleColor}, the lookup is
- * on `<c:title>` directly rather than gated on `<c:rich>` so a
- * title authored as a `<c:strRef>` formula reference can still
- * surface its border color.
- */
-function parseTitleBorderColor(chartEl: XmlElement): string | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  return parseSpPrBorderColor(title);
-}
-
-/**
- * Pull the `w` attribute off `<c:title><c:spPr><a:ln w="EMU"/>` and
- * return the stroke width in points after clamping to the
- * `0.25..13.5` pt band Excel's UI exposes. The OOXML `w` attribute
- * carries the stroke width in English Metric Units (1 pt = 12 700 EMU)
- * per `CT_LineProperties` (ECMA-376 Part 1, §20.1.2.3.24); the reader
- * snaps the result to the 0.25 pt grid so a parsed-then-written width
- * does not drift across round-trips (Excel rounds in the UI anyway).
- *
- * Returns `undefined` when the chart omits `<c:title>`, when the
- * title has no `<c:spPr><a:ln w=..>` slot, when the attribute is
- * missing, when the value cannot be parsed as a finite positive
- * number, or when it parses to zero (Excel's "no border" marker — the
- * writer-side knob does not model that state). Mirrors the writer-side
- * {@link SheetChart.titleBorderWidth} so a parsed value slots
- * straight into {@link cloneChart} without conversion.
- *
- * The lookup is scoped to direct children of `<c:title>` so a stray
- * `<a:ln w=..>` elsewhere (on a series stroke, on an axis line, on the
- * plot-area / legend border) cannot leak in. Mirrors {@link parseTitleBorderColor} —
- * same `<c:spPr>` host on the same `<c:title>` parent — but lands on
- * the `w` attribute rather than the `<a:solidFill><a:srgbClr>` color
- * child.
- */
-function parseTitleBorderWidth(chartEl: XmlElement): number | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  return parseBorderWidthFromSpPr(title);
-}
-
-/**
- * Pull the `val` attribute off `<c:title><c:spPr><a:ln><a:prstDash
- * val=".."/></a:ln></c:spPr></c:title>` and return the recognized
- * {@link ChartBorderDash} value. Returns `undefined` when the chain
- * is missing at any link, when the attribute is absent / unrecognized,
- * or when it matches the OOXML default `"solid"` (so absence and the
- * default round-trip identically through {@link cloneChart}).
- *
- * Delegates to {@link parseBorderDashFromSpPr} so the accept-or-drop
- * grammar matches every chart-frame border-dash slot the reader
- * surfaces.
- */
-function parseTitleBorderDash(chartEl: XmlElement): ChartBorderDash | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  return parseBorderDashFromSpPr(title);
-}
 
 /**
  * Pull `<c:title><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
@@ -5111,176 +4684,12 @@ function parseAxisTitleBorderDash(axis: XmlElement): ChartBorderDash | undefined
 
 // ── Title Strike ────────────────────────────────────────────────────
 
-/**
- * Pull `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/>
- * </a:pPr></a:p></c:rich></c:tx></c:title>` off the chart. Returns
- * the strikethrough flag.
- *
- * The OOXML `strike` attribute is the `ST_TextStrikeType` enum on
- * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7) with
- * three values: `"noStrike"` (the OOXML application default),
- * `"sngStrike"` (single line, the value Excel's UI checkbox emits),
- * and `"dblStrike"` (double line, a non-UI variant). The reader
- * surfaces only the UI-default `"sngStrike"` as `true`; `"noStrike"`,
- * absence, and the non-UI `"dblStrike"` all collapse to `undefined` —
- * the writer emits only `"sngStrike"`, so reporting `"dblStrike"` as
- * `true` would silently downgrade the choice to a single line on
- * round-trip. Unknown / malformed `strike` tokens likewise drop to
- * `undefined`.
- *
- * Returns `undefined` whenever the chart omits the `<c:title>`
- * element — there is no `<a:p>` slot to surface the flag from in
- * that case — or when the title is a `<c:strRef>` (formula
- * reference) with no `<c:rich>` body. The `<a:defRPr>` lives inside
- * `<c:tx><c:rich><a:p><a:pPr>` per the CT_Title schema (the default-
- * paragraph properties on the rich-text body's first paragraph); the
- * lookup is scoped to that path so a stray `<a:defRPr>` elsewhere in
- * the chart (e.g. on an axis title or a data-labels block) cannot
- * leak in.
- */
-function parseTitleStrike(chartEl: XmlElement): boolean | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
-  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
-  // default-paragraph strikethrough flag. The reader walks the
-  // canonical chain and bails on the first missing link so a
-  // malformed `<c:rich>` surfaces as absence rather than a fabricated
-  // value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const raw = defRPr.attrs.strike;
-  // Only the UI-default `"sngStrike"` surfaces as `true`. The OOXML
-  // application default `"noStrike"` and the non-UI `"dblStrike"` both
-  // collapse to `undefined` so absence and the OOXML default round-trip
-  // identically through the writer; the writer emits only `"sngStrike"`,
-  // so reporting `"dblStrike"` here would silently downgrade the choice
-  // on round-trip.
-  if (raw === "sngStrike") return true;
-  return undefined;
-}
 
 // ── Title Underline ─────────────────────────────────────────────────
 
-/**
- * Pull `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr u=".."/>
- * </a:pPr></a:p></c:rich></c:tx></c:title>` off the chart. Returns
- * the underline flag.
- *
- * The OOXML `u` attribute is the `ST_TextUnderlineType` enum on
- * `CT_TextCharacterProperties` (ECMA-376 Part 1, §21.1.2.3.7) with
- * eighteen values; Excel's UI exposes only `"sng"` (single line —
- * the default underline checkbox) and `"dbl"` (double line). The
- * reader surfaces only the UI-default `"sng"` as `true`; `"none"`
- * (the OOXML application default), absence, the non-UI `"dbl"`
- * variant, and the sixteen exotic tokens (`"words"`, `"heavy"`,
- * `"dotted"`, `"dottedHeavy"`, `"dash"`, `"dashHeavy"`, `"dashLong"`,
- * `"dashLongHeavy"`, `"dotDash"`, `"dotDashHeavy"`, `"dotDotDash"`,
- * `"dotDotDashHeavy"`, `"wavy"`, `"wavyHeavy"`, `"wavyDbl"`) all
- * collapse to `undefined` — the writer emits only `"sng"`, so
- * reporting any non-single underline as `true` would silently
- * downgrade the choice to a single line on round-trip. Unknown /
- * malformed `u` tokens likewise drop to `undefined`.
- *
- * Returns `undefined` whenever the chart omits the `<c:title>`
- * element — there is no `<a:p>` slot to surface the flag from in
- * that case — or when the title is a `<c:strRef>` (formula
- * reference) with no `<c:rich>` body. The `<a:defRPr>` lives inside
- * `<c:tx><c:rich><a:p><a:pPr>` per the CT_Title schema (the default-
- * paragraph properties on the rich-text body's first paragraph); the
- * lookup is scoped to that path so a stray `<a:defRPr>` elsewhere in
- * the chart (e.g. on an axis title or a data-labels block) cannot
- * leak in.
- */
-function parseTitleUnderline(chartEl: XmlElement): boolean | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
-  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
-  // default-paragraph underline flag. The reader walks the canonical
-  // chain and bails on the first missing link so a malformed
-  // `<c:rich>` surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const raw = defRPr.attrs.u;
-  // Only the UI-default `"sng"` surfaces as `true`. The OOXML
-  // application default `"none"`, the non-UI `"dbl"` variant, and
-  // every exotic token (`"words"`, `"heavy"`, `"dotted"`, etc.) all
-  // collapse to `undefined` so absence and the OOXML default
-  // round-trip identically through the writer; the writer emits only
-  // `"sng"`, so reporting a non-single underline here would silently
-  // downgrade the choice on round-trip.
-  if (raw === "sng") return true;
-  return undefined;
-}
 
 // ── Title Font Family ───────────────────────────────────────────────
 
-/**
- * Pull `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
- * typeface=".."/></a:defRPr></a:pPr></a:p></c:rich></c:tx></c:title>`
- * off the chart. Returns the typeface string the title was authored
- * with.
- *
- * The OOXML `<a:latin>` element carries the typeface name on
- * `CT_TextFont` (ECMA-376 Part 1, §21.1.2.3.7). The reader trims
- * surrounding whitespace and reports the trimmed typeface; empty /
- * whitespace-only `typeface` attributes and missing `<a:latin>`
- * elements both collapse to `undefined` so absence and the empty
- * form round-trip identically through the writer. Non-string
- * `typeface` tokens (defensive — the XML parser only ever surfaces
- * strings) likewise drop to `undefined`.
- *
- * Returns `undefined` whenever the chart omits the `<c:title>` element
- * — there is no `<a:p>` slot to surface the typeface from in that case
- * — or when the title is a `<c:strRef>` (formula reference) with no
- * `<c:rich>` body. The `<a:defRPr>` lives inside
- * `<c:tx><c:rich><a:p><a:pPr>` per the CT_Title schema (the default-
- * paragraph properties on the rich-text body's first paragraph); the
- * lookup is scoped to that path so a stray `<a:latin>` elsewhere in
- * the chart (e.g. on an axis title or a data-labels block) cannot
- * leak in.
- */
-function parseTitleFontFamily(chartEl: XmlElement): string | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
-  // `<a:p><a:pPr><a:defRPr><a:latin>` is the OOXML path Excel writes
-  // for the default-paragraph typeface. The reader walks the
-  // canonical chain and bails on the first missing link so a
-  // malformed `<c:rich>` surfaces as absence rather than a fabricated
-  // value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const latin = findChild(defRPr, "latin");
-  if (!latin) return undefined;
-  const raw = latin.attrs.typeface;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  return trimmed;
-}
 
 // ── Auto Title Deleted ────────────────────────────────────────────
 
@@ -6455,39 +5864,6 @@ function readBoolVal(raw: string | undefined): boolean | undefined {
 
 // ── Internals ─────────────────────────────────────────────────────
 
-/**
- * Read `<c:title>` text. The title may be a rich-text run tree or a
- * formula reference; we only surface plain text runs joined together.
- */
-function parseTitle(chartEl: XmlElement): string | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  // tx can hold either <c:rich> (literal text) or <c:strRef> (formula).
-  const rich = findChild(tx, "rich");
-  if (rich) {
-    const parts: string[] = [];
-    collectTextRuns(rich, parts);
-    const joined = parts.join("").trim();
-    return joined.length > 0 ? joined : undefined;
-  }
-  const strRef = findChild(tx, "strRef");
-  if (strRef) {
-    const cache = findChild(strRef, "strCache");
-    if (cache) {
-      for (const pt of childElements(cache)) {
-        if (pt.local !== "pt") continue;
-        const v = findChild(pt, "v");
-        if (v) {
-          const text = elementText(v).trim();
-          if (text.length > 0) return text;
-        }
-      }
-    }
-  }
-  return undefined;
-}
 
 function collectTextRuns(el: XmlElement, out: string[]): void {
   for (const child of el.children) {

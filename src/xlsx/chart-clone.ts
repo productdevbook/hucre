@@ -51,6 +51,17 @@ import {
   resolveSideWallThickness,
   resolveView3D,
 } from "./chart/walls";
+import { normalizeLayoutCoordinate } from "./chart/layout";
+import {
+  normalizeTitleBold,
+  normalizeTitleColor,
+  normalizeTitleFontFamily,
+  normalizeTitleFontSize,
+  normalizeTitleItalic,
+  normalizeTitleRotation,
+  normalizeTitleStrike,
+  normalizeTitleUnderline,
+} from "./chart/title";
 
 // ── Public API ───────────────────────────────────────────────────────
 
@@ -3988,14 +3999,6 @@ function normalizeLegendLayout(
   return out;
 }
 
-/** Filter a single coordinate to a finite number in the `0..1` band. */
-function normalizeLayoutCoordinate(raw: unknown): number | undefined {
-  if (typeof raw !== "number") return undefined;
-  if (!Number.isFinite(raw)) return undefined;
-  if (raw < 0 || raw > 1) return undefined;
-  return raw;
-}
-
 /**
  * Resolve a `legendLayout` override.
  *
@@ -4542,23 +4545,6 @@ function resolveTitleOverlay(
 const TITLE_ROTATION_MIN_DEG = -90;
 const TITLE_ROTATION_MAX_DEG = 90;
 
-/**
- * Normalize a `titleRotation` value (whole degrees) for the cloned
- * `SheetChart`. Mirrors the writer's `normalizeTitleRotation` — the
- * cloned shape is guaranteed to round-trip through the writer without
- * surprise: out-of-range inputs clamp to the `-90..90` band; non-integer
- * inputs round to the nearest whole degree; `0`, `NaN`, `Infinity`, and
- * non-numeric inputs collapse to `undefined` so the cloned chart drops
- * the field rather than carry a value the writer would silently elide.
- */
-function normalizeTitleRotation(value: number | undefined): number | undefined {
-  if (value === undefined || typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  let degrees = Math.round(value);
-  if (degrees < TITLE_ROTATION_MIN_DEG) degrees = TITLE_ROTATION_MIN_DEG;
-  else if (degrees > TITLE_ROTATION_MAX_DEG) degrees = TITLE_ROTATION_MAX_DEG;
-  if (degrees === 0) return undefined;
-  return degrees;
-}
 
 /**
  * Resolve a `titleRotation` override.
@@ -4592,25 +4578,6 @@ function resolveTitleRotation(
 const TITLE_FONT_SIZE_MIN_PT = 1;
 const TITLE_FONT_SIZE_MAX_PT = 400;
 
-/**
- * Normalize a `titleFontSize` value (whole / half points) for the
- * cloned `SheetChart`. Mirrors the writer's `normalizeTitleFontSize` —
- * the cloned shape is guaranteed to round-trip through the writer
- * without surprise: fractional inputs round to the nearest 0.5pt
- * (Excel's UI granularity); inputs outside the `1..400`pt band, `NaN`,
- * `Infinity`, and non-numeric inputs all collapse to `undefined` so
- * the cloned chart drops the field rather than carry a value the
- * writer would silently elide back to the application default.
- */
-function normalizeTitleFontSize(value: number | undefined): number | undefined {
-  if (value === undefined || typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  // Round to the nearest 0.5pt (Excel's UI granularity). `Math.round`
-  // on `2 * value` and dividing by 2 gives a clean half-step band.
-  const halfSteps = Math.round(value * 2);
-  const points = halfSteps / 2;
-  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
-  return points;
-}
 
 /**
  * Resolve a `titleFontSize` override.
@@ -4636,20 +4603,6 @@ function resolveTitleFontSize(
   return normalizeTitleFontSize(override);
 }
 
-/**
- * Normalize a `titleBold` value for the cloned `SheetChart`. Mirrors
- * the writer's `normalizeTitleBold` — the cloned shape is guaranteed
- * to round-trip through the writer without surprise: `true` / `false`
- * pass through literally, every other token (typed escape from an
- * untyped caller) collapses to `undefined` so the cloned chart drops
- * the field rather than carry a value the writer would silently elide
- * back to the OOXML default.
- */
-function normalizeTitleBold(value: boolean | undefined): boolean | undefined {
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
-}
 
 /**
  * Resolve a `titleBold` override.
@@ -4674,20 +4627,6 @@ function resolveTitleBold(
   return normalizeTitleBold(override);
 }
 
-/**
- * Normalize a `titleItalic` value for the cloned `SheetChart`. Mirrors
- * the writer's `normalizeTitleItalic` — the cloned shape is guaranteed
- * to round-trip through the writer without surprise: `true` / `false`
- * pass through literally, every other token (typed escape from an
- * untyped caller) collapses to `undefined` so the cloned chart drops
- * the field rather than carry a value the writer would silently elide
- * back to absence.
- */
-function normalizeTitleItalic(value: boolean | undefined): boolean | undefined {
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
-}
 
 /**
  * Resolve a `titleItalic` override.
@@ -4713,19 +4652,6 @@ function resolveTitleItalic(
   return normalizeTitleItalic(override);
 }
 
-/**
- * Normalize a `titleColor` value for the cloned `SheetChart`. Mirrors
- * the writer's `normalizeTitleColor` — the cloned shape is guaranteed
- * to round-trip through the writer without surprise: a valid sRGB
- * hex string (with or without a leading `#`) collapses to the
- * 6-character uppercase canonical form; every malformed input (wrong
- * length, non-hex characters, alpha-channel forms, non-string
- * escapes) collapses to `undefined` so the cloned chart drops the
- * field rather than carry a value the writer would silently elide.
- */
-function normalizeTitleColor(value: string | undefined): string | undefined {
-  return normalizeRgbHex(value);
-}
 
 /**
  * Resolve a `titleColor` override.
@@ -4884,20 +4810,6 @@ function resolveTitleBorderWidth(
   return normalizeTitleBorderWidth(override);
 }
 
-/**
- * Normalize a `titleStrike` value for the cloned `SheetChart`. Mirrors
- * the writer's `normalizeTitleStrike` — the cloned shape is guaranteed
- * to round-trip through the writer without surprise: `true` / `false`
- * pass through literally, every other token (typed escape from an
- * untyped caller) collapses to `undefined` so the cloned chart drops
- * the field rather than carry a value the writer would silently elide
- * back to absence.
- */
-function normalizeTitleStrike(value: boolean | undefined): boolean | undefined {
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
-}
 
 /**
  * Resolve a `titleStrike` override.
@@ -4923,20 +4835,6 @@ function resolveTitleStrike(
   return normalizeTitleStrike(override);
 }
 
-/**
- * Normalize a `titleUnderline` value for the cloned `SheetChart`. Mirrors
- * the writer's `normalizeTitleUnderline` — the cloned shape is guaranteed
- * to round-trip through the writer without surprise: `true` / `false`
- * pass through literally, every other token (typed escape from an
- * untyped caller) collapses to `undefined` so the cloned chart drops
- * the field rather than carry a value the writer would silently elide
- * back to absence.
- */
-function normalizeTitleUnderline(value: boolean | undefined): boolean | undefined {
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
-}
 
 /**
  * Resolve a `titleUnderline` override.
@@ -4963,22 +4861,6 @@ function resolveTitleUnderline(
   return normalizeTitleUnderline(override);
 }
 
-/**
- * Normalize a `titleFontFamily` value for the cloned `SheetChart`.
- * Mirrors the writer's `normalizeTitleFontFamily` — the cloned shape
- * is guaranteed to round-trip through the writer without surprise:
- * non-empty strings pass through trimmed, every other token (empty
- * / whitespace-only strings, typed escapes from an untyped caller)
- * collapses to `undefined` so the cloned chart drops the field
- * rather than carry a value the writer would silently elide back to
- * absence.
- */
-function normalizeTitleFontFamily(value: string | undefined): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return undefined;
-  return trimmed;
-}
 
 /**
  * Resolve a `titleFontFamily` override.
