@@ -16,3 +16,5 @@ export * from "./util";
 export * from "./walls";
 export * from "./title";
 export * from "./legend";
+export * from "./dataLabels";
+export * from "./dataTable";
