@@ -127,7 +127,7 @@ export function makeFontSizeNormalizer(
 }
 
 /** Normalize a font-size value against the standard `1..400` pt band. */
-export const normalizeFontSizePt = makeFontSizeNormalizer(FONT_SIZE_MIN_PT, FONT_SIZE_MAX_PT);
+export const normalizeFontSizePt: (value: number | undefined) => number | undefined = makeFontSizeNormalizer(FONT_SIZE_MIN_PT, FONT_SIZE_MAX_PT);
 
 // ── Font family ───────────────────────────────────────────────────
 

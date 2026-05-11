@@ -165,7 +165,7 @@ function parseIntSafe(s: string | undefined, fallback: number): number {
 
 // Deliberately exported but not used internally — exposed for callers
 // that already extracted the relationship list and just want the body.
-export const REL_EXTERNAL_LINK_PATH_TYPES = [
+export const REL_EXTERNAL_LINK_PATH_TYPES: readonly [string, string] = [
   REL_EXTERNAL_LINK_PATH,
   REL_EXTERNAL_LINK_PATH_STRICT,
-] as const;
+];
