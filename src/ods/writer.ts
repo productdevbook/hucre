@@ -114,7 +114,7 @@ function detectCurrencySymbol(code: string): string | undefined {
   const quoted = code.match(/"([^"]+)"/);
   if (quoted && /[$€£¥₺₽₹]/.test(quoted[1])) return quoted[1];
   // Bare $ at the start
-  if (/^\$/.test(code) || /[$€£¥₺₽₹]/.test(code)) {
+  if (code.startsWith("$") || /[$€£¥₺₽₹]/.test(code)) {
     const m = code.match(/[$€£¥₺₽₹]/);
     if (m) return m[0];
   }
