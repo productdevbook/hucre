@@ -378,6 +378,24 @@ The roundtrip path takes the same option: `await saveXlsx(wb, { encryption: { pa
 The key-derivation iteration count defaults to Excel's 100000; lower it via
 `encryption: { password, spinCount }` when the speed/security trade-off calls for it.
 
+### XLSB (Binary Excel) — read
+
+Read `.xlsb` (Excel Binary Workbook) files — the binary package format
+that's smaller and faster to open than `.xlsx`. `read()` auto-detects it,
+or call `readXlsb` directly:
+
+```ts
+import { read, readXlsb } from "hucre"
+
+const wb = await readXlsb(bytes) // sheet names + typed cell values
+const same = await read(bytes) // auto-detected (XLSX vs XLSB vs ODS)
+```
+
+Decodes shared strings, RK / floating-point numbers, inline strings,
+booleans, error codes, cached formula values, and dates (via the binary
+style table). Read-only; password-protected `.xlsb` also decrypts with
+`{ password }`.
+
 ### ODS (OpenDocument)
 
 ```ts

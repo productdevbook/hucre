@@ -4,6 +4,7 @@ export type { WriteObjectsTableOption } from "./defter"
 
 // ── XLSX ────────────────────────────────────────────────────────────
 export { readXlsx } from "./xlsx/reader"
+export { readXlsb } from "./xlsx/xlsb/reader"
 export { writeXlsx } from "./xlsx/writer"
 export { link } from "./xlsx/hyperlink"
 export { openXlsx, saveXlsx } from "./xlsx/roundtrip"

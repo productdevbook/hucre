@@ -15,6 +15,8 @@ import type {
   TableColumn,
 } from "./_types"
 import { readXlsx } from "./xlsx/reader"
+import { readXlsb, looksLikeXlsb } from "./xlsx/xlsb/reader"
+import { ZipReader } from "./zip/reader"
 import { decryptAgile } from "./xlsx/crypto/agile"
 import { writeXlsx } from "./xlsx/writer"
 import { readOds } from "./ods/reader"
@@ -104,6 +106,13 @@ export async function read(input: ReadInput, options?: ReadOptions): Promise<Wor
 
   if (format === "ods") {
     return readOds(data, options)
+  }
+  // XLSX and XLSB share the ZIP shape; tell them apart by the binary
+  // workbook part before dispatching.
+  try {
+    if (looksLikeXlsb(new ZipReader(data))) return readXlsb(data, options)
+  } catch {
+    // Not a readable ZIP here — fall through to readXlsx for a typed error.
   }
   return readXlsx(data, options)
 }
