@@ -387,6 +387,38 @@ describe("cloneSheet", () => {
     cloned.tables![0].columns[0].name = "Modified"
     expect(sheet.tables![0].columns[0].name).toBe("Name")
   })
+
+  it("should clone charts as an independent deep copy (issue #136)", () => {
+    const sheet = makeSheet({
+      rows: [
+        ["Q", "Rev"],
+        ["Q1", 1],
+      ],
+      charts: [
+        {
+          kinds: ["bar"],
+          seriesCount: 1,
+          title: "Original",
+          series: [{ kind: "bar", index: 0, name: "Rev", valuesRef: "Sheet1!$B$2:$B$2" }],
+          anchor: { from: { row: 5, col: 0 }, to: { row: 19, col: 7 } },
+        },
+      ],
+    })
+
+    const cloned = cloneSheet(sheet, "Cloned")
+
+    expect(cloned.charts!.length).toBe(1)
+    expect(cloned.charts![0].title).toBe("Original")
+    expect(cloned.charts![0].kinds).toEqual(["bar"])
+
+    // Mutating the clone must not leak into the original (deep copy).
+    cloned.charts![0].title = "Mutated"
+    cloned.charts![0].series![0].name = "Changed"
+    cloned.charts![0].anchor!.from.row = 99
+    expect(sheet.charts![0].title).toBe("Original")
+    expect(sheet.charts![0].series![0].name).toBe("Rev")
+    expect(sheet.charts![0].anchor!.from.row).toBe(5)
+  })
 })
 
 // ── copySheetToWorkbook ─────────────────────────────────────────────

@@ -1004,6 +1004,15 @@ export function cloneSheet(sheet: Sheet, newName: string): Sheet {
     }))
   }
 
+  // Deep copy charts. Charts are plain JSON-serializable records (no
+  // Map / Uint8Array / function members), so a structuredClone gives a
+  // faithful independent copy without hand-walking the deep axis / series
+  // / dataLabels trees. Carrying them here is what lets
+  // copySheetToWorkbook bring charts across workbooks (issue #136).
+  if (sheet.charts && sheet.charts.length > 0) {
+    cloned.charts = structuredClone(sheet.charts)
+  }
+
   return cloned
 }
 

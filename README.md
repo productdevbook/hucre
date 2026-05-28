@@ -741,6 +741,31 @@ addChart(dashboard, {
 await writeXlsx({ sheets: [dashboard] })
 ```
 
+Charts also survive the **roundtrip** (`openXlsx` → modify → `saveXlsx`),
+not just the fresh `writeXlsx` path. A chart attached to a newly added
+sheet — or carried across workbooks by `copySheetToWorkbook` — is
+serialized into proper `xl/charts/chartN.xml` parts with their drawing
+relationships on save:
+
+```ts
+import { copySheetToWorkbook, getCharts, openXlsx, saveXlsx } from "hucre"
+
+const template = await openXlsx(templateBytes)
+const report = await openXlsx(reportBytes)
+
+// Copy a chart-bearing sheet from the template into the report workbook…
+copySheetToWorkbook(template.sheets[0], report, "Dashboard")
+
+// …and saveXlsx re-emits the chart parts (not just the cell data).
+const out = await saveXlsx(report)
+console.log(getCharts(await openXlsx(out)).length) // includes the copied chart
+```
+
+The roundtrip path serializes model charts for sheets that don't already
+own a drawing (new or copied sheets); to add a chart to a sheet that
+already carries one, compose it through the fresh `writeXlsx` path
+instead.
+
 ### Unified API
 
 Auto-detect format and work with simple helpers:
