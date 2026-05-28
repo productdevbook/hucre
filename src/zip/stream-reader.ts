@@ -195,24 +195,23 @@ export class ZipStreamReader {
     if (this.bodyConsumed) throw new ZipError("ZipStreamReader: entry body already consumed")
     this.fallbackLog = null // committed to streaming — stop retaining bytes
     let remaining = this.pendingBody
-    const self = this
     const raw = new ReadableStream<Uint8Array>({
-      async pull(controller) {
+      pull: async (controller) => {
         if (remaining <= 0) {
-          self.bodyConsumed = true
+          this.bodyConsumed = true
           controller.close()
           return
         }
-        const take = await self.readExact(Math.min(remaining, 1 << 20))
+        const take = await this.readExact(Math.min(remaining, 1 << 20))
         if (!take) {
-          self.bodyConsumed = true
+          this.bodyConsumed = true
           controller.error(new ZipError("ZipStreamReader: truncated entry body"))
           return
         }
         remaining -= take.length
         controller.enqueue(take)
         if (remaining <= 0) {
-          self.bodyConsumed = true
+          this.bodyConsumed = true
           controller.close()
         }
       },
