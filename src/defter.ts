@@ -16,6 +16,8 @@ import type {
 } from "./_types"
 import { readXlsx } from "./xlsx/reader"
 import { readXlsb, looksLikeXlsb } from "./xlsx/xlsb/reader"
+import { readXls, looksLikeXls } from "./xls/reader"
+import { readCfb } from "./xlsx/crypto/cfb"
 import { ZipReader } from "./zip/reader"
 import { decryptAgile } from "./xlsx/crypto/agile"
 import { writeXlsx } from "./xlsx/writer"
@@ -95,6 +97,17 @@ export async function read(input: ReadInput, options?: ReadOptions): Promise<Wor
   // XLSX decryption is wired up — an ODS password yields a ZIP that
   // detectFormat routes to readOds, which handles its own encryption.)
   if (isOle2Container(data)) {
+    // An OLE2 container is either a legacy .xls (BIFF "Workbook" stream)
+    // or an encrypted OOXML/ODS package (an "EncryptionInfo" stream).
+    let cfbStreams: Map<string, Uint8Array> | null = null
+    try {
+      cfbStreams = readCfb(data)
+    } catch {
+      cfbStreams = null // not a parseable CFB — treat as encrypted/unknown
+    }
+    if (cfbStreams && looksLikeXls(cfbStreams)) {
+      return readXls(data, options)
+    }
     if (options?.password) {
       data = await decryptAgile(data, options.password)
     } else {

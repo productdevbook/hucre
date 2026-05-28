@@ -396,6 +396,22 @@ booleans, error codes, cached formula values, and dates (via the binary
 style table). Read-only; password-protected `.xlsb` also decrypts with
 `{ password }`.
 
+### XLS (Legacy Excel 97-2003) — read
+
+Read legacy `.xls` (BIFF8) files — the OLE2/CFB binary format from Excel
+97-2003. `read()` auto-detects it, or call `readXls`:
+
+```ts
+import { read, readXls } from "hucre"
+
+const wb = await readXls(bytes)
+const same = await read(bytes) // auto-detected
+```
+
+Decodes the shared-string table (with CONTINUE spanning), RK / MULRK /
+number / boolean / error cells, labels, cached formula values, dates, and
+merged cells. Read-only.
+
 ### ODS (OpenDocument)
 
 ```ts
