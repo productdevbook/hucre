@@ -8,8 +8,9 @@ import type { SharedString } from "./shared-strings"
 import type { ParsedStyles } from "./styles"
 import type { Relationship } from "./relationships"
 import { ParseError, ZipError } from "../errors"
-import { assertNotEncrypted, bufferReadableStream } from "../_input"
+import { assertNotEncrypted } from "../_input"
 import { ZipReader } from "../zip/reader"
+import { ZipStreamReader } from "../zip/stream-reader"
 import { parseXml, parseSaxStream, decodeOoxmlEscapes } from "../xml/parser"
 import { parseContentTypes } from "./content-types"
 import { parseRelationships } from "./relationships"
@@ -590,20 +591,181 @@ function resolveStreamCellValue(
  * - `maxRows` — caps the number of rows yielded. Once the cap is hit the
  *   underlying ZIP/SAX stream is cancelled so no further work is done.
  */
+// ── True streaming path (ReadableStream input) ───────────────────────
+// Parse ZIP local headers as bytes arrive, collect the small metadata
+// parts, and pipe the single target worksheet straight into the SAX
+// parser — never buffering the whole archive or the whole worksheet.
+
+interface ResolvedMeta {
+  wsPath: string
+  sharedStrings: SharedString[]
+  parsedStyles: ParsedStyles | null
+  dateSystem: "1900" | "1904"
+}
+
+/** A ZIP entry that holds row data for a worksheet (not its `_rels`). */
+function isWorksheetEntry(name: string): boolean {
+  return /^xl\/worksheets\/sheet\d+\.xml$/i.test(name)
+}
+
+/** Metadata parts the worksheet resolver needs, all small. Everything else streams or skips. */
+function shouldCollectEntry(name: string): boolean {
+  if (name === "[Content_Types].xml") return true
+  if (name.endsWith(".rels")) return true
+  return /^xl\/(workbook|sharedStrings|styles)\.xml$/i.test(name)
+}
+
+/**
+ * Resolve the target worksheet path + shared strings + styles + date
+ * system purely from the collected metadata map. Returns null when a
+ * needed part hasn't been seen yet (so the caller must fall back to the
+ * random-access reader) or the target sheet doesn't exist.
+ */
+function resolveFromParts(
+  parts: Map<string, Uint8Array>,
+  options?: ReadOptions & { sheet?: number | string },
+): ResolvedMeta | null {
+  const ct = parts.get("[Content_Types].xml")
+  const rootRelsBytes = parts.get("_rels/.rels")
+  if (!ct || !rootRelsBytes) return null
+  parseContentTypes(decodeUtf8(ct))
+
+  const rootRels = parseRelationships(decodeUtf8(rootRelsBytes))
+  const workbookRel = rootRels.find((r) => r.type === REL_WORKBOOK)
+  if (!workbookRel) return null
+  const workbookPath = workbookRel.target.startsWith("/")
+    ? workbookRel.target.slice(1)
+    : workbookRel.target
+
+  const wbBytes = parts.get(workbookPath)
+  if (!wbBytes) return null
+
+  const workbookDir = dirname(workbookPath)
+  const workbookRelsPath = workbookDir
+    ? `${workbookDir}/_rels/${workbookPath.slice(workbookDir.length + 1)}.rels`
+    : `_rels/${workbookPath}.rels`
+  const wbRelsBytes = parts.get(workbookRelsPath)
+  const workbookRels = wbRelsBytes ? parseRelationships(decodeUtf8(wbRelsBytes)) : []
+
+  const { sheets: sheetInfos, dateSystem } = parseWorkbookXml(decodeUtf8(wbBytes), options)
+  const targetSheet = resolveTargetSheet(sheetInfos, options?.sheet)
+  if (!targetSheet) return null
+
+  const sheetRelMap = new Map<string, string>()
+  for (const rel of workbookRels) {
+    if (rel.type === REL_WORKSHEET) {
+      sheetRelMap.set(rel.id, resolvePath(workbookDir, rel.target))
+    }
+  }
+  const wsPath = sheetRelMap.get(targetSheet.rId)
+  if (!wsPath) return null
+
+  // Shared strings — if the workbook references them they MUST already be
+  // collected (they precede the worksheet); otherwise we can't resolve
+  // string cells while streaming, so bail to the buffered path.
+  let sharedStrings: SharedString[] = []
+  const ssRel = workbookRels.find((r) => r.type === REL_SHARED_STRINGS)
+  if (ssRel) {
+    const ssPath = resolvePath(workbookDir, ssRel.target)
+    const ssBytes = parts.get(ssPath)
+    if (!ssBytes) return null
+    sharedStrings = parseSharedStrings(decodeUtf8(ssBytes))
+  }
+
+  let parsedStyles: ParsedStyles | null = null
+  const stylesRel = workbookRels.find((r) => r.type === REL_STYLES)
+  if (stylesRel) {
+    const stylesPath = resolvePath(workbookDir, stylesRel.target)
+    const stylesBytes = parts.get(stylesPath)
+    if (!stylesBytes) return null
+    parsedStyles = parseStyles(decodeUtf8(stylesBytes))
+  }
+
+  return { wsPath, sharedStrings, parsedStyles, dateSystem }
+}
+
+type PrepareResult =
+  | { mode: "stream"; wsStream: ReadableStream<Uint8Array>; meta: ResolvedMeta }
+  | { mode: "fallback"; data: Uint8Array }
+
+/**
+ * Drive a {@link ZipStreamReader} over the input: collect metadata, then
+ * stream the target worksheet. Falls back (returns the fully buffered
+ * archive) whenever an entry can't be streamed by local header alone, the
+ * target can't be resolved in stream order, or the target sheet is absent.
+ */
+async function prepareStreaming(
+  input: ReadableStream<Uint8Array>,
+  options?: ReadOptions & { sheet?: number | string },
+): Promise<PrepareResult> {
+  const zr = new ZipStreamReader(input)
+  const parts = new Map<string, Uint8Array>()
+  let resolved: ResolvedMeta | null = null
+
+  for (;;) {
+    const entry = await zr.nextEntry()
+    if (!entry) {
+      // Reached the central directory without streaming the target — fall
+      // back so the buffered path handles resolution / "sheet not found".
+      return { mode: "fallback", data: await zr.drainToBuffer() }
+    }
+    if (!entry.streamable) {
+      return { mode: "fallback", data: await zr.drainToBuffer() }
+    }
+
+    if (isWorksheetEntry(entry.name)) {
+      if (!resolved) resolved = resolveFromParts(parts, options)
+      if (!resolved) return { mode: "fallback", data: await zr.drainToBuffer() }
+      if (entry.name === resolved.wsPath) {
+        const wsStream = zr.entryStream(entry)
+        return { mode: "stream", wsStream, meta: resolved }
+      }
+      await zr.skipEntry()
+      continue
+    }
+
+    if (shouldCollectEntry(entry.name)) {
+      parts.set(entry.name, await zr.readEntryBytes(entry))
+    } else {
+      await zr.skipEntry()
+    }
+  }
+}
+
 export async function* streamXlsxRows(
   input: Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>,
   options?: ReadOptions & { sheet?: number | string },
 ): AsyncGenerator<StreamRow, void, undefined> {
   // Normalize input to Uint8Array for ZIP central directory parsing.
-  // ReadableStream must be fully buffered because ZIP central directory
-  // is at the end of the file.
   let data: Uint8Array
   if (input instanceof Uint8Array) {
     data = input
   } else if (input instanceof ArrayBuffer) {
     data = new Uint8Array(input)
   } else {
-    data = await bufferReadableStream(input)
+    // ReadableStream — attempt true streaming (parse ZIP local headers as
+    // bytes arrive, pipe the target worksheet straight into the SAX parser
+    // without buffering the whole archive). Falls back to buffering only
+    // when the archive's structure rules out single-pass streaming.
+    const prep = await prepareStreaming(input, options)
+    if (prep.mode === "stream") {
+      let rangeFilter: RangeFilter | undefined
+      if (options?.range) rangeFilter = parseRangeFilter(options.range)
+      const maxRowsLimit =
+        typeof options?.maxRows === "number" && options.maxRows > 0 ? options.maxRows : 0
+      yield* parseWorksheetRowsStreaming(
+        prep.wsStream,
+        prep.meta.sharedStrings,
+        prep.meta.parsedStyles,
+        prep.meta.dateSystem,
+        {
+          range: rangeFilter,
+          maxRows: maxRowsLimit > 0 ? maxRowsLimit : undefined,
+        },
+      )
+      return
+    }
+    data = prep.data
   }
 
   // Detect password-protected workbooks (OLE2/CFB envelope) up front so

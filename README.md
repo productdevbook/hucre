@@ -280,6 +280,18 @@ for await (const row of streamXlsxRows(buffer)) {
   console.log(row.index, row.values)
 }
 
+// True streaming from a ReadableStream — the ZIP is parsed front-to-back
+// from local file headers, so the whole archive is never buffered. Only
+// the small metadata parts (content types, rels, workbook, shared strings,
+// styles) are read up front; the target worksheet is piped straight into
+// the SAX parser. (Falls back to buffering only for archives whose layout
+// rules out single-pass streaming — e.g. ZIP data descriptors, or shared
+// strings stored after the worksheet.)
+const res = await fetch("https://example.com/huge.xlsx")
+for await (const row of streamXlsxRows(res.body!)) {
+  console.log(row.index, row.values)
+}
+
 // Cap the number of rows yielded (preview / sampling). The underlying
 // ZIP/SAX stream is cancelled once the cap is reached, so very large
 // sheets stay cheap.
