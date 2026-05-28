@@ -1,27 +1,27 @@
-import { describe, it, expect } from "vitest";
-import { parseChart } from "../src/xlsx/chart-reader";
-import { ZipWriter } from "../src/zip/writer";
-import { ZipReader } from "../src/zip/reader";
-import { readXlsx } from "../src/xlsx/reader";
-import { openXlsx, saveXlsx } from "../src/xlsx/roundtrip";
+import { describe, it, expect } from "vitest"
+import { parseChart } from "../src/xlsx/chart-reader"
+import { ZipWriter } from "../src/zip/writer"
+import { ZipReader } from "../src/zip/reader"
+import { readXlsx } from "../src/xlsx/reader"
+import { openXlsx, saveXlsx } from "../src/xlsx/roundtrip"
 
-const encoder = new TextEncoder();
-const decoder = new TextDecoder("utf-8");
+const encoder = new TextEncoder()
+const decoder = new TextDecoder("utf-8")
 
 // ── parseChart ────────────────────────────────────────────────────
 
 describe("parseChart", () => {
   it("returns undefined for documents that aren't c:chartSpace", () => {
     const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<root/>`;
-    expect(parseChart(xml)).toBeUndefined();
-  });
+<root/>`
+    expect(parseChart(xml)).toBeUndefined()
+  })
 
   it("returns kinds=[] when chartSpace has no chart child", () => {
     const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"/>`;
-    expect(parseChart(xml)).toEqual({ kinds: [], seriesCount: 0 });
-  });
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"/>`
+    expect(parseChart(xml)).toEqual({ kinds: [], seriesCount: 0 })
+  })
 
   it("parses a single bar chart with two series", () => {
     const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -37,7 +37,7 @@ describe("parseChart", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)).toEqual({
       kinds: ["bar"],
       seriesCount: 2,
@@ -46,8 +46,8 @@ describe("parseChart", () => {
         { kind: "bar", index: 0 },
         { kind: "bar", index: 1 },
       ],
-    });
-  });
+    })
+  })
 
   it("collects every chart-type element (combo charts)", () => {
     const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -63,7 +63,7 @@ describe("parseChart", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)).toEqual({
       kinds: ["bar", "line"],
       seriesCount: 3,
@@ -72,8 +72,8 @@ describe("parseChart", () => {
         { kind: "line", index: 0 },
         { kind: "line", index: 1 },
       ],
-    });
-  });
+    })
+  })
 
   it("recognizes pie / doughnut / scatter / area / bubble / radar / surface / stock / 3D", () => {
     for (const [tag, expected] of [
@@ -93,10 +93,10 @@ describe("parseChart", () => {
       ["ofPieChart", "ofPie"],
     ] as const) {
       const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
-  <c:chart><c:plotArea><c:${tag}/></c:plotArea></c:chart></c:chartSpace>`;
-      expect(parseChart(xml)?.kinds).toEqual([expected]);
+  <c:chart><c:plotArea><c:${tag}/></c:plotArea></c:chart></c:chartSpace>`
+      expect(parseChart(xml)?.kinds).toEqual([expected])
     }
-  });
+  })
 
   it("falls back to strRef cached value when title is a formula", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -114,11 +114,11 @@ describe("parseChart", () => {
     </c:title>
     <c:plotArea><c:barChart/></c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.title).toBe("Quarterly Revenue");
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.title).toBe("Quarterly Revenue")
+  })
+})
 
 // ── parseChart — series introspection ─────────────────────────────
 
@@ -145,8 +145,8 @@ describe("parseChart — series introspection", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.series).toEqual([
       {
         kind: "bar",
@@ -162,8 +162,8 @@ describe("parseChart — series introspection", () => {
         name: "Cost",
         valuesRef: "Sheet1!$C$2:$C$10",
       },
-    ]);
-  });
+    ])
+  })
 
   it("decodes scatter xVal / yVal series wiring", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -179,7 +179,7 @@ describe("parseChart — series introspection", () => {
       </c:scatterChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.series).toEqual([
       {
         kind: "scatter",
@@ -188,8 +188,8 @@ describe("parseChart — series introspection", () => {
         valuesRef: "S!$B$2:$B$5",
         categoriesRef: "S!$A$2:$A$5",
       },
-    ]);
-  });
+    ])
+  })
 
   it("falls back to strRef cache for the series name", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -212,9 +212,9 @@ describe("parseChart — series introspection", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.series?.[0].name).toBe("From Cache");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.series?.[0].name).toBe("From Cache")
+  })
 
   it("uses the strRef formula text when no cache is present", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -230,9 +230,9 @@ describe("parseChart — series introspection", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.series?.[0].name).toBe("Sheet1!$B$1");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.series?.[0].name).toBe("Sheet1!$B$1")
+  })
 
   it("omits valuesRef and categoriesRef for literal numLit series", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -253,10 +253,10 @@ describe("parseChart — series introspection", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const series = parseChart(xml)?.series;
-    expect(series).toEqual([{ kind: "bar", index: 0 }]);
-  });
+</c:chartSpace>`
+    const series = parseChart(xml)?.series
+    expect(series).toEqual([{ kind: "bar", index: 0 }])
+  })
 
   it("ignores malformed srgbClr values", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
@@ -271,9 +271,9 @@ describe("parseChart — series introspection", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.series?.[0].color).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.series?.[0].color).toBeUndefined()
+  })
 
   it("strips a leading '#' from srgbClr values and uppercases the result", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
@@ -288,9 +288,9 @@ describe("parseChart — series introspection", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.series?.[0].color).toBe("AABBCC");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.series?.[0].color).toBe("AABBCC")
+  })
 
   it("indexes series independently per chart-type element in combo charts", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -314,24 +314,24 @@ describe("parseChart — series introspection", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.series).toEqual([
       { kind: "bar", index: 0, name: "Bar A" },
       { kind: "bar", index: 1, name: "Bar B" },
       { kind: "line", index: 0, name: "Line A" },
-    ]);
-  });
+    ])
+  })
 
   it("does not set series when the chart has no <c:ser> children", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
   <c:chart><c:plotArea><c:barChart/></c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.kinds).toEqual(["bar"]);
-    expect(chart?.seriesCount).toBe(0);
-    expect(chart?.series).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.kinds).toEqual(["bar"])
+    expect(chart?.seriesCount).toBe(0)
+    expect(chart?.series).toBeUndefined()
+  })
+})
 
 // ── parseChart — legend & grouping ────────────────────────────────
 
@@ -342,13 +342,13 @@ describe("parseChart — legend", () => {
     <c:plotArea><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart></c:plotArea>
     ${legendXml}
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("maps legendPos val=r → right", () => {
-    const xml = chartWithLegend('<c:legend><c:legendPos val="r"/></c:legend>');
-    expect(parseChart(xml)?.legend).toBe("right");
-  });
+    const xml = chartWithLegend('<c:legend><c:legendPos val="r"/></c:legend>')
+    expect(parseChart(xml)?.legend).toBe("right")
+  })
 
   it("maps every legendPos value to the writer-side label", () => {
     for (const [val, expected] of [
@@ -358,38 +358,38 @@ describe("parseChart — legend", () => {
       ["r", "right"],
       ["tr", "topRight"],
     ] as const) {
-      const xml = chartWithLegend(`<c:legend><c:legendPos val="${val}"/></c:legend>`);
-      expect(parseChart(xml)?.legend).toBe(expected);
+      const xml = chartWithLegend(`<c:legend><c:legendPos val="${val}"/></c:legend>`)
+      expect(parseChart(xml)?.legend).toBe(expected)
     }
-  });
+  })
 
   it('returns false when <c:delete val="1"/> hides the legend', () => {
-    const xml = chartWithLegend('<c:legend><c:delete val="1"/></c:legend>');
-    expect(parseChart(xml)?.legend).toBe(false);
-  });
+    const xml = chartWithLegend('<c:legend><c:delete val="1"/></c:legend>')
+    expect(parseChart(xml)?.legend).toBe(false)
+  })
 
   it("falls back to right when legend is declared without legendPos", () => {
     // Legend element with no legendPos child is valid OOXML; Excel
     // renders it on the right.
-    const xml = chartWithLegend("<c:legend/>");
-    expect(parseChart(xml)?.legend).toBe("right");
-  });
+    const xml = chartWithLegend("<c:legend/>")
+    expect(parseChart(xml)?.legend).toBe("right")
+  })
 
   it("returns undefined when the chart has no <c:legend>", () => {
-    const xml = chartWithLegend("");
-    expect(parseChart(xml)?.legend).toBeUndefined();
-  });
+    const xml = chartWithLegend("")
+    expect(parseChart(xml)?.legend).toBeUndefined()
+  })
 
   it("ignores unknown legendPos values rather than fabricating a default", () => {
-    const xml = chartWithLegend('<c:legend><c:legendPos val="bogus"/></c:legend>');
-    expect(parseChart(xml)?.legend).toBeUndefined();
-  });
+    const xml = chartWithLegend('<c:legend><c:legendPos val="bogus"/></c:legend>')
+    expect(parseChart(xml)?.legend).toBeUndefined()
+  })
 
   it('ignores <c:delete val="0"/> (visible legend with no position) and falls back to right', () => {
-    const xml = chartWithLegend('<c:legend><c:delete val="0"/></c:legend>');
-    expect(parseChart(xml)?.legend).toBe("right");
-  });
-});
+    const xml = chartWithLegend('<c:legend><c:delete val="0"/></c:legend>')
+    expect(parseChart(xml)?.legend).toBe("right")
+  })
+})
 
 describe("parseChart — bar grouping", () => {
   function barChartWithGrouping(groupingXml: string): string {
@@ -402,36 +402,36 @@ describe("parseChart — bar grouping", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces stacked grouping", () => {
-    const xml = barChartWithGrouping('<c:grouping val="stacked"/>');
-    expect(parseChart(xml)?.barGrouping).toBe("stacked");
-  });
+    const xml = barChartWithGrouping('<c:grouping val="stacked"/>')
+    expect(parseChart(xml)?.barGrouping).toBe("stacked")
+  })
 
   it("surfaces percentStacked grouping", () => {
-    const xml = barChartWithGrouping('<c:grouping val="percentStacked"/>');
-    expect(parseChart(xml)?.barGrouping).toBe("percentStacked");
-  });
+    const xml = barChartWithGrouping('<c:grouping val="percentStacked"/>')
+    expect(parseChart(xml)?.barGrouping).toBe("percentStacked")
+  })
 
   it("surfaces explicit clustered grouping", () => {
-    const xml = barChartWithGrouping('<c:grouping val="clustered"/>');
-    expect(parseChart(xml)?.barGrouping).toBe("clustered");
-  });
+    const xml = barChartWithGrouping('<c:grouping val="clustered"/>')
+    expect(parseChart(xml)?.barGrouping).toBe("clustered")
+  })
 
   it("collapses standard grouping to undefined (writer default)", () => {
     // OOXML's `standard` value renders identical to `clustered` in
     // Excel; we omit it so the cloned chart inherits the writer's
     // default rather than carrying a redundant marker.
-    const xml = barChartWithGrouping('<c:grouping val="standard"/>');
-    expect(parseChart(xml)?.barGrouping).toBeUndefined();
-  });
+    const xml = barChartWithGrouping('<c:grouping val="standard"/>')
+    expect(parseChart(xml)?.barGrouping).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:grouping> element", () => {
-    const xml = barChartWithGrouping("");
-    expect(parseChart(xml)?.barGrouping).toBeUndefined();
-  });
+    const xml = barChartWithGrouping("")
+    expect(parseChart(xml)?.barGrouping).toBeUndefined()
+  })
 
   it("does not surface barGrouping for non-bar charts", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -443,9 +443,9 @@ describe("parseChart — bar grouping", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.barGrouping).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.barGrouping).toBeUndefined()
+  })
 
   it("uses the first bar chart's grouping in a combo workbook", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -460,10 +460,10 @@ describe("parseChart — bar grouping", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.barGrouping).toBe("stacked");
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.barGrouping).toBe("stacked")
+  })
+})
 
 describe("parseChart — line grouping", () => {
   function lineChartWithGrouping(groupingXml: string): string {
@@ -476,28 +476,28 @@ describe("parseChart — line grouping", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces stacked grouping", () => {
-    const xml = lineChartWithGrouping('<c:grouping val="stacked"/>');
-    expect(parseChart(xml)?.lineGrouping).toBe("stacked");
-  });
+    const xml = lineChartWithGrouping('<c:grouping val="stacked"/>')
+    expect(parseChart(xml)?.lineGrouping).toBe("stacked")
+  })
 
   it("surfaces percentStacked grouping", () => {
-    const xml = lineChartWithGrouping('<c:grouping val="percentStacked"/>');
-    expect(parseChart(xml)?.lineGrouping).toBe("percentStacked");
-  });
+    const xml = lineChartWithGrouping('<c:grouping val="percentStacked"/>')
+    expect(parseChart(xml)?.lineGrouping).toBe("percentStacked")
+  })
 
   it("collapses standard grouping to undefined (writer default)", () => {
-    const xml = lineChartWithGrouping('<c:grouping val="standard"/>');
-    expect(parseChart(xml)?.lineGrouping).toBeUndefined();
-  });
+    const xml = lineChartWithGrouping('<c:grouping val="standard"/>')
+    expect(parseChart(xml)?.lineGrouping).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:grouping> element", () => {
-    const xml = lineChartWithGrouping("");
-    expect(parseChart(xml)?.lineGrouping).toBeUndefined();
-  });
+    const xml = lineChartWithGrouping("")
+    expect(parseChart(xml)?.lineGrouping).toBeUndefined()
+  })
 
   it("does not surface lineGrouping for non-line charts", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -509,10 +509,10 @@ describe("parseChart — line grouping", () => {
       </c:areaChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.lineGrouping).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.lineGrouping).toBeUndefined()
+  })
+})
 
 describe("parseChart — area grouping", () => {
   function areaChartWithGrouping(groupingXml: string): string {
@@ -525,28 +525,28 @@ describe("parseChart — area grouping", () => {
       </c:areaChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces stacked grouping", () => {
-    const xml = areaChartWithGrouping('<c:grouping val="stacked"/>');
-    expect(parseChart(xml)?.areaGrouping).toBe("stacked");
-  });
+    const xml = areaChartWithGrouping('<c:grouping val="stacked"/>')
+    expect(parseChart(xml)?.areaGrouping).toBe("stacked")
+  })
 
   it("surfaces percentStacked grouping", () => {
-    const xml = areaChartWithGrouping('<c:grouping val="percentStacked"/>');
-    expect(parseChart(xml)?.areaGrouping).toBe("percentStacked");
-  });
+    const xml = areaChartWithGrouping('<c:grouping val="percentStacked"/>')
+    expect(parseChart(xml)?.areaGrouping).toBe("percentStacked")
+  })
 
   it("collapses standard grouping to undefined (writer default)", () => {
-    const xml = areaChartWithGrouping('<c:grouping val="standard"/>');
-    expect(parseChart(xml)?.areaGrouping).toBeUndefined();
-  });
+    const xml = areaChartWithGrouping('<c:grouping val="standard"/>')
+    expect(parseChart(xml)?.areaGrouping).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:grouping> element", () => {
-    const xml = areaChartWithGrouping("");
-    expect(parseChart(xml)?.areaGrouping).toBeUndefined();
-  });
+    const xml = areaChartWithGrouping("")
+    expect(parseChart(xml)?.areaGrouping).toBeUndefined()
+  })
 
   it("does not surface areaGrouping for non-area charts", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -558,9 +558,9 @@ describe("parseChart — area grouping", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.areaGrouping).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.areaGrouping).toBeUndefined()
+  })
 
   it("surfaces both line and area grouping in a combo workbook", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -576,12 +576,12 @@ describe("parseChart — area grouping", () => {
       </c:areaChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const parsed = parseChart(xml);
-    expect(parsed?.lineGrouping).toBe("percentStacked");
-    expect(parsed?.areaGrouping).toBe("stacked");
-  });
-});
+</c:chartSpace>`
+    const parsed = parseChart(xml)
+    expect(parsed?.lineGrouping).toBe("percentStacked")
+    expect(parsed?.areaGrouping).toBe("stacked")
+  })
+})
 
 // ── parseChart — data labels ──────────────────────────────────────
 
@@ -604,13 +604,13 @@ describe("parseChart — data labels", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.dataLabels).toEqual({
       showValue: true,
       position: "outEnd",
-    });
-  });
+    })
+  })
 
   it("collects all show* toggles when set", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -631,8 +631,8 @@ describe("parseChart — data labels", () => {
       </c:pieChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.dataLabels).toEqual({
       showValue: true,
       showCategoryName: true,
@@ -640,8 +640,8 @@ describe("parseChart — data labels", () => {
       showPercent: true,
       position: "bestFit",
       separator: "; ",
-    });
-  });
+    })
+  })
 
   it("returns undefined dataLabels when <c:dLbls> only has delete=1", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -655,10 +655,10 @@ describe("parseChart — data labels", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels).toBeUndefined()
+  })
 
   it("returns undefined dataLabels when no toggle is on (all show*=0, no position)", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -677,10 +677,10 @@ describe("parseChart — data labels", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels).toBeUndefined()
+  })
 
   it("ignores invalid dLblPos values", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -695,11 +695,11 @@ describe("parseChart — data labels", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.position).toBeUndefined();
-    expect(chart?.dataLabels?.showValue).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.position).toBeUndefined()
+    expect(chart?.dataLabels?.showValue).toBe(true)
+  })
 
   it("accepts true/false as well as 1/0 in show* attributes", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -714,11 +714,11 @@ describe("parseChart — data labels", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.showValue).toBe(true);
-    expect(chart?.dataLabels?.showCategoryName).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.showValue).toBe(true)
+    expect(chart?.dataLabels?.showCategoryName).toBeUndefined()
+  })
 
   it("surfaces series-level dataLabels independently of chart-level", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -742,14 +742,14 @@ describe("parseChart — data labels", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.series?.[0].dataLabels).toEqual({
       showValue: true,
       position: "ctr",
-    });
-    expect(chart?.series?.[1].dataLabels).toBeUndefined();
-  });
+    })
+    expect(chart?.series?.[1].dataLabels).toBeUndefined()
+  })
 
   it("captures only the first chart-type-level <c:dLbls> in combo charts", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -771,20 +771,20 @@ describe("parseChart — data labels", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     // First chart-type element wins for the chart-level summary.
     expect(chart?.dataLabels).toEqual({
       showValue: true,
       position: "outEnd",
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — axis titles ──────────────────────────────────────
 
 describe("parseChart — axis titles", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   it("surfaces x and y axis titles from <c:catAx>/<c:valAx> rich text", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -801,13 +801,13 @@ describe("parseChart — axis titles", () => {
       </c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes).toEqual({
       x: { title: "Quarter" },
       y: { title: "Revenue (USD)" },
-    });
-  });
+    })
+  })
 
   it("does not surface axes when neither axis carries a title", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -818,10 +818,10 @@ describe("parseChart — axis titles", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("surfaces only the populated axis when one side is titled", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -835,11 +835,11 @@ describe("parseChart — axis titles", () => {
       </c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toEqual({ y: { title: "Revenue" } });
-    expect(chart?.axes?.x).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toEqual({ y: { title: "Revenue" } })
+    expect(chart?.axes?.x).toBeUndefined()
+  })
 
   it("falls back to a strRef cache when the title is a formula", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -863,10 +863,10 @@ describe("parseChart — axis titles", () => {
       <c:catAx><c:axId val="1"/></c:catAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.title).toBe("Cached Y Label");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.title).toBe("Cached Y Label")
+  })
 
   it("maps scatter axes to x = first valAx, y = second valAx", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -885,13 +885,13 @@ describe("parseChart — axis titles", () => {
       </c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes).toEqual({
       x: { title: "Time" },
       y: { title: "Magnitude" },
-    });
-  });
+    })
+  })
 
   it("ignores empty/whitespace-only axis titles", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -905,10 +905,10 @@ describe("parseChart — axis titles", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("joins multi-run rich titles into a single string", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -931,16 +931,16 @@ describe("parseChart — axis titles", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Region (2024)");
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Region (2024)")
+  })
+})
 
 // ── parseChart — axis gridlines ──────────────────────────────────
 
 describe("parseChart — axis gridlines", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   it("surfaces major gridlines on the value axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -954,12 +954,12 @@ describe("parseChart — axis gridlines", () => {
       </c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes).toEqual({
       y: { gridlines: { major: true } },
-    });
-  });
+    })
+  })
 
   it("surfaces both major and minor gridlines when present", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -974,10 +974,10 @@ describe("parseChart — axis gridlines", () => {
       </c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.gridlines).toEqual({ major: true, minor: true });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.gridlines).toEqual({ major: true, minor: true })
+  })
 
   it("surfaces gridlines on both x and y axes simultaneously", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -994,13 +994,13 @@ describe("parseChart — axis gridlines", () => {
       </c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes).toEqual({
       x: { gridlines: { major: true } },
       y: { gridlines: { minor: true } },
-    });
-  });
+    })
+  })
 
   it("does not surface axes when neither title nor gridlines are declared", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1011,10 +1011,10 @@ describe("parseChart — axis gridlines", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("co-surfaces gridlines and the axis title when both are present", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1029,13 +1029,13 @@ describe("parseChart — axis gridlines", () => {
       </c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.y).toEqual({
       title: "Revenue",
       gridlines: { major: true },
-    });
-  });
+    })
+  })
 
   it("ignores nested styling inside the gridline elements", () => {
     // Excel sometimes nests <c:spPr> inside <c:majorGridlines> for line
@@ -1055,10 +1055,10 @@ describe("parseChart — axis gridlines", () => {
       </c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.gridlines).toEqual({ major: true });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.gridlines).toEqual({ major: true })
+  })
 
   it("maps scatter chart gridlines to x = first valAx, y = second valAx", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1077,19 +1077,19 @@ describe("parseChart — axis gridlines", () => {
       </c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes).toEqual({
       x: { gridlines: { major: true } },
       y: { gridlines: { minor: true } },
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — axis scale ───────────────────────────────────────
 
 describe("parseChart — axis scale", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it("surfaces <c:min> / <c:max> / <c:majorUnit> / <c:minorUnit> off the value axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1107,10 +1107,10 @@ describe("parseChart — axis scale", () => {
       <c:minorUnit val="5"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.scale).toEqual({ min: 0, max: 100, majorUnit: 25, minorUnit: 5 });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.scale).toEqual({ min: 0, max: 100, majorUnit: 25, minorUnit: 5 })
+  })
 
   it("surfaces <c:logBase> from inside <c:scaling>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1125,10 +1125,10 @@ describe("parseChart — axis scale", () => {
       </c:scaling>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.scale).toEqual({ logBase: 10 });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.scale).toEqual({ logBase: 10 })
+  })
 
   it("does not surface a scale when <c:scaling> only carries <c:orientation>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1140,10 +1140,10 @@ describe("parseChart — axis scale", () => {
       <c:scaling><c:orientation val="minMax"/></c:scaling>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("ignores non-finite, zero, and negative tick spacings", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1157,10 +1157,10 @@ describe("parseChart — axis scale", () => {
       <c:minorUnit val="-2"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("maps scatter axes to x = first valAx, y = second valAx", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1177,17 +1177,17 @@ describe("parseChart — axis scale", () => {
       <c:axPos val="l"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.scale).toEqual({ min: 0, max: 50 });
-    expect(chart?.axes?.y?.scale).toEqual({ min: -200, max: 200 });
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.scale).toEqual({ min: 0, max: 50 })
+    expect(chart?.axes?.y?.scale).toEqual({ min: -200, max: 200 })
+  })
+})
 
 // ── parseChart — axis number format ───────────────────────────────
 
 describe("parseChart — axis number format", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces <c:numFmt formatCode="..."/> off the value axis', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1199,10 +1199,10 @@ describe("parseChart — axis number format", () => {
       <c:numFmt formatCode="#,##0" sourceLinked="0"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.numberFormat).toEqual({ formatCode: "#,##0" });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.numberFormat).toEqual({ formatCode: "#,##0" })
+  })
 
   it("surfaces sourceLinked when set to 1", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1214,10 +1214,10 @@ describe("parseChart — axis number format", () => {
       <c:numFmt formatCode="0.00%" sourceLinked="1"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.numberFormat).toEqual({ formatCode: "0.00%", sourceLinked: true });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.numberFormat).toEqual({ formatCode: "0.00%", sourceLinked: true })
+  })
 
   it("ignores empty formatCode attributes", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1229,10 +1229,10 @@ describe("parseChart — axis number format", () => {
       <c:numFmt formatCode="" sourceLinked="1"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("co-surfaces axis title, gridlines, scale and number format together", () => {
     const xml = `<c:chartSpace ${NS}
@@ -1249,21 +1249,21 @@ describe("parseChart — axis number format", () => {
       <c:majorUnit val="25"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.y).toEqual({
       title: "Revenue",
       gridlines: { major: true },
       scale: { min: 0, max: 100, majorUnit: 25 },
       numberFormat: { formatCode: "$#,##0" },
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — doughnut hole size ───────────────────────────────
 
 describe("parseChart — doughnut hole size", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces <c:holeSize val="..."/> off a doughnut chart', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1274,21 +1274,21 @@ describe("parseChart — doughnut hole size", () => {
       <c:holeSize val="65"/>
     </c:doughnutChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.kinds).toEqual(["doughnut"]);
-    expect(chart?.holeSize).toBe(65);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.kinds).toEqual(["doughnut"])
+    expect(chart?.holeSize).toBe(65)
+  })
 
   it("omits holeSize when the doughnut chart does not declare one", () => {
     const xml = `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:doughnutChart><c:varyColors val="1"/></c:doughnutChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.holeSize).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.holeSize).toBeUndefined()
+  })
 
   it("rejects malformed or out-of-range holeSize values", () => {
     const out = (val: string): unknown =>
@@ -1296,29 +1296,29 @@ describe("parseChart — doughnut hole size", () => {
   <c:chart><c:plotArea>
     <c:doughnutChart><c:holeSize val="${val}"/></c:doughnutChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`)?.holeSize;
-    expect(out("not-a-number")).toBeUndefined();
-    expect(out("0")).toBeUndefined();
-    expect(out("100")).toBeUndefined();
+</c:chartSpace>`)?.holeSize
+    expect(out("not-a-number")).toBeUndefined()
+    expect(out("0")).toBeUndefined()
+    expect(out("100")).toBeUndefined()
     // 1–99 inclusive is what the OOXML schema allows.
-    expect(out("1")).toBe(1);
-    expect(out("99")).toBe(99);
-  });
+    expect(out("1")).toBe(1)
+    expect(out("99")).toBe(99)
+  })
 
   it("does not attach holeSize to non-doughnut charts", () => {
     const xml = `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:pieChart><c:varyColors val="1"/></c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.kinds).toEqual(["pie"]);
-    expect(chart?.holeSize).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.kinds).toEqual(["pie"])
+    expect(chart?.holeSize).toBeUndefined()
+  })
+})
 
 describe("parseChart — bar gapWidth & overlap", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces <c:gapWidth val="..."/> off a bar chart', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1330,11 +1330,11 @@ describe("parseChart — bar gapWidth & overlap", () => {
       <c:gapWidth val="75"/>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.kinds).toEqual(["bar"]);
-    expect(chart?.gapWidth).toBe(75);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.kinds).toEqual(["bar"])
+    expect(chart?.gapWidth).toBe(75)
+  })
 
   it('surfaces <c:overlap val="..."/> off a bar chart', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1346,11 +1346,11 @@ describe("parseChart — bar gapWidth & overlap", () => {
       <c:overlap val="-25"/>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.kinds).toEqual(["bar"]);
-    expect(chart?.overlap).toBe(-25);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.kinds).toEqual(["bar"])
+    expect(chart?.overlap).toBe(-25)
+  })
 
   it("surfaces both gapWidth and overlap when both are declared", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1360,40 +1360,40 @@ describe("parseChart — bar gapWidth & overlap", () => {
       <c:overlap val="100"/>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.gapWidth).toBe(75);
-    expect(chart?.overlap).toBe(100);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.gapWidth).toBe(75)
+    expect(chart?.overlap).toBe(100)
+  })
 
   it("collapses the OOXML default gapWidth (150) to undefined", () => {
     const xml = `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:barChart><c:gapWidth val="150"/></c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.gapWidth).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.gapWidth).toBeUndefined()
+  })
 
   it("collapses the OOXML default overlap (0) to undefined", () => {
     const xml = `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:barChart><c:overlap val="0"/></c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.overlap).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.overlap).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:gapWidth> / <c:overlap>", () => {
     const xml = `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.gapWidth).toBeUndefined();
-    expect(chart?.overlap).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.gapWidth).toBeUndefined()
+    expect(chart?.overlap).toBeUndefined()
+  })
 
   it("rejects malformed or out-of-range gapWidth values", () => {
     const out = (val: string): unknown =>
@@ -1401,16 +1401,16 @@ describe("parseChart — bar gapWidth & overlap", () => {
   <c:chart><c:plotArea>
     <c:barChart><c:gapWidth val="${val}"/></c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`)?.gapWidth;
-    expect(out("not-a-number")).toBeUndefined();
+</c:chartSpace>`)?.gapWidth
+    expect(out("not-a-number")).toBeUndefined()
     // Below schema minimum.
-    expect(out("-1")).toBeUndefined();
+    expect(out("-1")).toBeUndefined()
     // Above schema maximum (ST_GapAmount is 0..500 inclusive).
-    expect(out("501")).toBeUndefined();
+    expect(out("501")).toBeUndefined()
     // Bounds inclusive.
-    expect(out("0")).toBe(0);
-    expect(out("500")).toBe(500);
-  });
+    expect(out("0")).toBe(0)
+    expect(out("500")).toBe(500)
+  })
 
   it("rejects malformed or out-of-range overlap values", () => {
     const out = (val: string): unknown =>
@@ -1418,16 +1418,16 @@ describe("parseChart — bar gapWidth & overlap", () => {
   <c:chart><c:plotArea>
     <c:barChart><c:overlap val="${val}"/></c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`)?.overlap;
-    expect(out("not-a-number")).toBeUndefined();
-    expect(out("-101")).toBeUndefined();
-    expect(out("101")).toBeUndefined();
+</c:chartSpace>`)?.overlap
+    expect(out("not-a-number")).toBeUndefined()
+    expect(out("-101")).toBeUndefined()
+    expect(out("101")).toBeUndefined()
     // Bounds inclusive (-100..100), 0 collapses to undefined.
-    expect(out("-100")).toBe(-100);
-    expect(out("100")).toBe(100);
-    expect(out("-1")).toBe(-1);
-    expect(out("1")).toBe(1);
-  });
+    expect(out("-100")).toBe(-100)
+    expect(out("100")).toBe(100)
+    expect(out("-1")).toBe(-1)
+    expect(out("1")).toBe(1)
+  })
 
   it("does not attach gapWidth / overlap to non-bar chart kinds", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1438,12 +1438,12 @@ describe("parseChart — bar gapWidth & overlap", () => {
       <c:ser><c:idx val="0"/></c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.kinds).toEqual(["line"]);
-    expect(chart?.gapWidth).toBeUndefined();
-    expect(chart?.overlap).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.kinds).toEqual(["line"])
+    expect(chart?.gapWidth).toBeUndefined()
+    expect(chart?.overlap).toBeUndefined()
+  })
 
   it("surfaces gapWidth / overlap from <c:bar3DChart> as well", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1453,16 +1453,16 @@ describe("parseChart — bar gapWidth & overlap", () => {
       <c:overlap val="25"/>
     </c:bar3DChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.kinds).toEqual(["bar3D"]);
-    expect(chart?.gapWidth).toBe(50);
-    expect(chart?.overlap).toBe(25);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.kinds).toEqual(["bar3D"])
+    expect(chart?.gapWidth).toBe(50)
+    expect(chart?.overlap).toBe(25)
+  })
+})
 
 describe("parseChart — first slice angle", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces <c:firstSliceAng val="..."/> off a pie chart', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1472,11 +1472,11 @@ describe("parseChart — first slice angle", () => {
       <c:firstSliceAng val="90"/>
     </c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.kinds).toEqual(["pie"]);
-    expect(chart?.firstSliceAng).toBe(90);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.kinds).toEqual(["pie"])
+    expect(chart?.firstSliceAng).toBe(90)
+  })
 
   it('surfaces <c:firstSliceAng val="..."/> off a doughnut chart', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1487,38 +1487,38 @@ describe("parseChart — first slice angle", () => {
       <c:holeSize val="50"/>
     </c:doughnutChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.kinds).toEqual(["doughnut"]);
-    expect(chart?.firstSliceAng).toBe(180);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.kinds).toEqual(["doughnut"])
+    expect(chart?.firstSliceAng).toBe(180)
+  })
 
   it("collapses the OOXML default 0 to undefined (writer absence)", () => {
     const xml = `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:pieChart><c:firstSliceAng val="0"/></c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.firstSliceAng).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.firstSliceAng).toBeUndefined()
+  })
 
   it("collapses the schema-equivalent 360 to undefined (same as 0)", () => {
     const xml = `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:pieChart><c:firstSliceAng val="360"/></c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.firstSliceAng).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.firstSliceAng).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:firstSliceAng> element", () => {
     const xml = `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:pieChart><c:varyColors val="1"/></c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.firstSliceAng).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.firstSliceAng).toBeUndefined()
+  })
 
   it("rejects malformed or out-of-range firstSliceAng values", () => {
     const out = (val: string): unknown =>
@@ -1526,17 +1526,17 @@ describe("parseChart — first slice angle", () => {
   <c:chart><c:plotArea>
     <c:pieChart><c:firstSliceAng val="${val}"/></c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`)?.firstSliceAng;
-    expect(out("not-a-number")).toBeUndefined();
+</c:chartSpace>`)?.firstSliceAng
+    expect(out("not-a-number")).toBeUndefined()
     // Negative values fall outside the CT_FirstSliceAng band.
-    expect(out("-1")).toBeUndefined();
+    expect(out("-1")).toBeUndefined()
     // 361 also falls outside the schema band (0..360 inclusive).
-    expect(out("361")).toBeUndefined();
+    expect(out("361")).toBeUndefined()
     // 1..359 are accepted verbatim.
-    expect(out("1")).toBe(1);
-    expect(out("270")).toBe(270);
-    expect(out("359")).toBe(359);
-  });
+    expect(out("1")).toBe(1)
+    expect(out("270")).toBe(270)
+    expect(out("359")).toBe(359)
+  })
 
   it("does not attach firstSliceAng to non-pie / non-doughnut charts", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1546,11 +1546,11 @@ describe("parseChart — first slice angle", () => {
       <c:ser><c:idx val="0"/></c:ser>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.kinds).toEqual(["bar"]);
-    expect(chart?.firstSliceAng).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.kinds).toEqual(["bar"])
+    expect(chart?.firstSliceAng).toBeUndefined()
+  })
 
   it("ignores firstSliceAng outside of pie/doughnut even in combo charts", () => {
     // A pie sibling in the same plotArea should win over a stray
@@ -1566,17 +1566,17 @@ describe("parseChart — first slice angle", () => {
       <c:firstSliceAng val="45"/>
     </c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.kinds).toEqual(["line", "pie"]);
-    expect(chart?.firstSliceAng).toBe(45);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.kinds).toEqual(["line", "pie"])
+    expect(chart?.firstSliceAng).toBe(45)
+  })
+})
 
 // ── parseChart — series smooth flag ───────────────────────────────
 
 describe("parseChart — series smooth flag", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces smooth=true on a <c:lineChart> series with <c:smooth val="1"/>', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1590,10 +1590,10 @@ describe("parseChart — series smooth flag", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].smooth).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].smooth).toBe(true)
+  })
 
   it("surfaces smooth=true on a <c:scatterChart> series", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1608,10 +1608,10 @@ describe("parseChart — series smooth flag", () => {
       </c:ser>
     </c:scatterChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].smooth).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].smooth).toBe(true)
+  })
 
   it("collapses the OOXML default smooth=false to undefined", () => {
     // Absence of <c:smooth> and `<c:smooth val="0"/>` round-trip
@@ -1627,10 +1627,10 @@ describe("parseChart — series smooth flag", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].smooth).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].smooth).toBeUndefined()
+  })
 
   it("returns smooth undefined when <c:smooth> is absent", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1642,10 +1642,10 @@ describe("parseChart — series smooth flag", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].smooth).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].smooth).toBeUndefined()
+  })
 
   it('also accepts the "true" / "false" boolean spelling', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1658,10 +1658,10 @@ describe("parseChart — series smooth flag", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].smooth).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].smooth).toBe(true)
+  })
 
   it("ignores <c:smooth> on chart families whose schema rejects the element", () => {
     // The OOXML schema places <c:smooth> only on CT_LineSer and
@@ -1679,10 +1679,10 @@ describe("parseChart — series smooth flag", () => {
       </c:ser>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].smooth).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].smooth).toBeUndefined()
+  })
 
   it("surfaces smooth per-series independently across multi-series line charts", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1704,19 +1704,19 @@ describe("parseChart — series smooth flag", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series).toHaveLength(3);
-    expect(chart?.series?.[0].smooth).toBe(true);
-    expect(chart?.series?.[1].smooth).toBeUndefined();
-    expect(chart?.series?.[2].smooth).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series).toHaveLength(3)
+    expect(chart?.series?.[0].smooth).toBe(true)
+    expect(chart?.series?.[1].smooth).toBeUndefined()
+    expect(chart?.series?.[2].smooth).toBeUndefined()
+  })
+})
 
 // ── parseChart — series line stroke ───────────────────────────────
 
 describe("parseChart — series line stroke", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   it('surfaces stroke.dash from <a:prstDash val="dash"/>', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1733,10 +1733,10 @@ describe("parseChart — series line stroke", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].stroke).toEqual({ dash: "dash" });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].stroke).toEqual({ dash: "dash" })
+  })
 
   it('surfaces stroke.width from <a:ln w="..."/> by converting EMU back to points', () => {
     // 31 750 EMU = 2.5 pt.
@@ -1752,10 +1752,10 @@ describe("parseChart — series line stroke", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].stroke).toEqual({ width: 2.5 });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].stroke).toEqual({ width: 2.5 })
+  })
 
   it("surfaces both dash and width when both are present", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1774,10 +1774,10 @@ describe("parseChart — series line stroke", () => {
       </c:ser>
     </c:scatterChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].stroke).toEqual({ dash: "lgDash", width: 0.75 });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].stroke).toEqual({ dash: "lgDash", width: 0.75 })
+  })
 
   it("returns stroke undefined when <a:ln> is absent", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1789,10 +1789,10 @@ describe("parseChart — series line stroke", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].stroke).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].stroke).toBeUndefined()
+  })
 
   it("collapses an empty <a:ln/> (no width, no prstDash) to undefined", () => {
     // An empty <a:ln/> carries no meaningful settings; don't surface a
@@ -1807,10 +1807,10 @@ describe("parseChart — series line stroke", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].stroke).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].stroke).toBeUndefined()
+  })
 
   it("drops an unknown dash value rather than surfacing a malformed token", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1827,10 +1827,10 @@ describe("parseChart — series line stroke", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].stroke).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].stroke).toBeUndefined()
+  })
 
   it("clamps an absurdly wide <a:ln w=...> back into the 0.25..13.5 pt band", () => {
     // 999 999 EMU ≈ 78.7 pt; clamp to 13.5 pt.
@@ -1846,10 +1846,10 @@ describe("parseChart — series line stroke", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].stroke).toEqual({ width: 13.5 });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].stroke).toEqual({ width: 13.5 })
+  })
 
   it("ignores stroke on chart families whose schema does not paint a connecting line", () => {
     // Even if a corrupt template carries <a:ln> on a bar/pie/area
@@ -1870,10 +1870,10 @@ describe("parseChart — series line stroke", () => {
       </c:ser>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].stroke).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].stroke).toBeUndefined()
+  })
 
   it("surfaces stroke per-series independently across multi-series line charts", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -1895,13 +1895,13 @@ describe("parseChart — series line stroke", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series).toHaveLength(3);
-    expect(chart?.series?.[0].stroke).toEqual({ dash: "dash", width: 2.5 });
-    expect(chart?.series?.[1].stroke).toBeUndefined();
-    expect(chart?.series?.[2].stroke).toEqual({ dash: "sysDot" });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series).toHaveLength(3)
+    expect(chart?.series?.[0].stroke).toEqual({ dash: "dash", width: 2.5 })
+    expect(chart?.series?.[1].stroke).toBeUndefined()
+    expect(chart?.series?.[2].stroke).toEqual({ dash: "sysDot" })
+  })
 
   it("does not let stroke shadow the existing series.color (parseSeriesColor still wins)", () => {
     // A series with both a fill color and a stroke should surface
@@ -1923,19 +1923,19 @@ describe("parseChart — series line stroke", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].color).toBe("1F77B4");
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].color).toBe("1F77B4")
     // 19 050 EMU = 1.5 pt.
-    expect(chart?.series?.[0].stroke).toEqual({ dash: "dashDot", width: 1.5 });
-  });
-});
+    expect(chart?.series?.[0].stroke).toEqual({ dash: "dashDot", width: 1.5 })
+  })
+})
 
 // ── parseChart — series marker ────────────────────────────────────
 
 describe("parseChart — series marker", () => {
-  const NS_C = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
-  const NS_A = `xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_C = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
+  const NS_A = `xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   it("surfaces symbol + size on a <c:lineChart> series", () => {
     const xml = `<c:chartSpace ${NS_C} ${NS_A}>
@@ -1951,10 +1951,10 @@ describe("parseChart — series marker", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].marker).toEqual({ symbol: "diamond", size: 10 });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].marker).toEqual({ symbol: "diamond", size: 10 })
+  })
 
   it("surfaces fill and outline colors from <c:spPr>", () => {
     const xml = `<c:chartSpace ${NS_C} ${NS_A}>
@@ -1974,15 +1974,15 @@ describe("parseChart — series marker", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.series?.[0].marker).toEqual({
       symbol: "circle",
       size: 6,
       fill: "1F77B4",
       line: "FF0000",
-    });
-  });
+    })
+  })
 
   it("upper-cases hex color values pulled from the marker spPr", () => {
     const xml = `<c:chartSpace ${NS_C} ${NS_A}>
@@ -1997,10 +1997,10 @@ describe("parseChart — series marker", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].marker?.fill).toBe("1F77B4");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].marker?.fill).toBe("1F77B4")
+  })
 
   it("clamps marker size into the OOXML 2..72 band", () => {
     const xml = `<c:chartSpace ${NS_C} ${NS_A}>
@@ -2018,11 +2018,11 @@ describe("parseChart — series marker", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].marker?.size).toBe(72);
-    expect(chart?.series?.[1].marker?.size).toBe(2);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].marker?.size).toBe(72)
+    expect(chart?.series?.[1].marker?.size).toBe(2)
+  })
 
   it("collapses an empty <c:marker/> to undefined", () => {
     // No symbol, size, or color — there's nothing meaningful to surface.
@@ -2036,10 +2036,10 @@ describe("parseChart — series marker", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].marker).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].marker).toBeUndefined()
+  })
 
   it("drops unknown marker symbols rather than surface invalid values", () => {
     const xml = `<c:chartSpace ${NS_C} ${NS_A}>
@@ -2052,11 +2052,11 @@ describe("parseChart — series marker", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     // Size still surfaces; the bogus symbol is dropped.
-    expect(chart?.series?.[0].marker).toEqual({ size: 5 });
-  });
+    expect(chart?.series?.[0].marker).toEqual({ size: 5 })
+  })
 
   it("surfaces marker on a <c:scatterChart> series", () => {
     const xml = `<c:chartSpace ${NS_C} ${NS_A}>
@@ -2071,10 +2071,10 @@ describe("parseChart — series marker", () => {
       </c:ser>
     </c:scatterChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].marker).toEqual({ symbol: "x", size: 8 });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].marker).toEqual({ symbol: "x", size: 8 })
+  })
 
   it("ignores <c:marker> on chart families whose schema rejects it", () => {
     // A bar / pie / area template carrying a stray <c:marker> on its
@@ -2091,10 +2091,10 @@ describe("parseChart — series marker", () => {
       </c:ser>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].marker).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].marker).toBeUndefined()
+  })
 
   it("surfaces marker per-series independently across multi-series line charts", () => {
     const xml = `<c:chartSpace ${NS_C} ${NS_A}>
@@ -2116,19 +2116,19 @@ describe("parseChart — series marker", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series).toHaveLength(3);
-    expect(chart?.series?.[0].marker).toEqual({ symbol: "circle", size: 6 });
-    expect(chart?.series?.[1].marker).toEqual({ symbol: "square" });
-    expect(chart?.series?.[2].marker).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series).toHaveLength(3)
+    expect(chart?.series?.[0].marker).toEqual({ symbol: "circle", size: 6 })
+    expect(chart?.series?.[1].marker).toEqual({ symbol: "square" })
+    expect(chart?.series?.[2].marker).toBeUndefined()
+  })
+})
 
 // ── parseChart — dispBlanksAs ─────────────────────────────────────
 
 describe("parseChart — dispBlanksAs", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces <c:dispBlanksAs val="zero"/> off <c:chart>', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -2140,9 +2140,9 @@ describe("parseChart — dispBlanksAs", () => {
     </c:plotArea>
     <c:dispBlanksAs val="zero"/>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dispBlanksAs).toBe("zero");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dispBlanksAs).toBe("zero")
+  })
 
   it('surfaces <c:dispBlanksAs val="span"/> off <c:chart>', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -2154,9 +2154,9 @@ describe("parseChart — dispBlanksAs", () => {
     </c:plotArea>
     <c:dispBlanksAs val="span"/>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dispBlanksAs).toBe("span");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dispBlanksAs).toBe("span")
+  })
 
   it("collapses the OOXML default 'gap' to undefined (writer absence)", () => {
     // The default carried explicitly by Excel's reference serialization
@@ -2168,9 +2168,9 @@ describe("parseChart — dispBlanksAs", () => {
     </c:plotArea>
     <c:dispBlanksAs val="gap"/>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dispBlanksAs).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dispBlanksAs).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:dispBlanksAs> element", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -2179,9 +2179,9 @@ describe("parseChart — dispBlanksAs", () => {
       <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dispBlanksAs).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dispBlanksAs).toBeUndefined()
+  })
 
   it("drops unknown dispBlanksAs values rather than fabricate one", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -2191,9 +2191,9 @@ describe("parseChart — dispBlanksAs", () => {
     </c:plotArea>
     <c:dispBlanksAs val="bogus"/>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dispBlanksAs).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dispBlanksAs).toBeUndefined()
+  })
 
   it("ignores a missing val attribute on <c:dispBlanksAs>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -2203,15 +2203,15 @@ describe("parseChart — dispBlanksAs", () => {
     </c:plotArea>
     <c:dispBlanksAs/>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dispBlanksAs).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.dispBlanksAs).toBeUndefined()
+  })
+})
 
 // ── parseChart — varyColors ───────────────────────────────────────
 
 describe("parseChart — varyColors", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces <c:varyColors val="1"/> on a column chart (non-default true)', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -2225,9 +2225,9 @@ describe("parseChart — varyColors", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.varyColors).toBe(true);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.varyColors).toBe(true)
+  })
 
   it('surfaces <c:varyColors val="0"/> on a doughnut chart (non-default false)', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -2241,9 +2241,9 @@ describe("parseChart — varyColors", () => {
       </c:doughnutChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.varyColors).toBe(false);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.varyColors).toBe(false)
+  })
 
   it("collapses the per-family default to undefined on a column chart (varyColors=0)", () => {
     // Column / bar default is `false` — `<c:varyColors val="0"/>` and
@@ -2259,9 +2259,9 @@ describe("parseChart — varyColors", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.varyColors).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.varyColors).toBeUndefined()
+  })
 
   it("collapses the per-family default to undefined on a pie chart (varyColors=1)", () => {
     // Pie default is `true` — `<c:varyColors val="1"/>` and absence both
@@ -2275,9 +2275,9 @@ describe("parseChart — varyColors", () => {
       </c:pieChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.varyColors).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.varyColors).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:varyColors> element", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -2286,9 +2286,9 @@ describe("parseChart — varyColors", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.varyColors).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.varyColors).toBeUndefined()
+  })
 
   it("accepts the OOXML true / false spellings on the val attribute", () => {
     // The OOXML schema for `xsd:boolean` accepts `"true"` / `"false"`
@@ -2305,9 +2305,9 @@ describe("parseChart — varyColors", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.varyColors).toBe(true);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.varyColors).toBe(true)
+  })
 
   it("drops unknown varyColors values rather than fabricate one", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -2319,9 +2319,9 @@ describe("parseChart — varyColors", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.varyColors).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.varyColors).toBeUndefined()
+  })
 
   it("ignores a missing val attribute on <c:varyColors>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -2333,9 +2333,9 @@ describe("parseChart — varyColors", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.varyColors).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.varyColors).toBeUndefined()
+  })
 
   it("surfaces varyColors from the first chart-type element on combo charts", () => {
     // The reader latches onto the first chart-type element that carries
@@ -2356,15 +2356,15 @@ describe("parseChart — varyColors", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.varyColors).toBe(true);
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.varyColors).toBe(true)
+  })
+})
 
 // ── parseChart — scatterStyle ─────────────────────────────────────
 
 describe("parseChart — scatterStyle", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces <c:scatterStyle val="lineMarker"/> on a scatter chart', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -2377,9 +2377,9 @@ describe("parseChart — scatterStyle", () => {
       </c:scatterChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.scatterStyle).toBe("lineMarker");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.scatterStyle).toBe("lineMarker")
+  })
 
   it('surfaces <c:scatterStyle val="smooth"/> on a smooth-line scatter', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -2391,9 +2391,9 @@ describe("parseChart — scatterStyle", () => {
       </c:scatterChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.scatterStyle).toBe("smooth");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.scatterStyle).toBe("smooth")
+  })
 
   it("surfaces every other ST_ScatterStyle preset literally", () => {
     // Walk the remaining four enum tokens — each one round-trips
@@ -2408,10 +2408,10 @@ describe("parseChart — scatterStyle", () => {
       </c:scatterChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.scatterStyle).toBe(preset);
+</c:chartSpace>`
+      expect(parseChart(xml)?.scatterStyle).toBe(preset)
     }
-  });
+  })
 
   it("returns undefined when the scatter chart omits <c:scatterStyle>", () => {
     // The OOXML schema lists the element as required, but Excel falls
@@ -2426,9 +2426,9 @@ describe("parseChart — scatterStyle", () => {
       </c:scatterChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.scatterStyle).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.scatterStyle).toBeUndefined()
+  })
 
   it("ignores a <c:scatterStyle> with no val attribute", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -2440,9 +2440,9 @@ describe("parseChart — scatterStyle", () => {
       </c:scatterChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.scatterStyle).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.scatterStyle).toBeUndefined()
+  })
 
   it("drops unknown scatterStyle values rather than fabricate one", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -2454,9 +2454,9 @@ describe("parseChart — scatterStyle", () => {
       </c:scatterChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.scatterStyle).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.scatterStyle).toBeUndefined()
+  })
 
   it("does not surface scatterStyle on non-scatter charts", () => {
     // The OOXML schema places <c:scatterStyle> exclusively on
@@ -2474,9 +2474,9 @@ describe("parseChart — scatterStyle", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.scatterStyle).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.scatterStyle).toBeUndefined()
+  })
 
   it("surfaces scatterStyle from the first scatterChart in a combo chart", () => {
     // Combo charts are rare but Excel supports an arbitrary mix of
@@ -2496,10 +2496,10 @@ describe("parseChart — scatterStyle", () => {
       </c:scatterChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.scatterStyle).toBe("smoothMarker");
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.scatterStyle).toBe("smoothMarker")
+  })
+})
 
 // ── End-to-end: full XLSX with a chart ────────────────────────────
 
@@ -2509,7 +2509,7 @@ describe("parseChart — scatterStyle", () => {
  * inserted chart (drawing -> _rels -> chart -> style -> colors).
  */
 async function buildXlsxWithChart(): Promise<Uint8Array> {
-  const z = new ZipWriter();
+  const z = new ZipWriter()
 
   z.add(
     "[Content_Types].xml",
@@ -2524,7 +2524,7 @@ async function buildXlsxWithChart(): Promise<Uint8Array> {
   <Override PartName="/xl/charts/style1.xml" ContentType="application/vnd.ms-office.chartstyle+xml"/>
   <Override PartName="/xl/charts/colors1.xml" ContentType="application/vnd.ms-office.chartcolorstyle+xml"/>
 </Types>`),
-  );
+  )
 
   z.add(
     "_rels/.rels",
@@ -2532,7 +2532,7 @@ async function buildXlsxWithChart(): Promise<Uint8Array> {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
 </Relationships>`),
-  );
+  )
 
   z.add(
     "xl/workbook.xml",
@@ -2541,7 +2541,7 @@ async function buildXlsxWithChart(): Promise<Uint8Array> {
           xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
 </workbook>`),
-  );
+  )
 
   z.add(
     "xl/_rels/workbook.xml.rels",
@@ -2549,7 +2549,7 @@ async function buildXlsxWithChart(): Promise<Uint8Array> {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
 </Relationships>`),
-  );
+  )
 
   z.add(
     "xl/worksheets/sheet1.xml",
@@ -2562,7 +2562,7 @@ async function buildXlsxWithChart(): Promise<Uint8Array> {
   </sheetData>
   <drawing r:id="rId1"/>
 </worksheet>`),
-  );
+  )
 
   z.add(
     "xl/worksheets/_rels/sheet1.xml.rels",
@@ -2570,7 +2570,7 @@ async function buildXlsxWithChart(): Promise<Uint8Array> {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
 </Relationships>`),
-  );
+  )
 
   // Drawing with one chart anchor
   z.add(
@@ -2598,7 +2598,7 @@ async function buildXlsxWithChart(): Promise<Uint8Array> {
     <xdr:clientData/>
   </xdr:twoCellAnchor>
 </xdr:wsDr>`),
-  );
+  )
 
   z.add(
     "xl/drawings/_rels/drawing1.xml.rels",
@@ -2606,7 +2606,7 @@ async function buildXlsxWithChart(): Promise<Uint8Array> {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/>
 </Relationships>`),
-  );
+  )
 
   z.add(
     "xl/charts/chart1.xml",
@@ -2628,7 +2628,7 @@ async function buildXlsxWithChart(): Promise<Uint8Array> {
   </c:chart>
   <c:externalData r:id="rId1"/>
 </c:chartSpace>`),
-  );
+  )
 
   z.add(
     "xl/charts/_rels/chart1.xml.rels",
@@ -2637,31 +2637,31 @@ async function buildXlsxWithChart(): Promise<Uint8Array> {
   <Relationship Id="rId1" Type="http://schemas.microsoft.com/office/2011/relationships/chartStyle" Target="style1.xml"/>
   <Relationship Id="rId2" Type="http://schemas.microsoft.com/office/2011/relationships/chartColorStyle" Target="colors1.xml"/>
 </Relationships>`),
-  );
+  )
 
   z.add(
     "xl/charts/style1.xml",
     encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cs:chartStyle xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle" id="201"/>`),
-  );
+  )
 
   z.add(
     "xl/charts/colors1.xml",
     encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cs:colorStyle xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle" meth="cycle" id="10"/>`),
-  );
+  )
 
-  return await z.build();
+  return await z.build()
 }
 
 // ── readXlsx — chart integration ─────────────────────────────────
 
 describe("readXlsx — chart integration", () => {
   it("attaches sheet.charts when the drawing references a chart", async () => {
-    const buf = await buildXlsxWithChart();
-    const wb = await readXlsx(buf);
-    expect(wb.sheets).toHaveLength(1);
-    expect(wb.sheets[0].charts).toHaveLength(1);
+    const buf = await buildXlsxWithChart()
+    const wb = await readXlsx(buf)
+    expect(wb.sheets).toHaveLength(1)
+    expect(wb.sheets[0].charts).toHaveLength(1)
     expect(wb.sheets[0].charts?.[0]).toEqual({
       kinds: ["bar"],
       seriesCount: 1,
@@ -2671,11 +2671,11 @@ describe("readXlsx — chart integration", () => {
         from: { row: 1, col: 3 },
         to: { row: 16, col: 10 },
       },
-    });
-  });
+    })
+  })
 
   it("does not set sheet.charts when the workbook has none", async () => {
-    const z = new ZipWriter();
+    const z = new ZipWriter()
     z.add(
       "[Content_Types].xml",
       encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -2685,14 +2685,14 @@ describe("readXlsx — chart integration", () => {
   <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
   <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
 </Types>`),
-    );
+    )
     z.add(
       "_rels/.rels",
       encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
 </Relationships>`),
-    );
+    )
     z.add(
       "xl/workbook.xml",
       encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -2700,111 +2700,111 @@ describe("readXlsx — chart integration", () => {
           xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheets><sheet name="Main" sheetId="1" r:id="rId1"/></sheets>
 </workbook>`),
-    );
+    )
     z.add(
       "xl/_rels/workbook.xml.rels",
       encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
 </Relationships>`),
-    );
+    )
     z.add(
       "xl/worksheets/sheet1.xml",
       encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`),
-    );
+    )
 
-    const wb = await readXlsx(await z.build());
-    expect(wb.sheets[0].charts).toBeUndefined();
-  });
-});
+    const wb = await readXlsx(await z.build())
+    expect(wb.sheets[0].charts).toBeUndefined()
+  })
+})
 
 // ── Roundtrip preservation ───────────────────────────────────────
 
 describe("roundtrip — chart preservation", () => {
   it("preserves chart, style, colors, drawing, and drawing rels", async () => {
-    const buf = await buildXlsxWithChart();
-    const wb = await openXlsx(buf);
-    const out = await saveXlsx(wb);
-    const zip = new ZipReader(out);
+    const buf = await buildXlsxWithChart()
+    const wb = await openXlsx(buf)
+    const out = await saveXlsx(wb)
+    const zip = new ZipReader(out)
 
-    expect(zip.has("xl/charts/chart1.xml")).toBe(true);
-    expect(zip.has("xl/charts/style1.xml")).toBe(true);
-    expect(zip.has("xl/charts/colors1.xml")).toBe(true);
-    expect(zip.has("xl/charts/_rels/chart1.xml.rels")).toBe(true);
-    expect(zip.has("xl/drawings/drawing1.xml")).toBe(true);
-    expect(zip.has("xl/drawings/_rels/drawing1.xml.rels")).toBe(true);
+    expect(zip.has("xl/charts/chart1.xml")).toBe(true)
+    expect(zip.has("xl/charts/style1.xml")).toBe(true)
+    expect(zip.has("xl/charts/colors1.xml")).toBe(true)
+    expect(zip.has("xl/charts/_rels/chart1.xml.rels")).toBe(true)
+    expect(zip.has("xl/drawings/drawing1.xml")).toBe(true)
+    expect(zip.has("xl/drawings/_rels/drawing1.xml.rels")).toBe(true)
 
     // Chart body must survive byte-identical (it carries the title).
-    const chartXml = decoder.decode(await zip.extract("xl/charts/chart1.xml"));
-    expect(chartXml).toContain("Quarterly Sales");
+    const chartXml = decoder.decode(await zip.extract("xl/charts/chart1.xml"))
+    expect(chartXml).toContain("Quarterly Sales")
 
     // Drawing body keeps the chart graphicFrame.
-    const drawingXml = decoder.decode(await zip.extract("xl/drawings/drawing1.xml"));
-    expect(drawingXml).toContain("c:chart");
-  });
+    const drawingXml = decoder.decode(await zip.extract("xl/drawings/drawing1.xml"))
+    expect(drawingXml).toContain("c:chart")
+  })
 
   it("declares chart parts in [Content_Types].xml", async () => {
-    const buf = await buildXlsxWithChart();
-    const wb = await openXlsx(buf);
-    const out = await saveXlsx(wb);
-    const zip = new ZipReader(out);
+    const buf = await buildXlsxWithChart()
+    const wb = await openXlsx(buf)
+    const out = await saveXlsx(wb)
+    const zip = new ZipReader(out)
 
-    const ct = decoder.decode(await zip.extract("[Content_Types].xml"));
-    expect(ct).toContain("/xl/charts/chart1.xml");
-    expect(ct).toContain("/xl/charts/style1.xml");
-    expect(ct).toContain("/xl/charts/colors1.xml");
-    expect(ct).toContain("application/vnd.openxmlformats-officedocument.drawingml.chart+xml");
-    expect(ct).toContain("application/vnd.ms-office.chartstyle+xml");
-    expect(ct).toContain("application/vnd.ms-office.chartcolorstyle+xml");
+    const ct = decoder.decode(await zip.extract("[Content_Types].xml"))
+    expect(ct).toContain("/xl/charts/chart1.xml")
+    expect(ct).toContain("/xl/charts/style1.xml")
+    expect(ct).toContain("/xl/charts/colors1.xml")
+    expect(ct).toContain("application/vnd.openxmlformats-officedocument.drawingml.chart+xml")
+    expect(ct).toContain("application/vnd.ms-office.chartstyle+xml")
+    expect(ct).toContain("application/vnd.ms-office.chartcolorstyle+xml")
     // The chart-bearing drawing must be declared too — without this
     // the drawing bytes survive but Excel treats them as orphan.
-    expect(ct).toContain("/xl/drawings/drawing1.xml");
-  });
+    expect(ct).toContain("/xl/drawings/drawing1.xml")
+  })
 
   it("re-anchors the drawing into the regenerated worksheet body", async () => {
-    const buf = await buildXlsxWithChart();
-    const wb = await openXlsx(buf);
-    const out = await saveXlsx(wb);
-    const zip = new ZipReader(out);
+    const buf = await buildXlsxWithChart()
+    const wb = await openXlsx(buf)
+    const out = await saveXlsx(wb)
+    const zip = new ZipReader(out)
 
-    const wsXml = decoder.decode(await zip.extract("xl/worksheets/sheet1.xml"));
-    expect(wsXml).toMatch(/<drawing r:id="rId\d+"\/>/);
+    const wsXml = decoder.decode(await zip.extract("xl/worksheets/sheet1.xml"))
+    expect(wsXml).toMatch(/<drawing r:id="rId\d+"\/>/)
 
-    const sheetRels = decoder.decode(await zip.extract("xl/worksheets/_rels/sheet1.xml.rels"));
+    const sheetRels = decoder.decode(await zip.extract("xl/worksheets/_rels/sheet1.xml.rels"))
     expect(sheetRels).toContain(
       'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing"',
-    );
-    expect(sheetRels).toContain('Target="../drawings/drawing1.xml"');
-  });
+    )
+    expect(sheetRels).toContain('Target="../drawings/drawing1.xml"')
+  })
 
   it("re-reading the saved workbook still surfaces the chart", async () => {
-    const buf = await buildXlsxWithChart();
-    const wb = await openXlsx(buf);
-    const out = await saveXlsx(wb);
-    const reread = await readXlsx(out);
+    const buf = await buildXlsxWithChart()
+    const wb = await openXlsx(buf)
+    const out = await saveXlsx(wb)
+    const reread = await readXlsx(out)
 
-    expect(reread.sheets[0].charts).toHaveLength(1);
-    expect(reread.sheets[0].charts?.[0].title).toBe("Quarterly Sales");
-    expect(reread.sheets[0].charts?.[0].kinds).toEqual(["bar"]);
-  });
+    expect(reread.sheets[0].charts).toHaveLength(1)
+    expect(reread.sheets[0].charts?.[0].title).toBe("Quarterly Sales")
+    expect(reread.sheets[0].charts?.[0].kinds).toEqual(["bar"])
+  })
 
   it("survives a cell modification — does not lose the chart", async () => {
-    const buf = await buildXlsxWithChart();
-    const wb = await openXlsx(buf);
+    const buf = await buildXlsxWithChart()
+    const wb = await openXlsx(buf)
     // Touch a cell so the worksheet is definitively regenerated.
-    wb.sheets[0].rows[0][0] = 99;
-    const out = await saveXlsx(wb);
-    const zip = new ZipReader(out);
+    wb.sheets[0].rows[0][0] = 99
+    const out = await saveXlsx(wb)
+    const zip = new ZipReader(out)
 
-    expect(zip.has("xl/charts/chart1.xml")).toBe(true);
-    expect(zip.has("xl/drawings/drawing1.xml")).toBe(true);
+    expect(zip.has("xl/charts/chart1.xml")).toBe(true)
+    expect(zip.has("xl/drawings/drawing1.xml")).toBe(true)
 
-    const reread = await readXlsx(out);
-    expect(reread.sheets[0].rows[0][0]).toBe(99);
-    expect(reread.sheets[0].charts).toHaveLength(1);
-  });
-});
+    const reread = await readXlsx(out)
+    expect(reread.sheets[0].rows[0][0]).toBe(99)
+    expect(reread.sheets[0].charts).toHaveLength(1)
+  })
+})
 
 // ── readXlsx — chart cell anchor ─────────────────────────────────
 
@@ -2814,7 +2814,7 @@ describe("roundtrip — chart preservation", () => {
  * `absoluteAnchor`). Used to verify {@link Chart.anchor} extraction.
  */
 async function buildXlsxWithAnchor(anchorXml: string): Promise<Uint8Array> {
-  const z = new ZipWriter();
+  const z = new ZipWriter()
 
   z.add(
     "[Content_Types].xml",
@@ -2827,7 +2827,7 @@ async function buildXlsxWithAnchor(anchorXml: string): Promise<Uint8Array> {
   <Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>
   <Override PartName="/xl/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>
 </Types>`),
-  );
+  )
 
   z.add(
     "_rels/.rels",
@@ -2835,7 +2835,7 @@ async function buildXlsxWithAnchor(anchorXml: string): Promise<Uint8Array> {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
 </Relationships>`),
-  );
+  )
 
   z.add(
     "xl/workbook.xml",
@@ -2844,7 +2844,7 @@ async function buildXlsxWithAnchor(anchorXml: string): Promise<Uint8Array> {
           xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
 </workbook>`),
-  );
+  )
 
   z.add(
     "xl/_rels/workbook.xml.rels",
@@ -2852,7 +2852,7 @@ async function buildXlsxWithAnchor(anchorXml: string): Promise<Uint8Array> {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
 </Relationships>`),
-  );
+  )
 
   z.add(
     "xl/worksheets/sheet1.xml",
@@ -2862,7 +2862,7 @@ async function buildXlsxWithAnchor(anchorXml: string): Promise<Uint8Array> {
   <sheetData/>
   <drawing r:id="rId1"/>
 </worksheet>`),
-  );
+  )
 
   z.add(
     "xl/worksheets/_rels/sheet1.xml.rels",
@@ -2870,7 +2870,7 @@ async function buildXlsxWithAnchor(anchorXml: string): Promise<Uint8Array> {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
 </Relationships>`),
-  );
+  )
 
   z.add(
     "xl/drawings/drawing1.xml",
@@ -2881,7 +2881,7 @@ async function buildXlsxWithAnchor(anchorXml: string): Promise<Uint8Array> {
           xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
 ${anchorXml}
 </xdr:wsDr>`),
-  );
+  )
 
   z.add(
     "xl/drawings/_rels/drawing1.xml.rels",
@@ -2889,7 +2889,7 @@ ${anchorXml}
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/>
 </Relationships>`),
-  );
+  )
 
   z.add(
     "xl/charts/chart1.xml",
@@ -2897,9 +2897,9 @@ ${anchorXml}
 <c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
   <c:chart><c:plotArea><c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart></c:plotArea></c:chart>
 </c:chartSpace>`),
-  );
+  )
 
-  return await z.build();
+  return await z.build()
 }
 
 /**
@@ -2917,7 +2917,7 @@ const CHART_GRAPHIC_FRAME = `<xdr:graphicFrame>
           <c:chart r:id="rId1"/>
         </a:graphicData>
       </a:graphic>
-    </xdr:graphicFrame>`;
+    </xdr:graphicFrame>`
 
 describe("readXlsx — chart cell anchor", () => {
   it("surfaces from/to from a twoCellAnchor", async () => {
@@ -2926,13 +2926,13 @@ describe("readXlsx — chart cell anchor", () => {
     <xdr:to><xdr:col>9</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>20</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
     ${CHART_GRAPHIC_FRAME}
     <xdr:clientData/>
-  </xdr:twoCellAnchor>`);
-    const wb = await readXlsx(buf);
+  </xdr:twoCellAnchor>`)
+    const wb = await readXlsx(buf)
     expect(wb.sheets[0].charts?.[0].anchor).toEqual({
       from: { row: 5, col: 2 },
       to: { row: 20, col: 9 },
-    });
-  });
+    })
+  })
 
   it("surfaces from-only for a oneCellAnchor (intrinsic size lives in <xdr:ext>)", async () => {
     const buf = await buildXlsxWithAnchor(`<xdr:oneCellAnchor>
@@ -2940,12 +2940,12 @@ describe("readXlsx — chart cell anchor", () => {
     <xdr:ext cx="6000000" cy="3500000"/>
     ${CHART_GRAPHIC_FRAME}
     <xdr:clientData/>
-  </xdr:oneCellAnchor>`);
-    const wb = await readXlsx(buf);
-    const anchor = wb.sheets[0].charts?.[0].anchor;
-    expect(anchor).toEqual({ from: { row: 2, col: 1 } });
-    expect(anchor?.to).toBeUndefined();
-  });
+  </xdr:oneCellAnchor>`)
+    const wb = await readXlsx(buf)
+    const anchor = wb.sheets[0].charts?.[0].anchor
+    expect(anchor).toEqual({ from: { row: 2, col: 1 } })
+    expect(anchor?.to).toBeUndefined()
+  })
 
   it("omits anchor for an absoluteAnchor (EMU-positioned, no cell anchor)", async () => {
     const buf = await buildXlsxWithAnchor(`<xdr:absoluteAnchor>
@@ -2953,10 +2953,10 @@ describe("readXlsx — chart cell anchor", () => {
     <xdr:ext cx="6000000" cy="3500000"/>
     ${CHART_GRAPHIC_FRAME}
     <xdr:clientData/>
-  </xdr:absoluteAnchor>`);
-    const wb = await readXlsx(buf);
-    expect(wb.sheets[0].charts?.[0].anchor).toBeUndefined();
-  });
+  </xdr:absoluteAnchor>`)
+    const wb = await readXlsx(buf)
+    expect(wb.sheets[0].charts?.[0].anchor).toBeUndefined()
+  })
 
   it("omits anchor when the twoCellAnchor is missing its <xdr:from> block", async () => {
     // Pathological — Excel always writes <xdr:from>, but defensive
@@ -2964,10 +2964,10 @@ describe("readXlsx — chart cell anchor", () => {
     const buf = await buildXlsxWithAnchor(`<xdr:twoCellAnchor>
     ${CHART_GRAPHIC_FRAME}
     <xdr:clientData/>
-  </xdr:twoCellAnchor>`);
-    const wb = await readXlsx(buf);
-    expect(wb.sheets[0].charts?.[0].anchor).toBeUndefined();
-  });
+  </xdr:twoCellAnchor>`)
+    const wb = await readXlsx(buf)
+    expect(wb.sheets[0].charts?.[0].anchor).toBeUndefined()
+  })
 
   it("falls back to from-only when the twoCellAnchor is missing its <xdr:to> block", async () => {
     // Some authoring tools omit <xdr:to> for one-cell-style charts
@@ -2976,16 +2976,16 @@ describe("readXlsx — chart cell anchor", () => {
     <xdr:from><xdr:col>4</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>7</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
     ${CHART_GRAPHIC_FRAME}
     <xdr:clientData/>
-  </xdr:twoCellAnchor>`);
-    const wb = await readXlsx(buf);
-    expect(wb.sheets[0].charts?.[0].anchor).toEqual({ from: { row: 7, col: 4 } });
-  });
+  </xdr:twoCellAnchor>`)
+    const wb = await readXlsx(buf)
+    expect(wb.sheets[0].charts?.[0].anchor).toEqual({ from: { row: 7, col: 4 } })
+  })
 
   it("attaches the correct anchor to each chart when the drawing carries multiple", async () => {
     // Build a drawing with two anchors, each pointing at its own chart
     // part. Verifies the per-anchor pairing rather than a coarse
     // "any anchor" pickup.
-    const z = new ZipWriter();
+    const z = new ZipWriter()
     z.add(
       "[Content_Types].xml",
       encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -2998,14 +2998,14 @@ describe("readXlsx — chart cell anchor", () => {
   <Override PartName="/xl/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>
   <Override PartName="/xl/charts/chart2.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>
 </Types>`),
-    );
+    )
     z.add(
       "_rels/.rels",
       encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
 </Relationships>`),
-    );
+    )
     z.add(
       "xl/workbook.xml",
       encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -3013,14 +3013,14 @@ describe("readXlsx — chart cell anchor", () => {
           xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
 </workbook>`),
-    );
+    )
     z.add(
       "xl/_rels/workbook.xml.rels",
       encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
 </Relationships>`),
-    );
+    )
     z.add(
       "xl/worksheets/sheet1.xml",
       encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -3029,14 +3029,14 @@ describe("readXlsx — chart cell anchor", () => {
   <sheetData/>
   <drawing r:id="rId1"/>
 </worksheet>`),
-    );
+    )
     z.add(
       "xl/worksheets/_rels/sheet1.xml.rels",
       encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
 </Relationships>`),
-    );
+    )
     z.add(
       "xl/drawings/drawing1.xml",
       encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -3065,7 +3065,7 @@ describe("readXlsx — chart cell anchor", () => {
     <xdr:clientData/>
   </xdr:twoCellAnchor>
 </xdr:wsDr>`),
-    );
+    )
     z.add(
       "xl/drawings/_rels/drawing1.xml.rels",
       encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -3073,54 +3073,54 @@ describe("readXlsx — chart cell anchor", () => {
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/>
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart2.xml"/>
 </Relationships>`),
-    );
+    )
     z.add(
       "xl/charts/chart1.xml",
       encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
   <c:chart><c:title><c:tx><c:rich><a:p xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:r><a:t>First</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart></c:plotArea></c:chart>
 </c:chartSpace>`),
-    );
+    )
     z.add(
       "xl/charts/chart2.xml",
       encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
   <c:chart><c:title><c:tx><c:rich><a:p xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:r><a:t>Second</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart></c:plotArea></c:chart>
 </c:chartSpace>`),
-    );
+    )
 
-    const wb = await readXlsx(await z.build());
-    const charts = wb.sheets[0].charts;
-    expect(charts).toHaveLength(2);
+    const wb = await readXlsx(await z.build())
+    const charts = wb.sheets[0].charts
+    expect(charts).toHaveLength(2)
     // Order tracks the drawing's anchor sequence — the first
     // graphicFrame becomes charts[0], the second becomes charts[1].
-    const byTitle = new Map(charts!.map((c) => [c.title, c]));
+    const byTitle = new Map(charts!.map((c) => [c.title, c]))
     expect(byTitle.get("First")?.anchor).toEqual({
       from: { row: 0, col: 0 },
       to: { row: 10, col: 5 },
-    });
+    })
     expect(byTitle.get("Second")?.anchor).toEqual({
       from: { row: 12, col: 6 },
       to: { row: 30, col: 13 },
-    });
-  });
+    })
+  })
 
   it("survives roundtrip — re-reading the saved file still reports the anchor", async () => {
-    const buf = await buildXlsxWithChart();
-    const wb = await openXlsx(buf);
-    const out = await saveXlsx(wb);
-    const reread = await readXlsx(out);
+    const buf = await buildXlsxWithChart()
+    const wb = await openXlsx(buf)
+    const out = await saveXlsx(wb)
+    const reread = await readXlsx(out)
     expect(reread.sheets[0].charts?.[0].anchor).toEqual({
       from: { row: 1, col: 3 },
       to: { row: 16, col: 10 },
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — series invertIfNegative flag ─────────────────────
 
 describe("parseChart — series invertIfNegative flag", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces invertIfNegative=true on a <c:barChart> series with <c:invertIfNegative val="1"/>', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3134,10 +3134,10 @@ describe("parseChart — series invertIfNegative flag", () => {
       </c:ser>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].invertIfNegative).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].invertIfNegative).toBe(true)
+  })
 
   it("surfaces invertIfNegative=true on a horizontal bar chart series", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3151,10 +3151,10 @@ describe("parseChart — series invertIfNegative flag", () => {
       </c:ser>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].invertIfNegative).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].invertIfNegative).toBe(true)
+  })
 
   it("collapses the OOXML default invertIfNegative=false to undefined", () => {
     // Absence of <c:invertIfNegative> and `<c:invertIfNegative val="0"/>`
@@ -3172,10 +3172,10 @@ describe("parseChart — series invertIfNegative flag", () => {
       </c:ser>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].invertIfNegative).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].invertIfNegative).toBeUndefined()
+  })
 
   it("returns invertIfNegative undefined when <c:invertIfNegative> is absent", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3188,10 +3188,10 @@ describe("parseChart — series invertIfNegative flag", () => {
       </c:ser>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].invertIfNegative).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].invertIfNegative).toBeUndefined()
+  })
 
   it('also accepts the "true" / "false" boolean spelling', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3205,10 +3205,10 @@ describe("parseChart — series invertIfNegative flag", () => {
       </c:ser>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].invertIfNegative).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].invertIfNegative).toBe(true)
+  })
 
   it("ignores <c:invertIfNegative> on chart families whose schema rejects the element", () => {
     // The OOXML schema places <c:invertIfNegative> only on CT_BarSer
@@ -3225,10 +3225,10 @@ describe("parseChart — series invertIfNegative flag", () => {
       </c:ser>
     </c:lineChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].invertIfNegative).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].invertIfNegative).toBeUndefined()
+  })
 
   it("surfaces invertIfNegative per-series independently across multi-series bar charts", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3251,13 +3251,13 @@ describe("parseChart — series invertIfNegative flag", () => {
       </c:ser>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series).toHaveLength(3);
-    expect(chart?.series?.[0].invertIfNegative).toBe(true);
-    expect(chart?.series?.[1].invertIfNegative).toBeUndefined();
-    expect(chart?.series?.[2].invertIfNegative).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series).toHaveLength(3)
+    expect(chart?.series?.[0].invertIfNegative).toBe(true)
+    expect(chart?.series?.[1].invertIfNegative).toBeUndefined()
+    expect(chart?.series?.[2].invertIfNegative).toBeUndefined()
+  })
 
   it("returns invertIfNegative undefined when val attribute is missing", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3271,16 +3271,16 @@ describe("parseChart — series invertIfNegative flag", () => {
       </c:ser>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].invertIfNegative).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].invertIfNegative).toBeUndefined()
+  })
+})
 
 // ── parseChart — series explosion (pie / doughnut) ────────────────
 
 describe("parseChart — series explosion", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces explosion=25 on a <c:pieChart> series with <c:explosion val="25"/>', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3293,10 +3293,10 @@ describe("parseChart — series explosion", () => {
       </c:ser>
     </c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].explosion).toBe(25);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].explosion).toBe(25)
+  })
 
   it('surfaces explosion on a <c:doughnutChart> series with <c:explosion val="50"/>', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3310,10 +3310,10 @@ describe("parseChart — series explosion", () => {
       <c:holeSize val="50"/>
     </c:doughnutChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].explosion).toBe(50);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].explosion).toBe(50)
+  })
 
   it("collapses the OOXML default explosion=0 to undefined", () => {
     // Absence of <c:explosion> and `<c:explosion val="0"/>` round-trip
@@ -3329,10 +3329,10 @@ describe("parseChart — series explosion", () => {
       </c:ser>
     </c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].explosion).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].explosion).toBeUndefined()
+  })
 
   it("returns explosion undefined when <c:explosion> is absent", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3344,10 +3344,10 @@ describe("parseChart — series explosion", () => {
       </c:ser>
     </c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].explosion).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].explosion).toBeUndefined()
+  })
 
   it("rounds non-integer explosion values to the nearest integer", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3360,13 +3360,13 @@ describe("parseChart — series explosion", () => {
       </c:ser>
     </c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].explosion).toBe(34);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].explosion).toBe(34)
+  })
 
   it("rejects malformed or negative explosion values", () => {
-    const cases = ["bogus", "-50", "NaN", "Infinity", ""];
+    const cases = ["bogus", "-50", "NaN", "Infinity", ""]
     for (const val of cases) {
       const xml = `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
@@ -3378,10 +3378,10 @@ describe("parseChart — series explosion", () => {
       </c:ser>
     </c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.series?.[0].explosion).toBeUndefined();
+</c:chartSpace>`
+      expect(parseChart(xml)?.series?.[0].explosion).toBeUndefined()
     }
-  });
+  })
 
   it("returns explosion undefined when val attribute is missing", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3394,17 +3394,17 @@ describe("parseChart — series explosion", () => {
       </c:ser>
     </c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0].explosion).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0].explosion).toBeUndefined()
+  })
 
   it("ignores <c:explosion> on chart families whose schema rejects the element", () => {
     // The OOXML schema places <c:explosion> only on CT_PieSer (shared
     // across the pie family). A bar/line/area/scatter template carrying
     // a stray explosion element should not surface a value the writer
     // would never emit anyway.
-    const cases = ["barChart", "lineChart", "areaChart", "scatterChart"] as const;
+    const cases = ["barChart", "lineChart", "areaChart", "scatterChart"] as const
     for (const tag of cases) {
       const xml = `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
@@ -3416,10 +3416,10 @@ describe("parseChart — series explosion", () => {
       </c:ser>
     </c:${tag}>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.series?.[0].explosion).toBeUndefined();
+</c:chartSpace>`
+      expect(parseChart(xml)?.series?.[0].explosion).toBeUndefined()
     }
-  });
+  })
 
   it("surfaces explosion per-series independently across multi-series doughnut charts", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3442,13 +3442,13 @@ describe("parseChart — series explosion", () => {
       <c:holeSize val="50"/>
     </c:doughnutChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series).toHaveLength(3);
-    expect(chart?.series?.[0].explosion).toBe(25);
-    expect(chart?.series?.[1].explosion).toBeUndefined();
-    expect(chart?.series?.[2].explosion).toBe(75);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series).toHaveLength(3)
+    expect(chart?.series?.[0].explosion).toBe(25)
+    expect(chart?.series?.[1].explosion).toBeUndefined()
+    expect(chart?.series?.[2].explosion).toBe(75)
+  })
 
   it("surfaces explosion on <c:pie3DChart> and <c:ofPieChart> series", () => {
     // CT_Pie3DSer / CT_OfPieSer share CT_PieSer through EG_PieSer, so
@@ -3464,16 +3464,16 @@ describe("parseChart — series explosion", () => {
       </c:ser>
     </c:${tag}>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.series?.[0].explosion).toBe(40);
+</c:chartSpace>`
+      expect(parseChart(xml)?.series?.[0].explosion).toBe(40)
     }
-  });
-});
+  })
+})
 
 // ── parseChart — axis tick marks and tick label position ──────────
 
 describe("parseChart — axis tick marks and tick label position", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces non-default <c:majorTickMark val=".."/> off the value axis', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3485,10 +3485,10 @@ describe("parseChart — axis tick marks and tick label position", () => {
       <c:majorTickMark val="cross"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.majorTickMark).toBe("cross");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.majorTickMark).toBe("cross")
+  })
 
   it('surfaces non-default <c:minorTickMark val=".."/> off the value axis', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3500,10 +3500,10 @@ describe("parseChart — axis tick marks and tick label position", () => {
       <c:minorTickMark val="out"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.minorTickMark).toBe("out");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.minorTickMark).toBe("out")
+  })
 
   it('surfaces non-default <c:tickLblPos val=".."/> off the value axis', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3515,10 +3515,10 @@ describe("parseChart — axis tick marks and tick label position", () => {
       <c:tickLblPos val="low"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.tickLblPos).toBe("low");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.tickLblPos).toBe("low")
+  })
 
   it("collapses the OOXML default majorTickMark=out to undefined", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3530,10 +3530,10 @@ describe("parseChart — axis tick marks and tick label position", () => {
       <c:majorTickMark val="out"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("collapses the OOXML default minorTickMark=none to undefined", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3545,10 +3545,10 @@ describe("parseChart — axis tick marks and tick label position", () => {
       <c:minorTickMark val="none"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("collapses the OOXML default tickLblPos=nextTo to undefined", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3560,10 +3560,10 @@ describe("parseChart — axis tick marks and tick label position", () => {
       <c:tickLblPos val="nextTo"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("ignores unknown majorTickMark / minorTickMark values", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3576,10 +3576,10 @@ describe("parseChart — axis tick marks and tick label position", () => {
       <c:minorTickMark val="diagonal"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("ignores unknown tickLblPos values", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3591,10 +3591,10 @@ describe("parseChart — axis tick marks and tick label position", () => {
       <c:tickLblPos val="diagonal"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("ignores tick-mark / tick-lbl-pos elements with no val attribute", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3608,10 +3608,10 @@ describe("parseChart — axis tick marks and tick label position", () => {
       <c:tickLblPos/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("surfaces tick rendering on the category axis (catAx) too", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3624,11 +3624,11 @@ describe("parseChart — axis tick marks and tick label position", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.majorTickMark).toBe("in");
-    expect(chart?.axes?.x?.tickLblPos).toBe("high");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.majorTickMark).toBe("in")
+    expect(chart?.axes?.x?.tickLblPos).toBe("high")
+  })
 
   it("surfaces tick rendering on the scatter X axis (first valAx)", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3648,11 +3648,11 @@ describe("parseChart — axis tick marks and tick label position", () => {
       <c:tickLblPos val="none"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.majorTickMark).toBe("cross");
-    expect(chart?.axes?.y?.tickLblPos).toBe("none");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.majorTickMark).toBe("cross")
+    expect(chart?.axes?.y?.tickLblPos).toBe("none")
+  })
 
   it("co-surfaces title, gridlines, scale, numberFormat, tick marks and tick label pos together", () => {
     const xml = `<c:chartSpace ${NS}
@@ -3671,8 +3671,8 @@ describe("parseChart — axis tick marks and tick label position", () => {
       <c:tickLblPos val="low"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.y).toEqual({
       title: "Revenue",
       gridlines: { major: true },
@@ -3681,14 +3681,14 @@ describe("parseChart — axis tick marks and tick label position", () => {
       majorTickMark: "cross",
       minorTickMark: "in",
       tickLblPos: "low",
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — plotVisOnly ──────────────────────────────────────
 
 describe("parseChart — plotVisOnly", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces <c:plotVisOnly val="0"/> on <c:chart> as false (non-default)', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3700,9 +3700,9 @@ describe("parseChart — plotVisOnly", () => {
     </c:plotArea>
     <c:plotVisOnly val="0"/>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.plotVisOnly).toBe(false);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.plotVisOnly).toBe(false)
+  })
 
   it("collapses the OOXML default true to undefined (writer absence)", () => {
     // The default carried explicitly by Excel's reference serialization
@@ -3714,9 +3714,9 @@ describe("parseChart — plotVisOnly", () => {
     </c:plotArea>
     <c:plotVisOnly val="1"/>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.plotVisOnly).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.plotVisOnly).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:plotVisOnly> element", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3725,9 +3725,9 @@ describe("parseChart — plotVisOnly", () => {
       <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.plotVisOnly).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.plotVisOnly).toBeUndefined()
+  })
 
   it("accepts the OOXML true / false spellings on the val attribute", () => {
     // The OOXML schema for `xsd:boolean` accepts `"true"` / `"false"`
@@ -3740,9 +3740,9 @@ describe("parseChart — plotVisOnly", () => {
     </c:plotArea>
     <c:plotVisOnly val="false"/>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.plotVisOnly).toBe(false);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.plotVisOnly).toBe(false)
+  })
 
   it("collapses the 'true' spelling to undefined as well", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3752,9 +3752,9 @@ describe("parseChart — plotVisOnly", () => {
     </c:plotArea>
     <c:plotVisOnly val="true"/>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.plotVisOnly).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.plotVisOnly).toBeUndefined()
+  })
 
   it("drops unknown plotVisOnly values rather than fabricate one", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3764,9 +3764,9 @@ describe("parseChart — plotVisOnly", () => {
     </c:plotArea>
     <c:plotVisOnly val="bogus"/>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.plotVisOnly).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.plotVisOnly).toBeUndefined()
+  })
 
   it("ignores a missing val attribute on <c:plotVisOnly>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3776,9 +3776,9 @@ describe("parseChart — plotVisOnly", () => {
     </c:plotArea>
     <c:plotVisOnly/>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.plotVisOnly).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.plotVisOnly).toBeUndefined()
+  })
 
   it("surfaces plotVisOnly alongside other chart-level toggles", () => {
     // Co-existing with dispBlanksAs / varyColors should not interfere
@@ -3796,18 +3796,18 @@ describe("parseChart — plotVisOnly", () => {
     <c:plotVisOnly val="0"/>
     <c:dispBlanksAs val="zero"/>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.plotVisOnly).toBe(false);
-    expect(chart?.dispBlanksAs).toBe("zero");
-    expect(chart?.varyColors).toBe(true);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.plotVisOnly).toBe(false)
+    expect(chart?.dispBlanksAs).toBe("zero")
+    expect(chart?.varyColors).toBe(true)
+  })
+})
 
 // ── parseChart — showDLblsOverMax ─────────────────────────────────
 
 describe("parseChart — showDLblsOverMax", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces <c:showDLblsOverMax val="0"/> on <c:chart> as false (non-default)', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3819,9 +3819,9 @@ describe("parseChart — showDLblsOverMax", () => {
     </c:plotArea>
     <c:showDLblsOverMax val="0"/>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.showDLblsOverMax).toBe(false);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.showDLblsOverMax).toBe(false)
+  })
 
   it("collapses the OOXML default true to undefined (writer absence)", () => {
     // The default carried explicitly by the writer's reference shape
@@ -3833,9 +3833,9 @@ describe("parseChart — showDLblsOverMax", () => {
     </c:plotArea>
     <c:showDLblsOverMax val="1"/>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.showDLblsOverMax).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.showDLblsOverMax).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:showDLblsOverMax> element", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3844,9 +3844,9 @@ describe("parseChart — showDLblsOverMax", () => {
       <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.showDLblsOverMax).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.showDLblsOverMax).toBeUndefined()
+  })
 
   it("accepts the OOXML true / false spellings on the val attribute", () => {
     // The OOXML schema for `xsd:boolean` accepts `"true"` / `"false"`
@@ -3859,9 +3859,9 @@ describe("parseChart — showDLblsOverMax", () => {
     </c:plotArea>
     <c:showDLblsOverMax val="false"/>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.showDLblsOverMax).toBe(false);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.showDLblsOverMax).toBe(false)
+  })
 
   it("collapses the 'true' spelling to undefined as well", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3871,9 +3871,9 @@ describe("parseChart — showDLblsOverMax", () => {
     </c:plotArea>
     <c:showDLblsOverMax val="true"/>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.showDLblsOverMax).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.showDLblsOverMax).toBeUndefined()
+  })
 
   it("drops unknown showDLblsOverMax values rather than fabricate one", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3883,9 +3883,9 @@ describe("parseChart — showDLblsOverMax", () => {
     </c:plotArea>
     <c:showDLblsOverMax val="bogus"/>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.showDLblsOverMax).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.showDLblsOverMax).toBeUndefined()
+  })
 
   it("ignores a missing val attribute on <c:showDLblsOverMax>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3895,9 +3895,9 @@ describe("parseChart — showDLblsOverMax", () => {
     </c:plotArea>
     <c:showDLblsOverMax/>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.showDLblsOverMax).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.showDLblsOverMax).toBeUndefined()
+  })
 
   it("surfaces showDLblsOverMax alongside other chart-level toggles", () => {
     // Co-existing with plotVisOnly / dispBlanksAs / varyColors should
@@ -3916,19 +3916,19 @@ describe("parseChart — showDLblsOverMax", () => {
     <c:dispBlanksAs val="zero"/>
     <c:showDLblsOverMax val="0"/>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.showDLblsOverMax).toBe(false);
-    expect(chart?.plotVisOnly).toBe(false);
-    expect(chart?.dispBlanksAs).toBe("zero");
-    expect(chart?.varyColors).toBe(true);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.showDLblsOverMax).toBe(false)
+    expect(chart?.plotVisOnly).toBe(false)
+    expect(chart?.dispBlanksAs).toBe("zero")
+    expect(chart?.varyColors).toBe(true)
+  })
+})
 
 // ── parseChart — roundedCorners ───────────────────────────────────
 
 describe("parseChart — roundedCorners", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces <c:roundedCorners val="1"/> on <c:chartSpace> as true (non-default)', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3940,9 +3940,9 @@ describe("parseChart — roundedCorners", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.roundedCorners).toBe(true);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.roundedCorners).toBe(true)
+  })
 
   it("collapses the OOXML default false to undefined (writer absence)", () => {
     // The default carried explicitly by Excel's reference serialization
@@ -3954,9 +3954,9 @@ describe("parseChart — roundedCorners", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.roundedCorners).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.roundedCorners).toBeUndefined()
+  })
 
   it("returns undefined when the chartSpace has no <c:roundedCorners> element", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3965,9 +3965,9 @@ describe("parseChart — roundedCorners", () => {
       <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.roundedCorners).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.roundedCorners).toBeUndefined()
+  })
 
   it("accepts the OOXML true / false spellings on the val attribute", () => {
     // The OOXML schema for `xsd:boolean` accepts `"true"` / `"false"`
@@ -3980,9 +3980,9 @@ describe("parseChart — roundedCorners", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.roundedCorners).toBe(true);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.roundedCorners).toBe(true)
+  })
 
   it("collapses the 'false' spelling to undefined as well", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -3992,9 +3992,9 @@ describe("parseChart — roundedCorners", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.roundedCorners).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.roundedCorners).toBeUndefined()
+  })
 
   it("drops unknown roundedCorners values rather than fabricate one", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4004,9 +4004,9 @@ describe("parseChart — roundedCorners", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.roundedCorners).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.roundedCorners).toBeUndefined()
+  })
 
   it("ignores a missing val attribute on <c:roundedCorners>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4016,9 +4016,9 @@ describe("parseChart — roundedCorners", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.roundedCorners).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.roundedCorners).toBeUndefined()
+  })
 
   it("surfaces roundedCorners alongside other chart-level toggles", () => {
     // Co-existing with plotVisOnly / dispBlanksAs / varyColors should
@@ -4038,19 +4038,19 @@ describe("parseChart — roundedCorners", () => {
     <c:plotVisOnly val="0"/>
     <c:dispBlanksAs val="zero"/>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.roundedCorners).toBe(true);
-    expect(chart?.plotVisOnly).toBe(false);
-    expect(chart?.dispBlanksAs).toBe("zero");
-    expect(chart?.varyColors).toBe(true);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.roundedCorners).toBe(true)
+    expect(chart?.plotVisOnly).toBe(false)
+    expect(chart?.dispBlanksAs).toBe("zero")
+    expect(chart?.varyColors).toBe(true)
+  })
+})
 
 // ── parseChart — axis reverse (orientation) ──────────────────────────
 
 describe("parseChart — axis reverse (orientation)", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   it('surfaces reverse=true off <c:scaling><c:orientation val="maxMin"/>', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4062,10 +4062,10 @@ describe("parseChart — axis reverse (orientation)", () => {
       <c:scaling><c:orientation val="maxMin"/></c:scaling>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.reverse).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.reverse).toBe(true)
+  })
 
   it('collapses the OOXML default orientation="minMax" to undefined', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4077,11 +4077,11 @@ describe("parseChart — axis reverse (orientation)", () => {
       <c:scaling><c:orientation val="minMax"/></c:scaling>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     // Neither axis has any other surfaced field, so the whole axes block drops.
-    expect(chart?.axes).toBeUndefined();
-  });
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("collapses an axis with no <c:scaling> at all to undefined", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4090,10 +4090,10 @@ describe("parseChart — axis reverse (orientation)", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("ignores unknown orientation tokens", () => {
     // A typo'd template (e.g. "diagonal", "reverse", empty string) drops
@@ -4108,10 +4108,10 @@ describe("parseChart — axis reverse (orientation)", () => {
       <c:scaling><c:orientation val="diagonal"/></c:scaling>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("ignores <c:orientation/> with no val attribute", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4123,10 +4123,10 @@ describe("parseChart — axis reverse (orientation)", () => {
       <c:scaling><c:orientation/></c:scaling>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("surfaces reverse on the category axis (catAx) too", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4138,11 +4138,11 @@ describe("parseChart — axis reverse (orientation)", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.reverse).toBe(true);
-    expect(chart?.axes?.y?.reverse).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.reverse).toBe(true)
+    expect(chart?.axes?.y?.reverse).toBeUndefined()
+  })
 
   it("surfaces reverse on both scatter X (axPos=b) and Y (axPos=l) axes", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4162,11 +4162,11 @@ describe("parseChart — axis reverse (orientation)", () => {
       <c:scaling><c:orientation val="maxMin"/></c:scaling>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.reverse).toBe(true);
-    expect(chart?.axes?.y?.reverse).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.reverse).toBe(true)
+    expect(chart?.axes?.y?.reverse).toBe(true)
+  })
 
   it("surfaces reverse alongside other axis fields without interfering", () => {
     // Co-existing with min/max scaling, gridlines, numFmt, and tick rendering
@@ -4189,8 +4189,8 @@ describe("parseChart — axis reverse (orientation)", () => {
       <c:majorTickMark val="cross"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.y).toEqual({
       title: "Revenue",
       gridlines: { major: true },
@@ -4198,14 +4198,14 @@ describe("parseChart — axis reverse (orientation)", () => {
       numberFormat: { formatCode: "$#,##0" },
       majorTickMark: "cross",
       reverse: true,
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — axis tick label / mark skip ──────────────────────
 
 describe("parseChart — axis tickLblSkip / tickMarkSkip", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it("surfaces a non-default tickLblSkip on the category axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4217,11 +4217,11 @@ describe("parseChart — axis tickLblSkip / tickMarkSkip", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.tickLblSkip).toBe(3);
-    expect(chart?.axes?.x?.tickMarkSkip).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.tickLblSkip).toBe(3)
+    expect(chart?.axes?.x?.tickMarkSkip).toBeUndefined()
+  })
 
   it("surfaces a non-default tickMarkSkip on the category axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4233,11 +4233,11 @@ describe("parseChart — axis tickLblSkip / tickMarkSkip", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.tickMarkSkip).toBe(5);
-    expect(chart?.axes?.x?.tickLblSkip).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.tickMarkSkip).toBe(5)
+    expect(chart?.axes?.x?.tickLblSkip).toBeUndefined()
+  })
 
   it("surfaces both skips together when set on the same axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4250,10 +4250,10 @@ describe("parseChart — axis tickLblSkip / tickMarkSkip", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x).toEqual({ tickLblSkip: 2, tickMarkSkip: 4 });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x).toEqual({ tickLblSkip: 2, tickMarkSkip: 4 })
+  })
 
   it("collapses the OOXML default tickLblSkip=1 to undefined", () => {
     // Absence of the element and `val="1"` round-trip identically
@@ -4268,10 +4268,10 @@ describe("parseChart — axis tickLblSkip / tickMarkSkip", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("ignores out-of-range skip values (drops rather than clamps)", () => {
     // ST_SkipIntervals restricts the value to 1..32767. Out-of-range
@@ -4287,17 +4287,17 @@ describe("parseChart — axis tickLblSkip / tickMarkSkip", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-      return parseChart(xml)?.axes?.x?.tickLblSkip;
-    };
-    expect(out("0")).toBeUndefined();
-    expect(out("-5")).toBeUndefined();
-    expect(out("99999")).toBeUndefined();
-    expect(out("not-a-number")).toBeUndefined();
+</c:chartSpace>`
+      return parseChart(xml)?.axes?.x?.tickLblSkip
+    }
+    expect(out("0")).toBeUndefined()
+    expect(out("-5")).toBeUndefined()
+    expect(out("99999")).toBeUndefined()
+    expect(out("not-a-number")).toBeUndefined()
     // Boundaries 2 and 32767 are accepted.
-    expect(out("2")).toBe(2);
-    expect(out("32767")).toBe(32767);
-  });
+    expect(out("2")).toBe(2)
+    expect(out("32767")).toBe(32767)
+  })
 
   it("returns undefined when tickLblSkip val attribute is missing", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4309,10 +4309,10 @@ describe("parseChart — axis tickLblSkip / tickMarkSkip", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("does not surface tickLblSkip / tickMarkSkip on a value axis", () => {
     // The OOXML schema places these elements on CT_CatAx / CT_DateAx
@@ -4329,12 +4329,12 @@ describe("parseChart — axis tickLblSkip / tickMarkSkip", () => {
       <c:tickMarkSkip val="5"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.tickLblSkip).toBeUndefined();
-    expect(chart?.axes?.y?.tickMarkSkip).toBeUndefined();
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.tickLblSkip).toBeUndefined()
+    expect(chart?.axes?.y?.tickMarkSkip).toBeUndefined()
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("co-surfaces tick skips alongside title, gridlines, scale, and number format", () => {
     const xml = `<c:chartSpace ${NS}
@@ -4351,22 +4351,22 @@ describe("parseChart — axis tickLblSkip / tickMarkSkip", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Region",
       gridlines: { major: true },
       numberFormat: { formatCode: "@" },
       tickLblSkip: 3,
       tickMarkSkip: 6,
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — axis lblOffset ────────────────────────────────────
 
 describe("parseChart — axis lblOffset", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it("surfaces a non-default lblOffset on the category axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4378,10 +4378,10 @@ describe("parseChart — axis lblOffset", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.lblOffset).toBe(250);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.lblOffset).toBe(250)
+  })
 
   it("collapses the OOXML default lblOffset=100 to undefined", () => {
     // Excel's reference serialization always emits `<c:lblOffset val="100"/>`,
@@ -4397,10 +4397,10 @@ describe("parseChart — axis lblOffset", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("ignores out-of-range lblOffset values (drops rather than clamps)", () => {
     // ST_LblOffsetPercent restricts the value to 0..1000. Out-of-range
@@ -4416,16 +4416,16 @@ describe("parseChart — axis lblOffset", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-      return parseChart(xml)?.axes?.x?.lblOffset;
-    };
-    expect(out("-5")).toBeUndefined();
-    expect(out("9999")).toBeUndefined();
-    expect(out("not-a-number")).toBeUndefined();
+</c:chartSpace>`
+      return parseChart(xml)?.axes?.x?.lblOffset
+    }
+    expect(out("-5")).toBeUndefined()
+    expect(out("9999")).toBeUndefined()
+    expect(out("not-a-number")).toBeUndefined()
     // Boundaries 0 and 1000 are accepted.
-    expect(out("0")).toBe(0);
-    expect(out("1000")).toBe(1000);
-  });
+    expect(out("0")).toBe(0)
+    expect(out("1000")).toBe(1000)
+  })
 
   it("returns undefined when lblOffset val attribute is missing", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4437,10 +4437,10 @@ describe("parseChart — axis lblOffset", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("does not surface lblOffset on a value axis", () => {
     // The OOXML schema places `<c:lblOffset>` on CT_CatAx / CT_DateAx
@@ -4456,11 +4456,11 @@ describe("parseChart — axis lblOffset", () => {
       <c:lblOffset val="250"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.lblOffset).toBeUndefined();
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.lblOffset).toBeUndefined()
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("co-surfaces lblOffset alongside title, gridlines, and tick skips", () => {
     const xml = `<c:chartSpace ${NS}
@@ -4476,21 +4476,21 @@ describe("parseChart — axis lblOffset", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Region",
       gridlines: { major: true },
       lblOffset: 200,
       tickLblSkip: 3,
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — axis hidden flag (<c:delete>) ──────────────────────
 
 describe("parseChart — axis hidden", () => {
-  const NS_HIDDEN = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS_HIDDEN = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces hidden=true on the category axis when val="1"', () => {
     const xml = `<c:chartSpace ${NS_HIDDEN}>
@@ -4502,11 +4502,11 @@ describe("parseChart — axis hidden", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.hidden).toBe(true);
-    expect(chart?.axes?.y?.hidden).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.hidden).toBe(true)
+    expect(chart?.axes?.y?.hidden).toBeUndefined()
+  })
 
   it('surfaces hidden=true on the value axis when val="1"', () => {
     const xml = `<c:chartSpace ${NS_HIDDEN}>
@@ -4518,11 +4518,11 @@ describe("parseChart — axis hidden", () => {
       <c:delete val="1"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.hidden).toBeUndefined();
-    expect(chart?.axes?.y?.hidden).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.hidden).toBeUndefined()
+    expect(chart?.axes?.y?.hidden).toBe(true)
+  })
 
   it('surfaces hidden=true on both axes when both pin val="1"', () => {
     const xml = `<c:chartSpace ${NS_HIDDEN}>
@@ -4537,11 +4537,11 @@ describe("parseChart — axis hidden", () => {
       <c:delete val="1"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.hidden).toBe(true);
-    expect(chart?.axes?.y?.hidden).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.hidden).toBe(true)
+    expect(chart?.axes?.y?.hidden).toBe(true)
+  })
 
   it('collapses the OOXML default val="0" to undefined', () => {
     const xml = `<c:chartSpace ${NS_HIDDEN}>
@@ -4556,10 +4556,10 @@ describe("parseChart — axis hidden", () => {
       <c:delete val="0"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("collapses absence of <c:delete> to undefined", () => {
     const xml = `<c:chartSpace ${NS_HIDDEN}>
@@ -4568,10 +4568,10 @@ describe("parseChart — axis hidden", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it('accepts the OOXML truthy spelling val="true"', () => {
     const xml = `<c:chartSpace ${NS_HIDDEN}>
@@ -4583,10 +4583,10 @@ describe("parseChart — axis hidden", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.hidden).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.hidden).toBe(true)
+  })
 
   it('accepts the OOXML falsy spelling val="false" and collapses to undefined', () => {
     const xml = `<c:chartSpace ${NS_HIDDEN}>
@@ -4598,10 +4598,10 @@ describe("parseChart — axis hidden", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <c:delete> is missing the val attribute", () => {
     const xml = `<c:chartSpace ${NS_HIDDEN}>
@@ -4613,10 +4613,10 @@ describe("parseChart — axis hidden", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("returns undefined for unknown val tokens", () => {
     const xml = `<c:chartSpace ${NS_HIDDEN}>
@@ -4628,10 +4628,10 @@ describe("parseChart — axis hidden", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("co-surfaces hidden alongside title, gridlines, and tick rendering", () => {
     const xml = `<c:chartSpace ${NS_HIDDEN}
@@ -4647,15 +4647,15 @@ describe("parseChart — axis hidden", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Region",
       gridlines: { major: true },
       tickLblPos: "low",
       hidden: true,
-    });
-  });
+    })
+  })
 
   it("surfaces hidden on a scatter chart's value-axis pair", () => {
     // Scatter has two valAx — the first (axPos="b") is the X axis, the
@@ -4675,17 +4675,17 @@ describe("parseChart — axis hidden", () => {
       <c:axPos val="l"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.hidden).toBe(true);
-    expect(chart?.axes?.y?.hidden).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.hidden).toBe(true)
+    expect(chart?.axes?.y?.hidden).toBeUndefined()
+  })
+})
 
 // ── parseChart — axis lblAlgn ──────────────────────────────────────
 
 describe("parseChart — axis lblAlgn", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it("surfaces a non-default lblAlgn on the category axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4697,10 +4697,10 @@ describe("parseChart — axis lblAlgn", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.lblAlgn).toBe("l");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.lblAlgn).toBe("l")
+  })
 
   it("collapses the OOXML default lblAlgn=ctr to undefined", () => {
     // Excel's reference serialization always emits `<c:lblAlgn val="ctr"/>`,
@@ -4716,10 +4716,10 @@ describe("parseChart — axis lblAlgn", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("accepts the ST_LblAlgn tokens 'l' and 'r'", () => {
     const out = (val: string): unknown => {
@@ -4732,12 +4732,12 @@ describe("parseChart — axis lblAlgn", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-      return parseChart(xml)?.axes?.x?.lblAlgn;
-    };
-    expect(out("l")).toBe("l");
-    expect(out("r")).toBe("r");
-  });
+</c:chartSpace>`
+      return parseChart(xml)?.axes?.x?.lblAlgn
+    }
+    expect(out("l")).toBe("l")
+    expect(out("r")).toBe("r")
+  })
 
   it("ignores unknown lblAlgn tokens (drops rather than fabricates)", () => {
     // ST_LblAlgn restricts the value to ctr / l / r. Unknown tokens like
@@ -4754,14 +4754,14 @@ describe("parseChart — axis lblAlgn", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-      return parseChart(xml)?.axes?.x?.lblAlgn;
-    };
-    expect(out("left")).toBeUndefined();
-    expect(out("center")).toBeUndefined();
-    expect(out("LEFT")).toBeUndefined();
-    expect(out("")).toBeUndefined();
-  });
+</c:chartSpace>`
+      return parseChart(xml)?.axes?.x?.lblAlgn
+    }
+    expect(out("left")).toBeUndefined()
+    expect(out("center")).toBeUndefined()
+    expect(out("LEFT")).toBeUndefined()
+    expect(out("")).toBeUndefined()
+  })
 
   it("returns undefined when lblAlgn val attribute is missing", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4773,10 +4773,10 @@ describe("parseChart — axis lblAlgn", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("does not surface lblAlgn on a value axis", () => {
     // The OOXML schema places `<c:lblAlgn>` on CT_CatAx / CT_DateAx
@@ -4792,11 +4792,11 @@ describe("parseChart — axis lblAlgn", () => {
       <c:lblAlgn val="r"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.lblAlgn).toBeUndefined();
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.lblAlgn).toBeUndefined()
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("co-surfaces lblAlgn alongside title, gridlines, and lblOffset", () => {
     const xml = `<c:chartSpace ${NS}
@@ -4812,21 +4812,21 @@ describe("parseChart — axis lblAlgn", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Region",
       gridlines: { major: true },
       lblOffset: 200,
       lblAlgn: "l",
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — legend overlay ──────────────────────────────────────
 
 describe("parseChart — legendOverlay", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces <c:legend><c:overlay val="1"/></c:legend> as true (non-default)', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4839,11 +4839,11 @@ describe("parseChart — legendOverlay", () => {
       <c:overlay val="1"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe("right");
-    expect(chart?.legendOverlay).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe("right")
+    expect(chart?.legendOverlay).toBe(true)
+  })
 
   it("collapses the OOXML default false to undefined (writer absence)", () => {
     // The default carried explicitly by Excel's reference serialization
@@ -4858,11 +4858,11 @@ describe("parseChart — legendOverlay", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe("bottom");
-    expect(chart?.legendOverlay).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe("bottom")
+    expect(chart?.legendOverlay).toBeUndefined()
+  })
 
   it("returns undefined when the legend element omits <c:overlay>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4874,11 +4874,11 @@ describe("parseChart — legendOverlay", () => {
       <c:legendPos val="t"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe("top");
-    expect(chart?.legendOverlay).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe("top")
+    expect(chart?.legendOverlay).toBeUndefined()
+  })
 
   it("accepts the OOXML true / false spellings on the val attribute", () => {
     // The OOXML schema for `xsd:boolean` accepts `"true"` / `"false"`
@@ -4894,9 +4894,9 @@ describe("parseChart — legendOverlay", () => {
       <c:overlay val="true"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendOverlay).toBe(true);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendOverlay).toBe(true)
+  })
 
   it("collapses the 'false' spelling to undefined as well", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4909,9 +4909,9 @@ describe("parseChart — legendOverlay", () => {
       <c:overlay val="false"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendOverlay).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendOverlay).toBeUndefined()
+  })
 
   it("drops unknown overlay values rather than fabricate one", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4924,9 +4924,9 @@ describe("parseChart — legendOverlay", () => {
       <c:overlay val="bogus"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendOverlay).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendOverlay).toBeUndefined()
+  })
 
   it("ignores a missing val attribute on <c:overlay>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4939,9 +4939,9 @@ describe("parseChart — legendOverlay", () => {
       <c:overlay/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendOverlay).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendOverlay).toBeUndefined()
+  })
 
   it('drops the overlay flag when the legend is hidden via <c:delete val="1"/>', () => {
     // A hidden legend (legend === false) has no <c:overlay> slot in the
@@ -4958,11 +4958,11 @@ describe("parseChart — legendOverlay", () => {
       <c:overlay val="1"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe(false);
-    expect(chart?.legendOverlay).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe(false)
+    expect(chart?.legendOverlay).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:legend> element at all", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -4971,11 +4971,11 @@ describe("parseChart — legendOverlay", () => {
       <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBeUndefined();
-    expect(chart?.legendOverlay).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBeUndefined()
+    expect(chart?.legendOverlay).toBeUndefined()
+  })
 
   it("surfaces overlay on every chart family that emits a legend", () => {
     // The element lives on <c:legend>, which is a sibling of
@@ -4993,11 +4993,11 @@ describe("parseChart — legendOverlay", () => {
       <c:overlay val="1"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-      const chart = parseChart(xml);
-      expect(chart?.legendOverlay).toBe(true);
+</c:chartSpace>`
+      const chart = parseChart(xml)
+      expect(chart?.legendOverlay).toBe(true)
     }
-  });
+  })
 
   it("co-exists with other chart-level toggles", () => {
     // The legend overlay flag should not interfere with sibling chart-
@@ -5021,24 +5021,24 @@ describe("parseChart — legendOverlay", () => {
     <c:plotVisOnly val="0"/>
     <c:dispBlanksAs val="zero"/>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe("top");
-    expect(chart?.legendOverlay).toBe(true);
-    expect(chart?.roundedCorners).toBe(true);
-    expect(chart?.plotVisOnly).toBe(false);
-    expect(chart?.dispBlanksAs).toBe("zero");
-    expect(chart?.varyColors).toBe(true);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe("top")
+    expect(chart?.legendOverlay).toBe(true)
+    expect(chart?.roundedCorners).toBe(true)
+    expect(chart?.plotVisOnly).toBe(false)
+    expect(chart?.dispBlanksAs).toBe("zero")
+    expect(chart?.varyColors).toBe(true)
+  })
+})
 
 // ── parseChart — legend font size ────────────────────────────────────
 
 describe("parseChart — legendFontSize", () => {
-  const NS_LFS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_LFS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withLegendSz(sz: string | undefined): string {
-    const defRPr = sz === undefined ? "<a:defRPr/>" : `<a:defRPr sz="${sz}"/>`;
+    const defRPr = sz === undefined ? "<a:defRPr/>" : `<a:defRPr sz="${sz}"/>`
     return `<c:chartSpace ${NS_LFS}>
   <c:chart>
     <c:plotArea>
@@ -5056,42 +5056,42 @@ describe("parseChart — legendFontSize", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the size in points from the sz attribute (100ths of a point)", () => {
     // 12pt * 100 = 1200.
-    const chart = parseChart(withLegendSz("1200"));
-    expect(chart?.legendFontSize).toBe(12);
-  });
+    const chart = parseChart(withLegendSz("1200"))
+    expect(chart?.legendFontSize).toBe(12)
+  })
 
   it("surfaces the default 9pt size literally", () => {
     // Excel writes sz="900" on every fresh chart legend whose typography
     // has been customized — the reader surfaces it because it is a
     // literal pin on the wire.
-    const chart = parseChart(withLegendSz("900"));
-    expect(chart?.legendFontSize).toBe(9);
-  });
+    const chart = parseChart(withLegendSz("900"))
+    expect(chart?.legendFontSize).toBe(9)
+  })
 
   it("rounds to the nearest 0.5pt", () => {
     // sz="950" = 9.5pt — surfaces literally.
-    const a = parseChart(withLegendSz("950"));
-    expect(a?.legendFontSize).toBe(9.5);
+    const a = parseChart(withLegendSz("950"))
+    expect(a?.legendFontSize).toBe(9.5)
     // sz="924" = 9.24pt — rounds down to 9.
-    const b = parseChart(withLegendSz("924"));
-    expect(b?.legendFontSize).toBe(9);
+    const b = parseChart(withLegendSz("924"))
+    expect(b?.legendFontSize).toBe(9)
     // sz="980" = 9.8pt — rounds up to 10 (halfSteps `Math.round(19.6)=20`).
-    const c = parseChart(withLegendSz("980"));
-    expect(c?.legendFontSize).toBe(10);
+    const c = parseChart(withLegendSz("980"))
+    expect(c?.legendFontSize).toBe(10)
     // sz="930" = 9.3pt — rounds to 9.5 (halfSteps `Math.round(18.6)=19`).
-    const d = parseChart(withLegendSz("930"));
-    expect(d?.legendFontSize).toBe(9.5);
-  });
+    const d = parseChart(withLegendSz("930"))
+    expect(d?.legendFontSize).toBe(9.5)
+  })
 
   it("returns undefined when <a:defRPr> omits the sz attribute", () => {
-    const chart = parseChart(withLegendSz(undefined));
-    expect(chart?.legendFontSize).toBeUndefined();
-  });
+    const chart = parseChart(withLegendSz(undefined))
+    expect(chart?.legendFontSize).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:legend> element at all", () => {
     const xml = `<c:chartSpace ${NS_LFS}>
@@ -5100,10 +5100,10 @@ describe("parseChart — legendFontSize", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legendFontSize).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legendFontSize).toBeUndefined()
+  })
 
   it("returns undefined when <c:legend> has no <c:txPr> body", () => {
     // A bare legend with only <c:legendPos> / <c:overlay> children has
@@ -5120,9 +5120,9 @@ describe("parseChart — legendFontSize", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendFontSize).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendFontSize).toBeUndefined()
+  })
 
   it("returns undefined when <c:txPr> has no <a:p><a:pPr> chain", () => {
     // A degenerate <c:txPr> with only <a:bodyPr> and <a:lstStyle> has
@@ -5144,9 +5144,9 @@ describe("parseChart — legendFontSize", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendFontSize).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendFontSize).toBeUndefined()
+  })
 
   it('drops the size when the legend is hidden via <c:delete val="1"/>', () => {
     // A hidden legend (legend === false) has no <c:txPr> slot in the
@@ -5170,39 +5170,39 @@ describe("parseChart — legendFontSize", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe(false);
-    expect(chart?.legendFontSize).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe(false)
+    expect(chart?.legendFontSize).toBeUndefined()
+  })
 
   it("drops sz values below the 1pt minimum after rounding (sz=49)", () => {
     // 49 / 100 = 0.49pt — half-step round lands at 0.5pt, which is
     // outside the OOXML ST_TextFontSize 1pt minimum. (sz values from
     // 75 onwards round up to 1.0pt and surface literally; 74 and below
     // are dropped.)
-    expect(parseChart(withLegendSz("49"))?.legendFontSize).toBeUndefined();
-  });
+    expect(parseChart(withLegendSz("49"))?.legendFontSize).toBeUndefined()
+  })
 
   it("drops sz values above the 400pt maximum (sz=400001)", () => {
-    expect(parseChart(withLegendSz("400001"))?.legendFontSize).toBeUndefined();
-  });
+    expect(parseChart(withLegendSz("400001"))?.legendFontSize).toBeUndefined()
+  })
 
   it("surfaces the 1pt minimum (sz=100)", () => {
-    expect(parseChart(withLegendSz("100"))?.legendFontSize).toBe(1);
-  });
+    expect(parseChart(withLegendSz("100"))?.legendFontSize).toBe(1)
+  })
 
   it("surfaces the 400pt maximum (sz=40000)", () => {
-    expect(parseChart(withLegendSz("40000"))?.legendFontSize).toBe(400);
-  });
+    expect(parseChart(withLegendSz("40000"))?.legendFontSize).toBe(400)
+  })
 
   it("drops non-numeric sz tokens", () => {
-    expect(parseChart(withLegendSz("twelve"))?.legendFontSize).toBeUndefined();
-  });
+    expect(parseChart(withLegendSz("twelve"))?.legendFontSize).toBeUndefined()
+  })
 
   it("drops empty sz tokens", () => {
-    expect(parseChart(withLegendSz(""))?.legendFontSize).toBeUndefined();
-  });
+    expect(parseChart(withLegendSz(""))?.legendFontSize).toBeUndefined()
+  })
 
   it("co-surfaces alongside legendOverlay and other legend fields", () => {
     const xml = `<c:chartSpace ${NS_LFS}>
@@ -5226,13 +5226,13 @@ describe("parseChart — legendFontSize", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe("bottom");
-    expect(chart?.legendOverlay).toBe(true);
-    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }]);
-    expect(chart?.legendFontSize).toBe(14);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe("bottom")
+    expect(chart?.legendOverlay).toBe(true)
+    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }])
+    expect(chart?.legendFontSize).toBe(14)
+  })
 
   it("surfaces the size on every chart family that emits a legend", () => {
     // The element lives on <c:legend>, which is a sibling of
@@ -5255,19 +5255,19 @@ describe("parseChart — legendFontSize", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.legendFontSize).toBe(11);
+</c:chartSpace>`
+      expect(parseChart(xml)?.legendFontSize).toBe(11)
     }
-  });
-});
+  })
+})
 
 // ── parseChart — legend bold ─────────────────────────────────────────
 
 describe("parseChart — legendBold", () => {
-  const NS_LB = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_LB = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withLegendBold(b: string | undefined): string {
-    const defRPr = b === undefined ? "<a:defRPr/>" : `<a:defRPr b="${b}"/>`;
+    const defRPr = b === undefined ? "<a:defRPr/>" : `<a:defRPr b="${b}"/>`
     return `<c:chartSpace ${NS_LB}>
   <c:chart>
     <c:plotArea>
@@ -5285,34 +5285,34 @@ describe("parseChart — legendBold", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces true when the legend pinned b='1'", () => {
-    expect(parseChart(withLegendBold("1"))?.legendBold).toBe(true);
-  });
+    expect(parseChart(withLegendBold("1"))?.legendBold).toBe(true)
+  })
 
   it("accepts the OOXML 'true' spelling on b", () => {
-    expect(parseChart(withLegendBold("true"))?.legendBold).toBe(true);
-  });
+    expect(parseChart(withLegendBold("true"))?.legendBold).toBe(true)
+  })
 
   it("collapses b='0' to undefined (OOXML default — non-bold)", () => {
-    expect(parseChart(withLegendBold("0"))?.legendBold).toBeUndefined();
-  });
+    expect(parseChart(withLegendBold("0"))?.legendBold).toBeUndefined()
+  })
 
   it("collapses b='false' to undefined", () => {
-    expect(parseChart(withLegendBold("false"))?.legendBold).toBeUndefined();
-  });
+    expect(parseChart(withLegendBold("false"))?.legendBold).toBeUndefined()
+  })
 
   it("returns undefined when <a:defRPr> omits the b attribute", () => {
-    expect(parseChart(withLegendBold(undefined))?.legendBold).toBeUndefined();
-  });
+    expect(parseChart(withLegendBold(undefined))?.legendBold).toBeUndefined()
+  })
 
   it("drops unknown b tokens rather than fabricate a value", () => {
-    expect(parseChart(withLegendBold("bold"))?.legendBold).toBeUndefined();
-    expect(parseChart(withLegendBold(""))?.legendBold).toBeUndefined();
-    expect(parseChart(withLegendBold("2"))?.legendBold).toBeUndefined();
-  });
+    expect(parseChart(withLegendBold("bold"))?.legendBold).toBeUndefined()
+    expect(parseChart(withLegendBold(""))?.legendBold).toBeUndefined()
+    expect(parseChart(withLegendBold("2"))?.legendBold).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:legend> element at all", () => {
     const xml = `<c:chartSpace ${NS_LB}>
@@ -5321,9 +5321,9 @@ describe("parseChart — legendBold", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendBold).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendBold).toBeUndefined()
+  })
 
   it("returns undefined when <c:legend> has no <c:txPr> body", () => {
     const xml = `<c:chartSpace ${NS_LB}>
@@ -5338,9 +5338,9 @@ describe("parseChart — legendBold", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendBold).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendBold).toBeUndefined()
+  })
 
   it("returns undefined when <c:txPr> has no <a:p><a:pPr> chain", () => {
     const xml = `<c:chartSpace ${NS_LB}>
@@ -5359,9 +5359,9 @@ describe("parseChart — legendBold", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendBold).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendBold).toBeUndefined()
+  })
 
   it('drops the bold flag when the legend is hidden via <c:delete val="1"/>', () => {
     const xml = `<c:chartSpace ${NS_LB}>
@@ -5382,11 +5382,11 @@ describe("parseChart — legendBold", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe(false);
-    expect(chart?.legendBold).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe(false)
+    expect(chart?.legendBold).toBeUndefined()
+  })
 
   it("co-surfaces alongside legendOverlay and other legend fields", () => {
     const xml = `<c:chartSpace ${NS_LB}>
@@ -5410,13 +5410,13 @@ describe("parseChart — legendBold", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe("bottom");
-    expect(chart?.legendOverlay).toBe(true);
-    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }]);
-    expect(chart?.legendBold).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe("bottom")
+    expect(chart?.legendOverlay).toBe(true)
+    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }])
+    expect(chart?.legendBold).toBe(true)
+  })
 
   it("surfaces the bold flag on every chart family that emits a legend", () => {
     for (const kind of ["lineChart", "barChart", "pieChart", "doughnutChart"]) {
@@ -5435,19 +5435,19 @@ describe("parseChart — legendBold", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.legendBold).toBe(true);
+</c:chartSpace>`
+      expect(parseChart(xml)?.legendBold).toBe(true)
     }
-  });
-});
+  })
+})
 
 // ── parseChart — legend italic ───────────────────────────────────────
 
 describe("parseChart — legendItalic", () => {
-  const NS_LI = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_LI = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withLegendItalic(i: string | undefined): string {
-    const defRPr = i === undefined ? "<a:defRPr/>" : `<a:defRPr i="${i}"/>`;
+    const defRPr = i === undefined ? "<a:defRPr/>" : `<a:defRPr i="${i}"/>`
     return `<c:chartSpace ${NS_LI}>
   <c:chart>
     <c:plotArea>
@@ -5465,34 +5465,34 @@ describe("parseChart — legendItalic", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces true when the legend pinned i='1'", () => {
-    expect(parseChart(withLegendItalic("1"))?.legendItalic).toBe(true);
-  });
+    expect(parseChart(withLegendItalic("1"))?.legendItalic).toBe(true)
+  })
 
   it("accepts the OOXML 'true' spelling on i", () => {
-    expect(parseChart(withLegendItalic("true"))?.legendItalic).toBe(true);
-  });
+    expect(parseChart(withLegendItalic("true"))?.legendItalic).toBe(true)
+  })
 
   it("collapses i='0' to undefined (OOXML default — non-italic)", () => {
-    expect(parseChart(withLegendItalic("0"))?.legendItalic).toBeUndefined();
-  });
+    expect(parseChart(withLegendItalic("0"))?.legendItalic).toBeUndefined()
+  })
 
   it("collapses i='false' to undefined", () => {
-    expect(parseChart(withLegendItalic("false"))?.legendItalic).toBeUndefined();
-  });
+    expect(parseChart(withLegendItalic("false"))?.legendItalic).toBeUndefined()
+  })
 
   it("returns undefined when <a:defRPr> omits the i attribute", () => {
-    expect(parseChart(withLegendItalic(undefined))?.legendItalic).toBeUndefined();
-  });
+    expect(parseChart(withLegendItalic(undefined))?.legendItalic).toBeUndefined()
+  })
 
   it("drops unknown i tokens rather than fabricate a value", () => {
-    expect(parseChart(withLegendItalic("italic"))?.legendItalic).toBeUndefined();
-    expect(parseChart(withLegendItalic(""))?.legendItalic).toBeUndefined();
-    expect(parseChart(withLegendItalic("2"))?.legendItalic).toBeUndefined();
-  });
+    expect(parseChart(withLegendItalic("italic"))?.legendItalic).toBeUndefined()
+    expect(parseChart(withLegendItalic(""))?.legendItalic).toBeUndefined()
+    expect(parseChart(withLegendItalic("2"))?.legendItalic).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:legend> element at all", () => {
     const xml = `<c:chartSpace ${NS_LI}>
@@ -5501,9 +5501,9 @@ describe("parseChart — legendItalic", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendItalic).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendItalic).toBeUndefined()
+  })
 
   it("returns undefined when <c:legend> has no <c:txPr> body", () => {
     const xml = `<c:chartSpace ${NS_LI}>
@@ -5518,9 +5518,9 @@ describe("parseChart — legendItalic", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendItalic).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendItalic).toBeUndefined()
+  })
 
   it("returns undefined when <c:txPr> has no <a:p><a:pPr> chain", () => {
     const xml = `<c:chartSpace ${NS_LI}>
@@ -5539,9 +5539,9 @@ describe("parseChart — legendItalic", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendItalic).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendItalic).toBeUndefined()
+  })
 
   it('drops the italic flag when the legend is hidden via <c:delete val="1"/>', () => {
     const xml = `<c:chartSpace ${NS_LI}>
@@ -5562,11 +5562,11 @@ describe("parseChart — legendItalic", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe(false);
-    expect(chart?.legendItalic).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe(false)
+    expect(chart?.legendItalic).toBeUndefined()
+  })
 
   it("co-surfaces alongside legendOverlay and other legend fields", () => {
     const xml = `<c:chartSpace ${NS_LI}>
@@ -5590,13 +5590,13 @@ describe("parseChart — legendItalic", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe("bottom");
-    expect(chart?.legendOverlay).toBe(true);
-    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }]);
-    expect(chart?.legendItalic).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe("bottom")
+    expect(chart?.legendOverlay).toBe(true)
+    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }])
+    expect(chart?.legendItalic).toBe(true)
+  })
 
   it("surfaces the italic flag on every chart family that emits a legend", () => {
     for (const kind of ["lineChart", "barChart", "pieChart", "doughnutChart"]) {
@@ -5615,19 +5615,19 @@ describe("parseChart — legendItalic", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.legendItalic).toBe(true);
+</c:chartSpace>`
+      expect(parseChart(xml)?.legendItalic).toBe(true)
     }
-  });
-});
+  })
+})
 
 // ── parseChart — legend underline ────────────────────────────────────
 
 describe("parseChart — legendUnderline", () => {
-  const NS_LU = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_LU = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withLegendU(u: string | undefined): string {
-    const defRPr = u === undefined ? "<a:defRPr/>" : `<a:defRPr u="${u}"/>`;
+    const defRPr = u === undefined ? "<a:defRPr/>" : `<a:defRPr u="${u}"/>`
     return `<c:chartSpace ${NS_LU}>
   <c:chart>
     <c:plotArea>
@@ -5645,22 +5645,22 @@ describe("parseChart — legendUnderline", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it('surfaces legendUnderline=true when u="sng"', () => {
-    expect(parseChart(withLegendU("sng"))?.legendUnderline).toBe(true);
-  });
+    expect(parseChart(withLegendU("sng"))?.legendUnderline).toBe(true)
+  })
 
   it('collapses the OOXML default u="none" to undefined', () => {
     // Absence and the OOXML default round-trip identically through the
     // writer — only an explicit `u="sng"` surfaces `true`.
-    expect(parseChart(withLegendU("none"))?.legendUnderline).toBeUndefined();
-  });
+    expect(parseChart(withLegendU("none"))?.legendUnderline).toBeUndefined()
+  })
 
   it("returns undefined when <a:defRPr> omits the u attribute", () => {
-    expect(parseChart(withLegendU(undefined))?.legendUnderline).toBeUndefined();
-  });
+    expect(parseChart(withLegendU(undefined))?.legendUnderline).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:legend> element at all", () => {
     const xml = `<c:chartSpace ${NS_LU}>
@@ -5669,9 +5669,9 @@ describe("parseChart — legendUnderline", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendUnderline).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendUnderline).toBeUndefined()
+  })
 
   it("returns undefined when <c:legend> has no <c:txPr> body", () => {
     const xml = `<c:chartSpace ${NS_LU}>
@@ -5686,9 +5686,9 @@ describe("parseChart — legendUnderline", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendUnderline).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendUnderline).toBeUndefined()
+  })
 
   it("returns undefined when <c:txPr> has no <a:p><a:pPr> chain", () => {
     const xml = `<c:chartSpace ${NS_LU}>
@@ -5707,9 +5707,9 @@ describe("parseChart — legendUnderline", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendUnderline).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendUnderline).toBeUndefined()
+  })
 
   it('drops the flag when the legend is hidden via <c:delete val="1"/>', () => {
     const xml = `<c:chartSpace ${NS_LU}>
@@ -5730,11 +5730,11 @@ describe("parseChart — legendUnderline", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe(false);
-    expect(chart?.legendUnderline).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe(false)
+    expect(chart?.legendUnderline).toBeUndefined()
+  })
 
   it("collapses non-sng underline variants to undefined", () => {
     // The writer only emits `"sng"` / `"none"`, so reporting any
@@ -5758,16 +5758,16 @@ describe("parseChart — legendUnderline", () => {
       "wavyDbl",
       "words",
     ]) {
-      expect(parseChart(withLegendU(variant))?.legendUnderline).toBeUndefined();
+      expect(parseChart(withLegendU(variant))?.legendUnderline).toBeUndefined()
     }
-  });
+  })
 
   it("collapses garbage / unknown u tokens to undefined", () => {
-    expect(parseChart(withLegendU(""))?.legendUnderline).toBeUndefined();
-    expect(parseChart(withLegendU("yes"))?.legendUnderline).toBeUndefined();
-    expect(parseChart(withLegendU("1"))?.legendUnderline).toBeUndefined();
-    expect(parseChart(withLegendU("true"))?.legendUnderline).toBeUndefined();
-  });
+    expect(parseChart(withLegendU(""))?.legendUnderline).toBeUndefined()
+    expect(parseChart(withLegendU("yes"))?.legendUnderline).toBeUndefined()
+    expect(parseChart(withLegendU("1"))?.legendUnderline).toBeUndefined()
+    expect(parseChart(withLegendU("true"))?.legendUnderline).toBeUndefined()
+  })
 
   it("co-surfaces alongside legendOverlay / legendEntries / legendFontSize", () => {
     const xml = `<c:chartSpace ${NS_LU}>
@@ -5791,14 +5791,14 @@ describe("parseChart — legendUnderline", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe("bottom");
-    expect(chart?.legendOverlay).toBe(true);
-    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }]);
-    expect(chart?.legendFontSize).toBe(14);
-    expect(chart?.legendUnderline).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe("bottom")
+    expect(chart?.legendOverlay).toBe(true)
+    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }])
+    expect(chart?.legendFontSize).toBe(14)
+    expect(chart?.legendUnderline).toBe(true)
+  })
 
   it("surfaces the flag on every chart family that emits a legend", () => {
     for (const kind of ["lineChart", "barChart", "pieChart", "doughnutChart"]) {
@@ -5817,19 +5817,19 @@ describe("parseChart — legendUnderline", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.legendUnderline).toBe(true);
+</c:chartSpace>`
+      expect(parseChart(xml)?.legendUnderline).toBe(true)
     }
-  });
-});
+  })
+})
 
 // ── parseChart — legendStrikethrough ────────────────────────────────
 
 describe("parseChart — legendStrikethrough", () => {
-  const NS_LS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_LS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withLegendStrike(strike: string | undefined): string {
-    const defRPr = strike === undefined ? "<a:defRPr/>" : `<a:defRPr strike="${strike}"/>`;
+    const defRPr = strike === undefined ? "<a:defRPr/>" : `<a:defRPr strike="${strike}"/>`
     return `<c:chartSpace ${NS_LS}>
   <c:chart>
     <c:plotArea>
@@ -5847,28 +5847,28 @@ describe("parseChart — legendStrikethrough", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it('surfaces legendStrikethrough=true when strike="sngStrike"', () => {
-    expect(parseChart(withLegendStrike("sngStrike"))?.legendStrikethrough).toBe(true);
-  });
+    expect(parseChart(withLegendStrike("sngStrike"))?.legendStrikethrough).toBe(true)
+  })
 
   it('collapses the OOXML default strike="noStrike" to undefined', () => {
     // Absence and the OOXML default round-trip identically through the
     // writer — only an explicit `strike="sngStrike"` surfaces `true`.
-    expect(parseChart(withLegendStrike("noStrike"))?.legendStrikethrough).toBeUndefined();
-  });
+    expect(parseChart(withLegendStrike("noStrike"))?.legendStrikethrough).toBeUndefined()
+  })
 
   it('collapses the non-UI variant strike="dblStrike" to undefined', () => {
     // The writer only emits `"sngStrike"`, so reporting `"dblStrike"`
     // as `true` would silently downgrade the choice on round-trip.
-    expect(parseChart(withLegendStrike("dblStrike"))?.legendStrikethrough).toBeUndefined();
-  });
+    expect(parseChart(withLegendStrike("dblStrike"))?.legendStrikethrough).toBeUndefined()
+  })
 
   it("returns undefined when <a:defRPr> omits the strike attribute", () => {
-    expect(parseChart(withLegendStrike(undefined))?.legendStrikethrough).toBeUndefined();
-  });
+    expect(parseChart(withLegendStrike(undefined))?.legendStrikethrough).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:legend> element at all", () => {
     const xml = `<c:chartSpace ${NS_LS}>
@@ -5877,9 +5877,9 @@ describe("parseChart — legendStrikethrough", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendStrikethrough).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendStrikethrough).toBeUndefined()
+  })
 
   it("returns undefined when <c:legend> has no <c:txPr> body", () => {
     const xml = `<c:chartSpace ${NS_LS}>
@@ -5894,9 +5894,9 @@ describe("parseChart — legendStrikethrough", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendStrikethrough).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendStrikethrough).toBeUndefined()
+  })
 
   it("returns undefined when <c:txPr> has no <a:p><a:pPr> chain", () => {
     const xml = `<c:chartSpace ${NS_LS}>
@@ -5915,9 +5915,9 @@ describe("parseChart — legendStrikethrough", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendStrikethrough).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendStrikethrough).toBeUndefined()
+  })
 
   it('drops the flag when the legend is hidden via <c:delete val="1"/>', () => {
     const xml = `<c:chartSpace ${NS_LS}>
@@ -5938,19 +5938,19 @@ describe("parseChart — legendStrikethrough", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe(false);
-    expect(chart?.legendStrikethrough).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe(false)
+    expect(chart?.legendStrikethrough).toBeUndefined()
+  })
 
   it("collapses garbage / unknown strike tokens to undefined", () => {
-    expect(parseChart(withLegendStrike(""))?.legendStrikethrough).toBeUndefined();
-    expect(parseChart(withLegendStrike("yes"))?.legendStrikethrough).toBeUndefined();
-    expect(parseChart(withLegendStrike("1"))?.legendStrikethrough).toBeUndefined();
-    expect(parseChart(withLegendStrike("true"))?.legendStrikethrough).toBeUndefined();
-    expect(parseChart(withLegendStrike("strike"))?.legendStrikethrough).toBeUndefined();
-  });
+    expect(parseChart(withLegendStrike(""))?.legendStrikethrough).toBeUndefined()
+    expect(parseChart(withLegendStrike("yes"))?.legendStrikethrough).toBeUndefined()
+    expect(parseChart(withLegendStrike("1"))?.legendStrikethrough).toBeUndefined()
+    expect(parseChart(withLegendStrike("true"))?.legendStrikethrough).toBeUndefined()
+    expect(parseChart(withLegendStrike("strike"))?.legendStrikethrough).toBeUndefined()
+  })
 
   it("co-surfaces alongside legendOverlay / legendEntries / legendFontSize / legendUnderline", () => {
     const xml = `<c:chartSpace ${NS_LS}>
@@ -5974,15 +5974,15 @@ describe("parseChart — legendStrikethrough", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe("bottom");
-    expect(chart?.legendOverlay).toBe(true);
-    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }]);
-    expect(chart?.legendFontSize).toBe(14);
-    expect(chart?.legendUnderline).toBe(true);
-    expect(chart?.legendStrikethrough).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe("bottom")
+    expect(chart?.legendOverlay).toBe(true)
+    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }])
+    expect(chart?.legendFontSize).toBe(14)
+    expect(chart?.legendUnderline).toBe(true)
+    expect(chart?.legendStrikethrough).toBe(true)
+  })
 
   it("surfaces the flag on every chart family that emits a legend", () => {
     for (const kind of ["lineChart", "barChart", "pieChart", "doughnutChart"]) {
@@ -6001,22 +6001,22 @@ describe("parseChart — legendStrikethrough", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.legendStrikethrough).toBe(true);
+</c:chartSpace>`
+      expect(parseChart(xml)?.legendStrikethrough).toBe(true)
     }
-  });
-});
+  })
+})
 
 // ── parseChart — legendFontColor ────────────────────────────────────
 
 describe("parseChart — legendFontColor", () => {
-  const NS_LFC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_LFC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withLegendColor(srgbVal: string | undefined): string {
     const fill =
       srgbVal === undefined
         ? "<a:defRPr/>"
-        : `<a:defRPr><a:solidFill><a:srgbClr val="${srgbVal}"/></a:solidFill></a:defRPr>`;
+        : `<a:defRPr><a:solidFill><a:srgbClr val="${srgbVal}"/></a:solidFill></a:defRPr>`
     return `<c:chartSpace ${NS_LFC}>
   <c:chart>
     <c:plotArea>
@@ -6034,22 +6034,22 @@ describe("parseChart — legendFontColor", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces legendFontColor as the canonical 6-character uppercase hex", () => {
-    expect(parseChart(withLegendColor("FF0000"))?.legendFontColor).toBe("FF0000");
-  });
+    expect(parseChart(withLegendColor("FF0000"))?.legendFontColor).toBe("FF0000")
+  })
 
   it("normalizes a lowercase srgbClr val to the OOXML uppercase canonical form", () => {
     // Excel writes uppercase, but a hand-edited template might use
     // lowercase — the reader normalizes to the canonical shape.
-    expect(parseChart(withLegendColor("ff8800"))?.legendFontColor).toBe("FF8800");
-  });
+    expect(parseChart(withLegendColor("ff8800"))?.legendFontColor).toBe("FF8800")
+  })
 
   it("returns undefined when the legend has no <a:solidFill> block at all", () => {
-    expect(parseChart(withLegendColor(undefined))?.legendFontColor).toBeUndefined();
-  });
+    expect(parseChart(withLegendColor(undefined))?.legendFontColor).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:legend> element at all", () => {
     const xml = `<c:chartSpace ${NS_LFC}>
@@ -6058,9 +6058,9 @@ describe("parseChart — legendFontColor", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendFontColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendFontColor).toBeUndefined()
+  })
 
   it("returns undefined when <c:legend> has no <c:txPr> body", () => {
     const xml = `<c:chartSpace ${NS_LFC}>
@@ -6075,9 +6075,9 @@ describe("parseChart — legendFontColor", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendFontColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendFontColor).toBeUndefined()
+  })
 
   it("returns undefined when <c:txPr> has no <a:p><a:pPr><a:defRPr> chain", () => {
     const xml = `<c:chartSpace ${NS_LFC}>
@@ -6096,9 +6096,9 @@ describe("parseChart — legendFontColor", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendFontColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendFontColor).toBeUndefined()
+  })
 
   it('drops the fill when the legend is hidden via <c:delete val="1"/>', () => {
     const xml = `<c:chartSpace ${NS_LFC}>
@@ -6119,11 +6119,11 @@ describe("parseChart — legendFontColor", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe(false);
-    expect(chart?.legendFontColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe(false)
+    expect(chart?.legendFontColor).toBeUndefined()
+  })
 
   it("collapses theme references (<a:schemeClr>) to undefined — only literal RGB round-trips", () => {
     const xml = `<c:chartSpace ${NS_LFC}>
@@ -6143,17 +6143,17 @@ describe("parseChart — legendFontColor", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendFontColor).toEqual({ theme: "accent1" });
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendFontColor).toEqual({ theme: "accent1" })
+  })
 
   it("collapses malformed val tokens (wrong length, non-hex characters) to undefined", () => {
-    expect(parseChart(withLegendColor(""))?.legendFontColor).toBeUndefined();
-    expect(parseChart(withLegendColor("FF00"))?.legendFontColor).toBeUndefined();
-    expect(parseChart(withLegendColor("FF0000FF"))?.legendFontColor).toBeUndefined();
-    expect(parseChart(withLegendColor("ZZZZZZ"))?.legendFontColor).toBeUndefined();
-    expect(parseChart(withLegendColor("hello!"))?.legendFontColor).toBeUndefined();
-  });
+    expect(parseChart(withLegendColor(""))?.legendFontColor).toBeUndefined()
+    expect(parseChart(withLegendColor("FF00"))?.legendFontColor).toBeUndefined()
+    expect(parseChart(withLegendColor("FF0000FF"))?.legendFontColor).toBeUndefined()
+    expect(parseChart(withLegendColor("ZZZZZZ"))?.legendFontColor).toBeUndefined()
+    expect(parseChart(withLegendColor("hello!"))?.legendFontColor).toBeUndefined()
+  })
 
   it("co-surfaces alongside legendOverlay / legendEntries / legendFontSize / legendUnderline", () => {
     const xml = `<c:chartSpace ${NS_LFC}>
@@ -6177,15 +6177,15 @@ describe("parseChart — legendFontColor", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe("bottom");
-    expect(chart?.legendOverlay).toBe(true);
-    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }]);
-    expect(chart?.legendFontSize).toBe(14);
-    expect(chart?.legendUnderline).toBe(true);
-    expect(chart?.legendFontColor).toBe("123456");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe("bottom")
+    expect(chart?.legendOverlay).toBe(true)
+    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }])
+    expect(chart?.legendFontSize).toBe(14)
+    expect(chart?.legendUnderline).toBe(true)
+    expect(chart?.legendFontColor).toBe("123456")
+  })
 
   it("surfaces the fill on every chart family that emits a legend", () => {
     for (const kind of ["lineChart", "barChart", "pieChart", "doughnutChart"]) {
@@ -6204,22 +6204,22 @@ describe("parseChart — legendFontColor", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.legendFontColor).toBe("00FF00");
+</c:chartSpace>`
+      expect(parseChart(xml)?.legendFontColor).toBe("00FF00")
     }
-  });
-});
+  })
+})
 
 // ── parseChart — legendFontFamily ───────────────────────────────────
 
 describe("parseChart — legendFontFamily", () => {
-  const NS_LFF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_LFF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withLegendTypeface(typeface: string | undefined): string {
     const latin =
       typeface === undefined
         ? "<a:defRPr/>"
-        : `<a:defRPr><a:latin typeface="${typeface}"/></a:defRPr>`;
+        : `<a:defRPr><a:latin typeface="${typeface}"/></a:defRPr>`
     return `<c:chartSpace ${NS_LFF}>
   <c:chart>
     <c:plotArea>
@@ -6237,34 +6237,34 @@ describe("parseChart — legendFontFamily", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces legendFontFamily as the trimmed typeface string", () => {
-    expect(parseChart(withLegendTypeface("Arial"))?.legendFontFamily).toBe("Arial");
-  });
+    expect(parseChart(withLegendTypeface("Arial"))?.legendFontFamily).toBe("Arial")
+  })
 
   it("trims surrounding whitespace from the typeface attribute", () => {
-    expect(parseChart(withLegendTypeface("   Calibri   "))?.legendFontFamily).toBe("Calibri");
-  });
+    expect(parseChart(withLegendTypeface("   Calibri   "))?.legendFontFamily).toBe("Calibri")
+  })
 
   it("surfaces a multi-word typeface verbatim", () => {
     expect(parseChart(withLegendTypeface("Times New Roman"))?.legendFontFamily).toBe(
       "Times New Roman",
-    );
-  });
+    )
+  })
 
   it("returns undefined when the legend has no <a:latin> element at all", () => {
-    expect(parseChart(withLegendTypeface(undefined))?.legendFontFamily).toBeUndefined();
-  });
+    expect(parseChart(withLegendTypeface(undefined))?.legendFontFamily).toBeUndefined()
+  })
 
   it("collapses an empty typeface attribute to undefined", () => {
-    expect(parseChart(withLegendTypeface(""))?.legendFontFamily).toBeUndefined();
-  });
+    expect(parseChart(withLegendTypeface(""))?.legendFontFamily).toBeUndefined()
+  })
 
   it("collapses a whitespace-only typeface attribute to undefined", () => {
-    expect(parseChart(withLegendTypeface("   "))?.legendFontFamily).toBeUndefined();
-  });
+    expect(parseChart(withLegendTypeface("   "))?.legendFontFamily).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:legend> element at all", () => {
     const xml = `<c:chartSpace ${NS_LFF}>
@@ -6273,9 +6273,9 @@ describe("parseChart — legendFontFamily", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendFontFamily).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendFontFamily).toBeUndefined()
+  })
 
   it("returns undefined when <c:legend> has no <c:txPr> body", () => {
     const xml = `<c:chartSpace ${NS_LFF}>
@@ -6290,9 +6290,9 @@ describe("parseChart — legendFontFamily", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendFontFamily).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendFontFamily).toBeUndefined()
+  })
 
   it("returns undefined when <c:txPr> has no <a:p><a:pPr><a:defRPr> chain", () => {
     const xml = `<c:chartSpace ${NS_LFF}>
@@ -6311,9 +6311,9 @@ describe("parseChart — legendFontFamily", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendFontFamily).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendFontFamily).toBeUndefined()
+  })
 
   it('drops the typeface when the legend is hidden via <c:delete val="1"/>', () => {
     const xml = `<c:chartSpace ${NS_LFF}>
@@ -6334,11 +6334,11 @@ describe("parseChart — legendFontFamily", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe(false);
-    expect(chart?.legendFontFamily).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe(false)
+    expect(chart?.legendFontFamily).toBeUndefined()
+  })
 
   it("co-surfaces alongside legendOverlay / legendEntries / legendFontSize / legendUnderline / legendFontColor", () => {
     const xml = `<c:chartSpace ${NS_LFF}>
@@ -6362,16 +6362,16 @@ describe("parseChart — legendFontFamily", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe("bottom");
-    expect(chart?.legendOverlay).toBe(true);
-    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }]);
-    expect(chart?.legendFontSize).toBe(14);
-    expect(chart?.legendUnderline).toBe(true);
-    expect(chart?.legendFontColor).toBe("123456");
-    expect(chart?.legendFontFamily).toBe("Verdana");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe("bottom")
+    expect(chart?.legendOverlay).toBe(true)
+    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }])
+    expect(chart?.legendFontSize).toBe(14)
+    expect(chart?.legendUnderline).toBe(true)
+    expect(chart?.legendFontColor).toBe("123456")
+    expect(chart?.legendFontFamily).toBe("Verdana")
+  })
 
   it("surfaces the typeface on every chart family that emits a legend", () => {
     for (const kind of ["lineChart", "barChart", "pieChart", "doughnutChart"]) {
@@ -6390,16 +6390,16 @@ describe("parseChart — legendFontFamily", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.legendFontFamily).toBe("Calibri");
+</c:chartSpace>`
+      expect(parseChart(xml)?.legendFontFamily).toBe("Calibri")
     }
-  });
-});
+  })
+})
 
 // ── parseChart — legendLayout (manual placement) ────────────────────
 
 describe("parseChart — legendLayout", () => {
-  const NS_LL = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_LL = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withManualLayout(body: string): string {
     return `<c:chartSpace ${NS_LL}>
@@ -6417,23 +6417,23 @@ describe("parseChart — legendLayout", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces every coordinate when all four are pinned", () => {
     const xml = withManualLayout(
       `<c:xMode val="edge"/><c:yMode val="edge"/><c:wMode val="edge"/><c:hMode val="edge"/>
        <c:x val="0.65"/><c:y val="0.15"/><c:w val="0.3"/><c:h val="0.4"/>`,
-    );
-    expect(parseChart(xml)?.legendLayout).toEqual({ x: 0.65, y: 0.15, w: 0.3, h: 0.4 });
-  });
+    )
+    expect(parseChart(xml)?.legendLayout).toEqual({ x: 0.65, y: 0.15, w: 0.3, h: 0.4 })
+  })
 
   it("surfaces a partial layout (only x/y pinned)", () => {
     const xml = withManualLayout(
       `<c:xMode val="edge"/><c:yMode val="edge"/><c:x val="0.5"/><c:y val="0.25"/>`,
-    );
-    expect(parseChart(xml)?.legendLayout).toEqual({ x: 0.5, y: 0.25 });
-  });
+    )
+    expect(parseChart(xml)?.legendLayout).toEqual({ x: 0.5, y: 0.25 })
+  })
 
   it('accepts xMode="factor" and surfaces the same shape', () => {
     // The reader admits both `factor` (delta from auto-layout) and
@@ -6441,31 +6441,31 @@ describe("parseChart — legendLayout", () => {
     // emit, but a templated chart with `factor` still round-trips.
     const xml = withManualLayout(
       `<c:xMode val="factor"/><c:yMode val="factor"/><c:x val="0.4"/><c:y val="0.3"/>`,
-    );
-    expect(parseChart(xml)?.legendLayout).toEqual({ x: 0.4, y: 0.3 });
-  });
+    )
+    expect(parseChart(xml)?.legendLayout).toEqual({ x: 0.4, y: 0.3 })
+  })
 
   it("drops out-of-range coordinates axis-by-axis", () => {
     const xml = withManualLayout(
       `<c:x val="-0.5"/><c:y val="2.0"/><c:w val="0.5"/><c:h val="0.5"/>`,
-    );
-    expect(parseChart(xml)?.legendLayout).toEqual({ w: 0.5, h: 0.5 });
-  });
+    )
+    expect(parseChart(xml)?.legendLayout).toEqual({ w: 0.5, h: 0.5 })
+  })
 
   it("drops non-numeric coordinates axis-by-axis", () => {
-    const xml = withManualLayout(`<c:x val="not-a-number"/><c:y val="0.5"/>`);
-    expect(parseChart(xml)?.legendLayout).toEqual({ y: 0.5 });
-  });
+    const xml = withManualLayout(`<c:x val="not-a-number"/><c:y val="0.5"/>`)
+    expect(parseChart(xml)?.legendLayout).toEqual({ y: 0.5 })
+  })
 
   it("collapses an empty <c:manualLayout> to undefined", () => {
-    const xml = withManualLayout(``);
-    expect(parseChart(xml)?.legendLayout).toBeUndefined();
-  });
+    const xml = withManualLayout(``)
+    expect(parseChart(xml)?.legendLayout).toBeUndefined()
+  })
 
   it("collapses a layout where every coordinate dropped to undefined", () => {
-    const xml = withManualLayout(`<c:x val="-1"/><c:y val="2"/>`);
-    expect(parseChart(xml)?.legendLayout).toBeUndefined();
-  });
+    const xml = withManualLayout(`<c:x val="-1"/><c:y val="2"/>`)
+    expect(parseChart(xml)?.legendLayout).toBeUndefined()
+  })
 
   it("returns undefined when <c:legend> has no <c:layout> block", () => {
     const xml = `<c:chartSpace ${NS_LL}>
@@ -6480,9 +6480,9 @@ describe("parseChart — legendLayout", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendLayout).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendLayout).toBeUndefined()
+  })
 
   it("returns undefined when <c:layout> has no <c:manualLayout> child", () => {
     const xml = `<c:chartSpace ${NS_LL}>
@@ -6498,9 +6498,9 @@ describe("parseChart — legendLayout", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendLayout).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendLayout).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:legend> element at all", () => {
     const xml = `<c:chartSpace ${NS_LL}>
@@ -6509,9 +6509,9 @@ describe("parseChart — legendLayout", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendLayout).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendLayout).toBeUndefined()
+  })
 
   it('drops the layout when the legend is hidden via <c:delete val="1"/>', () => {
     const xml = `<c:chartSpace ${NS_LL}>
@@ -6528,16 +6528,16 @@ describe("parseChart — legendLayout", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe(false);
-    expect(chart?.legendLayout).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe(false)
+    expect(chart?.legendLayout).toBeUndefined()
+  })
 
   it("accepts the boundary values 0 and 1", () => {
-    const xml = withManualLayout(`<c:x val="0"/><c:y val="1"/><c:w val="0"/><c:h val="1"/>`);
-    expect(parseChart(xml)?.legendLayout).toEqual({ x: 0, y: 1, w: 0, h: 1 });
-  });
+    const xml = withManualLayout(`<c:x val="0"/><c:y val="1"/><c:w val="0"/><c:h val="1"/>`)
+    expect(parseChart(xml)?.legendLayout).toEqual({ x: 0, y: 1, w: 0, h: 1 })
+  })
 
   it("co-surfaces alongside legendOverlay / legendEntries / legendFontSize", () => {
     const xml = `<c:chartSpace ${NS_LL}>
@@ -6569,20 +6569,20 @@ describe("parseChart — legendLayout", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe("bottom");
-    expect(chart?.legendOverlay).toBe(true);
-    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }]);
-    expect(chart?.legendFontSize).toBe(14);
-    expect(chart?.legendLayout).toEqual({ x: 0.6, y: 0.2 });
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe("bottom")
+    expect(chart?.legendOverlay).toBe(true)
+    expect(chart?.legendEntries).toEqual([{ idx: 0, delete: true }])
+    expect(chart?.legendFontSize).toBe(14)
+    expect(chart?.legendLayout).toEqual({ x: 0.6, y: 0.2 })
+  })
+})
 
 // ── parseChart — plotAreaLayout (manual placement) ──────────────────
 
 describe("parseChart — plotAreaLayout", () => {
-  const NS_PL = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_PL = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withPlotAreaLayout(body: string): string {
     return `<c:chartSpace ${NS_PL}>
@@ -6596,59 +6596,59 @@ describe("parseChart — plotAreaLayout", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces every coordinate when all four are pinned", () => {
     const xml = withPlotAreaLayout(
       `<c:xMode val="edge"/><c:yMode val="edge"/><c:wMode val="edge"/><c:hMode val="edge"/>
        <c:x val="0.12"/><c:y val="0.18"/><c:w val="0.7"/><c:h val="0.6"/>`,
-    );
-    expect(parseChart(xml)?.plotAreaLayout).toEqual({ x: 0.12, y: 0.18, w: 0.7, h: 0.6 });
-  });
+    )
+    expect(parseChart(xml)?.plotAreaLayout).toEqual({ x: 0.12, y: 0.18, w: 0.7, h: 0.6 })
+  })
 
   it("surfaces a partial layout (only x/y pinned)", () => {
     const xml = withPlotAreaLayout(
       `<c:xMode val="edge"/><c:yMode val="edge"/><c:x val="0.1"/><c:y val="0.25"/>`,
-    );
-    expect(parseChart(xml)?.plotAreaLayout).toEqual({ x: 0.1, y: 0.25 });
-  });
+    )
+    expect(parseChart(xml)?.plotAreaLayout).toEqual({ x: 0.1, y: 0.25 })
+  })
 
   it("surfaces a partial layout (only w/h pinned)", () => {
     const xml = withPlotAreaLayout(
       `<c:wMode val="edge"/><c:hMode val="edge"/><c:w val="0.7"/><c:h val="0.6"/>`,
-    );
-    expect(parseChart(xml)?.plotAreaLayout).toEqual({ w: 0.7, h: 0.6 });
-  });
+    )
+    expect(parseChart(xml)?.plotAreaLayout).toEqual({ w: 0.7, h: 0.6 })
+  })
 
   it('accepts xMode="factor" and surfaces the same shape', () => {
     const xml = withPlotAreaLayout(
       `<c:xMode val="factor"/><c:yMode val="factor"/><c:x val="0.15"/><c:y val="0.2"/>`,
-    );
-    expect(parseChart(xml)?.plotAreaLayout).toEqual({ x: 0.15, y: 0.2 });
-  });
+    )
+    expect(parseChart(xml)?.plotAreaLayout).toEqual({ x: 0.15, y: 0.2 })
+  })
 
   it("drops out-of-range coordinates axis-by-axis", () => {
     const xml = withPlotAreaLayout(
       `<c:x val="-0.5"/><c:y val="2.0"/><c:w val="0.7"/><c:h val="0.6"/>`,
-    );
-    expect(parseChart(xml)?.plotAreaLayout).toEqual({ w: 0.7, h: 0.6 });
-  });
+    )
+    expect(parseChart(xml)?.plotAreaLayout).toEqual({ w: 0.7, h: 0.6 })
+  })
 
   it("drops non-numeric coordinates axis-by-axis", () => {
-    const xml = withPlotAreaLayout(`<c:x val="not-a-number"/><c:y val="0.4"/>`);
-    expect(parseChart(xml)?.plotAreaLayout).toEqual({ y: 0.4 });
-  });
+    const xml = withPlotAreaLayout(`<c:x val="not-a-number"/><c:y val="0.4"/>`)
+    expect(parseChart(xml)?.plotAreaLayout).toEqual({ y: 0.4 })
+  })
 
   it("collapses an empty <c:manualLayout> to undefined", () => {
-    const xml = withPlotAreaLayout(``);
-    expect(parseChart(xml)?.plotAreaLayout).toBeUndefined();
-  });
+    const xml = withPlotAreaLayout(``)
+    expect(parseChart(xml)?.plotAreaLayout).toBeUndefined()
+  })
 
   it("collapses a layout where every coordinate dropped to undefined", () => {
-    const xml = withPlotAreaLayout(`<c:x val="-1"/><c:y val="2"/>`);
-    expect(parseChart(xml)?.plotAreaLayout).toBeUndefined();
-  });
+    const xml = withPlotAreaLayout(`<c:x val="-1"/><c:y val="2"/>`)
+    expect(parseChart(xml)?.plotAreaLayout).toBeUndefined()
+  })
 
   it("returns undefined when <c:plotArea> has only the bare <c:layout/> placeholder", () => {
     const xml = `<c:chartSpace ${NS_PL}>
@@ -6660,9 +6660,9 @@ describe("parseChart — plotAreaLayout", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.plotAreaLayout).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.plotAreaLayout).toBeUndefined()
+  })
 
   it("returns undefined when <c:layout> has no <c:manualLayout> child", () => {
     const xml = `<c:chartSpace ${NS_PL}>
@@ -6674,9 +6674,9 @@ describe("parseChart — plotAreaLayout", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.plotAreaLayout).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.plotAreaLayout).toBeUndefined()
+  })
 
   it("returns undefined when <c:plotArea> has no <c:layout> element at all", () => {
     const xml = `<c:chartSpace ${NS_PL}>
@@ -6687,14 +6687,14 @@ describe("parseChart — plotAreaLayout", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.plotAreaLayout).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.plotAreaLayout).toBeUndefined()
+  })
 
   it("accepts the boundary values 0 and 1", () => {
-    const xml = withPlotAreaLayout(`<c:x val="0"/><c:y val="1"/><c:w val="0"/><c:h val="1"/>`);
-    expect(parseChart(xml)?.plotAreaLayout).toEqual({ x: 0, y: 1, w: 0, h: 1 });
-  });
+    const xml = withPlotAreaLayout(`<c:x val="0"/><c:y val="1"/><c:w val="0"/><c:h val="1"/>`)
+    expect(parseChart(xml)?.plotAreaLayout).toEqual({ x: 0, y: 1, w: 0, h: 1 })
+  })
 
   it("surfaces independently of legendLayout (each lives on its own host)", () => {
     const xml = `<c:chartSpace ${NS_PL}>
@@ -6725,17 +6725,17 @@ describe("parseChart — plotAreaLayout", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.plotAreaLayout).toEqual({ x: 0.1, y: 0.18 });
-    expect(chart?.legendLayout).toEqual({ x: 0.75, y: 0.2 });
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.plotAreaLayout).toEqual({ x: 0.1, y: 0.18 })
+    expect(chart?.legendLayout).toEqual({ x: 0.75, y: 0.2 })
+  })
+})
 
 // ── parseChart — data labels showLegendKey ──────────────────────────
 
 describe("parseChart — data labels showLegendKey", () => {
-  const NS_LK = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS_LK = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces showLegendKey=true on chart-level dLbls when val="1"', () => {
     const xml = `<c:chartSpace ${NS_LK}>
@@ -6753,14 +6753,14 @@ describe("parseChart — data labels showLegendKey", () => {
       </c:dLbls>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.dataLabels).toEqual({
       position: "outEnd",
       showLegendKey: true,
       showValue: true,
-    });
-  });
+    })
+  })
 
   it('collapses the OOXML default val="0" to undefined', () => {
     const xml = `<c:chartSpace ${NS_LK}>
@@ -6773,11 +6773,11 @@ describe("parseChart — data labels showLegendKey", () => {
       </c:dLbls>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.showLegendKey).toBeUndefined();
-    expect(chart?.dataLabels?.showValue).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.showLegendKey).toBeUndefined()
+    expect(chart?.dataLabels?.showValue).toBe(true)
+  })
 
   it("collapses absence of <c:showLegendKey> to undefined", () => {
     const xml = `<c:chartSpace ${NS_LK}>
@@ -6789,10 +6789,10 @@ describe("parseChart — data labels showLegendKey", () => {
       </c:dLbls>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.showLegendKey).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.showLegendKey).toBeUndefined()
+  })
 
   it('accepts the OOXML truthy spelling val="true"', () => {
     const xml = `<c:chartSpace ${NS_LK}>
@@ -6805,10 +6805,10 @@ describe("parseChart — data labels showLegendKey", () => {
       </c:dLbls>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.showLegendKey).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.showLegendKey).toBe(true)
+  })
 
   it('accepts the OOXML falsy spelling val="false" and collapses to undefined', () => {
     const xml = `<c:chartSpace ${NS_LK}>
@@ -6821,10 +6821,10 @@ describe("parseChart — data labels showLegendKey", () => {
       </c:dLbls>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.showLegendKey).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.showLegendKey).toBeUndefined()
+  })
 
   it("ignores unknown val tokens", () => {
     const xml = `<c:chartSpace ${NS_LK}>
@@ -6837,10 +6837,10 @@ describe("parseChart — data labels showLegendKey", () => {
       </c:dLbls>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.showLegendKey).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.showLegendKey).toBeUndefined()
+  })
 
   it("returns undefined when <c:showLegendKey> is missing the val attribute", () => {
     const xml = `<c:chartSpace ${NS_LK}>
@@ -6853,10 +6853,10 @@ describe("parseChart — data labels showLegendKey", () => {
       </c:dLbls>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.showLegendKey).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.showLegendKey).toBeUndefined()
+  })
 
   it("makes showLegendKey alone enough to surface a dataLabels record", () => {
     // Even when no value/category/series/percent toggle is on, a pinned
@@ -6877,10 +6877,10 @@ describe("parseChart — data labels showLegendKey", () => {
       </c:dLbls>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels).toEqual({ showLegendKey: true });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels).toEqual({ showLegendKey: true })
+  })
 
   it("surfaces showLegendKey on a series-level <c:dLbls>", () => {
     const xml = `<c:chartSpace ${NS_LK}>
@@ -6898,14 +6898,14 @@ describe("parseChart — data labels showLegendKey", () => {
       </c:ser>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.series?.[0].dataLabels).toEqual({
       position: "ctr",
       showLegendKey: true,
       showValue: true,
-    });
-  });
+    })
+  })
 
   it("co-surfaces showLegendKey alongside other show toggles and separator", () => {
     const xml = `<c:chartSpace ${NS_LK}>
@@ -6924,8 +6924,8 @@ describe("parseChart — data labels showLegendKey", () => {
       </c:dLbls>
     </c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.dataLabels).toEqual({
       position: "bestFit",
       showLegendKey: true,
@@ -6933,14 +6933,14 @@ describe("parseChart — data labels showLegendKey", () => {
       showCategoryName: true,
       showPercent: true,
       separator: "; ",
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — data labels numberFormat ──────────────────────────
 
 describe("parseChart — data labels numberFormat", () => {
-  const NS_NF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS_NF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it("surfaces numberFormat from a chart-level <c:dLbls><c:numFmt>", () => {
     const xml = `<c:chartSpace ${NS_NF}>
@@ -6953,10 +6953,10 @@ describe("parseChart — data labels numberFormat", () => {
       </c:dLbls>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00%" });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00%" })
+  })
 
   it("surfaces sourceLinked=true when the OOXML attribute is pinned to 1", () => {
     const xml = `<c:chartSpace ${NS_NF}>
@@ -6969,13 +6969,13 @@ describe("parseChart — data labels numberFormat", () => {
       </c:dLbls>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.dataLabels?.numberFormat).toEqual({
       formatCode: "General",
       sourceLinked: true,
-    });
-  });
+    })
+  })
 
   it('accepts the OOXML truthy spelling sourceLinked="true"', () => {
     const xml = `<c:chartSpace ${NS_NF}>
@@ -6988,13 +6988,13 @@ describe("parseChart — data labels numberFormat", () => {
       </c:dLbls>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.dataLabels?.numberFormat).toEqual({
       formatCode: "0.0",
       sourceLinked: true,
-    });
-  });
+    })
+  })
 
   it('collapses the OOXML default sourceLinked="0" to undefined', () => {
     const xml = `<c:chartSpace ${NS_NF}>
@@ -7007,10 +7007,10 @@ describe("parseChart — data labels numberFormat", () => {
       </c:dLbls>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "$#,##0.00" });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "$#,##0.00" })
+  })
 
   it("collapses absence of <c:numFmt> to undefined", () => {
     const xml = `<c:chartSpace ${NS_NF}>
@@ -7022,10 +7022,10 @@ describe("parseChart — data labels numberFormat", () => {
       </c:dLbls>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.numberFormat).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.numberFormat).toBeUndefined()
+  })
 
   it("returns undefined when <c:numFmt> is missing the formatCode attribute", () => {
     const xml = `<c:chartSpace ${NS_NF}>
@@ -7038,10 +7038,10 @@ describe("parseChart — data labels numberFormat", () => {
       </c:dLbls>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.numberFormat).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.numberFormat).toBeUndefined()
+  })
 
   it("returns undefined for empty formatCode strings", () => {
     const xml = `<c:chartSpace ${NS_NF}>
@@ -7054,10 +7054,10 @@ describe("parseChart — data labels numberFormat", () => {
       </c:dLbls>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.numberFormat).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.numberFormat).toBeUndefined()
+  })
 
   it("makes numberFormat alone enough to surface a dataLabels record", () => {
     // The number format pin is meaningful even without any show* toggle —
@@ -7079,10 +7079,10 @@ describe("parseChart — data labels numberFormat", () => {
       </c:dLbls>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels).toEqual({ numberFormat: { formatCode: "0.00%" } });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels).toEqual({ numberFormat: { formatCode: "0.00%" } })
+  })
 
   it("surfaces numberFormat on a series-level <c:dLbls>", () => {
     const xml = `<c:chartSpace ${NS_NF}>
@@ -7100,14 +7100,14 @@ describe("parseChart — data labels numberFormat", () => {
       </c:ser>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.series?.[0].dataLabels).toEqual({
       position: "ctr",
       showValue: true,
       numberFormat: { formatCode: "$#,##0" },
-    });
-  });
+    })
+  })
 
   it("co-surfaces numberFormat alongside other dataLabels fields", () => {
     const xml = `<c:chartSpace ${NS_NF}>
@@ -7127,8 +7127,8 @@ describe("parseChart — data labels numberFormat", () => {
       </c:dLbls>
     </c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.dataLabels).toEqual({
       position: "bestFit",
       showLegendKey: true,
@@ -7136,8 +7136,8 @@ describe("parseChart — data labels numberFormat", () => {
       showPercent: true,
       separator: "; ",
       numberFormat: { formatCode: "0.00%" },
-    });
-  });
+    })
+  })
 
   it("does not leak a per-point <c:dLbl><c:numFmt> into the block-level record", () => {
     // The CT_DLbls schema allows a `<c:numFmt>` to live inside a
@@ -7159,17 +7159,17 @@ describe("parseChart — data labels numberFormat", () => {
       </c:dLbls>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.numberFormat).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.numberFormat).toBeUndefined()
+  })
 
   it("threads numberFormat through line / pie / scatter chart families", () => {
     const families = [
       ["lineChart", "line"],
       ["pieChart", "pie"],
       ["scatterChart", "scatter"],
-    ] as const;
+    ] as const
     for (const [tag] of families) {
       const xml = `<c:chartSpace ${NS_NF}>
   <c:chart><c:plotArea>
@@ -7181,17 +7181,17 @@ describe("parseChart — data labels numberFormat", () => {
       </c:dLbls>
     </c:${tag}>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-      const chart = parseChart(xml);
-      expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00%" });
+</c:chartSpace>`
+      const chart = parseChart(xml)
+      expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00%" })
     }
-  });
-});
+  })
+})
 
 // ── parseChart — axis noMultiLvlLbl ────────────────────────────────
 
 describe("parseChart — axis noMultiLvlLbl", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces noMultiLvlLbl=true on the category axis when val="1"', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7203,11 +7203,11 @@ describe("parseChart — axis noMultiLvlLbl", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.noMultiLvlLbl).toBe(true);
-    expect(chart?.axes?.y?.noMultiLvlLbl).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.noMultiLvlLbl).toBe(true)
+    expect(chart?.axes?.y?.noMultiLvlLbl).toBeUndefined()
+  })
 
   it('collapses the OOXML default val="0" to undefined', () => {
     // Excel's reference serialization emits `<c:noMultiLvlLbl val="0"/>`
@@ -7223,10 +7223,10 @@ describe("parseChart — axis noMultiLvlLbl", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("collapses absence of <c:noMultiLvlLbl> to undefined", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7235,10 +7235,10 @@ describe("parseChart — axis noMultiLvlLbl", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it('accepts the OOXML truthy spelling val="true"', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7250,10 +7250,10 @@ describe("parseChart — axis noMultiLvlLbl", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.noMultiLvlLbl).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.noMultiLvlLbl).toBe(true)
+  })
 
   it('accepts the OOXML falsy spelling val="false" and collapses to undefined', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7265,10 +7265,10 @@ describe("parseChart — axis noMultiLvlLbl", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <c:noMultiLvlLbl> is missing the val attribute", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7280,10 +7280,10 @@ describe("parseChart — axis noMultiLvlLbl", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("returns undefined for unknown val tokens", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7295,10 +7295,10 @@ describe("parseChart — axis noMultiLvlLbl", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("does not surface noMultiLvlLbl on a value axis", () => {
     // The OOXML schema places `<c:noMultiLvlLbl>` on CT_CatAx exclusively
@@ -7314,11 +7314,11 @@ describe("parseChart — axis noMultiLvlLbl", () => {
       <c:noMultiLvlLbl val="1"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.noMultiLvlLbl).toBeUndefined();
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.noMultiLvlLbl).toBeUndefined()
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("does not surface noMultiLvlLbl on a scatter chart's value axes", () => {
     // Scatter has two valAx — the schema rejects `<c:noMultiLvlLbl>` on
@@ -7338,12 +7338,12 @@ describe("parseChart — axis noMultiLvlLbl", () => {
       <c:noMultiLvlLbl val="1"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.noMultiLvlLbl).toBeUndefined();
-    expect(chart?.axes?.y?.noMultiLvlLbl).toBeUndefined();
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.noMultiLvlLbl).toBeUndefined()
+    expect(chart?.axes?.y?.noMultiLvlLbl).toBeUndefined()
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("co-surfaces noMultiLvlLbl alongside title, gridlines, and other catAx fields", () => {
     const xml = `<c:chartSpace ${NS}
@@ -7360,22 +7360,22 @@ describe("parseChart — axis noMultiLvlLbl", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Region",
       gridlines: { major: true },
       lblOffset: 200,
       tickLblSkip: 3,
       noMultiLvlLbl: true,
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — axis auto ─────────────────────────────────────────
 
 describe("parseChart — axis auto", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces auto=false on the category axis when val="0"', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7387,11 +7387,11 @@ describe("parseChart — axis auto", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.auto).toBe(false);
-    expect(chart?.axes?.y?.auto).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.auto).toBe(false)
+    expect(chart?.axes?.y?.auto).toBeUndefined()
+  })
 
   it('collapses the OOXML default val="1" to undefined', () => {
     // Excel's reference serialization always emits `<c:auto val="1"/>`
@@ -7407,10 +7407,10 @@ describe("parseChart — axis auto", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("collapses absence of <c:auto> to undefined", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7419,10 +7419,10 @@ describe("parseChart — axis auto", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it('accepts the OOXML falsy spelling val="false"', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7434,10 +7434,10 @@ describe("parseChart — axis auto", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.auto).toBe(false);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.auto).toBe(false)
+  })
 
   it('accepts the OOXML truthy spelling val="true" and collapses to undefined', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7449,10 +7449,10 @@ describe("parseChart — axis auto", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <c:auto> is missing the val attribute", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7464,10 +7464,10 @@ describe("parseChart — axis auto", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("returns undefined for unknown val tokens", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7479,10 +7479,10 @@ describe("parseChart — axis auto", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("does not surface auto on a value axis", () => {
     // The OOXML schema places `<c:auto>` on CT_CatAx exclusively —
@@ -7498,11 +7498,11 @@ describe("parseChart — axis auto", () => {
       <c:auto val="0"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.auto).toBeUndefined();
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.auto).toBeUndefined()
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("does not surface auto on a scatter chart's value axes", () => {
     // Scatter has two valAx — the schema rejects `<c:auto>` on both, so
@@ -7522,12 +7522,12 @@ describe("parseChart — axis auto", () => {
       <c:auto val="0"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.auto).toBeUndefined();
-    expect(chart?.axes?.y?.auto).toBeUndefined();
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.auto).toBeUndefined()
+    expect(chart?.axes?.y?.auto).toBeUndefined()
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("co-surfaces auto alongside other catAx fields", () => {
     const xml = `<c:chartSpace ${NS}
@@ -7542,23 +7542,23 @@ describe("parseChart — axis auto", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Period",
       auto: false,
       noMultiLvlLbl: true,
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — titleOverlay ───────────────────────────────────────
 
 describe("parseChart — titleOverlay", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withTitle(overlay?: string): string {
-    const overlayElement = overlay === undefined ? "" : `<c:overlay val="${overlay}"/>`;
+    const overlayElement = overlay === undefined ? "" : `<c:overlay val="${overlay}"/>`
     return `<c:chartSpace ${NS}>
   <c:chart>
     <c:title>
@@ -7573,43 +7573,43 @@ describe("parseChart — titleOverlay", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it('surfaces <c:title><c:overlay val="1"/></c:title> as true (non-default)', () => {
-    const chart = parseChart(withTitle("1"));
-    expect(chart?.title).toBe("Sales");
-    expect(chart?.titleOverlay).toBe(true);
-  });
+    const chart = parseChart(withTitle("1"))
+    expect(chart?.title).toBe("Sales")
+    expect(chart?.titleOverlay).toBe(true)
+  })
 
   it("collapses the OOXML default false to undefined (writer absence)", () => {
     // The default carried explicitly by Excel's reference serialization
     // round-trips identically to absence of the field.
-    const chart = parseChart(withTitle("0"));
-    expect(chart?.title).toBe("Sales");
-    expect(chart?.titleOverlay).toBeUndefined();
-  });
+    const chart = parseChart(withTitle("0"))
+    expect(chart?.title).toBe("Sales")
+    expect(chart?.titleOverlay).toBeUndefined()
+  })
 
   it("returns undefined when the title element omits <c:overlay>", () => {
-    const chart = parseChart(withTitle());
-    expect(chart?.title).toBe("Sales");
-    expect(chart?.titleOverlay).toBeUndefined();
-  });
+    const chart = parseChart(withTitle())
+    expect(chart?.title).toBe("Sales")
+    expect(chart?.titleOverlay).toBeUndefined()
+  })
 
   it("accepts the OOXML true / false spellings on the val attribute", () => {
     // The OOXML schema for `xsd:boolean` accepts `"true"` / `"false"`
     // alongside `"1"` / `"0"`. Hucre tolerates both shapes — a hand-
     // edited template using `true` should round-trip.
-    expect(parseChart(withTitle("true"))?.titleOverlay).toBe(true);
-  });
+    expect(parseChart(withTitle("true"))?.titleOverlay).toBe(true)
+  })
 
   it("collapses the 'false' spelling to undefined as well", () => {
-    expect(parseChart(withTitle("false"))?.titleOverlay).toBeUndefined();
-  });
+    expect(parseChart(withTitle("false"))?.titleOverlay).toBeUndefined()
+  })
 
   it("drops unknown overlay values rather than fabricate one", () => {
-    expect(parseChart(withTitle("bogus"))?.titleOverlay).toBeUndefined();
-  });
+    expect(parseChart(withTitle("bogus"))?.titleOverlay).toBeUndefined()
+  })
 
   it("ignores a missing val attribute on <c:overlay>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7626,9 +7626,9 @@ describe("parseChart — titleOverlay", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.titleOverlay).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.titleOverlay).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:title> element at all", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7637,11 +7637,11 @@ describe("parseChart — titleOverlay", () => {
       <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.title).toBeUndefined();
-    expect(chart?.titleOverlay).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.title).toBeUndefined()
+    expect(chart?.titleOverlay).toBeUndefined()
+  })
 
   it("surfaces the overlay flag on every chart family that emits a title", () => {
     // The element lives on <c:title>, a chart-level sibling of
@@ -7662,11 +7662,11 @@ describe("parseChart — titleOverlay", () => {
       <c:${kind}><c:ser><c:idx val="0"/></c:ser></c:${kind}>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-      const chart = parseChart(xml);
-      expect(chart?.titleOverlay).toBe(true);
+</c:chartSpace>`
+      const chart = parseChart(xml)
+      expect(chart?.titleOverlay).toBe(true)
     }
-  });
+  })
 
   it("co-exists independently with the legend overlay flag", () => {
     // The chart-title `<c:overlay>` lives on `<c:title>`, while the
@@ -7691,11 +7691,11 @@ describe("parseChart — titleOverlay", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleOverlay).toBe(true);
-    expect(chart?.legendOverlay).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleOverlay).toBe(true)
+    expect(chart?.legendOverlay).toBeUndefined()
+  })
 
   it("co-exists with other chart-level toggles", () => {
     // The title overlay flag should not interfere with sibling chart-
@@ -7722,15 +7722,15 @@ describe("parseChart — titleOverlay", () => {
     <c:plotVisOnly val="0"/>
     <c:dispBlanksAs val="zero"/>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.title).toBe("Sales");
-    expect(chart?.titleOverlay).toBe(true);
-    expect(chart?.roundedCorners).toBe(true);
-    expect(chart?.plotVisOnly).toBe(false);
-    expect(chart?.dispBlanksAs).toBe("zero");
-    expect(chart?.varyColors).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.title).toBe("Sales")
+    expect(chart?.titleOverlay).toBe(true)
+    expect(chart?.roundedCorners).toBe(true)
+    expect(chart?.plotVisOnly).toBe(false)
+    expect(chart?.dispBlanksAs).toBe("zero")
+    expect(chart?.varyColors).toBe(true)
+  })
 
   it("does not pull <c:overlay> from a sibling element by mistake", () => {
     // The reader must scope the lookup to direct `<c:title>` children
@@ -7753,17 +7753,17 @@ describe("parseChart — titleOverlay", () => {
       <c:overlay val="1"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleOverlay).toBeUndefined();
-    expect(chart?.legendOverlay).toBe(true);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleOverlay).toBeUndefined()
+    expect(chart?.legendOverlay).toBe(true)
+  })
+})
 
 // ── parseChart — axis crosses / crossesAt ──────────────────────────
 
 describe("parseChart — axis crosses / crossesAt", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces crosses="min" on the category axis', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7775,12 +7775,12 @@ describe("parseChart — axis crosses / crossesAt", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.crosses).toBe("min");
-    expect(chart?.axes?.x?.crossesAt).toBeUndefined();
-    expect(chart?.axes?.y?.crosses).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.crosses).toBe("min")
+    expect(chart?.axes?.x?.crossesAt).toBeUndefined()
+    expect(chart?.axes?.y?.crosses).toBeUndefined()
+  })
 
   it('surfaces crosses="max" on the value axis', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7792,11 +7792,11 @@ describe("parseChart — axis crosses / crossesAt", () => {
       <c:crosses val="max"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.crosses).toBeUndefined();
-    expect(chart?.axes?.y?.crosses).toBe("max");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.crosses).toBeUndefined()
+    expect(chart?.axes?.y?.crosses).toBe("max")
+  })
 
   it('collapses the OOXML default crosses="autoZero" to undefined', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7811,10 +7811,10 @@ describe("parseChart — axis crosses / crossesAt", () => {
       <c:crosses val="autoZero"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("collapses absence of <c:crosses> to undefined", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7823,10 +7823,10 @@ describe("parseChart — axis crosses / crossesAt", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("returns undefined for unknown crosses tokens", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7838,10 +7838,10 @@ describe("parseChart — axis crosses / crossesAt", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <c:crosses> is missing the val attribute", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7853,10 +7853,10 @@ describe("parseChart — axis crosses / crossesAt", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("surfaces a positive crossesAt on the value axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7868,11 +7868,11 @@ describe("parseChart — axis crosses / crossesAt", () => {
       <c:crossesAt val="50"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.crossesAt).toBe(50);
-    expect(chart?.axes?.y?.crosses).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.crossesAt).toBe(50)
+    expect(chart?.axes?.y?.crosses).toBeUndefined()
+  })
 
   it("surfaces a negative crossesAt", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7884,10 +7884,10 @@ describe("parseChart — axis crosses / crossesAt", () => {
       <c:crossesAt val="-25.5"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.crossesAt).toBe(-25.5);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.crossesAt).toBe(-25.5)
+  })
 
   it("preserves crossesAt=0 (distinct from autoZero)", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7899,11 +7899,11 @@ describe("parseChart — axis crosses / crossesAt", () => {
       <c:crossesAt val="0"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.crossesAt).toBe(0);
-    expect(chart?.axes?.y?.crosses).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.crossesAt).toBe(0)
+    expect(chart?.axes?.y?.crosses).toBeUndefined()
+  })
 
   it("returns undefined when <c:crossesAt> is missing the val attribute", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7915,10 +7915,10 @@ describe("parseChart — axis crosses / crossesAt", () => {
       <c:crossesAt/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <c:crossesAt val> is non-numeric", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -7930,10 +7930,10 @@ describe("parseChart — axis crosses / crossesAt", () => {
       <c:crossesAt val="middle"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("prefers crossesAt over crosses when both are present (XSD choice)", () => {
     // The OOXML schema places <c:crosses> and <c:crossesAt> in an XSD
@@ -7950,11 +7950,11 @@ describe("parseChart — axis crosses / crossesAt", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.crosses).toBeUndefined();
-    expect(chart?.axes?.x?.crossesAt).toBe(42);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.crosses).toBeUndefined()
+    expect(chart?.axes?.x?.crossesAt).toBe(42)
+  })
 
   it("falls back to crosses when crossesAt is unparseable", () => {
     // Same malformed-template guard, the other direction: when
@@ -7970,11 +7970,11 @@ describe("parseChart — axis crosses / crossesAt", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.crosses).toBe("min");
-    expect(chart?.axes?.x?.crossesAt).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.crosses).toBe("min")
+    expect(chart?.axes?.x?.crossesAt).toBeUndefined()
+  })
 
   it("surfaces crosses on a scatter chart's value-axis pair", () => {
     // Scatter has two valAx — the first (axPos="b") is the X axis, the
@@ -7995,11 +7995,11 @@ describe("parseChart — axis crosses / crossesAt", () => {
       <c:crosses val="max"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.crossesAt).toBe(3.14);
-    expect(chart?.axes?.y?.crosses).toBe("max");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.crossesAt).toBe(3.14)
+    expect(chart?.axes?.y?.crosses).toBe("max")
+  })
 
   it("co-surfaces crosses alongside title and tick rendering", () => {
     const xml = `<c:chartSpace ${NS}
@@ -8014,15 +8014,15 @@ describe("parseChart — axis crosses / crossesAt", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Region",
       tickLblPos: "low",
       crosses: "min",
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — drop / hi-low lines ──────────────────────────────
 
@@ -8038,7 +8038,7 @@ describe("parseChart — drop lines", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   function areaChartWithExtras(extras: string): string {
@@ -8052,13 +8052,13 @@ describe("parseChart — drop lines", () => {
       </c:areaChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces dropLines=true on a line chart that declares <c:dropLines/>", () => {
-    const xml = lineChartWithExtras("<c:dropLines/>");
-    expect(parseChart(xml)?.dropLines).toBe(true);
-  });
+    const xml = lineChartWithExtras("<c:dropLines/>")
+    expect(parseChart(xml)?.dropLines).toBe(true)
+  })
 
   it("surfaces dropLines=true on a line chart that declares <c:dropLines> with a nested <c:spPr>", () => {
     // CT_ChartLines may carry `<c:spPr>` for stroke styling. The
@@ -8067,24 +8067,24 @@ describe("parseChart — drop lines", () => {
     // surfaces `true` so the clone bridge can carry the intent.
     const xml = lineChartWithExtras(
       `<c:dropLines><c:spPr><a:ln w="9525"><a:solidFill><a:srgbClr val="808080"/></a:solidFill></a:ln></c:spPr></c:dropLines>`,
-    );
-    expect(parseChart(xml)?.dropLines).toBe(true);
-  });
+    )
+    expect(parseChart(xml)?.dropLines).toBe(true)
+  })
 
   it("returns undefined when the line chart omits <c:dropLines>", () => {
-    const xml = lineChartWithExtras("");
-    expect(parseChart(xml)?.dropLines).toBeUndefined();
-  });
+    const xml = lineChartWithExtras("")
+    expect(parseChart(xml)?.dropLines).toBeUndefined()
+  })
 
   it("surfaces dropLines=true on an area chart that declares <c:dropLines/>", () => {
-    const xml = areaChartWithExtras("<c:dropLines/>");
-    expect(parseChart(xml)?.dropLines).toBe(true);
-  });
+    const xml = areaChartWithExtras("<c:dropLines/>")
+    expect(parseChart(xml)?.dropLines).toBe(true)
+  })
 
   it("returns undefined when the area chart omits <c:dropLines>", () => {
-    const xml = areaChartWithExtras("");
-    expect(parseChart(xml)?.dropLines).toBeUndefined();
-  });
+    const xml = areaChartWithExtras("")
+    expect(parseChart(xml)?.dropLines).toBeUndefined()
+  })
 
   it("does not surface dropLines for chart kinds that have no <c:dropLines> slot (bar)", () => {
     // The reader only inspects line / line3D / area / area3D children;
@@ -8099,9 +8099,9 @@ describe("parseChart — drop lines", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dropLines).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dropLines).toBeUndefined()
+  })
 
   it("surfaces dropLines on the first line/area chart-type element only (combo workbook)", () => {
     // Combo charts (multi-kind plot area) surface the first matching
@@ -8118,10 +8118,10 @@ describe("parseChart — drop lines", () => {
       </c:areaChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dropLines).toBe(true);
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.dropLines).toBe(true)
+  })
+})
 
 describe("parseChart — high-low lines", () => {
   function lineChartWithExtras(extras: string): string {
@@ -8135,25 +8135,25 @@ describe("parseChart — high-low lines", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces hiLowLines=true on a line chart that declares <c:hiLowLines/>", () => {
-    const xml = lineChartWithExtras("<c:hiLowLines/>");
-    expect(parseChart(xml)?.hiLowLines).toBe(true);
-  });
+    const xml = lineChartWithExtras("<c:hiLowLines/>")
+    expect(parseChart(xml)?.hiLowLines).toBe(true)
+  })
 
   it("surfaces hiLowLines=true on a line chart that declares <c:hiLowLines> with a nested <c:spPr>", () => {
     const xml = lineChartWithExtras(
       `<c:hiLowLines><c:spPr><a:ln w="9525"><a:solidFill><a:srgbClr val="808080"/></a:solidFill></a:ln></c:spPr></c:hiLowLines>`,
-    );
-    expect(parseChart(xml)?.hiLowLines).toBe(true);
-  });
+    )
+    expect(parseChart(xml)?.hiLowLines).toBe(true)
+  })
 
   it("returns undefined when the line chart omits <c:hiLowLines>", () => {
-    const xml = lineChartWithExtras("");
-    expect(parseChart(xml)?.hiLowLines).toBeUndefined();
-  });
+    const xml = lineChartWithExtras("")
+    expect(parseChart(xml)?.hiLowLines).toBeUndefined()
+  })
 
   it("does not surface hiLowLines on an area chart (no slot in the OOXML schema)", () => {
     // The reader's per-kind gate excludes `area` / `area3D` from the
@@ -8168,9 +8168,9 @@ describe("parseChart — high-low lines", () => {
       </c:areaChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.hiLowLines).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.hiLowLines).toBeUndefined()
+  })
 
   it("does not surface hiLowLines for chart kinds that have no slot (bar)", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -8182,16 +8182,16 @@ describe("parseChart — high-low lines", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.hiLowLines).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.hiLowLines).toBeUndefined()
+  })
 
   it("surfaces both dropLines and hiLowLines together on a line chart", () => {
-    const xml = lineChartWithExtras("<c:dropLines/><c:hiLowLines/>");
-    const parsed = parseChart(xml);
-    expect(parsed?.dropLines).toBe(true);
-    expect(parsed?.hiLowLines).toBe(true);
-  });
+    const xml = lineChartWithExtras("<c:dropLines/><c:hiLowLines/>")
+    const parsed = parseChart(xml)
+    expect(parsed?.dropLines).toBe(true)
+    expect(parsed?.hiLowLines).toBe(true)
+  })
 
   it("surfaces hiLowLines on a stockChart (the third OOXML host for the element)", () => {
     // hucre's writer never authors `<c:stockChart>`, but a parsed
@@ -8206,10 +8206,10 @@ describe("parseChart — high-low lines", () => {
       </c:stockChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.hiLowLines).toBe(true);
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.hiLowLines).toBe(true)
+  })
+})
 
 // ── parseChart — series lines ──────────────────────────────────────
 
@@ -8227,13 +8227,13 @@ describe("parseChart — series lines", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces serLines=true on a bar chart that declares <c:serLines/>", () => {
-    const xml = barChartWithExtras("<c:serLines/>");
-    expect(parseChart(xml)?.serLines).toBe(true);
-  });
+    const xml = barChartWithExtras("<c:serLines/>")
+    expect(parseChart(xml)?.serLines).toBe(true)
+  })
 
   it("surfaces serLines=true on a bar chart that declares <c:serLines> with a nested <c:spPr>", () => {
     // CT_ChartLines may carry `<c:spPr>` for stroke styling. The
@@ -8242,14 +8242,14 @@ describe("parseChart — series lines", () => {
     // surfaces `true` so the clone bridge can carry the intent.
     const xml = barChartWithExtras(
       `<c:serLines><c:spPr><a:ln w="9525"><a:solidFill><a:srgbClr val="808080"/></a:solidFill></a:ln></c:spPr></c:serLines>`,
-    );
-    expect(parseChart(xml)?.serLines).toBe(true);
-  });
+    )
+    expect(parseChart(xml)?.serLines).toBe(true)
+  })
 
   it("returns undefined when the bar chart omits <c:serLines>", () => {
-    const xml = barChartWithExtras("");
-    expect(parseChart(xml)?.serLines).toBeUndefined();
-  });
+    const xml = barChartWithExtras("")
+    expect(parseChart(xml)?.serLines).toBeUndefined()
+  })
 
   it("does not surface serLines for chart kinds that have no <c:serLines> slot (line)", () => {
     // The reader only inspects bar / ofPie children; a stray
@@ -8265,9 +8265,9 @@ describe("parseChart — series lines", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.serLines).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.serLines).toBeUndefined()
+  })
 
   it("does not surface serLines for chart kinds that have no slot (pie)", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -8280,9 +8280,9 @@ describe("parseChart — series lines", () => {
       </c:pieChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.serLines).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.serLines).toBeUndefined()
+  })
 
   it("does not surface serLines for chart kinds that have no slot (area)", () => {
     const xml = `<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
@@ -8295,9 +8295,9 @@ describe("parseChart — series lines", () => {
       </c:areaChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.serLines).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.serLines).toBeUndefined()
+  })
 
   it("surfaces serLines on an ofPieChart (the second OOXML host for the element)", () => {
     // hucre's writer never authors `<c:ofPieChart>`, but a parsed
@@ -8313,9 +8313,9 @@ describe("parseChart — series lines", () => {
       </c:ofPieChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.serLines).toBe(true);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.serLines).toBe(true)
+  })
 
   it("surfaces serLines on the first bar/ofPie chart-type element only (combo workbook)", () => {
     // Combo charts (multi-kind plot area) surface the first matching
@@ -8335,9 +8335,9 @@ describe("parseChart — series lines", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.serLines).toBe(true);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.serLines).toBe(true)
+  })
 
   it("surfaces serLines on a clustered bar chart even though Excel paints nothing", () => {
     // The OOXML element pins regardless of the grouping; Excel only
@@ -8354,15 +8354,15 @@ describe("parseChart — series lines", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.serLines).toBe(true);
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.serLines).toBe(true)
+  })
+})
 
 // ── parseChart — upDownBars ────────────────────────────────────────
 
 describe("parseChart — upDownBars", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it("surfaces upDownBars=true on a line chart with the bare element", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -8377,10 +8377,10 @@ describe("parseChart — upDownBars", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBe(true)
+  })
 
   it("surfaces upDownBars=true when the element carries the optional gapWidth child", () => {
     // Excel's reference serialization includes <c:gapWidth val="150"/>
@@ -8400,10 +8400,10 @@ describe("parseChart — upDownBars", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBe(true)
+  })
 
   it("surfaces upDownBars=true when the element carries upBars / downBars children", () => {
     // <c:upBars> and <c:downBars> are CT_UpDownBar — each with an
@@ -8434,10 +8434,10 @@ describe("parseChart — upDownBars", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBe(true)
+  })
 
   it("collapses absence of <c:upDownBars> to undefined on a line chart", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -8451,10 +8451,10 @@ describe("parseChart — upDownBars", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBeUndefined()
+  })
 
   it("ignores <c:upDownBars> on a bar chart (CT_BarChart rejects the element)", () => {
     // The OOXML schema places <c:upDownBars> on CT_LineChart /
@@ -8474,10 +8474,10 @@ describe("parseChart — upDownBars", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBeUndefined()
+  })
 
   it("ignores <c:upDownBars> on an area chart (CT_AreaChart rejects the element)", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -8492,10 +8492,10 @@ describe("parseChart — upDownBars", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBeUndefined()
+  })
 
   it("ignores <c:upDownBars> on a scatter chart (CT_ScatterChart rejects the element)", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -8510,10 +8510,10 @@ describe("parseChart — upDownBars", () => {
     <c:valAx><c:axId val="1"/></c:valAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBeUndefined()
+  })
 
   it("surfaces upDownBars on a stock chart (CT_StockChart accepts the element)", () => {
     // CT_StockChart is where Excel typically paints up/down bars in the
@@ -8530,10 +8530,10 @@ describe("parseChart — upDownBars", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBe(true)
+  })
 
   it("surfaces upDownBars on a 3D line chart (CT_Line3DChart accepts the element)", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -8550,10 +8550,10 @@ describe("parseChart — upDownBars", () => {
     <c:valAx><c:axId val="2"/></c:valAx>
     <c:serAx><c:axId val="3"/></c:serAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBe(true)
+  })
 
   it("co-surfaces upDownBars alongside other chart-level fields", () => {
     // upDownBars sits inside the chart-type element (line/stock) and
@@ -8578,18 +8578,18 @@ describe("parseChart — upDownBars", () => {
     <c:plotVisOnly val="0"/>
     <c:dispBlanksAs val="zero"/>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBe(true);
-    expect(chart?.plotVisOnly).toBe(false);
-    expect(chart?.dispBlanksAs).toBe("zero");
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBe(true)
+    expect(chart?.plotVisOnly).toBe(false)
+    expect(chart?.dispBlanksAs).toBe("zero")
+  })
+})
 
 // ── parseChart — upDownBars gap width ────────────────────────────────
 
 describe("parseChart — upDownBars gap width", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   function makeLineChart(udbBody: string): string {
     return `<c:chartSpace ${NS}>
@@ -8604,82 +8604,82 @@ describe("parseChart — upDownBars gap width", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces a custom gap width on the up/down bars", () => {
-    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="200"/></c:upDownBars>`);
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBe(true);
-    expect(chart?.upDownBarsGapWidth).toBe(200);
-  });
+    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="200"/></c:upDownBars>`)
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBe(true)
+    expect(chart?.upDownBarsGapWidth).toBe(200)
+  })
 
   it("surfaces a tight gap width of 0", () => {
-    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="0"/></c:upDownBars>`);
-    const chart = parseChart(xml);
-    expect(chart?.upDownBarsGapWidth).toBe(0);
-  });
+    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="0"/></c:upDownBars>`)
+    const chart = parseChart(xml)
+    expect(chart?.upDownBarsGapWidth).toBe(0)
+  })
 
   it("surfaces the maximum gap width of 500", () => {
-    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="500"/></c:upDownBars>`);
-    const chart = parseChart(xml);
-    expect(chart?.upDownBarsGapWidth).toBe(500);
-  });
+    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="500"/></c:upDownBars>`)
+    const chart = parseChart(xml)
+    expect(chart?.upDownBarsGapWidth).toBe(500)
+  })
 
   it("collapses the OOXML default 150 to undefined", () => {
     // <c:gapWidth val="150"/> is Excel's reference value; the parser
     // collapses it for round-trip symmetry with the writer's default
     // — absence and `150` must round-trip identically.
-    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="150"/></c:upDownBars>`);
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBe(true);
-    expect(chart?.upDownBarsGapWidth).toBeUndefined();
-  });
+    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="150"/></c:upDownBars>`)
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBe(true)
+    expect(chart?.upDownBarsGapWidth).toBeUndefined()
+  })
 
   it("returns undefined when <c:gapWidth> is absent", () => {
-    const xml = makeLineChart(`<c:upDownBars/>`);
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBe(true);
-    expect(chart?.upDownBarsGapWidth).toBeUndefined();
-  });
+    const xml = makeLineChart(`<c:upDownBars/>`)
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBe(true)
+    expect(chart?.upDownBarsGapWidth).toBeUndefined()
+  })
 
   it("drops out-of-range values above the schema cap of 500", () => {
     // The OOXML schema (ST_GapAmount) restricts the value to 0..500;
     // the reader drops out-of-range values rather than clamp so a
     // corrupt template does not silently rewrite as a different gap.
-    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="800"/></c:upDownBars>`);
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBe(true);
-    expect(chart?.upDownBarsGapWidth).toBeUndefined();
-  });
+    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="800"/></c:upDownBars>`)
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBe(true)
+    expect(chart?.upDownBarsGapWidth).toBeUndefined()
+  })
 
   it("drops negative values below the schema floor of 0", () => {
-    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="-25"/></c:upDownBars>`);
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBe(true);
-    expect(chart?.upDownBarsGapWidth).toBeUndefined();
-  });
+    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="-25"/></c:upDownBars>`)
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBe(true)
+    expect(chart?.upDownBarsGapWidth).toBeUndefined()
+  })
 
   it("drops non-numeric val attributes", () => {
-    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="wide"/></c:upDownBars>`);
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBe(true);
-    expect(chart?.upDownBarsGapWidth).toBeUndefined();
-  });
+    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="wide"/></c:upDownBars>`)
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBe(true)
+    expect(chart?.upDownBarsGapWidth).toBeUndefined()
+  })
 
   it("drops a missing val attribute", () => {
-    const xml = makeLineChart(`<c:upDownBars><c:gapWidth/></c:upDownBars>`);
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBe(true);
-    expect(chart?.upDownBarsGapWidth).toBeUndefined();
-  });
+    const xml = makeLineChart(`<c:upDownBars><c:gapWidth/></c:upDownBars>`)
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBe(true)
+    expect(chart?.upDownBarsGapWidth).toBeUndefined()
+  })
 
   it("returns undefined when <c:upDownBars> itself is absent", () => {
-    const xml = makeLineChart("");
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBeUndefined();
-    expect(chart?.upDownBarsGapWidth).toBeUndefined();
-  });
+    const xml = makeLineChart("")
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBeUndefined()
+    expect(chart?.upDownBarsGapWidth).toBeUndefined()
+  })
 
   it("ignores the gap width on a bar chart (CT_BarChart has no <c:upDownBars> slot)", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -8695,11 +8695,11 @@ describe("parseChart — upDownBars gap width", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBeUndefined();
-    expect(chart?.upDownBarsGapWidth).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBeUndefined()
+    expect(chart?.upDownBarsGapWidth).toBeUndefined()
+  })
 
   it("surfaces the gap width on a stock chart (CT_StockChart accepts <c:upDownBars>)", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -8713,11 +8713,11 @@ describe("parseChart — upDownBars gap width", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBe(true);
-    expect(chart?.upDownBarsGapWidth).toBe(80);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBe(true)
+    expect(chart?.upDownBarsGapWidth).toBe(80)
+  })
 
   it("surfaces the gap width on a 3D line chart (CT_Line3DChart accepts <c:upDownBars>)", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -8734,27 +8734,27 @@ describe("parseChart — upDownBars gap width", () => {
     <c:valAx><c:axId val="2"/></c:valAx>
     <c:serAx><c:axId val="3"/></c:serAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.upDownBars).toBe(true);
-    expect(chart?.upDownBarsGapWidth).toBe(120);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.upDownBars).toBe(true)
+    expect(chart?.upDownBarsGapWidth).toBe(120)
+  })
 
   it("does not collide with the bar-chart gap width field", () => {
     // Bar charts also carry <c:gapWidth> — make sure surfacing the
     // up/down-bars value does not leak into / collide with the
     // bar-chart `gapWidth` field.
-    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="200"/></c:upDownBars>`);
-    const chart = parseChart(xml);
-    expect(chart?.upDownBarsGapWidth).toBe(200);
-    expect(chart?.gapWidth).toBeUndefined();
-  });
-});
+    const xml = makeLineChart(`<c:upDownBars><c:gapWidth val="200"/></c:upDownBars>`)
+    const chart = parseChart(xml)
+    expect(chart?.upDownBarsGapWidth).toBe(200)
+    expect(chart?.gapWidth).toBeUndefined()
+  })
+})
 
 // ── parseChart — axis dispUnits ──────────────────────────────────────
 
 describe("parseChart — axis dispUnits", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it("surfaces a built-in unit preset on the value axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -8766,11 +8766,11 @@ describe("parseChart — axis dispUnits", () => {
       <c:dispUnits><c:builtInUnit val="millions"/></c:dispUnits>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.dispUnits).toEqual({ unit: "millions" });
-    expect(chart?.axes?.x?.dispUnits).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.dispUnits).toEqual({ unit: "millions" })
+    expect(chart?.axes?.x?.dispUnits).toBeUndefined()
+  })
 
   it("surfaces showLabel when <c:dispUnitsLbl> is present", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -8785,10 +8785,10 @@ describe("parseChart — axis dispUnits", () => {
       </c:dispUnits>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.dispUnits).toEqual({ unit: "thousands", showLabel: true });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.dispUnits).toEqual({ unit: "thousands", showLabel: true })
+  })
 
   it("collapses dispUnits to undefined on a category axis (catAx rejects the element)", () => {
     // The OOXML schema places <c:dispUnits> exclusively on CT_ValAx, so a
@@ -8804,10 +8804,10 @@ describe("parseChart — axis dispUnits", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.dispUnits).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.dispUnits).toBeUndefined()
+  })
 
   it("drops an unknown ST_BuiltInUnit token rather than fabricating a value", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -8819,10 +8819,10 @@ describe("parseChart — axis dispUnits", () => {
       <c:dispUnits><c:builtInUnit val="quintillions"/></c:dispUnits>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.dispUnits).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.dispUnits).toBeUndefined()
+  })
 
   it("drops the parsed value when neither <c:builtInUnit> nor <c:custUnit> resolves", () => {
     // <c:dispUnits> has an xsd:choice between <c:builtInUnit> and
@@ -8834,8 +8834,8 @@ describe("parseChart — axis dispUnits", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/><c:dispUnits/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(bare)?.axes?.y?.dispUnits).toBeUndefined();
+</c:chartSpace>`
+    expect(parseChart(bare)?.axes?.y?.dispUnits).toBeUndefined()
 
     const noVal = `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
@@ -8843,8 +8843,8 @@ describe("parseChart — axis dispUnits", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/><c:dispUnits><c:builtInUnit/></c:dispUnits></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(noVal)?.axes?.y?.dispUnits).toBeUndefined();
+</c:chartSpace>`
+    expect(parseChart(noVal)?.axes?.y?.dispUnits).toBeUndefined()
 
     const noCustVal = `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
@@ -8852,9 +8852,9 @@ describe("parseChart — axis dispUnits", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/><c:dispUnits><c:custUnit/></c:dispUnits></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(noCustVal)?.axes?.y?.dispUnits).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(noCustVal)?.axes?.y?.dispUnits).toBeUndefined()
+  })
 
   it("surfaces dispUnits on both scatter axes (both are valAx)", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -8874,11 +8874,11 @@ describe("parseChart — axis dispUnits", () => {
       <c:dispUnits><c:builtInUnit val="billions"/><c:dispUnitsLbl/></c:dispUnits>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.dispUnits).toEqual({ unit: "hundreds" });
-    expect(chart?.axes?.y?.dispUnits).toEqual({ unit: "billions", showLabel: true });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.dispUnits).toEqual({ unit: "hundreds" })
+    expect(chart?.axes?.y?.dispUnits).toEqual({ unit: "billions", showLabel: true })
+  })
 
   it("collapses dispUnits to undefined when the chart has no <c:dispUnits>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -8887,10 +8887,10 @@ describe("parseChart — axis dispUnits", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.dispUnits).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.dispUnits).toBeUndefined()
+  })
 
   it("surfaces a custom numeric divisor on the value axis", () => {
     // Excel's "Display units → Other" path emits <c:custUnit val=".."/>
@@ -8906,10 +8906,10 @@ describe("parseChart — axis dispUnits", () => {
       <c:dispUnits><c:custUnit val="86400"/></c:dispUnits>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.dispUnits).toEqual({ custUnit: 86400 });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.dispUnits).toEqual({ custUnit: 86400 })
+  })
 
   it("parses fractional custUnit values per the OOXML CT_Double schema", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -8921,10 +8921,10 @@ describe("parseChart — axis dispUnits", () => {
       <c:dispUnits><c:custUnit val="2.5"/></c:dispUnits>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.dispUnits).toEqual({ custUnit: 2.5 });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.dispUnits).toEqual({ custUnit: 2.5 })
+  })
 
   it("surfaces showLabel alongside custUnit when <c:dispUnitsLbl> is present", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -8939,10 +8939,10 @@ describe("parseChart — axis dispUnits", () => {
       </c:dispUnits>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.dispUnits).toEqual({ custUnit: 500, showLabel: true });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.dispUnits).toEqual({ custUnit: 500, showLabel: true })
+  })
 
   it("drops custUnit values that are non-positive, non-finite, or malformed", () => {
     // OOXML CT_Double accepts any double, but a divisor of 0 or below
@@ -8958,10 +8958,10 @@ describe("parseChart — axis dispUnits", () => {
       <c:dispUnits><c:custUnit val="${raw}"/></c:dispUnits>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.axes?.y?.dispUnits).toBeUndefined();
+</c:chartSpace>`
+      expect(parseChart(xml)?.axes?.y?.dispUnits).toBeUndefined()
     }
-  });
+  })
 
   it("prefers <c:custUnit> over <c:builtInUnit> when a malformed template declares both", () => {
     // The OOXML schema's xsd:choice forbids both children, but a
@@ -8980,10 +8980,10 @@ describe("parseChart — axis dispUnits", () => {
       </c:dispUnits>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.dispUnits).toEqual({ custUnit: 1500 });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.dispUnits).toEqual({ custUnit: 1500 })
+  })
 
   it("falls back to <c:builtInUnit> when <c:custUnit> is present but malformed", () => {
     // A `<c:custUnit>` whose `val` fails the positive-finite gate
@@ -9002,10 +9002,10 @@ describe("parseChart — axis dispUnits", () => {
       </c:dispUnits>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.dispUnits).toEqual({ unit: "hundreds" });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.dispUnits).toEqual({ unit: "hundreds" })
+  })
 
   it("collapses custUnit to undefined on a category axis (catAx rejects <c:dispUnits>)", () => {
     // Same scope rule as the built-in preset — `<c:dispUnits>` lives
@@ -9020,16 +9020,16 @@ describe("parseChart — axis dispUnits", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.dispUnits).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.dispUnits).toBeUndefined()
+  })
+})
 
 // ── parseChart — chart style preset ────────────────────────────────
 
 describe("parseChart — chart style preset", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces <c:style val="2"/> on <c:chartSpace> as the integer 2', () => {
     // Excel's reference serialization for a fresh chart pins style 2 —
@@ -9044,9 +9044,9 @@ describe("parseChart — chart style preset", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.style).toBe(2);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.style).toBe(2)
+  })
 
   it("surfaces a templated mid-range preset (style 27)", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -9059,9 +9059,9 @@ describe("parseChart — chart style preset", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.style).toBe(27);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.style).toBe(27)
+  })
 
   it("surfaces the OOXML range bounds (1 and 48)", () => {
     for (const val of [1, 48]) {
@@ -9072,10 +9072,10 @@ describe("parseChart — chart style preset", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.style).toBe(val);
+</c:chartSpace>`
+      expect(parseChart(xml)?.style).toBe(val)
     }
-  });
+  })
 
   it("returns undefined when the chartSpace has no <c:style> element", () => {
     // Absence is the writer's default — the reader surfaces nothing
@@ -9087,9 +9087,9 @@ describe("parseChart — chart style preset", () => {
       <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.style).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.style).toBeUndefined()
+  })
 
   it("drops out-of-range style values (0 / 49)", () => {
     // CT_Style declares `val` as `xsd:unsignedByte` in the gallery
@@ -9103,10 +9103,10 @@ describe("parseChart — chart style preset", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.style).toBeUndefined();
+</c:chartSpace>`
+      expect(parseChart(xml)?.style).toBeUndefined()
     }
-  });
+  })
 
   it("drops non-integer style values rather than fabricate one", () => {
     // The OOXML schema forbids fractional / negative / alpha values.
@@ -9118,10 +9118,10 @@ describe("parseChart — chart style preset", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.style).toBeUndefined();
+</c:chartSpace>`
+      expect(parseChart(xml)?.style).toBeUndefined()
     }
-  });
+  })
 
   it("ignores a missing val attribute on <c:style>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -9131,9 +9131,9 @@ describe("parseChart — chart style preset", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.style).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.style).toBeUndefined()
+  })
 
   it("surfaces style alongside roundedCorners and other chart-level toggles", () => {
     // <c:style> sits on <c:chartSpace> (after <c:roundedCorners>) per
@@ -9153,20 +9153,20 @@ describe("parseChart — chart style preset", () => {
     <c:plotVisOnly val="0"/>
     <c:dispBlanksAs val="zero"/>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.style).toBe(34);
-    expect(chart?.roundedCorners).toBe(true);
-    expect(chart?.plotVisOnly).toBe(false);
-    expect(chart?.dispBlanksAs).toBe("zero");
-    expect(chart?.varyColors).toBe(true);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.style).toBe(34)
+    expect(chart?.roundedCorners).toBe(true)
+    expect(chart?.plotVisOnly).toBe(false)
+    expect(chart?.dispBlanksAs).toBe("zero")
+    expect(chart?.varyColors).toBe(true)
+  })
+})
 
 // ── parseChart — chart editing locale (lang) ───────────────────────
 
 describe("parseChart — chart editing locale", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces <c:lang val="en-US"/> on <c:chartSpace> as the string "en-US"', () => {
     // Excel's reference serialization for a fresh chart authored on
@@ -9182,9 +9182,9 @@ describe("parseChart — chart editing locale", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.lang).toBe("en-US");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.lang).toBe("en-US")
+  })
 
   it("surfaces a templated non-English locale (tr-TR)", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -9197,9 +9197,9 @@ describe("parseChart — chart editing locale", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.lang).toBe("tr-TR");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.lang).toBe("tr-TR")
+  })
 
   it("surfaces locale shapes Excel actually emits", () => {
     // Sample of the BCP-47 forms <c:lang> accepts under xsd:language.
@@ -9211,10 +9211,10 @@ describe("parseChart — chart editing locale", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.lang).toBe(tag);
+</c:chartSpace>`
+      expect(parseChart(xml)?.lang).toBe(tag)
     }
-  });
+  })
 
   it("returns undefined when the chartSpace has no <c:lang> element", () => {
     // Absence is the writer's default — the reader surfaces nothing
@@ -9226,9 +9226,9 @@ describe("parseChart — chart editing locale", () => {
       <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.lang).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.lang).toBeUndefined()
+  })
 
   it("drops malformed locale tokens rather than surface them", () => {
     // <c:lang> is xsd:language (BCP-47 culture name). Garbage values
@@ -9242,10 +9242,10 @@ describe("parseChart — chart editing locale", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.lang).toBeUndefined();
+</c:chartSpace>`
+      expect(parseChart(xml)?.lang).toBeUndefined()
     }
-  });
+  })
 
   it("ignores a missing val attribute on <c:lang>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -9255,9 +9255,9 @@ describe("parseChart — chart editing locale", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.lang).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.lang).toBeUndefined()
+  })
 
   it("surfaces lang alongside other chart-space toggles", () => {
     // <c:lang> sits before <c:roundedCorners> per CT_ChartSpace and
@@ -9278,21 +9278,21 @@ describe("parseChart — chart editing locale", () => {
     <c:plotVisOnly val="0"/>
     <c:dispBlanksAs val="zero"/>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.lang).toBe("tr-TR");
-    expect(chart?.roundedCorners).toBe(true);
-    expect(chart?.style).toBe(34);
-    expect(chart?.plotVisOnly).toBe(false);
-    expect(chart?.dispBlanksAs).toBe("zero");
-    expect(chart?.varyColors).toBe(true);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.lang).toBe("tr-TR")
+    expect(chart?.roundedCorners).toBe(true)
+    expect(chart?.style).toBe(34)
+    expect(chart?.plotVisOnly).toBe(false)
+    expect(chart?.dispBlanksAs).toBe("zero")
+    expect(chart?.varyColors).toBe(true)
+  })
+})
 
 // ── parseChart — chart date system (date1904) ──────────────────────
 
 describe("parseChart — chart date system", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces <c:date1904 val="1"/> as true', () => {
     // The non-default state — chart date references use the 1904 base
@@ -9308,9 +9308,9 @@ describe("parseChart — chart date system", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.date1904).toBe(true);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.date1904).toBe(true)
+  })
 
   it('surfaces <c:date1904 val="true"/> as true', () => {
     // OOXML accepts the textual `xsd:boolean` spellings.
@@ -9324,9 +9324,9 @@ describe("parseChart — chart date system", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.date1904).toBe(true);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.date1904).toBe(true)
+  })
 
   it('collapses <c:date1904 val="0"/> to undefined (OOXML default)', () => {
     // The OOXML default — chart uses the 1900 base. Absence and the
@@ -9342,9 +9342,9 @@ describe("parseChart — chart date system", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.date1904).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.date1904).toBeUndefined()
+  })
 
   it('collapses <c:date1904 val="false"/> to undefined', () => {
     const xml = `<c:chartSpace ${NS}>
@@ -9356,9 +9356,9 @@ describe("parseChart — chart date system", () => {
       </c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.date1904).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.date1904).toBeUndefined()
+  })
 
   it("returns undefined when the chartSpace has no <c:date1904>", () => {
     // Absence is the writer's default — the reader surfaces nothing
@@ -9373,9 +9373,9 @@ describe("parseChart — chart date system", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.date1904).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.date1904).toBeUndefined()
+  })
 
   it("ignores a missing val attribute on <c:date1904>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -9385,9 +9385,9 @@ describe("parseChart — chart date system", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.date1904).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.date1904).toBeUndefined()
+  })
 
   it("drops unknown val tokens rather than fabricate a flag", () => {
     // <c:date1904> is xsd:boolean per CT_Boolean. Anything outside
@@ -9401,10 +9401,10 @@ describe("parseChart — chart date system", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.date1904).toBeUndefined();
+</c:chartSpace>`
+      expect(parseChart(xml)?.date1904).toBeUndefined()
     }
-  });
+  })
 
   it("surfaces date1904 alongside lang and other chart-space toggles", () => {
     // <c:date1904> sits at the head of the CT_ChartSpace sequence,
@@ -9426,22 +9426,22 @@ describe("parseChart — chart date system", () => {
     <c:plotVisOnly val="0"/>
     <c:dispBlanksAs val="zero"/>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.date1904).toBe(true);
-    expect(chart?.lang).toBe("en-US");
-    expect(chart?.roundedCorners).toBe(true);
-    expect(chart?.style).toBe(34);
-    expect(chart?.plotVisOnly).toBe(false);
-    expect(chart?.dispBlanksAs).toBe("zero");
-    expect(chart?.varyColors).toBe(true);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.date1904).toBe(true)
+    expect(chart?.lang).toBe("en-US")
+    expect(chart?.roundedCorners).toBe(true)
+    expect(chart?.style).toBe(34)
+    expect(chart?.plotVisOnly).toBe(false)
+    expect(chart?.dispBlanksAs).toBe("zero")
+    expect(chart?.varyColors).toBe(true)
+  })
+})
 
 // ── parseChart — axis crossBetween ───────────────────────────────────
 
 describe("parseChart — axis crossBetween", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces a non-default <c:crossBetween val="midCat"/> on the value axis of a column chart', () => {
     // Bar / column / line / area's family default is `"between"`; pinning
@@ -9455,11 +9455,11 @@ describe("parseChart — axis crossBetween", () => {
       <c:crossBetween val="midCat"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.crossBetween).toBe("midCat");
-    expect(chart?.axes?.x?.crossBetween).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.crossBetween).toBe("midCat")
+    expect(chart?.axes?.x?.crossBetween).toBeUndefined()
+  })
 
   it('collapses the family-default <c:crossBetween val="between"/> on a column chart to undefined', () => {
     // Excel always emits `<c:crossBetween>` on every `<c:valAx>` because
@@ -9475,10 +9475,10 @@ describe("parseChart — axis crossBetween", () => {
       <c:crossBetween val="between"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.crossBetween).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.crossBetween).toBeUndefined()
+  })
 
   it('collapses the family-default <c:crossBetween val="midCat"/> on a scatter chart to undefined', () => {
     // Scatter's family default is `"midCat"` because both axes are value
@@ -9502,11 +9502,11 @@ describe("parseChart — axis crossBetween", () => {
       <c:crossBetween val="midCat"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.crossBetween).toBeUndefined();
-    expect(chart?.axes?.y?.crossBetween).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.crossBetween).toBeUndefined()
+    expect(chart?.axes?.y?.crossBetween).toBeUndefined()
+  })
 
   it('surfaces a non-default <c:crossBetween val="between"/> on a scatter chart', () => {
     // Scatter's family default is `"midCat"`; pinning `"between"` is a
@@ -9528,11 +9528,11 @@ describe("parseChart — axis crossBetween", () => {
       <c:axPos val="l"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.crossBetween).toBe("between");
-    expect(chart?.axes?.y?.crossBetween).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.crossBetween).toBe("between")
+    expect(chart?.axes?.y?.crossBetween).toBeUndefined()
+  })
 
   it("collapses crossBetween to undefined on a category axis (catAx rejects the element)", () => {
     // The OOXML schema places <c:crossBetween> exclusively on CT_ValAx,
@@ -9548,10 +9548,10 @@ describe("parseChart — axis crossBetween", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.crossBetween).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.crossBetween).toBeUndefined()
+  })
 
   it("drops an unknown ST_CrossBetween token rather than fabricating a value", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -9563,10 +9563,10 @@ describe("parseChart — axis crossBetween", () => {
       <c:crossBetween val="diagonal"/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.crossBetween).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.crossBetween).toBeUndefined()
+  })
 
   it("drops a missing val attribute rather than fabricating a value", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -9578,10 +9578,10 @@ describe("parseChart — axis crossBetween", () => {
       <c:crossBetween/>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.crossBetween).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.crossBetween).toBeUndefined()
+  })
 
   it("collapses crossBetween to undefined when the chart has no <c:crossBetween>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -9590,16 +9590,16 @@ describe("parseChart — axis crossBetween", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.crossBetween).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.crossBetween).toBeUndefined()
+  })
+})
 
 // ── parseChart — data table ──────────────────────────────────────────
 
 describe("parseChart — data table", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it("surfaces a fully-defaulted <c:dTable> with every flag true", () => {
     // Excel's reference serialization for a freshly-enabled data table
@@ -9621,15 +9621,15 @@ describe("parseChart — data table", () => {
       <c:showKeys val="1"/>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.dataTable).toEqual({
       showHorzBorder: true,
       showVertBorder: true,
       showOutline: true,
       showKeys: true,
-    });
-  });
+    })
+  })
 
   it("surfaces non-default false flags literally", () => {
     // Each boolean child round-trips literally — `false` is just as
@@ -9647,14 +9647,14 @@ describe("parseChart — data table", () => {
       <c:showKeys val="0"/>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.dataTable).toEqual({
       showHorzBorder: false,
       showVertBorder: false,
       showOutline: false,
       showKeys: false,
-    });
-  });
+    })
+  })
 
   it("surfaces a mixed shape (keys hidden, borders shown)", () => {
     // A common pattern — paint the table grid but hide the legend
@@ -9671,14 +9671,14 @@ describe("parseChart — data table", () => {
       <c:showKeys val="0"/>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.dataTable).toEqual({
       showHorzBorder: true,
       showVertBorder: true,
       showOutline: true,
       showKeys: false,
-    });
-  });
+    })
+  })
 
   it("accepts the OOXML textual <xsd:boolean> spellings", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -9693,14 +9693,14 @@ describe("parseChart — data table", () => {
       <c:showKeys val="false"/>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.dataTable).toEqual({
       showHorzBorder: true,
       showVertBorder: false,
       showOutline: true,
       showKeys: false,
-    });
-  });
+    })
+  })
 
   it("returns undefined when the plot area has no <c:dTable> element", () => {
     // Absence is the writer's default — Excel renders no data table.
@@ -9715,9 +9715,9 @@ describe("parseChart — data table", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable).toBeUndefined()
+  })
 
   it("drops a missing val attribute on a <c:dTable> child rather than fabricate a flag", () => {
     // A child without `val` is malformed per CT_Boolean; the reader
@@ -9735,13 +9735,13 @@ describe("parseChart — data table", () => {
       <c:showKeys val="1"/>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.dataTable).toEqual({
       showHorzBorder: true,
       showOutline: true,
       showKeys: true,
-    });
-  });
+    })
+  })
 
   it("drops unknown val tokens rather than fabricate flags", () => {
     // Anything outside the OOXML truthy / falsy spellings collapses
@@ -9758,12 +9758,12 @@ describe("parseChart — data table", () => {
       <c:showKeys val="0"/>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.dataTable).toEqual({
       showOutline: true,
       showKeys: false,
-    });
-  });
+    })
+  })
 
   it("surfaces an empty object when <c:dTable> is present but every child is malformed", () => {
     // The element itself is the gating signal — when it appears, the
@@ -9783,9 +9783,9 @@ describe("parseChart — data table", () => {
       <c:showKeys/>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable).toEqual({});
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable).toEqual({})
+  })
 
   it("surfaces dataTable on a column chart", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -9803,14 +9803,14 @@ describe("parseChart — data table", () => {
       <c:showKeys val="1"/>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.dataTable).toEqual({
       showHorzBorder: true,
       showVertBorder: true,
       showOutline: true,
       showKeys: true,
-    });
-  });
+    })
+  })
 
   it("surfaces dataTable on a scatter chart (both axes are valAx)", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -9828,21 +9828,21 @@ describe("parseChart — data table", () => {
       <c:showKeys val="1"/>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.dataTable).toEqual({
       showHorzBorder: false,
       showVertBorder: true,
       showOutline: false,
       showKeys: true,
-    });
-  });
+    })
+  })
 
   it("returns undefined when the chart has no plotArea", () => {
     // Defensive — a chart with no plotArea has no slot for <c:dTable>
     // either. Surfaces nothing so the parsed shape stays minimal.
-    const xml = `<c:chartSpace ${NS}><c:chart></c:chart></c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable).toBeUndefined();
-  });
+    const xml = `<c:chartSpace ${NS}><c:chart></c:chart></c:chartSpace>`
+    expect(parseChart(xml)?.dataTable).toBeUndefined()
+  })
 
   // ── data-table font size ───────────────────────────────────────────
 
@@ -9868,15 +9868,15 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.dataTable).toEqual({
       showHorzBorder: true,
       showVertBorder: true,
       showOutline: true,
       showKeys: true,
       fontSize: 18,
-    });
-  });
+    })
+  })
 
   it("rounds a fractional sz to the nearest 0.5pt (Excel UI step)", () => {
     // sz="1230" → 12.3pt → 12.5pt (rounded to half-step). Mirrors the
@@ -9898,9 +9898,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fontSize).toBe(12.5);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fontSize).toBe(12.5)
+  })
 
   it("collapses an out-of-range sz to undefined fontSize (chart with the four flags only)", () => {
     // sz="0" → 0pt is below the OOXML supported range. The reader drops
@@ -9922,14 +9922,14 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.dataTable).toEqual({
       showHorzBorder: true,
       showVertBorder: true,
       showOutline: true,
       showKeys: true,
-    });
-  });
+    })
+  })
 
   it("collapses a non-numeric sz token to undefined fontSize", () => {
     // sz="garbage" can't be parsed as an integer. The reader drops the
@@ -9951,9 +9951,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fontSize).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fontSize).toBeUndefined()
+  })
 
   it("returns undefined fontSize when <c:txPr> is missing entirely", () => {
     // The OOXML default for the data-table is no <c:txPr> at all — the
@@ -9972,9 +9972,9 @@ describe("parseChart — data table", () => {
       <c:showKeys val="1"/>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fontSize).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fontSize).toBeUndefined()
+  })
 
   it("returns undefined fontSize when <c:txPr> is present but the chain is broken", () => {
     // Each link of `<c:txPr><a:p><a:pPr><a:defRPr sz="..">` must be
@@ -9997,9 +9997,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fontSize).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fontSize).toBeUndefined()
+  })
 
   it("surfaces the boundary fontSize values 1 and 400 verbatim", () => {
     // sz="100" → 1pt; sz="40000" → 400pt. Both lie at the edge of the
@@ -10021,11 +10021,11 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(minXml)?.dataTable?.fontSize).toBe(1);
-    const maxXml = minXml.replace('sz="100"', 'sz="40000"');
-    expect(parseChart(maxXml)?.dataTable?.fontSize).toBe(400);
-  });
+</c:chartSpace>`
+    expect(parseChart(minXml)?.dataTable?.fontSize).toBe(1)
+    const maxXml = minXml.replace('sz="100"', 'sz="40000"')
+    expect(parseChart(maxXml)?.dataTable?.fontSize).toBe(400)
+  })
 
   // ── data-table font color ──────────────────────────────────────────
 
@@ -10051,9 +10051,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fontColor).toBe("1070CA");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fontColor).toBe("1070CA")
+  })
 
   it("uppercases a lowercase srgbClr val on parse", () => {
     // The reader normalises the hex to the OOXML uppercase canonical
@@ -10075,9 +10075,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fontColor).toBe("ABCDEF");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fontColor).toBe("ABCDEF")
+  })
 
   it("collapses a malformed srgbClr val to undefined", () => {
     // Wrong length, non-hex characters, missing val all drop the field
@@ -10099,12 +10099,12 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(wrongLen)?.dataTable?.fontColor).toBeUndefined();
+</c:chartSpace>`
+    expect(parseChart(wrongLen)?.dataTable?.fontColor).toBeUndefined()
 
-    const nonHex = wrongLen.replace('val="FF00"', 'val="ZZZZZZ"');
-    expect(parseChart(nonHex)?.dataTable?.fontColor).toBeUndefined();
-  });
+    const nonHex = wrongLen.replace('val="FF00"', 'val="ZZZZZZ"')
+    expect(parseChart(nonHex)?.dataTable?.fontColor).toBeUndefined()
+  })
 
   it("collapses theme references (a:schemeClr) to undefined fontColor", () => {
     // Only the literal <a:srgbClr> RGB triple round-trips; theme
@@ -10126,9 +10126,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fontColor).toEqual({ theme: "dk1" });
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fontColor).toEqual({ theme: "dk1" })
+  })
 
   it("returns undefined fontColor when <c:txPr> is missing entirely", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -10143,9 +10143,9 @@ describe("parseChart — data table", () => {
       <c:showKeys val="1"/>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fontColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fontColor).toBeUndefined()
+  })
 
   it("returns undefined fontColor when the chain has no <a:solidFill>", () => {
     // The <a:defRPr> exists but carries no <a:solidFill> child — the
@@ -10167,11 +10167,11 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fontColor).toBeUndefined();
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fontColor).toBeUndefined()
     // The fontSize part still surfaces.
-    expect(parseChart(xml)?.dataTable?.fontSize).toBe(14);
-  });
+    expect(parseChart(xml)?.dataTable?.fontSize).toBe(14)
+  })
 
   it("surfaces both fontSize and fontColor when both are pinned", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10191,7 +10191,7 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.dataTable).toEqual({
       showHorzBorder: true,
       showVertBorder: true,
@@ -10199,8 +10199,8 @@ describe("parseChart — data table", () => {
       showKeys: true,
       fontSize: 16,
       fontColor: "123456",
-    });
-  });
+    })
+  })
 
   // ── data-table bold ────────────────────────────────────────────────
 
@@ -10222,9 +10222,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.bold).toBe(true);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.bold).toBe(true)
+  })
 
   it("surfaces an explicit b='0' as bold: false", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10244,9 +10244,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.bold).toBe(false);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.bold).toBe(false)
+  })
 
   it("accepts the OOXML textual <xsd:boolean> spellings for b", () => {
     const trueXml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10266,11 +10266,11 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(trueXml)?.dataTable?.bold).toBe(true);
-    const falseXml = trueXml.replace('b="true"', 'b="false"');
-    expect(parseChart(falseXml)?.dataTable?.bold).toBe(false);
-  });
+</c:chartSpace>`
+    expect(parseChart(trueXml)?.dataTable?.bold).toBe(true)
+    const falseXml = trueXml.replace('b="true"', 'b="false"')
+    expect(parseChart(falseXml)?.dataTable?.bold).toBe(false)
+  })
 
   it("collapses an unknown b token to undefined", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10290,9 +10290,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.bold).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.bold).toBeUndefined()
+  })
 
   it("returns undefined bold when <c:txPr> is missing entirely", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -10307,9 +10307,9 @@ describe("parseChart — data table", () => {
       <c:showKeys val="1"/>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.bold).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.bold).toBeUndefined()
+  })
 
   it("returns undefined bold when the b attribute is missing on defRPr", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10329,11 +10329,11 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.bold).toBeUndefined();
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.bold).toBeUndefined()
     // The fontSize part still surfaces.
-    expect(parseChart(xml)?.dataTable?.fontSize).toBe(14);
-  });
+    expect(parseChart(xml)?.dataTable?.fontSize).toBe(14)
+  })
 
   it("surfaces fontSize, fontColor, and bold together when all three are pinned", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10353,7 +10353,7 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.dataTable).toEqual({
       showHorzBorder: true,
       showVertBorder: true,
@@ -10362,8 +10362,8 @@ describe("parseChart — data table", () => {
       fontSize: 16,
       fontColor: "1070CA",
       bold: true,
-    });
-  });
+    })
+  })
   // ── data-table italic ──────────────────────────────────────────────
 
   it("surfaces a pinned dataTable.italic from <a:defRPr i='1'/>", () => {
@@ -10384,9 +10384,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.italic).toBe(true);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.italic).toBe(true)
+  })
 
   it("surfaces an explicit i='0' as italic: false", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10406,9 +10406,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.italic).toBe(false);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.italic).toBe(false)
+  })
 
   it("accepts the OOXML textual <xsd:boolean> spellings for i", () => {
     const trueXml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10428,11 +10428,11 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(trueXml)?.dataTable?.italic).toBe(true);
-    const falseXml = trueXml.replace('i="true"', 'i="false"');
-    expect(parseChart(falseXml)?.dataTable?.italic).toBe(false);
-  });
+</c:chartSpace>`
+    expect(parseChart(trueXml)?.dataTable?.italic).toBe(true)
+    const falseXml = trueXml.replace('i="true"', 'i="false"')
+    expect(parseChart(falseXml)?.dataTable?.italic).toBe(false)
+  })
 
   it("collapses an unknown i token to undefined", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10452,9 +10452,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.italic).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.italic).toBeUndefined()
+  })
 
   it("returns undefined italic when <c:txPr> is missing entirely", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -10469,9 +10469,9 @@ describe("parseChart — data table", () => {
       <c:showKeys val="1"/>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.italic).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.italic).toBeUndefined()
+  })
 
   it("returns undefined italic when the i attribute is missing on defRPr", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10491,12 +10491,12 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.italic).toBeUndefined();
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.italic).toBeUndefined()
     // The fontSize and bold parts still surface.
-    expect(parseChart(xml)?.dataTable?.fontSize).toBe(14);
-    expect(parseChart(xml)?.dataTable?.bold).toBe(true);
-  });
+    expect(parseChart(xml)?.dataTable?.fontSize).toBe(14)
+    expect(parseChart(xml)?.dataTable?.bold).toBe(true)
+  })
 
   it("surfaces every italic typography pin together when all four are pinned", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10516,7 +10516,7 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.dataTable).toEqual({
       showHorzBorder: true,
       showVertBorder: true,
@@ -10526,8 +10526,8 @@ describe("parseChart — data table", () => {
       fontColor: "1070CA",
       bold: true,
       italic: true,
-    });
-  });
+    })
+  })
 
   // ── data-table underline ───────────────────────────────────────────
 
@@ -10549,9 +10549,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.underline).toBe(true);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.underline).toBe(true)
+  })
 
   it("surfaces an explicit u='none' as underline: false", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10571,9 +10571,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.underline).toBe(false);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.underline).toBe(false)
+  })
 
   it("collapses non-Excel-UI underline variants to undefined", () => {
     // The OOXML schema allows `dbl`, `heavy`, `dotted`, `dotDash`,
@@ -10597,10 +10597,10 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.dataTable?.underline).toBeUndefined();
+</c:chartSpace>`
+      expect(parseChart(xml)?.dataTable?.underline).toBeUndefined()
     }
-  });
+  })
 
   it("returns undefined underline when <c:txPr> is missing entirely", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -10615,9 +10615,9 @@ describe("parseChart — data table", () => {
       <c:showKeys val="1"/>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.underline).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.underline).toBeUndefined()
+  })
 
   it("returns undefined underline when the u attribute is missing on defRPr", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10637,12 +10637,12 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.underline).toBeUndefined();
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.underline).toBeUndefined()
     // The fontSize and bold parts still surface.
-    expect(parseChart(xml)?.dataTable?.fontSize).toBe(14);
-    expect(parseChart(xml)?.dataTable?.bold).toBe(true);
-  });
+    expect(parseChart(xml)?.dataTable?.fontSize).toBe(14)
+    expect(parseChart(xml)?.dataTable?.bold).toBe(true)
+  })
 
   it("surfaces every underline typography pin together when all four are pinned", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10662,7 +10662,7 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.dataTable).toEqual({
       showHorzBorder: true,
       showVertBorder: true,
@@ -10672,8 +10672,8 @@ describe("parseChart — data table", () => {
       fontColor: "1070CA",
       bold: true,
       underline: true,
-    });
-  });
+    })
+  })
 
   // ── data-table strikethrough ───────────────────────────────────────
 
@@ -10695,9 +10695,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.strikethrough).toBe(true);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.strikethrough).toBe(true)
+  })
 
   it("collapses an explicit strike='noStrike' to undefined", () => {
     // The OOXML default `"noStrike"` is functionally identical to
@@ -10720,9 +10720,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.strikethrough).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.strikethrough).toBeUndefined()
+  })
 
   it("collapses the dblStrike variant to undefined", () => {
     // Reporting `"dblStrike"` as `true` would silently downgrade the
@@ -10745,9 +10745,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.strikethrough).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.strikethrough).toBeUndefined()
+  })
 
   it("collapses an unknown strike token to undefined", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10767,9 +10767,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.strikethrough).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.strikethrough).toBeUndefined()
+  })
 
   it("returns undefined strikethrough when <c:txPr> is missing entirely", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -10784,9 +10784,9 @@ describe("parseChart — data table", () => {
       <c:showKeys val="1"/>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.strikethrough).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.strikethrough).toBeUndefined()
+  })
 
   it("returns undefined strikethrough when the strike attribute is missing on defRPr", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10806,12 +10806,12 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.strikethrough).toBeUndefined();
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.strikethrough).toBeUndefined()
     // The fontSize and bold parts still surface.
-    expect(parseChart(xml)?.dataTable?.fontSize).toBe(14);
-    expect(parseChart(xml)?.dataTable?.bold).toBe(true);
-  });
+    expect(parseChart(xml)?.dataTable?.fontSize).toBe(14)
+    expect(parseChart(xml)?.dataTable?.bold).toBe(true)
+  })
 
   it("surfaces every typography pin together when all four are pinned", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10831,7 +10831,7 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.dataTable).toEqual({
       showHorzBorder: true,
       showVertBorder: true,
@@ -10841,8 +10841,8 @@ describe("parseChart — data table", () => {
       fontColor: "1070CA",
       bold: true,
       strikethrough: true,
-    });
-  });
+    })
+  })
 
   // ── data-table font family ─────────────────────────────────────────
 
@@ -10864,9 +10864,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fontFamily).toBe("Arial");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fontFamily).toBe("Arial")
+  })
 
   it("trims surrounding whitespace from the parsed typeface", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10886,9 +10886,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fontFamily).toBe("Calibri");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fontFamily).toBe("Calibri")
+  })
 
   it("collapses an empty typeface attribute to undefined", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10908,9 +10908,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fontFamily).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fontFamily).toBeUndefined()
+  })
 
   it("collapses a whitespace-only typeface attribute to undefined", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10930,9 +10930,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fontFamily).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fontFamily).toBeUndefined()
+  })
 
   it("returns undefined fontFamily when <a:latin> is missing on defRPr", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10952,12 +10952,12 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fontFamily).toBeUndefined();
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fontFamily).toBeUndefined()
     // The fontSize and bold parts still surface.
-    expect(parseChart(xml)?.dataTable?.fontSize).toBe(14);
-    expect(parseChart(xml)?.dataTable?.bold).toBe(true);
-  });
+    expect(parseChart(xml)?.dataTable?.fontSize).toBe(14)
+    expect(parseChart(xml)?.dataTable?.bold).toBe(true)
+  })
 
   it("returns undefined fontFamily when <c:txPr> is missing entirely", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -10972,9 +10972,9 @@ describe("parseChart — data table", () => {
       <c:showKeys val="1"/>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fontFamily).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fontFamily).toBeUndefined()
+  })
 
   it("returns undefined fontFamily when the typeface attribute is missing on <a:latin>", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -10994,9 +10994,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fontFamily).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fontFamily).toBeUndefined()
+  })
 
   it("surfaces a multi-word typeface verbatim", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -11016,9 +11016,9 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fontFamily).toBe("Times New Roman");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fontFamily).toBe("Times New Roman")
+  })
 
   it("surfaces every typography pin together when fontSize, fontColor, bold, strikethrough, and fontFamily are pinned", () => {
     const xml = `<c:chartSpace ${NS} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -11038,7 +11038,7 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.dataTable).toEqual({
       showHorzBorder: true,
       showVertBorder: true,
@@ -11049,8 +11049,8 @@ describe("parseChart — data table", () => {
       bold: true,
       strikethrough: true,
       fontFamily: "Calibri",
-    });
-  });
+    })
+  })
 
   // ── data-table fill color (parseDataTableFillColor) ────────────────
 
@@ -11071,9 +11071,9 @@ describe("parseChart — data table", () => {
       <c:spPr><a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill></c:spPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fillColor).toBe("F2F2F2");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fillColor).toBe("F2F2F2")
+  })
 
   it("uppercases a lower-case srgbClr val on the <c:dTable><c:spPr> slot", () => {
     // The reader collapses any case to OOXML canonical uppercase so a
@@ -11094,9 +11094,9 @@ describe("parseChart — data table", () => {
       <c:spPr><a:solidFill><a:srgbClr val="abcdef"/></a:solidFill></c:spPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fillColor).toBe("ABCDEF");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fillColor).toBe("ABCDEF")
+  })
 
   it("surfaces undefined when <c:spPr> is absent on <c:dTable>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -11114,9 +11114,9 @@ describe("parseChart — data table", () => {
       <c:showKeys val="1"/>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fillColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fillColor).toBeUndefined()
+  })
 
   it("collapses malformed srgbClr val tokens to undefined", () => {
     // Wrong length (4 hex chars) and non-hex chars both drop the field.
@@ -11133,11 +11133,11 @@ describe("parseChart — data table", () => {
       <c:spPr><a:solidFill><a:srgbClr val="ABCD"/></a:solidFill></c:spPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(wrongLen)?.dataTable?.fillColor).toBeUndefined();
-    const nonHex = wrongLen.replace('val="ABCD"', 'val="ZZZZZZ"');
-    expect(parseChart(nonHex)?.dataTable?.fillColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(wrongLen)?.dataTable?.fillColor).toBeUndefined()
+    const nonHex = wrongLen.replace('val="ABCD"', 'val="ZZZZZZ"')
+    expect(parseChart(nonHex)?.dataTable?.fillColor).toBeUndefined()
+  })
 
   it("collapses an alpha-channel srgbClr val to undefined", () => {
     // The OOXML schema places alpha on <a:alpha>, not on the val token,
@@ -11155,9 +11155,9 @@ describe("parseChart — data table", () => {
       <c:spPr><a:solidFill><a:srgbClr val="FF0000FF"/></a:solidFill></c:spPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fillColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fillColor).toBeUndefined()
+  })
 
   it("collapses theme-color <a:schemeClr> references to undefined", () => {
     // Theme references cannot round-trip losslessly to <a:srgbClr> so
@@ -11176,9 +11176,9 @@ describe("parseChart — data table", () => {
       <c:spPr><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></c:spPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.fillColor).toEqual({ theme: "accent1" });
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.fillColor).toEqual({ theme: "accent1" })
+  })
 
   it("collapses non-solid fills to undefined (noFill / gradFill / pattFill / blipFill)", () => {
     const head = `<c:chartSpace ${NS}>
@@ -11190,19 +11190,19 @@ describe("parseChart — data table", () => {
       <c:showHorzBorder val="1"/>
       <c:showVertBorder val="1"/>
       <c:showOutline val="1"/>
-      <c:showKeys val="1"/>`;
+      <c:showKeys val="1"/>`
     const tail = `</c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const noFill = `${head}<c:spPr><a:noFill/></c:spPr>${tail}`;
-    expect(parseChart(noFill)?.dataTable?.fillColor).toBeUndefined();
-    const gradFill = `${head}<c:spPr><a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs></a:gsLst></a:gradFill></c:spPr>${tail}`;
-    expect(parseChart(gradFill)?.dataTable?.fillColor).toBeUndefined();
-    const pattFill = `${head}<c:spPr><a:pattFill prst="dkDnDiag"><a:fgClr><a:srgbClr val="FF0000"/></a:fgClr></a:pattFill></c:spPr>${tail}`;
-    expect(parseChart(pattFill)?.dataTable?.fillColor).toBeUndefined();
-    const blipFill = `${head}<c:spPr><a:blipFill><a:blip/></a:blipFill></c:spPr>${tail}`;
-    expect(parseChart(blipFill)?.dataTable?.fillColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const noFill = `${head}<c:spPr><a:noFill/></c:spPr>${tail}`
+    expect(parseChart(noFill)?.dataTable?.fillColor).toBeUndefined()
+    const gradFill = `${head}<c:spPr><a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs></a:gsLst></a:gradFill></c:spPr>${tail}`
+    expect(parseChart(gradFill)?.dataTable?.fillColor).toBeUndefined()
+    const pattFill = `${head}<c:spPr><a:pattFill prst="dkDnDiag"><a:fgClr><a:srgbClr val="FF0000"/></a:fgClr></a:pattFill></c:spPr>${tail}`
+    expect(parseChart(pattFill)?.dataTable?.fillColor).toBeUndefined()
+    const blipFill = `${head}<c:spPr><a:blipFill><a:blip/></a:blipFill></c:spPr>${tail}`
+    expect(parseChart(blipFill)?.dataTable?.fillColor).toBeUndefined()
+  })
 
   it("does not leak a sibling plotArea / chartSpace <c:spPr> into dataTable.fillColor", () => {
     // The reader scopes the lookup to direct children of <c:dTable> so
@@ -11221,12 +11221,12 @@ describe("parseChart — data table", () => {
     <c:spPr><a:solidFill><a:srgbClr val="111111"/></a:solidFill></c:spPr>
   </c:plotArea></c:chart>
   <c:spPr><a:solidFill><a:srgbClr val="222222"/></a:solidFill></c:spPr>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataTable?.fillColor).toBeUndefined();
-    expect(chart?.plotAreaFillColor).toBe("111111");
-    expect(chart?.chartSpaceFillColor).toBe("222222");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataTable?.fillColor).toBeUndefined()
+    expect(chart?.plotAreaFillColor).toBe("111111")
+    expect(chart?.chartSpaceFillColor).toBe("222222")
+  })
 
   it("composes dataTable.fillColor with the four boolean toggles and typography knobs in a single dTable block", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -11247,7 +11247,7 @@ describe("parseChart — data table", () => {
       </c:txPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.dataTable).toEqual({
       showHorzBorder: false,
       showVertBorder: true,
@@ -11256,8 +11256,8 @@ describe("parseChart — data table", () => {
       fillColor: "F2F2F2",
       fontColor: "1070CA",
       bold: true,
-    });
-  });
+    })
+  })
 
   // ── data-table border color (parseDataTableBorderColor) ────────────
 
@@ -11278,9 +11278,9 @@ describe("parseChart — data table", () => {
       <c:spPr><a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln></c:spPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.borderColor).toBe("1F77B4");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.borderColor).toBe("1F77B4")
+  })
 
   it("uppercases a lower-case srgbClr val on the <c:dTable><c:spPr><a:ln> slot", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -11299,9 +11299,9 @@ describe("parseChart — data table", () => {
       <c:spPr><a:ln><a:solidFill><a:srgbClr val="abcdef"/></a:solidFill></a:ln></c:spPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.borderColor).toBe("ABCDEF");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.borderColor).toBe("ABCDEF")
+  })
 
   it("surfaces undefined when <a:ln> is absent on the <c:dTable><c:spPr> block", () => {
     // Only a fill knob — no <a:ln> child means no border color to
@@ -11324,11 +11324,11 @@ describe("parseChart — data table", () => {
       <c:spPr><a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill></c:spPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataTable?.borderColor).toBeUndefined();
-    expect(chart?.dataTable?.fillColor).toBe("F2F2F2");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataTable?.borderColor).toBeUndefined()
+    expect(chart?.dataTable?.fillColor).toBe("F2F2F2")
+  })
 
   it("surfaces undefined when <c:spPr> is absent on <c:dTable> for borderColor", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -11346,9 +11346,9 @@ describe("parseChart — data table", () => {
       <c:showKeys val="1"/>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.borderColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.borderColor).toBeUndefined()
+  })
 
   it("collapses malformed borderColor srgbClr val tokens to undefined", () => {
     const wrongLen = `<c:chartSpace ${NS}>
@@ -11364,13 +11364,13 @@ describe("parseChart — data table", () => {
       <c:spPr><a:ln><a:solidFill><a:srgbClr val="ABCD"/></a:solidFill></a:ln></c:spPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(wrongLen)?.dataTable?.borderColor).toBeUndefined();
-    const nonHex = wrongLen.replace('val="ABCD"', 'val="ZZZZZZ"');
-    expect(parseChart(nonHex)?.dataTable?.borderColor).toBeUndefined();
-    const alpha = wrongLen.replace('val="ABCD"', 'val="FF0000FF"');
-    expect(parseChart(alpha)?.dataTable?.borderColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(wrongLen)?.dataTable?.borderColor).toBeUndefined()
+    const nonHex = wrongLen.replace('val="ABCD"', 'val="ZZZZZZ"')
+    expect(parseChart(nonHex)?.dataTable?.borderColor).toBeUndefined()
+    const alpha = wrongLen.replace('val="ABCD"', 'val="FF0000FF"')
+    expect(parseChart(alpha)?.dataTable?.borderColor).toBeUndefined()
+  })
 
   it("collapses theme-color <a:schemeClr> references to undefined for borderColor", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -11386,9 +11386,9 @@ describe("parseChart — data table", () => {
       <c:spPr><a:ln><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:ln></c:spPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataTable?.borderColor).toEqual({ theme: "accent1" });
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataTable?.borderColor).toEqual({ theme: "accent1" })
+  })
 
   it("collapses non-solid line fills to undefined (noFill / gradFill / pattFill)", () => {
     const head = `<c:chartSpace ${NS}>
@@ -11400,17 +11400,17 @@ describe("parseChart — data table", () => {
       <c:showHorzBorder val="1"/>
       <c:showVertBorder val="1"/>
       <c:showOutline val="1"/>
-      <c:showKeys val="1"/>`;
+      <c:showKeys val="1"/>`
     const tail = `</c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const noFill = `${head}<c:spPr><a:ln><a:noFill/></a:ln></c:spPr>${tail}`;
-    expect(parseChart(noFill)?.dataTable?.borderColor).toBeUndefined();
-    const gradFill = `${head}<c:spPr><a:ln><a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs></a:gsLst></a:gradFill></a:ln></c:spPr>${tail}`;
-    expect(parseChart(gradFill)?.dataTable?.borderColor).toBeUndefined();
-    const pattFill = `${head}<c:spPr><a:ln><a:pattFill prst="dkDnDiag"><a:fgClr><a:srgbClr val="FF0000"/></a:fgClr></a:pattFill></a:ln></c:spPr>${tail}`;
-    expect(parseChart(pattFill)?.dataTable?.borderColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const noFill = `${head}<c:spPr><a:ln><a:noFill/></a:ln></c:spPr>${tail}`
+    expect(parseChart(noFill)?.dataTable?.borderColor).toBeUndefined()
+    const gradFill = `${head}<c:spPr><a:ln><a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs></a:gsLst></a:gradFill></a:ln></c:spPr>${tail}`
+    expect(parseChart(gradFill)?.dataTable?.borderColor).toBeUndefined()
+    const pattFill = `${head}<c:spPr><a:ln><a:pattFill prst="dkDnDiag"><a:fgClr><a:srgbClr val="FF0000"/></a:fgClr></a:pattFill></a:ln></c:spPr>${tail}`
+    expect(parseChart(pattFill)?.dataTable?.borderColor).toBeUndefined()
+  })
 
   it("does not leak a sibling plotArea / legend <a:ln> into dataTable.borderColor", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -11427,12 +11427,12 @@ describe("parseChart — data table", () => {
     <c:spPr><a:ln><a:solidFill><a:srgbClr val="111111"/></a:solidFill></a:ln></c:spPr>
   </c:plotArea>
   <c:legend><c:spPr><a:ln><a:solidFill><a:srgbClr val="222222"/></a:solidFill></a:ln></c:spPr></c:legend></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataTable?.borderColor).toBeUndefined();
-    expect(chart?.plotAreaBorderColor).toBe("111111");
-    expect(chart?.legendBorderColor).toBe("222222");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataTable?.borderColor).toBeUndefined()
+    expect(chart?.plotAreaBorderColor).toBe("111111")
+    expect(chart?.legendBorderColor).toBe("222222")
+  })
 
   it("composes dataTable.fillColor and borderColor from a single <c:spPr> block", () => {
     // The fill and stroke share the <c:spPr> host but land on
@@ -11454,7 +11454,7 @@ describe("parseChart — data table", () => {
       </c:spPr>
     </c:dTable>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.dataTable).toEqual({
       showHorzBorder: true,
       showVertBorder: true,
@@ -11462,14 +11462,14 @@ describe("parseChart — data table", () => {
       showKeys: true,
       fillColor: "F2F2F2",
       borderColor: "1F77B4",
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — chart-space protection ──────────────────────────────
 
 describe("parseChart — chart-space protection", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it("surfaces every flag a fully-pinned <c:protection> declares", () => {
     // CT_Protection lists every child as optional, but a "lock
@@ -11491,16 +11491,16 @@ describe("parseChart — chart-space protection", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.protection).toEqual({
       chartObject: true,
       data: true,
       formatting: true,
       selection: true,
       userInterface: true,
-    });
-  });
+    })
+  })
 
   it("surfaces non-default false flags literally", () => {
     // Each boolean child round-trips literally — `false` is just as
@@ -11519,15 +11519,15 @@ describe("parseChart — chart-space protection", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.protection).toEqual({
       chartObject: false,
       data: false,
       formatting: false,
       selection: false,
       userInterface: false,
-    });
-  });
+    })
+  })
 
   it("surfaces a partial shape with only the flags the file pinned", () => {
     // Common pattern — lock data and selection but leave the rest
@@ -11544,12 +11544,12 @@ describe("parseChart — chart-space protection", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.protection).toEqual({
       data: true,
       selection: true,
-    });
-  });
+    })
+  })
 
   it("accepts the OOXML textual <xsd:boolean> spellings", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -11565,15 +11565,15 @@ describe("parseChart — chart-space protection", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.protection).toEqual({
       chartObject: true,
       data: false,
       formatting: true,
       selection: false,
       userInterface: true,
-    });
-  });
+    })
+  })
 
   it("returns undefined when the chart has no <c:protection> element", () => {
     // Absence is the writer's default — Excel applies no chart-level
@@ -11589,9 +11589,9 @@ describe("parseChart — chart-space protection", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.protection).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.protection).toBeUndefined()
+  })
 
   it("drops a missing val attribute on a <c:protection> child rather than fabricate a flag", () => {
     // A child without `val` is malformed per CT_Boolean; the reader
@@ -11608,12 +11608,12 @@ describe("parseChart — chart-space protection", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.protection).toEqual({
       chartObject: true,
       formatting: true,
-    });
-  });
+    })
+  })
 
   it("drops unknown val tokens rather than fabricate flags", () => {
     // Anything outside the OOXML truthy / falsy spellings collapses
@@ -11629,11 +11629,11 @@ describe("parseChart — chart-space protection", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.protection).toEqual({
       selection: true,
-    });
-  });
+    })
+  })
 
   it("surfaces an empty object when <c:protection> is present but every child is malformed", () => {
     // The element itself is the gating signal — when it appears, the
@@ -11654,9 +11654,9 @@ describe("parseChart — chart-space protection", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.protection).toEqual({});
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.protection).toEqual({})
+  })
 
   it("surfaces an empty object on a bare <c:protection/> element", () => {
     // A self-closing element with no children — same minimal-shape
@@ -11669,9 +11669,9 @@ describe("parseChart — chart-space protection", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.protection).toEqual({});
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.protection).toEqual({})
+  })
 
   it("surfaces protection on a pie chart (no axes, but the element lives on chartSpace)", () => {
     // <c:protection> lives on <c:chartSpace>, not inside <c:plotArea>,
@@ -11687,20 +11687,20 @@ describe("parseChart — chart-space protection", () => {
       <c:ser><c:idx val="0"/></c:ser>
     </c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xml)?.protection).toEqual({
       formatting: true,
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — auto title deleted ────────────────────────────────
 
 describe("parseChart — autoTitleDeleted", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withAutoTitleDeleted(val?: string): string {
-    const el = val === undefined ? "" : `<c:autoTitleDeleted val="${val}"/>`;
+    const el = val === undefined ? "" : `<c:autoTitleDeleted val="${val}"/>`
     return `<c:chartSpace ${NS}>
   <c:chart>
     ${el}
@@ -11708,7 +11708,7 @@ describe("parseChart — autoTitleDeleted", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it('surfaces <c:autoTitleDeleted val="1"/> as true (non-default)', () => {
@@ -11716,32 +11716,32 @@ describe("parseChart — autoTitleDeleted", () => {
     // auto-generated title. Surfaces verbatim because a chart that
     // pinned the flag carries the override Excel would otherwise
     // synthesise from the series name.
-    expect(parseChart(withAutoTitleDeleted("1"))?.autoTitleDeleted).toBe(true);
-  });
+    expect(parseChart(withAutoTitleDeleted("1"))?.autoTitleDeleted).toBe(true)
+  })
 
   it('surfaces <c:autoTitleDeleted val="true"/> as true', () => {
     // OOXML accepts the textual `xsd:boolean` spellings.
-    expect(parseChart(withAutoTitleDeleted("true"))?.autoTitleDeleted).toBe(true);
-  });
+    expect(parseChart(withAutoTitleDeleted("true"))?.autoTitleDeleted).toBe(true)
+  })
 
   it('collapses <c:autoTitleDeleted val="0"/> to undefined (OOXML default)', () => {
     // The OOXML default — the auto-title is not suppressed. Absence
     // and the default round-trip identically through cloneChart, so the
     // reader collapses the explicit default to undefined for symmetry
     // with every other chart-level toggle.
-    expect(parseChart(withAutoTitleDeleted("0"))?.autoTitleDeleted).toBeUndefined();
-  });
+    expect(parseChart(withAutoTitleDeleted("0"))?.autoTitleDeleted).toBeUndefined()
+  })
 
   it('collapses <c:autoTitleDeleted val="false"/> to undefined', () => {
-    expect(parseChart(withAutoTitleDeleted("false"))?.autoTitleDeleted).toBeUndefined();
-  });
+    expect(parseChart(withAutoTitleDeleted("false"))?.autoTitleDeleted).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:autoTitleDeleted> element", () => {
     // Absence is identical to the OOXML default; the reader surfaces
     // nothing so a fresh chart and a chart that omits the element
     // round-trip identically through cloneChart.
-    expect(parseChart(withAutoTitleDeleted())?.autoTitleDeleted).toBeUndefined();
-  });
+    expect(parseChart(withAutoTitleDeleted())?.autoTitleDeleted).toBeUndefined()
+  })
 
   it("ignores a missing val attribute on <c:autoTitleDeleted>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -11751,13 +11751,13 @@ describe("parseChart — autoTitleDeleted", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.autoTitleDeleted).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.autoTitleDeleted).toBeUndefined()
+  })
 
   it("drops unknown val tokens rather than fabricate a flag", () => {
-    expect(parseChart(withAutoTitleDeleted("bogus"))?.autoTitleDeleted).toBeUndefined();
-  });
+    expect(parseChart(withAutoTitleDeleted("bogus"))?.autoTitleDeleted).toBeUndefined()
+  })
 
   it("surfaces autoTitleDeleted independently of the title presence (titleless chart)", () => {
     // The element sits on <c:chart> directly, not nested inside
@@ -11773,11 +11773,11 @@ describe("parseChart — autoTitleDeleted", () => {
       </c:barChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.title).toBeUndefined();
-    expect(chart?.autoTitleDeleted).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.title).toBeUndefined()
+    expect(chart?.autoTitleDeleted).toBe(true)
+  })
 
   it("surfaces autoTitleDeleted alongside a literal title (chart with both)", () => {
     // A chart can emit both a literal <c:title> and pin
@@ -11798,11 +11798,11 @@ describe("parseChart — autoTitleDeleted", () => {
       <c:lineChart><c:ser><c:idx val="0"/></c:ser></c:lineChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.title).toBe("Sales");
-    expect(chart?.autoTitleDeleted).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.title).toBe("Sales")
+    expect(chart?.autoTitleDeleted).toBe(true)
+  })
 
   it("co-exists with other chart-level toggles", () => {
     // The flag should not interfere with sibling chart-level fields
@@ -11822,14 +11822,14 @@ describe("parseChart — autoTitleDeleted", () => {
     <c:plotVisOnly val="0"/>
     <c:dispBlanksAs val="zero"/>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.autoTitleDeleted).toBe(true);
-    expect(chart?.roundedCorners).toBe(true);
-    expect(chart?.plotVisOnly).toBe(false);
-    expect(chart?.dispBlanksAs).toBe("zero");
-    expect(chart?.varyColors).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.autoTitleDeleted).toBe(true)
+    expect(chart?.roundedCorners).toBe(true)
+    expect(chart?.plotVisOnly).toBe(false)
+    expect(chart?.dispBlanksAs).toBe("zero")
+    expect(chart?.varyColors).toBe(true)
+  })
 
   it("surfaces the flag on every chart family", () => {
     // The element sits on <c:chart>, not inside any chart-type
@@ -11842,16 +11842,16 @@ describe("parseChart — autoTitleDeleted", () => {
       <c:${kind}><c:ser><c:idx val="0"/></c:ser></c:${kind}>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-      expect(parseChart(xml)?.autoTitleDeleted).toBe(true);
+</c:chartSpace>`
+      expect(parseChart(xml)?.autoTitleDeleted).toBe(true)
     }
-  });
-});
+  })
+})
 
 // ── parseChart — chart-level line marker visibility ────────────────
 
 describe("parseChart — showLineMarkers", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces showLineMarkers=false when the line chart pins <c:marker val="0"/>', () => {
     // The non-default state — flips the chart-level gate off so
@@ -11868,10 +11868,10 @@ describe("parseChart — showLineMarkers", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.showLineMarkers).toBe(false);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.showLineMarkers).toBe(false)
+  })
 
   it('collapses <c:marker val="1"/> (the Excel / OOXML default) to undefined', () => {
     // Excel's reference serialization for every authored line chart
@@ -11890,10 +11890,10 @@ describe("parseChart — showLineMarkers", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.showLineMarkers).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.showLineMarkers).toBeUndefined()
+  })
 
   it("collapses absence of <c:marker> to undefined on a line chart", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -11907,10 +11907,10 @@ describe("parseChart — showLineMarkers", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.showLineMarkers).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.showLineMarkers).toBeUndefined()
+  })
 
   it('accepts the OOXML truthy / falsy spellings ("true" / "false")', () => {
     const xmlFalse = `<c:chartSpace ${NS}>
@@ -11925,12 +11925,12 @@ describe("parseChart — showLineMarkers", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xmlFalse)?.showLineMarkers).toBe(false);
+</c:chartSpace>`
+    expect(parseChart(xmlFalse)?.showLineMarkers).toBe(false)
 
-    const xmlTrue = xmlFalse.replace('val="false"', 'val="true"');
-    expect(parseChart(xmlTrue)?.showLineMarkers).toBeUndefined();
-  });
+    const xmlTrue = xmlFalse.replace('val="false"', 'val="true"')
+    expect(parseChart(xmlTrue)?.showLineMarkers).toBeUndefined()
+  })
 
   it("drops a missing val attribute (CT_Boolean default would be true)", () => {
     // A bare <c:marker/> carries no `val`; per CT_Boolean the schema
@@ -11950,10 +11950,10 @@ describe("parseChart — showLineMarkers", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.showLineMarkers).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.showLineMarkers).toBeUndefined()
+  })
 
   it("drops an unknown val token rather than fabricating a value", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -11968,10 +11968,10 @@ describe("parseChart — showLineMarkers", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.showLineMarkers).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.showLineMarkers).toBeUndefined()
+  })
 
   it("ignores chart-level <c:marker> on a 3D line chart (CT_Line3DChart has no slot)", () => {
     // The OOXML schema places the chart-level <c:marker> (CT_Boolean)
@@ -11992,10 +11992,10 @@ describe("parseChart — showLineMarkers", () => {
     <c:valAx><c:axId val="2"/></c:valAx>
     <c:serAx><c:axId val="3"/></c:serAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.showLineMarkers).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.showLineMarkers).toBeUndefined()
+  })
 
   it("ignores chart-level <c:marker> on a stock chart (CT_StockChart has no slot)", () => {
     // CT_StockChart has hiLowLines / upDownBars but no chart-level
@@ -12011,10 +12011,10 @@ describe("parseChart — showLineMarkers", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.showLineMarkers).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.showLineMarkers).toBeUndefined()
+  })
 
   it("ignores <c:marker> on bar / column / pie / doughnut / area / scatter charts", () => {
     // The chart-level <c:marker> (CT_Boolean) only lives on
@@ -12035,9 +12035,9 @@ describe("parseChart — showLineMarkers", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.showLineMarkers).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.showLineMarkers).toBeUndefined()
+  })
 
   it("does not confuse the chart-level <c:marker> with the per-series <c:marker> block", () => {
     // The per-series <c:marker> sits inside <c:ser> and carries
@@ -12059,14 +12059,14 @@ describe("parseChart — showLineMarkers", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     // No chart-level <c:marker> is present — only the per-series
     // block — so showLineMarkers must be undefined.
-    expect(chart?.showLineMarkers).toBeUndefined();
+    expect(chart?.showLineMarkers).toBeUndefined()
     // Per-series marker still surfaces on the series side.
-    expect(chart?.series?.[0].marker).toMatchObject({ symbol: "circle", size: 6 });
-  });
+    expect(chart?.series?.[0].marker).toMatchObject({ symbol: "circle", size: 6 })
+  })
 
   it("co-surfaces showLineMarkers alongside other line-only chart-level fields", () => {
     // The chart-level <c:marker> sits at the tail of CT_LineChart
@@ -12089,19 +12089,19 @@ describe("parseChart — showLineMarkers", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.showLineMarkers).toBe(false);
-    expect(chart?.dropLines).toBe(true);
-    expect(chart?.hiLowLines).toBe(true);
-    expect(chart?.upDownBars).toBe(true);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.showLineMarkers).toBe(false)
+    expect(chart?.dropLines).toBe(true)
+    expect(chart?.hiLowLines).toBe(true)
+    expect(chart?.upDownBars).toBe(true)
+  })
+})
 
 // ── parseChart — view3D ────────────────────────────────────────────
 
 describe("parseChart — view3D", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it("surfaces every CT_View3D field a fully-pinned <c:view3D> declares", () => {
     // Excel's "3-D Rotation" pane writes every field on a fresh 3D
@@ -12124,8 +12124,8 @@ describe("parseChart — view3D", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.view3D).toEqual({
       rotX: 15,
       hPercent: 100,
@@ -12133,8 +12133,8 @@ describe("parseChart — view3D", () => {
       depthPercent: 100,
       rAngAx: true,
       perspective: 30,
-    });
-  });
+    })
+  })
 
   it("surfaces a partial shape with only the fields the file pinned", () => {
     // Common pattern — pin rotation only, leave height / depth /
@@ -12151,9 +12151,9 @@ describe("parseChart — view3D", () => {
       <c:line3DChart><c:ser><c:idx val="0"/></c:ser></c:line3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.view3D).toEqual({ rotX: 20, rotY: 40 });
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.view3D).toEqual({ rotX: 20, rotY: 40 })
+  })
 
   it("surfaces signed rotX values (the OOXML ST_RotX type accepts -90..90)", () => {
     // ST_RotX is a signed byte — Excel writes negative values for
@@ -12171,9 +12171,9 @@ describe("parseChart — view3D", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.view3D).toEqual({ rotX: -30 });
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.view3D).toEqual({ rotX: -30 })
+  })
 
   it("surfaces the boundary values of every range (min and max)", () => {
     // Verify the inclusive bounds of every child's simple type.
@@ -12193,14 +12193,14 @@ describe("parseChart — view3D", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xmlMin)?.view3D).toEqual({
       rotX: -90,
       hPercent: 5,
       rotY: 0,
       depthPercent: 20,
       perspective: 0,
-    });
+    })
 
     const xmlMax = `<c:chartSpace ${NS}>
   <c:chart>
@@ -12218,15 +12218,15 @@ describe("parseChart — view3D", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     expect(parseChart(xmlMax)?.view3D).toEqual({
       rotX: 90,
       hPercent: 500,
       rotY: 360,
       depthPercent: 2000,
       perspective: 240,
-    });
-  });
+    })
+  })
 
   it("drops out-of-range numeric fields rather than fabricate clamped values", () => {
     // Each numeric field is bound by an OOXML simple type (ST_RotX,
@@ -12248,11 +12248,11 @@ describe("parseChart — view3D", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     // Every field is out of its simple-type range — nothing surfaces,
     // but the empty `<c:view3D>` shell still gates the field as `{}`.
-    expect(parseChart(xml)?.view3D).toEqual({});
-  });
+    expect(parseChart(xml)?.view3D).toEqual({})
+  })
 
   it("drops fractional / non-integer values rather than fabricate floats", () => {
     // Every CT_View3D numeric child is an integer simple type.
@@ -12273,9 +12273,9 @@ describe("parseChart — view3D", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.view3D).toEqual({});
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.view3D).toEqual({})
+  })
 
   it("accepts the OOXML textual <xsd:boolean> spellings on rAngAx", () => {
     // CT_Boolean accepts "1" / "true" / "0" / "false".
@@ -12289,12 +12289,12 @@ describe("parseChart — view3D", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xmlTrue)?.view3D).toEqual({ rAngAx: true });
+</c:chartSpace>`
+    expect(parseChart(xmlTrue)?.view3D).toEqual({ rAngAx: true })
 
-    const xmlFalse = xmlTrue.replace('val="true"', 'val="false"');
-    expect(parseChart(xmlFalse)?.view3D).toEqual({ rAngAx: false });
-  });
+    const xmlFalse = xmlTrue.replace('val="true"', 'val="false"')
+    expect(parseChart(xmlFalse)?.view3D).toEqual({ rAngAx: false })
+  })
 
   it("drops a missing val attribute on a <c:view3D> child rather than fabricate a value", () => {
     // A child without `val` is malformed per its CT type; the reader
@@ -12314,9 +12314,9 @@ describe("parseChart — view3D", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.view3D).toEqual({ rotY: 20 });
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.view3D).toEqual({ rotY: 20 })
+  })
 
   it("drops unknown rAngAx tokens rather than fabricate flags", () => {
     // Anything outside the OOXML truthy / falsy spellings collapses
@@ -12334,9 +12334,9 @@ describe("parseChart — view3D", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.view3D).toEqual({ rotX: 15 });
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.view3D).toEqual({ rotX: 15 })
+  })
 
   it("surfaces an empty object when <c:view3D> is present but every child is malformed", () => {
     // The element itself is the gating signal — when it appears, the
@@ -12360,9 +12360,9 @@ describe("parseChart — view3D", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.view3D).toEqual({});
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.view3D).toEqual({})
+  })
 
   it("surfaces an empty object on a bare <c:view3D/> element", () => {
     // A self-closing element with no children — same minimal-shape
@@ -12377,9 +12377,9 @@ describe("parseChart — view3D", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.view3D).toEqual({});
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.view3D).toEqual({})
+  })
 
   it("returns undefined when the chart has no <c:view3D> element", () => {
     // Absence is the writer's default — Excel falls back to the
@@ -12395,9 +12395,9 @@ describe("parseChart — view3D", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.view3D).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.view3D).toBeUndefined()
+  })
 
   it("surfaces view3D on a 2D chart family (the OOXML schema accepts it on every CT_Chart)", () => {
     // <c:view3D> is only meaningful on 3D families but the schema
@@ -12415,9 +12415,9 @@ describe("parseChart — view3D", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.view3D).toEqual({ rotX: 15 });
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.view3D).toEqual({ rotX: 15 })
+  })
 
   it("surfaces view3D on a pie chart (no axes, but the element lives on <c:chart>)", () => {
     // <c:view3D> lives on <c:chart>, not inside <c:plotArea>, so
@@ -12435,9 +12435,9 @@ describe("parseChart — view3D", () => {
       </c:pieChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.view3D).toEqual({ rotY: 180 });
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.view3D).toEqual({ rotY: 180 })
+  })
 
   it("co-exists with sibling chart-level toggles", () => {
     // The view3D reader should not interfere with sibling fields
@@ -12458,19 +12458,19 @@ describe("parseChart — view3D", () => {
     <c:plotVisOnly val="0"/>
     <c:dispBlanksAs val="zero"/>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.autoTitleDeleted).toBe(true);
-    expect(chart?.view3D).toEqual({ rotX: 20, rotY: 30 });
-    expect(chart?.plotVisOnly).toBe(false);
-    expect(chart?.dispBlanksAs).toBe("zero");
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.autoTitleDeleted).toBe(true)
+    expect(chart?.view3D).toEqual({ rotX: 20, rotY: 30 })
+    expect(chart?.plotVisOnly).toBe(false)
+    expect(chart?.dispBlanksAs).toBe("zero")
+  })
+})
 
 // ── parseChart — floor thickness ──────────────────────────────────
 
 describe("parseChart — floorThickness", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it("surfaces a positive thickness pinned by <c:floor><c:thickness>", () => {
     // Excel's "Format Floor -> Floor -> Thickness" pane writes
@@ -12489,9 +12489,9 @@ describe("parseChart — floorThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.floorThickness).toBe(25);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.floorThickness).toBe(25)
+  })
 
   it("collapses the OOXML default 0 to undefined", () => {
     // The OOXML default `0` (no extrusion) is the writer's default
@@ -12509,9 +12509,9 @@ describe("parseChart — floorThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.floorThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.floorThickness).toBeUndefined()
+  })
 
   it("surfaces the boundary value 100 (Excel UI band ceiling)", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -12526,9 +12526,9 @@ describe("parseChart — floorThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.floorThickness).toBe(100);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.floorThickness).toBe(100)
+  })
 
   it("drops out-of-range values rather than fabricate a clamped thickness", () => {
     // Excel's UI tops out at 100 — a stray value above the band drops
@@ -12547,9 +12547,9 @@ describe("parseChart — floorThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.floorThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.floorThickness).toBeUndefined()
+  })
 
   it("drops fractional / non-integer values rather than fabricate floats", () => {
     // ST_Thickness is `xsd:unsignedInt` — `parseInt` would coerce
@@ -12569,9 +12569,9 @@ describe("parseChart — floorThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.floorThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.floorThickness).toBeUndefined()
+  })
 
   it("drops negative values (ST_Thickness is xsd:unsignedInt)", () => {
     // The unsigned simple type rejects a leading `-`.
@@ -12587,9 +12587,9 @@ describe("parseChart — floorThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.floorThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.floorThickness).toBeUndefined()
+  })
 
   it("drops a missing val attribute rather than fabricate a value", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -12604,9 +12604,9 @@ describe("parseChart — floorThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.floorThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.floorThickness).toBeUndefined()
+  })
 
   it("drops non-numeric val tokens rather than coerce", () => {
     // `parseInt` would coerce "30abc" → 30, but Excel never emits the
@@ -12623,9 +12623,9 @@ describe("parseChart — floorThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.floorThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.floorThickness).toBeUndefined()
+  })
 
   it("returns undefined when <c:floor> is present but <c:thickness> is missing", () => {
     // CT_Surface's `<c:thickness>` is optional. A `<c:floor>` block
@@ -12642,9 +12642,9 @@ describe("parseChart — floorThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.floorThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.floorThickness).toBeUndefined()
+  })
 
   it("returns undefined on a bare <c:floor/> element", () => {
     // A self-closing element with no children — same minimal-shape
@@ -12659,9 +12659,9 @@ describe("parseChart — floorThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.floorThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.floorThickness).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:floor> element", () => {
     // Absence is the writer's default — Excel renders no floor
@@ -12677,9 +12677,9 @@ describe("parseChart — floorThickness", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.floorThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.floorThickness).toBeUndefined()
+  })
 
   it("surfaces floorThickness on a 2D chart family (the schema accepts it on every CT_Chart)", () => {
     // <c:floor> is only meaningful on 3D families but the OOXML schema
@@ -12697,9 +12697,9 @@ describe("parseChart — floorThickness", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.floorThickness).toBe(15);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.floorThickness).toBe(15)
+  })
 
   it("surfaces floorThickness on a pie chart (no axes, but the element lives on <c:chart>)", () => {
     // <c:floor> lives on <c:chart>, not inside <c:plotArea>, so
@@ -12717,9 +12717,9 @@ describe("parseChart — floorThickness", () => {
       </c:pieChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.floorThickness).toBe(10);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.floorThickness).toBe(10)
+  })
 
   it("co-exists with sibling chart-level toggles", () => {
     // The floorThickness reader should not interfere with sibling
@@ -12743,20 +12743,20 @@ describe("parseChart — floorThickness", () => {
     <c:plotVisOnly val="0"/>
     <c:dispBlanksAs val="zero"/>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.autoTitleDeleted).toBe(true);
-    expect(chart?.view3D).toEqual({ rotX: 20 });
-    expect(chart?.floorThickness).toBe(40);
-    expect(chart?.plotVisOnly).toBe(false);
-    expect(chart?.dispBlanksAs).toBe("zero");
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.autoTitleDeleted).toBe(true)
+    expect(chart?.view3D).toEqual({ rotX: 20 })
+    expect(chart?.floorThickness).toBe(40)
+    expect(chart?.plotVisOnly).toBe(false)
+    expect(chart?.dispBlanksAs).toBe("zero")
+  })
+})
 
 // ── parseChart — side-wall thickness ──────────────────────────────
 
 describe("parseChart — sideWallThickness", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it("surfaces a positive thickness pinned by <c:sideWall><c:thickness>", () => {
     // Excel's "Format Side Wall -> Side Wall -> Thickness" pane writes
@@ -12775,9 +12775,9 @@ describe("parseChart — sideWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.sideWallThickness).toBe(25);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.sideWallThickness).toBe(25)
+  })
 
   it("collapses the OOXML default 0 to undefined", () => {
     // The OOXML default `0` (no extrusion) is the writer's default
@@ -12795,9 +12795,9 @@ describe("parseChart — sideWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.sideWallThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.sideWallThickness).toBeUndefined()
+  })
 
   it("surfaces the boundary value 100 (Excel UI band ceiling)", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -12812,9 +12812,9 @@ describe("parseChart — sideWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.sideWallThickness).toBe(100);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.sideWallThickness).toBe(100)
+  })
 
   it("drops out-of-range values rather than fabricate a clamped thickness", () => {
     // Excel's UI tops out at 100 — a stray value above the band drops
@@ -12833,9 +12833,9 @@ describe("parseChart — sideWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.sideWallThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.sideWallThickness).toBeUndefined()
+  })
 
   it("drops fractional / non-integer values rather than fabricate floats", () => {
     // ST_Thickness is `xsd:unsignedInt` — `parseInt` would coerce
@@ -12855,9 +12855,9 @@ describe("parseChart — sideWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.sideWallThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.sideWallThickness).toBeUndefined()
+  })
 
   it("drops negative values (ST_Thickness is xsd:unsignedInt)", () => {
     // The unsigned simple type rejects a leading `-`.
@@ -12873,9 +12873,9 @@ describe("parseChart — sideWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.sideWallThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.sideWallThickness).toBeUndefined()
+  })
 
   it("drops a missing val attribute rather than fabricate a value", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -12890,9 +12890,9 @@ describe("parseChart — sideWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.sideWallThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.sideWallThickness).toBeUndefined()
+  })
 
   it("drops non-numeric val tokens rather than coerce", () => {
     // `parseInt` would coerce "30abc" → 30, but Excel never emits the
@@ -12909,9 +12909,9 @@ describe("parseChart — sideWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.sideWallThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.sideWallThickness).toBeUndefined()
+  })
 
   it("returns undefined when <c:sideWall> is present but <c:thickness> is missing", () => {
     // CT_Surface's `<c:thickness>` is optional. A `<c:sideWall>` block
@@ -12928,9 +12928,9 @@ describe("parseChart — sideWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.sideWallThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.sideWallThickness).toBeUndefined()
+  })
 
   it("returns undefined on a bare <c:sideWall/> element", () => {
     // A self-closing element with no children — same minimal-shape
@@ -12945,9 +12945,9 @@ describe("parseChart — sideWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.sideWallThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.sideWallThickness).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:sideWall> element", () => {
     // Absence is the writer's default — Excel renders no side-wall
@@ -12963,9 +12963,9 @@ describe("parseChart — sideWallThickness", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.sideWallThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.sideWallThickness).toBeUndefined()
+  })
 
   it("surfaces sideWallThickness on a 2D chart family (the schema accepts it on every CT_Chart)", () => {
     // <c:sideWall> is only meaningful on 3D families but the OOXML
@@ -12983,9 +12983,9 @@ describe("parseChart — sideWallThickness", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.sideWallThickness).toBe(15);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.sideWallThickness).toBe(15)
+  })
 
   it("surfaces sideWallThickness on a pie chart (no axes, but the element lives on <c:chart>)", () => {
     // <c:sideWall> lives on <c:chart>, not inside <c:plotArea>, so
@@ -13003,9 +13003,9 @@ describe("parseChart — sideWallThickness", () => {
       </c:pieChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.sideWallThickness).toBe(10);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.sideWallThickness).toBe(10)
+  })
 
   it("co-exists with sibling chart-level toggles", () => {
     // The sideWallThickness reader should not interfere with sibling
@@ -13029,20 +13029,20 @@ describe("parseChart — sideWallThickness", () => {
     <c:plotVisOnly val="0"/>
     <c:dispBlanksAs val="zero"/>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.autoTitleDeleted).toBe(true);
-    expect(chart?.view3D).toEqual({ rotX: 20 });
-    expect(chart?.sideWallThickness).toBe(40);
-    expect(chart?.plotVisOnly).toBe(false);
-    expect(chart?.dispBlanksAs).toBe("zero");
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.autoTitleDeleted).toBe(true)
+    expect(chart?.view3D).toEqual({ rotX: 20 })
+    expect(chart?.sideWallThickness).toBe(40)
+    expect(chart?.plotVisOnly).toBe(false)
+    expect(chart?.dispBlanksAs).toBe("zero")
+  })
+})
 
 // ── parseChart — back-wall thickness ──────────────────────────────
 
 describe("parseChart — backWallThickness", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it("surfaces a positive thickness pinned by <c:backWall><c:thickness>", () => {
     // Excel's "Format Back Wall -> Back Wall -> Thickness" pane writes
@@ -13061,9 +13061,9 @@ describe("parseChart — backWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.backWallThickness).toBe(25);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.backWallThickness).toBe(25)
+  })
 
   it("collapses the OOXML default 0 to undefined", () => {
     // The OOXML default `0` (no extrusion) is the writer's default
@@ -13081,9 +13081,9 @@ describe("parseChart — backWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.backWallThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.backWallThickness).toBeUndefined()
+  })
 
   it("surfaces the boundary value 100 (Excel UI band ceiling)", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -13098,9 +13098,9 @@ describe("parseChart — backWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.backWallThickness).toBe(100);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.backWallThickness).toBe(100)
+  })
 
   it("drops out-of-range values rather than fabricate a clamped thickness", () => {
     // Excel's UI tops out at 100 — a stray value above the band drops
@@ -13120,9 +13120,9 @@ describe("parseChart — backWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.backWallThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.backWallThickness).toBeUndefined()
+  })
 
   it("drops fractional / non-integer values rather than fabricate floats", () => {
     // ST_Thickness is `xsd:unsignedInt` — `parseInt` would coerce
@@ -13142,9 +13142,9 @@ describe("parseChart — backWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.backWallThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.backWallThickness).toBeUndefined()
+  })
 
   it("drops negative values (ST_Thickness is xsd:unsignedInt)", () => {
     // The unsigned simple type rejects a leading `-`.
@@ -13160,9 +13160,9 @@ describe("parseChart — backWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.backWallThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.backWallThickness).toBeUndefined()
+  })
 
   it("drops a missing val attribute rather than fabricate a value", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -13177,9 +13177,9 @@ describe("parseChart — backWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.backWallThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.backWallThickness).toBeUndefined()
+  })
 
   it("drops non-numeric val tokens rather than coerce", () => {
     // `parseInt` would coerce "30abc" → 30, but Excel never emits the
@@ -13196,9 +13196,9 @@ describe("parseChart — backWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.backWallThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.backWallThickness).toBeUndefined()
+  })
 
   it("returns undefined when <c:backWall> is present but <c:thickness> is missing", () => {
     // CT_Surface's `<c:thickness>` is optional. A `<c:backWall>` block
@@ -13215,9 +13215,9 @@ describe("parseChart — backWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.backWallThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.backWallThickness).toBeUndefined()
+  })
 
   it("returns undefined on a bare <c:backWall/> element", () => {
     // A self-closing element with no children — same minimal-shape
@@ -13232,9 +13232,9 @@ describe("parseChart — backWallThickness", () => {
       </c:bar3DChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.backWallThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.backWallThickness).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:backWall> element", () => {
     // Absence is the writer's default — Excel renders no back-wall
@@ -13250,9 +13250,9 @@ describe("parseChart — backWallThickness", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.backWallThickness).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.backWallThickness).toBeUndefined()
+  })
 
   it("surfaces backWallThickness on a 2D chart family (the schema accepts it on every CT_Chart)", () => {
     // <c:backWall> is only meaningful on 3D families but the OOXML
@@ -13270,9 +13270,9 @@ describe("parseChart — backWallThickness", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.backWallThickness).toBe(15);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.backWallThickness).toBe(15)
+  })
 
   it("surfaces backWallThickness on a pie chart (no axes, but the element lives on <c:chart>)", () => {
     // <c:backWall> lives on <c:chart>, not inside <c:plotArea>, so
@@ -13290,9 +13290,9 @@ describe("parseChart — backWallThickness", () => {
       </c:pieChart>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.backWallThickness).toBe(10);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.backWallThickness).toBe(10)
+  })
 
   it("co-exists with sibling chart-level toggles (view3D, floor)", () => {
     // The backWallThickness reader should not interfere with sibling
@@ -13322,16 +13322,16 @@ describe("parseChart — backWallThickness", () => {
     <c:plotVisOnly val="0"/>
     <c:dispBlanksAs val="zero"/>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.autoTitleDeleted).toBe(true);
-    expect(chart?.view3D).toEqual({ rotX: 20 });
-    expect(chart?.floorThickness).toBe(30);
-    expect(chart?.backWallThickness).toBe(40);
-    expect(chart?.plotVisOnly).toBe(false);
-    expect(chart?.dispBlanksAs).toBe("zero");
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.autoTitleDeleted).toBe(true)
+    expect(chart?.view3D).toEqual({ rotX: 20 })
+    expect(chart?.floorThickness).toBe(30)
+    expect(chart?.backWallThickness).toBe(40)
+    expect(chart?.plotVisOnly).toBe(false)
+    expect(chart?.dispBlanksAs).toBe("zero")
+  })
+})
 
 // ── parseChart — legend entries ────────────────────────────────────
 
@@ -13349,15 +13349,15 @@ describe("parseChart — legend entries", () => {
     </c:plotArea>
     ${legendXml}
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces a single hidden entry", () => {
     const xml = chartWithLegend(
       '<c:legend><c:legendPos val="r"/><c:legendEntry><c:idx val="1"/><c:delete val="1"/></c:legendEntry></c:legend>',
-    );
-    expect(parseChart(xml)?.legendEntries).toEqual([{ idx: 1, delete: true }]);
-  });
+    )
+    expect(parseChart(xml)?.legendEntries).toEqual([{ idx: 1, delete: true }])
+  })
 
   it("surfaces multiple entries in <c:idx> declaration order", () => {
     const xml = chartWithLegend(
@@ -13366,15 +13366,15 @@ describe("parseChart — legend entries", () => {
         <c:legendEntry><c:idx val="2"/><c:delete val="1"/></c:legendEntry>
         <c:legendEntry><c:idx val="0"/><c:delete val="1"/></c:legendEntry>
       </c:legend>`,
-    );
+    )
     // The reader preserves the source order — the writer reorders by
     // ascending idx on emit, but parseChart surfaces the file-order list
     // so a roundtrip can be observed without normalization.
     expect(parseChart(xml)?.legendEntries).toEqual([
       { idx: 2, delete: true },
       { idx: 0, delete: true },
-    ]);
-  });
+    ])
+  })
 
   it("treats a missing <c:delete> as delete=false (the OOXML default)", () => {
     // CT_LegendEntry's <c:delete> is optional. Some templates (and
@@ -13384,16 +13384,16 @@ describe("parseChart — legend entries", () => {
     // selector forward.
     const xml = chartWithLegend(
       '<c:legend><c:legendPos val="r"/><c:legendEntry><c:idx val="1"/></c:legendEntry></c:legend>',
-    );
-    expect(parseChart(xml)?.legendEntries).toEqual([{ idx: 1, delete: false }]);
-  });
+    )
+    expect(parseChart(xml)?.legendEntries).toEqual([{ idx: 1, delete: false }])
+  })
 
   it('parses <c:delete val="0"/> as delete=false', () => {
     const xml = chartWithLegend(
       '<c:legend><c:legendPos val="r"/><c:legendEntry><c:idx val="0"/><c:delete val="0"/></c:legendEntry></c:legend>',
-    );
-    expect(parseChart(xml)?.legendEntries).toEqual([{ idx: 0, delete: false }]);
-  });
+    )
+    expect(parseChart(xml)?.legendEntries).toEqual([{ idx: 0, delete: false }])
+  })
 
   it('accepts the truthy / falsy <c:delete> spellings ("true" / "false")', () => {
     const xml = chartWithLegend(
@@ -13402,17 +13402,17 @@ describe("parseChart — legend entries", () => {
         <c:legendEntry><c:idx val="0"/><c:delete val="true"/></c:legendEntry>
         <c:legendEntry><c:idx val="1"/><c:delete val="false"/></c:legendEntry>
       </c:legend>`,
-    );
+    )
     expect(parseChart(xml)?.legendEntries).toEqual([
       { idx: 0, delete: true },
       { idx: 1, delete: false },
-    ]);
-  });
+    ])
+  })
 
   it("returns undefined when the chart declares no <c:legendEntry>", () => {
-    const xml = chartWithLegend('<c:legend><c:legendPos val="r"/></c:legend>');
-    expect(parseChart(xml)?.legendEntries).toBeUndefined();
-  });
+    const xml = chartWithLegend('<c:legend><c:legendPos val="r"/></c:legend>')
+    expect(parseChart(xml)?.legendEntries).toBeUndefined()
+  })
 
   it("returns undefined when the chart hides the legend (delete=1)", () => {
     // A hidden legend has no slot for entry overrides — even a stray
@@ -13420,14 +13420,14 @@ describe("parseChart — legend entries", () => {
     // would never show those entries anyway).
     const xml = chartWithLegend(
       '<c:legend><c:delete val="1"/><c:legendEntry><c:idx val="0"/><c:delete val="1"/></c:legendEntry></c:legend>',
-    );
-    expect(parseChart(xml)?.legendEntries).toBeUndefined();
-  });
+    )
+    expect(parseChart(xml)?.legendEntries).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:legend> at all", () => {
-    const xml = chartWithLegend("");
-    expect(parseChart(xml)?.legendEntries).toBeUndefined();
-  });
+    const xml = chartWithLegend("")
+    expect(parseChart(xml)?.legendEntries).toBeUndefined()
+  })
 
   it("drops entries whose <c:idx> is missing", () => {
     const xml = chartWithLegend(
@@ -13436,9 +13436,9 @@ describe("parseChart — legend entries", () => {
         <c:legendEntry><c:delete val="1"/></c:legendEntry>
         <c:legendEntry><c:idx val="2"/><c:delete val="1"/></c:legendEntry>
       </c:legend>`,
-    );
-    expect(parseChart(xml)?.legendEntries).toEqual([{ idx: 2, delete: true }]);
-  });
+    )
+    expect(parseChart(xml)?.legendEntries).toEqual([{ idx: 2, delete: true }])
+  })
 
   it("drops entries whose <c:idx val=..> is malformed", () => {
     const xml = chartWithLegend(
@@ -13448,9 +13448,9 @@ describe("parseChart — legend entries", () => {
         <c:legendEntry><c:idx val="-1"/><c:delete val="1"/></c:legendEntry>
         <c:legendEntry><c:idx val="0"/><c:delete val="1"/></c:legendEntry>
       </c:legend>`,
-    );
-    expect(parseChart(xml)?.legendEntries).toEqual([{ idx: 0, delete: true }]);
-  });
+    )
+    expect(parseChart(xml)?.legendEntries).toEqual([{ idx: 0, delete: true }])
+  })
 
   it("deduplicates duplicate <c:idx> entries (first wins)", () => {
     const xml = chartWithLegend(
@@ -13459,21 +13459,21 @@ describe("parseChart — legend entries", () => {
         <c:legendEntry><c:idx val="1"/><c:delete val="1"/></c:legendEntry>
         <c:legendEntry><c:idx val="1"/><c:delete val="0"/></c:legendEntry>
       </c:legend>`,
-    );
-    expect(parseChart(xml)?.legendEntries).toEqual([{ idx: 1, delete: true }]);
-  });
-});
+    )
+    expect(parseChart(xml)?.legendEntries).toEqual([{ idx: 1, delete: true }])
+  })
+})
 
 // ── parseChart — axis label rotation ───────────────────────────────
 
 describe("parseChart — axis labelRotation", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withCatAxTxPr(rot: string | undefined): string {
     const txPr =
       rot === undefined
         ? ""
-        : `<c:txPr><a:bodyPr rot="${rot}"/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>`;
+        : `<c:txPr><a:bodyPr rot="${rot}"/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>`
     return `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -13483,31 +13483,31 @@ describe("parseChart — axis labelRotation", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the rotation in whole degrees from the rot attribute (60000ths)", () => {
     // 45 degrees * 60000 = 2,700,000.
-    const chart = parseChart(withCatAxTxPr("2700000"));
-    expect(chart?.axes?.x?.labelRotation).toBe(45);
-  });
+    const chart = parseChart(withCatAxTxPr("2700000"))
+    expect(chart?.axes?.x?.labelRotation).toBe(45)
+  })
 
   it("surfaces negative rotations literally", () => {
-    const chart = parseChart(withCatAxTxPr("-2700000"));
-    expect(chart?.axes?.x?.labelRotation).toBe(-45);
-  });
+    const chart = parseChart(withCatAxTxPr("-2700000"))
+    expect(chart?.axes?.x?.labelRotation).toBe(-45)
+  })
 
   it('collapses the OOXML default rot="0" to undefined', () => {
     // The default `0` round-trips identically to absence — both leave
     // the labels rendering flat.
-    const chart = parseChart(withCatAxTxPr("0"));
-    expect(chart?.axes).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxTxPr("0"))
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <c:txPr> is absent", () => {
-    const chart = parseChart(withCatAxTxPr(undefined));
-    expect(chart?.axes).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxTxPr(undefined))
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <a:bodyPr> is absent inside <c:txPr>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -13519,9 +13519,9 @@ describe("parseChart — axis labelRotation", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <a:bodyPr> omits the rot attribute", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -13533,32 +13533,32 @@ describe("parseChart — axis labelRotation", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes).toBeUndefined()
+  })
 
   it("clamps rot values above the 90-degree maximum to 90", () => {
     // Values outside Excel's UI band collapse to the nearest endpoint
     // so a corrupt template cannot surface a rotation the writer would
     // never emit. 180° in 60000ths = 10,800,000.
-    const chart = parseChart(withCatAxTxPr("10800000"));
-    expect(chart?.axes?.x?.labelRotation).toBe(90);
-  });
+    const chart = parseChart(withCatAxTxPr("10800000"))
+    expect(chart?.axes?.x?.labelRotation).toBe(90)
+  })
 
   it("clamps rot values below the -90-degree minimum to -90", () => {
-    const chart = parseChart(withCatAxTxPr("-10800000"));
-    expect(chart?.axes?.x?.labelRotation).toBe(-90);
-  });
+    const chart = parseChart(withCatAxTxPr("-10800000"))
+    expect(chart?.axes?.x?.labelRotation).toBe(-90)
+  })
 
   it("drops non-numeric rot tokens", () => {
-    expect(parseChart(withCatAxTxPr("forty-five"))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTxPr("forty-five"))?.axes).toBeUndefined()
+  })
 
   it("rounds non-integer 60000ths to the nearest whole degree", () => {
     // 2,700,030 ≈ 45.0005°, rounds to 45.
-    const chart = parseChart(withCatAxTxPr("2700030"));
-    expect(chart?.axes?.x?.labelRotation).toBe(45);
-  });
+    const chart = parseChart(withCatAxTxPr("2700030"))
+    expect(chart?.axes?.x?.labelRotation).toBe(45)
+  })
 
   it("surfaces the rotation on the value axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -13570,10 +13570,10 @@ describe("parseChart — axis labelRotation", () => {
       <c:txPr><a:bodyPr rot="-1800000"/><a:lstStyle/><a:p/></c:txPr>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.labelRotation).toBe(-30);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.labelRotation).toBe(-30)
+  })
 
   it("surfaces independently on both axes", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -13588,11 +13588,11 @@ describe("parseChart — axis labelRotation", () => {
       <c:txPr><a:bodyPr rot="-1800000"/><a:lstStyle/><a:p/></c:txPr>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.labelRotation).toBe(45);
-    expect(chart?.axes?.y?.labelRotation).toBe(-30);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.labelRotation).toBe(45)
+    expect(chart?.axes?.y?.labelRotation).toBe(-30)
+  })
 
   it("surfaces the rotation on a scatter chart's value axes", () => {
     // Scatter has two `<c:valAx>` siblings — the rotation surfaces on
@@ -13611,11 +13611,11 @@ describe("parseChart — axis labelRotation", () => {
       <c:txPr><a:bodyPr rot="-2700000"/><a:lstStyle/><a:p/></c:txPr>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.labelRotation).toBe(45);
-    expect(chart?.axes?.y?.labelRotation).toBe(-45);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.labelRotation).toBe(45)
+    expect(chart?.axes?.y?.labelRotation).toBe(-45)
+  })
 
   it("co-surfaces alongside other axis fields", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -13630,27 +13630,27 @@ describe("parseChart — axis labelRotation", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Period",
       tickLblPos: "low",
       labelRotation: 45,
       noMultiLvlLbl: true,
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — axis labelFontSize ──────────────────────────────────
 
 describe("parseChart — axis labelFontSize", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withCatAxTxPrSize(sz: string | undefined): string {
     const txPr =
       sz === undefined
         ? ""
-        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="${sz}"/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>`;
+        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="${sz}"/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>`
     return `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -13660,29 +13660,29 @@ describe("parseChart — axis labelFontSize", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the font size in points from the sz attribute (100ths of a point)", () => {
     // 12pt * 100 = 1200.
-    const chart = parseChart(withCatAxTxPrSize("1200"));
-    expect(chart?.axes?.x?.labelFontSize).toBe(12);
-  });
+    const chart = parseChart(withCatAxTxPrSize("1200"))
+    expect(chart?.axes?.x?.labelFontSize).toBe(12)
+  })
 
   it("surfaces the reference 10pt size", () => {
-    const chart = parseChart(withCatAxTxPrSize("1000"));
-    expect(chart?.axes?.x?.labelFontSize).toBe(10);
-  });
+    const chart = parseChart(withCatAxTxPrSize("1000"))
+    expect(chart?.axes?.x?.labelFontSize).toBe(10)
+  })
 
   it("rounds half-point inputs to the nearest 0.5pt (Excel UI granularity)", () => {
     // 1050 => 10.5pt.
-    const chart = parseChart(withCatAxTxPrSize("1050"));
-    expect(chart?.axes?.x?.labelFontSize).toBe(10.5);
-  });
+    const chart = parseChart(withCatAxTxPrSize("1050"))
+    expect(chart?.axes?.x?.labelFontSize).toBe(10.5)
+  })
 
   it("returns undefined when <c:txPr> is absent", () => {
-    expect(parseChart(withCatAxTxPrSize(undefined))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTxPrSize(undefined))?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <a:defRPr> omits the sz attribute", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -13694,9 +13694,9 @@ describe("parseChart — axis labelFontSize", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <a:p> is absent inside <c:txPr>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -13708,23 +13708,23 @@ describe("parseChart — axis labelFontSize", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes).toBeUndefined()
+  })
 
   it("drops out-of-range sz tokens (below 100)", () => {
     // 50 / 100 = 0.5pt — below the 1pt minimum.
-    expect(parseChart(withCatAxTxPrSize("50"))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTxPrSize("50"))?.axes).toBeUndefined()
+  })
 
   it("drops out-of-range sz tokens (above 400000)", () => {
     // 500000 / 100 = 5000pt — above the 400pt maximum.
-    expect(parseChart(withCatAxTxPrSize("500000"))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTxPrSize("500000"))?.axes).toBeUndefined()
+  })
 
   it("drops non-numeric sz tokens", () => {
-    expect(parseChart(withCatAxTxPrSize("twelve-pt"))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTxPrSize("twelve-pt"))?.axes).toBeUndefined()
+  })
 
   it("surfaces the font size on the value axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -13736,9 +13736,9 @@ describe("parseChart — axis labelFontSize", () => {
       <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="900"/></a:pPr></a:p></c:txPr>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes?.y?.labelFontSize).toBe(9);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes?.y?.labelFontSize).toBe(9)
+  })
 
   it("surfaces independently on both axes", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -13753,11 +13753,11 @@ describe("parseChart — axis labelFontSize", () => {
       <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="900"/></a:pPr></a:p></c:txPr>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.labelFontSize).toBe(12);
-    expect(chart?.axes?.y?.labelFontSize).toBe(9);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.labelFontSize).toBe(12)
+    expect(chart?.axes?.y?.labelFontSize).toBe(9)
+  })
 
   it("surfaces co-existing rotation and font size from the same <c:txPr>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -13769,11 +13769,11 @@ describe("parseChart — axis labelFontSize", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.labelRotation).toBe(45);
-    expect(chart?.axes?.x?.labelFontSize).toBe(14);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.labelRotation).toBe(45)
+    expect(chart?.axes?.x?.labelFontSize).toBe(14)
+  })
 
   it('does not pick up an <a:defRPr sz=".."/> from the axis title\'s <c:rich>', () => {
     // The axis-title's `<c:rich>` carries its own `<a:defRPr sz="..">`
@@ -13789,11 +13789,11 @@ describe("parseChart — axis labelFontSize", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleFontSize).toBe(18);
-    expect(chart?.axes?.x?.labelFontSize).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleFontSize).toBe(18)
+    expect(chart?.axes?.x?.labelFontSize).toBeUndefined()
+  })
 
   it("co-surfaces alongside other axis fields", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -13807,21 +13807,21 @@ describe("parseChart — axis labelFontSize", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Period",
       tickLblPos: "low",
       labelRotation: 45,
       labelFontSize: 12,
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — data labels showLeaderLines ─────────────────────────
 
 describe("parseChart — data labels showLeaderLines", () => {
-  const NS_LL = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`;
+  const NS_LL = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"`
 
   it('surfaces showLeaderLines=false on a pie chart-level dLbls when val="0"', () => {
     const xml = `<c:chartSpace ${NS_LL}>
@@ -13839,13 +13839,13 @@ describe("parseChart — data labels showLeaderLines", () => {
       </c:dLbls>
     </c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.dataLabels).toEqual({
       showValue: true,
       showLeaderLines: false,
-    });
-  });
+    })
+  })
 
   it('collapses the OOXML default val="1" to undefined', () => {
     // The OOXML default is `true`; absence and the default round-trip
@@ -13861,11 +13861,11 @@ describe("parseChart — data labels showLeaderLines", () => {
       </c:dLbls>
     </c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.showLeaderLines).toBeUndefined();
-    expect(chart?.dataLabels?.showValue).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.showLeaderLines).toBeUndefined()
+    expect(chart?.dataLabels?.showValue).toBe(true)
+  })
 
   it("collapses absence of <c:showLeaderLines> to undefined", () => {
     const xml = `<c:chartSpace ${NS_LL}>
@@ -13877,10 +13877,10 @@ describe("parseChart — data labels showLeaderLines", () => {
       </c:dLbls>
     </c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.showLeaderLines).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.showLeaderLines).toBeUndefined()
+  })
 
   it('accepts the OOXML falsy spelling val="false"', () => {
     const xml = `<c:chartSpace ${NS_LL}>
@@ -13893,10 +13893,10 @@ describe("parseChart — data labels showLeaderLines", () => {
       </c:dLbls>
     </c:doughnutChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.showLeaderLines).toBe(false);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.showLeaderLines).toBe(false)
+  })
 
   it('accepts the OOXML truthy spelling val="true" and collapses to undefined', () => {
     const xml = `<c:chartSpace ${NS_LL}>
@@ -13909,10 +13909,10 @@ describe("parseChart — data labels showLeaderLines", () => {
       </c:dLbls>
     </c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.showLeaderLines).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.showLeaderLines).toBeUndefined()
+  })
 
   it("ignores unknown val tokens", () => {
     const xml = `<c:chartSpace ${NS_LL}>
@@ -13925,10 +13925,10 @@ describe("parseChart — data labels showLeaderLines", () => {
       </c:dLbls>
     </c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.showLeaderLines).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.showLeaderLines).toBeUndefined()
+  })
 
   it("returns undefined when <c:showLeaderLines> is missing the val attribute", () => {
     const xml = `<c:chartSpace ${NS_LL}>
@@ -13941,10 +13941,10 @@ describe("parseChart — data labels showLeaderLines", () => {
       </c:dLbls>
     </c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.showLeaderLines).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.showLeaderLines).toBeUndefined()
+  })
 
   it("makes showLeaderLines=false alone enough to surface a dataLabels record", () => {
     // Even when no value/category/series/percent toggle is on, a pinned
@@ -13966,10 +13966,10 @@ describe("parseChart — data labels showLeaderLines", () => {
       </c:dLbls>
     </c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels).toEqual({ showLeaderLines: false });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels).toEqual({ showLeaderLines: false })
+  })
 
   it("surfaces showLeaderLines on a series-level <c:dLbls>", () => {
     const xml = `<c:chartSpace ${NS_LL}>
@@ -13992,15 +13992,15 @@ describe("parseChart — data labels showLeaderLines", () => {
       </c:ser>
     </c:doughnutChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.series?.[0].dataLabels).toEqual({
       position: "bestFit",
       showValue: true,
       showPercent: true,
       showLeaderLines: false,
-    });
-  });
+    })
+  })
 
   it("co-surfaces showLeaderLines alongside numberFormat and other show toggles", () => {
     const xml = `<c:chartSpace ${NS_LL}>
@@ -14021,8 +14021,8 @@ describe("parseChart — data labels showLeaderLines", () => {
       </c:dLbls>
     </c:pieChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.dataLabels).toEqual({
       position: "bestFit",
       showLegendKey: true,
@@ -14032,8 +14032,8 @@ describe("parseChart — data labels showLeaderLines", () => {
       separator: "; ",
       numberFormat: { formatCode: "0.00%" },
       showLeaderLines: false,
-    });
-  });
+    })
+  })
 
   it("permissively surfaces showLeaderLines on non-pie families (parser is type-agnostic)", () => {
     // The OOXML schema scopes <c:showLeaderLines> to pie / doughnut on
@@ -14050,17 +14050,17 @@ describe("parseChart — data labels showLeaderLines", () => {
       </c:dLbls>
     </c:barChart>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.showLeaderLines).toBe(false);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.showLeaderLines).toBe(false)
+  })
+})
 
 describe("parseChart — title rotation", () => {
-  const NS_TR = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_TR = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withTitleRot(rot: string | undefined): string {
-    const bodyPr = rot === undefined ? "<a:bodyPr/>" : `<a:bodyPr rot="${rot}"/>`;
+    const bodyPr = rot === undefined ? "<a:bodyPr/>" : `<a:bodyPr rot="${rot}"/>`
     return `<c:chartSpace ${NS_TR}>
   <c:chart>
     <c:title>
@@ -14079,31 +14079,31 @@ describe("parseChart — title rotation", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the rotation in whole degrees from the rot attribute (60000ths)", () => {
     // 45 degrees * 60000 = 2,700,000.
-    const chart = parseChart(withTitleRot("2700000"));
-    expect(chart?.titleRotation).toBe(45);
-  });
+    const chart = parseChart(withTitleRot("2700000"))
+    expect(chart?.titleRotation).toBe(45)
+  })
 
   it("surfaces negative rotations literally", () => {
-    const chart = parseChart(withTitleRot("-2700000"));
-    expect(chart?.titleRotation).toBe(-45);
-  });
+    const chart = parseChart(withTitleRot("-2700000"))
+    expect(chart?.titleRotation).toBe(-45)
+  })
 
   it('collapses the OOXML default rot="0" to undefined', () => {
     // The default `0` round-trips identically to absence — both leave
     // the title rendering horizontally.
-    const chart = parseChart(withTitleRot("0"));
-    expect(chart?.titleRotation).toBeUndefined();
-  });
+    const chart = parseChart(withTitleRot("0"))
+    expect(chart?.titleRotation).toBeUndefined()
+  })
 
   it("returns undefined when <a:bodyPr> omits the rot attribute", () => {
-    const chart = parseChart(withTitleRot(undefined));
-    expect(chart?.titleRotation).toBeUndefined();
-  });
+    const chart = parseChart(withTitleRot(undefined))
+    expect(chart?.titleRotation).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:title> element", () => {
     const xml = `<c:chartSpace ${NS_TR}>
@@ -14112,10 +14112,10 @@ describe("parseChart — title rotation", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleRotation).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleRotation).toBeUndefined()
+  })
 
   it("returns undefined when <c:title> has no <c:tx><c:rich> body", () => {
     // A title that only carries `<c:strRef>` (formula reference) has
@@ -14137,39 +14137,39 @@ describe("parseChart — title rotation", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleRotation).toBeUndefined();
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleRotation).toBeUndefined()
     // Title still surfaces from the strRef cache.
-    expect(chart?.title).toBe("Quarterly Revenue");
-  });
+    expect(chart?.title).toBe("Quarterly Revenue")
+  })
 
   it("clamps rot values above the 90-degree maximum to 90", () => {
     // Values outside Excel's UI band collapse to the nearest endpoint
     // so a corrupt template cannot surface a rotation the writer would
     // never emit. 180° in 60000ths = 10,800,000.
-    const chart = parseChart(withTitleRot("10800000"));
-    expect(chart?.titleRotation).toBe(90);
-  });
+    const chart = parseChart(withTitleRot("10800000"))
+    expect(chart?.titleRotation).toBe(90)
+  })
 
   it("clamps rot values below the -90-degree minimum to -90", () => {
-    const chart = parseChart(withTitleRot("-10800000"));
-    expect(chart?.titleRotation).toBe(-90);
-  });
+    const chart = parseChart(withTitleRot("-10800000"))
+    expect(chart?.titleRotation).toBe(-90)
+  })
 
   it("drops non-numeric rot tokens", () => {
-    expect(parseChart(withTitleRot("forty-five"))?.titleRotation).toBeUndefined();
-  });
+    expect(parseChart(withTitleRot("forty-five"))?.titleRotation).toBeUndefined()
+  })
 
   it("drops empty rot tokens", () => {
-    expect(parseChart(withTitleRot(""))?.titleRotation).toBeUndefined();
-  });
+    expect(parseChart(withTitleRot(""))?.titleRotation).toBeUndefined()
+  })
 
   it("rounds non-integer 60000ths to the nearest whole degree", () => {
     // 2,700,030 ≈ 45.0005°, rounds to 45.
-    const chart = parseChart(withTitleRot("2700030"));
-    expect(chart?.titleRotation).toBe(45);
-  });
+    const chart = parseChart(withTitleRot("2700030"))
+    expect(chart?.titleRotation).toBe(45)
+  })
 
   it("co-surfaces alongside titleOverlay and other chart fields", () => {
     const xml = `<c:chartSpace ${NS_TR}>
@@ -14190,21 +14190,21 @@ describe("parseChart — title rotation", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.title).toBe("Sidebar");
-    expect(chart?.titleOverlay).toBe(true);
-    expect(chart?.titleRotation).toBe(-90);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.title).toBe("Sidebar")
+    expect(chart?.titleOverlay).toBe(true)
+    expect(chart?.titleRotation).toBe(-90)
+  })
+})
 
 // ── parseChart — title font size ─────────────────────────────────────
 
 describe("parseChart — title font size", () => {
-  const NS_TFS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_TFS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withTitleSz(sz: string | undefined): string {
-    const defRPr = sz === undefined ? "<a:defRPr/>" : `<a:defRPr sz="${sz}"/>`;
+    const defRPr = sz === undefined ? "<a:defRPr/>" : `<a:defRPr sz="${sz}"/>`
     return `<c:chartSpace ${NS_TFS}>
   <c:chart>
     <c:title>
@@ -14223,42 +14223,42 @@ describe("parseChart — title font size", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the size in points from the sz attribute (100ths of a point)", () => {
     // 18pt * 100 = 1800.
-    const chart = parseChart(withTitleSz("1800"));
-    expect(chart?.titleFontSize).toBe(18);
-  });
+    const chart = parseChart(withTitleSz("1800"))
+    expect(chart?.titleFontSize).toBe(18)
+  })
 
   it("surfaces the default 14pt size literally", () => {
     // Excel writes sz="1400" on every fresh chart title — the reader
     // surfaces it because it is a literal pin (no "default collapse"
     // for a literal sz, unlike the rot attribute's `0` default).
-    const chart = parseChart(withTitleSz("1400"));
-    expect(chart?.titleFontSize).toBe(14);
-  });
+    const chart = parseChart(withTitleSz("1400"))
+    expect(chart?.titleFontSize).toBe(14)
+  })
 
   it("rounds to the nearest 0.5pt", () => {
     // sz="1450" = 14.5pt — surfaces literally.
-    const a = parseChart(withTitleSz("1450"));
-    expect(a?.titleFontSize).toBe(14.5);
+    const a = parseChart(withTitleSz("1450"))
+    expect(a?.titleFontSize).toBe(14.5)
     // sz="1424" = 14.24pt — rounds down to 14.
-    const b = parseChart(withTitleSz("1424"));
-    expect(b?.titleFontSize).toBe(14);
+    const b = parseChart(withTitleSz("1424"))
+    expect(b?.titleFontSize).toBe(14)
     // sz="1480" = 14.8pt — rounds up to 15 (halfSteps `Math.round(29.6)=30`).
-    const c = parseChart(withTitleSz("1480"));
-    expect(c?.titleFontSize).toBe(15);
+    const c = parseChart(withTitleSz("1480"))
+    expect(c?.titleFontSize).toBe(15)
     // sz="1430" = 14.3pt — rounds to 14.5 (halfSteps `Math.round(28.6)=29`).
-    const d = parseChart(withTitleSz("1430"));
-    expect(d?.titleFontSize).toBe(14.5);
-  });
+    const d = parseChart(withTitleSz("1430"))
+    expect(d?.titleFontSize).toBe(14.5)
+  })
 
   it("returns undefined when <a:defRPr> omits the sz attribute", () => {
-    const chart = parseChart(withTitleSz(undefined));
-    expect(chart?.titleFontSize).toBeUndefined();
-  });
+    const chart = parseChart(withTitleSz(undefined))
+    expect(chart?.titleFontSize).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:title> element", () => {
     const xml = `<c:chartSpace ${NS_TFS}>
@@ -14267,10 +14267,10 @@ describe("parseChart — title font size", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleFontSize).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleFontSize).toBeUndefined()
+  })
 
   it("returns undefined when <c:title> has no <c:tx><c:rich> body", () => {
     // A title that only carries `<c:strRef>` (formula reference) has
@@ -14292,12 +14292,12 @@ describe("parseChart — title font size", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleFontSize).toBeUndefined();
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleFontSize).toBeUndefined()
     // Title still surfaces from the strRef cache.
-    expect(chart?.title).toBe("Quarterly Revenue");
-  });
+    expect(chart?.title).toBe("Quarterly Revenue")
+  })
 
   it("returns undefined when <a:p> has no <a:pPr> element", () => {
     const xml = `<c:chartSpace ${NS_TFS}>
@@ -14318,43 +14318,43 @@ describe("parseChart — title font size", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleFontSize).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleFontSize).toBeUndefined()
+  })
 
   it("drops sz values below the 1pt minimum after rounding (sz=49)", () => {
     // 49 / 100 = 0.49pt — half-step round lands at 0.5pt, which is
     // outside the OOXML ST_TextFontSize 1pt minimum. (sz values from
     // 75 onwards round up to 1.0pt and surface literally; 74 and below
     // are dropped.)
-    const chart = parseChart(withTitleSz("49"));
-    expect(chart?.titleFontSize).toBeUndefined();
-  });
+    const chart = parseChart(withTitleSz("49"))
+    expect(chart?.titleFontSize).toBeUndefined()
+  })
 
   it("drops sz values above the 400pt maximum (sz=400001)", () => {
     // 400001 / 100 = 4000.01pt — outside the OOXML band.
-    const chart = parseChart(withTitleSz("400001"));
-    expect(chart?.titleFontSize).toBeUndefined();
-  });
+    const chart = parseChart(withTitleSz("400001"))
+    expect(chart?.titleFontSize).toBeUndefined()
+  })
 
   it("surfaces the 1pt minimum (sz=100)", () => {
-    const chart = parseChart(withTitleSz("100"));
-    expect(chart?.titleFontSize).toBe(1);
-  });
+    const chart = parseChart(withTitleSz("100"))
+    expect(chart?.titleFontSize).toBe(1)
+  })
 
   it("surfaces the 400pt maximum (sz=40000)", () => {
-    const chart = parseChart(withTitleSz("40000"));
-    expect(chart?.titleFontSize).toBe(400);
-  });
+    const chart = parseChart(withTitleSz("40000"))
+    expect(chart?.titleFontSize).toBe(400)
+  })
 
   it("drops non-numeric sz tokens", () => {
-    expect(parseChart(withTitleSz("fourteen"))?.titleFontSize).toBeUndefined();
-  });
+    expect(parseChart(withTitleSz("fourteen"))?.titleFontSize).toBeUndefined()
+  })
 
   it("drops empty sz tokens", () => {
-    expect(parseChart(withTitleSz(""))?.titleFontSize).toBeUndefined();
-  });
+    expect(parseChart(withTitleSz(""))?.titleFontSize).toBeUndefined()
+  })
 
   it("co-surfaces alongside titleRotation, titleOverlay, and other chart fields", () => {
     const xml = `<c:chartSpace ${NS_TFS}>
@@ -14375,22 +14375,22 @@ describe("parseChart — title font size", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.title).toBe("Hero");
-    expect(chart?.titleOverlay).toBe(true);
-    expect(chart?.titleRotation).toBe(-90);
-    expect(chart?.titleFontSize).toBe(24);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.title).toBe("Hero")
+    expect(chart?.titleOverlay).toBe(true)
+    expect(chart?.titleRotation).toBe(-90)
+    expect(chart?.titleFontSize).toBe(24)
+  })
+})
 
 // ── parseChart — title bold ──────────────────────────────────────────
 
 describe("parseChart — title bold", () => {
-  const NS_TB = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_TB = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withTitleBold(b: string | undefined): string {
-    const defRPr = b === undefined ? "<a:defRPr/>" : `<a:defRPr b="${b}"/>`;
+    const defRPr = b === undefined ? "<a:defRPr/>" : `<a:defRPr b="${b}"/>`
     return `<c:chartSpace ${NS_TB}>
   <c:chart>
     <c:title>
@@ -14409,33 +14409,33 @@ describe("parseChart — title bold", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces true when the title pinned b='1'", () => {
-    const chart = parseChart(withTitleBold("1"));
-    expect(chart?.titleBold).toBe(true);
-  });
+    const chart = parseChart(withTitleBold("1"))
+    expect(chart?.titleBold).toBe(true)
+  })
 
   it("collapses b='0' to undefined (OOXML default round-trips identically)", () => {
-    const chart = parseChart(withTitleBold("0"));
-    expect(chart?.titleBold).toBeUndefined();
-  });
+    const chart = parseChart(withTitleBold("0"))
+    expect(chart?.titleBold).toBeUndefined()
+  })
 
   it("collapses absence of the b attribute to undefined", () => {
-    const chart = parseChart(withTitleBold(undefined));
-    expect(chart?.titleBold).toBeUndefined();
-  });
+    const chart = parseChart(withTitleBold(undefined))
+    expect(chart?.titleBold).toBeUndefined()
+  })
 
   it("accepts the OOXML truthy spelling 'true'", () => {
-    const chart = parseChart(withTitleBold("true"));
-    expect(chart?.titleBold).toBe(true);
-  });
+    const chart = parseChart(withTitleBold("true"))
+    expect(chart?.titleBold).toBe(true)
+  })
 
   it("collapses the OOXML falsy spelling 'false' to undefined", () => {
-    const chart = parseChart(withTitleBold("false"));
-    expect(chart?.titleBold).toBeUndefined();
-  });
+    const chart = parseChart(withTitleBold("false"))
+    expect(chart?.titleBold).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:title> element", () => {
     const xml = `<c:chartSpace ${NS_TB}>
@@ -14444,10 +14444,10 @@ describe("parseChart — title bold", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleBold).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleBold).toBeUndefined()
+  })
 
   it("returns undefined when <c:title> has no <c:tx><c:rich> body (strRef)", () => {
     // A title that only carries `<c:strRef>` (formula reference) has
@@ -14469,11 +14469,11 @@ describe("parseChart — title bold", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleBold).toBeUndefined();
-    expect(chart?.title).toBe("Revenue");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleBold).toBeUndefined()
+    expect(chart?.title).toBe("Revenue")
+  })
 
   it("returns undefined when <a:p> has no <a:pPr> element", () => {
     const xml = `<c:chartSpace ${NS_TB}>
@@ -14494,16 +14494,16 @@ describe("parseChart — title bold", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleBold).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleBold).toBeUndefined()
+  })
 
   it("drops unknown b tokens to undefined", () => {
-    expect(parseChart(withTitleBold("yes"))?.titleBold).toBeUndefined();
-    expect(parseChart(withTitleBold("on"))?.titleBold).toBeUndefined();
-    expect(parseChart(withTitleBold(""))?.titleBold).toBeUndefined();
-  });
+    expect(parseChart(withTitleBold("yes"))?.titleBold).toBeUndefined()
+    expect(parseChart(withTitleBold("on"))?.titleBold).toBeUndefined()
+    expect(parseChart(withTitleBold(""))?.titleBold).toBeUndefined()
+  })
 
   it("does not leak from a stray axis-title <a:defRPr>", () => {
     // The category axis title carries a bold <a:defRPr b="1"/>, but
@@ -14537,10 +14537,10 @@ describe("parseChart — title bold", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleBold).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleBold).toBeUndefined()
+  })
 
   it("co-surfaces alongside titleFontSize, titleRotation, and titleOverlay", () => {
     const xml = `<c:chartSpace ${NS_TB}>
@@ -14561,23 +14561,23 @@ describe("parseChart — title bold", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.title).toBe("Hero");
-    expect(chart?.titleBold).toBe(true);
-    expect(chart?.titleFontSize).toBe(24);
-    expect(chart?.titleRotation).toBe(-45);
-    expect(chart?.titleOverlay).toBe(true);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.title).toBe("Hero")
+    expect(chart?.titleBold).toBe(true)
+    expect(chart?.titleFontSize).toBe(24)
+    expect(chart?.titleRotation).toBe(-45)
+    expect(chart?.titleOverlay).toBe(true)
+  })
+})
 
 // ── parseChart — title italic ────────────────────────────────────────
 
 describe("parseChart — title italic", () => {
-  const NS_TI = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_TI = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withTitleItalic(i: string | undefined): string {
-    const defRPr = i === undefined ? "<a:defRPr/>" : `<a:defRPr i="${i}"/>`;
+    const defRPr = i === undefined ? "<a:defRPr/>" : `<a:defRPr i="${i}"/>`
     return `<c:chartSpace ${NS_TI}>
   <c:chart>
     <c:title>
@@ -14596,33 +14596,33 @@ describe("parseChart — title italic", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces true when the title pinned i='1'", () => {
-    const chart = parseChart(withTitleItalic("1"));
-    expect(chart?.titleItalic).toBe(true);
-  });
+    const chart = parseChart(withTitleItalic("1"))
+    expect(chart?.titleItalic).toBe(true)
+  })
 
   it("collapses i='0' to undefined (OOXML default round-trips identically)", () => {
-    const chart = parseChart(withTitleItalic("0"));
-    expect(chart?.titleItalic).toBeUndefined();
-  });
+    const chart = parseChart(withTitleItalic("0"))
+    expect(chart?.titleItalic).toBeUndefined()
+  })
 
   it("collapses absence of the i attribute to undefined", () => {
-    const chart = parseChart(withTitleItalic(undefined));
-    expect(chart?.titleItalic).toBeUndefined();
-  });
+    const chart = parseChart(withTitleItalic(undefined))
+    expect(chart?.titleItalic).toBeUndefined()
+  })
 
   it("accepts the OOXML truthy spelling 'true'", () => {
-    const chart = parseChart(withTitleItalic("true"));
-    expect(chart?.titleItalic).toBe(true);
-  });
+    const chart = parseChart(withTitleItalic("true"))
+    expect(chart?.titleItalic).toBe(true)
+  })
 
   it("collapses the OOXML falsy spelling 'false' to undefined", () => {
-    const chart = parseChart(withTitleItalic("false"));
-    expect(chart?.titleItalic).toBeUndefined();
-  });
+    const chart = parseChart(withTitleItalic("false"))
+    expect(chart?.titleItalic).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:title> element", () => {
     const xml = `<c:chartSpace ${NS_TI}>
@@ -14631,10 +14631,10 @@ describe("parseChart — title italic", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleItalic).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleItalic).toBeUndefined()
+  })
 
   it("returns undefined when <c:title> has no <c:tx><c:rich> body (strRef)", () => {
     // A title that only carries `<c:strRef>` (formula reference) has
@@ -14656,11 +14656,11 @@ describe("parseChart — title italic", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleItalic).toBeUndefined();
-    expect(chart?.title).toBe("Revenue");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleItalic).toBeUndefined()
+    expect(chart?.title).toBe("Revenue")
+  })
 
   it("returns undefined when <a:p> has no <a:pPr> element", () => {
     const xml = `<c:chartSpace ${NS_TI}>
@@ -14681,16 +14681,16 @@ describe("parseChart — title italic", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleItalic).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleItalic).toBeUndefined()
+  })
 
   it("drops unknown i tokens to undefined", () => {
-    expect(parseChart(withTitleItalic("yes"))?.titleItalic).toBeUndefined();
-    expect(parseChart(withTitleItalic("on"))?.titleItalic).toBeUndefined();
-    expect(parseChart(withTitleItalic(""))?.titleItalic).toBeUndefined();
-  });
+    expect(parseChart(withTitleItalic("yes"))?.titleItalic).toBeUndefined()
+    expect(parseChart(withTitleItalic("on"))?.titleItalic).toBeUndefined()
+    expect(parseChart(withTitleItalic(""))?.titleItalic).toBeUndefined()
+  })
 
   it("does not leak from a stray axis-title <a:defRPr>", () => {
     // The category axis title carries an italic <a:defRPr i="1"/>, but
@@ -14724,10 +14724,10 @@ describe("parseChart — title italic", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleItalic).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleItalic).toBeUndefined()
+  })
 
   it("co-surfaces alongside titleBold, titleFontSize, titleRotation, and titleOverlay", () => {
     const xml = `<c:chartSpace ${NS_TI}>
@@ -14748,24 +14748,24 @@ describe("parseChart — title italic", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.title).toBe("Hero");
-    expect(chart?.titleItalic).toBe(true);
-    expect(chart?.titleBold).toBe(true);
-    expect(chart?.titleFontSize).toBe(24);
-    expect(chart?.titleRotation).toBe(-45);
-    expect(chart?.titleOverlay).toBe(true);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.title).toBe("Hero")
+    expect(chart?.titleItalic).toBe(true)
+    expect(chart?.titleBold).toBe(true)
+    expect(chart?.titleFontSize).toBe(24)
+    expect(chart?.titleRotation).toBe(-45)
+    expect(chart?.titleOverlay).toBe(true)
+  })
+})
 
 // ── parseChart — title color ─────────────────────────────────────────
 
 describe("parseChart — title color", () => {
-  const NS_TC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_TC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withTitleColor(srgb: string | undefined): string {
-    const fill = srgb === undefined ? "" : `<a:solidFill><a:srgbClr val="${srgb}"/></a:solidFill>`;
+    const fill = srgb === undefined ? "" : `<a:solidFill><a:srgbClr val="${srgb}"/></a:solidFill>`
     return `<c:chartSpace ${NS_TC}>
   <c:chart>
     <c:title>
@@ -14784,28 +14784,28 @@ describe("parseChart — title color", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the uppercase hex value pinned by <a:srgbClr val='..'>", () => {
-    const chart = parseChart(withTitleColor("FF0000"));
-    expect(chart?.titleColor).toBe("FF0000");
-  });
+    const chart = parseChart(withTitleColor("FF0000"))
+    expect(chart?.titleColor).toBe("FF0000")
+  })
 
   it("normalizes a lowercase hex value to uppercase", () => {
-    const chart = parseChart(withTitleColor("1070ca"));
-    expect(chart?.titleColor).toBe("1070CA");
-  });
+    const chart = parseChart(withTitleColor("1070ca"))
+    expect(chart?.titleColor).toBe("1070CA")
+  })
 
   it("strips a leading '#' on read", () => {
-    const chart = parseChart(withTitleColor("#1070CA"));
-    expect(chart?.titleColor).toBe("1070CA");
-  });
+    const chart = parseChart(withTitleColor("#1070CA"))
+    expect(chart?.titleColor).toBe("1070CA")
+  })
 
   it("collapses absence of <a:solidFill> to undefined (theme-color default)", () => {
-    const chart = parseChart(withTitleColor(undefined));
-    expect(chart?.titleColor).toBeUndefined();
-  });
+    const chart = parseChart(withTitleColor(undefined))
+    expect(chart?.titleColor).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:title> element", () => {
     const xml = `<c:chartSpace ${NS_TC}>
@@ -14814,10 +14814,10 @@ describe("parseChart — title color", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleColor).toBeUndefined()
+  })
 
   it("returns undefined when the title is a <c:strRef> formula reference", () => {
     const xml = `<c:chartSpace ${NS_TC}>
@@ -14837,11 +14837,11 @@ describe("parseChart — title color", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleColor).toBeUndefined();
-    expect(chart?.title).toBe("Revenue");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleColor).toBeUndefined()
+    expect(chart?.title).toBe("Revenue")
+  })
 
   it("returns undefined when <a:p> has no <a:pPr> element", () => {
     const xml = `<c:chartSpace ${NS_TC}>
@@ -14862,10 +14862,10 @@ describe("parseChart — title color", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleColor).toBeUndefined()
+  })
 
   it("collapses theme color (<a:schemeClr>) to undefined", () => {
     // Theme references don't round-trip losslessly — only literal sRGB
@@ -14888,18 +14888,18 @@ describe("parseChart — title color", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleColor).toEqual({ theme: "tx1" });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleColor).toEqual({ theme: "tx1" })
+  })
 
   it("drops malformed val tokens (wrong length / non-hex / 8-char alpha form)", () => {
-    expect(parseChart(withTitleColor(""))?.titleColor).toBeUndefined();
-    expect(parseChart(withTitleColor("FFF"))?.titleColor).toBeUndefined();
-    expect(parseChart(withTitleColor("ZZZZZZ"))?.titleColor).toBeUndefined();
+    expect(parseChart(withTitleColor(""))?.titleColor).toBeUndefined()
+    expect(parseChart(withTitleColor("FFF"))?.titleColor).toBeUndefined()
+    expect(parseChart(withTitleColor("ZZZZZZ"))?.titleColor).toBeUndefined()
     // 8-character alpha form (Excel uses <a:alpha> sibling for that)
-    expect(parseChart(withTitleColor("FF0000FF"))?.titleColor).toBeUndefined();
-  });
+    expect(parseChart(withTitleColor("FF0000FF"))?.titleColor).toBeUndefined()
+  })
 
   it("does not leak from a stray axis-title <a:solidFill>", () => {
     // The category axis title carries an italic-colored <a:solidFill>,
@@ -14933,10 +14933,10 @@ describe("parseChart — title color", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleColor).toBeUndefined()
+  })
 
   it("co-surfaces alongside titleBold, titleItalic, titleFontSize, titleRotation, and titleOverlay", () => {
     const xml = `<c:chartSpace ${NS_TC}>
@@ -14957,25 +14957,25 @@ describe("parseChart — title color", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.title).toBe("Hero");
-    expect(chart?.titleColor).toBe("1070CA");
-    expect(chart?.titleItalic).toBe(true);
-    expect(chart?.titleBold).toBe(true);
-    expect(chart?.titleFontSize).toBe(24);
-    expect(chart?.titleRotation).toBe(-45);
-    expect(chart?.titleOverlay).toBe(true);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.title).toBe("Hero")
+    expect(chart?.titleColor).toBe("1070CA")
+    expect(chart?.titleItalic).toBe(true)
+    expect(chart?.titleBold).toBe(true)
+    expect(chart?.titleFontSize).toBe(24)
+    expect(chart?.titleRotation).toBe(-45)
+    expect(chart?.titleOverlay).toBe(true)
+  })
+})
 
 // ── parseChart — title strike ────────────────────────────────────────
 
 describe("parseChart — title strike", () => {
-  const NS_TS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_TS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withTitleStrike(strike: string | undefined): string {
-    const defRPr = strike === undefined ? "<a:defRPr/>" : `<a:defRPr strike="${strike}"/>`;
+    const defRPr = strike === undefined ? "<a:defRPr/>" : `<a:defRPr strike="${strike}"/>`
     return `<c:chartSpace ${NS_TS}>
   <c:chart>
     <c:title>
@@ -14994,31 +14994,31 @@ describe("parseChart — title strike", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces true when the title pinned strike='sngStrike' (Excel UI checkbox)", () => {
-    const chart = parseChart(withTitleStrike("sngStrike"));
-    expect(chart?.titleStrike).toBe(true);
-  });
+    const chart = parseChart(withTitleStrike("sngStrike"))
+    expect(chart?.titleStrike).toBe(true)
+  })
 
   it("collapses strike='noStrike' to undefined (OOXML default round-trips identically)", () => {
-    const chart = parseChart(withTitleStrike("noStrike"));
-    expect(chart?.titleStrike).toBeUndefined();
-  });
+    const chart = parseChart(withTitleStrike("noStrike"))
+    expect(chart?.titleStrike).toBeUndefined()
+  })
 
   it("collapses absence of the strike attribute to undefined", () => {
-    const chart = parseChart(withTitleStrike(undefined));
-    expect(chart?.titleStrike).toBeUndefined();
-  });
+    const chart = parseChart(withTitleStrike(undefined))
+    expect(chart?.titleStrike).toBeUndefined()
+  })
 
   it("collapses the non-UI 'dblStrike' variant to undefined (avoids lossy downgrade)", () => {
     // Hucre's writer emits only "sngStrike". Surfacing "dblStrike" as
     // true would silently downgrade the choice on round-trip, so the
     // reader collapses it to undefined to keep the round-trip lossless.
-    const chart = parseChart(withTitleStrike("dblStrike"));
-    expect(chart?.titleStrike).toBeUndefined();
-  });
+    const chart = parseChart(withTitleStrike("dblStrike"))
+    expect(chart?.titleStrike).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:title> element", () => {
     const xml = `<c:chartSpace ${NS_TS}>
@@ -15027,10 +15027,10 @@ describe("parseChart — title strike", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleStrike).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleStrike).toBeUndefined()
+  })
 
   it("returns undefined when <c:title> has no <c:tx><c:rich> body (strRef)", () => {
     // A title that only carries `<c:strRef>` (formula reference) has
@@ -15052,11 +15052,11 @@ describe("parseChart — title strike", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleStrike).toBeUndefined();
-    expect(chart?.title).toBe("Revenue");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleStrike).toBeUndefined()
+    expect(chart?.title).toBe("Revenue")
+  })
 
   it("returns undefined when <a:p> has no <a:pPr> element", () => {
     const xml = `<c:chartSpace ${NS_TS}>
@@ -15077,18 +15077,18 @@ describe("parseChart — title strike", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleStrike).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleStrike).toBeUndefined()
+  })
 
   it("drops unknown strike tokens to undefined", () => {
-    expect(parseChart(withTitleStrike("yes"))?.titleStrike).toBeUndefined();
-    expect(parseChart(withTitleStrike("on"))?.titleStrike).toBeUndefined();
-    expect(parseChart(withTitleStrike(""))?.titleStrike).toBeUndefined();
-    expect(parseChart(withTitleStrike("1"))?.titleStrike).toBeUndefined();
-    expect(parseChart(withTitleStrike("true"))?.titleStrike).toBeUndefined();
-  });
+    expect(parseChart(withTitleStrike("yes"))?.titleStrike).toBeUndefined()
+    expect(parseChart(withTitleStrike("on"))?.titleStrike).toBeUndefined()
+    expect(parseChart(withTitleStrike(""))?.titleStrike).toBeUndefined()
+    expect(parseChart(withTitleStrike("1"))?.titleStrike).toBeUndefined()
+    expect(parseChart(withTitleStrike("true"))?.titleStrike).toBeUndefined()
+  })
 
   it("does not leak from a stray axis-title <a:defRPr>", () => {
     // The category axis title carries a strike <a:defRPr strike="sngStrike"/>,
@@ -15122,10 +15122,10 @@ describe("parseChart — title strike", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleStrike).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleStrike).toBeUndefined()
+  })
 
   it("co-surfaces alongside titleBold, titleItalic, titleColor, titleFontSize, titleRotation, and titleOverlay", () => {
     const xml = `<c:chartSpace ${NS_TS}>
@@ -15146,26 +15146,26 @@ describe("parseChart — title strike", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.title).toBe("Hero");
-    expect(chart?.titleStrike).toBe(true);
-    expect(chart?.titleColor).toBe("1070CA");
-    expect(chart?.titleItalic).toBe(true);
-    expect(chart?.titleBold).toBe(true);
-    expect(chart?.titleFontSize).toBe(24);
-    expect(chart?.titleRotation).toBe(-45);
-    expect(chart?.titleOverlay).toBe(true);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.title).toBe("Hero")
+    expect(chart?.titleStrike).toBe(true)
+    expect(chart?.titleColor).toBe("1070CA")
+    expect(chart?.titleItalic).toBe(true)
+    expect(chart?.titleBold).toBe(true)
+    expect(chart?.titleFontSize).toBe(24)
+    expect(chart?.titleRotation).toBe(-45)
+    expect(chart?.titleOverlay).toBe(true)
+  })
+})
 
 // ── parseChart — title underline ─────────────────────────────────────
 
 describe("parseChart — title underline", () => {
-  const NS_TU = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_TU = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withTitleUnderline(u: string | undefined): string {
-    const defRPr = u === undefined ? "<a:defRPr/>" : `<a:defRPr u="${u}"/>`;
+    const defRPr = u === undefined ? "<a:defRPr/>" : `<a:defRPr u="${u}"/>`
     return `<c:chartSpace ${NS_TU}>
   <c:chart>
     <c:title>
@@ -15184,31 +15184,31 @@ describe("parseChart — title underline", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces true when the title pinned u='sng' (Excel UI checkbox)", () => {
-    const chart = parseChart(withTitleUnderline("sng"));
-    expect(chart?.titleUnderline).toBe(true);
-  });
+    const chart = parseChart(withTitleUnderline("sng"))
+    expect(chart?.titleUnderline).toBe(true)
+  })
 
   it("collapses u='none' to undefined (OOXML default round-trips identically)", () => {
-    const chart = parseChart(withTitleUnderline("none"));
-    expect(chart?.titleUnderline).toBeUndefined();
-  });
+    const chart = parseChart(withTitleUnderline("none"))
+    expect(chart?.titleUnderline).toBeUndefined()
+  })
 
   it("collapses absence of the u attribute to undefined", () => {
-    const chart = parseChart(withTitleUnderline(undefined));
-    expect(chart?.titleUnderline).toBeUndefined();
-  });
+    const chart = parseChart(withTitleUnderline(undefined))
+    expect(chart?.titleUnderline).toBeUndefined()
+  })
 
   it("collapses the non-UI 'dbl' variant to undefined (avoids lossy downgrade)", () => {
     // Hucre's writer emits only "sng". Surfacing "dbl" as true would
     // silently downgrade the choice on round-trip, so the reader
     // collapses it to undefined to keep the round-trip lossless.
-    const chart = parseChart(withTitleUnderline("dbl"));
-    expect(chart?.titleUnderline).toBeUndefined();
-  });
+    const chart = parseChart(withTitleUnderline("dbl"))
+    expect(chart?.titleUnderline).toBeUndefined()
+  })
 
   it("collapses every exotic ST_TextUnderlineType variant to undefined", () => {
     // The OOXML enum has eighteen values; Excel's UI exposes only "sng"
@@ -15231,11 +15231,11 @@ describe("parseChart — title underline", () => {
       "wavy",
       "wavyHeavy",
       "wavyDbl",
-    ];
+    ]
     for (const variant of exotic) {
-      expect(parseChart(withTitleUnderline(variant))?.titleUnderline).toBeUndefined();
+      expect(parseChart(withTitleUnderline(variant))?.titleUnderline).toBeUndefined()
     }
-  });
+  })
 
   it("returns undefined when the chart has no <c:title> element", () => {
     const xml = `<c:chartSpace ${NS_TU}>
@@ -15244,10 +15244,10 @@ describe("parseChart — title underline", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleUnderline).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleUnderline).toBeUndefined()
+  })
 
   it("returns undefined when <c:title> has no <c:tx><c:rich> body (strRef)", () => {
     // A title that only carries `<c:strRef>` (formula reference) has
@@ -15269,11 +15269,11 @@ describe("parseChart — title underline", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleUnderline).toBeUndefined();
-    expect(chart?.title).toBe("Revenue");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleUnderline).toBeUndefined()
+    expect(chart?.title).toBe("Revenue")
+  })
 
   it("returns undefined when <a:p> has no <a:pPr> element", () => {
     const xml = `<c:chartSpace ${NS_TU}>
@@ -15294,19 +15294,19 @@ describe("parseChart — title underline", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleUnderline).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleUnderline).toBeUndefined()
+  })
 
   it("drops unknown u tokens to undefined", () => {
-    expect(parseChart(withTitleUnderline("yes"))?.titleUnderline).toBeUndefined();
-    expect(parseChart(withTitleUnderline("on"))?.titleUnderline).toBeUndefined();
-    expect(parseChart(withTitleUnderline(""))?.titleUnderline).toBeUndefined();
-    expect(parseChart(withTitleUnderline("1"))?.titleUnderline).toBeUndefined();
-    expect(parseChart(withTitleUnderline("true"))?.titleUnderline).toBeUndefined();
-    expect(parseChart(withTitleUnderline("single"))?.titleUnderline).toBeUndefined();
-  });
+    expect(parseChart(withTitleUnderline("yes"))?.titleUnderline).toBeUndefined()
+    expect(parseChart(withTitleUnderline("on"))?.titleUnderline).toBeUndefined()
+    expect(parseChart(withTitleUnderline(""))?.titleUnderline).toBeUndefined()
+    expect(parseChart(withTitleUnderline("1"))?.titleUnderline).toBeUndefined()
+    expect(parseChart(withTitleUnderline("true"))?.titleUnderline).toBeUndefined()
+    expect(parseChart(withTitleUnderline("single"))?.titleUnderline).toBeUndefined()
+  })
 
   it("does not leak from a stray axis-title <a:defRPr>", () => {
     // The category axis title carries <a:defRPr u="sng"/>, but the
@@ -15340,10 +15340,10 @@ describe("parseChart — title underline", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleUnderline).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleUnderline).toBeUndefined()
+  })
 
   it("co-surfaces alongside titleBold, titleItalic, titleStrike, titleColor, titleFontSize, titleRotation, and titleOverlay", () => {
     const xml = `<c:chartSpace ${NS_TU}>
@@ -15364,27 +15364,27 @@ describe("parseChart — title underline", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.title).toBe("Hero");
-    expect(chart?.titleUnderline).toBe(true);
-    expect(chart?.titleStrike).toBe(true);
-    expect(chart?.titleColor).toBe("1070CA");
-    expect(chart?.titleItalic).toBe(true);
-    expect(chart?.titleBold).toBe(true);
-    expect(chart?.titleFontSize).toBe(24);
-    expect(chart?.titleRotation).toBe(-45);
-    expect(chart?.titleOverlay).toBe(true);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.title).toBe("Hero")
+    expect(chart?.titleUnderline).toBe(true)
+    expect(chart?.titleStrike).toBe(true)
+    expect(chart?.titleColor).toBe("1070CA")
+    expect(chart?.titleItalic).toBe(true)
+    expect(chart?.titleBold).toBe(true)
+    expect(chart?.titleFontSize).toBe(24)
+    expect(chart?.titleRotation).toBe(-45)
+    expect(chart?.titleOverlay).toBe(true)
+  })
+})
 
 // ── parseChart — axis title rotation ─────────────────────────────────
 
 describe("parseChart — axis title rotation", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withCatAxTitle(rot: string | undefined): string {
-    const bodyPr = rot === undefined ? "<a:bodyPr/>" : `<a:bodyPr rot="${rot}"/>`;
+    const bodyPr = rot === undefined ? "<a:bodyPr/>" : `<a:bodyPr rot="${rot}"/>`
     return `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -15401,32 +15401,32 @@ describe("parseChart — axis title rotation", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the axis-title rotation in whole degrees from the rot attribute", () => {
     // 45° in 60000ths = 2,700,000.
-    const chart = parseChart(withCatAxTitle("2700000"));
-    expect(chart?.axes?.x?.axisTitleRotation).toBe(45);
-    expect(chart?.axes?.x?.title).toBe("Period");
-  });
+    const chart = parseChart(withCatAxTitle("2700000"))
+    expect(chart?.axes?.x?.axisTitleRotation).toBe(45)
+    expect(chart?.axes?.x?.title).toBe("Period")
+  })
 
   it("surfaces negative rotations literally", () => {
-    const chart = parseChart(withCatAxTitle("-2700000"));
-    expect(chart?.axes?.x?.axisTitleRotation).toBe(-45);
-  });
+    const chart = parseChart(withCatAxTitle("-2700000"))
+    expect(chart?.axes?.x?.axisTitleRotation).toBe(-45)
+  })
 
   it('collapses the OOXML default rot="0" to undefined', () => {
-    const chart = parseChart(withCatAxTitle("0"));
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleRotation).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxTitle("0"))
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleRotation).toBeUndefined()
+  })
 
   it("returns undefined when <a:bodyPr> omits the rot attribute", () => {
-    const chart = parseChart(withCatAxTitle(undefined));
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleRotation).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxTitle(undefined))
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleRotation).toBeUndefined()
+  })
 
   it("returns undefined when <c:title> is absent on the axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -15435,10 +15435,10 @@ describe("parseChart — axis title rotation", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("returns undefined when the title is a <c:strRef> (no <c:rich> body)", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -15456,33 +15456,33 @@ describe("parseChart — axis title rotation", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleRotation).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleRotation).toBeUndefined()
+  })
 
   it("clamps rot above 90° to 90", () => {
     // 180° in 60000ths = 10,800,000.
-    const chart = parseChart(withCatAxTitle("10800000"));
-    expect(chart?.axes?.x?.axisTitleRotation).toBe(90);
-  });
+    const chart = parseChart(withCatAxTitle("10800000"))
+    expect(chart?.axes?.x?.axisTitleRotation).toBe(90)
+  })
 
   it("clamps rot below -90° to -90", () => {
-    const chart = parseChart(withCatAxTitle("-10800000"));
-    expect(chart?.axes?.x?.axisTitleRotation).toBe(-90);
-  });
+    const chart = parseChart(withCatAxTitle("-10800000"))
+    expect(chart?.axes?.x?.axisTitleRotation).toBe(-90)
+  })
 
   it("drops non-numeric rot tokens", () => {
-    const chart = parseChart(withCatAxTitle("forty-five"));
-    expect(chart?.axes?.x?.axisTitleRotation).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxTitle("forty-five"))
+    expect(chart?.axes?.x?.axisTitleRotation).toBeUndefined()
+  })
 
   it("rounds non-integer 60000ths to the nearest whole degree", () => {
     // 2,700,030 ≈ 45.0005°, rounds to 45.
-    const chart = parseChart(withCatAxTitle("2700030"));
-    expect(chart?.axes?.x?.axisTitleRotation).toBe(45);
-  });
+    const chart = parseChart(withCatAxTitle("2700030"))
+    expect(chart?.axes?.x?.axisTitleRotation).toBe(45)
+  })
 
   it("does not leak the tick-label <c:txPr> rotation into the title rotation", () => {
     // The reader must scope its lookup to the title's <c:rich> body —
@@ -15505,12 +15505,12 @@ describe("parseChart — axis title rotation", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleRotation).toBeUndefined();
-    expect(chart?.axes?.x?.labelRotation).toBe(45);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleRotation).toBeUndefined()
+    expect(chart?.axes?.x?.labelRotation).toBe(45)
+  })
 
   it("surfaces the rotation on the value axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -15529,11 +15529,11 @@ describe("parseChart — axis title rotation", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.title).toBe("USD");
-    expect(chart?.axes?.y?.axisTitleRotation).toBe(-90);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.title).toBe("USD")
+    expect(chart?.axes?.y?.axisTitleRotation).toBe(-90)
+  })
 
   it("surfaces independently on both axes", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -15562,11 +15562,11 @@ describe("parseChart — axis title rotation", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleRotation).toBe(45);
-    expect(chart?.axes?.y?.axisTitleRotation).toBe(-30);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleRotation).toBe(45)
+    expect(chart?.axes?.y?.axisTitleRotation).toBe(-30)
+  })
 
   it("co-surfaces alongside other axis fields", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -15588,25 +15588,25 @@ describe("parseChart — axis title rotation", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Period",
       axisTitleRotation: 45,
       tickLblPos: "low",
       labelRotation: -30,
       noMultiLvlLbl: true,
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — axis title font size ───────────────────────────────
 
 describe("parseChart — axis title font size", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withCatAxTitle(sz: string | undefined): string {
-    const defRPr = sz === undefined ? "<a:defRPr/>" : `<a:defRPr sz="${sz}"/>`;
+    const defRPr = sz === undefined ? "<a:defRPr/>" : `<a:defRPr sz="${sz}"/>`
     return `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -15623,41 +15623,41 @@ describe("parseChart — axis title font size", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the axis-title size in points from the sz attribute (100ths of a point)", () => {
     // 12pt * 100 = 1200.
-    const chart = parseChart(withCatAxTitle("1200"));
-    expect(chart?.axes?.x?.axisTitleFontSize).toBe(12);
-    expect(chart?.axes?.x?.title).toBe("Period");
-  });
+    const chart = parseChart(withCatAxTitle("1200"))
+    expect(chart?.axes?.x?.axisTitleFontSize).toBe(12)
+    expect(chart?.axes?.x?.title).toBe("Period")
+  })
 
   it("surfaces the writer's reference 10pt size literally", () => {
     // Excel writes sz="1000" on every fresh axis title — the reader
     // surfaces it because it is a literal pin (no "default collapse"
     // for a literal sz, mirroring `titleFontSize`).
-    const chart = parseChart(withCatAxTitle("1000"));
-    expect(chart?.axes?.x?.axisTitleFontSize).toBe(10);
-  });
+    const chart = parseChart(withCatAxTitle("1000"))
+    expect(chart?.axes?.x?.axisTitleFontSize).toBe(10)
+  })
 
   it("rounds to the nearest 0.5pt", () => {
     // sz="1050" = 10.5pt — surfaces literally.
-    const a = parseChart(withCatAxTitle("1050"));
-    expect(a?.axes?.x?.axisTitleFontSize).toBe(10.5);
+    const a = parseChart(withCatAxTitle("1050"))
+    expect(a?.axes?.x?.axisTitleFontSize).toBe(10.5)
     // sz="1024" = 10.24pt — rounds down to 10.
-    const b = parseChart(withCatAxTitle("1024"));
-    expect(b?.axes?.x?.axisTitleFontSize).toBe(10);
+    const b = parseChart(withCatAxTitle("1024"))
+    expect(b?.axes?.x?.axisTitleFontSize).toBe(10)
     // sz="1080" = 10.8pt — rounds up to 11.
-    const c = parseChart(withCatAxTitle("1080"));
-    expect(c?.axes?.x?.axisTitleFontSize).toBe(11);
-  });
+    const c = parseChart(withCatAxTitle("1080"))
+    expect(c?.axes?.x?.axisTitleFontSize).toBe(11)
+  })
 
   it("returns undefined when <a:defRPr> omits the sz attribute", () => {
-    const chart = parseChart(withCatAxTitle(undefined));
-    expect(chart?.axes?.x?.axisTitleFontSize).toBeUndefined();
-    expect(chart?.axes?.x?.title).toBe("Period");
-  });
+    const chart = parseChart(withCatAxTitle(undefined))
+    expect(chart?.axes?.x?.axisTitleFontSize).toBeUndefined()
+    expect(chart?.axes?.x?.title).toBe("Period")
+  })
 
   it("returns undefined when the axis omits <c:title>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -15666,10 +15666,10 @@ describe("parseChart — axis title font size", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("returns undefined when the title is a <c:strRef> (no <c:rich> body)", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -15687,11 +15687,11 @@ describe("parseChart — axis title font size", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleFontSize).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleFontSize).toBeUndefined()
+  })
 
   it("returns undefined when <a:p> has no <a:pPr> element", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -15710,42 +15710,42 @@ describe("parseChart — axis title font size", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleFontSize).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleFontSize).toBeUndefined()
+  })
 
   it("drops sz values below the 1pt minimum after rounding (sz=49)", () => {
     // 49 / 100 = 0.49pt — half-step rounds to 0.5pt, below the OOXML
     // ST_TextFontSize 1pt minimum.
-    const chart = parseChart(withCatAxTitle("49"));
-    expect(chart?.axes?.x?.axisTitleFontSize).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxTitle("49"))
+    expect(chart?.axes?.x?.axisTitleFontSize).toBeUndefined()
+  })
 
   it("drops sz values above the 400pt maximum (sz=400001)", () => {
     // 400001 / 100 = 4000.01pt — outside the OOXML band.
-    const chart = parseChart(withCatAxTitle("400001"));
-    expect(chart?.axes?.x?.axisTitleFontSize).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxTitle("400001"))
+    expect(chart?.axes?.x?.axisTitleFontSize).toBeUndefined()
+  })
 
   it("surfaces the 1pt minimum (sz=100)", () => {
-    const chart = parseChart(withCatAxTitle("100"));
-    expect(chart?.axes?.x?.axisTitleFontSize).toBe(1);
-  });
+    const chart = parseChart(withCatAxTitle("100"))
+    expect(chart?.axes?.x?.axisTitleFontSize).toBe(1)
+  })
 
   it("surfaces the 400pt maximum (sz=40000)", () => {
-    const chart = parseChart(withCatAxTitle("40000"));
-    expect(chart?.axes?.x?.axisTitleFontSize).toBe(400);
-  });
+    const chart = parseChart(withCatAxTitle("40000"))
+    expect(chart?.axes?.x?.axisTitleFontSize).toBe(400)
+  })
 
   it("drops non-numeric sz tokens", () => {
-    expect(parseChart(withCatAxTitle("twelve"))?.axes?.x?.axisTitleFontSize).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTitle("twelve"))?.axes?.x?.axisTitleFontSize).toBeUndefined()
+  })
 
   it("drops empty sz tokens", () => {
-    expect(parseChart(withCatAxTitle(""))?.axes?.x?.axisTitleFontSize).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTitle(""))?.axes?.x?.axisTitleFontSize).toBeUndefined()
+  })
 
   it("does not leak the tick-label <c:txPr> size into the title size", () => {
     // The reader scopes the lookup to the title's <c:rich> body —
@@ -15768,11 +15768,11 @@ describe("parseChart — axis title font size", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleFontSize).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleFontSize).toBeUndefined()
+  })
 
   it("surfaces the size on the value axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -15791,11 +15791,11 @@ describe("parseChart — axis title font size", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.title).toBe("USD");
-    expect(chart?.axes?.y?.axisTitleFontSize).toBe(16);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.title).toBe("USD")
+    expect(chart?.axes?.y?.axisTitleFontSize).toBe(16)
+  })
 
   it("surfaces independently on both axes", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -15824,11 +15824,11 @@ describe("parseChart — axis title font size", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleFontSize).toBe(9);
-    expect(chart?.axes?.y?.axisTitleFontSize).toBe(18);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleFontSize).toBe(9)
+    expect(chart?.axes?.y?.axisTitleFontSize).toBe(18)
+  })
 
   it("co-surfaces alongside other axis fields", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -15847,23 +15847,23 @@ describe("parseChart — axis title font size", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Period",
       axisTitleRotation: 45,
       axisTitleFontSize: 14,
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — axis title bold ─────────────────────────────────────
 
 describe("parseChart — axis title bold", () => {
-  const NS_AXB = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_AXB = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withCatAxTitleBold(b: string | undefined): string {
-    const defRPr = b === undefined ? "<a:defRPr/>" : `<a:defRPr b="${b}"/>`;
+    const defRPr = b === undefined ? "<a:defRPr/>" : `<a:defRPr b="${b}"/>`
     return `<c:chartSpace ${NS_AXB}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -15880,42 +15880,42 @@ describe("parseChart — axis title bold", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces true on the X axis when the axis title pinned b='1'", () => {
-    const chart = parseChart(withCatAxTitleBold("1"));
-    expect(chart?.axes?.x?.axisTitleBold).toBe(true);
-    expect(chart?.axes?.x?.title).toBe("Period");
-  });
+    const chart = parseChart(withCatAxTitleBold("1"))
+    expect(chart?.axes?.x?.axisTitleBold).toBe(true)
+    expect(chart?.axes?.x?.title).toBe("Period")
+  })
 
   it("collapses b='0' to undefined (OOXML default round-trips identically)", () => {
-    const chart = parseChart(withCatAxTitleBold("0"));
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleBold).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxTitleBold("0"))
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleBold).toBeUndefined()
+  })
 
   it("collapses absence of the b attribute to undefined", () => {
-    const chart = parseChart(withCatAxTitleBold(undefined));
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleBold).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxTitleBold(undefined))
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleBold).toBeUndefined()
+  })
 
   it("accepts the OOXML truthy spelling 'true'", () => {
-    const chart = parseChart(withCatAxTitleBold("true"));
-    expect(chart?.axes?.x?.axisTitleBold).toBe(true);
-  });
+    const chart = parseChart(withCatAxTitleBold("true"))
+    expect(chart?.axes?.x?.axisTitleBold).toBe(true)
+  })
 
   it("collapses the OOXML falsy spelling 'false' to undefined", () => {
-    const chart = parseChart(withCatAxTitleBold("false"));
-    expect(chart?.axes?.x?.axisTitleBold).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxTitleBold("false"))
+    expect(chart?.axes?.x?.axisTitleBold).toBeUndefined()
+  })
 
   it("drops unknown b tokens to undefined", () => {
-    expect(parseChart(withCatAxTitleBold("yes"))?.axes?.x?.axisTitleBold).toBeUndefined();
-    expect(parseChart(withCatAxTitleBold(""))?.axes?.x?.axisTitleBold).toBeUndefined();
-    expect(parseChart(withCatAxTitleBold("on"))?.axes?.x?.axisTitleBold).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTitleBold("yes"))?.axes?.x?.axisTitleBold).toBeUndefined()
+    expect(parseChart(withCatAxTitleBold(""))?.axes?.x?.axisTitleBold).toBeUndefined()
+    expect(parseChart(withCatAxTitleBold("on"))?.axes?.x?.axisTitleBold).toBeUndefined()
+  })
 
   it("returns undefined when the axis omits <c:title>", () => {
     const xml = `<c:chartSpace ${NS_AXB}>
@@ -15924,10 +15924,10 @@ describe("parseChart — axis title bold", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("returns undefined when the axis title is a <c:strRef> (no <c:rich> body)", () => {
     const xml = `<c:chartSpace ${NS_AXB}>
@@ -15945,11 +15945,11 @@ describe("parseChart — axis title bold", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleBold).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleBold).toBeUndefined()
+  })
 
   it("returns undefined when <a:p> has no <a:pPr> element", () => {
     const xml = `<c:chartSpace ${NS_AXB}>
@@ -15968,11 +15968,11 @@ describe("parseChart — axis title bold", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleBold).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleBold).toBeUndefined()
+  })
 
   it("surfaces the bold flag on the value axis as well", () => {
     const xml = `<c:chartSpace ${NS_AXB}>
@@ -15991,11 +15991,11 @@ describe("parseChart — axis title bold", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.title).toBe("Revenue");
-    expect(chart?.axes?.y?.axisTitleBold).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.title).toBe("Revenue")
+    expect(chart?.axes?.y?.axisTitleBold).toBe(true)
+  })
 
   it("surfaces the bold flag on a scatter chart's value-axis pair", () => {
     const xml = `<c:chartSpace ${NS_AXB}>
@@ -16027,11 +16027,11 @@ describe("parseChart — axis title bold", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleBold).toBe(true);
-    expect(chart?.axes?.y?.axisTitleBold).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleBold).toBe(true)
+    expect(chart?.axes?.y?.axisTitleBold).toBe(true)
+  })
 
   it("does not leak from a stray chart-level <a:defRPr b='1'> onto the axis", () => {
     // The chart-level title is bold, but the axis title is not — the
@@ -16063,11 +16063,11 @@ describe("parseChart — axis title bold", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleBold).toBe(true);
-    expect(chart?.axes?.x?.axisTitleBold).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleBold).toBe(true)
+    expect(chart?.axes?.x?.axisTitleBold).toBeUndefined()
+  })
 
   it("co-surfaces alongside axisTitleRotation on the same axis title", () => {
     // Axis-title rotation 45° (`rot="2700000"`) and bold `b="1"` both
@@ -16089,21 +16089,21 @@ describe("parseChart — axis title bold", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleRotation).toBe(45);
-    expect(chart?.axes?.x?.axisTitleBold).toBe(true);
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleRotation).toBe(45)
+    expect(chart?.axes?.x?.axisTitleBold).toBe(true)
+  })
+})
 
 // ── parseChart — axis title italic ───────────────────────────────────
 
 describe("parseChart — axis title italic", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withCatAxTitle(iAttr: string | undefined): string {
-    const defRPr = iAttr === undefined ? "<a:defRPr/>" : `<a:defRPr i="${iAttr}"/>`;
+    const defRPr = iAttr === undefined ? "<a:defRPr/>" : `<a:defRPr i="${iAttr}"/>`
     return `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -16120,41 +16120,41 @@ describe("parseChart — axis title italic", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the axis-title italic flag from the i attribute (i=1)", () => {
-    const chart = parseChart(withCatAxTitle("1"));
-    expect(chart?.axes?.x?.axisTitleItalic).toBe(true);
-    expect(chart?.axes?.x?.title).toBe("Period");
-  });
+    const chart = parseChart(withCatAxTitle("1"))
+    expect(chart?.axes?.x?.axisTitleItalic).toBe(true)
+    expect(chart?.axes?.x?.title).toBe("Period")
+  })
 
   it("collapses i=0 to undefined (OOXML default round-trip)", () => {
-    const chart = parseChart(withCatAxTitle("0"));
-    expect(chart?.axes?.x?.axisTitleItalic).toBeUndefined();
-    expect(chart?.axes?.x?.title).toBe("Period");
-  });
+    const chart = parseChart(withCatAxTitle("0"))
+    expect(chart?.axes?.x?.axisTitleItalic).toBeUndefined()
+    expect(chart?.axes?.x?.title).toBe("Period")
+  })
 
   it("collapses absence to undefined", () => {
-    const chart = parseChart(withCatAxTitle(undefined));
-    expect(chart?.axes?.x?.axisTitleItalic).toBeUndefined();
-    expect(chart?.axes?.x?.title).toBe("Period");
-  });
+    const chart = parseChart(withCatAxTitle(undefined))
+    expect(chart?.axes?.x?.axisTitleItalic).toBeUndefined()
+    expect(chart?.axes?.x?.title).toBe("Period")
+  })
 
   it('accepts the OOXML truthy spelling i="true"', () => {
-    const chart = parseChart(withCatAxTitle("true"));
-    expect(chart?.axes?.x?.axisTitleItalic).toBe(true);
-  });
+    const chart = parseChart(withCatAxTitle("true"))
+    expect(chart?.axes?.x?.axisTitleItalic).toBe(true)
+  })
 
   it('accepts the OOXML falsy spelling i="false"', () => {
-    const chart = parseChart(withCatAxTitle("false"));
-    expect(chart?.axes?.x?.axisTitleItalic).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxTitle("false"))
+    expect(chart?.axes?.x?.axisTitleItalic).toBeUndefined()
+  })
 
   it("drops unknown i tokens", () => {
-    expect(parseChart(withCatAxTitle("yes"))?.axes?.x?.axisTitleItalic).toBeUndefined();
-    expect(parseChart(withCatAxTitle(""))?.axes?.x?.axisTitleItalic).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTitle("yes"))?.axes?.x?.axisTitleItalic).toBeUndefined()
+    expect(parseChart(withCatAxTitle(""))?.axes?.x?.axisTitleItalic).toBeUndefined()
+  })
 
   it("returns undefined when the axis omits <c:title>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -16163,10 +16163,10 @@ describe("parseChart — axis title italic", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("returns undefined when the title is a <c:strRef> (no <c:rich> body)", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -16184,11 +16184,11 @@ describe("parseChart — axis title italic", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleItalic).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleItalic).toBeUndefined()
+  })
 
   it("returns undefined when <a:p> has no <a:pPr> element", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -16207,11 +16207,11 @@ describe("parseChart — axis title italic", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleItalic).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleItalic).toBeUndefined()
+  })
 
   it("does not leak the tick-label <c:txPr> italic flag into the title flag", () => {
     // The reader scopes the lookup to the title's <c:rich> body —
@@ -16234,11 +16234,11 @@ describe("parseChart — axis title italic", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleItalic).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleItalic).toBeUndefined()
+  })
 
   it("surfaces the italic flag on the value axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -16257,11 +16257,11 @@ describe("parseChart — axis title italic", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.title).toBe("USD");
-    expect(chart?.axes?.y?.axisTitleItalic).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.title).toBe("USD")
+    expect(chart?.axes?.y?.axisTitleItalic).toBe(true)
+  })
 
   it("surfaces independently on both axes", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -16290,11 +16290,11 @@ describe("parseChart — axis title italic", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleItalic).toBe(true);
-    expect(chart?.axes?.y?.axisTitleItalic).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleItalic).toBe(true)
+    expect(chart?.axes?.y?.axisTitleItalic).toBeUndefined()
+  })
 
   it("co-surfaces alongside other axis fields", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -16313,24 +16313,24 @@ describe("parseChart — axis title italic", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Period",
       axisTitleRotation: 45,
       axisTitleFontSize: 14,
       axisTitleItalic: true,
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — axis title color ────────────────────────────────────
 
 describe("parseChart — axis title color", () => {
-  const NS_AC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_AC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withCatAxTitleColor(srgb: string | undefined): string {
-    const fill = srgb === undefined ? "" : `<a:solidFill><a:srgbClr val="${srgb}"/></a:solidFill>`;
+    const fill = srgb === undefined ? "" : `<a:solidFill><a:srgbClr val="${srgb}"/></a:solidFill>`
     return `<c:chartSpace ${NS_AC}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -16347,30 +16347,30 @@ describe("parseChart — axis title color", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the uppercase hex value pinned by <a:srgbClr val='..'>", () => {
-    const chart = parseChart(withCatAxTitleColor("FF0000"));
-    expect(chart?.axes?.x?.axisTitleColor).toBe("FF0000");
-    expect(chart?.axes?.x?.title).toBe("Period");
-  });
+    const chart = parseChart(withCatAxTitleColor("FF0000"))
+    expect(chart?.axes?.x?.axisTitleColor).toBe("FF0000")
+    expect(chart?.axes?.x?.title).toBe("Period")
+  })
 
   it("normalizes a lowercase hex value to uppercase", () => {
-    const chart = parseChart(withCatAxTitleColor("1070ca"));
-    expect(chart?.axes?.x?.axisTitleColor).toBe("1070CA");
-  });
+    const chart = parseChart(withCatAxTitleColor("1070ca"))
+    expect(chart?.axes?.x?.axisTitleColor).toBe("1070CA")
+  })
 
   it("strips a leading '#' on read", () => {
-    const chart = parseChart(withCatAxTitleColor("#1070CA"));
-    expect(chart?.axes?.x?.axisTitleColor).toBe("1070CA");
-  });
+    const chart = parseChart(withCatAxTitleColor("#1070CA"))
+    expect(chart?.axes?.x?.axisTitleColor).toBe("1070CA")
+  })
 
   it("collapses absence of <a:solidFill> to undefined (theme-color default)", () => {
-    const chart = parseChart(withCatAxTitleColor(undefined));
-    expect(chart?.axes?.x?.axisTitleColor).toBeUndefined();
-    expect(chart?.axes?.x?.title).toBe("Period");
-  });
+    const chart = parseChart(withCatAxTitleColor(undefined))
+    expect(chart?.axes?.x?.axisTitleColor).toBeUndefined()
+    expect(chart?.axes?.x?.title).toBe("Period")
+  })
 
   it("returns undefined when the axis omits <c:title>", () => {
     const xml = `<c:chartSpace ${NS_AC}>
@@ -16379,10 +16379,10 @@ describe("parseChart — axis title color", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("returns undefined when the title is a <c:strRef> formula reference", () => {
     const xml = `<c:chartSpace ${NS_AC}>
@@ -16400,11 +16400,11 @@ describe("parseChart — axis title color", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:p> has no <a:pPr> element", () => {
     const xml = `<c:chartSpace ${NS_AC}>
@@ -16423,11 +16423,11 @@ describe("parseChart — axis title color", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleColor).toBeUndefined()
+  })
 
   it("collapses theme color (<a:schemeClr>) to undefined", () => {
     // Theme references don't round-trip losslessly — only literal sRGB
@@ -16448,18 +16448,18 @@ describe("parseChart — axis title color", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleColor).toEqual({ theme: "tx1" });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleColor).toEqual({ theme: "tx1" })
+  })
 
   it("drops malformed val tokens (wrong length / non-hex / 8-char alpha form)", () => {
-    expect(parseChart(withCatAxTitleColor(""))?.axes?.x?.axisTitleColor).toBeUndefined();
-    expect(parseChart(withCatAxTitleColor("FFF"))?.axes?.x?.axisTitleColor).toBeUndefined();
-    expect(parseChart(withCatAxTitleColor("ZZZZZZ"))?.axes?.x?.axisTitleColor).toBeUndefined();
+    expect(parseChart(withCatAxTitleColor(""))?.axes?.x?.axisTitleColor).toBeUndefined()
+    expect(parseChart(withCatAxTitleColor("FFF"))?.axes?.x?.axisTitleColor).toBeUndefined()
+    expect(parseChart(withCatAxTitleColor("ZZZZZZ"))?.axes?.x?.axisTitleColor).toBeUndefined()
     // 8-character alpha form (Excel uses <a:alpha> sibling for that).
-    expect(parseChart(withCatAxTitleColor("FF0000FF"))?.axes?.x?.axisTitleColor).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTitleColor("FF0000FF"))?.axes?.x?.axisTitleColor).toBeUndefined()
+  })
 
   it("does not leak the chart-level title <a:solidFill> into the axis title color", () => {
     // The chart-level title carries an <a:solidFill>, but the axis
@@ -16493,11 +16493,11 @@ describe("parseChart — axis title color", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleColor).toBe("FF0000");
-    expect(chart?.axes?.x?.axisTitleColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleColor).toBe("FF0000")
+    expect(chart?.axes?.x?.axisTitleColor).toBeUndefined()
+  })
 
   it("does not leak the tick-label <c:txPr> <a:solidFill> into the axis title color", () => {
     // The reader scopes the lookup to the axis title's <c:rich> body
@@ -16520,11 +16520,11 @@ describe("parseChart — axis title color", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleColor).toBeUndefined()
+  })
 
   it("surfaces the color on the value axis", () => {
     const xml = `<c:chartSpace ${NS_AC}>
@@ -16543,11 +16543,11 @@ describe("parseChart — axis title color", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.title).toBe("USD");
-    expect(chart?.axes?.y?.axisTitleColor).toBe("00C586");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.title).toBe("USD")
+    expect(chart?.axes?.y?.axisTitleColor).toBe("00C586")
+  })
 
   it("surfaces independently on both axes", () => {
     const xml = `<c:chartSpace ${NS_AC}>
@@ -16576,11 +16576,11 @@ describe("parseChart — axis title color", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleColor).toBe("FF0000");
-    expect(chart?.axes?.y?.axisTitleColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleColor).toBe("FF0000")
+    expect(chart?.axes?.y?.axisTitleColor).toBeUndefined()
+  })
 
   it("co-surfaces alongside the other axis-title knobs on the same axis", () => {
     const xml = `<c:chartSpace ${NS_AC}>
@@ -16599,8 +16599,8 @@ describe("parseChart — axis title color", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Period",
       axisTitleRotation: 45,
@@ -16608,17 +16608,17 @@ describe("parseChart — axis title color", () => {
       axisTitleBold: true,
       axisTitleItalic: true,
       axisTitleColor: "1070CA",
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — axis title strike ───────────────────────────────────
 
 describe("parseChart — axis title strike", () => {
-  const NS_AS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_AS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withCatAxTitleStrike(strike: string | undefined): string {
-    const defRPr = strike === undefined ? "<a:defRPr/>" : `<a:defRPr strike="${strike}"/>`;
+    const defRPr = strike === undefined ? "<a:defRPr/>" : `<a:defRPr strike="${strike}"/>`
     return `<c:chartSpace ${NS_AS}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -16635,42 +16635,42 @@ describe("parseChart — axis title strike", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces true when the axis title pinned strike='sngStrike' (Excel UI checkbox)", () => {
-    const chart = parseChart(withCatAxTitleStrike("sngStrike"));
-    expect(chart?.axes?.x?.axisTitleStrike).toBe(true);
-    expect(chart?.axes?.x?.title).toBe("Period");
-  });
+    const chart = parseChart(withCatAxTitleStrike("sngStrike"))
+    expect(chart?.axes?.x?.axisTitleStrike).toBe(true)
+    expect(chart?.axes?.x?.title).toBe("Period")
+  })
 
   it("collapses strike='noStrike' to undefined (OOXML default round-trips identically)", () => {
-    const chart = parseChart(withCatAxTitleStrike("noStrike"));
-    expect(chart?.axes?.x?.axisTitleStrike).toBeUndefined();
-    expect(chart?.axes?.x?.title).toBe("Period");
-  });
+    const chart = parseChart(withCatAxTitleStrike("noStrike"))
+    expect(chart?.axes?.x?.axisTitleStrike).toBeUndefined()
+    expect(chart?.axes?.x?.title).toBe("Period")
+  })
 
   it("collapses absence of the strike attribute to undefined", () => {
-    const chart = parseChart(withCatAxTitleStrike(undefined));
-    expect(chart?.axes?.x?.axisTitleStrike).toBeUndefined();
-    expect(chart?.axes?.x?.title).toBe("Period");
-  });
+    const chart = parseChart(withCatAxTitleStrike(undefined))
+    expect(chart?.axes?.x?.axisTitleStrike).toBeUndefined()
+    expect(chart?.axes?.x?.title).toBe("Period")
+  })
 
   it("collapses the non-UI 'dblStrike' variant to undefined (avoids lossy downgrade)", () => {
     // Hucre's writer emits only "sngStrike". Surfacing "dblStrike" as
     // true would silently downgrade the choice on round-trip, so the
     // reader collapses it to undefined to keep the round-trip lossless.
-    const chart = parseChart(withCatAxTitleStrike("dblStrike"));
-    expect(chart?.axes?.x?.axisTitleStrike).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxTitleStrike("dblStrike"))
+    expect(chart?.axes?.x?.axisTitleStrike).toBeUndefined()
+  })
 
   it("drops unknown strike tokens to undefined", () => {
-    expect(parseChart(withCatAxTitleStrike("yes"))?.axes?.x?.axisTitleStrike).toBeUndefined();
-    expect(parseChart(withCatAxTitleStrike("on"))?.axes?.x?.axisTitleStrike).toBeUndefined();
-    expect(parseChart(withCatAxTitleStrike(""))?.axes?.x?.axisTitleStrike).toBeUndefined();
-    expect(parseChart(withCatAxTitleStrike("1"))?.axes?.x?.axisTitleStrike).toBeUndefined();
-    expect(parseChart(withCatAxTitleStrike("true"))?.axes?.x?.axisTitleStrike).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTitleStrike("yes"))?.axes?.x?.axisTitleStrike).toBeUndefined()
+    expect(parseChart(withCatAxTitleStrike("on"))?.axes?.x?.axisTitleStrike).toBeUndefined()
+    expect(parseChart(withCatAxTitleStrike(""))?.axes?.x?.axisTitleStrike).toBeUndefined()
+    expect(parseChart(withCatAxTitleStrike("1"))?.axes?.x?.axisTitleStrike).toBeUndefined()
+    expect(parseChart(withCatAxTitleStrike("true"))?.axes?.x?.axisTitleStrike).toBeUndefined()
+  })
 
   it("returns undefined when the axis omits <c:title>", () => {
     const xml = `<c:chartSpace ${NS_AS}>
@@ -16679,10 +16679,10 @@ describe("parseChart — axis title strike", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes).toBeUndefined()
+  })
 
   it("returns undefined when the title is a <c:strRef> formula reference", () => {
     // A title that only carries `<c:strRef>` (formula reference) has
@@ -16702,11 +16702,11 @@ describe("parseChart — axis title strike", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleStrike).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleStrike).toBeUndefined()
+  })
 
   it("returns undefined when <a:p> has no <a:pPr> element", () => {
     const xml = `<c:chartSpace ${NS_AS}>
@@ -16725,11 +16725,11 @@ describe("parseChart — axis title strike", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleStrike).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleStrike).toBeUndefined()
+  })
 
   it("does not leak the chart-level title strike into the axis title strike", () => {
     // The chart-level title pins strike="sngStrike", but the axis
@@ -16763,11 +16763,11 @@ describe("parseChart — axis title strike", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleStrike).toBe(true);
-    expect(chart?.axes?.x?.axisTitleStrike).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleStrike).toBe(true)
+    expect(chart?.axes?.x?.axisTitleStrike).toBeUndefined()
+  })
 
   it("does not leak the tick-label <c:txPr> strike flag into the axis title strike", () => {
     // The reader scopes the lookup to the axis title's <c:rich> body —
@@ -16790,11 +16790,11 @@ describe("parseChart — axis title strike", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleStrike).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleStrike).toBeUndefined()
+  })
 
   it("surfaces the strike flag on the value axis", () => {
     const xml = `<c:chartSpace ${NS_AS}>
@@ -16813,11 +16813,11 @@ describe("parseChart — axis title strike", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.title).toBe("USD");
-    expect(chart?.axes?.y?.axisTitleStrike).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.title).toBe("USD")
+    expect(chart?.axes?.y?.axisTitleStrike).toBe(true)
+  })
 
   it("surfaces independently on both axes", () => {
     const xml = `<c:chartSpace ${NS_AS}>
@@ -16846,11 +16846,11 @@ describe("parseChart — axis title strike", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleStrike).toBe(true);
-    expect(chart?.axes?.y?.axisTitleStrike).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleStrike).toBe(true)
+    expect(chart?.axes?.y?.axisTitleStrike).toBeUndefined()
+  })
 
   it("co-surfaces alongside other axis-title knobs on the same axis", () => {
     const xml = `<c:chartSpace ${NS_AS}>
@@ -16869,8 +16869,8 @@ describe("parseChart — axis title strike", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Period",
       axisTitleRotation: 45,
@@ -16879,17 +16879,17 @@ describe("parseChart — axis title strike", () => {
       axisTitleItalic: true,
       axisTitleColor: "1070CA",
       axisTitleStrike: true,
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — axis title underline ───────────────────────────────
 
 describe("parseChart — axis title underline", () => {
-  const NS_AU = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_AU = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withCatAxTitleUnderline(u: string | undefined): string {
-    const defRPr = u === undefined ? "<a:defRPr/>" : `<a:defRPr u="${u}"/>`;
+    const defRPr = u === undefined ? "<a:defRPr/>" : `<a:defRPr u="${u}"/>`
     return `<c:chartSpace ${NS_AU}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -16906,32 +16906,32 @@ describe("parseChart — axis title underline", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces true when the axis title pinned u='sng' (Excel UI checkbox)", () => {
-    const chart = parseChart(withCatAxTitleUnderline("sng"));
-    expect(chart?.axes?.x?.axisTitleUnderline).toBe(true);
-    expect(chart?.axes?.x?.title).toBe("Period");
-  });
+    const chart = parseChart(withCatAxTitleUnderline("sng"))
+    expect(chart?.axes?.x?.axisTitleUnderline).toBe(true)
+    expect(chart?.axes?.x?.title).toBe("Period")
+  })
 
   it("collapses u='none' to undefined (OOXML default round-trips identically)", () => {
-    const chart = parseChart(withCatAxTitleUnderline("none"));
-    expect(chart?.axes?.x?.axisTitleUnderline).toBeUndefined();
-    expect(chart?.axes?.x?.title).toBe("Period");
-  });
+    const chart = parseChart(withCatAxTitleUnderline("none"))
+    expect(chart?.axes?.x?.axisTitleUnderline).toBeUndefined()
+    expect(chart?.axes?.x?.title).toBe("Period")
+  })
 
   it("collapses absence of the u attribute to undefined", () => {
-    const chart = parseChart(withCatAxTitleUnderline(undefined));
-    expect(chart?.axes?.x?.axisTitleUnderline).toBeUndefined();
-    expect(chart?.axes?.x?.title).toBe("Period");
-  });
+    const chart = parseChart(withCatAxTitleUnderline(undefined))
+    expect(chart?.axes?.x?.axisTitleUnderline).toBeUndefined()
+    expect(chart?.axes?.x?.title).toBe("Period")
+  })
 
   it("collapses the non-UI 'dbl' variant to undefined", () => {
-    const chart = parseChart(withCatAxTitleUnderline("dbl"));
-    expect(chart?.axes?.x?.axisTitleUnderline).toBeUndefined();
-    expect(chart?.axes?.x?.title).toBe("Period");
-  });
+    const chart = parseChart(withCatAxTitleUnderline("dbl"))
+    expect(chart?.axes?.x?.axisTitleUnderline).toBeUndefined()
+    expect(chart?.axes?.x?.title).toBe("Period")
+  })
 
   it("collapses every exotic ST_TextUnderlineType variant to undefined", () => {
     // Non-UI variants Excel never emits via the ribbon. The reader
@@ -16956,19 +16956,17 @@ describe("parseChart — axis title underline", () => {
     ]) {
       expect(
         parseChart(withCatAxTitleUnderline(variant))?.axes?.x?.axisTitleUnderline,
-      ).toBeUndefined();
+      ).toBeUndefined()
     }
-  });
+  })
 
   it("collapses unknown / malformed u tokens to undefined", () => {
-    expect(parseChart(withCatAxTitleUnderline("yes"))?.axes?.x?.axisTitleUnderline).toBeUndefined();
-    expect(parseChart(withCatAxTitleUnderline("on"))?.axes?.x?.axisTitleUnderline).toBeUndefined();
-    expect(parseChart(withCatAxTitleUnderline(""))?.axes?.x?.axisTitleUnderline).toBeUndefined();
-    expect(parseChart(withCatAxTitleUnderline("1"))?.axes?.x?.axisTitleUnderline).toBeUndefined();
-    expect(
-      parseChart(withCatAxTitleUnderline("true"))?.axes?.x?.axisTitleUnderline,
-    ).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTitleUnderline("yes"))?.axes?.x?.axisTitleUnderline).toBeUndefined()
+    expect(parseChart(withCatAxTitleUnderline("on"))?.axes?.x?.axisTitleUnderline).toBeUndefined()
+    expect(parseChart(withCatAxTitleUnderline(""))?.axes?.x?.axisTitleUnderline).toBeUndefined()
+    expect(parseChart(withCatAxTitleUnderline("1"))?.axes?.x?.axisTitleUnderline).toBeUndefined()
+    expect(parseChart(withCatAxTitleUnderline("true"))?.axes?.x?.axisTitleUnderline).toBeUndefined()
+  })
 
   it("returns undefined when the axis has no title at all", () => {
     const xml = `<c:chartSpace ${NS_AU}>
@@ -16977,10 +16975,10 @@ describe("parseChart — axis title underline", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleUnderline).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleUnderline).toBeUndefined()
+  })
 
   it("returns undefined when the title is a strRef (no rich body)", () => {
     const xml = `<c:chartSpace ${NS_AU}>
@@ -16995,10 +16993,10 @@ describe("parseChart — axis title underline", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleUnderline).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleUnderline).toBeUndefined()
+  })
 
   it("ignores an underline pinned on the chart-level title's defRPr (axis-only scope)", () => {
     // The axis title's defRPr has no u attribute — the chart title's
@@ -17030,11 +17028,11 @@ describe("parseChart — axis title underline", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleUnderline).toBe(true);
-    expect(chart?.axes?.x?.axisTitleUnderline).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleUnderline).toBe(true)
+    expect(chart?.axes?.x?.axisTitleUnderline).toBeUndefined()
+  })
 
   it("ignores an underline pinned on the tick-label txPr (title-only scope)", () => {
     // The axis tick-label `<c:txPr>` carries u="sng" but the axis
@@ -17061,10 +17059,10 @@ describe("parseChart — axis title underline", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleUnderline).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleUnderline).toBeUndefined()
+  })
 
   it("surfaces true on a value-axis title (scope covers every axis flavour)", () => {
     const xml = `<c:chartSpace ${NS_AU}>
@@ -17083,11 +17081,11 @@ describe("parseChart — axis title underline", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.y?.axisTitleUnderline).toBe(true);
-    expect(chart?.axes?.y?.title).toBe("USD");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.y?.axisTitleUnderline).toBe(true)
+    expect(chart?.axes?.y?.title).toBe("USD")
+  })
 
   it("threads independently across both axes", () => {
     const xml = `<c:chartSpace ${NS_AU}>
@@ -17116,11 +17114,11 @@ describe("parseChart — axis title underline", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleUnderline).toBe(true);
-    expect(chart?.axes?.y?.axisTitleUnderline).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleUnderline).toBe(true)
+    expect(chart?.axes?.y?.axisTitleUnderline).toBeUndefined()
+  })
 
   it("co-surfaces alongside other axis-title knobs on the same axis", () => {
     const xml = `<c:chartSpace ${NS_AU}>
@@ -17139,8 +17137,8 @@ describe("parseChart — axis title underline", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Period",
       axisTitleRotation: 45,
@@ -17150,20 +17148,20 @@ describe("parseChart — axis title underline", () => {
       axisTitleColor: "1070CA",
       axisTitleStrike: true,
       axisTitleUnderline: true,
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — axis labelBold ──────────────────────────────────────
 
 describe("parseChart — axis labelBold", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withCatAxTxPrBold(b: string | undefined): string {
     const txPr =
       b === undefined
         ? ""
-        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr b="${b}"/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>`;
+        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr b="${b}"/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>`
     return `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -17173,34 +17171,34 @@ describe("parseChart — axis labelBold", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it('surfaces labelBold=true when <a:defRPr b="1"/> is pinned', () => {
-    const chart = parseChart(withCatAxTxPrBold("1"));
-    expect(chart?.axes?.x?.labelBold).toBe(true);
-  });
+    const chart = parseChart(withCatAxTxPrBold("1"))
+    expect(chart?.axes?.x?.labelBold).toBe(true)
+  })
 
   it('surfaces labelBold=true on the OOXML truthy spelling b="true"', () => {
-    const chart = parseChart(withCatAxTxPrBold("true"));
-    expect(chart?.axes?.x?.labelBold).toBe(true);
-  });
+    const chart = parseChart(withCatAxTxPrBold("true"))
+    expect(chart?.axes?.x?.labelBold).toBe(true)
+  })
 
   it('drops the OOXML default b="0" to undefined (round-trips with absence)', () => {
-    expect(parseChart(withCatAxTxPrBold("0"))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTxPrBold("0"))?.axes).toBeUndefined()
+  })
 
   it('drops the falsy spelling b="false" to undefined', () => {
-    expect(parseChart(withCatAxTxPrBold("false"))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTxPrBold("false"))?.axes).toBeUndefined()
+  })
 
   it("drops malformed b tokens to undefined", () => {
-    expect(parseChart(withCatAxTxPrBold("yes"))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTxPrBold("yes"))?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <c:txPr> is absent", () => {
-    expect(parseChart(withCatAxTxPrBold(undefined))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTxPrBold(undefined))?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <a:defRPr> omits the b attribute", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17212,9 +17210,9 @@ describe("parseChart — axis labelBold", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <a:p> is absent inside <c:txPr>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17226,9 +17224,9 @@ describe("parseChart — axis labelBold", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes).toBeUndefined()
+  })
 
   it("surfaces labelBold on the value axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17240,9 +17238,9 @@ describe("parseChart — axis labelBold", () => {
       <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr b="1"/></a:pPr></a:p></c:txPr>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes?.y?.labelBold).toBe(true);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes?.y?.labelBold).toBe(true)
+  })
 
   it("surfaces labelBold independently on both axes", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17257,11 +17255,11 @@ describe("parseChart — axis labelBold", () => {
       <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr b="1"/></a:pPr></a:p></c:txPr>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.labelBold).toBe(true);
-    expect(chart?.axes?.y?.labelBold).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.labelBold).toBe(true)
+    expect(chart?.axes?.y?.labelBold).toBe(true)
+  })
 
   it("co-surfaces labelBold alongside labelRotation and labelFontSize from the same <c:txPr>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17273,12 +17271,12 @@ describe("parseChart — axis labelBold", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.labelRotation).toBe(45);
-    expect(chart?.axes?.x?.labelFontSize).toBe(14);
-    expect(chart?.axes?.x?.labelBold).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.labelRotation).toBe(45)
+    expect(chart?.axes?.x?.labelFontSize).toBe(14)
+    expect(chart?.axes?.x?.labelBold).toBe(true)
+  })
 
   it('does not pick up an <a:defRPr b=".."/> from the axis title\'s <c:rich>', () => {
     // The axis-title's `<c:rich>` carries its own `<a:defRPr b="..">`
@@ -17294,11 +17292,11 @@ describe("parseChart — axis labelBold", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleBold).toBe(true);
-    expect(chart?.axes?.x?.labelBold).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleBold).toBe(true)
+    expect(chart?.axes?.x?.labelBold).toBeUndefined()
+  })
 
   it("co-surfaces alongside other axis fields", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17312,28 +17310,28 @@ describe("parseChart — axis labelBold", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Period",
       tickLblPos: "low",
       labelRotation: 45,
       labelFontSize: 12,
       labelBold: true,
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — axis labelItalic ────────────────────────────────────
 
 describe("parseChart — axis labelItalic", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withCatAxTxPrItalic(i: string | undefined): string {
     const txPr =
       i === undefined
         ? ""
-        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr i="${i}"/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>`;
+        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr i="${i}"/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>`
     return `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -17343,34 +17341,34 @@ describe("parseChart — axis labelItalic", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it('surfaces labelItalic=true when <a:defRPr i="1"/> is pinned', () => {
-    const chart = parseChart(withCatAxTxPrItalic("1"));
-    expect(chart?.axes?.x?.labelItalic).toBe(true);
-  });
+    const chart = parseChart(withCatAxTxPrItalic("1"))
+    expect(chart?.axes?.x?.labelItalic).toBe(true)
+  })
 
   it('surfaces labelItalic=true on the OOXML truthy spelling i="true"', () => {
-    const chart = parseChart(withCatAxTxPrItalic("true"));
-    expect(chart?.axes?.x?.labelItalic).toBe(true);
-  });
+    const chart = parseChart(withCatAxTxPrItalic("true"))
+    expect(chart?.axes?.x?.labelItalic).toBe(true)
+  })
 
   it('drops the OOXML default i="0" to undefined (round-trips with absence)', () => {
-    expect(parseChart(withCatAxTxPrItalic("0"))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTxPrItalic("0"))?.axes).toBeUndefined()
+  })
 
   it('drops the falsy spelling i="false" to undefined', () => {
-    expect(parseChart(withCatAxTxPrItalic("false"))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTxPrItalic("false"))?.axes).toBeUndefined()
+  })
 
   it("drops malformed i tokens to undefined", () => {
-    expect(parseChart(withCatAxTxPrItalic("yes"))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTxPrItalic("yes"))?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <c:txPr> is absent", () => {
-    expect(parseChart(withCatAxTxPrItalic(undefined))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTxPrItalic(undefined))?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <a:defRPr> omits the i attribute", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17382,9 +17380,9 @@ describe("parseChart — axis labelItalic", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <a:p> is absent inside <c:txPr>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17396,9 +17394,9 @@ describe("parseChart — axis labelItalic", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes).toBeUndefined()
+  })
 
   it("surfaces labelItalic on the value axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17410,9 +17408,9 @@ describe("parseChart — axis labelItalic", () => {
       <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr i="1"/></a:pPr></a:p></c:txPr>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes?.y?.labelItalic).toBe(true);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes?.y?.labelItalic).toBe(true)
+  })
 
   it("surfaces labelItalic independently on both axes", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17427,11 +17425,11 @@ describe("parseChart — axis labelItalic", () => {
       <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr i="1"/></a:pPr></a:p></c:txPr>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.labelItalic).toBe(true);
-    expect(chart?.axes?.y?.labelItalic).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.labelItalic).toBe(true)
+    expect(chart?.axes?.y?.labelItalic).toBe(true)
+  })
 
   it("co-surfaces labelItalic alongside labelBold, labelRotation, and labelFontSize from the same <c:txPr>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17443,13 +17441,13 @@ describe("parseChart — axis labelItalic", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.labelRotation).toBe(45);
-    expect(chart?.axes?.x?.labelFontSize).toBe(14);
-    expect(chart?.axes?.x?.labelBold).toBe(true);
-    expect(chart?.axes?.x?.labelItalic).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.labelRotation).toBe(45)
+    expect(chart?.axes?.x?.labelFontSize).toBe(14)
+    expect(chart?.axes?.x?.labelBold).toBe(true)
+    expect(chart?.axes?.x?.labelItalic).toBe(true)
+  })
 
   it('does not pick up an <a:defRPr i=".."/> from the axis title\'s <c:rich>', () => {
     // The axis-title's `<c:rich>` carries its own `<a:defRPr i="..">`
@@ -17465,11 +17463,11 @@ describe("parseChart — axis labelItalic", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleItalic).toBe(true);
-    expect(chart?.axes?.x?.labelItalic).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleItalic).toBe(true)
+    expect(chart?.axes?.x?.labelItalic).toBeUndefined()
+  })
 
   it("co-surfaces alongside other axis fields", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17483,26 +17481,26 @@ describe("parseChart — axis labelItalic", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Period",
       tickLblPos: "low",
       labelRotation: 45,
       labelFontSize: 12,
       labelItalic: true,
-    });
-  });
-});
+    })
+  })
+})
 
 describe("parseChart — axis labelColor", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withCatAxLabelColor(val: string | undefined): string {
     const txPr =
       val === undefined
         ? ""
-        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="${val}"/></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>`;
+        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="${val}"/></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>`
     return `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -17512,28 +17510,28 @@ describe("parseChart — axis labelColor", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces labelColor as the 6-character uppercase hex when <a:srgbClr/> is pinned", () => {
-    const chart = parseChart(withCatAxLabelColor("FF0000"));
-    expect(chart?.axes?.x?.labelColor).toBe("FF0000");
-  });
+    const chart = parseChart(withCatAxLabelColor("FF0000"))
+    expect(chart?.axes?.x?.labelColor).toBe("FF0000")
+  })
 
   it("normalizes a lowercase hex value to uppercase", () => {
-    const chart = parseChart(withCatAxLabelColor("1070ca"));
-    expect(chart?.axes?.x?.labelColor).toBe("1070CA");
-  });
+    const chart = parseChart(withCatAxLabelColor("1070ca"))
+    expect(chart?.axes?.x?.labelColor).toBe("1070CA")
+  })
 
   it("drops malformed val tokens to undefined", () => {
-    expect(parseChart(withCatAxLabelColor("FFF"))?.axes).toBeUndefined();
-    expect(parseChart(withCatAxLabelColor("ZZZZZZ"))?.axes).toBeUndefined();
-    expect(parseChart(withCatAxLabelColor("FF0000FF"))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxLabelColor("FFF"))?.axes).toBeUndefined()
+    expect(parseChart(withCatAxLabelColor("ZZZZZZ"))?.axes).toBeUndefined()
+    expect(parseChart(withCatAxLabelColor("FF0000FF"))?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <c:txPr> is absent", () => {
-    expect(parseChart(withCatAxLabelColor(undefined))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxLabelColor(undefined))?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <a:defRPr> omits the solidFill child", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17545,9 +17543,9 @@ describe("parseChart — axis labelColor", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes).toBeUndefined()
+  })
 
   it("surfaces <a:schemeClr> in tick-label color as a ChartThemeColor object", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17559,9 +17557,9 @@ describe("parseChart — axis labelColor", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes?.x?.labelColor).toEqual({ theme: "tx1" });
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes?.x?.labelColor).toEqual({ theme: "tx1" })
+  })
 
   it("surfaces labelColor on the value axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17573,9 +17571,9 @@ describe("parseChart — axis labelColor", () => {
       <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="00C586"/></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes?.y?.labelColor).toBe("00C586");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes?.y?.labelColor).toBe("00C586")
+  })
 
   it("surfaces labelColor independently on both axes", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17590,11 +17588,11 @@ describe("parseChart — axis labelColor", () => {
       <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="00C586"/></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.labelColor).toBe("FF0000");
-    expect(chart?.axes?.y?.labelColor).toBe("00C586");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.labelColor).toBe("FF0000")
+    expect(chart?.axes?.y?.labelColor).toBe("00C586")
+  })
 
   it("co-surfaces labelColor alongside labelBold, labelItalic, labelRotation, and labelFontSize from the same <c:txPr>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17606,14 +17604,14 @@ describe("parseChart — axis labelColor", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.labelRotation).toBe(45);
-    expect(chart?.axes?.x?.labelFontSize).toBe(14);
-    expect(chart?.axes?.x?.labelBold).toBe(true);
-    expect(chart?.axes?.x?.labelItalic).toBe(true);
-    expect(chart?.axes?.x?.labelColor).toBe("1070CA");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.labelRotation).toBe(45)
+    expect(chart?.axes?.x?.labelFontSize).toBe(14)
+    expect(chart?.axes?.x?.labelBold).toBe(true)
+    expect(chart?.axes?.x?.labelItalic).toBe(true)
+    expect(chart?.axes?.x?.labelColor).toBe("1070CA")
+  })
 
   it("does not pick up an <a:srgbClr/> from the axis title's <c:rich>", () => {
     // The axis-title's `<c:rich>` carries its own `<a:solidFill>`
@@ -17629,11 +17627,11 @@ describe("parseChart — axis labelColor", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleColor).toBe("1070CA");
-    expect(chart?.axes?.x?.labelColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleColor).toBe("1070CA")
+    expect(chart?.axes?.x?.labelColor).toBeUndefined()
+  })
 
   it("co-surfaces alongside other axis fields", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17647,28 +17645,28 @@ describe("parseChart — axis labelColor", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Period",
       tickLblPos: "low",
       labelRotation: 45,
       labelFontSize: 12,
       labelColor: "1070CA",
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — axis labelUnderline ───────────────────────────────
 
 describe("parseChart — axis labelUnderline", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withCatAxLabelUnderline(u: string | undefined): string {
     const txPr =
       u === undefined
         ? ""
-        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr u="${u}"/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>`;
+        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr u="${u}"/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>`
     return `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -17678,21 +17676,21 @@ describe("parseChart — axis labelUnderline", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it('surfaces labelUnderline=true when <a:defRPr u="sng"/> is pinned', () => {
-    const chart = parseChart(withCatAxLabelUnderline("sng"));
-    expect(chart?.axes?.x?.labelUnderline).toBe(true);
-  });
+    const chart = parseChart(withCatAxLabelUnderline("sng"))
+    expect(chart?.axes?.x?.labelUnderline).toBe(true)
+  })
 
   it('drops the OOXML default u="none" to undefined (round-trips with absence)', () => {
-    expect(parseChart(withCatAxLabelUnderline("none"))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxLabelUnderline("none"))?.axes).toBeUndefined()
+  })
 
   it('drops the non-UI variant u="dbl" to undefined (writer would downgrade to "sng")', () => {
-    expect(parseChart(withCatAxLabelUnderline("dbl"))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxLabelUnderline("dbl"))?.axes).toBeUndefined()
+  })
 
   it("drops the sixteen exotic ST_TextUnderlineType tokens to undefined", () => {
     for (const exotic of [
@@ -17712,18 +17710,18 @@ describe("parseChart — axis labelUnderline", () => {
       "wavyHeavy",
       "wavyDbl",
     ]) {
-      expect(parseChart(withCatAxLabelUnderline(exotic))?.axes).toBeUndefined();
+      expect(parseChart(withCatAxLabelUnderline(exotic))?.axes).toBeUndefined()
     }
-  });
+  })
 
   it("drops malformed u tokens to undefined", () => {
-    expect(parseChart(withCatAxLabelUnderline("bogus"))?.axes).toBeUndefined();
-    expect(parseChart(withCatAxLabelUnderline(""))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxLabelUnderline("bogus"))?.axes).toBeUndefined()
+    expect(parseChart(withCatAxLabelUnderline(""))?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <c:txPr> is absent", () => {
-    expect(parseChart(withCatAxLabelUnderline(undefined))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxLabelUnderline(undefined))?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <a:defRPr> omits the u attribute", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17735,9 +17733,9 @@ describe("parseChart — axis labelUnderline", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <a:p> is absent inside <c:txPr>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17749,9 +17747,9 @@ describe("parseChart — axis labelUnderline", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes).toBeUndefined()
+  })
 
   it("surfaces labelUnderline on the value axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17763,9 +17761,9 @@ describe("parseChart — axis labelUnderline", () => {
       <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr u="sng"/></a:pPr></a:p></c:txPr>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes?.y?.labelUnderline).toBe(true);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes?.y?.labelUnderline).toBe(true)
+  })
 
   it("surfaces labelUnderline independently on both axes", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17780,11 +17778,11 @@ describe("parseChart — axis labelUnderline", () => {
       <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr u="sng"/></a:pPr></a:p></c:txPr>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.labelUnderline).toBe(true);
-    expect(chart?.axes?.y?.labelUnderline).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.labelUnderline).toBe(true)
+    expect(chart?.axes?.y?.labelUnderline).toBe(true)
+  })
 
   it("co-surfaces labelUnderline alongside the other tick-label typography knobs from the same <c:txPr>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17796,15 +17794,15 @@ describe("parseChart — axis labelUnderline", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.labelRotation).toBe(45);
-    expect(chart?.axes?.x?.labelFontSize).toBe(14);
-    expect(chart?.axes?.x?.labelBold).toBe(true);
-    expect(chart?.axes?.x?.labelItalic).toBe(true);
-    expect(chart?.axes?.x?.labelColor).toBe("1070CA");
-    expect(chart?.axes?.x?.labelUnderline).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.labelRotation).toBe(45)
+    expect(chart?.axes?.x?.labelFontSize).toBe(14)
+    expect(chart?.axes?.x?.labelBold).toBe(true)
+    expect(chart?.axes?.x?.labelItalic).toBe(true)
+    expect(chart?.axes?.x?.labelColor).toBe("1070CA")
+    expect(chart?.axes?.x?.labelUnderline).toBe(true)
+  })
 
   it('does not pick up an <a:defRPr u=".."/> from the axis title\'s <c:rich>', () => {
     // The axis-title's `<c:rich>` carries its own `<a:defRPr u="..">`
@@ -17820,11 +17818,11 @@ describe("parseChart — axis labelUnderline", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleUnderline).toBe(true);
-    expect(chart?.axes?.x?.labelUnderline).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleUnderline).toBe(true)
+    expect(chart?.axes?.x?.labelUnderline).toBeUndefined()
+  })
 
   it("co-surfaces alongside other axis fields", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17838,26 +17836,26 @@ describe("parseChart — axis labelUnderline", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Period",
       tickLblPos: "low",
       labelRotation: 45,
       labelFontSize: 12,
       labelUnderline: true,
-    });
-  });
-});
+    })
+  })
+})
 
 describe("parseChart — axis labelStrike", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withCatAxTxPrStrike(strike: string | undefined): string {
     const txPr =
       strike === undefined
         ? ""
-        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr strike="${strike}"/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>`;
+        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr strike="${strike}"/></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>`
     return `<c:chartSpace ${NS}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -17867,36 +17865,36 @@ describe("parseChart — axis labelStrike", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it('surfaces labelStrike=true when <a:defRPr strike="sngStrike"/> is pinned', () => {
-    const chart = parseChart(withCatAxTxPrStrike("sngStrike"));
-    expect(chart?.axes?.x?.labelStrike).toBe(true);
-  });
+    const chart = parseChart(withCatAxTxPrStrike("sngStrike"))
+    expect(chart?.axes?.x?.labelStrike).toBe(true)
+  })
 
   it('drops the OOXML default strike="noStrike" to undefined (round-trips with absence)', () => {
-    expect(parseChart(withCatAxTxPrStrike("noStrike"))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTxPrStrike("noStrike"))?.axes).toBeUndefined()
+  })
 
   it('drops the non-UI strike="dblStrike" variant to undefined (avoids lossy downgrade)', () => {
     // Hucre's writer emits only "sngStrike". Surfacing "dblStrike" as
     // true would silently downgrade the choice on round-trip, so the
     // reader collapses it to undefined to keep the round-trip lossless.
-    expect(parseChart(withCatAxTxPrStrike("dblStrike"))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTxPrStrike("dblStrike"))?.axes).toBeUndefined()
+  })
 
   it("drops malformed strike tokens to undefined", () => {
-    expect(parseChart(withCatAxTxPrStrike("yes"))?.axes).toBeUndefined();
-    expect(parseChart(withCatAxTxPrStrike("on"))?.axes).toBeUndefined();
-    expect(parseChart(withCatAxTxPrStrike(""))?.axes).toBeUndefined();
-    expect(parseChart(withCatAxTxPrStrike("1"))?.axes).toBeUndefined();
-    expect(parseChart(withCatAxTxPrStrike("true"))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTxPrStrike("yes"))?.axes).toBeUndefined()
+    expect(parseChart(withCatAxTxPrStrike("on"))?.axes).toBeUndefined()
+    expect(parseChart(withCatAxTxPrStrike(""))?.axes).toBeUndefined()
+    expect(parseChart(withCatAxTxPrStrike("1"))?.axes).toBeUndefined()
+    expect(parseChart(withCatAxTxPrStrike("true"))?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <c:txPr> is absent", () => {
-    expect(parseChart(withCatAxTxPrStrike(undefined))?.axes).toBeUndefined();
-  });
+    expect(parseChart(withCatAxTxPrStrike(undefined))?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <a:defRPr> omits the strike attribute", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17908,9 +17906,9 @@ describe("parseChart — axis labelStrike", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <a:p> is absent inside <c:txPr>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17922,9 +17920,9 @@ describe("parseChart — axis labelStrike", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes).toBeUndefined()
+  })
 
   it("surfaces labelStrike on the value axis", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17936,9 +17934,9 @@ describe("parseChart — axis labelStrike", () => {
       <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr strike="sngStrike"/></a:pPr></a:p></c:txPr>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes?.y?.labelStrike).toBe(true);
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes?.y?.labelStrike).toBe(true)
+  })
 
   it("surfaces labelStrike independently on both axes", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17953,11 +17951,11 @@ describe("parseChart — axis labelStrike", () => {
       <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr strike="sngStrike"/></a:pPr></a:p></c:txPr>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.labelStrike).toBe(true);
-    expect(chart?.axes?.y?.labelStrike).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.labelStrike).toBe(true)
+    expect(chart?.axes?.y?.labelStrike).toBe(true)
+  })
 
   it("co-surfaces labelStrike alongside labelBold, labelItalic, labelRotation, and labelFontSize from the same <c:txPr>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -17969,14 +17967,14 @@ describe("parseChart — axis labelStrike", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.labelRotation).toBe(45);
-    expect(chart?.axes?.x?.labelFontSize).toBe(14);
-    expect(chart?.axes?.x?.labelBold).toBe(true);
-    expect(chart?.axes?.x?.labelItalic).toBe(true);
-    expect(chart?.axes?.x?.labelStrike).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.labelRotation).toBe(45)
+    expect(chart?.axes?.x?.labelFontSize).toBe(14)
+    expect(chart?.axes?.x?.labelBold).toBe(true)
+    expect(chart?.axes?.x?.labelItalic).toBe(true)
+    expect(chart?.axes?.x?.labelStrike).toBe(true)
+  })
 
   it('does not pick up an <a:defRPr strike=".."/> from the axis title\'s <c:rich>', () => {
     // The axis-title's `<c:rich>` carries its own `<a:defRPr strike="..">`
@@ -17992,11 +17990,11 @@ describe("parseChart — axis labelStrike", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleStrike).toBe(true);
-    expect(chart?.axes?.x?.labelStrike).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleStrike).toBe(true)
+    expect(chart?.axes?.x?.labelStrike).toBeUndefined()
+  })
 
   it("co-surfaces alongside other axis fields", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -18010,25 +18008,25 @@ describe("parseChart — axis labelStrike", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     expect(chart?.axes?.x).toEqual({
       title: "Period",
       tickLblPos: "low",
       labelRotation: 45,
       labelFontSize: 12,
       labelStrike: true,
-    });
-  });
-});
+    })
+  })
+})
 
 // ── parseChart — data labels fontSize ───────────────────────────────
 
 describe("parseChart — data labels fontSize", () => {
-  const NS_DLF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_DLF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withDLblsTxPr(sz: string | undefined): string {
-    const defRPr = sz === undefined ? "<a:defRPr/>" : `<a:defRPr sz="${sz}"/>`;
+    const defRPr = sz === undefined ? "<a:defRPr/>" : `<a:defRPr sz="${sz}"/>`
     return `<c:chartSpace ${NS_DLF}>
   <c:chart>
     <c:plotArea>
@@ -18052,23 +18050,23 @@ describe("parseChart — data labels fontSize", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it('surfaces fontSize=14 when sz="1400" (100ths of a point)', () => {
-    const chart = parseChart(withDLblsTxPr("1400"));
-    expect(chart?.dataLabels?.fontSize).toBe(14);
-  });
+    const chart = parseChart(withDLblsTxPr("1400"))
+    expect(chart?.dataLabels?.fontSize).toBe(14)
+  })
 
   it("surfaces a half-point integer-based fractional size (1450 → 14.5)", () => {
-    const chart = parseChart(withDLblsTxPr("1450"));
-    expect(chart?.dataLabels?.fontSize).toBe(14.5);
-  });
+    const chart = parseChart(withDLblsTxPr("1450"))
+    expect(chart?.dataLabels?.fontSize).toBe(14.5)
+  })
 
   it("returns undefined when <a:defRPr> omits the sz attribute", () => {
-    const chart = parseChart(withDLblsTxPr(undefined));
-    expect(chart?.dataLabels?.fontSize).toBeUndefined();
-  });
+    const chart = parseChart(withDLblsTxPr(undefined))
+    expect(chart?.dataLabels?.fontSize).toBeUndefined()
+  })
 
   it("returns undefined when the dLbls block has no <c:txPr> body", () => {
     const xml = `<c:chartSpace ${NS_DLF}>
@@ -18089,10 +18087,10 @@ describe("parseChart — data labels fontSize", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.fontSize).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.fontSize).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:dLbls> element at all", () => {
     const xml = `<c:chartSpace ${NS_DLF}>
@@ -18105,25 +18103,25 @@ describe("parseChart — data labels fontSize", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels).toBeUndefined()
+  })
 
   it("collapses out-of-range sz values (below 100) to undefined", () => {
-    expect(parseChart(withDLblsTxPr("50"))?.dataLabels?.fontSize).toBeUndefined();
-    expect(parseChart(withDLblsTxPr("0"))?.dataLabels?.fontSize).toBeUndefined();
-  });
+    expect(parseChart(withDLblsTxPr("50"))?.dataLabels?.fontSize).toBeUndefined()
+    expect(parseChart(withDLblsTxPr("0"))?.dataLabels?.fontSize).toBeUndefined()
+  })
 
   it("collapses out-of-range sz values (above 40000) to undefined", () => {
-    expect(parseChart(withDLblsTxPr("40100"))?.dataLabels?.fontSize).toBeUndefined();
-    expect(parseChart(withDLblsTxPr("999999"))?.dataLabels?.fontSize).toBeUndefined();
-  });
+    expect(parseChart(withDLblsTxPr("40100"))?.dataLabels?.fontSize).toBeUndefined()
+    expect(parseChart(withDLblsTxPr("999999"))?.dataLabels?.fontSize).toBeUndefined()
+  })
 
   it("collapses malformed sz tokens (non-numeric) to undefined", () => {
-    expect(parseChart(withDLblsTxPr(""))?.dataLabels?.fontSize).toBeUndefined();
-    expect(parseChart(withDLblsTxPr("abc"))?.dataLabels?.fontSize).toBeUndefined();
-    expect(parseChart(withDLblsTxPr("12pt"))?.dataLabels?.fontSize).toBeUndefined();
-  });
+    expect(parseChart(withDLblsTxPr(""))?.dataLabels?.fontSize).toBeUndefined()
+    expect(parseChart(withDLblsTxPr("abc"))?.dataLabels?.fontSize).toBeUndefined()
+    expect(parseChart(withDLblsTxPr("12pt"))?.dataLabels?.fontSize).toBeUndefined()
+  })
 
   it("co-surfaces alongside the other dLbls fields (showVal / position / numberFormat)", () => {
     const xml = `<c:chartSpace ${NS_DLF}>
@@ -18151,13 +18149,13 @@ describe("parseChart — data labels fontSize", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.fontSize).toBe(14);
-    expect(chart?.dataLabels?.position).toBe("outEnd");
-    expect(chart?.dataLabels?.showValue).toBe(true);
-    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.fontSize).toBe(14)
+    expect(chart?.dataLabels?.position).toBe("outEnd")
+    expect(chart?.dataLabels?.showValue).toBe(true)
+    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" })
+  })
 
   it("surfaces the fontSize on a fontSize-only dLbls block (no other show* toggles)", () => {
     // Even when no other dataLabels field is set, a fontSize-only
@@ -18186,21 +18184,21 @@ describe("parseChart — data labels fontSize", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels?.fontSize).toBe(16);
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels?.fontSize).toBe(16)
+  })
+})
 
 // ── parseChart — data labels fontColor ──────────────────────────────
 
 describe("parseChart — data labels fontColor", () => {
-  const NS_DLC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_DLC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withDLblsColor(srgbVal: string | undefined): string {
     const fill =
       srgbVal === undefined
         ? "<a:defRPr/>"
-        : `<a:defRPr><a:solidFill><a:srgbClr val="${srgbVal}"/></a:solidFill></a:defRPr>`;
+        : `<a:defRPr><a:solidFill><a:srgbClr val="${srgbVal}"/></a:solidFill></a:defRPr>`
     return `<c:chartSpace ${NS_DLC}>
   <c:chart>
     <c:plotArea>
@@ -18224,20 +18222,20 @@ describe("parseChart — data labels fontColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces fontColor as the canonical 6-character uppercase hex", () => {
-    expect(parseChart(withDLblsColor("FF0000"))?.dataLabels?.fontColor).toBe("FF0000");
-  });
+    expect(parseChart(withDLblsColor("FF0000"))?.dataLabels?.fontColor).toBe("FF0000")
+  })
 
   it("normalizes a lowercase srgbClr val to the OOXML uppercase canonical form", () => {
-    expect(parseChart(withDLblsColor("ff8800"))?.dataLabels?.fontColor).toBe("FF8800");
-  });
+    expect(parseChart(withDLblsColor("ff8800"))?.dataLabels?.fontColor).toBe("FF8800")
+  })
 
   it("returns undefined when the dLbls block has no <a:solidFill>", () => {
-    expect(parseChart(withDLblsColor(undefined))?.dataLabels?.fontColor).toBeUndefined();
-  });
+    expect(parseChart(withDLblsColor(undefined))?.dataLabels?.fontColor).toBeUndefined()
+  })
 
   it("returns undefined when the dLbls block has no <c:txPr> body", () => {
     const xml = `<c:chartSpace ${NS_DLC}>
@@ -18258,9 +18256,9 @@ describe("parseChart — data labels fontColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels?.fontColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels?.fontColor).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:dLbls> element at all", () => {
     const xml = `<c:chartSpace ${NS_DLC}>
@@ -18273,9 +18271,9 @@ describe("parseChart — data labels fontColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels).toBeUndefined()
+  })
 
   it("collapses theme references (<a:schemeClr>) to undefined — only literal RGB round-trips", () => {
     const xml = `<c:chartSpace ${NS_DLC}>
@@ -18301,16 +18299,16 @@ describe("parseChart — data labels fontColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels?.fontColor).toEqual({ theme: "accent1" });
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels?.fontColor).toEqual({ theme: "accent1" })
+  })
 
   it("collapses malformed val tokens (wrong length, non-hex characters) to undefined", () => {
-    expect(parseChart(withDLblsColor(""))?.dataLabels?.fontColor).toBeUndefined();
-    expect(parseChart(withDLblsColor("FF00"))?.dataLabels?.fontColor).toBeUndefined();
-    expect(parseChart(withDLblsColor("FF0000FF"))?.dataLabels?.fontColor).toBeUndefined();
-    expect(parseChart(withDLblsColor("ZZZZZZ"))?.dataLabels?.fontColor).toBeUndefined();
-  });
+    expect(parseChart(withDLblsColor(""))?.dataLabels?.fontColor).toBeUndefined()
+    expect(parseChart(withDLblsColor("FF00"))?.dataLabels?.fontColor).toBeUndefined()
+    expect(parseChart(withDLblsColor("FF0000FF"))?.dataLabels?.fontColor).toBeUndefined()
+    expect(parseChart(withDLblsColor("ZZZZZZ"))?.dataLabels?.fontColor).toBeUndefined()
+  })
 
   it("co-surfaces alongside the other dLbls fields (showVal / position / numberFormat)", () => {
     const xml = `<c:chartSpace ${NS_DLC}>
@@ -18338,13 +18336,13 @@ describe("parseChart — data labels fontColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.fontColor).toBe("123456");
-    expect(chart?.dataLabels?.position).toBe("outEnd");
-    expect(chart?.dataLabels?.showValue).toBe(true);
-    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.fontColor).toBe("123456")
+    expect(chart?.dataLabels?.position).toBe("outEnd")
+    expect(chart?.dataLabels?.showValue).toBe(true)
+    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" })
+  })
 
   it("surfaces the fontColor on a fontColor-only dLbls block (no other show* toggles)", () => {
     const xml = `<c:chartSpace ${NS_DLC}>
@@ -18370,18 +18368,18 @@ describe("parseChart — data labels fontColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels?.fontColor).toBe("00FF00");
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels?.fontColor).toBe("00FF00")
+  })
+})
 
 // ── parseChart — data labels bold ───────────────────────────────────
 
 describe("parseChart — data labels bold", () => {
-  const NS_DLB = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_DLB = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withDLblsBold(b: string | undefined): string {
-    const defRPr = b === undefined ? "<a:defRPr/>" : `<a:defRPr b="${b}"/>`;
+    const defRPr = b === undefined ? "<a:defRPr/>" : `<a:defRPr b="${b}"/>`
     return `<c:chartSpace ${NS_DLB}>
   <c:chart>
     <c:plotArea>
@@ -18405,28 +18403,28 @@ describe("parseChart — data labels bold", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it('surfaces bold=true when b="1"', () => {
-    expect(parseChart(withDLblsBold("1"))?.dataLabels?.bold).toBe(true);
-  });
+    expect(parseChart(withDLblsBold("1"))?.dataLabels?.bold).toBe(true)
+  })
 
   it('surfaces bold=true when b="true" (less common but valid)', () => {
-    expect(parseChart(withDLblsBold("true"))?.dataLabels?.bold).toBe(true);
-  });
+    expect(parseChart(withDLblsBold("true"))?.dataLabels?.bold).toBe(true)
+  })
 
   it('collapses the OOXML default b="0" to undefined', () => {
-    expect(parseChart(withDLblsBold("0"))?.dataLabels?.bold).toBeUndefined();
-  });
+    expect(parseChart(withDLblsBold("0"))?.dataLabels?.bold).toBeUndefined()
+  })
 
   it('collapses b="false" to undefined (matches the OOXML default)', () => {
-    expect(parseChart(withDLblsBold("false"))?.dataLabels?.bold).toBeUndefined();
-  });
+    expect(parseChart(withDLblsBold("false"))?.dataLabels?.bold).toBeUndefined()
+  })
 
   it("returns undefined when <a:defRPr> omits the b attribute", () => {
-    expect(parseChart(withDLblsBold(undefined))?.dataLabels?.bold).toBeUndefined();
-  });
+    expect(parseChart(withDLblsBold(undefined))?.dataLabels?.bold).toBeUndefined()
+  })
 
   it("returns undefined when the dLbls block has no <c:txPr> body", () => {
     const xml = `<c:chartSpace ${NS_DLB}>
@@ -18447,16 +18445,16 @@ describe("parseChart — data labels bold", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels?.bold).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels?.bold).toBeUndefined()
+  })
 
   it("collapses garbage / unknown b tokens to undefined", () => {
-    expect(parseChart(withDLblsBold(""))?.dataLabels?.bold).toBeUndefined();
-    expect(parseChart(withDLblsBold("yes"))?.dataLabels?.bold).toBeUndefined();
-    expect(parseChart(withDLblsBold("2"))?.dataLabels?.bold).toBeUndefined();
-    expect(parseChart(withDLblsBold("bold"))?.dataLabels?.bold).toBeUndefined();
-  });
+    expect(parseChart(withDLblsBold(""))?.dataLabels?.bold).toBeUndefined()
+    expect(parseChart(withDLblsBold("yes"))?.dataLabels?.bold).toBeUndefined()
+    expect(parseChart(withDLblsBold("2"))?.dataLabels?.bold).toBeUndefined()
+    expect(parseChart(withDLblsBold("bold"))?.dataLabels?.bold).toBeUndefined()
+  })
 
   it("co-surfaces alongside the other dLbls fields (showVal / position / numberFormat)", () => {
     const xml = `<c:chartSpace ${NS_DLB}>
@@ -18484,13 +18482,13 @@ describe("parseChart — data labels bold", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.bold).toBe(true);
-    expect(chart?.dataLabels?.position).toBe("outEnd");
-    expect(chart?.dataLabels?.showValue).toBe(true);
-    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.bold).toBe(true)
+    expect(chart?.dataLabels?.position).toBe("outEnd")
+    expect(chart?.dataLabels?.showValue).toBe(true)
+    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" })
+  })
 
   it("surfaces the bold flag on a bold-only dLbls block (no other show* toggles)", () => {
     const xml = `<c:chartSpace ${NS_DLB}>
@@ -18516,18 +18514,18 @@ describe("parseChart — data labels bold", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels?.bold).toBe(true);
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels?.bold).toBe(true)
+  })
+})
 
 // ── parseChart — data labels italic ─────────────────────────────────
 
 describe("parseChart — data labels italic", () => {
-  const NS_DLI = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_DLI = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withDLblsItalic(i: string | undefined): string {
-    const defRPr = i === undefined ? "<a:defRPr/>" : `<a:defRPr i="${i}"/>`;
+    const defRPr = i === undefined ? "<a:defRPr/>" : `<a:defRPr i="${i}"/>`
     return `<c:chartSpace ${NS_DLI}>
   <c:chart>
     <c:plotArea>
@@ -18551,28 +18549,28 @@ describe("parseChart — data labels italic", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it('surfaces italic=true when i="1"', () => {
-    expect(parseChart(withDLblsItalic("1"))?.dataLabels?.italic).toBe(true);
-  });
+    expect(parseChart(withDLblsItalic("1"))?.dataLabels?.italic).toBe(true)
+  })
 
   it('surfaces italic=true when i="true" (less common but valid)', () => {
-    expect(parseChart(withDLblsItalic("true"))?.dataLabels?.italic).toBe(true);
-  });
+    expect(parseChart(withDLblsItalic("true"))?.dataLabels?.italic).toBe(true)
+  })
 
   it('collapses the OOXML default i="0" to undefined', () => {
-    expect(parseChart(withDLblsItalic("0"))?.dataLabels?.italic).toBeUndefined();
-  });
+    expect(parseChart(withDLblsItalic("0"))?.dataLabels?.italic).toBeUndefined()
+  })
 
   it('collapses i="false" to undefined (matches the OOXML default)', () => {
-    expect(parseChart(withDLblsItalic("false"))?.dataLabels?.italic).toBeUndefined();
-  });
+    expect(parseChart(withDLblsItalic("false"))?.dataLabels?.italic).toBeUndefined()
+  })
 
   it("returns undefined when <a:defRPr> omits the i attribute", () => {
-    expect(parseChart(withDLblsItalic(undefined))?.dataLabels?.italic).toBeUndefined();
-  });
+    expect(parseChart(withDLblsItalic(undefined))?.dataLabels?.italic).toBeUndefined()
+  })
 
   it("returns undefined when the dLbls block has no <c:txPr> body", () => {
     const xml = `<c:chartSpace ${NS_DLI}>
@@ -18593,16 +18591,16 @@ describe("parseChart — data labels italic", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels?.italic).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels?.italic).toBeUndefined()
+  })
 
   it("collapses garbage / unknown i tokens to undefined", () => {
-    expect(parseChart(withDLblsItalic(""))?.dataLabels?.italic).toBeUndefined();
-    expect(parseChart(withDLblsItalic("yes"))?.dataLabels?.italic).toBeUndefined();
-    expect(parseChart(withDLblsItalic("2"))?.dataLabels?.italic).toBeUndefined();
-    expect(parseChart(withDLblsItalic("italic"))?.dataLabels?.italic).toBeUndefined();
-  });
+    expect(parseChart(withDLblsItalic(""))?.dataLabels?.italic).toBeUndefined()
+    expect(parseChart(withDLblsItalic("yes"))?.dataLabels?.italic).toBeUndefined()
+    expect(parseChart(withDLblsItalic("2"))?.dataLabels?.italic).toBeUndefined()
+    expect(parseChart(withDLblsItalic("italic"))?.dataLabels?.italic).toBeUndefined()
+  })
 
   it("co-surfaces alongside the other dLbls fields (showVal / position / numberFormat / bold)", () => {
     const xml = `<c:chartSpace ${NS_DLI}>
@@ -18630,14 +18628,14 @@ describe("parseChart — data labels italic", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.italic).toBe(true);
-    expect(chart?.dataLabels?.bold).toBe(true);
-    expect(chart?.dataLabels?.position).toBe("outEnd");
-    expect(chart?.dataLabels?.showValue).toBe(true);
-    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.italic).toBe(true)
+    expect(chart?.dataLabels?.bold).toBe(true)
+    expect(chart?.dataLabels?.position).toBe("outEnd")
+    expect(chart?.dataLabels?.showValue).toBe(true)
+    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" })
+  })
 
   it("surfaces the italic flag on an italic-only dLbls block (no other show* toggles)", () => {
     const xml = `<c:chartSpace ${NS_DLI}>
@@ -18663,17 +18661,17 @@ describe("parseChart — data labels italic", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels?.italic).toBe(true);
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels?.italic).toBe(true)
+  })
+})
 // ── parseChart — data labels underline ──────────────────────────────
 
 describe("parseChart — data labels underline", () => {
-  const NS_DLU = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_DLU = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withDLblsUnderline(u: string | undefined): string {
-    const defRPr = u === undefined ? "<a:defRPr/>" : `<a:defRPr u="${u}"/>`;
+    const defRPr = u === undefined ? "<a:defRPr/>" : `<a:defRPr u="${u}"/>`
     return `<c:chartSpace ${NS_DLU}>
   <c:chart>
     <c:plotArea>
@@ -18697,20 +18695,20 @@ describe("parseChart — data labels underline", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it('surfaces underline=true when u="sng"', () => {
-    expect(parseChart(withDLblsUnderline("sng"))?.dataLabels?.underline).toBe(true);
-  });
+    expect(parseChart(withDLblsUnderline("sng"))?.dataLabels?.underline).toBe(true)
+  })
 
   it('collapses the OOXML default u="none" to undefined', () => {
-    expect(parseChart(withDLblsUnderline("none"))?.dataLabels?.underline).toBeUndefined();
-  });
+    expect(parseChart(withDLblsUnderline("none"))?.dataLabels?.underline).toBeUndefined()
+  })
 
   it('collapses u="dbl" (double underline) to undefined — only "sng" round-trips losslessly', () => {
-    expect(parseChart(withDLblsUnderline("dbl"))?.dataLabels?.underline).toBeUndefined();
-  });
+    expect(parseChart(withDLblsUnderline("dbl"))?.dataLabels?.underline).toBeUndefined()
+  })
 
   it("collapses every non-sng ST_TextUnderlineType variant to undefined", () => {
     for (const variant of [
@@ -18730,13 +18728,13 @@ describe("parseChart — data labels underline", () => {
       "wavyDbl",
       "words",
     ]) {
-      expect(parseChart(withDLblsUnderline(variant))?.dataLabels?.underline).toBeUndefined();
+      expect(parseChart(withDLblsUnderline(variant))?.dataLabels?.underline).toBeUndefined()
     }
-  });
+  })
 
   it("returns undefined when <a:defRPr> omits the u attribute", () => {
-    expect(parseChart(withDLblsUnderline(undefined))?.dataLabels?.underline).toBeUndefined();
-  });
+    expect(parseChart(withDLblsUnderline(undefined))?.dataLabels?.underline).toBeUndefined()
+  })
 
   it("returns undefined when the dLbls block has no <c:txPr> body", () => {
     const xml = `<c:chartSpace ${NS_DLU}>
@@ -18757,16 +18755,16 @@ describe("parseChart — data labels underline", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels?.underline).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels?.underline).toBeUndefined()
+  })
 
   it("collapses garbage tokens to undefined", () => {
-    expect(parseChart(withDLblsUnderline(""))?.dataLabels?.underline).toBeUndefined();
-    expect(parseChart(withDLblsUnderline("yes"))?.dataLabels?.underline).toBeUndefined();
-    expect(parseChart(withDLblsUnderline("1"))?.dataLabels?.underline).toBeUndefined();
-    expect(parseChart(withDLblsUnderline("true"))?.dataLabels?.underline).toBeUndefined();
-  });
+    expect(parseChart(withDLblsUnderline(""))?.dataLabels?.underline).toBeUndefined()
+    expect(parseChart(withDLblsUnderline("yes"))?.dataLabels?.underline).toBeUndefined()
+    expect(parseChart(withDLblsUnderline("1"))?.dataLabels?.underline).toBeUndefined()
+    expect(parseChart(withDLblsUnderline("true"))?.dataLabels?.underline).toBeUndefined()
+  })
 
   it("co-surfaces alongside the other dLbls fields (showVal / position / numberFormat / bold)", () => {
     const xml = `<c:chartSpace ${NS_DLU}>
@@ -18794,14 +18792,14 @@ describe("parseChart — data labels underline", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.underline).toBe(true);
-    expect(chart?.dataLabels?.bold).toBe(true);
-    expect(chart?.dataLabels?.position).toBe("outEnd");
-    expect(chart?.dataLabels?.showValue).toBe(true);
-    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.underline).toBe(true)
+    expect(chart?.dataLabels?.bold).toBe(true)
+    expect(chart?.dataLabels?.position).toBe("outEnd")
+    expect(chart?.dataLabels?.showValue).toBe(true)
+    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" })
+  })
 
   it("surfaces the underline flag on an underline-only dLbls block (no other show* toggles)", () => {
     const xml = `<c:chartSpace ${NS_DLU}>
@@ -18827,17 +18825,17 @@ describe("parseChart — data labels underline", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels?.underline).toBe(true);
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels?.underline).toBe(true)
+  })
+})
 // ── parseChart — data labels strikethrough ──────────────────────────
 
 describe("parseChart — data labels strikethrough", () => {
-  const NS_DLS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_DLS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withDLblsStrike(strike: string | undefined): string {
-    const defRPr = strike === undefined ? "<a:defRPr/>" : `<a:defRPr strike="${strike}"/>`;
+    const defRPr = strike === undefined ? "<a:defRPr/>" : `<a:defRPr strike="${strike}"/>`
     return `<c:chartSpace ${NS_DLS}>
   <c:chart>
     <c:plotArea>
@@ -18861,24 +18859,24 @@ describe("parseChart — data labels strikethrough", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it('surfaces strikethrough=true when strike="sngStrike"', () => {
-    expect(parseChart(withDLblsStrike("sngStrike"))?.dataLabels?.strikethrough).toBe(true);
-  });
+    expect(parseChart(withDLblsStrike("sngStrike"))?.dataLabels?.strikethrough).toBe(true)
+  })
 
   it('collapses the OOXML default strike="noStrike" to undefined', () => {
-    expect(parseChart(withDLblsStrike("noStrike"))?.dataLabels?.strikethrough).toBeUndefined();
-  });
+    expect(parseChart(withDLblsStrike("noStrike"))?.dataLabels?.strikethrough).toBeUndefined()
+  })
 
   it('collapses strike="dblStrike" (double line) to undefined — only "sngStrike" round-trips losslessly', () => {
-    expect(parseChart(withDLblsStrike("dblStrike"))?.dataLabels?.strikethrough).toBeUndefined();
-  });
+    expect(parseChart(withDLblsStrike("dblStrike"))?.dataLabels?.strikethrough).toBeUndefined()
+  })
 
   it("returns undefined when <a:defRPr> omits the strike attribute", () => {
-    expect(parseChart(withDLblsStrike(undefined))?.dataLabels?.strikethrough).toBeUndefined();
-  });
+    expect(parseChart(withDLblsStrike(undefined))?.dataLabels?.strikethrough).toBeUndefined()
+  })
 
   it("returns undefined when the dLbls block has no <c:txPr> body", () => {
     const xml = `<c:chartSpace ${NS_DLS}>
@@ -18899,17 +18897,17 @@ describe("parseChart — data labels strikethrough", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels?.strikethrough).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels?.strikethrough).toBeUndefined()
+  })
 
   it("collapses garbage tokens to undefined", () => {
-    expect(parseChart(withDLblsStrike(""))?.dataLabels?.strikethrough).toBeUndefined();
-    expect(parseChart(withDLblsStrike("yes"))?.dataLabels?.strikethrough).toBeUndefined();
-    expect(parseChart(withDLblsStrike("1"))?.dataLabels?.strikethrough).toBeUndefined();
-    expect(parseChart(withDLblsStrike("true"))?.dataLabels?.strikethrough).toBeUndefined();
-    expect(parseChart(withDLblsStrike("strike"))?.dataLabels?.strikethrough).toBeUndefined();
-  });
+    expect(parseChart(withDLblsStrike(""))?.dataLabels?.strikethrough).toBeUndefined()
+    expect(parseChart(withDLblsStrike("yes"))?.dataLabels?.strikethrough).toBeUndefined()
+    expect(parseChart(withDLblsStrike("1"))?.dataLabels?.strikethrough).toBeUndefined()
+    expect(parseChart(withDLblsStrike("true"))?.dataLabels?.strikethrough).toBeUndefined()
+    expect(parseChart(withDLblsStrike("strike"))?.dataLabels?.strikethrough).toBeUndefined()
+  })
 
   it("co-surfaces alongside the other dLbls fields (showVal / position / numberFormat / bold)", () => {
     const xml = `<c:chartSpace ${NS_DLS}>
@@ -18937,14 +18935,14 @@ describe("parseChart — data labels strikethrough", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.strikethrough).toBe(true);
-    expect(chart?.dataLabels?.bold).toBe(true);
-    expect(chart?.dataLabels?.position).toBe("outEnd");
-    expect(chart?.dataLabels?.showValue).toBe(true);
-    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.strikethrough).toBe(true)
+    expect(chart?.dataLabels?.bold).toBe(true)
+    expect(chart?.dataLabels?.position).toBe("outEnd")
+    expect(chart?.dataLabels?.showValue).toBe(true)
+    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" })
+  })
 
   it("surfaces the strikethrough flag on a strike-only dLbls block (no other show* toggles)", () => {
     const xml = `<c:chartSpace ${NS_DLS}>
@@ -18970,21 +18968,21 @@ describe("parseChart — data labels strikethrough", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels?.strikethrough).toBe(true);
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels?.strikethrough).toBe(true)
+  })
+})
 
 // ── parseChart — data labels fontFamily ─────────────────────────────
 
 describe("parseChart — data labels fontFamily", () => {
-  const NS_DLFF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_DLFF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withDLblsTypeface(typeface: string | undefined): string {
     const defRPr =
       typeface === undefined
         ? "<a:defRPr/>"
-        : `<a:defRPr><a:latin typeface="${typeface}"/></a:defRPr>`;
+        : `<a:defRPr><a:latin typeface="${typeface}"/></a:defRPr>`
     return `<c:chartSpace ${NS_DLFF}>
   <c:chart>
     <c:plotArea>
@@ -19008,34 +19006,34 @@ describe("parseChart — data labels fontFamily", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces fontFamily as the trimmed typeface string", () => {
-    expect(parseChart(withDLblsTypeface("Arial"))?.dataLabels?.fontFamily).toBe("Arial");
-  });
+    expect(parseChart(withDLblsTypeface("Arial"))?.dataLabels?.fontFamily).toBe("Arial")
+  })
 
   it("trims surrounding whitespace from the typeface attribute", () => {
-    expect(parseChart(withDLblsTypeface("   Calibri   "))?.dataLabels?.fontFamily).toBe("Calibri");
-  });
+    expect(parseChart(withDLblsTypeface("   Calibri   "))?.dataLabels?.fontFamily).toBe("Calibri")
+  })
 
   it("surfaces a multi-word typeface verbatim", () => {
     expect(parseChart(withDLblsTypeface("Times New Roman"))?.dataLabels?.fontFamily).toBe(
       "Times New Roman",
-    );
-  });
+    )
+  })
 
   it("returns undefined when the dLbls block has no <a:latin> element at all", () => {
-    expect(parseChart(withDLblsTypeface(undefined))?.dataLabels?.fontFamily).toBeUndefined();
-  });
+    expect(parseChart(withDLblsTypeface(undefined))?.dataLabels?.fontFamily).toBeUndefined()
+  })
 
   it("collapses an empty typeface attribute to undefined", () => {
-    expect(parseChart(withDLblsTypeface(""))?.dataLabels?.fontFamily).toBeUndefined();
-  });
+    expect(parseChart(withDLblsTypeface(""))?.dataLabels?.fontFamily).toBeUndefined()
+  })
 
   it("collapses a whitespace-only typeface attribute to undefined", () => {
-    expect(parseChart(withDLblsTypeface("   "))?.dataLabels?.fontFamily).toBeUndefined();
-  });
+    expect(parseChart(withDLblsTypeface("   "))?.dataLabels?.fontFamily).toBeUndefined()
+  })
 
   it("returns undefined when the dLbls block has no <c:txPr> body", () => {
     const xml = `<c:chartSpace ${NS_DLFF}>
@@ -19056,9 +19054,9 @@ describe("parseChart — data labels fontFamily", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels?.fontFamily).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels?.fontFamily).toBeUndefined()
+  })
 
   it("co-surfaces alongside other dLbls typography fields (sz / strike / fontColor / fontFamily)", () => {
     const xml = `<c:chartSpace ${NS_DLFF}>
@@ -19086,16 +19084,16 @@ describe("parseChart — data labels fontFamily", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.fontFamily).toBe("Verdana");
-    expect(chart?.dataLabels?.fontSize).toBe(14);
-    expect(chart?.dataLabels?.bold).toBe(true);
-    expect(chart?.dataLabels?.strikethrough).toBe(true);
-    expect(chart?.dataLabels?.fontColor).toBe("FF0000");
-    expect(chart?.dataLabels?.position).toBe("outEnd");
-    expect(chart?.dataLabels?.showValue).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.fontFamily).toBe("Verdana")
+    expect(chart?.dataLabels?.fontSize).toBe(14)
+    expect(chart?.dataLabels?.bold).toBe(true)
+    expect(chart?.dataLabels?.strikethrough).toBe(true)
+    expect(chart?.dataLabels?.fontColor).toBe("FF0000")
+    expect(chart?.dataLabels?.position).toBe("outEnd")
+    expect(chart?.dataLabels?.showValue).toBe(true)
+  })
 
   it("surfaces the typeface on a font-only dLbls block (no other show* toggles)", () => {
     const xml = `<c:chartSpace ${NS_DLFF}>
@@ -19121,21 +19119,21 @@ describe("parseChart — data labels fontFamily", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels?.fontFamily).toBe("Calibri");
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels?.fontFamily).toBe("Calibri")
+  })
+})
 
 // ── parseChart — title font family ──────────────────────────────────
 
 describe("parseChart — title font family", () => {
-  const NS_TFF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_TFF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withTitleFontFamily(typeface: string | undefined): string {
     const defRPr =
       typeface === undefined
         ? "<a:defRPr/>"
-        : `<a:defRPr><a:latin typeface="${typeface}"/></a:defRPr>`;
+        : `<a:defRPr><a:latin typeface="${typeface}"/></a:defRPr>`
     return `<c:chartSpace ${NS_TFF}>
   <c:chart>
     <c:title>
@@ -19154,38 +19152,38 @@ describe("parseChart — title font family", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the typeface when the title pinned <a:latin typeface='Arial'/>", () => {
-    const chart = parseChart(withTitleFontFamily("Arial"));
-    expect(chart?.titleFontFamily).toBe("Arial");
-  });
+    const chart = parseChart(withTitleFontFamily("Arial"))
+    expect(chart?.titleFontFamily).toBe("Arial")
+  })
 
   it("surfaces multi-word typefaces verbatim", () => {
-    const chart = parseChart(withTitleFontFamily("Times New Roman"));
-    expect(chart?.titleFontFamily).toBe("Times New Roman");
-  });
+    const chart = parseChart(withTitleFontFamily("Times New Roman"))
+    expect(chart?.titleFontFamily).toBe("Times New Roman")
+  })
 
   it("collapses absence of the <a:latin> element to undefined", () => {
-    const chart = parseChart(withTitleFontFamily(undefined));
-    expect(chart?.titleFontFamily).toBeUndefined();
-  });
+    const chart = parseChart(withTitleFontFamily(undefined))
+    expect(chart?.titleFontFamily).toBeUndefined()
+  })
 
   it("collapses an empty typeface attribute to undefined", () => {
-    const chart = parseChart(withTitleFontFamily(""));
-    expect(chart?.titleFontFamily).toBeUndefined();
-  });
+    const chart = parseChart(withTitleFontFamily(""))
+    expect(chart?.titleFontFamily).toBeUndefined()
+  })
 
   it("trims surrounding whitespace from the typeface", () => {
-    const chart = parseChart(withTitleFontFamily("   Arial   "));
-    expect(chart?.titleFontFamily).toBe("Arial");
-  });
+    const chart = parseChart(withTitleFontFamily("   Arial   "))
+    expect(chart?.titleFontFamily).toBe("Arial")
+  })
 
   it("collapses a whitespace-only typeface to undefined", () => {
-    const chart = parseChart(withTitleFontFamily("   "));
-    expect(chart?.titleFontFamily).toBeUndefined();
-  });
+    const chart = parseChart(withTitleFontFamily("   "))
+    expect(chart?.titleFontFamily).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:title> element", () => {
     const xml = `<c:chartSpace ${NS_TFF}>
@@ -19194,10 +19192,10 @@ describe("parseChart — title font family", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleFontFamily).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleFontFamily).toBeUndefined()
+  })
 
   it("returns undefined when <c:title> has no <c:tx><c:rich> body (strRef)", () => {
     const xml = `<c:chartSpace ${NS_TFF}>
@@ -19217,11 +19215,11 @@ describe("parseChart — title font family", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleFontFamily).toBeUndefined();
-    expect(chart?.title).toBe("Revenue");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleFontFamily).toBeUndefined()
+    expect(chart?.title).toBe("Revenue")
+  })
 
   it("scopes the lookup to the chart-level title (axis-title <a:latin> does not leak in)", () => {
     // Two axis titles each pin a different typeface; the chart title
@@ -19256,22 +19254,22 @@ describe("parseChart — title font family", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleFontFamily).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleFontFamily).toBeUndefined()
+  })
+})
 
 // ── parseChart — axis tick-label font family ────────────────────────
 
 describe("parseChart — axis tick-label font family", () => {
-  const NS_ALFF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_ALFF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withCatAxLabelFontFamily(typeface: string | undefined): string {
     const txPr =
       typeface === undefined
         ? ""
-        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:latin typeface="${typeface}"/></a:defRPr></a:pPr></a:p></c:txPr>`;
+        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:latin typeface="${typeface}"/></a:defRPr></a:pPr></a:p></c:txPr>`
     return `<c:chartSpace ${NS_ALFF}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -19281,14 +19279,14 @@ describe("parseChart — axis tick-label font family", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   function withValAxLabelFontFamily(typeface: string | undefined): string {
     const txPr =
       typeface === undefined
         ? ""
-        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:latin typeface="${typeface}"/></a:defRPr></a:pPr></a:p></c:txPr>`;
+        : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:latin typeface="${typeface}"/></a:defRPr></a:pPr></a:p></c:txPr>`
     return `<c:chartSpace ${NS_ALFF}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -19298,23 +19296,23 @@ describe("parseChart — axis tick-label font family", () => {
       ${txPr}
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the typeface on a category axis", () => {
-    const chart = parseChart(withCatAxLabelFontFamily("Arial"));
-    expect(chart?.axes?.x?.labelFontFamily).toBe("Arial");
-  });
+    const chart = parseChart(withCatAxLabelFontFamily("Arial"))
+    expect(chart?.axes?.x?.labelFontFamily).toBe("Arial")
+  })
 
   it("surfaces the typeface on a value axis", () => {
-    const chart = parseChart(withValAxLabelFontFamily("Calibri"));
-    expect(chart?.axes?.y?.labelFontFamily).toBe("Calibri");
-  });
+    const chart = parseChart(withValAxLabelFontFamily("Calibri"))
+    expect(chart?.axes?.y?.labelFontFamily).toBe("Calibri")
+  })
 
   it("surfaces multi-word typefaces verbatim", () => {
-    const chart = parseChart(withCatAxLabelFontFamily("Times New Roman"));
-    expect(chart?.axes?.x?.labelFontFamily).toBe("Times New Roman");
-  });
+    const chart = parseChart(withCatAxLabelFontFamily("Times New Roman"))
+    expect(chart?.axes?.x?.labelFontFamily).toBe("Times New Roman")
+  })
 
   it("collapses absence of <a:latin> to undefined", () => {
     const xml = `<c:chartSpace ${NS_ALFF}>
@@ -19326,30 +19324,30 @@ describe("parseChart — axis tick-label font family", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.labelFontFamily).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.labelFontFamily).toBeUndefined()
+  })
 
   it("collapses an empty typeface attribute to undefined", () => {
-    const chart = parseChart(withCatAxLabelFontFamily(""));
-    expect(chart?.axes?.x?.labelFontFamily).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxLabelFontFamily(""))
+    expect(chart?.axes?.x?.labelFontFamily).toBeUndefined()
+  })
 
   it("trims surrounding whitespace from the typeface", () => {
-    const chart = parseChart(withCatAxLabelFontFamily("   Arial   "));
-    expect(chart?.axes?.x?.labelFontFamily).toBe("Arial");
-  });
+    const chart = parseChart(withCatAxLabelFontFamily("   Arial   "))
+    expect(chart?.axes?.x?.labelFontFamily).toBe("Arial")
+  })
 
   it("collapses whitespace-only typefaces to undefined", () => {
-    const chart = parseChart(withCatAxLabelFontFamily("   "));
-    expect(chart?.axes?.x?.labelFontFamily).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxLabelFontFamily("   "))
+    expect(chart?.axes?.x?.labelFontFamily).toBeUndefined()
+  })
 
   it("returns undefined when the axis has no <c:txPr>", () => {
-    const chart = parseChart(withCatAxLabelFontFamily(undefined));
-    expect(chart?.axes?.x?.labelFontFamily).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxLabelFontFamily(undefined))
+    expect(chart?.axes?.x?.labelFontFamily).toBeUndefined()
+  })
 
   it("scopes the lookup to the axis-level <c:txPr> (axis-title <a:latin> does not leak in)", () => {
     // The axis title pins <a:latin>; the tick-label <c:txPr> pins
@@ -19371,22 +19369,22 @@ describe("parseChart — axis tick-label font family", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.labelFontFamily).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.labelFontFamily).toBeUndefined()
+  })
+})
 
 // ── parseChart — axis title font family ─────────────────────────────
 
 describe("parseChart — axis title font family", () => {
-  const NS_ATFF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_ATFF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withCatAxTitleFontFamily(typeface: string | undefined): string {
     const defRPr =
       typeface === undefined
         ? "<a:defRPr/>"
-        : `<a:defRPr><a:latin typeface="${typeface}"/></a:defRPr>`;
+        : `<a:defRPr><a:latin typeface="${typeface}"/></a:defRPr>`
     return `<c:chartSpace ${NS_ATFF}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -19403,14 +19401,14 @@ describe("parseChart — axis title font family", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   function withValAxTitleFontFamily(typeface: string | undefined): string {
     const defRPr =
       typeface === undefined
         ? "<a:defRPr/>"
-        : `<a:defRPr><a:latin typeface="${typeface}"/></a:defRPr>`;
+        : `<a:defRPr><a:latin typeface="${typeface}"/></a:defRPr>`
     return `<c:chartSpace ${NS_ATFF}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -19427,45 +19425,45 @@ describe("parseChart — axis title font family", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the typeface on a category axis", () => {
-    const chart = parseChart(withCatAxTitleFontFamily("Arial"));
-    expect(chart?.axes?.x?.axisTitleFontFamily).toBe("Arial");
-    expect(chart?.axes?.x?.title).toBe("Period");
-  });
+    const chart = parseChart(withCatAxTitleFontFamily("Arial"))
+    expect(chart?.axes?.x?.axisTitleFontFamily).toBe("Arial")
+    expect(chart?.axes?.x?.title).toBe("Period")
+  })
 
   it("surfaces the typeface on a value axis", () => {
-    const chart = parseChart(withValAxTitleFontFamily("Calibri"));
-    expect(chart?.axes?.y?.axisTitleFontFamily).toBe("Calibri");
-    expect(chart?.axes?.y?.title).toBe("Revenue");
-  });
+    const chart = parseChart(withValAxTitleFontFamily("Calibri"))
+    expect(chart?.axes?.y?.axisTitleFontFamily).toBe("Calibri")
+    expect(chart?.axes?.y?.title).toBe("Revenue")
+  })
 
   it("surfaces multi-word typefaces verbatim", () => {
-    const chart = parseChart(withCatAxTitleFontFamily("Times New Roman"));
-    expect(chart?.axes?.x?.axisTitleFontFamily).toBe("Times New Roman");
-  });
+    const chart = parseChart(withCatAxTitleFontFamily("Times New Roman"))
+    expect(chart?.axes?.x?.axisTitleFontFamily).toBe("Times New Roman")
+  })
 
   it("collapses absence of <a:latin> to undefined", () => {
-    const chart = parseChart(withCatAxTitleFontFamily(undefined));
-    expect(chart?.axes?.x?.axisTitleFontFamily).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxTitleFontFamily(undefined))
+    expect(chart?.axes?.x?.axisTitleFontFamily).toBeUndefined()
+  })
 
   it("collapses an empty typeface attribute to undefined", () => {
-    const chart = parseChart(withCatAxTitleFontFamily(""));
-    expect(chart?.axes?.x?.axisTitleFontFamily).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxTitleFontFamily(""))
+    expect(chart?.axes?.x?.axisTitleFontFamily).toBeUndefined()
+  })
 
   it("trims surrounding whitespace from the typeface", () => {
-    const chart = parseChart(withCatAxTitleFontFamily("   Arial   "));
-    expect(chart?.axes?.x?.axisTitleFontFamily).toBe("Arial");
-  });
+    const chart = parseChart(withCatAxTitleFontFamily("   Arial   "))
+    expect(chart?.axes?.x?.axisTitleFontFamily).toBe("Arial")
+  })
 
   it("collapses whitespace-only typefaces to undefined", () => {
-    const chart = parseChart(withCatAxTitleFontFamily("   "));
-    expect(chart?.axes?.x?.axisTitleFontFamily).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxTitleFontFamily("   "))
+    expect(chart?.axes?.x?.axisTitleFontFamily).toBeUndefined()
+  })
 
   it("returns undefined when the axis has no title at all", () => {
     const xml = `<c:chartSpace ${NS_ATFF}>
@@ -19474,11 +19472,11 @@ describe("parseChart — axis title font family", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleFontFamily).toBeUndefined();
-    expect(chart?.axes?.y?.axisTitleFontFamily).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleFontFamily).toBeUndefined()
+    expect(chart?.axes?.y?.axisTitleFontFamily).toBeUndefined()
+  })
 
   it("returns undefined when the title is a strRef (no rich body)", () => {
     const xml = `<c:chartSpace ${NS_ATFF}>
@@ -19495,10 +19493,10 @@ describe("parseChart — axis title font family", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleFontFamily).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleFontFamily).toBeUndefined()
+  })
 
   it("scopes the lookup to the axis title (tick-label <a:latin> does not leak in)", () => {
     // The tick-label <c:txPr> pins a typeface; the axis title pins
@@ -19525,19 +19523,19 @@ describe("parseChart — axis title font family", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleFontFamily).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleFontFamily).toBeUndefined()
+  })
+})
 
 // ── parseChart — axis title overlay ─────────────────────────────────
 
 describe("parseChart — axis title overlay", () => {
-  const NS_ATO = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_ATO = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withAxisTitleOverlay(val: string | undefined): string {
-    const overlay = val === undefined ? "" : `<c:overlay val="${val}"/>`;
+    const overlay = val === undefined ? "" : `<c:overlay val="${val}"/>`
     return `<c:chartSpace ${NS_ATO}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -19554,35 +19552,35 @@ describe("parseChart — axis title overlay", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it('surfaces axisTitleOverlay=true when val="1"', () => {
-    expect(parseChart(withAxisTitleOverlay("1"))?.axes?.x?.axisTitleOverlay).toBe(true);
-  });
+    expect(parseChart(withAxisTitleOverlay("1"))?.axes?.x?.axisTitleOverlay).toBe(true)
+  })
 
   it('surfaces axisTitleOverlay=true when val="true"', () => {
-    expect(parseChart(withAxisTitleOverlay("true"))?.axes?.x?.axisTitleOverlay).toBe(true);
-  });
+    expect(parseChart(withAxisTitleOverlay("true"))?.axes?.x?.axisTitleOverlay).toBe(true)
+  })
 
   it('collapses the OOXML default val="0" to undefined', () => {
-    expect(parseChart(withAxisTitleOverlay("0"))?.axes?.x?.axisTitleOverlay).toBeUndefined();
-  });
+    expect(parseChart(withAxisTitleOverlay("0"))?.axes?.x?.axisTitleOverlay).toBeUndefined()
+  })
 
   it('collapses val="false" to undefined', () => {
-    expect(parseChart(withAxisTitleOverlay("false"))?.axes?.x?.axisTitleOverlay).toBeUndefined();
-  });
+    expect(parseChart(withAxisTitleOverlay("false"))?.axes?.x?.axisTitleOverlay).toBeUndefined()
+  })
 
   it("returns undefined when <c:overlay> is missing entirely", () => {
-    expect(parseChart(withAxisTitleOverlay(undefined))?.axes?.x?.axisTitleOverlay).toBeUndefined();
-  });
+    expect(parseChart(withAxisTitleOverlay(undefined))?.axes?.x?.axisTitleOverlay).toBeUndefined()
+  })
 
   it("collapses unknown / malformed val tokens to undefined", () => {
-    expect(parseChart(withAxisTitleOverlay(""))?.axes?.x?.axisTitleOverlay).toBeUndefined();
-    expect(parseChart(withAxisTitleOverlay("yes"))?.axes?.x?.axisTitleOverlay).toBeUndefined();
-    expect(parseChart(withAxisTitleOverlay("on"))?.axes?.x?.axisTitleOverlay).toBeUndefined();
-    expect(parseChart(withAxisTitleOverlay("2"))?.axes?.x?.axisTitleOverlay).toBeUndefined();
-  });
+    expect(parseChart(withAxisTitleOverlay(""))?.axes?.x?.axisTitleOverlay).toBeUndefined()
+    expect(parseChart(withAxisTitleOverlay("yes"))?.axes?.x?.axisTitleOverlay).toBeUndefined()
+    expect(parseChart(withAxisTitleOverlay("on"))?.axes?.x?.axisTitleOverlay).toBeUndefined()
+    expect(parseChart(withAxisTitleOverlay("2"))?.axes?.x?.axisTitleOverlay).toBeUndefined()
+  })
 
   it("returns undefined when the axis omits <c:title> entirely", () => {
     const xml = `<c:chartSpace ${NS_ATO}>
@@ -19591,9 +19589,9 @@ describe("parseChart — axis title overlay", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes?.x?.axisTitleOverlay).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes?.x?.axisTitleOverlay).toBeUndefined()
+  })
 
   it("scopes the lookup to <c:title> (chart-level <c:overlay> does not leak in)", () => {
     // The chart-level title pins overlay=true; the axis title pins
@@ -19625,11 +19623,11 @@ describe("parseChart — axis title overlay", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleOverlay).toBe(true);
-    expect(chart?.axes?.x?.axisTitleOverlay).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleOverlay).toBe(true)
+    expect(chart?.axes?.x?.axisTitleOverlay).toBeUndefined()
+  })
 
   it("co-surfaces alongside other axis-title knobs", () => {
     const xml = `<c:chartSpace ${NS_ATO}>
@@ -19648,14 +19646,14 @@ describe("parseChart — axis title overlay", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleOverlay).toBe(true);
-    expect(chart?.axes?.x?.axisTitleRotation).toBe(30);
-    expect(chart?.axes?.x?.axisTitleFontSize).toBe(14);
-    expect(chart?.axes?.x?.axisTitleBold).toBe(true);
-    expect(chart?.axes?.x?.axisTitleColor).toBe("FF0000");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleOverlay).toBe(true)
+    expect(chart?.axes?.x?.axisTitleRotation).toBe(30)
+    expect(chart?.axes?.x?.axisTitleFontSize).toBe(14)
+    expect(chart?.axes?.x?.axisTitleBold).toBe(true)
+    expect(chart?.axes?.x?.axisTitleColor).toBe("FF0000")
+  })
 
   it("surfaces axisTitleOverlay independently on the X and Y axes", () => {
     const xml = `<c:chartSpace ${NS_ATO}>
@@ -19676,17 +19674,17 @@ describe("parseChart — axis title overlay", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleOverlay).toBe(true);
-    expect(chart?.axes?.y?.axisTitleOverlay).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleOverlay).toBe(true)
+    expect(chart?.axes?.y?.axisTitleOverlay).toBeUndefined()
+  })
+})
 
 // ── parseChart — titleLayout (manual placement) ─────────────────────
 
 describe("parseChart — titleLayout", () => {
-  const NS_TL = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_TL = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withTitleLayout(body: string): string {
     return `<c:chartSpace ${NS_TL}>
@@ -19713,52 +19711,50 @@ describe("parseChart — titleLayout", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces every coordinate when all four are pinned", () => {
     const xml = withTitleLayout(
       `<c:xMode val="edge"/><c:yMode val="edge"/><c:wMode val="edge"/><c:hMode val="edge"/>
        <c:x val="0.35"/><c:y val="0.05"/><c:w val="0.3"/><c:h val="0.1"/>`,
-    );
-    expect(parseChart(xml)?.titleLayout).toEqual({ x: 0.35, y: 0.05, w: 0.3, h: 0.1 });
-  });
+    )
+    expect(parseChart(xml)?.titleLayout).toEqual({ x: 0.35, y: 0.05, w: 0.3, h: 0.1 })
+  })
 
   it("surfaces a partial layout (only x/y pinned)", () => {
     const xml = withTitleLayout(
       `<c:xMode val="edge"/><c:yMode val="edge"/><c:x val="0.5"/><c:y val="0.05"/>`,
-    );
-    expect(parseChart(xml)?.titleLayout).toEqual({ x: 0.5, y: 0.05 });
-  });
+    )
+    expect(parseChart(xml)?.titleLayout).toEqual({ x: 0.5, y: 0.05 })
+  })
 
   it('accepts xMode="factor" and surfaces the same shape', () => {
     const xml = withTitleLayout(
       `<c:xMode val="factor"/><c:yMode val="factor"/><c:x val="0.4"/><c:y val="0.02"/>`,
-    );
-    expect(parseChart(xml)?.titleLayout).toEqual({ x: 0.4, y: 0.02 });
-  });
+    )
+    expect(parseChart(xml)?.titleLayout).toEqual({ x: 0.4, y: 0.02 })
+  })
 
   it("drops out-of-range coordinates axis-by-axis", () => {
-    const xml = withTitleLayout(
-      `<c:x val="-0.5"/><c:y val="2.0"/><c:w val="0.3"/><c:h val="0.1"/>`,
-    );
-    expect(parseChart(xml)?.titleLayout).toEqual({ w: 0.3, h: 0.1 });
-  });
+    const xml = withTitleLayout(`<c:x val="-0.5"/><c:y val="2.0"/><c:w val="0.3"/><c:h val="0.1"/>`)
+    expect(parseChart(xml)?.titleLayout).toEqual({ w: 0.3, h: 0.1 })
+  })
 
   it("drops non-numeric coordinates axis-by-axis", () => {
-    const xml = withTitleLayout(`<c:x val="not-a-number"/><c:y val="0.05"/>`);
-    expect(parseChart(xml)?.titleLayout).toEqual({ y: 0.05 });
-  });
+    const xml = withTitleLayout(`<c:x val="not-a-number"/><c:y val="0.05"/>`)
+    expect(parseChart(xml)?.titleLayout).toEqual({ y: 0.05 })
+  })
 
   it("collapses an empty <c:manualLayout> to undefined", () => {
-    const xml = withTitleLayout(``);
-    expect(parseChart(xml)?.titleLayout).toBeUndefined();
-  });
+    const xml = withTitleLayout(``)
+    expect(parseChart(xml)?.titleLayout).toBeUndefined()
+  })
 
   it("collapses a layout where every coordinate dropped to undefined", () => {
-    const xml = withTitleLayout(`<c:x val="-1"/><c:y val="2"/>`);
-    expect(parseChart(xml)?.titleLayout).toBeUndefined();
-  });
+    const xml = withTitleLayout(`<c:x val="-1"/><c:y val="2"/>`)
+    expect(parseChart(xml)?.titleLayout).toBeUndefined()
+  })
 
   it("returns undefined when <c:title> has no <c:layout> block", () => {
     const xml = `<c:chartSpace ${NS_TL}>
@@ -19773,9 +19769,9 @@ describe("parseChart — titleLayout", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.titleLayout).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.titleLayout).toBeUndefined()
+  })
 
   it("returns undefined when <c:layout> has no <c:manualLayout> child", () => {
     const xml = `<c:chartSpace ${NS_TL}>
@@ -19791,9 +19787,9 @@ describe("parseChart — titleLayout", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.titleLayout).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.titleLayout).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:title> element at all", () => {
     const xml = `<c:chartSpace ${NS_TL}>
@@ -19802,14 +19798,14 @@ describe("parseChart — titleLayout", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.titleLayout).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.titleLayout).toBeUndefined()
+  })
 
   it("accepts the boundary values 0 and 1", () => {
-    const xml = withTitleLayout(`<c:x val="0"/><c:y val="1"/><c:w val="0"/><c:h val="1"/>`);
-    expect(parseChart(xml)?.titleLayout).toEqual({ x: 0, y: 1, w: 0, h: 1 });
-  });
+    const xml = withTitleLayout(`<c:x val="0"/><c:y val="1"/><c:w val="0"/><c:h val="1"/>`)
+    expect(parseChart(xml)?.titleLayout).toEqual({ x: 0, y: 1, w: 0, h: 1 })
+  })
 
   it("co-surfaces alongside titleOverlay / titleFontSize / titleBold", () => {
     const xml = `<c:chartSpace ${NS_TL}>
@@ -19839,13 +19835,13 @@ describe("parseChart — titleLayout", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleLayout).toEqual({ x: 0.4, y: 0.02 });
-    expect(chart?.titleOverlay).toBe(true);
-    expect(chart?.titleFontSize).toBe(18);
-    expect(chart?.titleBold).toBe(true);
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleLayout).toEqual({ x: 0.4, y: 0.02 })
+    expect(chart?.titleOverlay).toBe(true)
+    expect(chart?.titleFontSize).toBe(18)
+    expect(chart?.titleBold).toBe(true)
+  })
 
   it("co-surfaces alongside legendLayout (independent <c:layout> slots)", () => {
     const xml = `<c:chartSpace ${NS_TL}>
@@ -19882,17 +19878,17 @@ describe("parseChart — titleLayout", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleLayout).toEqual({ x: 0.4, y: 0.02 });
-    expect(chart?.legendLayout).toEqual({ x: 0.7, y: 0.2 });
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleLayout).toEqual({ x: 0.4, y: 0.02 })
+    expect(chart?.legendLayout).toEqual({ x: 0.7, y: 0.2 })
+  })
+})
 
 // ── parseChart — plotAreaFillColor (solid fill) ─────────────────────
 
 describe("parseChart — plotAreaFillColor", () => {
-  const NS_PFC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_PFC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withPlotAreaSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS_PFC}>
@@ -19905,23 +19901,23 @@ describe("parseChart — plotAreaFillColor", () => {
       <c:spPr>${spPrBody}</c:spPr>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the literal sRGB color when <c:plotArea><c:spPr><a:solidFill><a:srgbClr> is pinned", () => {
-    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`);
-    expect(parseChart(xml)?.plotAreaFillColor).toBe("F2F2F2");
-  });
+    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`)
+    expect(parseChart(xml)?.plotAreaFillColor).toBe("F2F2F2")
+  })
 
   it("normalizes lowercase hex to canonical uppercase form", () => {
-    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="abcdef"/></a:solidFill>`);
-    expect(parseChart(xml)?.plotAreaFillColor).toBe("ABCDEF");
-  });
+    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="abcdef"/></a:solidFill>`)
+    expect(parseChart(xml)?.plotAreaFillColor).toBe("ABCDEF")
+  })
 
   it("returns undefined when the chart has no <c:plotArea>", () => {
-    const xml = `<c:chartSpace ${NS_PFC}><c:chart></c:chart></c:chartSpace>`;
-    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
-  });
+    const xml = `<c:chartSpace ${NS_PFC}><c:chart></c:chart></c:chartSpace>`
+    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined()
+  })
 
   it("returns undefined when <c:plotArea> has no <c:spPr>", () => {
     const xml = `<c:chartSpace ${NS_PFC}>
@@ -19933,48 +19929,48 @@ describe("parseChart — plotAreaFillColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined()
+  })
 
   it("returns undefined when <c:spPr> has no <a:solidFill>", () => {
     const xml = withPlotAreaSpPr(
       `<a:ln><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
-  });
+    )
+    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined()
+  })
 
   it("surfaces <a:schemeClr> as a ChartThemeColor object", () => {
-    const xml = withPlotAreaSpPr(`<a:solidFill><a:schemeClr val="bg1"/></a:solidFill>`);
-    expect(parseChart(xml)?.plotAreaFillColor).toEqual({ theme: "bg1" });
-  });
+    const xml = withPlotAreaSpPr(`<a:solidFill><a:schemeClr val="bg1"/></a:solidFill>`)
+    expect(parseChart(xml)?.plotAreaFillColor).toEqual({ theme: "bg1" })
+  })
 
   it("returns undefined when fill is <a:noFill>", () => {
-    const xml = withPlotAreaSpPr(`<a:noFill/>`);
-    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
-  });
+    const xml = withPlotAreaSpPr(`<a:noFill/>`)
+    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined()
+  })
 
   it("returns undefined when fill is <a:gradFill>", () => {
     const xml = withPlotAreaSpPr(
       `<a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FFFFFF"/></a:gs></a:gsLst></a:gradFill>`,
-    );
-    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
-  });
+    )
+    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is malformed (wrong length)", () => {
-    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="ABC"/></a:solidFill>`);
-    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
-  });
+    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="ABC"/></a:solidFill>`)
+    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is malformed (non-hex characters)", () => {
-    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="GGGGGG"/></a:solidFill>`);
-    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
-  });
+    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="GGGGGG"/></a:solidFill>`)
+    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is missing", () => {
-    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr/></a:solidFill>`);
-    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
-  });
+    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr/></a:solidFill>`)
+    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined()
+  })
 
   it("ignores a stray <c:spPr> elsewhere on the chart (e.g. on a series)", () => {
     // Series-level <c:spPr> must not leak into plotAreaFillColor.
@@ -19992,20 +19988,20 @@ describe("parseChart — plotAreaFillColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.plotAreaFillColor).toBeUndefined()
+  })
 
   it("admits a leading # on the val attribute", () => {
-    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="#1F77B4"/></a:solidFill>`);
-    expect(parseChart(xml)?.plotAreaFillColor).toBe("1F77B4");
-  });
-});
+    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="#1F77B4"/></a:solidFill>`)
+    expect(parseChart(xml)?.plotAreaFillColor).toBe("1F77B4")
+  })
+})
 
 // ── parseChart — plotAreaBorderColor (line stroke) ──────────────────
 
 describe("parseChart — plotAreaBorderColor", () => {
-  const NS_PBC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_PBC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withPlotAreaSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS_PBC}>
@@ -20018,37 +20014,37 @@ describe("parseChart — plotAreaBorderColor", () => {
       <c:spPr>${spPrBody}</c:spPr>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the literal sRGB color when <c:plotArea><c:spPr><a:ln><a:solidFill><a:srgbClr> is pinned", () => {
     const xml = withPlotAreaSpPr(
       `<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.plotAreaBorderColor).toBe("1F77B4");
-  });
+    )
+    expect(parseChart(xml)?.plotAreaBorderColor).toBe("1F77B4")
+  })
 
   it("normalizes lowercase hex to canonical uppercase form", () => {
     const xml = withPlotAreaSpPr(
       `<a:ln><a:solidFill><a:srgbClr val="abcdef"/></a:solidFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.plotAreaBorderColor).toBe("ABCDEF");
-  });
+    )
+    expect(parseChart(xml)?.plotAreaBorderColor).toBe("ABCDEF")
+  })
 
   it("surfaces fill and border independently when both are pinned", () => {
     const xml = withPlotAreaSpPr(
       `<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>` +
         `<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
-    );
-    const parsed = parseChart(xml);
-    expect(parsed?.plotAreaFillColor).toBe("F2F2F2");
-    expect(parsed?.plotAreaBorderColor).toBe("1F77B4");
-  });
+    )
+    const parsed = parseChart(xml)
+    expect(parsed?.plotAreaFillColor).toBe("F2F2F2")
+    expect(parsed?.plotAreaBorderColor).toBe("1F77B4")
+  })
 
   it("returns undefined when the chart has no <c:plotArea>", () => {
-    const xml = `<c:chartSpace ${NS_PBC}><c:chart></c:chart></c:chartSpace>`;
-    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined();
-  });
+    const xml = `<c:chartSpace ${NS_PBC}><c:chart></c:chart></c:chartSpace>`
+    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <c:plotArea> has no <c:spPr>", () => {
     const xml = `<c:chartSpace ${NS_PBC}>
@@ -20060,55 +20056,53 @@ describe("parseChart — plotAreaBorderColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <c:spPr> has no <a:ln>", () => {
-    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`);
-    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined();
-  });
+    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`)
+    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln> has no <a:solidFill>", () => {
-    const xml = withPlotAreaSpPr(`<a:ln w="12700"/>`);
-    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined();
-  });
+    const xml = withPlotAreaSpPr(`<a:ln w="12700"/>`)
+    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined()
+  })
 
   it("surfaces <a:ln><a:schemeClr> as a ChartThemeColor object", () => {
-    const xml = withPlotAreaSpPr(
-      `<a:ln><a:solidFill><a:schemeClr val="bg1"/></a:solidFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.plotAreaBorderColor).toEqual({ theme: "bg1" });
-  });
+    const xml = withPlotAreaSpPr(`<a:ln><a:solidFill><a:schemeClr val="bg1"/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.plotAreaBorderColor).toEqual({ theme: "bg1" })
+  })
 
   it("returns undefined when <a:ln> stroke is <a:noFill>", () => {
-    const xml = withPlotAreaSpPr(`<a:ln><a:noFill/></a:ln>`);
-    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined();
-  });
+    const xml = withPlotAreaSpPr(`<a:ln><a:noFill/></a:ln>`)
+    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln> stroke is <a:gradFill>", () => {
     const xml = withPlotAreaSpPr(
       `<a:ln><a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FFFFFF"/></a:gs></a:gsLst></a:gradFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined();
-  });
+    )
+    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is malformed (wrong length)", () => {
-    const xml = withPlotAreaSpPr(`<a:ln><a:solidFill><a:srgbClr val="ABC"/></a:solidFill></a:ln>`);
-    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined();
-  });
+    const xml = withPlotAreaSpPr(`<a:ln><a:solidFill><a:srgbClr val="ABC"/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is malformed (non-hex characters)", () => {
     const xml = withPlotAreaSpPr(
       `<a:ln><a:solidFill><a:srgbClr val="GGGGGG"/></a:solidFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined();
-  });
+    )
+    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is missing", () => {
-    const xml = withPlotAreaSpPr(`<a:ln><a:solidFill><a:srgbClr/></a:solidFill></a:ln>`);
-    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined();
-  });
+    const xml = withPlotAreaSpPr(`<a:ln><a:solidFill><a:srgbClr/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined()
+  })
 
   it("ignores a stray <a:ln> on a series <c:spPr> (not the plotArea)", () => {
     // Series-level <c:spPr><a:ln> must not leak into plotAreaBorderColor.
@@ -20126,22 +20120,22 @@ describe("parseChart — plotAreaBorderColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.plotAreaBorderColor).toBeUndefined()
+  })
 
   it("admits a leading # on the val attribute", () => {
     const xml = withPlotAreaSpPr(
       `<a:ln><a:solidFill><a:srgbClr val="#1F77B4"/></a:solidFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.plotAreaBorderColor).toBe("1F77B4");
-  });
-});
+    )
+    expect(parseChart(xml)?.plotAreaBorderColor).toBe("1F77B4")
+  })
+})
 
 // ── parseChart — plotAreaBorderWidth (line stroke thickness) ─────────
 
 describe("parseChart — plotAreaBorderWidth", () => {
-  const NS_PBW = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_PBW = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withPlotAreaSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS_PBW}>
@@ -20154,53 +20148,53 @@ describe("parseChart — plotAreaBorderWidth", () => {
       <c:spPr>${spPrBody}</c:spPr>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the stroke width in points (12700 EMU = 1 pt)", () => {
-    const xml = withPlotAreaSpPr(`<a:ln w="12700"/>`);
-    expect(parseChart(xml)?.plotAreaBorderWidth).toBe(1);
-  });
+    const xml = withPlotAreaSpPr(`<a:ln w="12700"/>`)
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBe(1)
+  })
 
   it("surfaces a fractional stroke width (19050 EMU = 1.5 pt)", () => {
-    const xml = withPlotAreaSpPr(`<a:ln w="19050"/>`);
-    expect(parseChart(xml)?.plotAreaBorderWidth).toBe(1.5);
-  });
+    const xml = withPlotAreaSpPr(`<a:ln w="19050"/>`)
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBe(1.5)
+  })
 
   it("surfaces the minimum width (3175 EMU = 0.25 pt)", () => {
-    const xml = withPlotAreaSpPr(`<a:ln w="3175"/>`);
-    expect(parseChart(xml)?.plotAreaBorderWidth).toBe(0.25);
-  });
+    const xml = withPlotAreaSpPr(`<a:ln w="3175"/>`)
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBe(0.25)
+  })
 
   it("snaps an exotic EMU value to the nearest 0.25 pt grid", () => {
     // 14000 EMU ≈ 1.10 pt → snaps to 1.0 pt.
-    const xml = withPlotAreaSpPr(`<a:ln w="14000"/>`);
-    expect(parseChart(xml)?.plotAreaBorderWidth).toBe(1);
-  });
+    const xml = withPlotAreaSpPr(`<a:ln w="14000"/>`)
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBe(1)
+  })
 
   it("clamps below the minimum band (1000 EMU → 0.25 pt)", () => {
-    const xml = withPlotAreaSpPr(`<a:ln w="1000"/>`);
-    expect(parseChart(xml)?.plotAreaBorderWidth).toBe(0.25);
-  });
+    const xml = withPlotAreaSpPr(`<a:ln w="1000"/>`)
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBe(0.25)
+  })
 
   it("clamps above the maximum band (1000000 EMU → 13.5 pt)", () => {
-    const xml = withPlotAreaSpPr(`<a:ln w="1000000"/>`);
-    expect(parseChart(xml)?.plotAreaBorderWidth).toBe(13.5);
-  });
+    const xml = withPlotAreaSpPr(`<a:ln w="1000000"/>`)
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBe(13.5)
+  })
 
   it("surfaces both border color and width when both are pinned on <a:ln>", () => {
     const xml = withPlotAreaSpPr(
       `<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
-    );
-    const parsed = parseChart(xml);
-    expect(parsed?.plotAreaBorderWidth).toBe(2);
-    expect(parsed?.plotAreaBorderColor).toBe("1F77B4");
-  });
+    )
+    const parsed = parseChart(xml)
+    expect(parsed?.plotAreaBorderWidth).toBe(2)
+    expect(parsed?.plotAreaBorderColor).toBe("1F77B4")
+  })
 
   it("returns undefined when the chart has no <c:plotArea>", () => {
-    const xml = `<c:chartSpace ${NS_PBW}><c:chart></c:chart></c:chartSpace>`;
-    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined();
-  });
+    const xml = `<c:chartSpace ${NS_PBW}><c:chart></c:chart></c:chartSpace>`
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when <c:plotArea> has no <c:spPr>", () => {
     const xml = `<c:chartSpace ${NS_PBW}>
@@ -20212,36 +20206,36 @@ describe("parseChart — plotAreaBorderWidth", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when <c:spPr> has no <a:ln>", () => {
-    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`);
-    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined();
-  });
+    const xml = withPlotAreaSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`)
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln> has no w attribute", () => {
     const xml = withPlotAreaSpPr(
       `<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined();
-  });
+    )
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when the w attribute is malformed (non-numeric)", () => {
-    const xml = withPlotAreaSpPr(`<a:ln w="thick"/>`);
-    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined();
-  });
+    const xml = withPlotAreaSpPr(`<a:ln w="thick"/>`)
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when the w attribute is zero (Excel's 'no border' marker)", () => {
-    const xml = withPlotAreaSpPr(`<a:ln w="0"/>`);
-    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined();
-  });
+    const xml = withPlotAreaSpPr(`<a:ln w="0"/>`)
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when the w attribute is negative", () => {
-    const xml = withPlotAreaSpPr(`<a:ln w="-12700"/>`);
-    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined();
-  });
+    const xml = withPlotAreaSpPr(`<a:ln w="-12700"/>`)
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined()
+  })
 
   it("ignores a stray <a:ln w=..> on a series <c:spPr> (not the plotArea)", () => {
     const xml = `<c:chartSpace ${NS_PBW}>
@@ -20258,15 +20252,15 @@ describe("parseChart — plotAreaBorderWidth", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.plotAreaBorderWidth).toBeUndefined()
+  })
+})
 
 // ── parseChart — axisTitleLayout (manual placement) ─────────────────
 
 describe("parseChart — axisTitleLayout", () => {
-  const NS_ATL = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_ATL = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withAxisTitleLayout(body: string, on: "x" | "y" = "x"): string {
     const xTitle =
@@ -20276,7 +20270,7 @@ describe("parseChart — axisTitleLayout", () => {
             <c:layout><c:manualLayout>${body}</c:manualLayout></c:layout>
             <c:overlay val="0"/>
           </c:title>`
-        : "";
+        : ""
     const yTitle =
       on === "y"
         ? `<c:title>
@@ -20284,7 +20278,7 @@ describe("parseChart — axisTitleLayout", () => {
             <c:layout><c:manualLayout>${body}</c:manualLayout></c:layout>
             <c:overlay val="0"/>
           </c:title>`
-        : "";
+        : ""
     return `<c:chartSpace ${NS_ATL}>
   <c:chart><c:plotArea>
     <c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart>
@@ -20297,78 +20291,78 @@ describe("parseChart — axisTitleLayout", () => {
       ${yTitle}
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces every coordinate when all four are pinned on the X axis", () => {
     const xml = withAxisTitleLayout(
       `<c:xMode val="edge"/><c:yMode val="edge"/><c:wMode val="edge"/><c:hMode val="edge"/>
        <c:x val="0.4"/><c:y val="0.85"/><c:w val="0.3"/><c:h val="0.1"/>`,
-    );
+    )
     expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toEqual({
       x: 0.4,
       y: 0.85,
       w: 0.3,
       h: 0.1,
-    });
-  });
+    })
+  })
 
   it("surfaces every coordinate when all four are pinned on the Y axis", () => {
     const xml = withAxisTitleLayout(
       `<c:xMode val="edge"/><c:yMode val="edge"/><c:wMode val="edge"/><c:hMode val="edge"/>
        <c:x val="0.05"/><c:y val="0.5"/><c:w val="0.05"/><c:h val="0.5"/>`,
       "y",
-    );
+    )
     expect(parseChart(xml)?.axes?.y?.axisTitleLayout).toEqual({
       x: 0.05,
       y: 0.5,
       w: 0.05,
       h: 0.5,
-    });
-  });
+    })
+  })
 
   it("surfaces a partial layout (only x/y pinned)", () => {
     const xml = withAxisTitleLayout(
       `<c:xMode val="edge"/><c:yMode val="edge"/><c:x val="0.5"/><c:y val="0.9"/>`,
-    );
-    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toEqual({ x: 0.5, y: 0.9 });
-  });
+    )
+    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toEqual({ x: 0.5, y: 0.9 })
+  })
 
   it("surfaces a partial layout (only w/h pinned)", () => {
     const xml = withAxisTitleLayout(
       `<c:wMode val="edge"/><c:hMode val="edge"/><c:w val="0.3"/><c:h val="0.1"/>`,
-    );
-    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toEqual({ w: 0.3, h: 0.1 });
-  });
+    )
+    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toEqual({ w: 0.3, h: 0.1 })
+  })
 
   it('accepts xMode="factor" and surfaces the same shape', () => {
     const xml = withAxisTitleLayout(
       `<c:xMode val="factor"/><c:yMode val="factor"/><c:x val="0.4"/><c:y val="0.3"/>`,
-    );
-    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toEqual({ x: 0.4, y: 0.3 });
-  });
+    )
+    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toEqual({ x: 0.4, y: 0.3 })
+  })
 
   it("drops out-of-range coordinates axis-by-axis", () => {
     const xml = withAxisTitleLayout(
       `<c:x val="-0.5"/><c:y val="2.0"/><c:w val="0.3"/><c:h val="0.1"/>`,
-    );
-    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toEqual({ w: 0.3, h: 0.1 });
-  });
+    )
+    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toEqual({ w: 0.3, h: 0.1 })
+  })
 
   it("drops non-numeric coordinates axis-by-axis", () => {
-    const xml = withAxisTitleLayout(`<c:x val="not-a-number"/><c:y val="0.4"/>`);
-    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toEqual({ y: 0.4 });
-  });
+    const xml = withAxisTitleLayout(`<c:x val="not-a-number"/><c:y val="0.4"/>`)
+    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toEqual({ y: 0.4 })
+  })
 
   it("collapses an empty <c:manualLayout> to undefined", () => {
-    const xml = withAxisTitleLayout(``);
-    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toBeUndefined();
-  });
+    const xml = withAxisTitleLayout(``)
+    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toBeUndefined()
+  })
 
   it("collapses a layout where every coordinate dropped to undefined", () => {
-    const xml = withAxisTitleLayout(`<c:x val="-1"/><c:y val="2"/>`);
-    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toBeUndefined();
-  });
+    const xml = withAxisTitleLayout(`<c:x val="-1"/><c:y val="2"/>`)
+    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toBeUndefined()
+  })
 
   it("returns undefined when the axis has no <c:title> element at all", () => {
     const xml = `<c:chartSpace ${NS_ATL}>
@@ -20377,10 +20371,10 @@ describe("parseChart — axisTitleLayout", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toBeUndefined();
-    expect(parseChart(xml)?.axes?.y?.axisTitleLayout).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toBeUndefined()
+    expect(parseChart(xml)?.axes?.y?.axisTitleLayout).toBeUndefined()
+  })
 
   it("returns undefined when <c:title> has no <c:layout> child", () => {
     const xml = `<c:chartSpace ${NS_ATL}>
@@ -20395,9 +20389,9 @@ describe("parseChart — axisTitleLayout", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toBeUndefined()
+  })
 
   it("returns undefined when <c:layout> has no <c:manualLayout> child", () => {
     const xml = `<c:chartSpace ${NS_ATL}>
@@ -20413,14 +20407,14 @@ describe("parseChart — axisTitleLayout", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toBeUndefined()
+  })
 
   it("accepts the boundary values 0 and 1", () => {
-    const xml = withAxisTitleLayout(`<c:x val="0"/><c:y val="1"/><c:w val="0"/><c:h val="1"/>`);
-    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toEqual({ x: 0, y: 1, w: 0, h: 1 });
-  });
+    const xml = withAxisTitleLayout(`<c:x val="0"/><c:y val="1"/><c:w val="0"/><c:h val="1"/>`)
+    expect(parseChart(xml)?.axes?.x?.axisTitleLayout).toEqual({ x: 0, y: 1, w: 0, h: 1 })
+  })
 
   it("does not leak a chart-level <c:legend><c:layout> into the axis-title layout slot", () => {
     // A stray legend layout on the same chart must not leak into the
@@ -20444,11 +20438,11 @@ describe("parseChart — axisTitleLayout", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleLayout).toBeUndefined();
-    expect(chart?.legendLayout).toEqual({ x: 0.5, y: 0.5 });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleLayout).toBeUndefined()
+    expect(chart?.legendLayout).toEqual({ x: 0.5, y: 0.5 })
+  })
 
   it("surfaces independently on the X and Y axes", () => {
     const xml = `<c:chartSpace ${NS_ATL}>
@@ -20471,17 +20465,17 @@ describe("parseChart — axisTitleLayout", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleLayout).toEqual({ x: 0.4, y: 0.9 });
-    expect(chart?.axes?.y?.axisTitleLayout).toEqual({ w: 0.05, h: 0.5 });
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleLayout).toEqual({ x: 0.4, y: 0.9 })
+    expect(chart?.axes?.y?.axisTitleLayout).toEqual({ w: 0.05, h: 0.5 })
+  })
+})
 
 // ── parseChart — titleFillColor (solid fill) ────────────────────────
 
 describe("parseChart — titleFillColor", () => {
-  const NS_TFC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_TFC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withTitleSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS_TFC}>
@@ -20498,23 +20492,23 @@ describe("parseChart — titleFillColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the literal sRGB color when <c:title><c:spPr><a:solidFill><a:srgbClr> is pinned", () => {
-    const xml = withTitleSpPr(`<a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill>`);
-    expect(parseChart(xml)?.titleFillColor).toBe("FFFF00");
-  });
+    const xml = withTitleSpPr(`<a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill>`)
+    expect(parseChart(xml)?.titleFillColor).toBe("FFFF00")
+  })
 
   it("normalizes lowercase hex to canonical uppercase form", () => {
-    const xml = withTitleSpPr(`<a:solidFill><a:srgbClr val="abcdef"/></a:solidFill>`);
-    expect(parseChart(xml)?.titleFillColor).toBe("ABCDEF");
-  });
+    const xml = withTitleSpPr(`<a:solidFill><a:srgbClr val="abcdef"/></a:solidFill>`)
+    expect(parseChart(xml)?.titleFillColor).toBe("ABCDEF")
+  })
 
   it("returns undefined when the chart has no <c:title>", () => {
-    const xml = `<c:chartSpace ${NS_TFC}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`;
-    expect(parseChart(xml)?.titleFillColor).toBeUndefined();
-  });
+    const xml = `<c:chartSpace ${NS_TFC}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`
+    expect(parseChart(xml)?.titleFillColor).toBeUndefined()
+  })
 
   it("returns undefined when <c:title> has no <c:spPr>", () => {
     const xml = `<c:chartSpace ${NS_TFC}>
@@ -20530,53 +20524,53 @@ describe("parseChart — titleFillColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.titleFillColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.titleFillColor).toBeUndefined()
+  })
 
   it("returns undefined when <c:spPr> has no <a:solidFill>", () => {
-    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>`);
-    expect(parseChart(xml)?.titleFillColor).toBeUndefined();
-  });
+    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.titleFillColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:solidFill> uses <a:schemeClr> (theme reference)", () => {
-    const xml = withTitleSpPr(`<a:solidFill><a:schemeClr val="bg1"/></a:solidFill>`);
-    expect(parseChart(xml)?.titleFillColor).toEqual({ theme: "bg1" });
-  });
+    const xml = withTitleSpPr(`<a:solidFill><a:schemeClr val="bg1"/></a:solidFill>`)
+    expect(parseChart(xml)?.titleFillColor).toEqual({ theme: "bg1" })
+  })
 
   it("returns undefined when fill is <a:noFill>", () => {
-    const xml = withTitleSpPr(`<a:noFill/>`);
-    expect(parseChart(xml)?.titleFillColor).toBeUndefined();
-  });
+    const xml = withTitleSpPr(`<a:noFill/>`)
+    expect(parseChart(xml)?.titleFillColor).toBeUndefined()
+  })
 
   it("returns undefined when fill is <a:gradFill>", () => {
     const xml = withTitleSpPr(
       `<a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FFFFFF"/></a:gs></a:gsLst></a:gradFill>`,
-    );
-    expect(parseChart(xml)?.titleFillColor).toBeUndefined();
-  });
+    )
+    expect(parseChart(xml)?.titleFillColor).toBeUndefined()
+  })
 
   it("returns undefined when fill is <a:pattFill>", () => {
     const xml = withTitleSpPr(
       `<a:pattFill prst="dkUpDiag"><a:fgClr><a:srgbClr val="000000"/></a:fgClr><a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr></a:pattFill>`,
-    );
-    expect(parseChart(xml)?.titleFillColor).toBeUndefined();
-  });
+    )
+    expect(parseChart(xml)?.titleFillColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is malformed (wrong length)", () => {
-    const xml = withTitleSpPr(`<a:solidFill><a:srgbClr val="ABC"/></a:solidFill>`);
-    expect(parseChart(xml)?.titleFillColor).toBeUndefined();
-  });
+    const xml = withTitleSpPr(`<a:solidFill><a:srgbClr val="ABC"/></a:solidFill>`)
+    expect(parseChart(xml)?.titleFillColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is malformed (non-hex characters)", () => {
-    const xml = withTitleSpPr(`<a:solidFill><a:srgbClr val="GGGGGG"/></a:solidFill>`);
-    expect(parseChart(xml)?.titleFillColor).toBeUndefined();
-  });
+    const xml = withTitleSpPr(`<a:solidFill><a:srgbClr val="GGGGGG"/></a:solidFill>`)
+    expect(parseChart(xml)?.titleFillColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is missing", () => {
-    const xml = withTitleSpPr(`<a:solidFill><a:srgbClr/></a:solidFill>`);
-    expect(parseChart(xml)?.titleFillColor).toBeUndefined();
-  });
+    const xml = withTitleSpPr(`<a:solidFill><a:srgbClr/></a:solidFill>`)
+    expect(parseChart(xml)?.titleFillColor).toBeUndefined()
+  })
 
   it("ignores a stray <c:spPr> elsewhere on the chart (e.g. on the plot area)", () => {
     // Plot-area-level <c:spPr> must not leak into titleFillColor.
@@ -20590,14 +20584,14 @@ describe("parseChart — titleFillColor", () => {
       <c:spPr><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill></c:spPr>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.titleFillColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.titleFillColor).toBeUndefined()
+  })
 
   it("admits a leading # on the val attribute", () => {
-    const xml = withTitleSpPr(`<a:solidFill><a:srgbClr val="#1F77B4"/></a:solidFill>`);
-    expect(parseChart(xml)?.titleFillColor).toBe("1F77B4");
-  });
+    const xml = withTitleSpPr(`<a:solidFill><a:srgbClr val="#1F77B4"/></a:solidFill>`)
+    expect(parseChart(xml)?.titleFillColor).toBe("1F77B4")
+  })
 
   it("surfaces titleFillColor independently of titleColor (font color slot)", () => {
     // Both fills are pinned: font color in <a:defRPr><a:solidFill>,
@@ -20619,11 +20613,11 @@ describe("parseChart — titleFillColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleColor).toBe("FF0000");
-    expect(chart?.titleFillColor).toBe("FFFF00");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleColor).toBe("FF0000")
+    expect(chart?.titleFillColor).toBe("FFFF00")
+  })
 
   it("surfaces titleFillColor on a strRef-bodied title (no <c:rich>)", () => {
     // Fill lookup is on `<c:title>` directly, not gated on `<c:rich>` —
@@ -20643,15 +20637,15 @@ describe("parseChart — titleFillColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.titleFillColor).toBe("FFFF00");
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.titleFillColor).toBe("FFFF00")
+  })
+})
 
 // ── parseChart — titleBorderColor (line stroke) ─────────────────────
 
 describe("parseChart — titleBorderColor", () => {
-  const NS_TBC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_TBC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withTitleSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS_TBC}>
@@ -20668,33 +20662,33 @@ describe("parseChart — titleBorderColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the literal sRGB color when <c:title><c:spPr><a:ln><a:solidFill><a:srgbClr> is pinned", () => {
-    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`);
-    expect(parseChart(xml)?.titleBorderColor).toBe("1F77B4");
-  });
+    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.titleBorderColor).toBe("1F77B4")
+  })
 
   it("normalizes lowercase hex to canonical uppercase form", () => {
-    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="abcdef"/></a:solidFill></a:ln>`);
-    expect(parseChart(xml)?.titleBorderColor).toBe("ABCDEF");
-  });
+    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="abcdef"/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.titleBorderColor).toBe("ABCDEF")
+  })
 
   it("surfaces fill and border independently when both are pinned", () => {
     const xml = withTitleSpPr(
       `<a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill>` +
         `<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
-    );
-    const parsed = parseChart(xml);
-    expect(parsed?.titleFillColor).toBe("FFFF00");
-    expect(parsed?.titleBorderColor).toBe("1F77B4");
-  });
+    )
+    const parsed = parseChart(xml)
+    expect(parsed?.titleFillColor).toBe("FFFF00")
+    expect(parsed?.titleBorderColor).toBe("1F77B4")
+  })
 
   it("returns undefined when the chart has no <c:title>", () => {
-    const xml = `<c:chartSpace ${NS_TBC}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`;
-    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
-  });
+    const xml = `<c:chartSpace ${NS_TBC}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <c:title> has no <c:spPr>", () => {
     const xml = `<c:chartSpace ${NS_TBC}>
@@ -20710,58 +20704,58 @@ describe("parseChart — titleBorderColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <c:spPr> has no <a:ln>", () => {
-    const xml = withTitleSpPr(`<a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill>`);
-    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
-  });
+    const xml = withTitleSpPr(`<a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill>`)
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln> has no <a:solidFill>", () => {
-    const xml = withTitleSpPr(`<a:ln w="12700"/>`);
-    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
-  });
+    const xml = withTitleSpPr(`<a:ln w="12700"/>`)
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln><a:solidFill> uses <a:schemeClr> (theme reference)", () => {
-    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:schemeClr val="bg1"/></a:solidFill></a:ln>`);
-    expect(parseChart(xml)?.titleBorderColor).toEqual({ theme: "bg1" });
-  });
+    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:schemeClr val="bg1"/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.titleBorderColor).toEqual({ theme: "bg1" })
+  })
 
   it("returns undefined when <a:ln> stroke is <a:noFill>", () => {
-    const xml = withTitleSpPr(`<a:ln><a:noFill/></a:ln>`);
-    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
-  });
+    const xml = withTitleSpPr(`<a:ln><a:noFill/></a:ln>`)
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln> stroke is <a:gradFill>", () => {
     const xml = withTitleSpPr(
       `<a:ln><a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FFFFFF"/></a:gs></a:gsLst></a:gradFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
-  });
+    )
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln> stroke is <a:pattFill>", () => {
     const xml = withTitleSpPr(
       `<a:ln><a:pattFill prst="dkUpDiag"><a:fgClr><a:srgbClr val="000000"/></a:fgClr><a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr></a:pattFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
-  });
+    )
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is malformed (wrong length)", () => {
-    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="ABC"/></a:solidFill></a:ln>`);
-    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
-  });
+    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="ABC"/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is malformed (non-hex characters)", () => {
-    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="GGGGGG"/></a:solidFill></a:ln>`);
-    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
-  });
+    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="GGGGGG"/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is missing", () => {
-    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr/></a:solidFill></a:ln>`);
-    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
-  });
+    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined()
+  })
 
   it("ignores a stray <a:ln> on the plot area (not the title)", () => {
     const xml = `<c:chartSpace ${NS_TBC}>
@@ -20774,9 +20768,9 @@ describe("parseChart — titleBorderColor", () => {
       <c:spPr><a:ln><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill></a:ln></c:spPr>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined()
+  })
 
   it("ignores a stray <a:ln> on a series <c:spPr> (not the title)", () => {
     const xml = `<c:chartSpace ${NS_TBC}>
@@ -20793,14 +20787,14 @@ describe("parseChart — titleBorderColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.titleBorderColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.titleBorderColor).toBeUndefined()
+  })
 
   it("admits a leading # on the val attribute", () => {
-    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="#1F77B4"/></a:solidFill></a:ln>`);
-    expect(parseChart(xml)?.titleBorderColor).toBe("1F77B4");
-  });
+    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="#1F77B4"/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.titleBorderColor).toBe("1F77B4")
+  })
 
   it("surfaces titleBorderColor independently of titleColor (font color slot)", () => {
     const xml = `<c:chartSpace ${NS_TBC}>
@@ -20820,11 +20814,11 @@ describe("parseChart — titleBorderColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleColor).toBe("FF0000");
-    expect(chart?.titleBorderColor).toBe("1F77B4");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleColor).toBe("FF0000")
+    expect(chart?.titleBorderColor).toBe("1F77B4")
+  })
 
   it("surfaces titleBorderColor on a strRef-bodied title (no <c:rich>)", () => {
     const xml = `<c:chartSpace ${NS_TBC}>
@@ -20841,21 +20835,21 @@ describe("parseChart — titleBorderColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.titleBorderColor).toBe("1F77B4");
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.titleBorderColor).toBe("1F77B4")
+  })
+})
 
 // ── parseChart — legendFillColor ─────────────────────────────────────
 
 describe("parseChart — legendFillColor", () => {
-  const NS_LFB = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_LFB = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withLegendFill(srgbVal: string | undefined): string {
     const spPr =
       srgbVal === undefined
         ? ""
-        : `<c:spPr><a:solidFill><a:srgbClr val="${srgbVal}"/></a:solidFill></c:spPr>`;
+        : `<c:spPr><a:solidFill><a:srgbClr val="${srgbVal}"/></a:solidFill></c:spPr>`
     return `<c:chartSpace ${NS_LFB}>
   <c:chart>
     <c:plotArea>
@@ -20869,24 +20863,24 @@ describe("parseChart — legendFillColor", () => {
       ${spPr}
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces legendFillColor as the canonical 6-character uppercase hex", () => {
-    expect(parseChart(withLegendFill("FFFF00"))?.legendFillColor).toBe("FFFF00");
-  });
+    expect(parseChart(withLegendFill("FFFF00"))?.legendFillColor).toBe("FFFF00")
+  })
 
   it("normalizes a lowercase srgbClr val to the OOXML uppercase canonical form", () => {
-    expect(parseChart(withLegendFill("ff8800"))?.legendFillColor).toBe("FF8800");
-  });
+    expect(parseChart(withLegendFill("ff8800"))?.legendFillColor).toBe("FF8800")
+  })
 
   it("normalizes a leading # in the srgbClr val to the bare hex form", () => {
-    expect(parseChart(withLegendFill("#abcdef"))?.legendFillColor).toBe("ABCDEF");
-  });
+    expect(parseChart(withLegendFill("#abcdef"))?.legendFillColor).toBe("ABCDEF")
+  })
 
   it("returns undefined when the legend has no <c:spPr> block at all", () => {
-    expect(parseChart(withLegendFill(undefined))?.legendFillColor).toBeUndefined();
-  });
+    expect(parseChart(withLegendFill(undefined))?.legendFillColor).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:legend> element at all", () => {
     const xml = `<c:chartSpace ${NS_LFB}>
@@ -20895,9 +20889,9 @@ describe("parseChart — legendFillColor", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendFillColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendFillColor).toBeUndefined()
+  })
 
   it("returns undefined when <c:spPr> has no <a:solidFill> child", () => {
     const xml = `<c:chartSpace ${NS_LFB}>
@@ -20913,11 +20907,11 @@ describe("parseChart — legendFillColor", () => {
       <c:spPr><a:ln><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:ln></c:spPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
     // The <a:solidFill> here is nested inside <a:ln> (stroke), not a
     // direct child of <c:spPr> — the reader should ignore it.
-    expect(parseChart(xml)?.legendFillColor).toBeUndefined();
-  });
+    expect(parseChart(xml)?.legendFillColor).toBeUndefined()
+  })
 
   it('drops the fill when the legend is hidden via <c:delete val="1"/>', () => {
     const xml = `<c:chartSpace ${NS_LFB}>
@@ -20934,11 +20928,11 @@ describe("parseChart — legendFillColor", () => {
       <c:spPr><a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill></c:spPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe(false);
-    expect(chart?.legendFillColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe(false)
+    expect(chart?.legendFillColor).toBeUndefined()
+  })
 
   it("collapses theme references (<a:schemeClr>) to undefined — only literal RGB round-trips", () => {
     const xml = `<c:chartSpace ${NS_LFB}>
@@ -20954,9 +20948,9 @@ describe("parseChart — legendFillColor", () => {
       <c:spPr><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></c:spPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendFillColor).toEqual({ theme: "accent1" });
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendFillColor).toEqual({ theme: "accent1" })
+  })
 
   it("collapses <a:noFill> to undefined (non-solid fill)", () => {
     const xml = `<c:chartSpace ${NS_LFB}>
@@ -20972,9 +20966,9 @@ describe("parseChart — legendFillColor", () => {
       <c:spPr><a:noFill/></c:spPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendFillColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendFillColor).toBeUndefined()
+  })
 
   it("collapses <a:gradFill> to undefined (non-solid fill)", () => {
     const xml = `<c:chartSpace ${NS_LFB}>
@@ -20990,21 +20984,21 @@ describe("parseChart — legendFillColor", () => {
       <c:spPr><a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs></a:gsLst></a:gradFill></c:spPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendFillColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendFillColor).toBeUndefined()
+  })
 
   it("drops malformed <a:srgbClr val/> tokens (wrong length)", () => {
-    expect(parseChart(withLegendFill("FF00"))?.legendFillColor).toBeUndefined();
-  });
+    expect(parseChart(withLegendFill("FF00"))?.legendFillColor).toBeUndefined()
+  })
 
   it("drops malformed <a:srgbClr val/> tokens (non-hex characters)", () => {
-    expect(parseChart(withLegendFill("ZZZZZZ"))?.legendFillColor).toBeUndefined();
-  });
+    expect(parseChart(withLegendFill("ZZZZZZ"))?.legendFillColor).toBeUndefined()
+  })
 
   it("drops alpha-channel hex forms in <a:srgbClr val/>", () => {
-    expect(parseChart(withLegendFill("FF0000FF"))?.legendFillColor).toBeUndefined();
-  });
+    expect(parseChart(withLegendFill("FF0000FF"))?.legendFillColor).toBeUndefined()
+  })
 
   it("does not leak a stray <c:spPr> from a series into legendFillColor", () => {
     const xml = `<c:chartSpace ${NS_LFB}>
@@ -21024,9 +21018,9 @@ describe("parseChart — legendFillColor", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendFillColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendFillColor).toBeUndefined()
+  })
 
   it("composes independently with legendFontColor — distinct paths inside <c:legend>", () => {
     const xml = `<c:chartSpace ${NS_LFB}>
@@ -21047,17 +21041,17 @@ describe("parseChart — legendFillColor", () => {
       </c:txPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legendFillColor).toBe("FFFF00");
-    expect(chart?.legendFontColor).toBe("000000");
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legendFillColor).toBe("FFFF00")
+    expect(chart?.legendFontColor).toBe("000000")
+  })
+})
 
 // ── parseChart — chartSpaceFillColor (entire chart background) ──────
 
 describe("parseChart — chartSpaceFillColor", () => {
-  const NS_CSF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_CSF = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withChartSpaceSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS_CSF}>
@@ -21070,18 +21064,18 @@ describe("parseChart — chartSpaceFillColor", () => {
     </c:plotArea>
   </c:chart>
   <c:spPr>${spPrBody}</c:spPr>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the literal sRGB color when <c:chartSpace><c:spPr><a:solidFill><a:srgbClr> is pinned", () => {
-    const xml = withChartSpaceSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`);
-    expect(parseChart(xml)?.chartSpaceFillColor).toBe("F2F2F2");
-  });
+    const xml = withChartSpaceSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`)
+    expect(parseChart(xml)?.chartSpaceFillColor).toBe("F2F2F2")
+  })
 
   it("normalizes lowercase hex to canonical uppercase form", () => {
-    const xml = withChartSpaceSpPr(`<a:solidFill><a:srgbClr val="abcdef"/></a:solidFill>`);
-    expect(parseChart(xml)?.chartSpaceFillColor).toBe("ABCDEF");
-  });
+    const xml = withChartSpaceSpPr(`<a:solidFill><a:srgbClr val="abcdef"/></a:solidFill>`)
+    expect(parseChart(xml)?.chartSpaceFillColor).toBe("ABCDEF")
+  })
 
   it("returns undefined when the chartSpace has no <c:spPr>", () => {
     const xml = `<c:chartSpace ${NS_CSF}>
@@ -21093,70 +21087,70 @@ describe("parseChart — chartSpaceFillColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined()
+  })
 
   it("returns undefined when <c:spPr> has no <a:solidFill>", () => {
     const xml = withChartSpaceSpPr(
       `<a:ln><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined();
-  });
+    )
+    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:solidFill> uses <a:schemeClr> (theme reference)", () => {
-    const xml = withChartSpaceSpPr(`<a:solidFill><a:schemeClr val="bg1"/></a:solidFill>`);
-    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "bg1" });
-  });
+    const xml = withChartSpaceSpPr(`<a:solidFill><a:schemeClr val="bg1"/></a:solidFill>`)
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "bg1" })
+  })
 
   it("returns undefined when fill is <a:noFill>", () => {
-    const xml = withChartSpaceSpPr(`<a:noFill/>`);
-    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined();
-  });
+    const xml = withChartSpaceSpPr(`<a:noFill/>`)
+    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined()
+  })
 
   it("returns undefined when fill is <a:gradFill>", () => {
     const xml = withChartSpaceSpPr(
       `<a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FFFFFF"/></a:gs></a:gsLst></a:gradFill>`,
-    );
-    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined();
-  });
+    )
+    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined()
+  })
 
   it("returns undefined when fill is <a:pattFill>", () => {
     const xml = withChartSpaceSpPr(
       `<a:pattFill prst="pct5"><a:fgClr><a:srgbClr val="000000"/></a:fgClr><a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr></a:pattFill>`,
-    );
-    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined();
-  });
+    )
+    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined()
+  })
 
   it("returns undefined when fill is <a:blipFill>", () => {
-    const xml = withChartSpaceSpPr(`<a:blipFill><a:blip r:embed="rId1"/><a:stretch/></a:blipFill>`);
-    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined();
-  });
+    const xml = withChartSpaceSpPr(`<a:blipFill><a:blip r:embed="rId1"/><a:stretch/></a:blipFill>`)
+    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is malformed (wrong length)", () => {
-    const xml = withChartSpaceSpPr(`<a:solidFill><a:srgbClr val="ABC"/></a:solidFill>`);
-    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined();
-  });
+    const xml = withChartSpaceSpPr(`<a:solidFill><a:srgbClr val="ABC"/></a:solidFill>`)
+    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is malformed (non-hex characters)", () => {
-    const xml = withChartSpaceSpPr(`<a:solidFill><a:srgbClr val="GGGGGG"/></a:solidFill>`);
-    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined();
-  });
+    const xml = withChartSpaceSpPr(`<a:solidFill><a:srgbClr val="GGGGGG"/></a:solidFill>`)
+    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is missing", () => {
-    const xml = withChartSpaceSpPr(`<a:solidFill><a:srgbClr/></a:solidFill>`);
-    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined();
-  });
+    const xml = withChartSpaceSpPr(`<a:solidFill><a:srgbClr/></a:solidFill>`)
+    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined()
+  })
 
   it("drops alpha-channel hex forms", () => {
-    const xml = withChartSpaceSpPr(`<a:solidFill><a:srgbClr val="FF0000FF"/></a:solidFill>`);
-    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined();
-  });
+    const xml = withChartSpaceSpPr(`<a:solidFill><a:srgbClr val="FF0000FF"/></a:solidFill>`)
+    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined()
+  })
 
   it("admits a leading # on the val attribute", () => {
-    const xml = withChartSpaceSpPr(`<a:solidFill><a:srgbClr val="#1F77B4"/></a:solidFill>`);
-    expect(parseChart(xml)?.chartSpaceFillColor).toBe("1F77B4");
-  });
+    const xml = withChartSpaceSpPr(`<a:solidFill><a:srgbClr val="#1F77B4"/></a:solidFill>`)
+    expect(parseChart(xml)?.chartSpaceFillColor).toBe("1F77B4")
+  })
 
   it("does not leak a stray <c:spPr> from <c:plotArea> into chartSpaceFillColor", () => {
     const xml = `<c:chartSpace ${NS_CSF}>
@@ -21169,12 +21163,12 @@ describe("parseChart — chartSpaceFillColor", () => {
       <c:spPr><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill></c:spPr>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     // The plot-area fill is a different field; the chartSpace fill is absent.
-    expect(chart?.plotAreaFillColor).toBe("ABCDEF");
-    expect(chart?.chartSpaceFillColor).toBeUndefined();
-  });
+    expect(chart?.plotAreaFillColor).toBe("ABCDEF")
+    expect(chart?.chartSpaceFillColor).toBeUndefined()
+  })
 
   it("does not leak a stray <c:spPr> from <c:legend> into chartSpaceFillColor", () => {
     const xml = `<c:chartSpace ${NS_CSF}>
@@ -21190,11 +21184,11 @@ describe("parseChart — chartSpaceFillColor", () => {
       <c:spPr><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill></c:spPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legendFillColor).toBe("ABCDEF");
-    expect(chart?.chartSpaceFillColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legendFillColor).toBe("ABCDEF")
+    expect(chart?.chartSpaceFillColor).toBeUndefined()
+  })
 
   it("composes independently with plotAreaFillColor — distinct <c:spPr> blocks at distinct hosts", () => {
     const xml = `<c:chartSpace ${NS_CSF}>
@@ -21208,17 +21202,17 @@ describe("parseChart — chartSpaceFillColor", () => {
     </c:plotArea>
   </c:chart>
   <c:spPr><a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill></c:spPr>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.plotAreaFillColor).toBe("ABCDEF");
-    expect(chart?.chartSpaceFillColor).toBe("F2F2F2");
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.plotAreaFillColor).toBe("ABCDEF")
+    expect(chart?.chartSpaceFillColor).toBe("F2F2F2")
+  })
+})
 
 // ── parseChart — chartSpaceBorderColor (entire chart border) ────────
 
 describe("parseChart — chartSpaceBorderColor", () => {
-  const NS_CSB = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_CSB = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withChartSpaceSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS_CSB}>
@@ -21231,29 +21225,29 @@ describe("parseChart — chartSpaceBorderColor", () => {
     </c:plotArea>
   </c:chart>
   <c:spPr>${spPrBody}</c:spPr>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the literal sRGB stroke when <c:chartSpace><c:spPr><a:ln><a:solidFill><a:srgbClr> is pinned", () => {
     const xml = withChartSpaceSpPr(
       `<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.chartSpaceBorderColor).toBe("1F77B4");
-  });
+    )
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBe("1F77B4")
+  })
 
   it("normalizes lowercase hex to canonical uppercase form", () => {
     const xml = withChartSpaceSpPr(
       `<a:ln><a:solidFill><a:srgbClr val="abcdef"/></a:solidFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.chartSpaceBorderColor).toBe("ABCDEF");
-  });
+    )
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBe("ABCDEF")
+  })
 
   it("admits a leading # on the val attribute", () => {
     const xml = withChartSpaceSpPr(
       `<a:ln><a:solidFill><a:srgbClr val="#1F77B4"/></a:solidFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.chartSpaceBorderColor).toBe("1F77B4");
-  });
+    )
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBe("1F77B4")
+  })
 
   it("returns undefined when the chartSpace has no <c:spPr>", () => {
     const xml = `<c:chartSpace ${NS_CSB}>
@@ -21265,66 +21259,64 @@ describe("parseChart — chartSpaceBorderColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <c:spPr> has no <a:ln> child", () => {
-    const xml = withChartSpaceSpPr(`<a:solidFill><a:srgbClr val="000000"/></a:solidFill>`);
-    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
-  });
+    const xml = withChartSpaceSpPr(`<a:solidFill><a:srgbClr val="000000"/></a:solidFill>`)
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln> has no <a:solidFill>", () => {
-    const xml = withChartSpaceSpPr(`<a:ln><a:noFill/></a:ln>`);
-    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
-  });
+    const xml = withChartSpaceSpPr(`<a:ln><a:noFill/></a:ln>`)
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln><a:solidFill> uses <a:schemeClr> (theme reference)", () => {
     const xml = withChartSpaceSpPr(
       `<a:ln><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.chartSpaceBorderColor).toEqual({ theme: "accent1" });
-  });
+    )
+    expect(parseChart(xml)?.chartSpaceBorderColor).toEqual({ theme: "accent1" })
+  })
 
   it("returns undefined when <a:ln> uses <a:gradFill>", () => {
     const xml = withChartSpaceSpPr(
       `<a:ln><a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FFFFFF"/></a:gs></a:gsLst></a:gradFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
-  });
+    )
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln> uses <a:pattFill>", () => {
     const xml = withChartSpaceSpPr(
       `<a:ln><a:pattFill prst="pct5"><a:fgClr><a:srgbClr val="000000"/></a:fgClr><a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr></a:pattFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
-  });
+    )
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is malformed (wrong length)", () => {
-    const xml = withChartSpaceSpPr(
-      `<a:ln><a:solidFill><a:srgbClr val="ABC"/></a:solidFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
-  });
+    const xml = withChartSpaceSpPr(`<a:ln><a:solidFill><a:srgbClr val="ABC"/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is malformed (non-hex characters)", () => {
     const xml = withChartSpaceSpPr(
       `<a:ln><a:solidFill><a:srgbClr val="GGGGGG"/></a:solidFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
-  });
+    )
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is missing", () => {
-    const xml = withChartSpaceSpPr(`<a:ln><a:solidFill><a:srgbClr/></a:solidFill></a:ln>`);
-    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
-  });
+    const xml = withChartSpaceSpPr(`<a:ln><a:solidFill><a:srgbClr/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined()
+  })
 
   it("drops alpha-channel hex forms", () => {
     const xml = withChartSpaceSpPr(
       `<a:ln><a:solidFill><a:srgbClr val="FF0000FF"/></a:solidFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined();
-  });
+    )
+    expect(parseChart(xml)?.chartSpaceBorderColor).toBeUndefined()
+  })
 
   it("does not leak a stray <c:spPr> from <c:plotArea> into chartSpaceBorderColor", () => {
     const xml = `<c:chartSpace ${NS_CSB}>
@@ -21337,12 +21329,12 @@ describe("parseChart — chartSpaceBorderColor", () => {
       <c:spPr><a:ln><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill></a:ln></c:spPr>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
+</c:chartSpace>`
+    const chart = parseChart(xml)
     // The plot-area stroke is a different field; the chart-space stroke is absent.
-    expect(chart?.plotAreaBorderColor).toBe("ABCDEF");
-    expect(chart?.chartSpaceBorderColor).toBeUndefined();
-  });
+    expect(chart?.plotAreaBorderColor).toBe("ABCDEF")
+    expect(chart?.chartSpaceBorderColor).toBeUndefined()
+  })
 
   it("does not leak a stray <c:spPr> from <c:legend> into chartSpaceBorderColor", () => {
     const xml = `<c:chartSpace ${NS_CSB}>
@@ -21358,35 +21350,35 @@ describe("parseChart — chartSpaceBorderColor", () => {
       <c:spPr><a:ln><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill></a:ln></c:spPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legendBorderColor).toBe("ABCDEF");
-    expect(chart?.chartSpaceBorderColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legendBorderColor).toBe("ABCDEF")
+    expect(chart?.chartSpaceBorderColor).toBeUndefined()
+  })
 
   it("composes independently with chartSpaceFillColor — same <c:spPr> block, distinct children", () => {
     const xml = withChartSpaceSpPr(
       `<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill><a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
-    );
-    const chart = parseChart(xml);
-    expect(chart?.chartSpaceFillColor).toBe("F2F2F2");
-    expect(chart?.chartSpaceBorderColor).toBe("1F77B4");
-  });
+    )
+    const chart = parseChart(xml)
+    expect(chart?.chartSpaceFillColor).toBe("F2F2F2")
+    expect(chart?.chartSpaceBorderColor).toBe("1F77B4")
+  })
 
   it("surfaces the stroke independently when only <a:ln> is pinned (no <a:solidFill> sibling)", () => {
     const xml = withChartSpaceSpPr(
       `<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
-    );
-    const chart = parseChart(xml);
-    expect(chart?.chartSpaceFillColor).toBeUndefined();
-    expect(chart?.chartSpaceBorderColor).toBe("1F77B4");
-  });
-});
+    )
+    const chart = parseChart(xml)
+    expect(chart?.chartSpaceFillColor).toBeUndefined()
+    expect(chart?.chartSpaceBorderColor).toBe("1F77B4")
+  })
+})
 
 // ── parseChart — axisTitleFillColor ──────────────────────────────────
 
 describe("parseChart — axisTitleFillColor", () => {
-  const NS_ATFC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_ATFC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withCatAxTitleSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS_ATFC}>
@@ -21402,7 +21394,7 @@ describe("parseChart — axisTitleFillColor", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   function withValAxTitleSpPr(spPrBody: string): string {
@@ -21419,38 +21411,38 @@ describe("parseChart — axisTitleFillColor", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the literal sRGB color when <c:title><c:spPr><a:solidFill><a:srgbClr> is pinned (catAx)", () => {
     const chart = parseChart(
       withCatAxTitleSpPr(`<a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill>`),
-    );
-    expect(chart?.axes?.x?.axisTitleFillColor).toBe("FFFF00");
-    expect(chart?.axes?.x?.title).toBe("Period");
-  });
+    )
+    expect(chart?.axes?.x?.axisTitleFillColor).toBe("FFFF00")
+    expect(chart?.axes?.x?.title).toBe("Period")
+  })
 
   it("surfaces the literal sRGB color on the value axis (valAx)", () => {
     const chart = parseChart(
       withValAxTitleSpPr(`<a:solidFill><a:srgbClr val="00C586"/></a:solidFill>`),
-    );
-    expect(chart?.axes?.y?.axisTitleFillColor).toBe("00C586");
-    expect(chart?.axes?.y?.title).toBe("USD");
-  });
+    )
+    expect(chart?.axes?.y?.axisTitleFillColor).toBe("00C586")
+    expect(chart?.axes?.y?.title).toBe("USD")
+  })
 
   it("normalizes lowercase hex to canonical uppercase form", () => {
     const chart = parseChart(
       withCatAxTitleSpPr(`<a:solidFill><a:srgbClr val="abcdef"/></a:solidFill>`),
-    );
-    expect(chart?.axes?.x?.axisTitleFillColor).toBe("ABCDEF");
-  });
+    )
+    expect(chart?.axes?.x?.axisTitleFillColor).toBe("ABCDEF")
+  })
 
   it("admits a leading # on the val attribute", () => {
     const chart = parseChart(
       withCatAxTitleSpPr(`<a:solidFill><a:srgbClr val="#1F77B4"/></a:solidFill>`),
-    );
-    expect(chart?.axes?.x?.axisTitleFillColor).toBe("1F77B4");
-  });
+    )
+    expect(chart?.axes?.x?.axisTitleFillColor).toBe("1F77B4")
+  })
 
   it("returns undefined when the axis omits <c:title>", () => {
     const xml = `<c:chartSpace ${NS_ATFC}>
@@ -21459,9 +21451,9 @@ describe("parseChart — axisTitleFillColor", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <c:title> has no <c:spPr>", () => {
     const xml = `<c:chartSpace ${NS_ATFC}>
@@ -21476,73 +21468,73 @@ describe("parseChart — axisTitleFillColor", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleFillColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleFillColor).toBeUndefined()
+  })
 
   it("returns undefined when <c:spPr> has no <a:solidFill>", () => {
     const chart = parseChart(
       withCatAxTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>`),
-    );
-    expect(chart?.axes?.x?.axisTitleFillColor).toBeUndefined();
-  });
+    )
+    expect(chart?.axes?.x?.axisTitleFillColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:solidFill> uses <a:schemeClr> (theme reference)", () => {
     const chart = parseChart(
       withCatAxTitleSpPr(`<a:solidFill><a:schemeClr val="bg1"/></a:solidFill>`),
-    );
-    expect(chart?.axes?.x?.axisTitleFillColor).toEqual({ theme: "bg1" });
-  });
+    )
+    expect(chart?.axes?.x?.axisTitleFillColor).toEqual({ theme: "bg1" })
+  })
 
   it("returns undefined when fill is <a:noFill>", () => {
-    const chart = parseChart(withCatAxTitleSpPr(`<a:noFill/>`));
-    expect(chart?.axes?.x?.axisTitleFillColor).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxTitleSpPr(`<a:noFill/>`))
+    expect(chart?.axes?.x?.axisTitleFillColor).toBeUndefined()
+  })
 
   it("returns undefined when fill is <a:gradFill>", () => {
     const chart = parseChart(
       withCatAxTitleSpPr(
         `<a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FFFFFF"/></a:gs></a:gsLst></a:gradFill>`,
       ),
-    );
-    expect(chart?.axes?.x?.axisTitleFillColor).toBeUndefined();
-  });
+    )
+    expect(chart?.axes?.x?.axisTitleFillColor).toBeUndefined()
+  })
 
   it("returns undefined when fill is <a:pattFill>", () => {
     const chart = parseChart(
       withCatAxTitleSpPr(
         `<a:pattFill prst="dkUpDiag"><a:fgClr><a:srgbClr val="000000"/></a:fgClr><a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr></a:pattFill>`,
       ),
-    );
-    expect(chart?.axes?.x?.axisTitleFillColor).toBeUndefined();
-  });
+    )
+    expect(chart?.axes?.x?.axisTitleFillColor).toBeUndefined()
+  })
 
   it("drops malformed val tokens (wrong length / non-hex / 8-char alpha form)", () => {
     expect(
       parseChart(withCatAxTitleSpPr(`<a:solidFill><a:srgbClr val=""/></a:solidFill>`))?.axes?.x
         ?.axisTitleFillColor,
-    ).toBeUndefined();
+    ).toBeUndefined()
     expect(
       parseChart(withCatAxTitleSpPr(`<a:solidFill><a:srgbClr val="FFF"/></a:solidFill>`))?.axes?.x
         ?.axisTitleFillColor,
-    ).toBeUndefined();
+    ).toBeUndefined()
     expect(
       parseChart(withCatAxTitleSpPr(`<a:solidFill><a:srgbClr val="ZZZZZZ"/></a:solidFill>`))?.axes
         ?.x?.axisTitleFillColor,
-    ).toBeUndefined();
+    ).toBeUndefined()
     // 8-character alpha form (Excel uses <a:alpha> sibling for that).
     expect(
       parseChart(withCatAxTitleSpPr(`<a:solidFill><a:srgbClr val="FF0000FF"/></a:solidFill>`))?.axes
         ?.x?.axisTitleFillColor,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is missing", () => {
-    const chart = parseChart(withCatAxTitleSpPr(`<a:solidFill><a:srgbClr/></a:solidFill>`));
-    expect(chart?.axes?.x?.axisTitleFillColor).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxTitleSpPr(`<a:solidFill><a:srgbClr/></a:solidFill>`))
+    expect(chart?.axes?.x?.axisTitleFillColor).toBeUndefined()
+  })
 
   it("does not leak the chart-level title <c:spPr> fill into the axis title fill", () => {
     // Chart-level <c:title> has the spPr; the axis title doesn't.
@@ -21565,11 +21557,11 @@ describe("parseChart — axisTitleFillColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleFillColor).toBe("FFFF00");
-    expect(chart?.axes?.x?.axisTitleFillColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleFillColor).toBe("FFFF00")
+    expect(chart?.axes?.x?.axisTitleFillColor).toBeUndefined()
+  })
 
   it("does not leak a stray <c:spPr> on a sibling axis (catAx vs valAx scope)", () => {
     // The valAx has spPr at the title — catAx should not pick it up.
@@ -21592,11 +21584,11 @@ describe("parseChart — axisTitleFillColor", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleFillColor).toBeUndefined();
-    expect(chart?.axes?.y?.axisTitleFillColor).toBe("00C586");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleFillColor).toBeUndefined()
+    expect(chart?.axes?.y?.axisTitleFillColor).toBe("00C586")
+  })
 
   it("surfaces axisTitleFillColor independently of axisTitleColor (font color slot)", () => {
     const xml = `<c:chartSpace ${NS_ATFC}>
@@ -21615,11 +21607,11 @@ describe("parseChart — axisTitleFillColor", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleColor).toBe("FF0000");
-    expect(chart?.axes?.x?.axisTitleFillColor).toBe("FFFF00");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleColor).toBe("FF0000")
+    expect(chart?.axes?.x?.axisTitleFillColor).toBe("FFFF00")
+  })
 
   it("surfaces axisTitleFillColor on a strRef-bodied title (no <c:rich>)", () => {
     // Fill lookup is on `<c:title>` directly, not gated on `<c:rich>` —
@@ -21637,15 +21629,15 @@ describe("parseChart — axisTitleFillColor", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes?.x?.axisTitleFillColor).toBe("FFFF00");
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes?.x?.axisTitleFillColor).toBe("FFFF00")
+  })
+})
 
 // ── parseChart — axisTitleBorderColor (line stroke) ──────────────────
 
 describe("parseChart — axisTitleBorderColor", () => {
-  const NS_ATBC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_ATBC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withCatAxTitleSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS_ATBC}>
@@ -21661,7 +21653,7 @@ describe("parseChart — axisTitleBorderColor", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   function withValAxTitleSpPr(spPrBody: string): string {
@@ -21678,38 +21670,38 @@ describe("parseChart — axisTitleBorderColor", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the literal sRGB color when <c:title><c:spPr><a:ln><a:solidFill><a:srgbClr> is pinned (catAx)", () => {
     const chart = parseChart(
       withCatAxTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`),
-    );
-    expect(chart?.axes?.x?.axisTitleBorderColor).toBe("1F77B4");
-    expect(chart?.axes?.x?.title).toBe("Period");
-  });
+    )
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBe("1F77B4")
+    expect(chart?.axes?.x?.title).toBe("Period")
+  })
 
   it("surfaces the literal sRGB color on the value axis (valAx)", () => {
     const chart = parseChart(
       withValAxTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="00C586"/></a:solidFill></a:ln>`),
-    );
-    expect(chart?.axes?.y?.axisTitleBorderColor).toBe("00C586");
-    expect(chart?.axes?.y?.title).toBe("USD");
-  });
+    )
+    expect(chart?.axes?.y?.axisTitleBorderColor).toBe("00C586")
+    expect(chart?.axes?.y?.title).toBe("USD")
+  })
 
   it("normalizes lowercase hex to canonical uppercase form", () => {
     const chart = parseChart(
       withCatAxTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="abcdef"/></a:solidFill></a:ln>`),
-    );
-    expect(chart?.axes?.x?.axisTitleBorderColor).toBe("ABCDEF");
-  });
+    )
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBe("ABCDEF")
+  })
 
   it("admits a leading # on the val attribute", () => {
     const chart = parseChart(
       withCatAxTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="#1F77B4"/></a:solidFill></a:ln>`),
-    );
-    expect(chart?.axes?.x?.axisTitleBorderColor).toBe("1F77B4");
-  });
+    )
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBe("1F77B4")
+  })
 
   it("surfaces fill and border independently when both are pinned on the same axis title", () => {
     const chart = parseChart(
@@ -21717,10 +21709,10 @@ describe("parseChart — axisTitleBorderColor", () => {
         `<a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill>` +
           `<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
       ),
-    );
-    expect(chart?.axes?.x?.axisTitleFillColor).toBe("FFFF00");
-    expect(chart?.axes?.x?.axisTitleBorderColor).toBe("1F77B4");
-  });
+    )
+    expect(chart?.axes?.x?.axisTitleFillColor).toBe("FFFF00")
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBe("1F77B4")
+  })
 
   it("returns undefined when the axis omits <c:title>", () => {
     const xml = `<c:chartSpace ${NS_ATBC}>
@@ -21729,9 +21721,9 @@ describe("parseChart — axisTitleBorderColor", () => {
     <c:catAx><c:axId val="1"/></c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes).toBeUndefined()
+  })
 
   it("returns undefined when <c:title> has no <c:spPr>", () => {
     const xml = `<c:chartSpace ${NS_ATBC}>
@@ -21746,83 +21738,83 @@ describe("parseChart — axisTitleBorderColor", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.title).toBe("Period");
-    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.title).toBe("Period")
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <c:spPr> has no <a:ln>", () => {
     const chart = parseChart(
       withCatAxTitleSpPr(`<a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill>`),
-    );
-    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
-  });
+    )
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln> has no <a:solidFill>", () => {
-    const chart = parseChart(withCatAxTitleSpPr(`<a:ln w="12700"/>`));
-    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxTitleSpPr(`<a:ln w="12700"/>`))
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln><a:solidFill> uses <a:schemeClr> (theme reference)", () => {
     const chart = parseChart(
       withCatAxTitleSpPr(`<a:ln><a:solidFill><a:schemeClr val="bg1"/></a:solidFill></a:ln>`),
-    );
-    expect(chart?.axes?.x?.axisTitleBorderColor).toEqual({ theme: "bg1" });
-  });
+    )
+    expect(chart?.axes?.x?.axisTitleBorderColor).toEqual({ theme: "bg1" })
+  })
 
   it("returns undefined when <a:ln> stroke is <a:noFill>", () => {
-    const chart = parseChart(withCatAxTitleSpPr(`<a:ln><a:noFill/></a:ln>`));
-    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
-  });
+    const chart = parseChart(withCatAxTitleSpPr(`<a:ln><a:noFill/></a:ln>`))
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln> stroke is <a:gradFill>", () => {
     const chart = parseChart(
       withCatAxTitleSpPr(
         `<a:ln><a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FFFFFF"/></a:gs></a:gsLst></a:gradFill></a:ln>`,
       ),
-    );
-    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
-  });
+    )
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln> stroke is <a:pattFill>", () => {
     const chart = parseChart(
       withCatAxTitleSpPr(
         `<a:ln><a:pattFill prst="dkUpDiag"><a:fgClr><a:srgbClr val="000000"/></a:fgClr><a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr></a:pattFill></a:ln>`,
       ),
-    );
-    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
-  });
+    )
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined()
+  })
 
   it("drops malformed val tokens (wrong length / non-hex / 8-char alpha form)", () => {
     expect(
       parseChart(withCatAxTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val=""/></a:solidFill></a:ln>`))
         ?.axes?.x?.axisTitleBorderColor,
-    ).toBeUndefined();
+    ).toBeUndefined()
     expect(
       parseChart(
         withCatAxTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="FFF"/></a:solidFill></a:ln>`),
       )?.axes?.x?.axisTitleBorderColor,
-    ).toBeUndefined();
+    ).toBeUndefined()
     expect(
       parseChart(
         withCatAxTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="ZZZZZZ"/></a:solidFill></a:ln>`),
       )?.axes?.x?.axisTitleBorderColor,
-    ).toBeUndefined();
+    ).toBeUndefined()
     // 8-character alpha form (Excel uses <a:alpha> sibling for that).
     expect(
       parseChart(
         withCatAxTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="FF0000FF"/></a:solidFill></a:ln>`),
       )?.axes?.x?.axisTitleBorderColor,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is missing", () => {
     const chart = parseChart(
       withCatAxTitleSpPr(`<a:ln><a:solidFill><a:srgbClr/></a:solidFill></a:ln>`),
-    );
-    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
-  });
+    )
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined()
+  })
 
   it("does not leak the chart-level title <c:spPr><a:ln> stroke into the axis title border", () => {
     // Chart-level <c:title> has the spPr/ln; the axis title doesn't.
@@ -21845,11 +21837,11 @@ describe("parseChart — axisTitleBorderColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.titleBorderColor).toBe("1F77B4");
-    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.titleBorderColor).toBe("1F77B4")
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined()
+  })
 
   it("does not leak a stray <a:ln> on a sibling axis (catAx vs valAx scope)", () => {
     const xml = `<c:chartSpace ${NS_ATBC}>
@@ -21871,11 +21863,11 @@ describe("parseChart — axisTitleBorderColor", () => {
       </c:title>
     </c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined();
-    expect(chart?.axes?.y?.axisTitleBorderColor).toBe("00C586");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBeUndefined()
+    expect(chart?.axes?.y?.axisTitleBorderColor).toBe("00C586")
+  })
 
   it("surfaces axisTitleBorderColor independently of axisTitleColor (font color slot)", () => {
     const xml = `<c:chartSpace ${NS_ATBC}>
@@ -21894,11 +21886,11 @@ describe("parseChart — axisTitleBorderColor", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.axes?.x?.axisTitleColor).toBe("FF0000");
-    expect(chart?.axes?.x?.axisTitleBorderColor).toBe("1F77B4");
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.axes?.x?.axisTitleColor).toBe("FF0000")
+    expect(chart?.axes?.x?.axisTitleBorderColor).toBe("1F77B4")
+  })
 
   it("surfaces axisTitleBorderColor on a strRef-bodied title (no <c:rich>)", () => {
     const xml = `<c:chartSpace ${NS_ATBC}>
@@ -21914,15 +21906,15 @@ describe("parseChart — axisTitleBorderColor", () => {
     </c:catAx>
     <c:valAx><c:axId val="2"/></c:valAx>
   </c:plotArea></c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes?.x?.axisTitleBorderColor).toBe("1F77B4");
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes?.x?.axisTitleBorderColor).toBe("1F77B4")
+  })
+})
 
 // ── parseChart — dataLabelsFillColor ────────────────────────────────
 
 describe("parseChart — dataLabelsFillColor", () => {
-  const NS_DLFC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_DLFC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withDLblsSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS_DLFC}>
@@ -21944,22 +21936,22 @@ describe("parseChart — dataLabelsFillColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces fillColor as the canonical 6-character uppercase hex", () => {
     expect(
       parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill>`))?.dataLabels
         ?.fillColor,
-    ).toBe("FFFF00");
-  });
+    ).toBe("FFFF00")
+  })
 
   it("normalizes a lowercase srgbClr val to the OOXML uppercase canonical form", () => {
     expect(
       parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val="abcdef"/></a:solidFill>`))?.dataLabels
         ?.fillColor,
-    ).toBe("ABCDEF");
-  });
+    ).toBe("ABCDEF")
+  })
 
   it("returns undefined when the dLbls block has no <c:spPr>", () => {
     const xml = `<c:chartSpace ${NS_DLFC}>
@@ -21980,9 +21972,9 @@ describe("parseChart — dataLabelsFillColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels?.fillColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels?.fillColor).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:dLbls> element at all", () => {
     const xml = `<c:chartSpace ${NS_DLFC}>
@@ -21995,27 +21987,27 @@ describe("parseChart — dataLabelsFillColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels).toBeUndefined()
+  })
 
   it("collapses theme references (<a:schemeClr>) to undefined — only literal RGB round-trips", () => {
     expect(
       parseChart(withDLblsSpPr(`<a:solidFill><a:schemeClr val="accent1"/></a:solidFill>`))
         ?.dataLabels?.fillColor,
-    ).toEqual({ theme: "accent1" });
-  });
+    ).toEqual({ theme: "accent1" })
+  })
 
   it("collapses non-solid fills (<a:noFill>) to undefined", () => {
-    expect(parseChart(withDLblsSpPr(`<a:noFill/>`))?.dataLabels?.fillColor).toBeUndefined();
-  });
+    expect(parseChart(withDLblsSpPr(`<a:noFill/>`))?.dataLabels?.fillColor).toBeUndefined()
+  })
 
   it("collapses gradient fills (<a:gradFill>) to undefined", () => {
     expect(
       parseChart(withDLblsSpPr(`<a:gradFill><a:gsLst/><a:lin ang="0" scaled="1"/></a:gradFill>`))
         ?.dataLabels?.fillColor,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("collapses pattern fills (<a:pattFill>) to undefined", () => {
     expect(
@@ -22024,27 +22016,27 @@ describe("parseChart — dataLabelsFillColor", () => {
           `<a:pattFill prst="pct5"><a:fgClr><a:srgbClr val="000000"/></a:fgClr><a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr></a:pattFill>`,
         ),
       )?.dataLabels?.fillColor,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("collapses malformed val tokens (wrong length / non-hex / alpha) to undefined", () => {
     expect(
       parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val=""/></a:solidFill>`))?.dataLabels
         ?.fillColor,
-    ).toBeUndefined();
+    ).toBeUndefined()
     expect(
       parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val="FF00"/></a:solidFill>`))?.dataLabels
         ?.fillColor,
-    ).toBeUndefined();
+    ).toBeUndefined()
     expect(
       parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val="FF0000FF"/></a:solidFill>`))
         ?.dataLabels?.fillColor,
-    ).toBeUndefined();
+    ).toBeUndefined()
     expect(
       parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val="ZZZZZZ"/></a:solidFill>`))?.dataLabels
         ?.fillColor,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("co-surfaces alongside the other dLbls fields (showVal / position / fontColor)", () => {
     const xml = `<c:chartSpace ${NS_DLFC}>
@@ -22073,14 +22065,14 @@ describe("parseChart — dataLabelsFillColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.fillColor).toBe("FFEEDD");
-    expect(chart?.dataLabels?.fontColor).toBe("112233");
-    expect(chart?.dataLabels?.position).toBe("outEnd");
-    expect(chart?.dataLabels?.showValue).toBe(true);
-    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.fillColor).toBe("FFEEDD")
+    expect(chart?.dataLabels?.fontColor).toBe("112233")
+    expect(chart?.dataLabels?.position).toBe("outEnd")
+    expect(chart?.dataLabels?.showValue).toBe(true)
+    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" })
+  })
 
   it("surfaces the fillColor on a fillColor-only dLbls block (no other show* toggles)", () => {
     const xml = `<c:chartSpace ${NS_DLFC}>
@@ -22102,9 +22094,9 @@ describe("parseChart — dataLabelsFillColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels?.fillColor).toBe("00FF00");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels?.fillColor).toBe("00FF00")
+  })
 
   it("surfaces fillColor on a per-series <c:dLbls> block", () => {
     const xml = `<c:chartSpace ${NS_DLFC}>
@@ -22128,16 +22120,16 @@ describe("parseChart — dataLabelsFillColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0]?.dataLabels?.fillColor).toBe("A1B2C3");
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0]?.dataLabels?.fillColor).toBe("A1B2C3")
+  })
+})
 
 // ── parseChart — dataLabelsBorderColor (line stroke) ────────────────
 
 describe("parseChart — dataLabelsBorderColor", () => {
-  const NS_DLBC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_DLBC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withDLblsSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS_DLBC}>
@@ -22159,22 +22151,22 @@ describe("parseChart — dataLabelsBorderColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces borderColor as the canonical 6-character uppercase hex", () => {
     expect(
       parseChart(withDLblsSpPr(`<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`))
         ?.dataLabels?.borderColor,
-    ).toBe("1F77B4");
-  });
+    ).toBe("1F77B4")
+  })
 
   it("normalizes a lowercase srgbClr val to the OOXML uppercase canonical form", () => {
     expect(
       parseChart(withDLblsSpPr(`<a:ln><a:solidFill><a:srgbClr val="abcdef"/></a:solidFill></a:ln>`))
         ?.dataLabels?.borderColor,
-    ).toBe("ABCDEF");
-  });
+    ).toBe("ABCDEF")
+  })
 
   it("returns undefined when the dLbls block has no <c:spPr>", () => {
     const xml = `<c:chartSpace ${NS_DLBC}>
@@ -22195,22 +22187,22 @@ describe("parseChart — dataLabelsBorderColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels?.borderColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels?.borderColor).toBeUndefined()
+  })
 
   it("returns undefined when <c:spPr> has no <a:ln> child (fillColor-only block)", () => {
     expect(
       parseChart(withDLblsSpPr(`<a:solidFill><a:srgbClr val="FFEEDD"/></a:solidFill>`))?.dataLabels
         ?.borderColor,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln> exists but lacks a solid fill", () => {
     expect(
       parseChart(withDLblsSpPr(`<a:ln><a:noFill/></a:ln>`))?.dataLabels?.borderColor,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("returns undefined when the chart has no <c:dLbls> element at all", () => {
     const xml = `<c:chartSpace ${NS_DLBC}>
@@ -22223,17 +22215,17 @@ describe("parseChart — dataLabelsBorderColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels).toBeUndefined()
+  })
 
   it("collapses theme references (<a:schemeClr>) inside <a:ln> to undefined", () => {
     expect(
       parseChart(
         withDLblsSpPr(`<a:ln><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:ln>`),
       )?.dataLabels?.borderColor,
-    ).toEqual({ theme: "accent1" });
-  });
+    ).toEqual({ theme: "accent1" })
+  })
 
   it("collapses non-solid line fills (<a:gradFill>) to undefined", () => {
     expect(
@@ -22242,8 +22234,8 @@ describe("parseChart — dataLabelsBorderColor", () => {
           `<a:ln><a:gradFill><a:gsLst/><a:lin ang="0" scaled="1"/></a:gradFill></a:ln>`,
         ),
       )?.dataLabels?.borderColor,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("collapses pattern line fills (<a:pattFill>) to undefined", () => {
     expect(
@@ -22252,38 +22244,38 @@ describe("parseChart — dataLabelsBorderColor", () => {
           `<a:ln><a:pattFill prst="pct5"><a:fgClr><a:srgbClr val="000000"/></a:fgClr><a:bgClr><a:srgbClr val="FFFFFF"/></a:bgClr></a:pattFill></a:ln>`,
         ),
       )?.dataLabels?.borderColor,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("collapses malformed val tokens (wrong length / non-hex / alpha) to undefined", () => {
     expect(
       parseChart(withDLblsSpPr(`<a:ln><a:solidFill><a:srgbClr val=""/></a:solidFill></a:ln>`))
         ?.dataLabels?.borderColor,
-    ).toBeUndefined();
+    ).toBeUndefined()
     expect(
       parseChart(withDLblsSpPr(`<a:ln><a:solidFill><a:srgbClr val="FF00"/></a:solidFill></a:ln>`))
         ?.dataLabels?.borderColor,
-    ).toBeUndefined();
+    ).toBeUndefined()
     expect(
       parseChart(
         withDLblsSpPr(`<a:ln><a:solidFill><a:srgbClr val="FF0000FF"/></a:solidFill></a:ln>`),
       )?.dataLabels?.borderColor,
-    ).toBeUndefined();
+    ).toBeUndefined()
     expect(
       parseChart(withDLblsSpPr(`<a:ln><a:solidFill><a:srgbClr val="ZZZZZZ"/></a:solidFill></a:ln>`))
         ?.dataLabels?.borderColor,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("co-surfaces alongside fillColor on the same <c:spPr>", () => {
     const chart = parseChart(
       withDLblsSpPr(
         `<a:solidFill><a:srgbClr val="FFEEDD"/></a:solidFill><a:ln><a:solidFill><a:srgbClr val="112233"/></a:solidFill></a:ln>`,
       ),
-    );
-    expect(chart?.dataLabels?.fillColor).toBe("FFEEDD");
-    expect(chart?.dataLabels?.borderColor).toBe("112233");
-  });
+    )
+    expect(chart?.dataLabels?.fillColor).toBe("FFEEDD")
+    expect(chart?.dataLabels?.borderColor).toBe("112233")
+  })
 
   it("co-surfaces alongside the other dLbls fields (showVal / position / fontColor)", () => {
     const xml = `<c:chartSpace ${NS_DLBC}>
@@ -22312,14 +22304,14 @@ describe("parseChart — dataLabelsBorderColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.dataLabels?.borderColor).toBe("445566");
-    expect(chart?.dataLabels?.fontColor).toBe("112233");
-    expect(chart?.dataLabels?.position).toBe("outEnd");
-    expect(chart?.dataLabels?.showValue).toBe(true);
-    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" });
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.dataLabels?.borderColor).toBe("445566")
+    expect(chart?.dataLabels?.fontColor).toBe("112233")
+    expect(chart?.dataLabels?.position).toBe("outEnd")
+    expect(chart?.dataLabels?.showValue).toBe(true)
+    expect(chart?.dataLabels?.numberFormat).toEqual({ formatCode: "0.00" })
+  })
 
   it("surfaces the borderColor on a borderColor-only dLbls block (no other show* toggles)", () => {
     const xml = `<c:chartSpace ${NS_DLBC}>
@@ -22341,9 +22333,9 @@ describe("parseChart — dataLabelsBorderColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.dataLabels?.borderColor).toBe("00FF00");
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.dataLabels?.borderColor).toBe("00FF00")
+  })
 
   it("surfaces borderColor on a per-series <c:dLbls> block", () => {
     const xml = `<c:chartSpace ${NS_DLBC}>
@@ -22367,16 +22359,16 @@ describe("parseChart — dataLabelsBorderColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.series?.[0]?.dataLabels?.borderColor).toBe("A1B2C3");
-  });
-});
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.series?.[0]?.dataLabels?.borderColor).toBe("A1B2C3")
+  })
+})
 
 // ── parseChart — legendBorderColor (line stroke) ────────────────────
 
 describe("parseChart — legendBorderColor", () => {
-  const NS_LBC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_LBC = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withLegendSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS_LBC}>
@@ -22392,35 +22384,33 @@ describe("parseChart — legendBorderColor", () => {
       <c:spPr>${spPrBody}</c:spPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the literal sRGB color when <c:legend><c:spPr><a:ln><a:solidFill><a:srgbClr> is pinned", () => {
-    const xml = withLegendSpPr(`<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`);
-    expect(parseChart(xml)?.legendBorderColor).toBe("1F77B4");
-  });
+    const xml = withLegendSpPr(`<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.legendBorderColor).toBe("1F77B4")
+  })
 
   it("normalizes lowercase hex to canonical uppercase form", () => {
-    const xml = withLegendSpPr(`<a:ln><a:solidFill><a:srgbClr val="abcdef"/></a:solidFill></a:ln>`);
-    expect(parseChart(xml)?.legendBorderColor).toBe("ABCDEF");
-  });
+    const xml = withLegendSpPr(`<a:ln><a:solidFill><a:srgbClr val="abcdef"/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.legendBorderColor).toBe("ABCDEF")
+  })
 
   it("admits a leading # on the val attribute", () => {
-    const xml = withLegendSpPr(
-      `<a:ln><a:solidFill><a:srgbClr val="#1F77B4"/></a:solidFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.legendBorderColor).toBe("1F77B4");
-  });
+    const xml = withLegendSpPr(`<a:ln><a:solidFill><a:srgbClr val="#1F77B4"/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.legendBorderColor).toBe("1F77B4")
+  })
 
   it("surfaces fill and border independently when both are pinned", () => {
     const xml = withLegendSpPr(
       `<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>` +
         `<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
-    );
-    const parsed = parseChart(xml);
-    expect(parsed?.legendFillColor).toBe("F2F2F2");
-    expect(parsed?.legendBorderColor).toBe("1F77B4");
-  });
+    )
+    const parsed = parseChart(xml)
+    expect(parsed?.legendFillColor).toBe("F2F2F2")
+    expect(parsed?.legendBorderColor).toBe("1F77B4")
+  })
 
   it("returns undefined when the chart has no <c:legend>", () => {
     const xml = `<c:chartSpace ${NS_LBC}>
@@ -22431,9 +22421,9 @@ describe("parseChart — legendBorderColor", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendBorderColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <c:legend> has no <c:spPr>", () => {
     const xml = `<c:chartSpace ${NS_LBC}>
@@ -22448,53 +22438,53 @@ describe("parseChart — legendBorderColor", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendBorderColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <c:spPr> has no <a:ln>", () => {
-    const xml = withLegendSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`);
-    expect(parseChart(xml)?.legendBorderColor).toBeUndefined();
-  });
+    const xml = withLegendSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`)
+    expect(parseChart(xml)?.legendBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln> has no <a:solidFill>", () => {
-    const xml = withLegendSpPr(`<a:ln w="12700"/>`);
-    expect(parseChart(xml)?.legendBorderColor).toBeUndefined();
-  });
+    const xml = withLegendSpPr(`<a:ln w="12700"/>`)
+    expect(parseChart(xml)?.legendBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln><a:solidFill> uses <a:schemeClr> (theme reference)", () => {
     const xml = withLegendSpPr(
       `<a:ln><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.legendBorderColor).toEqual({ theme: "accent1" });
-  });
+    )
+    expect(parseChart(xml)?.legendBorderColor).toEqual({ theme: "accent1" })
+  })
 
   it("returns undefined when <a:ln> stroke is <a:noFill>", () => {
-    const xml = withLegendSpPr(`<a:ln><a:noFill/></a:ln>`);
-    expect(parseChart(xml)?.legendBorderColor).toBeUndefined();
-  });
+    const xml = withLegendSpPr(`<a:ln><a:noFill/></a:ln>`)
+    expect(parseChart(xml)?.legendBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln> stroke is <a:gradFill>", () => {
     const xml = withLegendSpPr(
       `<a:ln><a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FFFFFF"/></a:gs></a:gsLst></a:gradFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.legendBorderColor).toBeUndefined();
-  });
+    )
+    expect(parseChart(xml)?.legendBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is malformed (wrong length)", () => {
-    const xml = withLegendSpPr(`<a:ln><a:solidFill><a:srgbClr val="ABC"/></a:solidFill></a:ln>`);
-    expect(parseChart(xml)?.legendBorderColor).toBeUndefined();
-  });
+    const xml = withLegendSpPr(`<a:ln><a:solidFill><a:srgbClr val="ABC"/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.legendBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is malformed (non-hex characters)", () => {
-    const xml = withLegendSpPr(`<a:ln><a:solidFill><a:srgbClr val="GGGGGG"/></a:solidFill></a:ln>`);
-    expect(parseChart(xml)?.legendBorderColor).toBeUndefined();
-  });
+    const xml = withLegendSpPr(`<a:ln><a:solidFill><a:srgbClr val="GGGGGG"/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.legendBorderColor).toBeUndefined()
+  })
 
   it("returns undefined when the val attribute is missing", () => {
-    const xml = withLegendSpPr(`<a:ln><a:solidFill><a:srgbClr/></a:solidFill></a:ln>`);
-    expect(parseChart(xml)?.legendBorderColor).toBeUndefined();
-  });
+    const xml = withLegendSpPr(`<a:ln><a:solidFill><a:srgbClr/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.legendBorderColor).toBeUndefined()
+  })
 
   it('drops the border when the legend is hidden via <c:delete val="1"/>', () => {
     const xml = `<c:chartSpace ${NS_LBC}>
@@ -22511,11 +22501,11 @@ describe("parseChart — legendBorderColor", () => {
       <c:spPr><a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln></c:spPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe(false);
-    expect(chart?.legendBorderColor).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe(false)
+    expect(chart?.legendBorderColor).toBeUndefined()
+  })
 
   it("ignores a stray <a:ln> on a series <c:spPr> (not the legend)", () => {
     // Series-level <c:spPr><a:ln> must not leak into legendBorderColor.
@@ -22536,15 +22526,15 @@ describe("parseChart — legendBorderColor", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendBorderColor).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendBorderColor).toBeUndefined()
+  })
+})
 
 // ── parseChart — legendBorderWidth (line stroke thickness) ───────────
 
 describe("parseChart — legendBorderWidth", () => {
-  const NS_LBW = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_LBW = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withLegendSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS_LBW}>
@@ -22560,48 +22550,48 @@ describe("parseChart — legendBorderWidth", () => {
       <c:spPr>${spPrBody}</c:spPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the stroke width in points (12700 EMU = 1 pt)", () => {
-    const xml = withLegendSpPr(`<a:ln w="12700"/>`);
-    expect(parseChart(xml)?.legendBorderWidth).toBe(1);
-  });
+    const xml = withLegendSpPr(`<a:ln w="12700"/>`)
+    expect(parseChart(xml)?.legendBorderWidth).toBe(1)
+  })
 
   it("surfaces a fractional stroke width (19050 EMU = 1.5 pt)", () => {
-    const xml = withLegendSpPr(`<a:ln w="19050"/>`);
-    expect(parseChart(xml)?.legendBorderWidth).toBe(1.5);
-  });
+    const xml = withLegendSpPr(`<a:ln w="19050"/>`)
+    expect(parseChart(xml)?.legendBorderWidth).toBe(1.5)
+  })
 
   it("surfaces the minimum width (3175 EMU = 0.25 pt)", () => {
-    const xml = withLegendSpPr(`<a:ln w="3175"/>`);
-    expect(parseChart(xml)?.legendBorderWidth).toBe(0.25);
-  });
+    const xml = withLegendSpPr(`<a:ln w="3175"/>`)
+    expect(parseChart(xml)?.legendBorderWidth).toBe(0.25)
+  })
 
   it("snaps an exotic EMU value to the nearest 0.25 pt grid", () => {
     // 14000 EMU ≈ 1.10 pt → snaps to 1.0 pt.
-    const xml = withLegendSpPr(`<a:ln w="14000"/>`);
-    expect(parseChart(xml)?.legendBorderWidth).toBe(1);
-  });
+    const xml = withLegendSpPr(`<a:ln w="14000"/>`)
+    expect(parseChart(xml)?.legendBorderWidth).toBe(1)
+  })
 
   it("clamps below the minimum band (1000 EMU → 0.25 pt)", () => {
-    const xml = withLegendSpPr(`<a:ln w="1000"/>`);
-    expect(parseChart(xml)?.legendBorderWidth).toBe(0.25);
-  });
+    const xml = withLegendSpPr(`<a:ln w="1000"/>`)
+    expect(parseChart(xml)?.legendBorderWidth).toBe(0.25)
+  })
 
   it("clamps above the maximum band (1000000 EMU → 13.5 pt)", () => {
-    const xml = withLegendSpPr(`<a:ln w="1000000"/>`);
-    expect(parseChart(xml)?.legendBorderWidth).toBe(13.5);
-  });
+    const xml = withLegendSpPr(`<a:ln w="1000000"/>`)
+    expect(parseChart(xml)?.legendBorderWidth).toBe(13.5)
+  })
 
   it("surfaces both border color and width when both are pinned on <a:ln>", () => {
     const xml = withLegendSpPr(
       `<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
-    );
-    const parsed = parseChart(xml);
-    expect(parsed?.legendBorderWidth).toBe(2);
-    expect(parsed?.legendBorderColor).toBe("1F77B4");
-  });
+    )
+    const parsed = parseChart(xml)
+    expect(parsed?.legendBorderWidth).toBe(2)
+    expect(parsed?.legendBorderColor).toBe("1F77B4")
+  })
 
   it("returns undefined when the chart has no <c:legend>", () => {
     const xml = `<c:chartSpace ${NS_LBW}>
@@ -22612,9 +22602,9 @@ describe("parseChart — legendBorderWidth", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when <c:legend> has no <c:spPr>", () => {
     const xml = `<c:chartSpace ${NS_LBW}>
@@ -22629,34 +22619,34 @@ describe("parseChart — legendBorderWidth", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when <c:spPr> has no <a:ln>", () => {
-    const xml = withLegendSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`);
-    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined();
-  });
+    const xml = withLegendSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`)
+    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln> has no w attribute", () => {
-    const xml = withLegendSpPr(`<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`);
-    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined();
-  });
+    const xml = withLegendSpPr(`<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when the w attribute is malformed (non-numeric)", () => {
-    const xml = withLegendSpPr(`<a:ln w="thick"/>`);
-    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined();
-  });
+    const xml = withLegendSpPr(`<a:ln w="thick"/>`)
+    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when the w attribute is zero (Excel's 'no border' marker)", () => {
-    const xml = withLegendSpPr(`<a:ln w="0"/>`);
-    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined();
-  });
+    const xml = withLegendSpPr(`<a:ln w="0"/>`)
+    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when the w attribute is negative", () => {
-    const xml = withLegendSpPr(`<a:ln w="-12700"/>`);
-    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined();
-  });
+    const xml = withLegendSpPr(`<a:ln w="-12700"/>`)
+    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined()
+  })
 
   it('drops the width when the legend is hidden via <c:delete val="1"/>', () => {
     const xml = `<c:chartSpace ${NS_LBW}>
@@ -22673,11 +22663,11 @@ describe("parseChart — legendBorderWidth", () => {
       <c:spPr><a:ln w="19050"/></c:spPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    const chart = parseChart(xml);
-    expect(chart?.legend).toBe(false);
-    expect(chart?.legendBorderWidth).toBeUndefined();
-  });
+</c:chartSpace>`
+    const chart = parseChart(xml)
+    expect(chart?.legend).toBe(false)
+    expect(chart?.legendBorderWidth).toBeUndefined()
+  })
 
   it("ignores a stray <a:ln w=..> on a series <c:spPr> (not the legend)", () => {
     const xml = `<c:chartSpace ${NS_LBW}>
@@ -22697,9 +22687,9 @@ describe("parseChart — legendBorderWidth", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined()
+  })
 
   it("ignores a stray <a:ln w=..> on a plot-area <c:spPr> (not the legend)", () => {
     const xml = `<c:chartSpace ${NS_LBW}>
@@ -22715,15 +22705,15 @@ describe("parseChart — legendBorderWidth", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendBorderWidth).toBeUndefined()
+  })
+})
 
 // ── parseChart — titleBorderWidth ────────────────────────────────────
 
 describe("parseChart — titleBorderWidth", () => {
-  const NS_TBW = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS_TBW = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withTitleSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS_TBW}>
@@ -22740,53 +22730,53 @@ describe("parseChart — titleBorderWidth", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the stroke width in points (12700 EMU = 1 pt)", () => {
-    const xml = withTitleSpPr(`<a:ln w="12700"/>`);
-    expect(parseChart(xml)?.titleBorderWidth).toBe(1);
-  });
+    const xml = withTitleSpPr(`<a:ln w="12700"/>`)
+    expect(parseChart(xml)?.titleBorderWidth).toBe(1)
+  })
 
   it("surfaces a fractional stroke width (19050 EMU = 1.5 pt)", () => {
-    const xml = withTitleSpPr(`<a:ln w="19050"/>`);
-    expect(parseChart(xml)?.titleBorderWidth).toBe(1.5);
-  });
+    const xml = withTitleSpPr(`<a:ln w="19050"/>`)
+    expect(parseChart(xml)?.titleBorderWidth).toBe(1.5)
+  })
 
   it("surfaces the minimum width (3175 EMU = 0.25 pt)", () => {
-    const xml = withTitleSpPr(`<a:ln w="3175"/>`);
-    expect(parseChart(xml)?.titleBorderWidth).toBe(0.25);
-  });
+    const xml = withTitleSpPr(`<a:ln w="3175"/>`)
+    expect(parseChart(xml)?.titleBorderWidth).toBe(0.25)
+  })
 
   it("snaps an exotic EMU value to the nearest 0.25 pt grid", () => {
     // 14000 EMU ≈ 1.10 pt → snaps to 1.0 pt.
-    const xml = withTitleSpPr(`<a:ln w="14000"/>`);
-    expect(parseChart(xml)?.titleBorderWidth).toBe(1);
-  });
+    const xml = withTitleSpPr(`<a:ln w="14000"/>`)
+    expect(parseChart(xml)?.titleBorderWidth).toBe(1)
+  })
 
   it("clamps below the minimum band (1000 EMU → 0.25 pt)", () => {
-    const xml = withTitleSpPr(`<a:ln w="1000"/>`);
-    expect(parseChart(xml)?.titleBorderWidth).toBe(0.25);
-  });
+    const xml = withTitleSpPr(`<a:ln w="1000"/>`)
+    expect(parseChart(xml)?.titleBorderWidth).toBe(0.25)
+  })
 
   it("clamps above the maximum band (1000000 EMU → 13.5 pt)", () => {
-    const xml = withTitleSpPr(`<a:ln w="1000000"/>`);
-    expect(parseChart(xml)?.titleBorderWidth).toBe(13.5);
-  });
+    const xml = withTitleSpPr(`<a:ln w="1000000"/>`)
+    expect(parseChart(xml)?.titleBorderWidth).toBe(13.5)
+  })
 
   it("surfaces both border color and width when both are pinned on <a:ln>", () => {
     const xml = withTitleSpPr(
       `<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
-    );
-    const parsed = parseChart(xml);
-    expect(parsed?.titleBorderWidth).toBe(2);
-    expect(parsed?.titleBorderColor).toBe("1F77B4");
-  });
+    )
+    const parsed = parseChart(xml)
+    expect(parsed?.titleBorderWidth).toBe(2)
+    expect(parsed?.titleBorderColor).toBe("1F77B4")
+  })
 
   it("returns undefined when the chart has no <c:title>", () => {
-    const xml = `<c:chartSpace ${NS_TBW}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`;
-    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
-  });
+    const xml = `<c:chartSpace ${NS_TBW}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when <c:title> has no <c:spPr>", () => {
     const xml = `<c:chartSpace ${NS_TBW}>
@@ -22802,34 +22792,34 @@ describe("parseChart — titleBorderWidth", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when <c:spPr> has no <a:ln>", () => {
-    const xml = withTitleSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`);
-    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
-  });
+    const xml = withTitleSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`)
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln> has no w attribute", () => {
-    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`);
-    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
-  });
+    const xml = withTitleSpPr(`<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`)
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when the w attribute is malformed (non-numeric)", () => {
-    const xml = withTitleSpPr(`<a:ln w="thick"/>`);
-    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
-  });
+    const xml = withTitleSpPr(`<a:ln w="thick"/>`)
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when the w attribute is zero (Excel's 'no border' marker)", () => {
-    const xml = withTitleSpPr(`<a:ln w="0"/>`);
-    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
-  });
+    const xml = withTitleSpPr(`<a:ln w="0"/>`)
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when the w attribute is negative", () => {
-    const xml = withTitleSpPr(`<a:ln w="-12700"/>`);
-    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
-  });
+    const xml = withTitleSpPr(`<a:ln w="-12700"/>`)
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined()
+  })
 
   it("ignores a stray <a:ln w=..> on a series <c:spPr> (not the title)", () => {
     const xml = `<c:chartSpace ${NS_TBW}>
@@ -22845,9 +22835,9 @@ describe("parseChart — titleBorderWidth", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined()
+  })
 
   it("ignores a stray <a:ln w=..> on a plot-area <c:spPr> (not the title)", () => {
     const xml = `<c:chartSpace ${NS_TBW}>
@@ -22859,9 +22849,9 @@ describe("parseChart — titleBorderWidth", () => {
       <c:spPr><a:ln w="50800"/></c:spPr>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined()
+  })
 
   it("ignores a stray <a:ln w=..> on the legend (not the title)", () => {
     const xml = `<c:chartSpace ${NS_TBW}>
@@ -22877,9 +22867,9 @@ describe("parseChart — titleBorderWidth", () => {
       <c:spPr><a:ln w="50800"/></c:spPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.titleBorderWidth).toBeUndefined()
+  })
 
   it("surfaces titleBorderWidth on a strRef-bodied title (no <c:rich>)", () => {
     const xml = `<c:chartSpace ${NS_TBW}>
@@ -22896,15 +22886,15 @@ describe("parseChart — titleBorderWidth", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.titleBorderWidth).toBe(1.5);
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.titleBorderWidth).toBe(1.5)
+  })
+})
 
 // ── parseChart — chartSpaceBorderWidth ───────────────────────────────
 
 describe("parseChart — chartSpaceBorderWidth", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withChartSpaceSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS}>
@@ -22917,77 +22907,77 @@ describe("parseChart — chartSpaceBorderWidth", () => {
     </c:plotArea>
   </c:chart>
   <c:spPr>${spPrBody}</c:spPr>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces the stroke width in points (12700 EMU = 1 pt)", () => {
-    expect(parseChart(withChartSpaceSpPr(`<a:ln w="12700"/>`))?.chartSpaceBorderWidth).toBe(1);
-  });
+    expect(parseChart(withChartSpaceSpPr(`<a:ln w="12700"/>`))?.chartSpaceBorderWidth).toBe(1)
+  })
 
   it("surfaces a fractional stroke width (19050 EMU = 1.5 pt)", () => {
-    expect(parseChart(withChartSpaceSpPr(`<a:ln w="19050"/>`))?.chartSpaceBorderWidth).toBe(1.5);
-  });
+    expect(parseChart(withChartSpaceSpPr(`<a:ln w="19050"/>`))?.chartSpaceBorderWidth).toBe(1.5)
+  })
 
   it("surfaces the minimum width (3175 EMU = 0.25 pt)", () => {
-    expect(parseChart(withChartSpaceSpPr(`<a:ln w="3175"/>`))?.chartSpaceBorderWidth).toBe(0.25);
-  });
+    expect(parseChart(withChartSpaceSpPr(`<a:ln w="3175"/>`))?.chartSpaceBorderWidth).toBe(0.25)
+  })
 
   it("snaps an exotic EMU value to the nearest 0.25 pt grid", () => {
-    expect(parseChart(withChartSpaceSpPr(`<a:ln w="14000"/>`))?.chartSpaceBorderWidth).toBe(1);
-  });
+    expect(parseChart(withChartSpaceSpPr(`<a:ln w="14000"/>`))?.chartSpaceBorderWidth).toBe(1)
+  })
 
   it("clamps below the minimum band (1000 EMU → 0.25 pt)", () => {
-    expect(parseChart(withChartSpaceSpPr(`<a:ln w="1000"/>`))?.chartSpaceBorderWidth).toBe(0.25);
-  });
+    expect(parseChart(withChartSpaceSpPr(`<a:ln w="1000"/>`))?.chartSpaceBorderWidth).toBe(0.25)
+  })
 
   it("clamps above the maximum band (1000000 EMU → 13.5 pt)", () => {
-    expect(parseChart(withChartSpaceSpPr(`<a:ln w="1000000"/>`))?.chartSpaceBorderWidth).toBe(13.5);
-  });
+    expect(parseChart(withChartSpaceSpPr(`<a:ln w="1000000"/>`))?.chartSpaceBorderWidth).toBe(13.5)
+  })
 
   it("surfaces both border color and width when both are pinned on <a:ln>", () => {
     const xml = withChartSpaceSpPr(
       `<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
-    );
-    const parsed = parseChart(xml);
-    expect(parsed?.chartSpaceBorderWidth).toBe(2);
-    expect(parsed?.chartSpaceBorderColor).toBe("1F77B4");
-  });
+    )
+    const parsed = parseChart(xml)
+    expect(parsed?.chartSpaceBorderWidth).toBe(2)
+    expect(parsed?.chartSpaceBorderColor).toBe("1F77B4")
+  })
 
   it("returns undefined when chartSpace has no <c:spPr>", () => {
-    const xml = `<c:chartSpace ${NS}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`;
-    expect(parseChart(xml)?.chartSpaceBorderWidth).toBeUndefined();
-  });
+    const xml = `<c:chartSpace ${NS}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`
+    expect(parseChart(xml)?.chartSpaceBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when <c:spPr> has no <a:ln>", () => {
     expect(
       parseChart(withChartSpaceSpPr(`<a:solidFill><a:srgbClr val="F2F2F2"/></a:solidFill>`))
         ?.chartSpaceBorderWidth,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln> has no w attribute", () => {
     expect(
       parseChart(
         withChartSpaceSpPr(`<a:ln><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`),
       )?.chartSpaceBorderWidth,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("returns undefined when w is malformed", () => {
     expect(
       parseChart(withChartSpaceSpPr(`<a:ln w="thick"/>`))?.chartSpaceBorderWidth,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("returns undefined when w is zero", () => {
-    expect(parseChart(withChartSpaceSpPr(`<a:ln w="0"/>`))?.chartSpaceBorderWidth).toBeUndefined();
-  });
+    expect(parseChart(withChartSpaceSpPr(`<a:ln w="0"/>`))?.chartSpaceBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when w is negative", () => {
     expect(
       parseChart(withChartSpaceSpPr(`<a:ln w="-12700"/>`))?.chartSpaceBorderWidth,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("ignores a stray <a:ln w=..> on a series <c:spPr>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -23003,15 +22993,15 @@ describe("parseChart — chartSpaceBorderWidth", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.chartSpaceBorderWidth).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.chartSpaceBorderWidth).toBeUndefined()
+  })
+})
 
 // ── parseChart — axisTitleBorderWidth ────────────────────────────────
 
 describe("parseChart — axisTitleBorderWidth", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withAxisTitleSpPr(spPrBody: string, axis: "catAx" | "valAx" = "catAx"): string {
     return `<c:chartSpace ${NS}>
@@ -23030,39 +23020,39 @@ describe("parseChart — axisTitleBorderWidth", () => {
       <c:${axis === "catAx" ? "valAx" : "catAx"}><c:axId val="2"/></c:${axis === "catAx" ? "valAx" : "catAx"}>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces width on the X axis (catAx)", () => {
-    const parsed = parseChart(withAxisTitleSpPr(`<a:ln w="12700"/>`, "catAx"));
-    expect(parsed?.axes?.x?.axisTitleBorderWidth).toBe(1);
-  });
+    const parsed = parseChart(withAxisTitleSpPr(`<a:ln w="12700"/>`, "catAx"))
+    expect(parsed?.axes?.x?.axisTitleBorderWidth).toBe(1)
+  })
 
   it("surfaces width on the Y axis (valAx)", () => {
-    const parsed = parseChart(withAxisTitleSpPr(`<a:ln w="19050"/>`, "valAx"));
-    expect(parsed?.axes?.y?.axisTitleBorderWidth).toBe(1.5);
-  });
+    const parsed = parseChart(withAxisTitleSpPr(`<a:ln w="19050"/>`, "valAx"))
+    expect(parsed?.axes?.y?.axisTitleBorderWidth).toBe(1.5)
+  })
 
   it("surfaces both color and width on the same <a:ln>", () => {
     const xml = withAxisTitleSpPr(
       `<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`,
-    );
-    const parsed = parseChart(xml);
-    expect(parsed?.axes?.x?.axisTitleBorderWidth).toBe(2);
-    expect(parsed?.axes?.x?.axisTitleBorderColor).toBe("1F77B4");
-  });
+    )
+    const parsed = parseChart(xml)
+    expect(parsed?.axes?.x?.axisTitleBorderWidth).toBe(2)
+    expect(parsed?.axes?.x?.axisTitleBorderColor).toBe("1F77B4")
+  })
 
   it("clamps to the minimum (0.25 pt)", () => {
     expect(parseChart(withAxisTitleSpPr(`<a:ln w="100"/>`))?.axes?.x?.axisTitleBorderWidth).toBe(
       0.25,
-    );
-  });
+    )
+  })
 
   it("clamps to the maximum (13.5 pt)", () => {
     expect(
       parseChart(withAxisTitleSpPr(`<a:ln w="1000000"/>`))?.axes?.x?.axisTitleBorderWidth,
-    ).toBe(13.5);
-  });
+    ).toBe(13.5)
+  })
 
   it("returns undefined when axis has no <c:title>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -23074,9 +23064,9 @@ describe("parseChart — axisTitleBorderWidth", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes?.x?.axisTitleBorderWidth).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes?.x?.axisTitleBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when title has no <c:spPr>", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -23094,31 +23084,31 @@ describe("parseChart — axisTitleBorderWidth", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.axes?.x?.axisTitleBorderWidth).toBeUndefined();
-  });
+</c:chartSpace>`
+    expect(parseChart(xml)?.axes?.x?.axisTitleBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when w is missing", () => {
-    expect(parseChart(withAxisTitleSpPr(`<a:ln/>`))?.axes?.x?.axisTitleBorderWidth).toBeUndefined();
-  });
+    expect(parseChart(withAxisTitleSpPr(`<a:ln/>`))?.axes?.x?.axisTitleBorderWidth).toBeUndefined()
+  })
 
   it("returns undefined when w is zero", () => {
     expect(
       parseChart(withAxisTitleSpPr(`<a:ln w="0"/>`))?.axes?.x?.axisTitleBorderWidth,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("returns undefined when w is malformed", () => {
     expect(
       parseChart(withAxisTitleSpPr(`<a:ln w="bold"/>`))?.axes?.x?.axisTitleBorderWidth,
-    ).toBeUndefined();
-  });
-});
+    ).toBeUndefined()
+  })
+})
 
 // ── parseChart — dataTableBorderWidth ────────────────────────────────
 
 describe("parseChart — dataTableBorderWidth", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withDTableSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS}>
@@ -23137,68 +23127,64 @@ describe("parseChart — dataTableBorderWidth", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces width (12700 EMU = 1 pt)", () => {
-    const parsed = parseChart(withDTableSpPr(`<a:ln w="12700"/>`));
-    expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderWidth : undefined).toBe(
-      1,
-    );
-  });
+    const parsed = parseChart(withDTableSpPr(`<a:ln w="12700"/>`))
+    expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderWidth : undefined).toBe(1)
+  })
 
   it("surfaces fractional width (19050 EMU = 1.5 pt)", () => {
-    const parsed = parseChart(withDTableSpPr(`<a:ln w="19050"/>`));
+    const parsed = parseChart(withDTableSpPr(`<a:ln w="19050"/>`))
     expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderWidth : undefined).toBe(
       1.5,
-    );
-  });
+    )
+  })
 
   it("clamps to minimum 0.25", () => {
-    const parsed = parseChart(withDTableSpPr(`<a:ln w="100"/>`));
+    const parsed = parseChart(withDTableSpPr(`<a:ln w="100"/>`))
     expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderWidth : undefined).toBe(
       0.25,
-    );
-  });
+    )
+  })
 
   it("clamps to maximum 13.5", () => {
-    const parsed = parseChart(withDTableSpPr(`<a:ln w="9999999"/>`));
+    const parsed = parseChart(withDTableSpPr(`<a:ln w="9999999"/>`))
     expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderWidth : undefined).toBe(
       13.5,
-    );
-  });
+    )
+  })
 
   it("returns undefined when w is zero", () => {
-    const parsed = parseChart(withDTableSpPr(`<a:ln w="0"/>`));
+    const parsed = parseChart(withDTableSpPr(`<a:ln w="0"/>`))
     expect(
       typeof parsed?.dataTable === "object" ? parsed.dataTable.borderWidth : undefined,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("returns undefined when w is missing", () => {
-    const parsed = parseChart(withDTableSpPr(`<a:ln/>`));
+    const parsed = parseChart(withDTableSpPr(`<a:ln/>`))
     expect(
       typeof parsed?.dataTable === "object" ? parsed.dataTable.borderWidth : undefined,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("surfaces both color and width together", () => {
     const parsed = parseChart(
       withDTableSpPr(`<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`),
-    );
-    expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderWidth : undefined).toBe(
-      2,
-    );
+    )
+    expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderWidth : undefined).toBe(2)
     expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderColor : undefined).toBe(
       "1F77B4",
-    );
-  });
-});
+    )
+  })
+})
 
 // ── parseChart — dataLabelsBorderWidth ───────────────────────────────
 
 describe("parseChart — dataLabelsBorderWidth", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withDLblsSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS}>
@@ -23223,47 +23209,47 @@ describe("parseChart — dataLabelsBorderWidth", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces width on series-level data labels", () => {
-    const parsed = parseChart(withDLblsSpPr(`<a:ln w="12700"/>`));
-    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBe(1);
-  });
+    const parsed = parseChart(withDLblsSpPr(`<a:ln w="12700"/>`))
+    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBe(1)
+  })
 
   it("surfaces fractional width on series-level data labels", () => {
-    const parsed = parseChart(withDLblsSpPr(`<a:ln w="19050"/>`));
-    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBe(1.5);
-  });
+    const parsed = parseChart(withDLblsSpPr(`<a:ln w="19050"/>`))
+    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBe(1.5)
+  })
 
   it("clamps to minimum 0.25", () => {
-    const parsed = parseChart(withDLblsSpPr(`<a:ln w="100"/>`));
-    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBe(0.25);
-  });
+    const parsed = parseChart(withDLblsSpPr(`<a:ln w="100"/>`))
+    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBe(0.25)
+  })
 
   it("clamps to maximum 13.5", () => {
-    const parsed = parseChart(withDLblsSpPr(`<a:ln w="9999999"/>`));
-    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBe(13.5);
-  });
+    const parsed = parseChart(withDLblsSpPr(`<a:ln w="9999999"/>`))
+    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBe(13.5)
+  })
 
   it("returns undefined when w is zero", () => {
-    const parsed = parseChart(withDLblsSpPr(`<a:ln w="0"/>`));
-    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBeUndefined();
-  });
+    const parsed = parseChart(withDLblsSpPr(`<a:ln w="0"/>`))
+    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBeUndefined()
+  })
 
   it("surfaces both color and width on the same <a:ln>", () => {
     const parsed = parseChart(
       withDLblsSpPr(`<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill></a:ln>`),
-    );
-    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBe(2);
-    expect(parsed?.series?.[0]?.dataLabels?.borderColor).toBe("1F77B4");
-  });
-});
+    )
+    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBe(2)
+    expect(parsed?.series?.[0]?.dataLabels?.borderColor).toBe("1F77B4")
+  })
+})
 
 // ── parseChart — *BorderDash family ──────────────────────────────────
 
 describe("parseChart — plotAreaBorderDash", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withPlotAreaSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS}>
@@ -23276,102 +23262,102 @@ describe("parseChart — plotAreaBorderDash", () => {
       <c:spPr>${spPrBody}</c:spPr>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces a 'dash' preset", () => {
     expect(
       parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="dash"/></a:ln>`))?.plotAreaBorderDash,
-    ).toBe("dash");
-  });
+    ).toBe("dash")
+  })
 
   it("surfaces a 'dashDot' preset", () => {
     expect(
       parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="dashDot"/></a:ln>`))?.plotAreaBorderDash,
-    ).toBe("dashDot");
-  });
+    ).toBe("dashDot")
+  })
 
   it("surfaces a 'dot' preset", () => {
     expect(
       parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="dot"/></a:ln>`))?.plotAreaBorderDash,
-    ).toBe("dot");
-  });
+    ).toBe("dot")
+  })
 
   it("surfaces a 'lgDash' preset", () => {
     expect(
       parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="lgDash"/></a:ln>`))?.plotAreaBorderDash,
-    ).toBe("lgDash");
-  });
+    ).toBe("lgDash")
+  })
 
   it("surfaces 'lgDashDot' / 'lgDashDotDot'", () => {
     expect(
       parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="lgDashDot"/></a:ln>`))
         ?.plotAreaBorderDash,
-    ).toBe("lgDashDot");
+    ).toBe("lgDashDot")
     expect(
       parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="lgDashDotDot"/></a:ln>`))
         ?.plotAreaBorderDash,
-    ).toBe("lgDashDotDot");
-  });
+    ).toBe("lgDashDotDot")
+  })
 
   it("surfaces 'sysDash' / 'sysDashDot' / 'sysDashDotDot' / 'sysDot'", () => {
     expect(
       parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="sysDash"/></a:ln>`))?.plotAreaBorderDash,
-    ).toBe("sysDash");
+    ).toBe("sysDash")
     expect(
       parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="sysDashDot"/></a:ln>`))
         ?.plotAreaBorderDash,
-    ).toBe("sysDashDot");
+    ).toBe("sysDashDot")
     expect(
       parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="sysDashDotDot"/></a:ln>`))
         ?.plotAreaBorderDash,
-    ).toBe("sysDashDotDot");
+    ).toBe("sysDashDotDot")
     expect(
       parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="sysDot"/></a:ln>`))?.plotAreaBorderDash,
-    ).toBe("sysDot");
-  });
+    ).toBe("sysDot")
+  })
 
   it("collapses 'solid' (the OOXML default) to undefined", () => {
     expect(
       parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="solid"/></a:ln>`))?.plotAreaBorderDash,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("returns undefined when no <c:spPr> is present", () => {
-    const xml = `<c:chartSpace ${NS}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`;
-    expect(parseChart(xml)?.plotAreaBorderDash).toBeUndefined();
-  });
+    const xml = `<c:chartSpace ${NS}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`
+    expect(parseChart(xml)?.plotAreaBorderDash).toBeUndefined()
+  })
 
   it("returns undefined when <a:ln> has no <a:prstDash>", () => {
-    expect(parseChart(withPlotAreaSpPr(`<a:ln/>`))?.plotAreaBorderDash).toBeUndefined();
-  });
+    expect(parseChart(withPlotAreaSpPr(`<a:ln/>`))?.plotAreaBorderDash).toBeUndefined()
+  })
 
   it("returns undefined when val is missing", () => {
     expect(
       parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash/></a:ln>`))?.plotAreaBorderDash,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("returns undefined when val is unrecognized", () => {
     expect(
       parseChart(withPlotAreaSpPr(`<a:ln><a:prstDash val="weirdToken"/></a:ln>`))
         ?.plotAreaBorderDash,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("composes with border color and width", () => {
     const xml = withPlotAreaSpPr(
       `<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill><a:prstDash val="dash"/></a:ln>`,
-    );
-    const parsed = parseChart(xml);
-    expect(parsed?.plotAreaBorderDash).toBe("dash");
-    expect(parsed?.plotAreaBorderColor).toBe("1F77B4");
-    expect(parsed?.plotAreaBorderWidth).toBe(2);
-  });
-});
+    )
+    const parsed = parseChart(xml)
+    expect(parsed?.plotAreaBorderDash).toBe("dash")
+    expect(parsed?.plotAreaBorderColor).toBe("1F77B4")
+    expect(parsed?.plotAreaBorderWidth).toBe(2)
+  })
+})
 
 describe("parseChart — legendBorderDash", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withLegendSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS}>
@@ -23388,31 +23374,31 @@ describe("parseChart — legendBorderDash", () => {
       <c:spPr>${spPrBody}</c:spPr>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces 'dash' on legend", () => {
     expect(
       parseChart(withLegendSpPr(`<a:ln><a:prstDash val="dash"/></a:ln>`))?.legendBorderDash,
-    ).toBe("dash");
-  });
+    ).toBe("dash")
+  })
 
   it("surfaces 'dot' on legend", () => {
     expect(
       parseChart(withLegendSpPr(`<a:ln><a:prstDash val="dot"/></a:ln>`))?.legendBorderDash,
-    ).toBe("dot");
-  });
+    ).toBe("dot")
+  })
 
   it("collapses 'solid' to undefined", () => {
     expect(
       parseChart(withLegendSpPr(`<a:ln><a:prstDash val="solid"/></a:ln>`))?.legendBorderDash,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("returns undefined when chart has no legend", () => {
-    const xml = `<c:chartSpace ${NS}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`;
-    expect(parseChart(xml)?.legendBorderDash).toBeUndefined();
-  });
+    const xml = `<c:chartSpace ${NS}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`
+    expect(parseChart(xml)?.legendBorderDash).toBeUndefined()
+  })
 
   it("ignores stray prstDash on the plot area when reading legendBorderDash", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -23429,13 +23415,13 @@ describe("parseChart — legendBorderDash", () => {
       <c:overlay val="0"/>
     </c:legend>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.legendBorderDash).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.legendBorderDash).toBeUndefined()
+  })
+})
 
 describe("parseChart — titleBorderDash", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withTitleSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS}>
@@ -23452,45 +23438,45 @@ describe("parseChart — titleBorderDash", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces 'dash' on title", () => {
     expect(
       parseChart(withTitleSpPr(`<a:ln><a:prstDash val="dash"/></a:ln>`))?.titleBorderDash,
-    ).toBe("dash");
-  });
+    ).toBe("dash")
+  })
 
   it("surfaces 'sysDash' on title", () => {
     expect(
       parseChart(withTitleSpPr(`<a:ln><a:prstDash val="sysDash"/></a:ln>`))?.titleBorderDash,
-    ).toBe("sysDash");
-  });
+    ).toBe("sysDash")
+  })
 
   it("collapses 'solid' to undefined", () => {
     expect(
       parseChart(withTitleSpPr(`<a:ln><a:prstDash val="solid"/></a:ln>`))?.titleBorderDash,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("returns undefined when chart has no title", () => {
-    const xml = `<c:chartSpace ${NS}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`;
-    expect(parseChart(xml)?.titleBorderDash).toBeUndefined();
-  });
+    const xml = `<c:chartSpace ${NS}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`
+    expect(parseChart(xml)?.titleBorderDash).toBeUndefined()
+  })
 
   it("composes with border color, width, and dash on the same <a:ln>", () => {
     const xml = withTitleSpPr(
       `<a:ln w="25400"><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill><a:prstDash val="dashDot"/></a:ln>`,
-    );
-    const parsed = parseChart(xml);
-    expect(parsed?.titleBorderDash).toBe("dashDot");
-    expect(parsed?.titleBorderColor).toBe("ABCDEF");
-    expect(parsed?.titleBorderWidth).toBe(2);
-  });
-});
+    )
+    const parsed = parseChart(xml)
+    expect(parsed?.titleBorderDash).toBe("dashDot")
+    expect(parsed?.titleBorderColor).toBe("ABCDEF")
+    expect(parsed?.titleBorderWidth).toBe(2)
+  })
+})
 
 describe("parseChart — chartSpaceBorderDash", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withChartSpaceSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS}>
@@ -23503,36 +23489,36 @@ describe("parseChart — chartSpaceBorderDash", () => {
     </c:plotArea>
   </c:chart>
   <c:spPr>${spPrBody}</c:spPr>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces 'dash' on chartSpace", () => {
     expect(
       parseChart(withChartSpaceSpPr(`<a:ln><a:prstDash val="dash"/></a:ln>`))?.chartSpaceBorderDash,
-    ).toBe("dash");
-  });
+    ).toBe("dash")
+  })
 
   it("collapses 'solid' to undefined", () => {
     expect(
       parseChart(withChartSpaceSpPr(`<a:ln><a:prstDash val="solid"/></a:ln>`))
         ?.chartSpaceBorderDash,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("returns undefined when chartSpace has no <c:spPr>", () => {
-    const xml = `<c:chartSpace ${NS}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`;
-    expect(parseChart(xml)?.chartSpaceBorderDash).toBeUndefined();
-  });
+    const xml = `<c:chartSpace ${NS}><c:chart><c:plotArea><c:layout/><c:barChart><c:ser><c:idx val="0"/></c:ser></c:barChart><c:catAx><c:axId val="1"/></c:catAx><c:valAx><c:axId val="2"/></c:valAx></c:plotArea></c:chart></c:chartSpace>`
+    expect(parseChart(xml)?.chartSpaceBorderDash).toBeUndefined()
+  })
 
   it("composes with chartSpaceBorderColor and chartSpaceBorderWidth", () => {
     const xml = withChartSpaceSpPr(
       `<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill><a:prstDash val="dot"/></a:ln>`,
-    );
-    const parsed = parseChart(xml);
-    expect(parsed?.chartSpaceBorderDash).toBe("dot");
-    expect(parsed?.chartSpaceBorderColor).toBe("1F77B4");
-    expect(parsed?.chartSpaceBorderWidth).toBe(2);
-  });
+    )
+    const parsed = parseChart(xml)
+    expect(parsed?.chartSpaceBorderDash).toBe("dot")
+    expect(parsed?.chartSpaceBorderColor).toBe("1F77B4")
+    expect(parsed?.chartSpaceBorderWidth).toBe(2)
+  })
 
   it("ignores a stray prstDash on the plot area", () => {
     const xml = `<c:chartSpace ${NS}>
@@ -23545,13 +23531,13 @@ describe("parseChart — chartSpaceBorderDash", () => {
       <c:spPr><a:ln><a:prstDash val="dash"/></a:ln></c:spPr>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
-    expect(parseChart(xml)?.chartSpaceBorderDash).toBeUndefined();
-  });
-});
+</c:chartSpace>`
+    expect(parseChart(xml)?.chartSpaceBorderDash).toBeUndefined()
+  })
+})
 
 describe("parseChart — axisTitleBorderDash", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withAxisTitleSpPr(spPrBody: string, axis: "catAx" | "valAx" = "catAx"): string {
     return `<c:chartSpace ${NS}>
@@ -23570,50 +23556,50 @@ describe("parseChart — axisTitleBorderDash", () => {
       <c:${axis === "catAx" ? "valAx" : "catAx"}><c:axId val="2"/></c:${axis === "catAx" ? "valAx" : "catAx"}>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces 'dash' on the X axis (catAx)", () => {
     expect(
       parseChart(withAxisTitleSpPr(`<a:ln><a:prstDash val="dash"/></a:ln>`, "catAx"))?.axes?.x
         ?.axisTitleBorderDash,
-    ).toBe("dash");
-  });
+    ).toBe("dash")
+  })
 
   it("surfaces 'dot' on the Y axis (valAx)", () => {
     expect(
       parseChart(withAxisTitleSpPr(`<a:ln><a:prstDash val="dot"/></a:ln>`, "valAx"))?.axes?.y
         ?.axisTitleBorderDash,
-    ).toBe("dot");
-  });
+    ).toBe("dot")
+  })
 
   it("collapses 'solid' to undefined", () => {
     expect(
       parseChart(withAxisTitleSpPr(`<a:ln><a:prstDash val="solid"/></a:ln>`))?.axes?.x
         ?.axisTitleBorderDash,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("returns undefined for unrecognized values", () => {
     expect(
       parseChart(withAxisTitleSpPr(`<a:ln><a:prstDash val="bogus"/></a:ln>`))?.axes?.x
         ?.axisTitleBorderDash,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("composes with axisTitleBorderColor and axisTitleBorderWidth", () => {
     const xml = withAxisTitleSpPr(
       `<a:ln w="25400"><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill><a:prstDash val="dashDot"/></a:ln>`,
-    );
-    const parsed = parseChart(xml);
-    expect(parsed?.axes?.x?.axisTitleBorderDash).toBe("dashDot");
-    expect(parsed?.axes?.x?.axisTitleBorderColor).toBe("ABCDEF");
-    expect(parsed?.axes?.x?.axisTitleBorderWidth).toBe(2);
-  });
-});
+    )
+    const parsed = parseChart(xml)
+    expect(parsed?.axes?.x?.axisTitleBorderDash).toBe("dashDot")
+    expect(parsed?.axes?.x?.axisTitleBorderColor).toBe("ABCDEF")
+    expect(parsed?.axes?.x?.axisTitleBorderWidth).toBe(2)
+  })
+})
 
 describe("parseChart — dataTableBorderDash", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withDTableSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS}>
@@ -23632,50 +23618,48 @@ describe("parseChart — dataTableBorderDash", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces 'dash' on data table", () => {
-    const parsed = parseChart(withDTableSpPr(`<a:ln><a:prstDash val="dash"/></a:ln>`));
+    const parsed = parseChart(withDTableSpPr(`<a:ln><a:prstDash val="dash"/></a:ln>`))
     expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderDash : undefined).toBe(
       "dash",
-    );
-  });
+    )
+  })
 
   it("collapses 'solid' to undefined", () => {
-    const parsed = parseChart(withDTableSpPr(`<a:ln><a:prstDash val="solid"/></a:ln>`));
+    const parsed = parseChart(withDTableSpPr(`<a:ln><a:prstDash val="solid"/></a:ln>`))
     expect(
       typeof parsed?.dataTable === "object" ? parsed.dataTable.borderDash : undefined,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("returns undefined for unrecognized value", () => {
-    const parsed = parseChart(withDTableSpPr(`<a:ln><a:prstDash val="weirdo"/></a:ln>`));
+    const parsed = parseChart(withDTableSpPr(`<a:ln><a:prstDash val="weirdo"/></a:ln>`))
     expect(
       typeof parsed?.dataTable === "object" ? parsed.dataTable.borderDash : undefined,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("composes with dTable border color and width", () => {
     const parsed = parseChart(
       withDTableSpPr(
         `<a:ln w="25400"><a:solidFill><a:srgbClr val="1F77B4"/></a:solidFill><a:prstDash val="dot"/></a:ln>`,
       ),
-    );
+    )
     expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderDash : undefined).toBe(
       "dot",
-    );
+    )
     expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderColor : undefined).toBe(
       "1F77B4",
-    );
-    expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderWidth : undefined).toBe(
-      2,
-    );
-  });
-});
+    )
+    expect(typeof parsed?.dataTable === "object" ? parsed.dataTable.borderWidth : undefined).toBe(2)
+  })
+})
 
 describe("parseChart — dataLabelsBorderDash", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withDLblsSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS}>
@@ -23700,41 +23684,41 @@ describe("parseChart — dataLabelsBorderDash", () => {
       <c:valAx><c:axId val="2"/></c:valAx>
     </c:plotArea>
   </c:chart>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces 'dash' on data labels", () => {
     expect(
       parseChart(withDLblsSpPr(`<a:ln><a:prstDash val="dash"/></a:ln>`))?.series?.[0]?.dataLabels
         ?.borderDash,
-    ).toBe("dash");
-  });
+    ).toBe("dash")
+  })
 
   it("collapses 'solid' to undefined", () => {
     expect(
       parseChart(withDLblsSpPr(`<a:ln><a:prstDash val="solid"/></a:ln>`))?.series?.[0]?.dataLabels
         ?.borderDash,
-    ).toBeUndefined();
-  });
+    ).toBeUndefined()
+  })
 
   it("composes with data-labels border color and width", () => {
     const parsed = parseChart(
       withDLblsSpPr(
         `<a:ln w="25400"><a:solidFill><a:srgbClr val="ABCDEF"/></a:solidFill><a:prstDash val="dashDot"/></a:ln>`,
       ),
-    );
-    expect(parsed?.series?.[0]?.dataLabels?.borderDash).toBe("dashDot");
-    expect(parsed?.series?.[0]?.dataLabels?.borderColor).toBe("ABCDEF");
-    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBe(2);
-  });
-});
+    )
+    expect(parsed?.series?.[0]?.dataLabels?.borderDash).toBe("dashDot")
+    expect(parsed?.series?.[0]?.dataLabels?.borderColor).toBe("ABCDEF")
+    expect(parsed?.series?.[0]?.dataLabels?.borderWidth).toBe(2)
+  })
+})
 
 // ── parseChart — theme color refs (<a:schemeClr>) ─────────────────
 //
 // Surface every theme color slot and modifier combination supported
 // by `parseSchemeClr` / `parseSpPrFill` / `parseSpPrBorderColor`.
 describe("parseChart — theme color refs", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withChartSpaceSpPr(spPrBody: string): string {
     return `<c:chartSpace ${NS}>
@@ -23746,69 +23730,83 @@ describe("parseChart — theme color refs", () => {
     </c:plotArea>
   </c:chart>
   <c:spPr>${spPrBody}</c:spPr>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces every theme color name on chartSpace fill", () => {
     const names = [
-      "bg1", "tx1", "bg2", "tx2",
-      "accent1", "accent2", "accent3", "accent4", "accent5", "accent6",
-      "hlink", "folHlink", "phClr", "dk1", "lt1", "dk2", "lt2",
-    ];
+      "bg1",
+      "tx1",
+      "bg2",
+      "tx2",
+      "accent1",
+      "accent2",
+      "accent3",
+      "accent4",
+      "accent5",
+      "accent6",
+      "hlink",
+      "folHlink",
+      "phClr",
+      "dk1",
+      "lt1",
+      "dk2",
+      "lt2",
+    ]
     for (const theme of names) {
-      const xml = withChartSpaceSpPr(`<a:solidFill><a:schemeClr val="${theme}"/></a:solidFill>`);
-      expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme });
+      const xml = withChartSpaceSpPr(`<a:solidFill><a:schemeClr val="${theme}"/></a:solidFill>`)
+      expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme })
     }
-  });
+  })
 
   it("drops unknown theme names to undefined", () => {
-    const xml = withChartSpaceSpPr(`<a:solidFill><a:schemeClr val="bogus"/></a:solidFill>`);
-    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined();
-  });
+    const xml = withChartSpaceSpPr(`<a:solidFill><a:schemeClr val="bogus"/></a:solidFill>`)
+    expect(parseChart(xml)?.chartSpaceFillColor).toBeUndefined()
+  })
 
   it("surfaces lumMod alone", () => {
     const xml = withChartSpaceSpPr(
       `<a:solidFill><a:schemeClr val="accent1"><a:lumMod val="75000"/></a:schemeClr></a:solidFill>`,
-    );
-    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent1", lumMod: 75000 });
-  });
+    )
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent1", lumMod: 75000 })
+  })
 
   it("surfaces lumMod + lumOff", () => {
     const xml = withChartSpaceSpPr(
       `<a:solidFill><a:schemeClr val="accent2"><a:lumMod val="40000"/><a:lumOff val="60000"/></a:schemeClr></a:solidFill>`,
-    );
+    )
     expect(parseChart(xml)?.chartSpaceFillColor).toEqual({
       theme: "accent2",
       lumMod: 40000,
       lumOff: 60000,
-    });
-  });
+    })
+  })
 
   it("surfaces tint", () => {
     const xml = withChartSpaceSpPr(
       `<a:solidFill><a:schemeClr val="accent3"><a:tint val="20000"/></a:schemeClr></a:solidFill>`,
-    );
-    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent3", tint: 20000 });
-  });
+    )
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent3", tint: 20000 })
+  })
 
   it("surfaces shade", () => {
     const xml = withChartSpaceSpPr(
       `<a:solidFill><a:schemeClr val="accent4"><a:shade val="50000"/></a:schemeClr></a:solidFill>`,
-    );
-    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent4", shade: 50000 });
-  });
+    )
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent4", shade: 50000 })
+  })
 
   it("surfaces alpha", () => {
     const xml = withChartSpaceSpPr(
       `<a:solidFill><a:schemeClr val="accent5"><a:alpha val="80000"/></a:schemeClr></a:solidFill>`,
-    );
-    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent5", alpha: 80000 });
-  });
+    )
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent5", alpha: 80000 })
+  })
 
   it("surfaces all modifiers together", () => {
     const xml = withChartSpaceSpPr(
       `<a:solidFill><a:schemeClr val="accent6"><a:tint val="10000"/><a:shade val="20000"/><a:alpha val="90000"/><a:lumMod val="80000"/><a:lumOff val="20000"/></a:schemeClr></a:solidFill>`,
-    );
+    )
     expect(parseChart(xml)?.chartSpaceFillColor).toEqual({
       theme: "accent6",
       tint: 10000,
@@ -23816,48 +23814,48 @@ describe("parseChart — theme color refs", () => {
       alpha: 90000,
       lumMod: 80000,
       lumOff: 20000,
-    });
-  });
+    })
+  })
 
   it("drops out-of-range lumMod (negative)", () => {
     const xml = withChartSpaceSpPr(
       `<a:solidFill><a:schemeClr val="accent1"><a:lumMod val="-5"/></a:schemeClr></a:solidFill>`,
-    );
-    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent1" });
-  });
+    )
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent1" })
+  })
 
   it("drops out-of-range lumMod (over 100000)", () => {
     const xml = withChartSpaceSpPr(
       `<a:solidFill><a:schemeClr val="accent1"><a:lumMod val="200000"/></a:schemeClr></a:solidFill>`,
-    );
-    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent1" });
-  });
+    )
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent1" })
+  })
 
   it("accepts negative tint within ST_FixedPercentage range", () => {
     const xml = withChartSpaceSpPr(
       `<a:solidFill><a:schemeClr val="accent1"><a:tint val="-50000"/></a:schemeClr></a:solidFill>`,
-    );
-    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent1", tint: -50000 });
-  });
+    )
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent1", tint: -50000 })
+  })
 
   it("drops malformed mod values to bare theme color", () => {
     const xml = withChartSpaceSpPr(
       `<a:solidFill><a:schemeClr val="accent1"><a:lumMod val="abc"/><a:tint val=""/></a:schemeClr></a:solidFill>`,
-    );
-    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent1" });
-  });
+    )
+    expect(parseChart(xml)?.chartSpaceFillColor).toEqual({ theme: "accent1" })
+  })
 
   it("surfaces theme color on chartSpace border (<a:ln>)", () => {
     const xml = withChartSpaceSpPr(
       `<a:ln><a:solidFill><a:schemeClr val="accent2"><a:lumMod val="50000"/></a:schemeClr></a:solidFill></a:ln>`,
-    );
-    expect(parseChart(xml)?.chartSpaceBorderColor).toEqual({ theme: "accent2", lumMod: 50000 });
-  });
-});
+    )
+    expect(parseChart(xml)?.chartSpaceBorderColor).toEqual({ theme: "accent2", lumMod: 50000 })
+  })
+})
 
 // ── parseChart — line cap / compound on chart-space ────────────────
 describe("parseChart — line cap / compound", () => {
-  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`;
+  const NS = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"`
 
   function withChartSpaceLn(lnAttrs: string, lnBody = ""): string {
     return `<c:chartSpace ${NS}>
@@ -23869,58 +23867,58 @@ describe("parseChart — line cap / compound", () => {
     </c:plotArea>
   </c:chart>
   <c:spPr><a:ln${lnAttrs}>${lnBody}</a:ln></c:spPr>
-</c:chartSpace>`;
+</c:chartSpace>`
   }
 
   it("surfaces cap='rnd' on chartSpace border", () => {
-    expect(parseChart(withChartSpaceLn(` cap="rnd"`))?.chartSpaceBorderCap).toBe("rnd");
-  });
+    expect(parseChart(withChartSpaceLn(` cap="rnd"`))?.chartSpaceBorderCap).toBe("rnd")
+  })
 
   it("surfaces cap='sq' on chartSpace border", () => {
-    expect(parseChart(withChartSpaceLn(` cap="sq"`))?.chartSpaceBorderCap).toBe("sq");
-  });
+    expect(parseChart(withChartSpaceLn(` cap="sq"`))?.chartSpaceBorderCap).toBe("sq")
+  })
 
   it("collapses cap='flat' to undefined (OOXML default)", () => {
-    expect(parseChart(withChartSpaceLn(` cap="flat"`))?.chartSpaceBorderCap).toBeUndefined();
-  });
+    expect(parseChart(withChartSpaceLn(` cap="flat"`))?.chartSpaceBorderCap).toBeUndefined()
+  })
 
   it("collapses unknown cap tokens to undefined", () => {
-    expect(parseChart(withChartSpaceLn(` cap="bogus"`))?.chartSpaceBorderCap).toBeUndefined();
-  });
+    expect(parseChart(withChartSpaceLn(` cap="bogus"`))?.chartSpaceBorderCap).toBeUndefined()
+  })
 
   it("surfaces cmpd='dbl' on chartSpace border", () => {
-    expect(parseChart(withChartSpaceLn(` cmpd="dbl"`))?.chartSpaceBorderCompound).toBe("dbl");
-  });
+    expect(parseChart(withChartSpaceLn(` cmpd="dbl"`))?.chartSpaceBorderCompound).toBe("dbl")
+  })
 
   it("surfaces cmpd='thickThin'", () => {
     expect(parseChart(withChartSpaceLn(` cmpd="thickThin"`))?.chartSpaceBorderCompound).toBe(
       "thickThin",
-    );
-  });
+    )
+  })
 
   it("surfaces cmpd='thinThick'", () => {
     expect(parseChart(withChartSpaceLn(` cmpd="thinThick"`))?.chartSpaceBorderCompound).toBe(
       "thinThick",
-    );
-  });
+    )
+  })
 
   it("surfaces cmpd='tri'", () => {
-    expect(parseChart(withChartSpaceLn(` cmpd="tri"`))?.chartSpaceBorderCompound).toBe("tri");
-  });
+    expect(parseChart(withChartSpaceLn(` cmpd="tri"`))?.chartSpaceBorderCompound).toBe("tri")
+  })
 
   it("collapses cmpd='sng' to undefined (OOXML default)", () => {
-    expect(parseChart(withChartSpaceLn(` cmpd="sng"`))?.chartSpaceBorderCompound).toBeUndefined();
-  });
+    expect(parseChart(withChartSpaceLn(` cmpd="sng"`))?.chartSpaceBorderCompound).toBeUndefined()
+  })
 
   it("collapses unknown cmpd tokens to undefined", () => {
-    expect(parseChart(withChartSpaceLn(` cmpd="bogus"`))?.chartSpaceBorderCompound).toBeUndefined();
-  });
+    expect(parseChart(withChartSpaceLn(` cmpd="bogus"`))?.chartSpaceBorderCompound).toBeUndefined()
+  })
 
   it("surfaces cap and cmpd together", () => {
-    const c = parseChart(withChartSpaceLn(` cap="rnd" cmpd="dbl"`));
-    expect(c?.chartSpaceBorderCap).toBe("rnd");
-    expect(c?.chartSpaceBorderCompound).toBe("dbl");
-  });
+    const c = parseChart(withChartSpaceLn(` cap="rnd" cmpd="dbl"`))
+    expect(c?.chartSpaceBorderCap).toBe("rnd")
+    expect(c?.chartSpaceBorderCompound).toBe("dbl")
+  })
 
   it("composes with width / dash / color", () => {
     const c = parseChart(
@@ -23928,11 +23926,11 @@ describe("parseChart — line cap / compound", () => {
         ` w="25400" cap="rnd" cmpd="dbl"`,
         `<a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:prstDash val="dash"/>`,
       ),
-    );
-    expect(c?.chartSpaceBorderCap).toBe("rnd");
-    expect(c?.chartSpaceBorderCompound).toBe("dbl");
-    expect(c?.chartSpaceBorderWidth).toBe(2);
-    expect(c?.chartSpaceBorderDash).toBe("dash");
-    expect(c?.chartSpaceBorderColor).toBe("FF0000");
-  });
-});
+    )
+    expect(c?.chartSpaceBorderCap).toBe("rnd")
+    expect(c?.chartSpaceBorderCompound).toBe("dbl")
+    expect(c?.chartSpaceBorderWidth).toBe(2)
+    expect(c?.chartSpaceBorderDash).toBe("dash")
+    expect(c?.chartSpaceBorderColor).toBe("FF0000")
+  })
+})

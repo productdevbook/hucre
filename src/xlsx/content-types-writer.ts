@@ -1,43 +1,43 @@
 // ── Content Types Writer ──────────────────────────────────────────────
 // Generates [Content_Types].xml for an XLSX package.
 
-import { xmlDocument, xmlSelfClose } from "../xml/writer";
+import { xmlDocument, xmlSelfClose } from "../xml/writer"
 
-const NS_CONTENT_TYPES = "http://schemas.openxmlformats.org/package/2006/content-types";
+const NS_CONTENT_TYPES = "http://schemas.openxmlformats.org/package/2006/content-types"
 
-const CT_RELS = "application/vnd.openxmlformats-package.relationships+xml";
-const CT_XML = "application/xml";
-const CT_WORKBOOK = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml";
-const CT_WORKBOOK_MACRO = "application/vnd.ms-excel.sheet.macroEnabled.main+xml";
-const CT_VBA_PROJECT = "application/vnd.ms-office.vbaProject";
-const CT_WORKSHEET = "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml";
-const CT_STYLES = "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml";
+const CT_RELS = "application/vnd.openxmlformats-package.relationships+xml"
+const CT_XML = "application/xml"
+const CT_WORKBOOK = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
+const CT_WORKBOOK_MACRO = "application/vnd.ms-excel.sheet.macroEnabled.main+xml"
+const CT_VBA_PROJECT = "application/vnd.ms-office.vbaProject"
+const CT_WORKSHEET = "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
+const CT_STYLES = "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"
 const CT_SHARED_STRINGS =
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml";
-const CT_DRAWING = "application/vnd.openxmlformats-officedocument.drawing+xml";
-const CT_CHART = "application/vnd.openxmlformats-officedocument.drawingml.chart+xml";
-const CT_COMMENTS = "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml";
-const CT_VML = "application/vnd.openxmlformats-officedocument.vmlDrawing";
-const CT_TABLE = "application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml";
-const CT_THEME = "application/vnd.openxmlformats-officedocument.theme+xml";
-const CT_THREADED_COMMENTS = "application/vnd.ms-excel.threadedcomments+xml";
-const CT_PERSON = "application/vnd.ms-excel.person+xml";
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"
+const CT_DRAWING = "application/vnd.openxmlformats-officedocument.drawing+xml"
+const CT_CHART = "application/vnd.openxmlformats-officedocument.drawingml.chart+xml"
+const CT_COMMENTS = "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"
+const CT_VML = "application/vnd.openxmlformats-officedocument.vmlDrawing"
+const CT_TABLE = "application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"
+const CT_THEME = "application/vnd.openxmlformats-officedocument.theme+xml"
+const CT_THREADED_COMMENTS = "application/vnd.ms-excel.threadedcomments+xml"
+const CT_PERSON = "application/vnd.ms-excel.person+xml"
 const CT_EXTERNAL_LINK =
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml";
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"
 // WPS-style cell-embedded images. Excel and WPS both declare this part
 // with the generic drawing content type.
-const CT_CELL_IMAGES = "application/vnd.openxmlformats-officedocument.drawing+xml";
-const CT_PIVOT_TABLE = "application/vnd.openxmlformats-officedocument.spreadsheetml.pivotTable+xml";
+const CT_CELL_IMAGES = "application/vnd.openxmlformats-officedocument.drawing+xml"
+const CT_PIVOT_TABLE = "application/vnd.openxmlformats-officedocument.spreadsheetml.pivotTable+xml"
 const CT_PIVOT_CACHE_DEFINITION =
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml";
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml"
 const CT_PIVOT_CACHE_RECORDS =
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheRecords+xml";
-const CT_SLICER = "application/vnd.ms-excel.slicer+xml";
-const CT_SLICER_CACHE = "application/vnd.ms-excel.slicerCache+xml";
-const CT_TIMELINE = "application/vnd.ms-excel.timeline+xml";
-const CT_TIMELINE_CACHE = "application/vnd.ms-excel.timelineCache+xml";
-const CT_CHART_STYLE = "application/vnd.ms-office.chartstyle+xml";
-const CT_CHART_COLORS = "application/vnd.ms-office.chartcolorstyle+xml";
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheRecords+xml"
+const CT_SLICER = "application/vnd.ms-excel.slicer+xml"
+const CT_SLICER_CACHE = "application/vnd.ms-excel.slicerCache+xml"
+const CT_TIMELINE = "application/vnd.ms-excel.timeline+xml"
+const CT_TIMELINE_CACHE = "application/vnd.ms-excel.timelineCache+xml"
+const CT_CHART_STYLE = "application/vnd.ms-office.chartstyle+xml"
+const CT_CHART_COLORS = "application/vnd.ms-office.chartcolorstyle+xml"
 
 /** Image extension → content type mapping */
 const IMAGE_CONTENT_TYPES: Record<string, string> = {
@@ -46,97 +46,97 @@ const IMAGE_CONTENT_TYPES: Record<string, string> = {
   gif: "image/gif",
   svg: "image/svg+xml",
   webp: "image/webp",
-};
+}
 
 export interface ContentTypesOptions {
-  sheetCount: number;
-  hasSharedStrings: boolean;
+  sheetCount: number
+  hasSharedStrings: boolean
   /** 1-based indices of drawings (e.g. [1, 3] means drawing1.xml and drawing3.xml exist) */
-  drawingIndices?: number[];
+  drawingIndices?: number[]
   /**
    * 1-based indices of native chart parts (e.g. [1, 2] for chart1.xml
    * and chart2.xml). One Override per chart is required so Excel can
    * locate the part by content type.
    */
-  chartIndices?: number[];
+  chartIndices?: number[]
   /** Set of image extensions used (e.g. new Set(["png", "jpeg"])) */
-  imageExtensions?: Set<string>;
+  imageExtensions?: Set<string>
   /** 1-based indices of comments (e.g. [1, 2] means comments1.xml and comments2.xml exist) */
-  commentIndices?: number[];
+  commentIndices?: number[]
   /** 1-based indices of tables (e.g. [1, 2, 3] means table1.xml, table2.xml, table3.xml exist) */
-  tableIndices?: number[];
+  tableIndices?: number[]
   /**
    * 1-based indices of sheets that have a threadedComments part. Each
    * entry adds an `Override` for `/xl/threadedComments/threadedCommentN.xml`.
    */
-  threadedCommentSheetIndices?: number[];
+  threadedCommentSheetIndices?: number[]
   /** Whether `xl/persons/person.xml` is present. */
-  hasPersons?: boolean;
+  hasPersons?: boolean
   /**
    * 1-based indices of external link parts. Each entry adds an
    * `Override` for `/xl/externalLinks/externalLinkN.xml`.
    */
-  externalLinkIndices?: number[];
+  externalLinkIndices?: number[]
   /**
    * Whether `xl/cellimages.xml` (WPS DISPIMG cell-embedded image
    * registry) is present and should be re-declared as an Override.
    */
-  hasCellImages?: boolean;
+  hasCellImages?: boolean
   /**
    * 1-based indices of pivot table parts. Each entry adds an
    * `Override` for `/xl/pivotTables/pivotTableN.xml`.
    */
-  pivotTableIndices?: number[];
+  pivotTableIndices?: number[]
   /**
    * 1-based indices of pivot cache definitions. Each entry adds an
    * `Override` for `/xl/pivotCache/pivotCacheDefinitionN.xml`.
    */
-  pivotCacheDefinitionIndices?: number[];
+  pivotCacheDefinitionIndices?: number[]
   /**
    * 1-based indices of pivot cache records. Each entry adds an
    * `Override` for `/xl/pivotCache/pivotCacheRecordsN.xml`.
    */
-  pivotCacheRecordIndices?: number[];
+  pivotCacheRecordIndices?: number[]
   /**
    * 1-based indices of per-sheet slicer parts. Each entry adds an
    * `Override` for `/xl/slicers/slicerN.xml`.
    */
-  slicerIndices?: number[];
+  slicerIndices?: number[]
   /**
    * 1-based indices of workbook-level slicer cache parts. Each entry
    * adds an `Override` for `/xl/slicerCaches/slicerCacheN.xml`.
    */
-  slicerCacheIndices?: number[];
+  slicerCacheIndices?: number[]
   /**
    * 1-based indices of per-sheet timeline parts. Each entry adds an
    * `Override` for `/xl/timelines/timelineN.xml`.
    */
-  timelineIndices?: number[];
+  timelineIndices?: number[]
   /**
    * 1-based indices of workbook-level timeline cache parts. Each entry
    * adds an `Override` for `/xl/timelineCaches/timelineCacheN.xml`.
    */
-  timelineCacheIndices?: number[];
+  timelineCacheIndices?: number[]
   /**
    * 1-based indices of chart style parts (`/xl/charts/styleN.xml`).
    * Excel 2013+ writes one style file per chart. Older charts omit it.
    */
-  chartStyleIndices?: number[];
+  chartStyleIndices?: number[]
   /**
    * 1-based indices of chart color parts (`/xl/charts/colorsN.xml`).
    * Excel 2013+ writes one colors file per chart. Older charts omit it.
    */
-  chartColorsIndices?: number[];
+  chartColorsIndices?: number[]
   /** Whether docProps/core.xml is present */
-  hasCoreProps?: boolean;
+  hasCoreProps?: boolean
   /** Whether docProps/app.xml is present */
-  hasAppProps?: boolean;
+  hasAppProps?: boolean
   /** Whether docProps/custom.xml is present */
-  hasCustomProps?: boolean;
+  hasCustomProps?: boolean
   /** Whether VBA macros are present (xl/vbaProject.bin). Uses XLSM content types. */
-  hasMacros?: boolean;
+  hasMacros?: boolean
   /** Whether Excel 2024 checkbox FeaturePropertyBag is present. */
-  hasFeaturePropertyBag?: boolean;
+  hasFeaturePropertyBag?: boolean
 }
 
 /** Generate [Content_Types].xml for XLSX */
@@ -145,33 +145,33 @@ export function writeContentTypes(
   hasSharedStrings?: boolean,
 ): string {
   // Support both old and new call signatures
-  let opts: ContentTypesOptions;
+  let opts: ContentTypesOptions
   if (typeof sheetCountOrOptions === "number") {
     opts = {
       sheetCount: sheetCountOrOptions,
       hasSharedStrings: hasSharedStrings ?? false,
-    };
+    }
   } else {
-    opts = sheetCountOrOptions;
+    opts = sheetCountOrOptions
   }
 
-  const children: string[] = [];
+  const children: string[] = []
 
   // Default extension mappings
-  children.push(xmlSelfClose("Default", { Extension: "rels", ContentType: CT_RELS }));
-  children.push(xmlSelfClose("Default", { Extension: "xml", ContentType: CT_XML }));
+  children.push(xmlSelfClose("Default", { Extension: "rels", ContentType: CT_RELS }))
+  children.push(xmlSelfClose("Default", { Extension: "xml", ContentType: CT_XML }))
 
   // Default extension for VBA binary (needed for macro-enabled workbooks)
   if (opts.hasMacros) {
-    children.push(xmlSelfClose("Default", { Extension: "bin", ContentType: CT_VBA_PROJECT }));
+    children.push(xmlSelfClose("Default", { Extension: "bin", ContentType: CT_VBA_PROJECT }))
   }
 
   // Default extensions for image types
   if (opts.imageExtensions) {
     for (const ext of opts.imageExtensions) {
-      const ct = IMAGE_CONTENT_TYPES[ext];
+      const ct = IMAGE_CONTENT_TYPES[ext]
       if (ct) {
-        children.push(xmlSelfClose("Default", { Extension: ext, ContentType: ct }));
+        children.push(xmlSelfClose("Default", { Extension: ext, ContentType: ct }))
       }
     }
   }
@@ -182,7 +182,7 @@ export function writeContentTypes(
       PartName: "/xl/workbook.xml",
       ContentType: opts.hasMacros ? CT_WORKBOOK_MACRO : CT_WORKBOOK,
     }),
-  );
+  )
 
   // Override for each worksheet
   for (let i = 1; i <= opts.sheetCount; i++) {
@@ -191,7 +191,7 @@ export function writeContentTypes(
         PartName: `/xl/worksheets/sheet${i}.xml`,
         ContentType: CT_WORKSHEET,
       }),
-    );
+    )
   }
 
   // Override for styles
@@ -200,7 +200,7 @@ export function writeContentTypes(
       PartName: "/xl/styles.xml",
       ContentType: CT_STYLES,
     }),
-  );
+  )
 
   // Override for theme
   children.push(
@@ -208,7 +208,7 @@ export function writeContentTypes(
       PartName: "/xl/theme/theme1.xml",
       ContentType: CT_THEME,
     }),
-  );
+  )
 
   // Override for shared strings (if present)
   if (opts.hasSharedStrings) {
@@ -217,7 +217,7 @@ export function writeContentTypes(
         PartName: "/xl/sharedStrings.xml",
         ContentType: CT_SHARED_STRINGS,
       }),
-    );
+    )
   }
 
   // Override for each drawing
@@ -228,7 +228,7 @@ export function writeContentTypes(
           PartName: `/xl/drawings/drawing${idx}.xml`,
           ContentType: CT_DRAWING,
         }),
-      );
+      )
     }
   }
 
@@ -240,13 +240,13 @@ export function writeContentTypes(
           PartName: `/xl/charts/chart${idx}.xml`,
           ContentType: CT_CHART,
         }),
-      );
+      )
     }
   }
 
   // Default extension for VML (needed for comment shapes)
   if (opts.commentIndices && opts.commentIndices.length > 0) {
-    children.push(xmlSelfClose("Default", { Extension: "vml", ContentType: CT_VML }));
+    children.push(xmlSelfClose("Default", { Extension: "vml", ContentType: CT_VML }))
   }
 
   // Override for each comments file
@@ -257,7 +257,7 @@ export function writeContentTypes(
           PartName: `/xl/comments${idx}.xml`,
           ContentType: CT_COMMENTS,
         }),
-      );
+      )
     }
   }
 
@@ -269,7 +269,7 @@ export function writeContentTypes(
           PartName: `/xl/tables/table${idx}.xml`,
           ContentType: CT_TABLE,
         }),
-      );
+      )
     }
   }
 
@@ -281,7 +281,7 @@ export function writeContentTypes(
           PartName: `/xl/threadedComments/threadedComment${idx}.xml`,
           ContentType: CT_THREADED_COMMENTS,
         }),
-      );
+      )
     }
   }
 
@@ -292,7 +292,7 @@ export function writeContentTypes(
         PartName: "/xl/persons/person.xml",
         ContentType: CT_PERSON,
       }),
-    );
+    )
   }
 
   // Override for each external link
@@ -303,7 +303,7 @@ export function writeContentTypes(
           PartName: `/xl/externalLinks/externalLink${idx}.xml`,
           ContentType: CT_EXTERNAL_LINK,
         }),
-      );
+      )
     }
   }
 
@@ -314,7 +314,7 @@ export function writeContentTypes(
         PartName: "/xl/cellimages.xml",
         ContentType: CT_CELL_IMAGES,
       }),
-    );
+    )
   }
 
   // Override for each pivot table
@@ -325,7 +325,7 @@ export function writeContentTypes(
           PartName: `/xl/pivotTables/pivotTable${idx}.xml`,
           ContentType: CT_PIVOT_TABLE,
         }),
-      );
+      )
     }
   }
 
@@ -337,7 +337,7 @@ export function writeContentTypes(
           PartName: `/xl/pivotCache/pivotCacheDefinition${idx}.xml`,
           ContentType: CT_PIVOT_CACHE_DEFINITION,
         }),
-      );
+      )
     }
   }
 
@@ -349,7 +349,7 @@ export function writeContentTypes(
           PartName: `/xl/pivotCache/pivotCacheRecords${idx}.xml`,
           ContentType: CT_PIVOT_CACHE_RECORDS,
         }),
-      );
+      )
     }
   }
 
@@ -361,7 +361,7 @@ export function writeContentTypes(
           PartName: `/xl/slicers/slicer${idx}.xml`,
           ContentType: CT_SLICER,
         }),
-      );
+      )
     }
   }
 
@@ -373,7 +373,7 @@ export function writeContentTypes(
           PartName: `/xl/slicerCaches/slicerCache${idx}.xml`,
           ContentType: CT_SLICER_CACHE,
         }),
-      );
+      )
     }
   }
 
@@ -385,7 +385,7 @@ export function writeContentTypes(
           PartName: `/xl/timelines/timeline${idx}.xml`,
           ContentType: CT_TIMELINE,
         }),
-      );
+      )
     }
   }
 
@@ -397,7 +397,7 @@ export function writeContentTypes(
           PartName: `/xl/timelineCaches/timelineCache${idx}.xml`,
           ContentType: CT_TIMELINE_CACHE,
         }),
-      );
+      )
     }
   }
 
@@ -409,7 +409,7 @@ export function writeContentTypes(
           PartName: `/xl/charts/style${idx}.xml`,
           ContentType: CT_CHART_STYLE,
         }),
-      );
+      )
     }
   }
 
@@ -421,7 +421,7 @@ export function writeContentTypes(
           PartName: `/xl/charts/colors${idx}.xml`,
           ContentType: CT_CHART_COLORS,
         }),
-      );
+      )
     }
   }
 
@@ -432,7 +432,7 @@ export function writeContentTypes(
         PartName: "/xl/featurePropertyBag/featurePropertyBag.xml",
         ContentType: "application/vnd.ms-excel.featurepropertybag+xml",
       }),
-    );
+    )
   }
 
   // Override for docProps
@@ -442,7 +442,7 @@ export function writeContentTypes(
         PartName: "/docProps/core.xml",
         ContentType: "application/vnd.openxmlformats-package.core-properties+xml",
       }),
-    );
+    )
   }
   if (opts.hasAppProps) {
     children.push(
@@ -450,7 +450,7 @@ export function writeContentTypes(
         PartName: "/docProps/app.xml",
         ContentType: "application/vnd.openxmlformats-officedocument.extended-properties+xml",
       }),
-    );
+    )
   }
   if (opts.hasCustomProps) {
     children.push(
@@ -458,8 +458,8 @@ export function writeContentTypes(
         PartName: "/docProps/custom.xml",
         ContentType: "application/vnd.openxmlformats-officedocument.custom-properties+xml",
       }),
-    );
+    )
   }
 
-  return xmlDocument("Types", { xmlns: NS_CONTENT_TYPES }, children);
+  return xmlDocument("Types", { xmlns: NS_CONTENT_TYPES }, children)
 }

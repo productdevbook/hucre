@@ -7,27 +7,27 @@
 // and is not (yet) part of the published OOXML spec. Apart from this writer
 // hucre does not otherwise model the property bag.
 
-import { xmlDocument, xmlElement, xmlSelfClose } from "../xml/writer";
+import { xmlDocument, xmlElement, xmlSelfClose } from "../xml/writer"
 
 /** Namespace used by `xfpb:`-qualified elements inside cellXf and dxf extLst. */
-export const FPB_NS = "http://schemas.microsoft.com/office/spreadsheetml/2022/featurepropertybag";
+export const FPB_NS = "http://schemas.microsoft.com/office/spreadsheetml/2022/featurepropertybag"
 
 /** Cell-XF complement extension URI (per-xf, used by checkboxes). */
-export const FPB_XF_EXT_URI = "{C7286773-470A-42A8-94C5-96B5CB345126}";
+export const FPB_XF_EXT_URI = "{C7286773-470A-42A8-94C5-96B5CB345126}"
 
 /** DXF complement extension URI — unused today but reserved for the
  *  conditional-formatting + checkbox combination XlsxWriter supports. */
-export const FPB_DXF_EXT_URI = "{0417FA29-78FA-4A13-93AC-8FF0FAFDF519}";
+export const FPB_DXF_EXT_URI = "{0417FA29-78FA-4A13-93AC-8FF0FAFDF519}"
 
 /** Workbook relationship type for the part. */
 export const FPB_REL_TYPE =
-  "http://schemas.microsoft.com/office/2022/11/relationships/FeaturePropertyBag";
+  "http://schemas.microsoft.com/office/2022/11/relationships/FeaturePropertyBag"
 
 /** Content-type for the part. */
-export const FPB_CONTENT_TYPE = "application/vnd.ms-excel.featurepropertybag+xml";
+export const FPB_CONTENT_TYPE = "application/vnd.ms-excel.featurepropertybag+xml"
 
 /** Path inside the XLSX archive. */
-export const FPB_PART_PATH = "xl/featurePropertyBag/featurePropertyBag.xml";
+export const FPB_PART_PATH = "xl/featurePropertyBag/featurePropertyBag.xml"
 
 /**
  * Emit the fixed property-bag chain that Excel 2024 expects when at least
@@ -44,6 +44,6 @@ export function writeFeaturePropertyBagXml(): string {
     xmlElement("bag", { type: "XFComplements", extRef: "XFComplementsMapperExtRef" }, [
       xmlElement("a", { k: "MappedFeaturePropertyBags" }, [xmlElement("bagId", undefined, "2")]),
     ]),
-  ];
-  return xmlDocument("FeaturePropertyBags", { xmlns: FPB_NS }, bags);
+  ]
+  return xmlDocument("FeaturePropertyBags", { xmlns: FPB_NS }, bags)
 }

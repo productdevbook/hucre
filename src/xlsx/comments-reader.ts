@@ -1,123 +1,123 @@
 // ── Comments Reader ──────────────────────────────────────────────────
 // Parses xl/commentsN.xml into a map of cell references to CellComment.
 
-import type { CellComment } from "../_types";
-import { parseSax } from "../xml/parser";
+import type { CellComment } from "../_types"
+import { parseSax } from "../xml/parser"
 
 /**
  * Parse xl/commentsN.xml and return a map of cell reference (e.g. "A1")
  * to CellComment objects.
  */
 export function parseComments(xml: string): Map<string, CellComment> {
-  const comments = new Map<string, CellComment>();
-  const authors: string[] = [];
+  const comments = new Map<string, CellComment>()
+  const authors: string[] = []
 
   // SAX parsing state
-  let inAuthors = false;
-  let inAuthor = false;
-  let inCommentList = false;
-  let inComment = false;
-  let inText = false;
-  let _inR = false;
-  let inT = false;
+  let inAuthors = false
+  let inAuthor = false
+  let inCommentList = false
+  let inComment = false
+  let inText = false
+  let _inR = false
+  let inT = false
 
-  let authorText = "";
-  let currentRef = "";
-  let currentAuthorId = -1;
-  let currentText = "";
+  let authorText = ""
+  let currentRef = ""
+  let currentAuthorId = -1
+  let currentText = ""
 
   parseSax(xml, {
     onOpenTag(tag, attrs) {
-      const local = tag.includes(":") ? tag.slice(tag.indexOf(":") + 1) : tag;
+      const local = tag.includes(":") ? tag.slice(tag.indexOf(":") + 1) : tag
 
       switch (local) {
         case "authors":
-          inAuthors = true;
-          break;
+          inAuthors = true
+          break
         case "author":
           if (inAuthors) {
-            inAuthor = true;
-            authorText = "";
+            inAuthor = true
+            authorText = ""
           }
-          break;
+          break
         case "commentList":
-          inCommentList = true;
-          break;
+          inCommentList = true
+          break
         case "comment":
           if (inCommentList) {
-            inComment = true;
-            currentRef = attrs["ref"] ?? "";
-            currentAuthorId = attrs["authorId"] ? Number(attrs["authorId"]) : -1;
-            currentText = "";
+            inComment = true
+            currentRef = attrs["ref"] ?? ""
+            currentAuthorId = attrs["authorId"] ? Number(attrs["authorId"]) : -1
+            currentText = ""
           }
-          break;
+          break
         case "text":
           if (inComment) {
-            inText = true;
+            inText = true
           }
-          break;
+          break
         case "r":
           if (inText) {
-            _inR = true;
+            _inR = true
           }
-          break;
+          break
         case "t":
           if (inText) {
-            inT = true;
+            inT = true
           }
-          break;
+          break
       }
     },
 
     onText(text) {
       if (inAuthor) {
-        authorText += text;
+        authorText += text
       } else if (inT) {
-        currentText += text;
+        currentText += text
       }
     },
 
     onCloseTag(tag) {
-      const local = tag.includes(":") ? tag.slice(tag.indexOf(":") + 1) : tag;
+      const local = tag.includes(":") ? tag.slice(tag.indexOf(":") + 1) : tag
 
       switch (local) {
         case "authors":
-          inAuthors = false;
-          break;
+          inAuthors = false
+          break
         case "author":
           if (inAuthor) {
-            authors.push(authorText);
-            inAuthor = false;
+            authors.push(authorText)
+            inAuthor = false
           }
-          break;
+          break
         case "commentList":
-          inCommentList = false;
-          break;
+          inCommentList = false
+          break
         case "comment":
           if (inComment && currentRef) {
-            const comment: CellComment = { text: currentText };
+            const comment: CellComment = { text: currentText }
             if (currentAuthorId >= 0 && currentAuthorId < authors.length) {
-              const authorName = authors[currentAuthorId];
+              const authorName = authors[currentAuthorId]
               if (authorName) {
-                comment.author = authorName;
+                comment.author = authorName
               }
             }
-            comments.set(currentRef, comment);
-            inComment = false;
+            comments.set(currentRef, comment)
+            inComment = false
           }
-          break;
+          break
         case "text":
-          inText = false;
-          break;
+          inText = false
+          break
         case "r":
-          _inR = false;
-          break;
+          _inR = false
+          break
         case "t":
-          inT = false;
-          break;
+          inT = false
+          break
       }
     },
-  });
+  })
 
-  return comments;
+  return comments
 }

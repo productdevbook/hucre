@@ -1,4 +1,4 @@
-import { defineBuildConfig } from "obuild/config";
+import { defineBuildConfig } from "obuild/config"
 
 export default defineBuildConfig({
   entries: [
@@ -9,4 +9,4 @@ export default defineBuildConfig({
       dts: true,
     },
   ],
-});
+})

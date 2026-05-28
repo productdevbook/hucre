@@ -13,13 +13,13 @@ import type {
   ReadInput,
   TableDefinition,
   TableColumn,
-} from "./_types";
-import { readXlsx } from "./xlsx/reader";
-import { writeXlsx } from "./xlsx/writer";
-import { readOds } from "./ods/reader";
-import { writeOds } from "./ods/writer";
-import { EncryptedFileError, UnsupportedFormatError } from "./errors";
-import { isOle2Container, readInputToUint8Array } from "./_input";
+} from "./_types"
+import { readXlsx } from "./xlsx/reader"
+import { writeXlsx } from "./xlsx/writer"
+import { readOds } from "./ods/reader"
+import { writeOds } from "./ods/writer"
+import { EncryptedFileError, UnsupportedFormatError } from "./errors"
+import { isOle2Container, readInputToUint8Array } from "./_input"
 
 // ── Format Detection ────────────────────────────────────────────────
 
@@ -32,44 +32,44 @@ import { isOle2Container, readInputToUint8Array } from "./_input";
 function detectFormat(data: Uint8Array): "xlsx" | "ods" {
   // Both XLSX and ODS start with PK (ZIP magic: 0x504B0304)
   if (data.length < 4 || data[0] !== 0x50 || data[1] !== 0x4b) {
-    throw new UnsupportedFormatError("unknown (not a ZIP archive)");
+    throw new UnsupportedFormatError("unknown (not a ZIP archive)")
   }
 
   // Read the first local file header to get the filename
   // Local file header: offset 26 = filename length (2 bytes LE), offset 30+ = filename
   if (data.length < 30) {
-    throw new UnsupportedFormatError("unknown (ZIP too short)");
+    throw new UnsupportedFormatError("unknown (ZIP too short)")
   }
 
-  const filenameLen = data[26]! | (data[27]! << 8);
+  const filenameLen = data[26]! | (data[27]! << 8)
   if (data.length < 30 + filenameLen) {
-    throw new UnsupportedFormatError("unknown (ZIP truncated)");
+    throw new UnsupportedFormatError("unknown (ZIP truncated)")
   }
 
-  const decoder = new TextDecoder("utf-8");
-  const firstName = decoder.decode(data.subarray(30, 30 + filenameLen));
+  const decoder = new TextDecoder("utf-8")
+  const firstName = decoder.decode(data.subarray(30, 30 + filenameLen))
 
   if (firstName === "mimetype") {
     // Read the extra field length to find where file data starts
-    const extraLen = data[28]! | (data[29]! << 8);
-    const dataOffset = 30 + filenameLen + extraLen;
+    const extraLen = data[28]! | (data[29]! << 8)
+    const dataOffset = 30 + filenameLen + extraLen
 
     // Read the uncompressed size from the local header (offset 22, 4 bytes LE)
-    const uncompSize = data[22]! | (data[23]! << 8) | (data[24]! << 16) | (data[25]! << 24);
+    const uncompSize = data[22]! | (data[23]! << 8) | (data[24]! << 16) | (data[25]! << 24)
 
     if (uncompSize > 0 && data.length >= dataOffset + uncompSize) {
-      const mimeContent = decoder.decode(data.subarray(dataOffset, dataOffset + uncompSize));
+      const mimeContent = decoder.decode(data.subarray(dataOffset, dataOffset + uncompSize))
       if (mimeContent.trim() === "application/vnd.oasis.opendocument.spreadsheet") {
-        return "ods";
+        return "ods"
       }
     }
 
     // Even if we couldn't read the content, "mimetype" as first entry is ODS convention
-    return "ods";
+    return "ods"
   }
 
   // Default: assume XLSX for any other ZIP
-  return "xlsx";
+  return "xlsx"
 }
 
 // ── Public API ──────────────────────────────────────────────────────
@@ -82,7 +82,7 @@ function detectFormat(data: Uint8Array): "xlsx" | "ods" {
  * ReadableStream input is buffered fully before format detection runs.
  */
 export async function read(input: ReadInput, options?: ReadOptions): Promise<Workbook> {
-  const data = await readInputToUint8Array(input);
+  const data = await readInputToUint8Array(input)
 
   // Surface password-protected workbooks (OLE2/CFB envelope) before
   // `detectFormat` rejects them as "not a ZIP archive". The container
@@ -90,15 +90,15 @@ export async function read(input: ReadInput, options?: ReadOptions): Promise<Wor
   // or ODS, so we leave `format` unset on the error. Decryption is
   // tracked in #156.
   if (isOle2Container(data)) {
-    throw new EncryptedFileError();
+    throw new EncryptedFileError()
   }
 
-  const format = detectFormat(data);
+  const format = detectFormat(data)
 
   if (format === "ods") {
-    return readOds(data, options);
+    return readOds(data, options)
   }
-  return readXlsx(data, options);
+  return readXlsx(data, options)
 }
 
 /**
@@ -107,11 +107,11 @@ export async function read(input: ReadInput, options?: ReadOptions): Promise<Wor
 export async function write(
   options: WriteOptions & { format?: "xlsx" | "ods" },
 ): Promise<WriteOutput> {
-  const format = options.format ?? "xlsx";
+  const format = options.format ?? "xlsx"
   if (format === "ods") {
-    return writeOds(options);
+    return writeOds(options)
   }
-  return writeXlsx(options);
+  return writeXlsx(options)
 }
 
 /**
@@ -122,62 +122,62 @@ export async function readObjects<T extends Record<string, CellValue> = Record<s
   input: ReadInput,
   options?: ReadOptions,
 ): Promise<T[]> {
-  const workbook = await read(input, options);
+  const workbook = await read(input, options)
 
   if (workbook.sheets.length === 0) {
-    return [];
+    return []
   }
 
-  const sheet = workbook.sheets[0]!;
-  const rows = sheet.rows;
+  const sheet = workbook.sheets[0]!
+  const rows = sheet.rows
 
   if (rows.length === 0) {
-    return [];
+    return []
   }
 
   // First row is headers
-  const headerRow = rows[0]!;
+  const headerRow = rows[0]!
   const headers = headerRow.map((h) => {
-    if (h === null || h === undefined) return "";
-    return String(h).trim();
-  });
+    if (h === null || h === undefined) return ""
+    return String(h).trim()
+  })
 
   if (headers.length === 0) {
-    return [];
+    return []
   }
 
-  const data: T[] = [];
+  const data: T[] = []
   for (let i = 1; i < rows.length; i++) {
-    const row = rows[i]!;
-    const obj: Record<string, CellValue> = {};
+    const row = rows[i]!
+    const obj: Record<string, CellValue> = {}
     for (let j = 0; j < headers.length; j++) {
-      const key = headers[j]!;
-      if (key === "") continue;
-      obj[key] = j < row.length ? (row[j] ?? null) : null;
+      const key = headers[j]!
+      if (key === "") continue
+      obj[key] = j < row.length ? (row[j] ?? null) : null
     }
-    data.push(obj as T);
+    data.push(obj as T)
   }
 
-  return data;
+  return data
 }
 
 /** Options for writeObjects table generation */
 export interface WriteObjectsTableOption {
   /** Table name (must be unique in workbook) */
-  name: string;
+  name: string
   /** Table style (e.g. "TableStyleMedium2") */
-  style?: string;
+  style?: string
   /** Show totals row */
-  showTotalRow?: boolean;
+  showTotalRow?: boolean
   /** Show auto-filter. Default: true */
-  showAutoFilter?: boolean;
+  showAutoFilter?: boolean
   /** Show banded rows. Default: true */
-  showRowStripes?: boolean;
+  showRowStripes?: boolean
   /** Totals per column key: { revenue: "sum", margin: "average" } */
   totals?: Record<
     string,
     "sum" | "average" | "count" | "min" | "max" | "countNums" | "stdDev" | "var"
-  >;
+  >
 }
 
 /**
@@ -187,56 +187,56 @@ export interface WriteObjectsTableOption {
 export async function writeObjects(
   data: Array<Record<string, CellValue>>,
   options?: {
-    sheetName?: string;
-    format?: "xlsx" | "ods";
+    sheetName?: string
+    format?: "xlsx" | "ods"
     /** Wrap output in a native Excel table (ListObject) */
-    table?: WriteObjectsTableOption;
+    table?: WriteObjectsTableOption
   },
 ): Promise<WriteOutput> {
-  const sheetName = options?.sheetName ?? "Sheet1";
-  const format = options?.format ?? "xlsx";
+  const sheetName = options?.sheetName ?? "Sheet1"
+  const format = options?.format ?? "xlsx"
 
   if (data.length === 0) {
     return write({
       sheets: [{ name: sheetName, rows: [] }],
       format,
-    });
+    })
   }
 
   // Infer columns from first object's keys
-  const keys = Object.keys(data[0]!);
+  const keys = Object.keys(data[0]!)
 
   // Build rows: header row + data rows
-  const rows: CellValue[][] = [];
+  const rows: CellValue[][] = []
 
   // Header row
-  rows.push(keys);
+  rows.push(keys)
 
   // Data rows
   for (const item of data) {
     const row: CellValue[] = keys.map((key) => {
-      const val = item[key];
-      return val === undefined ? null : val;
-    });
-    rows.push(row);
+      const val = item[key]
+      return val === undefined ? null : val
+    })
+    rows.push(row)
   }
 
   // Build Excel table if requested
-  let tables: TableDefinition[] | undefined;
+  let tables: TableDefinition[] | undefined
   if (options?.table) {
-    const t = options.table;
-    const colCount = keys.length;
-    const rowCount = data.length + 1; // +1 for header
-    const endCol = colToLetterSimple(colCount - 1);
-    const range = `A1:${endCol}${rowCount + (t.showTotalRow ? 1 : 0)}`;
+    const t = options.table
+    const colCount = keys.length
+    const rowCount = data.length + 1 // +1 for header
+    const endCol = colToLetterSimple(colCount - 1)
+    const range = `A1:${endCol}${rowCount + (t.showTotalRow ? 1 : 0)}`
 
     const tableColumns: TableColumn[] = keys.map((key) => {
-      const totalFn = t.totals?.[key];
+      const totalFn = t.totals?.[key]
       return {
         name: key,
         ...(totalFn ? { totalFunction: totalFn } : {}),
-      };
-    });
+      }
+    })
 
     tables = [
       {
@@ -249,22 +249,22 @@ export async function writeObjects(
         showRowStripes: t.showRowStripes,
         showTotalRow: t.showTotalRow,
       },
-    ];
+    ]
   }
 
   return write({
     sheets: [{ name: sheetName, rows, tables }],
     format,
-  });
+  })
 }
 
 /** Simple column index to letter (0-based) */
 function colToLetterSimple(col: number): string {
-  let result = "";
-  let n = col;
+  let result = ""
+  let n = col
   while (n >= 0) {
-    result = String.fromCharCode(65 + (n % 26)) + result;
-    n = Math.floor(n / 26) - 1;
+    result = String.fromCharCode(65 + (n % 26)) + result
+    n = Math.floor(n / 26) - 1
   }
-  return result;
+  return result
 }

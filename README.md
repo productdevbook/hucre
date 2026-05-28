@@ -21,11 +21,11 @@ npm install hucre
 ```
 
 ```ts
-import { readXlsx, writeXlsx } from "hucre";
+import { readXlsx, writeXlsx } from "hucre"
 
 // Read an XLSX file
-const workbook = await readXlsx(buffer);
-console.log(workbook.sheets[0].rows);
+const workbook = await readXlsx(buffer)
+console.log(workbook.sheets[0].rows)
 
 // Write an XLSX file
 const xlsx = await writeXlsx({
@@ -43,7 +43,7 @@ const xlsx = await writeXlsx({
       ],
     },
   ],
-});
+})
 ```
 
 ## Tree Shaking
@@ -51,11 +51,11 @@ const xlsx = await writeXlsx({
 Import only what you need:
 
 ```ts
-import { readXlsx, writeXlsx } from "hucre/xlsx"; // XLSX only
-import { parseCsv, writeCsv } from "hucre/csv"; // CSV only (~2 KB gzipped)
-import { readOds, writeOds } from "hucre/ods"; // ODS only
-import { parseJson, writeNdjson } from "hucre/json"; // JSON / NDJSON
-import { readXml, writeXml } from "hucre/xml"; // Tabular XML
+import { readXlsx, writeXlsx } from "hucre/xlsx" // XLSX only
+import { parseCsv, writeCsv } from "hucre/csv" // CSV only (~2 KB gzipped)
+import { readOds, writeOds } from "hucre/ods" // ODS only
+import { parseJson, writeNdjson } from "hucre/json" // JSON / NDJSON
+import { readXml, writeXml } from "hucre/xml" // Tabular XML
 ```
 
 ## Why hucre?
@@ -103,18 +103,18 @@ import { readXml, writeXml } from "hucre/xml"; // Tabular XML
 ### Reading
 
 ```ts
-import { readXlsx } from "hucre/xlsx";
+import { readXlsx } from "hucre/xlsx"
 
 const wb = await readXlsx(uint8Array, {
   sheets: [0, "Products"], // Filter sheets by index or name
   readStyles: true, // Parse cell styles
   dateSystem: "auto", // Auto-detect 1900/1904
-});
+})
 
 for (const sheet of wb.sheets) {
-  console.log(sheet.name); // "Products"
-  console.log(sheet.rows); // CellValue[][]
-  console.log(sheet.merges); // MergeRange[]
+  console.log(sheet.name) // "Products"
+  console.log(sheet.rows) // CellValue[][]
+  console.log(sheet.merges) // MergeRange[]
 }
 ```
 
@@ -125,7 +125,7 @@ selection without paying the I/O cost of the full read:
 ```ts
 const wb = await readXlsx(buf, {
   sheets: (info) => !info.hidden && !info.veryHidden,
-});
+})
 // info: { name, index, hidden?, veryHidden? }
 ```
 
@@ -134,7 +134,7 @@ Supported cell types: strings, numbers, booleans, dates, formulas, rich text, er
 ### Writing
 
 ```ts
-import { writeXlsx } from "hucre/xlsx";
+import { writeXlsx } from "hucre/xlsx"
 
 const buffer = await writeXlsx({
   sheets: [
@@ -154,7 +154,7 @@ const buffer = await writeXlsx({
     },
   ],
   defaultFont: { name: "Calibri", size: 11 },
-});
+})
 ```
 
 Features: cell styles, auto column widths, merged cells, freeze/split panes, auto-filter with criteria, data validation, hyperlinks, images (PNG/JPEG/GIF/SVG/WebP), comments, tables, conditional formatting (cellIs/colorScale/dataBar/iconSet), named ranges, print settings, page breaks, sheet protection, workbook protection, rich text, shared/array/dynamic formulas, sparklines, textboxes, background images, number formats, hidden sheets, Excel 2024 native checkboxes, HTML/Markdown/JSON/TSV export, template engine.
@@ -174,7 +174,7 @@ const buffer = await writeXlsx({
       data: products,
     },
   ],
-});
+})
 ```
 
 Calculates optimal column widths from cell content — font-aware, handles CJK double-width characters, number formats, min/max constraints.
@@ -209,7 +209,7 @@ const buffer = await writeXlsx({
       ],
     },
   ],
-});
+})
 ```
 
 ### Hyperlinks
@@ -240,7 +240,32 @@ const buffer = await writeXlsx({
       ]),
     },
   ],
-});
+})
+```
+
+For tabular reports, put links **inline in `data` rows** instead of a parallel
+`cells` map — keyed by the column's `key`. Use the `link()` helper (or a plain
+`{ text, hyperlink, tooltip? }` object). A `#`-prefixed target is treated as an
+internal reference (`#Sheet2!A1`).
+
+```ts
+import { writeXlsx, link } from "hucre/xlsx"
+
+await writeXlsx({
+  sheets: [
+    {
+      name: "Summary",
+      columns: [
+        { header: "Link", key: "link" },
+        { header: "ID", key: "id" },
+      ],
+      data: [
+        { link: link("Open", "https://example.com/items/abc-123"), id: "abc-123" },
+        { link: { text: "Open", hyperlink: "https://example.com/items/def-456" }, id: "def-456" },
+      ],
+    },
+  ],
+})
 ```
 
 ### Streaming
@@ -248,18 +273,18 @@ const buffer = await writeXlsx({
 Process large files row-by-row without loading everything into memory:
 
 ```ts
-import { streamXlsxRows, XlsxStreamWriter } from "hucre/xlsx";
+import { streamXlsxRows, XlsxStreamWriter } from "hucre/xlsx"
 
 // Stream read — async generator yields rows one at a time
 for await (const row of streamXlsxRows(buffer)) {
-  console.log(row.index, row.values);
+  console.log(row.index, row.values)
 }
 
 // Cap the number of rows yielded (preview / sampling). The underlying
 // ZIP/SAX stream is cancelled once the cap is reached, so very large
 // sheets stay cheap.
 for await (const row of streamXlsxRows(buffer, { maxRows: 100 })) {
-  console.log(row.index, row.values);
+  console.log(row.index, row.values)
 }
 
 // Filter to an A1 range. Rows outside the row span are skipped; cells
@@ -275,11 +300,11 @@ const writer = new XlsxStreamWriter({
   name: "BigData",
   columns: [{ header: "ID" }, { header: "Value" }],
   freezePane: { rows: 1 },
-});
+})
 for (let i = 0; i < 100_000; i++) {
-  writer.addRow([i + 1, Math.random()]);
+  writer.addRow([i + 1, Math.random()])
 }
-const buffer = await writer.finish();
+const buffer = await writer.finish()
 ```
 
 #### Auto-split past Excel's row limit
@@ -289,7 +314,7 @@ data crosses Excel's 1,048,576-row hard limit (default). The captured
 header row is repeated on every rolled sheet.
 
 ```ts
-import { XlsxStreamWriter, XLSX_MAX_ROWS_PER_SHEET } from "hucre/xlsx";
+import { XlsxStreamWriter, XLSX_MAX_ROWS_PER_SHEET } from "hucre/xlsx"
 
 const writer = new XlsxStreamWriter({
   name: "BigData",
@@ -299,20 +324,20 @@ const writer = new XlsxStreamWriter({
   ],
   maxRowsPerSheet: 1_000_000, // optional override; default = 1_048_576
   repeatHeaders: true, // default
-});
+})
 
-for (let i = 0; i < 3_000_000; i++) writer.addRow([i + 1, Math.random()]);
+for (let i = 0; i < 3_000_000; i++) writer.addRow([i + 1, Math.random()])
 // → BigData, BigData_2, BigData_3
-const buf = await writer.finish();
+const buf = await writer.finish()
 ```
 
 ### ODS (OpenDocument)
 
 ```ts
-import { readOds, writeOds } from "hucre/ods";
+import { readOds, writeOds } from "hucre/ods"
 
-const wb = await readOds(buffer);
-const ods = await writeOds({ sheets: [{ name: "Sheet1", rows: [["Hello", 42]] }] });
+const wb = await readOds(buffer)
+const ods = await writeOds({ sheets: [{ name: "Sheet1", rows: [["Hello", 42]] }] })
 ```
 
 ### Round-trip Preservation
@@ -320,11 +345,11 @@ const ods = await writeOds({ sheets: [{ name: "Sheet1", rows: [["Hello", 42]] }]
 Open, modify, save — without losing charts, macros, or features hucre doesn't natively handle:
 
 ```ts
-import { openXlsx, saveXlsx } from "hucre/xlsx";
+import { openXlsx, saveXlsx } from "hucre/xlsx"
 
-const workbook = await openXlsx(buffer);
-workbook.sheets[0].rows[0][0] = "Updated!";
-const output = await saveXlsx(workbook); // Charts, VBA, themes preserved
+const workbook = await openXlsx(buffer)
+workbook.sheets[0].rows[0][0] = "Updated!"
+const output = await saveXlsx(workbook) // Charts, VBA, themes preserved
 ```
 
 ### External Workbook References
@@ -336,21 +361,21 @@ disappear from `xl/workbook.xml.rels`, leaving Excel with orphan
 `externalLinkN.xml` parts that it ignores.
 
 ```ts
-import { readXlsx, parseExternalLink } from "hucre";
+import { readXlsx, parseExternalLink } from "hucre"
 
-const wb = await readXlsx(buf);
+const wb = await readXlsx(buf)
 for (const link of wb.externalLinks ?? []) {
-  console.log(link.target, link.targetMode, link.sheetNames);
+  console.log(link.target, link.targetMode, link.sheetNames)
   for (const sheet of link.sheetData) {
     for (const cell of sheet.cells) {
       // cell.type ∈ "n" | "s" | "b" | "e" | "str"
-      console.log(cell.ref, cell.type, cell.value);
+      console.log(cell.ref, cell.type, cell.value)
     }
   }
 }
 
 // Standalone parser when you already have the XML strings
-const link = parseExternalLink(externalLinkXml, externalLinkRelsXml);
+const link = parseExternalLink(externalLinkXml, externalLinkRelsXml)
 ```
 
 The 1-based index in `workbook.externalLinks` matches the `[N]` prefix
@@ -369,17 +394,17 @@ relationship and content-type override are dropped and the formula
 loses its target.
 
 ```ts
-import { readXlsx } from "hucre";
+import { readXlsx } from "hucre"
 
-const wb = await readXlsx(buf);
+const wb = await readXlsx(buf)
 for (const img of wb.cellImages ?? []) {
-  console.log(img.id, img.type, img.description, img.data.byteLength);
+  console.log(img.id, img.type, img.description, img.data.byteLength)
 }
 
 // Standalone parsers when you already have the XML strings.
-import { parseCellImages, assembleCellImages, REL_CELL_IMAGES } from "hucre";
-const refs = parseCellImages(cellImagesXml);
-const images = assembleCellImages(refs, mediaMap);
+import { parseCellImages, assembleCellImages, REL_CELL_IMAGES } from "hucre"
+const refs = parseCellImages(cellImagesXml)
+const images = assembleCellImages(refs, mediaMap)
 ```
 
 Synthesizing a `cellimages.xml` from a model on a fresh `writeXlsx`
@@ -397,22 +422,22 @@ roundtrip Excel saw the cache parts as orphans and dropped the
 slicers / timelines on next open.
 
 ```ts
-import { readXlsx } from "hucre";
+import { readXlsx } from "hucre"
 
-const wb = await readXlsx(buf);
+const wb = await readXlsx(buf)
 
 // Workbook-level cache definitions.
-console.log(wb.slicerCaches); // SlicerCache[] (pivot-table or table source)
-console.log(wb.timelineCaches); // TimelineCache[]
+console.log(wb.slicerCaches) // SlicerCache[] (pivot-table or table source)
+console.log(wb.timelineCaches) // TimelineCache[]
 
 // Per-sheet slicer / timeline instances.
 for (const sheet of wb.sheets) {
-  for (const s of sheet.slicers ?? []) console.log(s.name, s.cache, s.caption);
-  for (const t of sheet.timelines ?? []) console.log(t.name, t.cache, t.level);
+  for (const s of sheet.slicers ?? []) console.log(s.name, s.cache, s.caption)
+  for (const t of sheet.timelines ?? []) console.log(t.name, t.cache, t.level)
 }
 
 // Standalone parsers when you already have the XML strings.
-import { parseSlicers, parseSlicerCache, parseTimelines, parseTimelineCache } from "hucre";
+import { parseSlicers, parseSlicerCache, parseTimelines, parseTimelineCache } from "hucre"
 ```
 
 The worksheet body's `<x14:slicerList>` / `<x15:timelines>` extension
@@ -433,27 +458,27 @@ sheet's rels — Excel previously saw the pivot parts as orphans and
 dropped the tables on next open.
 
 ```ts
-import { readXlsx } from "hucre";
+import { readXlsx } from "hucre"
 
-const wb = await readXlsx(buf);
+const wb = await readXlsx(buf)
 
 // Workbook-level cache definitions.
 for (const cache of wb.pivotCaches ?? []) {
-  console.log(cache.cacheId, cache.sourceSheet, cache.sourceRef, cache.fieldNames);
+  console.log(cache.cacheId, cache.sourceSheet, cache.sourceRef, cache.fieldNames)
 }
 
 // Per-sheet pivot table instances.
 for (const sheet of wb.sheets) {
   for (const pt of sheet.pivotTables ?? []) {
-    console.log(pt.name, pt.location, pt.cacheId);
+    console.log(pt.name, pt.location, pt.cacheId)
     for (const f of pt.fields) {
-      console.log("  ", f.name, f.axis, f.function);
+      console.log("  ", f.name, f.axis, f.function)
     }
   }
 }
 
 // Standalone parsers when you already have the XML strings.
-import { parsePivotTable, parsePivotCacheDefinition, attachPivotCacheFields } from "hucre";
+import { parsePivotTable, parsePivotCacheDefinition, attachPivotCacheFields } from "hucre"
 ```
 
 `PivotTable.cacheId` matches the workbook-level `cacheId` rather than a
@@ -469,7 +494,7 @@ recompute — Phase 1 ships the structural skeleton, not pre-computed
 value cells.
 
 ```ts
-import { writeXlsx } from "hucre";
+import { writeXlsx } from "hucre"
 
 const xlsx = await writeXlsx({
   sheets: [
@@ -496,7 +521,7 @@ const xlsx = await writeXlsx({
       ],
     },
   ],
-});
+})
 ```
 
 Supported aggregation functions: `sum` (default), `count`, `average`,
@@ -564,23 +589,23 @@ with the standard `undefined` / `null` / value override grammar.
 #### Read side — `parseChart` / `getCharts`
 
 ```ts
-import { getCharts, openXlsx, parseChart } from "hucre";
+import { getCharts, openXlsx, parseChart } from "hucre"
 
-const wb = await openXlsx(buf);
+const wb = await openXlsx(buf)
 
 for (const { sheetName, chart } of getCharts(wb)) {
-  console.log(sheetName, chart.kinds, chart.title);
+  console.log(sheetName, chart.kinds, chart.title)
   // e.g. "Sales" ["bar"] "Quarterly Sales"
-  console.log(chart.anchor); // { from: { row: 1, col: 3 }, to: { row: 16, col: 10 } }
-  console.log(chart.axes?.x?.title, chart.axes?.y?.scale);
+  console.log(chart.anchor) // { from: { row: 1, col: 3 }, to: { row: 16, col: 10 } }
+  console.log(chart.axes?.x?.title, chart.axes?.y?.scale)
 
   for (const s of chart.series ?? []) {
-    console.log(s.kind, s.name, s.valuesRef, s.color, s.dataLabels);
+    console.log(s.kind, s.name, s.valuesRef, s.color, s.dataLabels)
   }
 }
 
 // Standalone parser when you already have the chart XML.
-const chart = parseChart(xml);
+const chart = parseChart(xml)
 ```
 
 `Chart.kinds` lists every chart-type element under `<c:plotArea>` in
@@ -598,7 +623,7 @@ embedded data, no formula) intentionally surface no
 #### Write side — `writeXlsx` + `addChart`
 
 ```ts
-import { addChart, writeXlsx } from "hucre";
+import { addChart, writeXlsx } from "hucre"
 
 const dashboard = {
   name: "Dashboard",
@@ -609,7 +634,7 @@ const dashboard = {
     ["Q3", 14000, 14500],
     ["Q4", 17800, 17200],
   ],
-};
+}
 
 addChart(dashboard, {
   type: "column",
@@ -635,9 +660,9 @@ addChart(dashboard, {
   plotAreaBorderWidth: 0.75,
   dataLabels: { showValue: true, position: "outEnd", fontSize: 9 },
   anchor: { from: { row: 6, col: 0 }, to: { row: 22, col: 7 } },
-});
+})
 
-const xlsx = await writeXlsx({ sheets: [dashboard] });
+const xlsx = await writeXlsx({ sheets: [dashboard] })
 ```
 
 Every knob the writer accepts lives on the `SheetChart` type — see
@@ -662,11 +687,11 @@ Per-series overrides are supplied as a positional `series` array;
 each entry merges with the source series at the matching index.
 
 ```ts
-import { cloneChart, openXlsx, parseChart, writeXlsx } from "hucre";
+import { cloneChart, openXlsx, parseChart, writeXlsx } from "hucre"
 
-const wb = await openXlsx(templateBytes);
-const sourceChart = wb.sheets[0].charts?.[0];
-if (!sourceChart) throw new Error("template missing chart");
+const wb = await openXlsx(templateBytes)
+const sourceChart = wb.sheets[0].charts?.[0]
+if (!sourceChart) throw new Error("template missing chart")
 
 // Re-bind the template chart to a new data range and recolour series.
 const cloned = cloneChart(sourceChart, {
@@ -678,11 +703,11 @@ const cloned = cloneChart(sourceChart, {
     { values: "B2:B13", categories: "A2:A13", color: "1F77B4" },
     { values: "C2:C13", categories: "A2:A13", color: null /* drop template tint */ },
   ],
-});
+})
 
 const out = await writeXlsx({
   sheets: [{ name: "Sheet1", rows: dashboardRows, charts: [cloned] }],
-});
+})
 ```
 
 A common pattern is "template -> override -> write" — keep one
@@ -696,24 +721,24 @@ override surface (every knob on `SheetChart` has a matching
 #### Walking and adding charts
 
 ```ts
-import { addChart, getCharts, openXlsx, writeXlsx } from "hucre";
+import { addChart, getCharts, openXlsx, writeXlsx } from "hucre"
 
-const wb = await openXlsx(templateBytes);
+const wb = await openXlsx(templateBytes)
 
 // Read side — find every chart in a template workbook.
 for (const { sheetName, chart } of getCharts(wb)) {
-  console.log(sheetName, chart.kinds, chart.title);
+  console.log(sheetName, chart.kinds, chart.title)
 }
 
 // Write side — declarative chart attachment.
-const dashboard = { name: "Dashboard", rows: dashboardRows };
+const dashboard = { name: "Dashboard", rows: dashboardRows }
 addChart(dashboard, {
   type: "column",
   title: "Q1 Revenue",
   series: [{ name: "Revenue", values: "B2:B13", categories: "A2:A13" }],
   anchor: { from: { row: 14, col: 0 } },
-});
-await writeXlsx({ sheets: [dashboard] });
+})
+await writeXlsx({ sheets: [dashboard] })
 ```
 
 ### Unified API
@@ -721,16 +746,16 @@ await writeXlsx({ sheets: [dashboard] });
 Auto-detect format and work with simple helpers:
 
 ```ts
-import { read, write, readObjects, writeObjects } from "hucre";
+import { read, write, readObjects, writeObjects } from "hucre"
 
 // Auto-detect XLSX vs ODS
-const wb = await read(buffer);
+const wb = await read(buffer)
 
 // Quick: file → array of objects
-const products = await readObjects<{ name: string; price: number }>(buffer);
+const products = await readObjects<{ name: string; price: number }>(buffer)
 
 // Quick: objects → XLSX
-const xlsx = await writeObjects(products, { sheetName: "Products" });
+const xlsx = await writeObjects(products, { sheetName: "Products" })
 ```
 
 ### CLI
@@ -748,26 +773,26 @@ npx hucre validate data.xlsx --schema schema.json
 Manipulate sheet data in memory:
 
 ```ts
-import { insertRows, deleteRows, cloneSheet, moveSheet } from "hucre";
+import { insertRows, deleteRows, cloneSheet, moveSheet } from "hucre"
 
-insertRows(sheet, 5, 3); // Insert 3 rows at position 5
-deleteRows(sheet, 0, 1); // Delete first row
-const copy = cloneSheet(sheet, "Copy"); // Deep clone
-moveSheet(workbook, 0, 2); // Reorder sheets
+insertRows(sheet, 5, 3) // Insert 3 rows at position 5
+deleteRows(sheet, 0, 1) // Delete first row
+const copy = cloneSheet(sheet, "Copy") // Deep clone
+moveSheet(workbook, 0, 2) // Reorder sheets
 ```
 
 ### HTML & Markdown Export
 
 ```ts
-import { toHtml, toMarkdown } from "hucre";
+import { toHtml, toMarkdown } from "hucre"
 
 const html = toHtml(workbook.sheets[0], {
   headerRow: true,
   styles: true,
   classes: true,
-});
+})
 
-const md = toMarkdown(workbook.sheets[0]);
+const md = toMarkdown(workbook.sheets[0])
 // | Name   | Price  | Stock |
 // |--------|-------:|------:|
 // | Widget |   9.99 |   142 |
@@ -776,24 +801,24 @@ const md = toMarkdown(workbook.sheets[0]);
 ### Number Format Renderer
 
 ```ts
-import { formatValue } from "hucre";
+import { formatValue } from "hucre"
 
-formatValue(1234.5, "#,##0.00"); // "1,234.50"
-formatValue(0.15, "0%"); // "15%"
-formatValue(44197, "yyyy-mm-dd"); // "2021-01-01"
-formatValue(1234, "$#,##0"); // "$1,234"
-formatValue(0.333, "# ?/?"); // "1/3"
+formatValue(1234.5, "#,##0.00") // "1,234.50"
+formatValue(0.15, "0%") // "15%"
+formatValue(44197, "yyyy-mm-dd") // "2021-01-01"
+formatValue(1234, "$#,##0") // "$1,234"
+formatValue(0.333, "# ?/?") // "1/3"
 ```
 
 ### Cell Utilities
 
 ```ts
-import { parseCellRef, cellRef, colToLetter, rangeRef } from "hucre";
+import { parseCellRef, cellRef, colToLetter, rangeRef } from "hucre"
 
-parseCellRef("AA15"); // { row: 14, col: 26 }
-cellRef(14, 26); // "AA15"
-colToLetter(26); // "AA"
-rangeRef(0, 0, 9, 3); // "A1:D10"
+parseCellRef("AA15") // { row: 14, col: 26 }
+cellRef(14, 26) // "AA15"
+colToLetter(26) // "AA"
+rangeRef(0, 0, 9, 3) // "A1:D10"
 ```
 
 ### Builder API
@@ -801,7 +826,7 @@ rangeRef(0, 0, 9, 3); // "A1:D10"
 Fluent method-chaining interface:
 
 ```ts
-import { WorkbookBuilder } from "hucre";
+import { WorkbookBuilder } from "hucre"
 
 const xlsx = await WorkbookBuilder.create()
   .addSheet("Products")
@@ -813,7 +838,7 @@ const xlsx = await WorkbookBuilder.create()
   .row(["Gadget", 24.5])
   .freeze(1)
   .done()
-  .build();
+  .build()
 ```
 
 ### Template Engine
@@ -821,15 +846,15 @@ const xlsx = await WorkbookBuilder.create()
 Fill `{{placeholders}}` in existing XLSX templates:
 
 ```ts
-import { openXlsx, saveXlsx, fillTemplate } from "hucre";
+import { openXlsx, saveXlsx, fillTemplate } from "hucre"
 
-const workbook = await openXlsx(templateBuffer);
+const workbook = await openXlsx(templateBuffer)
 fillTemplate(workbook, {
   company: "Acme Inc",
   date: new Date(),
   total: 12500,
-});
-const output = await saveXlsx(workbook);
+})
+const output = await saveXlsx(workbook)
 ```
 
 ### Excel 2024 Checkboxes
@@ -840,7 +865,7 @@ Excel and LibreOffice fall back to the raw `TRUE`/`FALSE` display since the
 on-disk value is just a normal boolean.
 
 ```ts
-import { writeXlsx, readXlsx } from "hucre/xlsx";
+import { writeXlsx, readXlsx } from "hucre/xlsx"
 
 const buf = await writeXlsx({
   sheets: [
@@ -854,10 +879,10 @@ const buf = await writeXlsx({
       ]),
     },
   ],
-});
+})
 
-const wb = await readXlsx(buf);
-wb.sheets[0].cells?.get("1,0")?.checkbox; // true
+const wb = await readXlsx(buf)
+wb.sheets[0].cells?.get("1,0")?.checkbox // true
 ```
 
 This is the first JS/TS implementation of native checkboxes — only `XlsxWriter`
@@ -873,7 +898,7 @@ non-empty value into `docProps/core.xml` so screen readers announce it
 on file open.
 
 ```ts
-import { writeXlsx, a11y, readXlsx } from "hucre";
+import { writeXlsx, a11y, readXlsx } from "hucre"
 
 const xlsx = await writeXlsx({
   sheets: [
@@ -894,18 +919,18 @@ const xlsx = await writeXlsx({
       ],
     },
   ],
-});
+})
 
 // Audit a workbook for missing alt text, missing header rows,
 // merged headers, low contrast, and more.
-const wb = await readXlsx(xlsx);
+const wb = await readXlsx(xlsx)
 for (const issue of a11y.audit(wb)) {
-  console.log(issue.type, issue.code, issue.message, issue.location);
+  console.log(issue.type, issue.code, issue.message, issue.location)
 }
 
 // Color contrast helpers (WCAG 2.1 sRGB)
-a11y.contrastRatio("0969DA", "FFFFFF"); // ≈ 4.93 (passes AA)
-a11y.relativeLuminance("808080");
+a11y.contrastRatio("0969DA", "FFFFFF") // ≈ 4.93 (passes AA)
+a11y.relativeLuminance("808080")
 ```
 
 Issue codes: `no-doc-title`, `no-doc-description`, `empty-sheet`,
@@ -919,8 +944,8 @@ Tune the contrast pass with
 Skip the `wb.sheets[0].rows[0] as headers, slice(1) as data` boilerplate — return objects directly, mirror of `parseCsvObjects`:
 
 ```ts
-import { readXlsxObjects, writeXlsxObjects } from "hucre/xlsx";
-import { readOdsObjects, writeOdsObjects } from "hucre/ods";
+import { readXlsxObjects, writeXlsxObjects } from "hucre/xlsx"
+import { readOdsObjects, writeOdsObjects } from "hucre/ods"
 
 const { data, headers } = await readXlsxObjects(buffer, {
   sheet: 0, // index or name (default: 0)
@@ -928,7 +953,7 @@ const { data, headers } = await readXlsxObjects(buffer, {
   skipEmptyRows: true,
   transformHeader: (h) => h.toLowerCase().replace(/ /g, "_"),
   transformValue: (v, header) => (header === "price" ? Number(v) : v),
-});
+})
 
 // Symmetric write — headers come from the first object's keys when omitted
 const xlsx = await writeXlsxObjects(
@@ -937,7 +962,7 @@ const xlsx = await writeXlsxObjects(
     { Name: "Gadget", Price: 24.5 },
   ],
   { sheetName: "Products" },
-);
+)
 ```
 
 ### JSON / NDJSON
@@ -951,39 +976,39 @@ import {
   workbookToJson,
   NdjsonStreamWriter,
   readNdjsonStream,
-} from "hucre/json";
+} from "hucre/json"
 
 // Read — top-level array, { products: [...] } shape, or single object
-const { data, headers } = parseJson(jsonString);
+const { data, headers } = parseJson(jsonString)
 
 // Pick rows from a deeper path
-parseJson(text, { rowsAt: "data.rows" });
+parseJson(text, { rowsAt: "data.rows" })
 
 // Flatten nested objects with dot-path keys (default: true)
-parseJson('[{"sku":"P1","pricing":{"cost":100}}]');
+parseJson('[{"sku":"P1","pricing":{"cost":100}}]')
 // → data: [{ sku: "P1", "pricing.cost": 100 }]
 
 // NDJSON / JSON Lines — one object per line
 const out = parseNdjson(ndjsonText, {
   onError: (line, ln) => console.warn(`bad line ${ln}`), // skip + report
-});
+})
 
 // Round-trip a workbook (single sheet → array, multi-sheet → { Sheet: [...] })
-import { readXlsx } from "hucre/xlsx";
-const wb = await readXlsx(buffer);
-const json = workbookToJson(wb, { pretty: true });
+import { readXlsx } from "hucre/xlsx"
+const wb = await readXlsx(buffer)
+const json = workbookToJson(wb, { pretty: true })
 
 // Streaming write — works in Cloudflare Workers / Deno / Node 18+
-const writer = new NdjsonStreamWriter();
-for await (const row of source) writer.write(row);
-writer.end();
+const writer = new NdjsonStreamWriter()
+for await (const row of source) writer.write(row)
+writer.end()
 return new Response(writer.toStream(), {
   headers: { "content-type": "application/x-ndjson" },
-});
+})
 
 // Streaming read
 for await (const row of readNdjsonStream(request.body!)) {
-  console.log(row);
+  console.log(row)
 }
 ```
 
@@ -992,7 +1017,7 @@ for await (const row of readNdjsonStream(request.body!)) {
 Read and write tabular XML — product feeds (GS1 GDSN, Trendyol, marketplace exports), ERP dumps (SAP B1, Logo GO, Netsis), CRM catalogs. SAX-based: 50–200 MB feeds don't load into memory.
 
 ```ts
-import { readXml, writeXml } from "hucre/xml";
+import { readXml, writeXml } from "hucre/xml"
 
 // Auto-detects the most-frequently-repeating direct child of root as the row tag
 const { data, headers, rowTag } = readXml(`
@@ -1006,13 +1031,13 @@ const { data, headers, rowTag } = readXml(`
     </Product>
     <Product code="P2"><Name>Pine</Name></Product>
   </Catalog>
-`);
+`)
 // rowTag: "Product"
 // data: [{ "@code": "P1", Name: "Oak", "Pricing.@currency": "USD",
 //         "Pricing.Cost": "100", "Pricing.Retail": "180" }, ...]
 
 // Override auto-detect with rowTag, strip namespace prefixes, control flatten
-readXml(xml, { rowTag: "ns:Product", stripNamespaces: true, flatten: true });
+readXml(xml, { rowTag: "ns:Product", stripNamespaces: true, flatten: true })
 
 // Write — @-keyed fields become XML attributes, dot-paths reconstruct elements
 const xml = writeXml(
@@ -1021,17 +1046,17 @@ const xml = writeXml(
     { "@code": "P2", Name: "Pine", "Pricing.Cost": 90 },
   ],
   { rootTag: "Catalog", rowTag: "Product", pretty: true },
-);
+)
 ```
 
 ### JSON Export (legacy)
 
 ```ts
-import { toJson } from "hucre";
+import { toJson } from "hucre"
 
-toJson(sheet, { format: "objects" }); // [{Name:"Widget", Price:9.99}, ...]
-toJson(sheet, { format: "columns" }); // {Name:["Widget"], Price:[9.99]}
-toJson(sheet, { format: "arrays" }); // {headers:[...], data:[[...]]}
+toJson(sheet, { format: "objects" }) // [{Name:"Widget", Price:9.99}, ...]
+toJson(sheet, { format: "columns" }) // {Name:["Widget"], Price:[9.99]}
+toJson(sheet, { format: "arrays" }) // {headers:[...], data:[[...]]}
 ```
 
 For new code prefer `writeJson` / `workbookToJson` from `hucre/json` — same result, consistent with `parseJson`/`parseNdjson`/`writeNdjson`.
@@ -1039,19 +1064,19 @@ For new code prefer `writeJson` / `workbookToJson` from `hucre/json` — same re
 ### CSV
 
 ```ts
-import { parseCsv, parseCsvObjects, writeCsv, detectDelimiter } from "hucre/csv";
+import { parseCsv, parseCsvObjects, writeCsv, detectDelimiter } from "hucre/csv"
 
 // Parse — auto-detects delimiter, handles RFC 4180 edge cases
-const rows = parseCsv(csvString, { typeInference: true });
+const rows = parseCsv(csvString, { typeInference: true })
 
 // Parse with headers — returns typed objects
-const { data, headers } = parseCsvObjects(csvString, { header: true });
+const { data, headers } = parseCsvObjects(csvString, { header: true })
 
 // Write
-const csv = writeCsv(rows, { delimiter: ";", bom: true });
+const csv = writeCsv(rows, { delimiter: ";", bom: true })
 
 // Detect delimiter
-detectDelimiter(csvString); // "," or ";" or "\t" or "|"
+detectDelimiter(csvString) // "," or ";" or "\t" or "|"
 ```
 
 ### Schema Validation
@@ -1059,10 +1084,10 @@ detectDelimiter(csvString); // "," or ";" or "\t" or "|"
 Validate imported data with type coercion, pattern matching, and error collection:
 
 ```ts
-import { validateWithSchema } from "hucre";
-import { parseCsv } from "hucre/csv";
+import { validateWithSchema } from "hucre"
+import { parseCsv } from "hucre/csv"
 
-const rows = parseCsv(csvString);
+const rows = parseCsv(csvString)
 
 const result = validateWithSchema(
   rows,
@@ -1074,10 +1099,10 @@ const result = validateWithSchema(
     Status: { type: "string", enum: ["active", "inactive", "draft"] },
   },
   { headerRow: 1 },
-);
+)
 
-console.log(result.data); // Validated & coerced objects
-console.log(result.errors); // [{ row: 3, field: "Price", message: "...", value: "abc" }]
+console.log(result.data) // Validated & coerced objects
+console.log(result.errors) // [{ row: 3, field: "Price", message: "...", value: "abc" }]
 ```
 
 Schema field options:
@@ -1101,13 +1126,13 @@ Schema field options:
 Timezone-safe Excel date serial number conversion:
 
 ```ts
-import { serialToDate, dateToSerial, isDateFormat, formatDate } from "hucre";
+import { serialToDate, dateToSerial, isDateFormat, formatDate } from "hucre"
 
-serialToDate(44197); // 2021-01-01T00:00:00.000Z
-dateToSerial(new Date("2021-01-01")); // 44197
-isDateFormat("yyyy-mm-dd"); // true
-isDateFormat("#,##0.00"); // false
-formatDate(new Date(), "yyyy-mm-dd"); // "2026-03-24"
+serialToDate(44197) // 2021-01-01T00:00:00.000Z
+dateToSerial(new Date("2021-01-01")) // 44197
+isDateFormat("yyyy-mm-dd") // true
+isDateFormat("#,##0.00") // false
+formatDate(new Date(), "yyyy-mm-dd") // "2026-03-24"
 ```
 
 Handles the Lotus 1-2-3 bug (serial 60), 1900/1904 date systems, and time fractions correctly.

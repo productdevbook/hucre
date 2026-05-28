@@ -7,5 +7,5 @@ export {
   writeCsvObjects,
   formatCsvValue,
   fetchCsv,
-} from "./csv/index";
-export { streamCsvRows, CsvStreamWriter } from "./csv/stream";
+} from "./csv/index"
+export { streamCsvRows, CsvStreamWriter } from "./csv/stream"

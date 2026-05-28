@@ -1,5 +1,5 @@
-export { parseXml, parseSax, decodeOoxmlEscapes } from "./parser";
-export type { XmlElement, XmlNode, SaxHandlers } from "./parser";
+export { parseXml, parseSax, decodeOoxmlEscapes } from "./parser"
+export type { XmlElement, XmlNode, SaxHandlers } from "./parser"
 export {
   xmlElement,
   xmlSelfClose,
@@ -7,5 +7,5 @@ export {
   xmlEscapeAttr,
   xmlDeclaration,
   xmlDocument,
-} from "./writer";
-export type { XmlWriterOptions } from "./writer";
+} from "./writer"
+export type { XmlWriterOptions } from "./writer"

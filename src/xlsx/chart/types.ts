@@ -20,7 +20,7 @@
  * full set of OOXML chart-type element local names) — the write side
  * exposes only the kinds the chart author can emit today.
  */
-export type WriteChartKind = "bar" | "column" | "line" | "pie" | "doughnut" | "scatter" | "area";
+export type WriteChartKind = "bar" | "column" | "line" | "pie" | "doughnut" | "scatter" | "area"
 
 /**
  * Where a data label is placed relative to its data point.
@@ -42,7 +42,7 @@ export type ChartDataLabelPosition =
   | "inEnd"
   | "inBase"
   | "outEnd"
-  | "bestFit";
+  | "bestFit"
 
 /**
  * Configuration for the small text annotations Excel paints next to
@@ -61,13 +61,13 @@ export type ChartDataLabelPosition =
  */
 export interface ChartDataLabels {
   /** Show the numeric value of each data point. */
-  showValue?: boolean;
+  showValue?: boolean
   /** Show the category (X-axis) label. */
-  showCategoryName?: boolean;
+  showCategoryName?: boolean
   /** Show the series name. Useful with multi-series legends collapsed. */
-  showSeriesName?: boolean;
+  showSeriesName?: boolean
   /** Show the value as a percent of total. Pie / doughnut only. */
-  showPercent?: boolean;
+  showPercent?: boolean
   /**
    * Render the legend's color swatch (the small marker / bar Excel
    * paints in the chart legend) inline with each data label. Mirrors
@@ -77,20 +77,20 @@ export interface ChartDataLabels {
    * default is `false` (no legend key); set to `true` to repeat the
    * legend swatch alongside every label.
    */
-  showLegendKey?: boolean;
+  showLegendKey?: boolean
   /**
    * Where the label sits relative to its point. See
    * {@link ChartDataLabelPosition} for the valid set per chart kind.
    * Omit to let Excel pick a default (`outEnd` for bar/column,
    * `r` for line/scatter, `bestFit` for pie).
    */
-  position?: ChartDataLabelPosition;
+  position?: ChartDataLabelPosition
   /**
    * Separator between concatenated label parts when more than one
    * `show*` toggle is on. Defaults to `", "`. Common alternatives:
    * `" "`, `"; "`, `"\n"` (newline).
    */
-  separator?: string;
+  separator?: string
   /**
    * Number format applied to the value rendered inside each data label.
    * Mirrors Excel's "Format Data Labels -> Number" panel — pinning a
@@ -106,7 +106,7 @@ export interface ChartDataLabels {
    * dLblPos? -> show*`). Omit to fall back to whatever Excel inherits
    * from the source cell formatting.
    */
-  numberFormat?: ChartAxisNumberFormat;
+  numberFormat?: ChartAxisNumberFormat
   /**
    * Render the leader lines that connect each data label back to its
    * pie / doughnut slice when Excel pushes a label outside the slice it
@@ -126,7 +126,7 @@ export interface ChartDataLabels {
    * label that gets pushed outside its slice). Set to `false` to opt
    * out and render labels without the connecting lines.
    */
-  showLeaderLines?: boolean;
+  showLeaderLines?: boolean
   /**
    * Data-label font size in points (range `1..400`), pinned via
    * `<c:dLbls><c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p>
@@ -159,7 +159,7 @@ export interface ChartDataLabels {
    * factor — so a caller can thread a single point value through every
    * typography-pinning slot.
    */
-  fontSize?: number;
+  fontSize?: number
   /**
    * Data-label font color. Maps to `<c:dLbls><c:txPr><a:p><a:pPr>
    * <a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill>
@@ -195,7 +195,7 @@ export interface ChartDataLabels {
    * `<a:solidFill><a:srgbClr val=".."/>` mapping — so a caller can
    * thread a single hex string through every typography-pinning slot.
    */
-  fontColor?: ChartColor;
+  fontColor?: ChartColor
   /**
    * Data-label bold flag. Maps to `<c:dLbls><c:txPr><a:p><a:pPr>
    * <a:defRPr b=".."/></a:pPr></a:p></c:txPr></c:dLbls>` — Excel's
@@ -225,7 +225,7 @@ export interface ChartDataLabels {
    * `<a:defRPr b=".."/>` mapping — so a caller can thread a single
    * bold value through every typography-pinning slot.
    */
-  bold?: boolean;
+  bold?: boolean
   /**
    * Data-label italic flag. Maps to `<c:dLbls><c:txPr><a:p><a:pPr>
    * <a:defRPr i=".."/></a:pPr></a:p></c:txPr></c:dLbls>` — Excel's
@@ -255,7 +255,7 @@ export interface ChartDataLabels {
    * same OOXML `<a:defRPr i=".."/>` mapping — so a caller can thread
    * a single italic value through every typography-pinning slot.
    */
-  italic?: boolean;
+  italic?: boolean
   /**
    * Data-label underline flag. Maps to `<c:dLbls><c:txPr><a:p><a:pPr>
    * <a:defRPr u=".."/></a:pPr></a:p></c:txPr></c:dLbls>` — Excel's
@@ -290,7 +290,7 @@ export interface ChartDataLabels {
    * so a caller can thread a single underline value through every
    * typography-pinning slot.
    */
-  underline?: boolean;
+  underline?: boolean
   /**
    * Data-label strikethrough flag. Maps to `<c:dLbls><c:txPr><a:p>
    * <a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr></c:dLbls>`
@@ -323,7 +323,7 @@ export interface ChartDataLabels {
    * / the `show*` toggles / {@link bold} / {@link italic} /
    * {@link underline}.
    */
-  strikethrough?: boolean;
+  strikethrough?: boolean
   /**
    * Data-label font family / typeface. Maps to `<c:dLbls><c:txPr>
    * <a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
@@ -363,7 +363,7 @@ export interface ChartDataLabels {
    * toggles / {@link bold} / {@link italic} / {@link underline} /
    * {@link strikethrough} / {@link fontSize} / {@link fontColor}.
    */
-  fontFamily?: string;
+  fontFamily?: string
   /**
    * Data-labels background fill (solid). Maps to `<c:dLbls><c:spPr>
    * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></c:spPr>
@@ -406,7 +406,7 @@ export interface ChartDataLabels {
    * {@link underline} / {@link strikethrough} / {@link fontSize} /
    * {@link fontColor} / {@link fontFamily}.
    */
-  fillColor?: ChartColor;
+  fillColor?: ChartColor
   /**
    * Data-labels border (line) color as a 6-digit RGB hex string (e.g.
    * `"1F77B4"`). Maps to `<c:dLbls><c:spPr><a:ln><a:solidFill>
@@ -467,7 +467,7 @@ export interface ChartDataLabels {
    * {@link underline} / {@link strikethrough} / {@link fontSize} /
    * {@link fontColor} / {@link fontFamily} / {@link fillColor}.
    */
-  borderColor?: ChartColor;
+  borderColor?: ChartColor
   /**
    * Data-labels border (stroke) thickness in points (e.g. `1.5`). Maps
    * to the `w` attribute on `<c:dLbls><c:spPr><a:ln w="EMU">` — Excel's
@@ -493,7 +493,7 @@ export interface ChartDataLabels {
    * `<a:solidFill>` child, but the writer authors `<a:ln>` whenever
    * either knob is set.
    */
-  borderWidth?: number;
+  borderWidth?: number
   /**
    * Data-labels border (stroke) preset dash pattern. Maps to the `val`
    * attribute on `<c:dLbls><c:spPr><a:ln><a:prstDash val=".."/>`.
@@ -507,20 +507,20 @@ export interface ChartDataLabels {
    * {@link borderWidth} — all three knobs share the same `<a:ln>`
    * element.
    */
-  borderDash?: ChartBorderDash;
+  borderDash?: ChartBorderDash
   /**
    * Border (stroke) line cap style. Maps to the `cap` attribute on
    * `<c:dLbls><c:spPr><a:ln cap=".."/>`. Same accept-or-drop grammar
    * as {@link ChartLineCap} — `"flat"` collapses to absence.
    */
-  borderCap?: ChartLineCap;
+  borderCap?: ChartLineCap
   /**
    * Border (stroke) compound line style. Maps to the `cmpd` attribute
    * on `<c:dLbls><c:spPr><a:ln cmpd=".."/>`. Same accept-or-drop
    * grammar as {@link ChartLineCompound} — `"sng"` collapses to
    * absence.
    */
-  borderCompound?: ChartLineCompound;
+  borderCompound?: ChartLineCompound
 }
 
 /**
@@ -542,7 +542,7 @@ export type ChartLineDashStyle =
   | "sysDash"
   | "sysDot"
   | "sysDashDot"
-  | "sysDashDotDot";
+  | "sysDashDotDot"
 
 /**
  * Preset dash pattern for a chart-frame border stroke (plot-area /
@@ -568,7 +568,7 @@ export type ChartBorderDash =
   | "sysDash"
   | "sysDashDot"
   | "sysDashDotDot"
-  | "sysDot";
+  | "sysDot"
 
 /**
  * Per-series line stroke styling for line / scatter charts.
@@ -590,7 +590,7 @@ export interface ChartLineStroke {
    * Preset dash pattern. See {@link ChartLineDashStyle} for the
    * accepted set.
    */
-  dash?: ChartLineDashStyle;
+  dash?: ChartLineDashStyle
   /**
    * Stroke width in points. Excel's UI exposes the 0.25 – 13.5 pt band;
    * the writer clamps anything outside that range and rounds to the
@@ -599,21 +599,21 @@ export interface ChartLineStroke {
    * conversion and the reader inverts it. Non-finite values are
    * dropped so the writer can elide the attribute entirely.
    */
-  width?: number;
+  width?: number
   /**
    * Line end-cap style. Maps to the `cap` attribute on `<a:ln>`
    * (CT_LineProperties, ECMA-376 Part 1, §20.1.2.3.24). Mirrors the
    * OOXML `ST_LineCap` enum. The OOXML default is `"flat"`; absence
    * and `"flat"` round-trip identically.
    */
-  cap?: ChartLineCap;
+  cap?: ChartLineCap
   /**
    * Line compound style. Maps to the `cmpd` attribute on `<a:ln>`
    * (CT_LineProperties). Mirrors the OOXML `ST_CompoundLine` enum.
    * The OOXML default is `"sng"`; absence and `"sng"` round-trip
    * identically.
    */
-  compound?: ChartLineCompound;
+  compound?: ChartLineCompound
 }
 
 /**
@@ -625,7 +625,7 @@ export interface ChartLineStroke {
  * - `"sq"`   — square cap (extends past the line end).
  * - `"flat"` — flat cap, ends precisely at the line end (default).
  */
-export type ChartLineCap = "rnd" | "sq" | "flat";
+export type ChartLineCap = "rnd" | "sq" | "flat"
 
 /**
  * Line compound style for a chart-frame stroke.
@@ -638,7 +638,7 @@ export type ChartLineCap = "rnd" | "sq" | "flat";
  * - `"thinThick"`  — a thin line followed by a thick line.
  * - `"tri"`        — three parallel lines.
  */
-export type ChartLineCompound = "sng" | "dbl" | "thickThin" | "thinThick" | "tri";
+export type ChartLineCompound = "sng" | "dbl" | "thickThin" | "thinThick" | "tri"
 
 /**
  * Theme color slot name. Mirrors the named slots in OOXML
@@ -667,7 +667,7 @@ export type ChartThemeColorName =
   | "dk1"
   | "lt1"
   | "dk2"
-  | "lt2";
+  | "lt2"
 
 /**
  * Theme color reference for a chart fill / line / typography slot.
@@ -689,40 +689,40 @@ export type ChartThemeColorName =
  */
 export interface ChartThemeColor {
   /** Theme color slot name. See {@link ChartThemeColorName}. */
-  theme: ChartThemeColorName;
+  theme: ChartThemeColorName
   /**
    * Optional luminance modulation, integer 0..100000 (the OOXML
    * `ST_PositivePercentage` range, where `100000` represents 100% =
    * no change). Excel's UI exposes the value as a percentage in the
    * "More Colors" dialog.
    */
-  lumMod?: number;
+  lumMod?: number
   /**
    * Optional luminance offset, integer 0..100000 (the OOXML
    * `ST_PositivePercentage` range). Composes with `lumMod` to
    * produce Excel's "Lighter / Darker" theme color tints.
    */
-  lumOff?: number;
+  lumOff?: number
   /**
    * Optional tint amount, integer -100000..100000 (the OOXML
    * `ST_FixedPercentage` range). Lightens the color toward white at
    * positive values; the negative band collapses to no-op on emit per
    * the schema but is preserved through the round-trip.
    */
-  tint?: number;
+  tint?: number
   /**
    * Optional shade amount, integer -100000..100000 (the OOXML
    * `ST_FixedPercentage` range). Darkens the color toward black at
    * positive values.
    */
-  shade?: number;
+  shade?: number
   /**
    * Optional alpha amount, integer 0..100000 (the OOXML
    * `ST_PositivePercentage` range, where `100000` = fully opaque).
    * Excel's UI exposes the value as a transparency percentage in the
    * "More Colors" dialog.
    */
-  alpha?: number;
+  alpha?: number
 }
 
 /**
@@ -742,7 +742,7 @@ export interface ChartThemeColor {
  * working unchanged — the type signature widens to also accept the
  * theme-color object.
  */
-export type ChartColor = string | ChartThemeColor;
+export type ChartColor = string | ChartThemeColor
 
 /**
  * Marker symbol shape rendered at each data point on a line / scatter
@@ -766,7 +766,7 @@ export type ChartMarkerSymbol =
   | "star"
   | "dot"
   | "dash"
-  | "plus";
+  | "plus"
 
 /**
  * Per-series marker styling for line / scatter charts.
@@ -785,25 +785,25 @@ export type ChartMarkerSymbol =
  */
 export interface ChartMarker {
   /** Shape of the marker glyph. See {@link ChartMarkerSymbol}. */
-  symbol?: ChartMarkerSymbol;
+  symbol?: ChartMarkerSymbol
   /**
    * Marker glyph size in points, in the OOXML range `2..72`. Excel's
    * UI clamps values outside this band. Default (when omitted): Excel
    * picks a series-rotation default (typically `5`).
    */
-  size?: number;
+  size?: number
   /**
    * Marker fill color. Accepts a 6-digit RGB hex string (e.g.
    * `"1F77B4"`) for `<a:srgbClr>` or a {@link ChartThemeColor} for
    * `<a:schemeClr>`. Maps to `<c:marker><c:spPr><a:solidFill>...`.
    */
-  fill?: ChartColor;
+  fill?: ChartColor
   /**
    * Marker outline color. Accepts a 6-digit RGB hex string for
    * `<a:srgbClr>` or a {@link ChartThemeColor} for `<a:schemeClr>`.
    * Maps to `<c:marker><c:spPr><a:ln><a:solidFill>...`.
    */
-  line?: ChartColor;
+  line?: ChartColor
 }
 
 /**
@@ -820,7 +820,7 @@ export interface ChartMarker {
  * - `"span"` — connect adjacent points across the gap (line / scatter
  *   only; Excel falls back to `"gap"` for bar / pie / area).
  */
-export type ChartDisplayBlanksAs = "gap" | "zero" | "span";
+export type ChartDisplayBlanksAs = "gap" | "zero" | "span"
 
 /**
  * Granular data-table configuration for {@link SheetChart.dataTable}.
@@ -846,13 +846,13 @@ export type ChartDisplayBlanksAs = "gap" | "zero" | "span";
  */
 export interface ChartDataTable {
   /** Paint horizontal lines between rows. Default: `true`. */
-  showHorzBorder?: boolean;
+  showHorzBorder?: boolean
   /** Paint vertical lines between category columns. Default: `true`. */
-  showVertBorder?: boolean;
+  showVertBorder?: boolean
   /** Paint the outer border around the table. Default: `true`. */
-  showOutline?: boolean;
+  showOutline?: boolean
   /** Render the legend swatch next to each series row. Default: `true`. */
-  showKeys?: boolean;
+  showKeys?: boolean
   /**
    * Data-table font size in points (range `1..400`), pinned via
    * `<c:dTable><c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p>
@@ -892,7 +892,7 @@ export interface ChartDataTable {
    * the field on those families along with the rest of the data-table
    * configuration.
    */
-  fontSize?: number;
+  fontSize?: number
   /**
    * Data-table font color. Maps to `<c:dTable><c:txPr><a:p><a:pPr>
    * <a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill>
@@ -933,7 +933,7 @@ export interface ChartDataTable {
    * Only meaningful for chart families with axes; silently dropped on
    * pie / doughnut along with the rest of the data-table configuration.
    */
-  fontColor?: ChartColor;
+  fontColor?: ChartColor
   /**
    * Data-table bold flag. Maps to `<c:dTable><c:txPr><a:p><a:pPr>
    * <a:defRPr b=".."/></a:pPr></a:p></c:txPr></c:dTable>` — Excel's
@@ -964,7 +964,7 @@ export interface ChartDataTable {
    * Only meaningful for chart families with axes; silently dropped on
    * pie / doughnut along with the rest of the data-table configuration.
    */
-  bold?: boolean;
+  bold?: boolean
   /**
    * Data-table italic flag. Maps to `<c:dTable><c:txPr><a:p><a:pPr>
    * <a:defRPr i=".."/></a:pPr></a:p></c:txPr></c:dTable>` — Excel's
@@ -996,7 +996,7 @@ export interface ChartDataTable {
    * Only meaningful for chart families with axes; silently dropped on
    * pie / doughnut along with the rest of the data-table configuration.
    */
-  italic?: boolean;
+  italic?: boolean
   /**
    * Data-table underline flag. Maps to `<c:dTable><c:txPr><a:p><a:pPr>
    * <a:defRPr u=".."/></a:pPr></a:p></c:txPr></c:dTable>` — Excel's
@@ -1035,7 +1035,7 @@ export interface ChartDataTable {
    * Only meaningful for chart families with axes; silently dropped on
    * pie / doughnut along with the rest of the data-table configuration.
    */
-  underline?: boolean;
+  underline?: boolean
   /**
    * Data-table strikethrough flag. Maps to `<c:dTable><c:txPr><a:p>
    * <a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr></c:dTable>` —
@@ -1078,7 +1078,7 @@ export interface ChartDataTable {
    * Only meaningful for chart families with axes; silently dropped on
    * pie / doughnut along with the rest of the data-table configuration.
    */
-  strikethrough?: boolean;
+  strikethrough?: boolean
   /**
    * Data-table font family / typeface. Maps to `<c:dTable><c:txPr>
    * <a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr></a:pPr>
@@ -1125,7 +1125,7 @@ export interface ChartDataTable {
    * Only meaningful for chart families with axes; silently dropped on
    * pie / doughnut along with the rest of the data-table configuration.
    */
-  fontFamily?: string;
+  fontFamily?: string
   /**
    * Data-table background fill color as a 6-digit RGB hex string (e.g.
    * `"F2F2F2"`). Maps to `<c:dTable><c:spPr><a:solidFill><a:srgbClr
@@ -1176,7 +1176,7 @@ export interface ChartDataTable {
    * Only meaningful for chart families with axes; silently dropped on
    * pie / doughnut along with the rest of the data-table configuration.
    */
-  fillColor?: ChartColor;
+  fillColor?: ChartColor
   /**
    * Data-table border (line) color as a 6-digit RGB hex string (e.g.
    * `"1F77B4"`). Maps to `<c:dTable><c:spPr><a:ln><a:solidFill>
@@ -1237,7 +1237,7 @@ export interface ChartDataTable {
    * Only meaningful for chart families with axes; silently dropped on
    * pie / doughnut along with the rest of the data-table configuration.
    */
-  borderColor?: ChartColor;
+  borderColor?: ChartColor
   /**
    * Data-table border (stroke) thickness in points (e.g. `1.5`). Maps
    * to the `w` attribute on `<c:dTable><c:spPr><a:ln w="EMU">` — Excel's
@@ -1266,7 +1266,7 @@ export interface ChartDataTable {
    * Only meaningful for chart families with axes; silently dropped on
    * pie / doughnut along with the rest of the data-table configuration.
    */
-  borderWidth?: number;
+  borderWidth?: number
   /**
    * Data-table border (stroke) preset dash pattern. Maps to the `val`
    * attribute on `<c:dTable><c:spPr><a:ln><a:prstDash val=".."/>`.
@@ -1282,19 +1282,19 @@ export interface ChartDataTable {
    * dropped on pie / doughnut along with the rest of the data-table
    * configuration.
    */
-  borderDash?: ChartBorderDash;
+  borderDash?: ChartBorderDash
   /**
    * Data-table border (stroke) line cap style. Maps to the `cap`
    * attribute on `<c:dTable><c:spPr><a:ln cap=".."/>`. Same
    * accept-or-drop grammar as {@link ChartLineCap}.
    */
-  borderCap?: ChartLineCap;
+  borderCap?: ChartLineCap
   /**
    * Data-table border (stroke) compound line style. Maps to the
    * `cmpd` attribute on `<c:dTable><c:spPr><a:ln cmpd=".."/>`. Same
    * accept-or-drop grammar as {@link ChartLineCompound}.
    */
-  borderCompound?: ChartLineCompound;
+  borderCompound?: ChartLineCompound
 }
 
 /**
@@ -1325,35 +1325,35 @@ export interface ChartProtection {
    * Default: `false` — the chart is movable / resizable on a protected
    * worksheet. Set `true` to freeze the chart's position and contents.
    */
-  chartObject?: boolean;
+  chartObject?: boolean
   /**
    * Lock the underlying data references the chart points at. Maps to
    * `<c:data val=".."/>`. Default: `false` — Excel allows the user to
    * re-pick data ranges via "Select Data Source" even when the parent
    * sheet is protected. Set `true` to keep the series ranges pinned.
    */
-  data?: boolean;
+  data?: boolean
   /**
    * Lock chart formatting (colors, fills, fonts, layout). Maps to
    * `<c:formatting val=".."/>`. Default: `false` — the user may still
    * tweak Format-Chart-Element panes on a protected sheet. Set `true`
    * to lock down the rendered look.
    */
-  formatting?: boolean;
+  formatting?: boolean
   /**
    * Lock click-to-select on chart elements. Maps to
    * `<c:selection val=".."/>`. Default: `false` — the user can still
    * click into series, legend entries, or labels to inspect them. Set
    * `true` to disable element selection entirely.
    */
-  selection?: boolean;
+  selection?: boolean
   /**
    * Lock chart-level UI affordances such as the floating "+ Chart
    * Elements" button and the right-click context menu. Maps to
    * `<c:userInterface val=".."/>`. Default: `false` — Excel still
    * surfaces the on-canvas affordances. Set `true` to suppress them.
    */
-  userInterface?: boolean;
+  userInterface?: boolean
 }
 
 /**
@@ -1385,14 +1385,14 @@ export interface ChartView3D {
    * `-90` – `90`. Excel's default is `15` for most 3D families and
    * `0` for `pie3D`. Values outside the range drop at write time.
    */
-  rotX?: number;
+  rotX?: number
   /**
    * Height as a percent of the chart width. Maps to
    * `<c:hPercent val=".."/>` (`ST_HPercent`, percent). Accepted range:
    * `5` – `500`. Excel's default is `100`. Values outside the range
    * drop at write time.
    */
-  hPercent?: number;
+  hPercent?: number
   /**
    * Rotation around the Y axis in degrees. Maps to
    * `<c:rotY val=".."/>` (`ST_RotY`, unsigned short). Accepted range:
@@ -1400,14 +1400,14 @@ export interface ChartView3D {
    * `0` for `pie3D` / `bar3D` (column orientation). Values outside the
    * range drop at write time.
    */
-  rotY?: number;
+  rotY?: number
   /**
    * Depth as a percent of the chart width. Maps to
    * `<c:depthPercent val=".."/>` (`ST_DepthPercent`, percent). Accepted
    * range: `20` – `2000`. Excel's default is `100`. Values outside the
    * range drop at write time.
    */
-  depthPercent?: number;
+  depthPercent?: number
   /**
    * Right-angle-axes flag. Maps to `<c:rAngAx val=".."/>` (CT_Boolean).
    * Default: `false` — perspective foreshortening is applied to the
@@ -1415,7 +1415,7 @@ export interface ChartView3D {
    * (Excel's "Right angle axes" checkbox), which suppresses perspective
    * even when {@link perspective} is non-zero.
    */
-  rAngAx?: boolean;
+  rAngAx?: boolean
   /**
    * Perspective factor. Maps to `<c:perspective val=".."/>`
    * (`ST_Perspective`, percent). Accepted range: `0` – `240`. Excel's
@@ -1424,7 +1424,7 @@ export interface ChartView3D {
    * {@link rAngAx} is `true`. Values outside the range drop at write
    * time.
    */
-  perspective?: number;
+  perspective?: number
 }
 
 /**
@@ -1458,7 +1458,7 @@ export type ChartScatterStyle =
   | "lineMarker"
   | "marker"
   | "smooth"
-  | "smoothMarker";
+  | "smoothMarker"
 
 /**
  * A single data series inside a chart.
@@ -1470,19 +1470,19 @@ export type ChartScatterStyle =
  */
 export interface ChartSeries {
   /** Series name shown in the legend (e.g. "Revenue"). */
-  name?: string;
+  name?: string
   /** A1-style range with the series numeric values (e.g. "B2:B10"). */
-  values: string;
+  values: string
   /** A1-style range with the category labels (e.g. "A2:A10"). */
-  categories?: string;
+  categories?: string
   /** Optional fill color as a 6-digit RGB hex string (e.g. "1F77B4"). */
-  color?: ChartColor;
+  color?: ChartColor
   /**
    * Per-series data label override. Pass `false` to suppress labels
    * for this series even when the chart-level
    * {@link SheetChart.dataLabels} enables them.
    */
-  dataLabels?: ChartDataLabels | false;
+  dataLabels?: ChartDataLabels | false
   /**
    * Smooth the line connecting data points using a Catmull-Rom-style
    * spline. Maps to `<c:smooth val="..">` inside the `<c:ser>` element.
@@ -1494,7 +1494,7 @@ export interface ChartSeries {
    * curved variant Excel offers under "Format Data Series → Line →
    * Smoothed line".
    */
-  smooth?: boolean;
+  smooth?: boolean
   /**
    * Per-series line stroke (dash pattern + width) for line / scatter
    * charts. Maps to `<a:ln>` inside `<c:ser><c:spPr>`. Ignored on every
@@ -1502,14 +1502,14 @@ export interface ChartSeries {
    * render a connecting line, so dashing and stroke width have no
    * visible effect there. See {@link ChartLineStroke}.
    */
-  stroke?: ChartLineStroke;
+  stroke?: ChartLineStroke
   /**
    * Per-series marker styling. Only meaningful for `line` and
    * `scatter` charts — the OOXML schema places `<c:marker>` on
    * `CT_LineSer` / `CT_ScatterSer` only. Ignored on every other
    * chart family at write time.
    */
-  marker?: ChartMarker;
+  marker?: ChartMarker
   /**
    * Invert the fill color when the value is negative. Maps to
    * `<c:invertIfNegative val=".."/>` inside the `<c:ser>` element.
@@ -1523,7 +1523,7 @@ export interface ChartSeries {
    * if negative" toggle, which paints negative bars with white (or
    * the inverted color when the spreadsheet supplies one).
    */
-  invertIfNegative?: boolean;
+  invertIfNegative?: boolean
   /**
    * Pie / doughnut slice explosion as a percentage of the radius —
    * the distance the slice is pulled away from the center. Maps to
@@ -1539,7 +1539,7 @@ export interface ChartSeries {
    * explosion (one slice pulled away while the rest stay flush) is
    * supported via {@link dataPoints} — `dataPoints[k].explosion`.
    */
-  explosion?: number;
+  explosion?: number
   /**
    * Per-data-point overrides. Maps to `<c:ser><c:dPt>` (CT_DPt,
    * ECMA-376 Part 1, §21.2.2.52). Each element pins overrides for a
@@ -1551,7 +1551,7 @@ export interface ChartSeries {
    * with the same `idx` collapse last-wins to mirror Excel's UI
    * behaviour. See {@link ChartDataPoint} for the per-field shape.
    */
-  dataPoints?: ChartDataPoint[];
+  dataPoints?: ChartDataPoint[]
   /**
    * Per-series trendlines. Maps to `<c:ser><c:trendline>` (CT_Trendline,
    * ECMA-376 Part 1, §21.2.2.211). Multiple trendlines may be attached
@@ -1564,7 +1564,7 @@ export interface ChartSeries {
    * `CT_LineSer`, `CT_AreaSer`, `CT_ScatterSer`. Pie / doughnut series
    * have no trendline slot and the writer drops the field there.
    */
-  trendlines?: ChartTrendline[];
+  trendlines?: ChartTrendline[]
   /**
    * Per-series error bars. Maps to `<c:ser><c:errBars>` (CT_ErrBars,
    * ECMA-376 Part 1, §21.2.2.55). A series may carry separate X and Y
@@ -1576,7 +1576,7 @@ export interface ChartSeries {
    * entry in declaration order; pie / doughnut series have no slot
    * and the writer drops the field there.
    */
-  errorBars?: ChartErrorBars[];
+  errorBars?: ChartErrorBars[]
   /**
    * Bubble-size reference for `bubble` series. Maps to
    * `<c:ser><c:bubbleSize>` (CT_NumDataSource, ECMA-376 Part 1,
@@ -1592,7 +1592,7 @@ export interface ChartSeries {
    * {@link ChartSeriesInfo.bubbleSizeRef} so a templated bubble chart
    * can round-trip through {@link cloneChart}.
    */
-  bubbleSize?: string;
+  bubbleSize?: string
   /**
    * Per-series 3D shape variant for `bar3D` charts. Maps to
    * `<c:ser><c:shape val=".."/>` (CT_Shape, ECMA-376 Part 1,
@@ -1610,7 +1610,7 @@ export interface ChartSeries {
    * `<c:shape>` exclusively on `CT_BarSer` inside `<c:bar3DChart>`.
    * The writer drops the field on every other chart family.
    */
-  shape3D?: ChartShape3D;
+  shape3D?: ChartShape3D
 }
 
 /**
@@ -1626,7 +1626,7 @@ export interface ChartSeries {
  * - `"pyramid"`       — square-base pyramid, apex at the data value.
  * - `"pyramidToMax"`  — square-base pyramid scaled to the chart maximum.
  */
-export type ChartShape3D = "cone" | "coneToMax" | "box" | "cylinder" | "pyramid" | "pyramidToMax";
+export type ChartShape3D = "cone" | "coneToMax" | "box" | "cylinder" | "pyramid" | "pyramidToMax"
 
 /**
  * Per-data-point override inside a series.
@@ -1648,7 +1648,7 @@ export interface ChartDataPoint {
    * an index drop on emit since Excel uses the index to anchor the
    * override on the matching point.
    */
-  idx: number;
+  idx: number
   /**
    * Pie / doughnut per-slice explosion (percent of radius). Maps to
    * `<c:dPt><c:explosion val="N"/></c:dPt>`. Range `0..400` per
@@ -1656,44 +1656,44 @@ export interface ChartDataPoint {
    * stays inside the range Excel will render. Only meaningful on pie /
    * doughnut series; the writer drops the field on every other family.
    */
-  explosion?: number;
+  explosion?: number
   /**
    * Bubble-3D toggle. Maps to `<c:dPt><c:bubble3D val=".."/></c:dPt>`.
    * Surfaces the OOXML default `false` on a fresh writer because the
    * schema lists the element as required on `CT_DPt` — the writer always
    * emits `val="0"` unless the caller pins `true`.
    */
-  bubble3D?: boolean;
+  bubble3D?: boolean
   /**
    * Per-point fill color as a 6-digit RGB hex string. Maps to
    * `<c:dPt><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></c:spPr></c:dPt>`.
    * Mirrors the series-level fill grammar — accepts a leading `#` and
    * any case; malformed input drops to `undefined`.
    */
-  fillColor?: ChartColor;
+  fillColor?: ChartColor
   /**
    * Per-point border (line) color as a 6-digit RGB hex string. Maps to
    * `<c:dPt><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:ln></c:spPr></c:dPt>`.
    * Same hex grammar as {@link fillColor}.
    */
-  borderColor?: ChartColor;
+  borderColor?: ChartColor
   /**
    * Per-point border width in points. Maps to the `w` attribute on
    * `<c:dPt><c:spPr><a:ln w="EMU"/></c:spPr></c:dPt>`. Same
    * `0.25..13.5` pt clamp as every other chart-frame border-width slot.
    */
-  borderWidth?: number;
+  borderWidth?: number
   /**
    * Per-point border preset dash. Maps to
    * `<c:dPt><c:spPr><a:ln><a:prstDash val=".."/></a:ln></c:spPr></c:dPt>`.
    * Same accept-or-drop grammar as {@link ChartBorderDash}.
    */
-  borderDash?: ChartBorderDash;
+  borderDash?: ChartBorderDash
   /**
    * Per-point marker styling override (line / scatter only). Maps to
    * `<c:dPt><c:marker>`. Mirrors {@link ChartMarker} field semantics.
    */
-  marker?: ChartMarker;
+  marker?: ChartMarker
 }
 
 /**
@@ -1710,7 +1710,7 @@ export interface ChartDataPoint {
  * - `"poly"`       — polynomial fit, set `order` 2..6.
  * - `"movingAvg"`  — `n`-period moving average, set `period` 2..n-1.
  */
-export type ChartTrendlineType = "linear" | "log" | "exp" | "power" | "poly" | "movingAvg";
+export type ChartTrendlineType = "linear" | "log" | "exp" | "power" | "poly" | "movingAvg"
 
 /**
  * Per-series trendline configuration. Maps to `<c:ser><c:trendline>`
@@ -1735,74 +1735,74 @@ export interface ChartTrendline {
    * entries without a type drop on emit since the OOXML schema lists
    * `<c:trendlineType>` as required on `CT_Trendline`.
    */
-  type: ChartTrendlineType;
+  type: ChartTrendlineType
   /**
    * Custom name shown in the chart legend. Maps to
    * `<c:name>STRING</c:name>`. When omitted, Excel synthesises a
    * default name (e.g. "Linear (Series 1)").
    */
-  name?: string;
+  name?: string
   /**
    * Polynomial order — only honored when {@link type} is `"poly"`.
    * Maps to `<c:order val="N"/>`. Range `2..6` per Excel's UI;
    * out-of-range values clamp on emit so a round-trip stays inside
    * the range Excel will render.
    */
-  order?: number;
+  order?: number
   /**
    * Moving-average period — only honored when {@link type} is
    * `"movingAvg"`. Maps to `<c:period val="N"/>`. Range `2..N-1`
    * where `N` is the number of points; out-of-range values clamp.
    */
-  period?: number;
+  period?: number
   /**
    * Forward forecast — number of category-axis units to project the
    * trendline forward beyond the last data point. Maps to
    * `<c:forward val="N"/>` (CT_Double per OOXML).
    */
-  forward?: number;
+  forward?: number
   /**
    * Backward forecast — number of category-axis units to project the
    * trendline backward before the first data point. Maps to
    * `<c:backward val="N"/>` (CT_Double).
    */
-  backward?: number;
+  backward?: number
   /**
    * Pin the y-intercept of the fit. Maps to `<c:intercept val="N"/>`
    * (CT_Double). Only meaningful for `"linear"`, `"poly"`, and `"exp"`
    * trendlines; ignored for the others.
    */
-  intercept?: number;
+  intercept?: number
   /**
    * Whether to display the trendline equation on the chart. Maps to
    * `<c:dispEq val=".."/>`. The OOXML default `false` collapses to
    * `undefined` on parse so absence and the default round-trip
    * identically through {@link cloneChart}.
    */
-  dispEquation?: boolean;
+  dispEquation?: boolean
   /**
    * Whether to display the R-squared value on the chart. Maps to
    * `<c:dispRSqr val=".."/>`. The OOXML default `false` collapses to
    * `undefined` on parse so absence and the default round-trip
    * identically through {@link cloneChart}.
    */
-  dispRSquared?: boolean;
+  dispRSquared?: boolean
   /**
    * Trendline stroke color. Maps to
    * `<c:trendline><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:ln></c:spPr></c:trendline>`.
    * Same hex grammar as every other chart-frame stroke color.
    */
-  lineColor?: ChartColor;
+  lineColor?: ChartColor
   /**
    * Trendline stroke width in points. Same `0.25..13.5` pt clamp as
    * every other chart-frame border-width slot.
    */
-  lineWidth?: number;
+  lineWidth?: number
   /**
    * Trendline stroke preset dash. Same accept-or-drop grammar as
    * {@link ChartBorderDash}.
    */
-  lineDash?: ChartBorderDash;
+  lineDash?: ChartBorderDash
 }
 
 /**
@@ -1813,7 +1813,7 @@ export interface ChartTrendline {
  * - `"x"` — error bars on the category axis (scatter / bubble only).
  * - `"y"` — error bars on the value axis.
  */
-export type ChartErrorBarDirection = "x" | "y";
+export type ChartErrorBarDirection = "x" | "y"
 
 /**
  * Error-bar polarity.
@@ -1824,7 +1824,7 @@ export type ChartErrorBarDirection = "x" | "y";
  * - `"minus"` — bars extend below / left only.
  * - `"plus"`  — bars extend above / right only.
  */
-export type ChartErrorBarType = "both" | "minus" | "plus";
+export type ChartErrorBarType = "both" | "minus" | "plus"
 
 /**
  * Error-bar value source.
@@ -1837,7 +1837,7 @@ export type ChartErrorBarType = "both" | "minus" | "plus";
  * - `"stdDev"`      — bars are `n` standard deviations.
  * - `"stdErr"`      — bars are the standard error.
  */
-export type ChartErrorBarValType = "cust" | "fixedVal" | "percentage" | "stdDev" | "stdErr";
+export type ChartErrorBarValType = "cust" | "fixedVal" | "percentage" | "stdDev" | "stdErr"
 
 /**
  * Per-series error-bar configuration. Maps to `<c:ser><c:errBars>`
@@ -1862,41 +1862,41 @@ export interface ChartErrorBars {
    * Direction the bars extend on. Maps to `<c:errDir val=".."/>`.
    * Required.
    */
-  direction: ChartErrorBarDirection;
+  direction: ChartErrorBarDirection
   /**
    * Polarity. Maps to `<c:errBarType val=".."/>`. Required.
    */
-  type: ChartErrorBarType;
+  type: ChartErrorBarType
   /**
    * Value source. Maps to `<c:errValType val=".."/>`. Required.
    */
-  valType: ChartErrorBarValType;
+  valType: ChartErrorBarValType
   /**
    * Fixed numeric value used by `valType: "fixedVal" | "percentage" |
    * "stdDev"`. Maps to `<c:val val="N"/>` (CT_Double). Ignored when
    * `valType` is `"stdErr"` or `"cust"`.
    */
-  value?: number;
+  value?: number
   /**
    * Whether to suppress the cross-bar end caps. Maps to
    * `<c:noEndCap val=".."/>`. Default `false` (caps drawn).
    */
-  noEndCap?: boolean;
+  noEndCap?: boolean
   /**
    * Stroke color for the error-bar line. Maps to
    * `<c:errBars><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:ln></c:spPr></c:errBars>`.
    */
-  lineColor?: ChartColor;
+  lineColor?: ChartColor
   /**
    * Stroke width in points. Same `0.25..13.5` pt clamp as every other
    * chart-frame border-width slot.
    */
-  lineWidth?: number;
+  lineWidth?: number
   /**
    * Stroke preset dash pattern. Same accept-or-drop grammar as
    * {@link ChartBorderDash}.
    */
-  lineDash?: ChartBorderDash;
+  lineDash?: ChartBorderDash
 }
 
 /**
@@ -1927,7 +1927,7 @@ export interface ChartLegendEntry {
    * `<c:idx val=".."/>`); non-finite, negative, or non-integer values
    * are dropped at write time rather than emit a token Excel rejects.
    */
-  idx: number;
+  idx: number
   /**
    * Whether the legend entry is hidden. Maps to
    * `<c:legendEntry><c:delete val=".."/></c:legendEntry>`. Defaults to
@@ -1938,7 +1938,7 @@ export interface ChartLegendEntry {
    * {@link delete} carries a meaningful value, and it always emits the
    * `<c:delete>` child explicitly so a re-parse sees the same flag.
    */
-  delete?: boolean;
+  delete?: boolean
   /**
    * Per-entry font size (in points) override. Maps to
    * `<c:legendEntry><c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p></c:txPr></c:legendEntry>`.
@@ -1947,41 +1947,41 @@ export interface ChartLegendEntry {
    * at emit time. Out-of-range values (`< 1` or `> 400`) and non-numeric
    * tokens collapse to `undefined`.
    */
-  fontSize?: number;
+  fontSize?: number
   /**
    * Per-entry bold flag. Maps to `<a:defRPr b=".."/>` inside the entry's
    * `<c:txPr>`. Mirrors {@link SheetChart.legendBold}.
    */
-  bold?: boolean;
+  bold?: boolean
   /**
    * Per-entry italic flag. Maps to `<a:defRPr i=".."/>`. Mirrors
    * {@link SheetChart.legendItalic}.
    */
-  italic?: boolean;
+  italic?: boolean
   /**
    * Per-entry underline flag. Maps to `<a:defRPr u=".."/>`. Mirrors
    * {@link SheetChart.legendUnderline} — only `u="sng"` round-trips
    * cleanly.
    */
-  underline?: boolean;
+  underline?: boolean
   /**
    * Per-entry strikethrough flag. Maps to `<a:defRPr strike=".."/>`.
    * Mirrors {@link SheetChart.legendStrikethrough} — only `strike="sngStrike"`
    * round-trips cleanly.
    */
-  strikethrough?: boolean;
+  strikethrough?: boolean
   /**
    * Per-entry font color (6-digit RGB hex). Maps to
    * `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr>`
    * inside the entry's `<c:txPr>`.
    */
-  color?: ChartColor;
+  color?: ChartColor
   /**
    * Per-entry font family / typeface name. Maps to
    * `<a:defRPr><a:latin typeface=".."/></a:defRPr>` inside the entry's
    * `<c:txPr>`.
    */
-  fontFamily?: string;
+  fontFamily?: string
 }
 
 /**
@@ -2021,7 +2021,7 @@ export interface ChartManualLayout {
    * `undefined` so the writer skips the `<c:x>` slot rather than emit a
    * token Excel would reject.
    */
-  x?: number;
+  x?: number
   /**
    * Vertical anchor as a fraction of the chart frame height. Maps to
    * `<c:manualLayout><c:y val=".."/></c:manualLayout>`. Range: `0..1`
@@ -2029,7 +2029,7 @@ export interface ChartManualLayout {
    * Out-of-range / non-finite / non-numeric inputs collapse to
    * `undefined` so the writer skips the `<c:y>` slot.
    */
-  y?: number;
+  y?: number
   /**
    * Width as a fraction of the chart frame width. Maps to
    * `<c:manualLayout><c:w val=".."/></c:manualLayout>`. Range: `0..1`
@@ -2037,7 +2037,7 @@ export interface ChartManualLayout {
    * frame width). Out-of-range / non-finite / non-numeric inputs
    * collapse to `undefined` so the writer skips the `<c:w>` slot.
    */
-  w?: number;
+  w?: number
   /**
    * Height as a fraction of the chart frame height. Maps to
    * `<c:manualLayout><c:h val=".."/></c:manualLayout>`. Range: `0..1`
@@ -2045,7 +2045,7 @@ export interface ChartManualLayout {
    * frame height). Out-of-range / non-finite / non-numeric inputs
    * collapse to `undefined` so the writer skips the `<c:h>` slot.
    */
-  h?: number;
+  h?: number
 }
 
 /**
@@ -2062,22 +2062,22 @@ export interface SheetChart {
    * Excel default). Both map to `<c:barChart>` with different
    * `<c:barDir>` values.
    */
-  type: WriteChartKind;
+  type: WriteChartKind
   /** Optional chart title rendered above the plot area. */
-  title?: string;
+  title?: string
   /** One or more data series. */
-  series: ChartSeries[];
+  series: ChartSeries[]
   /** Cell anchor — `to` defaults to a 6×15 area below `from`. */
   anchor: {
-    from: { row: number; col: number };
-    to?: { row: number; col: number };
-  };
+    from: { row: number; col: number }
+    to?: { row: number; col: number }
+  }
   /**
    * Bar/column subtype. Default: `"clustered"`. `"stacked"` and
    * `"percentStacked"` group series end-to-end. Ignored for non-bar
    * chart kinds.
    */
-  barGrouping?: "clustered" | "stacked" | "percentStacked";
+  barGrouping?: "clustered" | "stacked" | "percentStacked"
   /**
    * Bar/column gap width as a percentage of the bar width — the empty
    * space between adjacent category groups. Accepted range: `0` – `500`
@@ -2087,7 +2087,7 @@ export interface SheetChart {
    * `<c:barChart><c:gapWidth val=".."/></c:barChart>`. Ignored for
    * non-bar / non-column chart kinds.
    */
-  gapWidth?: number;
+  gapWidth?: number
   /**
    * Bar/column series overlap as a percentage of the bar width.
    * Accepted range: `-100` – `100` (the OOXML `ST_Overlap` schema).
@@ -2098,21 +2098,21 @@ export interface SheetChart {
    * `<c:barChart><c:overlap val=".."/></c:barChart>`. Ignored for
    * non-bar / non-column chart kinds.
    */
-  overlap?: number;
+  overlap?: number
   /**
    * Line subtype. Default: `"standard"`. `"stacked"` accumulates
    * series end-to-end, `"percentStacked"` normalizes each category to
    * 100%. Ignored for non-line chart kinds. Maps to
    * `<c:lineChart><c:grouping val="..."/></c:lineChart>`.
    */
-  lineGrouping?: "standard" | "stacked" | "percentStacked";
+  lineGrouping?: "standard" | "stacked" | "percentStacked"
   /**
    * Area subtype. Default: `"standard"`. `"stacked"` paints series on
    * top of each other, `"percentStacked"` normalizes each category to
    * 100%. Ignored for non-area chart kinds. Maps to
    * `<c:areaChart><c:grouping val="..."/></c:areaChart>`.
    */
-  areaGrouping?: "standard" | "stacked" | "percentStacked";
+  areaGrouping?: "standard" | "stacked" | "percentStacked"
   /**
    * Whether the chart paints `<c:dropLines>` — vertical reference lines
    * that drop from each data point down to the category axis. Mirrors
@@ -2129,7 +2129,7 @@ export interface SheetChart {
    * other chart kind (`bar` / `column` / `pie` / `doughnut` /
    * `scatter`).
    */
-  dropLines?: boolean;
+  dropLines?: boolean
   /**
    * Whether the chart paints `<c:hiLowLines>` — vertical reference
    * lines that connect the highest and lowest series values at each
@@ -2147,7 +2147,7 @@ export interface SheetChart {
    * ignored on every other chart kind (`bar` / `column` / `pie` /
    * `doughnut` / `area` / `scatter`).
    */
-  hiLowLines?: boolean;
+  hiLowLines?: boolean
   /**
    * Whether the chart paints `<c:serLines>` — connector lines drawn
    * between paired data points across consecutive series in a stacked
@@ -2169,14 +2169,14 @@ export interface SheetChart {
    * (matches Excel's own behavior when the toggle is flipped on a
    * clustered chart).
    */
-  serLines?: boolean;
+  serLines?: boolean
   /**
    * Doughnut hole size as a percentage of the outer radius. Accepted
    * range: 10 – 90 (Excel's UI clamps values outside this band).
    * Default: `50` — the Excel default. Ignored for non-doughnut chart
    * kinds.
    */
-  holeSize?: number;
+  holeSize?: number
   /**
    * Pie / doughnut starting angle in degrees, measured clockwise from
    * the 12 o'clock position. Accepted range: 0 – 360 (the OOXML schema
@@ -2188,13 +2188,13 @@ export interface SheetChart {
    * composing a dashboard whose pie / doughnut charts should align
    * visually (e.g. `90` to start at 3 o'clock).
    */
-  firstSliceAng?: number;
+  firstSliceAng?: number
   /**
    * Whether the legend is shown and where. Default: `"right"` for
    * pie/doughnut/bar/line/area, `"bottom"` for scatter. Pass `false`
    * to hide the legend.
    */
-  legend?: false | "top" | "bottom" | "left" | "right" | "topRight";
+  legend?: false | "top" | "bottom" | "left" | "right" | "topRight"
   /**
    * Whether the legend overlaps the plot area. Maps to
    * `<c:legend><c:overlay val=".."/></c:legend>` — Excel's "Format
@@ -2208,7 +2208,7 @@ export interface SheetChart {
    * Silently ignored when `legend === false` (no legend element is
    * emitted) — there is no overlay flag to set on a hidden legend.
    */
-  legendOverlay?: boolean;
+  legendOverlay?: boolean
   /**
    * Per-series legend-entry overrides. Maps to
    * `<c:legend><c:legendEntry>...</c:legendEntry></c:legend>` — Excel's
@@ -2231,7 +2231,7 @@ export interface SheetChart {
    * `<c:legendPos>` and before `<c:layout>` / `<c:overlay>`; the writer
    * emits in that order so a re-parse sees the canonical sequence.
    */
-  legendEntries?: ChartLegendEntry[];
+  legendEntries?: ChartLegendEntry[]
   /**
    * Legend font size in whole or half points. Maps to
    * `<c:legend><c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p>
@@ -2268,7 +2268,7 @@ export interface SheetChart {
    * on the same `<c:legend>` element so a single configuration call
    * threads cleanly through every legend knob Excel exposes.
    */
-  legendFontSize?: number;
+  legendFontSize?: number
   /**
    * Legend bold flag. Maps to `<c:legend><c:txPr><a:p><a:pPr>
    * <a:defRPr b=".."/></a:pPr></a:p></c:txPr></c:legend>` — Excel's
@@ -2298,7 +2298,7 @@ export interface SheetChart {
    * `<c:legend>` element so a single configuration call threads
    * cleanly through every legend knob Excel exposes.
    */
-  legendBold?: boolean;
+  legendBold?: boolean
   /**
    * Legend italic flag. Maps to `<c:legend><c:txPr><a:p><a:pPr>
    * <a:defRPr i=".."/></a:pPr></a:p></c:txPr></c:legend>` — Excel's
@@ -2330,7 +2330,7 @@ export interface SheetChart {
    * `<c:legend>` element so a single configuration call threads
    * cleanly through every legend knob Excel exposes.
    */
-  legendItalic?: boolean;
+  legendItalic?: boolean
   /**
    * Legend underline flag. Maps to `<c:legend><c:txPr><a:p><a:pPr>
    * <a:defRPr u=".."/></a:pPr></a:p></c:txPr></c:legend>` — Excel's
@@ -2363,7 +2363,7 @@ export interface SheetChart {
    * land on the same `<c:legend>` element so a single configuration
    * call threads cleanly through every legend knob Excel exposes.
    */
-  legendUnderline?: boolean;
+  legendUnderline?: boolean
   /**
    * Legend strikethrough flag. Maps to `<c:legend><c:txPr><a:p><a:pPr>
    * <a:defRPr strike=".."/></a:pPr></a:p></c:txPr></c:legend>` — Excel's
@@ -2398,7 +2398,7 @@ export interface SheetChart {
    * `<c:legend>` element so a single configuration call threads
    * cleanly through every legend knob Excel exposes.
    */
-  legendStrikethrough?: boolean;
+  legendStrikethrough?: boolean
   /**
    * Legend font color. Maps to `<c:legend><c:txPr><a:p><a:pPr>
    * <a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill>
@@ -2438,7 +2438,7 @@ export interface SheetChart {
    * configuration call threads cleanly through every legend knob Excel
    * exposes.
    */
-  legendFontColor?: ChartColor;
+  legendFontColor?: ChartColor
   /**
    * Legend font family / typeface. Maps to `<c:legend><c:txPr><a:p>
    * <a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr></a:pPr>
@@ -2480,7 +2480,7 @@ export interface SheetChart {
    * configuration call threads cleanly through every legend knob
    * Excel exposes.
    */
-  legendFontFamily?: string;
+  legendFontFamily?: string
   /**
    * Custom legend placement inside the chart frame. Maps to
    * `<c:legend><c:layout><c:manualLayout>...</c:manualLayout></c:layout>
@@ -2523,7 +2523,7 @@ export interface SheetChart {
    * entire `<c:layout>` block so a fresh chart matches Excel's
    * reference serialization byte-for-byte.
    */
-  legendLayout?: ChartManualLayout;
+  legendLayout?: ChartManualLayout
   /**
    * Legend background fill color. Maps to `<c:legend><c:spPr>
    * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></c:spPr>
@@ -2570,7 +2570,7 @@ export interface SheetChart {
    * `<c:legendPos>` / `<c:overlay>` — every knob targets a different
    * child of `<c:legend>`.
    */
-  legendFillColor?: ChartColor;
+  legendFillColor?: ChartColor
   /**
    * Legend border (stroke) solid color as a 6-digit RGB hex string
    * (e.g. `"1F77B4"`). Maps to `<c:legend><c:spPr><a:ln><a:solidFill>
@@ -2619,7 +2619,7 @@ export interface SheetChart {
    * (`<a:schemeClr>`) likewise drop to `undefined` so a parsed value
    * always carries a literal hex Excel will render byte-for-byte.
    */
-  legendBorderColor?: ChartColor;
+  legendBorderColor?: ChartColor
   /**
    * Legend border (stroke) thickness in points (e.g. `1.5`). Maps to
    * the `w` attribute on `<c:legend><c:spPr><a:ln w="EMU">` — Excel's
@@ -2660,7 +2660,7 @@ export interface SheetChart {
    * 0.25..13.5 pt clamp + 0.25 pt snap so width values compose the same
    * way at the call site.
    */
-  legendBorderWidth?: number;
+  legendBorderWidth?: number
   /**
    * Chart legend border (stroke) preset dash pattern. Maps to the
    * `val` attribute on `<c:legend><c:spPr><a:ln><a:prstDash val=".."/>`.
@@ -2674,20 +2674,20 @@ export interface SheetChart {
    * element. Silently ignored when `legend === false` (no `<c:legend>`
    * element is emitted).
    */
-  legendBorderDash?: ChartBorderDash;
+  legendBorderDash?: ChartBorderDash
   /**
    * Legend border (stroke) line cap style. Maps to the `cap` attribute
    * on `<c:legend><c:spPr><a:ln cap=".."/>`. Same accept-or-drop
    * grammar as {@link titleBorderCap} — `"flat"` collapses to absence.
    */
-  legendBorderCap?: ChartLineCap;
+  legendBorderCap?: ChartLineCap
   /**
    * Legend border (stroke) compound line style. Maps to the `cmpd`
    * attribute on `<c:legend><c:spPr><a:ln cmpd=".."/>`. Same
    * accept-or-drop grammar as {@link titleBorderCompound} — `"sng"`
    * collapses to absence.
    */
-  legendBorderCompound?: ChartLineCompound;
+  legendBorderCompound?: ChartLineCompound
   /**
    * Custom plot-area placement inside the chart frame. Maps to
    * `<c:plotArea><c:layout><c:manualLayout>...</c:manualLayout></c:layout>
@@ -2732,7 +2732,7 @@ export interface SheetChart {
    * placeholder with `<c:layout><c:manualLayout>...</c:manualLayout>
    * </c:layout>`.
    */
-  plotAreaLayout?: ChartManualLayout;
+  plotAreaLayout?: ChartManualLayout
   /**
    * Plot-area solid fill color as a 6-digit RGB hex string (e.g.
    * `"F2F2F2"`). Maps to `<c:plotArea><c:spPr><a:solidFill>
@@ -2765,7 +2765,7 @@ export interface SheetChart {
    * (`<a:schemeClr>`) likewise drop to `undefined` so a parsed value
    * always carries a literal hex Excel will render byte-for-byte.
    */
-  plotAreaFillColor?: ChartColor;
+  plotAreaFillColor?: ChartColor
   /**
    * Plot-area border (stroke) solid color as a 6-digit RGB hex string
    * (e.g. `"1F77B4"`). Maps to `<c:plotArea><c:spPr><a:ln><a:solidFill>
@@ -2810,7 +2810,7 @@ export interface SheetChart {
    * grammar, same `<c:spPr>` host element, but lands on the line
    * (`<a:ln>`) child rather than the fill (`<a:solidFill>`) child.
    */
-  plotAreaBorderColor?: ChartColor;
+  plotAreaBorderColor?: ChartColor
   /**
    * Plot-area border (stroke) thickness in points (e.g. `1.5`). Maps to
    * the `w` attribute on `<c:plotArea><c:spPr><a:ln w="EMU">` — Excel's
@@ -2848,7 +2848,7 @@ export interface SheetChart {
    * for axis lines and other strokes — this knob covers only the
    * plot-area border slot.
    */
-  plotAreaBorderWidth?: number;
+  plotAreaBorderWidth?: number
   /**
    * Plot-area border (stroke) preset dash pattern. Maps to the `val`
    * attribute on `<c:plotArea><c:spPr><a:ln><a:prstDash val=".."/>` —
@@ -2876,21 +2876,21 @@ export interface SheetChart {
    * `<a:prstDash>` child); the writer authors `<a:ln>` whenever any
    * of them is set.
    */
-  plotAreaBorderDash?: ChartBorderDash;
+  plotAreaBorderDash?: ChartBorderDash
   /**
    * Plot-area border (stroke) line cap style. Maps to the `cap`
    * attribute on `<c:plotArea><c:spPr><a:ln cap=".."/>`. Same
    * accept-or-drop grammar as {@link titleBorderCap} — `"flat"`
    * collapses to absence.
    */
-  plotAreaBorderCap?: ChartLineCap;
+  plotAreaBorderCap?: ChartLineCap
   /**
    * Plot-area border (stroke) compound line style. Maps to the `cmpd`
    * attribute on `<c:plotArea><c:spPr><a:ln cmpd=".."/>`. Same
    * accept-or-drop grammar as {@link titleBorderCompound} — `"sng"`
    * collapses to absence.
    */
-  plotAreaBorderCompound?: ChartLineCompound;
+  plotAreaBorderCompound?: ChartLineCompound
   /**
    * Chart-space (entire chart background) solid fill color as a 6-digit
    * RGB hex string (e.g. `"F2F2F2"`). Maps to `<c:chartSpace><c:spPr>
@@ -2938,7 +2938,7 @@ export interface SheetChart {
    * </c:spPr>` mapping — so a caller can thread a single hex string
    * through every `<c:spPr>`-based fill slot.
    */
-  chartSpaceFillColor?: ChartColor;
+  chartSpaceFillColor?: ChartColor
   /**
    * Chart-space (entire chart frame) border (stroke) solid color as a
    * 6-digit RGB hex string (e.g. `"1F77B4"`). Maps to `<c:chartSpace>
@@ -2985,7 +2985,7 @@ export interface SheetChart {
    * </a:solidFill></a:ln>` mapping — so a caller can thread a single
    * hex string through every `<a:ln>`-based stroke slot.
    */
-  chartSpaceBorderColor?: ChartColor;
+  chartSpaceBorderColor?: ChartColor
   /**
    * Chart-space (entire chart frame) border (stroke) thickness in
    * points (e.g. `1.5`). Maps to the `w` attribute on
@@ -3024,7 +3024,7 @@ export interface SheetChart {
    * parent (`<c:chartSpace>` rather than `<c:plotArea>` / `<c:legend>`
    * / `<c:title>`).
    */
-  chartSpaceBorderWidth?: number;
+  chartSpaceBorderWidth?: number
   /**
    * Chart-space (entire chart frame) border (stroke) preset dash
    * pattern. Maps to the `val` attribute on `<c:chartSpace><c:spPr>
@@ -3039,22 +3039,22 @@ export interface SheetChart {
    * `<a:ln>` element. Mirrors {@link plotAreaBorderDash} and lands on
    * `<c:chartSpace>`'s own `<c:spPr>` block.
    */
-  chartSpaceBorderDash?: ChartBorderDash;
+  chartSpaceBorderDash?: ChartBorderDash
   /**
    * Chart-space (entire chart frame) border (stroke) line cap style.
    * Maps to the `cap` attribute on `<c:chartSpace><c:spPr><a:ln
    * cap=".."/>`. Same accept-or-drop grammar as {@link titleBorderCap}.
    */
-  chartSpaceBorderCap?: ChartLineCap;
+  chartSpaceBorderCap?: ChartLineCap
   /**
    * Chart-space (entire chart frame) border (stroke) compound line
    * style. Maps to the `cmpd` attribute on `<c:chartSpace><c:spPr>
    * <a:ln cmpd=".."/>`. Same accept-or-drop grammar as
    * {@link titleBorderCompound}.
    */
-  chartSpaceBorderCompound?: ChartLineCompound;
+  chartSpaceBorderCompound?: ChartLineCompound
   /** Show the chart-level title element. Default: `true` when `title` is set. */
-  showTitle?: boolean;
+  showTitle?: boolean
   /**
    * Whether the chart title overlaps the plot area. Maps to
    * `<c:title><c:overlay val=".."/></c:title>` — Excel's "Format Chart
@@ -3071,7 +3071,7 @@ export interface SheetChart {
    * the legend's `<c:overlay>` lives on `<c:legend>`, while this one
    * lives on `<c:title>`, so the two flags compose freely.
    */
-  titleOverlay?: boolean;
+  titleOverlay?: boolean
   /**
    * Chart title rotation in whole degrees, measured clockwise from the
    * normal horizontal baseline. Maps to `<c:title><c:tx><c:rich>
@@ -3104,7 +3104,7 @@ export interface SheetChart {
    * thread a single rotation value through both the chart title and an
    * axis label set without bookkeeping the units.
    */
-  titleRotation?: number;
+  titleRotation?: number
   /**
    * Chart title font size in whole or half points. Maps to
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
@@ -3131,7 +3131,7 @@ export interface SheetChart {
    * or `title` is absent) — there is no `<c:title>` block to host the
    * size in either case.
    */
-  titleFontSize?: number;
+  titleFontSize?: number
   /**
    * Chart title bold flag. Maps to
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr>
@@ -3158,7 +3158,7 @@ export interface SheetChart {
    * configuration call threads cleanly through every chart-title knob
    * Excel exposes.
    */
-  titleBold?: boolean;
+  titleBold?: boolean
   /**
    * Chart title italic flag. Maps to
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr>
@@ -3186,7 +3186,7 @@ export interface SheetChart {
    * `<c:title>` element so a single configuration call threads cleanly
    * through every chart-title knob Excel exposes.
    */
-  titleItalic?: boolean;
+  titleItalic?: boolean
   /**
    * Chart title font color. Maps to
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>
@@ -3225,7 +3225,7 @@ export interface SheetChart {
    * on the same `<c:title>` element so a single configuration call
    * threads cleanly through every chart-title knob Excel exposes.
    */
-  titleColor?: ChartColor;
+  titleColor?: ChartColor
   /**
    * Chart title strikethrough flag. Maps to
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
@@ -3275,7 +3275,7 @@ export interface SheetChart {
    * `<c:title>` element so a single configuration call threads
    * cleanly through every chart-title knob Excel exposes.
    */
-  titleStrike?: boolean;
+  titleStrike?: boolean
   /**
    * Chart title underline flag. Maps to
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr u=".."/></a:pPr>
@@ -3330,7 +3330,7 @@ export interface SheetChart {
    * `<c:title>` element so a single configuration call threads
    * cleanly through every chart-title knob Excel exposes.
    */
-  titleUnderline?: boolean;
+  titleUnderline?: boolean
   /**
    * Chart title font family / typeface. Maps to
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
@@ -3368,7 +3368,7 @@ export interface SheetChart {
    * `<c:title>` element so a single configuration call threads
    * cleanly through every chart-title knob Excel exposes.
    */
-  titleFontFamily?: string;
+  titleFontFamily?: string
   /**
    * Custom chart-title placement inside the chart frame. Maps to
    * `<c:title><c:layout><c:manualLayout>...</c:manualLayout></c:layout>
@@ -3416,7 +3416,7 @@ export interface SheetChart {
    * thread the same `(x, y, w, h)` 0..1 fractions through both manual-
    * layout slots without bookkeeping a second type.
    */
-  titleLayout?: ChartManualLayout;
+  titleLayout?: ChartManualLayout
   /**
    * Chart title background fill color. Maps to `<c:title><c:spPr>
    * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></c:spPr>
@@ -3464,7 +3464,7 @@ export interface SheetChart {
    * `<c:overlay>` — every knob targets a different child of
    * `<c:title>`.
    */
-  titleFillColor?: ChartColor;
+  titleFillColor?: ChartColor
   /**
    * Chart title border (stroke) solid color as a 6-digit RGB hex string
    * (e.g. `"1F77B4"`). Maps to `<c:title><c:spPr><a:ln><a:solidFill>
@@ -3513,7 +3513,7 @@ export interface SheetChart {
    * </c:spPr>` mapping — so a caller can thread a single hex string
    * through every `<c:spPr><a:ln>`-based stroke slot.
    */
-  titleBorderColor?: ChartColor;
+  titleBorderColor?: ChartColor
   /**
    * Chart title border (stroke) thickness in points (e.g. `1.5`). Maps
    * to the `w` attribute on `<c:title><c:spPr><a:ln w="EMU">` —
@@ -3556,7 +3556,7 @@ export interface SheetChart {
    * the same 0.25..13.5 pt clamp + 0.25 pt snap so width values
    * compose the same way at the call site.
    */
-  titleBorderWidth?: number;
+  titleBorderWidth?: number
   /**
    * Chart title border (stroke) preset dash pattern. Maps to the `val`
    * attribute on `<c:title><c:spPr><a:ln><a:prstDash val=".."/>`.
@@ -3570,14 +3570,14 @@ export interface SheetChart {
    * element. Silently ignored when no title is rendered
    * (`showTitle === false` or `title` is absent).
    */
-  titleBorderDash?: ChartBorderDash;
+  titleBorderDash?: ChartBorderDash
   /**
    * Chart title border (stroke) line cap style. Maps to the `cap`
    * attribute on `<c:title><c:spPr><a:ln cap=".."/>`. Mirrors the OOXML
    * `ST_LineCap` enum — `"flat"` (default), `"rnd"`, `"sq"`. Absence
    * and `"flat"` round-trip identically.
    */
-  titleBorderCap?: ChartLineCap;
+  titleBorderCap?: ChartLineCap
   /**
    * Chart title border (stroke) compound line style. Maps to the `cmpd`
    * attribute on `<c:title><c:spPr><a:ln cmpd=".."/>`. Mirrors the
@@ -3585,7 +3585,7 @@ export interface SheetChart {
    * `"dbl"`, `"thickThin"`, `"thinThick"`, `"tri"`. Absence and
    * `"sng"` round-trip identically.
    */
-  titleBorderCompound?: ChartLineCompound;
+  titleBorderCompound?: ChartLineCompound
   /**
    * Auto-title-deleted flag. Maps to `<c:chart><c:autoTitleDeleted
    * val=".."/>` — Excel's record of whether the user explicitly deleted
@@ -3612,18 +3612,18 @@ export interface SheetChart {
    * rendered intent is explicit on roundtrip — Excel itself includes
    * it on every reference serialization.
    */
-  autoTitleDeleted?: boolean;
+  autoTitleDeleted?: boolean
   /** Alternative text for screen readers (lands in xdr:cNvPr/@descr). */
-  altText?: string;
+  altText?: string
   /** Caption for the chart frame (lands in xdr:cNvPr/@title). */
-  frameTitle?: string;
+  frameTitle?: string
   /**
    * Chart-level data labels applied to every series that does not set
    * its own {@link ChartSeries.dataLabels}. Pass a single
    * {@link ChartDataLabels} object to enable Excel's small in-chart
    * value/category annotations.
    */
-  dataLabels?: ChartDataLabels;
+  dataLabels?: ChartDataLabels
   /**
    * How Excel renders missing / blank cells in the source data. Maps
    * to `<c:dispBlanksAs val=".."/>` on `<c:chart>`. Default: `"gap"`
@@ -3632,7 +3632,7 @@ export interface SheetChart {
    * connect across the gap on line and scatter charts. See
    * {@link ChartDisplayBlanksAs} for the accepted set.
    */
-  dispBlanksAs?: ChartDisplayBlanksAs;
+  dispBlanksAs?: ChartDisplayBlanksAs
   /**
    * Vary the color of each data point within the same series. Maps to
    * `<c:varyColors val=".."/>` on the chart-type element
@@ -3660,7 +3660,7 @@ export interface SheetChart {
    * area / scatter charts; surface / stock are not authored by hucre's
    * writer.
    */
-  varyColors?: boolean;
+  varyColors?: boolean
   /**
    * Scatter sub-style for `scatter` charts. Maps to
    * `<c:scatterChart><c:scatterStyle val=".."/></c:scatterChart>`.
@@ -3676,7 +3676,7 @@ export interface SheetChart {
    * per-series {@link ChartSeries.smooth} flag to pick a curve on a
    * line chart or pin smoothing on individual scatter series.
    */
-  scatterStyle?: ChartScatterStyle;
+  scatterStyle?: ChartScatterStyle
   /**
    * Whether the chart only plots data from visible cells. Maps to
    * `<c:plotVisOnly val=".."/>` on `<c:chart>`. Mirrors Excel's
@@ -3694,7 +3694,7 @@ export interface SheetChart {
    * explicit on roundtrip — Excel itself includes it in every reference
    * serialization.
    */
-  plotVisOnly?: boolean;
+  plotVisOnly?: boolean
   /**
    * Whether data labels are shown for points whose values exceed the
    * chart's maximum axis bound. Maps to `<c:showDLblsOverMax val=".."/>`
@@ -3716,7 +3716,7 @@ export interface SheetChart {
    * (the other always-emitted chart-level toggles); a value pinned by
    * the caller round-trips identically through {@link cloneChart}.
    */
-  showDLblsOverMax?: boolean;
+  showDLblsOverMax?: boolean
   /**
    * Whether the chart frame is drawn with rounded corners. Maps to
    * `<c:roundedCorners val=".."/>` on `<c:chartSpace>` (a sibling of
@@ -3732,7 +3732,7 @@ export interface SheetChart {
    * explicit on roundtrip — Excel itself includes it in every reference
    * serialization.
    */
-  roundedCorners?: boolean;
+  roundedCorners?: boolean
   /**
    * Whether to render up / down bars between paired series on a line
    * chart. Maps to `<c:lineChart><c:upDownBars/></c:lineChart>` —
@@ -3753,7 +3753,7 @@ export interface SheetChart {
    * default for `CT_UpDownBars/gapWidth`. Pin
    * {@link upDownBarsGapWidth} to thin or widen the bars.
    */
-  upDownBars?: boolean;
+  upDownBars?: boolean
   /**
    * Width of the gap between up / down bars as a percentage of the bar
    * width. Maps to `<c:lineChart><c:upDownBars><c:gapWidth val=".."/>
@@ -3782,7 +3782,7 @@ export interface SheetChart {
    * on a line chart. Both share the same `ST_GapAmount` schema range
    * but are independently scoped.
    */
-  upDownBarsGapWidth?: number;
+  upDownBarsGapWidth?: number
   /**
    * Whether the line chart paints markers at each data point. Maps to
    * `<c:lineChart><c:marker val=".."/></c:lineChart>` — Excel's
@@ -3813,7 +3813,7 @@ export interface SheetChart {
    * marker-on chart round-trip identically through {@link cloneChart};
    * only an explicit `val="0"` surfaces `false`.
    */
-  showLineMarkers?: boolean;
+  showLineMarkers?: boolean
   /**
    * Built-in chart style preset. Maps to `<c:style val=".."/>` on
    * `<c:chartSpace>` (a sibling of `<c:chart>`, not a child). Mirrors
@@ -3833,7 +3833,7 @@ export interface SheetChart {
    * preserves the parsed value so a fresh chart and a templated chart
    * compose side by side without manual re-styling.
    */
-  style?: number;
+  style?: number
   /**
    * Editing-locale hint. Maps to `<c:lang val=".."/>` on
    * `<c:chartSpace>` (a sibling of `<c:chart>`, not a child). The
@@ -3858,7 +3858,7 @@ export interface SheetChart {
    * match `[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*` (the IETF language tag
    * subset `<c:lang>` accepts under `xsd:language`).
    */
-  lang?: string;
+  lang?: string
   /**
    * Date-system hint. Maps to `<c:date1904 val=".."/>` on
    * `<c:chartSpace>` (a sibling of `<c:chart>`, not a child). The flag
@@ -3888,7 +3888,7 @@ export interface SheetChart {
    * governs date interpretation across the whole chart document, not
    * just the plot area.
    */
-  date1904?: boolean;
+  date1904?: boolean
   /**
    * Whether the chart paints a data table beneath the plot area. Maps
    * to `<c:plotArea><c:dTable>...</c:dTable></c:plotArea>` — Excel's
@@ -3911,7 +3911,7 @@ export interface SheetChart {
    * axes at all, so the field is silently dropped on those families.
    * See {@link ChartDataTable}.
    */
-  dataTable?: boolean | ChartDataTable;
+  dataTable?: boolean | ChartDataTable
   /**
    * Chart-space protection. Maps to `<c:chartSpace><c:protection>...
    * </c:protection>` (CT_Protection, ECMA-376 Part 1, §21.2.2.142) —
@@ -3942,7 +3942,7 @@ export interface SheetChart {
    * has no bearing on whether the slot exists. See
    * {@link ChartProtection}.
    */
-  protection?: boolean | ChartProtection;
+  protection?: boolean | ChartProtection
   /**
    * 3-D view configuration. Maps to `<c:chart><c:view3D>` (CT_View3D,
    * ECMA-376 Part 1, §21.2.2.228) — Excel's "3-D Rotation" pane,
@@ -3972,7 +3972,7 @@ export interface SheetChart {
    * 3D template chart through {@link cloneChart}. See
    * {@link ChartView3D}.
    */
-  view3D?: ChartView3D;
+  view3D?: ChartView3D
   /**
    * 3-D floor thickness, in points. Maps to
    * `<c:chart><c:floor><c:thickness val="N"/></c:floor>` —
@@ -4003,7 +4003,7 @@ export interface SheetChart {
    * between `<c:view3D>` and `<c:sideWall>` / `<c:backWall>` /
    * `<c:plotArea>` per CT_Chart.
    */
-  floorThickness?: number;
+  floorThickness?: number
   /**
    * 3-D side-wall thickness, in points. Maps to
    * `<c:chart><c:sideWall><c:thickness val="N"/></c:sideWall>` —
@@ -4035,7 +4035,7 @@ export interface SheetChart {
    * CT_Chart; mirrors {@link SheetChart.view3D} as a chart-level 3D
    * styling knob.
    */
-  sideWallThickness?: number;
+  sideWallThickness?: number
   /**
    * 3-D back-wall thickness, in points. Maps to
    * `<c:chart><c:backWall><c:thickness val="N"/></c:backWall>` —
@@ -4067,7 +4067,7 @@ export interface SheetChart {
    * /  `<c:sideWall>` / `<c:backWall>` are independent siblings on
    * `<c:chart>`.
    */
-  backWallThickness?: number;
+  backWallThickness?: number
   /**
    * Per-axis configuration rendered alongside the plot area. The `x`
    * axis is the category axis for bar/column/line/area (or the bottom
@@ -4112,7 +4112,7 @@ export interface SheetChart {
   axes?: {
     /** Category axis (bar/column/line/area) or X value axis (scatter). */
     x?: {
-      title?: string;
+      title?: string
       /**
        * Rotation of the axis title in whole degrees. Maps to
        * `<c:catAx><c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title></c:catAx>`
@@ -4141,7 +4141,7 @@ export interface SheetChart {
        * Pie / doughnut have no axes at all, so the field is silently
        * dropped on those families.
        */
-      axisTitleRotation?: number;
+      axisTitleRotation?: number
       /**
        * Axis title font size in whole or half points. Maps to
        * `<c:catAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
@@ -4174,7 +4174,7 @@ export interface SheetChart {
        * per the OOXML schema, so the field round-trips on every chart
        * family that has axes (bar / column / line / area / scatter).
        */
-      axisTitleFontSize?: number;
+      axisTitleFontSize?: number
       /**
        * Axis title bold flag. Maps to
        * `<c:catAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr>
@@ -4215,7 +4215,7 @@ export interface SheetChart {
        * per the OOXML schema, so the field round-trips on every chart
        * family that has axes (bar / column / line / area / scatter).
        */
-      axisTitleBold?: boolean;
+      axisTitleBold?: boolean
       /**
        * Axis title italic flag. Maps to
        * `<c:catAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr>
@@ -4251,7 +4251,7 @@ export interface SheetChart {
        * per the OOXML schema, so the field round-trips on every chart
        * family that has axes (bar / column / line / area / scatter).
        */
-      axisTitleItalic?: boolean;
+      axisTitleItalic?: boolean
       /**
        * Axis title font color. Maps to
        * `<c:catAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr>
@@ -4301,7 +4301,7 @@ export interface SheetChart {
        * per the OOXML schema, so the field round-trips on every chart
        * family that has axes (bar / column / line / area / scatter).
        */
-      axisTitleColor?: ChartColor;
+      axisTitleColor?: ChartColor
       /**
        * Axis title strikethrough flag. Maps to
        * `<c:catAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
@@ -4358,7 +4358,7 @@ export interface SheetChart {
        * per the OOXML schema, so the field round-trips on every chart
        * family that has axes (bar / column / line / area / scatter).
        */
-      axisTitleStrike?: boolean;
+      axisTitleStrike?: boolean
       /**
        * Axis title underline flag. Maps to
        * `<c:catAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr u=".."/></a:pPr>
@@ -4421,7 +4421,7 @@ export interface SheetChart {
        * per the OOXML schema, so the field round-trips on every chart
        * family that has axes (bar / column / line / area / scatter).
        */
-      axisTitleUnderline?: boolean;
+      axisTitleUnderline?: boolean
       /**
        * Axis title font family / typeface. Maps to
        * `<c:catAx>` / `<c:valAx>` / `<c:dateAx>` / `<c:serAx>` ->
@@ -4468,7 +4468,7 @@ export interface SheetChart {
        * every chart family that has axes (bar / column / line /
        * area / scatter).
        */
-      axisTitleFontFamily?: string;
+      axisTitleFontFamily?: string
       /**
        * Axis-title overlay flag. Maps to
        * `<c:catAx><c:title><c:overlay val=".."/></c:title></c:catAx>`
@@ -4507,7 +4507,7 @@ export interface SheetChart {
        * every chart family that has axes (bar / column / line /
        * area / scatter).
        */
-      axisTitleOverlay?: boolean;
+      axisTitleOverlay?: boolean
       /**
        * Axis-title manual placement. Maps to
        * `<c:catAx><c:title><c:layout><c:manualLayout>...</c:manualLayout>
@@ -4559,7 +4559,7 @@ export interface SheetChart {
        * every chart family that has axes (bar / column / line /
        * area / scatter).
        */
-      axisTitleLayout?: ChartManualLayout;
+      axisTitleLayout?: ChartManualLayout
       /**
        * Axis-title background fill (solid). Maps to
        * `<c:catAx><c:title><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
@@ -4608,7 +4608,7 @@ export interface SheetChart {
        * every chart family that has axes (bar / column / line /
        * area / scatter).
        */
-      axisTitleFillColor?: ChartColor;
+      axisTitleFillColor?: ChartColor
       /**
        * Axis-title border (line stroke) solid color as a 6-digit RGB
        * hex string (e.g. `"1F77B4"`). Maps to
@@ -4672,7 +4672,7 @@ export interface SheetChart {
        * every chart family that has axes (bar / column / line /
        * area / scatter).
        */
-      axisTitleBorderColor?: ChartColor;
+      axisTitleBorderColor?: ChartColor
       /**
        * Axis-title border (stroke) thickness in points (e.g. `1.5`).
        * Maps to the `w` attribute on `<c:catAx><c:title><c:spPr>
@@ -4705,7 +4705,7 @@ export interface SheetChart {
        * to host `<c:spPr>`) and on `pie` / `doughnut` charts (no axes
        * at all).
        */
-      axisTitleBorderWidth?: number;
+      axisTitleBorderWidth?: number
       /**
        * Axis-title border (stroke) preset dash pattern. Maps to the
        * `val` attribute on `<c:catAx><c:title><c:spPr><a:ln>
@@ -4722,44 +4722,44 @@ export interface SheetChart {
        * `<a:ln>` element. Silently dropped when the axis renders no
        * title and on `pie` / `doughnut` charts.
        */
-      axisTitleBorderDash?: ChartBorderDash;
+      axisTitleBorderDash?: ChartBorderDash
       /**
        * Axis-title border (stroke) line cap style. Maps to the `cap`
        * attribute on the axis title's `<c:spPr><a:ln cap=".."/>`. Same
        * accept-or-drop grammar as {@link SheetChart.titleBorderCap}.
        */
-      axisTitleBorderCap?: ChartLineCap;
+      axisTitleBorderCap?: ChartLineCap
       /**
        * Axis-title border (stroke) compound line style. Maps to the
        * `cmpd` attribute on the axis title's `<c:spPr><a:ln
        * cmpd=".."/>`. Same accept-or-drop grammar as
        * {@link SheetChart.titleBorderCompound}.
        */
-      axisTitleBorderCompound?: ChartLineCompound;
-      gridlines?: ChartAxisGridlines;
-      scale?: ChartAxisScale;
-      numberFormat?: ChartAxisNumberFormat;
+      axisTitleBorderCompound?: ChartLineCompound
+      gridlines?: ChartAxisGridlines
+      scale?: ChartAxisScale
+      numberFormat?: ChartAxisNumberFormat
       /**
        * Major tick-mark style. Maps to
        * `<c:catAx><c:majorTickMark val=".."/></c:catAx>` (or
        * `<c:valAx>` for scatter). Default: `"out"` — Excel's reference
        * serialization. See {@link ChartAxisTickMark}.
        */
-      majorTickMark?: ChartAxisTickMark;
+      majorTickMark?: ChartAxisTickMark
       /**
        * Minor tick-mark style. Maps to
        * `<c:catAx><c:minorTickMark val=".."/></c:catAx>` (or
        * `<c:valAx>` for scatter). Default: `"none"` — Excel's
        * reference serialization. See {@link ChartAxisTickMark}.
        */
-      minorTickMark?: ChartAxisTickMark;
+      minorTickMark?: ChartAxisTickMark
       /**
        * Tick-label position. Maps to
        * `<c:catAx><c:tickLblPos val=".."/></c:catAx>` (or
        * `<c:valAx>` for scatter). Default: `"nextTo"` — Excel's
        * reference serialization. See {@link ChartAxisTickLabelPosition}.
        */
-      tickLblPos?: ChartAxisTickLabelPosition;
+      tickLblPos?: ChartAxisTickLabelPosition
       /**
        * Tick-label rotation in degrees. Maps to
        * `<c:catAx><c:txPr><a:bodyPr rot="N"/></c:txPr></c:catAx>` (or
@@ -4790,7 +4790,7 @@ export interface SheetChart {
        * write time so the writer never emits a token Excel's strict
        * validator would reject.
        */
-      labelRotation?: number;
+      labelRotation?: number
       /**
        * Tick-label font size in whole or half points. Maps to
        * `<c:catAx><c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p></c:txPr></c:catAx>`
@@ -4823,7 +4823,7 @@ export interface SheetChart {
        * doughnut have no axes at all, so the field is silently dropped
        * on those families.
        */
-      labelFontSize?: number;
+      labelFontSize?: number
       /**
        * Tick-label bold flag. Maps to
        * `<c:catAx><c:txPr><a:p><a:pPr><a:defRPr b=".."/></a:pPr></a:p></c:txPr></c:catAx>`
@@ -4860,7 +4860,7 @@ export interface SheetChart {
        * doughnut have no axes at all, so the field is silently dropped
        * on those families.
        */
-      labelBold?: boolean;
+      labelBold?: boolean
       /**
        * Tick-label italic flag. Maps to
        * `<c:catAx><c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p></c:txPr></c:catAx>`
@@ -4901,7 +4901,7 @@ export interface SheetChart {
        * doughnut have no axes at all, so the field is silently dropped
        * on those families.
        */
-      labelItalic?: boolean;
+      labelItalic?: boolean
       /**
        * Tick-label font color. Maps to
        * `<c:catAx><c:txPr><a:p><a:pPr><a:defRPr><a:solidFill>
@@ -4949,7 +4949,7 @@ export interface SheetChart {
        * doughnut have no axes at all, so the field is silently dropped
        * on those families.
        */
-      labelColor?: ChartColor;
+      labelColor?: ChartColor
       /**
        * Tick-label underline flag. Maps to
        * `<c:catAx><c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr></c:catAx>`
@@ -5009,7 +5009,7 @@ export interface SheetChart {
        * doughnut have no axes at all, so the field is silently dropped
        * on those families.
        */
-      labelUnderline?: boolean;
+      labelUnderline?: boolean
       /**
        * Tick-label strikethrough flag. Maps to
        * `<c:catAx><c:txPr><a:p><a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr></c:catAx>`
@@ -5065,7 +5065,7 @@ export interface SheetChart {
        * doughnut have no axes at all, so the field is silently dropped
        * on those families.
        */
-      labelStrike?: boolean;
+      labelStrike?: boolean
       /**
        * Axis tick-label font family / typeface. Maps to
        * `<c:catAx>` / `<c:valAx>` / `<c:dateAx>` / `<c:serAx>` ->
@@ -5107,7 +5107,7 @@ export interface SheetChart {
        * scatter). Pie / doughnut have no axes at all, so the field
        * is silently dropped on those families.
        */
-      labelFontFamily?: string;
+      labelFontFamily?: string
       /**
        * Reverse the axis plotting order. Maps to
        * `<c:scaling><c:orientation val="maxMin"/></c:scaling>` —
@@ -5122,7 +5122,7 @@ export interface SheetChart {
        * pin a specific reading direction (e.g. dates on a horizontal
        * bar chart with the most recent at the top).
        */
-      reverse?: boolean;
+      reverse?: boolean
       /**
        * Show every Nth tick label on a category axis. `1` (the OOXML
        * default) shows every label; `2` shows every other one; `3`
@@ -5135,7 +5135,7 @@ export interface SheetChart {
        * `ST_SkipIntervals` schema). Values outside the range or
        * non-positive are dropped at write time.
        */
-      tickLblSkip?: number;
+      tickLblSkip?: number
       /**
        * Show every Nth tick mark on a category axis. Same `1`-default
        * semantics as {@link tickLblSkip} but for the short tick lines
@@ -5143,7 +5143,7 @@ export interface SheetChart {
        * `<c:catAx><c:tickMarkSkip val="N"/></c:catAx>`. Same
        * scope-restriction as `tickLblSkip` — category axes only.
        */
-      tickMarkSkip?: number;
+      tickMarkSkip?: number
       /**
        * Distance between the tick labels and the axis line on a
        * category axis, expressed as a percentage of the default
@@ -5157,7 +5157,7 @@ export interface SheetChart {
        * range: `0..1000` (the OOXML `ST_LblOffsetPercent` schema).
        * Values outside the range are dropped at write time.
        */
-      lblOffset?: number;
+      lblOffset?: number
       /**
        * Suppress Excel's automatic multi-level category labels. Maps
        * to `<c:catAx><c:noMultiLvlLbl val=".."/></c:catAx>`. The OOXML
@@ -5175,7 +5175,7 @@ export interface SheetChart {
        * schema places the element on `CT_CatAx` only — `CT_ValAx`,
        * `CT_DateAx`, and `CT_SerAx` reject it.
        */
-      noMultiLvlLbl?: boolean;
+      noMultiLvlLbl?: boolean
       /**
        * Automatic axis-type detection on a category axis. Maps to
        * `<c:catAx><c:auto val=".."/></c:catAx>` (CT_CatAx, ECMA-376
@@ -5199,7 +5199,7 @@ export interface SheetChart {
        * chart and only flips the value when the caller explicitly
        * pins `auto: false`.
        */
-      auto?: boolean;
+      auto?: boolean
       /**
        * Horizontal alignment of the tick labels on a category axis —
        * `"ctr"` (center, the OOXML default), `"l"` (left), or `"r"`
@@ -5217,7 +5217,7 @@ export interface SheetChart {
        * above; unknown tokens are dropped at write time. See
        * {@link ChartAxisLabelAlign}.
        */
-      lblAlgn?: ChartAxisLabelAlign;
+      lblAlgn?: ChartAxisLabelAlign
       /**
        * Hide the entire axis (line, tick marks, tick labels). Maps to
        * `<c:catAx><c:delete val="1"/></c:catAx>` (or the matching
@@ -5236,7 +5236,7 @@ export interface SheetChart {
        * The flag is silently ignored on `pie` / `doughnut` charts
        * because the OOXML schema places no axes on those families.
        */
-      hidden?: boolean;
+      hidden?: boolean
       /**
        * Where the perpendicular axis crosses this axis along its own
        * range. Maps to `<c:catAx><c:crosses val=".."/></c:catAx>` (or
@@ -5252,7 +5252,7 @@ export interface SheetChart {
        * because the OOXML schema places no axes on those families. See
        * {@link ChartAxisCrosses}.
        */
-      crosses?: ChartAxisCrosses;
+      crosses?: ChartAxisCrosses
       /**
        * Numeric crossing position. Maps to
        * `<c:catAx><c:crossesAt val=".."/></c:catAx>` (or `<c:valAx>` for
@@ -5267,7 +5267,7 @@ export interface SheetChart {
        * inputs (`NaN`, `Infinity`) drop at write time. Silently ignored
        * on `pie` / `doughnut` charts.
        */
-      crossesAt?: number;
+      crossesAt?: number
       /**
        * Built-in display-unit preset for the X axis. Maps to
        * `<c:valAx><c:dispUnits><c:builtInUnit val=".."/></c:dispUnits></c:valAx>`.
@@ -5285,7 +5285,7 @@ export interface SheetChart {
        * See {@link ChartAxisDispUnits} for the surfaced shape and
        * {@link ChartAxisDispUnit} for the accepted preset tokens.
        */
-      dispUnits?: ChartAxisDispUnits | ChartAxisDispUnit;
+      dispUnits?: ChartAxisDispUnits | ChartAxisDispUnit
       /**
        * Cross-between mode for the X axis. Maps to
        * `<c:valAx><c:crossBetween val=".."/></c:valAx>`.
@@ -5298,11 +5298,11 @@ export interface SheetChart {
        * axis, which rejects `<c:crossBetween>`; pie / doughnut have no
        * axes at all). See {@link ChartAxisCrossBetween}.
        */
-      crossBetween?: ChartAxisCrossBetween;
-    };
+      crossBetween?: ChartAxisCrossBetween
+    }
     /** Value axis. */
     y?: {
-      title?: string;
+      title?: string
       /**
        * Rotation of the value-axis title in whole degrees. Maps to
        * `<c:valAx><c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title></c:valAx>`.
@@ -5320,7 +5320,7 @@ export interface SheetChart {
        * any axis whose `title` is unset (no `<c:title>` block to host
        * the rotation).
        */
-      axisTitleRotation?: number;
+      axisTitleRotation?: number
       /**
        * Value-axis title font size in whole or half points. Maps to
        * `<c:valAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
@@ -5337,7 +5337,7 @@ export interface SheetChart {
        * and on any axis whose `title` is unset (no `<c:title>` block
        * to host the size).
        */
-      axisTitleFontSize?: number;
+      axisTitleFontSize?: number
       /**
        * Value-axis title bold flag. Maps to
        * `<c:valAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr>
@@ -5357,7 +5357,7 @@ export interface SheetChart {
        * whose `title` is unset (no `<c:title>` block to host the
        * flag).
        */
-      axisTitleBold?: boolean;
+      axisTitleBold?: boolean
       /**
        * Value-axis title italic flag. Maps to
        * `<c:valAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr>
@@ -5377,7 +5377,7 @@ export interface SheetChart {
        * and on any axis whose `title` is unset (no `<c:title>` block
        * to host the flag).
        */
-      axisTitleItalic?: boolean;
+      axisTitleItalic?: boolean
       /**
        * Value-axis title font color. Maps to
        * `<c:valAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr>
@@ -5399,7 +5399,7 @@ export interface SheetChart {
        * whose `title` is unset (no `<c:title>` block to host the
        * fill).
        */
-      axisTitleColor?: ChartColor;
+      axisTitleColor?: ChartColor
       /**
        * Value-axis title strikethrough flag. Maps to
        * `<c:valAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
@@ -5418,7 +5418,7 @@ export interface SheetChart {
        * axes at all) and on any axis whose `title` is unset (no
        * `<c:title>` block to host the flag).
        */
-      axisTitleStrike?: boolean;
+      axisTitleStrike?: boolean
       /**
        * Value-axis title underline flag. Maps to
        * `<c:valAx><c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr u=".."/></a:pPr>
@@ -5438,7 +5438,7 @@ export interface SheetChart {
        * at all) and on any axis whose `title` is unset (no `<c:title>`
        * block to host the flag).
        */
-      axisTitleUnderline?: boolean;
+      axisTitleUnderline?: boolean
       /**
        * Axis title font family / typeface. Maps to
        * `<c:catAx>` / `<c:valAx>` / `<c:dateAx>` / `<c:serAx>` ->
@@ -5485,7 +5485,7 @@ export interface SheetChart {
        * every chart family that has axes (bar / column / line /
        * area / scatter).
        */
-      axisTitleFontFamily?: string;
+      axisTitleFontFamily?: string
       /**
        * Value-axis-title overlay flag. Same canonical `<c:title>
        * <c:overlay val=".."/></c:title>` slot and grammar as
@@ -5493,7 +5493,7 @@ export interface SheetChart {
        * round-trips on `<c:valAx>` exactly as it does on `<c:catAx>`.
        * See the X-axis variant for the full semantics.
        */
-      axisTitleOverlay?: boolean;
+      axisTitleOverlay?: boolean
       /**
        * Value-axis-title manual placement. Same canonical
        * `<c:title><c:layout><c:manualLayout>...</c:manualLayout>
@@ -5502,7 +5502,7 @@ export interface SheetChart {
        * round-trips on `<c:valAx>` exactly as it does on `<c:catAx>`.
        * See the X-axis variant for the full semantics.
        */
-      axisTitleLayout?: ChartManualLayout;
+      axisTitleLayout?: ChartManualLayout
       /**
        * Value-axis-title background fill (solid). Same canonical
        * `<c:title><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
@@ -5511,7 +5511,7 @@ export interface SheetChart {
        * round-trips on `<c:valAx>` exactly as it does on `<c:catAx>`.
        * See the X-axis variant for the full semantics.
        */
-      axisTitleFillColor?: ChartColor;
+      axisTitleFillColor?: ChartColor
       /**
        * Value-axis-title border (line stroke) solid color. Same
        * canonical `<c:title><c:spPr><a:ln><a:solidFill><a:srgbClr
@@ -5520,7 +5520,7 @@ export interface SheetChart {
        * — the field round-trips on `<c:valAx>` exactly as it does on
        * `<c:catAx>`. See the X-axis variant for the full semantics.
        */
-      axisTitleBorderColor?: ChartColor;
+      axisTitleBorderColor?: ChartColor
       /**
        * Value-axis-title border (stroke) thickness in points. Same
        * canonical `<c:title><c:spPr><a:ln w="EMU">` slot and grammar
@@ -5528,7 +5528,7 @@ export interface SheetChart {
        * round-trips on `<c:valAx>` exactly as it does on `<c:catAx>`.
        * See the X-axis variant for the full semantics.
        */
-      axisTitleBorderWidth?: number;
+      axisTitleBorderWidth?: number
       /**
        * Value-axis-title border (stroke) preset dash pattern. Same
        * canonical `<c:title><c:spPr><a:ln><a:prstDash val=".."/>` slot
@@ -5536,41 +5536,41 @@ export interface SheetChart {
        * the field round-trips on `<c:valAx>` exactly as it does on
        * `<c:catAx>`. See the X-axis variant for the full semantics.
        */
-      axisTitleBorderDash?: ChartBorderDash;
+      axisTitleBorderDash?: ChartBorderDash
       /**
        * Axis-title border (stroke) line cap style. Maps to the `cap`
        * attribute on the axis title's `<c:spPr><a:ln cap=".."/>`. Same
        * accept-or-drop grammar as {@link SheetChart.titleBorderCap}.
        */
-      axisTitleBorderCap?: ChartLineCap;
+      axisTitleBorderCap?: ChartLineCap
       /**
        * Axis-title border (stroke) compound line style. Maps to the
        * `cmpd` attribute on the axis title's `<c:spPr><a:ln
        * cmpd=".."/>`. Same accept-or-drop grammar as
        * {@link SheetChart.titleBorderCompound}.
        */
-      axisTitleBorderCompound?: ChartLineCompound;
-      gridlines?: ChartAxisGridlines;
-      scale?: ChartAxisScale;
-      numberFormat?: ChartAxisNumberFormat;
+      axisTitleBorderCompound?: ChartLineCompound
+      gridlines?: ChartAxisGridlines
+      scale?: ChartAxisScale
+      numberFormat?: ChartAxisNumberFormat
       /**
        * Major tick-mark style for the value axis. Maps to
        * `<c:valAx><c:majorTickMark val=".."/></c:valAx>`. Default:
        * `"out"`. See {@link ChartAxisTickMark}.
        */
-      majorTickMark?: ChartAxisTickMark;
+      majorTickMark?: ChartAxisTickMark
       /**
        * Minor tick-mark style for the value axis. Maps to
        * `<c:valAx><c:minorTickMark val=".."/></c:valAx>`. Default:
        * `"none"`. See {@link ChartAxisTickMark}.
        */
-      minorTickMark?: ChartAxisTickMark;
+      minorTickMark?: ChartAxisTickMark
       /**
        * Tick-label position for the value axis. Maps to
        * `<c:valAx><c:tickLblPos val=".."/></c:valAx>`. Default:
        * `"nextTo"`. See {@link ChartAxisTickLabelPosition}.
        */
-      tickLblPos?: ChartAxisTickLabelPosition;
+      tickLblPos?: ChartAxisTickLabelPosition
       /**
        * Tick-label rotation in degrees for the value axis. Maps to
        * `<c:valAx><c:txPr><a:bodyPr rot="N"/></c:txPr></c:valAx>`.
@@ -5585,7 +5585,7 @@ export interface SheetChart {
        * sit on the value axis. Silently dropped on `pie` / `doughnut`
        * charts (no axes at all).
        */
-      labelRotation?: number;
+      labelRotation?: number
       /**
        * Tick-label font size in points for the value axis. Maps to
        * `<c:valAx><c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p></c:txPr></c:valAx>`.
@@ -5601,7 +5601,7 @@ export interface SheetChart {
        * typography pin. Silently dropped on `pie` / `doughnut`
        * charts (no axes at all).
        */
-      labelFontSize?: number;
+      labelFontSize?: number
       /**
        * Tick-label bold flag for the value axis. Maps to
        * `<c:valAx><c:txPr><a:p><a:pPr><a:defRPr b=".."/></a:pPr></a:p></c:valAx>`.
@@ -5618,7 +5618,7 @@ export interface SheetChart {
        * headers in a busy chart frame). Silently dropped on `pie` /
        * `doughnut` charts (no axes at all).
        */
-      labelBold?: boolean;
+      labelBold?: boolean
       /**
        * Tick-label italic flag for the value axis. Maps to
        * `<c:valAx><c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p></c:valAx>`.
@@ -5635,7 +5635,7 @@ export interface SheetChart {
        * a stylistic accent in a busy chart frame). Silently dropped
        * on `pie` / `doughnut` charts (no axes at all).
        */
-      labelItalic?: boolean;
+      labelItalic?: boolean
       /**
        * Tick-label font color for the value axis. Maps to
        * `<c:valAx><c:txPr><a:p><a:pPr><a:defRPr><a:solidFill>
@@ -5654,7 +5654,7 @@ export interface SheetChart {
        * stylistic tint). Silently dropped on `pie` / `doughnut` charts
        * (no axes at all).
        */
-      labelColor?: ChartColor;
+      labelColor?: ChartColor
       /**
        * Tick-label underline flag for the value axis. Maps to
        * `<c:valAx><c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr></c:valAx>`.
@@ -5673,7 +5673,7 @@ export interface SheetChart {
        * inline links in a busy chart frame). Silently dropped on
        * `pie` / `doughnut` charts (no axes at all).
        */
-      labelUnderline?: boolean;
+      labelUnderline?: boolean
       /**
        * Tick-label strikethrough flag for the value axis. Maps to
        * `<c:valAx><c:txPr><a:p><a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr></c:valAx>`.
@@ -5692,21 +5692,21 @@ export interface SheetChart {
        * snapshot report). Silently dropped on `pie` / `doughnut` charts
        * (no axes at all).
        */
-      labelStrike?: boolean;
+      labelStrike?: boolean
       /**
        * Value-axis tick-label font family / typeface. Same canonical-
        * slot pair and grammar as {@link SheetChart.axes.x.labelFontFamily} —
        * the field round-trips on `<c:valAx>` exactly as it does on
        * `<c:catAx>`. See the X-axis variant for the full semantics.
        */
-      labelFontFamily?: string;
+      labelFontFamily?: string
       /**
        * Hide the entire value axis (line, tick marks, tick labels).
        * Maps to `<c:valAx><c:delete val="1"/></c:valAx>`. Default:
        * `false`. See {@link SheetChart.axes.x.hidden} for the full
        * semantics — the value-axis flag mirrors the X-axis flag.
        */
-      hidden?: boolean;
+      hidden?: boolean
       /**
        * Reverse the value axis plotting order. Maps to
        * `<c:valAx><c:scaling><c:orientation val="maxMin"/></c:scaling></c:valAx>`.
@@ -5716,7 +5716,7 @@ export interface SheetChart {
        * setting `true` flips the numeric direction so the maximum sits
        * at the origin and the minimum at the far end.
        */
-      reverse?: boolean;
+      reverse?: boolean
       /**
        * Where the perpendicular axis crosses the value axis along its
        * own range. Maps to `<c:valAx><c:crosses val=".."/></c:valAx>`.
@@ -5725,14 +5725,14 @@ export interface SheetChart {
        * exclusive with {@link crossesAt} — when both are set the writer
        * favours `crossesAt`. See {@link ChartAxisCrosses}.
        */
-      crosses?: ChartAxisCrosses;
+      crosses?: ChartAxisCrosses
       /**
        * Numeric crossing position for the value axis. Maps to
        * `<c:valAx><c:crossesAt val=".."/></c:valAx>`. Mirrors
        * {@link SheetChart.axes.x.crossesAt} — when set, takes
        * precedence over {@link crosses}.
        */
-      crossesAt?: number;
+      crossesAt?: number
       /**
        * Built-in display-unit preset for the value axis. Maps to
        * `<c:valAx><c:dispUnits><c:builtInUnit val=".."/></c:dispUnits></c:valAx>`.
@@ -5752,7 +5752,7 @@ export interface SheetChart {
        * See {@link ChartAxisDispUnits} for the surfaced shape and
        * {@link ChartAxisDispUnit} for the accepted preset tokens.
        */
-      dispUnits?: ChartAxisDispUnits | ChartAxisDispUnit;
+      dispUnits?: ChartAxisDispUnits | ChartAxisDispUnit
       /**
        * Cross-between mode for the value axis. Maps to
        * `<c:valAx><c:crossBetween val=".."/></c:valAx>`.
@@ -5763,9 +5763,9 @@ export interface SheetChart {
        * all, so the field is silently dropped on those families. See
        * {@link ChartAxisCrossBetween}.
        */
-      crossBetween?: ChartAxisCrossBetween;
-    };
-  };
+      crossBetween?: ChartAxisCrossBetween
+    }
+  }
 }
 
 // ── Charts ────────────────────────────────────────────────────────
@@ -5792,7 +5792,7 @@ export type ChartKind =
   | "surface"
   | "surface3D"
   | "stock"
-  | "ofPie";
+  | "ofPie"
 
 /**
  * A single series surfaced from a parsed chart.
@@ -5808,23 +5808,23 @@ export type ChartKind =
  */
 export interface ChartSeriesInfo {
   /** Chart kind that owns this series (matches {@link Chart.kinds}). */
-  kind: ChartKind;
+  kind: ChartKind
   /** 0-based position inside the chart-type element. */
-  index: number;
+  index: number
   /** Series name pulled from `<c:tx>` (literal `<c:v>` or strRef cache). */
-  name?: string;
+  name?: string
   /** Raw `<c:f>` for `<c:val>` / `<c:yVal>`. */
-  valuesRef?: string;
+  valuesRef?: string
   /** Raw `<c:f>` for `<c:cat>` / `<c:xVal>`. */
-  categoriesRef?: string;
+  categoriesRef?: string
   /** 6-digit RGB hex from `<c:spPr><a:solidFill><a:srgbClr val>`. */
-  color?: ChartColor;
+  color?: ChartColor
   /**
    * Series-level data labels parsed from the `<c:ser><c:dLbls>` block.
    * Falls back to the chart-level {@link Chart.dataLabels} when this
    * series carries no override of its own.
    */
-  dataLabels?: ChartDataLabelsInfo;
+  dataLabels?: ChartDataLabelsInfo
   /**
    * Smoothed-line flag pulled from `<c:ser><c:smooth val=".."/>`.
    * Surfaces only on `line` / `scatter` series — the OOXML schema places
@@ -5832,7 +5832,7 @@ export interface ChartSeriesInfo {
    * collapses to `undefined` because it matches the OOXML default and
    * round-trips identically with absence of the field.
    */
-  smooth?: boolean;
+  smooth?: boolean
   /**
    * Line stroke pulled from `<c:ser><c:spPr><a:ln>` — preset dash
    * pattern and width in points. Surfaces only on `line` / `scatter`
@@ -5841,7 +5841,7 @@ export interface ChartSeriesInfo {
    * mirror the write-side {@link ChartLineStroke}, so the value can be
    * fed straight into a clone without transformation.
    */
-  stroke?: ChartLineStroke;
+  stroke?: ChartLineStroke
   /**
    * Marker styling parsed from `<c:ser><c:marker>`. Surfaces only on
    * `line` / `scatter` series — the OOXML schema places `<c:marker>`
@@ -5851,7 +5851,7 @@ export interface ChartSeriesInfo {
    * mirror the write-side {@link ChartMarker}, so the value can be
    * fed straight into {@link cloneChart} without transformation.
    */
-  marker?: ChartMarker;
+  marker?: ChartMarker
   /**
    * Invert-if-negative flag pulled from
    * `<c:ser><c:invertIfNegative val=".."/>`. Surfaces only on `bar`
@@ -5860,7 +5860,7 @@ export interface ChartSeriesInfo {
    * `false` collapses to `undefined` because it matches the OOXML
    * default and round-trips identically with absence of the field.
    */
-  invertIfNegative?: boolean;
+  invertIfNegative?: boolean
   /**
    * Slice explosion (in percent of the radius) pulled from
    * `<c:ser><c:explosion val=".."/>`. Surfaces only on `pie`,
@@ -5870,38 +5870,38 @@ export interface ChartSeriesInfo {
    * default `0` collapses to `undefined` because absence and `0`
    * round-trip identically through the writer's elision logic.
    */
-  explosion?: number;
+  explosion?: number
   /**
    * Per-data-point overrides parsed from `<c:ser><c:dPt>` (CT_DPt,
    * ECMA-376 Part 1, §21.2.2.52). Empty array collapses to `undefined`.
    * See {@link ChartDataPoint} for the per-field shape.
    */
-  dataPoints?: ChartDataPoint[];
+  dataPoints?: ChartDataPoint[]
   /**
    * Per-series trendlines parsed from `<c:ser><c:trendline>`
    * (CT_Trendline, ECMA-376 Part 1, §21.2.2.211). Empty array collapses
    * to `undefined`. See {@link ChartTrendline} for the per-field shape.
    */
-  trendlines?: ChartTrendline[];
+  trendlines?: ChartTrendline[]
   /**
    * Per-series error bars parsed from `<c:ser><c:errBars>`
    * (CT_ErrBars, ECMA-376 Part 1, §21.2.2.55). Empty array collapses to
    * `undefined`. See {@link ChartErrorBars} for the per-field shape.
    */
-  errorBars?: ChartErrorBars[];
+  errorBars?: ChartErrorBars[]
   /**
    * Bubble size reference (third numeric reference) parsed from
    * `<c:ser><c:bubbleSize>` on bubble series. Surfaces only on `bubble`
    * series — the OOXML schema places `<c:bubbleSize>` exclusively on
    * `CT_BubbleSer`.
    */
-  bubbleSizeRef?: string;
+  bubbleSizeRef?: string
   /**
    * 3D shape variant parsed from `<c:ser><c:shape val=".."/>` on bar3D
    * series. Surfaces only on `bar3D` series. See {@link ChartShape3D}
    * for the accepted tokens.
    */
-  shape3D?: ChartShape3D;
+  shape3D?: ChartShape3D
 }
 
 /**
@@ -5911,10 +5911,10 @@ export interface ChartSeriesInfo {
  * transformation.
  */
 export interface ChartDataLabelsInfo {
-  showValue?: boolean;
-  showCategoryName?: boolean;
-  showSeriesName?: boolean;
-  showPercent?: boolean;
+  showValue?: boolean
+  showCategoryName?: boolean
+  showSeriesName?: boolean
+  showPercent?: boolean
   /**
    * Mirror of {@link ChartDataLabels.showLegendKey}. Surfaces `true`
    * only when the source `<c:dLbls>` block pinned
@@ -5923,9 +5923,9 @@ export interface ChartDataLabelsInfo {
    * `undefined` so absence and the default round-trip identically
    * through {@link cloneChart}.
    */
-  showLegendKey?: boolean;
-  position?: ChartDataLabelPosition;
-  separator?: string;
+  showLegendKey?: boolean
+  position?: ChartDataLabelPosition
+  separator?: string
   /**
    * Mirror of {@link ChartDataLabels.numberFormat}. Surfaces the
    * `<c:numFmt formatCode=".." sourceLinked=".."/>` parsed from the
@@ -5937,7 +5937,7 @@ export interface ChartDataLabelsInfo {
    * `<c:numFmt>` element or when the parsed `formatCode` is missing /
    * empty.
    */
-  numberFormat?: ChartAxisNumberFormat;
+  numberFormat?: ChartAxisNumberFormat
   /**
    * Mirror of {@link ChartDataLabels.showLeaderLines}. Surfaces the
    * `<c:showLeaderLines val=".."/>` flag parsed from the source
@@ -5956,7 +5956,7 @@ export interface ChartDataLabelsInfo {
    * the source emits it for so a templated chart can round-trip
    * cleanly even when the chart-type element ends up coerced.
    */
-  showLeaderLines?: boolean;
+  showLeaderLines?: boolean
   /**
    * Data-label font size in points pulled from `<c:dLbls><c:txPr>
    * <a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p></c:txPr></c:dLbls>`.
@@ -5973,7 +5973,7 @@ export interface ChartDataLabelsInfo {
    * writer-side {@link ChartDataLabels.fontSize} so a parsed value
    * slots straight into {@link cloneChart} without conversion.
    */
-  fontSize?: number;
+  fontSize?: number
   /**
    * Data-label font color pulled from `<c:dLbls><c:txPr><a:p><a:pPr>
    * <a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill>
@@ -5992,7 +5992,7 @@ export interface ChartDataLabelsInfo {
    * {@link ChartDataLabels.fontColor} so a parsed value slots
    * straight into {@link cloneChart} without conversion.
    */
-  fontColor?: ChartColor;
+  fontColor?: ChartColor
   /**
    * Data-label bold flag pulled from `<c:dLbls><c:txPr><a:p><a:pPr>
    * <a:defRPr b=".."/></a:pPr></a:p></c:txPr></c:dLbls>`. The OOXML
@@ -6006,7 +6006,7 @@ export interface ChartDataLabelsInfo {
    * writer-side {@link ChartDataLabels.bold} so a parsed value slots
    * straight into {@link cloneChart} without conversion.
    */
-  bold?: boolean;
+  bold?: boolean
   /**
    * Data-label italic flag pulled from `<c:dLbls><c:txPr><a:p><a:pPr>
    * <a:defRPr i=".."/></a:pPr></a:p></c:txPr></c:dLbls>`. The OOXML
@@ -6020,7 +6020,7 @@ export interface ChartDataLabelsInfo {
    * writer-side {@link ChartDataLabels.italic} so a parsed value slots
    * straight into {@link cloneChart} without conversion.
    */
-  italic?: boolean;
+  italic?: boolean
   /**
    * Data-label underline flag pulled from `<c:dLbls><c:txPr><a:p>
    * <a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr></c:dLbls>`. The
@@ -6039,7 +6039,7 @@ export interface ChartDataLabelsInfo {
    * {@link ChartDataLabels.underline} so a parsed value slots
    * straight into {@link cloneChart} without conversion.
    */
-  underline?: boolean;
+  underline?: boolean
   /**
    * Data-label strikethrough flag pulled from `<c:dLbls><c:txPr>
    * <a:p><a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr>
@@ -6058,7 +6058,7 @@ export interface ChartDataLabelsInfo {
    * {@link ChartDataLabels.strikethrough} so a parsed value slots
    * straight into {@link cloneChart} without conversion.
    */
-  strikethrough?: boolean;
+  strikethrough?: boolean
   /**
    * Data-label font family / typeface pulled from `<c:dLbls><c:txPr>
    * <a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
@@ -6077,7 +6077,7 @@ export interface ChartDataLabelsInfo {
    * {@link ChartDataLabels.fontFamily} so a parsed value slots
    * straight into {@link cloneChart} without conversion.
    */
-  fontFamily?: string;
+  fontFamily?: string
   /**
    * Data-labels background fill pulled from `<c:dLbls><c:spPr>
    * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></c:spPr>
@@ -6099,7 +6099,7 @@ export interface ChartDataLabelsInfo {
    * writer-side {@link ChartDataLabels.fillColor} so a parsed value
    * slots straight into {@link cloneChart} without conversion.
    */
-  fillColor?: ChartColor;
+  fillColor?: ChartColor
   /**
    * Data-labels border (line) color pulled from `<c:dLbls><c:spPr>
    * <a:ln><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></a:ln>
@@ -6128,7 +6128,7 @@ export interface ChartDataLabelsInfo {
    * same `<c:spPr>` block so a caller can pin both knobs without
    * conflict.
    */
-  borderColor?: ChartColor;
+  borderColor?: ChartColor
   /**
    * Data-labels border (stroke) thickness in points pulled from the
    * `w` attribute on `<c:dLbls><c:spPr><a:ln w="EMU">`. Reflects
@@ -6148,7 +6148,7 @@ export interface ChartDataLabelsInfo {
    * {@link ChartDataLabels.borderWidth} so a parsed value slots
    * straight into {@link cloneChart} without conversion.
    */
-  borderWidth?: number;
+  borderWidth?: number
   /**
    * Data-labels border (stroke) preset dash pattern pulled from the
    * `val` attribute on `<c:dLbls><c:spPr><a:ln><a:prstDash val=".."/>`.
@@ -6158,19 +6158,19 @@ export interface ChartDataLabelsInfo {
    * default `"solid"` was authored / the value is unrecognized. Mirrors
    * the writer-side {@link ChartDataLabels.borderDash}.
    */
-  borderDash?: ChartBorderDash;
+  borderDash?: ChartBorderDash
   /**
    * Data-labels border (stroke) line cap style pulled from the `cap`
    * attribute on `<c:dLbls><c:spPr><a:ln cap=".."/>`. Mirrors
    * {@link ChartDataLabels.borderCap}.
    */
-  borderCap?: ChartLineCap;
+  borderCap?: ChartLineCap
   /**
    * Data-labels border (stroke) compound line style pulled from the
    * `cmpd` attribute on `<c:dLbls><c:spPr><a:ln cmpd=".."/>`. Mirrors
    * {@link ChartDataLabels.borderCompound}.
    */
-  borderCompound?: ChartLineCompound;
+  borderCompound?: ChartLineCompound
 }
 
 /**
@@ -6190,9 +6190,9 @@ export interface ChartDataLabelsInfo {
  */
 export interface ChartAnchor {
   /** Top-left cell (`<xdr:from>`). */
-  from: { row: number; col: number };
+  from: { row: number; col: number }
   /** Bottom-right cell (`<xdr:to>`). Omitted for one-cell anchors. */
-  to?: { row: number; col: number };
+  to?: { row: number; col: number }
 }
 
 /**
@@ -6208,9 +6208,9 @@ export interface ChartAnchor {
  */
 export interface ChartAxisGridlines {
   /** Whether the axis declares `<c:majorGridlines>`. */
-  major?: boolean;
+  major?: boolean
   /** Whether the axis declares `<c:minorGridlines>`. */
-  minor?: boolean;
+  minor?: boolean
 }
 
 /**
@@ -6234,19 +6234,19 @@ export interface ChartAxisGridlines {
  */
 export interface ChartAxisScale {
   /** `<c:min>` — value where the axis starts. */
-  min?: number;
+  min?: number
   /** `<c:max>` — value where the axis ends. */
-  max?: number;
+  max?: number
   /** `<c:majorUnit>` — spacing between major tick marks. Must be > 0. */
-  majorUnit?: number;
+  majorUnit?: number
   /** `<c:minorUnit>` — spacing between minor tick marks. Must be > 0. */
-  minorUnit?: number;
+  minorUnit?: number
   /**
    * `<c:logBase>` — log base for a logarithmic scale. Excel restricts
    * this to 2–1000; the parser does not enforce that range, but the
    * writer rejects values outside it.
    */
-  logBase?: number;
+  logBase?: number
 }
 
 /**
@@ -6258,13 +6258,13 @@ export interface ChartAxisScale {
  */
 export interface ChartAxisNumberFormat {
   /** OOXML format code (e.g. `"#,##0"`, `"0.00%"`). */
-  formatCode: string;
+  formatCode: string
   /**
    * When `true`, Excel ignores `formatCode` and pulls the format
    * straight from the source data range. Defaults to `false` when
    * omitted — the pinned `formatCode` wins.
    */
-  sourceLinked?: boolean;
+  sourceLinked?: boolean
 }
 
 /**
@@ -6286,7 +6286,7 @@ export interface ChartAxisNumberFormat {
  * `<c:minorTickMark>` is `"none"` (Excel's UI also defaults to "None"
  * for the minor type on a freshly-drawn axis).
  */
-export type ChartAxisTickMark = "none" | "in" | "out" | "cross";
+export type ChartAxisTickMark = "none" | "in" | "out" | "cross"
 
 /**
  * Axis tick-label position — where Excel paints the numeric / category
@@ -6306,7 +6306,7 @@ export type ChartAxisTickMark = "none" | "in" | "out" | "cross";
  * - `"none"`   — no labels rendered. Excel's UI exposes this as
  *                "Format Axis → Labels → Label Position → None".
  */
-export type ChartAxisTickLabelPosition = "nextTo" | "low" | "high" | "none";
+export type ChartAxisTickLabelPosition = "nextTo" | "low" | "high" | "none"
 
 /**
  * Horizontal alignment for category-axis tick labels — where Excel
@@ -6328,7 +6328,7 @@ export type ChartAxisTickLabelPosition = "nextTo" | "low" | "high" | "none";
  * scatter charts have no category axis, so the field is dropped on
  * those families.
  */
-export type ChartAxisLabelAlign = "ctr" | "l" | "r";
+export type ChartAxisLabelAlign = "ctr" | "l" | "r"
 
 /**
  * Axis crossing position — where the perpendicular axis crosses this
@@ -6350,7 +6350,7 @@ export type ChartAxisLabelAlign = "ctr" | "l" | "r";
  * favours `crossesAt` whenever the caller pins it; `crosses` is the
  * fallback when only the semantic toggle is set.
  */
-export type ChartAxisCrosses = "autoZero" | "min" | "max";
+export type ChartAxisCrosses = "autoZero" | "min" | "max"
 
 /**
  * Whether the perpendicular axis crosses BETWEEN data points or AT the
@@ -6381,7 +6381,7 @@ export type ChartAxisCrosses = "autoZero" | "min" | "max";
  * should round-trip through `parseChart -> cloneChart -> writeXlsx`
  * without flattening.
  */
-export type ChartAxisCrossBetween = "between" | "midCat";
+export type ChartAxisCrossBetween = "between" | "midCat"
 
 /**
  * Built-in display-unit preset on a value axis — Excel's "Format Axis ->
@@ -6423,7 +6423,7 @@ export type ChartAxisDispUnit =
   | "tenMillions"
   | "hundredMillions"
   | "billions"
-  | "trillions";
+  | "trillions"
 
 /**
  * Display-unit configuration for a value axis. Maps to the
@@ -6459,7 +6459,7 @@ export interface ChartAxisDispUnits {
    * absent — a `ChartAxisDispUnits` object with neither field pinned
    * collapses to no element on emit.
    */
-  unit?: ChartAxisDispUnit;
+  unit?: ChartAxisDispUnit
   /**
    * Custom numeric divisor — Excel's "Display units → Other" path.
    * Maps to `<c:dispUnits><c:custUnit val=".."/></c:dispUnits>` (CT_Double
@@ -6473,14 +6473,14 @@ export interface ChartAxisDispUnits {
    * non-number inputs drop silently rather than emit a token Excel
    * would refuse.
    */
-  custUnit?: number;
+  custUnit?: number
   /**
    * Whether to print Excel's automatic display-unit annotation
    * alongside the axis (e.g. "Millions" for `unit: "millions"`). Maps
    * to the presence of `<c:dispUnitsLbl/>` inside `<c:dispUnits>`.
    * Default: `false` (no label rendered, the divisor still applies).
    */
-  showLabel?: boolean;
+  showLabel?: boolean
   /**
    * Optional custom annotation text for the display-unit label. Maps
    * to `<c:dispUnitsLbl><c:tx><c:rich><a:p><a:r><a:t>...</a:t></a:r></a:p></c:rich></c:tx></c:dispUnitsLbl>`.
@@ -6497,12 +6497,12 @@ export interface ChartAxisDispUnits {
    * writer never emits an empty `<a:t/>` Excel would render as a
    * zero-width annotation.
    */
-  customLabel?: string;
+  customLabel?: string
 }
 
 export interface ChartAxisInfo {
   /** Plain-text title from the axis's `<c:title>`. Omitted when absent. */
-  title?: string;
+  title?: string
   /**
    * Axis-title rotation in degrees pulled from
    * `<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title>`
@@ -6526,7 +6526,7 @@ export interface ChartAxisInfo {
    * flavour so a parsed chart preserves the rotation regardless of
    * whether the source axis was a category or value axis.
    */
-  axisTitleRotation?: number;
+  axisTitleRotation?: number
   /**
    * Axis-title font size in points (range `1..400`), pulled from
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
@@ -6557,7 +6557,7 @@ export interface ChartAxisInfo {
    * flavour so a parsed chart preserves the size regardless of
    * whether the source axis was a category or value axis.
    */
-  axisTitleFontSize?: number;
+  axisTitleFontSize?: number
   /**
    * Axis-title bold flag pulled from
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr>
@@ -6585,7 +6585,7 @@ export interface ChartAxisInfo {
    * flavour so a parsed chart preserves the bold state regardless of
    * whether the source axis was a category or value axis.
    */
-  axisTitleBold?: boolean;
+  axisTitleBold?: boolean
   /**
    * Axis-title italic flag pulled from
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p>
@@ -6613,7 +6613,7 @@ export interface ChartAxisInfo {
    * flavour so a parsed chart preserves the flag regardless of
    * whether the source axis was a category or value axis.
    */
-  axisTitleItalic?: boolean;
+  axisTitleItalic?: boolean
   /**
    * Axis-title font color pulled from
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>
@@ -6647,7 +6647,7 @@ export interface ChartAxisInfo {
    * flavour so a parsed chart preserves the color regardless of
    * whether the source axis was a category or value axis.
    */
-  axisTitleColor?: ChartColor;
+  axisTitleColor?: ChartColor
   /**
    * Axis-title strikethrough flag pulled from
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
@@ -6682,7 +6682,7 @@ export interface ChartAxisInfo {
    * flavour so a parsed chart preserves the flag regardless of
    * whether the source axis was a category or value axis.
    */
-  axisTitleStrike?: boolean;
+  axisTitleStrike?: boolean
   /**
    * Axis-title underline flag pulled from
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr u=".."/></a:pPr>
@@ -6719,7 +6719,7 @@ export interface ChartAxisInfo {
    * flavour so a parsed chart preserves the flag regardless of
    * whether the source axis was a category or value axis.
    */
-  axisTitleUnderline?: boolean;
+  axisTitleUnderline?: boolean
   /**
    * Axis title font family / typeface pulled from `<c:catAx>` /
    * `<c:valAx>` / `<c:dateAx>` / `<c:serAx>` ->
@@ -6754,7 +6754,7 @@ export interface ChartAxisInfo {
    * regardless of whether the source axis was a category or value
    * axis.
    */
-  axisTitleFontFamily?: string;
+  axisTitleFontFamily?: string
   /**
    * Axis-title overlay flag pulled from
    * `<c:catAx><c:title><c:overlay val=".."/></c:title></c:catAx>` (or
@@ -6784,7 +6784,7 @@ export interface ChartAxisInfo {
    * into the writer-side {@link SheetChart.axes.x.axisTitleOverlay}
    * without transformation.
    */
-  axisTitleOverlay?: boolean;
+  axisTitleOverlay?: boolean
   /**
    * Axis-title manual placement pulled from
    * `<c:catAx><c:title><c:layout><c:manualLayout>...</c:manualLayout>
@@ -6825,7 +6825,7 @@ export interface ChartAxisInfo {
    * flavour so a parsed chart preserves the placement regardless of
    * whether the source axis was a category or value axis.
    */
-  axisTitleLayout?: ChartManualLayout;
+  axisTitleLayout?: ChartManualLayout
   /**
    * Axis-title background fill (solid sRGB) pulled from
    * `<c:catAx><c:title><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
@@ -6868,7 +6868,7 @@ export interface ChartAxisInfo {
    * axis flavour so a parsed chart preserves the fill regardless of
    * whether the source axis was a category or value axis.
    */
-  axisTitleFillColor?: ChartColor;
+  axisTitleFillColor?: ChartColor
   /**
    * Axis-title border (line stroke) solid sRGB color pulled from
    * `<c:catAx><c:title><c:spPr><a:ln><a:solidFill><a:srgbClr
@@ -6914,7 +6914,7 @@ export interface ChartAxisInfo {
    * axis flavour so a parsed chart preserves the stroke regardless
    * of whether the source axis was a category or value axis.
    */
-  axisTitleBorderColor?: ChartColor;
+  axisTitleBorderColor?: ChartColor
   /**
    * Axis-title border (stroke) thickness in points pulled from the
    * `w` attribute on `<c:catAx><c:title><c:spPr><a:ln w="EMU">` (or
@@ -6943,7 +6943,7 @@ export interface ChartAxisInfo {
    * chart-level {@link Chart.titleBorderWidth} on a different host
    * element.
    */
-  axisTitleBorderWidth?: number;
+  axisTitleBorderWidth?: number
   /**
    * Axis-title border (stroke) preset dash pattern pulled from the
    * `val` attribute on `<c:catAx><c:title><c:spPr><a:ln><a:prstDash
@@ -6957,40 +6957,40 @@ export interface ChartAxisInfo {
    * so a parsed value slots straight into {@link cloneChart} without
    * conversion.
    */
-  axisTitleBorderDash?: ChartBorderDash;
+  axisTitleBorderDash?: ChartBorderDash
   /**
    * Axis-title border (stroke) line cap style. Reports the
    * {@link ChartLineCap} pinned by the source, or `undefined` for the
    * OOXML default `"flat"`. Mirrors the writer-side
    * {@link SheetChart.axes.x.axisTitleBorderCap}.
    */
-  axisTitleBorderCap?: ChartLineCap;
+  axisTitleBorderCap?: ChartLineCap
   /**
    * Axis-title border (stroke) compound line style. Reports the
    * {@link ChartLineCompound} pinned by the source, or `undefined` for
    * the OOXML default `"sng"`. Mirrors the writer-side
    * {@link SheetChart.axes.x.axisTitleBorderCompound}.
    */
-  axisTitleBorderCompound?: ChartLineCompound;
+  axisTitleBorderCompound?: ChartLineCompound
   /**
    * Major / minor gridline visibility. Omitted when neither
    * `<c:majorGridlines>` nor `<c:minorGridlines>` is declared on the
    * axis (i.e. Excel's "no gridlines" state for both).
    */
-  gridlines?: ChartAxisGridlines;
+  gridlines?: ChartAxisGridlines
   /**
    * Numeric scaling (`<c:min>` / `<c:max>` / `<c:majorUnit>` /
    * `<c:minorUnit>` / `<c:logBase>`). Omitted when the axis declared
    * none of those children — Excel auto-computes the bounds in that
    * case and the reader leaves the inference up to the consumer.
    */
-  scale?: ChartAxisScale;
+  scale?: ChartAxisScale
   /**
    * Tick-label number format (`<c:numFmt>`). Omitted when the axis
    * does not declare one. Mirrors `formatCode` / `sourceLinked` on
    * the writer side.
    */
-  numberFormat?: ChartAxisNumberFormat;
+  numberFormat?: ChartAxisNumberFormat
   /**
    * Major tick-mark style pulled from `<c:majorTickMark>`. Omitted
    * when absent or when the axis declared the OOXML default `"out"` —
@@ -6998,13 +6998,13 @@ export interface ChartAxisInfo {
    * {@link cloneChart}, so collapsing the default keeps the parsed
    * shape minimal. See {@link ChartAxisTickMark}.
    */
-  majorTickMark?: ChartAxisTickMark;
+  majorTickMark?: ChartAxisTickMark
   /**
    * Minor tick-mark style pulled from `<c:minorTickMark>`. Omitted
    * when absent or when the axis declared the OOXML default `"none"`.
    * See {@link ChartAxisTickMark}.
    */
-  minorTickMark?: ChartAxisTickMark;
+  minorTickMark?: ChartAxisTickMark
   /**
    * Tick-label position pulled from `<c:tickLblPos>`. Omitted when
    * absent or when the axis declared the OOXML default `"nextTo"` —
@@ -7012,7 +7012,7 @@ export interface ChartAxisInfo {
    * {@link cloneChart}, so collapsing the default keeps the parsed
    * shape minimal. See {@link ChartAxisTickLabelPosition}.
    */
-  tickLblPos?: ChartAxisTickLabelPosition;
+  tickLblPos?: ChartAxisTickLabelPosition
   /**
    * Tick-label rotation in degrees pulled from
    * `<c:txPr><a:bodyPr rot="N"/></c:txPr>` on the axis element.
@@ -7033,7 +7033,7 @@ export interface ChartAxisInfo {
    * flavour so a parsed chart preserves the rotation regardless of
    * whether the source axis was a category or value axis.
    */
-  labelRotation?: number;
+  labelRotation?: number
   /**
    * Tick-label font size in points pulled from
    * `<c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p></c:txPr>`
@@ -7058,7 +7058,7 @@ export interface ChartAxisInfo {
    * `<a:defRPr>` inside `<c:title>` (surfaced by
    * {@link ChartAxisInfo.axisTitleFontSize}) cannot leak in.
    */
-  labelFontSize?: number;
+  labelFontSize?: number
   /**
    * Tick-label bold flag pulled from
    * `<c:txPr><a:p><a:pPr><a:defRPr b=".."/></a:pPr></a:p></c:txPr>`
@@ -7081,7 +7081,7 @@ export interface ChartAxisInfo {
    * `<a:defRPr b=".."/>` inside `<c:title>` (surfaced by
    * {@link ChartAxisInfo.axisTitleBold}) cannot leak in.
    */
-  labelBold?: boolean;
+  labelBold?: boolean
   /**
    * Tick-label italic flag pulled from
    * `<c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p></c:txPr>`
@@ -7104,7 +7104,7 @@ export interface ChartAxisInfo {
    * `<a:defRPr i=".."/>` inside `<c:title>` (surfaced by
    * {@link ChartAxisInfo.axisTitleItalic}) cannot leak in.
    */
-  labelItalic?: boolean;
+  labelItalic?: boolean
   /**
    * Tick-label font color pulled from
    * `<c:txPr><a:p><a:pPr><a:defRPr><a:solidFill>
@@ -7135,7 +7135,7 @@ export interface ChartAxisInfo {
    * {@link ChartAxisInfo.axisTitleColor}) or on a `<c:spPr>` series
    * fill cannot leak in.
    */
-  labelColor?: ChartColor;
+  labelColor?: ChartColor
   /**
    * Tick-label underline flag pulled from
    * `<c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr>`
@@ -7166,7 +7166,7 @@ export interface ChartAxisInfo {
    * `<a:defRPr u=".."/>` inside `<c:title>` (surfaced by
    * {@link ChartAxisInfo.axisTitleUnderline}) cannot leak in.
    */
-  labelUnderline?: boolean;
+  labelUnderline?: boolean
   /**
    * Tick-label strikethrough flag pulled from
    * `<c:txPr><a:p><a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr>`
@@ -7195,7 +7195,7 @@ export interface ChartAxisInfo {
    * `<a:defRPr strike=".."/>` inside `<c:title>` (surfaced by
    * {@link ChartAxisInfo.axisTitleStrike}) cannot leak in.
    */
-  labelStrike?: boolean;
+  labelStrike?: boolean
   /**
    * Axis tick-label font family / typeface pulled from `<c:catAx>` /
    * `<c:valAx>` / `<c:dateAx>` / `<c:serAx>` ->
@@ -7222,7 +7222,7 @@ export interface ChartAxisInfo {
    * `<a:latin>` inside `<c:title>` (surfaced by
    * {@link ChartAxisInfo.axisTitleFontFamily}) cannot leak in.
    */
-  labelFontFamily?: string;
+  labelFontFamily?: string
   /**
    * Reverse-axis flag pulled from
    * `<c:scaling><c:orientation val=".."/></c:scaling>`. Surfaces `true`
@@ -7233,7 +7233,7 @@ export interface ChartAxisInfo {
    * {@link SheetChart.axes.x.reverse} field, so a parsed value slots
    * straight back into a clone target without transformation.
    */
-  reverse?: boolean;
+  reverse?: boolean
   /**
    * Tick-label skip interval pulled from `<c:tickLblSkip val=".."/>`.
    * Surfaces only on category axes (`<c:catAx>` / `<c:dateAx>`) — the
@@ -7243,13 +7243,13 @@ export interface ChartAxisInfo {
    * Out-of-range values (non-positive or > 32767) are dropped rather
    * than fabricated.
    */
-  tickLblSkip?: number;
+  tickLblSkip?: number
   /**
    * Tick-mark skip interval pulled from `<c:tickMarkSkip val=".."/>`.
    * Same scope (category axes only) and default-collapse semantics as
    * {@link tickLblSkip}.
    */
-  tickMarkSkip?: number;
+  tickMarkSkip?: number
   /**
    * Label offset pulled from `<c:lblOffset val=".."/>`, expressed as a
    * percentage of the default axis-label spacing. Surfaces only on
@@ -7260,7 +7260,7 @@ export interface ChartAxisInfo {
    * identically through {@link cloneChart}. Accepted range is `0..1000`;
    * out-of-range values are dropped rather than fabricated.
    */
-  lblOffset?: number;
+  lblOffset?: number
   /**
    * Tick-label horizontal alignment pulled from `<c:lblAlgn val=".."/>`.
    * Surfaces only on category axes (`<c:catAx>` / `<c:dateAx>`) — the
@@ -7271,7 +7271,7 @@ export interface ChartAxisInfo {
    * tokens drop to `undefined` rather than fabricate a value the
    * writer would never emit. See {@link ChartAxisLabelAlign}.
    */
-  lblAlgn?: ChartAxisLabelAlign;
+  lblAlgn?: ChartAxisLabelAlign
   /**
    * Multi-level-label suppression flag pulled from
    * `<c:noMultiLvlLbl val=".."/>`. Surfaces `true` only when the axis
@@ -7288,7 +7288,7 @@ export interface ChartAxisInfo {
    * `"false"`); unknown values and missing `val` attributes drop to
    * `undefined`.
    */
-  noMultiLvlLbl?: boolean;
+  noMultiLvlLbl?: boolean
   /**
    * Automatic axis-type detection flag pulled from
    * `<c:auto val=".."/>`. Surfaces `false` only when the axis pinned
@@ -7305,7 +7305,7 @@ export interface ChartAxisInfo {
    * `"false"`); unknown values and missing `val` attributes drop to
    * `undefined`.
    */
-  auto?: boolean;
+  auto?: boolean
   /**
    * Axis hidden flag pulled from `<c:delete val=".."/>`. Surfaces
    * `true` when the axis pinned `val="1"` (Excel's "Format Axis ->
@@ -7316,7 +7316,7 @@ export interface ChartAxisInfo {
    * `"0"` / `"false"`); unknown values and missing `val` attributes
    * drop to `undefined`.
    */
-  hidden?: boolean;
+  hidden?: boolean
   /**
    * Semantic crossing position pulled from `<c:crosses val=".."/>`.
    * Surfaces only when the axis pinned a non-default token — the OOXML
@@ -7330,7 +7330,7 @@ export interface ChartAxisInfo {
    * the reader keeps `crossesAt` and drops `crosses` to mirror the
    * writer's preference.
    */
-  crosses?: ChartAxisCrosses;
+  crosses?: ChartAxisCrosses
   /**
    * Numeric crossing position pulled from `<c:crossesAt val=".."/>`.
    * Surfaces the literal value Excel paints — `0` is preserved (it is a
@@ -7343,7 +7343,7 @@ export interface ChartAxisInfo {
    * the same axis (a malformed template) the reader keeps `crossesAt`
    * and drops `crosses` to mirror the writer's preference.
    */
-  crossesAt?: number;
+  crossesAt?: number
   /**
    * Built-in display-unit preset pulled from
    * `<c:dispUnits><c:builtInUnit val=".."/><c:dispUnitsLbl?/></c:dispUnits>`.
@@ -7360,7 +7360,7 @@ export interface ChartAxisInfo {
    * (and any unrecognized payload) collapses to `undefined` so a
    * round-trip leaves Excel's default "no display unit" state untouched.
    */
-  dispUnits?: ChartAxisDispUnits;
+  dispUnits?: ChartAxisDispUnits
   /**
    * Cross-between mode pulled from `<c:crossBetween val=".."/>`.
    * Surfaces only on value axes — the OOXML schema places the element
@@ -7371,7 +7371,7 @@ export interface ChartAxisInfo {
    * inherited Excel's default still round-trips minimally through
    * {@link cloneChart}. See {@link ChartAxisCrossBetween}.
    */
-  crossBetween?: ChartAxisCrossBetween;
+  crossBetween?: ChartAxisCrossBetween
 }
 
 /**
@@ -7390,7 +7390,7 @@ export interface ChartAxisInfo {
  * legend element (Excel's "no legend" state); `undefined` means the
  * chart did not declare a legend at all.
  */
-export type ChartLegendPosition = "top" | "bottom" | "left" | "right" | "topRight";
+export type ChartLegendPosition = "top" | "bottom" | "left" | "right" | "topRight"
 
 /**
  * Bar/column grouping reported by {@link Chart.barGrouping}.
@@ -7402,7 +7402,7 @@ export type ChartLegendPosition = "top" | "bottom" | "left" | "right" | "topRigh
  * absence of the field. Only the stacked variants surface, which is
  * what callers need to detect when cloning a stacked template.
  */
-export type ChartBarGrouping = "clustered" | "stacked" | "percentStacked";
+export type ChartBarGrouping = "clustered" | "stacked" | "percentStacked"
 
 /**
  * Line/area grouping reported by {@link Chart.lineGrouping} and
@@ -7415,27 +7415,27 @@ export type ChartBarGrouping = "clustered" | "stacked" | "percentStacked";
  * {@link SheetChart.lineGrouping} / {@link SheetChart.areaGrouping}
  * defaults.
  */
-export type ChartLineAreaGrouping = "stacked" | "percentStacked";
+export type ChartLineAreaGrouping = "stacked" | "percentStacked"
 
 export interface Chart {
   /** Chart-type elements present in `<c:plotArea>`, in declaration order. */
-  kinds: ChartKind[];
+  kinds: ChartKind[]
   /** Number of `<c:ser>` series across every chart-type element. */
-  seriesCount: number;
+  seriesCount: number
   /** Plain-text title pulled from `<c:title>`, when present. */
-  title?: string;
+  title?: string
   /**
    * Per-series metadata across every chart-type element, in
    * declaration order. Empty when the chart has no `<c:ser>` children.
    */
-  series?: ChartSeriesInfo[];
+  series?: ChartSeriesInfo[]
   /**
    * Cell anchor pulled from the host drawing's `<xdr:twoCellAnchor>` /
    * `<xdr:oneCellAnchor>`. Undefined when the drawing positions the
    * chart with `<xdr:absoluteAnchor>` (EMU-positioned, no cell anchor)
    * or when the drawing's anchor element is missing the `from` block.
    */
-  anchor?: ChartAnchor;
+  anchor?: ChartAnchor
   /**
    * Legend placement pulled from `<c:legend><c:legendPos val=".."/>`.
    * Reported as `false` when the chart explicitly omits the legend
@@ -7443,7 +7443,7 @@ export interface Chart {
    * did not declare a legend at all — Excel falls back to its default
    * placement in that case.
    */
-  legend?: false | ChartLegendPosition;
+  legend?: false | ChartLegendPosition
   /**
    * Legend-overlay flag pulled from `<c:legend><c:overlay val=".."/>`.
    * Reflects Excel's "Format Legend -> Show the legend without
@@ -7461,7 +7461,7 @@ export interface Chart {
    * source chart has no `<c:legend>` element at all — there is no
    * overlay flag to surface in either case.
    */
-  legendOverlay?: boolean;
+  legendOverlay?: boolean
   /**
    * Per-series legend-entry overrides pulled from
    * `<c:legend><c:legendEntry>` children. Each entry surfaces the
@@ -7479,7 +7479,7 @@ export interface Chart {
    * source chart has no `<c:legend>` element at all — there are no
    * legend entries to surface in either case.
    */
-  legendEntries?: ChartLegendEntry[];
+  legendEntries?: ChartLegendEntry[]
   /**
    * Legend font size in points pulled from
    * `<c:legend><c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p>
@@ -7499,7 +7499,7 @@ export interface Chart {
    * the writer-side {@link SheetChart.legendFontSize} so a parsed value
    * slots straight into {@link cloneChart} without conversion.
    */
-  legendFontSize?: number;
+  legendFontSize?: number
   /**
    * Legend bold flag pulled from `<c:legend><c:txPr><a:p><a:pPr>
    * <a:defRPr b=".."/></a:pPr></a:p></c:txPr></c:legend>`. The OOXML
@@ -7517,7 +7517,7 @@ export interface Chart {
    * the writer-side {@link SheetChart.legendBold} so a parsed value
    * slots straight into {@link cloneChart} without conversion.
    */
-  legendBold?: boolean;
+  legendBold?: boolean
   /**
    * Legend italic flag pulled from `<c:legend><c:txPr><a:p><a:pPr>
    * <a:defRPr i=".."/></a:pPr></a:p></c:txPr></c:legend>`. The OOXML
@@ -7535,7 +7535,7 @@ export interface Chart {
    * the writer-side {@link SheetChart.legendItalic} so a parsed value
    * slots straight into {@link cloneChart} without conversion.
    */
-  legendItalic?: boolean;
+  legendItalic?: boolean
   /**
    * Legend underline flag pulled from `<c:legend><c:txPr><a:p><a:pPr>
    * <a:defRPr u=".."/></a:pPr></a:p></c:txPr></c:legend>`. The OOXML
@@ -7556,7 +7556,7 @@ export interface Chart {
    * the writer-side {@link SheetChart.legendUnderline} so a parsed
    * value slots straight into {@link cloneChart} without conversion.
    */
-  legendUnderline?: boolean;
+  legendUnderline?: boolean
   /**
    * Legend strikethrough flag pulled from `<c:legend><c:txPr><a:p>
    * <a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr></c:legend>`.
@@ -7578,7 +7578,7 @@ export interface Chart {
    * the writer-side {@link SheetChart.legendStrikethrough} so a parsed
    * value slots straight into {@link cloneChart} without conversion.
    */
-  legendStrikethrough?: boolean;
+  legendStrikethrough?: boolean
   /**
    * Legend font color pulled from `<c:legend><c:txPr><a:p><a:pPr>
    * <a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill>
@@ -7601,7 +7601,7 @@ export interface Chart {
    * the writer-side {@link SheetChart.legendFontColor} so a parsed
    * value slots straight into {@link cloneChart} without conversion.
    */
-  legendFontColor?: ChartColor;
+  legendFontColor?: ChartColor
   /**
    * Legend font family / typeface pulled from `<c:legend><c:txPr>
    * <a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
@@ -7625,7 +7625,7 @@ export interface Chart {
    * parsed value slots straight into {@link cloneChart} without
    * conversion.
    */
-  legendFontFamily?: string;
+  legendFontFamily?: string
   /**
    * Custom legend placement pulled from `<c:legend><c:layout>
    * <c:manualLayout>...</c:manualLayout></c:layout></c:legend>`.
@@ -7652,7 +7652,7 @@ export interface Chart {
    * writer-side {@link SheetChart.legendLayout} so a parsed value
    * slots straight into {@link cloneChart} without conversion.
    */
-  legendLayout?: ChartManualLayout;
+  legendLayout?: ChartManualLayout
   /**
    * Legend background fill color pulled from `<c:legend><c:spPr>
    * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></c:spPr>
@@ -7680,7 +7680,7 @@ export interface Chart {
    * the writer-side {@link SheetChart.legendFillColor} so a parsed
    * value slots straight into {@link cloneChart} without conversion.
    */
-  legendFillColor?: ChartColor;
+  legendFillColor?: ChartColor
   /**
    * Legend border (stroke) solid color pulled from `<c:legend><c:spPr>
    * <a:ln><a:solidFill><a:srgbClr val=".."/></a:solidFill></a:ln>
@@ -7712,7 +7712,7 @@ export interface Chart {
    * from the same `<c:spPr>` block but on different children
    * (`<a:solidFill>` for fill, `<a:ln><a:solidFill>` for stroke).
    */
-  legendBorderColor?: ChartColor;
+  legendBorderColor?: ChartColor
   /**
    * Legend border (stroke) thickness in points pulled from the `w`
    * attribute on `<c:legend><c:spPr><a:ln w="EMU">`. Reflects Excel's
@@ -7739,7 +7739,7 @@ export interface Chart {
    * from the same `<a:ln>` element but on a different slot (the color
    * child versus the width attribute).
    */
-  legendBorderWidth?: number;
+  legendBorderWidth?: number
   /**
    * Chart legend border (stroke) preset dash pattern pulled from the
    * `val` attribute on `<c:legend><c:spPr><a:ln><a:prstDash val=".."/>`.
@@ -7752,19 +7752,19 @@ export interface Chart {
    * parsed value slots straight into {@link cloneChart} without
    * conversion.
    */
-  legendBorderDash?: ChartBorderDash;
+  legendBorderDash?: ChartBorderDash
   /**
    * Legend border (stroke) line cap style. Mirrors the writer-side
    * {@link SheetChart.legendBorderCap}. `undefined` for absence /
    * OOXML default `"flat"`.
    */
-  legendBorderCap?: ChartLineCap;
+  legendBorderCap?: ChartLineCap
   /**
    * Legend border (stroke) compound line style. Mirrors the
    * writer-side {@link SheetChart.legendBorderCompound}. `undefined`
    * for absence / OOXML default `"sng"`.
    */
-  legendBorderCompound?: ChartLineCompound;
+  legendBorderCompound?: ChartLineCompound
   /**
    * Custom plot-area placement pulled from `<c:plotArea><c:layout>
    * <c:manualLayout>...</c:manualLayout></c:layout></c:plotArea>`.
@@ -7793,7 +7793,7 @@ export interface Chart {
    * so a parsed value slots straight into {@link cloneChart} without
    * conversion.
    */
-  plotAreaLayout?: ChartManualLayout;
+  plotAreaLayout?: ChartManualLayout
   /**
    * Plot-area solid fill color pulled from `<c:plotArea><c:spPr>
    * <a:solidFill><a:srgbClr val=".."/></a:solidFill></c:spPr></c:plotArea>`.
@@ -7819,7 +7819,7 @@ export interface Chart {
    * `<c:plotArea>` element at all — there is no `<c:spPr>` slot to
    * surface the fill from in that case.
    */
-  plotAreaFillColor?: ChartColor;
+  plotAreaFillColor?: ChartColor
   /**
    * Plot-area border (stroke) solid color pulled from
    * `<c:plotArea><c:spPr><a:ln><a:solidFill><a:srgbClr val=".."/>
@@ -7852,7 +7852,7 @@ export interface Chart {
    * `<c:spPr>` block but on different children (`<a:solidFill>` for
    * fill, `<a:ln><a:solidFill>` for stroke).
    */
-  plotAreaBorderColor?: ChartColor;
+  plotAreaBorderColor?: ChartColor
   /**
    * Plot-area border (stroke) thickness in points pulled from the `w`
    * attribute on `<c:plotArea><c:spPr><a:ln w="EMU">`. Reflects Excel's
@@ -7879,7 +7879,7 @@ export interface Chart {
    * `<a:ln>` element but on a different slot (the color child versus
    * the width attribute).
    */
-  plotAreaBorderWidth?: number;
+  plotAreaBorderWidth?: number
   /**
    * Plot-area border (stroke) preset dash pattern pulled from the
    * `val` attribute on `<c:plotArea><c:spPr><a:ln><a:prstDash
@@ -7893,19 +7893,19 @@ export interface Chart {
    * parsed value slots straight into {@link cloneChart} without
    * conversion.
    */
-  plotAreaBorderDash?: ChartBorderDash;
+  plotAreaBorderDash?: ChartBorderDash
   /**
    * Plot-area border (stroke) line cap style. Mirrors the writer-side
    * {@link SheetChart.plotAreaBorderCap}. `undefined` for absence /
    * OOXML default `"flat"`.
    */
-  plotAreaBorderCap?: ChartLineCap;
+  plotAreaBorderCap?: ChartLineCap
   /**
    * Plot-area border (stroke) compound line style. Mirrors the
    * writer-side {@link SheetChart.plotAreaBorderCompound}. `undefined`
    * for absence / OOXML default `"sng"`.
    */
-  plotAreaBorderCompound?: ChartLineCompound;
+  plotAreaBorderCompound?: ChartLineCompound
   /**
    * Chart-space (entire chart background) solid fill color pulled
    * from `<c:chartSpace><c:spPr><a:solidFill><a:srgbClr val=".."/>
@@ -7939,7 +7939,7 @@ export interface Chart {
    * — so a parsed value flows through the same hex shape regardless
    * of which `<c:spPr>`-based fill slot the source chart pinned.
    */
-  chartSpaceFillColor?: ChartColor;
+  chartSpaceFillColor?: ChartColor
   /**
    * Chart-space (entire chart frame) border (stroke) color pulled
    * from `<c:chartSpace><c:spPr><a:ln><a:solidFill><a:srgbClr val=".."/>
@@ -7974,7 +7974,7 @@ export interface Chart {
    * elsewhere (e.g. on `<c:plotArea>` / `<c:legend>` / `<c:title>` /
    * a series) cannot leak into this field.
    */
-  chartSpaceBorderColor?: ChartColor;
+  chartSpaceBorderColor?: ChartColor
   /**
    * Chart-space (entire chart frame) border (stroke) thickness in
    * points pulled from the `w` attribute on `<c:chartSpace><c:spPr>
@@ -8005,7 +8005,7 @@ export interface Chart {
    * encoding, same `<a:ln>` host — but lands on `<c:chartSpace>`'s own
    * `<c:spPr>` block.
    */
-  chartSpaceBorderWidth?: number;
+  chartSpaceBorderWidth?: number
   /**
    * Chart-space (entire chart frame) border (stroke) preset dash
    * pattern pulled from the `val` attribute on `<c:chartSpace><c:spPr>
@@ -8019,17 +8019,17 @@ export interface Chart {
    * a parsed value slots straight into {@link cloneChart} without
    * conversion.
    */
-  chartSpaceBorderDash?: ChartBorderDash;
+  chartSpaceBorderDash?: ChartBorderDash
   /**
    * Chart-space (entire chart frame) border (stroke) line cap style.
    * Mirrors the writer-side {@link SheetChart.chartSpaceBorderCap}.
    */
-  chartSpaceBorderCap?: ChartLineCap;
+  chartSpaceBorderCap?: ChartLineCap
   /**
    * Chart-space (entire chart frame) border (stroke) compound line
    * style. Mirrors the writer-side {@link SheetChart.chartSpaceBorderCompound}.
    */
-  chartSpaceBorderCompound?: ChartLineCompound;
+  chartSpaceBorderCompound?: ChartLineCompound
   /**
    * Title-overlay flag pulled from `<c:title><c:overlay val=".."/>`.
    * Reflects Excel's "Format Chart Title -> Show the title without
@@ -8046,7 +8046,7 @@ export interface Chart {
    * Reported as `undefined` whenever the source chart has no `<c:title>`
    * element at all — there is no overlay flag to surface in that case.
    */
-  titleOverlay?: boolean;
+  titleOverlay?: boolean
   /**
    * Chart title rotation in whole degrees, pulled from
    * `<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title>`.
@@ -8069,7 +8069,7 @@ export interface Chart {
    * threads straight back into the writer-side
    * {@link SheetChart.titleRotation} without transformation.
    */
-  titleRotation?: number;
+  titleRotation?: number
   /**
    * Chart title font size in points (range `1..400`), pulled from
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
@@ -8095,7 +8095,7 @@ export interface Chart {
    * straight back into the writer-side
    * {@link SheetChart.titleFontSize} without transformation.
    */
-  titleFontSize?: number;
+  titleFontSize?: number
   /**
    * Chart title bold flag pulled from
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr>
@@ -8116,7 +8116,7 @@ export interface Chart {
    * straight back into the writer-side {@link SheetChart.titleBold}
    * without transformation.
    */
-  titleBold?: boolean;
+  titleBold?: boolean
   /**
    * Chart title italic flag pulled from
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr>
@@ -8137,7 +8137,7 @@ export interface Chart {
    * straight back into the writer-side {@link SheetChart.titleItalic}
    * without transformation.
    */
-  titleItalic?: boolean;
+  titleItalic?: boolean
   /**
    * Chart title font color pulled from
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>
@@ -8162,7 +8162,7 @@ export interface Chart {
    * `val` is malformed (wrong length, non-hex characters). There is
    * no `<a:p>` to host the fill in any of those cases.
    */
-  titleColor?: ChartColor;
+  titleColor?: ChartColor
   /**
    * Chart title strikethrough flag pulled from
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
@@ -8191,7 +8191,7 @@ export interface Chart {
    * straight back into the writer-side {@link SheetChart.titleStrike}
    * without transformation.
    */
-  titleStrike?: boolean;
+  titleStrike?: boolean
   /**
    * Chart title underline flag pulled from
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr u=".."/></a:pPr>
@@ -8221,7 +8221,7 @@ export interface Chart {
    * straight back into the writer-side {@link SheetChart.titleUnderline}
    * without transformation.
    */
-  titleUnderline?: boolean;
+  titleUnderline?: boolean
   /**
    * Chart title font family / typeface pulled from
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
@@ -8245,7 +8245,7 @@ export interface Chart {
    * straight back into the writer-side
    * {@link SheetChart.titleFontFamily} without transformation.
    */
-  titleFontFamily?: string;
+  titleFontFamily?: string
   /**
    * Custom chart-title placement pulled from `<c:title><c:layout>
    * <c:manualLayout>...</c:manualLayout></c:layout></c:title>`. Reflects
@@ -8272,7 +8272,7 @@ export interface Chart {
    * {@link SheetChart.titleLayout} so a parsed value slots straight
    * into {@link cloneChart} without conversion.
    */
-  titleLayout?: ChartManualLayout;
+  titleLayout?: ChartManualLayout
   /**
    * Chart title background fill color pulled from `<c:title><c:spPr>
    * <a:solidFill><a:srgbClr val="RRGGBB"/></a:solidFill></c:spPr>
@@ -8303,7 +8303,7 @@ export interface Chart {
    * writer-side {@link SheetChart.titleFillColor} so a parsed value
    * slots straight into {@link cloneChart} without conversion.
    */
-  titleFillColor?: ChartColor;
+  titleFillColor?: ChartColor
   /**
    * Chart title border (stroke) solid color pulled from
    * `<c:title><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/>
@@ -8344,7 +8344,7 @@ export interface Chart {
    * {@link plotAreaBorderColor} — same `<a:ln><a:solidFill><a:srgbClr>`
    * chain on a different host element.
    */
-  titleBorderColor?: ChartColor;
+  titleBorderColor?: ChartColor
   /**
    * Chart title border (stroke) thickness in points pulled from the
    * `w` attribute on `<c:title><c:spPr><a:ln w="EMU">`. Reflects
@@ -8373,7 +8373,7 @@ export interface Chart {
    * {@link legendBorderWidth} — same EMU encoding, same `<a:ln>` host —
    * but lands on `<c:title>`'s own `<c:spPr>` block.
    */
-  titleBorderWidth?: number;
+  titleBorderWidth?: number
   /**
    * Chart title border (stroke) preset dash pattern pulled from the
    * `val` attribute on `<c:title><c:spPr><a:ln><a:prstDash val=".."/>`.
@@ -8386,17 +8386,17 @@ export interface Chart {
    * parsed value slots straight into {@link cloneChart} without
    * conversion.
    */
-  titleBorderDash?: ChartBorderDash;
+  titleBorderDash?: ChartBorderDash
   /**
    * Chart title border (stroke) line cap style. Mirrors the
    * writer-side {@link SheetChart.titleBorderCap}.
    */
-  titleBorderCap?: ChartLineCap;
+  titleBorderCap?: ChartLineCap
   /**
    * Chart title border (stroke) compound line style. Mirrors the
    * writer-side {@link SheetChart.titleBorderCompound}.
    */
-  titleBorderCompound?: ChartLineCompound;
+  titleBorderCompound?: ChartLineCompound
   /**
    * Auto-title-deleted flag pulled from `<c:chart><c:autoTitleDeleted
    * val=".."/>`. Reflects Excel's "the user explicitly deleted the
@@ -8420,7 +8420,7 @@ export interface Chart {
    * spellings (`"1"` / `"true"` / `"0"` / `"false"`); unknown values
    * and missing `val` attributes drop to `undefined`.
    */
-  autoTitleDeleted?: boolean;
+  autoTitleDeleted?: boolean
   /**
    * Grouping pulled from the first `<c:barChart>` element, when the
    * chart has one. Surfaces only the stacked variants — the OOXML
@@ -8429,21 +8429,21 @@ export interface Chart {
    * `clustered` value is reported here for symmetry with the writer's
    * {@link SheetChart.barGrouping} field.
    */
-  barGrouping?: ChartBarGrouping;
+  barGrouping?: ChartBarGrouping
   /**
    * Grouping pulled from the first `<c:lineChart>` element, when the
    * chart has one. Surfaces only `"stacked"` / `"percentStacked"` —
    * the OOXML `"standard"` value is the writer default and collapses
    * to `undefined` here.
    */
-  lineGrouping?: ChartLineAreaGrouping;
+  lineGrouping?: ChartLineAreaGrouping
   /**
    * Grouping pulled from the first `<c:areaChart>` element, when the
    * chart has one. Surfaces only `"stacked"` / `"percentStacked"` —
    * the OOXML `"standard"` value is the writer default and collapses
    * to `undefined` here.
    */
-  areaGrouping?: ChartLineAreaGrouping;
+  areaGrouping?: ChartLineAreaGrouping
   /**
    * Drop-lines flag pulled from the first `<c:lineChart>` /
    * `<c:areaChart>` element's `<c:dropLines/>` child. Reflects
@@ -8457,7 +8457,7 @@ export interface Chart {
    * `<c:area3DChart>`. Surfaces `undefined` on every other chart
    * family.
    */
-  dropLines?: boolean;
+  dropLines?: boolean
   /**
    * High-low-lines flag pulled from the first `<c:lineChart>`
    * element's `<c:hiLowLines/>` child. Reflects Excel's "Add Chart
@@ -8470,7 +8470,7 @@ export interface Chart {
    * `<c:lineChart>`, `<c:line3DChart>`, and `<c:stockChart>`. Surfaces
    * `undefined` on every other chart family.
    */
-  hiLowLines?: boolean;
+  hiLowLines?: boolean
   /**
    * Series-lines flag pulled from the first `<c:barChart>` /
    * `<c:ofPieChart>` element's `<c:serLines/>` child. Reflects Excel's
@@ -8485,13 +8485,13 @@ export interface Chart {
    * `<c:barChart>` and `<c:ofPieChart>`. Surfaces `undefined` on every
    * other chart family.
    */
-  serLines?: boolean;
+  serLines?: boolean
   /**
    * Chart-level data label defaults parsed from the first chart-type
    * element's `<c:dLbls>` block. Series-level overrides on
    * {@link ChartSeriesInfo.dataLabels} take precedence.
    */
-  dataLabels?: ChartDataLabelsInfo;
+  dataLabels?: ChartDataLabelsInfo
   /**
    * Per-axis metadata. `x` corresponds to the chart's `<c:catAx>`
    * (category axis on bar/column/line/area) or the first `<c:valAx>`
@@ -8500,16 +8500,16 @@ export interface Chart {
    * neither axis carries a title.
    */
   axes?: {
-    x?: ChartAxisInfo;
-    y?: ChartAxisInfo;
-  };
+    x?: ChartAxisInfo
+    y?: ChartAxisInfo
+  }
   /**
    * Doughnut hole size pulled from the chart's `<c:doughnutChart>
    * <c:holeSize val=".."/>`, expressed as a percentage of the outer
    * radius (1–99). Omitted on non-doughnut charts and on doughnut
    * charts that do not declare the element.
    */
-  holeSize?: number;
+  holeSize?: number
   /**
    * Bar/column gap width pulled from the first `<c:barChart>` /
    * `<c:bar3DChart>` element's `<c:gapWidth val=".."/>`, expressed as a
@@ -8519,7 +8519,7 @@ export interface Chart {
    * {@link SheetChart.gapWidth} treats the absence of the field.
    * Omitted on non-bar / non-column charts.
    */
-  gapWidth?: number;
+  gapWidth?: number
   /**
    * Bar/column series overlap pulled from the first `<c:barChart>` /
    * `<c:bar3DChart>` element's `<c:overlap val=".."/>`, expressed as a
@@ -8529,7 +8529,7 @@ export interface Chart {
    * {@link SheetChart.overlap} treats the absence of the field.
    * Omitted on non-bar / non-column charts.
    */
-  overlap?: number;
+  overlap?: number
   /**
    * Pie / doughnut starting angle in degrees pulled from the first
    * `<c:pieChart>` / `<c:doughnutChart>` element's
@@ -8539,7 +8539,7 @@ export interface Chart {
    * {@link SheetChart.firstSliceAng} treats the absence of the field
    * the same way. Omitted on non-pie / non-doughnut charts.
    */
-  firstSliceAng?: number;
+  firstSliceAng?: number
   /**
    * How the chart renders missing / blank cells, pulled from
    * `<c:chart><c:dispBlanksAs val=".."/>`. The OOXML default of
@@ -8549,7 +8549,7 @@ export interface Chart {
    * `"zero"` and `"span"` literally; unknown values are dropped rather
    * than fabricated.
    */
-  dispBlanksAs?: ChartDisplayBlanksAs;
+  dispBlanksAs?: ChartDisplayBlanksAs
   /**
    * Vary-colors-by-point flag pulled from the first chart-type
    * element's `<c:varyColors val=".."/>`. Reflects Excel's
@@ -8571,7 +8571,7 @@ export interface Chart {
    * Omitted on chart families that have no `<c:varyColors>` slot
    * (`surface`, `surface3D`, `stock`).
    */
-  varyColors?: boolean;
+  varyColors?: boolean
   /**
    * Scatter sub-style pulled from `<c:scatterChart><c:scatterStyle
    * val=".."/></c:scatterChart>`. Reflects which of Excel's six XY
@@ -8586,7 +8586,7 @@ export interface Chart {
    * Omitted on every chart family except `scatter`; the OOXML schema
    * places `<c:scatterStyle>` exclusively on `<c:scatterChart>`.
    */
-  scatterStyle?: ChartScatterStyle;
+  scatterStyle?: ChartScatterStyle
   /**
    * Plot-visible-only flag pulled from
    * `<c:chart><c:plotVisOnly val=".."/>`. Reflects Excel's "Hidden and
@@ -8601,7 +8601,7 @@ export interface Chart {
    * / `"0"` / `"false"`); unknown values and missing `val` attributes
    * drop to `undefined`.
    */
-  plotVisOnly?: boolean;
+  plotVisOnly?: boolean
   /**
    * Show-data-labels-over-max flag pulled from
    * `<c:chart><c:showDLblsOverMax val=".."/>`. Reflects Excel's "Format
@@ -8624,7 +8624,7 @@ export interface Chart {
    * point exceeds the auto-computed max); it only matters when the
    * caller pinned a tighter axis ceiling.
    */
-  showDLblsOverMax?: boolean;
+  showDLblsOverMax?: boolean
   /**
    * Rounded-corners flag pulled from
    * `<c:chartSpace><c:roundedCorners val=".."/>`. Reflects Excel's
@@ -8642,7 +8642,7 @@ export interface Chart {
    * Note: `<c:roundedCorners>` lives on `<c:chartSpace>`, not inside
    * `<c:chart>` — the toggle styles the outer frame, not the plot area.
    */
-  roundedCorners?: boolean;
+  roundedCorners?: boolean
   /**
    * Up / down bars flag pulled from the first `<c:lineChart>` element's
    * `<c:upDownBars>` child. Reflects Excel's "Add Chart Element ->
@@ -8660,7 +8660,7 @@ export interface Chart {
    * `CT_StockChart`, so the reader ignores any stray element on bar /
    * column / pie / doughnut / area / scatter chart-type elements.
    */
-  upDownBars?: boolean;
+  upDownBars?: boolean
   /**
    * Up / down bars gap width pulled from
    * `<c:lineChart><c:upDownBars><c:gapWidth val=".."/></c:upDownBars>
@@ -8680,7 +8680,7 @@ export interface Chart {
    * the reader only inspects the element when the parent toggle is
    * present.
    */
-  upDownBarsGapWidth?: number;
+  upDownBarsGapWidth?: number
   /**
    * Chart-level marker visibility flag pulled from
    * `<c:lineChart><c:marker val=".."/></c:lineChart>`. Reflects Excel's
@@ -8707,7 +8707,7 @@ export interface Chart {
    * marker rendering across every series, while the per-series block
    * picks the symbol / size / fill that paints when the gate is open.
    */
-  showLineMarkers?: boolean;
+  showLineMarkers?: boolean
   /**
    * Built-in chart style preset pulled from `<c:chartSpace><c:style
    * val=".."/>`. Reflects Excel's "Chart Design -> Chart Styles"
@@ -8729,7 +8729,7 @@ export interface Chart {
    * `<c:chart>` — the preset styles the outer chart space (frame
    * fill, plot area look, default text font), not just the plot area.
    */
-  style?: number;
+  style?: number
   /**
    * Editing-locale hint pulled from `<c:chartSpace><c:lang val=".."/>`.
    * The value is an IETF BCP-47 culture name such as `en-US`, `tr-TR`,
@@ -8751,7 +8751,7 @@ export interface Chart {
    * not inside `<c:chart>` — the locale governs the entire chart
    * document, not just the plot area.
    */
-  lang?: string;
+  lang?: string
   /**
    * Date-system flag pulled from `<c:chartSpace><c:date1904 val=".."/>`.
    * Mirrors the host workbook's `<workbookPr date1904="1"/>` toggle —
@@ -8784,7 +8784,7 @@ export interface Chart {
    * governs date interpretation across the whole chart document, not
    * just the plot area.
    */
-  date1904?: boolean;
+  date1904?: boolean
   /**
    * Data-table configuration pulled from
    * `<c:plotArea><c:dTable>...</c:dTable></c:plotArea>`. Reflects
@@ -8806,7 +8806,7 @@ export interface Chart {
    * places `<c:dTable>` inside `<c:plotArea>` after the axes — pie /
    * doughnut have no axes and surface `undefined`.
    */
-  dataTable?: ChartDataTable;
+  dataTable?: ChartDataTable
   /**
    * Chart-space protection pulled from
    * `<c:chartSpace><c:protection>...</c:protection>`. Reflects the
@@ -8830,7 +8830,7 @@ export interface Chart {
    * `<c:chart>` per CT_ChartSpace), so every chart family — including
    * pie / doughnut — can carry it.
    */
-  protection?: ChartProtection;
+  protection?: ChartProtection
   /**
    * 3-D view configuration pulled from `<c:chart><c:view3D>` (CT_View3D,
    * ECMA-376 Part 1, §21.2.2.228). Reflects Excel's "3-D Rotation"
@@ -8859,7 +8859,7 @@ export interface Chart {
    * surfaces here so the round-trip through {@link cloneChart} stays
    * lossless.
    */
-  view3D?: ChartView3D;
+  view3D?: ChartView3D
   /**
    * 3-D floor thickness pulled from
    * `<c:chart><c:floor><c:thickness val="N"/></c:floor>` (the
@@ -8882,7 +8882,7 @@ export interface Chart {
    * surfaces here so the round-trip through {@link cloneChart} stays
    * lossless.
    */
-  floorThickness?: number;
+  floorThickness?: number
   /**
    * 3-D side-wall thickness pulled from
    * `<c:chart><c:sideWall><c:thickness val="N"/></c:sideWall>` (the
@@ -8904,7 +8904,7 @@ export interface Chart {
    * `surface3D`); a stray element on a 2D chart still surfaces here
    * so the round-trip through {@link cloneChart} stays lossless.
    */
-  sideWallThickness?: number;
+  sideWallThickness?: number
   /**
    * 3-D back-wall thickness pulled from
    * `<c:chart><c:backWall><c:thickness val="N"/></c:backWall>` (the
@@ -8927,5 +8927,5 @@ export interface Chart {
    * {@link cloneChart} stays lossless. `<c:floor>` / `<c:sideWall>` /
    * `<c:backWall>` are independent siblings on `<c:chart>`.
    */
-  backWallThickness?: number;
+  backWallThickness?: number
 }

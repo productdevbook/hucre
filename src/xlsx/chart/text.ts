@@ -29,14 +29,14 @@
 // what siblings can leak in, what JSDoc points back through `@link`)
 // remain meaningful at the call site.
 
-import type { XmlElement } from "../../xml/parser";
+import type { XmlElement } from "../../xml/parser"
 
 /** See `chart/shape.ts` for the equivalent helper. */
 function findChild(el: XmlElement, localName: string): XmlElement | undefined {
   for (const c of el.children) {
-    if (typeof c !== "string" && c.local === localName) return c;
+    if (typeof c !== "string" && c.local === localName) return c
   }
-  return undefined;
+  return undefined
 }
 
 // ── Rotation constants ────────────────────────────────────────────
@@ -48,11 +48,11 @@ function findChild(el: XmlElement, localName: string): XmlElement | undefined {
  * reader clamps anything outside that band so a corrupt template
  * cannot surface a value the writer would never emit.
  */
-export const TXPR_ROT_PER_DEGREE = 60000;
+export const TXPR_ROT_PER_DEGREE = 60000
 /** Lower bound of the rotation band Excel's UI exposes. */
-export const ROTATION_MIN_DEG = -90;
+export const ROTATION_MIN_DEG = -90
 /** Upper bound of the rotation band Excel's UI exposes. */
-export const ROTATION_MAX_DEG = 90;
+export const ROTATION_MAX_DEG = 90
 
 // ── Font size constants ───────────────────────────────────────────
 
@@ -65,11 +65,11 @@ export const ROTATION_MAX_DEG = 90;
  * converted to points (`1..400`), so any out-of-range value collapses
  * to `undefined` rather than surface a token Excel would never emit.
  */
-export const FONT_SZ_PER_POINT = 100;
+export const FONT_SZ_PER_POINT = 100
 /** Lower bound of the font-size band Excel's UI exposes. */
-export const FONT_SIZE_MIN_PT = 1;
+export const FONT_SIZE_MIN_PT = 1
 /** Upper bound of the font-size band Excel's UI exposes. */
-export const FONT_SIZE_MAX_PT = 400;
+export const FONT_SIZE_MAX_PT = 400
 
 // ── Font size normalize / parse / clamp ───────────────────────────
 
@@ -87,18 +87,18 @@ export const FONT_SIZE_MAX_PT = 400;
  * same half-point grid Excel's UI exposes.
  */
 export function parseFontSizeFromDefRPr(defRPr: XmlElement): number | undefined {
-  const raw = defRPr.attrs.sz;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  const parsed = Number.parseInt(trimmed, 10);
-  if (!Number.isFinite(parsed)) return undefined;
+  const raw = defRPr.attrs.sz
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  const parsed = Number.parseInt(trimmed, 10)
+  if (!Number.isFinite(parsed)) return undefined
   // Convert from 100ths of a point to points, rounding to the nearest
   // 0.5pt to match the granularity Excel's UI exposes.
-  const halfSteps = Math.round((parsed / FONT_SZ_PER_POINT) * 2);
-  const points = halfSteps / 2;
-  if (points < FONT_SIZE_MIN_PT || points > FONT_SIZE_MAX_PT) return undefined;
-  return points;
+  const halfSteps = Math.round((parsed / FONT_SZ_PER_POINT) * 2)
+  const points = halfSteps / 2
+  if (points < FONT_SIZE_MIN_PT || points > FONT_SIZE_MAX_PT) return undefined
+  return points
 }
 
 /**
@@ -117,17 +117,18 @@ export function makeFontSizeNormalizer(
   maxPt: number,
 ): (value: number | undefined) => number | undefined {
   return (value) => {
-    if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
-    const halfSteps = Math.round(value * 2);
-    const snapped = halfSteps / 2;
-    if (snapped < minPt) return minPt;
-    if (snapped > maxPt) return maxPt;
-    return snapped;
-  };
+    if (typeof value !== "number" || !Number.isFinite(value)) return undefined
+    const halfSteps = Math.round(value * 2)
+    const snapped = halfSteps / 2
+    if (snapped < minPt) return minPt
+    if (snapped > maxPt) return maxPt
+    return snapped
+  }
 }
 
 /** Normalize a font-size value against the standard `1..400` pt band. */
-export const normalizeFontSizePt = makeFontSizeNormalizer(FONT_SIZE_MIN_PT, FONT_SIZE_MAX_PT);
+export const normalizeFontSizePt: (value: number | undefined) => number | undefined =
+  makeFontSizeNormalizer(FONT_SIZE_MIN_PT, FONT_SIZE_MAX_PT)
 
 // ── Font family ───────────────────────────────────────────────────
 
@@ -140,13 +141,13 @@ export const normalizeFontSizePt = makeFontSizeNormalizer(FONT_SIZE_MIN_PT, FONT
  * would silently elide back to absence.
  */
 export function parseFontFamilyFromDefRPr(defRPr: XmlElement): string | undefined {
-  const latin = findChild(defRPr, "latin");
-  if (!latin) return undefined;
-  const typeface = latin.attrs.typeface;
-  if (typeof typeface !== "string") return undefined;
-  const trimmed = typeface.trim();
-  if (trimmed.length === 0) return undefined;
-  return trimmed;
+  const latin = findChild(defRPr, "latin")
+  if (!latin) return undefined
+  const typeface = latin.attrs.typeface
+  if (typeof typeface !== "string") return undefined
+  const trimmed = typeface.trim()
+  if (trimmed.length === 0) return undefined
+  return trimmed
 }
 
 /**
@@ -156,10 +157,10 @@ export function parseFontFamilyFromDefRPr(defRPr: XmlElement): string | undefine
  * `<a:latin>` element entirely.
  */
 export function normalizeFontFamily(value: string | undefined): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return undefined;
-  return trimmed;
+  if (typeof value !== "string") return undefined
+  const trimmed = value.trim()
+  if (trimmed.length === 0) return undefined
+  return trimmed
 }
 
 // ── Bold / italic ─────────────────────────────────────────────────
@@ -175,10 +176,10 @@ export function normalizeFontFamily(value: string | undefined): string | undefin
  * `<c:overlay>`, `<c:auto>`, etc.).
  */
 export function readBoolAttrValue(raw: string | undefined): boolean | undefined {
-  if (raw === undefined) return undefined;
-  if (raw === "1" || raw === "true") return true;
-  if (raw === "0" || raw === "false") return false;
-  return undefined;
+  if (raw === undefined) return undefined
+  if (raw === "1" || raw === "true") return true
+  if (raw === "0" || raw === "false") return false
+  return undefined
 }
 
 /**
@@ -188,9 +189,9 @@ export function readBoolAttrValue(raw: string | undefined): boolean | undefined 
  * caller).
  */
 export function normalizeBoolFlag(value: boolean | undefined): boolean | undefined {
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
+  if (value === true) return true
+  if (value === false) return false
+  return undefined
 }
 
 // ── Underline / strike helpers ────────────────────────────────────
@@ -210,10 +211,10 @@ export function normalizeBoolFlag(value: boolean | undefined): boolean | undefin
  * identically through `cloneChart`.
  */
 export function readUnderlineToken(raw: string | undefined): boolean | undefined {
-  if (raw === undefined) return undefined;
-  if (raw === "sng") return true;
-  if (raw === "none") return false;
-  return undefined;
+  if (raw === undefined) return undefined
+  if (raw === "sng") return true
+  if (raw === "none") return false
+  return undefined
 }
 
 /**
@@ -224,8 +225,8 @@ export function readUnderlineToken(raw: string | undefined): boolean | undefined
  * identically through `cloneChart`.
  */
 export function readStrikeToken(raw: string | undefined): boolean | undefined {
-  if (raw === undefined) return undefined;
-  if (raw === "sngStrike") return true;
-  if (raw === "noStrike") return false;
-  return undefined;
+  if (raw === undefined) return undefined
+  if (raw === "sngStrike") return true
+  if (raw === "noStrike") return false
+  return undefined
 }

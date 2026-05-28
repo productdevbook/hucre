@@ -9,7 +9,7 @@
 // These mirror the `getCharts(workbook)` / `addChart(sheet, ...)`
 // shorthand sketched in the dashboard composition issue (#136).
 
-import type { Chart, Sheet, SheetChart, WriteSheet, Workbook } from "../_types";
+import type { Chart, Sheet, SheetChart, WriteSheet, Workbook } from "../_types"
 
 // ── getCharts ────────────────────────────────────────────────────────
 
@@ -24,15 +24,15 @@ import type { Chart, Sheet, SheetChart, WriteSheet, Workbook } from "../_types";
  */
 export interface ChartLocation {
   /** Reference to the sheet that owns the chart. Same identity as `workbook.sheets[sheetIndex]`. */
-  sheet: Sheet;
+  sheet: Sheet
   /** Sheet name as declared in `xl/workbook.xml`. */
-  sheetName: string;
+  sheetName: string
   /** 0-based position of the sheet inside `workbook.sheets`. */
-  sheetIndex: number;
+  sheetIndex: number
   /** The parsed chart record. Same identity as `sheet.charts[chartIndex]`. */
-  chart: Chart;
+  chart: Chart
   /** 0-based position of the chart inside `sheet.charts`. */
-  chartIndex: number;
+  chartIndex: number
 }
 
 /**
@@ -53,11 +53,11 @@ export interface ChartLocation {
  * ```
  */
 export function getCharts(workbook: Workbook): ChartLocation[] {
-  const out: ChartLocation[] = [];
+  const out: ChartLocation[] = []
   for (let sheetIndex = 0; sheetIndex < workbook.sheets.length; sheetIndex++) {
-    const sheet = workbook.sheets[sheetIndex];
-    const charts = sheet.charts;
-    if (!charts || charts.length === 0) continue;
+    const sheet = workbook.sheets[sheetIndex]
+    const charts = sheet.charts
+    if (!charts || charts.length === 0) continue
     for (let chartIndex = 0; chartIndex < charts.length; chartIndex++) {
       out.push({
         sheet,
@@ -65,10 +65,10 @@ export function getCharts(workbook: Workbook): ChartLocation[] {
         sheetIndex,
         chart: charts[chartIndex],
         chartIndex,
-      });
+      })
     }
   }
-  return out;
+  return out
 }
 
 // ── addChart ─────────────────────────────────────────────────────────
@@ -109,18 +109,18 @@ export function getCharts(workbook: Workbook): ChartLocation[] {
  */
 export function addChart(sheet: WriteSheet, chart: SheetChart): SheetChart {
   if (!chart || typeof chart !== "object") {
-    throw new TypeError("addChart: chart is required");
+    throw new TypeError("addChart: chart is required")
   }
   if (!chart.type) {
-    throw new TypeError("addChart: chart.type is required");
+    throw new TypeError("addChart: chart.type is required")
   }
   if (!Array.isArray(chart.series) || chart.series.length === 0) {
-    throw new TypeError("addChart: chart.series must contain at least one entry");
+    throw new TypeError("addChart: chart.series must contain at least one entry")
   }
   if (!chart.anchor || !chart.anchor.from) {
-    throw new TypeError("addChart: chart.anchor.from is required");
+    throw new TypeError("addChart: chart.anchor.from is required")
   }
-  const list = sheet.charts ?? (sheet.charts = []);
-  list.push(chart);
-  return chart;
+  const list = sheet.charts ?? (sheet.charts = [])
+  list.push(chart)
+  return chart
 }

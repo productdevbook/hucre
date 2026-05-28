@@ -1,6 +1,6 @@
 // ── Cell Value Types ────────────────────────────────────────────────
 
-export type CellValue = string | number | boolean | Date | null;
+export type CellValue = string | number | boolean | Date | null
 
 export type CellType =
   | "string"
@@ -10,35 +10,35 @@ export type CellType =
   | "error"
   | "formula"
   | "richText"
-  | "empty";
+  | "empty"
 
 // ── Color ──────────────────────────────────────────────────────────
 
 export interface Color {
   /** Hex RGB string without '#', e.g. "FF0000" */
-  rgb?: string;
+  rgb?: string
   /** Theme color index */
-  theme?: number;
+  theme?: number
   /** Tint applied to theme color (-1.0 to 1.0) */
-  tint?: number;
+  tint?: number
   /** Indexed color (legacy) */
-  indexed?: number;
+  indexed?: number
 }
 
 // ── Font ───────────────────────────────────────────────────────────
 
 export interface FontStyle {
-  name?: string;
-  size?: number;
-  bold?: boolean;
-  italic?: boolean;
-  underline?: boolean | "single" | "double" | "singleAccounting" | "doubleAccounting";
-  strikethrough?: boolean;
-  color?: Color;
-  vertAlign?: "superscript" | "subscript";
-  family?: number;
-  charset?: number;
-  scheme?: "major" | "minor" | "none";
+  name?: string
+  size?: number
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean | "single" | "double" | "singleAccounting" | "doubleAccounting"
+  strikethrough?: boolean
+  color?: Color
+  vertAlign?: "superscript" | "subscript"
+  family?: number
+  charset?: number
+  scheme?: "major" | "minor" | "none"
 }
 
 // ── Fill ───────────────────────────────────────────────────────────
@@ -62,22 +62,22 @@ export type FillPattern =
   | "lightTrellis"
   | "lightUp"
   | "lightVertical"
-  | "mediumGray";
+  | "mediumGray"
 
 export interface PatternFill {
-  type: "pattern";
-  pattern: FillPattern;
-  fgColor?: Color;
-  bgColor?: Color;
+  type: "pattern"
+  pattern: FillPattern
+  fgColor?: Color
+  bgColor?: Color
 }
 
 export interface GradientFill {
-  type: "gradient";
-  degree?: number;
-  stops: Array<{ position: number; color: Color }>;
+  type: "gradient"
+  degree?: number
+  stops: Array<{ position: number; color: Color }>
 }
 
-export type FillStyle = PatternFill | GradientFill;
+export type FillStyle = PatternFill | GradientFill
 
 // ── Border ─────────────────────────────────────────────────────────
 
@@ -94,21 +94,21 @@ export type BorderLineStyle =
   | "mediumDashDot"
   | "dashDotDot"
   | "mediumDashDotDot"
-  | "slantDashDot";
+  | "slantDashDot"
 
 export interface BorderSide {
-  style: BorderLineStyle;
-  color?: Color;
+  style: BorderLineStyle
+  color?: Color
 }
 
 export interface BorderStyle {
-  top?: BorderSide;
-  right?: BorderSide;
-  bottom?: BorderSide;
-  left?: BorderSide;
-  diagonal?: BorderSide;
-  diagonalUp?: boolean;
-  diagonalDown?: boolean;
+  top?: BorderSide
+  right?: BorderSide
+  bottom?: BorderSide
+  left?: BorderSide
+  diagonal?: BorderSide
+  diagonalUp?: boolean
+  diagonalDown?: boolean
 }
 
 // ── Alignment ──────────────────────────────────────────────────────
@@ -122,62 +122,81 @@ export interface AlignmentStyle {
     | "justify"
     | "centerContinuous"
     | "distributed"
-    | "general";
-  vertical?: "top" | "center" | "bottom" | "justify" | "distributed";
-  wrapText?: boolean;
-  shrinkToFit?: boolean;
-  textRotation?: number;
-  indent?: number;
-  readingOrder?: "ltr" | "rtl" | "context";
+    | "general"
+  vertical?: "top" | "center" | "bottom" | "justify" | "distributed"
+  wrapText?: boolean
+  shrinkToFit?: boolean
+  textRotation?: number
+  indent?: number
+  readingOrder?: "ltr" | "rtl" | "context"
 }
 
 // ── Cell Style ─────────────────────────────────────────────────────
 
 export interface CellStyle {
-  font?: FontStyle;
-  fill?: FillStyle;
-  border?: BorderStyle;
-  alignment?: AlignmentStyle;
-  numFmt?: string;
-  protection?: CellProtection;
+  font?: FontStyle
+  fill?: FillStyle
+  border?: BorderStyle
+  alignment?: AlignmentStyle
+  numFmt?: string
+  protection?: CellProtection
 }
 
 export interface CellProtection {
-  locked?: boolean;
-  hidden?: boolean;
+  locked?: boolean
+  hidden?: boolean
 }
 
 // ── Rich Text ──────────────────────────────────────────────────────
 
 export interface RichTextRun {
-  text: string;
-  font?: FontStyle;
+  text: string
+  font?: FontStyle
 }
 
 // ── Hyperlink ──────────────────────────────────────────────────────
 
 export interface Hyperlink {
-  target: string;
-  tooltip?: string;
-  display?: string;
+  target: string
+  tooltip?: string
+  display?: string
   /** Internal reference (e.g. "Sheet2!A1") */
-  location?: string;
+  location?: string
+}
+
+/**
+ * A rich hyperlink value that can be placed inline in a {@link WriteSheet.data}
+ * row object, keyed by a column's `key`. The display text and link target live
+ * together, so a "Link" column needs no parallel `cells` coordinate map.
+ *
+ * @example
+ * ```ts
+ * data: [{ id: "abc", link: { text: "Open", hyperlink: "https://example.com/abc" } }]
+ * ```
+ */
+export interface HyperlinkValue {
+  /** Display text shown in the cell. */
+  text: string
+  /** Link destination — an external URL, or an internal ref prefixed with `#` (e.g. `"#Sheet2!A1"`). */
+  hyperlink: string
+  /** Optional hover tooltip. */
+  tooltip?: string
 }
 
 // ── Comment ────────────────────────────────────────────────────────
 
 export interface CellComment {
-  author?: string;
-  text: string;
-  richText?: RichTextRun[];
+  author?: string
+  text: string
+  richText?: RichTextRun[]
 }
 
 // ── Cell ───────────────────────────────────────────────────────────
 
 export interface Cell {
-  value: CellValue;
-  type: CellType;
-  style?: CellStyle;
+  value: CellValue
+  type: CellType
+  style?: CellStyle
   /**
    * Render this cell as an Excel 2024 native checkbox. Only meaningful for
    * boolean cells; the value drives the checked state.
@@ -187,56 +206,56 @@ export interface Cell {
    * Requires Microsoft 365; older Excel and LibreOffice fall back to the
    * raw `TRUE`/`FALSE` value.
    */
-  checkbox?: boolean;
-  formula?: string;
-  formulaResult?: CellValue;
+  checkbox?: boolean
+  formula?: string
+  formulaResult?: CellValue
   /** Formula type: "shared" | "array". Undefined means normal formula. */
-  formulaType?: "shared" | "array";
+  formulaType?: "shared" | "array"
   /** Shared formula index (si attribute) */
-  formulaSharedIndex?: number;
+  formulaSharedIndex?: number
   /** Range this formula applies to (ref attribute on master cell) */
-  formulaRef?: string;
+  formulaRef?: string
   /** Dynamic array flag (cm="1") */
-  formulaDynamic?: boolean;
-  richText?: RichTextRun[];
-  hyperlink?: Hyperlink;
-  comment?: CellComment;
+  formulaDynamic?: boolean
+  richText?: RichTextRun[]
+  hyperlink?: Hyperlink
+  comment?: CellComment
 }
 
 // ── Column Definition ──────────────────────────────────────────────
 
 export interface ColumnDef {
   /** Column header text */
-  header?: string;
+  header?: string
   /** Key for object-based data */
-  key?: string;
+  key?: string
   /** Column width in characters */
-  width?: number;
+  width?: number
   /** Auto-calculate optimal width from cell content */
-  autoWidth?: boolean;
+  autoWidth?: boolean
   /** Default style for the column */
-  style?: CellStyle;
+  style?: CellStyle
   /** Number format */
-  numFmt?: string;
+  numFmt?: string
   /** Hide column */
-  hidden?: boolean;
+  hidden?: boolean
   /** Outline level (grouping) */
-  outlineLevel?: number;
+  outlineLevel?: number
   /** Whether this outline group is collapsed */
-  collapsed?: boolean;
+  collapsed?: boolean
 }
 
 // ── Merge Range ────────────────────────────────────────────────────
 
 export interface MergeRange {
   /** Start row (0-based) */
-  startRow: number;
+  startRow: number
   /** Start column (0-based) */
-  startCol: number;
+  startCol: number
   /** End row (0-based, inclusive) */
-  endRow: number;
+  endRow: number
   /** End column (0-based, inclusive) */
-  endCol: number;
+  endCol: number
 }
 
 // ── Data Validation ────────────────────────────────────────────────
@@ -248,7 +267,7 @@ export type ValidationType =
   | "date"
   | "time"
   | "textLength"
-  | "custom";
+  | "custom"
 
 export type ValidationOperator =
   | "between"
@@ -258,25 +277,25 @@ export type ValidationOperator =
   | "greaterThan"
   | "lessThan"
   | "greaterThanOrEqual"
-  | "lessThanOrEqual";
+  | "lessThanOrEqual"
 
 export interface DataValidation {
-  type: ValidationType;
-  operator?: ValidationOperator;
-  formula1?: string;
-  formula2?: string;
+  type: ValidationType
+  operator?: ValidationOperator
+  formula1?: string
+  formula2?: string
   /** List values (for type: "list") */
-  values?: string[];
-  allowBlank?: boolean;
-  showInputMessage?: boolean;
-  showErrorMessage?: boolean;
-  inputTitle?: string;
-  inputMessage?: string;
-  errorTitle?: string;
-  errorMessage?: string;
-  errorStyle?: "stop" | "warning" | "information";
+  values?: string[]
+  allowBlank?: boolean
+  showInputMessage?: boolean
+  showErrorMessage?: boolean
+  inputTitle?: string
+  inputMessage?: string
+  errorTitle?: string
+  errorMessage?: string
+  errorStyle?: "stop" | "warning" | "information"
   /** Cell range (e.g. "A1:A100") */
-  range: string;
+  range: string
 }
 
 // ── Conditional Formatting ─────────────────────────────────────────
@@ -296,87 +315,87 @@ export type ConditionalRuleType =
   | "beginsWith"
   | "endsWith"
   | "containsBlanks"
-  | "notContainsBlanks";
+  | "notContainsBlanks"
 
 export interface ConditionalRule {
-  type: ConditionalRuleType;
-  priority: number;
-  operator?: ValidationOperator;
-  formula?: string | string[];
-  style?: CellStyle;
-  stopIfTrue?: boolean;
-  range: string;
+  type: ConditionalRuleType
+  priority: number
+  operator?: ValidationOperator
+  formula?: string | string[]
+  style?: CellStyle
+  stopIfTrue?: boolean
+  range: string
   /** Color scale configuration */
   colorScale?: {
     cfvo: Array<{
-      type: "min" | "max" | "num" | "percent" | "percentile";
-      value?: string;
-    }>;
-    colors: string[]; // hex ARGB colors like "FF63BE7B"
-  };
+      type: "min" | "max" | "num" | "percent" | "percentile"
+      value?: string
+    }>
+    colors: string[] // hex ARGB colors like "FF63BE7B"
+  }
   /** Data bar configuration */
   dataBar?: {
     cfvo: Array<{
-      type: "min" | "max" | "num" | "percent" | "percentile";
-      value?: string;
-    }>;
-    color: string;
-  };
+      type: "min" | "max" | "num" | "percent" | "percentile"
+      value?: string
+    }>
+    color: string
+  }
   /** Icon set configuration */
   iconSet?: {
-    iconSet: string; // "3Arrows", "3TrafficLights1", etc.
+    iconSet: string // "3Arrows", "3TrafficLights1", etc.
     cfvo: Array<{
-      type: "min" | "num" | "percent" | "percentile";
-      value?: string;
-    }>;
-    reverse?: boolean;
-    showValue?: boolean;
-  };
+      type: "min" | "num" | "percent" | "percentile"
+      value?: string
+    }>
+    reverse?: boolean
+    showValue?: boolean
+  }
   /** Text value for containsText, notContainsText, beginsWith, endsWith */
-  text?: string;
+  text?: string
 }
 
 // ── Auto Filter ────────────────────────────────────────────────────
 
 export interface AutoFilter {
   /** Range (e.g. "A1:D100") */
-  range: string;
+  range: string
   /** Column filter criteria */
   columns?: Array<{
     /** 0-based column index within the autoFilter range */
-    colIndex: number;
+    colIndex: number
     /** List of values to filter by */
-    filters?: string[];
-  }>;
+    filters?: string[]
+  }>
 }
 
 // ── Freeze Pane ────────────────────────────────────────────────────
 
 export interface FreezePane {
   /** Number of rows to freeze from top */
-  rows?: number;
+  rows?: number
   /** Number of columns to freeze from left */
-  columns?: number;
+  columns?: number
 }
 
 // ── Split Pane ─────────────────────────────────────────────────────
 
 export interface SplitPane {
   /** Horizontal split position in twips (1/20 of a point) */
-  xSplit?: number;
+  xSplit?: number
   /** Vertical split position in twips (1/20 of a point) */
-  ySplit?: number;
+  ySplit?: number
 }
 
 // ── Named Range ────────────────────────────────────────────────────
 
 export interface NamedRange {
-  name: string;
+  name: string
   /** Cell range reference (e.g. "Sheet1!$A$1:$D$10") */
-  range: string;
+  range: string
   /** Scope: undefined = workbook level, string = sheet name */
-  scope?: string;
-  comment?: string;
+  scope?: string
+  comment?: string
 }
 
 // ── Page Setup / Print ─────────────────────────────────────────────
@@ -390,81 +409,81 @@ export type PaperSize =
   | "b4"
   | "b5"
   | "executive"
-  | "tabloid";
+  | "tabloid"
 
 export interface PageSetup {
-  paperSize?: PaperSize;
-  orientation?: "portrait" | "landscape";
-  fitToPage?: boolean;
-  fitToWidth?: number;
-  fitToHeight?: number;
-  scale?: number;
-  margins?: PageMargins;
-  printArea?: string;
-  printTitlesRow?: string;
-  printTitlesColumn?: string;
-  showGridLines?: boolean;
-  showRowColHeaders?: boolean;
-  horizontalCentered?: boolean;
-  verticalCentered?: boolean;
+  paperSize?: PaperSize
+  orientation?: "portrait" | "landscape"
+  fitToPage?: boolean
+  fitToWidth?: number
+  fitToHeight?: number
+  scale?: number
+  margins?: PageMargins
+  printArea?: string
+  printTitlesRow?: string
+  printTitlesColumn?: string
+  showGridLines?: boolean
+  showRowColHeaders?: boolean
+  horizontalCentered?: boolean
+  verticalCentered?: boolean
 }
 
 export interface PageMargins {
-  top?: number;
-  right?: number;
-  bottom?: number;
-  left?: number;
-  header?: number;
-  footer?: number;
+  top?: number
+  right?: number
+  bottom?: number
+  left?: number
+  header?: number
+  footer?: number
 }
 
 export interface HeaderFooter {
-  oddHeader?: string;
-  oddFooter?: string;
-  evenHeader?: string;
-  evenFooter?: string;
-  firstHeader?: string;
-  firstFooter?: string;
-  differentOddEven?: boolean;
-  differentFirst?: boolean;
+  oddHeader?: string
+  oddFooter?: string
+  evenHeader?: string
+  evenFooter?: string
+  firstHeader?: string
+  firstFooter?: string
+  differentOddEven?: boolean
+  differentFirst?: boolean
 }
 
 // ── Sparkline ─────────────────────────────────────────────────────
 
 export interface Sparkline {
   /** Cell where the sparkline is displayed */
-  location: string;
+  location: string
   /** Data range (e.g. "Sheet1!B2:F2") */
-  dataRange: string;
+  dataRange: string
   /** Type: line, column, or win/loss (stacked) */
-  type?: "line" | "column" | "stacked";
+  type?: "line" | "column" | "stacked"
   /** Color (hex RGB without '#', e.g. "376092") */
-  color?: string;
+  color?: string
   /** Show markers */
-  markers?: boolean;
+  markers?: boolean
 }
 
 // ── TextBox ───────────────────────────────────────────────────────
 
 export interface SheetTextBox {
-  text: string;
+  text: string
   anchor: {
-    from: { row: number; col: number };
-    to?: { row: number; col: number };
-  };
-  width?: number;
-  height?: number;
+    from: { row: number; col: number }
+    to?: { row: number; col: number }
+  }
+  width?: number
+  height?: number
   style?: {
-    fontSize?: number;
-    bold?: boolean;
-    color?: string;
-    fillColor?: string;
-    borderColor?: string;
-  };
+    fontSize?: number
+    bold?: boolean
+    color?: string
+    fillColor?: string
+    borderColor?: string
+  }
   /** Alternative text for screen readers (lands in xdr:cNvPr/@descr). */
-  altText?: string;
+  altText?: string
   /** Title/caption for the shape (lands in xdr:cNvPr/@title). */
-  title?: string;
+  title?: string
 }
 
 // ── Threaded Comments (Excel 365+) ─────────────────────────────────
@@ -475,13 +494,13 @@ export interface SheetTextBox {
  */
 export interface ThreadedCommentPerson {
   /** Stable GUID identifying this person within the workbook. */
-  id: string;
+  id: string
   /** Display name shown in Excel's comment pane (required by the schema). */
-  displayName: string;
+  displayName: string
   /** Identity-system user id, e.g. the Azure AD object id. */
-  userId?: string;
+  userId?: string
   /** Identity provider name, e.g. "AD" or "PeoplePicker". */
-  providerId?: string;
+  providerId?: string
 }
 
 /**
@@ -489,10 +508,10 @@ export interface ThreadedCommentPerson {
  * UTF-16 code-unit offsets into the comment text.
  */
 export interface ThreadedCommentMention {
-  mentionPersonId: string;
-  mentionId: string;
-  startIndex: number;
-  length: number;
+  mentionPersonId: string
+  mentionId: string
+  startIndex: number
+  length: number
 }
 
 /**
@@ -501,39 +520,39 @@ export interface ThreadedCommentMention {
  * parent through `parentId`.
  */
 export interface ThreadedComment {
-  id: string;
+  id: string
   /** A1-style cell ref. Required for thread roots, omitted for replies. */
-  ref?: string;
+  ref?: string
   /** GUID matching a {@link ThreadedCommentPerson.id}. */
-  personId: string;
+  personId: string
   /** GUID of the parent comment when this is a reply. */
-  parentId?: string;
+  parentId?: string
   /** ISO-8601 timestamp from the `dT` attribute. */
-  date?: string;
+  date?: string
   /** Comment body. */
-  text: string;
+  text: string
   /** Whether the thread is marked resolved. */
-  done?: boolean;
+  done?: boolean
   /** `@person` mentions inside the text. */
-  mentions?: ThreadedCommentMention[];
+  mentions?: ThreadedCommentMention[]
 }
 
 // ── Image ──────────────────────────────────────────────────────────
 
 export interface SheetImage {
-  data: Uint8Array;
-  type: "png" | "jpeg" | "gif" | "svg" | "webp";
+  data: Uint8Array
+  type: "png" | "jpeg" | "gif" | "svg" | "webp"
   /** Anchor to cell */
   anchor: {
-    from: { row: number; col: number };
-    to?: { row: number; col: number };
-  };
-  width?: number;
-  height?: number;
+    from: { row: number; col: number }
+    to?: { row: number; col: number }
+  }
+  width?: number
+  height?: number
   /** Alternative text for screen readers (lands in xdr:cNvPr/@descr). */
-  altText?: string;
+  altText?: string
   /** Title/caption for the image (lands in xdr:cNvPr/@title). */
-  title?: string;
+  title?: string
 }
 
 // ── Charts (write/clone surface) ────────────────────────────────────
@@ -543,7 +562,7 @@ export interface SheetImage {
 // home. We re-export them here so existing consumers
 // (`import { SheetChart, ... } from "hucre"`) keep working unchanged.
 
-import type { SheetChart } from "./xlsx/chart/types";
+import type { SheetChart } from "./xlsx/chart/types"
 
 export type {
   ChartBorderDash,
@@ -576,7 +595,7 @@ export type {
   ChartView3D,
   SheetChart,
   WriteChartKind,
-} from "./xlsx/chart/types";
+} from "./xlsx/chart/types"
 
 // ── Accessibility ──────────────────────────────────────────────────
 
@@ -591,17 +610,17 @@ export interface SheetA11y {
    * the first non-empty summary across the workbook is copied there
    * so screen readers announce it when the file is opened.
    */
-  summary?: string;
+  summary?: string
   /**
    * 0-based row index that should be treated as the column-header
    * row. Used by the audit to verify a header is present and to
    * cross-check tables that span the same range.
    */
-  headerRow?: number;
+  headerRow?: number
 }
 
 /** Severity of an accessibility finding. */
-export type A11ySeverity = "error" | "warning" | "info";
+export type A11ySeverity = "error" | "warning" | "info"
 
 /** Stable code identifying an accessibility issue. */
 export type A11yCode =
@@ -612,218 +631,218 @@ export type A11yCode =
   | "merged-header-row"
   | "low-contrast"
   | "empty-sheet"
-  | "blank-row-in-data";
+  | "blank-row-in-data"
 
 /** Pinpoint where an issue applies. */
 export interface A11yLocation {
-  sheet?: string;
+  sheet?: string
   /** Cell reference like "B5" or range like "A1:D1". */
-  ref?: string;
+  ref?: string
   /** Image index inside `sheet.images`. */
-  image?: number;
+  image?: number
   /** Text-box index inside `sheet.textBoxes`. */
-  textBox?: number;
+  textBox?: number
 }
 
 export interface A11yIssue {
-  type: A11ySeverity;
-  code: A11yCode;
-  message: string;
-  location?: A11yLocation;
+  type: A11ySeverity
+  code: A11yCode
+  message: string
+  location?: A11yLocation
 }
 
 // ── Sheet Protection ───────────────────────────────────────────────
 
 export interface SheetProtection {
-  password?: string;
-  sheet?: boolean;
-  objects?: boolean;
-  scenarios?: boolean;
-  selectLockedCells?: boolean;
-  selectUnlockedCells?: boolean;
-  formatCells?: boolean;
-  formatColumns?: boolean;
-  formatRows?: boolean;
-  insertColumns?: boolean;
-  insertRows?: boolean;
-  insertHyperlinks?: boolean;
-  deleteColumns?: boolean;
-  deleteRows?: boolean;
-  sort?: boolean;
-  autoFilter?: boolean;
-  pivotTables?: boolean;
+  password?: string
+  sheet?: boolean
+  objects?: boolean
+  scenarios?: boolean
+  selectLockedCells?: boolean
+  selectUnlockedCells?: boolean
+  formatCells?: boolean
+  formatColumns?: boolean
+  formatRows?: boolean
+  insertColumns?: boolean
+  insertRows?: boolean
+  insertHyperlinks?: boolean
+  deleteColumns?: boolean
+  deleteRows?: boolean
+  sort?: boolean
+  autoFilter?: boolean
+  pivotTables?: boolean
 }
 
 // ── Sheet View ─────────────────────────────────────────────────────
 
 export interface SheetView {
-  showGridLines?: boolean;
-  showRowColHeaders?: boolean;
-  zoomScale?: number;
-  rightToLeft?: boolean;
-  tabColor?: Color;
+  showGridLines?: boolean
+  showRowColHeaders?: boolean
+  zoomScale?: number
+  rightToLeft?: boolean
+  tabColor?: Color
 }
 
 // ── Table (ListObject) ────────────────────────────────────────────
 
 export interface TableDefinition {
   /** Table name (must be unique in workbook, used in structured references) */
-  name: string;
+  name: string
   /** Display name */
-  displayName?: string;
+  displayName?: string
   /** Cell range (e.g. "A1:D10") — if not provided, auto-calculated from data */
-  range?: string;
+  range?: string
   /** Column definitions */
-  columns: TableColumn[];
+  columns: TableColumn[]
   /** Table style name (e.g. "TableStyleMedium2") */
-  style?: string;
+  style?: string
   /** Show banded rows. Default: true */
-  showRowStripes?: boolean;
+  showRowStripes?: boolean
   /** Show banded columns. Default: false */
-  showColumnStripes?: boolean;
+  showColumnStripes?: boolean
   /** Show auto-filter. Default: true */
-  showAutoFilter?: boolean;
+  showAutoFilter?: boolean
   /** Show total row. Default: false */
-  showTotalRow?: boolean;
+  showTotalRow?: boolean
 }
 
 export interface TableColumn {
   /** Column header name */
-  name: string;
+  name: string
   /** Total row function (sum, count, average, min, max, countNums, stdDev, var, custom) */
-  totalFunction?: string;
+  totalFunction?: string
   /** Total row formula (for custom) */
-  totalFormula?: string;
+  totalFormula?: string
   /** Total row label (text in total cell) */
-  totalLabel?: string;
+  totalLabel?: string
 }
 
 // ── Row Definition ────────────────────────────────────────────────
 
 export interface RowDef {
   /** Row height in points */
-  height?: number;
+  height?: number
   /** Hide row */
-  hidden?: boolean;
+  hidden?: boolean
   /** Outline level (grouping) */
-  outlineLevel?: number;
+  outlineLevel?: number
   /** Whether this outline group is collapsed */
-  collapsed?: boolean;
+  collapsed?: boolean
 }
 
 // ── Sheet ──────────────────────────────────────────────────────────
 
 export interface Sheet {
-  name: string;
-  rows: CellValue[][];
+  name: string
+  rows: CellValue[][]
   /** Detailed cell data (keyed by "row,col" e.g. "0,2") */
-  cells?: Map<string, Cell>;
-  columns?: ColumnDef[];
+  cells?: Map<string, Cell>
+  columns?: ColumnDef[]
   /** Row-level properties (keyed by 0-based row index) */
-  rowDefs?: Map<number, RowDef>;
-  merges?: MergeRange[];
-  dataValidations?: DataValidation[];
-  conditionalRules?: ConditionalRule[];
-  autoFilter?: AutoFilter;
-  freezePane?: FreezePane;
-  splitPane?: SplitPane;
-  images?: SheetImage[];
-  protection?: SheetProtection;
-  pageSetup?: PageSetup;
-  headerFooter?: HeaderFooter;
-  view?: SheetView;
-  hidden?: boolean;
+  rowDefs?: Map<number, RowDef>
+  merges?: MergeRange[]
+  dataValidations?: DataValidation[]
+  conditionalRules?: ConditionalRule[]
+  autoFilter?: AutoFilter
+  freezePane?: FreezePane
+  splitPane?: SplitPane
+  images?: SheetImage[]
+  protection?: SheetProtection
+  pageSetup?: PageSetup
+  headerFooter?: HeaderFooter
+  view?: SheetView
+  hidden?: boolean
   /** Very hidden (only unhideable via VBA) */
-  veryHidden?: boolean;
+  veryHidden?: boolean
   /** Excel Tables (ListObject) defined on this sheet */
-  tables?: TableDefinition[];
+  tables?: TableDefinition[]
   /** Row page breaks (0-based row indices) */
-  rowBreaks?: number[];
+  rowBreaks?: number[]
   /** Column page breaks (0-based column indices) */
-  colBreaks?: number[];
+  colBreaks?: number[]
   /** Outline properties (controls summary row/column position) */
-  outlineProperties?: OutlineProperties;
+  outlineProperties?: OutlineProperties
   /** Background image data (extracted from worksheet picture relationship) */
-  backgroundImage?: Uint8Array;
+  backgroundImage?: Uint8Array
   /** Sparklines (mini-charts in cells) */
-  sparklines?: Sparkline[];
+  sparklines?: Sparkline[]
   /** Text boxes (shapes with text) */
-  textBoxes?: SheetTextBox[];
+  textBoxes?: SheetTextBox[]
   /**
    * Excel 365 threaded comments for this sheet. Stored physically in
    * `xl/threadedComments/threadedCommentN.xml` and resolved against
    * the workbook-wide person list (`Workbook.persons`).
    */
-  threadedComments?: ThreadedComment[];
+  threadedComments?: ThreadedComment[]
   /** Accessibility metadata for screen readers and the `audit` helper. */
-  a11y?: SheetA11y;
+  a11y?: SheetA11y
   /**
    * Pivot table instances hosted on this sheet. The body lives in
    * `xl/pivotTables/pivotTableN.xml`; each instance points at a
    * workbook-level cache via `cacheId`.
    */
-  pivotTables?: PivotTable[];
+  pivotTables?: PivotTable[]
   /**
    * Slicers attached to this sheet (Excel 2010+). Resolved from
    * `xl/slicers/slicerN.xml` parts referenced via this sheet's rels.
    */
-  slicers?: Slicer[];
+  slicers?: Slicer[]
   /**
    * Timeline slicers attached to this sheet (Excel 2013+). Resolved from
    * `xl/timelines/timelineN.xml` parts referenced via this sheet's rels.
    */
-  timelines?: Timeline[];
+  timelines?: Timeline[]
   /**
    * Charts anchored on this sheet, resolved from `xl/charts/chartN.xml`
    * parts referenced via the sheet's drawing. Hucre does not yet author
    * charts; the entries surface for inspection on read and survive
    * roundtrip when the sheet has no hucre-managed images.
    */
-  charts?: Chart[];
+  charts?: Chart[]
 }
 
 // ── Workbook Properties ────────────────────────────────────────────
 
 export interface WorkbookProperties {
-  title?: string;
-  subject?: string;
-  creator?: string;
-  keywords?: string;
-  description?: string;
-  lastModifiedBy?: string;
-  created?: Date;
-  modified?: Date;
-  company?: string;
-  manager?: string;
-  category?: string;
+  title?: string
+  subject?: string
+  creator?: string
+  keywords?: string
+  description?: string
+  lastModifiedBy?: string
+  created?: Date
+  modified?: Date
+  company?: string
+  manager?: string
+  category?: string
   /** Custom properties */
-  custom?: Record<string, string | number | boolean | Date>;
+  custom?: Record<string, string | number | boolean | Date>
 }
 
 // ── External Workbook Links ────────────────────────────────────────
 
 /** Cached cell type as encoded in `cell/@t`. Mirrors OOXML cell type codes. */
-export type ExternalCellType = "n" | "s" | "b" | "e" | "str";
+export type ExternalCellType = "n" | "s" | "b" | "e" | "str"
 
 export interface ExternalCachedCell {
   /** A1-style reference within the external sheet. */
-  ref: string;
-  type: ExternalCellType;
+  ref: string
+  type: ExternalCellType
   /** Cached value. Strings include error text for `t="e"`. */
-  value: string | number | boolean;
+  value: string | number | boolean
 }
 
 export interface ExternalSheetData {
   /** 0-based index into the external workbook's sheet list. */
-  sheetId: number;
-  cells: ExternalCachedCell[];
+  sheetId: number
+  cells: ExternalCachedCell[]
 }
 
 export interface ExternalDefinedName {
-  name: string;
-  refersTo?: string;
+  name: string
+  refersTo?: string
   /** Sheet-local index when present; omitted for workbook-level names. */
-  sheetId?: number;
+  sheetId?: number
 }
 
 /**
@@ -834,15 +853,15 @@ export interface ExternalDefinedName {
  */
 export interface ExternalLink {
   /** Target path of the linked workbook (URL, file path, or local entry). */
-  target: string;
+  target: string
   /** Almost always `"External"`. Mirrors the `TargetMode` attribute. */
-  targetMode?: "External" | "Internal";
+  targetMode?: "External" | "Internal"
   /** External workbook's sheets in declaration order. */
-  sheetNames: string[];
+  sheetNames: string[]
   /** Cached cell values, keyed by external sheet id. */
-  sheetData: ExternalSheetData[];
+  sheetData: ExternalSheetData[]
   /** Defined names declared in the external workbook. */
-  definedNames?: ExternalDefinedName[];
+  definedNames?: ExternalDefinedName[]
 }
 
 // ── Cell-Embedded Images (WPS DISPIMG / cellimages) ───────────────
@@ -860,13 +879,13 @@ export interface CellImage {
    * Stable image identifier as it appears inside the DISPIMG formula
    * (`name` attribute on `xdr:cNvPr`). For example `"ID_2A8C..."`.
    */
-  id: string;
+  id: string
   /** Image binary, extracted from the package media folder. */
-  data: Uint8Array;
+  data: Uint8Array
   /** Image format inferred from the media file extension. */
-  type: SheetImage["type"];
+  type: SheetImage["type"]
   /** Optional human-readable description (`descr` attribute). */
-  description?: string;
+  description?: string
 }
 
 // ── Pivot Tables ───────────────────────────────────────────────────
@@ -886,33 +905,33 @@ export type PivotDataFieldFunction =
   | "stdDev"
   | "stdDevp"
   | "var"
-  | "varp";
+  | "varp"
 
 /**
  * Field role in a pivot table layout. `row`, `col`, `page`, and `data`
  * mirror the four standard axes; `hidden` means the field exists in the
  * cache but is not currently placed on any axis.
  */
-export type PivotFieldAxis = "row" | "col" | "page" | "data" | "hidden";
+export type PivotFieldAxis = "row" | "col" | "page" | "data" | "hidden"
 
 export interface PivotField {
   /**
    * Display name. Reads from the `<cacheField name="...">` attribute on
    * the matching field index in the pivot cache definition.
    */
-  name: string;
+  name: string
   /**
    * Where the field appears in the pivot table. `hidden` covers cache
    * fields that are present but not placed on any axis.
    */
-  axis: PivotFieldAxis;
+  axis: PivotFieldAxis
   /** When `axis === "data"`, the aggregation applied to the values. */
-  function?: PivotDataFieldFunction;
+  function?: PivotDataFieldFunction
   /**
    * Display name overlay for data fields (the `name` attribute on
    * `<dataField>`). Falls back to `name` when absent.
    */
-  displayName?: string;
+  displayName?: string
 }
 
 /**
@@ -922,38 +941,38 @@ export interface PivotField {
  */
 export interface PivotTable {
   /** Pivot table name (`<pivotTableDefinition name="...">`). */
-  name: string;
+  name: string
   /**
    * Index into `Workbook.pivotCaches`. Mirrors the workbook-level
    * `cacheId` attribute on `<pivotCache>` rather than the per-table
    * relationship — that way a model author who reorders the cache
    * array keeps the link sound.
    */
-  cacheId: number;
+  cacheId: number
   /**
    * Output range on the host sheet, e.g. `"A3:D20"`. Empty string when
    * the source omits a `<location>` element.
    */
-  location: string;
+  location: string
   /** Number of header rows above the data rows. */
-  firstHeaderRow?: number;
+  firstHeaderRow?: number
   /** Number of body rows reserved for column-axis labels. */
-  firstDataRow?: number;
+  firstDataRow?: number
   /** Column index of the first data row (0-based). */
-  firstDataCol?: number;
+  firstDataCol?: number
   /** Number of pages declared in `<pageFields>`. */
-  rowPageCount?: number;
+  rowPageCount?: number
   /** Number of column-axis page-break positions. */
-  colPageCount?: number;
+  colPageCount?: number
   /**
    * Pivot fields in declaration order. The position in this array is
    * the field index used by `<rowItems>`, `<colItems>`, etc.
    */
-  fields: PivotField[];
+  fields: PivotField[]
   /** Pivot-table style name (`<pivotTableStyleInfo name="...">`). */
-  styleName?: string;
+  styleName?: string
   /** Whether the data field caption is shown. */
-  dataCaption?: string;
+  dataCaption?: string
 }
 
 /**
@@ -966,24 +985,24 @@ export interface PivotCache {
    * Cache id Excel uses to wire pivot tables to caches. Mirrors the
    * `cacheId` attribute on `<workbook><pivotCaches><pivotCache>`.
    */
-  cacheId: number;
+  cacheId: number
   /**
    * Source range, e.g. `"Sheet1!$A$1:$C$100"` or a defined-name
    * reference. Empty string for non-worksheet sources.
    */
-  sourceRef?: string;
+  sourceRef?: string
   /** Source sheet name when the source is a worksheet range. */
-  sourceSheet?: string;
+  sourceSheet?: string
   /**
    * Source type: `worksheet` (range or table on a sheet), `external`
    * (linked workbook / database), `consolidation`, or `scenario`. Most
    * real workbooks use `worksheet`.
    */
-  sourceType?: "worksheet" | "external" | "consolidation" | "scenario";
+  sourceType?: "worksheet" | "external" | "consolidation" | "scenario"
   /** Cached field names in declaration order. */
-  fieldNames: string[];
+  fieldNames: string[]
   /** Whether a `pivotCacheRecords{N}.xml` part is present. */
-  hasRecords?: boolean;
+  hasRecords?: boolean
 }
 
 /**
@@ -996,13 +1015,13 @@ export interface PivotCache {
  */
 export interface WritePivotDataField {
   /** Source column name (must match an entry in the source header row). */
-  field: string;
+  field: string
   /** Aggregation function. Default: `"sum"`. */
-  function?: PivotDataFieldFunction;
+  function?: PivotDataFieldFunction
   /** Optional display name override. Default: e.g. `"Sum of Revenue"`. */
-  displayName?: string;
+  displayName?: string
   /** Optional number format for aggregated values. Default: General. */
-  numberFormat?: string;
+  numberFormat?: string
 }
 
 /**
@@ -1019,42 +1038,42 @@ export interface WritePivotDataField {
  */
 export interface WritePivotTable {
   /** Pivot table name shown in Excel's `Field List`. */
-  name: string;
+  name: string
   /**
    * Source sheet name. Defaults to the sheet the pivot is declared on
    * when omitted — handy for pivots that summarise their own sheet's
    * data.
    */
-  sourceSheet?: string;
+  sourceSheet?: string
   /**
    * Source range covering the header row plus all data rows
    * (e.g. `"A1:C100"`). Auto-detected from the source sheet's `rows`
    * length when omitted.
    */
-  sourceRange?: string;
+  sourceRange?: string
   /**
    * Top-left anchor for the rendered pivot table on the host sheet
    * (e.g. `"A3"`). Default: `"A1"`.
    */
-  targetCell?: string;
+  targetCell?: string
   /** Source columns laid out on the row axis, in order. */
-  rows?: string[];
+  rows?: string[]
   /** Source columns laid out on the column axis, in order. */
-  columns?: string[];
+  columns?: string[]
   /** Source columns laid out as page (filter) fields, in order. */
-  pages?: string[];
+  pages?: string[]
   /** Aggregated value fields. Each entry becomes one data column. */
-  values: WritePivotDataField[];
+  values: WritePivotDataField[]
   /**
    * Pivot table style name (e.g. `"PivotStyleLight16"`). Default:
    * `"PivotStyleLight16"` — the modern Excel default.
    */
-  styleName?: string;
+  styleName?: string
   /**
    * Caption shown above the data fields when there is more than one.
    * Default: `"Values"` (Excel's built-in caption).
    */
-  dataCaption?: string;
+  dataCaption?: string
 }
 
 // ── Slicers & Timelines ────────────────────────────────────────────
@@ -1068,19 +1087,19 @@ export interface WritePivotTable {
  */
 export interface Slicer {
   /** Programmatic name. Mirrors `slicer/@name`. */
-  name: string;
+  name: string
   /** Slicer cache identifier this slicer references. Mirrors `slicer/@cache`. */
-  cache: string;
+  cache: string
   /** Display caption shown in the header. Mirrors `slicer/@caption`. */
-  caption?: string;
+  caption?: string
   /** Number of columns in the slicer button grid. Mirrors `slicer/@columnCount`. */
-  columnCount?: number;
+  columnCount?: number
   /** Built-in style id, e.g. `SlicerStyleLight1`. Mirrors `slicer/@style`. */
-  style?: string;
+  style?: string
   /** Sort order for items. Mirrors `slicer/@sortOrder` (e.g. `ascending`, `descending`). */
-  sortOrder?: string;
+  sortOrder?: string
   /** Row height in EMUs. Mirrors `slicer/@rowHeight`. */
-  rowHeight?: number;
+  rowHeight?: number
 }
 
 /**
@@ -1091,30 +1110,30 @@ export interface Slicer {
  */
 export interface SlicerCache {
   /** Programmatic name. Mirrors `slicerCacheDefinition/@name`. */
-  name: string;
+  name: string
   /** Source identifier — typically the cache definition's source ref. */
-  sourceName?: string;
+  sourceName?: string
   /**
    * Pivot tables this cache filters, when sourced from a pivot table.
    * Each entry is the `tabId` (sheet index) + `name` of a pivot table.
    */
-  pivotTables?: SlicerCachePivotTable[];
+  pivotTables?: SlicerCachePivotTable[]
   /** Excel Table this cache filters, when sourced from a table. */
-  tableSource?: SlicerCacheTableSource;
+  tableSource?: SlicerCacheTableSource
 }
 
 export interface SlicerCachePivotTable {
   /** 0-based sheet tab id of the sheet hosting the pivot table. */
-  tabId: number;
+  tabId: number
   /** Pivot table name. */
-  name: string;
+  name: string
 }
 
 export interface SlicerCacheTableSource {
   /** Excel Table name. */
-  name: string;
+  name: string
   /** Column referenced in the table. */
-  column?: string;
+  column?: string
 }
 
 /**
@@ -1125,23 +1144,23 @@ export interface SlicerCacheTableSource {
  */
 export interface Timeline {
   /** Programmatic name. */
-  name: string;
+  name: string
   /** Cache identifier this timeline references. */
-  cache: string;
+  cache: string
   /** Display caption. */
-  caption?: string;
+  caption?: string
   /** Built-in style id, e.g. `TimeSlicerStyleLight1`. */
-  style?: string;
+  style?: string
   /** Granularity: `years`, `quarters`, `months`, or `days`. */
-  level?: string;
+  level?: string
   /** Whether the time-level selector is shown. */
-  showHeader?: boolean;
+  showHeader?: boolean
   /** Whether the selection-label band is shown. */
-  showSelectionLabel?: boolean;
+  showSelectionLabel?: boolean
   /** Whether the time-level row is shown. */
-  showTimeLevel?: boolean;
+  showTimeLevel?: boolean
   /** Whether the horizontal scrollbar is shown. */
-  showHorizontalScrollbar?: boolean;
+  showHorizontalScrollbar?: boolean
 }
 
 /**
@@ -1152,11 +1171,11 @@ export interface Timeline {
  */
 export interface TimelineCache {
   /** Programmatic name. */
-  name: string;
+  name: string
   /** Source identifier. */
-  sourceName?: string;
+  sourceName?: string
   /** Pivot tables this cache filters. */
-  pivotTables?: SlicerCachePivotTable[];
+  pivotTables?: SlicerCachePivotTable[]
 }
 
 // ── Charts (read surface) ───────────────────────────────────────────
@@ -1166,7 +1185,7 @@ export interface TimelineCache {
 // (`import { Chart, ChartAxisInfo, ... } from "hucre"`) keep working
 // unchanged.
 
-import type { Chart } from "./xlsx/chart/types";
+import type { Chart } from "./xlsx/chart/types"
 
 export type {
   Chart,
@@ -1188,38 +1207,38 @@ export type {
   ChartLegendPosition,
   ChartLineAreaGrouping,
   ChartSeriesInfo,
-} from "./xlsx/chart/types";
+} from "./xlsx/chart/types"
 
 // ── Workbook ───────────────────────────────────────────────────────
 
 export interface Workbook {
-  sheets: Sheet[];
-  properties?: WorkbookProperties;
-  namedRanges?: NamedRange[];
+  sheets: Sheet[]
+  properties?: WorkbookProperties
+  namedRanges?: NamedRange[]
   /** Date system: 1900 (default/Windows) or 1904 (Mac) */
-  dateSystem?: "1900" | "1904";
+  dateSystem?: "1900" | "1904"
   /** Default font for the workbook */
-  defaultFont?: FontStyle;
+  defaultFont?: FontStyle
   /** Active sheet index */
-  activeSheet?: number;
+  activeSheet?: number
   /** Theme color palette (resolved from xl/theme/theme1.xml) */
-  themeColors?: string[];
+  themeColors?: string[]
   /** Workbook-level protection */
   workbookProtection?: {
-    lockStructure?: boolean;
-    lockWindows?: boolean;
-  };
+    lockStructure?: boolean
+    lockWindows?: boolean
+  }
   /**
    * Workbook-wide person directory referenced from threaded comments.
    * Each `ThreadedComment.personId` resolves against this list.
    */
-  persons?: ThreadedCommentPerson[];
+  persons?: ThreadedCommentPerson[]
   /**
    * External workbook references, resolved from
    * `xl/externalLinks/externalLinkN.xml`. The 1-based position in this
    * array matches the `[N]` prefix used in formulas like `[1]Sheet1!A1`.
    */
-  externalLinks?: ExternalLink[];
+  externalLinks?: ExternalLink[]
   /**
    * Cell-embedded images (WPS DISPIMG mechanism).
    *
@@ -1227,23 +1246,23 @@ export interface Workbook {
    * `=_xlfn.DISPIMG("<id>", 1)` formulas — match `CellImage.id` against
    * the first argument to look up the binary.
    */
-  cellImages?: CellImage[];
+  cellImages?: CellImage[]
   /**
    * Workbook-level pivot caches resolved from
    * `xl/pivotCache/pivotCacheDefinitionN.xml`. Sheet-level
    * `PivotTable.cacheId` references entries here.
    */
-  pivotCaches?: PivotCache[];
+  pivotCaches?: PivotCache[]
   /**
    * Slicer caches resolved from `xl/slicerCaches/slicerCacheN.xml`.
    * The 1-based position in this array matches the `N` in the source path.
    */
-  slicerCaches?: SlicerCache[];
+  slicerCaches?: SlicerCache[]
   /**
    * Timeline caches resolved from `xl/timelineCaches/timelineCacheN.xml`.
    * The 1-based position in this array matches the `N` in the source path.
    */
-  timelineCaches?: TimelineCache[];
+  timelineCaches?: TimelineCache[]
 }
 
 // ── Read Options ───────────────────────────────────────────────────
@@ -1258,13 +1277,13 @@ export interface Workbook {
  */
 export interface SheetFilterInfo {
   /** Sheet name as declared in the workbook directory. */
-  name: string;
+  name: string
   /** 0-based position in the workbook's sheet list. */
-  index: number;
+  index: number
   /** XLSX `<sheet state="hidden">`. Undefined for ODS. */
-  hidden?: boolean;
+  hidden?: boolean
   /** XLSX `<sheet state="veryHidden">`. Undefined for ODS. */
-  veryHidden?: boolean;
+  veryHidden?: boolean
 }
 
 /**
@@ -1272,7 +1291,7 @@ export interface SheetFilterInfo {
  * {@link SheetFilterInfo} per sheet in workbook order; returning `true`
  * includes the sheet, `false` skips it.
  */
-export type SheetFilter = (info: SheetFilterInfo, index: number) => boolean;
+export type SheetFilter = (info: SheetFilterInfo, index: number) => boolean
 
 export interface ReadOptions {
   /**
@@ -1285,240 +1304,243 @@ export interface ReadOptions {
    *
    * Default: all sheets.
    */
-  sheets?: Array<number | string> | SheetFilter;
+  sheets?: Array<number | string> | SheetFilter
   /** Which row is the header row (1-based). Default: none */
-  headerRow?: number;
+  headerRow?: number
   /** Schema for validation and type coercion */
-  schema?: SchemaDefinition;
+  schema?: SchemaDefinition
   /** Date system override. Default: auto-detect from file */
-  dateSystem?: "1900" | "1904" | "auto";
+  dateSystem?: "1900" | "1904" | "auto"
   /** Whether to read styles. Default: false (faster without) */
-  readStyles?: boolean;
+  readStyles?: boolean
   /** Password for encrypted files */
-  password?: string;
+  password?: string
   /** Maximum number of data rows to read per sheet. Default: unlimited */
-  maxRows?: number;
+  maxRows?: number
   /** Cell range to read (e.g. "A1:D10"). Only cells within this range are returned. */
-  range?: string;
+  range?: string
 }
 
 // ── Write Options ──────────────────────────────────────────────────
 
 export interface WriteOptions {
-  sheets: WriteSheet[];
-  properties?: WorkbookProperties;
-  namedRanges?: NamedRange[];
-  defaultFont?: FontStyle;
-  dateSystem?: "1900" | "1904";
+  sheets: WriteSheet[]
+  properties?: WorkbookProperties
+  namedRanges?: NamedRange[]
+  defaultFont?: FontStyle
+  dateSystem?: "1900" | "1904"
   /** Active sheet index (0-based). Default: 0 */
-  activeSheet?: number;
+  activeSheet?: number
   /** Workbook-level protection (lock structure/windows) */
   workbookProtection?: {
-    lockStructure?: boolean;
-    lockWindows?: boolean;
-    password?: string;
-  };
+    lockStructure?: boolean
+    lockWindows?: boolean
+    password?: string
+  }
   /** String storage mode. Default: "shared"
    *  - "shared": shared string table (smaller files with repeated strings)
    *  - "inline": inline strings per cell (faster write, larger files)
    */
-  stringMode?: "shared" | "inline";
+  stringMode?: "shared" | "inline"
   /** VBA project binary (vbaProject.bin) to embed. Output becomes macro-enabled (.xlsm). */
-  vbaProject?: Uint8Array;
+  vbaProject?: Uint8Array
 }
 
 export interface WriteSheet {
-  name: string;
-  columns?: ColumnDef[];
+  name: string
+  columns?: ColumnDef[]
   /** Raw row data (array of arrays) */
-  rows?: CellValue[][];
-  /** Object data (array of objects — uses column keys) */
-  data?: Array<Record<string, CellValue>>;
+  rows?: CellValue[][]
+  /**
+   * Object data (array of objects — uses column keys). A value may be a scalar
+   * {@link CellValue} or a rich {@link HyperlinkValue} for inline clickable links.
+   */
+  data?: Array<Record<string, CellValue | HyperlinkValue>>
   /** Detailed cell overrides (keyed by "row,col") */
-  cells?: Map<string, Partial<Cell>>;
-  merges?: MergeRange[];
-  dataValidations?: DataValidation[];
-  conditionalRules?: ConditionalRule[];
-  autoFilter?: AutoFilter;
-  freezePane?: FreezePane;
-  splitPane?: SplitPane;
-  images?: SheetImage[];
-  protection?: SheetProtection;
-  pageSetup?: PageSetup;
-  headerFooter?: HeaderFooter;
-  view?: SheetView;
-  hidden?: boolean;
-  veryHidden?: boolean;
+  cells?: Map<string, Partial<Cell>>
+  merges?: MergeRange[]
+  dataValidations?: DataValidation[]
+  conditionalRules?: ConditionalRule[]
+  autoFilter?: AutoFilter
+  freezePane?: FreezePane
+  splitPane?: SplitPane
+  images?: SheetImage[]
+  protection?: SheetProtection
+  pageSetup?: PageSetup
+  headerFooter?: HeaderFooter
+  view?: SheetView
+  hidden?: boolean
+  veryHidden?: boolean
   /** Excel Tables (ListObject) to define on this sheet */
-  tables?: TableDefinition[];
+  tables?: TableDefinition[]
   /** Row page breaks (0-based row indices) */
-  rowBreaks?: number[];
+  rowBreaks?: number[]
   /** Column page breaks (0-based column indices) */
-  colBreaks?: number[];
+  colBreaks?: number[]
   /** Row-level properties (keyed by 0-based row index) */
-  rowDefs?: Map<number, RowDef>;
+  rowDefs?: Map<number, RowDef>
   /** Outline properties (controls summary row/column position) */
-  outlineProperties?: OutlineProperties;
+  outlineProperties?: OutlineProperties
   /** Background image for the worksheet (watermark) */
-  backgroundImage?: Uint8Array;
+  backgroundImage?: Uint8Array
   /** Sparklines (mini-charts in cells) */
-  sparklines?: Sparkline[];
+  sparklines?: Sparkline[]
   /** Text boxes (shapes with text) */
-  textBoxes?: SheetTextBox[];
+  textBoxes?: SheetTextBox[]
   /**
    * Native Excel charts (bar, column, line, pie, scatter, area). Charts
    * share the worksheet's drawing part with images and text boxes.
    */
-  charts?: SheetChart[];
+  charts?: SheetChart[]
   /** Excel 365 threaded comments for this sheet. */
-  threadedComments?: ThreadedComment[];
+  threadedComments?: ThreadedComment[]
   /**
    * Pivot tables anchored on this sheet. The source data is read from
    * either the same sheet or a sibling sheet identified by
    * {@link WritePivotTable.sourceSheet}.
    */
-  pivotTables?: WritePivotTable[];
+  pivotTables?: WritePivotTable[]
   /** Accessibility metadata for screen readers and the `audit` helper. */
-  a11y?: SheetA11y;
+  a11y?: SheetA11y
 }
 
 // ── Outline Properties ────────────────────────────────────────────
 
 export interface OutlineProperties {
   /** Summary rows appear below detail rows. Default: true */
-  summaryBelow?: boolean;
+  summaryBelow?: boolean
   /** Summary columns appear to the right of detail columns. Default: true */
-  summaryRight?: boolean;
+  summaryRight?: boolean
 }
 
 // ── CSV Options ────────────────────────────────────────────────────
 
 export interface CsvReadOptions {
   /** Field delimiter. Default: auto-detect */
-  delimiter?: string;
+  delimiter?: string
   /** Line separator. Default: auto-detect */
-  lineSeparator?: string;
+  lineSeparator?: string
   /** Quote character. Default: " */
-  quote?: string;
+  quote?: string
   /** Escape character. Default: " (RFC 4180 doubled quotes) */
-  escape?: string;
+  escape?: string
   /** Whether first row is header. Default: false */
-  header?: boolean;
+  header?: boolean
   /** Skip BOM if present. Default: true */
-  skipBom?: boolean;
+  skipBom?: boolean
   /** Type inference for numbers, booleans, dates. Default: false */
-  typeInference?: boolean;
+  typeInference?: boolean
   /** Keep strings with leading zeros (e.g. "0123") as strings instead of converting to numbers. Default: true */
-  preserveLeadingZeros?: boolean;
+  preserveLeadingZeros?: boolean
   /** Schema for validation */
-  schema?: SchemaDefinition;
+  schema?: SchemaDefinition
   /** Encoding. Default: "utf-8" */
-  encoding?: string;
+  encoding?: string
   /** Skip empty rows. Default: false */
-  skipEmptyRows?: boolean;
+  skipEmptyRows?: boolean
   /** Comment character (lines starting with this are skipped) */
-  comment?: string;
+  comment?: string
   /** Maximum number of data rows to parse. When set, parsing stops after this many rows. */
-  maxRows?: number;
+  maxRows?: number
   /** Skip the first N lines before parsing (useful for files with metadata headers above the CSV data). */
-  skipLines?: number;
+  skipLines?: number
   /** Called for each row during parsing, enabling progressive processing without buffering all rows. */
-  onRow?: (row: CellValue[], index: number) => void;
+  onRow?: (row: CellValue[], index: number) => void
   /** Transform each header string when `header: true`. Called on each header value. */
-  transformHeader?: (header: string, index: number) => string;
+  transformHeader?: (header: string, index: number) => string
   /** Transform each cell value after type inference. Called on every cell. */
-  transformValue?: (value: CellValue, header: string, row: number, col: number) => CellValue;
+  transformValue?: (value: CellValue, header: string, row: number, col: number) => CellValue
   /** Fast mode: skip quote handling and just split by delimiter/newlines. Faster for files known to have no quoted fields. Default: false */
-  fastMode?: boolean;
+  fastMode?: boolean
 }
 
 export interface CsvWriteOptions {
   /** Field delimiter. Default: "," */
-  delimiter?: string;
+  delimiter?: string
   /** Line separator. Default: "\r\n" (CRLF per RFC 4180) */
-  lineSeparator?: string;
+  lineSeparator?: string
   /** Quote character. Default: " */
-  quote?: string;
+  quote?: string
   /** Quote style. Default: "required" */
-  quoteStyle?: "all" | "required" | "none";
+  quoteStyle?: "all" | "required" | "none"
   /** Headers row from column names */
-  headers?: string[] | boolean;
+  headers?: string[] | boolean
   /** Prepend UTF-8 BOM (for Excel compatibility). Default: false */
-  bom?: boolean;
+  bom?: boolean
   /** Date format string. Default: ISO 8601 */
-  dateFormat?: string;
+  dateFormat?: string
   /** Null/undefined representation. Default: "" */
-  nullValue?: string;
+  nullValue?: string
   /** Escape formula injection by prefixing cells starting with =, +, -, @, \t, \r with a single quote. Default: false */
-  escapeFormulae?: boolean;
+  escapeFormulae?: boolean
   /** Column keys to include (for writeCsvObjects). When provided, only these columns are output in this order. */
-  columns?: string[];
+  columns?: string[]
 }
 
 // ── Schema Validation ──────────────────────────────────────────────
 
-export type SchemaFieldType = "string" | "number" | "integer" | "boolean" | "date";
+export type SchemaFieldType = "string" | "number" | "integer" | "boolean" | "date"
 
 export interface SchemaField {
   /** Expected column header name (for matching) */
-  column?: string;
+  column?: string
   /** Column index (0-based, alternative to column name) */
-  columnIndex?: number;
-  type?: SchemaFieldType;
-  required?: boolean;
+  columnIndex?: number
+  type?: SchemaFieldType
+  required?: boolean
   /** Custom validation function */
-  validate?: (value: unknown) => boolean | string;
+  validate?: (value: unknown) => boolean | string
   /** Transform value after parsing */
-  transform?: (value: unknown) => unknown;
+  transform?: (value: unknown) => unknown
   /** Regular expression pattern (for strings) */
-  pattern?: RegExp;
+  pattern?: RegExp
   /** Minimum value (for numbers) or length (for strings) */
-  min?: number;
+  min?: number
   /** Maximum value (for numbers) or length (for strings) */
-  max?: number;
+  max?: number
   /** Allowed values */
-  enum?: unknown[];
+  enum?: unknown[]
   /** Default value for empty cells */
-  default?: unknown;
+  default?: unknown
 }
 
-export type SchemaDefinition = Record<string, SchemaField>;
+export type SchemaDefinition = Record<string, SchemaField>
 
 export interface ValidationError {
   /** 1-based row number */
-  row: number;
+  row: number
   /** Column name or index */
-  column: string | number;
+  column: string | number
   /** Error message */
-  message: string;
+  message: string
   /** The raw value that failed validation */
-  value: unknown;
+  value: unknown
   /** Field name in the schema */
-  field: string;
+  field: string
 }
 
 export interface ReadResult<T = Record<string, unknown>> {
   /** Parsed and validated rows */
-  data: T[];
+  data: T[]
   /** Validation errors (if schema provided) */
-  errors: ValidationError[];
+  errors: ValidationError[]
   /** Raw sheet data */
-  sheets: Sheet[];
+  sheets: Sheet[]
 }
 
 // ── Streaming Types ────────────────────────────────────────────────
 
 export interface StreamReadOptions extends ReadOptions {
   /** Batch size for row events. Default: 1 */
-  batchSize?: number;
+  batchSize?: number
 }
 
 export interface StreamWriteOptions extends WriteOptions {
   /** Sheet being written */
-  sheet: WriteSheet;
+  sheet: WriteSheet
 }
 
 // ── Input/Output Types ─────────────────────────────────────────────
 
-export type ReadInput = Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>;
-export type WriteOutput = Uint8Array;
+export type ReadInput = Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>
+export type WriteOutput = Uint8Array

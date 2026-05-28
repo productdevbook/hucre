@@ -14,10 +14,10 @@
 // callers in chart-reader.ts because each has host-specific scope
 // commentary worth keeping.
 
-import type { ChartManualLayout } from "./types";
-import type { XmlElement } from "../../xml/parser";
-import { findChild } from "./util";
-import { xmlElement, xmlSelfClose } from "../../xml/writer";
+import type { ChartManualLayout } from "./types"
+import type { XmlElement } from "../../xml/parser"
+import { findChild } from "./util"
+import { xmlElement, xmlSelfClose } from "../../xml/writer"
 
 /**
  * Parse a single `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` element off a
@@ -28,15 +28,15 @@ import { xmlElement, xmlSelfClose } from "../../xml/writer";
  * is omitted.
  */
 export function readLayoutCoordinate(el: XmlElement | undefined): number | undefined {
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  const parsed = Number(trimmed);
-  if (!Number.isFinite(parsed)) return undefined;
-  if (parsed < 0 || parsed > 1) return undefined;
-  return parsed;
+  if (!el) return undefined
+  const raw = el.attrs.val
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed)) return undefined
+  if (parsed < 0 || parsed > 1) return undefined
+  return parsed
 }
 
 /**
@@ -52,23 +52,23 @@ export function readLayoutCoordinate(el: XmlElement | undefined): number | undef
  * shared by every per-host wrapper that uses it.
  */
 export function parseManualLayout(parent: XmlElement): ChartManualLayout | undefined {
-  const layout = findChild(parent, "layout");
-  if (!layout) return undefined;
-  const manual = findChild(layout, "manualLayout");
-  if (!manual) return undefined;
-  const x = readLayoutCoordinate(findChild(manual, "x"));
-  const y = readLayoutCoordinate(findChild(manual, "y"));
-  const w = readLayoutCoordinate(findChild(manual, "w"));
-  const h = readLayoutCoordinate(findChild(manual, "h"));
+  const layout = findChild(parent, "layout")
+  if (!layout) return undefined
+  const manual = findChild(layout, "manualLayout")
+  if (!manual) return undefined
+  const x = readLayoutCoordinate(findChild(manual, "x"))
+  const y = readLayoutCoordinate(findChild(manual, "y"))
+  const w = readLayoutCoordinate(findChild(manual, "w"))
+  const h = readLayoutCoordinate(findChild(manual, "h"))
   if (x === undefined && y === undefined && w === undefined && h === undefined) {
-    return undefined;
+    return undefined
   }
-  const out: ChartManualLayout = {};
-  if (x !== undefined) out.x = x;
-  if (y !== undefined) out.y = y;
-  if (w !== undefined) out.w = w;
-  if (h !== undefined) out.h = h;
-  return out;
+  const out: ChartManualLayout = {}
+  if (x !== undefined) out.x = x
+  if (y !== undefined) out.y = y
+  if (w !== undefined) out.w = w
+  if (h !== undefined) out.h = h
+  return out
 }
 
 /**
@@ -80,10 +80,10 @@ export function parseManualLayout(parent: XmlElement): ChartManualLayout | undef
  * combination.
  */
 export interface ResolvedManualLayout {
-  x?: number;
-  y?: number;
-  w?: number;
-  h?: number;
+  x?: number
+  y?: number
+  w?: number
+  h?: number
 }
 
 /**
@@ -103,20 +103,20 @@ export interface ResolvedManualLayout {
 export function normalizeManualLayout(
   raw: ChartManualLayout | undefined,
 ): ResolvedManualLayout | undefined {
-  if (!raw || typeof raw !== "object") return undefined;
-  const out: ResolvedManualLayout = {};
-  const x = normalizeLayoutCoordinate(raw.x);
-  if (x !== undefined) out.x = x;
-  const y = normalizeLayoutCoordinate(raw.y);
-  if (y !== undefined) out.y = y;
-  const w = normalizeLayoutCoordinate(raw.w);
-  if (w !== undefined) out.w = w;
-  const h = normalizeLayoutCoordinate(raw.h);
-  if (h !== undefined) out.h = h;
+  if (!raw || typeof raw !== "object") return undefined
+  const out: ResolvedManualLayout = {}
+  const x = normalizeLayoutCoordinate(raw.x)
+  if (x !== undefined) out.x = x
+  const y = normalizeLayoutCoordinate(raw.y)
+  if (y !== undefined) out.y = y
+  const w = normalizeLayoutCoordinate(raw.w)
+  if (w !== undefined) out.w = w
+  const h = normalizeLayoutCoordinate(raw.h)
+  if (h !== undefined) out.h = h
   if (out.x === undefined && out.y === undefined && out.w === undefined && out.h === undefined) {
-    return undefined;
+    return undefined
   }
-  return out;
+  return out
 }
 
 /**
@@ -125,10 +125,10 @@ export function normalizeManualLayout(
  * `undefined`.
  */
 export function normalizeLayoutCoordinate(raw: unknown): number | undefined {
-  if (typeof raw !== "number") return undefined;
-  if (!Number.isFinite(raw)) return undefined;
-  if (raw < 0 || raw > 1) return undefined;
-  return raw;
+  if (typeof raw !== "number") return undefined
+  if (!Number.isFinite(raw)) return undefined
+  if (raw < 0 || raw > 1) return undefined
+  return raw
 }
 
 /**
@@ -149,20 +149,20 @@ export function normalizeLayoutCoordinate(raw: unknown): number | undefined {
 export function normalizeChartManualLayout(
   value: ChartManualLayout | undefined,
 ): ChartManualLayout | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const out: ChartManualLayout = {};
-  const x = normalizeLayoutCoordinate(value.x);
-  if (x !== undefined) out.x = x;
-  const y = normalizeLayoutCoordinate(value.y);
-  if (y !== undefined) out.y = y;
-  const w = normalizeLayoutCoordinate(value.w);
-  if (w !== undefined) out.w = w;
-  const h = normalizeLayoutCoordinate(value.h);
-  if (h !== undefined) out.h = h;
+  if (!value || typeof value !== "object") return undefined
+  const out: ChartManualLayout = {}
+  const x = normalizeLayoutCoordinate(value.x)
+  if (x !== undefined) out.x = x
+  const y = normalizeLayoutCoordinate(value.y)
+  if (y !== undefined) out.y = y
+  const w = normalizeLayoutCoordinate(value.w)
+  if (w !== undefined) out.w = w
+  const h = normalizeLayoutCoordinate(value.h)
+  if (h !== undefined) out.h = h
   if (out.x === undefined && out.y === undefined && out.w === undefined && out.h === undefined) {
-    return undefined;
+    return undefined
   }
-  return out;
+  return out
 }
 
 /**
@@ -186,16 +186,16 @@ export function normalizeChartManualLayout(
  * order so a re-parse sees the canonical shape.
  */
 export function buildManualLayout(layout: ResolvedManualLayout | undefined): string | undefined {
-  if (!layout) return undefined;
-  const children: string[] = [];
-  if (layout.x !== undefined) children.push(xmlSelfClose("c:xMode", { val: "edge" }));
-  if (layout.y !== undefined) children.push(xmlSelfClose("c:yMode", { val: "edge" }));
-  if (layout.w !== undefined) children.push(xmlSelfClose("c:wMode", { val: "edge" }));
-  if (layout.h !== undefined) children.push(xmlSelfClose("c:hMode", { val: "edge" }));
-  if (layout.x !== undefined) children.push(xmlSelfClose("c:x", { val: layout.x }));
-  if (layout.y !== undefined) children.push(xmlSelfClose("c:y", { val: layout.y }));
-  if (layout.w !== undefined) children.push(xmlSelfClose("c:w", { val: layout.w }));
-  if (layout.h !== undefined) children.push(xmlSelfClose("c:h", { val: layout.h }));
-  if (children.length === 0) return undefined;
-  return xmlElement("c:layout", undefined, [xmlElement("c:manualLayout", undefined, children)]);
+  if (!layout) return undefined
+  const children: string[] = []
+  if (layout.x !== undefined) children.push(xmlSelfClose("c:xMode", { val: "edge" }))
+  if (layout.y !== undefined) children.push(xmlSelfClose("c:yMode", { val: "edge" }))
+  if (layout.w !== undefined) children.push(xmlSelfClose("c:wMode", { val: "edge" }))
+  if (layout.h !== undefined) children.push(xmlSelfClose("c:hMode", { val: "edge" }))
+  if (layout.x !== undefined) children.push(xmlSelfClose("c:x", { val: layout.x }))
+  if (layout.y !== undefined) children.push(xmlSelfClose("c:y", { val: layout.y }))
+  if (layout.w !== undefined) children.push(xmlSelfClose("c:w", { val: layout.w }))
+  if (layout.h !== undefined) children.push(xmlSelfClose("c:h", { val: layout.h }))
+  if (children.length === 0) return undefined
+  return xmlElement("c:layout", undefined, [xmlElement("c:manualLayout", undefined, children)])
 }

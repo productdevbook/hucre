@@ -21,9 +21,9 @@ import type {
   ChartLineCompound,
   ChartManualLayout,
   SheetChart,
-} from "../../_types";
-import type { XmlElement } from "../../xml/parser";
-import { xmlElement, xmlSelfClose } from "../../xml/writer";
+} from "../../_types"
+import type { XmlElement } from "../../xml/parser"
+import { xmlElement, xmlSelfClose } from "../../xml/writer"
 import {
   EMU_PER_PT,
   buildColorElement,
@@ -42,7 +42,7 @@ import {
   parseSpPrFill,
   resolveLineCap,
   resolveLineCompound,
-} from "./shape";
+} from "./shape"
 import {
   type ResolvedManualLayout,
   buildManualLayout,
@@ -50,41 +50,41 @@ import {
   normalizeLayoutCoordinate,
   normalizeManualLayout,
   parseManualLayout,
-} from "./layout";
-import { childElements, findChild, parseBoolAttr, readBoolVal } from "./util";
+} from "./layout"
+import { childElements, findChild, parseBoolAttr, readBoolVal } from "./util"
 import {
   FONT_SIZE_MAX_PT,
   FONT_SIZE_MIN_PT,
   FONT_SZ_PER_POINT,
   ROTATION_MAX_DEG,
   ROTATION_MIN_DEG,
-} from "./text";
-import { normalizeTitleColor, normalizeTitleFontSize } from "./title";
+} from "./text"
+import { normalizeTitleColor, normalizeTitleFontSize } from "./title"
 
 // ── Legend types (writer-side) ────────────────────────────────────
 
-export type LegendPos = "t" | "b" | "l" | "r" | "tr";
+export type LegendPos = "t" | "b" | "l" | "r" | "tr"
 
 export interface ResolvedLegendEntry {
-  idx: number;
-  delete: boolean;
-  fontSize?: number;
-  bold?: boolean;
-  italic?: boolean;
-  underline?: boolean;
-  strikethrough?: boolean;
-  color?: ChartColor;
-  fontFamily?: string;
+  idx: number
+  delete: boolean
+  fontSize?: number
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  strikethrough?: boolean
+  color?: ChartColor
+  fontFamily?: string
 }
 
 // ── Constants (legend-scope aliases) ──────────────────────────────
 
-const TITLE_FONT_SZ_PER_POINT = FONT_SZ_PER_POINT;
-const TITLE_FONT_SIZE_MIN_PT = FONT_SIZE_MIN_PT;
-const TITLE_FONT_SIZE_MAX_PT = FONT_SIZE_MAX_PT;
+const TITLE_FONT_SZ_PER_POINT = FONT_SZ_PER_POINT
+const TITLE_FONT_SIZE_MIN_PT = FONT_SIZE_MIN_PT
+const TITLE_FONT_SIZE_MAX_PT = FONT_SIZE_MAX_PT
 
-const LEGEND_BORDER_WIDTH_MIN_PT = 0.25;
-const LEGEND_BORDER_WIDTH_MAX_PT = 13.5;
+const LEGEND_BORDER_WIDTH_MIN_PT = 0.25
+const LEGEND_BORDER_WIDTH_MAX_PT = 13.5
 
 // ── Reader ────────────────────────────────────────────────────────
 
@@ -95,39 +95,39 @@ const LEGEND_BORDER_WIDTH_MAX_PT = 13.5;
  * chart has no `<c:legend>` element at all.
  */
 export function parseLegend(chartEl: XmlElement): false | ChartLegendPosition | undefined {
-  const legend = findChild(chartEl, "legend");
-  if (!legend) return undefined;
+  const legend = findChild(chartEl, "legend")
+  if (!legend) return undefined
 
   // <c:delete val="1"/> means the chart explicitly suppresses the
   // legend. Some Excel versions emit just an empty `<c:legend/>`
   // followed by `<c:overlay/>` even when the legend is hidden, but
   // `<c:delete val="1">` is the canonical "no legend" marker.
-  const del = findChild(legend, "delete");
-  if (del && readBoolVal(del.attrs.val) === true) return false;
+  const del = findChild(legend, "delete")
+  if (del && readBoolVal(del.attrs.val) === true) return false
 
-  const pos = findChild(legend, "legendPos");
+  const pos = findChild(legend, "legendPos")
   if (!pos) {
     // A legend element without legendPos is valid OOXML (Excel falls
     // back to "right"). Surface "right" so the cloned chart preserves
     // the visible-legend state.
-    return "right";
+    return "right"
   }
-  const val = pos.attrs.val;
-  if (typeof val !== "string") return "right";
+  const val = pos.attrs.val
+  if (typeof val !== "string") return "right"
   switch (val) {
     case "t":
-      return "top";
+      return "top"
     case "b":
-      return "bottom";
+      return "bottom"
     case "l":
-      return "left";
+      return "left"
     case "r":
-      return "right";
+      return "right"
     case "tr":
-      return "topRight";
+      return "topRight"
     default:
       // Unknown legendPos values are dropped rather than fabricated.
-      return undefined;
+      return undefined
   }
 }
 
@@ -149,23 +149,23 @@ export function parseLegend(chartEl: XmlElement): false | ChartLegendPosition | 
  * `undefined` rather than fabricate a flag Excel would not emit.
  */
 export function parseLegendOverlay(chartEl: XmlElement): boolean | undefined {
-  const legend = findChild(chartEl, "legend");
-  if (!legend) return undefined;
-  const overlay = findChild(legend, "overlay");
-  if (!overlay) return undefined;
-  const raw = overlay.attrs.val;
-  if (typeof raw !== "string") return undefined;
+  const legend = findChild(chartEl, "legend")
+  if (!legend) return undefined
+  const overlay = findChild(legend, "overlay")
+  if (!overlay) return undefined
+  const raw = overlay.attrs.val
+  if (typeof raw !== "string") return undefined
   switch (raw) {
     case "1":
     case "true":
-      return true;
+      return true
     case "0":
     case "false":
       // OOXML default — collapse to undefined for symmetry with the
       // writer's `legendOverlay` field.
-      return undefined;
+      return undefined
     default:
-      return undefined;
+      return undefined
   }
 }
 
@@ -198,86 +198,86 @@ export function parseLegendOverlay(chartEl: XmlElement): boolean | undefined {
  * appends an entry still beats the parsed value.
  */
 export function parseLegendEntries(chartEl: XmlElement): ChartLegendEntry[] | undefined {
-  const legend = findChild(chartEl, "legend");
-  if (!legend) return undefined;
+  const legend = findChild(chartEl, "legend")
+  if (!legend) return undefined
 
-  const seen = new Set<number>();
-  const out: ChartLegendEntry[] = [];
+  const seen = new Set<number>()
+  const out: ChartLegendEntry[] = []
   for (const child of childElements(legend)) {
-    if (child.local !== "legendEntry") continue;
-    const idxEl = findChild(child, "idx");
-    if (!idxEl) continue;
-    const raw = idxEl.attrs.val;
-    if (typeof raw !== "string") continue;
-    const idx = Number.parseInt(raw, 10);
-    if (!Number.isFinite(idx) || idx < 0) continue;
-    if (seen.has(idx)) continue;
-    seen.add(idx);
+    if (child.local !== "legendEntry") continue
+    const idxEl = findChild(child, "idx")
+    if (!idxEl) continue
+    const raw = idxEl.attrs.val
+    if (typeof raw !== "string") continue
+    const idx = Number.parseInt(raw, 10)
+    if (!Number.isFinite(idx) || idx < 0) continue
+    if (seen.has(idx)) continue
+    seen.add(idx)
 
-    const deleteEl = findChild(child, "delete");
-    const deleteFlag = deleteEl !== undefined ? readBoolVal(deleteEl.attrs.val) === true : false;
-    const entry: ChartLegendEntry = { idx, delete: deleteFlag };
+    const deleteEl = findChild(child, "delete")
+    const deleteFlag = deleteEl !== undefined ? readBoolVal(deleteEl.attrs.val) === true : false
+    const entry: ChartLegendEntry = { idx, delete: deleteFlag }
 
     // Walk `<c:legendEntry><c:txPr><a:p><a:pPr><a:defRPr ...>` for the
     // per-entry typography overrides. Mirror the same path the
     // chart-level legend font-size / bold / italic readers use.
-    const txPr = findChild(child, "txPr");
+    const txPr = findChild(child, "txPr")
     if (txPr) {
-      const p = findChild(txPr, "p");
+      const p = findChild(txPr, "p")
       if (p) {
-        const pPr = findChild(p, "pPr");
+        const pPr = findChild(p, "pPr")
         if (pPr) {
-          const defRPr = findChild(pPr, "defRPr");
+          const defRPr = findChild(pPr, "defRPr")
           if (defRPr) {
-            const sz = defRPr.attrs.sz;
+            const sz = defRPr.attrs.sz
             if (typeof sz === "string") {
-              const trimmed = sz.trim();
+              const trimmed = sz.trim()
               if (trimmed.length > 0) {
-                const parsed = Number.parseInt(trimmed, 10);
+                const parsed = Number.parseInt(trimmed, 10)
                 if (Number.isFinite(parsed)) {
-                  const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2);
-                  const points = halfSteps / 2;
+                  const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2)
+                  const points = halfSteps / 2
                   if (points >= TITLE_FONT_SIZE_MIN_PT && points <= TITLE_FONT_SIZE_MAX_PT) {
-                    entry.fontSize = points;
+                    entry.fontSize = points
                   }
                 }
               }
             }
-            const b = defRPr.attrs.b;
+            const b = defRPr.attrs.b
             if (typeof b === "string") {
-              const v = readBoolVal(b);
-              if (v === true) entry.bold = true;
+              const v = readBoolVal(b)
+              if (v === true) entry.bold = true
             }
-            const i = defRPr.attrs.i;
+            const i = defRPr.attrs.i
             if (typeof i === "string") {
-              const v = readBoolVal(i);
-              if (v === true) entry.italic = true;
+              const v = readBoolVal(i)
+              if (v === true) entry.italic = true
             }
-            const u = defRPr.attrs.u;
-            if (typeof u === "string" && u === "sng") entry.underline = true;
-            const strike = defRPr.attrs.strike;
-            if (typeof strike === "string" && strike === "sngStrike") entry.strikethrough = true;
+            const u = defRPr.attrs.u
+            if (typeof u === "string" && u === "sng") entry.underline = true
+            const strike = defRPr.attrs.strike
+            if (typeof strike === "string" && strike === "sngStrike") entry.strikethrough = true
 
             // Font color
-            const solidFill = findChild(defRPr, "solidFill");
+            const solidFill = findChild(defRPr, "solidFill")
             if (solidFill) {
-              const srgb = findChild(solidFill, "srgbClr");
+              const srgb = findChild(solidFill, "srgbClr")
               if (srgb) {
-                const v = srgb.attrs.val;
+                const v = srgb.attrs.val
                 if (typeof v === "string") {
-                  const hex = v.replace(/^#/, "").toUpperCase();
-                  if (/^[0-9A-F]{6}$/.test(hex)) entry.color = hex;
+                  const hex = v.replace(/^#/, "").toUpperCase()
+                  if (/^[0-9A-F]{6}$/.test(hex)) entry.color = hex
                 }
               }
             }
 
             // Font family
-            const latin = findChild(defRPr, "latin");
+            const latin = findChild(defRPr, "latin")
             if (latin) {
-              const tf = latin.attrs.typeface;
+              const tf = latin.attrs.typeface
               if (typeof tf === "string") {
-                const trimmed = tf.trim();
-                if (trimmed.length > 0) entry.fontFamily = trimmed;
+                const trimmed = tf.trim()
+                if (trimmed.length > 0) entry.fontFamily = trimmed
               }
             }
           }
@@ -285,10 +285,10 @@ export function parseLegendEntries(chartEl: XmlElement): ChartLegendEntry[] | un
       }
     }
 
-    out.push(entry);
+    out.push(entry)
   }
 
-  return out.length > 0 ? out : undefined;
+  return out.length > 0 ? out : undefined
 }
 
 /**
@@ -315,22 +315,22 @@ export function parseLegendEntries(chartEl: XmlElement): ChartLegendEntry[] | un
  * straight back into the writer's emit path.
  */
 export function parseLegendFontSize(chartEl: XmlElement): number | undefined {
-  const legend = findChild(chartEl, "legend");
-  if (!legend) return undefined;
-  const txPr = findChild(legend, "txPr");
-  if (!txPr) return undefined;
-  const p = findChild(txPr, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const raw = defRPr.attrs.sz;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  const parsed = Number.parseInt(trimmed, 10);
-  if (!Number.isFinite(parsed)) return undefined;
+  const legend = findChild(chartEl, "legend")
+  if (!legend) return undefined
+  const txPr = findChild(legend, "txPr")
+  if (!txPr) return undefined
+  const p = findChild(txPr, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const raw = defRPr.attrs.sz
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  const parsed = Number.parseInt(trimmed, 10)
+  if (!Number.isFinite(parsed)) return undefined
   // Convert from 100ths of a point to points, rounding to the nearest
   // 0.5pt to match the granularity Excel's UI exposes. `Math.round`
   // on `2 * (parsed / 100)` and dividing by 2 gives a clean half-step
@@ -338,10 +338,10 @@ export function parseLegendFontSize(chartEl: XmlElement): number | undefined {
   // chart-title / axis-title / tick-label sibling parsers use the
   // identical conversion so a parsed value flows through every
   // typography slot without bookkeeping the units.
-  const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2);
-  const points = halfSteps / 2;
-  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
-  return points;
+  const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2)
+  const points = halfSteps / 2
+  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined
+  return points
 }
 
 /**
@@ -366,25 +366,25 @@ export function parseLegendFontSize(chartEl: XmlElement): number | undefined {
  * slots straight back into the writer's emit path.
  */
 export function parseLegendBold(chartEl: XmlElement): boolean | undefined {
-  const legend = findChild(chartEl, "legend");
-  if (!legend) return undefined;
-  const txPr = findChild(legend, "txPr");
-  if (!txPr) return undefined;
-  const p = findChild(txPr, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const raw = defRPr.attrs.b;
+  const legend = findChild(chartEl, "legend")
+  if (!legend) return undefined
+  const txPr = findChild(legend, "txPr")
+  if (!txPr) return undefined
+  const p = findChild(txPr, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const raw = defRPr.attrs.b
   // OOXML `xsd:boolean` accepts `"1"` / `"true"` (truthy) and `"0"` /
   // `"false"` (falsy). Truthy spellings surface `true`; falsy
   // spellings collapse to `undefined` so the OOXML default and an
   // explicit `b="0"` round-trip identically through `cloneChart`.
   // Unknown / missing `b` tokens drop to `undefined` for the same
   // reason — never fabricate a flag Excel would not emit.
-  if (raw === "1" || raw === "true") return true;
-  return undefined;
+  if (raw === "1" || raw === "true") return true
+  return undefined
 }
 
 /**
@@ -405,19 +405,19 @@ export function parseLegendBold(chartEl: XmlElement): boolean | undefined {
  * writer's emit path.
  */
 export function parseLegendItalic(chartEl: XmlElement): boolean | undefined {
-  const legend = findChild(chartEl, "legend");
-  if (!legend) return undefined;
-  const txPr = findChild(legend, "txPr");
-  if (!txPr) return undefined;
-  const p = findChild(txPr, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const raw = defRPr.attrs.i;
-  if (raw === "1" || raw === "true") return true;
-  return undefined;
+  const legend = findChild(chartEl, "legend")
+  if (!legend) return undefined
+  const txPr = findChild(legend, "txPr")
+  if (!txPr) return undefined
+  const p = findChild(txPr, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const raw = defRPr.attrs.i
+  if (raw === "1" || raw === "true") return true
+  return undefined
 }
 
 /**
@@ -441,19 +441,19 @@ export function parseLegendItalic(chartEl: XmlElement): boolean | undefined {
  * into the writer's emit path.
  */
 export function parseLegendUnderline(chartEl: XmlElement): boolean | undefined {
-  const legend = findChild(chartEl, "legend");
-  if (!legend) return undefined;
-  const txPr = findChild(legend, "txPr");
-  if (!txPr) return undefined;
-  const p = findChild(txPr, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const raw = defRPr.attrs.u;
-  if (raw === "sng") return true;
-  return undefined;
+  const legend = findChild(chartEl, "legend")
+  if (!legend) return undefined
+  const txPr = findChild(legend, "txPr")
+  if (!txPr) return undefined
+  const p = findChild(txPr, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const raw = defRPr.attrs.u
+  if (raw === "sng") return true
+  return undefined
 }
 
 /**
@@ -478,19 +478,19 @@ export function parseLegendUnderline(chartEl: XmlElement): boolean | undefined {
  * into the writer's emit path.
  */
 export function parseLegendStrikethrough(chartEl: XmlElement): boolean | undefined {
-  const legend = findChild(chartEl, "legend");
-  if (!legend) return undefined;
-  const txPr = findChild(legend, "txPr");
-  if (!txPr) return undefined;
-  const p = findChild(txPr, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const raw = defRPr.attrs.strike;
-  if (raw === "sngStrike") return true;
-  return undefined;
+  const legend = findChild(chartEl, "legend")
+  if (!legend) return undefined
+  const txPr = findChild(legend, "txPr")
+  if (!txPr) return undefined
+  const p = findChild(txPr, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const raw = defRPr.attrs.strike
+  if (raw === "sngStrike") return true
+  return undefined
 }
 
 /**
@@ -517,23 +517,23 @@ export function parseLegendStrikethrough(chartEl: XmlElement): boolean | undefin
  * emit path.
  */
 export function parseLegendFontColor(chartEl: XmlElement): ChartColor | undefined {
-  const legend = findChild(chartEl, "legend");
-  if (!legend) return undefined;
-  const txPr = findChild(legend, "txPr");
-  if (!txPr) return undefined;
-  const p = findChild(txPr, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const solidFill = findChild(defRPr, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
-  if (srgbClr) return normalizeRgbHex(srgbClr.attrs.val);
-  const schemeClr = findChild(solidFill, "schemeClr");
-  if (schemeClr) return parseSchemeClr(schemeClr);
-  return undefined;
+  const legend = findChild(chartEl, "legend")
+  if (!legend) return undefined
+  const txPr = findChild(legend, "txPr")
+  if (!txPr) return undefined
+  const p = findChild(txPr, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const solidFill = findChild(defRPr, "solidFill")
+  if (!solidFill) return undefined
+  const srgbClr = findChild(solidFill, "srgbClr")
+  if (srgbClr) return normalizeRgbHex(srgbClr.attrs.val)
+  const schemeClr = findChild(solidFill, "schemeClr")
+  if (schemeClr) return parseSchemeClr(schemeClr)
+  return undefined
 }
 
 /**
@@ -558,23 +558,23 @@ export function parseLegendFontColor(chartEl: XmlElement): ChartColor | undefine
  * parsed value slots straight back into the writer's emit path.
  */
 export function parseLegendFontFamily(chartEl: XmlElement): string | undefined {
-  const legend = findChild(chartEl, "legend");
-  if (!legend) return undefined;
-  const txPr = findChild(legend, "txPr");
-  if (!txPr) return undefined;
-  const p = findChild(txPr, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const latin = findChild(defRPr, "latin");
-  if (!latin) return undefined;
-  const raw = latin.attrs.typeface;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  return trimmed;
+  const legend = findChild(chartEl, "legend")
+  if (!legend) return undefined
+  const txPr = findChild(legend, "txPr")
+  if (!txPr) return undefined
+  const p = findChild(txPr, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const latin = findChild(defRPr, "latin")
+  if (!latin) return undefined
+  const raw = latin.attrs.typeface
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  return trimmed
 }
 
 /**
@@ -605,9 +605,9 @@ export function parseLegendFontFamily(chartEl: XmlElement): string | undefined {
  * through the writer.
  */
 export function parseLegendLayout(chartEl: XmlElement): ChartManualLayout | undefined {
-  const legend = findChild(chartEl, "legend");
-  if (!legend) return undefined;
-  return parseManualLayout(legend);
+  const legend = findChild(chartEl, "legend")
+  if (!legend) return undefined
+  return parseManualLayout(legend)
 }
 
 /**
@@ -644,9 +644,9 @@ export function parseLegendLayout(chartEl: XmlElement): ChartManualLayout | unde
  * caller can pin both knobs without conflict.
  */
 export function parseLegendFillColor(chartEl: XmlElement): ChartColor | undefined {
-  const legend = findChild(chartEl, "legend");
-  if (!legend) return undefined;
-  return parseSpPrFill(legend);
+  const legend = findChild(chartEl, "legend")
+  if (!legend) return undefined
+  return parseSpPrFill(legend)
 }
 
 /**
@@ -685,9 +685,9 @@ export function parseLegendFillColor(chartEl: XmlElement): ChartColor | undefine
  * knobs without conflict.
  */
 export function parseLegendBorderColor(chartEl: XmlElement): ChartColor | undefined {
-  const legend = findChild(chartEl, "legend");
-  if (!legend) return undefined;
-  return parseSpPrBorderColor(legend);
+  const legend = findChild(chartEl, "legend")
+  if (!legend) return undefined
+  return parseSpPrBorderColor(legend)
 }
 
 /**
@@ -715,9 +715,9 @@ export function parseLegendBorderColor(chartEl: XmlElement): ChartColor | undefi
  * child.
  */
 export function parseLegendBorderWidth(chartEl: XmlElement): number | undefined {
-  const legend = findChild(chartEl, "legend");
-  if (!legend) return undefined;
-  return parseBorderWidthFromSpPr(legend);
+  const legend = findChild(chartEl, "legend")
+  if (!legend) return undefined
+  return parseBorderWidthFromSpPr(legend)
 }
 
 /**
@@ -731,9 +731,9 @@ export function parseLegendBorderWidth(chartEl: XmlElement): number | undefined 
  * host element.
  */
 export function parseLegendBorderDash(chartEl: XmlElement): ChartBorderDash | undefined {
-  const legend = findChild(chartEl, "legend");
-  if (!legend) return undefined;
-  return parseBorderDashFromSpPr(legend);
+  const legend = findChild(chartEl, "legend")
+  if (!legend) return undefined
+  return parseBorderDashFromSpPr(legend)
 }
 
 /**
@@ -742,9 +742,9 @@ export function parseLegendBorderDash(chartEl: XmlElement): ChartBorderDash | un
  * malformed / OOXML default `"flat"`.
  */
 export function parseLegendBorderCap(chartEl: XmlElement): ChartLineCap | undefined {
-  const legend = findChild(chartEl, "legend");
-  if (!legend) return undefined;
-  return parseBorderCapFromSpPr(legend);
+  const legend = findChild(chartEl, "legend")
+  if (!legend) return undefined
+  return parseBorderCapFromSpPr(legend)
 }
 
 /**
@@ -753,30 +753,30 @@ export function parseLegendBorderCap(chartEl: XmlElement): ChartLineCap | undefi
  * malformed / OOXML default `"sng"`.
  */
 export function parseLegendBorderCompound(chartEl: XmlElement): ChartLineCompound | undefined {
-  const legend = findChild(chartEl, "legend");
-  if (!legend) return undefined;
-  return parseBorderCompoundFromSpPr(legend);
+  const legend = findChild(chartEl, "legend")
+  if (!legend) return undefined
+  return parseBorderCompoundFromSpPr(legend)
 }
 
 // ── Writer ────────────────────────────────────────────────────────
 
 export function resolveLegendPosition(chart: SheetChart): LegendPos | null {
-  if (chart.legend === false) return null;
+  if (chart.legend === false) return null
   if (chart.legend === undefined) {
     // Sensible defaults that match Excel's behaviour.
-    return chart.type === "scatter" ? "b" : "r";
+    return chart.type === "scatter" ? "b" : "r"
   }
   switch (chart.legend) {
     case "top":
-      return "t";
+      return "t"
     case "bottom":
-      return "b";
+      return "b"
     case "left":
-      return "l";
+      return "l"
     case "right":
-      return "r";
+      return "r"
     case "topRight":
-      return "tr";
+      return "tr"
   }
 }
 
@@ -799,7 +799,7 @@ export function buildLegend(
   borderCap?: ChartLineCap | undefined,
   borderCompound?: ChartLineCompound | undefined,
 ): string {
-  const children: string[] = [xmlSelfClose("c:legendPos", { val: pos })];
+  const children: string[] = [xmlSelfClose("c:legendPos", { val: pos })]
 
   // CT_Legend sequence places `<c:legendEntry>` after `<c:legendPos>`
   // and before `<c:layout>` / `<c:overlay>` (ECMA-376 Part 1,
@@ -813,7 +813,7 @@ export function buildLegend(
     const entryChildren: string[] = [
       xmlSelfClose("c:idx", { val: entry.idx }),
       xmlSelfClose("c:delete", { val: entry.delete ? 1 : 0 }),
-    ];
+    ]
     // Per-entry typography overrides — `<c:txPr>` lands inside
     // `<c:legendEntry>` after `<c:delete>` per CT_LegendEntry.
     const entryTxPr = buildLegendTxPr(
@@ -824,9 +824,9 @@ export function buildLegend(
       entry.strikethrough,
       entry.color,
       entry.fontFamily,
-    );
-    if (entryTxPr !== undefined) entryChildren.push(entryTxPr);
-    children.push(xmlElement("c:legendEntry", undefined, entryChildren));
+    )
+    if (entryTxPr !== undefined) entryChildren.push(entryTxPr)
+    children.push(xmlElement("c:legendEntry", undefined, entryChildren))
   }
 
   // CT_Legend sequence places `<c:layout>` between `<c:legendEntry>`
@@ -837,12 +837,12 @@ export function buildLegend(
   // auto-layout position). Each axis is independently optional so the
   // helper drops `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` slots whose
   // value did not survive normalization.
-  const layoutXml = buildManualLayout(layout);
+  const layoutXml = buildManualLayout(layout)
   if (layoutXml !== undefined) {
-    children.push(layoutXml);
+    children.push(layoutXml)
   }
 
-  children.push(xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }));
+  children.push(xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }))
 
   // CT_Legend sequence places `<c:spPr>` between `<c:overlay>` and
   // `<c:txPr>` (ECMA-376 Part 1, §21.2.2.114). The writer skips
@@ -863,9 +863,9 @@ export function buildLegend(
     borderDash,
     borderCap,
     borderCompound,
-  );
+  )
   if (legendSpPrXml !== undefined) {
-    children.push(legendSpPrXml);
+    children.push(legendSpPrXml)
   }
 
   // CT_Legend sequence places `<c:txPr>` after `<c:spPr>` (and before
@@ -886,12 +886,12 @@ export function buildLegend(
     strikethrough,
     rgbHex,
     fontFamily,
-  );
+  )
   if (txPrXml !== undefined) {
-    children.push(txPrXml);
+    children.push(txPrXml)
   }
 
-  return xmlElement("c:legend", undefined, children);
+  return xmlElement("c:legend", undefined, children)
 }
 
 /**
@@ -938,11 +938,11 @@ export function buildLegendSpPr(
     borderCap === undefined &&
     borderCompound === undefined
   ) {
-    return undefined;
+    return undefined
   }
-  const children: string[] = [];
+  const children: string[] = []
   if (fillRgbHex !== undefined) {
-    children.push(xmlElement("a:solidFill", undefined, [buildColorElement(fillRgbHex)]));
+    children.push(xmlElement("a:solidFill", undefined, [buildColorElement(fillRgbHex)]))
   }
   if (
     borderRgbHex !== undefined ||
@@ -951,30 +951,30 @@ export function buildLegendSpPr(
     borderCap !== undefined ||
     borderCompound !== undefined
   ) {
-    const lnAttrs: Record<string, string | number> = {};
+    const lnAttrs: Record<string, string | number> = {}
     if (borderWidthPt !== undefined) {
       // OOXML stores stroke width in EMU (1 pt = 12 700 EMU). Round to
       // the nearest integer because the schema types `w` as `xsd:int`.
-      lnAttrs.w = Math.round(borderWidthPt * EMU_PER_PT);
+      lnAttrs.w = Math.round(borderWidthPt * EMU_PER_PT)
     }
-    if (borderCap !== undefined) lnAttrs.cap = borderCap;
-    if (borderCompound !== undefined) lnAttrs.cmpd = borderCompound;
-    const lnChildren: string[] = [];
+    if (borderCap !== undefined) lnAttrs.cap = borderCap
+    if (borderCompound !== undefined) lnAttrs.cmpd = borderCompound
+    const lnChildren: string[] = []
     if (borderRgbHex !== undefined) {
-      lnChildren.push(xmlElement("a:solidFill", undefined, [buildColorElement(borderRgbHex)]));
+      lnChildren.push(xmlElement("a:solidFill", undefined, [buildColorElement(borderRgbHex)]))
     }
     // `<a:prstDash>` follows `<a:solidFill>` per CT_LineProperties
     // schema sequence (ECMA-376 Part 1, §20.1.2.3.24).
     if (borderDash !== undefined) {
-      lnChildren.push(xmlSelfClose("a:prstDash", { val: borderDash }));
+      lnChildren.push(xmlSelfClose("a:prstDash", { val: borderDash }))
     }
     children.push(
       lnChildren.length === 0
         ? xmlSelfClose("a:ln", lnAttrs)
         : xmlElement("a:ln", Object.keys(lnAttrs).length > 0 ? lnAttrs : undefined, lnChildren),
-    );
+    )
   }
-  return xmlElement("c:spPr", undefined, children);
+  return xmlElement("c:spPr", undefined, children)
 }
 
 /**
@@ -1019,28 +1019,29 @@ export function buildLegendTxPr(
     rgbHex === undefined &&
     fontFamily === undefined
   )
-    return undefined;
-  const defRPrAttrs: Record<string, string | number> = {};
-  if (fontSizePt !== undefined) defRPrAttrs.sz = fontSizePt * TITLE_FONT_SZ_PER_POINT;
-  if (bold !== undefined) defRPrAttrs.b = bold ? 1 : 0;
-  if (italic !== undefined) defRPrAttrs.i = italic ? 1 : 0;
-  if (underline !== undefined) defRPrAttrs.u = underline ? "sng" : "none";
+    return undefined
+  const defRPrAttrs: Record<string, string | number> = {}
+  if (fontSizePt !== undefined) defRPrAttrs.sz = fontSizePt * TITLE_FONT_SZ_PER_POINT
+  if (bold !== undefined) defRPrAttrs.b = bold ? 1 : 0
+  if (italic !== undefined) defRPrAttrs.i = italic ? 1 : 0
+  if (underline !== undefined) defRPrAttrs.u = underline ? "sng" : "none"
   // Strikethrough rides as `strike="sngStrike"` on the same
   // `<a:defRPr>` slot. Absence collapses to omitting the attribute
   // entirely (the OOXML default `"noStrike"` is functionally identical
   // to absence — the reader collapses both to `undefined`). The writer
   // never emits `"noStrike"` or `"dblStrike"` so the surfaced shape
   // stays consistent with Excel's UI checkbox.
-  if (strikethrough === true) defRPrAttrs.strike = "sngStrike";
+  if (strikethrough === true) defRPrAttrs.strike = "sngStrike"
   // OOXML's `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/>
   // </a:solidFill></a:defRPr>` carries the legend font color.
   // Absence (`undefined`) collapses to omitting the entire
   // `<a:solidFill>` block so the legend inherits the theme text
   // color (Excel's reference behavior for a fresh legend that has
   // not had a custom font color picked).
-  const solidFillChild = rgbHex !== undefined
-    ? xmlElement("a:solidFill", undefined, [buildColorElement(rgbHex)])
-    : undefined;
+  const solidFillChild =
+    rgbHex !== undefined
+      ? xmlElement("a:solidFill", undefined, [buildColorElement(rgbHex)])
+      : undefined
   // OOXML's `<a:defRPr><a:latin typeface=".."/></a:defRPr>` carries
   // the legend font family. The `<a:latin>` element follows
   // `<a:solidFill>` per the CT_TextCharacterProperties child sequence
@@ -1048,7 +1049,7 @@ export function buildLegendTxPr(
   // to omitting the entire `<a:latin>` element so the legend inherits
   // the theme typeface (Excel's reference behavior for a fresh legend
   // that has not had a custom font picked).
-  const latinChild = fontFamily ? xmlSelfClose("a:latin", { typeface: fontFamily }) : undefined;
+  const latinChild = fontFamily ? xmlSelfClose("a:latin", { typeface: fontFamily }) : undefined
   // When a fill color or a typeface is set the `<a:defRPr>` slot
   // expands from self-closing to wrapping the children; otherwise the
   // writer keeps the existing self-closing form so a fresh legend
@@ -1056,13 +1057,13 @@ export function buildLegendTxPr(
   // serialization byte-for-byte. Children are emitted in
   // CT_TextCharacterProperties' canonical schema order: solidFill
   // first, then latin.
-  const defRPrChildren: string[] = [];
-  if (solidFillChild) defRPrChildren.push(solidFillChild);
-  if (latinChild) defRPrChildren.push(latinChild);
+  const defRPrChildren: string[] = []
+  if (solidFillChild) defRPrChildren.push(solidFillChild)
+  if (latinChild) defRPrChildren.push(latinChild)
   const defRPr =
     defRPrChildren.length > 0
       ? xmlElement("a:defRPr", defRPrAttrs, defRPrChildren)
-      : xmlSelfClose("a:defRPr", defRPrAttrs);
+      : xmlSelfClose("a:defRPr", defRPrAttrs)
   return xmlElement("c:txPr", undefined, [
     xmlSelfClose("a:bodyPr"),
     xmlSelfClose("a:lstStyle"),
@@ -1070,7 +1071,7 @@ export function buildLegendTxPr(
       xmlElement("a:pPr", undefined, [defRPr]),
       xmlSelfClose("a:endParaRPr", { lang: "en-US" }),
     ]),
-  ]);
+  ])
 }
 
 /**
@@ -1090,7 +1091,7 @@ export function buildLegendTxPr(
  * threads cleanly through every typography slot Excel exposes.
  */
 export function resolveLegendFontSize(chart: SheetChart): number | undefined {
-  return normalizeTitleFontSize(chart.legendFontSize);
+  return normalizeTitleFontSize(chart.legendFontSize)
 }
 
 /**
@@ -1111,10 +1112,10 @@ export function resolveLegendFontSize(chart: SheetChart): number | undefined {
  * drops the slot rather than emit a value Excel would reject.
  */
 export function resolveLegendBold(chart: SheetChart): boolean | undefined {
-  const value = chart.legendBold;
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
+  const value = chart.legendBold
+  if (value === true) return true
+  if (value === false) return false
+  return undefined
 }
 
 /**
@@ -1131,10 +1132,10 @@ export function resolveLegendBold(chart: SheetChart): boolean | undefined {
  * pass through; non-boolean tokens collapse to `undefined`.
  */
 export function resolveLegendItalic(chart: SheetChart): boolean | undefined {
-  const value = chart.legendItalic;
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
+  const value = chart.legendItalic
+  if (value === true) return true
+  if (value === false) return false
+  return undefined
 }
 
 /**
@@ -1153,10 +1154,10 @@ export function resolveLegendItalic(chart: SheetChart): boolean | undefined {
  * single underline) and `false` into `u="none"` at emit time.
  */
 export function resolveLegendUnderline(chart: SheetChart): boolean | undefined {
-  const value = chart.legendUnderline;
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
+  const value = chart.legendUnderline
+  if (value === true) return true
+  if (value === false) return false
+  return undefined
 }
 
 /**
@@ -1185,8 +1186,8 @@ export function resolveLegendUnderline(chart: SheetChart): boolean | undefined {
  * is expected to gate the call on the resolved legend visibility.
  */
 export function resolveLegendStrikethrough(chart: SheetChart): boolean | undefined {
-  if (chart.legendStrikethrough === true) return true;
-  return undefined;
+  if (chart.legendStrikethrough === true) return true
+  return undefined
 }
 
 /**
@@ -1205,7 +1206,7 @@ export function resolveLegendStrikethrough(chart: SheetChart): boolean | undefin
  * slot to host the fill in either case.
  */
 export function resolveLegendFontColor(chart: SheetChart): ChartColor | undefined {
-  return normalizeTitleColor(chart.legendFontColor);
+  return normalizeTitleColor(chart.legendFontColor)
 }
 
 /**
@@ -1223,10 +1224,10 @@ export function resolveLegendFontColor(chart: SheetChart): ChartColor | undefine
  * without a custom font picked).
  */
 export function normalizeLegendFontFamily(value: string | undefined): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return undefined;
-  return trimmed;
+  if (typeof value !== "string") return undefined
+  const trimmed = value.trim()
+  if (trimmed.length === 0) return undefined
+  return trimmed
 }
 
 /**
@@ -1245,7 +1246,7 @@ export function normalizeLegendFontFamily(value: string | undefined): string | u
  * slot to host the typeface in either case.
  */
 export function resolveLegendFontFamily(chart: SheetChart): string | undefined {
-  return normalizeLegendFontFamily(chart.legendFontFamily);
+  return normalizeLegendFontFamily(chart.legendFontFamily)
 }
 
 /**
@@ -1274,44 +1275,44 @@ export function resolveLegendFontFamily(chart: SheetChart): string | undefined {
  * avoid touching the legend block.
  */
 export function resolveLegendEntries(chart: SheetChart): ResolvedLegendEntry[] {
-  const raw = chart.legendEntries;
-  if (!Array.isArray(raw) || raw.length === 0) return [];
+  const raw = chart.legendEntries
+  if (!Array.isArray(raw) || raw.length === 0) return []
 
-  const byIdx = new Map<number, ResolvedLegendEntry>();
+  const byIdx = new Map<number, ResolvedLegendEntry>()
   for (const entry of raw) {
-    if (!entry || typeof entry !== "object") continue;
-    const idx = entry.idx;
-    if (typeof idx !== "number" || !Number.isFinite(idx)) continue;
-    if (!Number.isInteger(idx) || idx < 0) continue;
-    const resolved: ResolvedLegendEntry = { idx, delete: entry.delete === true };
+    if (!entry || typeof entry !== "object") continue
+    const idx = entry.idx
+    if (typeof idx !== "number" || !Number.isFinite(idx)) continue
+    if (!Number.isInteger(idx) || idx < 0) continue
+    const resolved: ResolvedLegendEntry = { idx, delete: entry.delete === true }
     if (typeof entry.fontSize === "number" && Number.isFinite(entry.fontSize)) {
       // Same half-step / range clamp as resolveLegendFontSize.
-      const halfSteps = Math.round(entry.fontSize * 2);
-      const points = halfSteps / 2;
+      const halfSteps = Math.round(entry.fontSize * 2)
+      const points = halfSteps / 2
       if (points >= TITLE_FONT_SIZE_MIN_PT && points <= TITLE_FONT_SIZE_MAX_PT) {
-        resolved.fontSize = points;
+        resolved.fontSize = points
       }
     }
-    if (entry.bold === true) resolved.bold = true;
-    else if (entry.bold === false) resolved.bold = false;
-    if (entry.italic === true) resolved.italic = true;
-    else if (entry.italic === false) resolved.italic = false;
-    if (entry.underline === true) resolved.underline = true;
-    else if (entry.underline === false) resolved.underline = false;
-    if (entry.strikethrough === true) resolved.strikethrough = true;
-    else if (entry.strikethrough === false) resolved.strikethrough = false;
+    if (entry.bold === true) resolved.bold = true
+    else if (entry.bold === false) resolved.bold = false
+    if (entry.italic === true) resolved.italic = true
+    else if (entry.italic === false) resolved.italic = false
+    if (entry.underline === true) resolved.underline = true
+    else if (entry.underline === false) resolved.underline = false
+    if (entry.strikethrough === true) resolved.strikethrough = true
+    else if (entry.strikethrough === false) resolved.strikethrough = false
     if (entry.color !== undefined) {
-      const normalized = normalizeChartColor(entry.color);
-      if (normalized !== undefined) resolved.color = normalized;
+      const normalized = normalizeChartColor(entry.color)
+      if (normalized !== undefined) resolved.color = normalized
     }
     if (typeof entry.fontFamily === "string") {
-      const trimmed = entry.fontFamily.trim();
-      if (trimmed.length > 0) resolved.fontFamily = trimmed;
+      const trimmed = entry.fontFamily.trim()
+      if (trimmed.length > 0) resolved.fontFamily = trimmed
     }
-    byIdx.set(idx, resolved);
+    byIdx.set(idx, resolved)
   }
 
-  return Array.from(byIdx.values()).sort((a, b) => a.idx - b.idx);
+  return Array.from(byIdx.values()).sort((a, b) => a.idx - b.idx)
 }
 
 /**
@@ -1331,7 +1332,7 @@ export function resolveLegendEntries(chart: SheetChart): ResolvedLegendEntry[] {
  * `val` flips when the caller pins `legendOverlay: true`.
  */
 export function resolveLegendOverlay(chart: SheetChart): boolean {
-  return chart.legendOverlay === true;
+  return chart.legendOverlay === true
 }
 
 /**
@@ -1352,7 +1353,7 @@ export function resolveLegendOverlay(chart: SheetChart): boolean {
  * `<c:h>` slot rather than emit a token Excel would reject.
  */
 export function resolveLegendLayout(chart: SheetChart): ResolvedManualLayout | undefined {
-  return normalizeManualLayout(chart.legendLayout);
+  return normalizeManualLayout(chart.legendLayout)
 }
 
 /**
@@ -1377,7 +1378,7 @@ export function resolveLegendLayout(chart: SheetChart): ResolvedManualLayout | u
  * of `<c:legend>` so a single configuration call can pin both.
  */
 export function resolveLegendFillColor(chart: SheetChart): ChartColor | undefined {
-  return normalizeTitleColor(chart.legendFillColor);
+  return normalizeTitleColor(chart.legendFillColor)
 }
 
 /**
@@ -1405,7 +1406,7 @@ export function resolveLegendFillColor(chart: SheetChart): ChartColor | undefine
  * own `<c:spPr>` block.
  */
 export function resolveLegendBorderColor(chart: SheetChart): ChartColor | undefined {
-  return normalizeTitleColor(chart.legendBorderColor);
+  return normalizeTitleColor(chart.legendBorderColor)
 }
 
 /**
@@ -1433,7 +1434,7 @@ export function resolveLegendBorderColor(chart: SheetChart): ChartColor | undefi
  * own `<c:spPr>` block.
  */
 export function resolveLegendBorderWidth(chart: SheetChart): number | undefined {
-  return clampStrokeWidthPt(chart.legendBorderWidth);
+  return clampStrokeWidthPt(chart.legendBorderWidth)
 }
 
 /**
@@ -1452,7 +1453,7 @@ export function resolveLegendBorderWidth(chart: SheetChart): number | undefined 
  * `<a:ln>` element but on different children / attributes.
  */
 export function resolveLegendBorderDash(chart: SheetChart): ChartBorderDash | undefined {
-  return normalizeBorderDash(chart.legendBorderDash);
+  return normalizeBorderDash(chart.legendBorderDash)
 }
 
 // ── Clone normalizers ─────────────────────────────────────────────
@@ -1467,9 +1468,9 @@ export function resolveLegendBorderDash(chart: SheetChart): ChartBorderDash | un
  * back to absence.
  */
 export function normalizeLegendBold(value: boolean | undefined): boolean | undefined {
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
+  if (value === true) return true
+  if (value === false) return false
+  return undefined
 }
 
 /**
@@ -1479,9 +1480,9 @@ export function normalizeLegendBold(value: boolean | undefined): boolean | undef
  * collapses to `undefined`.
  */
 export function normalizeLegendItalic(value: boolean | undefined): boolean | undefined {
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
+  if (value === true) return true
+  if (value === false) return false
+  return undefined
 }
 
 /**
@@ -1490,9 +1491,9 @@ export function normalizeLegendItalic(value: boolean | undefined): boolean | und
  * pass through literally, every other token collapses to `undefined`.
  */
 export function normalizeLegendUnderline(value: boolean | undefined): boolean | undefined {
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
+  if (value === true) return true
+  if (value === false) return false
+  return undefined
 }
 
 /**
@@ -1510,9 +1511,9 @@ export function normalizeLegendUnderline(value: boolean | undefined): boolean | 
  * omission.
  */
 export function normalizeLegendStrikethrough(value: boolean | undefined): boolean | undefined {
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
+  if (value === true) return true
+  if (value === false) return false
+  return undefined
 }
 
 /**
@@ -1528,7 +1529,7 @@ export function normalizeLegendStrikethrough(value: boolean | undefined): boolea
 export function normalizeLegendLayout(
   value: ChartManualLayout | undefined,
 ): ChartManualLayout | undefined {
-  return normalizeChartManualLayout(value);
+  return normalizeChartManualLayout(value)
 }
 
 /**
@@ -1542,12 +1543,12 @@ export function normalizeLegendLayout(
  * than carry a value the writer would silently elide back to absence.
  */
 export function normalizeLegendBorderWidth(value: number | undefined): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined
   // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
-  const snapped = Math.round(value * 4) / 4;
-  if (snapped < LEGEND_BORDER_WIDTH_MIN_PT) return LEGEND_BORDER_WIDTH_MIN_PT;
-  if (snapped > LEGEND_BORDER_WIDTH_MAX_PT) return LEGEND_BORDER_WIDTH_MAX_PT;
-  return snapped;
+  const snapped = Math.round(value * 4) / 4
+  if (snapped < LEGEND_BORDER_WIDTH_MIN_PT) return LEGEND_BORDER_WIDTH_MIN_PT
+  if (snapped > LEGEND_BORDER_WIDTH_MAX_PT) return LEGEND_BORDER_WIDTH_MAX_PT
+  return snapped
 }
 
 // ── Clone resolvers (3-arg source/override) ───────────────────────
@@ -1570,9 +1571,9 @@ export function resolveCloneLegendOverlay(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
+  if (override === undefined) return sourceValue
+  if (override === null) return undefined
+  return override
 }
 
 /**
@@ -1602,12 +1603,12 @@ export function resolveCloneLegendEntries(
   override: ChartLegendEntry[] | null | undefined,
 ): ChartLegendEntry[] | undefined {
   if (override === undefined) {
-    if (!sourceValue || sourceValue.length === 0) return undefined;
-    return sourceValue.map((entry) => ({ ...entry }));
+    if (!sourceValue || sourceValue.length === 0) return undefined
+    return sourceValue.map((entry) => ({ ...entry }))
   }
-  if (override === null) return undefined;
-  if (!Array.isArray(override) || override.length === 0) return undefined;
-  return override.map((entry) => ({ ...entry }));
+  if (override === null) return undefined
+  if (!Array.isArray(override) || override.length === 0) return undefined
+  return override.map((entry) => ({ ...entry }))
 }
 
 /**
@@ -1632,9 +1633,9 @@ export function resolveCloneLegendFontSize(
   sourceValue: number | undefined,
   override: number | null | undefined,
 ): number | undefined {
-  if (override === undefined) return normalizeTitleFontSize(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleFontSize(override);
+  if (override === undefined) return normalizeTitleFontSize(sourceValue)
+  if (override === null) return undefined
+  return normalizeTitleFontSize(override)
 }
 
 /**
@@ -1658,9 +1659,9 @@ export function resolveCloneLegendBold(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
-  if (override === undefined) return normalizeLegendBold(sourceValue);
-  if (override === null) return undefined;
-  return normalizeLegendBold(override);
+  if (override === undefined) return normalizeLegendBold(sourceValue)
+  if (override === null) return undefined
+  return normalizeLegendBold(override)
 }
 
 /**
@@ -1684,9 +1685,9 @@ export function resolveCloneLegendItalic(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
-  if (override === undefined) return normalizeLegendItalic(sourceValue);
-  if (override === null) return undefined;
-  return normalizeLegendItalic(override);
+  if (override === undefined) return normalizeLegendItalic(sourceValue)
+  if (override === null) return undefined
+  return normalizeLegendItalic(override)
 }
 
 /**
@@ -1710,9 +1711,9 @@ export function resolveCloneLegendUnderline(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
-  if (override === undefined) return normalizeLegendUnderline(sourceValue);
-  if (override === null) return undefined;
-  return normalizeLegendUnderline(override);
+  if (override === undefined) return normalizeLegendUnderline(sourceValue)
+  if (override === null) return undefined
+  return normalizeLegendUnderline(override)
 }
 
 /**
@@ -1737,9 +1738,9 @@ export function resolveCloneLegendStrikethrough(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
-  if (override === undefined) return normalizeLegendStrikethrough(sourceValue);
-  if (override === null) return undefined;
-  return normalizeLegendStrikethrough(override);
+  if (override === undefined) return normalizeLegendStrikethrough(sourceValue)
+  if (override === null) return undefined
+  return normalizeLegendStrikethrough(override)
 }
 
 /**
@@ -1766,9 +1767,9 @@ export function resolveCloneLegendFontColor(
   sourceValue: ChartColor | undefined,
   override: ChartColor | null | undefined,
 ): ChartColor | undefined {
-  if (override === undefined) return normalizeTitleColor(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleColor(override);
+  if (override === undefined) return normalizeTitleColor(sourceValue)
+  if (override === null) return undefined
+  return normalizeTitleColor(override)
 }
 
 /**
@@ -1796,9 +1797,9 @@ export function resolveCloneLegendFontFamily(
   sourceValue: string | undefined,
   override: string | null | undefined,
 ): string | undefined {
-  if (override === undefined) return normalizeLegendFontFamily(sourceValue);
-  if (override === null) return undefined;
-  return normalizeLegendFontFamily(override);
+  if (override === undefined) return normalizeLegendFontFamily(sourceValue)
+  if (override === null) return undefined
+  return normalizeLegendFontFamily(override)
 }
 
 /**
@@ -1828,9 +1829,9 @@ export function resolveCloneLegendLayout(
   sourceValue: ChartManualLayout | undefined,
   override: ChartManualLayout | null | undefined,
 ): ChartManualLayout | undefined {
-  if (override === undefined) return normalizeLegendLayout(sourceValue);
-  if (override === null) return undefined;
-  return normalizeLegendLayout(override);
+  if (override === undefined) return normalizeLegendLayout(sourceValue)
+  if (override === null) return undefined
+  return normalizeLegendLayout(override)
 }
 
 /**
@@ -1866,9 +1867,9 @@ export function resolveCloneLegendFillColor(
   sourceValue: ChartColor | undefined,
   override: ChartColor | null | undefined,
 ): ChartColor | undefined {
-  if (override === undefined) return normalizeTitleColor(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleColor(override);
+  if (override === undefined) return normalizeTitleColor(sourceValue)
+  if (override === null) return undefined
+  return normalizeTitleColor(override)
 }
 
 /**
@@ -1902,9 +1903,9 @@ export function resolveCloneLegendBorderColor(
   sourceValue: ChartColor | undefined,
   override: ChartColor | null | undefined,
 ): ChartColor | undefined {
-  if (override === undefined) return normalizeTitleColor(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleColor(override);
+  if (override === undefined) return normalizeTitleColor(sourceValue)
+  if (override === null) return undefined
+  return normalizeTitleColor(override)
 }
 
 /**
@@ -1937,7 +1938,7 @@ export function resolveCloneLegendBorderWidth(
   sourceValue: number | undefined,
   override: number | null | undefined,
 ): number | undefined {
-  if (override === undefined) return normalizeLegendBorderWidth(sourceValue);
-  if (override === null) return undefined;
-  return normalizeLegendBorderWidth(override);
+  if (override === undefined) return normalizeLegendBorderWidth(sourceValue)
+  if (override === null) return undefined
+  return normalizeLegendBorderWidth(override)
 }

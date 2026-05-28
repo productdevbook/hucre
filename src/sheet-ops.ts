@@ -1,9 +1,9 @@
 // ── Sheet Operations ────────────────────────────────────────────────
 // In-memory row/column manipulation utilities for Sheet objects.
 
-import type { Sheet, MergeRange, RowDef, Workbook, Cell, CellStyle, CellValue } from "./_types";
-import { parseCellRef } from "./xlsx/worksheet";
-import { rangeRef } from "./xlsx/worksheet-writer";
+import type { Sheet, MergeRange, RowDef, Workbook, Cell, CellStyle, CellValue } from "./_types"
+import { parseCellRef } from "./xlsx/worksheet"
+import { rangeRef } from "./xlsx/worksheet-writer"
 
 // ── Range Helpers ────────────────────────────────────────────────────
 
@@ -11,22 +11,22 @@ import { rangeRef } from "./xlsx/worksheet-writer";
  * Parse a range string like "A1:D10" into 0-based coordinates.
  */
 function parseRange(range: string): MergeRange {
-  const parts = range.split(":");
-  const start = parseCellRef(parts[0]);
-  const end = parts.length > 1 ? parseCellRef(parts[1]) : start;
+  const parts = range.split(":")
+  const start = parseCellRef(parts[0])
+  const end = parts.length > 1 ? parseCellRef(parts[1]) : start
   return {
     startRow: start.row,
     startCol: start.col,
     endRow: end.row,
     endCol: end.col,
-  };
+  }
 }
 
 /**
  * Build a range string from 0-based coordinates.
  */
 function buildRange(r: MergeRange): string {
-  return rangeRef(r.startRow, r.startCol, r.endRow, r.endCol);
+  return rangeRef(r.startRow, r.startCol, r.endRow, r.endCol)
 }
 
 /**
@@ -34,10 +34,10 @@ function buildRange(r: MergeRange): string {
  * Only rows >= threshold are shifted.
  */
 function shiftRangeRows(range: string, threshold: number, delta: number): string {
-  const r = parseRange(range);
-  if (r.startRow >= threshold) r.startRow += delta;
-  if (r.endRow >= threshold) r.endRow += delta;
-  return buildRange(r);
+  const r = parseRange(range)
+  if (r.startRow >= threshold) r.startRow += delta
+  if (r.endRow >= threshold) r.endRow += delta
+  return buildRange(r)
 }
 
 /**
@@ -45,29 +45,29 @@ function shiftRangeRows(range: string, threshold: number, delta: number): string
  * Only columns >= threshold are shifted.
  */
 function shiftRangeCols(range: string, threshold: number, delta: number): string {
-  const r = parseRange(range);
-  if (r.startCol >= threshold) r.startCol += delta;
-  if (r.endCol >= threshold) r.endCol += delta;
-  return buildRange(r);
+  const r = parseRange(range)
+  if (r.startCol >= threshold) r.startCol += delta
+  if (r.endCol >= threshold) r.endCol += delta
+  return buildRange(r)
 }
 
 // ── Row Width Helper ─────────────────────────────────────────────────
 
 function getRowWidth(sheet: Sheet): number {
-  let width = 0;
+  let width = 0
   for (const row of sheet.rows) {
-    if (row.length > width) width = row.length;
+    if (row.length > width) width = row.length
   }
   if (sheet.columns && sheet.columns.length > width) {
-    width = sheet.columns.length;
+    width = sheet.columns.length
   }
-  return width;
+  return width
 }
 
 function makeEmptyRow(width: number): null[] {
-  const row: null[] = [];
-  for (let i = 0; i < width; i++) row.push(null);
-  return row;
+  const row: null[] = []
+  for (let i = 0; i < width; i++) row.push(null)
+  return row
 }
 
 // ── Insert Rows ──────────────────────────────────────────────────────
@@ -78,42 +78,42 @@ function makeEmptyRow(width: number): null[] {
  * images, and cells Map keys.
  */
 export function insertRows(sheet: Sheet, rowIndex: number, count: number): void {
-  if (count <= 0) return;
+  if (count <= 0) return
 
-  const width = getRowWidth(sheet);
-  const newRows: null[][] = [];
+  const width = getRowWidth(sheet)
+  const newRows: null[][] = []
   for (let i = 0; i < count; i++) {
-    newRows.push(makeEmptyRow(width));
+    newRows.push(makeEmptyRow(width))
   }
 
   // Insert into rows array
-  sheet.rows.splice(rowIndex, 0, ...newRows);
+  sheet.rows.splice(rowIndex, 0, ...newRows)
 
   // Update cells Map
   if (sheet.cells && sheet.cells.size > 0) {
-    const updated = new Map<string, import("./_types").Cell>();
+    const updated = new Map<string, import("./_types").Cell>()
     for (const [key, cell] of sheet.cells) {
-      const [rowStr, colStr] = key.split(",");
-      const row = Number(rowStr);
-      const col = Number(colStr);
+      const [rowStr, colStr] = key.split(",")
+      const row = Number(rowStr)
+      const col = Number(colStr)
       if (row >= rowIndex) {
-        updated.set(`${row + count},${col}`, cell);
+        updated.set(`${row + count},${col}`, cell)
       } else {
-        updated.set(key, cell);
+        updated.set(key, cell)
       }
     }
-    sheet.cells = updated;
+    sheet.cells = updated
   }
 
   // Update merge ranges
   if (sheet.merges) {
     for (const merge of sheet.merges) {
       if (merge.startRow >= rowIndex) {
-        merge.startRow += count;
-        merge.endRow += count;
+        merge.startRow += count
+        merge.endRow += count
       } else if (merge.endRow >= rowIndex) {
         // Merge starts before insertion but ends at or after — expand it
-        merge.endRow += count;
+        merge.endRow += count
       }
     }
   }
@@ -121,52 +121,52 @@ export function insertRows(sheet: Sheet, rowIndex: number, count: number): void 
   // Update data validations
   if (sheet.dataValidations) {
     for (const dv of sheet.dataValidations) {
-      dv.range = shiftRangeRows(dv.range, rowIndex, count);
+      dv.range = shiftRangeRows(dv.range, rowIndex, count)
     }
   }
 
   // Update conditional rules
   if (sheet.conditionalRules) {
     for (const rule of sheet.conditionalRules) {
-      rule.range = shiftRangeRows(rule.range, rowIndex, count);
+      rule.range = shiftRangeRows(rule.range, rowIndex, count)
     }
   }
 
   // Update auto filter
   if (sheet.autoFilter) {
-    sheet.autoFilter.range = shiftRangeRows(sheet.autoFilter.range, rowIndex, count);
+    sheet.autoFilter.range = shiftRangeRows(sheet.autoFilter.range, rowIndex, count)
   }
 
   // Update image anchors
   if (sheet.images) {
     for (const img of sheet.images) {
       if (img.anchor.from.row >= rowIndex) {
-        img.anchor.from.row += count;
+        img.anchor.from.row += count
       }
       if (img.anchor.to && img.anchor.to.row >= rowIndex) {
-        img.anchor.to.row += count;
+        img.anchor.to.row += count
       }
     }
   }
 
   // Update row defs
   if (sheet.rowDefs && sheet.rowDefs.size > 0) {
-    const updated = new Map<number, RowDef>();
+    const updated = new Map<number, RowDef>()
     for (const [row, def] of sheet.rowDefs) {
       if (row >= rowIndex) {
-        updated.set(row + count, def);
+        updated.set(row + count, def)
       } else {
-        updated.set(row, def);
+        updated.set(row, def)
       }
     }
-    sheet.rowDefs = updated;
+    sheet.rowDefs = updated
   }
 
   // Update table ranges
   if (sheet.tables) {
     for (const table of sheet.tables) {
       if (table.range) {
-        table.range = shiftRangeRows(table.range, rowIndex, count);
+        table.range = shiftRangeRows(table.range, rowIndex, count)
       }
     }
   }
@@ -179,30 +179,30 @@ export function insertRows(sheet: Sheet, rowIndex: number, count: number): void 
  * Removes merges fully within deleted range. Adjusts merges that partially overlap.
  */
 export function deleteRows(sheet: Sheet, rowIndex: number, count: number): void {
-  if (count <= 0) return;
+  if (count <= 0) return
 
-  const deleteEnd = rowIndex + count; // exclusive
+  const deleteEnd = rowIndex + count // exclusive
 
   // Remove rows from array
-  sheet.rows.splice(rowIndex, count);
+  sheet.rows.splice(rowIndex, count)
 
   // Update cells Map
   if (sheet.cells && sheet.cells.size > 0) {
-    const updated = new Map<string, import("./_types").Cell>();
+    const updated = new Map<string, import("./_types").Cell>()
     for (const [key, cell] of sheet.cells) {
-      const [rowStr, colStr] = key.split(",");
-      const row = Number(rowStr);
-      const col = Number(colStr);
+      const [rowStr, colStr] = key.split(",")
+      const row = Number(rowStr)
+      const col = Number(colStr)
       if (row >= rowIndex && row < deleteEnd) {
         // Cell is in deleted range — remove it
-        continue;
+        continue
       } else if (row >= deleteEnd) {
-        updated.set(`${row - count},${col}`, cell);
+        updated.set(`${row - count},${col}`, cell)
       } else {
-        updated.set(key, cell);
+        updated.set(key, cell)
       }
     }
-    sheet.cells = updated;
+    sheet.cells = updated
   }
 
   // Update merge ranges
@@ -210,68 +210,68 @@ export function deleteRows(sheet: Sheet, rowIndex: number, count: number): void 
     sheet.merges = sheet.merges.filter((merge) => {
       // Fully within deleted range — remove
       if (merge.startRow >= rowIndex && merge.endRow < deleteEnd) {
-        return false;
+        return false
       }
-      return true;
-    });
+      return true
+    })
 
     for (const merge of sheet.merges) {
       if (merge.startRow >= deleteEnd) {
         // Entirely below deleted range — shift up
-        merge.startRow -= count;
-        merge.endRow -= count;
+        merge.startRow -= count
+        merge.endRow -= count
       } else if (merge.endRow >= deleteEnd) {
         // Partially overlapping: starts before or at deletion, ends after
         if (merge.startRow >= rowIndex) {
           // Starts within deleted range — clamp start to rowIndex
-          merge.startRow = rowIndex;
-          merge.endRow -= count;
+          merge.startRow = rowIndex
+          merge.endRow -= count
         } else {
           // Starts before deleted range — shrink end
-          merge.endRow -= count;
+          merge.endRow -= count
         }
       } else if (merge.endRow >= rowIndex) {
         // Ends within deleted range but starts before — clamp end
-        merge.endRow = rowIndex - 1;
+        merge.endRow = rowIndex - 1
       }
     }
 
     // Remove degenerate merges (start > end)
-    sheet.merges = sheet.merges.filter((m) => m.startRow <= m.endRow && m.startCol <= m.endCol);
+    sheet.merges = sheet.merges.filter((m) => m.startRow <= m.endRow && m.startCol <= m.endCol)
   }
 
   // Update data validations
   if (sheet.dataValidations) {
     sheet.dataValidations = sheet.dataValidations.filter((dv) => {
-      const r = parseRange(dv.range);
+      const r = parseRange(dv.range)
       // Remove if fully within deleted range
-      if (r.startRow >= rowIndex && r.endRow < deleteEnd) return false;
-      return true;
-    });
+      if (r.startRow >= rowIndex && r.endRow < deleteEnd) return false
+      return true
+    })
     for (const dv of sheet.dataValidations) {
-      dv.range = shiftDeletedRangeRows(dv.range, rowIndex, count);
+      dv.range = shiftDeletedRangeRows(dv.range, rowIndex, count)
     }
   }
 
   // Update conditional rules
   if (sheet.conditionalRules) {
     sheet.conditionalRules = sheet.conditionalRules.filter((rule) => {
-      const r = parseRange(rule.range);
-      if (r.startRow >= rowIndex && r.endRow < deleteEnd) return false;
-      return true;
-    });
+      const r = parseRange(rule.range)
+      if (r.startRow >= rowIndex && r.endRow < deleteEnd) return false
+      return true
+    })
     for (const rule of sheet.conditionalRules) {
-      rule.range = shiftDeletedRangeRows(rule.range, rowIndex, count);
+      rule.range = shiftDeletedRangeRows(rule.range, rowIndex, count)
     }
   }
 
   // Update auto filter
   if (sheet.autoFilter) {
-    const r = parseRange(sheet.autoFilter.range);
+    const r = parseRange(sheet.autoFilter.range)
     if (r.startRow >= rowIndex && r.endRow < deleteEnd) {
-      sheet.autoFilter = undefined;
+      sheet.autoFilter = undefined
     } else {
-      sheet.autoFilter.range = shiftDeletedRangeRows(sheet.autoFilter.range, rowIndex, count);
+      sheet.autoFilter.range = shiftDeletedRangeRows(sheet.autoFilter.range, rowIndex, count)
     }
   }
 
@@ -279,43 +279,43 @@ export function deleteRows(sheet: Sheet, rowIndex: number, count: number): void 
   if (sheet.images) {
     sheet.images = sheet.images.filter((img) => {
       // Remove images whose anchor starts in deleted range
-      return !(img.anchor.from.row >= rowIndex && img.anchor.from.row < deleteEnd);
-    });
+      return !(img.anchor.from.row >= rowIndex && img.anchor.from.row < deleteEnd)
+    })
     for (const img of sheet.images) {
       if (img.anchor.from.row >= deleteEnd) {
-        img.anchor.from.row -= count;
+        img.anchor.from.row -= count
       }
       if (img.anchor.to && img.anchor.to.row >= deleteEnd) {
-        img.anchor.to.row -= count;
+        img.anchor.to.row -= count
       }
     }
   }
 
   // Update row defs
   if (sheet.rowDefs && sheet.rowDefs.size > 0) {
-    const updated = new Map<number, RowDef>();
+    const updated = new Map<number, RowDef>()
     for (const [row, def] of sheet.rowDefs) {
       if (row >= rowIndex && row < deleteEnd) {
-        continue; // deleted
+        continue // deleted
       } else if (row >= deleteEnd) {
-        updated.set(row - count, def);
+        updated.set(row - count, def)
       } else {
-        updated.set(row, def);
+        updated.set(row, def)
       }
     }
-    sheet.rowDefs = updated;
+    sheet.rowDefs = updated
   }
 
   // Update table ranges
   if (sheet.tables) {
     sheet.tables = sheet.tables.filter((table) => {
-      if (!table.range) return true;
-      const r = parseRange(table.range);
-      return !(r.startRow >= rowIndex && r.endRow < deleteEnd);
-    });
+      if (!table.range) return true
+      const r = parseRange(table.range)
+      return !(r.startRow >= rowIndex && r.endRow < deleteEnd)
+    })
     for (const table of sheet.tables) {
       if (table.range) {
-        table.range = shiftDeletedRangeRows(table.range, rowIndex, count);
+        table.range = shiftDeletedRangeRows(table.range, rowIndex, count)
       }
     }
   }
@@ -327,22 +327,22 @@ export function deleteRows(sheet: Sheet, rowIndex: number, count: number): void 
  * Rows within [rowIndex, deleteEnd) are clamped.
  */
 function shiftDeletedRangeRows(range: string, rowIndex: number, count: number): string {
-  const deleteEnd = rowIndex + count;
-  const r = parseRange(range);
+  const deleteEnd = rowIndex + count
+  const r = parseRange(range)
 
   if (r.startRow >= deleteEnd) {
-    r.startRow -= count;
+    r.startRow -= count
   } else if (r.startRow >= rowIndex) {
-    r.startRow = rowIndex;
+    r.startRow = rowIndex
   }
 
   if (r.endRow >= deleteEnd) {
-    r.endRow -= count;
+    r.endRow -= count
   } else if (r.endRow >= rowIndex) {
-    r.endRow = rowIndex > 0 ? rowIndex - 1 : 0;
+    r.endRow = rowIndex > 0 ? rowIndex - 1 : 0
   }
 
-  return buildRange(r);
+  return buildRange(r)
 }
 
 // ── Insert Columns ───────────────────────────────────────────────────
@@ -353,50 +353,50 @@ function shiftDeletedRangeRows(range: string, rowIndex: number, count: number): 
  * images, column defs, and cells Map keys.
  */
 export function insertColumns(sheet: Sheet, colIndex: number, count: number): void {
-  if (count <= 0) return;
+  if (count <= 0) return
 
-  const nulls: null[] = makeEmptyRow(count);
+  const nulls: null[] = makeEmptyRow(count)
 
   // Insert nulls into each row
   for (const row of sheet.rows) {
     // Extend row if it's shorter than colIndex
-    while (row.length < colIndex) row.push(null);
-    row.splice(colIndex, 0, ...nulls);
+    while (row.length < colIndex) row.push(null)
+    row.splice(colIndex, 0, ...nulls)
   }
 
   // Update column defs
   if (sheet.columns) {
-    const newCols: import("./_types").ColumnDef[] = [];
-    for (let i = 0; i < count; i++) newCols.push({});
+    const newCols: import("./_types").ColumnDef[] = []
+    for (let i = 0; i < count; i++) newCols.push({})
     // Ensure columns array is long enough
-    while (sheet.columns.length < colIndex) sheet.columns.push({});
-    sheet.columns.splice(colIndex, 0, ...newCols);
+    while (sheet.columns.length < colIndex) sheet.columns.push({})
+    sheet.columns.splice(colIndex, 0, ...newCols)
   }
 
   // Update cells Map
   if (sheet.cells && sheet.cells.size > 0) {
-    const updated = new Map<string, import("./_types").Cell>();
+    const updated = new Map<string, import("./_types").Cell>()
     for (const [key, cell] of sheet.cells) {
-      const [rowStr, colStr] = key.split(",");
-      const row = Number(rowStr);
-      const col = Number(colStr);
+      const [rowStr, colStr] = key.split(",")
+      const row = Number(rowStr)
+      const col = Number(colStr)
       if (col >= colIndex) {
-        updated.set(`${row},${col + count}`, cell);
+        updated.set(`${row},${col + count}`, cell)
       } else {
-        updated.set(key, cell);
+        updated.set(key, cell)
       }
     }
-    sheet.cells = updated;
+    sheet.cells = updated
   }
 
   // Update merge ranges
   if (sheet.merges) {
     for (const merge of sheet.merges) {
       if (merge.startCol >= colIndex) {
-        merge.startCol += count;
-        merge.endCol += count;
+        merge.startCol += count
+        merge.endCol += count
       } else if (merge.endCol >= colIndex) {
-        merge.endCol += count;
+        merge.endCol += count
       }
     }
   }
@@ -404,30 +404,30 @@ export function insertColumns(sheet: Sheet, colIndex: number, count: number): vo
   // Update data validations
   if (sheet.dataValidations) {
     for (const dv of sheet.dataValidations) {
-      dv.range = shiftRangeCols(dv.range, colIndex, count);
+      dv.range = shiftRangeCols(dv.range, colIndex, count)
     }
   }
 
   // Update conditional rules
   if (sheet.conditionalRules) {
     for (const rule of sheet.conditionalRules) {
-      rule.range = shiftRangeCols(rule.range, colIndex, count);
+      rule.range = shiftRangeCols(rule.range, colIndex, count)
     }
   }
 
   // Update auto filter
   if (sheet.autoFilter) {
-    sheet.autoFilter.range = shiftRangeCols(sheet.autoFilter.range, colIndex, count);
+    sheet.autoFilter.range = shiftRangeCols(sheet.autoFilter.range, colIndex, count)
   }
 
   // Update image anchors
   if (sheet.images) {
     for (const img of sheet.images) {
       if (img.anchor.from.col >= colIndex) {
-        img.anchor.from.col += count;
+        img.anchor.from.col += count
       }
       if (img.anchor.to && img.anchor.to.col >= colIndex) {
-        img.anchor.to.col += count;
+        img.anchor.to.col += count
       }
     }
   }
@@ -436,7 +436,7 @@ export function insertColumns(sheet: Sheet, colIndex: number, count: number): vo
   if (sheet.tables) {
     for (const table of sheet.tables) {
       if (table.range) {
-        table.range = shiftRangeCols(table.range, colIndex, count);
+        table.range = shiftRangeCols(table.range, colIndex, count)
       }
     }
   }
@@ -449,115 +449,115 @@ export function insertColumns(sheet: Sheet, colIndex: number, count: number): vo
  * Removes merges fully within deleted range. Adjusts merges that partially overlap.
  */
 export function deleteColumns(sheet: Sheet, colIndex: number, count: number): void {
-  if (count <= 0) return;
+  if (count <= 0) return
 
-  const deleteEnd = colIndex + count; // exclusive
+  const deleteEnd = colIndex + count // exclusive
 
   // Remove columns from each row
   for (const row of sheet.rows) {
     if (colIndex < row.length) {
-      row.splice(colIndex, Math.min(count, row.length - colIndex));
+      row.splice(colIndex, Math.min(count, row.length - colIndex))
     }
   }
 
   // Update column defs
   if (sheet.columns) {
     if (colIndex < sheet.columns.length) {
-      sheet.columns.splice(colIndex, Math.min(count, sheet.columns.length - colIndex));
+      sheet.columns.splice(colIndex, Math.min(count, sheet.columns.length - colIndex))
     }
   }
 
   // Update cells Map
   if (sheet.cells && sheet.cells.size > 0) {
-    const updated = new Map<string, import("./_types").Cell>();
+    const updated = new Map<string, import("./_types").Cell>()
     for (const [key, cell] of sheet.cells) {
-      const [rowStr, colStr] = key.split(",");
-      const row = Number(rowStr);
-      const col = Number(colStr);
+      const [rowStr, colStr] = key.split(",")
+      const row = Number(rowStr)
+      const col = Number(colStr)
       if (col >= colIndex && col < deleteEnd) {
-        continue; // deleted
+        continue // deleted
       } else if (col >= deleteEnd) {
-        updated.set(`${row},${col - count}`, cell);
+        updated.set(`${row},${col - count}`, cell)
       } else {
-        updated.set(key, cell);
+        updated.set(key, cell)
       }
     }
-    sheet.cells = updated;
+    sheet.cells = updated
   }
 
   // Update merge ranges
   if (sheet.merges) {
     sheet.merges = sheet.merges.filter((merge) => {
       if (merge.startCol >= colIndex && merge.endCol < deleteEnd) {
-        return false;
+        return false
       }
-      return true;
-    });
+      return true
+    })
 
     for (const merge of sheet.merges) {
       if (merge.startCol >= deleteEnd) {
-        merge.startCol -= count;
-        merge.endCol -= count;
+        merge.startCol -= count
+        merge.endCol -= count
       } else if (merge.endCol >= deleteEnd) {
         if (merge.startCol >= colIndex) {
-          merge.startCol = colIndex;
-          merge.endCol -= count;
+          merge.startCol = colIndex
+          merge.endCol -= count
         } else {
-          merge.endCol -= count;
+          merge.endCol -= count
         }
       } else if (merge.endCol >= colIndex) {
-        merge.endCol = colIndex - 1;
+        merge.endCol = colIndex - 1
       }
     }
 
-    sheet.merges = sheet.merges.filter((m) => m.startRow <= m.endRow && m.startCol <= m.endCol);
+    sheet.merges = sheet.merges.filter((m) => m.startRow <= m.endRow && m.startCol <= m.endCol)
   }
 
   // Update data validations
   if (sheet.dataValidations) {
     sheet.dataValidations = sheet.dataValidations.filter((dv) => {
-      const r = parseRange(dv.range);
-      if (r.startCol >= colIndex && r.endCol < deleteEnd) return false;
-      return true;
-    });
+      const r = parseRange(dv.range)
+      if (r.startCol >= colIndex && r.endCol < deleteEnd) return false
+      return true
+    })
     for (const dv of sheet.dataValidations) {
-      dv.range = shiftDeletedRangeCols(dv.range, colIndex, count);
+      dv.range = shiftDeletedRangeCols(dv.range, colIndex, count)
     }
   }
 
   // Update conditional rules
   if (sheet.conditionalRules) {
     sheet.conditionalRules = sheet.conditionalRules.filter((rule) => {
-      const r = parseRange(rule.range);
-      if (r.startCol >= colIndex && r.endCol < deleteEnd) return false;
-      return true;
-    });
+      const r = parseRange(rule.range)
+      if (r.startCol >= colIndex && r.endCol < deleteEnd) return false
+      return true
+    })
     for (const rule of sheet.conditionalRules) {
-      rule.range = shiftDeletedRangeCols(rule.range, colIndex, count);
+      rule.range = shiftDeletedRangeCols(rule.range, colIndex, count)
     }
   }
 
   // Update auto filter
   if (sheet.autoFilter) {
-    const r = parseRange(sheet.autoFilter.range);
+    const r = parseRange(sheet.autoFilter.range)
     if (r.startCol >= colIndex && r.endCol < deleteEnd) {
-      sheet.autoFilter = undefined;
+      sheet.autoFilter = undefined
     } else {
-      sheet.autoFilter.range = shiftDeletedRangeCols(sheet.autoFilter.range, colIndex, count);
+      sheet.autoFilter.range = shiftDeletedRangeCols(sheet.autoFilter.range, colIndex, count)
     }
   }
 
   // Update image anchors
   if (sheet.images) {
     sheet.images = sheet.images.filter((img) => {
-      return !(img.anchor.from.col >= colIndex && img.anchor.from.col < deleteEnd);
-    });
+      return !(img.anchor.from.col >= colIndex && img.anchor.from.col < deleteEnd)
+    })
     for (const img of sheet.images) {
       if (img.anchor.from.col >= deleteEnd) {
-        img.anchor.from.col -= count;
+        img.anchor.from.col -= count
       }
       if (img.anchor.to && img.anchor.to.col >= deleteEnd) {
-        img.anchor.to.col -= count;
+        img.anchor.to.col -= count
       }
     }
   }
@@ -565,13 +565,13 @@ export function deleteColumns(sheet: Sheet, colIndex: number, count: number): vo
   // Update table ranges
   if (sheet.tables) {
     sheet.tables = sheet.tables.filter((table) => {
-      if (!table.range) return true;
-      const r = parseRange(table.range);
-      return !(r.startCol >= colIndex && r.endCol < deleteEnd);
-    });
+      if (!table.range) return true
+      const r = parseRange(table.range)
+      return !(r.startCol >= colIndex && r.endCol < deleteEnd)
+    })
     for (const table of sheet.tables) {
       if (table.range) {
-        table.range = shiftDeletedRangeCols(table.range, colIndex, count);
+        table.range = shiftDeletedRangeCols(table.range, colIndex, count)
       }
     }
   }
@@ -581,22 +581,22 @@ export function deleteColumns(sheet: Sheet, colIndex: number, count: number): vo
  * Shift column references in a range string after deletion.
  */
 function shiftDeletedRangeCols(range: string, colIndex: number, count: number): string {
-  const deleteEnd = colIndex + count;
-  const r = parseRange(range);
+  const deleteEnd = colIndex + count
+  const r = parseRange(range)
 
   if (r.startCol >= deleteEnd) {
-    r.startCol -= count;
+    r.startCol -= count
   } else if (r.startCol >= colIndex) {
-    r.startCol = colIndex;
+    r.startCol = colIndex
   }
 
   if (r.endCol >= deleteEnd) {
-    r.endCol -= count;
+    r.endCol -= count
   } else if (r.endCol >= colIndex) {
-    r.endCol = colIndex > 0 ? colIndex - 1 : 0;
+    r.endCol = colIndex > 0 ? colIndex - 1 : 0
   }
 
-  return buildRange(r);
+  return buildRange(r)
 }
 
 // ── Move Rows ────────────────────────────────────────────────────────
@@ -607,47 +607,47 @@ function shiftDeletedRangeCols(range: string, colIndex: number, count: number): 
  * `toIndex` is the target position in the original (pre-move) coordinate space.
  */
 export function moveRows(sheet: Sheet, fromIndex: number, count: number, toIndex: number): void {
-  if (count <= 0 || fromIndex === toIndex) return;
+  if (count <= 0 || fromIndex === toIndex) return
 
   // Extract rows
-  const extractedRows = sheet.rows.splice(fromIndex, count);
+  const extractedRows = sheet.rows.splice(fromIndex, count)
 
   // Extract cells for moved rows
-  const extractedCells = new Map<string, import("./_types").Cell>();
+  const extractedCells = new Map<string, import("./_types").Cell>()
   if (sheet.cells) {
     for (const [key, cell] of sheet.cells) {
-      const [rowStr] = key.split(",");
-      const row = Number(rowStr);
+      const [rowStr] = key.split(",")
+      const row = Number(rowStr)
       if (row >= fromIndex && row < fromIndex + count) {
-        extractedCells.set(key, cell);
-        sheet.cells.delete(key);
+        extractedCells.set(key, cell)
+        sheet.cells.delete(key)
       }
     }
   }
 
   // Extract row defs for moved rows
-  const extractedRowDefs = new Map<number, RowDef>();
+  const extractedRowDefs = new Map<number, RowDef>()
   if (sheet.rowDefs) {
     for (const [row, def] of sheet.rowDefs) {
       if (row >= fromIndex && row < fromIndex + count) {
-        extractedRowDefs.set(row, def);
-        sheet.rowDefs.delete(row);
+        extractedRowDefs.set(row, def)
+        sheet.rowDefs.delete(row)
       }
     }
   }
 
   // After removing from source, adjust target index
-  let adjustedTo = toIndex;
+  let adjustedTo = toIndex
   if (toIndex > fromIndex) {
-    adjustedTo = toIndex - count;
+    adjustedTo = toIndex - count
   }
 
   // Re-insert rows at adjusted position
-  sheet.rows.splice(adjustedTo, 0, ...extractedRows);
+  sheet.rows.splice(adjustedTo, 0, ...extractedRows)
 
   // Rebuild cells Map: shift all remaining cells, then re-add extracted
   if (sheet.cells || extractedCells.size > 0) {
-    const newCells = new Map<string, import("./_types").Cell>();
+    const newCells = new Map<string, import("./_types").Cell>()
 
     // Re-key all existing cells based on their new row positions
     if (sheet.cells) {
@@ -660,59 +660,59 @@ export function moveRows(sheet: Sheet, fromIndex: number, count: number, toIndex
       // After removal: rows above fromIndex stay, rows at fromIndex+ shift up by count
       // After insertion: rows at adjustedTo+ shift down by count
       for (const [key, cell] of sheet.cells) {
-        const [rowStr, colStr] = key.split(",");
-        let row = Number(rowStr);
-        const col = Number(colStr);
+        const [rowStr, colStr] = key.split(",")
+        let row = Number(rowStr)
+        const col = Number(colStr)
 
         // After removal of [fromIndex, fromIndex+count):
         if (row >= fromIndex) {
-          row -= count;
+          row -= count
         }
         // After insertion at adjustedTo:
         if (row >= adjustedTo) {
-          row += count;
+          row += count
         }
 
-        newCells.set(`${row},${col}`, cell);
+        newCells.set(`${row},${col}`, cell)
       }
     }
 
     // Re-add extracted cells at their new positions
     for (const [key, cell] of extractedCells) {
-      const [rowStr, colStr] = key.split(",");
-      const originalRow = Number(rowStr);
-      const col = Number(colStr);
-      const offset = originalRow - fromIndex;
-      const newRow = adjustedTo + offset;
-      newCells.set(`${newRow},${col}`, cell);
+      const [rowStr, colStr] = key.split(",")
+      const originalRow = Number(rowStr)
+      const col = Number(colStr)
+      const offset = originalRow - fromIndex
+      const newRow = adjustedTo + offset
+      newCells.set(`${newRow},${col}`, cell)
     }
 
-    sheet.cells = newCells.size > 0 ? newCells : undefined;
+    sheet.cells = newCells.size > 0 ? newCells : undefined
   }
 
   // Rebuild row defs
   if (sheet.rowDefs || extractedRowDefs.size > 0) {
-    const newRowDefs = new Map<number, RowDef>();
+    const newRowDefs = new Map<number, RowDef>()
 
     if (sheet.rowDefs) {
       for (const [row, def] of sheet.rowDefs) {
-        let newRow = row;
+        let newRow = row
         if (newRow >= fromIndex) {
-          newRow -= count;
+          newRow -= count
         }
         if (newRow >= adjustedTo) {
-          newRow += count;
+          newRow += count
         }
-        newRowDefs.set(newRow, def);
+        newRowDefs.set(newRow, def)
       }
     }
 
     for (const [row, def] of extractedRowDefs) {
-      const offset = row - fromIndex;
-      newRowDefs.set(adjustedTo + offset, def);
+      const offset = row - fromIndex
+      newRowDefs.set(adjustedTo + offset, def)
     }
 
-    sheet.rowDefs = newRowDefs.size > 0 ? newRowDefs : undefined;
+    sheet.rowDefs = newRowDefs.size > 0 ? newRowDefs : undefined
   }
 }
 
@@ -728,11 +728,11 @@ export function hideRows(
   count: number,
   hidden: boolean = true,
 ): void {
-  if (!sheet.rowDefs) sheet.rowDefs = new Map();
+  if (!sheet.rowDefs) sheet.rowDefs = new Map()
   for (let i = startRow; i < startRow + count; i++) {
-    const existing = sheet.rowDefs.get(i) || {};
-    existing.hidden = hidden;
-    sheet.rowDefs.set(i, existing);
+    const existing = sheet.rowDefs.get(i) || {}
+    existing.hidden = hidden
+    sheet.rowDefs.set(i, existing)
   }
 }
 
@@ -748,13 +748,13 @@ export function hideColumns(
   count: number,
   hidden: boolean = true,
 ): void {
-  if (!sheet.columns) sheet.columns = [];
+  if (!sheet.columns) sheet.columns = []
   // Ensure columns array is large enough
   while (sheet.columns.length <= startCol + count - 1) {
-    sheet.columns.push({});
+    sheet.columns.push({})
   }
   for (let i = startCol; i < startCol + count; i++) {
-    sheet.columns[i].hidden = hidden;
+    sheet.columns[i].hidden = hidden
   }
 }
 
@@ -765,20 +765,20 @@ export function hideColumns(
  * @param level - Outline level (default 1). Set to 0 to ungroup.
  */
 export function groupRows(sheet: Sheet, startRow: number, endRow: number, level: number = 1): void {
-  if (!sheet.rowDefs) sheet.rowDefs = new Map();
+  if (!sheet.rowDefs) sheet.rowDefs = new Map()
   for (let i = startRow; i <= endRow; i++) {
-    const existing = sheet.rowDefs.get(i) || {};
-    existing.outlineLevel = level;
-    sheet.rowDefs.set(i, existing);
+    const existing = sheet.rowDefs.get(i) || {}
+    existing.outlineLevel = level
+    sheet.rowDefs.set(i, existing)
   }
 }
 
 // ── Deep Clone Helpers ────────────────────────────────────────────────
 
 function cloneStyle(style: CellStyle): CellStyle {
-  const result: CellStyle = {};
+  const result: CellStyle = {}
   if (style.font)
-    result.font = { ...style.font, color: style.font.color ? { ...style.font.color } : undefined };
+    result.font = { ...style.font, color: style.font.color ? { ...style.font.color } : undefined }
   if (style.fill) {
     if (style.fill.type === "pattern") {
       result.fill = {
@@ -786,13 +786,13 @@ function cloneStyle(style: CellStyle): CellStyle {
         pattern: style.fill.pattern,
         fgColor: style.fill.fgColor ? { ...style.fill.fgColor } : undefined,
         bgColor: style.fill.bgColor ? { ...style.fill.bgColor } : undefined,
-      };
+      }
     } else {
       result.fill = {
         type: "gradient",
         degree: style.fill.degree,
         stops: style.fill.stops.map((s) => ({ position: s.position, color: { ...s.color } })),
-      };
+      }
     }
   }
   if (style.border) {
@@ -828,39 +828,39 @@ function cloneStyle(style: CellStyle): CellStyle {
             color: style.border.diagonal.color ? { ...style.border.diagonal.color } : undefined,
           }
         : undefined,
-    };
+    }
   }
-  if (style.alignment) result.alignment = { ...style.alignment };
-  if (style.numFmt !== undefined) result.numFmt = style.numFmt;
-  if (style.protection) result.protection = { ...style.protection };
-  return result;
+  if (style.alignment) result.alignment = { ...style.alignment }
+  if (style.numFmt !== undefined) result.numFmt = style.numFmt
+  if (style.protection) result.protection = { ...style.protection }
+  return result
 }
 
 function cloneCell(cell: Cell): Cell {
-  const result: Cell = { value: cell.value, type: cell.type };
-  if (cell.style) result.style = cloneStyle(cell.style);
-  if (cell.formula !== undefined) result.formula = cell.formula;
-  if (cell.formulaResult !== undefined) result.formulaResult = cell.formulaResult;
+  const result: Cell = { value: cell.value, type: cell.type }
+  if (cell.style) result.style = cloneStyle(cell.style)
+  if (cell.formula !== undefined) result.formula = cell.formula
+  if (cell.formulaResult !== undefined) result.formulaResult = cell.formulaResult
   if (cell.richText)
     result.richText = cell.richText.map((r) => ({
       text: r.text,
       font: r.font
         ? { ...r.font, color: r.font.color ? { ...r.font.color } : undefined }
         : undefined,
-    }));
-  if (cell.hyperlink) result.hyperlink = { ...cell.hyperlink };
+    }))
+  if (cell.hyperlink) result.hyperlink = { ...cell.hyperlink }
   if (cell.comment) {
-    result.comment = { text: cell.comment.text, author: cell.comment.author };
+    result.comment = { text: cell.comment.text, author: cell.comment.author }
     if (cell.comment.richText) {
       result.comment.richText = cell.comment.richText.map((r) => ({
         text: r.text,
         font: r.font
           ? { ...r.font, color: r.font.color ? { ...r.font.color } : undefined }
           : undefined,
-      }));
+      }))
     }
   }
-  return result;
+  return result
 }
 
 // ── Clone Sheet ─────────────────────────────────────────────────────
@@ -871,17 +871,17 @@ function cloneCell(cell: Cell): Cell {
  */
 export function cloneSheet(sheet: Sheet, newName: string): Sheet {
   // Deep copy rows
-  const rows = sheet.rows.map((row) => [...row]);
+  const rows = sheet.rows.map((row) => [...row])
 
-  const cloned: Sheet = { name: newName, rows };
+  const cloned: Sheet = { name: newName, rows }
 
   // Deep copy cells Map
   if (sheet.cells && sheet.cells.size > 0) {
-    const cells = new Map<string, Cell>();
+    const cells = new Map<string, Cell>()
     for (const [key, cell] of sheet.cells) {
-      cells.set(key, cloneCell(cell));
+      cells.set(key, cloneCell(cell))
     }
-    cloned.cells = cells;
+    cloned.cells = cells
   }
 
   // Deep copy columns
@@ -889,21 +889,21 @@ export function cloneSheet(sheet: Sheet, newName: string): Sheet {
     cloned.columns = sheet.columns.map((col) => ({
       ...col,
       style: col.style ? cloneStyle(col.style) : undefined,
-    }));
+    }))
   }
 
   // Deep copy rowDefs
   if (sheet.rowDefs && sheet.rowDefs.size > 0) {
-    const rowDefs = new Map<number, RowDef>();
+    const rowDefs = new Map<number, RowDef>()
     for (const [key, def] of sheet.rowDefs) {
-      rowDefs.set(key, { ...def });
+      rowDefs.set(key, { ...def })
     }
-    cloned.rowDefs = rowDefs;
+    cloned.rowDefs = rowDefs
   }
 
   // Deep copy merges
   if (sheet.merges) {
-    cloned.merges = sheet.merges.map((m) => ({ ...m }));
+    cloned.merges = sheet.merges.map((m) => ({ ...m }))
   }
 
   // Deep copy data validations
@@ -911,45 +911,45 @@ export function cloneSheet(sheet: Sheet, newName: string): Sheet {
     cloned.dataValidations = sheet.dataValidations.map((dv) => ({
       ...dv,
       values: dv.values ? [...dv.values] : undefined,
-    }));
+    }))
   }
 
   // Deep copy conditional rules
   if (sheet.conditionalRules) {
     cloned.conditionalRules = sheet.conditionalRules.map((rule) => {
-      const clonedRule = { ...rule };
-      if (rule.style) clonedRule.style = cloneStyle(rule.style);
-      if (rule.formula && Array.isArray(rule.formula)) clonedRule.formula = [...rule.formula];
+      const clonedRule = { ...rule }
+      if (rule.style) clonedRule.style = cloneStyle(rule.style)
+      if (rule.formula && Array.isArray(rule.formula)) clonedRule.formula = [...rule.formula]
       if (rule.colorScale) {
         clonedRule.colorScale = {
           cfvo: rule.colorScale.cfvo.map((c) => ({ ...c })),
           colors: [...rule.colorScale.colors],
-        };
+        }
       }
       if (rule.dataBar) {
         clonedRule.dataBar = {
           cfvo: rule.dataBar.cfvo.map((c) => ({ ...c })),
           color: rule.dataBar.color,
-        };
+        }
       }
       if (rule.iconSet) {
         clonedRule.iconSet = {
           ...rule.iconSet,
           cfvo: rule.iconSet.cfvo.map((c) => ({ ...c })),
-        };
+        }
       }
-      return clonedRule;
-    });
+      return clonedRule
+    })
   }
 
   // Copy autoFilter
   if (sheet.autoFilter) {
-    cloned.autoFilter = { ...sheet.autoFilter };
+    cloned.autoFilter = { ...sheet.autoFilter }
   }
 
   // Copy freezePane
   if (sheet.freezePane) {
-    cloned.freezePane = { ...sheet.freezePane };
+    cloned.freezePane = { ...sheet.freezePane }
   }
 
   // Deep copy images
@@ -963,12 +963,12 @@ export function cloneSheet(sheet: Sheet, newName: string): Sheet {
       },
       width: img.width,
       height: img.height,
-    }));
+    }))
   }
 
   // Copy protection
   if (sheet.protection) {
-    cloned.protection = { ...sheet.protection };
+    cloned.protection = { ...sheet.protection }
   }
 
   // Copy pageSetup
@@ -976,12 +976,12 @@ export function cloneSheet(sheet: Sheet, newName: string): Sheet {
     cloned.pageSetup = {
       ...sheet.pageSetup,
       margins: sheet.pageSetup.margins ? { ...sheet.pageSetup.margins } : undefined,
-    };
+    }
   }
 
   // Copy headerFooter
   if (sheet.headerFooter) {
-    cloned.headerFooter = { ...sheet.headerFooter };
+    cloned.headerFooter = { ...sheet.headerFooter }
   }
 
   // Copy view
@@ -989,22 +989,22 @@ export function cloneSheet(sheet: Sheet, newName: string): Sheet {
     cloned.view = {
       ...sheet.view,
       tabColor: sheet.view.tabColor ? { ...sheet.view.tabColor } : undefined,
-    };
+    }
   }
 
   // Copy hidden/veryHidden
-  if (sheet.hidden !== undefined) cloned.hidden = sheet.hidden;
-  if (sheet.veryHidden !== undefined) cloned.veryHidden = sheet.veryHidden;
+  if (sheet.hidden !== undefined) cloned.hidden = sheet.hidden
+  if (sheet.veryHidden !== undefined) cloned.veryHidden = sheet.veryHidden
 
   // Deep copy tables
   if (sheet.tables) {
     cloned.tables = sheet.tables.map((table) => ({
       ...table,
       columns: table.columns.map((col) => ({ ...col })),
-    }));
+    }))
   }
 
-  return cloned;
+  return cloned
 }
 
 // ── Copy Sheet To Workbook ──────────────────────────────────────────
@@ -1018,8 +1018,8 @@ export function copySheetToWorkbook(
   targetWorkbook: Workbook,
   newName?: string,
 ): void {
-  const cloned = cloneSheet(sourceSheet, newName ?? sourceSheet.name);
-  targetWorkbook.sheets.push(cloned);
+  const cloned = cloneSheet(sourceSheet, newName ?? sourceSheet.name)
+  targetWorkbook.sheets.push(cloned)
 }
 
 // ── Copy Range ──────────────────────────────────────────────────────
@@ -1033,67 +1033,67 @@ export function copyRange(
   source: { startRow: number; startCol: number; endRow: number; endCol: number },
   target: { startRow: number; startCol: number },
 ): void {
-  const rowCount = source.endRow - source.startRow + 1;
-  const colCount = source.endCol - source.startCol + 1;
+  const rowCount = source.endRow - source.startRow + 1
+  const colCount = source.endCol - source.startCol + 1
 
   // Ensure rows array is large enough for target
-  const targetEndRow = target.startRow + rowCount - 1;
+  const targetEndRow = target.startRow + rowCount - 1
   while (sheet.rows.length <= targetEndRow) {
-    sheet.rows.push([]);
+    sheet.rows.push([])
   }
 
   // Read all source values and cells first (to handle overlapping ranges)
-  const sourceValues: import("./_types").CellValue[][] = [];
-  const sourceCells: (Cell | null)[][] = [];
+  const sourceValues: import("./_types").CellValue[][] = []
+  const sourceCells: (Cell | null)[][] = []
 
   for (let r = 0; r < rowCount; r++) {
-    sourceValues.push([]);
-    sourceCells.push([]);
+    sourceValues.push([])
+    sourceCells.push([])
     for (let c = 0; c < colCount; c++) {
-      const srcRow = source.startRow + r;
-      const srcCol = source.startCol + c;
+      const srcRow = source.startRow + r
+      const srcCol = source.startCol + c
 
       // Read value
-      const row = sheet.rows[srcRow];
-      sourceValues[r].push(row && srcCol < row.length ? row[srcCol] : null);
+      const row = sheet.rows[srcRow]
+      sourceValues[r].push(row && srcCol < row.length ? row[srcCol] : null)
 
       // Read cell
       if (sheet.cells) {
-        const key = `${srcRow},${srcCol}`;
-        const cell = sheet.cells.get(key);
-        sourceCells[r].push(cell ? cloneCell(cell) : null);
+        const key = `${srcRow},${srcCol}`
+        const cell = sheet.cells.get(key)
+        sourceCells[r].push(cell ? cloneCell(cell) : null)
       } else {
-        sourceCells[r].push(null);
+        sourceCells[r].push(null)
       }
     }
   }
 
   // Write values and cells to target
   for (let r = 0; r < rowCount; r++) {
-    const tgtRow = target.startRow + r;
-    const row = sheet.rows[tgtRow];
+    const tgtRow = target.startRow + r
+    const row = sheet.rows[tgtRow]
 
     for (let c = 0; c < colCount; c++) {
-      const tgtCol = target.startCol + c;
+      const tgtCol = target.startCol + c
 
       // Extend row if needed
-      while (row.length <= tgtCol) row.push(null);
-      row[tgtCol] = sourceValues[r][c];
+      while (row.length <= tgtCol) row.push(null)
+      row[tgtCol] = sourceValues[r][c]
 
       // Copy cell data
-      const srcCell = sourceCells[r][c];
+      const srcCell = sourceCells[r][c]
       if (srcCell) {
-        if (!sheet.cells) sheet.cells = new Map();
-        sheet.cells.set(`${tgtRow},${tgtCol}`, srcCell);
+        if (!sheet.cells) sheet.cells = new Map()
+        sheet.cells.set(`${tgtRow},${tgtCol}`, srcCell)
       } else if (sheet.cells) {
-        sheet.cells.delete(`${tgtRow},${tgtCol}`);
+        sheet.cells.delete(`${tgtRow},${tgtCol}`)
       }
     }
   }
 
   // Copy merges that are fully within the source range
   if (sheet.merges) {
-    const newMerges: MergeRange[] = [];
+    const newMerges: MergeRange[] = []
     for (const merge of sheet.merges) {
       if (
         merge.startRow >= source.startRow &&
@@ -1101,14 +1101,14 @@ export function copyRange(
         merge.startCol >= source.startCol &&
         merge.endCol <= source.endCol
       ) {
-        const rowOffset = target.startRow - source.startRow;
-        const colOffset = target.startCol - source.startCol;
+        const rowOffset = target.startRow - source.startRow
+        const colOffset = target.startCol - source.startCol
         newMerges.push({
           startRow: merge.startRow + rowOffset,
           startCol: merge.startCol + colOffset,
           endRow: merge.endRow + rowOffset,
           endCol: merge.endCol + colOffset,
-        });
+        })
       }
     }
     // Append new merges (avoid duplicates by checking if already exists)
@@ -1119,9 +1119,9 @@ export function copyRange(
           m.startCol === nm.startCol &&
           m.endRow === nm.endRow &&
           m.endCol === nm.endCol,
-      );
+      )
       if (!exists) {
-        sheet.merges.push(nm);
+        sheet.merges.push(nm)
       }
     }
   }
@@ -1133,9 +1133,9 @@ export function copyRange(
  * Reorder sheets in a workbook.
  */
 export function moveSheet(workbook: Workbook, fromIndex: number, toIndex: number): void {
-  if (fromIndex === toIndex) return;
-  const [sheet] = workbook.sheets.splice(fromIndex, 1);
-  workbook.sheets.splice(toIndex, 0, sheet);
+  if (fromIndex === toIndex) return
+  const [sheet] = workbook.sheets.splice(fromIndex, 1)
+  workbook.sheets.splice(toIndex, 0, sheet)
 }
 
 // ── Remove Sheet ────────────────────────────────────────────────────
@@ -1144,15 +1144,15 @@ export function moveSheet(workbook: Workbook, fromIndex: number, toIndex: number
  * Remove a sheet from a workbook.
  */
 export function removeSheet(workbook: Workbook, index: number): void {
-  workbook.sheets.splice(index, 1);
+  workbook.sheets.splice(index, 1)
   // Adjust activeSheet if needed
   if (workbook.activeSheet !== undefined) {
     if (workbook.activeSheet === index) {
       // If we removed the active sheet, set to the previous sheet or 0
       workbook.activeSheet =
-        workbook.sheets.length > 0 ? Math.min(index, workbook.sheets.length - 1) : 0;
+        workbook.sheets.length > 0 ? Math.min(index, workbook.sheets.length - 1) : 0
     } else if (workbook.activeSheet > index) {
-      workbook.activeSheet--;
+      workbook.activeSheet--
     }
   }
 }
@@ -1170,23 +1170,23 @@ export function findCells(
   sheet: Sheet,
   predicate: CellValue | ((value: CellValue, row: number, col: number) => boolean),
 ): Array<{ row: number; col: number; value: CellValue }> {
-  const results: Array<{ row: number; col: number; value: CellValue }> = [];
-  const isFn = typeof predicate === "function";
+  const results: Array<{ row: number; col: number; value: CellValue }> = []
+  const isFn = typeof predicate === "function"
 
   for (let r = 0; r < sheet.rows.length; r++) {
-    const row = sheet.rows[r]!;
+    const row = sheet.rows[r]!
     for (let c = 0; c < row.length; c++) {
-      const value = row[c] ?? null;
+      const value = row[c] ?? null
       const match = isFn
         ? (predicate as (value: CellValue, row: number, col: number) => boolean)(value, r, c)
-        : value === predicate;
+        : value === predicate
       if (match) {
-        results.push({ row: r, col: c, value });
+        results.push({ row: r, col: c, value })
       }
     }
   }
 
-  return results;
+  return results
 }
 
 /**
@@ -1199,38 +1199,38 @@ export function findCells(
  * @returns The number of cells that were modified
  */
 export function replaceCells(sheet: Sheet, find: CellValue | RegExp, replace: CellValue): number {
-  let count = 0;
+  let count = 0
 
   for (let r = 0; r < sheet.rows.length; r++) {
-    const row = sheet.rows[r]!;
+    const row = sheet.rows[r]!
     for (let c = 0; c < row.length; c++) {
-      const value = row[c] ?? null;
+      const value = row[c] ?? null
 
       if (find instanceof RegExp) {
         // RegExp matching: only applies to string cells
         if (typeof value === "string" && find.test(value)) {
           if (typeof replace === "string") {
             // Reset lastIndex for global regexes
-            find.lastIndex = 0;
-            row[c] = value.replace(find, replace);
+            find.lastIndex = 0
+            row[c] = value.replace(find, replace)
           } else {
-            row[c] = replace;
+            row[c] = replace
           }
           // Reset lastIndex after test() for global regexes
-          find.lastIndex = 0;
-          count++;
+          find.lastIndex = 0
+          count++
         }
       } else {
         // Exact value matching
         if (value === find) {
-          row[c] = replace;
-          count++;
+          row[c] = replace
+          count++
         }
       }
     }
   }
 
-  return count;
+  return count
 }
 
 // ── Sort Rows ────────────────────────────────────────────────────────
@@ -1244,40 +1244,40 @@ export function replaceCells(sheet: Sheet, find: CellValue | RegExp, replace: Ce
  * @param order - Sort order: "asc" (default) or "desc"
  */
 export function sortRows(sheet: Sheet, colIndex: number, order?: "asc" | "desc"): void {
-  const desc = order === "desc";
+  const desc = order === "desc"
 
   sheet.rows.sort((a, b) => {
-    const va = colIndex < a.length ? (a[colIndex] ?? null) : null;
-    const vb = colIndex < b.length ? (b[colIndex] ?? null) : null;
-    const cmp = compareCellValues(va, vb);
-    return desc ? -cmp : cmp;
-  });
+    const va = colIndex < a.length ? (a[colIndex] ?? null) : null
+    const vb = colIndex < b.length ? (b[colIndex] ?? null) : null
+    const cmp = compareCellValues(va, vb)
+    return desc ? -cmp : cmp
+  })
 }
 
 /** Compare two cell values for sorting: nulls last, numbers < strings < booleans. */
 function compareCellValues(a: CellValue, b: CellValue): number {
   // Nulls last
-  if (a === null && b === null) return 0;
-  if (a === null) return 1;
-  if (b === null) return -1;
+  if (a === null && b === null) return 0
+  if (a === null) return 1
+  if (b === null) return -1
 
-  const ta = typeRank(a);
-  const tb = typeRank(b);
-  if (ta !== tb) return ta - tb;
+  const ta = typeRank(a)
+  const tb = typeRank(b)
+  if (ta !== tb) return ta - tb
 
   // Same type
-  if (typeof a === "number" && typeof b === "number") return a - b;
-  if (typeof a === "string" && typeof b === "string") return a.localeCompare(b);
-  if (typeof a === "boolean" && typeof b === "boolean") return (a ? 1 : 0) - (b ? 1 : 0);
-  if (a instanceof Date && b instanceof Date) return a.getTime() - b.getTime();
-  return 0;
+  if (typeof a === "number" && typeof b === "number") return a - b
+  if (typeof a === "string" && typeof b === "string") return a.localeCompare(b)
+  if (typeof a === "boolean" && typeof b === "boolean") return (a ? 1 : 0) - (b ? 1 : 0)
+  if (a instanceof Date && b instanceof Date) return a.getTime() - b.getTime()
+  return 0
 }
 
 function typeRank(v: CellValue): number {
-  if (v === null) return 4;
-  if (typeof v === "number") return 0;
-  if (v instanceof Date) return 1;
-  if (typeof v === "string") return 2;
-  if (typeof v === "boolean") return 3;
-  return 4;
+  if (v === null) return 4
+  if (typeof v === "number") return 0
+  if (v instanceof Date) return 1
+  if (typeof v === "string") return 2
+  if (typeof v === "boolean") return 3
+  return 4
 }

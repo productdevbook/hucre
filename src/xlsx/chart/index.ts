@@ -8,18 +8,18 @@
 // is the source-of-truth, `_types.ts` re-exports it, and the package
 // entry `src/index.ts` exposes the same names externally.
 
-export type * from "./types";
-export * from "./shape";
-export * from "./text";
-export * from "./layout";
-export * from "./util";
-export * from "./walls";
-export * from "./title";
-export * from "./legend";
-export * from "./dataLabels";
-export * from "./dataTable";
-export * from "./series";
-export * from "./seriesExtras";
-export * from "./axis";
-export * from "./plotArea";
-export * from "./chartSpace";
+export type * from "./types"
+export * from "./shape"
+export * from "./text"
+export * from "./layout"
+export * from "./util"
+export * from "./walls"
+export * from "./title"
+export * from "./legend"
+export * from "./dataLabels"
+export * from "./dataTable"
+export * from "./series"
+export * from "./seriesExtras"
+export * from "./axis"
+export * from "./plotArea"
+export * from "./chartSpace"

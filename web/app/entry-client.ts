@@ -1,3 +1,3 @@
-import { setupApp } from "./app.ts";
+import { setupApp } from "./app.ts"
 
-setupApp();
+setupApp()

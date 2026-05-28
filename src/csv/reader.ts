@@ -1,4 +1,4 @@
-import type { CellValue, CsvReadOptions } from "../_types";
+import type { CellValue, CsvReadOptions } from "../_types"
 
 // ── Public API ───────────────────────────────────────────────────────
 
@@ -7,13 +7,13 @@ import type { CellValue, CsvReadOptions } from "../_types";
  * Handles UTF-8 (EF BB BF), UTF-16 LE (FF FE), UTF-16 BE (FE FF).
  */
 export function stripBom(input: string): string {
-  if (input.length === 0) return input;
-  const first = input.charCodeAt(0);
+  if (input.length === 0) return input
+  const first = input.charCodeAt(0)
   // UTF-8 BOM: U+FEFF, UTF-16 BE BOM: U+FEFF
-  if (first === 0xfeff) return input.slice(1);
+  if (first === 0xfeff) return input.slice(1)
   // UTF-16 LE BOM: U+FFFE
-  if (first === 0xfffe) return input.slice(1);
-  return input;
+  if (first === 0xfffe) return input.slice(1)
+  return input
 }
 
 /**
@@ -22,133 +22,133 @@ export function stripBom(input: string): string {
  * consistent non-zero count across lines.
  */
 export function detectDelimiter(input: string): string {
-  const candidates = [",", ";", "\t", "|"];
+  const candidates = [",", ";", "\t", "|"]
   // Grab up to 10 lines (ignoring quoted fields for speed — good enough for detection)
-  const sampleLines = getSampleLines(input, 10);
+  const sampleLines = getSampleLines(input, 10)
 
-  if (sampleLines.length === 0) return ",";
+  if (sampleLines.length === 0) return ","
 
-  let bestDelimiter = ",";
-  let bestScore = -1;
+  let bestDelimiter = ","
+  let bestScore = -1
 
   for (const delim of candidates) {
-    const counts = sampleLines.map((line) => countUnquoted(line, delim));
-    const nonZero = counts.filter((c) => c > 0);
-    if (nonZero.length === 0) continue;
+    const counts = sampleLines.map((line) => countUnquoted(line, delim))
+    const nonZero = counts.filter((c) => c > 0)
+    if (nonZero.length === 0) continue
 
     // Consistency = how many lines have the same count as the first non-zero
-    const mode = nonZero[0]!;
-    const consistent = nonZero.filter((c) => c === mode).length;
+    const mode = nonZero[0]!
+    const consistent = nonZero.filter((c) => c === mode).length
     // Score: prefer higher consistency, then higher count
-    const score = consistent * 1000 + mode;
+    const score = consistent * 1000 + mode
 
     if (score > bestScore) {
-      bestScore = score;
-      bestDelimiter = delim;
+      bestScore = score
+      bestDelimiter = delim
     }
   }
 
-  return bestDelimiter;
+  return bestDelimiter
 }
 
 /**
  * Parse a CSV string into a 2D array of cell values.
  */
 export function parseCsv(input: string, options?: CsvReadOptions): CellValue[][] {
-  const opts = normalizeReadOptions(options);
+  const opts = normalizeReadOptions(options)
 
   if (opts.skipBom) {
-    input = stripBom(input);
+    input = stripBom(input)
   }
 
   // Skip the first N lines before parsing
-  const skipLines = options?.skipLines;
+  const skipLines = options?.skipLines
   if (skipLines && skipLines > 0) {
-    let linesSkipped = 0;
-    let pos = 0;
+    let linesSkipped = 0
+    let pos = 0
     while (linesSkipped < skipLines && pos < input.length) {
-      const ch = input[pos]!;
+      const ch = input[pos]!
       if (ch === "\r") {
-        linesSkipped++;
+        linesSkipped++
         if (pos + 1 < input.length && input[pos + 1] === "\n") {
-          pos += 2;
+          pos += 2
         } else {
-          pos++;
+          pos++
         }
       } else if (ch === "\n") {
-        linesSkipped++;
-        pos++;
+        linesSkipped++
+        pos++
       } else {
-        pos++;
+        pos++
       }
     }
-    input = input.slice(pos);
+    input = input.slice(pos)
   }
 
-  if (input.length === 0) return [];
+  if (input.length === 0) return []
 
-  const delimiter = opts.delimiter ?? detectDelimiter(input);
-  const quote = opts.quote;
-  const escape = opts.escape;
+  const delimiter = opts.delimiter ?? detectDelimiter(input)
+  const quote = opts.quote
+  const escape = opts.escape
 
   const rows = options?.fastMode
     ? parseFast(input, delimiter)
-    : parseRaw(input, delimiter, quote, escape);
+    : parseRaw(input, delimiter, quote, escape)
 
   // Filter comments
-  const commentChar = opts.comment;
+  const commentChar = opts.comment
   let filtered: CellValue[][] = commentChar
     ? rows.filter((row) => {
-        if (row.length === 0) return true;
-        const firstVal = row[0];
+        if (row.length === 0) return true
+        const firstVal = row[0]
         if (typeof firstVal === "string" && firstVal.startsWith(commentChar)) {
-          return false;
+          return false
         }
-        return true;
+        return true
       })
-    : rows;
+    : rows
 
   // Skip empty rows
   if (opts.skipEmptyRows) {
     filtered = filtered.filter(
       (row) => row.length > 0 && !row.every((cell) => cell === null || cell === ""),
-    );
+    )
   }
 
   // Limit to maxRows data rows
   if (opts.maxRows !== undefined && opts.maxRows >= 0 && filtered.length > opts.maxRows) {
-    filtered = filtered.slice(0, opts.maxRows);
+    filtered = filtered.slice(0, opts.maxRows)
   }
 
   // Type inference
   if (opts.typeInference) {
-    const preserveLeadingZeros = opts.preserveLeadingZeros;
-    filtered = filtered.map((row) => row.map((v) => inferType(v, preserveLeadingZeros)));
+    const preserveLeadingZeros = opts.preserveLeadingZeros
+    filtered = filtered.map((row) => row.map((v) => inferType(v, preserveLeadingZeros)))
   }
 
   // transformValue callback — applied after type inference
-  const transformValue = options?.transformValue;
+  const transformValue = options?.transformValue
   if (transformValue) {
     // When we don't have headers we pass column index as the header name
     // Detect headers from first row if header option is set
-    const headerRow = options?.header && filtered.length > 0 ? filtered[0]! : null;
+    const headerRow = options?.header && filtered.length > 0 ? filtered[0]! : null
     filtered = filtered.map((row, rowIdx) =>
       row.map((val, colIdx) => {
-        const header = headerRow ? String(headerRow[colIdx] ?? colIdx) : String(colIdx);
-        return transformValue(val, header, rowIdx, colIdx);
+        const header = headerRow ? String(headerRow[colIdx] ?? colIdx) : String(colIdx)
+        return transformValue(val, header, rowIdx, colIdx)
       }),
-    );
+    )
   }
 
   // onRow callback — called for each row after all processing
-  const onRow = options?.onRow;
+  const onRow = options?.onRow
   if (onRow) {
     for (let i = 0; i < filtered.length; i++) {
-      onRow(filtered[i]!, i);
+      onRow(filtered[i]!, i)
     }
   }
 
-  return filtered;
+  return filtered
 }
 
 /**
@@ -160,199 +160,199 @@ export function parseCsvObjects<T extends Record<string, CellValue> = Record<str
   options?: CsvReadOptions & { header: true },
 ): { data: T[]; headers: string[] } {
   // Pass through without transformValue/transformHeader to parseCsv — we handle them here
-  const { transformHeader, transformValue, ...restOptions } = options ?? {};
+  const { transformHeader, transformValue, ...restOptions } = options ?? {}
   const rows = parseCsv(input, {
     ...restOptions,
     header: false,
     transformValue: undefined,
     transformHeader: undefined,
-  });
+  })
 
   if (rows.length === 0) {
-    return { data: [], headers: [] };
+    return { data: [], headers: [] }
   }
 
-  const headerRow = rows[0]!;
+  const headerRow = rows[0]!
   let headers = headerRow.map((h) => {
-    if (h === null) return "";
-    return String(h).trim();
-  });
+    if (h === null) return ""
+    return String(h).trim()
+  })
 
   // Apply transformHeader callback
   if (transformHeader) {
-    headers = headers.map((h, i) => transformHeader(h, i));
+    headers = headers.map((h, i) => transformHeader(h, i))
   }
 
-  const data: T[] = [];
+  const data: T[] = []
   for (let i = 1; i < rows.length; i++) {
-    const row = rows[i]!;
-    const obj: Record<string, CellValue> = {};
+    const row = rows[i]!
+    const obj: Record<string, CellValue> = {}
     for (let j = 0; j < headers.length; j++) {
-      let val: CellValue = j < row.length ? row[j]! : null;
+      let val: CellValue = j < row.length ? row[j]! : null
       if (transformValue) {
-        val = transformValue(val, headers[j]!, i, j);
+        val = transformValue(val, headers[j]!, i, j)
       }
-      obj[headers[j]!] = val;
+      obj[headers[j]!] = val
     }
-    data.push(obj as T);
+    data.push(obj as T)
   }
 
-  return { data, headers };
+  return { data, headers }
 }
 
 // ── Fast parser (no quote handling) ──────────────────────────────────
 
 function parseFast(input: string, delimiter: string): string[][] {
-  const rows: string[][] = [];
-  const lines = input.split(/\r\n|\r|\n/);
+  const rows: string[][] = []
+  const lines = input.split(/\r\n|\r|\n/)
 
   // Drop trailing empty line from trailing newline
   if (lines.length > 0 && lines[lines.length - 1] === "") {
-    lines.pop();
+    lines.pop()
   }
 
   for (const line of lines) {
-    rows.push(line.split(delimiter));
+    rows.push(line.split(delimiter))
   }
 
-  return rows;
+  return rows
 }
 
 // ── Core parser (RFC 4180) ───────────────────────────────────────────
 
 function parseRaw(input: string, delimiter: string, quote: string, escape: string): string[][] {
-  const rows: string[][] = [];
-  let currentRow: string[] = [];
-  let currentField = "";
-  let inQuoted = false;
-  let i = 0;
-  const len = input.length;
+  const rows: string[][] = []
+  let currentRow: string[] = []
+  let currentField = ""
+  let inQuoted = false
+  let i = 0
+  const len = input.length
 
   while (i < len) {
-    const ch = input[i]!;
+    const ch = input[i]!
 
     if (inQuoted) {
       // Check for escape sequence (doubled quote or escape+quote)
       if (ch === escape && i + 1 < len && input[i + 1] === quote) {
-        currentField += quote;
-        i += 2;
-        continue;
+        currentField += quote
+        i += 2
+        continue
       }
       // End of quoted field
       if (ch === quote) {
-        inQuoted = false;
-        i++;
-        continue;
+        inQuoted = false
+        i++
+        continue
       }
       // Any other character inside quotes
-      currentField += ch;
-      i++;
-      continue;
+      currentField += ch
+      i++
+      continue
     }
 
     // Not in quoted field
 
     // Check for delimiter
     if (startsWith(input, delimiter, i)) {
-      currentRow.push(currentField);
-      currentField = "";
-      i += delimiter.length;
-      continue;
+      currentRow.push(currentField)
+      currentField = ""
+      i += delimiter.length
+      continue
     }
 
     // Check for line endings
     if (ch === "\r") {
-      currentRow.push(currentField);
-      currentField = "";
-      rows.push(currentRow);
-      currentRow = [];
+      currentRow.push(currentField)
+      currentField = ""
+      rows.push(currentRow)
+      currentRow = []
       // Consume \r\n as single line break
       if (i + 1 < len && input[i + 1] === "\n") {
-        i += 2;
+        i += 2
       } else {
-        i++;
+        i++
       }
-      continue;
+      continue
     }
 
     if (ch === "\n") {
-      currentRow.push(currentField);
-      currentField = "";
-      rows.push(currentRow);
-      currentRow = [];
-      i++;
-      continue;
+      currentRow.push(currentField)
+      currentField = ""
+      rows.push(currentRow)
+      currentRow = []
+      i++
+      continue
     }
 
     // Start of quoted field (only at the start of a field)
     if (ch === quote && currentField === "") {
-      inQuoted = true;
-      i++;
-      continue;
+      inQuoted = true
+      i++
+      continue
     }
 
     // Regular character
-    currentField += ch;
-    i++;
+    currentField += ch
+    i++
   }
 
   // Handle last field/row
   // Don't add a trailing empty row from a trailing newline
   if (currentField !== "" || currentRow.length > 0) {
-    currentRow.push(currentField);
-    rows.push(currentRow);
+    currentRow.push(currentField)
+    rows.push(currentRow)
   }
 
-  return rows;
+  return rows
 }
 
 // ── Type inference ───────────────────────────────────────────────────
 
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$/
 
 function inferType(value: CellValue, preserveLeadingZeros: boolean): CellValue {
-  if (value === null) return null;
-  if (typeof value !== "string") return value;
+  if (value === null) return null
+  if (typeof value !== "string") return value
 
-  const trimmed = value.trim();
-  if (trimmed === "") return value;
+  const trimmed = value.trim()
+  if (trimmed === "") return value
 
   // Boolean detection
-  const lower = trimmed.toLowerCase();
-  if (lower === "true" || lower === "yes") return true;
-  if (lower === "false" || lower === "no") return false;
+  const lower = trimmed.toLowerCase()
+  if (lower === "true" || lower === "yes") return true
+  if (lower === "false" || lower === "no") return false
 
   // ISO 8601 date detection (must come before number to avoid matching partial numbers)
   if (ISO_DATE_RE.test(trimmed)) {
-    const d = new Date(trimmed);
-    if (!Number.isNaN(d.getTime())) return d;
+    const d = new Date(trimmed)
+    if (!Number.isNaN(d.getTime())) return d
   }
 
   // Leading-zero preservation: keep strings like "0123", "007", "00" as strings.
   // Exceptions: "0.xxx" decimals are still parsed.
   if (preserveLeadingZeros && trimmed.length > 1 && trimmed[0] === "0" && trimmed[1] !== ".") {
-    return value;
+    return value
   }
 
   // Number detection
-  const asNumber = parseNumber(trimmed);
-  if (asNumber !== null) return asNumber;
+  const asNumber = parseNumber(trimmed)
+  if (asNumber !== null) return asNumber
 
-  return value;
+  return value
 }
 
 function parseNumber(s: string): number | null {
   // Handle locale-aware numbers like "1,234.56" or "1,234"
   // Strip commas that are thousands separators (followed by 3 digits)
-  const stripped = s.replace(/,(\d{3})/g, "$1");
+  const stripped = s.replace(/,(\d{3})/g, "$1")
   // Now try parsing
-  if (stripped === "" || stripped === "-" || stripped === "+") return null;
+  if (stripped === "" || stripped === "-" || stripped === "+") return null
   // Must look like a number (avoid parsing random strings)
-  if (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(stripped)) return null;
-  const n = Number(stripped);
-  if (Number.isNaN(n)) return null;
-  if (!Number.isFinite(n)) return null;
-  return n;
+  if (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(stripped)) return null
+  const n = Number(stripped)
+  if (Number.isNaN(n)) return null
+  if (!Number.isFinite(n)) return null
+  return n
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -369,7 +369,7 @@ function normalizeReadOptions(options?: CsvReadOptions) {
     comment: options?.comment,
     header: options?.header ?? false,
     maxRows: options?.maxRows,
-  };
+  }
 }
 
 /**
@@ -377,83 +377,83 @@ function normalizeReadOptions(options?: CsvReadOptions) {
  * Used for delimiter detection.
  */
 function getSampleLines(input: string, n: number): string[] {
-  const lines: string[] = [];
-  let current = "";
-  let inQuoted = false;
+  const lines: string[] = []
+  let current = ""
+  let inQuoted = false
   for (let i = 0; i < input.length && lines.length < n; i++) {
-    const ch = input[i]!;
+    const ch = input[i]!
     if (inQuoted) {
       if (ch === '"' && i + 1 < input.length && input[i + 1] === '"') {
-        current += ch;
-        i++;
-        continue;
+        current += ch
+        i++
+        continue
       }
       if (ch === '"') {
-        inQuoted = false;
-        current += ch;
-        continue;
+        inQuoted = false
+        current += ch
+        continue
       }
-      current += ch;
-      continue;
+      current += ch
+      continue
     }
     if (ch === '"') {
-      inQuoted = true;
-      current += ch;
-      continue;
+      inQuoted = true
+      current += ch
+      continue
     }
     if (ch === "\n" || ch === "\r") {
       if (current.length > 0) {
-        lines.push(current);
-        current = "";
+        lines.push(current)
+        current = ""
       }
       if (ch === "\r" && i + 1 < input.length && input[i + 1] === "\n") {
-        i++;
+        i++
       }
-      continue;
+      continue
     }
-    current += ch;
+    current += ch
   }
   if (current.length > 0 && lines.length < n) {
-    lines.push(current);
+    lines.push(current)
   }
-  return lines;
+  return lines
 }
 
 /**
  * Count occurrences of `delimiter` outside of quoted fields in a single line.
  */
 function countUnquoted(line: string, delimiter: string): number {
-  let count = 0;
-  let inQuoted = false;
+  let count = 0
+  let inQuoted = false
   for (let i = 0; i < line.length; i++) {
-    const ch = line[i]!;
+    const ch = line[i]!
     if (inQuoted) {
       if (ch === '"' && i + 1 < line.length && line[i + 1] === '"') {
-        i++;
-        continue;
+        i++
+        continue
       }
       if (ch === '"') {
-        inQuoted = false;
-        continue;
+        inQuoted = false
+        continue
       }
-      continue;
+      continue
     }
     if (ch === '"') {
-      inQuoted = true;
-      continue;
+      inQuoted = true
+      continue
     }
     if (startsWith(line, delimiter, i)) {
-      count++;
-      i += delimiter.length - 1;
+      count++
+      i += delimiter.length - 1
     }
   }
-  return count;
+  return count
 }
 
 function startsWith(str: string, prefix: string, offset: number): boolean {
-  if (offset + prefix.length > str.length) return false;
+  if (offset + prefix.length > str.length) return false
   for (let i = 0; i < prefix.length; i++) {
-    if (str[offset + i] !== prefix[i]) return false;
+    if (str[offset + i] !== prefix[i]) return false
   }
-  return true;
+  return true
 }

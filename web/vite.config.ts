@@ -1,6 +1,6 @@
-import { resolve } from "node:path";
-import { defineConfig } from "vite";
-import { nitro } from "nitro/vite";
+import { resolve } from "node:path"
+import { defineConfig } from "vite"
+import { nitro } from "nitro/vite"
 
 export default defineConfig({
   plugins: [nitro()],
@@ -12,4 +12,4 @@ export default defineConfig({
       "hucre/ods": resolve(__dirname, "../src/ods.ts"),
     },
   },
-});
+})

@@ -12,112 +12,112 @@ import type {
   CellStyle,
   MergeRange,
   Hyperlink,
-} from "../_types";
-import { ParseError, ZipError } from "../errors";
-import { assertNotEncrypted, readInputToUint8Array } from "../_input";
-import { ZipReader } from "../zip/reader";
-import { parseXml } from "../xml/parser";
-import type { XmlElement } from "../xml/parser";
+} from "../_types"
+import { ParseError, ZipError } from "../errors"
+import { assertNotEncrypted, readInputToUint8Array } from "../_input"
+import { ZipReader } from "../zip/reader"
+import { parseXml } from "../xml/parser"
+import type { XmlElement } from "../xml/parser"
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
 function decodeUtf8(data: Uint8Array): string {
-  return new TextDecoder("utf-8").decode(data);
+  return new TextDecoder("utf-8").decode(data)
 }
 
 function findChild(el: XmlElement, localName: string): XmlElement | undefined {
   for (const child of el.children) {
-    if (typeof child === "string") continue;
-    const local = child.local || child.tag;
-    if (local === localName) return child;
+    if (typeof child === "string") continue
+    const local = child.local || child.tag
+    if (local === localName) return child
   }
-  return undefined;
+  return undefined
 }
 
 function findChildren(el: XmlElement, localName: string): XmlElement[] {
-  const result: XmlElement[] = [];
+  const result: XmlElement[] = []
   for (const child of el.children) {
-    if (typeof child === "string") continue;
-    const local = child.local || child.tag;
-    if (local === localName) result.push(child);
+    if (typeof child === "string") continue
+    const local = child.local || child.tag
+    if (local === localName) result.push(child)
   }
-  return result;
+  return result
 }
 
 // ── Style Parsing ───────────────────────────────────────────────────
 
 interface OdsStyleDef {
-  bold?: boolean;
-  italic?: boolean;
-  fontSize?: number;
-  fontColor?: string; // hex with '#' prefix
-  backgroundColor?: string; // hex with '#' prefix
+  bold?: boolean
+  italic?: boolean
+  fontSize?: number
+  fontColor?: string // hex with '#' prefix
+  backgroundColor?: string // hex with '#' prefix
   /** Excel-style number format reconstructed from a data style */
-  numFmt?: string;
+  numFmt?: string
 }
 
 function parseStyles(doc: XmlElement): Map<string, OdsStyleDef> {
-  const styles = new Map<string, OdsStyleDef>();
+  const styles = new Map<string, OdsStyleDef>()
 
   // Styles live in <office:automatic-styles>
-  const autoStyles = findChild(doc, "automatic-styles");
-  if (!autoStyles) return styles;
+  const autoStyles = findChild(doc, "automatic-styles")
+  if (!autoStyles) return styles
 
   // First pass — collect data-style definitions (`<number:*-style>`) so we
   // can resolve `style:data-style-name` references in the second pass.
-  const dataStyleMap = parseDataStyles(autoStyles);
+  const dataStyleMap = parseDataStyles(autoStyles)
 
-  const styleElements = findChildren(autoStyles, "style");
+  const styleElements = findChildren(autoStyles, "style")
   for (const styleEl of styleElements) {
-    const family = styleEl.attrs["style:family"];
-    if (family !== "table-cell") continue;
+    const family = styleEl.attrs["style:family"]
+    if (family !== "table-cell") continue
 
-    const name = styleEl.attrs["style:name"];
-    if (!name) continue;
+    const name = styleEl.attrs["style:name"]
+    if (!name) continue
 
-    const def: OdsStyleDef = {};
+    const def: OdsStyleDef = {}
 
     // Parse text properties
-    const textProps = findChild(styleEl, "text-properties");
+    const textProps = findChild(styleEl, "text-properties")
     if (textProps) {
       if (textProps.attrs["fo:font-weight"] === "bold") {
-        def.bold = true;
+        def.bold = true
       }
       if (textProps.attrs["fo:font-style"] === "italic") {
-        def.italic = true;
+        def.italic = true
       }
-      const fontSize = textProps.attrs["fo:font-size"];
+      const fontSize = textProps.attrs["fo:font-size"]
       if (fontSize) {
         // Parse "12pt" → 12
-        const match = fontSize.match(/^(\d+(?:\.\d+)?)/);
-        if (match) def.fontSize = parseFloat(match[1]);
+        const match = fontSize.match(/^(\d+(?:\.\d+)?)/)
+        if (match) def.fontSize = parseFloat(match[1])
       }
-      const color = textProps.attrs["fo:color"];
+      const color = textProps.attrs["fo:color"]
       if (color) {
-        def.fontColor = color;
+        def.fontColor = color
       }
     }
 
     // Parse cell properties (background)
-    const cellProps = findChild(styleEl, "table-cell-properties");
+    const cellProps = findChild(styleEl, "table-cell-properties")
     if (cellProps) {
-      const bgColor = cellProps.attrs["fo:background-color"];
+      const bgColor = cellProps.attrs["fo:background-color"]
       if (bgColor && bgColor !== "transparent") {
-        def.backgroundColor = bgColor;
+        def.backgroundColor = bgColor
       }
     }
 
     // Resolve `style:data-style-name` to an Excel-style format code
-    const dataStyleRef = styleEl.attrs["style:data-style-name"];
+    const dataStyleRef = styleEl.attrs["style:data-style-name"]
     if (dataStyleRef) {
-      const numFmt = dataStyleMap.get(dataStyleRef);
-      if (numFmt) def.numFmt = numFmt;
+      const numFmt = dataStyleMap.get(dataStyleRef)
+      if (numFmt) def.numFmt = numFmt
     }
 
-    styles.set(name, def);
+    styles.set(name, def)
   }
 
-  return styles;
+  return styles
 }
 
 // ── Data-style (number format) parsing ──────────────────────────────
@@ -128,31 +128,31 @@ function parseStyles(doc: XmlElement): Map<string, OdsStyleDef> {
  * `<number:currency-style>` elements into Excel-compatible format codes.
  */
 function parseDataStyles(autoStyles: XmlElement): Map<string, string> {
-  const out = new Map<string, string>();
+  const out = new Map<string, string>()
 
   for (const child of autoStyles.children) {
-    if (typeof child === "string") continue;
-    const local = child.local || child.tag;
-    const name = child.attrs["style:name"];
-    if (!name) continue;
+    if (typeof child === "string") continue
+    const local = child.local || child.tag
+    const name = child.attrs["style:name"]
+    if (!name) continue
 
-    let code: string | undefined;
+    let code: string | undefined
     if (local === "number-style") {
-      code = serializeDataStyleChildren(child, "number");
+      code = serializeDataStyleChildren(child, "number")
     } else if (local === "percentage-style") {
-      code = serializeDataStyleChildren(child, "percentage");
+      code = serializeDataStyleChildren(child, "percentage")
     } else if (local === "currency-style") {
-      code = serializeDataStyleChildren(child, "currency");
+      code = serializeDataStyleChildren(child, "currency")
     } else if (local === "date-style") {
-      code = serializeDataStyleChildren(child, "date");
+      code = serializeDataStyleChildren(child, "date")
     } else if (local === "time-style") {
-      const truncate = child.attrs["number:truncate-on-overflow"];
-      code = serializeDataStyleChildren(child, "time", truncate === "false");
+      const truncate = child.attrs["number:truncate-on-overflow"]
+      code = serializeDataStyleChildren(child, "time", truncate === "false")
     }
-    if (code) out.set(name, code);
+    if (code) out.set(name, code)
   }
 
-  return out;
+  return out
 }
 
 function serializeDataStyleChildren(
@@ -160,141 +160,141 @@ function serializeDataStyleChildren(
   kind: "number" | "percentage" | "currency" | "date" | "time",
   bracketDuration = false,
 ): string {
-  let out = "";
+  let out = ""
   for (const child of el.children) {
-    if (typeof child === "string") continue;
-    const local = child.local || child.tag;
+    if (typeof child === "string") continue
+    const local = child.local || child.tag
     if (local === "number") {
-      const decimals = parseInt(child.attrs["number:decimal-places"] ?? "0", 10);
-      const grouping = child.attrs["number:grouping"] === "true";
-      const integerPart = grouping ? "#,##0" : "0";
-      out += decimals > 0 ? `${integerPart}.${"0".repeat(decimals)}` : integerPart;
+      const decimals = parseInt(child.attrs["number:decimal-places"] ?? "0", 10)
+      const grouping = child.attrs["number:grouping"] === "true"
+      const integerPart = grouping ? "#,##0" : "0"
+      out += decimals > 0 ? `${integerPart}.${"0".repeat(decimals)}` : integerPart
     } else if (local === "currency-symbol") {
-      const text = child.children.filter((c: unknown) => typeof c === "string").join("");
-      out += `"${text}"`;
+      const text = child.children.filter((c: unknown) => typeof c === "string").join("")
+      out += `"${text}"`
     } else if (local === "text") {
-      const text = child.children.filter((c: unknown) => typeof c === "string").join("");
+      const text = child.children.filter((c: unknown) => typeof c === "string").join("")
       // Single-character separators stay bare; longer literals get quoted.
       if (text.length === 1 && /[\s\-/:.,()%]/.test(text)) {
-        out += text;
+        out += text
       } else {
-        out += `"${text}"`;
+        out += `"${text}"`
       }
     } else if (local === "year") {
-      out += child.attrs["number:style"] === "long" ? "yyyy" : "yy";
+      out += child.attrs["number:style"] === "long" ? "yyyy" : "yy"
     } else if (local === "month") {
-      const long = child.attrs["number:style"] === "long";
-      const textual = child.attrs["number:textual"] === "true";
-      out += textual ? (long ? "mmmm" : "mmm") : long ? "mm" : "m";
+      const long = child.attrs["number:style"] === "long"
+      const textual = child.attrs["number:textual"] === "true"
+      out += textual ? (long ? "mmmm" : "mmm") : long ? "mm" : "m"
     } else if (local === "day") {
-      out += child.attrs["number:style"] === "long" ? "dd" : "d";
+      out += child.attrs["number:style"] === "long" ? "dd" : "d"
     } else if (local === "day-of-week") {
-      out += child.attrs["number:style"] === "long" ? "dddd" : "ddd";
+      out += child.attrs["number:style"] === "long" ? "dddd" : "ddd"
     } else if (local === "hours") {
-      const tok = child.attrs["number:style"] === "long" ? "hh" : "h";
-      out += bracketDuration && !out.includes("[") ? `[${tok}]` : tok;
+      const tok = child.attrs["number:style"] === "long" ? "hh" : "h"
+      out += bracketDuration && !out.includes("[") ? `[${tok}]` : tok
     } else if (local === "minutes") {
-      out += child.attrs["number:style"] === "long" ? "mm" : "m";
+      out += child.attrs["number:style"] === "long" ? "mm" : "m"
     } else if (local === "seconds") {
-      out += child.attrs["number:style"] === "long" ? "ss" : "s";
+      out += child.attrs["number:style"] === "long" ? "ss" : "s"
     } else if (local === "am-pm") {
-      out += "AM/PM";
+      out += "AM/PM"
     }
   }
-  if (kind === "percentage" && !out.endsWith("%")) out += "%";
+  if (kind === "percentage" && !out.endsWith("%")) out += "%"
   // ODS time elements may emit elapsed-hour brackets via the writer; if the
   // reader detects truncate-on-overflow=false, surface the bracket form.
-  return out;
+  return out
 }
 
 /** Convert a parsed ODS style def into a CellStyle */
 function odsStyleToCellStyle(def: OdsStyleDef): CellStyle {
-  const style: CellStyle = {};
+  const style: CellStyle = {}
 
   if (def.bold || def.italic || def.fontSize || def.fontColor) {
-    style.font = {};
-    if (def.bold) style.font.bold = true;
-    if (def.italic) style.font.italic = true;
-    if (def.fontSize) style.font.size = def.fontSize;
+    style.font = {}
+    if (def.bold) style.font.bold = true
+    if (def.italic) style.font.italic = true
+    if (def.fontSize) style.font.size = def.fontSize
     if (def.fontColor) {
       // Strip '#' prefix for the rgb field
-      const hex = def.fontColor.startsWith("#") ? def.fontColor.slice(1) : def.fontColor;
-      style.font.color = { rgb: hex.toUpperCase() };
+      const hex = def.fontColor.startsWith("#") ? def.fontColor.slice(1) : def.fontColor
+      style.font.color = { rgb: hex.toUpperCase() }
     }
   }
 
   if (def.backgroundColor) {
     const hex = def.backgroundColor.startsWith("#")
       ? def.backgroundColor.slice(1)
-      : def.backgroundColor;
+      : def.backgroundColor
     style.fill = {
       type: "pattern",
       pattern: "solid",
       fgColor: { rgb: hex.toUpperCase() },
-    };
+    }
   }
 
   if (def.numFmt) {
-    style.numFmt = def.numFmt;
+    style.numFmt = def.numFmt
   }
 
-  return style;
+  return style
 }
 
 // ── Hyperlink Parsing ───────────────────────────────────────────────
 
 /** Extract text and hyperlink from a cell's children */
 function extractTextAndHyperlink(cell: XmlElement): { text: string; hyperlink?: Hyperlink } {
-  const textP = findChild(cell, "p");
-  if (!textP) return { text: "" };
+  const textP = findChild(cell, "p")
+  if (!textP) return { text: "" }
 
   // Look for <text:a> elements inside <text:p>
   for (const child of textP.children) {
-    if (typeof child === "string") continue;
-    const local = child.local || child.tag;
+    if (typeof child === "string") continue
+    const local = child.local || child.tag
     if (local === "a") {
-      const href = child.attrs["xlink:href"];
-      const text = child.children.filter((c: unknown) => typeof c === "string").join("");
+      const href = child.attrs["xlink:href"]
+      const text = child.children.filter((c: unknown) => typeof c === "string").join("")
       if (href) {
         return {
           text,
           hyperlink: { target: href, display: text },
-        };
+        }
       }
     }
   }
 
   // No hyperlink — collect all text content (including from nested elements)
-  const text = collectText(textP);
-  return { text };
+  const text = collectText(textP)
+  return { text }
 }
 
 /** Recursively collect text from an element and its children,
  *  handling ODS special elements: text:span, text:s, text:line-break, text:tab */
 function collectText(el: XmlElement): string {
-  let text = "";
+  let text = ""
   for (const child of el.children) {
     if (typeof child === "string") {
-      text += child;
+      text += child
     } else {
-      const local = child.local || child.tag;
+      const local = child.local || child.tag
       if (local === "s") {
         // <text:s/> or <text:s text:c="N"/> — space characters
-        const count = Number(child.attrs["text:c"] ?? "1");
-        text += " ".repeat(count > 0 ? count : 1);
+        const count = Number(child.attrs["text:c"] ?? "1")
+        text += " ".repeat(count > 0 ? count : 1)
       } else if (local === "line-break") {
         // <text:line-break/> — newline
-        text += "\n";
+        text += "\n"
       } else if (local === "tab") {
         // <text:tab/> — tab character
-        text += "\t";
+        text += "\t"
       } else {
         // <text:span> and any other element — recurse into children
-        text += collectText(child);
+        text += collectText(child)
       }
     }
   }
-  return text;
+  return text
 }
 
 // ── Formula Parsing ─────────────────────────────────────────────────
@@ -305,74 +305,74 @@ function collectText(el: XmlElement): string {
  */
 function odsFormulaToExcel(formula: string): string {
   // Strip "of:=" or "oooc:=" prefix
-  let f = formula;
-  if (f.startsWith("of:=")) f = f.slice(4);
-  else if (f.startsWith("oooc:=")) f = f.slice(6);
-  else if (f.startsWith("=")) f = f.slice(1);
+  let f = formula
+  if (f.startsWith("of:=")) f = f.slice(4)
+  else if (f.startsWith("oooc:=")) f = f.slice(6)
+  else if (f.startsWith("=")) f = f.slice(1)
 
   // Convert [.A1:.B2] → A1:B2 and [.A1] → A1
   f = f.replace(/\[\.([^\]:.]+)(?::\.([^\]]+))?\]/g, (_match, ref1: string, ref2?: string) => {
-    if (ref2) return `${ref1}:${ref2}`;
-    return ref1;
-  });
+    if (ref2) return `${ref1}:${ref2}`
+    return ref1
+  })
 
-  return f;
+  return f
 }
 
 // ── Cell Value Parsing ──────────────────────────────────────────────
 
 function parseCellValue(cell: XmlElement): CellValue {
-  const valueType = cell.attrs["office:value-type"] ?? cell.attrs["calcext:value-type"] ?? "";
+  const valueType = cell.attrs["office:value-type"] ?? cell.attrs["calcext:value-type"] ?? ""
 
   switch (valueType) {
     case "string": {
       // Get text from <text:p> children, including from nested <text:a> elements
-      const { text } = extractTextAndHyperlink(cell);
-      if (text) return text;
+      const { text } = extractTextAndHyperlink(cell)
+      if (text) return text
       // Check office:string-value attribute
-      const strVal = cell.attrs["office:string-value"];
-      if (strVal !== undefined) return strVal;
-      return "";
+      const strVal = cell.attrs["office:string-value"]
+      if (strVal !== undefined) return strVal
+      return ""
     }
 
     case "float":
     case "currency":
     case "percentage": {
-      const val = cell.attrs["office:value"];
-      if (val !== undefined) return Number(val);
-      return null;
+      const val = cell.attrs["office:value"]
+      if (val !== undefined) return Number(val)
+      return null
     }
 
     case "boolean": {
-      const boolVal = cell.attrs["office:boolean-value"];
-      if (boolVal === "true") return true;
-      if (boolVal === "false") return false;
-      return null;
+      const boolVal = cell.attrs["office:boolean-value"]
+      if (boolVal === "true") return true
+      if (boolVal === "false") return false
+      return null
     }
 
     case "date": {
-      const dateVal = cell.attrs["office:date-value"];
+      const dateVal = cell.attrs["office:date-value"]
       if (dateVal) {
-        const d = new Date(dateVal);
-        if (!Number.isNaN(d.getTime())) return d;
+        const d = new Date(dateVal)
+        if (!Number.isNaN(d.getTime())) return d
       }
-      return null;
+      return null
     }
 
     case "time": {
       // ODS time values are ISO 8601 durations like PT12H30M
-      const timeVal = cell.attrs["office:time-value"];
+      const timeVal = cell.attrs["office:time-value"]
       if (timeVal) {
-        return timeVal;
+        return timeVal
       }
-      return null;
+      return null
     }
 
     default: {
       // No explicit type — try to extract text
-      const { text } = extractTextAndHyperlink(cell);
-      if (text) return text;
-      return null;
+      const { text } = extractTextAndHyperlink(cell)
+      if (text) return text
+      return null
     }
   }
 }
@@ -380,84 +380,84 @@ function parseCellValue(cell: XmlElement): CellValue {
 // ── Content XML Parsing ─────────────────────────────────────────────
 
 function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
-  const doc = parseXml(xml);
-  const sheets: Sheet[] = [];
+  const doc = parseXml(xml)
+  const sheets: Sheet[] = []
 
   // Parse styles for use when readStyles is enabled
-  const readStyles = options?.readStyles ?? false;
-  const styleDefs = readStyles ? parseStyles(doc) : new Map<string, OdsStyleDef>();
+  const readStyles = options?.readStyles ?? false
+  const styleDefs = readStyles ? parseStyles(doc) : new Map<string, OdsStyleDef>()
 
   // Navigate: document-content > body > spreadsheet > table
-  const body = findChild(doc, "body");
-  if (!body) return sheets;
+  const body = findChild(doc, "body")
+  if (!body) return sheets
 
-  const spreadsheet = findChild(body, "spreadsheet");
-  if (!spreadsheet) return sheets;
+  const spreadsheet = findChild(body, "spreadsheet")
+  if (!spreadsheet) return sheets
 
-  const tables = findChildren(spreadsheet, "table");
+  const tables = findChildren(spreadsheet, "table")
 
   for (const table of tables) {
-    const name = table.attrs["table:name"] ?? `Sheet${sheets.length + 1}`;
+    const name = table.attrs["table:name"] ?? `Sheet${sheets.length + 1}`
 
     // Filter sheets if specified
     if (options?.sheets !== undefined) {
-      const filter = options.sheets;
-      const idx = sheets.length;
-      let shouldRead: boolean;
+      const filter = options.sheets
+      const idx = sheets.length
+      let shouldRead: boolean
       if (typeof filter === "function") {
         // ODS does not expose visibility state in the table directory.
-        shouldRead = filter({ name, index: idx }, idx);
+        shouldRead = filter({ name, index: idx }, idx)
       } else if (filter.length === 0) {
-        shouldRead = true;
+        shouldRead = true
       } else {
         shouldRead = filter.some((spec) => {
-          if (typeof spec === "string") return spec === name;
-          if (typeof spec === "number") return spec === idx;
-          return false;
-        });
+          if (typeof spec === "string") return spec === name
+          if (typeof spec === "number") return spec === idx
+          return false
+        })
       }
       if (!shouldRead) {
-        sheets.push({ name, rows: [] }); // placeholder to maintain index
-        continue;
+        sheets.push({ name, rows: [] }) // placeholder to maintain index
+        continue
       }
     }
 
-    const rows: CellValue[][] = [];
-    const merges: MergeRange[] = [];
-    const cells = new Map<string, Cell>();
-    const tableRows = findChildren(table, "table-row");
+    const rows: CellValue[][] = []
+    const merges: MergeRange[] = []
+    const cells = new Map<string, Cell>()
+    const tableRows = findChildren(table, "table-row")
 
-    let currentRow = 0;
+    let currentRow = 0
 
     for (const tableRow of tableRows) {
-      const rowRepeat = Number(tableRow.attrs["table:number-rows-repeated"] ?? "1");
+      const rowRepeat = Number(tableRow.attrs["table:number-rows-repeated"] ?? "1")
 
       // Collect cell entries with their repeat counts first,
       // so we can trim trailing nulls before expanding
       const cellEntries: Array<{
-        value: CellValue;
-        repeat: number;
-        colSpan: number;
-        rowSpan: number;
-        isCovered: boolean;
-        styleName?: string;
-        formula?: string;
-        hyperlink?: Hyperlink;
-      }> = [];
+        value: CellValue
+        repeat: number
+        colSpan: number
+        rowSpan: number
+        isCovered: boolean
+        styleName?: string
+        formula?: string
+        hyperlink?: Hyperlink
+      }> = []
 
       for (const child of tableRow.children) {
-        if (typeof child === "string") continue;
-        const local = child.local || child.tag;
+        if (typeof child === "string") continue
+        const local = child.local || child.tag
 
         if (local === "table-cell") {
-          const colRepeat = Number(child.attrs["table:number-columns-repeated"] ?? "1");
-          const colSpan = Number(child.attrs["table:number-columns-spanned"] ?? "1");
-          const rowSpan = Number(child.attrs["table:number-rows-spanned"] ?? "1");
-          const value = parseCellValue(child);
-          const styleName = child.attrs["table:style-name"];
-          const formulaAttr = child.attrs["table:formula"];
-          const formula = formulaAttr ? odsFormulaToExcel(formulaAttr) : undefined;
-          const { hyperlink } = extractTextAndHyperlink(child);
+          const colRepeat = Number(child.attrs["table:number-columns-repeated"] ?? "1")
+          const colSpan = Number(child.attrs["table:number-columns-spanned"] ?? "1")
+          const rowSpan = Number(child.attrs["table:number-rows-spanned"] ?? "1")
+          const value = parseCellValue(child)
+          const styleName = child.attrs["table:style-name"]
+          const formulaAttr = child.attrs["table:formula"]
+          const formula = formulaAttr ? odsFormulaToExcel(formulaAttr) : undefined
+          const { hyperlink } = extractTextAndHyperlink(child)
           cellEntries.push({
             value,
             repeat: colRepeat,
@@ -467,16 +467,16 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
             styleName,
             formula,
             hyperlink,
-          });
+          })
         } else if (local === "covered-table-cell") {
-          const colRepeat = Number(child.attrs["table:number-columns-repeated"] ?? "1");
+          const colRepeat = Number(child.attrs["table:number-columns-repeated"] ?? "1")
           cellEntries.push({
             value: null,
             repeat: colRepeat,
             colSpan: 1,
             rowSpan: 1,
             isCovered: true,
-          });
+          })
         }
       }
 
@@ -490,16 +490,16 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
         !cellEntries[cellEntries.length - 1].formula &&
         !cellEntries[cellEntries.length - 1].hyperlink
       ) {
-        cellEntries.pop();
+        cellEntries.pop()
       }
 
       // Expand into row data and collect metadata
-      const rowData: CellValue[] = [];
-      let col = 0;
+      const rowData: CellValue[] = []
+      let col = 0
 
       for (const entry of cellEntries) {
         for (let r = 0; r < entry.repeat; r++) {
-          rowData.push(entry.value);
+          rowData.push(entry.value)
 
           // Collect merge ranges
           if (entry.colSpan > 1 || entry.rowSpan > 1) {
@@ -508,14 +508,14 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
               startCol: col,
               endRow: currentRow + entry.rowSpan - 1,
               endCol: col + entry.colSpan - 1,
-            });
+            })
           }
 
           // Collect cell metadata (formulas, hyperlinks, styles)
           const hasMetadata =
             entry.formula ||
             entry.hyperlink ||
-            (readStyles && entry.styleName && styleDefs.has(entry.styleName));
+            (readStyles && entry.styleName && styleDefs.has(entry.styleName))
 
           if (hasMetadata) {
             const cellData: Cell = {
@@ -532,135 +532,135 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
                         : entry.value instanceof Date
                           ? "date"
                           : "empty",
-            };
+            }
 
             if (entry.formula) {
-              cellData.formula = entry.formula;
-              cellData.type = "formula";
+              cellData.formula = entry.formula
+              cellData.type = "formula"
             }
             if (entry.hyperlink) {
-              cellData.hyperlink = entry.hyperlink;
+              cellData.hyperlink = entry.hyperlink
             }
             if (readStyles && entry.styleName) {
-              const styleDef = styleDefs.get(entry.styleName);
+              const styleDef = styleDefs.get(entry.styleName)
               if (styleDef) {
-                cellData.style = odsStyleToCellStyle(styleDef);
+                cellData.style = odsStyleToCellStyle(styleDef)
               }
             }
 
-            cells.set(`${currentRow},${col}`, cellData);
+            cells.set(`${currentRow},${col}`, cellData)
           }
 
-          col++;
+          col++
         }
       }
 
       // Cap row repeats for empty rows to avoid memory issues
       // (LibreOffice may emit large row repeats for trailing empty rows)
-      const effectiveRowRepeat = rowData.length > 0 ? rowRepeat : 0;
+      const effectiveRowRepeat = rowData.length > 0 ? rowRepeat : 0
 
       for (let r = 0; r < effectiveRowRepeat; r++) {
-        rows.push(effectiveRowRepeat === 1 && r === 0 ? rowData : [...rowData]);
+        rows.push(effectiveRowRepeat === 1 && r === 0 ? rowData : [...rowData])
         if (r > 0 && merges.length > 0) {
           // For repeated rows with merges, we'd need to duplicate merge info
           // but this is an edge case; repeated rows with merges are uncommon
         }
-        currentRow++;
+        currentRow++
       }
 
       if (effectiveRowRepeat === 0) {
         // Still advance row counter for empty repeated rows
-        currentRow += rowRepeat;
+        currentRow += rowRepeat
       }
     }
 
     // Trim trailing empty rows
     while (rows.length > 0 && rows[rows.length - 1].length === 0) {
-      rows.pop();
+      rows.pop()
     }
 
-    const sheet: Sheet = { name, rows };
+    const sheet: Sheet = { name, rows }
 
     if (merges.length > 0) {
-      sheet.merges = merges;
+      sheet.merges = merges
     }
 
     if (cells.size > 0) {
-      sheet.cells = cells;
+      sheet.cells = cells
     }
 
-    sheets.push(sheet);
+    sheets.push(sheet)
   }
 
   // If filter was applied, remove placeholder sheets with empty rows
   if (options?.sheets !== undefined) {
-    const filter = options.sheets;
+    const filter = options.sheets
     return sheets.filter((s, idx) => {
       if (s.rows.length > 0 || s.merges !== undefined || s.cells !== undefined) {
-        return true;
+        return true
       }
       // Empty sheets that were genuinely selected by the filter must be kept.
       if (typeof filter === "function") {
-        return filter({ name: s.name, index: idx }, idx);
+        return filter({ name: s.name, index: idx }, idx)
       }
-      if (filter.length === 0) return true;
+      if (filter.length === 0) return true
       return filter.some((spec) => {
-        if (typeof spec === "string") return spec === s.name;
-        return false;
-      });
-    });
+        if (typeof spec === "string") return spec === s.name
+        return false
+      })
+    })
   }
 
-  return sheets;
+  return sheets
 }
 
 // ── Meta XML Parsing ────────────────────────────────────────────────
 
 function parseMetaXml(xml: string): Partial<WorkbookProperties> {
-  const doc = parseXml(xml);
-  const props: Partial<WorkbookProperties> = {};
+  const doc = parseXml(xml)
+  const props: Partial<WorkbookProperties> = {}
 
   // Navigate to office:meta element
-  const meta = findChild(doc, "meta");
-  if (!meta) return props;
+  const meta = findChild(doc, "meta")
+  if (!meta) return props
 
   for (const child of meta.children) {
-    if (typeof child === "string") continue;
-    const local = child.local || child.tag;
-    const text = child.children.filter((c: unknown) => typeof c === "string").join("");
+    if (typeof child === "string") continue
+    const local = child.local || child.tag
+    const text = child.children.filter((c: unknown) => typeof c === "string").join("")
 
     switch (local) {
       case "title":
-        if (text) props.title = text;
-        break;
+        if (text) props.title = text
+        break
       case "subject":
-        if (text) props.subject = text;
-        break;
+        if (text) props.subject = text
+        break
       case "initial-creator":
-        if (text) props.creator = text;
-        break;
+        if (text) props.creator = text
+        break
       case "description":
-        if (text) props.description = text;
-        break;
+        if (text) props.description = text
+        break
       case "keyword":
-        if (text) props.keywords = text;
-        break;
+        if (text) props.keywords = text
+        break
       case "creation-date":
         if (text) {
-          const d = new Date(text);
-          if (!Number.isNaN(d.getTime())) props.created = d;
+          const d = new Date(text)
+          if (!Number.isNaN(d.getTime())) props.created = d
         }
-        break;
+        break
       case "date":
         if (text) {
-          const d = new Date(text);
-          if (!Number.isNaN(d.getTime())) props.modified = d;
+          const d = new Date(text)
+          if (!Number.isNaN(d.getTime())) props.modified = d
         }
-        break;
+        break
     }
   }
 
-  return props;
+  return props
 }
 
 // ── Main Reader ─────────────────────────────────────────────────────
@@ -673,64 +673,64 @@ function parseMetaXml(xml: string): Partial<WorkbookProperties> {
  * because the ZIP central directory lives at the end of the archive.
  */
 export async function readOds(input: ReadInput, options?: ReadOptions): Promise<Workbook> {
-  const data = await readInputToUint8Array(input);
+  const data = await readInputToUint8Array(input)
 
   // ODF supports password-encrypted documents via the same OLE2 / CFB
   // envelope Office uses for XLSX. Catch it before the ZIP reader does
   // so callers see a typed `EncryptedFileError` rather than a generic
   // ZIP ParseError. Decryption is tracked in #156.
-  assertNotEncrypted(data, "ods");
+  assertNotEncrypted(data, "ods")
 
   // 1. Open ZIP archive
-  let zip: ZipReader;
+  let zip: ZipReader
   try {
-    zip = new ZipReader(data);
+    zip = new ZipReader(data)
   } catch (err) {
-    if (err instanceof ZipError) throw err;
+    if (err instanceof ZipError) throw err
     throw new ParseError("Failed to open ODS file: not a valid ZIP archive", undefined, {
       cause: err,
-    });
+    })
   }
 
   // 2. Verify mimetype — ODF spec requires it as the first ZIP entry
   if (!zip.has("mimetype")) {
     throw new ParseError(
       "Invalid ODS: missing 'mimetype' entry. The file may not be a valid OpenDocument Spreadsheet.",
-    );
+    )
   }
-  const mimeData = await zip.extract("mimetype");
-  const mime = decodeUtf8(mimeData).trim();
+  const mimeData = await zip.extract("mimetype")
+  const mime = decodeUtf8(mimeData).trim()
   if (!mime.startsWith("application/vnd.oasis.opendocument")) {
     throw new ParseError(
       `Invalid ODS mimetype: "${mime}". Expected an OpenDocument type starting with "application/vnd.oasis.opendocument".`,
-    );
+    )
   }
 
   // 3. Parse content.xml (required)
   if (!zip.has("content.xml")) {
-    throw new ParseError("Invalid ODS: missing content.xml");
+    throw new ParseError("Invalid ODS: missing content.xml")
   }
-  const contentXml = decodeUtf8(await zip.extract("content.xml"));
-  const sheets = parseContentXml(contentXml, options);
+  const contentXml = decodeUtf8(await zip.extract("content.xml"))
+  const sheets = parseContentXml(contentXml, options)
 
   // 4. Parse meta.xml (optional)
-  let properties: WorkbookProperties | undefined;
+  let properties: WorkbookProperties | undefined
   if (zip.has("meta.xml")) {
-    const metaXml = decodeUtf8(await zip.extract("meta.xml"));
-    const metaProps = parseMetaXml(metaXml);
+    const metaXml = decodeUtf8(await zip.extract("meta.xml"))
+    const metaProps = parseMetaXml(metaXml)
     if (Object.keys(metaProps).length > 0) {
-      properties = { ...metaProps };
+      properties = { ...metaProps }
     }
   }
 
   // 5. Build workbook
   const workbook: Workbook = {
     sheets,
-  };
-
-  if (properties) {
-    workbook.properties = properties;
   }
 
-  return workbook;
+  if (properties) {
+    workbook.properties = properties
+  }
+
+  return workbook
 }

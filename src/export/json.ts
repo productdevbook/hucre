@@ -1,12 +1,12 @@
-import type { Sheet, CellValue } from "../_types";
+import type { Sheet, CellValue } from "../_types"
 
 export interface JsonExportOptions {
   /** Which row is headers (0-based). Default: 0 */
-  headerRow?: number;
+  headerRow?: number
   /** Output format. Default: "objects" */
-  format?: "objects" | "arrays" | "columns";
+  format?: "objects" | "arrays" | "columns"
   /** Pretty print. Default: false */
-  pretty?: boolean;
+  pretty?: boolean
 }
 
 /**
@@ -14,9 +14,9 @@ export interface JsonExportOptions {
  */
 function dateReplacer(_key: string, value: unknown): unknown {
   if (value instanceof Date) {
-    return value.toISOString();
+    return value.toISOString()
   }
-  return value;
+  return value
 }
 
 /**
@@ -28,75 +28,75 @@ function dateReplacer(_key: string, value: unknown): unknown {
  * - `"columns"`: `{Name:["Widget","Gadget"], Price:[9.99,24.5]}` (columnar)
  */
 export function toJson(sheet: Sheet, options?: JsonExportOptions): string {
-  const headerRowIdx = options?.headerRow ?? 0;
-  const format = options?.format ?? "objects";
-  const pretty = options?.pretty ?? false;
-  const indent = pretty ? 2 : undefined;
+  const headerRowIdx = options?.headerRow ?? 0
+  const format = options?.format ?? "objects"
+  const pretty = options?.pretty ?? false
+  const indent = pretty ? 2 : undefined
 
-  const rows = sheet.rows;
+  const rows = sheet.rows
 
   if (rows.length === 0) {
     if (format === "arrays") {
-      return JSON.stringify({ headers: [], data: [] }, dateReplacer, indent);
+      return JSON.stringify({ headers: [], data: [] }, dateReplacer, indent)
     }
     if (format === "columns") {
-      return JSON.stringify({}, dateReplacer, indent);
+      return JSON.stringify({}, dateReplacer, indent)
     }
-    return JSON.stringify([], dateReplacer, indent);
+    return JSON.stringify([], dateReplacer, indent)
   }
 
   // Extract headers
-  const rawHeaders = rows[headerRowIdx];
+  const rawHeaders = rows[headerRowIdx]
   if (!rawHeaders) {
     if (format === "arrays") {
-      return JSON.stringify({ headers: [], data: [] }, dateReplacer, indent);
+      return JSON.stringify({ headers: [], data: [] }, dateReplacer, indent)
     }
     if (format === "columns") {
-      return JSON.stringify({}, dateReplacer, indent);
+      return JSON.stringify({}, dateReplacer, indent)
     }
-    return JSON.stringify([], dateReplacer, indent);
+    return JSON.stringify([], dateReplacer, indent)
   }
 
   const headers = rawHeaders.map((h) => {
-    if (h === null || h === undefined) return "";
-    return String(h).trim();
-  });
+    if (h === null || h === undefined) return ""
+    return String(h).trim()
+  })
 
   // Data rows (everything after the header row)
-  const dataRows = rows.slice(headerRowIdx + 1);
+  const dataRows = rows.slice(headerRowIdx + 1)
 
   if (format === "arrays") {
     const data: CellValue[][] = dataRows.map((row) => {
-      const result: CellValue[] = [];
+      const result: CellValue[] = []
       for (let j = 0; j < headers.length; j++) {
-        result.push(j < row.length ? (row[j] ?? null) : null);
+        result.push(j < row.length ? (row[j] ?? null) : null)
       }
-      return result;
-    });
-    return JSON.stringify({ headers, data }, dateReplacer, indent);
+      return result
+    })
+    return JSON.stringify({ headers, data }, dateReplacer, indent)
   }
 
   if (format === "columns") {
-    const columns: Record<string, CellValue[]> = {};
+    const columns: Record<string, CellValue[]> = {}
     for (const header of headers) {
-      columns[header] = [];
+      columns[header] = []
     }
     for (const row of dataRows) {
       for (let j = 0; j < headers.length; j++) {
-        columns[headers[j]!]!.push(j < row.length ? (row[j] ?? null) : null);
+        columns[headers[j]!]!.push(j < row.length ? (row[j] ?? null) : null)
       }
     }
-    return JSON.stringify(columns, dateReplacer, indent);
+    return JSON.stringify(columns, dateReplacer, indent)
   }
 
   // Default: "objects"
-  const objects: Record<string, CellValue>[] = [];
+  const objects: Record<string, CellValue>[] = []
   for (const row of dataRows) {
-    const obj: Record<string, CellValue> = {};
+    const obj: Record<string, CellValue> = {}
     for (let j = 0; j < headers.length; j++) {
-      obj[headers[j]!] = j < row.length ? (row[j] ?? null) : null;
+      obj[headers[j]!] = j < row.length ? (row[j] ?? null) : null
     }
-    objects.push(obj);
+    objects.push(obj)
   }
-  return JSON.stringify(objects, dateReplacer, indent);
+  return JSON.stringify(objects, dateReplacer, indent)
 }

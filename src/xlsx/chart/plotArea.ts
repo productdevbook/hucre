@@ -24,9 +24,9 @@ import type {
   ChartManualLayout,
   ChartScatterStyle,
   SheetChart,
-} from "../../_types";
-import type { XmlElement } from "../../xml/parser";
-import { xmlElement, xmlSelfClose } from "../../xml/writer";
+} from "../../_types"
+import type { XmlElement } from "../../xml/parser"
+import { xmlElement, xmlSelfClose } from "../../xml/writer"
 import {
   EMU_PER_PT,
   buildColorElement,
@@ -44,21 +44,15 @@ import {
   parseSpPrFill,
   resolveLineCap,
   resolveLineCompound,
-} from "./shape";
+} from "./shape"
 import {
   type ResolvedManualLayout,
   buildManualLayout,
   normalizeChartManualLayout,
   normalizeManualLayout,
   parseManualLayout,
-} from "./layout";
-import {
-  childElements,
-  findChild,
-  parseBoolAttr,
-  parseNumericChildVal,
-  readBoolAttr,
-} from "./util";
+} from "./layout"
+import { childElements, findChild, parseBoolAttr, parseNumericChildVal, readBoolAttr } from "./util"
 import {
   AXIS_ID_CAT,
   AXIS_ID_VAL,
@@ -97,11 +91,11 @@ import {
   normalizeTickMark,
   normalizeAxisCrosses,
   parseAxisInfo,
-} from "./axis";
-import { normalizeTitleColor } from "./title";
-import { buildDataTable, resolveDataTable } from "./dataTable";
-import { buildChartLevelDataLabels } from "./dataLabels";
-import { buildSeries } from "./series";
+} from "./axis"
+import { normalizeTitleColor } from "./title"
+import { buildDataTable, resolveDataTable } from "./dataTable"
+import { buildChartLevelDataLabels } from "./dataLabels"
+import { buildSeries } from "./series"
 
 // ── Plot-area-scope constants ─────────────────────────────────────
 
@@ -117,7 +111,7 @@ const VARY_COLORS_DEFAULT_TRUE: ReadonlySet<ChartKind> = new Set([
   "pie3D",
   "doughnut",
   "ofPie",
-]);
+])
 
 /**
  * Recognized values of `<c:scatterStyle>` per the OOXML
@@ -132,11 +126,11 @@ const VALID_SCATTER_STYLES: ReadonlySet<ChartScatterStyle> = new Set([
   "marker",
   "smooth",
   "smoothMarker",
-]);
+])
 
-const DOUGHNUT_HOLE_DEFAULT = 50;
-const DOUGHNUT_HOLE_MIN = 10;
-const DOUGHNUT_HOLE_MAX = 90;
+const DOUGHNUT_HOLE_DEFAULT = 50
+const DOUGHNUT_HOLE_MIN = 10
+const DOUGHNUT_HOLE_MAX = 90
 
 /**
  * Chart kinds that emit `<c:varyColors val="1"/>` by default at the
@@ -148,7 +142,7 @@ const DOUGHNUT_HOLE_MAX = 90;
 const VARY_COLORS_DEFAULT_TRUE_TYPES: ReadonlySet<import("../../_types").WriteChartKind> = new Set([
   "pie",
   "doughnut",
-]);
+])
 
 /**
  * Recognized values of `<c:scatterStyle>` per the OOXML
@@ -162,7 +156,7 @@ const SCATTER_STYLE_VALUES: ReadonlySet<ChartScatterStyle> = new Set([
   "marker",
   "smooth",
   "smoothMarker",
-]);
+])
 
 /**
  * Resolve `<c:plotArea><c:layout><c:manualLayout>...</c:manualLayout>
@@ -183,7 +177,7 @@ const SCATTER_STYLE_VALUES: ReadonlySet<ChartScatterStyle> = new Set([
  * accept-or-drop grammar as {@link resolveLegendLayout}.
  */
 function resolvePlotAreaLayout(chart: SheetChart): ResolvedManualLayout | undefined {
-  return normalizeManualLayout(chart.plotAreaLayout);
+  return normalizeManualLayout(chart.plotAreaLayout)
 }
 
 // ── Reader ────────────────────────────────────────────────────────
@@ -202,26 +196,26 @@ function resolvePlotAreaLayout(chart: SheetChart): ResolvedManualLayout | undefi
 export function parseAxes(
   plotArea: XmlElement,
 ): { x?: ChartAxisInfo; y?: ChartAxisInfo } | undefined {
-  let catAx: XmlElement | undefined;
-  const valAxes: XmlElement[] = [];
+  let catAx: XmlElement | undefined
+  const valAxes: XmlElement[] = []
   for (const child of childElements(plotArea)) {
     if (child.local === "catAx") {
-      catAx ??= child;
+      catAx ??= child
     } else if (child.local === "valAx") {
-      valAxes.push(child);
+      valAxes.push(child)
     }
   }
 
-  let xAxis: XmlElement | undefined;
-  let yAxis: XmlElement | undefined;
+  let xAxis: XmlElement | undefined
+  let yAxis: XmlElement | undefined
   if (catAx) {
-    xAxis = catAx;
-    yAxis = valAxes[0];
+    xAxis = catAx
+    yAxis = valAxes[0]
   } else {
     // Scatter / bubble: both axes are valAx. The first declared one is
     // the X axis (`axPos="b"`), the second is the Y axis (`axPos="l"`).
-    xAxis = valAxes[0];
-    yAxis = valAxes[1];
+    xAxis = valAxes[0]
+    yAxis = valAxes[1]
   }
 
   // `<c:crossBetween>` is required on every `<c:valAx>` — Excel always
@@ -233,16 +227,16 @@ export function parseAxes(
   // default round-trips identically through {@link cloneChart} —
   // absence on the parsed shape and the writer-emitted default produce
   // the same `<c:crossBetween val=".."/>` byte-for-byte.
-  const familyDefaultCrossBetween: ChartAxisCrossBetween = catAx ? "between" : "midCat";
+  const familyDefaultCrossBetween: ChartAxisCrossBetween = catAx ? "between" : "midCat"
 
-  const x = xAxis ? parseAxisInfo(xAxis, familyDefaultCrossBetween) : undefined;
-  const y = yAxis ? parseAxisInfo(yAxis, familyDefaultCrossBetween) : undefined;
+  const x = xAxis ? parseAxisInfo(xAxis, familyDefaultCrossBetween) : undefined
+  const y = yAxis ? parseAxisInfo(yAxis, familyDefaultCrossBetween) : undefined
 
-  if (!x && !y) return undefined;
-  const out: { x?: ChartAxisInfo; y?: ChartAxisInfo } = {};
-  if (x) out.x = x;
-  if (y) out.y = y;
-  return out;
+  if (!x && !y) return undefined
+  const out: { x?: ChartAxisInfo; y?: ChartAxisInfo } = {}
+  if (x) out.x = x
+  if (y) out.y = y
+  return out
 }
 
 /**
@@ -278,7 +272,7 @@ export function parseAxes(
  * the writer.
  */
 export function parsePlotAreaLayout(plotArea: XmlElement): ChartManualLayout | undefined {
-  return parseManualLayout(plotArea);
+  return parseManualLayout(plotArea)
 }
 
 /**
@@ -308,7 +302,7 @@ export function parsePlotAreaLayout(plotArea: XmlElement): ChartManualLayout | u
  * `<c:dTable>` block) cannot leak in.
  */
 export function parsePlotAreaFillColor(plotArea: XmlElement): ChartColor | undefined {
-  return parseSpPrFill(plotArea);
+  return parseSpPrFill(plotArea)
 }
 
 /**
@@ -344,7 +338,7 @@ export function parsePlotAreaFillColor(plotArea: XmlElement): ChartColor | undef
  * (`<a:solidFill>`) child.
  */
 export function parsePlotAreaBorderColor(plotArea: XmlElement): ChartColor | undefined {
-  return parseSpPrBorderColor(plotArea);
+  return parseSpPrBorderColor(plotArea)
 }
 
 /**
@@ -370,7 +364,7 @@ export function parsePlotAreaBorderColor(plotArea: XmlElement): ChartColor | und
  * attribute rather than the `<a:solidFill><a:srgbClr>` color child.
  */
 export function parsePlotAreaBorderWidth(plotArea: XmlElement): number | undefined {
-  return parseBorderWidthFromSpPr(plotArea);
+  return parseBorderWidthFromSpPr(plotArea)
 }
 
 /**
@@ -385,30 +379,30 @@ export function parsePlotAreaBorderWidth(plotArea: XmlElement): number | undefin
  * missing `val` attributes drop to `undefined`.
  */
 export function parseVaryColors(chartTypeEl: XmlElement, kind: ChartKind): boolean | undefined {
-  const el = findChild(chartTypeEl, "varyColors");
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const familyDefaultsTrue = VARY_COLORS_DEFAULT_TRUE.has(kind);
+  const el = findChild(chartTypeEl, "varyColors")
+  if (!el) return undefined
+  const raw = el.attrs.val
+  if (typeof raw !== "string") return undefined
+  const familyDefaultsTrue = VARY_COLORS_DEFAULT_TRUE.has(kind)
   // Accept the OOXML truthy / falsy spellings. `1` / `true` map to true,
   // `0` / `false` map to false, anything else drops.
-  let parsed: boolean;
+  let parsed: boolean
   switch (raw) {
     case "1":
     case "true":
-      parsed = true;
-      break;
+      parsed = true
+      break
     case "0":
     case "false":
-      parsed = false;
-      break;
+      parsed = false
+      break
     default:
-      return undefined;
+      return undefined
   }
   // Collapse the per-family default so absence and the default
   // round-trip identically.
-  if (parsed === familyDefaultsTrue) return undefined;
-  return parsed;
+  if (parsed === familyDefaultsTrue) return undefined
+  return parsed
 }
 
 /**
@@ -429,12 +423,12 @@ export function parseVaryColors(chartTypeEl: XmlElement, kind: ChartKind): boole
  * UI default; not collapsing it on read keeps the round-trip exact.
  */
 export function parseScatterStyle(scatterChart: XmlElement): ChartScatterStyle | undefined {
-  const el = findChild(scatterChart, "scatterStyle");
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  if (!VALID_SCATTER_STYLES.has(raw as ChartScatterStyle)) return undefined;
-  return raw as ChartScatterStyle;
+  const el = findChild(scatterChart, "scatterStyle")
+  if (!el) return undefined
+  const raw = el.attrs.val
+  if (typeof raw !== "string") return undefined
+  if (!VALID_SCATTER_STYLES.has(raw as ChartScatterStyle)) return undefined
+  return raw as ChartScatterStyle
 }
 
 /**
@@ -452,7 +446,7 @@ export function parseScatterStyle(scatterChart: XmlElement): ChartScatterStyle |
  * still survives, which is what {@link cloneChart} needs.
  */
 export function parseDropLines(chartTypeEl: XmlElement): boolean | undefined {
-  return findChild(chartTypeEl, "dropLines") ? true : undefined;
+  return findChild(chartTypeEl, "dropLines") ? true : undefined
 }
 
 /**
@@ -462,7 +456,7 @@ export function parseDropLines(chartTypeEl: XmlElement): boolean | undefined {
  * surfaces `true`, absence collapses to `undefined`.
  */
 export function parseHiLowLines(chartTypeEl: XmlElement): boolean | undefined {
-  return findChild(chartTypeEl, "hiLowLines") ? true : undefined;
+  return findChild(chartTypeEl, "hiLowLines") ? true : undefined
 }
 
 /**
@@ -479,7 +473,7 @@ export function parseHiLowLines(chartTypeEl: XmlElement): boolean | undefined {
  * {@link cloneChart} needs.
  */
 export function parseSerLines(chartTypeEl: XmlElement): boolean | undefined {
-  return findChild(chartTypeEl, "serLines") ? true : undefined;
+  return findChild(chartTypeEl, "serLines") ? true : undefined
 }
 
 /**
@@ -502,22 +496,22 @@ export function parseSerLines(chartTypeEl: XmlElement): boolean | undefined {
  * on the matching chart-type kind.
  */
 export function parseShowLineMarkers(lineChart: XmlElement): boolean | undefined {
-  const el = findChild(lineChart, "marker");
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
+  const el = findChild(lineChart, "marker")
+  if (!el) return undefined
+  const raw = el.attrs.val
+  if (typeof raw !== "string") return undefined
   switch (raw) {
     case "0":
     case "false":
-      return false;
+      return false
     case "1":
     case "true":
       // OOXML / Excel default — collapse to undefined for symmetry
       // with the writer's `showLineMarkers` field, so a fresh chart
       // and a marker-on chart round-trip identically.
-      return undefined;
+      return undefined
     default:
-      return undefined;
+      return undefined
   }
 }
 
@@ -529,24 +523,24 @@ export function parseShowLineMarkers(lineChart: XmlElement): boolean | undefined
  * default, so omitting them keeps the parsed shape minimal.
  */
 export function parseBarGrouping(barChart: XmlElement): ChartBarGrouping | undefined {
-  const grouping = findChild(barChart, "grouping");
-  if (!grouping) return undefined;
-  const val = grouping.attrs.val;
-  if (typeof val !== "string") return undefined;
+  const grouping = findChild(barChart, "grouping")
+  if (!grouping) return undefined
+  const val = grouping.attrs.val
+  if (typeof val !== "string") return undefined
   switch (val) {
     case "stacked":
-      return "stacked";
+      return "stacked"
     case "percentStacked":
-      return "percentStacked";
+      return "percentStacked"
     case "clustered":
-      return "clustered";
+      return "clustered"
     case "standard":
       // OOXML's `standard` for barChart is functionally equivalent to
       // `clustered` (Excel renders side-by-side). Surface neither so
       // the cloned chart inherits the writer's default.
-      return undefined;
+      return undefined
     default:
-      return undefined;
+      return undefined
   }
 }
 
@@ -559,14 +553,14 @@ export function parseBarGrouping(barChart: XmlElement): ChartBarGrouping | undef
  * back out.
  */
 export function parseHoleSize(doughnut: XmlElement): number | undefined {
-  const el = findChild(doughnut, "holeSize");
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed)) return undefined;
-  if (parsed < 1 || parsed > 99) return undefined;
-  return parsed;
+  const el = findChild(doughnut, "holeSize")
+  if (!el) return undefined
+  const raw = el.attrs.val
+  if (typeof raw !== "string") return undefined
+  const parsed = Number.parseInt(raw, 10)
+  if (!Number.isFinite(parsed)) return undefined
+  if (parsed < 1 || parsed > 99) return undefined
+  return parsed
 }
 
 /**
@@ -581,15 +575,15 @@ export function parseHoleSize(doughnut: XmlElement): number | undefined {
  * — absence and `150` mean the same thing.
  */
 export function parseGapWidth(barChart: XmlElement): number | undefined {
-  const el = findChild(barChart, "gapWidth");
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed)) return undefined;
-  if (parsed < 0 || parsed > 500) return undefined;
-  if (parsed === 150) return undefined;
-  return parsed;
+  const el = findChild(barChart, "gapWidth")
+  if (!el) return undefined
+  const raw = el.attrs.val
+  if (typeof raw !== "string") return undefined
+  const parsed = Number.parseInt(raw, 10)
+  if (!Number.isFinite(parsed)) return undefined
+  if (parsed < 0 || parsed > 500) return undefined
+  if (parsed === 150) return undefined
+  return parsed
 }
 
 /**
@@ -606,15 +600,15 @@ export function parseGapWidth(barChart: XmlElement): number | undefined {
  * default — absence and `150` mean the same thing.
  */
 export function parseUpDownBarsGapWidth(upDownBars: XmlElement): number | undefined {
-  const el = findChild(upDownBars, "gapWidth");
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed)) return undefined;
-  if (parsed < 0 || parsed > 500) return undefined;
-  if (parsed === 150) return undefined;
-  return parsed;
+  const el = findChild(upDownBars, "gapWidth")
+  if (!el) return undefined
+  const raw = el.attrs.val
+  if (typeof raw !== "string") return undefined
+  const parsed = Number.parseInt(raw, 10)
+  if (!Number.isFinite(parsed)) return undefined
+  if (parsed < 0 || parsed > 500) return undefined
+  if (parsed === 150) return undefined
+  return parsed
 }
 
 /**
@@ -632,15 +626,15 @@ export function parseUpDownBarsGapWidth(upDownBars: XmlElement): number | undefi
  * round-trips as `100`.
  */
 export function parseOverlap(barChart: XmlElement): number | undefined {
-  const el = findChild(barChart, "overlap");
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed)) return undefined;
-  if (parsed < -100 || parsed > 100) return undefined;
-  if (parsed === 0) return undefined;
-  return parsed;
+  const el = findChild(barChart, "overlap")
+  if (!el) return undefined
+  const raw = el.attrs.val
+  if (typeof raw !== "string") return undefined
+  const parsed = Number.parseInt(raw, 10)
+  if (!Number.isFinite(parsed)) return undefined
+  if (parsed < -100 || parsed > 100) return undefined
+  if (parsed === 0) return undefined
+  return parsed
 }
 
 /**
@@ -656,17 +650,17 @@ export function parseOverlap(barChart: XmlElement): number | undefined {
  * different angle.
  */
 export function parseFirstSliceAng(chartType: XmlElement): number | undefined {
-  const el = findChild(chartType, "firstSliceAng");
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed)) return undefined;
-  if (parsed < 0 || parsed > 360) return undefined;
+  const el = findChild(chartType, "firstSliceAng")
+  if (!el) return undefined
+  const raw = el.attrs.val
+  if (typeof raw !== "string") return undefined
+  const parsed = Number.parseInt(raw, 10)
+  if (!Number.isFinite(parsed)) return undefined
+  if (parsed < 0 || parsed > 360) return undefined
   // Collapse `0` and the schema-equivalent `360` to undefined — both
   // mean "first slice at 12 o'clock", which is the writer's default.
-  if (parsed === 0 || parsed === 360) return undefined;
-  return parsed;
+  if (parsed === 0 || parsed === 360) return undefined
+  return parsed
 }
 
 /**
@@ -677,19 +671,19 @@ export function parseFirstSliceAng(chartType: XmlElement): number | undefined {
  * treat that as the absence of the field.
  */
 export function parseLineAreaGrouping(chartType: XmlElement): ChartLineAreaGrouping | undefined {
-  const grouping = findChild(chartType, "grouping");
-  if (!grouping) return undefined;
-  const val = grouping.attrs.val;
-  if (typeof val !== "string") return undefined;
+  const grouping = findChild(chartType, "grouping")
+  if (!grouping) return undefined
+  const val = grouping.attrs.val
+  if (typeof val !== "string") return undefined
   switch (val) {
     case "stacked":
-      return "stacked";
+      return "stacked"
     case "percentStacked":
-      return "percentStacked";
+      return "percentStacked"
     case "standard":
-      return undefined;
+      return undefined
     default:
-      return undefined;
+      return undefined
   }
 }
 
@@ -707,8 +701,8 @@ export function buildPlotArea(chart: SheetChart, sheetName: string): string {
   // (§21.2.2.115). An empty layout (every coordinate dropped on
   // normalization) collapses back to the bare placeholder so a fresh
   // chart matches Excel's reference shape byte-for-byte.
-  const plotAreaLayoutXml = buildManualLayout(resolvePlotAreaLayout(chart));
-  const children: string[] = [plotAreaLayoutXml ?? xmlSelfClose("c:layout")];
+  const plotAreaLayoutXml = buildManualLayout(resolvePlotAreaLayout(chart))
+  const children: string[] = [plotAreaLayoutXml ?? xmlSelfClose("c:layout")]
 
   // Axis titles, gridlines, scaling, number format and tick rendering
   // surface for every chart family except pie/doughnut. Pull them once
@@ -1041,42 +1035,42 @@ export function buildPlotArea(chart: SheetChart, sheetName: string): string {
     // / area Y axes; `"midCat"` on both scatter axes).
     xCrossBetween: normalizeAxisCrossBetween(chart.axes?.x?.crossBetween),
     yCrossBetween: normalizeAxisCrossBetween(chart.axes?.y?.crossBetween),
-  };
+  }
 
   switch (chart.type) {
     case "bar":
     case "column": {
-      children.push(buildBarChart(chart, sheetName));
-      children.push(...buildBarAxes(chart.type, opts));
-      break;
+      children.push(buildBarChart(chart, sheetName))
+      children.push(...buildBarAxes(chart.type, opts))
+      break
     }
     case "line": {
-      children.push(buildLineChart(chart, sheetName));
-      children.push(...buildBarAxes("column", opts));
-      break;
+      children.push(buildLineChart(chart, sheetName))
+      children.push(...buildBarAxes("column", opts))
+      break
     }
     case "area": {
-      children.push(buildAreaChart(chart, sheetName));
-      children.push(...buildBarAxes("column", opts));
-      break;
+      children.push(buildAreaChart(chart, sheetName))
+      children.push(...buildBarAxes("column", opts))
+      break
     }
     case "pie": {
-      children.push(buildPieChart(chart, sheetName));
-      break;
+      children.push(buildPieChart(chart, sheetName))
+      break
     }
     case "doughnut": {
-      children.push(buildDoughnutChart(chart, sheetName));
-      break;
+      children.push(buildDoughnutChart(chart, sheetName))
+      break
     }
     case "scatter": {
-      children.push(buildScatterChart(chart, sheetName));
-      children.push(...buildScatterAxes(opts));
-      break;
+      children.push(buildScatterChart(chart, sheetName))
+      children.push(...buildScatterAxes(opts))
+      break
     }
     default: {
       // exhaustiveness guard
-      const _exhaustive: never = chart.type;
-      throw new Error(`Unsupported chart type: ${String(_exhaustive)}`);
+      const _exhaustive: never = chart.type
+      throw new Error(`Unsupported chart type: ${String(_exhaustive)}`)
     }
   }
 
@@ -1087,9 +1081,9 @@ export function buildPlotArea(chart: SheetChart, sheetName: string): string {
   // all, so the OOXML schema places no slot for `<c:dTable>` on those
   // families; `resolveDataTable` short-circuits them by returning
   // `undefined`.
-  const dTable = resolveDataTable(chart);
+  const dTable = resolveDataTable(chart)
   if (dTable !== undefined) {
-    children.push(buildDataTable(dTable));
+    children.push(buildDataTable(dTable))
   }
 
   // `<c:plotArea><c:spPr><a:solidFill><a:srgbClr val=".."/></a:solidFill>
@@ -1100,12 +1094,12 @@ export function buildPlotArea(chart: SheetChart, sheetName: string): string {
   // `chart.plotAreaFillColor` normalizes to a literal hex; absence and
   // every malformed token collapse to no `<c:spPr>` so a fresh chart
   // matches Excel's reference shape byte-for-byte.
-  const plotAreaSpPr = buildPlotAreaSpPr(chart);
+  const plotAreaSpPr = buildPlotAreaSpPr(chart)
   if (plotAreaSpPr !== undefined) {
-    children.push(plotAreaSpPr);
+    children.push(plotAreaSpPr)
   }
 
-  return xmlElement("c:plotArea", undefined, children);
+  return xmlElement("c:plotArea", undefined, children)
 }
 
 /**
@@ -1130,12 +1124,12 @@ export function buildPlotArea(chart: SheetChart, sheetName: string): string {
  * single `<a:ln>` block.
  */
 export function buildPlotAreaSpPr(chart: SheetChart): string | undefined {
-  const fillHex = normalizePlotAreaFillColor(chart.plotAreaFillColor);
-  const borderHex = normalizePlotAreaBorderColor(chart.plotAreaBorderColor);
-  const borderWidthPt = clampStrokeWidthPt(chart.plotAreaBorderWidth);
-  const borderDash = normalizeBorderDash(chart.plotAreaBorderDash);
-  const borderCap = normalizeLineCap(chart.plotAreaBorderCap);
-  const borderCompound = normalizeLineCompound(chart.plotAreaBorderCompound);
+  const fillHex = normalizePlotAreaFillColor(chart.plotAreaFillColor)
+  const borderHex = normalizePlotAreaBorderColor(chart.plotAreaBorderColor)
+  const borderWidthPt = clampStrokeWidthPt(chart.plotAreaBorderWidth)
+  const borderDash = normalizeBorderDash(chart.plotAreaBorderDash)
+  const borderCap = normalizeLineCap(chart.plotAreaBorderCap)
+  const borderCompound = normalizeLineCompound(chart.plotAreaBorderCompound)
   if (
     fillHex === undefined &&
     borderHex === undefined &&
@@ -1144,12 +1138,12 @@ export function buildPlotAreaSpPr(chart: SheetChart): string | undefined {
     borderCap === undefined &&
     borderCompound === undefined
   ) {
-    return undefined;
+    return undefined
   }
 
-  const children: string[] = [];
+  const children: string[] = []
   if (fillHex !== undefined) {
-    children.push(xmlElement("a:solidFill", undefined, [buildColorElement(fillHex)]));
+    children.push(xmlElement("a:solidFill", undefined, [buildColorElement(fillHex)]))
   }
   if (
     borderHex !== undefined ||
@@ -1158,32 +1152,32 @@ export function buildPlotAreaSpPr(chart: SheetChart): string | undefined {
     borderCap !== undefined ||
     borderCompound !== undefined
   ) {
-    const lnAttrs: Record<string, string | number> = {};
+    const lnAttrs: Record<string, string | number> = {}
     if (borderWidthPt !== undefined) {
       // OOXML stores stroke width in EMU (1 pt = 12 700 EMU). Round to
       // the nearest integer because the schema types `w` as `xsd:int`.
-      lnAttrs.w = Math.round(borderWidthPt * EMU_PER_PT);
+      lnAttrs.w = Math.round(borderWidthPt * EMU_PER_PT)
     }
-    if (borderCap !== undefined) lnAttrs.cap = borderCap;
-    if (borderCompound !== undefined) lnAttrs.cmpd = borderCompound;
-    const lnChildren: string[] = [];
+    if (borderCap !== undefined) lnAttrs.cap = borderCap
+    if (borderCompound !== undefined) lnAttrs.cmpd = borderCompound
+    const lnChildren: string[] = []
     if (borderHex !== undefined) {
-      lnChildren.push(xmlElement("a:solidFill", undefined, [buildColorElement(borderHex)]));
+      lnChildren.push(xmlElement("a:solidFill", undefined, [buildColorElement(borderHex)]))
     }
     // `<a:prstDash>` follows `<a:solidFill>` per CT_LineProperties
     // (ECMA-376 Part 1, §20.1.2.3.24) — fill before dash before
     // headEnd / tailEnd. Skip emission for `"solid"` and unset values
     // so a fresh chart matches Excel's reference shape byte-for-byte.
     if (borderDash !== undefined) {
-      lnChildren.push(xmlSelfClose("a:prstDash", { val: borderDash }));
+      lnChildren.push(xmlSelfClose("a:prstDash", { val: borderDash }))
     }
     children.push(
       lnChildren.length === 0
         ? xmlSelfClose("a:ln", lnAttrs)
         : xmlElement("a:ln", Object.keys(lnAttrs).length > 0 ? lnAttrs : undefined, lnChildren),
-    );
+    )
   }
-  return xmlElement("c:spPr", undefined, children);
+  return xmlElement("c:spPr", undefined, children)
 }
 
 /**
@@ -1202,10 +1196,8 @@ export function buildPlotAreaSpPr(chart: SheetChart): string | undefined {
  * the chart-level {@link normalizeTitleColor} so the two share the same
  * sRGB grammar.
  */
-export function normalizePlotAreaFillColor(
-  value: ChartColor | undefined,
-): ChartColor | undefined {
-  return normalizeTitleColor(value);
+export function normalizePlotAreaFillColor(value: ChartColor | undefined): ChartColor | undefined {
+  return normalizeTitleColor(value)
 }
 
 /**
@@ -1229,19 +1221,19 @@ export function normalizePlotAreaFillColor(
 export function normalizePlotAreaBorderColor(
   value: ChartColor | undefined,
 ): ChartColor | undefined {
-  return normalizeTitleColor(value);
+  return normalizeTitleColor(value)
 }
 
 export function buildBarChart(chart: SheetChart, sheetName: string): string {
-  const grouping = chart.barGrouping ?? "clustered";
-  const barDir = chart.type === "bar" ? "bar" : "col";
-  const isStacked = grouping === "percentStacked" || grouping === "stacked";
+  const grouping = chart.barGrouping ?? "clustered"
+  const barDir = chart.type === "bar" ? "bar" : "col"
+  const isStacked = grouping === "percentStacked" || grouping === "stacked"
 
   const children: string[] = [
     xmlSelfClose("c:barDir", { val: barDir }),
     xmlSelfClose("c:grouping", { val: grouping }),
     xmlSelfClose("c:varyColors", { val: resolveVaryColors(chart) ? 1 : 0 }),
-  ];
+  ]
 
   for (let i = 0; i < chart.series.length; i++) {
     children.push(
@@ -1253,11 +1245,11 @@ export function buildBarChart(chart: SheetChart, sheetName: string): string {
         trendlines: chart.series[i].trendlines,
         errorBars: chart.series[i].errorBars,
       }),
-    );
+    )
   }
 
-  const chartLevelDLbls = buildChartLevelDataLabels(chart);
-  if (chartLevelDLbls) children.push(chartLevelDLbls);
+  const chartLevelDLbls = buildChartLevelDataLabels(chart)
+  if (chartLevelDLbls) children.push(chartLevelDLbls)
 
   // OOXML CT_BarChart enforces a strict child order:
   // barDir → grouping → varyColors → ser* → dLbls? → gapWidth? →
@@ -1271,17 +1263,17 @@ export function buildBarChart(chart: SheetChart, sheetName: string): string {
   // matching element (even when the value happens to equal the default
   // for that grouping), so callers can pin both knobs on a stacked
   // chart or relax overlap on a clustered one.
-  const explicitGapWidth = clampGapWidth(chart.gapWidth);
-  const explicitOverlap = clampOverlap(chart.overlap);
+  const explicitGapWidth = clampGapWidth(chart.gapWidth)
+  const explicitOverlap = clampOverlap(chart.overlap)
 
-  const emitGapWidth = explicitGapWidth ?? (isStacked ? undefined : 150);
+  const emitGapWidth = explicitGapWidth ?? (isStacked ? undefined : 150)
   if (emitGapWidth !== undefined) {
-    children.push(xmlSelfClose("c:gapWidth", { val: emitGapWidth }));
+    children.push(xmlSelfClose("c:gapWidth", { val: emitGapWidth }))
   }
 
-  const emitOverlap = explicitOverlap ?? (isStacked ? 100 : undefined);
+  const emitOverlap = explicitOverlap ?? (isStacked ? 100 : undefined)
   if (emitOverlap !== undefined) {
-    children.push(xmlSelfClose("c:overlap", { val: emitOverlap }));
+    children.push(xmlSelfClose("c:overlap", { val: emitOverlap }))
   }
 
   // CT_BarChart sequence places `<c:serLines>` between `<c:overlap>`
@@ -1295,13 +1287,13 @@ export function buildBarChart(chart: SheetChart, sheetName: string): string {
   // on a clustered chart (matches Excel's own behavior — the element
   // pins, the renderer paints nothing).
   if (chart.serLines === true) {
-    children.push(xmlElement("c:serLines", undefined, []));
+    children.push(xmlElement("c:serLines", undefined, []))
   }
 
-  children.push(xmlSelfClose("c:axId", { val: AXIS_ID_CAT }));
-  children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL }));
+  children.push(xmlSelfClose("c:axId", { val: AXIS_ID_CAT }))
+  children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL }))
 
-  return xmlElement("c:barChart", undefined, children);
+  return xmlElement("c:barChart", undefined, children)
 }
 
 /**
@@ -1316,11 +1308,11 @@ export function buildBarChart(chart: SheetChart, sheetName: string): string {
  * not the same as `100`).
  */
 export function clampGapWidth(value: number | undefined): number | undefined {
-  if (value === undefined || !Number.isFinite(value)) return undefined;
-  const rounded = Math.round(value);
-  if (rounded < 0) return 0;
-  if (rounded > 500) return 500;
-  return rounded;
+  if (value === undefined || !Number.isFinite(value)) return undefined
+  const rounded = Math.round(value)
+  if (rounded < 0) return 0
+  if (rounded > 500) return 500
+  return rounded
 }
 
 /**
@@ -1335,19 +1327,19 @@ export function clampGapWidth(value: number | undefined): number | undefined {
  * no physical sense).
  */
 export function clampOverlap(value: number | undefined): number | undefined {
-  if (value === undefined || !Number.isFinite(value)) return undefined;
-  const rounded = Math.round(value);
-  if (rounded < -100) return -100;
-  if (rounded > 100) return 100;
-  return rounded;
+  if (value === undefined || !Number.isFinite(value)) return undefined
+  const rounded = Math.round(value)
+  if (rounded < -100) return -100
+  if (rounded > 100) return 100
+  return rounded
 }
 
 export function buildLineChart(chart: SheetChart, sheetName: string): string {
-  const grouping = chart.lineGrouping ?? "standard";
+  const grouping = chart.lineGrouping ?? "standard"
   const children: string[] = [
     xmlSelfClose("c:grouping", { val: grouping }),
     xmlSelfClose("c:varyColors", { val: resolveVaryColors(chart) ? 1 : 0 }),
-  ];
+  ]
 
   for (let i = 0; i < chart.series.length; i++) {
     // `<c:smooth>` is required on `CT_LineSer` per the OOXML schema, so
@@ -1362,12 +1354,12 @@ export function buildLineChart(chart: SheetChart, sheetName: string): string {
       dataPoints: chart.series[i].dataPoints,
       trendlines: chart.series[i].trendlines,
       errorBars: chart.series[i].errorBars,
-    });
-    children.push(seriesXml);
+    })
+    children.push(seriesXml)
   }
 
-  const chartLevelDLbls = buildChartLevelDataLabels(chart);
-  if (chartLevelDLbls) children.push(chartLevelDLbls);
+  const chartLevelDLbls = buildChartLevelDataLabels(chart)
+  if (chartLevelDLbls) children.push(chartLevelDLbls)
 
   // CT_LineChart child order: grouping, varyColors?, ser*, dLbls?,
   // dropLines?, hiLowLines?, upDownBars?, marker?, axId+. The
@@ -1379,13 +1371,13 @@ export function buildLineChart(chart: SheetChart, sheetName: string): string {
   // element so untouched line charts match Excel's reference
   // serialization.
   if (chart.dropLines === true) {
-    children.push(xmlElement("c:dropLines", undefined, []));
+    children.push(xmlElement("c:dropLines", undefined, []))
   }
   if (chart.hiLowLines === true) {
-    children.push(xmlElement("c:hiLowLines", undefined, []));
+    children.push(xmlElement("c:hiLowLines", undefined, []))
   }
   if (chart.upDownBars === true) {
-    children.push(buildUpDownBars(chart.upDownBarsGapWidth));
+    children.push(buildUpDownBars(chart.upDownBarsGapWidth))
   }
 
   // `<c:marker>` (the chart-level CT_Boolean variant) gates per-series
@@ -1398,11 +1390,11 @@ export function buildLineChart(chart: SheetChart, sheetName: string): string {
   // the per-point dots chart-wide. `undefined` and `true` both emit
   // `val="1"` so a fresh chart matches Excel's default render and a
   // back-compat caller that never set the flag keeps the same output.
-  children.push(xmlSelfClose("c:marker", { val: chart.showLineMarkers === false ? 0 : 1 }));
-  children.push(xmlSelfClose("c:axId", { val: AXIS_ID_CAT }));
-  children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL }));
+  children.push(xmlSelfClose("c:marker", { val: chart.showLineMarkers === false ? 0 : 1 }))
+  children.push(xmlSelfClose("c:axId", { val: AXIS_ID_CAT }))
+  children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL }))
 
-  return xmlElement("c:lineChart", undefined, children);
+  return xmlElement("c:lineChart", undefined, children)
 }
 
 /**
@@ -1427,8 +1419,8 @@ export function buildLineChart(chart: SheetChart, sheetName: string): string {
  * in a follow-up if needed.
  */
 export function buildUpDownBars(gapWidth: number | undefined): string {
-  const resolved = clampUpDownBarsGapWidth(gapWidth) ?? 150;
-  return xmlElement("c:upDownBars", undefined, [xmlSelfClose("c:gapWidth", { val: resolved })]);
+  const resolved = clampUpDownBarsGapWidth(gapWidth) ?? 150
+  return xmlElement("c:upDownBars", undefined, [xmlSelfClose("c:gapWidth", { val: resolved })])
 }
 
 /**
@@ -1448,18 +1440,18 @@ export function buildUpDownBars(gapWidth: number | undefined): string {
  * what Excel ends up rendering.
  */
 export function clampUpDownBarsGapWidth(value: number | undefined): number | undefined {
-  if (value === undefined || !Number.isFinite(value)) return undefined;
-  const rounded = Math.round(value);
-  if (rounded < 0 || rounded > 500) return undefined;
-  return rounded;
+  if (value === undefined || !Number.isFinite(value)) return undefined
+  const rounded = Math.round(value)
+  if (rounded < 0 || rounded > 500) return undefined
+  return rounded
 }
 
 export function buildAreaChart(chart: SheetChart, sheetName: string): string {
-  const grouping = chart.areaGrouping ?? "standard";
+  const grouping = chart.areaGrouping ?? "standard"
   const children: string[] = [
     xmlSelfClose("c:grouping", { val: grouping }),
     xmlSelfClose("c:varyColors", { val: resolveVaryColors(chart) ? 1 : 0 }),
-  ];
+  ]
 
   for (let i = 0; i < chart.series.length; i++) {
     children.push(
@@ -1470,11 +1462,11 @@ export function buildAreaChart(chart: SheetChart, sheetName: string): string {
         trendlines: chart.series[i].trendlines,
         errorBars: chart.series[i].errorBars,
       }),
-    );
+    )
   }
 
-  const chartLevelDLbls = buildChartLevelDataLabels(chart);
-  if (chartLevelDLbls) children.push(chartLevelDLbls);
+  const chartLevelDLbls = buildChartLevelDataLabels(chart)
+  if (chartLevelDLbls) children.push(chartLevelDLbls)
 
   // CT_AreaChart sequence places `<c:dropLines>` between `<c:dLbls>`
   // and `<c:axId>`. The element is bare — its mere presence paints
@@ -1482,19 +1474,19 @@ export function buildAreaChart(chart: SheetChart, sheetName: string): string {
   // in. `<c:hiLowLines>` has no slot on `<c:areaChart>` per the OOXML
   // schema, so the area writer ignores `chart.hiLowLines` entirely.
   if (chart.dropLines === true) {
-    children.push(xmlElement("c:dropLines", undefined, []));
+    children.push(xmlElement("c:dropLines", undefined, []))
   }
 
-  children.push(xmlSelfClose("c:axId", { val: AXIS_ID_CAT }));
-  children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL }));
+  children.push(xmlSelfClose("c:axId", { val: AXIS_ID_CAT }))
+  children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL }))
 
-  return xmlElement("c:areaChart", undefined, children);
+  return xmlElement("c:areaChart", undefined, children)
 }
 
 export function buildPieChart(chart: SheetChart, sheetName: string): string {
   const children: string[] = [
     xmlSelfClose("c:varyColors", { val: resolveVaryColors(chart) ? 1 : 0 }),
-  ];
+  ]
 
   // A pie chart only paints the first series; additional ones are
   // valid OOXML but Excel ignores them.
@@ -1506,27 +1498,27 @@ export function buildPieChart(chart: SheetChart, sheetName: string): string {
         explosion: chart.series[0].explosion,
         dataPoints: chart.series[0].dataPoints,
       }),
-    );
+    )
   }
 
-  const chartLevelDLbls = buildChartLevelDataLabels(chart);
-  if (chartLevelDLbls) children.push(chartLevelDLbls);
+  const chartLevelDLbls = buildChartLevelDataLabels(chart)
+  if (chartLevelDLbls) children.push(chartLevelDLbls)
 
   // `<c:firstSliceAng>` is optional on `<c:pieChart>` (CT_PieChart);
   // omit it when the angle is the default `0` (12 o'clock start) so
   // we do not bloat untouched chart XML.
-  const sliceAng = clampFirstSliceAng(chart.firstSliceAng);
+  const sliceAng = clampFirstSliceAng(chart.firstSliceAng)
   if (sliceAng !== undefined) {
-    children.push(xmlSelfClose("c:firstSliceAng", { val: sliceAng }));
+    children.push(xmlSelfClose("c:firstSliceAng", { val: sliceAng }))
   }
 
-  return xmlElement("c:pieChart", undefined, children);
+  return xmlElement("c:pieChart", undefined, children)
 }
 
 export function buildDoughnutChart(chart: SheetChart, sheetName: string): string {
   const children: string[] = [
     xmlSelfClose("c:varyColors", { val: resolveVaryColors(chart) ? 1 : 0 }),
-  ];
+  ]
 
   // Like pie, doughnut paints every declared series — Excel renders
   // each as a concentric ring (rare in practice; most templates have
@@ -1539,11 +1531,11 @@ export function buildDoughnutChart(chart: SheetChart, sheetName: string): string
         explosion: chart.series[i].explosion,
         dataPoints: chart.series[i].dataPoints,
       }),
-    );
+    )
   }
 
-  const chartLevelDLbls = buildChartLevelDataLabels(chart);
-  if (chartLevelDLbls) children.push(chartLevelDLbls);
+  const chartLevelDLbls = buildChartLevelDataLabels(chart)
+  if (chartLevelDLbls) children.push(chartLevelDLbls)
 
   // `<c:firstSliceAng>` and `<c:holeSize>` are the two doughnut-only
   // knobs. firstSliceAng defaults to 0 (12 o'clock start); holeSize is
@@ -1556,10 +1548,10 @@ export function buildDoughnutChart(chart: SheetChart, sheetName: string): string
   // that mirrors the spec's reference serialization Excel produces.
   children.push(
     xmlSelfClose("c:firstSliceAng", { val: clampFirstSliceAng(chart.firstSliceAng) ?? 0 }),
-  );
-  children.push(xmlSelfClose("c:holeSize", { val: clampHoleSize(chart.holeSize) }));
+  )
+  children.push(xmlSelfClose("c:holeSize", { val: clampHoleSize(chart.holeSize) }))
 
-  return xmlElement("c:doughnutChart", undefined, children);
+  return xmlElement("c:doughnutChart", undefined, children)
 }
 
 /**
@@ -1576,29 +1568,29 @@ export function buildDoughnutChart(chart: SheetChart, sheetName: string): string
  * out-of-band value the user types into the chart-formatting pane.
  */
 export function clampFirstSliceAng(value: number | undefined): number | undefined {
-  if (value === undefined || !Number.isFinite(value)) return undefined;
-  const rounded = Math.round(value);
+  if (value === undefined || !Number.isFinite(value)) return undefined
+  const rounded = Math.round(value)
   // Wrap into 0..360 (inclusive). The OOXML schema actually allows
   // 360 as a value, so we keep it distinct from 0.
-  let normalized = rounded % 360;
-  if (normalized < 0) normalized += 360;
-  if (normalized === 0) return undefined;
-  return normalized;
+  let normalized = rounded % 360
+  if (normalized < 0) normalized += 360
+  if (normalized === 0) return undefined
+  return normalized
 }
 
 export function clampHoleSize(value: number | undefined): number {
-  if (value === undefined || !Number.isFinite(value)) return DOUGHNUT_HOLE_DEFAULT;
-  const rounded = Math.round(value);
-  if (rounded < DOUGHNUT_HOLE_MIN) return DOUGHNUT_HOLE_MIN;
-  if (rounded > DOUGHNUT_HOLE_MAX) return DOUGHNUT_HOLE_MAX;
-  return rounded;
+  if (value === undefined || !Number.isFinite(value)) return DOUGHNUT_HOLE_DEFAULT
+  const rounded = Math.round(value)
+  if (rounded < DOUGHNUT_HOLE_MIN) return DOUGHNUT_HOLE_MIN
+  if (rounded > DOUGHNUT_HOLE_MAX) return DOUGHNUT_HOLE_MAX
+  return rounded
 }
 
 export function buildScatterChart(chart: SheetChart, sheetName: string): string {
   const children: string[] = [
     xmlSelfClose("c:scatterStyle", { val: resolveScatterStyle(chart) }),
     xmlSelfClose("c:varyColors", { val: resolveVaryColors(chart) ? 1 : 0 }),
-  ];
+  ]
 
   for (let i = 0; i < chart.series.length; i++) {
     // `<c:smooth>` is optional on `CT_ScatterSer`; emit only when the
@@ -1615,16 +1607,16 @@ export function buildScatterChart(chart: SheetChart, sheetName: string): string 
         trendlines: chart.series[i].trendlines,
         errorBars: chart.series[i].errorBars,
       }),
-    );
+    )
   }
 
-  const chartLevelDLbls = buildChartLevelDataLabels(chart);
-  if (chartLevelDLbls) children.push(chartLevelDLbls);
+  const chartLevelDLbls = buildChartLevelDataLabels(chart)
+  if (chartLevelDLbls) children.push(chartLevelDLbls)
 
-  children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL_X }));
-  children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL_Y }));
+  children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL_X }))
+  children.push(xmlSelfClose("c:axId", { val: AXIS_ID_VAL_Y }))
 
-  return xmlElement("c:scatterChart", undefined, children);
+  return xmlElement("c:scatterChart", undefined, children)
 }
 
 /**
@@ -1643,8 +1635,8 @@ export function buildScatterChart(chart: SheetChart, sheetName: string): string 
  * unambiguous on roundtrip.
  */
 export function resolveVaryColors(chart: SheetChart): boolean {
-  if (typeof chart.varyColors === "boolean") return chart.varyColors;
-  return VARY_COLORS_DEFAULT_TRUE_TYPES.has(chart.type);
+  if (typeof chart.varyColors === "boolean") return chart.varyColors
+  return VARY_COLORS_DEFAULT_TRUE_TYPES.has(chart.type)
 }
 
 /**
@@ -1660,15 +1652,15 @@ export function resolveVaryColors(chart: SheetChart): boolean {
  * an invalid chart document Excel refuses to open.
  */
 export function resolveScatterStyle(chart: SheetChart): ChartScatterStyle {
-  const raw = chart.scatterStyle;
-  if (raw && SCATTER_STYLE_VALUES.has(raw)) return raw;
-  return "lineMarker";
+  const raw = chart.scatterStyle
+  if (raw && SCATTER_STYLE_VALUES.has(raw)) return raw
+  return "lineMarker"
 }
 
 // ── Clone-side plot-area constants ────────────────────────────────
 
-const PLOT_AREA_BORDER_WIDTH_MIN_PT = 0.25;
-const PLOT_AREA_BORDER_WIDTH_MAX_PT = 13.5;
+const PLOT_AREA_BORDER_WIDTH_MIN_PT = 0.25
+const PLOT_AREA_BORDER_WIDTH_MAX_PT = 13.5
 
 // ── Clone resolvers (3-arg source/override) ───────────────────────
 
@@ -1688,9 +1680,9 @@ export function resolveCloneVaryColors(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
+  if (override === undefined) return sourceValue
+  if (override === null) return undefined
+  return override
 }
 
 /**
@@ -1713,9 +1705,9 @@ export function resolveCloneUpDownBars(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
+  if (override === undefined) return sourceValue
+  if (override === null) return undefined
+  return override
 }
 
 /**
@@ -1739,9 +1731,9 @@ export function resolveCloneUpDownBarsGapWidth(
   sourceValue: number | undefined,
   override: number | null | undefined,
 ): number | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
+  if (override === undefined) return sourceValue
+  if (override === null) return undefined
+  return override
 }
 
 /**
@@ -1772,9 +1764,9 @@ export function resolveClonePlotAreaLayout(
   sourceValue: ChartManualLayout | undefined,
   override: ChartManualLayout | null | undefined,
 ): ChartManualLayout | undefined {
-  if (override === undefined) return normalizeChartManualLayout(sourceValue);
-  if (override === null) return undefined;
-  return normalizeChartManualLayout(override);
+  if (override === undefined) return normalizeChartManualLayout(sourceValue)
+  if (override === null) return undefined
+  return normalizeChartManualLayout(override)
 }
 
 /**
@@ -1801,9 +1793,9 @@ export function resolveClonePlotAreaFillColor(
   sourceValue: ChartColor | undefined,
   override: ChartColor | null | undefined,
 ): ChartColor | undefined {
-  if (override === undefined) return normalizePlotAreaFillColor(sourceValue);
-  if (override === null) return undefined;
-  return normalizePlotAreaFillColor(override);
+  if (override === undefined) return normalizePlotAreaFillColor(sourceValue)
+  if (override === null) return undefined
+  return normalizePlotAreaFillColor(override)
 }
 
 /**
@@ -1831,9 +1823,9 @@ export function resolveClonePlotAreaBorderColor(
   sourceValue: ChartColor | undefined,
   override: ChartColor | null | undefined,
 ): ChartColor | undefined {
-  if (override === undefined) return normalizePlotAreaBorderColor(sourceValue);
-  if (override === null) return undefined;
-  return normalizePlotAreaBorderColor(override);
+  if (override === undefined) return normalizePlotAreaBorderColor(sourceValue)
+  if (override === null) return undefined
+  return normalizePlotAreaBorderColor(override)
 }
 
 /**
@@ -1847,12 +1839,12 @@ export function resolveClonePlotAreaBorderColor(
  * than carry a value the writer would silently elide back to absence.
  */
 export function normalizeClonePlotAreaBorderWidth(value: number | undefined): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined
   // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
-  const snapped = Math.round(value * 4) / 4;
-  if (snapped < PLOT_AREA_BORDER_WIDTH_MIN_PT) return PLOT_AREA_BORDER_WIDTH_MIN_PT;
-  if (snapped > PLOT_AREA_BORDER_WIDTH_MAX_PT) return PLOT_AREA_BORDER_WIDTH_MAX_PT;
-  return snapped;
+  const snapped = Math.round(value * 4) / 4
+  if (snapped < PLOT_AREA_BORDER_WIDTH_MIN_PT) return PLOT_AREA_BORDER_WIDTH_MIN_PT
+  if (snapped > PLOT_AREA_BORDER_WIDTH_MAX_PT) return PLOT_AREA_BORDER_WIDTH_MAX_PT
+  return snapped
 }
 
 /**
@@ -1880,9 +1872,9 @@ export function resolveClonePlotAreaBorderWidth(
   sourceValue: number | undefined,
   override: number | null | undefined,
 ): number | undefined {
-  if (override === undefined) return normalizeClonePlotAreaBorderWidth(sourceValue);
-  if (override === null) return undefined;
-  return normalizeClonePlotAreaBorderWidth(override);
+  if (override === undefined) return normalizeClonePlotAreaBorderWidth(sourceValue)
+  if (override === null) return undefined
+  return normalizeClonePlotAreaBorderWidth(override)
 }
 
 /**
@@ -1906,10 +1898,10 @@ export function resolveCloneDropLines(
   override: boolean | null | undefined,
 ): boolean | undefined {
   if (override === undefined) {
-    return sourceValue === true ? true : undefined;
+    return sourceValue === true ? true : undefined
   }
-  if (override === null) return undefined;
-  return override === true ? true : undefined;
+  if (override === null) return undefined
+  return override === true ? true : undefined
 }
 
 /**
@@ -1922,10 +1914,10 @@ export function resolveCloneHiLowLines(
   override: boolean | null | undefined,
 ): boolean | undefined {
   if (override === undefined) {
-    return sourceValue === true ? true : undefined;
+    return sourceValue === true ? true : undefined
   }
-  if (override === null) return undefined;
-  return override === true ? true : undefined;
+  if (override === null) return undefined
+  return override === true ? true : undefined
 }
 
 /**
@@ -1940,10 +1932,10 @@ export function resolveCloneSerLines(
   override: boolean | null | undefined,
 ): boolean | undefined {
   if (override === undefined) {
-    return sourceValue === true ? true : undefined;
+    return sourceValue === true ? true : undefined
   }
-  if (override === null) return undefined;
-  return override === true ? true : undefined;
+  if (override === null) return undefined
+  return override === true ? true : undefined
 }
 
 /**
@@ -1961,7 +1953,7 @@ export function resolveCloneScatterStyle(
   sourceValue: ChartScatterStyle | undefined,
   override: ChartScatterStyle | null | undefined,
 ): ChartScatterStyle | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
+  if (override === undefined) return sourceValue
+  if (override === null) return undefined
+  return override
 }

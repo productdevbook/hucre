@@ -36,9 +36,9 @@ import type {
   ChartLineCompound,
   ChartManualLayout,
   WriteChartKind,
-} from "../../_types";
-import type { CloneChartOptions } from "../chart-clone";
-import type { XmlElement } from "../../xml/parser";
+} from "../../_types"
+import type { CloneChartOptions } from "../chart-clone"
+import type { XmlElement } from "../../xml/parser"
 import {
   EMU_PER_PT,
   buildColorElement,
@@ -60,13 +60,13 @@ import {
   resolveChartColor,
   resolveLineCap,
   resolveLineCompound,
-} from "./shape";
+} from "./shape"
 import {
   type ResolvedManualLayout,
   buildManualLayout,
   normalizeManualLayout,
   parseManualLayout,
-} from "./layout";
+} from "./layout"
 import {
   applyOverride,
   childElements,
@@ -75,7 +75,7 @@ import {
   findChild,
   parseBoolAttr,
   parseNumericChildVal,
-} from "./util";
+} from "./util"
 import {
   FONT_SIZE_MAX_PT,
   FONT_SIZE_MIN_PT,
@@ -83,8 +83,8 @@ import {
   ROTATION_MAX_DEG,
   ROTATION_MIN_DEG,
   TXPR_ROT_PER_DEGREE,
-} from "./text";
-import { xmlElement, xmlEscape, xmlSelfClose } from "../../xml/writer";
+} from "./text"
+import { xmlElement, xmlEscape, xmlSelfClose } from "../../xml/writer"
 import {
   buildTitleSpPr,
   normalizeTitleBold,
@@ -94,13 +94,13 @@ import {
   normalizeTitleRotation,
   normalizeTitleStrike,
   normalizeTitleUnderline,
-} from "./title";
-import type { SheetChart } from "../../_types";
-import { normalizeLegendLayout } from "./legend";
+} from "./title"
+import type { SheetChart } from "../../_types"
+import { normalizeLegendLayout } from "./legend"
 
-const TITLE_FONT_SZ_PER_POINT = FONT_SZ_PER_POINT;
-const TITLE_FONT_SIZE_MIN_PT = FONT_SIZE_MIN_PT;
-const TITLE_FONT_SIZE_MAX_PT = FONT_SIZE_MAX_PT;
+const TITLE_FONT_SZ_PER_POINT = FONT_SZ_PER_POINT
+const TITLE_FONT_SIZE_MIN_PT = FONT_SIZE_MIN_PT
+const TITLE_FONT_SIZE_MAX_PT = FONT_SIZE_MAX_PT
 
 // ── Axis-scope enumerations ───────────────────────────────────────
 
@@ -108,7 +108,7 @@ const TITLE_FONT_SIZE_MAX_PT = FONT_SIZE_MAX_PT;
  * Recognized values of `<c:majorTickMark>` / `<c:minorTickMark>` per
  * the OOXML `ST_TickMark` enumeration.
  */
-const VALID_TICK_MARKS: ReadonlySet<ChartAxisTickMark> = new Set(["none", "in", "out", "cross"]);
+const VALID_TICK_MARKS: ReadonlySet<ChartAxisTickMark> = new Set(["none", "in", "out", "cross"])
 
 /**
  * Recognized values of `<c:tickLblPos>` per the OOXML
@@ -119,13 +119,13 @@ const VALID_TICK_LBL_POSITIONS: ReadonlySet<ChartAxisTickLabelPosition> = new Se
   "low",
   "high",
   "none",
-]);
+])
 
 /**
  * Recognized values of `<c:lblAlgn>` per the OOXML `ST_LblAlgn`
  * enumeration.
  */
-const VALID_LBL_ALIGNS: ReadonlySet<ChartAxisLabelAlign> = new Set(["ctr", "l", "r"]);
+const VALID_LBL_ALIGNS: ReadonlySet<ChartAxisLabelAlign> = new Set(["ctr", "l", "r"])
 
 /**
  * Conversion factor between OOXML's `rot` attribute (60000ths of a
@@ -140,11 +140,11 @@ const VALID_LBL_ALIGNS: ReadonlySet<ChartAxisLabelAlign> = new Set(["ctr", "l", 
  * `LABEL_ROTATION_MAX_DEG` for parity with the original axis-tick-
  * label call sites.
  */
-const LABEL_ROTATION_MIN_DEG = ROTATION_MIN_DEG;
-const LABEL_ROTATION_MAX_DEG = ROTATION_MAX_DEG;
+const LABEL_ROTATION_MIN_DEG = ROTATION_MIN_DEG
+const LABEL_ROTATION_MAX_DEG = ROTATION_MAX_DEG
 
 /** Recognized values of `<c:crosses>` per the OOXML `ST_Crosses` enum. */
-const VALID_CROSSES: ReadonlySet<ChartAxisCrosses> = new Set(["autoZero", "min", "max"]);
+const VALID_CROSSES: ReadonlySet<ChartAxisCrosses> = new Set(["autoZero", "min", "max"])
 
 /** Recognized values of `<c:builtInUnit>` per the OOXML `ST_BuiltInUnit` enum. */
 const VALID_DISP_UNITS: ReadonlySet<ChartAxisDispUnit> = new Set([
@@ -157,10 +157,10 @@ const VALID_DISP_UNITS: ReadonlySet<ChartAxisDispUnit> = new Set([
   "hundredMillions",
   "billions",
   "trillions",
-]);
+])
 
 /** Recognized values of `<c:crossBetween>` per the OOXML `ST_CrossBetween` enum. */
-const VALID_CROSS_BETWEEN: ReadonlySet<ChartAxisCrossBetween> = new Set(["between", "midCat"]);
+const VALID_CROSS_BETWEEN: ReadonlySet<ChartAxisCrossBetween> = new Set(["between", "midCat"])
 
 // ── Reader ────────────────────────────────────────────────────────
 
@@ -168,7 +168,7 @@ export function parseAxisInfo(
   axis: XmlElement,
   familyDefaultCrossBetween: ChartAxisCrossBetween,
 ): ChartAxisInfo | undefined {
-  const title = parseAxisTitle(axis);
+  const title = parseAxisTitle(axis)
   // `<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title>` —
   // axis-title rotation in 60000ths of a degree. Sits on every axis
   // flavour per the OOXML schema (CT_CatAx, CT_ValAx, CT_DateAx,
@@ -180,7 +180,7 @@ export function parseAxisInfo(
   // `undefined`. Returns `undefined` when the axis omits `<c:title>`
   // entirely or when the title is a `<c:strRef>` (formula reference)
   // with no `<c:rich>` body.
-  const axisTitleRotation = parseAxisTitleRotation(axis);
+  const axisTitleRotation = parseAxisTitleRotation(axis)
   // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p>
   // </c:rich></c:tx></c:title>` — axis-title font size in 100ths of a
   // point. Same `<c:title>` body scope as `axisTitleRotation` so a
@@ -191,7 +191,7 @@ export function parseAxisInfo(
   // `<a:defRPr>` / the `sz` attribute likewise collapses to
   // `undefined` for symmetry with the writer-side
   // {@link SheetChart.axes.x.axisTitleFontSize}.
-  const axisTitleFontSize = parseAxisTitleFontSize(axis);
+  const axisTitleFontSize = parseAxisTitleFontSize(axis)
   // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr></a:p>
   // </c:rich></c:tx></c:title>` — axis-title bold flag. Same `<c:title>`
   // body scope as `axisTitleRotation` so a stray `<a:defRPr>` elsewhere
@@ -201,7 +201,7 @@ export function parseAxisInfo(
   // an explicit `b="1"` surfaces `true`. Returns `undefined` when the
   // axis omits `<c:title>` entirely or when the title is a `<c:strRef>`
   // (formula reference) with no `<c:rich>` body.
-  const axisTitleBold = parseAxisTitleBold(axis);
+  const axisTitleBold = parseAxisTitleBold(axis)
   // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p>
   // </c:rich></c:tx></c:title>` — axis-title italic flag. Same
   // `<c:title>` body scope as `axisTitleFontSize`, so a stray
@@ -212,7 +212,7 @@ export function parseAxisInfo(
   // `undefined` when the axis omits `<c:title>` entirely or when the
   // title is a `<c:strRef>` (formula reference) with no `<c:rich>`
   // body.
-  const axisTitleItalic = parseAxisTitleItalic(axis);
+  const axisTitleItalic = parseAxisTitleItalic(axis)
   // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>
   // <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
   // </c:rich></c:tx></c:title>` — axis-title font color. Same
@@ -225,7 +225,7 @@ export function parseAxisInfo(
   // losslessly through the writer. Returns `undefined` when the axis
   // omits `<c:title>` entirely or when the title is a `<c:strRef>`
   // (formula reference) with no `<c:rich>` body.
-  const axisTitleColor = parseAxisTitleColor(axis);
+  const axisTitleColor = parseAxisTitleColor(axis)
   // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
   // </a:p></c:rich></c:tx></c:title>` — axis-title strikethrough flag.
   // Same `<c:title>` body scope as `axisTitleItalic`, so a stray
@@ -237,7 +237,7 @@ export function parseAxisInfo(
   // (which emits only `"sngStrike"`). Returns `undefined` when the axis
   // omits `<c:title>` entirely or when the title is a `<c:strRef>`
   // (formula reference) with no `<c:rich>` body.
-  const axisTitleStrike = parseAxisTitleStrike(axis);
+  const axisTitleStrike = parseAxisTitleStrike(axis)
   // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr u=".."/></a:pPr>
   // </a:p></c:rich></c:tx></c:title>` — axis-title underline flag.
   // Same `<c:title>` body scope as `axisTitleStrike`, so a stray
@@ -250,7 +250,7 @@ export function parseAxisInfo(
   // `undefined` when the axis omits `<c:title>` entirely or when the
   // title is a `<c:strRef>` (formula reference) with no `<c:rich>`
   // body.
-  const axisTitleUnderline = parseAxisTitleUnderline(axis);
+  const axisTitleUnderline = parseAxisTitleUnderline(axis)
   // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
   // typeface=".."/></a:defRPr></a:pPr></a:p></c:rich></c:tx></c:title>` —
   // axis-title font family. Same `<c:title>` body scope as
@@ -262,7 +262,7 @@ export function parseAxisInfo(
   // through the writer. Returns `undefined` when the axis omits
   // `<c:title>` entirely or when the title is a `<c:strRef>` (formula
   // reference) with no `<c:rich>` body.
-  const axisTitleFontFamily = parseAxisTitleFontFamily(axis);
+  const axisTitleFontFamily = parseAxisTitleFontFamily(axis)
   // `<c:title><c:overlay val=".."/></c:title>` — axis-title overlay
   // flag. Sits as a direct child of `<c:title>` per CT_Title schema,
   // so the lookup is scoped to direct title children. The OOXML
@@ -270,7 +270,7 @@ export function parseAxisInfo(
   // `<c:overlay val="0"/>` round-trip identically through
   // {@link cloneChart}. Returns `undefined` when the axis omits
   // `<c:title>` entirely.
-  const axisTitleOverlay = parseAxisTitleOverlay(axis);
+  const axisTitleOverlay = parseAxisTitleOverlay(axis)
   // `<c:title><c:layout><c:manualLayout>...</c:manualLayout></c:layout>
   // </c:title>` — axis-title manual placement. Sits inside `<c:title>`
   // between `<c:tx>` and `<c:overlay>` per CT_Title schema (ECMA-376
@@ -287,7 +287,7 @@ export function parseAxisInfo(
   // coordinate dropped on normalization. Mirrors the chart-level
   // `legendLayout` / `plotAreaLayout` parsers — same accept-or-drop
   // grammar, same `xMode="edge"` / `xMode="factor"` admission.
-  const axisTitleLayout = parseAxisTitleLayout(axis);
+  const axisTitleLayout = parseAxisTitleLayout(axis)
   // `<c:title><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
   // </a:solidFill></c:spPr></c:title>` — axis-title background fill.
   // Sits on the axis's `<c:title>` directly per CT_Title schema (the
@@ -306,7 +306,7 @@ export function parseAxisInfo(
   // formula reference can still surface its background fill — Excel's
   // "Format Axis Title -> Fill" dialog is independent of whether the
   // text body is rich or a formula.
-  const axisTitleFillColor = parseAxisTitleFillColor(axis);
+  const axisTitleFillColor = parseAxisTitleFillColor(axis)
   // `<c:title><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/>
   // </a:solidFill></a:ln></c:spPr></c:title>` — axis-title border
   // (line stroke) color. Sits on the axis's `<c:title>` directly per
@@ -325,7 +325,7 @@ export function parseAxisInfo(
   // inner `<a:defRPr><a:solidFill>` slot for the font color) — the
   // three readers walk disjoint paths so a caller can pin all three
   // knobs without conflict.
-  const axisTitleBorderColor = parseAxisTitleBorderColor(axis);
+  const axisTitleBorderColor = parseAxisTitleBorderColor(axis)
   // `<c:catAx><c:title><c:spPr><a:ln w="EMU"/>` (or `<c:valAx>` /
   // `<c:dateAx>` / `<c:serAx>`) carries Excel's "Format Axis Title ->
   // Border -> Width" pin. Same EMU encoding and clamp / snap grammar
@@ -334,28 +334,28 @@ export function parseAxisInfo(
   // (`<a:prstDash>` child) — the three readers walk disjoint slots of
   // the shared `<a:ln>` element so a caller can pin all three knobs
   // without conflict.
-  const axisTitleBorderWidth = parseAxisTitleBorderWidth(axis);
+  const axisTitleBorderWidth = parseAxisTitleBorderWidth(axis)
   // `<c:catAx><c:title><c:spPr><a:ln><a:prstDash val=".."/>` (or
   // `<c:valAx>` / `<c:dateAx>` / `<c:serAx>`) carries Excel's "Format
   // Axis Title -> Border -> Dash type" pin.
-  const axisTitleBorderDash = parseAxisTitleBorderDash(axis);
+  const axisTitleBorderDash = parseAxisTitleBorderDash(axis)
   // `<c:title><c:spPr><a:ln cap=".."/>` / `<a:ln cmpd=".."/>` — Excel's
   // axis-title border line cap and compound styles. Same accept-or-drop
   // grammar as every other chart-frame `<a:ln>` slot.
-  const axisTitleBorderCap = parseAxisTitleBorderCap(axis);
-  const axisTitleBorderCompound = parseAxisTitleBorderCompound(axis);
-  const gridlines = parseAxisGridlines(axis);
-  const scale = parseAxisScale(axis);
-  const numberFormat = parseAxisNumberFormat(axis);
+  const axisTitleBorderCap = parseAxisTitleBorderCap(axis)
+  const axisTitleBorderCompound = parseAxisTitleBorderCompound(axis)
+  const gridlines = parseAxisGridlines(axis)
+  const scale = parseAxisScale(axis)
+  const numberFormat = parseAxisNumberFormat(axis)
   // Tick-mark and tick-label-position children sit alongside the
   // gridlines / numFmt on every CT_CatAx / CT_ValAx / CT_DateAx /
   // CT_SerAx — see CT_TickMark, ST_TickMark, ST_TickLblPos in
   // ECMA-376 Part 1, §21.2.2. The reader collapses each value to
   // `undefined` when it matches the OOXML default so absence and the
   // default round-trip identically through {@link cloneChart}.
-  const majorTickMark = parseAxisTickMark(axis, "majorTickMark", "out");
-  const minorTickMark = parseAxisTickMark(axis, "minorTickMark", "none");
-  const tickLblPos = parseAxisTickLblPos(axis);
+  const majorTickMark = parseAxisTickMark(axis, "majorTickMark", "out")
+  const minorTickMark = parseAxisTickMark(axis, "minorTickMark", "none")
+  const tickLblPos = parseAxisTickLblPos(axis)
   // `<c:txPr><a:bodyPr rot="N"/></c:txPr>` — tick-label rotation in
   // 60000ths of a degree. The element sits on every axis flavour per
   // the OOXML schema (CT_CatAx, CT_ValAx, CT_DateAx, CT_SerAx all
@@ -363,28 +363,28 @@ export function parseAxisInfo(
   // flavour. Out-of-range values clamp to the `-90..90` band Excel's
   // UI exposes; the OOXML default `0` and absence both collapse to
   // `undefined`.
-  const labelRotation = parseAxisLabelRotation(axis);
+  const labelRotation = parseAxisLabelRotation(axis)
   // `<c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p></c:txPr>` —
   // tick-label font size in 100ths of a point. Same `<c:txPr>` slot
   // as `labelRotation` above. Out-of-range / non-numeric values drop
   // to `undefined` so a corrupt template cannot surface a value the
   // writer would never emit. Surfaced on every axis flavour for
   // symmetry with the writer.
-  const labelFontSize = parseAxisLabelFontSize(axis);
+  const labelFontSize = parseAxisLabelFontSize(axis)
   // `<c:txPr><a:p><a:pPr><a:defRPr b=".."/></a:pPr></a:p></c:txPr>` —
   // tick-label bold flag. Same `<c:txPr>` slot scope as the rotation /
   // size readers above. The OOXML default `false` collapses to
   // `undefined` so absence and `b="0"` round-trip identically; only
   // an explicit `b="1"` surfaces `true`. Surfaced on every axis
   // flavour for symmetry with the writer.
-  const labelBold = parseAxisLabelBold(axis);
+  const labelBold = parseAxisLabelBold(axis)
   // `<c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p></c:txPr>` —
   // tick-label italic flag. Same `<c:txPr>` slot scope as the bold
   // reader above. The OOXML default `false` collapses to `undefined`
   // so absence and `i="0"` round-trip identically; only an explicit
   // `i="1"` surfaces `true`. Surfaced on every axis flavour for
   // symmetry with the writer.
-  const labelItalic = parseAxisLabelItalic(axis);
+  const labelItalic = parseAxisLabelItalic(axis)
   // `<c:txPr><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val=".."/>
   // </a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>` — tick-label
   // font color. Same `<c:txPr>` slot scope as the rotation / size /
@@ -393,7 +393,7 @@ export function parseAxisInfo(
   // tokens all collapse to `undefined` since only the literal RGB
   // triple round-trips losslessly through the writer. Surfaced on
   // every axis flavour for symmetry with the writer.
-  const labelColor = parseAxisLabelColor(axis);
+  const labelColor = parseAxisLabelColor(axis)
   // `<c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr>` —
   // tick-label underline flag. Same `<c:txPr>` slot scope as the
   // rotation / size / bold / italic / color readers above. Only the
@@ -403,7 +403,7 @@ export function parseAxisInfo(
   // default round-trip identically through the writer (which emits
   // only `"sng"`). Surfaced on every axis flavour for symmetry with
   // the writer.
-  const labelUnderline = parseAxisLabelUnderline(axis);
+  const labelUnderline = parseAxisLabelUnderline(axis)
   // `<c:txPr><a:p><a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr>` —
   // tick-label strikethrough flag. Same `<c:txPr>` slot scope as the
   // rotation / size / bold / italic / color / underline readers above.
@@ -413,7 +413,7 @@ export function parseAxisInfo(
   // trip identically through the writer (which emits only
   // `"sngStrike"`). Surfaced on every axis flavour for symmetry with
   // the writer.
-  const labelStrike = parseAxisLabelStrike(axis);
+  const labelStrike = parseAxisLabelStrike(axis)
   // `<c:txPr><a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
   // </a:pPr></a:p></c:txPr>` — axis tick-label font family. Same
   // axis-level `<c:txPr>` body scope as the rotation / size / bold /
@@ -424,48 +424,48 @@ export function parseAxisInfo(
   // scoped to the axis-level `<c:txPr>` so a stray `<a:latin>` inside
   // `<c:title>` (surfaced by `axisTitleFontFamily`) cannot leak in.
   // Surfaced on every axis flavour for symmetry with the writer.
-  const labelFontFamily = parseAxisLabelFontFamily(axis);
+  const labelFontFamily = parseAxisLabelFontFamily(axis)
   // <c:scaling><c:orientation val=".."/></c:scaling> — ST_Orientation
   // accepts "minMax" (default, low → high) and "maxMin" (reversed).
   // The default collapses to undefined so a fresh chart and a chart
   // that explicitly pins "minMax" round-trip identically.
-  const reverse = parseAxisReverse(axis);
+  const reverse = parseAxisReverse(axis)
   // `<c:tickLblSkip>` / `<c:tickMarkSkip>` live exclusively on
   // `CT_CatAx` / `CT_DateAx` per ECMA-376 Part 1, §21.2.2 — the
   // `<c:valAx>` schema rejects them entirely. Skip the parse on
   // value axes so a corrupt template carrying a stray skip element
   // on a value axis does not surface a field the writer would never
   // emit anyway.
-  const isCategoryAxis = axis.local === "catAx" || axis.local === "dateAx";
-  const tickLblSkip = isCategoryAxis ? parseAxisSkip(axis, "tickLblSkip") : undefined;
-  const tickMarkSkip = isCategoryAxis ? parseAxisSkip(axis, "tickMarkSkip") : undefined;
+  const isCategoryAxis = axis.local === "catAx" || axis.local === "dateAx"
+  const tickLblSkip = isCategoryAxis ? parseAxisSkip(axis, "tickLblSkip") : undefined
+  const tickMarkSkip = isCategoryAxis ? parseAxisSkip(axis, "tickMarkSkip") : undefined
   // `<c:lblOffset>` lives exclusively on `CT_CatAx` / `CT_DateAx` per
   // ECMA-376 Part 1, §21.2.2 — the `<c:valAx>` and `<c:serAx>` schemas
   // reject it. Skip the parse on value axes for the same reason as
   // the skip elements above.
-  const lblOffset = isCategoryAxis ? parseAxisLblOffset(axis) : undefined;
+  const lblOffset = isCategoryAxis ? parseAxisLblOffset(axis) : undefined
   // `<c:lblAlgn>` is also category-axis-only per ECMA-376 Part 1,
   // §21.2.2 — the OOXML `ST_LblAlgn` schema places the element on
   // `CT_CatAx` / `CT_DateAx` only. Same scope rule as `lblOffset`.
-  const lblAlgn = isCategoryAxis ? parseAxisLblAlgn(axis) : undefined;
+  const lblAlgn = isCategoryAxis ? parseAxisLblAlgn(axis) : undefined
   // `<c:noMultiLvlLbl>` lives exclusively on `CT_CatAx` per ECMA-376
   // Part 1, §21.2.2 — even `<c:dateAx>`, `<c:valAx>`, and `<c:serAx>`
   // reject the element. Skip the parse on every other axis flavour so
   // a corrupt template carrying a stray flag does not surface a value
   // the writer would never emit anyway.
-  const noMultiLvlLbl = axis.local === "catAx" ? parseAxisNoMultiLvlLbl(axis) : undefined;
+  const noMultiLvlLbl = axis.local === "catAx" ? parseAxisNoMultiLvlLbl(axis) : undefined
   // `<c:auto>` lives exclusively on `CT_CatAx` per ECMA-376 Part 1,
   // §21.2.2.7 — `<c:dateAx>`, `<c:valAx>`, and `<c:serAx>` reject the
   // element. Skip the parse on every other axis flavour for symmetry
   // with the writer's catAx-only emit path. Only `false` surfaces; the
   // OOXML default `true` (Excel inspects the data and decides whether
   // to treat the axis as a date axis) collapses to `undefined`.
-  const auto = axis.local === "catAx" ? parseAxisAuto(axis) : undefined;
+  const auto = axis.local === "catAx" ? parseAxisAuto(axis) : undefined
   // `<c:delete>` sits on every axis flavour (CT_CatAx / CT_ValAx /
   // CT_DateAx / CT_SerAx) per ECMA-376 Part 1, §21.2.2. The OOXML
   // default `val="0"` (axis visible) collapses to `undefined` so
   // absence and the default round-trip identically.
-  const hidden = parseAxisHidden(axis);
+  const hidden = parseAxisHidden(axis)
   // `<c:crosses>` and `<c:crossesAt>` sit on every axis flavour and live
   // in an XSD choice (CT_Crosses ⊕ CT_Double) — only one may legally
   // appear at a time per ECMA-376 Part 1, §21.2.2. The reader honours
@@ -473,14 +473,14 @@ export function parseAxisInfo(
   // together (a malformed template); the writer mirrors that order so a
   // round-trip surfaces the numeric pin and drops the redundant
   // semantic toggle.
-  const crossesPair = parseAxisCrosses(axis);
-  const crosses = crossesPair.crosses;
-  const crossesAt = crossesPair.crossesAt;
+  const crossesPair = parseAxisCrosses(axis)
+  const crosses = crossesPair.crosses
+  const crossesAt = crossesPair.crossesAt
   // `<c:dispUnits>` lives exclusively on `<c:valAx>` per ECMA-376 Part 1,
   // §21.2.2.32 (CT_ValAx → CT_DispUnits). Skip the parse on every other
   // axis flavour so a corrupt template carrying a stray element does
   // not surface a value the writer would never emit anyway.
-  const dispUnits = axis.local === "valAx" ? parseAxisDispUnits(axis) : undefined;
+  const dispUnits = axis.local === "valAx" ? parseAxisDispUnits(axis) : undefined
   // `<c:crossBetween>` is also value-axis-only per ECMA-376 Part 1,
   // §21.2.2.10 (CT_ValAx → CT_CrossBetween). The OOXML schema rejects
   // the element on `<c:catAx>` / `<c:dateAx>` / `<c:serAx>`, so the
@@ -489,9 +489,9 @@ export function parseAxisInfo(
   // and Excel always emits the family default — collapse the parsed
   // value when it matches the family default so absence and the
   // default round-trip identically through {@link cloneChart}.
-  const parsedCrossBetween = axis.local === "valAx" ? parseAxisCrossBetween(axis) : undefined;
+  const parsedCrossBetween = axis.local === "valAx" ? parseAxisCrossBetween(axis) : undefined
   const crossBetween =
-    parsedCrossBetween === familyDefaultCrossBetween ? undefined : parsedCrossBetween;
+    parsedCrossBetween === familyDefaultCrossBetween ? undefined : parsedCrossBetween
   if (
     title === undefined &&
     axisTitleRotation === undefined &&
@@ -537,55 +537,55 @@ export function parseAxisInfo(
     dispUnits === undefined &&
     crossBetween === undefined
   ) {
-    return undefined;
+    return undefined
   }
-  const out: ChartAxisInfo = {};
-  if (title !== undefined) out.title = title;
-  if (axisTitleRotation !== undefined) out.axisTitleRotation = axisTitleRotation;
-  if (axisTitleFontSize !== undefined) out.axisTitleFontSize = axisTitleFontSize;
-  if (axisTitleBold !== undefined) out.axisTitleBold = axisTitleBold;
-  if (axisTitleItalic !== undefined) out.axisTitleItalic = axisTitleItalic;
-  if (axisTitleColor !== undefined) out.axisTitleColor = axisTitleColor;
-  if (axisTitleStrike !== undefined) out.axisTitleStrike = axisTitleStrike;
-  if (axisTitleUnderline !== undefined) out.axisTitleUnderline = axisTitleUnderline;
-  if (axisTitleFontFamily !== undefined) out.axisTitleFontFamily = axisTitleFontFamily;
-  if (axisTitleOverlay !== undefined) out.axisTitleOverlay = axisTitleOverlay;
-  if (axisTitleLayout !== undefined) out.axisTitleLayout = axisTitleLayout;
-  if (axisTitleFillColor !== undefined) out.axisTitleFillColor = axisTitleFillColor;
-  if (axisTitleBorderColor !== undefined) out.axisTitleBorderColor = axisTitleBorderColor;
-  if (axisTitleBorderWidth !== undefined) out.axisTitleBorderWidth = axisTitleBorderWidth;
-  if (axisTitleBorderDash !== undefined) out.axisTitleBorderDash = axisTitleBorderDash;
-  if (axisTitleBorderCap !== undefined) out.axisTitleBorderCap = axisTitleBorderCap;
+  const out: ChartAxisInfo = {}
+  if (title !== undefined) out.title = title
+  if (axisTitleRotation !== undefined) out.axisTitleRotation = axisTitleRotation
+  if (axisTitleFontSize !== undefined) out.axisTitleFontSize = axisTitleFontSize
+  if (axisTitleBold !== undefined) out.axisTitleBold = axisTitleBold
+  if (axisTitleItalic !== undefined) out.axisTitleItalic = axisTitleItalic
+  if (axisTitleColor !== undefined) out.axisTitleColor = axisTitleColor
+  if (axisTitleStrike !== undefined) out.axisTitleStrike = axisTitleStrike
+  if (axisTitleUnderline !== undefined) out.axisTitleUnderline = axisTitleUnderline
+  if (axisTitleFontFamily !== undefined) out.axisTitleFontFamily = axisTitleFontFamily
+  if (axisTitleOverlay !== undefined) out.axisTitleOverlay = axisTitleOverlay
+  if (axisTitleLayout !== undefined) out.axisTitleLayout = axisTitleLayout
+  if (axisTitleFillColor !== undefined) out.axisTitleFillColor = axisTitleFillColor
+  if (axisTitleBorderColor !== undefined) out.axisTitleBorderColor = axisTitleBorderColor
+  if (axisTitleBorderWidth !== undefined) out.axisTitleBorderWidth = axisTitleBorderWidth
+  if (axisTitleBorderDash !== undefined) out.axisTitleBorderDash = axisTitleBorderDash
+  if (axisTitleBorderCap !== undefined) out.axisTitleBorderCap = axisTitleBorderCap
   if (axisTitleBorderCompound !== undefined) {
-    out.axisTitleBorderCompound = axisTitleBorderCompound;
+    out.axisTitleBorderCompound = axisTitleBorderCompound
   }
-  if (gridlines !== undefined) out.gridlines = gridlines;
-  if (scale !== undefined) out.scale = scale;
-  if (numberFormat !== undefined) out.numberFormat = numberFormat;
-  if (majorTickMark !== undefined) out.majorTickMark = majorTickMark;
-  if (minorTickMark !== undefined) out.minorTickMark = minorTickMark;
-  if (tickLblPos !== undefined) out.tickLblPos = tickLblPos;
-  if (labelRotation !== undefined) out.labelRotation = labelRotation;
-  if (labelFontSize !== undefined) out.labelFontSize = labelFontSize;
-  if (labelBold !== undefined) out.labelBold = labelBold;
-  if (labelItalic !== undefined) out.labelItalic = labelItalic;
-  if (labelColor !== undefined) out.labelColor = labelColor;
-  if (labelFontFamily !== undefined) out.labelFontFamily = labelFontFamily;
-  if (labelUnderline !== undefined) out.labelUnderline = labelUnderline;
-  if (labelStrike !== undefined) out.labelStrike = labelStrike;
-  if (reverse !== undefined) out.reverse = reverse;
-  if (tickLblSkip !== undefined) out.tickLblSkip = tickLblSkip;
-  if (tickMarkSkip !== undefined) out.tickMarkSkip = tickMarkSkip;
-  if (lblOffset !== undefined) out.lblOffset = lblOffset;
-  if (lblAlgn !== undefined) out.lblAlgn = lblAlgn;
-  if (noMultiLvlLbl !== undefined) out.noMultiLvlLbl = noMultiLvlLbl;
-  if (auto !== undefined) out.auto = auto;
-  if (hidden !== undefined) out.hidden = hidden;
-  if (crosses !== undefined) out.crosses = crosses;
-  if (crossesAt !== undefined) out.crossesAt = crossesAt;
-  if (dispUnits !== undefined) out.dispUnits = dispUnits;
-  if (crossBetween !== undefined) out.crossBetween = crossBetween;
-  return out;
+  if (gridlines !== undefined) out.gridlines = gridlines
+  if (scale !== undefined) out.scale = scale
+  if (numberFormat !== undefined) out.numberFormat = numberFormat
+  if (majorTickMark !== undefined) out.majorTickMark = majorTickMark
+  if (minorTickMark !== undefined) out.minorTickMark = minorTickMark
+  if (tickLblPos !== undefined) out.tickLblPos = tickLblPos
+  if (labelRotation !== undefined) out.labelRotation = labelRotation
+  if (labelFontSize !== undefined) out.labelFontSize = labelFontSize
+  if (labelBold !== undefined) out.labelBold = labelBold
+  if (labelItalic !== undefined) out.labelItalic = labelItalic
+  if (labelColor !== undefined) out.labelColor = labelColor
+  if (labelFontFamily !== undefined) out.labelFontFamily = labelFontFamily
+  if (labelUnderline !== undefined) out.labelUnderline = labelUnderline
+  if (labelStrike !== undefined) out.labelStrike = labelStrike
+  if (reverse !== undefined) out.reverse = reverse
+  if (tickLblSkip !== undefined) out.tickLblSkip = tickLblSkip
+  if (tickMarkSkip !== undefined) out.tickMarkSkip = tickMarkSkip
+  if (lblOffset !== undefined) out.lblOffset = lblOffset
+  if (lblAlgn !== undefined) out.lblAlgn = lblAlgn
+  if (noMultiLvlLbl !== undefined) out.noMultiLvlLbl = noMultiLvlLbl
+  if (auto !== undefined) out.auto = auto
+  if (hidden !== undefined) out.hidden = hidden
+  if (crosses !== undefined) out.crosses = crosses
+  if (crossesAt !== undefined) out.crossesAt = crossesAt
+  if (dispUnits !== undefined) out.dispUnits = dispUnits
+  if (crossBetween !== undefined) out.crossBetween = crossBetween
+  return out
 }
 
 /**
@@ -601,13 +601,13 @@ export function parseAxisTickMark(
   localName: "majorTickMark" | "minorTickMark",
   defaultValue: ChartAxisTickMark,
 ): ChartAxisTickMark | undefined {
-  const el = findChild(axis, localName);
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const value = raw.trim() as ChartAxisTickMark;
-  if (!VALID_TICK_MARKS.has(value)) return undefined;
-  return value === defaultValue ? undefined : value;
+  const el = findChild(axis, localName)
+  if (!el) return undefined
+  const raw = el.attrs.val
+  if (typeof raw !== "string") return undefined
+  const value = raw.trim() as ChartAxisTickMark
+  if (!VALID_TICK_MARKS.has(value)) return undefined
+  return value === defaultValue ? undefined : value
 }
 
 /**
@@ -617,13 +617,13 @@ export function parseAxisTickMark(
  * `"nextTo"` so absence and the default round-trip identically.
  */
 export function parseAxisTickLblPos(axis: XmlElement): ChartAxisTickLabelPosition | undefined {
-  const el = findChild(axis, "tickLblPos");
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const value = raw.trim() as ChartAxisTickLabelPosition;
-  if (!VALID_TICK_LBL_POSITIONS.has(value)) return undefined;
-  return value === "nextTo" ? undefined : value;
+  const el = findChild(axis, "tickLblPos")
+  if (!el) return undefined
+  const raw = el.attrs.val
+  if (typeof raw !== "string") return undefined
+  const value = raw.trim() as ChartAxisTickLabelPosition
+  if (!VALID_TICK_LBL_POSITIONS.has(value)) return undefined
+  return value === "nextTo" ? undefined : value
 }
 
 /**
@@ -635,17 +635,17 @@ export function parseAxisTickLblPos(axis: XmlElement): ChartAxisTickLabelPositio
  * to `undefined` rather than fabricate a flag.
  */
 export function parseAxisReverse(axis: XmlElement): boolean | undefined {
-  const scaling = findChild(axis, "scaling");
-  if (!scaling) return undefined;
-  const orientation = findChild(scaling, "orientation");
-  if (!orientation) return undefined;
-  const raw = orientation.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const value = raw.trim();
-  if (value === "maxMin") return true;
+  const scaling = findChild(axis, "scaling")
+  if (!scaling) return undefined
+  const orientation = findChild(scaling, "orientation")
+  if (!orientation) return undefined
+  const raw = orientation.attrs.val
+  if (typeof raw !== "string") return undefined
+  const value = raw.trim()
+  if (value === "maxMin") return true
   // "minMax" and unknown tokens both fall through to undefined — only
   // an explicit reversed orientation surfaces.
-  return undefined;
+  return undefined
 }
 
 /**
@@ -666,17 +666,17 @@ export function parseAxisSkip(
   axis: XmlElement,
   localName: "tickLblSkip" | "tickMarkSkip",
 ): number | undefined {
-  const el = findChild(axis, localName);
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  const parsed = Number.parseInt(trimmed, 10);
-  if (!Number.isFinite(parsed)) return undefined;
-  if (parsed < 1 || parsed > 32767) return undefined;
-  if (parsed === 1) return undefined;
-  return parsed;
+  const el = findChild(axis, localName)
+  if (!el) return undefined
+  const raw = el.attrs.val
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  const parsed = Number.parseInt(trimmed, 10)
+  if (!Number.isFinite(parsed)) return undefined
+  if (parsed < 1 || parsed > 32767) return undefined
+  if (parsed === 1) return undefined
+  return parsed
 }
 
 /**
@@ -693,17 +693,17 @@ export function parseAxisSkip(
  * so a corrupt template cannot leak an offset Excel would reject.
  */
 export function parseAxisLblOffset(axis: XmlElement): number | undefined {
-  const el = findChild(axis, "lblOffset");
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  const parsed = Number.parseInt(trimmed, 10);
-  if (!Number.isFinite(parsed)) return undefined;
-  if (parsed < 0 || parsed > 1000) return undefined;
-  if (parsed === 100) return undefined;
-  return parsed;
+  const el = findChild(axis, "lblOffset")
+  if (!el) return undefined
+  const raw = el.attrs.val
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  const parsed = Number.parseInt(trimmed, 10)
+  if (!Number.isFinite(parsed)) return undefined
+  if (parsed < 0 || parsed > 1000) return undefined
+  if (parsed === 100) return undefined
+  return parsed
 }
 
 /**
@@ -719,13 +719,13 @@ export function parseAxisLblOffset(axis: XmlElement): number | undefined {
  * corrupt template cannot leak an alignment Excel would reject.
  */
 export function parseAxisLblAlgn(axis: XmlElement): ChartAxisLabelAlign | undefined {
-  const el = findChild(axis, "lblAlgn");
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const value = raw.trim() as ChartAxisLabelAlign;
-  if (!VALID_LBL_ALIGNS.has(value)) return undefined;
-  return value === "ctr" ? undefined : value;
+  const el = findChild(axis, "lblAlgn")
+  if (!el) return undefined
+  const raw = el.attrs.val
+  if (typeof raw !== "string") return undefined
+  const value = raw.trim() as ChartAxisLabelAlign
+  if (!VALID_LBL_ALIGNS.has(value)) return undefined
+  return value === "ctr" ? undefined : value
 }
 
 /**
@@ -743,19 +743,19 @@ export function parseAxisLblAlgn(axis: XmlElement): ChartAxisLabelAlign | undefi
  * Boolean-valued chart attribute.
  */
 export function parseAxisNoMultiLvlLbl(axis: XmlElement): boolean | undefined {
-  const el = findChild(axis, "noMultiLvlLbl");
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
+  const el = findChild(axis, "noMultiLvlLbl")
+  if (!el) return undefined
+  const raw = el.attrs.val
+  if (typeof raw !== "string") return undefined
   switch (raw.trim()) {
     case "1":
     case "true":
-      return true;
+      return true
     case "0":
     case "false":
-      return undefined;
+      return undefined
     default:
-      return undefined;
+      return undefined
   }
 }
 
@@ -779,21 +779,21 @@ export function parseAxisNoMultiLvlLbl(axis: XmlElement): boolean | undefined {
  * `false`), so this parser collapses `true` rather than `false`.
  */
 export function parseAxisAuto(axis: XmlElement): boolean | undefined {
-  const el = findChild(axis, "auto");
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
+  const el = findChild(axis, "auto")
+  if (!el) return undefined
+  const raw = el.attrs.val
+  if (typeof raw !== "string") return undefined
   switch (raw.trim()) {
     case "0":
     case "false":
-      return false;
+      return false
     case "1":
     case "true":
       // OOXML default — collapse to undefined so absence and the
       // default round-trip identically.
-      return undefined;
+      return undefined
     default:
-      return undefined;
+      return undefined
   }
 }
 
@@ -810,21 +810,21 @@ export function parseAxisAuto(axis: XmlElement): boolean | undefined {
  * valued chart attribute.
  */
 export function parseAxisHidden(axis: XmlElement): boolean | undefined {
-  const el = findChild(axis, "delete");
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
+  const el = findChild(axis, "delete")
+  if (!el) return undefined
+  const raw = el.attrs.val
+  if (typeof raw !== "string") return undefined
   switch (raw.trim()) {
     case "1":
     case "true":
-      return true;
+      return true
     case "0":
     case "false":
       // OOXML default — collapse to undefined so absence and the
       // default round-trip identically.
-      return undefined;
+      return undefined
     default:
-      return undefined;
+      return undefined
   }
 }
 
@@ -847,22 +847,22 @@ export function parseAxisHidden(axis: XmlElement): boolean | undefined {
  * {@link SheetChart.axes}.x.labelRotation.
  */
 export function parseAxisLabelRotation(axis: XmlElement): number | undefined {
-  const txPr = findChild(axis, "txPr");
-  if (!txPr) return undefined;
-  const bodyPr = findChild(txPr, "bodyPr");
-  if (!bodyPr) return undefined;
-  const raw = bodyPr.attrs.rot;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  const parsed = Number.parseInt(trimmed, 10);
-  if (!Number.isFinite(parsed)) return undefined;
+  const txPr = findChild(axis, "txPr")
+  if (!txPr) return undefined
+  const bodyPr = findChild(txPr, "bodyPr")
+  if (!bodyPr) return undefined
+  const raw = bodyPr.attrs.rot
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  const parsed = Number.parseInt(trimmed, 10)
+  if (!Number.isFinite(parsed)) return undefined
   // Convert from 60000ths of a degree to whole degrees.
-  const degrees = Math.round(parsed / TXPR_ROT_PER_DEGREE);
-  if (degrees === 0) return undefined;
-  if (degrees < LABEL_ROTATION_MIN_DEG) return LABEL_ROTATION_MIN_DEG;
-  if (degrees > LABEL_ROTATION_MAX_DEG) return LABEL_ROTATION_MAX_DEG;
-  return degrees;
+  const degrees = Math.round(parsed / TXPR_ROT_PER_DEGREE)
+  if (degrees === 0) return undefined
+  if (degrees < LABEL_ROTATION_MIN_DEG) return LABEL_ROTATION_MIN_DEG
+  if (degrees > LABEL_ROTATION_MAX_DEG) return LABEL_ROTATION_MAX_DEG
+  return degrees
 }
 
 /**
@@ -890,28 +890,28 @@ export function parseAxisLabelRotation(axis: XmlElement): number | undefined {
  * {@link SheetChart.axes}.x.labelFontSize.
  */
 export function parseAxisLabelFontSize(axis: XmlElement): number | undefined {
-  const txPr = findChild(axis, "txPr");
-  if (!txPr) return undefined;
-  const p = findChild(txPr, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const raw = defRPr.attrs.sz;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  const parsed = Number.parseInt(trimmed, 10);
-  if (!Number.isFinite(parsed)) return undefined;
+  const txPr = findChild(axis, "txPr")
+  if (!txPr) return undefined
+  const p = findChild(txPr, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const raw = defRPr.attrs.sz
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  const parsed = Number.parseInt(trimmed, 10)
+  if (!Number.isFinite(parsed)) return undefined
   // Convert from 100ths of a point to points, rounding to the nearest
   // 0.5pt to match the granularity Excel's UI exposes. Mirrors the
   // chart-level / axis-title `parseTitleFontSize` half-step
   // normalisation.
-  const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2);
-  const points = halfSteps / 2;
-  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
-  return points;
+  const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2)
+  const points = halfSteps / 2
+  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined
+  return points
 }
 
 /**
@@ -941,20 +941,20 @@ export function parseAxisLabelFontSize(axis: XmlElement): number | undefined {
  * {@link SheetChart.axes}.x.labelBold.
  */
 export function parseAxisLabelBold(axis: XmlElement): boolean | undefined {
-  const txPr = findChild(axis, "txPr");
-  if (!txPr) return undefined;
-  const p = findChild(txPr, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const parsed = parseBoolAttr(defRPr.attrs.b);
+  const txPr = findChild(axis, "txPr")
+  if (!txPr) return undefined
+  const p = findChild(txPr, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const parsed = parseBoolAttr(defRPr.attrs.b)
   // The OOXML default `false` collapses to `undefined` so absence and
   // `b="0"` round-trip identically through the writer — only an
   // explicit `b="1"` surfaces `true`.
-  if (parsed === true) return true;
-  return undefined;
+  if (parsed === true) return true
+  return undefined
 }
 
 /**
@@ -977,20 +977,20 @@ export function parseAxisLabelBold(axis: XmlElement): boolean | undefined {
  * {@link SheetChart.axes}.x.labelItalic.
  */
 export function parseAxisLabelItalic(axis: XmlElement): boolean | undefined {
-  const txPr = findChild(axis, "txPr");
-  if (!txPr) return undefined;
-  const p = findChild(txPr, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const parsed = parseBoolAttr(defRPr.attrs.i);
+  const txPr = findChild(axis, "txPr")
+  if (!txPr) return undefined
+  const p = findChild(txPr, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const parsed = parseBoolAttr(defRPr.attrs.i)
   // The OOXML default `false` collapses to `undefined` so absence and
   // `i="0"` round-trip identically through the writer — only an
   // explicit `i="1"` surfaces `true`.
-  if (parsed === true) return true;
-  return undefined;
+  if (parsed === true) return true
+  return undefined
 }
 
 /**
@@ -1023,21 +1023,21 @@ export function parseAxisLabelItalic(axis: XmlElement): boolean | undefined {
  * fill cannot leak in.
  */
 export function parseAxisLabelColor(axis: XmlElement): ChartColor | undefined {
-  const txPr = findChild(axis, "txPr");
-  if (!txPr) return undefined;
-  const p = findChild(txPr, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const solidFill = findChild(defRPr, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
-  if (srgbClr) return normalizeRgbHex(srgbClr.attrs.val);
-  const schemeClr = findChild(solidFill, "schemeClr");
-  if (schemeClr) return parseSchemeClr(schemeClr);
-  return undefined;
+  const txPr = findChild(axis, "txPr")
+  if (!txPr) return undefined
+  const p = findChild(txPr, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const solidFill = findChild(defRPr, "solidFill")
+  if (!solidFill) return undefined
+  const srgbClr = findChild(solidFill, "srgbClr")
+  if (srgbClr) return normalizeRgbHex(srgbClr.attrs.val)
+  const schemeClr = findChild(solidFill, "schemeClr")
+  if (schemeClr) return parseSchemeClr(schemeClr)
+  return undefined
 }
 
 /**
@@ -1075,15 +1075,15 @@ export function parseAxisLabelColor(axis: XmlElement): ChartColor | undefined {
  * {@link SheetChart.axes}.x.labelUnderline.
  */
 export function parseAxisLabelUnderline(axis: XmlElement): boolean | undefined {
-  const txPr = findChild(axis, "txPr");
-  if (!txPr) return undefined;
-  const p = findChild(txPr, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const raw = defRPr.attrs.u;
+  const txPr = findChild(axis, "txPr")
+  if (!txPr) return undefined
+  const p = findChild(txPr, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const raw = defRPr.attrs.u
   // Only the UI-default `"sng"` surfaces as `true`. The OOXML
   // application default `"none"`, the non-UI `"dbl"` variant, and
   // every exotic token (`"words"`, `"heavy"`, `"dotted"`, etc.) all
@@ -1091,8 +1091,8 @@ export function parseAxisLabelUnderline(axis: XmlElement): boolean | undefined {
   // round-trip identically through the writer; the writer emits only
   // `"sng"`, so reporting a non-single underline here would silently
   // downgrade the choice on round-trip.
-  if (raw === "sng") return true;
-  return undefined;
+  if (raw === "sng") return true
+  return undefined
 }
 
 /**
@@ -1129,15 +1129,15 @@ export function parseAxisLabelUnderline(axis: XmlElement): boolean | undefined {
  * {@link SheetChart.axes}.x.labelStrike.
  */
 export function parseAxisLabelStrike(axis: XmlElement): boolean | undefined {
-  const txPr = findChild(axis, "txPr");
-  if (!txPr) return undefined;
-  const p = findChild(txPr, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const raw = defRPr.attrs.strike;
+  const txPr = findChild(axis, "txPr")
+  if (!txPr) return undefined
+  const p = findChild(txPr, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const raw = defRPr.attrs.strike
   // Only the UI-default `"sngStrike"` surfaces as `true`. The OOXML
   // application default `"noStrike"`, the non-UI `"dblStrike"` variant,
   // and unknown / malformed tokens all collapse to `undefined` so
@@ -1145,8 +1145,8 @@ export function parseAxisLabelStrike(axis: XmlElement): boolean | undefined {
   // writer; the writer emits only `"sngStrike"`, so reporting
   // `"dblStrike"` here would silently downgrade the choice on round-
   // trip.
-  if (raw === "sngStrike") return true;
-  return undefined;
+  if (raw === "sngStrike") return true
+  return undefined
 }
 
 /**
@@ -1178,21 +1178,21 @@ export function parseAxisLabelStrike(axis: XmlElement): boolean | undefined {
  * `<c:title><c:tx><c:rich>` body cannot leak in.
  */
 export function parseAxisLabelFontFamily(axis: XmlElement): string | undefined {
-  const txPr = findChild(axis, "txPr");
-  if (!txPr) return undefined;
-  const p = findChild(txPr, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const latin = findChild(defRPr, "latin");
-  if (!latin) return undefined;
-  const raw = latin.attrs.typeface;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  return trimmed;
+  const txPr = findChild(axis, "txPr")
+  if (!txPr) return undefined
+  const p = findChild(txPr, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const latin = findChild(defRPr, "latin")
+  if (!latin) return undefined
+  const raw = latin.attrs.typeface
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  return trimmed
 }
 
 /**
@@ -1217,31 +1217,31 @@ export function parseAxisLabelFontFamily(axis: XmlElement): string | undefined {
  *                   `"autoZero"` default).
  */
 export function parseAxisCrosses(axis: XmlElement): {
-  crosses?: ChartAxisCrosses;
-  crossesAt?: number;
+  crosses?: ChartAxisCrosses
+  crossesAt?: number
 } {
-  const crossesAtEl = findChild(axis, "crossesAt");
+  const crossesAtEl = findChild(axis, "crossesAt")
   if (crossesAtEl) {
-    const raw = crossesAtEl.attrs.val;
+    const raw = crossesAtEl.attrs.val
     if (typeof raw === "string") {
-      const trimmed = raw.trim();
+      const trimmed = raw.trim()
       if (trimmed.length > 0) {
-        const parsed = Number.parseFloat(trimmed);
+        const parsed = Number.parseFloat(trimmed)
         if (Number.isFinite(parsed)) {
-          return { crossesAt: parsed };
+          return { crossesAt: parsed }
         }
       }
     }
   }
 
-  const crossesEl = findChild(axis, "crosses");
-  if (!crossesEl) return {};
-  const raw = crossesEl.attrs.val;
-  if (typeof raw !== "string") return {};
-  const value = raw.trim() as ChartAxisCrosses;
-  if (!VALID_CROSSES.has(value)) return {};
-  if (value === "autoZero") return {};
-  return { crosses: value };
+  const crossesEl = findChild(axis, "crosses")
+  if (!crossesEl) return {}
+  const raw = crossesEl.attrs.val
+  if (typeof raw !== "string") return {}
+  const value = raw.trim() as ChartAxisCrosses
+  if (!VALID_CROSSES.has(value)) return {}
+  if (value === "autoZero") return {}
+  return { crosses: value }
 }
 
 /**
@@ -1267,73 +1267,73 @@ export function parseAxisCrosses(axis: XmlElement): {
  * a round-trip stays minimal.
  */
 export function parseAxisDispUnits(axis: XmlElement): ChartAxisDispUnits | undefined {
-  const dispUnits = findChild(axis, "dispUnits");
-  if (!dispUnits) return undefined;
-  const out: ChartAxisDispUnits = {};
+  const dispUnits = findChild(axis, "dispUnits")
+  if (!dispUnits) return undefined
+  const out: ChartAxisDispUnits = {}
   // `<c:custUnit>` wins when both children are pinned — the OOXML
   // schema's `xsd:choice` forbids both, but a corrupt template may
   // declare them simultaneously. The writer mirrors this preference so
   // the round-trip stays consistent.
-  const custUnit = findChild(dispUnits, "custUnit");
+  const custUnit = findChild(dispUnits, "custUnit")
   if (custUnit) {
-    const raw = custUnit.attrs.val;
+    const raw = custUnit.attrs.val
     if (typeof raw === "string") {
-      const parsed = Number.parseFloat(raw.trim());
+      const parsed = Number.parseFloat(raw.trim())
       if (Number.isFinite(parsed) && parsed > 0) {
-        out.custUnit = parsed;
+        out.custUnit = parsed
       }
     }
   }
   if (out.custUnit === undefined) {
-    const builtInUnit = findChild(dispUnits, "builtInUnit");
+    const builtInUnit = findChild(dispUnits, "builtInUnit")
     if (builtInUnit) {
-      const raw = builtInUnit.attrs.val;
+      const raw = builtInUnit.attrs.val
       if (typeof raw === "string") {
-        const trimmed = raw.trim() as ChartAxisDispUnit;
+        const trimmed = raw.trim() as ChartAxisDispUnit
         if (VALID_DISP_UNITS.has(trimmed)) {
-          out.unit = trimmed;
+          out.unit = trimmed
         }
       }
     }
   }
-  if (out.unit === undefined && out.custUnit === undefined) return undefined;
-  const lbl = findChild(dispUnits, "dispUnitsLbl");
+  if (out.unit === undefined && out.custUnit === undefined) return undefined
+  const lbl = findChild(dispUnits, "dispUnitsLbl")
   if (lbl) {
-    out.showLabel = true;
+    out.showLabel = true
     // Walk `<c:dispUnitsLbl><c:tx><c:rich><a:p><a:r><a:t>...</a:t>` for
     // an optional custom label. Multiple paragraphs / runs concatenate
     // with newlines so a richly-formatted label round-trips as plain
     // text. Empty / whitespace-only strings collapse to absence.
-    const tx = findChild(lbl, "tx");
+    const tx = findChild(lbl, "tx")
     if (tx) {
-      const rich = findChild(tx, "rich");
+      const rich = findChild(tx, "rich")
       if (rich) {
-        const buf: string[] = [];
+        const buf: string[] = []
         for (const p of rich.children) {
-          if (typeof p === "string") continue;
-          if (p.local !== "p") continue;
-          const paraBuf: string[] = [];
+          if (typeof p === "string") continue
+          if (p.local !== "p") continue
+          const paraBuf: string[] = []
           for (const r of p.children) {
-            if (typeof r === "string") continue;
-            if (r.local !== "r") continue;
+            if (typeof r === "string") continue
+            if (r.local !== "r") continue
             for (const t of r.children) {
-              if (typeof t === "string") continue;
-              if (t.local !== "t") continue;
-              let text = "";
+              if (typeof t === "string") continue
+              if (t.local !== "t") continue
+              let text = ""
               for (const c of t.children) {
-                if (typeof c === "string") text += c;
+                if (typeof c === "string") text += c
               }
-              paraBuf.push(text);
+              paraBuf.push(text)
             }
           }
-          if (paraBuf.length > 0) buf.push(paraBuf.join(""));
+          if (paraBuf.length > 0) buf.push(paraBuf.join(""))
         }
-        const joined = buf.join("\n").trim();
-        if (joined.length > 0) out.customLabel = joined;
+        const joined = buf.join("\n").trim()
+        if (joined.length > 0) out.customLabel = joined
       }
     }
   }
-  return out;
+  return out
 }
 
 /**
@@ -1354,13 +1354,13 @@ export function parseAxisDispUnits(axis: XmlElement): ChartAxisDispUnits | undef
  * without the parser's help.
  */
 export function parseAxisCrossBetween(axis: XmlElement): ChartAxisCrossBetween | undefined {
-  const el = findChild(axis, "crossBetween");
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim() as ChartAxisCrossBetween;
-  if (!VALID_CROSS_BETWEEN.has(trimmed)) return undefined;
-  return trimmed;
+  const el = findChild(axis, "crossBetween")
+  if (!el) return undefined
+  const raw = el.attrs.val
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim() as ChartAxisCrossBetween
+  if (!VALID_CROSS_BETWEEN.has(trimmed)) return undefined
+  return trimmed
 }
 
 /**
@@ -1381,30 +1381,30 @@ export function parseAxisCrossBetween(axis: XmlElement): ChartAxisCrossBetween |
  * baseline) does not surface a scale.
  */
 export function parseAxisScale(axis: XmlElement): ChartAxisScale | undefined {
-  const out: ChartAxisScale = {};
+  const out: ChartAxisScale = {}
 
   // <c:min>, <c:max>, and <c:logBase> live inside <c:scaling>; the
   // tick-spacing children <c:majorUnit> / <c:minorUnit> sit directly
   // under <c:catAx>/<c:valAx> per CT_CatAx / CT_ValAx in ECMA-376.
-  const scaling = findChild(axis, "scaling");
+  const scaling = findChild(axis, "scaling")
   if (scaling) {
-    const min = parseNumericChildVal(scaling, "min");
-    if (min !== undefined) out.min = min;
+    const min = parseNumericChildVal(scaling, "min")
+    if (min !== undefined) out.min = min
 
-    const max = parseNumericChildVal(scaling, "max");
-    if (max !== undefined) out.max = max;
+    const max = parseNumericChildVal(scaling, "max")
+    if (max !== undefined) out.max = max
 
-    const logBase = parseNumericChildVal(scaling, "logBase");
-    if (logBase !== undefined) out.logBase = logBase;
+    const logBase = parseNumericChildVal(scaling, "logBase")
+    if (logBase !== undefined) out.logBase = logBase
   }
 
-  const majorUnit = parseNumericChildVal(axis, "majorUnit");
-  if (majorUnit !== undefined && majorUnit > 0) out.majorUnit = majorUnit;
+  const majorUnit = parseNumericChildVal(axis, "majorUnit")
+  if (majorUnit !== undefined && majorUnit > 0) out.majorUnit = majorUnit
 
-  const minorUnit = parseNumericChildVal(axis, "minorUnit");
-  if (minorUnit !== undefined && minorUnit > 0) out.minorUnit = minorUnit;
+  const minorUnit = parseNumericChildVal(axis, "minorUnit")
+  if (minorUnit !== undefined && minorUnit > 0) out.minorUnit = minorUnit
 
-  return Object.keys(out).length > 0 ? out : undefined;
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 /**
@@ -1414,16 +1414,16 @@ export function parseAxisScale(axis: XmlElement): ChartAxisScale | undefined {
  * and `"true"`/`"false"` are both accepted.
  */
 export function parseAxisNumberFormat(axis: XmlElement): ChartAxisNumberFormat | undefined {
-  const numFmt = findChild(axis, "numFmt");
-  if (!numFmt) return undefined;
-  const formatCode = numFmt.attrs.formatCode;
-  if (typeof formatCode !== "string" || formatCode.length === 0) return undefined;
-  const out: ChartAxisNumberFormat = { formatCode };
-  const sourceLinked = numFmt.attrs.sourceLinked;
+  const numFmt = findChild(axis, "numFmt")
+  if (!numFmt) return undefined
+  const formatCode = numFmt.attrs.formatCode
+  if (typeof formatCode !== "string" || formatCode.length === 0) return undefined
+  const out: ChartAxisNumberFormat = { formatCode }
+  const sourceLinked = numFmt.attrs.sourceLinked
   if (sourceLinked !== undefined && parseBoolAttr(sourceLinked) === true) {
-    out.sourceLinked = true;
+    out.sourceLinked = true
   }
-  return out;
+  return out
 }
 
 /**
@@ -1438,13 +1438,13 @@ export function parseAxisNumberFormat(axis: XmlElement): ChartAxisNumberFormat |
  * round-trips into a redundant write.
  */
 export function parseAxisGridlines(axis: XmlElement): ChartAxisGridlines | undefined {
-  const major = findChild(axis, "majorGridlines") !== undefined;
-  const minor = findChild(axis, "minorGridlines") !== undefined;
-  if (!major && !minor) return undefined;
-  const out: ChartAxisGridlines = {};
-  if (major) out.major = true;
-  if (minor) out.minor = true;
-  return out;
+  const major = findChild(axis, "majorGridlines") !== undefined
+  const minor = findChild(axis, "minorGridlines") !== undefined
+  if (!major && !minor) return undefined
+  const out: ChartAxisGridlines = {}
+  if (major) out.major = true
+  if (minor) out.minor = true
+  return out
 }
 
 /**
@@ -1452,32 +1452,32 @@ export function parseAxisGridlines(axis: XmlElement): ChartAxisGridlines | undef
  * scoped to a single axis element rather than the chart root.
  */
 export function parseAxisTitle(axis: XmlElement): string | undefined {
-  const title = findChild(axis, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
+  const title = findChild(axis, "title")
+  if (!title) return undefined
+  const tx = findChild(title, "tx")
+  if (!tx) return undefined
+  const rich = findChild(tx, "rich")
   if (rich) {
-    const parts: string[] = [];
-    collectTextRuns(rich, parts);
-    const joined = parts.join("").trim();
-    return joined.length > 0 ? joined : undefined;
+    const parts: string[] = []
+    collectTextRuns(rich, parts)
+    const joined = parts.join("").trim()
+    return joined.length > 0 ? joined : undefined
   }
-  const strRef = findChild(tx, "strRef");
+  const strRef = findChild(tx, "strRef")
   if (strRef) {
-    const cache = findChild(strRef, "strCache");
+    const cache = findChild(strRef, "strCache")
     if (cache) {
       for (const pt of childElements(cache)) {
-        if (pt.local !== "pt") continue;
-        const v = findChild(pt, "v");
+        if (pt.local !== "pt") continue
+        const v = findChild(pt, "v")
         if (v) {
-          const text = elementText(v).trim();
-          if (text.length > 0) return text;
+          const text = elementText(v).trim()
+          if (text.length > 0) return text
         }
       }
     }
   }
-  return undefined;
+  return undefined
 }
 
 /**
@@ -1504,26 +1504,26 @@ export function parseAxisTitle(axis: XmlElement): string | undefined {
  * writer-side {@link SheetChart.axes}.x.axisTitleRotation.
  */
 export function parseAxisTitleRotation(axis: XmlElement): number | undefined {
-  const title = findChild(axis, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
-  const bodyPr = findChild(rich, "bodyPr");
-  if (!bodyPr) return undefined;
-  const raw = bodyPr.attrs.rot;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  const parsed = Number.parseInt(trimmed, 10);
-  if (!Number.isFinite(parsed)) return undefined;
+  const title = findChild(axis, "title")
+  if (!title) return undefined
+  const tx = findChild(title, "tx")
+  if (!tx) return undefined
+  const rich = findChild(tx, "rich")
+  if (!rich) return undefined
+  const bodyPr = findChild(rich, "bodyPr")
+  if (!bodyPr) return undefined
+  const raw = bodyPr.attrs.rot
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  const parsed = Number.parseInt(trimmed, 10)
+  if (!Number.isFinite(parsed)) return undefined
   // Convert from 60000ths of a degree to whole degrees.
-  const degrees = Math.round(parsed / TXPR_ROT_PER_DEGREE);
-  if (degrees === 0) return undefined;
-  if (degrees < LABEL_ROTATION_MIN_DEG) return LABEL_ROTATION_MIN_DEG;
-  if (degrees > LABEL_ROTATION_MAX_DEG) return LABEL_ROTATION_MAX_DEG;
-  return degrees;
+  const degrees = Math.round(parsed / TXPR_ROT_PER_DEGREE)
+  if (degrees === 0) return undefined
+  if (degrees < LABEL_ROTATION_MIN_DEG) return LABEL_ROTATION_MIN_DEG
+  if (degrees > LABEL_ROTATION_MAX_DEG) return LABEL_ROTATION_MAX_DEG
+  return degrees
 }
 
 /**
@@ -1550,35 +1550,35 @@ export function parseAxisTitleRotation(axis: XmlElement): number | undefined {
  * the writer-side {@link SheetChart.axes}.x.axisTitleFontSize.
  */
 export function parseAxisTitleFontSize(axis: XmlElement): number | undefined {
-  const title = findChild(axis, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
+  const title = findChild(axis, "title")
+  if (!title) return undefined
+  const tx = findChild(title, "tx")
+  if (!tx) return undefined
+  const rich = findChild(tx, "rich")
+  if (!rich) return undefined
   // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
   // default-paragraph font size. The reader walks the canonical chain
   // and bails on the first missing link so a malformed `<c:rich>`
   // surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const raw = defRPr.attrs.sz;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  const parsed = Number.parseInt(trimmed, 10);
-  if (!Number.isFinite(parsed)) return undefined;
+  const p = findChild(rich, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const raw = defRPr.attrs.sz
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  const parsed = Number.parseInt(trimmed, 10)
+  if (!Number.isFinite(parsed)) return undefined
   // Convert from 100ths of a point to points, rounding to the nearest
   // 0.5pt to match the granularity Excel's UI exposes. Mirrors the
   // chart-level `parseTitleFontSize` half-step normalisation.
-  const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2);
-  const points = halfSteps / 2;
-  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
-  return points;
+  const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2)
+  const points = halfSteps / 2
+  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined
+  return points
 }
 
 /**
@@ -1610,28 +1610,28 @@ export function parseAxisTitleFontSize(axis: XmlElement): number | undefined {
  * writer-side {@link SheetChart.axes}.x.axisTitleBold.
  */
 export function parseAxisTitleBold(axis: XmlElement): boolean | undefined {
-  const title = findChild(axis, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
+  const title = findChild(axis, "title")
+  if (!title) return undefined
+  const tx = findChild(title, "tx")
+  if (!tx) return undefined
+  const rich = findChild(tx, "rich")
+  if (!rich) return undefined
   // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
   // default-paragraph bold flag. The reader walks the canonical chain
   // and bails on the first missing link so a malformed `<c:rich>`
   // surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const parsed = parseBoolAttr(defRPr.attrs.b);
+  const p = findChild(rich, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const parsed = parseBoolAttr(defRPr.attrs.b)
   // The OOXML default `false` collapses to `undefined` so absence and
   // `b="0"` round-trip identically through the writer — only an
   // explicit `b="1"` surfaces `true`.
-  if (parsed === true) return true;
-  return undefined;
+  if (parsed === true) return true
+  return undefined
 }
 
 /**
@@ -1662,28 +1662,28 @@ export function parseAxisTitleBold(axis: XmlElement): boolean | undefined {
  * writer-side {@link SheetChart.axes}.x.axisTitleItalic.
  */
 export function parseAxisTitleItalic(axis: XmlElement): boolean | undefined {
-  const title = findChild(axis, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
+  const title = findChild(axis, "title")
+  if (!title) return undefined
+  const tx = findChild(title, "tx")
+  if (!tx) return undefined
+  const rich = findChild(tx, "rich")
+  if (!rich) return undefined
   // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
   // default-paragraph italic flag. The reader walks the canonical chain
   // and bails on the first missing link so a malformed `<c:rich>`
   // surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const parsed = parseBoolAttr(defRPr.attrs.i);
+  const p = findChild(rich, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const parsed = parseBoolAttr(defRPr.attrs.i)
   // The OOXML default `false` collapses to `undefined` so absence and
   // `i="0"` round-trip identically through the writer — only an
   // explicit `i="1"` surfaces `true`.
-  if (parsed === true) return true;
-  return undefined;
+  if (parsed === true) return true
+  return undefined
 }
 
 /**
@@ -1723,30 +1723,30 @@ export function parseAxisTitleItalic(axis: XmlElement): boolean | undefined {
  * writer-side {@link SheetChart.axes}.x.axisTitleColor.
  */
 export function parseAxisTitleColor(axis: XmlElement): ChartColor | undefined {
-  const title = findChild(axis, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
+  const title = findChild(axis, "title")
+  if (!title) return undefined
+  const tx = findChild(title, "tx")
+  if (!tx) return undefined
+  const rich = findChild(tx, "rich")
+  if (!rich) return undefined
   // `<a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr>` is the OOXML path
   // Excel writes for the default-paragraph font color. The reader walks
   // the canonical chain and bails on the first missing link so a
   // malformed `<c:rich>` surfaces as absence rather than a fabricated
   // value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const solidFill = findChild(defRPr, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
-  if (srgbClr) return normalizeRgbHex(srgbClr.attrs.val);
-  const schemeClr = findChild(solidFill, "schemeClr");
-  if (schemeClr) return parseSchemeClr(schemeClr);
-  return undefined;
+  const p = findChild(rich, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const solidFill = findChild(defRPr, "solidFill")
+  if (!solidFill) return undefined
+  const srgbClr = findChild(solidFill, "srgbClr")
+  if (srgbClr) return normalizeRgbHex(srgbClr.attrs.val)
+  const schemeClr = findChild(solidFill, "schemeClr")
+  if (schemeClr) return parseSchemeClr(schemeClr)
+  return undefined
 }
 
 /**
@@ -1786,31 +1786,31 @@ export function parseAxisTitleColor(axis: XmlElement): ChartColor | undefined {
  * writer-side {@link SheetChart.axes}.x.axisTitleStrike.
  */
 export function parseAxisTitleStrike(axis: XmlElement): boolean | undefined {
-  const title = findChild(axis, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
+  const title = findChild(axis, "title")
+  if (!title) return undefined
+  const tx = findChild(title, "tx")
+  if (!tx) return undefined
+  const rich = findChild(tx, "rich")
+  if (!rich) return undefined
   // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
   // default-paragraph strikethrough flag. The reader walks the
   // canonical chain and bails on the first missing link so a malformed
   // `<c:rich>` surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const raw = defRPr.attrs.strike;
+  const p = findChild(rich, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const raw = defRPr.attrs.strike
   // Only the UI-default `"sngStrike"` surfaces as `true`. The OOXML
   // application default `"noStrike"` and the non-UI `"dblStrike"` both
   // collapse to `undefined` so absence and the OOXML default round-trip
   // identically through the writer; the writer emits only `"sngStrike"`,
   // so reporting `"dblStrike"` here would silently downgrade the choice
   // on round-trip.
-  if (raw === "sngStrike") return true;
-  return undefined;
+  if (raw === "sngStrike") return true
+  return undefined
 }
 
 /**
@@ -1853,23 +1853,23 @@ export function parseAxisTitleStrike(axis: XmlElement): boolean | undefined {
  * the writer-side {@link SheetChart.axes}.x.axisTitleUnderline.
  */
 export function parseAxisTitleUnderline(axis: XmlElement): boolean | undefined {
-  const title = findChild(axis, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
+  const title = findChild(axis, "title")
+  if (!title) return undefined
+  const tx = findChild(title, "tx")
+  if (!tx) return undefined
+  const rich = findChild(tx, "rich")
+  if (!rich) return undefined
   // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
   // default-paragraph underline flag. The reader walks the canonical
   // chain and bails on the first missing link so a malformed
   // `<c:rich>` surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const raw = defRPr.attrs.u;
+  const p = findChild(rich, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const raw = defRPr.attrs.u
   // Only the UI-default `"sng"` surfaces as `true`. The OOXML
   // application default `"none"`, the non-UI `"dbl"` variant, and
   // every exotic token (`"words"`, `"heavy"`, `"dotted"`, etc.) all
@@ -1877,8 +1877,8 @@ export function parseAxisTitleUnderline(axis: XmlElement): boolean | undefined {
   // round-trip identically through the writer; the writer emits only
   // `"sng"`, so reporting a non-single underline here would silently
   // downgrade the choice on round-trip.
-  if (raw === "sng") return true;
-  return undefined;
+  if (raw === "sng") return true
+  return undefined
 }
 
 /**
@@ -1915,30 +1915,30 @@ export function parseAxisTitleUnderline(axis: XmlElement): boolean | undefined {
  * writer-side {@link SheetChart.axes}.x.axisTitleFontFamily.
  */
 export function parseAxisTitleFontFamily(axis: XmlElement): string | undefined {
-  const title = findChild(axis, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
+  const title = findChild(axis, "title")
+  if (!title) return undefined
+  const tx = findChild(title, "tx")
+  if (!tx) return undefined
+  const rich = findChild(tx, "rich")
+  if (!rich) return undefined
   // `<a:p><a:pPr><a:defRPr><a:latin>` is the OOXML path Excel writes
   // for the default-paragraph typeface. The reader walks the
   // canonical chain and bails on the first missing link so a
   // malformed `<c:rich>` surfaces as absence rather than a fabricated
   // value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const latin = findChild(defRPr, "latin");
-  if (!latin) return undefined;
-  const raw = latin.attrs.typeface;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  return trimmed;
+  const p = findChild(rich, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const latin = findChild(defRPr, "latin")
+  if (!latin) return undefined
+  const raw = latin.attrs.typeface
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  return trimmed
 }
 
 /**
@@ -1966,23 +1966,23 @@ export function parseAxisTitleFontFamily(axis: XmlElement): string | undefined {
  * emit.
  */
 export function parseAxisTitleOverlay(axis: XmlElement): boolean | undefined {
-  const title = findChild(axis, "title");
-  if (!title) return undefined;
-  const overlay = findChild(title, "overlay");
-  if (!overlay) return undefined;
-  const raw = overlay.attrs.val;
-  if (typeof raw !== "string") return undefined;
+  const title = findChild(axis, "title")
+  if (!title) return undefined
+  const overlay = findChild(title, "overlay")
+  if (!overlay) return undefined
+  const raw = overlay.attrs.val
+  if (typeof raw !== "string") return undefined
   switch (raw) {
     case "1":
     case "true":
-      return true;
+      return true
     case "0":
     case "false":
       // OOXML default — collapse to undefined for symmetry with the
       // writer's `axisTitleOverlay` field.
-      return undefined;
+      return undefined
     default:
-      return undefined;
+      return undefined
   }
 }
 
@@ -2019,9 +2019,9 @@ export function parseAxisTitleOverlay(axis: XmlElement): boolean | undefined {
  * three layout knobs share parsing semantics.
  */
 export function parseAxisTitleLayout(axis: XmlElement): ChartManualLayout | undefined {
-  const title = findChild(axis, "title");
-  if (!title) return undefined;
-  return parseManualLayout(title);
+  const title = findChild(axis, "title")
+  if (!title) return undefined
+  return parseManualLayout(title)
 }
 
 /**
@@ -2069,9 +2069,9 @@ export function parseAxisTitleLayout(axis: XmlElement): ChartManualLayout | unde
  * the writer-side {@link SheetChart.axes.x.axisTitleFillColor}.
  */
 export function parseAxisTitleFillColor(axis: XmlElement): ChartColor | undefined {
-  const title = findChild(axis, "title");
-  if (!title) return undefined;
-  return parseSpPrFill(title);
+  const title = findChild(axis, "title")
+  if (!title) return undefined
+  return parseSpPrFill(title)
 }
 
 /**
@@ -2122,9 +2122,9 @@ export function parseAxisTitleFillColor(axis: XmlElement): ChartColor | undefine
  * into the writer-side {@link SheetChart.axes.x.axisTitleBorderColor}.
  */
 export function parseAxisTitleBorderColor(axis: XmlElement): ChartColor | undefined {
-  const title = findChild(axis, "title");
-  if (!title) return undefined;
-  return parseSpPrBorderColor(title);
+  const title = findChild(axis, "title")
+  if (!title) return undefined
+  return parseSpPrBorderColor(title)
 }
 
 /**
@@ -2144,9 +2144,9 @@ export function parseAxisTitleBorderColor(axis: XmlElement): ChartColor | undefi
  * disjoint slots of the shared `<a:ln>` element.
  */
 export function parseAxisTitleBorderWidth(axis: XmlElement): number | undefined {
-  const title = findChild(axis, "title");
-  if (!title) return undefined;
-  return parseBorderWidthFromSpPr(title);
+  const title = findChild(axis, "title")
+  if (!title) return undefined
+  return parseBorderWidthFromSpPr(title)
 }
 
 /**
@@ -2158,9 +2158,9 @@ export function parseAxisTitleBorderWidth(axis: XmlElement): number | undefined 
  * or when it matches the OOXML default `"solid"`.
  */
 export function parseAxisTitleBorderDash(axis: XmlElement): ChartBorderDash | undefined {
-  const title = findChild(axis, "title");
-  if (!title) return undefined;
-  return parseBorderDashFromSpPr(title);
+  const title = findChild(axis, "title")
+  if (!title) return undefined
+  return parseBorderDashFromSpPr(title)
 }
 
 /**
@@ -2169,9 +2169,9 @@ export function parseAxisTitleBorderDash(axis: XmlElement): ChartBorderDash | un
  * `undefined` for absence / OOXML default `"flat"`.
  */
 export function parseAxisTitleBorderCap(axis: XmlElement): ChartLineCap | undefined {
-  const title = findChild(axis, "title");
-  if (!title) return undefined;
-  return parseBorderCapFromSpPr(title);
+  const title = findChild(axis, "title")
+  if (!title) return undefined
+  return parseBorderCapFromSpPr(title)
 }
 
 /**
@@ -2179,12 +2179,10 @@ export function parseAxisTitleBorderCap(axis: XmlElement): ChartLineCap | undefi
  * scoped to an axis element. Returns the {@link ChartLineCompound} or
  * `undefined` for absence / OOXML default `"sng"`.
  */
-export function parseAxisTitleBorderCompound(
-  axis: XmlElement,
-): ChartLineCompound | undefined {
-  const title = findChild(axis, "title");
-  if (!title) return undefined;
-  return parseBorderCompoundFromSpPr(title);
+export function parseAxisTitleBorderCompound(axis: XmlElement): ChartLineCompound | undefined {
+  const title = findChild(axis, "title")
+  if (!title) return undefined
+  return parseBorderCompoundFromSpPr(title)
 }
 
 /**
@@ -2211,29 +2209,29 @@ export function parseAxisTitleBorderCompound(
  * `undefined` rather than fabricate a flag Excel would not emit.
  */
 export function parseAutoTitleDeleted(chartEl: XmlElement): boolean | undefined {
-  const el = findChild(chartEl, "autoTitleDeleted");
-  if (!el) return undefined;
-  const raw = el.attrs.val;
-  if (typeof raw !== "string") return undefined;
+  const el = findChild(chartEl, "autoTitleDeleted")
+  if (!el) return undefined
+  const raw = el.attrs.val
+  if (typeof raw !== "string") return undefined
   switch (raw) {
     case "1":
     case "true":
-      return true;
+      return true
     case "0":
     case "false":
       // OOXML default — collapse to undefined for symmetry with the
       // writer's `autoTitleDeleted` field.
-      return undefined;
+      return undefined
     default:
-      return undefined;
+      return undefined
   }
 }
 
 // ── Writer-side axis types and constants ──────────────────────────
 
 export interface AxisRenderOptions {
-  xAxisTitle: string | undefined;
-  yAxisTitle: string | undefined;
+  xAxisTitle: string | undefined
+  yAxisTitle: string | undefined
   /**
    * Axis-title rotation in whole degrees emitted on the X axis via
    * `<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title>`.
@@ -2244,12 +2242,12 @@ export interface AxisRenderOptions {
    * meaningful when the axis renders a title — the per-family axis
    * builders gate the value on the `xAxisTitle` / `yAxisTitle` field.
    */
-  xAxisTitleRotation: number | undefined;
+  xAxisTitleRotation: number | undefined
   /**
    * Axis-title rotation in whole degrees emitted on the Y axis. Same
    * shape and conversion semantics as {@link xAxisTitleRotation}.
    */
-  yAxisTitleRotation: number | undefined;
+  yAxisTitleRotation: number | undefined
   /**
    * Axis-title font size in points emitted on the X axis via
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr>
@@ -2261,12 +2259,12 @@ export interface AxisRenderOptions {
    * per-family axis builders gate the value on the `xAxisTitle` /
    * `yAxisTitle` field.
    */
-  xAxisTitleFontSize: number | undefined;
+  xAxisTitleFontSize: number | undefined
   /**
    * Axis-title font size in points emitted on the Y axis. Same shape
    * and conversion semantics as {@link xAxisTitleFontSize}.
    */
-  yAxisTitleFontSize: number | undefined;
+  yAxisTitleFontSize: number | undefined
   /**
    * Axis-title bold flag emitted on the X axis via
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr>
@@ -2279,12 +2277,12 @@ export interface AxisRenderOptions {
    * renders a title — the per-family axis builders gate the value on
    * the `xAxisTitle` / `yAxisTitle` field.
    */
-  xAxisTitleBold: boolean | undefined;
+  xAxisTitleBold: boolean | undefined
   /**
    * Axis-title bold flag emitted on the Y axis. Same shape and
    * semantics as {@link xAxisTitleBold}.
    */
-  yAxisTitleBold: boolean | undefined;
+  yAxisTitleBold: boolean | undefined
   /**
    * Axis-title italic flag emitted on the X axis via
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr>
@@ -2296,12 +2294,12 @@ export interface AxisRenderOptions {
    * when the axis renders a title — the per-family axis builders gate
    * the value on the `xAxisTitle` / `yAxisTitle` field.
    */
-  xAxisTitleItalic: boolean | undefined;
+  xAxisTitleItalic: boolean | undefined
   /**
    * Axis-title italic flag emitted on the Y axis. Same shape and emit
    * semantics as {@link xAxisTitleItalic}.
    */
-  yAxisTitleItalic: boolean | undefined;
+  yAxisTitleItalic: boolean | undefined
   /**
    * Axis-title font color emitted on the X axis via
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>
@@ -2317,12 +2315,12 @@ export interface AxisRenderOptions {
    * renders a title — the per-family axis builders gate the value on
    * the `xAxisTitle` / `yAxisTitle` field.
    */
-  xAxisTitleColor: ChartColor | undefined;
+  xAxisTitleColor: ChartColor | undefined
   /**
    * Axis-title font color emitted on the Y axis. Same shape and emit
    * semantics as {@link xAxisTitleColor}.
    */
-  yAxisTitleColor: ChartColor | undefined;
+  yAxisTitleColor: ChartColor | undefined
   /**
    * Axis-title strikethrough flag emitted on the X axis via
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
@@ -2335,12 +2333,12 @@ export interface AxisRenderOptions {
    * meaningful when the axis renders a title — the per-family axis
    * builders gate the value on the `xAxisTitle` / `yAxisTitle` field.
    */
-  xAxisTitleStrike: boolean | undefined;
+  xAxisTitleStrike: boolean | undefined
   /**
    * Axis-title strikethrough flag emitted on the Y axis. Same shape
    * and emit semantics as {@link xAxisTitleStrike}.
    */
-  yAxisTitleStrike: boolean | undefined;
+  yAxisTitleStrike: boolean | undefined
   /**
    * Axis-title underline flag emitted on the X axis via
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr u=".."/></a:pPr>
@@ -2353,12 +2351,12 @@ export interface AxisRenderOptions {
    * title — the per-family axis builders gate the value on the
    * `xAxisTitle` / `yAxisTitle` field.
    */
-  xAxisTitleUnderline: boolean | undefined;
+  xAxisTitleUnderline: boolean | undefined
   /**
    * Axis-title underline flag emitted on the Y axis. Same shape
    * and emit semantics as {@link xAxisTitleUnderline}.
    */
-  yAxisTitleUnderline: boolean | undefined;
+  yAxisTitleUnderline: boolean | undefined
   /**
    * Axis-title font family / typeface emitted on the X axis via
    * `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
@@ -2374,12 +2372,12 @@ export interface AxisRenderOptions {
    * axis builders gate the value on the `xAxisTitle` / `yAxisTitle`
    * field.
    */
-  xAxisTitleFontFamily: string | undefined;
+  xAxisTitleFontFamily: string | undefined
   /**
    * Axis-title font family / typeface emitted on the Y axis. Same
    * shape and emit semantics as {@link xAxisTitleFontFamily}.
    */
-  yAxisTitleFontFamily: string | undefined;
+  yAxisTitleFontFamily: string | undefined
   /**
    * Axis-title overlay flag emitted on the X axis via
    * `<c:catAx><c:title><c:overlay val=".."/></c:title></c:catAx>`.
@@ -2393,12 +2391,12 @@ export interface AxisRenderOptions {
    * — the per-family axis builders gate the value on the
    * `xAxisTitle` / `yAxisTitle` field.
    */
-  xAxisTitleOverlay: boolean;
+  xAxisTitleOverlay: boolean
   /**
    * Axis-title overlay flag emitted on the Y axis. Same shape and
    * emit semantics as {@link xAxisTitleOverlay}.
    */
-  yAxisTitleOverlay: boolean;
+  yAxisTitleOverlay: boolean
   /**
    * Axis-title manual placement emitted on the X axis via
    * `<c:title><c:layout><c:manualLayout>...</c:manualLayout></c:layout>
@@ -2414,12 +2412,12 @@ export interface AxisRenderOptions {
    * `plotAreaLayout` slots so the four manual-layout knobs share a
    * normalization grammar (`normalizeManualLayout`).
    */
-  xAxisTitleLayout: ResolvedManualLayout | undefined;
+  xAxisTitleLayout: ResolvedManualLayout | undefined
   /**
    * Axis-title manual placement emitted on the Y axis. Same shape
    * and emit semantics as {@link xAxisTitleLayout}.
    */
-  yAxisTitleLayout: ResolvedManualLayout | undefined;
+  yAxisTitleLayout: ResolvedManualLayout | undefined
   /**
    * Axis-title background fill emitted on the X axis via
    * `<c:title><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
@@ -2435,12 +2433,12 @@ export interface AxisRenderOptions {
    * when the axis renders a title — the per-family axis builders
    * gate the value on the `xAxisTitle` / `yAxisTitle` field.
    */
-  xAxisTitleFillColor: ChartColor | undefined;
+  xAxisTitleFillColor: ChartColor | undefined
   /**
    * Axis-title background fill emitted on the Y axis. Same shape and
    * emit semantics as {@link xAxisTitleFillColor}.
    */
-  yAxisTitleFillColor: ChartColor | undefined;
+  yAxisTitleFillColor: ChartColor | undefined
   /**
    * Axis-title border (line stroke) color emitted on the X axis via
    * `<c:title><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/>
@@ -2462,12 +2460,12 @@ export interface AxisRenderOptions {
    * builders gate the value on the `xAxisTitle` / `yAxisTitle`
    * field.
    */
-  xAxisTitleBorderColor: ChartColor | undefined;
+  xAxisTitleBorderColor: ChartColor | undefined
   /**
    * Axis-title border emitted on the Y axis. Same shape and emit
    * semantics as {@link xAxisTitleBorderColor}.
    */
-  yAxisTitleBorderColor: ChartColor | undefined;
+  yAxisTitleBorderColor: ChartColor | undefined
   /**
    * Axis-title border (line stroke) thickness emitted on the X axis
    * via `<c:title><c:spPr><a:ln w="EMU"/></c:spPr></c:title>`. The
@@ -2478,12 +2476,12 @@ export interface AxisRenderOptions {
    * {@link xAxisTitleBorderDash} on the same `<a:ln>` element.
    * Only meaningful when the axis renders a title.
    */
-  xAxisTitleBorderWidth: number | undefined;
+  xAxisTitleBorderWidth: number | undefined
   /**
    * Axis-title border thickness emitted on the Y axis. Same shape and
    * emit semantics as {@link xAxisTitleBorderWidth}.
    */
-  yAxisTitleBorderWidth: number | undefined;
+  yAxisTitleBorderWidth: number | undefined
   /**
    * Axis-title border (line stroke) preset dash pattern emitted on the
    * X axis via `<c:title><c:spPr><a:ln><a:prstDash val=".."/></a:ln>
@@ -2494,46 +2492,46 @@ export interface AxisRenderOptions {
    * title renders solid. Composes independently with
    * {@link xAxisTitleBorderColor} and {@link xAxisTitleBorderWidth}.
    */
-  xAxisTitleBorderDash: ChartBorderDash | undefined;
+  xAxisTitleBorderDash: ChartBorderDash | undefined
   /**
    * Axis-title border dash emitted on the Y axis. Same shape and emit
    * semantics as {@link xAxisTitleBorderDash}.
    */
-  yAxisTitleBorderDash: ChartBorderDash | undefined;
+  yAxisTitleBorderDash: ChartBorderDash | undefined
   /**
    * Axis-title border line cap style emitted on the X axis via
    * `<c:title><c:spPr><a:ln cap=".."/>`. Mirrors
    * {@link SheetChart.titleBorderCap}.
    */
-  xAxisTitleBorderCap: ChartLineCap | undefined;
+  xAxisTitleBorderCap: ChartLineCap | undefined
   /**
    * Axis-title border line cap style emitted on the Y axis. Same shape
    * and emit semantics as {@link xAxisTitleBorderCap}.
    */
-  yAxisTitleBorderCap: ChartLineCap | undefined;
+  yAxisTitleBorderCap: ChartLineCap | undefined
   /**
    * Axis-title border compound line style emitted on the X axis via
    * `<c:title><c:spPr><a:ln cmpd=".."/>`. Mirrors
    * {@link SheetChart.titleBorderCompound}.
    */
-  xAxisTitleBorderCompound: ChartLineCompound | undefined;
+  xAxisTitleBorderCompound: ChartLineCompound | undefined
   /**
    * Axis-title border compound emitted on the Y axis. Same shape and
    * emit semantics as {@link xAxisTitleBorderCompound}.
    */
-  yAxisTitleBorderCompound: ChartLineCompound | undefined;
-  xGridlines: { major: boolean; minor: boolean } | undefined;
-  yGridlines: { major: boolean; minor: boolean } | undefined;
-  xScale: ChartAxisScale | undefined;
-  yScale: ChartAxisScale | undefined;
-  xNumFmt: ChartAxisNumberFormat | undefined;
-  yNumFmt: ChartAxisNumberFormat | undefined;
-  xMajorTickMark: ChartAxisTickMark | undefined;
-  yMajorTickMark: ChartAxisTickMark | undefined;
-  xMinorTickMark: ChartAxisTickMark | undefined;
-  yMinorTickMark: ChartAxisTickMark | undefined;
-  xTickLblPos: ChartAxisTickLabelPosition | undefined;
-  yTickLblPos: ChartAxisTickLabelPosition | undefined;
+  yAxisTitleBorderCompound: ChartLineCompound | undefined
+  xGridlines: { major: boolean; minor: boolean } | undefined
+  yGridlines: { major: boolean; minor: boolean } | undefined
+  xScale: ChartAxisScale | undefined
+  yScale: ChartAxisScale | undefined
+  xNumFmt: ChartAxisNumberFormat | undefined
+  yNumFmt: ChartAxisNumberFormat | undefined
+  xMajorTickMark: ChartAxisTickMark | undefined
+  yMajorTickMark: ChartAxisTickMark | undefined
+  xMinorTickMark: ChartAxisTickMark | undefined
+  yMinorTickMark: ChartAxisTickMark | undefined
+  xTickLblPos: ChartAxisTickLabelPosition | undefined
+  yTickLblPos: ChartAxisTickLabelPosition | undefined
   /**
    * Tick-label rotation in whole degrees emitted on the X axis via
    * `<c:txPr><a:bodyPr rot="N"/></c:txPr>`. The OOXML `rot` attribute
@@ -2544,12 +2542,12 @@ export interface AxisRenderOptions {
    * OOXML schema places `<c:txPr>` on `<c:catAx>` / `<c:valAx>` /
    * `<c:dateAx>` / `<c:serAx>` alike.
    */
-  xLabelRotation: number | undefined;
+  xLabelRotation: number | undefined
   /**
    * Tick-label rotation in whole degrees emitted on the Y axis. Same
    * shape and conversion semantics as {@link xLabelRotation}.
    */
-  yLabelRotation: number | undefined;
+  yLabelRotation: number | undefined
   /**
    * Tick-label font size in points emitted on the X axis via
    * `<c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p></c:txPr>`.
@@ -2561,12 +2559,12 @@ export interface AxisRenderOptions {
    * `xLabelFontSize` is set so the OOXML schema's `<c:txPr>` slot
    * carries every pinned typography knob.
    */
-  xLabelFontSize: number | undefined;
+  xLabelFontSize: number | undefined
   /**
    * Tick-label font size in points emitted on the Y axis. Same shape
    * and conversion semantics as {@link xLabelFontSize}.
    */
-  yLabelFontSize: number | undefined;
+  yLabelFontSize: number | undefined
   /**
    * Tick-label bold flag emitted on the X axis via
    * `<c:txPr><a:p><a:pPr><a:defRPr b=".."/></a:pPr></a:p></c:txPr>`.
@@ -2578,12 +2576,12 @@ export interface AxisRenderOptions {
    * `xLabelBold` is set so the OOXML schema's `<c:txPr>` slot
    * carries every pinned typography knob.
    */
-  xLabelBold: boolean | undefined;
+  xLabelBold: boolean | undefined
   /**
    * Tick-label bold flag emitted on the Y axis. Same shape and
    * semantics as {@link xLabelBold}.
    */
-  yLabelBold: boolean | undefined;
+  yLabelBold: boolean | undefined
   /**
    * Tick-label italic flag emitted on the X axis via
    * `<c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p></c:txPr>`.
@@ -2595,12 +2593,12 @@ export interface AxisRenderOptions {
    * or `xLabelItalic` is set so the OOXML schema's `<c:txPr>` slot
    * carries every pinned typography knob.
    */
-  xLabelItalic: boolean | undefined;
+  xLabelItalic: boolean | undefined
   /**
    * Tick-label italic flag emitted on the Y axis. Same shape and
    * semantics as {@link xLabelItalic}.
    */
-  yLabelItalic: boolean | undefined;
+  yLabelItalic: boolean | undefined
   /**
    * Tick-label font color emitted on the X axis via
    * `<c:txPr><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val=".."/>
@@ -2617,12 +2615,12 @@ export interface AxisRenderOptions {
    * `xLabelItalic`, or `xLabelColor` is set so the OOXML schema's
    * `<c:txPr>` slot carries every pinned typography knob.
    */
-  xLabelColor: ChartColor | undefined;
+  xLabelColor: ChartColor | undefined
   /**
    * Tick-label font color emitted on the Y axis. Same shape and
    * semantics as {@link xLabelColor}.
    */
-  yLabelColor: ChartColor | undefined;
+  yLabelColor: ChartColor | undefined
   /**
    * Tick-label underline flag emitted on the X axis via
    * `<c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr>`.
@@ -2638,12 +2636,12 @@ export interface AxisRenderOptions {
    * `xLabelUnderline`) is set so the OOXML schema's `<c:txPr>` slot
    * carries every pinned typography knob.
    */
-  xLabelUnderline: boolean | undefined;
+  xLabelUnderline: boolean | undefined
   /**
    * Tick-label underline flag emitted on the Y axis. Same shape and
    * semantics as {@link xLabelUnderline}.
    */
-  yLabelUnderline: boolean | undefined;
+  yLabelUnderline: boolean | undefined
   /**
    * Tick-label strikethrough flag emitted on the X axis via
    * `<c:txPr><a:p><a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr>`.
@@ -2659,12 +2657,12 @@ export interface AxisRenderOptions {
    * or `xLabelStrike`) is set so the OOXML schema's `<c:txPr>` slot
    * carries every pinned typography knob.
    */
-  xLabelStrike: boolean | undefined;
+  xLabelStrike: boolean | undefined
   /**
    * Tick-label strikethrough flag emitted on the Y axis. Same shape
    * and semantics as {@link xLabelStrike}.
    */
-  yLabelStrike: boolean | undefined;
+  yLabelStrike: boolean | undefined
   /**
    * Tick-label font family / typeface emitted on the X axis via
    * `<c:txPr><a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
@@ -2676,38 +2674,38 @@ export interface AxisRenderOptions {
    * whenever any tick-label typography knob is set so the OOXML
    * schema's `<c:txPr>` slot carries every pinned typography knob.
    */
-  xLabelFontFamily: string | undefined;
+  xLabelFontFamily: string | undefined
   /**
    * Tick-label font family / typeface emitted on the Y axis. Same
    * shape and semantics as {@link xLabelFontFamily}.
    */
-  yLabelFontFamily: string | undefined;
-  xReverse: boolean;
-  yReverse: boolean;
+  yLabelFontFamily: string | undefined
+  xReverse: boolean
+  yReverse: boolean
   /**
    * Tick-label skip interval emitted on the X axis only when the axis
    * is `<c:catAx>` (i.e. bar / column / line / area). Scatter charts
    * have no category axis, so the skip is dropped silently.
    */
-  xTickLblSkip: number | undefined;
+  xTickLblSkip: number | undefined
   /**
    * Tick-mark skip interval emitted on the X axis only when the axis
    * is `<c:catAx>`. Same scope rule as {@link xTickLblSkip}.
    */
-  xTickMarkSkip: number | undefined;
+  xTickMarkSkip: number | undefined
   /**
    * Label offset percentage emitted on the X axis only when the axis
    * is `<c:catAx>` (i.e. bar / column / line / area). Scatter charts
    * have no category axis, so the value is dropped silently.
    */
-  xLblOffset: number | undefined;
+  xLblOffset: number | undefined
   /**
    * Tick-label horizontal alignment emitted on the X axis only when
    * the axis is `<c:catAx>`. Scatter charts have no category axis, so
    * the value is dropped silently. `undefined` means absent (the
    * writer falls back to the OOXML default `"ctr"`).
    */
-  xLblAlgn: ChartAxisLabelAlign | undefined;
+  xLblAlgn: ChartAxisLabelAlign | undefined
   /**
    * Whether the X axis should pin `<c:noMultiLvlLbl val="1"/>`
    * (multi-level category labels suppressed). Always defined — `false`
@@ -2716,7 +2714,7 @@ export interface AxisRenderOptions {
    * builder; scatter has no category axis, so the value is silently
    * dropped at the per-chart-type branch.
    */
-  xNoMultiLvlLbl: boolean;
+  xNoMultiLvlLbl: boolean
   /**
    * Whether the X axis should render its `<c:auto>` element with
    * `val="1"` (Excel's default — auto-detect whether the axis is a
@@ -2727,16 +2725,16 @@ export interface AxisRenderOptions {
    * category axis, so the value is silently dropped at the per-chart-
    * type branch.
    */
-  xAuto: boolean;
+  xAuto: boolean
   /**
    * Whether the X axis should render its `<c:delete>` element with
    * `val="1"` (axis hidden). Always defined — `false` keeps Excel's
    * reference `val="0"` while `true` collapses the axis line, ticks,
    * and labels off the rendered chart.
    */
-  xHidden: boolean;
+  xHidden: boolean
   /** Whether the Y axis should render hidden. Same shape as {@link xHidden}. */
-  yHidden: boolean;
+  yHidden: boolean
   /**
    * Resolved axis-crosses pin for the X axis. The XSD choice between
    * `<c:crosses>` and `<c:crossesAt>` is collapsed to a single tagged
@@ -2745,16 +2743,16 @@ export interface AxisRenderOptions {
    * {@link ChartAxisCrosses} token, and `kind: "numeric"` emits
    * `<c:crossesAt>` with the literal value the caller pinned.
    */
-  xCrosses: ResolvedAxisCrosses;
+  xCrosses: ResolvedAxisCrosses
   /** Resolved axis-crosses pin for the Y axis. Same shape as {@link xCrosses}. */
-  yCrosses: ResolvedAxisCrosses;
+  yCrosses: ResolvedAxisCrosses
   /**
    * Display-unit preset emitted on the X axis only when the axis is
    * `<c:valAx>` (i.e. scatter charts). Bar / column / line / area route
    * the X axis through `<c:catAx>` which rejects `<c:dispUnits>`, so
    * the catAx builder ignores this field.
    */
-  xDispUnits: ChartAxisDispUnits | undefined;
+  xDispUnits: ChartAxisDispUnits | undefined
   /**
    * Display-unit preset emitted on the value axis. The catAx builder
    * (bar / column / line / area) routes the Y axis through `<c:valAx>`,
@@ -2763,7 +2761,7 @@ export interface AxisRenderOptions {
    * Pie / doughnut have no axes at all and the caller already
    * short-circuits those branches.
    */
-  yDispUnits: ChartAxisDispUnits | undefined;
+  yDispUnits: ChartAxisDispUnits | undefined
   /**
    * Cross-between override for the X axis. Only honoured on scatter
    * (the X axis is a value axis there); the catAx builder ignores it
@@ -2771,7 +2769,7 @@ export interface AxisRenderOptions {
    * §21.2.2.10. `undefined` falls back to the per-family default each
    * axis builder pins today.
    */
-  xCrossBetween: ChartAxisCrossBetween | undefined;
+  xCrossBetween: ChartAxisCrossBetween | undefined
   /**
    * Cross-between override for the value axis. The catAx builder (bar
    * / column / line / area) routes the Y axis through `<c:valAx>`, and
@@ -2780,7 +2778,7 @@ export interface AxisRenderOptions {
    * doughnut have no axes at all and the caller already short-circuits
    * those branches.
    */
-  yCrossBetween: ChartAxisCrossBetween | undefined;
+  yCrossBetween: ChartAxisCrossBetween | undefined
 }
 
 /**
@@ -2794,10 +2792,10 @@ export interface AxisRenderOptions {
 type ResolvedAxisCrosses =
   | { kind: "default" }
   | { kind: "semantic"; value: ChartAxisCrosses }
-  | { kind: "numeric"; value: number };
+  | { kind: "numeric"; value: number }
 
 /** Recognized values of `<c:crosses>` per the OOXML `ST_Crosses` enum. */
-const VALID_AXIS_CROSSES: ReadonlySet<ChartAxisCrosses> = new Set(["autoZero", "min", "max"]);
+const VALID_AXIS_CROSSES: ReadonlySet<ChartAxisCrosses> = new Set(["autoZero", "min", "max"])
 
 /** Recognized values of `<c:builtInUnit>` per the OOXML `ST_BuiltInUnit` enum. */
 // (Reader-side `VALID_DISP_UNITS` already declared above; the writer
@@ -2813,7 +2811,7 @@ const VALID_DISP_UNITS_WRITER: ReadonlySet<ChartAxisDispUnit> = new Set([
   "hundredMillions",
   "billions",
   "trillions",
-]);
+])
 
 /** Recognized values of `<c:crossBetween>` per the OOXML `ST_CrossBetween` enum. */
 // (Reader-side `VALID_CROSS_BETWEEN` already declared above; the
@@ -2821,12 +2819,12 @@ const VALID_DISP_UNITS_WRITER: ReadonlySet<ChartAxisDispUnit> = new Set([
 const VALID_CROSS_BETWEEN_WRITER: ReadonlySet<ChartAxisCrossBetween> = new Set([
   "between",
   "midCat",
-]);
+])
 
-export const AXIS_ID_CAT = 111111111;
-export const AXIS_ID_VAL = 222222222;
-export const AXIS_ID_VAL_X = 333333333;
-export const AXIS_ID_VAL_Y = 444444444;
+export const AXIS_ID_CAT = 111111111
+export const AXIS_ID_VAL = 222222222
+export const AXIS_ID_VAL_X = 333333333
+export const AXIS_ID_VAL_Y = 444444444
 
 /**
  * Application-default `sz` value for an axis title's `<a:defRPr>` /
@@ -2837,12 +2835,12 @@ export const AXIS_ID_VAL_Y = 444444444;
  * byte, and round-trips of templates that never pinned the field stay
  * stable across the parse -> clone -> write loop.
  */
-const AXIS_TITLE_DEFAULT_FONT_SIZE_SZ = 1000;
+const AXIS_TITLE_DEFAULT_FONT_SIZE_SZ = 1000
 
-const TITLE_ROT_PER_DEGREE = TXPR_ROT_PER_DEGREE;
+const TITLE_ROT_PER_DEGREE = TXPR_ROT_PER_DEGREE
 
 /** Recognized values of `<c:majorTickMark>` / `<c:minorTickMark>` (writer-side). */
-const TICK_MARK_VALUES: ReadonlySet<ChartAxisTickMark> = new Set(["none", "in", "out", "cross"]);
+const TICK_MARK_VALUES: ReadonlySet<ChartAxisTickMark> = new Set(["none", "in", "out", "cross"])
 
 /** Recognized values of `<c:tickLblPos>` (writer-side). */
 const TICK_LBL_POS_VALUES: ReadonlySet<ChartAxisTickLabelPosition> = new Set([
@@ -2850,7 +2848,7 @@ const TICK_LBL_POS_VALUES: ReadonlySet<ChartAxisTickLabelPosition> = new Set([
   "low",
   "high",
   "none",
-]);
+])
 
 // ── Writer ────────────────────────────────────────────────────────
 
@@ -2880,12 +2878,12 @@ const TICK_LBL_POS_VALUES: ReadonlySet<ChartAxisTickLabelPosition> = new Set([
  * `plotVisOnly` treat their inputs.
  */
 export function resolveAutoTitleDeleted(chart: SheetChart): boolean {
-  if (chart.autoTitleDeleted === true) return true;
-  if (chart.autoTitleDeleted === false) return false;
+  if (chart.autoTitleDeleted === true) return true
+  if (chart.autoTitleDeleted === false) return false
   // Derive from title presence — preserves back-compat for callers
   // that never set the field.
-  const showTitle = chart.showTitle ?? Boolean(chart.title);
-  return !(showTitle && chart.title);
+  const showTitle = chart.showTitle ?? Boolean(chart.title)
+  return !(showTitle && chart.title)
 }
 
 /**
@@ -2895,9 +2893,9 @@ export function resolveAutoTitleDeleted(chart: SheetChart): boolean {
  * blank label).
  */
 export function normalizeAxisTitle(value: string | undefined): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
+  if (typeof value !== "string") return undefined
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
 }
 
 /**
@@ -2908,11 +2906,11 @@ export function normalizeAxisTitle(value: string | undefined): string | undefine
 export function normalizeAxisGridlines(
   value: ChartAxisGridlines | undefined,
 ): { major: boolean; minor: boolean } | undefined {
-  if (!value) return undefined;
-  const major = value.major === true;
-  const minor = value.minor === true;
-  if (!major && !minor) return undefined;
-  return { major, minor };
+  if (!value) return undefined
+  const major = value.major === true
+  const minor = value.minor === true
+  if (!major && !minor) return undefined
+  return { major, minor }
 }
 
 /**
@@ -2925,11 +2923,11 @@ export function normalizeAxisGridlines(
 export function buildAxisGridlines(
   gridlines: { major: boolean; minor: boolean } | undefined,
 ): string[] {
-  if (!gridlines) return [];
-  const out: string[] = [];
-  if (gridlines.major) out.push(xmlElement("c:majorGridlines", undefined, []));
-  if (gridlines.minor) out.push(xmlElement("c:minorGridlines", undefined, []));
-  return out;
+  if (!gridlines) return []
+  const out: string[] = []
+  if (gridlines.major) out.push(xmlElement("c:majorGridlines", undefined, []))
+  if (gridlines.minor) out.push(xmlElement("c:minorGridlines", undefined, []))
+  return out
 }
 
 /**
@@ -2943,28 +2941,28 @@ export function buildAxisGridlines(
  * skip the entire `<c:scaling>` augmentation.
  */
 export function normalizeAxisScale(value: ChartAxisScale | undefined): ChartAxisScale | undefined {
-  if (!value) return undefined;
-  const out: ChartAxisScale = {};
-  if (typeof value.min === "number" && Number.isFinite(value.min)) out.min = value.min;
-  if (typeof value.max === "number" && Number.isFinite(value.max)) out.max = value.max;
+  if (!value) return undefined
+  const out: ChartAxisScale = {}
+  if (typeof value.min === "number" && Number.isFinite(value.min)) out.min = value.min
+  if (typeof value.max === "number" && Number.isFinite(value.max)) out.max = value.max
   if (out.min !== undefined && out.max !== undefined && out.min >= out.max) {
     // min >= max is meaningless; preserve the user-supplied min only
     // so validators don't choke on a flipped/empty axis range.
-    delete out.max;
+    delete out.max
   }
   if (
     typeof value.majorUnit === "number" &&
     Number.isFinite(value.majorUnit) &&
     value.majorUnit > 0
   ) {
-    out.majorUnit = value.majorUnit;
+    out.majorUnit = value.majorUnit
   }
   if (
     typeof value.minorUnit === "number" &&
     Number.isFinite(value.minorUnit) &&
     value.minorUnit > 0
   ) {
-    out.minorUnit = value.minorUnit;
+    out.minorUnit = value.minorUnit
   }
   if (
     typeof value.logBase === "number" &&
@@ -2972,9 +2970,9 @@ export function normalizeAxisScale(value: ChartAxisScale | undefined): ChartAxis
     value.logBase >= 2 &&
     value.logBase <= 1000
   ) {
-    out.logBase = value.logBase;
+    out.logBase = value.logBase
   }
-  return Object.keys(out).length > 0 ? out : undefined;
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 /**
@@ -2985,12 +2983,12 @@ export function normalizeAxisScale(value: ChartAxisScale | undefined): ChartAxis
 export function normalizeAxisNumberFormat(
   value: ChartAxisNumberFormat | undefined,
 ): ChartAxisNumberFormat | undefined {
-  if (!value) return undefined;
-  const formatCode = typeof value.formatCode === "string" ? value.formatCode : "";
-  if (formatCode.length === 0) return undefined;
-  const out: ChartAxisNumberFormat = { formatCode };
-  if (value.sourceLinked === true) out.sourceLinked = true;
-  return out;
+  if (!value) return undefined
+  const formatCode = typeof value.formatCode === "string" ? value.formatCode : ""
+  if (formatCode.length === 0) return undefined
+  const out: ChartAxisNumberFormat = { formatCode }
+  if (value.sourceLinked === true) out.sourceLinked = true
+  return out
 }
 
 /**
@@ -3009,11 +3007,11 @@ export function normalizeAxisNumberFormat(
  * it.
  */
 export function normalizeAxisSkip(value: number | undefined): number | undefined {
-  if (value === undefined || !Number.isFinite(value)) return undefined;
-  const rounded = Math.round(value);
-  if (rounded < 1 || rounded > 32767) return undefined;
-  if (rounded === 1) return undefined;
-  return rounded;
+  if (value === undefined || !Number.isFinite(value)) return undefined
+  const rounded = Math.round(value)
+  if (rounded < 1 || rounded > 32767) return undefined
+  if (rounded === 1) return undefined
+  return rounded
 }
 
 /**
@@ -3032,11 +3030,11 @@ export function normalizeAxisSkip(value: number | undefined): number | undefined
  * error in the caller.
  */
 export function normalizeAxisLblOffset(value: number | undefined): number | undefined {
-  if (value === undefined || !Number.isFinite(value)) return undefined;
-  const rounded = Math.round(value);
-  if (rounded < 0 || rounded > 1000) return undefined;
-  if (rounded === 100) return undefined;
-  return rounded;
+  if (value === undefined || !Number.isFinite(value)) return undefined
+  const rounded = Math.round(value)
+  if (rounded < 0 || rounded > 1000) return undefined
+  if (rounded === 100) return undefined
+  return rounded
 }
 
 /**
@@ -3057,10 +3055,10 @@ export function normalizeAxisLblOffset(value: number | undefined): number | unde
 export function normalizeAxisLblAlgn(
   value: ChartAxisLabelAlign | undefined,
 ): ChartAxisLabelAlign | undefined {
-  if (value === undefined) return undefined;
-  if (value !== "ctr" && value !== "l" && value !== "r") return undefined;
-  if (value === "ctr") return undefined;
-  return value;
+  if (value === undefined) return undefined
+  if (value !== "ctr" && value !== "l" && value !== "r") return undefined
+  if (value === "ctr") return undefined
+  return value
 }
 
 /**
@@ -3072,7 +3070,7 @@ export function normalizeAxisLblAlgn(
  * a literal boolean is the only path to a non-default value.
  */
 export function normalizeAxisHidden(value: boolean | undefined): boolean {
-  return value === true;
+  return value === true
 }
 
 /**
@@ -3088,12 +3086,12 @@ export function normalizeAxisHidden(value: boolean | undefined): boolean {
  * has no meaningful refinement at emit time).
  */
 export function normalizeAxisLabelRotation(value: number | undefined): number | undefined {
-  if (value === undefined || typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  let degrees = Math.round(value);
-  if (degrees < LABEL_ROTATION_MIN_DEG) degrees = LABEL_ROTATION_MIN_DEG;
-  else if (degrees > LABEL_ROTATION_MAX_DEG) degrees = LABEL_ROTATION_MAX_DEG;
-  if (degrees === 0) return undefined;
-  return degrees;
+  if (value === undefined || typeof value !== "number" || !Number.isFinite(value)) return undefined
+  let degrees = Math.round(value)
+  if (degrees < LABEL_ROTATION_MIN_DEG) degrees = LABEL_ROTATION_MIN_DEG
+  else if (degrees > LABEL_ROTATION_MAX_DEG) degrees = LABEL_ROTATION_MAX_DEG
+  if (degrees === 0) return undefined
+  return degrees
 }
 
 /**
@@ -3112,11 +3110,11 @@ export function normalizeAxisLabelRotation(value: number | undefined): number | 
  * threads cleanly through both the title and axis-label slots.
  */
 export function normalizeAxisLabelFontSize(value: number | undefined): number | undefined {
-  if (value === undefined || typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  const halfSteps = Math.round(value * 2);
-  const points = halfSteps / 2;
-  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
-  return points;
+  if (value === undefined || typeof value !== "number" || !Number.isFinite(value)) return undefined
+  const halfSteps = Math.round(value * 2)
+  const points = halfSteps / 2
+  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined
+  return points
 }
 
 /**
@@ -3130,7 +3128,7 @@ export function normalizeAxisLabelFontSize(value: number | undefined): number | 
  * emits on a fresh axis (the theme-default tick-label weight).
  */
 export function normalizeAxisLabelBold(value: boolean | undefined): boolean | undefined {
-  return normalizeTitleBold(value);
+  return normalizeTitleBold(value)
 }
 
 /**
@@ -3144,7 +3142,7 @@ export function normalizeAxisLabelBold(value: boolean | undefined): boolean | un
  * emits on a fresh axis (the theme-default tick-label slant).
  */
 export function normalizeAxisLabelItalic(value: boolean | undefined): boolean | undefined {
-  return normalizeTitleItalic(value);
+  return normalizeTitleItalic(value)
 }
 
 /**
@@ -3162,7 +3160,7 @@ export function normalizeAxisLabelItalic(value: boolean | undefined): boolean | 
  * custom color).
  */
 export function normalizeAxisLabelColor(value: ChartColor | undefined): ChartColor | undefined {
-  return normalizeTitleColor(value);
+  return normalizeTitleColor(value)
 }
 
 /**
@@ -3177,7 +3175,7 @@ export function normalizeAxisLabelColor(value: ChartColor | undefined): ChartCol
  * theme-default non-underlined tick labels).
  */
 export function normalizeAxisLabelUnderline(value: boolean | undefined): boolean | undefined {
-  return normalizeTitleUnderline(value);
+  return normalizeTitleUnderline(value)
 }
 
 /**
@@ -3192,7 +3190,7 @@ export function normalizeAxisLabelUnderline(value: boolean | undefined): boolean
  * default non-strikethrough tick labels).
  */
 export function normalizeAxisLabelStrike(value: boolean | undefined): boolean | undefined {
-  return normalizeTitleStrike(value);
+  return normalizeTitleStrike(value)
 }
 
 /**
@@ -3209,10 +3207,10 @@ export function normalizeAxisLabelStrike(value: boolean | undefined): boolean | 
  * axis without a custom tick-label font picked).
  */
 export function normalizeAxisLabelFontFamily(value: string | undefined): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return undefined;
-  return trimmed;
+  if (typeof value !== "string") return undefined
+  const trimmed = value.trim()
+  if (trimmed.length === 0) return undefined
+  return trimmed
 }
 
 /**
@@ -3286,11 +3284,11 @@ export function buildAxisTxPr(
     strike === undefined &&
     fontFamily === undefined
   )
-    return undefined;
-  const rot = rotationDeg === undefined ? undefined : rotationDeg * TXPR_ROT_PER_DEGREE;
-  const sz = fontSizePt === undefined ? undefined : fontSizePt * TITLE_FONT_SZ_PER_POINT;
-  const b = bold === undefined ? undefined : bold ? 1 : 0;
-  const i = italic === undefined ? undefined : italic ? 1 : 0;
+    return undefined
+  const rot = rotationDeg === undefined ? undefined : rotationDeg * TXPR_ROT_PER_DEGREE
+  const sz = fontSizePt === undefined ? undefined : fontSizePt * TITLE_FONT_SZ_PER_POINT
+  const b = bold === undefined ? undefined : bold ? 1 : 0
+  const i = italic === undefined ? undefined : italic ? 1 : 0
   // OOXML's `<a:defRPr u=".."/>` attribute is the
   // `ST_TextUnderlineType` enum on `CT_TextCharacterProperties` —
   // eighteen values total, with `"none"` as the OOXML default and
@@ -3301,7 +3299,7 @@ export function buildAxisTxPr(
   // both collapse to omitting the attribute (the OOXML default
   // `"none"` collapses to absence; Excel itself omits `u` when the
   // tick labels are not underlined).
-  const u = underline === true ? "sng" : undefined;
+  const u = underline === true ? "sng" : undefined
   // OOXML's `<a:defRPr strike=".."/>` attribute is the
   // `ST_TextStrikeType` enum on `CT_TextCharacterProperties` — three
   // values total, with `"noStrike"` as the OOXML default and
@@ -3312,16 +3310,17 @@ export function buildAxisTxPr(
   // explicit `false` both collapse to omitting the attribute (the
   // OOXML default `"noStrike"` collapses to absence; Excel itself
   // omits `strike` when the tick labels are not strikethrough).
-  const strikeAttr = strike === true ? "sngStrike" : undefined;
+  const strikeAttr = strike === true ? "sngStrike" : undefined
   // OOXML's `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/>
   // </a:solidFill></a:defRPr>` carries the tick-label font color.
   // Absence (`undefined`) collapses to omitting the entire
   // `<a:solidFill>` block so the labels inherit the theme text color
   // (Excel's reference behavior for a fresh axis that has not had a
   // custom tick-label color picked).
-  const solidFillChild = rgbHex !== undefined
-    ? xmlElement("a:solidFill", undefined, [buildColorElement(rgbHex)])
-    : undefined;
+  const solidFillChild =
+    rgbHex !== undefined
+      ? xmlElement("a:solidFill", undefined, [buildColorElement(rgbHex)])
+      : undefined
   // OOXML's `<a:defRPr><a:latin typeface=".."/></a:defRPr>` carries
   // the tick-label font family. The `<a:latin>` element follows
   // `<a:solidFill>` per the CT_TextCharacterProperties child sequence
@@ -3329,7 +3328,7 @@ export function buildAxisTxPr(
   // omitting the entire `<a:latin>` element so the labels inherit the
   // theme typeface (Excel's reference behavior for a fresh axis that
   // has not had a custom tick-label font picked).
-  const latinChild = fontFamily ? xmlSelfClose("a:latin", { typeface: fontFamily }) : undefined;
+  const latinChild = fontFamily ? xmlSelfClose("a:latin", { typeface: fontFamily }) : undefined
   // When a fill color or a typeface is set the `<a:defRPr>` slot
   // expands from self-closing to wrapping the children; otherwise the
   // writer keeps the existing self-closing form so a fresh axis with
@@ -3337,13 +3336,13 @@ export function buildAxisTxPr(
   // byte-for-byte. Children are emitted in
   // CT_TextCharacterProperties' canonical schema order: solidFill
   // first, then latin.
-  const defRPrChildren: string[] = [];
-  if (solidFillChild) defRPrChildren.push(solidFillChild);
-  if (latinChild) defRPrChildren.push(latinChild);
+  const defRPrChildren: string[] = []
+  if (solidFillChild) defRPrChildren.push(solidFillChild)
+  if (latinChild) defRPrChildren.push(latinChild)
   const defRPr =
     defRPrChildren.length > 0
       ? xmlElement("a:defRPr", { sz, b, i, u, strike: strikeAttr }, defRPrChildren)
-      : xmlSelfClose("a:defRPr", { sz, b, i, u, strike: strikeAttr });
+      : xmlSelfClose("a:defRPr", { sz, b, i, u, strike: strikeAttr })
   return xmlElement("c:txPr", undefined, [
     xmlSelfClose("a:bodyPr", { rot }),
     xmlSelfClose("a:lstStyle"),
@@ -3351,7 +3350,7 @@ export function buildAxisTxPr(
       xmlElement("a:pPr", undefined, [defRPr]),
       xmlSelfClose("a:endParaRPr", { lang: "en-US" }),
     ]),
-  ]);
+  ])
 }
 
 /**
@@ -3380,12 +3379,12 @@ export function normalizeAxisCrosses(
   numeric: number | undefined,
 ): ResolvedAxisCrosses {
   if (typeof numeric === "number" && Number.isFinite(numeric)) {
-    return { kind: "numeric", value: numeric };
+    return { kind: "numeric", value: numeric }
   }
   if (semantic !== undefined && VALID_AXIS_CROSSES.has(semantic) && semantic !== "autoZero") {
-    return { kind: "semantic", value: semantic };
+    return { kind: "semantic", value: semantic }
   }
-  return { kind: "default" };
+  return { kind: "default" }
 }
 
 /**
@@ -3398,11 +3397,11 @@ export function normalizeAxisCrosses(
 export function buildAxisCrosses(resolved: ResolvedAxisCrosses): string {
   switch (resolved.kind) {
     case "numeric":
-      return xmlSelfClose("c:crossesAt", { val: resolved.value });
+      return xmlSelfClose("c:crossesAt", { val: resolved.value })
     case "semantic":
-      return xmlSelfClose("c:crosses", { val: resolved.value });
+      return xmlSelfClose("c:crosses", { val: resolved.value })
     case "default":
-      return xmlSelfClose("c:crosses", { val: "autoZero" });
+      return xmlSelfClose("c:crosses", { val: "autoZero" })
   }
 }
 
@@ -3415,20 +3414,20 @@ export function buildAxisCrosses(resolved: ResolvedAxisCrosses): string {
  * Returns the children to splice in after `<c:orientation>`.
  */
 export function buildAxisScalingExtras(scale: ChartAxisScale | undefined): {
-  before: string[];
-  after: string[];
+  before: string[]
+  after: string[]
 } {
-  if (!scale) return { before: [], after: [] };
-  const before: string[] = [];
-  const after: string[] = [];
+  if (!scale) return { before: [], after: [] }
+  const before: string[] = []
+  const after: string[] = []
   // logBase comes before orientation per CT_Scaling.
   if (scale.logBase !== undefined) {
-    before.push(xmlSelfClose("c:logBase", { val: scale.logBase }));
+    before.push(xmlSelfClose("c:logBase", { val: scale.logBase }))
   }
   // max and min come after orientation, with max first (CT_Scaling).
-  if (scale.max !== undefined) after.push(xmlSelfClose("c:max", { val: scale.max }));
-  if (scale.min !== undefined) after.push(xmlSelfClose("c:min", { val: scale.min }));
-  return { before, after };
+  if (scale.max !== undefined) after.push(xmlSelfClose("c:max", { val: scale.max }))
+  if (scale.min !== undefined) after.push(xmlSelfClose("c:min", { val: scale.min }))
+  return { before, after }
 }
 
 /**
@@ -3441,13 +3440,13 @@ export function buildAxisScaling(
   scale: ChartAxisScale | undefined,
   reverse: boolean = false,
 ): string {
-  const { before, after } = buildAxisScalingExtras(scale);
+  const { before, after } = buildAxisScalingExtras(scale)
   const children: string[] = [
     ...before,
     xmlSelfClose("c:orientation", { val: reverse ? "maxMin" : "minMax" }),
     ...after,
-  ];
-  return xmlElement("c:scaling", undefined, children);
+  ]
+  return xmlElement("c:scaling", undefined, children)
 }
 
 /**
@@ -3456,15 +3455,15 @@ export function buildAxisScaling(
  * before `<c:crossAx>` per CT_CatAx / CT_ValAx).
  */
 export function buildAxisTickUnits(scale: ChartAxisScale | undefined): string[] {
-  if (!scale) return [];
-  const out: string[] = [];
+  if (!scale) return []
+  const out: string[] = []
   if (scale.majorUnit !== undefined) {
-    out.push(xmlSelfClose("c:majorUnit", { val: scale.majorUnit }));
+    out.push(xmlSelfClose("c:majorUnit", { val: scale.majorUnit }))
   }
   if (scale.minorUnit !== undefined) {
-    out.push(xmlSelfClose("c:minorUnit", { val: scale.minorUnit }));
+    out.push(xmlSelfClose("c:minorUnit", { val: scale.minorUnit }))
   }
-  return out;
+  return out
 }
 
 /**
@@ -3490,34 +3489,34 @@ export function buildAxisTickUnits(scale: ChartAxisScale | undefined): string[] 
 export function normalizeAxisDispUnits(
   value: ChartAxisDispUnits | ChartAxisDispUnit | undefined,
 ): ChartAxisDispUnits | undefined {
-  if (value === undefined) return undefined;
+  if (value === undefined) return undefined
   if (typeof value === "string") {
     return VALID_DISP_UNITS.has(value as ChartAxisDispUnit)
       ? { unit: value as ChartAxisDispUnit }
-      : undefined;
+      : undefined
   }
-  if (typeof value !== "object" || value === null) return undefined;
-  const out: ChartAxisDispUnits = {};
-  const unit = value.unit;
+  if (typeof value !== "object" || value === null) return undefined
+  const out: ChartAxisDispUnits = {}
+  const unit = value.unit
   if (typeof unit === "string" && VALID_DISP_UNITS.has(unit as ChartAxisDispUnit)) {
-    out.unit = unit as ChartAxisDispUnit;
+    out.unit = unit as ChartAxisDispUnit
   }
-  const custUnit = value.custUnit;
+  const custUnit = value.custUnit
   if (typeof custUnit === "number" && Number.isFinite(custUnit) && custUnit > 0) {
-    out.custUnit = custUnit;
+    out.custUnit = custUnit
   }
   // Drop the entire object when neither child resolves — a bare
   // `<c:dispUnits/>` shell would fail Excel's strict validator (the
   // CT_DispUnits choice has `minOccurs="0"` on the choice itself, but
   // an empty element with the parent's `<c:extLst>` slot also empty
   // is rejected by Excel's reference renderer).
-  if (out.unit === undefined && out.custUnit === undefined) return undefined;
-  if (value.showLabel === true) out.showLabel = true;
+  if (out.unit === undefined && out.custUnit === undefined) return undefined
+  if (value.showLabel === true) out.showLabel = true
   if (typeof value.customLabel === "string") {
-    const trimmed = value.customLabel.trim();
-    if (trimmed.length > 0) out.customLabel = trimmed;
+    const trimmed = value.customLabel.trim()
+    if (trimmed.length > 0) out.customLabel = trimmed
   }
-  return out;
+  return out
 }
 
 /**
@@ -3536,26 +3535,26 @@ export function normalizeAxisDispUnits(
  * the writer leaves Excel's default "no display unit" state untouched.
  */
 export function buildAxisDispUnits(dispUnits: ChartAxisDispUnits | undefined): string[] {
-  if (!dispUnits) return [];
-  const children: string[] = [];
+  if (!dispUnits) return []
+  const children: string[] = []
   if (dispUnits.custUnit !== undefined) {
-    children.push(xmlSelfClose("c:custUnit", { val: dispUnits.custUnit }));
+    children.push(xmlSelfClose("c:custUnit", { val: dispUnits.custUnit }))
   } else if (dispUnits.unit !== undefined) {
-    children.push(xmlSelfClose("c:builtInUnit", { val: dispUnits.unit }));
+    children.push(xmlSelfClose("c:builtInUnit", { val: dispUnits.unit }))
   } else {
     // Neither child resolved — skip emission rather than ship a bare
     // `<c:dispUnits/>` Excel rejects. The normalizer should have
     // pre-filtered this case, but the guard here keeps the writer
     // robust against a stray runtime object slipping past the type
     // boundary.
-    return [];
+    return []
   }
   if (
     dispUnits.showLabel === true ||
     (typeof dispUnits.customLabel === "string" && dispUnits.customLabel.trim().length > 0)
   ) {
     const customLabel =
-      typeof dispUnits.customLabel === "string" ? dispUnits.customLabel.trim() : "";
+      typeof dispUnits.customLabel === "string" ? dispUnits.customLabel.trim() : ""
     if (customLabel.length > 0) {
       // Build `<c:dispUnitsLbl><c:tx><c:rich><a:bodyPr/><a:lstStyle/>
       // <a:p><a:r><a:t>...</a:t></a:r></a:p></c:rich></c:tx></c:dispUnitsLbl>`.
@@ -3563,24 +3562,21 @@ export function buildAxisDispUnits(dispUnits: ChartAxisDispUnits | undefined): s
       // emits a bare `<a:bodyPr/>` and `<a:lstStyle/>` placeholder
       // before the paragraph — mirror that minimal shape so a re-parse
       // walks the canonical path.
-      const escaped = customLabel
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
+      const escaped = customLabel.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
       const richBlock = xmlElement("c:rich", undefined, [
         xmlSelfClose("a:bodyPr"),
         xmlSelfClose("a:lstStyle"),
         xmlElement("a:p", undefined, [
           xmlElement("a:r", undefined, [xmlElement("a:t", undefined, escaped)]),
         ]),
-      ]);
-      const txBlock = xmlElement("c:tx", undefined, [richBlock]);
-      children.push(xmlElement("c:dispUnitsLbl", undefined, [txBlock]));
+      ])
+      const txBlock = xmlElement("c:tx", undefined, [richBlock])
+      children.push(xmlElement("c:dispUnitsLbl", undefined, [txBlock]))
     } else {
-      children.push(xmlSelfClose("c:dispUnitsLbl"));
+      children.push(xmlSelfClose("c:dispUnitsLbl"))
     }
   }
-  return [xmlElement("c:dispUnits", undefined, children)];
+  return [xmlElement("c:dispUnits", undefined, children)]
 }
 
 /**
@@ -3598,10 +3594,10 @@ export function buildAxisDispUnits(dispUnits: ChartAxisDispUnits | undefined): s
 export function normalizeAxisCrossBetween(
   value: ChartAxisCrossBetween | undefined,
 ): ChartAxisCrossBetween | undefined {
-  if (typeof value !== "string") return undefined;
+  if (typeof value !== "string") return undefined
   return VALID_CROSS_BETWEEN.has(value as ChartAxisCrossBetween)
     ? (value as ChartAxisCrossBetween)
-    : undefined;
+    : undefined
 }
 
 /**
@@ -3610,9 +3606,9 @@ export function normalizeAxisCrossBetween(
  * writer then leaves Excel's default linked behaviour untouched.
  */
 export function buildAxisNumFmt(numFmt: ChartAxisNumberFormat | undefined): string[] {
-  if (!numFmt) return [];
-  const sourceLinked = numFmt.sourceLinked === true ? 1 : 0;
-  return [xmlSelfClose("c:numFmt", { formatCode: numFmt.formatCode, sourceLinked })];
+  if (!numFmt) return []
+  const sourceLinked = numFmt.sourceLinked === true ? 1 : 0
+  return [xmlSelfClose("c:numFmt", { formatCode: numFmt.formatCode, sourceLinked })]
 }
 
 /**
@@ -3623,8 +3619,8 @@ export function buildAxisNumFmt(numFmt: ChartAxisNumberFormat | undefined): stri
 export function normalizeTickMark(
   value: ChartAxisTickMark | undefined,
 ): ChartAxisTickMark | undefined {
-  if (value === undefined) return undefined;
-  return TICK_MARK_VALUES.has(value) ? value : undefined;
+  if (value === undefined) return undefined
+  return TICK_MARK_VALUES.has(value) ? value : undefined
 }
 
 /**
@@ -3635,8 +3631,8 @@ export function normalizeTickMark(
 export function normalizeTickLblPos(
   value: ChartAxisTickLabelPosition | undefined,
 ): ChartAxisTickLabelPosition | undefined {
-  if (value === undefined) return undefined;
-  return TICK_LBL_POS_VALUES.has(value) ? value : undefined;
+  if (value === undefined) return undefined
+  return TICK_LBL_POS_VALUES.has(value) ? value : undefined
 }
 
 /**
@@ -3656,17 +3652,17 @@ export function buildAxisTickRendering(
   minorTickMark: ChartAxisTickMark | undefined,
   tickLblPos: ChartAxisTickLabelPosition | undefined,
 ): string[] {
-  const out: string[] = [];
+  const out: string[] = []
   if (majorTickMark !== undefined) {
-    out.push(xmlSelfClose("c:majorTickMark", { val: majorTickMark }));
+    out.push(xmlSelfClose("c:majorTickMark", { val: majorTickMark }))
   }
   if (minorTickMark !== undefined) {
-    out.push(xmlSelfClose("c:minorTickMark", { val: minorTickMark }));
+    out.push(xmlSelfClose("c:minorTickMark", { val: minorTickMark }))
   }
   if (tickLblPos !== undefined) {
-    out.push(xmlSelfClose("c:tickLblPos", { val: tickLblPos }));
+    out.push(xmlSelfClose("c:tickLblPos", { val: tickLblPos }))
   }
-  return out;
+  return out
 }
 
 /**
@@ -3682,22 +3678,22 @@ export function buildAxisSkips(
   tickLblSkip: number | undefined,
   tickMarkSkip: number | undefined,
 ): string[] {
-  const out: string[] = [];
+  const out: string[] = []
   if (tickLblSkip !== undefined) {
-    out.push(xmlSelfClose("c:tickLblSkip", { val: tickLblSkip }));
+    out.push(xmlSelfClose("c:tickLblSkip", { val: tickLblSkip }))
   }
   if (tickMarkSkip !== undefined) {
-    out.push(xmlSelfClose("c:tickMarkSkip", { val: tickMarkSkip }));
+    out.push(xmlSelfClose("c:tickMarkSkip", { val: tickMarkSkip }))
   }
-  return out;
+  return out
 }
 
 export function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOptions): string[] {
   // For a vertical column chart, categories sit on the bottom (catAx)
   // and values run vertically (valAx). For a horizontal bar chart the
   // axes swap orientation.
-  const catPos = orientation === "column" ? "b" : "l";
-  const valPos = orientation === "column" ? "l" : "b";
+  const catPos = orientation === "column" ? "b" : "l"
+  const valPos = orientation === "column" ? "l" : "b"
 
   // OOXML enforces a strict child order inside <c:catAx>/<c:valAx>:
   // axId → scaling → delete → axPos → majorGridlines → minorGridlines
@@ -3713,7 +3709,7 @@ export function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOpti
     xmlSelfClose("c:delete", { val: opts.xHidden ? 1 : 0 }),
     xmlSelfClose("c:axPos", { val: catPos }),
     ...buildAxisGridlines(opts.xGridlines),
-  ];
+  ]
   if (opts.xAxisTitle)
     catAxChildren.push(
       buildAxisTitle(
@@ -3735,11 +3731,11 @@ export function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOpti
         opts.xAxisTitleBorderCap,
         opts.xAxisTitleBorderCompound,
       ),
-    );
+    )
   catAxChildren.push(
     ...buildAxisNumFmt(opts.xNumFmt),
     ...buildAxisTickRendering(opts.xMajorTickMark, opts.xMinorTickMark, opts.xTickLblPos),
-  );
+  )
   // `<c:txPr>` sits between `<c:tickLblPos>` (the last child of
   // `buildAxisTickRendering`) and `<c:crossAx>` per CT_CatAx (ECMA-376
   // Part 1, §21.2.2.7). Skip the entire block when the caller did not
@@ -3753,8 +3749,8 @@ export function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOpti
     opts.xLabelUnderline,
     opts.xLabelStrike,
     opts.xLabelFontFamily,
-  );
-  if (xCatAxTxPr) catAxChildren.push(xCatAxTxPr);
+  )
+  if (xCatAxTxPr) catAxChildren.push(xCatAxTxPr)
   catAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL }),
     buildAxisCrosses(opts.xCrosses),
@@ -3788,7 +3784,7 @@ export function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOpti
     // `false` both produce `val="0"` so untouched charts match Excel's
     // output byte-for-byte.
     xmlSelfClose("c:noMultiLvlLbl", { val: opts.xNoMultiLvlLbl ? 1 : 0 }),
-  );
+  )
 
   const valAxChildren: string[] = [
     xmlSelfClose("c:axId", { val: AXIS_ID_VAL }),
@@ -3796,7 +3792,7 @@ export function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOpti
     xmlSelfClose("c:delete", { val: opts.yHidden ? 1 : 0 }),
     xmlSelfClose("c:axPos", { val: valPos }),
     ...buildAxisGridlines(opts.yGridlines),
-  ];
+  ]
   if (opts.yAxisTitle)
     valAxChildren.push(
       buildAxisTitle(
@@ -3818,11 +3814,11 @@ export function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOpti
         opts.yAxisTitleBorderCap,
         opts.yAxisTitleBorderCompound,
       ),
-    );
+    )
   valAxChildren.push(
     ...buildAxisNumFmt(opts.yNumFmt),
     ...buildAxisTickRendering(opts.yMajorTickMark, opts.yMinorTickMark, opts.yTickLblPos),
-  );
+  )
   // `<c:txPr>` sits between `<c:tickLblPos>` and `<c:crossAx>` per
   // CT_ValAx (ECMA-376 Part 1, §21.2.2.32). Same omit-by-default
   // contract as the catAx slot above — emit nothing when the caller
@@ -3837,8 +3833,8 @@ export function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOpti
     opts.yLabelUnderline,
     opts.yLabelStrike,
     opts.yLabelFontFamily,
-  );
-  if (yValAxTxPr) valAxChildren.push(yValAxTxPr);
+  )
+  if (yValAxTxPr) valAxChildren.push(yValAxTxPr)
   valAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_CAT }),
     buildAxisCrosses(opts.yCrosses),
@@ -3854,12 +3850,12 @@ export function buildBarAxes(orientation: "bar" | "column", opts: AxisRenderOpti
     // charts route the X axis through `<c:catAx>` (which rejects the
     // element), so only the Y axis picks up the writer-side input.
     ...buildAxisDispUnits(opts.yDispUnits),
-  );
+  )
 
   return [
     xmlElement("c:catAx", undefined, catAxChildren),
     xmlElement("c:valAx", undefined, valAxChildren),
-  ];
+  ]
 }
 
 export function buildScatterAxes(opts: AxisRenderOptions): string[] {
@@ -3869,7 +3865,7 @@ export function buildScatterAxes(opts: AxisRenderOptions): string[] {
     xmlSelfClose("c:delete", { val: opts.xHidden ? 1 : 0 }),
     xmlSelfClose("c:axPos", { val: "b" }),
     ...buildAxisGridlines(opts.xGridlines),
-  ];
+  ]
   if (opts.xAxisTitle)
     xAxChildren.push(
       buildAxisTitle(
@@ -3891,11 +3887,11 @@ export function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.xAxisTitleBorderCap,
         opts.xAxisTitleBorderCompound,
       ),
-    );
+    )
   xAxChildren.push(
     ...buildAxisNumFmt(opts.xNumFmt),
     ...buildAxisTickRendering(opts.xMajorTickMark, opts.xMinorTickMark, opts.xTickLblPos),
-  );
+  )
   // `<c:txPr>` slot — same CT_ValAx position as the bar / column
   // builder above. Scatter X is a value axis, so the rotation pins on
   // the X-axis just as it does on the Y-axis.
@@ -3908,8 +3904,8 @@ export function buildScatterAxes(opts: AxisRenderOptions): string[] {
     opts.xLabelUnderline,
     opts.xLabelStrike,
     opts.xLabelFontFamily,
-  );
-  if (xValAxTxPr) xAxChildren.push(xValAxTxPr);
+  )
+  if (xValAxTxPr) xAxChildren.push(xValAxTxPr)
   xAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL_Y }),
     buildAxisCrosses(opts.xCrosses),
@@ -3923,7 +3919,7 @@ export function buildScatterAxes(opts: AxisRenderOptions): string[] {
     // `<c:minorUnit>`). Scatter charts route both axes through
     // `<c:valAx>`, so the X-axis builder picks up `xDispUnits` here.
     ...buildAxisDispUnits(opts.xDispUnits),
-  );
+  )
 
   const yAxChildren: string[] = [
     xmlSelfClose("c:axId", { val: AXIS_ID_VAL_Y }),
@@ -3931,7 +3927,7 @@ export function buildScatterAxes(opts: AxisRenderOptions): string[] {
     xmlSelfClose("c:delete", { val: opts.yHidden ? 1 : 0 }),
     xmlSelfClose("c:axPos", { val: "l" }),
     ...buildAxisGridlines(opts.yGridlines),
-  ];
+  ]
   if (opts.yAxisTitle)
     yAxChildren.push(
       buildAxisTitle(
@@ -3953,11 +3949,11 @@ export function buildScatterAxes(opts: AxisRenderOptions): string[] {
         opts.yAxisTitleBorderCap,
         opts.yAxisTitleBorderCompound,
       ),
-    );
+    )
   yAxChildren.push(
     ...buildAxisNumFmt(opts.yNumFmt),
     ...buildAxisTickRendering(opts.yMajorTickMark, opts.yMinorTickMark, opts.yTickLblPos),
-  );
+  )
   // `<c:txPr>` slot for the scatter Y axis — same CT_ValAx position
   // and omit-by-default contract as the catAx / valAx builders above.
   const yScatterTxPr = buildAxisTxPr(
@@ -3969,8 +3965,8 @@ export function buildScatterAxes(opts: AxisRenderOptions): string[] {
     opts.yLabelUnderline,
     opts.yLabelStrike,
     opts.yLabelFontFamily,
-  );
-  if (yScatterTxPr) yAxChildren.push(yScatterTxPr);
+  )
+  if (yScatterTxPr) yAxChildren.push(yScatterTxPr)
   yAxChildren.push(
     xmlSelfClose("c:crossAx", { val: AXIS_ID_VAL_X }),
     buildAxisCrosses(opts.yCrosses),
@@ -3982,12 +3978,12 @@ export function buildScatterAxes(opts: AxisRenderOptions): string[] {
     // so the same builder applies. See `buildBarAxes` for the broader
     // scope notes.
     ...buildAxisDispUnits(opts.yDispUnits),
-  );
+  )
 
   return [
     xmlElement("c:valAx", undefined, xAxChildren),
     xmlElement("c:valAx", undefined, yAxChildren),
-  ];
+  ]
 }
 
 /**
@@ -4062,7 +4058,7 @@ export function buildAxisTitle(
   borderCap?: ChartLineCap | undefined,
   borderCompound?: ChartLineCompound | undefined,
 ): string {
-  const rot = rotationDeg === undefined ? 0 : rotationDeg * TITLE_ROT_PER_DEGREE;
+  const rot = rotationDeg === undefined ? 0 : rotationDeg * TITLE_ROT_PER_DEGREE
   // OOXML's `<a:defRPr sz="N"/>` / `<a:rPr sz="N"/>` attribute is in
   // 100ths of a point. The writer holds the size in points and
   // converts at emit time. Absence (`undefined`) collapses to the
@@ -4074,7 +4070,7 @@ export function buildAxisTitle(
   const sz =
     fontSizePt === undefined
       ? AXIS_TITLE_DEFAULT_FONT_SIZE_SZ
-      : fontSizePt * TITLE_FONT_SZ_PER_POINT;
+      : fontSizePt * TITLE_FONT_SZ_PER_POINT
   // OOXML's `<a:defRPr b=".."/>` / `<a:rPr b=".."/>` attribute is the
   // `xsd:boolean` bold flag on `CT_TextCharacterProperties`. The
   // writer holds `axisTitleBold` as a boolean and emits `1` / `0` at
@@ -4084,7 +4080,7 @@ export function buildAxisTitle(
   // `<a:defRPr>` and `<a:rPr>` so a re-parse picks the value up off
   // either canonical slot, mirroring the chart-level `buildTitle`
   // writer.
-  const b = bold ? 1 : 0;
+  const b = bold ? 1 : 0
   // OOXML's `<a:defRPr i=".."/>` / `<a:rPr i=".."/>` attribute is the
   // `xsd:boolean` italic flag on `CT_TextCharacterProperties`. Mirrors
   // the chart-level `buildTitle` italic emit: `axisTitleItalic` lands
@@ -4095,7 +4091,7 @@ export function buildAxisTitle(
   // attribute so a fresh axis title matches Excel's reference
   // serialization byte-for-byte (Excel itself omits `i` on a non-
   // italic axis title — only the bold flag is always emitted).
-  const i = italic === true ? 1 : undefined;
+  const i = italic === true ? 1 : undefined
   // OOXML's `<a:defRPr strike=".."/>` / `<a:rPr strike=".."/>` attribute
   // is the `ST_TextStrikeType` enum on `CT_TextCharacterProperties` —
   // `"noStrike"` (default), `"sngStrike"` (single line, the value
@@ -4109,7 +4105,7 @@ export function buildAxisTitle(
   // default-paragraph `<a:defRPr>` and the literal run's `<a:rPr>` so
   // a re-parse picks the value up off either canonical slot — Excel
   // keeps the two attributes in sync.
-  const strikeAttr = strike === true ? "sngStrike" : undefined;
+  const strikeAttr = strike === true ? "sngStrike" : undefined
   // OOXML's `<a:defRPr u=".."/>` / `<a:rPr u=".."/>` attribute is the
   // `ST_TextUnderlineType` enum on `CT_TextCharacterProperties` —
   // eighteen values total, with `"none"` as the OOXML default,
@@ -4125,7 +4121,7 @@ export function buildAxisTitle(
   // default-paragraph `<a:defRPr>` and the literal run's `<a:rPr>` so
   // a re-parse picks the value up off either canonical slot — Excel
   // keeps the two attributes in sync.
-  const underlineAttr = underline === true ? "sng" : undefined;
+  const underlineAttr = underline === true ? "sng" : undefined
   // OOXML's `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/>
   // </a:solidFill></a:defRPr>` carries the title's font color. Mirrors
   // the chart-level `buildTitle` color emit: `axisTitleColor` lands on
@@ -4135,9 +4131,10 @@ export function buildAxisTitle(
   // `<a:solidFill>` block so the title inherits the theme text color
   // (Excel's reference behavior for a fresh axis title that has not
   // had a custom color picked).
-  const solidFillChild = rgbHex !== undefined
-    ? xmlElement("a:solidFill", undefined, [buildColorElement(rgbHex)])
-    : undefined;
+  const solidFillChild =
+    rgbHex !== undefined
+      ? xmlElement("a:solidFill", undefined, [buildColorElement(rgbHex)])
+      : undefined
   // OOXML's `<a:defRPr><a:latin typeface=".."/></a:defRPr>` carries the
   // axis title's font family. Mirrors the chart-level `buildTitle`
   // typeface emit: `axisTitleFontFamily` lands on both the default-
@@ -4149,7 +4146,7 @@ export function buildAxisTitle(
   // picked). The `<a:latin>` element follows `<a:solidFill>` per the
   // CT_TextCharacterProperties child sequence (ECMA-376 Part 1,
   // §21.1.2.3.7).
-  const latinChild = fontFamily ? xmlSelfClose("a:latin", { typeface: fontFamily }) : undefined;
+  const latinChild = fontFamily ? xmlSelfClose("a:latin", { typeface: fontFamily }) : undefined
   // When a fill color or a typeface is set the `<a:defRPr>` /
   // `<a:rPr>` slots expand from self-closing to wrapping the
   // children; otherwise the writer keeps the existing self-closing
@@ -4157,13 +4154,13 @@ export function buildAxisTitle(
   // Excel's reference serialization byte-for-byte. Children are
   // emitted in CT_TextCharacterProperties' canonical schema order:
   // solidFill first, then latin.
-  const rPrChildren: string[] = [];
-  if (solidFillChild) rPrChildren.push(solidFillChild);
-  if (latinChild) rPrChildren.push(latinChild);
+  const rPrChildren: string[] = []
+  if (solidFillChild) rPrChildren.push(solidFillChild)
+  if (latinChild) rPrChildren.push(latinChild)
   const defRPr =
     rPrChildren.length > 0
       ? xmlElement("a:defRPr", { sz, b, i, u: underlineAttr, strike: strikeAttr }, rPrChildren)
-      : xmlSelfClose("a:defRPr", { sz, b, i, u: underlineAttr, strike: strikeAttr });
+      : xmlSelfClose("a:defRPr", { sz, b, i, u: underlineAttr, strike: strikeAttr })
   const rPr =
     rPrChildren.length > 0
       ? xmlElement(
@@ -4178,14 +4175,14 @@ export function buildAxisTitle(
           i,
           u: underlineAttr,
           strike: strikeAttr,
-        });
+        })
   // `<c:layout>` sits between `<c:tx>` and `<c:overlay>` per CT_Title
   // (ECMA-376 Part 1, §21.2.2.210) — the schema sequence is
   // `<c:tx>?` / `<c:layout>?` / `<c:overlay>?` / `<c:spPr>?` /
   // `<c:txPr>?`. Skip the entire block when `layout` is `undefined`
   // (every coordinate either unset or dropped on normalization) so a
   // fresh axis title matches Excel's reference shape byte-for-byte.
-  const layoutXml = buildManualLayout(layout);
+  const layoutXml = buildManualLayout(layout)
   const titleChildren: string[] = [
     xmlElement("c:tx", undefined, [
       xmlElement("c:rich", undefined, [
@@ -4208,9 +4205,9 @@ export function buildAxisTitle(
         ]),
       ]),
     ]),
-  ];
-  if (layoutXml) titleChildren.push(layoutXml);
-  titleChildren.push(xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }));
+  ]
+  if (layoutXml) titleChildren.push(layoutXml)
+  titleChildren.push(xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }))
   // CT_Title (ECMA-376 Part 1, §21.2.2.210) places the optional
   // `<c:spPr>` between `<c:overlay>` and `<c:txPr>` / `<c:extLst>`.
   // Mirrors `buildTitle`: the writer skips emission entirely when
@@ -4237,9 +4234,9 @@ export function buildAxisTitle(
     borderDash,
     borderCap,
     borderCompound,
-  );
-  if (titleSpPrXml !== undefined) titleChildren.push(titleSpPrXml);
-  return xmlElement("c:title", undefined, titleChildren);
+  )
+  if (titleSpPrXml !== undefined) titleChildren.push(titleSpPrXml)
+  return xmlElement("c:title", undefined, titleChildren)
 }
 
 /**
@@ -4253,7 +4250,7 @@ export function buildAxisTitle(
  * round-trip identically through {@link cloneChart}.
  */
 export function normalizeAxisTitleRotation(value: number | undefined): number | undefined {
-  return normalizeTitleRotation(value);
+  return normalizeTitleRotation(value)
 }
 
 /**
@@ -4268,7 +4265,7 @@ export function normalizeAxisTitleRotation(value: number | undefined): number | 
  * back to the hardcoded 10pt axis-title default.
  */
 export function normalizeAxisTitleFontSize(value: number | undefined): number | undefined {
-  return normalizeTitleFontSize(value);
+  return normalizeTitleFontSize(value)
 }
 
 /**
@@ -4282,7 +4279,7 @@ export function normalizeAxisTitleFontSize(value: number | undefined): number | 
  * (non-bold) Excel itself emits on a fresh axis title.
  */
 export function normalizeAxisTitleBold(value: boolean | undefined): boolean | undefined {
-  return normalizeTitleBold(value);
+  return normalizeTitleBold(value)
 }
 
 /**
@@ -4297,7 +4294,7 @@ export function normalizeAxisTitleBold(value: boolean | undefined): boolean | un
  * title).
  */
 export function normalizeAxisTitleItalic(value: boolean | undefined): boolean | undefined {
-  return normalizeTitleItalic(value);
+  return normalizeTitleItalic(value)
 }
 
 /**
@@ -4315,7 +4312,7 @@ export function normalizeAxisTitleItalic(value: boolean | undefined): boolean | 
  * reference behavior for a fresh axis title without a custom color).
  */
 export function normalizeAxisTitleColor(value: ChartColor | undefined): ChartColor | undefined {
-  return normalizeTitleColor(value);
+  return normalizeTitleColor(value)
 }
 
 /**
@@ -4330,7 +4327,7 @@ export function normalizeAxisTitleColor(value: ChartColor | undefined): ChartCol
  * axis title).
  */
 export function normalizeAxisTitleStrike(value: boolean | undefined): boolean | undefined {
-  return normalizeTitleStrike(value);
+  return normalizeTitleStrike(value)
 }
 
 /**
@@ -4345,7 +4342,7 @@ export function normalizeAxisTitleStrike(value: boolean | undefined): boolean | 
  * axis title).
  */
 export function normalizeAxisTitleUnderline(value: boolean | undefined): boolean | undefined {
-  return normalizeTitleUnderline(value);
+  return normalizeTitleUnderline(value)
 }
 
 /**
@@ -4363,10 +4360,10 @@ export function normalizeAxisTitleUnderline(value: boolean | undefined): boolean
  * fresh axis title without a custom font picked).
  */
 export function normalizeAxisTitleFontFamily(value: string | undefined): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return undefined;
-  return trimmed;
+  if (typeof value !== "string") return undefined
+  const trimmed = value.trim()
+  if (trimmed.length === 0) return undefined
+  return trimmed
 }
 
 // ── Clone-side axis constants ─────────────────────────────────────
@@ -4377,7 +4374,7 @@ const VALID_TICK_MARK_VALUES: ReadonlySet<ChartAxisTickMark> = new Set([
   "in",
   "out",
   "cross",
-]);
+])
 
 /** Recognized values of `<c:tickLblPos>` (clone-side). */
 const VALID_TICK_LBL_POS_VALUES: ReadonlySet<ChartAxisTickLabelPosition> = new Set([
@@ -4385,24 +4382,24 @@ const VALID_TICK_LBL_POS_VALUES: ReadonlySet<ChartAxisTickLabelPosition> = new S
   "low",
   "high",
   "none",
-]);
+])
 
 /** Recognized values of `<c:crosses>` per the OOXML `ST_Crosses` enum (clone-side). */
-const VALID_CROSSES_VALUES: ReadonlySet<ChartAxisCrosses> = new Set(["autoZero", "min", "max"]);
+const VALID_CROSSES_VALUES: ReadonlySet<ChartAxisCrosses> = new Set(["autoZero", "min", "max"])
 
 interface CrossesPairSource {
-  crosses?: ChartAxisCrosses;
-  crossesAt?: number;
+  crosses?: ChartAxisCrosses
+  crossesAt?: number
 }
 
 interface CrossesPairOverride {
-  crosses?: ChartAxisCrosses | null;
-  crossesAt?: number | null;
+  crosses?: ChartAxisCrosses | null
+  crossesAt?: number | null
 }
 
 interface CrossesPair {
-  crosses?: ChartAxisCrosses;
-  crossesAt?: number;
+  crosses?: ChartAxisCrosses
+  crossesAt?: number
 }
 
 /** Recognized values of `<c:builtInUnit>` per the OOXML `ST_BuiltInUnit` enum (clone-side). */
@@ -4416,13 +4413,13 @@ const VALID_DISP_UNIT_VALUES: ReadonlySet<ChartAxisDispUnit> = new Set([
   "hundredMillions",
   "billions",
   "trillions",
-]);
+])
 
 /** Recognized values of `<c:crossBetween>` per the OOXML `ST_CrossBetween` enum (clone-side). */
 const VALID_CROSS_BETWEEN_VALUES: ReadonlySet<ChartAxisCrossBetween> = new Set([
   "between",
   "midCat",
-]);
+])
 
 // ── Clone ─────────────────────────────────────────────────────────
 
@@ -4450,9 +4447,9 @@ export function resolveCloneAutoTitleDeleted(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
+  if (override === undefined) return sourceValue
+  if (override === null) return undefined
+  return override
 }
 
 /**
@@ -4466,8 +4463,8 @@ export function resolveAxes(
   overrides: CloneChartOptions["axes"],
   type: WriteChartKind,
 ): SheetChart["axes"] | undefined {
-  const xTitle = applyOverride(sourceAxes?.x?.title, overrides?.x?.title);
-  const yTitle = applyOverride(sourceAxes?.y?.title, overrides?.y?.title);
+  const xTitle = applyOverride(sourceAxes?.x?.title, overrides?.x?.title)
+  const yTitle = applyOverride(sourceAxes?.y?.title, overrides?.y?.title)
   // `<c:title><c:tx><c:rich><a:bodyPr rot="N"/></c:rich></c:tx></c:title>`
   // lives on every axis flavour per the OOXML schema (CT_CatAx,
   // CT_ValAx, CT_DateAx, CT_SerAx all share the same `<c:title>`
@@ -4481,11 +4478,11 @@ export function resolveAxes(
   const xAxisTitleRotation = applyAxisTitleRotationOverride(
     sourceAxes?.x?.axisTitleRotation,
     overrides?.x?.axisTitleRotation,
-  );
+  )
   const yAxisTitleRotation = applyAxisTitleRotationOverride(
     sourceAxes?.y?.axisTitleRotation,
     overrides?.y?.axisTitleRotation,
-  );
+  )
   // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p>
   // </c:rich></c:tx></c:title>` — axis title font size in 100ths of a
   // point. Sits on the same `<c:title>` body as `axisTitleRotation`,
@@ -4499,11 +4496,11 @@ export function resolveAxes(
   const xAxisTitleFontSize = applyAxisTitleFontSizeOverride(
     sourceAxes?.x?.axisTitleFontSize,
     overrides?.x?.axisTitleFontSize,
-  );
+  )
   const yAxisTitleFontSize = applyAxisTitleFontSizeOverride(
     sourceAxes?.y?.axisTitleFontSize,
     overrides?.y?.axisTitleFontSize,
-  );
+  )
   // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr b=".."/></a:pPr></a:p>
   // </c:rich></c:tx></c:title>` — axis-title bold flag. Sits on the
   // same `<c:title>` body as `axisTitleRotation`, so the resolver
@@ -4516,11 +4513,11 @@ export function resolveAxes(
   const xAxisTitleBold = applyAxisTitleBoldOverride(
     sourceAxes?.x?.axisTitleBold,
     overrides?.x?.axisTitleBold,
-  );
+  )
   const yAxisTitleBold = applyAxisTitleBoldOverride(
     sourceAxes?.y?.axisTitleBold,
     overrides?.y?.axisTitleBold,
-  );
+  )
   // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p>
   // </c:rich></c:tx></c:title>` — axis title italic flag. Sits on the
   // same `<c:title>` body as `axisTitleRotation` / `axisTitleFontSize` /
@@ -4533,11 +4530,11 @@ export function resolveAxes(
   const xAxisTitleItalic = applyAxisTitleItalicOverride(
     sourceAxes?.x?.axisTitleItalic,
     overrides?.x?.axisTitleItalic,
-  );
+  )
   const yAxisTitleItalic = applyAxisTitleItalicOverride(
     sourceAxes?.y?.axisTitleItalic,
     overrides?.y?.axisTitleItalic,
-  );
+  )
   // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:solidFill>
   // <a:srgbClr val="RRGGBB"/></a:solidFill></a:defRPr></a:pPr></a:p>
   // </c:rich></c:tx></c:title>` — axis title font color. Sits on the
@@ -4553,11 +4550,11 @@ export function resolveAxes(
   const xAxisTitleColor = applyAxisTitleColorOverride(
     sourceAxes?.x?.axisTitleColor,
     overrides?.x?.axisTitleColor,
-  );
+  )
   const yAxisTitleColor = applyAxisTitleColorOverride(
     sourceAxes?.y?.axisTitleColor,
     overrides?.y?.axisTitleColor,
-  );
+  )
   // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr strike=".."/></a:pPr>
   // </a:p></c:rich></c:tx></c:title>` — axis title strikethrough flag.
   // Sits on the same `<c:title>` body as `axisTitleRotation` /
@@ -4572,11 +4569,11 @@ export function resolveAxes(
   const xAxisTitleStrike = applyAxisTitleStrikeOverride(
     sourceAxes?.x?.axisTitleStrike,
     overrides?.x?.axisTitleStrike,
-  );
+  )
   const yAxisTitleStrike = applyAxisTitleStrikeOverride(
     sourceAxes?.y?.axisTitleStrike,
     overrides?.y?.axisTitleStrike,
-  );
+  )
   // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr u=".."/></a:pPr>
   // </a:p></c:rich></c:tx></c:title>` — axis title underline flag.
   // Sits on the same `<c:title>` body as `axisTitleRotation` /
@@ -4591,11 +4588,11 @@ export function resolveAxes(
   const xAxisTitleUnderline = applyAxisTitleUnderlineOverride(
     sourceAxes?.x?.axisTitleUnderline,
     overrides?.x?.axisTitleUnderline,
-  );
+  )
   const yAxisTitleUnderline = applyAxisTitleUnderlineOverride(
     sourceAxes?.y?.axisTitleUnderline,
     overrides?.y?.axisTitleUnderline,
-  );
+  )
   // `<c:title><c:tx><c:rich><a:p><a:pPr><a:defRPr><a:latin
   // typeface=".."/></a:defRPr></a:pPr></a:p></c:rich></c:tx></c:title>` —
   // axis title font family. Sits on the same `<c:title>` body as
@@ -4611,11 +4608,11 @@ export function resolveAxes(
   const xAxisTitleFontFamily = applyAxisTitleFontFamilyOverride(
     sourceAxes?.x?.axisTitleFontFamily,
     overrides?.x?.axisTitleFontFamily,
-  );
+  )
   const yAxisTitleFontFamily = applyAxisTitleFontFamilyOverride(
     sourceAxes?.y?.axisTitleFontFamily,
     overrides?.y?.axisTitleFontFamily,
-  );
+  )
   // `<c:title><c:overlay val=".."/></c:title>` — axis-title overlay
   // flag. Sits as a direct child of `<c:title>` per CT_Title schema,
   // so the resolver applies on every chart family that has axes (pie
@@ -4627,11 +4624,11 @@ export function resolveAxes(
   const xAxisTitleOverlay = applyAxisTitleOverlayOverride(
     sourceAxes?.x?.axisTitleOverlay,
     overrides?.x?.axisTitleOverlay,
-  );
+  )
   const yAxisTitleOverlay = applyAxisTitleOverlayOverride(
     sourceAxes?.y?.axisTitleOverlay,
     overrides?.y?.axisTitleOverlay,
-  );
+  )
   // `<c:title><c:layout><c:manualLayout>...</c:manualLayout></c:layout>
   // </c:title>` — axis-title manual placement. Sits inside `<c:title>`
   // between `<c:tx>` and `<c:overlay>` per CT_Title schema, so the
@@ -4646,11 +4643,11 @@ export function resolveAxes(
   const xAxisTitleLayout = resolveAxisTitleLayout(
     sourceAxes?.x?.axisTitleLayout,
     overrides?.x?.axisTitleLayout,
-  );
+  )
   const yAxisTitleLayout = resolveAxisTitleLayout(
     sourceAxes?.y?.axisTitleLayout,
     overrides?.y?.axisTitleLayout,
-  );
+  )
   // `<c:title><c:spPr><a:solidFill><a:srgbClr val="RRGGBB"/>
   // </a:solidFill></c:spPr></c:title>` — axis-title background fill.
   // Lives on the axis's `<c:title>` directly per CT_Title schema (the
@@ -4669,11 +4666,11 @@ export function resolveAxes(
   const xAxisTitleFillColor = applyAxisTitleFillColorOverride(
     sourceAxes?.x?.axisTitleFillColor,
     overrides?.x?.axisTitleFillColor,
-  );
+  )
   const yAxisTitleFillColor = applyAxisTitleFillColorOverride(
     sourceAxes?.y?.axisTitleFillColor,
     overrides?.y?.axisTitleFillColor,
-  );
+  )
   // `<c:title><c:spPr><a:ln><a:solidFill><a:srgbClr val="RRGGBB"/>
   // </a:solidFill></a:ln></c:spPr></c:title>` — axis-title border
   // (line stroke) color. Lives on the axis's `<c:title>` directly per
@@ -4693,11 +4690,11 @@ export function resolveAxes(
   const xAxisTitleBorderColor = applyAxisTitleBorderColorOverride(
     sourceAxes?.x?.axisTitleBorderColor,
     overrides?.x?.axisTitleBorderColor,
-  );
+  )
   const yAxisTitleBorderColor = applyAxisTitleBorderColorOverride(
     sourceAxes?.y?.axisTitleBorderColor,
     overrides?.y?.axisTitleBorderColor,
-  );
+  )
   // `<c:title><c:spPr><a:ln w="EMU"/></c:spPr></c:title>` —
   // axis-title border (line stroke) thickness. Reuse the shared
   // {@link resolveBorderWidthPt} helper so the snap / clamp grammar
@@ -4708,52 +4705,46 @@ export function resolveAxes(
   const xAxisTitleBorderWidth = resolveBorderWidthPt(
     sourceAxes?.x?.axisTitleBorderWidth,
     overrides?.x?.axisTitleBorderWidth,
-  );
+  )
   const yAxisTitleBorderWidth = resolveBorderWidthPt(
     sourceAxes?.y?.axisTitleBorderWidth,
     overrides?.y?.axisTitleBorderWidth,
-  );
+  )
   // `<c:title><c:spPr><a:ln><a:prstDash val=".."/></a:ln></c:spPr>
   // </c:title>` — axis-title border preset dash pattern. Same accept-
   // or-drop grammar as every other chart-frame border-dash slot.
   const xAxisTitleBorderDash = resolveBorderDash(
     sourceAxes?.x?.axisTitleBorderDash,
     overrides?.x?.axisTitleBorderDash,
-  );
+  )
   const yAxisTitleBorderDash = resolveBorderDash(
     sourceAxes?.y?.axisTitleBorderDash,
     overrides?.y?.axisTitleBorderDash,
-  );
-  const xGridlines = applyGridlinesOverride(sourceAxes?.x?.gridlines, overrides?.x?.gridlines);
-  const yGridlines = applyGridlinesOverride(sourceAxes?.y?.gridlines, overrides?.y?.gridlines);
-  const xScale = applyScaleOverride(sourceAxes?.x?.scale, overrides?.x?.scale);
-  const yScale = applyScaleOverride(sourceAxes?.y?.scale, overrides?.y?.scale);
-  const xNumFmt = applyNumberFormatOverride(
-    sourceAxes?.x?.numberFormat,
-    overrides?.x?.numberFormat,
-  );
-  const yNumFmt = applyNumberFormatOverride(
-    sourceAxes?.y?.numberFormat,
-    overrides?.y?.numberFormat,
-  );
+  )
+  const xGridlines = applyGridlinesOverride(sourceAxes?.x?.gridlines, overrides?.x?.gridlines)
+  const yGridlines = applyGridlinesOverride(sourceAxes?.y?.gridlines, overrides?.y?.gridlines)
+  const xScale = applyScaleOverride(sourceAxes?.x?.scale, overrides?.x?.scale)
+  const yScale = applyScaleOverride(sourceAxes?.y?.scale, overrides?.y?.scale)
+  const xNumFmt = applyNumberFormatOverride(sourceAxes?.x?.numberFormat, overrides?.x?.numberFormat)
+  const yNumFmt = applyNumberFormatOverride(sourceAxes?.y?.numberFormat, overrides?.y?.numberFormat)
   const xMajorTickMark = applyTickMarkOverride(
     sourceAxes?.x?.majorTickMark,
     overrides?.x?.majorTickMark,
-  );
+  )
   const yMajorTickMark = applyTickMarkOverride(
     sourceAxes?.y?.majorTickMark,
     overrides?.y?.majorTickMark,
-  );
+  )
   const xMinorTickMark = applyTickMarkOverride(
     sourceAxes?.x?.minorTickMark,
     overrides?.x?.minorTickMark,
-  );
+  )
   const yMinorTickMark = applyTickMarkOverride(
     sourceAxes?.y?.minorTickMark,
     overrides?.y?.minorTickMark,
-  );
-  const xTickLblPos = applyTickLblPosOverride(sourceAxes?.x?.tickLblPos, overrides?.x?.tickLblPos);
-  const yTickLblPos = applyTickLblPosOverride(sourceAxes?.y?.tickLblPos, overrides?.y?.tickLblPos);
+  )
+  const xTickLblPos = applyTickLblPosOverride(sourceAxes?.x?.tickLblPos, overrides?.x?.tickLblPos)
+  const yTickLblPos = applyTickLblPosOverride(sourceAxes?.y?.tickLblPos, overrides?.y?.tickLblPos)
   // `<c:txPr><a:bodyPr rot="N"/></c:txPr>` lives on every axis flavour
   // per the OOXML schema (CT_CatAx, CT_ValAx, CT_DateAx, CT_SerAx all
   // carry an optional `<c:txPr>`), so the resolver applies on every
@@ -4764,11 +4755,11 @@ export function resolveAxes(
   const xLabelRotation = applyLabelRotationOverride(
     sourceAxes?.x?.labelRotation,
     overrides?.x?.labelRotation,
-  );
+  )
   const yLabelRotation = applyLabelRotationOverride(
     sourceAxes?.y?.labelRotation,
     overrides?.y?.labelRotation,
-  );
+  )
   // `<c:txPr><a:p><a:pPr><a:defRPr sz="N"/></a:pPr></a:p></c:txPr>`
   // shares the same `<c:txPr>` slot as the rotation resolver above,
   // and the same per-axis scope rule (every axis flavour carries
@@ -4778,19 +4769,19 @@ export function resolveAxes(
   const xLabelFontSize = applyLabelFontSizeOverride(
     sourceAxes?.x?.labelFontSize,
     overrides?.x?.labelFontSize,
-  );
+  )
   const yLabelFontSize = applyLabelFontSizeOverride(
     sourceAxes?.y?.labelFontSize,
     overrides?.y?.labelFontSize,
-  );
+  )
   // `<c:txPr><a:p><a:pPr><a:defRPr b=".."/></a:pPr></a:p></c:txPr>`
   // shares the same `<c:txPr>` slot as the rotation / size resolvers
   // above, and the same per-axis scope rule (every axis flavour
   // carries `<c:txPr>`; pie / doughnut already short-circuited
   // upstream). Non-boolean overrides collapse to a drop so the cloned
   // `SheetChart` always carries a value the writer will accept.
-  const xLabelBold = applyLabelBoldOverride(sourceAxes?.x?.labelBold, overrides?.x?.labelBold);
-  const yLabelBold = applyLabelBoldOverride(sourceAxes?.y?.labelBold, overrides?.y?.labelBold);
+  const xLabelBold = applyLabelBoldOverride(sourceAxes?.x?.labelBold, overrides?.x?.labelBold)
+  const yLabelBold = applyLabelBoldOverride(sourceAxes?.y?.labelBold, overrides?.y?.labelBold)
   // `<c:txPr><a:p><a:pPr><a:defRPr i=".."/></a:pPr></a:p></c:txPr>`
   // shares the same `<c:txPr>` slot as the rotation / size / bold
   // resolvers above, and the same per-axis scope rule (every axis
@@ -4800,11 +4791,11 @@ export function resolveAxes(
   const xLabelItalic = applyLabelItalicOverride(
     sourceAxes?.x?.labelItalic,
     overrides?.x?.labelItalic,
-  );
+  )
   const yLabelItalic = applyLabelItalicOverride(
     sourceAxes?.y?.labelItalic,
     overrides?.y?.labelItalic,
-  );
+  )
   // `<c:txPr><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val=".."/>
   // </a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>` shares the same
   // `<c:txPr>` slot as the rotation / size / bold / italic resolvers
@@ -4813,8 +4804,8 @@ export function resolveAxes(
   // upstream). Malformed overrides collapse to a drop via the
   // normalizer so the cloned `SheetChart` always carries a value the
   // writer will accept.
-  const xLabelColor = applyLabelColorOverride(sourceAxes?.x?.labelColor, overrides?.x?.labelColor);
-  const yLabelColor = applyLabelColorOverride(sourceAxes?.y?.labelColor, overrides?.y?.labelColor);
+  const xLabelColor = applyLabelColorOverride(sourceAxes?.x?.labelColor, overrides?.x?.labelColor)
+  const yLabelColor = applyLabelColorOverride(sourceAxes?.y?.labelColor, overrides?.y?.labelColor)
   // `<c:txPr><a:p><a:pPr><a:defRPr u=".."/></a:pPr></a:p></c:txPr>`
   // shares the same `<c:txPr>` slot as the rotation / size / bold /
   // italic / color resolvers above, and the same per-axis scope rule
@@ -4825,11 +4816,11 @@ export function resolveAxes(
   const xLabelUnderline = applyLabelUnderlineOverride(
     sourceAxes?.x?.labelUnderline,
     overrides?.x?.labelUnderline,
-  );
+  )
   const yLabelUnderline = applyLabelUnderlineOverride(
     sourceAxes?.y?.labelUnderline,
     overrides?.y?.labelUnderline,
-  );
+  )
   // `<c:txPr><a:p><a:pPr><a:defRPr strike=".."/></a:pPr></a:p></c:txPr>`
   // shares the same `<c:txPr>` slot as the rotation / size / bold /
   // italic / color / underline resolvers above, and the same per-axis
@@ -4840,11 +4831,11 @@ export function resolveAxes(
   const xLabelStrike = applyLabelStrikeOverride(
     sourceAxes?.x?.labelStrike,
     overrides?.x?.labelStrike,
-  );
+  )
   const yLabelStrike = applyLabelStrikeOverride(
     sourceAxes?.y?.labelStrike,
     overrides?.y?.labelStrike,
-  );
+  )
   // `<c:txPr><a:p><a:pPr><a:defRPr><a:latin typeface=".."/></a:defRPr>
   // </a:pPr></a:p></c:txPr>` shares the same `<c:txPr>` slot as the
   // rotation / size / bold / italic / color / underline / strike
@@ -4856,54 +4847,54 @@ export function resolveAxes(
   const xLabelFontFamily = applyLabelFontFamilyOverride(
     sourceAxes?.x?.labelFontFamily,
     overrides?.x?.labelFontFamily,
-  );
+  )
   const yLabelFontFamily = applyLabelFontFamilyOverride(
     sourceAxes?.y?.labelFontFamily,
     overrides?.y?.labelFontFamily,
-  );
-  const xReverse = applyReverseOverride(sourceAxes?.x?.reverse, overrides?.x?.reverse);
-  const yReverse = applyReverseOverride(sourceAxes?.y?.reverse, overrides?.y?.reverse);
+  )
+  const xReverse = applyReverseOverride(sourceAxes?.x?.reverse, overrides?.x?.reverse)
+  const yReverse = applyReverseOverride(sourceAxes?.y?.reverse, overrides?.y?.reverse)
   // `tickLblSkip` / `tickMarkSkip` only render on category axes
   // (`<c:catAx>`). Scatter charts use two value axes, so the X axis
   // skip would be silently dropped by the writer anyway — collapse it
   // to undefined here so the cloned `SheetChart` accurately reflects
   // what the chart will paint.
-  const isCatAxisX = type !== "scatter";
+  const isCatAxisX = type !== "scatter"
   const xTickLblSkip = isCatAxisX
     ? applySkipOverride(sourceAxes?.x?.tickLblSkip, overrides?.x?.tickLblSkip)
-    : undefined;
+    : undefined
   const xTickMarkSkip = isCatAxisX
     ? applySkipOverride(sourceAxes?.x?.tickMarkSkip, overrides?.x?.tickMarkSkip)
-    : undefined;
+    : undefined
   // `lblOffset` is also category-axis-only (CT_CatAx / CT_DateAx) per
   // the OOXML schema. Same scope rule as the skip elements above.
   const xLblOffset = isCatAxisX
     ? applyLblOffsetOverride(sourceAxes?.x?.lblOffset, overrides?.x?.lblOffset)
-    : undefined;
+    : undefined
   // `lblAlgn` is category-axis-only as well (CT_CatAx / CT_DateAx
   // per ECMA-376 §21.2.2). Same scope as `lblOffset`.
   const xLblAlgn = isCatAxisX
     ? applyLblAlgnOverride(sourceAxes?.x?.lblAlgn, overrides?.x?.lblAlgn)
-    : undefined;
+    : undefined
   // `noMultiLvlLbl` is even tighter — `CT_CatAx` only (no `<c:dateAx>`
   // slot per ECMA-376 §21.2.2). Reuse the catAx scope rule above; the
   // resolved chart type still funnels through `<c:catAx>` for every
   // bar / column / line / area family the writer supports.
   const xNoMultiLvlLbl = isCatAxisX
     ? applyNoMultiLvlLblOverride(sourceAxes?.x?.noMultiLvlLbl, overrides?.x?.noMultiLvlLbl)
-    : undefined;
+    : undefined
   // `<c:auto>` is also `CT_CatAx`-only per ECMA-376 §21.2.2.7 — same
   // scope rule as `noMultiLvlLbl`. The flag defaults to `true` in the
   // OOXML schema (Excel auto-detects whether to render the axis as a
   // date or category axis), so the resolver collapses `true` to
   // `undefined` and only surfaces an explicit `false`.
-  const xAuto = isCatAxisX ? applyAutoOverride(sourceAxes?.x?.auto, overrides?.x?.auto) : undefined;
+  const xAuto = isCatAxisX ? applyAutoOverride(sourceAxes?.x?.auto, overrides?.x?.auto) : undefined
   // `<c:delete>` lives on every axis flavour — both `<c:catAx>` and
   // `<c:valAx>` accept it — so the hidden flag carries through every
   // chart family that has axes. Pie / doughnut have no axes at all
   // and the caller already short-circuited those above.
-  const xHidden = applyHiddenOverride(sourceAxes?.x?.hidden, overrides?.x?.hidden);
-  const yHidden = applyHiddenOverride(sourceAxes?.y?.hidden, overrides?.y?.hidden);
+  const xHidden = applyHiddenOverride(sourceAxes?.x?.hidden, overrides?.x?.hidden)
+  const yHidden = applyHiddenOverride(sourceAxes?.y?.hidden, overrides?.y?.hidden)
   // `<c:crosses>` and `<c:crossesAt>` live in an XSD choice on every
   // axis flavour. Resolve the pair together so the precedence rule
   // (numeric pin wins over semantic token) survives the inherit / null
@@ -4912,11 +4903,11 @@ export function resolveAxes(
   const xCrossesPair = applyCrossesOverride(
     { crosses: sourceAxes?.x?.crosses, crossesAt: sourceAxes?.x?.crossesAt },
     { crosses: overrides?.x?.crosses, crossesAt: overrides?.x?.crossesAt },
-  );
+  )
   const yCrossesPair = applyCrossesOverride(
     { crosses: sourceAxes?.y?.crosses, crossesAt: sourceAxes?.y?.crossesAt },
     { crosses: overrides?.y?.crosses, crossesAt: overrides?.y?.crossesAt },
-  );
+  )
   // `<c:dispUnits>` lives exclusively on `<c:valAx>` per ECMA-376
   // §21.2.2.32 (CT_ValAx → CT_DispUnits). Bar / column / line / area
   // route the X axis through `<c:catAx>`, so the X-axis override is
@@ -4927,8 +4918,8 @@ export function resolveAxes(
   const xDispUnits =
     type === "scatter"
       ? applyDispUnitsOverride(sourceAxes?.x?.dispUnits, overrides?.x?.dispUnits)
-      : undefined;
-  const yDispUnits = applyDispUnitsOverride(sourceAxes?.y?.dispUnits, overrides?.y?.dispUnits);
+      : undefined
+  const yDispUnits = applyDispUnitsOverride(sourceAxes?.y?.dispUnits, overrides?.y?.dispUnits)
   // `<c:crossBetween>` is also value-axis-only per ECMA-376 §21.2.2.10
   // (CT_ValAx → CT_CrossBetween). Same scope rule as `dispUnits` — the
   // X-axis override is only honoured on scatter (both axes are value
@@ -4938,11 +4929,11 @@ export function resolveAxes(
   const xCrossBetween =
     type === "scatter"
       ? applyCrossBetweenOverride(sourceAxes?.x?.crossBetween, overrides?.x?.crossBetween)
-      : undefined;
+      : undefined
   const yCrossBetween = applyCrossBetweenOverride(
     sourceAxes?.y?.crossBetween,
     overrides?.y?.crossBetween,
-  );
+  )
 
   // The axis-title rotation only renders when the axis carries a
   // title — drop a stray inherited rotation when the resolved axis
@@ -4950,37 +4941,37 @@ export function resolveAxes(
   // the chart will paint. Symmetric with the writer's title-presence
   // gate (the per-family axis builder only invokes `buildAxisTitle`
   // when `opts.xAxisTitle` / `opts.yAxisTitle` is set).
-  const xAxisTitleRotationResolved = xTitle === undefined ? undefined : xAxisTitleRotation;
-  const yAxisTitleRotationResolved = yTitle === undefined ? undefined : yAxisTitleRotation;
+  const xAxisTitleRotationResolved = xTitle === undefined ? undefined : xAxisTitleRotation
+  const yAxisTitleRotationResolved = yTitle === undefined ? undefined : yAxisTitleRotation
   // The axis-title font size only renders when the axis carries a
   // title — drop a stray inherited size when the resolved axis title
   // is unset so the cloned `SheetChart` accurately reflects what the
   // chart will paint. Symmetric with the writer's title-presence gate
   // (the per-family axis builder only invokes `buildAxisTitle` when
   // `opts.xAxisTitle` / `opts.yAxisTitle` is set).
-  const xAxisTitleFontSizeResolved = xTitle === undefined ? undefined : xAxisTitleFontSize;
-  const yAxisTitleFontSizeResolved = yTitle === undefined ? undefined : yAxisTitleFontSize;
+  const xAxisTitleFontSizeResolved = xTitle === undefined ? undefined : xAxisTitleFontSize
+  const yAxisTitleFontSizeResolved = yTitle === undefined ? undefined : yAxisTitleFontSize
   // Same title-presence gate for the axis-title bold flag — drop a
   // stray inherited flag when the resolved axis title is unset so the
   // cloned `SheetChart` accurately reflects what the chart will paint.
-  const xAxisTitleBoldResolved = xTitle === undefined ? undefined : xAxisTitleBold;
-  const yAxisTitleBoldResolved = yTitle === undefined ? undefined : yAxisTitleBold;
+  const xAxisTitleBoldResolved = xTitle === undefined ? undefined : xAxisTitleBold
+  const yAxisTitleBoldResolved = yTitle === undefined ? undefined : yAxisTitleBold
   // The axis-title italic flag only renders when the axis carries a
   // title — drop a stray inherited flag when the resolved axis title
   // is unset so the cloned `SheetChart` accurately reflects what the
   // chart will paint. Symmetric with the writer's title-presence gate
   // (the per-family axis builder only invokes `buildAxisTitle` when
   // `opts.xAxisTitle` / `opts.yAxisTitle` is set).
-  const xAxisTitleItalicResolved = xTitle === undefined ? undefined : xAxisTitleItalic;
-  const yAxisTitleItalicResolved = yTitle === undefined ? undefined : yAxisTitleItalic;
+  const xAxisTitleItalicResolved = xTitle === undefined ? undefined : xAxisTitleItalic
+  const yAxisTitleItalicResolved = yTitle === undefined ? undefined : yAxisTitleItalic
   // The axis-title font color only renders when the axis carries a
   // title — drop a stray inherited fill when the resolved axis title
   // is unset so the cloned `SheetChart` accurately reflects what the
   // chart will paint. Symmetric with the writer's title-presence gate
   // (the per-family axis builder only invokes `buildAxisTitle` when
   // `opts.xAxisTitle` / `opts.yAxisTitle` is set).
-  const xAxisTitleColorResolved = xTitle === undefined ? undefined : xAxisTitleColor;
-  const yAxisTitleColorResolved = yTitle === undefined ? undefined : yAxisTitleColor;
+  const xAxisTitleColorResolved = xTitle === undefined ? undefined : xAxisTitleColor
+  const yAxisTitleColorResolved = yTitle === undefined ? undefined : yAxisTitleColor
   // The axis-title strikethrough flag only renders when the axis
   // carries a title — drop a stray inherited flag when the resolved
   // axis title is unset so the cloned `SheetChart` accurately reflects
@@ -4988,37 +4979,37 @@ export function resolveAxes(
   // title-presence gate (the per-family axis builder only invokes
   // `buildAxisTitle` when `opts.xAxisTitle` / `opts.yAxisTitle` is
   // set).
-  const xAxisTitleStrikeResolved = xTitle === undefined ? undefined : xAxisTitleStrike;
-  const yAxisTitleStrikeResolved = yTitle === undefined ? undefined : yAxisTitleStrike;
+  const xAxisTitleStrikeResolved = xTitle === undefined ? undefined : xAxisTitleStrike
+  const yAxisTitleStrikeResolved = yTitle === undefined ? undefined : yAxisTitleStrike
   // The axis-title underline flag only renders when the axis carries a
   // title — drop a stray inherited flag when the resolved axis title
   // is unset so the cloned `SheetChart` accurately reflects what the
   // chart will paint. Symmetric with the writer's title-presence gate
   // (the per-family axis builder only invokes `buildAxisTitle` when
   // `opts.xAxisTitle` / `opts.yAxisTitle` is set).
-  const xAxisTitleUnderlineResolved = xTitle === undefined ? undefined : xAxisTitleUnderline;
-  const yAxisTitleUnderlineResolved = yTitle === undefined ? undefined : yAxisTitleUnderline;
+  const xAxisTitleUnderlineResolved = xTitle === undefined ? undefined : xAxisTitleUnderline
+  const yAxisTitleUnderlineResolved = yTitle === undefined ? undefined : yAxisTitleUnderline
   // Same title-presence gate as the rotation / size / bold / italic /
   // color / strike / underline resolved values — the writer skips the
   // entire `<a:latin>` element when the matching axis title is unset,
   // so the cloned `SheetChart` accurately reflects what the chart
   // will paint.
-  const xAxisTitleFontFamilyResolved = xTitle === undefined ? undefined : xAxisTitleFontFamily;
-  const yAxisTitleFontFamilyResolved = yTitle === undefined ? undefined : yAxisTitleFontFamily;
+  const xAxisTitleFontFamilyResolved = xTitle === undefined ? undefined : xAxisTitleFontFamily
+  const yAxisTitleFontFamilyResolved = yTitle === undefined ? undefined : yAxisTitleFontFamily
   // Same title-presence gate as the rotation / size / bold / italic /
   // color / strike / underline / font-family resolved values — the
   // writer always emits `<c:overlay>` when it emits the axis title,
   // and the writer skips the entire axis-title block when the matching
   // axis title is unset, so the cloned `SheetChart` accurately
   // reflects what the chart will paint.
-  const xAxisTitleOverlayResolved = xTitle === undefined ? undefined : xAxisTitleOverlay;
-  const yAxisTitleOverlayResolved = yTitle === undefined ? undefined : yAxisTitleOverlay;
+  const xAxisTitleOverlayResolved = xTitle === undefined ? undefined : xAxisTitleOverlay
+  const yAxisTitleOverlayResolved = yTitle === undefined ? undefined : yAxisTitleOverlay
   // Same title-presence gate as the other axis-title knobs — the writer
   // skips the entire `<c:layout>` block (and the surrounding `<c:title>`
   // element) when the matching axis title is unset, so the cloned
   // `SheetChart` accurately reflects what the chart will paint.
-  const xAxisTitleLayoutResolved = xTitle === undefined ? undefined : xAxisTitleLayout;
-  const yAxisTitleLayoutResolved = yTitle === undefined ? undefined : yAxisTitleLayout;
+  const xAxisTitleLayoutResolved = xTitle === undefined ? undefined : xAxisTitleLayout
+  const yAxisTitleLayoutResolved = yTitle === undefined ? undefined : yAxisTitleLayout
   // The axis-title background fill only renders when the axis carries
   // a title — drop a stray inherited fill when the resolved axis title
   // is unset so the cloned `SheetChart` accurately reflects what the
@@ -5026,8 +5017,8 @@ export function resolveAxes(
   // (the per-family axis builder only invokes `buildAxisTitle` when
   // `opts.xAxisTitle` / `opts.yAxisTitle` is set, and the writer skips
   // the `<c:spPr>` block entirely when no fill is pinned).
-  const xAxisTitleFillColorResolved = xTitle === undefined ? undefined : xAxisTitleFillColor;
-  const yAxisTitleFillColorResolved = yTitle === undefined ? undefined : yAxisTitleFillColor;
+  const xAxisTitleFillColorResolved = xTitle === undefined ? undefined : xAxisTitleFillColor
+  const yAxisTitleFillColorResolved = yTitle === undefined ? undefined : yAxisTitleFillColor
   // The axis-title border (line stroke) only renders when the axis
   // carries a title — drop a stray inherited stroke when the resolved
   // axis title is unset so the cloned `SheetChart` accurately reflects
@@ -5037,17 +5028,17 @@ export function resolveAxes(
   // set, and the writer skips the `<a:ln>` block entirely when no
   // border is pinned — and skips the entire `<c:spPr>` block when
   // both the fill and border are absent).
-  const xAxisTitleBorderColorResolved = xTitle === undefined ? undefined : xAxisTitleBorderColor;
-  const yAxisTitleBorderColorResolved = yTitle === undefined ? undefined : yAxisTitleBorderColor;
+  const xAxisTitleBorderColorResolved = xTitle === undefined ? undefined : xAxisTitleBorderColor
+  const yAxisTitleBorderColorResolved = yTitle === undefined ? undefined : yAxisTitleBorderColor
   // Same hidden-axis-title scoping as the color knob — drop the
   // inherited width / dash on an axis whose title is unset so the
   // cloned `SheetChart` accurately reflects what the chart will paint.
-  const xAxisTitleBorderWidthResolved = xTitle === undefined ? undefined : xAxisTitleBorderWidth;
-  const yAxisTitleBorderWidthResolved = yTitle === undefined ? undefined : yAxisTitleBorderWidth;
-  const xAxisTitleBorderDashResolved = xTitle === undefined ? undefined : xAxisTitleBorderDash;
-  const yAxisTitleBorderDashResolved = yTitle === undefined ? undefined : yAxisTitleBorderDash;
+  const xAxisTitleBorderWidthResolved = xTitle === undefined ? undefined : xAxisTitleBorderWidth
+  const yAxisTitleBorderWidthResolved = yTitle === undefined ? undefined : yAxisTitleBorderWidth
+  const xAxisTitleBorderDashResolved = xTitle === undefined ? undefined : xAxisTitleBorderDash
+  const yAxisTitleBorderDashResolved = yTitle === undefined ? undefined : yAxisTitleBorderDash
 
-  const out: NonNullable<SheetChart["axes"]> = {};
+  const out: NonNullable<SheetChart["axes"]> = {}
   if (
     xTitle !== undefined ||
     xAxisTitleRotationResolved !== undefined ||
@@ -5091,56 +5082,56 @@ export function resolveAxes(
     xDispUnits !== undefined ||
     xCrossBetween !== undefined
   ) {
-    out.x = {};
-    if (xTitle !== undefined) out.x.title = xTitle;
+    out.x = {}
+    if (xTitle !== undefined) out.x.title = xTitle
     if (xAxisTitleRotationResolved !== undefined)
-      out.x.axisTitleRotation = xAxisTitleRotationResolved;
+      out.x.axisTitleRotation = xAxisTitleRotationResolved
     if (xAxisTitleFontSizeResolved !== undefined)
-      out.x.axisTitleFontSize = xAxisTitleFontSizeResolved;
-    if (xAxisTitleBoldResolved !== undefined) out.x.axisTitleBold = xAxisTitleBoldResolved;
-    if (xAxisTitleItalicResolved !== undefined) out.x.axisTitleItalic = xAxisTitleItalicResolved;
-    if (xAxisTitleColorResolved !== undefined) out.x.axisTitleColor = xAxisTitleColorResolved;
-    if (xAxisTitleStrikeResolved !== undefined) out.x.axisTitleStrike = xAxisTitleStrikeResolved;
+      out.x.axisTitleFontSize = xAxisTitleFontSizeResolved
+    if (xAxisTitleBoldResolved !== undefined) out.x.axisTitleBold = xAxisTitleBoldResolved
+    if (xAxisTitleItalicResolved !== undefined) out.x.axisTitleItalic = xAxisTitleItalicResolved
+    if (xAxisTitleColorResolved !== undefined) out.x.axisTitleColor = xAxisTitleColorResolved
+    if (xAxisTitleStrikeResolved !== undefined) out.x.axisTitleStrike = xAxisTitleStrikeResolved
     if (xAxisTitleUnderlineResolved !== undefined)
-      out.x.axisTitleUnderline = xAxisTitleUnderlineResolved;
+      out.x.axisTitleUnderline = xAxisTitleUnderlineResolved
     if (xAxisTitleFontFamilyResolved !== undefined)
-      out.x.axisTitleFontFamily = xAxisTitleFontFamilyResolved;
-    if (xAxisTitleOverlayResolved !== undefined) out.x.axisTitleOverlay = xAxisTitleOverlayResolved;
-    if (xAxisTitleLayoutResolved !== undefined) out.x.axisTitleLayout = xAxisTitleLayoutResolved;
+      out.x.axisTitleFontFamily = xAxisTitleFontFamilyResolved
+    if (xAxisTitleOverlayResolved !== undefined) out.x.axisTitleOverlay = xAxisTitleOverlayResolved
+    if (xAxisTitleLayoutResolved !== undefined) out.x.axisTitleLayout = xAxisTitleLayoutResolved
     if (xAxisTitleFillColorResolved !== undefined)
-      out.x.axisTitleFillColor = xAxisTitleFillColorResolved;
+      out.x.axisTitleFillColor = xAxisTitleFillColorResolved
     if (xAxisTitleBorderColorResolved !== undefined)
-      out.x.axisTitleBorderColor = xAxisTitleBorderColorResolved;
+      out.x.axisTitleBorderColor = xAxisTitleBorderColorResolved
     if (xAxisTitleBorderWidthResolved !== undefined)
-      out.x.axisTitleBorderWidth = xAxisTitleBorderWidthResolved;
+      out.x.axisTitleBorderWidth = xAxisTitleBorderWidthResolved
     if (xAxisTitleBorderDashResolved !== undefined)
-      out.x.axisTitleBorderDash = xAxisTitleBorderDashResolved;
-    if (xGridlines !== undefined) out.x.gridlines = xGridlines;
-    if (xScale !== undefined) out.x.scale = xScale;
-    if (xNumFmt !== undefined) out.x.numberFormat = xNumFmt;
-    if (xMajorTickMark !== undefined) out.x.majorTickMark = xMajorTickMark;
-    if (xMinorTickMark !== undefined) out.x.minorTickMark = xMinorTickMark;
-    if (xTickLblPos !== undefined) out.x.tickLblPos = xTickLblPos;
-    if (xLabelRotation !== undefined) out.x.labelRotation = xLabelRotation;
-    if (xLabelFontSize !== undefined) out.x.labelFontSize = xLabelFontSize;
-    if (xLabelBold !== undefined) out.x.labelBold = xLabelBold;
-    if (xLabelItalic !== undefined) out.x.labelItalic = xLabelItalic;
-    if (xLabelColor !== undefined) out.x.labelColor = xLabelColor;
-    if (xLabelUnderline !== undefined) out.x.labelUnderline = xLabelUnderline;
-    if (xLabelStrike !== undefined) out.x.labelStrike = xLabelStrike;
-    if (xLabelFontFamily !== undefined) out.x.labelFontFamily = xLabelFontFamily;
-    if (xReverse !== undefined) out.x.reverse = xReverse;
-    if (xTickLblSkip !== undefined) out.x.tickLblSkip = xTickLblSkip;
-    if (xTickMarkSkip !== undefined) out.x.tickMarkSkip = xTickMarkSkip;
-    if (xLblOffset !== undefined) out.x.lblOffset = xLblOffset;
-    if (xLblAlgn !== undefined) out.x.lblAlgn = xLblAlgn;
-    if (xNoMultiLvlLbl !== undefined) out.x.noMultiLvlLbl = xNoMultiLvlLbl;
-    if (xAuto !== undefined) out.x.auto = xAuto;
-    if (xHidden !== undefined) out.x.hidden = xHidden;
-    if (xCrossesPair.crosses !== undefined) out.x.crosses = xCrossesPair.crosses;
-    if (xCrossesPair.crossesAt !== undefined) out.x.crossesAt = xCrossesPair.crossesAt;
-    if (xDispUnits !== undefined) out.x.dispUnits = xDispUnits;
-    if (xCrossBetween !== undefined) out.x.crossBetween = xCrossBetween;
+      out.x.axisTitleBorderDash = xAxisTitleBorderDashResolved
+    if (xGridlines !== undefined) out.x.gridlines = xGridlines
+    if (xScale !== undefined) out.x.scale = xScale
+    if (xNumFmt !== undefined) out.x.numberFormat = xNumFmt
+    if (xMajorTickMark !== undefined) out.x.majorTickMark = xMajorTickMark
+    if (xMinorTickMark !== undefined) out.x.minorTickMark = xMinorTickMark
+    if (xTickLblPos !== undefined) out.x.tickLblPos = xTickLblPos
+    if (xLabelRotation !== undefined) out.x.labelRotation = xLabelRotation
+    if (xLabelFontSize !== undefined) out.x.labelFontSize = xLabelFontSize
+    if (xLabelBold !== undefined) out.x.labelBold = xLabelBold
+    if (xLabelItalic !== undefined) out.x.labelItalic = xLabelItalic
+    if (xLabelColor !== undefined) out.x.labelColor = xLabelColor
+    if (xLabelUnderline !== undefined) out.x.labelUnderline = xLabelUnderline
+    if (xLabelStrike !== undefined) out.x.labelStrike = xLabelStrike
+    if (xLabelFontFamily !== undefined) out.x.labelFontFamily = xLabelFontFamily
+    if (xReverse !== undefined) out.x.reverse = xReverse
+    if (xTickLblSkip !== undefined) out.x.tickLblSkip = xTickLblSkip
+    if (xTickMarkSkip !== undefined) out.x.tickMarkSkip = xTickMarkSkip
+    if (xLblOffset !== undefined) out.x.lblOffset = xLblOffset
+    if (xLblAlgn !== undefined) out.x.lblAlgn = xLblAlgn
+    if (xNoMultiLvlLbl !== undefined) out.x.noMultiLvlLbl = xNoMultiLvlLbl
+    if (xAuto !== undefined) out.x.auto = xAuto
+    if (xHidden !== undefined) out.x.hidden = xHidden
+    if (xCrossesPair.crosses !== undefined) out.x.crosses = xCrossesPair.crosses
+    if (xCrossesPair.crossesAt !== undefined) out.x.crossesAt = xCrossesPair.crossesAt
+    if (xDispUnits !== undefined) out.x.dispUnits = xDispUnits
+    if (xCrossBetween !== undefined) out.x.crossBetween = xCrossBetween
   }
   if (
     yTitle !== undefined ||
@@ -5179,53 +5170,53 @@ export function resolveAxes(
     yDispUnits !== undefined ||
     yCrossBetween !== undefined
   ) {
-    out.y = {};
-    if (yTitle !== undefined) out.y.title = yTitle;
+    out.y = {}
+    if (yTitle !== undefined) out.y.title = yTitle
     if (yAxisTitleRotationResolved !== undefined)
-      out.y.axisTitleRotation = yAxisTitleRotationResolved;
+      out.y.axisTitleRotation = yAxisTitleRotationResolved
     if (yAxisTitleFontSizeResolved !== undefined)
-      out.y.axisTitleFontSize = yAxisTitleFontSizeResolved;
-    if (yAxisTitleBoldResolved !== undefined) out.y.axisTitleBold = yAxisTitleBoldResolved;
-    if (yAxisTitleItalicResolved !== undefined) out.y.axisTitleItalic = yAxisTitleItalicResolved;
-    if (yAxisTitleColorResolved !== undefined) out.y.axisTitleColor = yAxisTitleColorResolved;
-    if (yAxisTitleStrikeResolved !== undefined) out.y.axisTitleStrike = yAxisTitleStrikeResolved;
+      out.y.axisTitleFontSize = yAxisTitleFontSizeResolved
+    if (yAxisTitleBoldResolved !== undefined) out.y.axisTitleBold = yAxisTitleBoldResolved
+    if (yAxisTitleItalicResolved !== undefined) out.y.axisTitleItalic = yAxisTitleItalicResolved
+    if (yAxisTitleColorResolved !== undefined) out.y.axisTitleColor = yAxisTitleColorResolved
+    if (yAxisTitleStrikeResolved !== undefined) out.y.axisTitleStrike = yAxisTitleStrikeResolved
     if (yAxisTitleUnderlineResolved !== undefined)
-      out.y.axisTitleUnderline = yAxisTitleUnderlineResolved;
+      out.y.axisTitleUnderline = yAxisTitleUnderlineResolved
     if (yAxisTitleFontFamilyResolved !== undefined)
-      out.y.axisTitleFontFamily = yAxisTitleFontFamilyResolved;
-    if (yAxisTitleOverlayResolved !== undefined) out.y.axisTitleOverlay = yAxisTitleOverlayResolved;
-    if (yAxisTitleLayoutResolved !== undefined) out.y.axisTitleLayout = yAxisTitleLayoutResolved;
+      out.y.axisTitleFontFamily = yAxisTitleFontFamilyResolved
+    if (yAxisTitleOverlayResolved !== undefined) out.y.axisTitleOverlay = yAxisTitleOverlayResolved
+    if (yAxisTitleLayoutResolved !== undefined) out.y.axisTitleLayout = yAxisTitleLayoutResolved
     if (yAxisTitleFillColorResolved !== undefined)
-      out.y.axisTitleFillColor = yAxisTitleFillColorResolved;
+      out.y.axisTitleFillColor = yAxisTitleFillColorResolved
     if (yAxisTitleBorderColorResolved !== undefined)
-      out.y.axisTitleBorderColor = yAxisTitleBorderColorResolved;
+      out.y.axisTitleBorderColor = yAxisTitleBorderColorResolved
     if (yAxisTitleBorderWidthResolved !== undefined)
-      out.y.axisTitleBorderWidth = yAxisTitleBorderWidthResolved;
+      out.y.axisTitleBorderWidth = yAxisTitleBorderWidthResolved
     if (yAxisTitleBorderDashResolved !== undefined)
-      out.y.axisTitleBorderDash = yAxisTitleBorderDashResolved;
-    if (yGridlines !== undefined) out.y.gridlines = yGridlines;
-    if (yScale !== undefined) out.y.scale = yScale;
-    if (yNumFmt !== undefined) out.y.numberFormat = yNumFmt;
-    if (yMajorTickMark !== undefined) out.y.majorTickMark = yMajorTickMark;
-    if (yMinorTickMark !== undefined) out.y.minorTickMark = yMinorTickMark;
-    if (yTickLblPos !== undefined) out.y.tickLblPos = yTickLblPos;
-    if (yLabelRotation !== undefined) out.y.labelRotation = yLabelRotation;
-    if (yLabelFontSize !== undefined) out.y.labelFontSize = yLabelFontSize;
-    if (yLabelBold !== undefined) out.y.labelBold = yLabelBold;
-    if (yLabelItalic !== undefined) out.y.labelItalic = yLabelItalic;
-    if (yLabelColor !== undefined) out.y.labelColor = yLabelColor;
-    if (yLabelUnderline !== undefined) out.y.labelUnderline = yLabelUnderline;
-    if (yLabelStrike !== undefined) out.y.labelStrike = yLabelStrike;
-    if (yLabelFontFamily !== undefined) out.y.labelFontFamily = yLabelFontFamily;
-    if (yHidden !== undefined) out.y.hidden = yHidden;
-    if (yReverse !== undefined) out.y.reverse = yReverse;
-    if (yCrossesPair.crosses !== undefined) out.y.crosses = yCrossesPair.crosses;
-    if (yCrossesPair.crossesAt !== undefined) out.y.crossesAt = yCrossesPair.crossesAt;
-    if (yDispUnits !== undefined) out.y.dispUnits = yDispUnits;
-    if (yCrossBetween !== undefined) out.y.crossBetween = yCrossBetween;
+      out.y.axisTitleBorderDash = yAxisTitleBorderDashResolved
+    if (yGridlines !== undefined) out.y.gridlines = yGridlines
+    if (yScale !== undefined) out.y.scale = yScale
+    if (yNumFmt !== undefined) out.y.numberFormat = yNumFmt
+    if (yMajorTickMark !== undefined) out.y.majorTickMark = yMajorTickMark
+    if (yMinorTickMark !== undefined) out.y.minorTickMark = yMinorTickMark
+    if (yTickLblPos !== undefined) out.y.tickLblPos = yTickLblPos
+    if (yLabelRotation !== undefined) out.y.labelRotation = yLabelRotation
+    if (yLabelFontSize !== undefined) out.y.labelFontSize = yLabelFontSize
+    if (yLabelBold !== undefined) out.y.labelBold = yLabelBold
+    if (yLabelItalic !== undefined) out.y.labelItalic = yLabelItalic
+    if (yLabelColor !== undefined) out.y.labelColor = yLabelColor
+    if (yLabelUnderline !== undefined) out.y.labelUnderline = yLabelUnderline
+    if (yLabelStrike !== undefined) out.y.labelStrike = yLabelStrike
+    if (yLabelFontFamily !== undefined) out.y.labelFontFamily = yLabelFontFamily
+    if (yHidden !== undefined) out.y.hidden = yHidden
+    if (yReverse !== undefined) out.y.reverse = yReverse
+    if (yCrossesPair.crosses !== undefined) out.y.crosses = yCrossesPair.crosses
+    if (yCrossesPair.crossesAt !== undefined) out.y.crossesAt = yCrossesPair.crossesAt
+    if (yDispUnits !== undefined) out.y.dispUnits = yDispUnits
+    if (yCrossBetween !== undefined) out.y.crossBetween = yCrossBetween
   }
 
-  return out.x || out.y ? out : undefined;
+  return out.x || out.y ? out : undefined
 }
 
 /**
@@ -5240,16 +5231,16 @@ export function applySkipOverride(
   override: number | null | undefined,
 ): number | undefined {
   if (override === undefined) {
-    if (typeof source !== "number" || !Number.isFinite(source)) return undefined;
-    const rounded = Math.round(source);
-    if (rounded < 1 || rounded > 32767 || rounded === 1) return undefined;
-    return rounded;
+    if (typeof source !== "number" || !Number.isFinite(source)) return undefined
+    const rounded = Math.round(source)
+    if (rounded < 1 || rounded > 32767 || rounded === 1) return undefined
+    return rounded
   }
-  if (override === null) return undefined;
-  if (typeof override !== "number" || !Number.isFinite(override)) return undefined;
-  const rounded = Math.round(override);
-  if (rounded < 1 || rounded > 32767 || rounded === 1) return undefined;
-  return rounded;
+  if (override === null) return undefined
+  if (typeof override !== "number" || !Number.isFinite(override)) return undefined
+  const rounded = Math.round(override)
+  if (rounded < 1 || rounded > 32767 || rounded === 1) return undefined
+  return rounded
 }
 
 /**
@@ -5266,16 +5257,16 @@ export function applyLblOffsetOverride(
   override: number | null | undefined,
 ): number | undefined {
   if (override === undefined) {
-    if (typeof source !== "number" || !Number.isFinite(source)) return undefined;
-    const rounded = Math.round(source);
-    if (rounded < 0 || rounded > 1000 || rounded === 100) return undefined;
-    return rounded;
+    if (typeof source !== "number" || !Number.isFinite(source)) return undefined
+    const rounded = Math.round(source)
+    if (rounded < 0 || rounded > 1000 || rounded === 100) return undefined
+    return rounded
   }
-  if (override === null) return undefined;
-  if (typeof override !== "number" || !Number.isFinite(override)) return undefined;
-  const rounded = Math.round(override);
-  if (rounded < 0 || rounded > 1000 || rounded === 100) return undefined;
-  return rounded;
+  if (override === null) return undefined
+  if (typeof override !== "number" || !Number.isFinite(override)) return undefined
+  const rounded = Math.round(override)
+  if (rounded < 0 || rounded > 1000 || rounded === 100) return undefined
+  return rounded
 }
 
 /**
@@ -5292,12 +5283,12 @@ export function applyLblAlgnOverride(
   override: ChartAxisLabelAlign | null | undefined,
 ): ChartAxisLabelAlign | undefined {
   if (override === undefined) {
-    if (source !== "l" && source !== "r" && source !== "ctr") return undefined;
-    return source === "ctr" ? undefined : source;
+    if (source !== "l" && source !== "r" && source !== "ctr") return undefined
+    return source === "ctr" ? undefined : source
   }
-  if (override === null) return undefined;
-  if (override !== "l" && override !== "r" && override !== "ctr") return undefined;
-  return override === "ctr" ? undefined : override;
+  if (override === null) return undefined
+  if (override !== "l" && override !== "r" && override !== "ctr") return undefined
+  return override === "ctr" ? undefined : override
 }
 
 /**
@@ -5314,10 +5305,10 @@ export function applyNoMultiLvlLblOverride(
   override: boolean | null | undefined,
 ): boolean | undefined {
   if (override === undefined) {
-    return source === true ? true : undefined;
+    return source === true ? true : undefined
   }
-  if (override === null) return undefined;
-  return override === true ? true : undefined;
+  if (override === null) return undefined
+  return override === true ? true : undefined
 }
 
 /**
@@ -5339,10 +5330,10 @@ export function applyAutoOverride(
   override: boolean | null | undefined,
 ): boolean | undefined {
   if (override === undefined) {
-    return source === false ? false : undefined;
+    return source === false ? false : undefined
   }
-  if (override === null) return undefined;
-  return override === false ? false : undefined;
+  if (override === null) return undefined
+  return override === false ? false : undefined
 }
 
 /**
@@ -5359,10 +5350,10 @@ export function applyHiddenOverride(
   override: boolean | null | undefined,
 ): boolean | undefined {
   if (override === undefined) {
-    return source === true ? true : undefined;
+    return source === true ? true : undefined
   }
-  if (override === null) return undefined;
-  return override === true ? true : undefined;
+  if (override === null) return undefined
+  return override === true ? true : undefined
 }
 
 /**
@@ -5376,17 +5367,17 @@ export function applyGridlinesOverride(
   override: ChartAxisGridlines | null | undefined,
 ): ChartAxisGridlines | undefined {
   if (override === undefined) {
-    if (!source) return undefined;
-    const out: ChartAxisGridlines = {};
-    if (source.major) out.major = true;
-    if (source.minor) out.minor = true;
-    return out.major || out.minor ? out : undefined;
+    if (!source) return undefined
+    const out: ChartAxisGridlines = {}
+    if (source.major) out.major = true
+    if (source.minor) out.minor = true
+    return out.major || out.minor ? out : undefined
   }
-  if (override === null) return undefined;
-  const out: ChartAxisGridlines = {};
-  if (override.major === true) out.major = true;
-  if (override.minor === true) out.minor = true;
-  return out.major || out.minor ? out : undefined;
+  if (override === null) return undefined
+  const out: ChartAxisGridlines = {}
+  if (override.major === true) out.major = true
+  if (override.minor === true) out.minor = true
+  return out.major || out.minor ? out : undefined
 }
 
 /**
@@ -5404,35 +5395,35 @@ export function applyScaleOverride(
   override: ChartAxisScale | null | undefined,
 ): ChartAxisScale | undefined {
   if (override === undefined) {
-    if (!source) return undefined;
-    return cloneScale(source);
+    if (!source) return undefined
+    return cloneScale(source)
   }
-  if (override === null) return undefined;
-  return cloneScale(override);
+  if (override === null) return undefined
+  return cloneScale(override)
 }
 
 export function cloneScale(source: ChartAxisScale): ChartAxisScale | undefined {
-  const out: ChartAxisScale = {};
-  if (typeof source.min === "number" && Number.isFinite(source.min)) out.min = source.min;
-  if (typeof source.max === "number" && Number.isFinite(source.max)) out.max = source.max;
+  const out: ChartAxisScale = {}
+  if (typeof source.min === "number" && Number.isFinite(source.min)) out.min = source.min
+  if (typeof source.max === "number" && Number.isFinite(source.max)) out.max = source.max
   if (
     typeof source.majorUnit === "number" &&
     Number.isFinite(source.majorUnit) &&
     source.majorUnit > 0
   ) {
-    out.majorUnit = source.majorUnit;
+    out.majorUnit = source.majorUnit
   }
   if (
     typeof source.minorUnit === "number" &&
     Number.isFinite(source.minorUnit) &&
     source.minorUnit > 0
   ) {
-    out.minorUnit = source.minorUnit;
+    out.minorUnit = source.minorUnit
   }
   if (typeof source.logBase === "number" && Number.isFinite(source.logBase)) {
-    out.logBase = source.logBase;
+    out.logBase = source.logBase
   }
-  return Object.keys(out).length > 0 ? out : undefined;
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 /**
@@ -5445,17 +5436,17 @@ export function applyNumberFormatOverride(
   override: ChartAxisNumberFormat | null | undefined,
 ): ChartAxisNumberFormat | undefined {
   if (override === undefined) {
-    if (!source) return undefined;
-    if (typeof source.formatCode !== "string" || source.formatCode.length === 0) return undefined;
-    const out: ChartAxisNumberFormat = { formatCode: source.formatCode };
-    if (source.sourceLinked === true) out.sourceLinked = true;
-    return out;
+    if (!source) return undefined
+    if (typeof source.formatCode !== "string" || source.formatCode.length === 0) return undefined
+    const out: ChartAxisNumberFormat = { formatCode: source.formatCode }
+    if (source.sourceLinked === true) out.sourceLinked = true
+    return out
   }
-  if (override === null) return undefined;
-  if (typeof override.formatCode !== "string" || override.formatCode.length === 0) return undefined;
-  const out: ChartAxisNumberFormat = { formatCode: override.formatCode };
-  if (override.sourceLinked === true) out.sourceLinked = true;
-  return out;
+  if (override === null) return undefined
+  if (typeof override.formatCode !== "string" || override.formatCode.length === 0) return undefined
+  const out: ChartAxisNumberFormat = { formatCode: override.formatCode }
+  if (override.sourceLinked === true) out.sourceLinked = true
+  return out
 }
 
 /**
@@ -5469,11 +5460,11 @@ export function applyTickMarkOverride(
   override: ChartAxisTickMark | null | undefined,
 ): ChartAxisTickMark | undefined {
   if (override === undefined) {
-    if (source === undefined) return undefined;
-    return VALID_TICK_MARK_VALUES.has(source) ? source : undefined;
+    if (source === undefined) return undefined
+    return VALID_TICK_MARK_VALUES.has(source) ? source : undefined
   }
-  if (override === null) return undefined;
-  return VALID_TICK_MARK_VALUES.has(override) ? override : undefined;
+  if (override === null) return undefined
+  return VALID_TICK_MARK_VALUES.has(override) ? override : undefined
 }
 
 /**
@@ -5488,11 +5479,11 @@ export function applyTickLblPosOverride(
   override: ChartAxisTickLabelPosition | null | undefined,
 ): ChartAxisTickLabelPosition | undefined {
   if (override === undefined) {
-    if (source === undefined) return undefined;
-    return VALID_TICK_LBL_POS_VALUES.has(source) ? source : undefined;
+    if (source === undefined) return undefined
+    return VALID_TICK_LBL_POS_VALUES.has(source) ? source : undefined
   }
-  if (override === null) return undefined;
-  return VALID_TICK_LBL_POS_VALUES.has(override) ? override : undefined;
+  if (override === null) return undefined
+  return VALID_TICK_LBL_POS_VALUES.has(override) ? override : undefined
 }
 
 /**
@@ -5508,12 +5499,12 @@ export function applyLabelRotationOverride(
   override: number | null | undefined,
 ): number | undefined {
   if (override === undefined) {
-    if (typeof source !== "number" || !Number.isFinite(source)) return undefined;
-    return clampLabelRotationDeg(source);
+    if (typeof source !== "number" || !Number.isFinite(source)) return undefined
+    return clampLabelRotationDeg(source)
   }
-  if (override === null) return undefined;
-  if (typeof override !== "number" || !Number.isFinite(override)) return undefined;
-  return clampLabelRotationDeg(override);
+  if (override === null) return undefined
+  if (typeof override !== "number" || !Number.isFinite(override)) return undefined
+  return clampLabelRotationDeg(override)
 }
 
 /**
@@ -5523,11 +5514,11 @@ export function applyLabelRotationOverride(
  * {@link normalizeAxisLabelRotation} contract.
  */
 export function clampLabelRotationDeg(value: number): number | undefined {
-  let degrees = Math.round(value);
-  if (degrees < -90) degrees = -90;
-  else if (degrees > 90) degrees = 90;
-  if (degrees === 0) return undefined;
-  return degrees;
+  let degrees = Math.round(value)
+  if (degrees < -90) degrees = -90
+  else if (degrees > 90) degrees = 90
+  if (degrees === 0) return undefined
+  return degrees
 }
 
 /**
@@ -5549,9 +5540,9 @@ export function applyLabelFontSizeOverride(
   source: number | undefined,
   override: number | null | undefined,
 ): number | undefined {
-  if (override === undefined) return normalizeTitleFontSize(source);
-  if (override === null) return undefined;
-  return normalizeTitleFontSize(override);
+  if (override === undefined) return normalizeTitleFontSize(source)
+  if (override === null) return undefined
+  return normalizeTitleFontSize(override)
 }
 
 /**
@@ -5572,14 +5563,14 @@ export function applyLabelBoldOverride(
   override: boolean | null | undefined,
 ): boolean | undefined {
   if (override === undefined) {
-    if (source === true) return true;
-    if (source === false) return false;
-    return undefined;
+    if (source === true) return true
+    if (source === false) return false
+    return undefined
   }
-  if (override === null) return undefined;
-  if (override === true) return true;
-  if (override === false) return false;
-  return undefined;
+  if (override === null) return undefined
+  if (override === true) return true
+  if (override === false) return false
+  return undefined
 }
 
 /**
@@ -5600,14 +5591,14 @@ export function applyLabelItalicOverride(
   override: boolean | null | undefined,
 ): boolean | undefined {
   if (override === undefined) {
-    if (source === true) return true;
-    if (source === false) return false;
-    return undefined;
+    if (source === true) return true
+    if (source === false) return false
+    return undefined
   }
-  if (override === null) return undefined;
-  if (override === true) return true;
-  if (override === false) return false;
-  return undefined;
+  if (override === null) return undefined
+  if (override === true) return true
+  if (override === false) return false
+  return undefined
 }
 
 /**
@@ -5631,9 +5622,9 @@ export function applyLabelColorOverride(
   source: ChartColor | undefined,
   override: ChartColor | null | undefined,
 ): ChartColor | undefined {
-  if (override === undefined) return normalizeTitleColor(source);
-  if (override === null) return undefined;
-  return normalizeTitleColor(override);
+  if (override === undefined) return normalizeTitleColor(source)
+  if (override === null) return undefined
+  return normalizeTitleColor(override)
 }
 
 /**
@@ -5655,14 +5646,14 @@ export function applyLabelUnderlineOverride(
   override: boolean | null | undefined,
 ): boolean | undefined {
   if (override === undefined) {
-    if (source === true) return true;
-    if (source === false) return false;
-    return undefined;
+    if (source === true) return true
+    if (source === false) return false
+    return undefined
   }
-  if (override === null) return undefined;
-  if (override === true) return true;
-  if (override === false) return false;
-  return undefined;
+  if (override === null) return undefined
+  if (override === true) return true
+  if (override === false) return false
+  return undefined
 }
 
 /**
@@ -5684,14 +5675,14 @@ export function applyLabelStrikeOverride(
   override: boolean | null | undefined,
 ): boolean | undefined {
   if (override === undefined) {
-    if (source === true) return true;
-    if (source === false) return false;
-    return undefined;
+    if (source === true) return true
+    if (source === false) return false
+    return undefined
   }
-  if (override === null) return undefined;
-  if (override === true) return true;
-  if (override === false) return false;
-  return undefined;
+  if (override === null) return undefined
+  if (override === true) return true
+  if (override === false) return false
+  return undefined
 }
 
 /**
@@ -5716,9 +5707,9 @@ export function applyLabelFontFamilyOverride(
   source: string | undefined,
   override: string | null | undefined,
 ): string | undefined {
-  if (override === undefined) return normalizeLabelFontFamily(source);
-  if (override === null) return undefined;
-  return normalizeLabelFontFamily(override);
+  if (override === undefined) return normalizeLabelFontFamily(source)
+  if (override === null) return undefined
+  return normalizeLabelFontFamily(override)
 }
 
 /**
@@ -5730,10 +5721,10 @@ export function applyLabelFontFamilyOverride(
  * rather than carry a value the writer would silently elide.
  */
 export function normalizeLabelFontFamily(value: string | undefined): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return undefined;
-  return trimmed;
+  if (typeof value !== "string") return undefined
+  const trimmed = value.trim()
+  if (trimmed.length === 0) return undefined
+  return trimmed
 }
 
 /**
@@ -5753,12 +5744,12 @@ export function applyAxisTitleRotationOverride(
   override: number | null | undefined,
 ): number | undefined {
   if (override === undefined) {
-    if (typeof source !== "number" || !Number.isFinite(source)) return undefined;
-    return clampLabelRotationDeg(source);
+    if (typeof source !== "number" || !Number.isFinite(source)) return undefined
+    return clampLabelRotationDeg(source)
   }
-  if (override === null) return undefined;
-  if (typeof override !== "number" || !Number.isFinite(override)) return undefined;
-  return clampLabelRotationDeg(override);
+  if (override === null) return undefined
+  if (typeof override !== "number" || !Number.isFinite(override)) return undefined
+  return clampLabelRotationDeg(override)
 }
 
 /**
@@ -5780,9 +5771,9 @@ export function applyAxisTitleFontSizeOverride(
   source: number | undefined,
   override: number | null | undefined,
 ): number | undefined {
-  if (override === undefined) return normalizeTitleFontSize(source);
-  if (override === null) return undefined;
-  return normalizeTitleFontSize(override);
+  if (override === undefined) return normalizeTitleFontSize(source)
+  if (override === null) return undefined
+  return normalizeTitleFontSize(override)
 }
 
 /**
@@ -5804,14 +5795,14 @@ export function applyAxisTitleBoldOverride(
   override: boolean | null | undefined,
 ): boolean | undefined {
   if (override === undefined) {
-    if (source === true) return true;
-    if (source === false) return false;
-    return undefined;
+    if (source === true) return true
+    if (source === false) return false
+    return undefined
   }
-  if (override === null) return undefined;
-  if (override === true) return true;
-  if (override === false) return false;
-  return undefined;
+  if (override === null) return undefined
+  if (override === true) return true
+  if (override === false) return false
+  return undefined
 }
 
 /**
@@ -5834,9 +5825,9 @@ export function applyAxisTitleItalicOverride(
   source: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
-  if (override === undefined) return normalizeTitleItalic(source);
-  if (override === null) return undefined;
-  return normalizeTitleItalic(override);
+  if (override === undefined) return normalizeTitleItalic(source)
+  if (override === null) return undefined
+  return normalizeTitleItalic(override)
 }
 
 /**
@@ -5861,9 +5852,9 @@ export function applyAxisTitleColorOverride(
   source: ChartColor | undefined,
   override: ChartColor | null | undefined,
 ): ChartColor | undefined {
-  if (override === undefined) return normalizeTitleColor(source);
-  if (override === null) return undefined;
-  return normalizeTitleColor(override);
+  if (override === undefined) return normalizeTitleColor(source)
+  if (override === null) return undefined
+  return normalizeTitleColor(override)
 }
 
 /**
@@ -5894,9 +5885,9 @@ export function applyAxisTitleFillColorOverride(
   source: ChartColor | undefined,
   override: ChartColor | null | undefined,
 ): ChartColor | undefined {
-  if (override === undefined) return normalizeTitleColor(source);
-  if (override === null) return undefined;
-  return normalizeTitleColor(override);
+  if (override === undefined) return normalizeTitleColor(source)
+  if (override === null) return undefined
+  return normalizeTitleColor(override)
 }
 
 /**
@@ -5934,9 +5925,9 @@ export function applyAxisTitleBorderColorOverride(
   source: ChartColor | undefined,
   override: ChartColor | null | undefined,
 ): ChartColor | undefined {
-  if (override === undefined) return normalizeTitleColor(source);
-  if (override === null) return undefined;
-  return normalizeTitleColor(override);
+  if (override === undefined) return normalizeTitleColor(source)
+  if (override === null) return undefined
+  return normalizeTitleColor(override)
 }
 
 /**
@@ -5959,9 +5950,9 @@ export function applyAxisTitleStrikeOverride(
   source: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
-  if (override === undefined) return normalizeTitleStrike(source);
-  if (override === null) return undefined;
-  return normalizeTitleStrike(override);
+  if (override === undefined) return normalizeTitleStrike(source)
+  if (override === null) return undefined
+  return normalizeTitleStrike(override)
 }
 
 /**
@@ -5984,9 +5975,9 @@ export function applyAxisTitleUnderlineOverride(
   source: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
-  if (override === undefined) return normalizeTitleUnderline(source);
-  if (override === null) return undefined;
-  return normalizeTitleUnderline(override);
+  if (override === undefined) return normalizeTitleUnderline(source)
+  if (override === null) return undefined
+  return normalizeTitleUnderline(override)
 }
 
 /**
@@ -6012,9 +6003,9 @@ export function applyAxisTitleFontFamilyOverride(
   source: string | undefined,
   override: string | null | undefined,
 ): string | undefined {
-  if (override === undefined) return normalizeAxisTitleFontFamilyClone(source);
-  if (override === null) return undefined;
-  return normalizeAxisTitleFontFamilyClone(override);
+  if (override === undefined) return normalizeAxisTitleFontFamilyClone(source)
+  if (override === null) return undefined
+  return normalizeAxisTitleFontFamilyClone(override)
 }
 
 /**
@@ -6027,10 +6018,10 @@ export function applyAxisTitleFontFamilyOverride(
  * field rather than carry a value the writer would silently elide.
  */
 export function normalizeAxisTitleFontFamilyClone(value: string | undefined): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return undefined;
-  return trimmed;
+  if (typeof value !== "string") return undefined
+  const trimmed = value.trim()
+  if (trimmed.length === 0) return undefined
+  return trimmed
 }
 
 /**
@@ -6062,14 +6053,14 @@ export function applyAxisTitleOverlayOverride(
   override: boolean | null | undefined,
 ): boolean | undefined {
   if (override === undefined) {
-    if (source === true) return true;
-    if (source === false) return false;
-    return undefined;
+    if (source === true) return true
+    if (source === false) return false
+    return undefined
   }
-  if (override === null) return undefined;
-  if (override === true) return true;
-  if (override === false) return false;
-  return undefined;
+  if (override === null) return undefined
+  if (override === true) return true
+  if (override === false) return false
+  return undefined
 }
 
 /**
@@ -6104,9 +6095,9 @@ export function resolveAxisTitleLayout(
   sourceValue: ChartManualLayout | undefined,
   override: ChartManualLayout | null | undefined,
 ): ChartManualLayout | undefined {
-  if (override === undefined) return normalizeLegendLayout(sourceValue);
-  if (override === null) return undefined;
-  return normalizeLegendLayout(override);
+  if (override === undefined) return normalizeLegendLayout(sourceValue)
+  if (override === null) return undefined
+  return normalizeLegendLayout(override)
 }
 
 /**
@@ -6127,10 +6118,10 @@ export function applyReverseOverride(
   override: boolean | null | undefined,
 ): boolean | undefined {
   if (override === undefined) {
-    return source === true ? true : undefined;
+    return source === true ? true : undefined
   }
-  if (override === null) return undefined;
-  return override === true ? true : undefined;
+  if (override === null) return undefined
+  return override === true ? true : undefined
 }
 
 /**
@@ -6152,19 +6143,19 @@ export function applyCrossesOverride(
   source: CrossesPairSource,
   override: CrossesPairOverride,
 ): CrossesPair {
-  const out: CrossesPair = {};
+  const out: CrossesPair = {}
 
   if (override.crosses !== undefined) {
     if (override.crosses !== null) {
-      const value = override.crosses;
+      const value = override.crosses
       if (VALID_CROSSES_VALUES.has(value) && value !== "autoZero") {
-        out.crosses = value;
+        out.crosses = value
       }
     }
     // override.crosses === null drops the field entirely.
   } else if (source.crosses !== undefined) {
     if (VALID_CROSSES_VALUES.has(source.crosses) && source.crosses !== "autoZero") {
-      out.crosses = source.crosses;
+      out.crosses = source.crosses
     }
   }
 
@@ -6174,14 +6165,14 @@ export function applyCrossesOverride(
       typeof override.crossesAt === "number" &&
       Number.isFinite(override.crossesAt)
     ) {
-      out.crossesAt = override.crossesAt;
+      out.crossesAt = override.crossesAt
     }
     // override.crossesAt === null drops the field entirely.
   } else if (typeof source.crossesAt === "number" && Number.isFinite(source.crossesAt)) {
-    out.crossesAt = source.crossesAt;
+    out.crossesAt = source.crossesAt
   }
 
-  return out;
+  return out
 }
 
 /**
@@ -6204,29 +6195,29 @@ export function applyCrossesOverride(
 export function normalizeDispUnits(
   value: ChartAxisDispUnits | ChartAxisDispUnit | undefined,
 ): ChartAxisDispUnits | undefined {
-  if (value === undefined) return undefined;
+  if (value === undefined) return undefined
   if (typeof value === "string") {
     return VALID_DISP_UNIT_VALUES.has(value as ChartAxisDispUnit)
       ? { unit: value as ChartAxisDispUnit }
-      : undefined;
+      : undefined
   }
-  if (typeof value !== "object" || value === null) return undefined;
-  const out: ChartAxisDispUnits = {};
-  const unit = value.unit;
+  if (typeof value !== "object" || value === null) return undefined
+  const out: ChartAxisDispUnits = {}
+  const unit = value.unit
   if (typeof unit === "string" && VALID_DISP_UNIT_VALUES.has(unit as ChartAxisDispUnit)) {
-    out.unit = unit as ChartAxisDispUnit;
+    out.unit = unit as ChartAxisDispUnit
   }
-  const custUnit = value.custUnit;
+  const custUnit = value.custUnit
   if (typeof custUnit === "number" && Number.isFinite(custUnit) && custUnit > 0) {
-    out.custUnit = custUnit;
+    out.custUnit = custUnit
   }
-  if (out.unit === undefined && out.custUnit === undefined) return undefined;
-  if (value.showLabel === true) out.showLabel = true;
+  if (out.unit === undefined && out.custUnit === undefined) return undefined
+  if (value.showLabel === true) out.showLabel = true
   if (typeof value.customLabel === "string") {
-    const trimmed = value.customLabel.trim();
-    if (trimmed.length > 0) out.customLabel = trimmed;
+    const trimmed = value.customLabel.trim()
+    if (trimmed.length > 0) out.customLabel = trimmed
   }
-  return out;
+  return out
 }
 
 /**
@@ -6242,9 +6233,9 @@ export function applyDispUnitsOverride(
   source: ChartAxisDispUnits | undefined,
   override: ChartAxisDispUnits | ChartAxisDispUnit | null | undefined,
 ): ChartAxisDispUnits | undefined {
-  if (override === undefined) return normalizeDispUnits(source);
-  if (override === null) return undefined;
-  return normalizeDispUnits(override);
+  if (override === undefined) return normalizeDispUnits(source)
+  if (override === null) return undefined
+  return normalizeDispUnits(override)
 }
 
 /**
@@ -6262,9 +6253,9 @@ export function applyCrossBetweenOverride(
   override: ChartAxisCrossBetween | null | undefined,
 ): ChartAxisCrossBetween | undefined {
   if (override === undefined) {
-    if (source === undefined) return undefined;
-    return VALID_CROSS_BETWEEN_VALUES.has(source) ? source : undefined;
+    if (source === undefined) return undefined
+    return VALID_CROSS_BETWEEN_VALUES.has(source) ? source : undefined
   }
-  if (override === null) return undefined;
-  return VALID_CROSS_BETWEEN_VALUES.has(override) ? override : undefined;
+  if (override === null) return undefined
+  return VALID_CROSS_BETWEEN_VALUES.has(override) ? override : undefined
 }

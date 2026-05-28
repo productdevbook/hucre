@@ -24,9 +24,9 @@ import type {
   ChartLineDashStyle,
   ChartThemeColor,
   ChartThemeColorName,
-} from "./types";
-import type { XmlElement } from "../../xml/parser";
-import { xmlElement, xmlSelfClose } from "../../xml/writer";
+} from "./types"
+import type { XmlElement } from "../../xml/parser"
+import { xmlElement, xmlSelfClose } from "../../xml/writer"
 
 /**
  * Local copy of `findChild`. The xml/parser module does not export the
@@ -37,9 +37,9 @@ import { xmlElement, xmlSelfClose } from "../../xml/writer";
  */
 function findChild(el: XmlElement, localName: string): XmlElement | undefined {
   for (const c of el.children) {
-    if (typeof c !== "string" && c.local === localName) return c;
+    if (typeof c !== "string" && c.local === localName) return c
   }
-  return undefined;
+  return undefined
 }
 
 // ── Stroke width ──────────────────────────────────────────────────
@@ -50,11 +50,11 @@ function findChild(el: XmlElement, localName: string): XmlElement | undefined {
 // (ECMA-376 Part 1, §20.1.2.3.24).
 
 /** Smallest stroke width Excel's UI exposes, in points. */
-export const STROKE_WIDTH_MIN_PT = 0.25;
+export const STROKE_WIDTH_MIN_PT = 0.25
 /** Largest stroke width Excel's UI exposes, in points. */
-export const STROKE_WIDTH_MAX_PT = 13.5;
+export const STROKE_WIDTH_MAX_PT = 13.5
 /** Conversion factor between OOXML EMU and points. */
-export const EMU_PER_PT = 12700;
+export const EMU_PER_PT = 12700
 
 // ── Line dash ──────────────────────────────────────────────────────
 
@@ -74,7 +74,7 @@ export const VALID_DASH_STYLES: ReadonlySet<ChartLineDashStyle> = new Set([
   "sysDot",
   "sysDashDot",
   "sysDashDotDot",
-]);
+])
 
 /**
  * Recognized values of {@link ChartBorderDash} — the chart-frame
@@ -95,7 +95,7 @@ export const VALID_BORDER_DASHES: ReadonlySet<ChartBorderDash> = new Set([
   "sysDashDot",
   "sysDashDotDot",
   "sysDot",
-]);
+])
 
 // ── Line cap / compound ───────────────────────────────────────────
 
@@ -104,7 +104,7 @@ export const VALID_BORDER_DASHES: ReadonlySet<ChartBorderDash> = new Set([
  * enum on `<a:ln cap="..."/>`. The default token `"flat"` round-trips
  * as absence so the writer skips emitting the attribute.
  */
-export const VALID_LINE_CAPS: ReadonlySet<ChartLineCap> = new Set(["rnd", "sq", "flat"]);
+export const VALID_LINE_CAPS: ReadonlySet<ChartLineCap> = new Set(["rnd", "sq", "flat"])
 
 /**
  * Recognized values of {@link ChartLineCompound} — the OOXML
@@ -118,7 +118,7 @@ export const VALID_LINE_COMPOUNDS: ReadonlySet<ChartLineCompound> = new Set([
   "thickThin",
   "thinThick",
   "tri",
-]);
+])
 
 /**
  * Normalize a {@link ChartLineCap} value for any chart-frame `<a:ln>`
@@ -128,10 +128,10 @@ export const VALID_LINE_COMPOUNDS: ReadonlySet<ChartLineCompound> = new Set([
  * absence and the default round-trip identically.
  */
 export function normalizeLineCap(value: ChartLineCap | undefined): ChartLineCap | undefined {
-  if (typeof value !== "string") return undefined;
-  if (!VALID_LINE_CAPS.has(value)) return undefined;
-  if (value === "flat") return undefined;
-  return value;
+  if (typeof value !== "string") return undefined
+  if (!VALID_LINE_CAPS.has(value)) return undefined
+  if (value === "flat") return undefined
+  return value
 }
 
 /**
@@ -144,10 +144,10 @@ export function normalizeLineCap(value: ChartLineCap | undefined): ChartLineCap 
 export function normalizeLineCompound(
   value: ChartLineCompound | undefined,
 ): ChartLineCompound | undefined {
-  if (typeof value !== "string") return undefined;
-  if (!VALID_LINE_COMPOUNDS.has(value)) return undefined;
-  if (value === "sng") return undefined;
-  return value;
+  if (typeof value !== "string") return undefined
+  if (!VALID_LINE_COMPOUNDS.has(value)) return undefined
+  if (value === "sng") return undefined
+  return value
 }
 
 /**
@@ -163,9 +163,9 @@ export function resolveLineCap(
   sourceValue: ChartLineCap | undefined,
   override: ChartLineCap | null | undefined,
 ): ChartLineCap | undefined {
-  if (override === undefined) return normalizeLineCap(sourceValue);
-  if (override === null) return undefined;
-  return normalizeLineCap(override);
+  if (override === undefined) return normalizeLineCap(sourceValue)
+  if (override === null) return undefined
+  return normalizeLineCap(override)
 }
 
 /**
@@ -182,9 +182,9 @@ export function resolveLineCompound(
   sourceValue: ChartLineCompound | undefined,
   override: ChartLineCompound | null | undefined,
 ): ChartLineCompound | undefined {
-  if (override === undefined) return normalizeLineCompound(sourceValue);
-  if (override === null) return undefined;
-  return normalizeLineCompound(override);
+  if (override === undefined) return normalizeLineCompound(sourceValue)
+  if (override === null) return undefined
+  return normalizeLineCompound(override)
 }
 
 /**
@@ -196,16 +196,16 @@ export function resolveLineCompound(
  * when it matches `"flat"`.
  */
 export function parseBorderCapFromSpPr(parent: XmlElement): ChartLineCap | undefined {
-  const spPr = findChild(parent, "spPr");
-  if (!spPr) return undefined;
-  const ln = findChild(spPr, "ln");
-  if (!ln) return undefined;
-  const raw = ln.attrs.cap;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim() as ChartLineCap;
-  if (!VALID_LINE_CAPS.has(trimmed)) return undefined;
-  if (trimmed === "flat") return undefined;
-  return trimmed;
+  const spPr = findChild(parent, "spPr")
+  if (!spPr) return undefined
+  const ln = findChild(spPr, "ln")
+  if (!ln) return undefined
+  const raw = ln.attrs.cap
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim() as ChartLineCap
+  if (!VALID_LINE_CAPS.has(trimmed)) return undefined
+  if (trimmed === "flat") return undefined
+  return trimmed
 }
 
 /**
@@ -217,16 +217,16 @@ export function parseBorderCapFromSpPr(parent: XmlElement): ChartLineCap | undef
  * unrecognized, or when it matches `"sng"`.
  */
 export function parseBorderCompoundFromSpPr(parent: XmlElement): ChartLineCompound | undefined {
-  const spPr = findChild(parent, "spPr");
-  if (!spPr) return undefined;
-  const ln = findChild(spPr, "ln");
-  if (!ln) return undefined;
-  const raw = ln.attrs.cmpd;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim() as ChartLineCompound;
-  if (!VALID_LINE_COMPOUNDS.has(trimmed)) return undefined;
-  if (trimmed === "sng") return undefined;
-  return trimmed;
+  const spPr = findChild(parent, "spPr")
+  if (!spPr) return undefined
+  const ln = findChild(spPr, "ln")
+  if (!ln) return undefined
+  const raw = ln.attrs.cmpd
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim() as ChartLineCompound
+  if (!VALID_LINE_COMPOUNDS.has(trimmed)) return undefined
+  if (trimmed === "sng") return undefined
+  return trimmed
 }
 
 // ── Theme color refs ──────────────────────────────────────────────
@@ -253,12 +253,12 @@ export const VALID_THEME_COLOR_NAMES: ReadonlySet<ChartThemeColorName> = new Set
   "lt1",
   "dk2",
   "lt2",
-]);
+])
 
-const POSITIVE_PERCENT_MIN = 0;
-const POSITIVE_PERCENT_MAX = 100000;
-const FIXED_PERCENT_MIN = -100000;
-const FIXED_PERCENT_MAX = 100000;
+const POSITIVE_PERCENT_MIN = 0
+const POSITIVE_PERCENT_MAX = 100000
+const FIXED_PERCENT_MIN = -100000
+const FIXED_PERCENT_MAX = 100000
 
 /**
  * Pull a single integer modifier off a `<a:schemeClr>` child, clamping
@@ -274,14 +274,14 @@ function parseSchemeClrMod(
   min: number,
   max: number,
 ): number | undefined {
-  const child = findChild(schemeClr, localName);
-  if (!child) return undefined;
-  const raw = child.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const n = Number.parseInt(raw.trim(), 10);
-  if (!Number.isFinite(n)) return undefined;
-  if (n < min || n > max) return undefined;
-  return n;
+  const child = findChild(schemeClr, localName)
+  if (!child) return undefined
+  const raw = child.attrs.val
+  if (typeof raw !== "string") return undefined
+  const n = Number.parseInt(raw.trim(), 10)
+  if (!Number.isFinite(n)) return undefined
+  if (n < min || n > max) return undefined
+  return n
 }
 
 /**
@@ -295,37 +295,22 @@ function parseSchemeClrMod(
  * round-trip even when the source carried garbage modifiers.
  */
 export function parseSchemeClr(schemeClr: XmlElement): ChartThemeColor | undefined {
-  const raw = schemeClr.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const name = raw.trim() as ChartThemeColorName;
-  if (!VALID_THEME_COLOR_NAMES.has(name)) return undefined;
-  const out: ChartThemeColor = { theme: name };
-  const lumMod = parseSchemeClrMod(
-    schemeClr,
-    "lumMod",
-    POSITIVE_PERCENT_MIN,
-    POSITIVE_PERCENT_MAX,
-  );
-  if (lumMod !== undefined) out.lumMod = lumMod;
-  const lumOff = parseSchemeClrMod(
-    schemeClr,
-    "lumOff",
-    POSITIVE_PERCENT_MIN,
-    POSITIVE_PERCENT_MAX,
-  );
-  if (lumOff !== undefined) out.lumOff = lumOff;
-  const tint = parseSchemeClrMod(schemeClr, "tint", FIXED_PERCENT_MIN, FIXED_PERCENT_MAX);
-  if (tint !== undefined) out.tint = tint;
-  const shade = parseSchemeClrMod(schemeClr, "shade", FIXED_PERCENT_MIN, FIXED_PERCENT_MAX);
-  if (shade !== undefined) out.shade = shade;
-  const alpha = parseSchemeClrMod(
-    schemeClr,
-    "alpha",
-    POSITIVE_PERCENT_MIN,
-    POSITIVE_PERCENT_MAX,
-  );
-  if (alpha !== undefined) out.alpha = alpha;
-  return out;
+  const raw = schemeClr.attrs.val
+  if (typeof raw !== "string") return undefined
+  const name = raw.trim() as ChartThemeColorName
+  if (!VALID_THEME_COLOR_NAMES.has(name)) return undefined
+  const out: ChartThemeColor = { theme: name }
+  const lumMod = parseSchemeClrMod(schemeClr, "lumMod", POSITIVE_PERCENT_MIN, POSITIVE_PERCENT_MAX)
+  if (lumMod !== undefined) out.lumMod = lumMod
+  const lumOff = parseSchemeClrMod(schemeClr, "lumOff", POSITIVE_PERCENT_MIN, POSITIVE_PERCENT_MAX)
+  if (lumOff !== undefined) out.lumOff = lumOff
+  const tint = parseSchemeClrMod(schemeClr, "tint", FIXED_PERCENT_MIN, FIXED_PERCENT_MAX)
+  if (tint !== undefined) out.tint = tint
+  const shade = parseSchemeClrMod(schemeClr, "shade", FIXED_PERCENT_MIN, FIXED_PERCENT_MAX)
+  if (shade !== undefined) out.shade = shade
+  const alpha = parseSchemeClrMod(schemeClr, "alpha", POSITIVE_PERCENT_MIN, POSITIVE_PERCENT_MAX)
+  if (alpha !== undefined) out.alpha = alpha
+  return out
 }
 
 /**
@@ -337,36 +322,32 @@ export function parseSchemeClr(schemeClr: XmlElement): ChartThemeColor | undefin
  * round-trips identically through the writer.
  */
 export function normalizeChartColor(value: ChartColor | undefined): ChartColor | undefined {
-  if (value === undefined || value === null) return undefined;
+  if (value === undefined || value === null) return undefined
   if (typeof value === "string") {
-    const hex = normalizeRgbHex(value);
-    return hex;
+    const hex = normalizeRgbHex(value)
+    return hex
   }
-  if (typeof value !== "object") return undefined;
-  const name = value.theme;
-  if (typeof name !== "string" || !VALID_THEME_COLOR_NAMES.has(name)) return undefined;
-  const out: ChartThemeColor = { theme: name };
-  const validateMod = (
-    raw: number | undefined,
-    min: number,
-    max: number,
-  ): number | undefined => {
-    if (typeof raw !== "number" || !Number.isFinite(raw)) return undefined;
-    const n = Math.round(raw);
-    if (n < min || n > max) return undefined;
-    return n;
-  };
-  const lumMod = validateMod(value.lumMod, POSITIVE_PERCENT_MIN, POSITIVE_PERCENT_MAX);
-  if (lumMod !== undefined) out.lumMod = lumMod;
-  const lumOff = validateMod(value.lumOff, POSITIVE_PERCENT_MIN, POSITIVE_PERCENT_MAX);
-  if (lumOff !== undefined) out.lumOff = lumOff;
-  const tint = validateMod(value.tint, FIXED_PERCENT_MIN, FIXED_PERCENT_MAX);
-  if (tint !== undefined) out.tint = tint;
-  const shade = validateMod(value.shade, FIXED_PERCENT_MIN, FIXED_PERCENT_MAX);
-  if (shade !== undefined) out.shade = shade;
-  const alpha = validateMod(value.alpha, POSITIVE_PERCENT_MIN, POSITIVE_PERCENT_MAX);
-  if (alpha !== undefined) out.alpha = alpha;
-  return out;
+  if (typeof value !== "object") return undefined
+  const name = value.theme
+  if (typeof name !== "string" || !VALID_THEME_COLOR_NAMES.has(name)) return undefined
+  const out: ChartThemeColor = { theme: name }
+  const validateMod = (raw: number | undefined, min: number, max: number): number | undefined => {
+    if (typeof raw !== "number" || !Number.isFinite(raw)) return undefined
+    const n = Math.round(raw)
+    if (n < min || n > max) return undefined
+    return n
+  }
+  const lumMod = validateMod(value.lumMod, POSITIVE_PERCENT_MIN, POSITIVE_PERCENT_MAX)
+  if (lumMod !== undefined) out.lumMod = lumMod
+  const lumOff = validateMod(value.lumOff, POSITIVE_PERCENT_MIN, POSITIVE_PERCENT_MAX)
+  if (lumOff !== undefined) out.lumOff = lumOff
+  const tint = validateMod(value.tint, FIXED_PERCENT_MIN, FIXED_PERCENT_MAX)
+  if (tint !== undefined) out.tint = tint
+  const shade = validateMod(value.shade, FIXED_PERCENT_MIN, FIXED_PERCENT_MAX)
+  if (shade !== undefined) out.shade = shade
+  const alpha = validateMod(value.alpha, POSITIVE_PERCENT_MIN, POSITIVE_PERCENT_MAX)
+  if (alpha !== undefined) out.alpha = alpha
+  return out
 }
 
 /**
@@ -378,39 +359,39 @@ export function normalizeChartColor(value: ChartColor | undefined): ChartColor |
  */
 export function buildColorElement(value: ChartColor): string {
   if (typeof value === "string") {
-    return xmlSelfClose("a:srgbClr", { val: value });
+    return xmlSelfClose("a:srgbClr", { val: value })
   }
   // ChartThemeColor — emit the modifiers in the OOXML schema order
   // documented on `CT_SchemeColor` (ECMA-376 Part 1, §20.1.2.3.29):
   // tint, shade, alpha, lumMod, lumOff. Excel tolerates other orders
   // but the schema sequence is canonical.
-  const children: string[] = [];
+  const children: string[] = []
   if (value.tint !== undefined) {
-    children.push(xmlSelfClose("a:tint", { val: value.tint }));
+    children.push(xmlSelfClose("a:tint", { val: value.tint }))
   }
   if (value.shade !== undefined) {
-    children.push(xmlSelfClose("a:shade", { val: value.shade }));
+    children.push(xmlSelfClose("a:shade", { val: value.shade }))
   }
   if (value.alpha !== undefined) {
-    children.push(xmlSelfClose("a:alpha", { val: value.alpha }));
+    children.push(xmlSelfClose("a:alpha", { val: value.alpha }))
   }
   if (value.lumMod !== undefined) {
-    children.push(xmlSelfClose("a:lumMod", { val: value.lumMod }));
+    children.push(xmlSelfClose("a:lumMod", { val: value.lumMod }))
   }
   if (value.lumOff !== undefined) {
-    children.push(xmlSelfClose("a:lumOff", { val: value.lumOff }));
+    children.push(xmlSelfClose("a:lumOff", { val: value.lumOff }))
   }
   if (children.length === 0) {
-    return xmlSelfClose("a:schemeClr", { val: value.theme });
+    return xmlSelfClose("a:schemeClr", { val: value.theme })
   }
-  return xmlElement("a:schemeClr", { val: value.theme }, children);
+  return xmlElement("a:schemeClr", { val: value.theme }, children)
 }
 
 /**
  * Build a `<a:solidFill>` block wrapping the supplied color reference.
  */
 export function buildSolidFill(value: ChartColor): string {
-  return xmlElement("a:solidFill", undefined, [buildColorElement(value)]);
+  return xmlElement("a:solidFill", undefined, [buildColorElement(value)])
 }
 
 /**
@@ -428,9 +409,9 @@ export function resolveChartColor(
   sourceValue: ChartColor | undefined,
   override: ChartColor | null | undefined,
 ): ChartColor | undefined {
-  if (override === undefined) return normalizeChartColor(sourceValue);
-  if (override === null) return undefined;
-  return normalizeChartColor(override);
+  if (override === undefined) return normalizeChartColor(sourceValue)
+  if (override === null) return undefined
+  return normalizeChartColor(override)
 }
 
 // ── Hex normalization ─────────────────────────────────────────────
@@ -443,13 +424,13 @@ export function resolveChartColor(
  * characters, alpha-channel forms, or non-string tokens.
  */
 export function normalizeRgbHex(raw: unknown): string | undefined {
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  const hex = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
-  if (hex.length !== 6) return undefined;
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return undefined;
-  return hex.toUpperCase();
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  const hex = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed
+  if (hex.length !== 6) return undefined
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return undefined
+  return hex.toUpperCase()
 }
 
 // ── Generic spPr readers ──────────────────────────────────────────
@@ -478,19 +459,19 @@ export function normalizeRgbHex(raw: unknown): string | undefined {
  * likewise drop to `undefined`.
  */
 export function parseSpPrFill(parent: XmlElement): ChartColor | undefined {
-  const spPr = findChild(parent, "spPr");
-  if (!spPr) return undefined;
-  const solidFill = findChild(spPr, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
+  const spPr = findChild(parent, "spPr")
+  if (!spPr) return undefined
+  const solidFill = findChild(spPr, "solidFill")
+  if (!solidFill) return undefined
+  const srgbClr = findChild(solidFill, "srgbClr")
   if (srgbClr) {
-    return normalizeRgbHex(srgbClr.attrs.val);
+    return normalizeRgbHex(srgbClr.attrs.val)
   }
-  const schemeClr = findChild(solidFill, "schemeClr");
+  const schemeClr = findChild(solidFill, "schemeClr")
   if (schemeClr) {
-    return parseSchemeClr(schemeClr);
+    return parseSchemeClr(schemeClr)
   }
-  return undefined;
+  return undefined
 }
 
 /**
@@ -503,21 +484,21 @@ export function parseSpPrFill(parent: XmlElement): ChartColor | undefined {
  * `<c:spPr>` block.
  */
 export function parseSpPrBorderColor(parent: XmlElement): ChartColor | undefined {
-  const spPr = findChild(parent, "spPr");
-  if (!spPr) return undefined;
-  const ln = findChild(spPr, "ln");
-  if (!ln) return undefined;
-  const solidFill = findChild(ln, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
+  const spPr = findChild(parent, "spPr")
+  if (!spPr) return undefined
+  const ln = findChild(spPr, "ln")
+  if (!ln) return undefined
+  const solidFill = findChild(ln, "solidFill")
+  if (!solidFill) return undefined
+  const srgbClr = findChild(solidFill, "srgbClr")
   if (srgbClr) {
-    return normalizeRgbHex(srgbClr.attrs.val);
+    return normalizeRgbHex(srgbClr.attrs.val)
   }
-  const schemeClr = findChild(solidFill, "schemeClr");
+  const schemeClr = findChild(solidFill, "schemeClr")
   if (schemeClr) {
-    return parseSchemeClr(schemeClr);
+    return parseSchemeClr(schemeClr)
   }
-  return undefined;
+  return undefined
 }
 
 /**
@@ -536,19 +517,19 @@ export function parseSpPrBorderColor(parent: XmlElement): ChartColor | undefined
  * border" marker — the writer-side knob does not model that state).
  */
 export function parseBorderWidthFromSpPr(parent: XmlElement): number | undefined {
-  const spPr = findChild(parent, "spPr");
-  if (!spPr) return undefined;
-  const ln = findChild(spPr, "ln");
-  if (!ln) return undefined;
-  const wAttr = ln.attrs.w;
-  if (typeof wAttr !== "string") return undefined;
-  const emu = Number.parseFloat(wAttr);
-  if (!Number.isFinite(emu) || emu <= 0) return undefined;
+  const spPr = findChild(parent, "spPr")
+  if (!spPr) return undefined
+  const ln = findChild(spPr, "ln")
+  if (!ln) return undefined
+  const wAttr = ln.attrs.w
+  if (typeof wAttr !== "string") return undefined
+  const emu = Number.parseFloat(wAttr)
+  if (!Number.isFinite(emu) || emu <= 0) return undefined
   // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
-  const pt = Math.round((emu / EMU_PER_PT) * 4) / 4;
-  if (pt < STROKE_WIDTH_MIN_PT) return STROKE_WIDTH_MIN_PT;
-  if (pt > STROKE_WIDTH_MAX_PT) return STROKE_WIDTH_MAX_PT;
-  return pt;
+  const pt = Math.round((emu / EMU_PER_PT) * 4) / 4
+  if (pt < STROKE_WIDTH_MIN_PT) return STROKE_WIDTH_MIN_PT
+  if (pt > STROKE_WIDTH_MAX_PT) return STROKE_WIDTH_MAX_PT
+  return pt
 }
 
 /**
@@ -565,18 +546,18 @@ export function parseBorderWidthFromSpPr(parent: XmlElement): number | undefined
  * matches every chart-frame border-dash slot the writer authors.
  */
 export function parseBorderDashFromSpPr(parent: XmlElement): ChartBorderDash | undefined {
-  const spPr = findChild(parent, "spPr");
-  if (!spPr) return undefined;
-  const ln = findChild(spPr, "ln");
-  if (!ln) return undefined;
-  const prstDash = findChild(ln, "prstDash");
-  if (!prstDash) return undefined;
-  const raw = prstDash.attrs.val;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim() as ChartBorderDash;
-  if (!VALID_BORDER_DASHES.has(trimmed)) return undefined;
-  if (trimmed === "solid") return undefined;
-  return trimmed;
+  const spPr = findChild(parent, "spPr")
+  if (!spPr) return undefined
+  const ln = findChild(spPr, "ln")
+  if (!ln) return undefined
+  const prstDash = findChild(ln, "prstDash")
+  if (!prstDash) return undefined
+  const raw = prstDash.attrs.val
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim() as ChartBorderDash
+  if (!VALID_BORDER_DASHES.has(trimmed)) return undefined
+  if (trimmed === "solid") return undefined
+  return trimmed
 }
 
 // ── Stroke width clamp ────────────────────────────────────────────
@@ -591,12 +572,12 @@ export function parseBorderDashFromSpPr(parent: XmlElement): ChartBorderDash | u
  * does not drift across round-trips (Excel rounds in the UI anyway).
  */
 export function clampStrokeWidthPt(value: number | undefined): number | undefined {
-  if (value === undefined || !Number.isFinite(value)) return undefined;
+  if (value === undefined || !Number.isFinite(value)) return undefined
   // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
-  const snapped = Math.round(value * 4) / 4;
-  if (snapped < STROKE_WIDTH_MIN_PT) return STROKE_WIDTH_MIN_PT;
-  if (snapped > STROKE_WIDTH_MAX_PT) return STROKE_WIDTH_MAX_PT;
-  return snapped;
+  const snapped = Math.round(value * 4) / 4
+  if (snapped < STROKE_WIDTH_MIN_PT) return STROKE_WIDTH_MIN_PT
+  if (snapped > STROKE_WIDTH_MAX_PT) return STROKE_WIDTH_MAX_PT
+  return snapped
 }
 
 /**
@@ -610,10 +591,10 @@ export function clampStrokeWidthPt(value: number | undefined): number | undefine
 export function normalizeBorderDash(
   value: ChartBorderDash | undefined,
 ): ChartBorderDash | undefined {
-  if (typeof value !== "string") return undefined;
-  if (!VALID_BORDER_DASHES.has(value)) return undefined;
-  if (value === "solid") return undefined;
-  return value;
+  if (typeof value !== "string") return undefined
+  if (!VALID_BORDER_DASHES.has(value)) return undefined
+  if (value === "solid") return undefined
+  return value
 }
 
 /**
@@ -639,9 +620,9 @@ export function resolveBorderWidthPt(
   sourceValue: number | undefined,
   override: number | null | undefined,
 ): number | undefined {
-  if (override === undefined) return clampStrokeWidthPt(sourceValue);
-  if (override === null) return undefined;
-  return clampStrokeWidthPt(override);
+  if (override === undefined) return clampStrokeWidthPt(sourceValue)
+  if (override === null) return undefined
+  return clampStrokeWidthPt(override)
 }
 
 /**
@@ -658,7 +639,7 @@ export function resolveBorderDash(
   sourceValue: ChartBorderDash | undefined,
   override: ChartBorderDash | null | undefined,
 ): ChartBorderDash | undefined {
-  if (override === undefined) return normalizeBorderDash(sourceValue);
-  if (override === null) return undefined;
-  return normalizeBorderDash(override);
+  if (override === undefined) return normalizeBorderDash(sourceValue)
+  if (override === null) return undefined
+  return normalizeBorderDash(override)
 }

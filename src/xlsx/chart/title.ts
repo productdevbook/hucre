@@ -28,9 +28,9 @@ import type {
   ChartLineCompound,
   ChartManualLayout,
   SheetChart,
-} from "../../_types";
-import type { XmlElement } from "../../xml/parser";
-import { xmlElement, xmlEscape, xmlSelfClose } from "../../xml/writer";
+} from "../../_types"
+import type { XmlElement } from "../../xml/parser"
+import { xmlElement, xmlEscape, xmlSelfClose } from "../../xml/writer"
 import {
   EMU_PER_PT,
   buildColorElement,
@@ -48,15 +48,15 @@ import {
   parseSchemeClr,
   parseSpPrBorderColor,
   parseSpPrFill,
-} from "./shape";
+} from "./shape"
 import {
   type ResolvedManualLayout,
   buildManualLayout,
   normalizeChartManualLayout,
   normalizeManualLayout,
   parseManualLayout,
-} from "./layout";
-import { childElements, collectTextRuns, elementText, findChild, parseBoolAttr } from "./util";
+} from "./layout"
+import { childElements, collectTextRuns, elementText, findChild, parseBoolAttr } from "./util"
 import {
   FONT_SIZE_MAX_PT,
   FONT_SIZE_MIN_PT,
@@ -64,7 +64,7 @@ import {
   ROTATION_MAX_DEG,
   ROTATION_MIN_DEG,
   TXPR_ROT_PER_DEGREE,
-} from "./text";
+} from "./text"
 
 // ── Constants (chart-title scope) ──────────────────────────────────
 
@@ -80,9 +80,9 @@ import {
  * every typography host (chart-title, axis-title, tick-label, legend,
  * data-label, data-table) shares the same conversion factor.
  */
-const TITLE_ROT_PER_DEGREE = TXPR_ROT_PER_DEGREE;
-const TITLE_ROTATION_MIN_DEG = ROTATION_MIN_DEG;
-const TITLE_ROTATION_MAX_DEG = ROTATION_MAX_DEG;
+const TITLE_ROT_PER_DEGREE = TXPR_ROT_PER_DEGREE
+const TITLE_ROTATION_MIN_DEG = ROTATION_MIN_DEG
+const TITLE_ROTATION_MAX_DEG = ROTATION_MAX_DEG
 
 /**
  * OOXML's `<a:defRPr sz="N"/>` / `<a:rPr sz="N"/>` attribute is in
@@ -93,9 +93,9 @@ const TITLE_ROTATION_MAX_DEG = ROTATION_MAX_DEG;
  * so any out-of-range value drops at emit time rather than surface a
  * token Excel would reject.
  */
-const TITLE_FONT_SZ_PER_POINT = FONT_SZ_PER_POINT;
-const TITLE_FONT_SIZE_MIN_PT = FONT_SIZE_MIN_PT;
-const TITLE_FONT_SIZE_MAX_PT = FONT_SIZE_MAX_PT;
+const TITLE_FONT_SZ_PER_POINT = FONT_SZ_PER_POINT
+const TITLE_FONT_SIZE_MIN_PT = FONT_SIZE_MIN_PT
+const TITLE_FONT_SIZE_MAX_PT = FONT_SIZE_MAX_PT
 
 /**
  * Application-default `sz` value for the chart title's `<a:defRPr>` /
@@ -104,7 +104,7 @@ const TITLE_FONT_SIZE_MAX_PT = FONT_SIZE_MAX_PT;
  * {@link SheetChart.titleFontSize} resolves to this default so a fresh
  * chart matches Excel's reference serialization byte-for-byte.
  */
-const TITLE_DEFAULT_FONT_SIZE_SZ = 1400;
+const TITLE_DEFAULT_FONT_SIZE_SZ = 1400
 
 // ── Reader ────────────────────────────────────────────────────────
 
@@ -138,9 +138,9 @@ const TITLE_DEFAULT_FONT_SIZE_SZ = 1400;
  * which manual-layout slot the source chart pinned.
  */
 export function parseTitleLayout(chartEl: XmlElement): ChartManualLayout | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  return parseManualLayout(title);
+  const title = findChild(chartEl, "title")
+  if (!title) return undefined
+  return parseManualLayout(title)
 }
 
 /**
@@ -161,23 +161,23 @@ export function parseTitleLayout(chartEl: XmlElement): ChartManualLayout | undef
  * `undefined` rather than fabricate a flag Excel would not emit.
  */
 export function parseTitleOverlay(chartEl: XmlElement): boolean | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const overlay = findChild(title, "overlay");
-  if (!overlay) return undefined;
-  const raw = overlay.attrs.val;
-  if (typeof raw !== "string") return undefined;
+  const title = findChild(chartEl, "title")
+  if (!title) return undefined
+  const overlay = findChild(title, "overlay")
+  if (!overlay) return undefined
+  const raw = overlay.attrs.val
+  if (typeof raw !== "string") return undefined
   switch (raw) {
     case "1":
     case "true":
-      return true;
+      return true
     case "0":
     case "false":
       // OOXML default — collapse to undefined for symmetry with the
       // writer's `titleOverlay` field.
-      return undefined;
+      return undefined
     default:
-      return undefined;
+      return undefined
   }
 }
 
@@ -200,26 +200,26 @@ export function parseTitleOverlay(chartEl: XmlElement): boolean | undefined {
  * path so a stray `<a:bodyPr>` elsewhere in the chart cannot leak in.
  */
 export function parseTitleRotation(chartEl: XmlElement): number | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
-  const bodyPr = findChild(rich, "bodyPr");
-  if (!bodyPr) return undefined;
-  const raw = bodyPr.attrs.rot;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  const parsed = Number.parseInt(trimmed, 10);
-  if (!Number.isFinite(parsed)) return undefined;
+  const title = findChild(chartEl, "title")
+  if (!title) return undefined
+  const tx = findChild(title, "tx")
+  if (!tx) return undefined
+  const rich = findChild(tx, "rich")
+  if (!rich) return undefined
+  const bodyPr = findChild(rich, "bodyPr")
+  if (!bodyPr) return undefined
+  const raw = bodyPr.attrs.rot
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  const parsed = Number.parseInt(trimmed, 10)
+  if (!Number.isFinite(parsed)) return undefined
   // Convert from 60000ths of a degree to whole degrees.
-  const degrees = Math.round(parsed / TITLE_ROT_PER_DEGREE);
-  if (degrees === 0) return undefined;
-  if (degrees < TITLE_ROTATION_MIN_DEG) return TITLE_ROTATION_MIN_DEG;
-  if (degrees > TITLE_ROTATION_MAX_DEG) return TITLE_ROTATION_MAX_DEG;
-  return degrees;
+  const degrees = Math.round(parsed / TITLE_ROT_PER_DEGREE)
+  if (degrees === 0) return undefined
+  if (degrees < TITLE_ROTATION_MIN_DEG) return TITLE_ROTATION_MIN_DEG
+  if (degrees > TITLE_ROTATION_MAX_DEG) return TITLE_ROTATION_MAX_DEG
+  return degrees
 }
 
 /**
@@ -246,36 +246,36 @@ export function parseTitleRotation(chartEl: XmlElement): number | undefined {
  * data-labels block) cannot leak in.
  */
 export function parseTitleFontSize(chartEl: XmlElement): number | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
+  const title = findChild(chartEl, "title")
+  if (!title) return undefined
+  const tx = findChild(title, "tx")
+  if (!tx) return undefined
+  const rich = findChild(tx, "rich")
+  if (!rich) return undefined
   // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
   // default-paragraph font size. The reader walks the canonical chain
   // and bails on the first missing link so a malformed `<c:rich>`
   // surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const raw = defRPr.attrs.sz;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  const parsed = Number.parseInt(trimmed, 10);
-  if (!Number.isFinite(parsed)) return undefined;
+  const p = findChild(rich, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const raw = defRPr.attrs.sz
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  const parsed = Number.parseInt(trimmed, 10)
+  if (!Number.isFinite(parsed)) return undefined
   // Convert from 100ths of a point to points, rounding to the nearest
   // 0.5pt to match the granularity Excel's UI exposes. `Math.round`
   // on `2 * (parsed / 100)` and dividing by 2 gives a clean half-step
   // band that mirrors the writer's emit-time normalization.
-  const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2);
-  const points = halfSteps / 2;
-  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
-  return points;
+  const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2)
+  const points = halfSteps / 2
+  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined
+  return points
 }
 
 /**
@@ -301,28 +301,28 @@ export function parseTitleFontSize(chartEl: XmlElement): number | undefined {
  * data-labels block) cannot leak in.
  */
 export function parseTitleBold(chartEl: XmlElement): boolean | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
+  const title = findChild(chartEl, "title")
+  if (!title) return undefined
+  const tx = findChild(title, "tx")
+  if (!tx) return undefined
+  const rich = findChild(tx, "rich")
+  if (!rich) return undefined
   // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
   // default-paragraph bold flag. The reader walks the canonical chain
   // and bails on the first missing link so a malformed `<c:rich>`
   // surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const parsed = parseBoolAttr(defRPr.attrs.b);
+  const p = findChild(rich, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const parsed = parseBoolAttr(defRPr.attrs.b)
   // The OOXML default `false` collapses to `undefined` so absence and
   // `b="0"` round-trip identically through the writer — only an
   // explicit `b="1"` surfaces `true`.
-  if (parsed === true) return true;
-  return undefined;
+  if (parsed === true) return true
+  return undefined
 }
 
 /**
@@ -348,28 +348,28 @@ export function parseTitleBold(chartEl: XmlElement): boolean | undefined {
  * data-labels block) cannot leak in.
  */
 export function parseTitleItalic(chartEl: XmlElement): boolean | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
+  const title = findChild(chartEl, "title")
+  if (!title) return undefined
+  const tx = findChild(title, "tx")
+  if (!tx) return undefined
+  const rich = findChild(tx, "rich")
+  if (!rich) return undefined
   // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
   // default-paragraph italic flag. The reader walks the canonical chain
   // and bails on the first missing link so a malformed `<c:rich>`
   // surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const parsed = parseBoolAttr(defRPr.attrs.i);
+  const p = findChild(rich, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const parsed = parseBoolAttr(defRPr.attrs.i)
   // The OOXML default `false` collapses to `undefined` so absence and
   // `i="0"` round-trip identically through the writer — only an
   // explicit `i="1"` surfaces `true`.
-  if (parsed === true) return true;
-  return undefined;
+  if (parsed === true) return true
+  return undefined
 }
 
 /**
@@ -399,30 +399,30 @@ export function parseTitleItalic(chartEl: XmlElement): boolean | undefined {
  * a data-labels block) cannot leak in.
  */
 export function parseTitleColor(chartEl: XmlElement): ChartColor | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
+  const title = findChild(chartEl, "title")
+  if (!title) return undefined
+  const tx = findChild(title, "tx")
+  if (!tx) return undefined
+  const rich = findChild(tx, "rich")
+  if (!rich) return undefined
   // `<a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr>` (or `<a:schemeClr>`)
   // is the OOXML path Excel writes for the default-paragraph font color.
   // The reader walks the canonical chain and bails on the first missing
   // link so a malformed `<c:rich>` surfaces as absence rather than a
   // fabricated value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const solidFill = findChild(defRPr, "solidFill");
-  if (!solidFill) return undefined;
-  const srgbClr = findChild(solidFill, "srgbClr");
-  if (srgbClr) return normalizeRgbHex(srgbClr.attrs.val);
-  const schemeClr = findChild(solidFill, "schemeClr");
-  if (schemeClr) return parseSchemeClr(schemeClr);
-  return undefined;
+  const p = findChild(rich, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const solidFill = findChild(defRPr, "solidFill")
+  if (!solidFill) return undefined
+  const srgbClr = findChild(solidFill, "srgbClr")
+  if (srgbClr) return normalizeRgbHex(srgbClr.attrs.val)
+  const schemeClr = findChild(solidFill, "schemeClr")
+  if (schemeClr) return parseSchemeClr(schemeClr)
+  return undefined
 }
 
 /**
@@ -461,9 +461,9 @@ export function parseTitleColor(chartEl: XmlElement): ChartColor | undefined {
  * background fill.
  */
 export function parseTitleFillColor(chartEl: XmlElement): ChartColor | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  return parseSpPrFill(title);
+  const title = findChild(chartEl, "title")
+  if (!title) return undefined
+  return parseSpPrFill(title)
 }
 
 /**
@@ -506,9 +506,9 @@ export function parseTitleFillColor(chartEl: XmlElement): ChartColor | undefined
  * surface its border color.
  */
 export function parseTitleBorderColor(chartEl: XmlElement): ChartColor | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  return parseSpPrBorderColor(title);
+  const title = findChild(chartEl, "title")
+  if (!title) return undefined
+  return parseSpPrBorderColor(title)
 }
 
 /**
@@ -536,9 +536,9 @@ export function parseTitleBorderColor(chartEl: XmlElement): ChartColor | undefin
  * child.
  */
 export function parseTitleBorderWidth(chartEl: XmlElement): number | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  return parseBorderWidthFromSpPr(title);
+  const title = findChild(chartEl, "title")
+  if (!title) return undefined
+  return parseBorderWidthFromSpPr(title)
 }
 
 /**
@@ -554,9 +554,9 @@ export function parseTitleBorderWidth(chartEl: XmlElement): number | undefined {
  * surfaces.
  */
 export function parseTitleBorderDash(chartEl: XmlElement): ChartBorderDash | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  return parseBorderDashFromSpPr(title);
+  const title = findChild(chartEl, "title")
+  if (!title) return undefined
+  return parseBorderDashFromSpPr(title)
 }
 
 /**
@@ -567,9 +567,9 @@ export function parseTitleBorderDash(chartEl: XmlElement): ChartBorderDash | und
  * default `"flat"`. Delegates to {@link parseBorderCapFromSpPr}.
  */
 export function parseTitleBorderCap(chartEl: XmlElement): ChartLineCap | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  return parseBorderCapFromSpPr(title);
+  const title = findChild(chartEl, "title")
+  if (!title) return undefined
+  return parseBorderCapFromSpPr(title)
 }
 
 /**
@@ -581,9 +581,9 @@ export function parseTitleBorderCap(chartEl: XmlElement): ChartLineCap | undefin
  * {@link parseBorderCompoundFromSpPr}.
  */
 export function parseTitleBorderCompound(chartEl: XmlElement): ChartLineCompound | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  return parseBorderCompoundFromSpPr(title);
+  const title = findChild(chartEl, "title")
+  if (!title) return undefined
+  return parseBorderCompoundFromSpPr(title)
 }
 
 /**
@@ -614,32 +614,32 @@ export function parseTitleBorderCompound(chartEl: XmlElement): ChartLineCompound
  * leak in.
  */
 export function parseTitleStrike(chartEl: XmlElement): boolean | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
+  const title = findChild(chartEl, "title")
+  if (!title) return undefined
+  const tx = findChild(title, "tx")
+  if (!tx) return undefined
+  const rich = findChild(tx, "rich")
+  if (!rich) return undefined
   // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
   // default-paragraph strikethrough flag. The reader walks the
   // canonical chain and bails on the first missing link so a
   // malformed `<c:rich>` surfaces as absence rather than a fabricated
   // value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const raw = defRPr.attrs.strike;
+  const p = findChild(rich, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const raw = defRPr.attrs.strike
   // Only the UI-default `"sngStrike"` surfaces as `true`. The OOXML
   // application default `"noStrike"` and the non-UI `"dblStrike"` both
   // collapse to `undefined` so absence and the OOXML default round-trip
   // identically through the writer; the writer emits only `"sngStrike"`,
   // so reporting `"dblStrike"` here would silently downgrade the choice
   // on round-trip.
-  if (raw === "sngStrike") return true;
-  return undefined;
+  if (raw === "sngStrike") return true
+  return undefined
 }
 
 /**
@@ -673,23 +673,23 @@ export function parseTitleStrike(chartEl: XmlElement): boolean | undefined {
  * leak in.
  */
 export function parseTitleUnderline(chartEl: XmlElement): boolean | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
+  const title = findChild(chartEl, "title")
+  if (!title) return undefined
+  const tx = findChild(title, "tx")
+  if (!tx) return undefined
+  const rich = findChild(tx, "rich")
+  if (!rich) return undefined
   // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
   // default-paragraph underline flag. The reader walks the canonical
   // chain and bails on the first missing link so a malformed
   // `<c:rich>` surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const raw = defRPr.attrs.u;
+  const p = findChild(rich, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const raw = defRPr.attrs.u
   // Only the UI-default `"sng"` surfaces as `true`. The OOXML
   // application default `"none"`, the non-UI `"dbl"` variant, and
   // every exotic token (`"words"`, `"heavy"`, `"dotted"`, etc.) all
@@ -697,8 +697,8 @@ export function parseTitleUnderline(chartEl: XmlElement): boolean | undefined {
   // round-trip identically through the writer; the writer emits only
   // `"sng"`, so reporting a non-single underline here would silently
   // downgrade the choice on round-trip.
-  if (raw === "sng") return true;
-  return undefined;
+  if (raw === "sng") return true
+  return undefined
 }
 
 /**
@@ -727,30 +727,30 @@ export function parseTitleUnderline(chartEl: XmlElement): boolean | undefined {
  * leak in.
  */
 export function parseTitleFontFamily(chartEl: XmlElement): string | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
-  const rich = findChild(tx, "rich");
-  if (!rich) return undefined;
+  const title = findChild(chartEl, "title")
+  if (!title) return undefined
+  const tx = findChild(title, "tx")
+  if (!tx) return undefined
+  const rich = findChild(tx, "rich")
+  if (!rich) return undefined
   // `<a:p><a:pPr><a:defRPr><a:latin>` is the OOXML path Excel writes
   // for the default-paragraph typeface. The reader walks the
   // canonical chain and bails on the first missing link so a
   // malformed `<c:rich>` surfaces as absence rather than a fabricated
   // value.
-  const p = findChild(rich, "p");
-  if (!p) return undefined;
-  const pPr = findChild(p, "pPr");
-  if (!pPr) return undefined;
-  const defRPr = findChild(pPr, "defRPr");
-  if (!defRPr) return undefined;
-  const latin = findChild(defRPr, "latin");
-  if (!latin) return undefined;
-  const raw = latin.attrs.typeface;
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  return trimmed;
+  const p = findChild(rich, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  const defRPr = findChild(pPr, "defRPr")
+  if (!defRPr) return undefined
+  const latin = findChild(defRPr, "latin")
+  if (!latin) return undefined
+  const raw = latin.attrs.typeface
+  if (typeof raw !== "string") return undefined
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  return trimmed
 }
 
 /**
@@ -758,33 +758,33 @@ export function parseTitleFontFamily(chartEl: XmlElement): string | undefined {
  * formula reference; we only surface plain text runs joined together.
  */
 export function parseTitle(chartEl: XmlElement): string | undefined {
-  const title = findChild(chartEl, "title");
-  if (!title) return undefined;
-  const tx = findChild(title, "tx");
-  if (!tx) return undefined;
+  const title = findChild(chartEl, "title")
+  if (!title) return undefined
+  const tx = findChild(title, "tx")
+  if (!tx) return undefined
   // tx can hold either <c:rich> (literal text) or <c:strRef> (formula).
-  const rich = findChild(tx, "rich");
+  const rich = findChild(tx, "rich")
   if (rich) {
-    const parts: string[] = [];
-    collectTextRuns(rich, parts);
-    const joined = parts.join("").trim();
-    return joined.length > 0 ? joined : undefined;
+    const parts: string[] = []
+    collectTextRuns(rich, parts)
+    const joined = parts.join("").trim()
+    return joined.length > 0 ? joined : undefined
   }
-  const strRef = findChild(tx, "strRef");
+  const strRef = findChild(tx, "strRef")
   if (strRef) {
-    const cache = findChild(strRef, "strCache");
+    const cache = findChild(strRef, "strCache")
     if (cache) {
       for (const pt of childElements(cache)) {
-        if (pt.local !== "pt") continue;
-        const v = findChild(pt, "v");
+        if (pt.local !== "pt") continue
+        const v = findChild(pt, "v")
         if (v) {
-          const text = elementText(v).trim();
-          if (text.length > 0) return text;
+          const text = elementText(v).trim()
+          if (text.length > 0) return text
         }
       }
     }
   }
-  return undefined;
+  return undefined
 }
 
 // ── Writer ────────────────────────────────────────────────────────
@@ -813,7 +813,7 @@ export function buildTitle(
   // emit time. Absence (`undefined`) collapses to the OOXML default
   // `0` so a fresh chart matches Excel's reference serialization
   // byte-for-byte.
-  const rot = rotationDeg === undefined ? 0 : rotationDeg * TITLE_ROT_PER_DEGREE;
+  const rot = rotationDeg === undefined ? 0 : rotationDeg * TITLE_ROT_PER_DEGREE
   // OOXML's `<a:defRPr sz="N"/>` / `<a:rPr sz="N"/>` attribute is in
   // 100ths of a point. The writer holds `titleFontSize` in points and
   // converts at emit time. Absence (`undefined`) collapses to the
@@ -822,7 +822,7 @@ export function buildTitle(
   // default-paragraph `<a:defRPr>` and the literal run's `<a:rPr>` so
   // a re-parse picks the value up off either canonical slot.
   const sz =
-    fontSizePt === undefined ? TITLE_DEFAULT_FONT_SIZE_SZ : fontSizePt * TITLE_FONT_SZ_PER_POINT;
+    fontSizePt === undefined ? TITLE_DEFAULT_FONT_SIZE_SZ : fontSizePt * TITLE_FONT_SZ_PER_POINT
   // OOXML's `<a:defRPr b=".."/>` / `<a:rPr b=".."/>` attribute is the
   // `xsd:boolean` bold flag on `CT_TextCharacterProperties`. The writer
   // holds `titleBold` as a boolean and emits `1` / `0` at the canonical
@@ -832,7 +832,7 @@ export function buildTitle(
   // default-paragraph `<a:defRPr>` and the literal run's `<a:rPr>` so
   // a re-parse picks the value up off either canonical slot — Excel
   // keeps the two attributes in sync.
-  const b = bold ? 1 : 0;
+  const b = bold ? 1 : 0
   // OOXML's `<a:defRPr i=".."/>` / `<a:rPr i=".."/>` attribute is the
   // `xsd:boolean` italic flag on `CT_TextCharacterProperties`. Mirrors
   // the bold pattern: `titleItalic` lands on both the default-paragraph
@@ -842,7 +842,7 @@ export function buildTitle(
   // collapse to omitting the attribute so a fresh chart matches Excel's
   // reference serialization byte-for-byte (Excel itself omits `i` when
   // the title is non-italic — only the bold flag is always emitted).
-  const i = italic === true ? 1 : undefined;
+  const i = italic === true ? 1 : undefined
   // OOXML's `<a:defRPr strike=".."/>` / `<a:rPr strike=".."/>` attribute
   // is the `ST_TextStrikeType` enum on `CT_TextCharacterProperties` —
   // `"noStrike"` (default), `"sngStrike"` (single line, the value
@@ -856,7 +856,7 @@ export function buildTitle(
   // default-paragraph `<a:defRPr>` and the literal run's `<a:rPr>` so
   // a re-parse picks the value up off either canonical slot — Excel
   // keeps the two attributes in sync.
-  const strikeAttr = strike === true ? "sngStrike" : undefined;
+  const strikeAttr = strike === true ? "sngStrike" : undefined
   // OOXML's `<a:defRPr u=".."/>` / `<a:rPr u=".."/>` attribute is the
   // `ST_TextUnderlineType` enum on `CT_TextCharacterProperties` —
   // eighteen values total, with `"none"` as the OOXML default,
@@ -872,7 +872,7 @@ export function buildTitle(
   // default-paragraph `<a:defRPr>` and the literal run's `<a:rPr>` so
   // a re-parse picks the value up off either canonical slot — Excel
   // keeps the two attributes in sync.
-  const underlineAttr = underline === true ? "sng" : undefined;
+  const underlineAttr = underline === true ? "sng" : undefined
   // OOXML's `<a:defRPr><a:solidFill><a:srgbClr val="RRGGBB"/>
   // </a:solidFill></a:defRPr>` carries the title's font color. The
   // writer holds `titleColor` as a 6-character uppercase hex string
@@ -882,9 +882,10 @@ export function buildTitle(
   // collapses to omitting the entire `<a:solidFill>` block so the
   // title inherits the theme text color (Excel's reference behavior
   // for a fresh chart title that has not had a custom color picked).
-  const solidFillChild = rgbHex !== undefined
-    ? xmlElement("a:solidFill", undefined, [buildColorElement(rgbHex)])
-    : undefined;
+  const solidFillChild =
+    rgbHex !== undefined
+      ? xmlElement("a:solidFill", undefined, [buildColorElement(rgbHex)])
+      : undefined
   // OOXML's `<a:defRPr><a:latin typeface=".."/></a:defRPr>` carries the
   // title's font family. The writer holds `titleFontFamily` as a non-
   // empty string and lands the `<a:latin>` element on both the default-
@@ -897,7 +898,7 @@ export function buildTitle(
   // CT_TextCharacterProperties child sequence (ECMA-376 Part 1,
   // §21.1.2.3.7) so a fresh chart with both color and family matches
   // Excel's reference serialization byte-for-byte.
-  const latinChild = fontFamily ? xmlSelfClose("a:latin", { typeface: fontFamily }) : undefined;
+  const latinChild = fontFamily ? xmlSelfClose("a:latin", { typeface: fontFamily }) : undefined
   // When a fill color or a typeface is set the `<a:defRPr>` /
   // `<a:rPr>` slots expand from self-closing to wrapping the children;
   // otherwise the writer keeps the existing self-closing form so a
@@ -905,13 +906,13 @@ export function buildTitle(
   // serialization byte-for-byte. Children are emitted in CT_TextChar
   // acterProperties' canonical schema order: solidFill first, then
   // latin.
-  const rPrChildren: string[] = [];
-  if (solidFillChild) rPrChildren.push(solidFillChild);
-  if (latinChild) rPrChildren.push(latinChild);
+  const rPrChildren: string[] = []
+  if (solidFillChild) rPrChildren.push(solidFillChild)
+  if (latinChild) rPrChildren.push(latinChild)
   const defRPr =
     rPrChildren.length > 0
       ? xmlElement("a:defRPr", { sz, b, i, u: underlineAttr, strike: strikeAttr }, rPrChildren)
-      : xmlSelfClose("a:defRPr", { sz, b, i, u: underlineAttr, strike: strikeAttr });
+      : xmlSelfClose("a:defRPr", { sz, b, i, u: underlineAttr, strike: strikeAttr })
   const rPr =
     rPrChildren.length > 0
       ? xmlElement(
@@ -926,7 +927,7 @@ export function buildTitle(
           i,
           u: underlineAttr,
           strike: strikeAttr,
-        });
+        })
   // CT_Title (ECMA-376 Part 1, §21.2.2.210) places the optional
   // `<c:layout>` between `<c:tx>` and `<c:overlay>`. The writer skips
   // emission entirely when the caller pinned no coordinates so a fresh
@@ -935,7 +936,7 @@ export function buildTitle(
   // position above the plot area). Each axis is independently optional
   // so the helper drops `<c:x>` / `<c:y>` / `<c:w>` / `<c:h>` slots
   // whose value did not survive normalization.
-  const layoutXml = buildManualLayout(layout);
+  const layoutXml = buildManualLayout(layout)
   const titleChildren: string[] = [
     xmlElement("c:tx", undefined, [
       xmlElement("c:rich", undefined, [
@@ -958,11 +959,11 @@ export function buildTitle(
         ]),
       ]),
     ]),
-  ];
+  ]
   if (layoutXml !== undefined) {
-    titleChildren.push(layoutXml);
+    titleChildren.push(layoutXml)
   }
-  titleChildren.push(xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }));
+  titleChildren.push(xmlSelfClose("c:overlay", { val: overlay ? 1 : 0 }))
   // CT_Title (ECMA-376 Part 1, §21.2.2.210) places the optional
   // `<c:spPr>` between `<c:overlay>` and `<c:txPr>` / `<c:extLst>`.
   // The writer skips emission entirely when the caller did not pin a
@@ -986,11 +987,11 @@ export function buildTitle(
     borderDash,
     borderCap,
     borderCompound,
-  );
+  )
   if (titleSpPrXml !== undefined) {
-    titleChildren.push(titleSpPrXml);
+    titleChildren.push(titleSpPrXml)
   }
-  return xmlElement("c:title", undefined, titleChildren);
+  return xmlElement("c:title", undefined, titleChildren)
 }
 
 /**
@@ -1037,11 +1038,11 @@ export function buildTitleSpPr(
     borderCap === undefined &&
     borderCompound === undefined
   ) {
-    return undefined;
+    return undefined
   }
-  const children: string[] = [];
+  const children: string[] = []
   if (fillRgbHex !== undefined) {
-    children.push(xmlElement("a:solidFill", undefined, [buildColorElement(fillRgbHex)]));
+    children.push(xmlElement("a:solidFill", undefined, [buildColorElement(fillRgbHex)]))
   }
   if (
     borderRgbHex !== undefined ||
@@ -1050,30 +1051,30 @@ export function buildTitleSpPr(
     borderCap !== undefined ||
     borderCompound !== undefined
   ) {
-    const lnAttrs: Record<string, string | number> = {};
+    const lnAttrs: Record<string, string | number> = {}
     if (borderWidthPt !== undefined) {
       // OOXML stores stroke width in EMU (1 pt = 12 700 EMU). Round to
       // the nearest integer because the schema types `w` as `xsd:int`.
-      lnAttrs.w = Math.round(borderWidthPt * EMU_PER_PT);
+      lnAttrs.w = Math.round(borderWidthPt * EMU_PER_PT)
     }
-    if (borderCap !== undefined) lnAttrs.cap = borderCap;
-    if (borderCompound !== undefined) lnAttrs.cmpd = borderCompound;
-    const lnChildren: string[] = [];
+    if (borderCap !== undefined) lnAttrs.cap = borderCap
+    if (borderCompound !== undefined) lnAttrs.cmpd = borderCompound
+    const lnChildren: string[] = []
     if (borderRgbHex !== undefined) {
-      lnChildren.push(xmlElement("a:solidFill", undefined, [buildColorElement(borderRgbHex)]));
+      lnChildren.push(xmlElement("a:solidFill", undefined, [buildColorElement(borderRgbHex)]))
     }
     // `<a:prstDash>` follows `<a:solidFill>` per CT_LineProperties
     // schema sequence (ECMA-376 Part 1, §20.1.2.3.24).
     if (borderDash !== undefined) {
-      lnChildren.push(xmlSelfClose("a:prstDash", { val: borderDash }));
+      lnChildren.push(xmlSelfClose("a:prstDash", { val: borderDash }))
     }
     children.push(
       lnChildren.length === 0
         ? xmlSelfClose("a:ln", lnAttrs)
         : xmlElement("a:ln", Object.keys(lnAttrs).length > 0 ? lnAttrs : undefined, lnChildren),
-    );
+    )
   }
-  return xmlElement("c:spPr", undefined, children);
+  return xmlElement("c:spPr", undefined, children)
 }
 
 /**
@@ -1090,12 +1091,12 @@ export function buildTitleSpPr(
  * emit time).
  */
 export function normalizeTitleRotation(value: number | undefined): number | undefined {
-  if (value === undefined || typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  let degrees = Math.round(value);
-  if (degrees < TITLE_ROTATION_MIN_DEG) degrees = TITLE_ROTATION_MIN_DEG;
-  else if (degrees > TITLE_ROTATION_MAX_DEG) degrees = TITLE_ROTATION_MAX_DEG;
-  if (degrees === 0) return undefined;
-  return degrees;
+  if (value === undefined || typeof value !== "number" || !Number.isFinite(value)) return undefined
+  let degrees = Math.round(value)
+  if (degrees < TITLE_ROTATION_MIN_DEG) degrees = TITLE_ROTATION_MIN_DEG
+  else if (degrees > TITLE_ROTATION_MAX_DEG) degrees = TITLE_ROTATION_MAX_DEG
+  if (degrees === 0) return undefined
+  return degrees
 }
 
 /**
@@ -1111,7 +1112,7 @@ export function normalizeTitleRotation(value: number | undefined): number | unde
  * case.
  */
 export function resolveTitleRotation(chart: SheetChart): number | undefined {
-  return normalizeTitleRotation(chart.titleRotation);
+  return normalizeTitleRotation(chart.titleRotation)
 }
 
 /**
@@ -1130,13 +1131,13 @@ export function resolveTitleRotation(chart: SheetChart): number | undefined {
  * at emit time).
  */
 export function normalizeTitleFontSize(value: number | undefined): number | undefined {
-  if (value === undefined || typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  if (value === undefined || typeof value !== "number" || !Number.isFinite(value)) return undefined
   // Round to the nearest 0.5pt (Excel's UI granularity). `Math.round`
   // on `2 * value` and dividing by 2 gives a clean half-step band.
-  const halfSteps = Math.round(value * 2);
-  const points = halfSteps / 2;
-  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined;
-  return points;
+  const halfSteps = Math.round(value * 2)
+  const points = halfSteps / 2
+  if (points < TITLE_FONT_SIZE_MIN_PT || points > TITLE_FONT_SIZE_MAX_PT) return undefined
+  return points
 }
 
 /**
@@ -1152,7 +1153,7 @@ export function normalizeTitleFontSize(value: number | undefined): number | unde
  * no `<c:title>` block to host the size in either case.
  */
 export function resolveTitleFontSize(chart: SheetChart): number | undefined {
-  return normalizeTitleFontSize(chart.titleFontSize);
+  return normalizeTitleFontSize(chart.titleFontSize)
 }
 
 /**
@@ -1166,9 +1167,9 @@ export function resolveTitleFontSize(chart: SheetChart): number | undefined {
  * (non-bold) Excel itself emits on a fresh chart title.
  */
 export function normalizeTitleBold(value: boolean | undefined): boolean | undefined {
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
+  if (value === true) return true
+  if (value === false) return false
+  return undefined
 }
 
 /**
@@ -1184,7 +1185,7 @@ export function normalizeTitleBold(value: boolean | undefined): boolean | undefi
  * in either case.
  */
 export function resolveTitleBold(chart: SheetChart): boolean | undefined {
-  return normalizeTitleBold(chart.titleBold);
+  return normalizeTitleBold(chart.titleBold)
 }
 
 /**
@@ -1199,9 +1200,9 @@ export function resolveTitleBold(chart: SheetChart): boolean | undefined {
  * collapses to absence).
  */
 export function normalizeTitleItalic(value: boolean | undefined): boolean | undefined {
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
+  if (value === true) return true
+  if (value === false) return false
+  return undefined
 }
 
 /**
@@ -1217,7 +1218,7 @@ export function normalizeTitleItalic(value: boolean | undefined): boolean | unde
  * in either case.
  */
 export function resolveTitleItalic(chart: SheetChart): boolean | undefined {
-  return normalizeTitleItalic(chart.titleItalic);
+  return normalizeTitleItalic(chart.titleItalic)
 }
 
 /**
@@ -1235,11 +1236,9 @@ export function resolveTitleItalic(chart: SheetChart): boolean | undefined {
  * inherits the theme text color (Excel's reference behavior for a
  * fresh chart title without a custom color).
  */
-export function normalizeTitleColor(
-  value: ChartColor | undefined,
-): ChartColor | undefined {
-  if (typeof value === "string") return normalizeRgbHexShared(value);
-  return normalizeChartColor(value);
+export function normalizeTitleColor(value: ChartColor | undefined): ChartColor | undefined {
+  if (typeof value === "string") return normalizeRgbHexShared(value)
+  return normalizeChartColor(value)
 }
 
 /**
@@ -1255,7 +1254,7 @@ export function normalizeTitleColor(
  * has no `<c:title>` block to host the fill in either case.
  */
 export function resolveTitleColor(chart: SheetChart): ChartColor | undefined {
-  return normalizeTitleColor(chart.titleColor);
+  return normalizeTitleColor(chart.titleColor)
 }
 
 /**
@@ -1280,7 +1279,7 @@ export function resolveTitleColor(chart: SheetChart): ChartColor | undefined {
  * single configuration call can pin both.
  */
 export function resolveTitleFillColor(chart: SheetChart): ChartColor | undefined {
-  return normalizeTitleColor(chart.titleFillColor);
+  return normalizeTitleColor(chart.titleFillColor)
 }
 
 /**
@@ -1307,7 +1306,7 @@ export function resolveTitleFillColor(chart: SheetChart): ChartColor | undefined
  * host element (`<c:title>` vs `<c:plotArea>`).
  */
 export function resolveTitleBorderColor(chart: SheetChart): ChartColor | undefined {
-  return normalizeTitleColor(chart.titleBorderColor);
+  return normalizeTitleColor(chart.titleBorderColor)
 }
 
 /**
@@ -1334,7 +1333,7 @@ export function resolveTitleBorderColor(chart: SheetChart): ChartColor | undefin
  * `<a:ln>` host — but lands on `<c:title>`'s own `<c:spPr>` block.
  */
 export function resolveTitleBorderWidth(chart: SheetChart): number | undefined {
-  return clampStrokeWidthPt(chart.titleBorderWidth);
+  return clampStrokeWidthPt(chart.titleBorderWidth)
 }
 
 /**
@@ -1355,7 +1354,7 @@ export function resolveTitleBorderWidth(chart: SheetChart): number | undefined {
  * `<a:solidFill>`, width is the `w` attribute, dash is `<a:prstDash>`.
  */
 export function resolveTitleBorderDash(chart: SheetChart): ChartBorderDash | undefined {
-  return normalizeBorderDash(chart.titleBorderDash);
+  return normalizeBorderDash(chart.titleBorderDash)
 }
 
 /**
@@ -1365,7 +1364,7 @@ export function resolveTitleBorderDash(chart: SheetChart): ChartBorderDash | und
  * `"flat"`. Delegates to {@link normalizeLineCap}.
  */
 export function resolveTitleBorderCap(chart: SheetChart): ChartLineCap | undefined {
-  return normalizeLineCap(chart.titleBorderCap);
+  return normalizeLineCap(chart.titleBorderCap)
 }
 
 /**
@@ -1374,10 +1373,8 @@ export function resolveTitleBorderCap(chart: SheetChart): ChartLineCap | undefin
  * {@link ChartLineCompound} or `undefined` for absence / the OOXML
  * default `"sng"`. Delegates to {@link normalizeLineCompound}.
  */
-export function resolveTitleBorderCompound(
-  chart: SheetChart,
-): ChartLineCompound | undefined {
-  return normalizeLineCompound(chart.titleBorderCompound);
+export function resolveTitleBorderCompound(chart: SheetChart): ChartLineCompound | undefined {
+  return normalizeLineCompound(chart.titleBorderCompound)
 }
 
 /**
@@ -1393,9 +1390,9 @@ export function resolveTitleBorderCompound(
  * explicit `true` emits `strike="sngStrike"`).
  */
 export function normalizeTitleStrike(value: boolean | undefined): boolean | undefined {
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
+  if (value === true) return true
+  if (value === false) return false
+  return undefined
 }
 
 /**
@@ -1411,7 +1408,7 @@ export function normalizeTitleStrike(value: boolean | undefined): boolean | unde
  * in either case.
  */
 export function resolveTitleStrike(chart: SheetChart): boolean | undefined {
-  return normalizeTitleStrike(chart.titleStrike);
+  return normalizeTitleStrike(chart.titleStrike)
 }
 
 /**
@@ -1427,9 +1424,9 @@ export function resolveTitleStrike(chart: SheetChart): boolean | undefined {
  * emits `u="sng"`).
  */
 export function normalizeTitleUnderline(value: boolean | undefined): boolean | undefined {
-  if (value === true) return true;
-  if (value === false) return false;
-  return undefined;
+  if (value === true) return true
+  if (value === false) return false
+  return undefined
 }
 
 /**
@@ -1445,7 +1442,7 @@ export function normalizeTitleUnderline(value: boolean | undefined): boolean | u
  * in either case.
  */
 export function resolveTitleUnderline(chart: SheetChart): boolean | undefined {
-  return normalizeTitleUnderline(chart.titleUnderline);
+  return normalizeTitleUnderline(chart.titleUnderline)
 }
 
 /**
@@ -1463,10 +1460,10 @@ export function resolveTitleUnderline(chart: SheetChart): boolean | undefined {
  * title without a custom font picked).
  */
 export function normalizeTitleFontFamily(value: string | undefined): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return undefined;
-  return trimmed;
+  if (typeof value !== "string") return undefined
+  const trimmed = value.trim()
+  if (trimmed.length === 0) return undefined
+  return trimmed
 }
 
 /**
@@ -1482,7 +1479,7 @@ export function normalizeTitleFontFamily(value: string | undefined): string | un
  * has no `<c:title>` block to host the typeface in either case.
  */
 export function resolveTitleFontFamily(chart: SheetChart): string | undefined {
-  return normalizeTitleFontFamily(chart.titleFontFamily);
+  return normalizeTitleFontFamily(chart.titleFontFamily)
 }
 
 /**
@@ -1508,7 +1505,7 @@ export function resolveTitleFontFamily(chart: SheetChart): string | undefined {
  * overlay element.
  */
 export function resolveTitleOverlay(chart: SheetChart): boolean {
-  return chart.titleOverlay === true;
+  return chart.titleOverlay === true
 }
 
 /**
@@ -1533,13 +1530,13 @@ export function resolveTitleOverlay(chart: SheetChart): boolean {
  * bookkeeping a second type.
  */
 export function resolveTitleLayout(chart: SheetChart): ResolvedManualLayout | undefined {
-  return normalizeManualLayout(chart.titleLayout);
+  return normalizeManualLayout(chart.titleLayout)
 }
 
 // ── Clone-side title constants ────────────────────────────────────
 
-const TITLE_BORDER_WIDTH_MIN_PT = 0.25;
-const TITLE_BORDER_WIDTH_MAX_PT = 13.5;
+const TITLE_BORDER_WIDTH_MIN_PT = 0.25
+const TITLE_BORDER_WIDTH_MAX_PT = 13.5
 
 // ── Clone resolvers (3-arg source/override) ───────────────────────
 
@@ -1570,9 +1567,9 @@ export function resolveCloneTitleLayout(
   sourceValue: ChartManualLayout | undefined,
   override: ChartManualLayout | null | undefined,
 ): ChartManualLayout | undefined {
-  if (override === undefined) return normalizeChartManualLayout(sourceValue);
-  if (override === null) return undefined;
-  return normalizeChartManualLayout(override);
+  if (override === undefined) return normalizeChartManualLayout(sourceValue)
+  if (override === null) return undefined
+  return normalizeChartManualLayout(override)
 }
 
 /**
@@ -1593,9 +1590,9 @@ export function resolveCloneTitleOverlay(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
-  if (override === undefined) return sourceValue;
-  if (override === null) return undefined;
-  return override;
+  if (override === undefined) return sourceValue
+  if (override === null) return undefined
+  return override
 }
 
 /**
@@ -1616,9 +1613,9 @@ export function resolveCloneTitleRotation(
   sourceValue: number | undefined,
   override: number | null | undefined,
 ): number | undefined {
-  if (override === undefined) return normalizeTitleRotation(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleRotation(override);
+  if (override === undefined) return normalizeTitleRotation(sourceValue)
+  if (override === null) return undefined
+  return normalizeTitleRotation(override)
 }
 
 /**
@@ -1640,9 +1637,9 @@ export function resolveCloneTitleFontSize(
   sourceValue: number | undefined,
   override: number | null | undefined,
 ): number | undefined {
-  if (override === undefined) return normalizeTitleFontSize(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleFontSize(override);
+  if (override === undefined) return normalizeTitleFontSize(sourceValue)
+  if (override === null) return undefined
+  return normalizeTitleFontSize(override)
 }
 
 /**
@@ -1663,9 +1660,9 @@ export function resolveCloneTitleBold(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
-  if (override === undefined) return normalizeTitleBold(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleBold(override);
+  if (override === undefined) return normalizeTitleBold(sourceValue)
+  if (override === null) return undefined
+  return normalizeTitleBold(override)
 }
 
 /**
@@ -1687,9 +1684,9 @@ export function resolveCloneTitleItalic(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
-  if (override === undefined) return normalizeTitleItalic(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleItalic(override);
+  if (override === undefined) return normalizeTitleItalic(sourceValue)
+  if (override === null) return undefined
+  return normalizeTitleItalic(override)
 }
 
 /**
@@ -1712,9 +1709,9 @@ export function resolveCloneTitleColor(
   sourceValue: ChartColor | undefined,
   override: ChartColor | null | undefined,
 ): ChartColor | undefined {
-  if (override === undefined) return normalizeTitleColor(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleColor(override);
+  if (override === undefined) return normalizeTitleColor(sourceValue)
+  if (override === null) return undefined
+  return normalizeTitleColor(override)
 }
 
 /**
@@ -1750,9 +1747,9 @@ export function resolveCloneTitleFillColor(
   sourceValue: ChartColor | undefined,
   override: ChartColor | null | undefined,
 ): ChartColor | undefined {
-  if (override === undefined) return normalizeTitleColor(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleColor(override);
+  if (override === undefined) return normalizeTitleColor(sourceValue)
+  if (override === null) return undefined
+  return normalizeTitleColor(override)
 }
 
 /**
@@ -1787,9 +1784,9 @@ export function resolveCloneTitleBorderColor(
   sourceValue: ChartColor | undefined,
   override: ChartColor | null | undefined,
 ): ChartColor | undefined {
-  if (override === undefined) return normalizeTitleColor(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleColor(override);
+  if (override === undefined) return normalizeTitleColor(sourceValue)
+  if (override === null) return undefined
+  return normalizeTitleColor(override)
 }
 
 /**
@@ -1803,12 +1800,12 @@ export function resolveCloneTitleBorderColor(
  * than carry a value the writer would silently elide back to absence.
  */
 export function normalizeTitleBorderWidth(value: number | undefined): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined
   // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
-  const snapped = Math.round(value * 4) / 4;
-  if (snapped < TITLE_BORDER_WIDTH_MIN_PT) return TITLE_BORDER_WIDTH_MIN_PT;
-  if (snapped > TITLE_BORDER_WIDTH_MAX_PT) return TITLE_BORDER_WIDTH_MAX_PT;
-  return snapped;
+  const snapped = Math.round(value * 4) / 4
+  if (snapped < TITLE_BORDER_WIDTH_MIN_PT) return TITLE_BORDER_WIDTH_MIN_PT
+  if (snapped > TITLE_BORDER_WIDTH_MAX_PT) return TITLE_BORDER_WIDTH_MAX_PT
+  return snapped
 }
 
 /**
@@ -1841,9 +1838,9 @@ export function resolveCloneTitleBorderWidth(
   sourceValue: number | undefined,
   override: number | null | undefined,
 ): number | undefined {
-  if (override === undefined) return normalizeTitleBorderWidth(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleBorderWidth(override);
+  if (override === undefined) return normalizeTitleBorderWidth(sourceValue)
+  if (override === null) return undefined
+  return normalizeTitleBorderWidth(override)
 }
 
 /**
@@ -1865,9 +1862,9 @@ export function resolveCloneTitleStrike(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
-  if (override === undefined) return normalizeTitleStrike(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleStrike(override);
+  if (override === undefined) return normalizeTitleStrike(sourceValue)
+  if (override === null) return undefined
+  return normalizeTitleStrike(override)
 }
 
 /**
@@ -1890,9 +1887,9 @@ export function resolveCloneTitleUnderline(
   sourceValue: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {
-  if (override === undefined) return normalizeTitleUnderline(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleUnderline(override);
+  if (override === undefined) return normalizeTitleUnderline(sourceValue)
+  if (override === null) return undefined
+  return normalizeTitleUnderline(override)
 }
 
 /**
@@ -1922,7 +1919,7 @@ export function resolveCloneTitleFontFamily(
   sourceValue: string | undefined,
   override: string | null | undefined,
 ): string | undefined {
-  if (override === undefined) return normalizeTitleFontFamily(sourceValue);
-  if (override === null) return undefined;
-  return normalizeTitleFontFamily(override);
+  if (override === undefined) return normalizeTitleFontFamily(sourceValue)
+  if (override === null) return undefined
+  return normalizeTitleFontFamily(override)
 }

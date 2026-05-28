@@ -3,37 +3,37 @@
 // Parses shared strings and styles upfront (small), then streams
 // worksheet rows without buffering the entire sheet in memory.
 
-import type { CellValue, ReadOptions } from "../_types";
-import type { SharedString } from "./shared-strings";
-import type { ParsedStyles } from "./styles";
-import type { Relationship } from "./relationships";
-import { ParseError, ZipError } from "../errors";
-import { assertNotEncrypted, bufferReadableStream } from "../_input";
-import { ZipReader } from "../zip/reader";
-import { parseXml, parseSaxStream, decodeOoxmlEscapes } from "../xml/parser";
-import { parseContentTypes } from "./content-types";
-import { parseRelationships } from "./relationships";
-import { parseSharedStrings } from "./shared-strings";
-import { parseStyles, isDateStyle } from "./styles";
-import { parseCellRef } from "./worksheet";
-import { serialToDate } from "../_date";
+import type { CellValue, ReadOptions } from "../_types"
+import type { SharedString } from "./shared-strings"
+import type { ParsedStyles } from "./styles"
+import type { Relationship } from "./relationships"
+import { ParseError, ZipError } from "../errors"
+import { assertNotEncrypted, bufferReadableStream } from "../_input"
+import { ZipReader } from "../zip/reader"
+import { parseXml, parseSaxStream, decodeOoxmlEscapes } from "../xml/parser"
+import { parseContentTypes } from "./content-types"
+import { parseRelationships } from "./relationships"
+import { parseSharedStrings } from "./shared-strings"
+import { parseStyles, isDateStyle } from "./styles"
+import { parseCellRef } from "./worksheet"
+import { serialToDate } from "../_date"
 
 // ── Types ────────────────────────────────────────────────────────────
 
 export interface StreamRow {
   /** 0-based row index */
-  index: number;
+  index: number
   /** Cell values for this row */
-  values: CellValue[];
+  values: CellValue[]
 }
 
 // ── Range filter ────────────────────────────────────────────────────
 
 interface RangeFilter {
-  startRow: number;
-  endRow: number;
-  startCol: number;
-  endCol: number;
+  startRow: number
+  endRow: number
+  startCol: number
+  endCol: number
 }
 
 /**
@@ -41,123 +41,123 @@ interface RangeFilter {
  * Single-cell refs like "B2" are also accepted (start == end).
  */
 function parseRangeFilter(ref: string): RangeFilter {
-  const parts = ref.split(":");
+  const parts = ref.split(":")
   if (parts.length === 0 || parts.length > 2) {
-    throw new ParseError(`Invalid range reference: "${ref}"`);
+    throw new ParseError(`Invalid range reference: "${ref}"`)
   }
-  const start = parseCellRef(parts[0]!);
-  const end = parts.length > 1 ? parseCellRef(parts[1]!) : start;
+  const start = parseCellRef(parts[0]!)
+  const end = parts.length > 1 ? parseCellRef(parts[1]!) : start
   return {
     startRow: Math.min(start.row, end.row),
     endRow: Math.max(start.row, end.row),
     startCol: Math.min(start.col, end.col),
     endCol: Math.max(start.col, end.col),
-  };
+  }
 }
 
 // ── OOXML Relationship Types ─────────────────────────────────────────
 
 const REL_WORKBOOK =
-  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"
 const REL_WORKSHEET =
-  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet";
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"
 const REL_SHARED_STRINGS =
-  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings";
-const REL_STYLES = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings"
+const REL_STYLES = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
 function decodeUtf8(data: Uint8Array): string {
-  return new TextDecoder("utf-8").decode(data);
+  return new TextDecoder("utf-8").decode(data)
 }
 
 function resolvePath(base: string, target: string): string {
-  if (target.startsWith("/")) return target.slice(1);
+  if (target.startsWith("/")) return target.slice(1)
 
-  const baseParts = base.split("/").filter(Boolean);
-  const targetParts = target.split("/").filter(Boolean);
+  const baseParts = base.split("/").filter(Boolean)
+  const targetParts = target.split("/").filter(Boolean)
 
   for (const part of targetParts) {
     if (part === "..") {
-      baseParts.pop();
+      baseParts.pop()
     } else if (part !== ".") {
-      baseParts.push(part);
+      baseParts.push(part)
     }
   }
 
-  return baseParts.join("/");
+  return baseParts.join("/")
 }
 
 function dirname(path: string): string {
-  const idx = path.lastIndexOf("/");
-  return idx === -1 ? "" : path.slice(0, idx);
+  const idx = path.lastIndexOf("/")
+  return idx === -1 ? "" : path.slice(0, idx)
 }
 
 // ── Workbook XML Parsing (minimal — just sheet info + date system) ───
 
 interface SheetInfo {
-  name: string;
-  sheetId: number;
-  rId: string;
+  name: string
+  sheetId: number
+  rId: string
 }
 
 function parseWorkbookXml(
   xml: string,
   options?: ReadOptions,
 ): { sheets: SheetInfo[]; dateSystem: "1900" | "1904" } {
-  const doc = parseXml(xml);
-  const sheets: SheetInfo[] = [];
-  let dateSystem: "1900" | "1904" = "1900";
+  const doc = parseXml(xml)
+  const sheets: SheetInfo[] = []
+  let dateSystem: "1900" | "1904" = "1900"
 
   if (options?.dateSystem === "1904") {
-    dateSystem = "1904";
+    dateSystem = "1904"
   } else if (options?.dateSystem === "1900") {
-    dateSystem = "1900";
+    dateSystem = "1900"
   }
 
   for (const child of doc.children) {
-    if (typeof child === "string") continue;
-    const local = child.local || child.tag;
+    if (typeof child === "string") continue
+    const local = child.local || child.tag
 
     if (local === "workbookPr") {
       if (child.attrs["date1904"] === "1" || child.attrs["date1904"] === "true") {
         if (!options?.dateSystem || options.dateSystem === "auto") {
-          dateSystem = "1904";
+          dateSystem = "1904"
         }
       }
     }
 
     if (local === "sheets") {
       for (const sheetChild of child.children) {
-        if (typeof sheetChild === "string") continue;
-        const sheetLocal = sheetChild.local || sheetChild.tag;
+        if (typeof sheetChild === "string") continue
+        const sheetLocal = sheetChild.local || sheetChild.tag
         if (sheetLocal === "sheet") {
-          const name = sheetChild.attrs["name"] ?? "";
-          const sheetId = Number(sheetChild.attrs["sheetId"] ?? "0");
+          const name = sheetChild.attrs["name"] ?? ""
+          const sheetId = Number(sheetChild.attrs["sheetId"] ?? "0")
           const rId =
             sheetChild.attrs["r:id"] ??
             sheetChild.attrs["R:id"] ??
             findRIdAttr(sheetChild.attrs) ??
-            "";
+            ""
 
           if (name && rId) {
-            sheets.push({ name, sheetId, rId });
+            sheets.push({ name, sheetId, rId })
           }
         }
       }
     }
   }
 
-  return { sheets, dateSystem };
+  return { sheets, dateSystem }
 }
 
 function findRIdAttr(attrs: Record<string, string>): string | undefined {
   for (const key of Object.keys(attrs)) {
     if (key.endsWith(":id") && attrs[key].startsWith("rId")) {
-      return attrs[key];
+      return attrs[key]
     }
   }
-  return undefined;
+  return undefined
 }
 
 // ── Resolve target sheet ────────────────────────────────────────────
@@ -165,39 +165,39 @@ function findRIdAttr(attrs: Record<string, string>): string | undefined {
 function resolveTargetSheet(allSheets: SheetInfo[], sheetSpec?: number | string): SheetInfo | null {
   if (sheetSpec === undefined) {
     // Default: first sheet
-    return allSheets[0] ?? null;
+    return allSheets[0] ?? null
   }
 
   if (typeof sheetSpec === "number") {
-    return sheetSpec >= 0 && sheetSpec < allSheets.length ? allSheets[sheetSpec] : null;
+    return sheetSpec >= 0 && sheetSpec < allSheets.length ? allSheets[sheetSpec] : null
   }
 
-  return allSheets.find((s) => s.name === sheetSpec) ?? null;
+  return allSheets.find((s) => s.name === sheetSpec) ?? null
 }
 
 // ── Worksheet SAX handlers (shared between sync and streaming paths) ─
 
 interface RowSaxState {
-  inSheetData: boolean;
-  inRow: boolean;
-  inCell: boolean;
-  inValue: boolean;
-  inFormula: boolean;
-  inInlineStr: boolean;
-  inInlineT: boolean;
-  inInlineR: boolean;
-  inInlineRT: boolean;
-  currentRowIndex: number;
-  currentRowCells: Array<{ col: number; value: CellValue }>;
-  cellRef: string;
-  cellType: string;
-  cellStyleIndex: number;
-  cellValueText: string;
-  inlineText: string;
-  inlineRichTextParts: string[];
-  currentRunText: string;
+  inSheetData: boolean
+  inRow: boolean
+  inCell: boolean
+  inValue: boolean
+  inFormula: boolean
+  inInlineStr: boolean
+  inInlineT: boolean
+  inInlineR: boolean
+  inInlineRT: boolean
+  currentRowIndex: number
+  currentRowCells: Array<{ col: number; value: CellValue }>
+  cellRef: string
+  cellType: string
+  cellStyleIndex: number
+  cellValueText: string
+  inlineText: string
+  inlineRichTextParts: string[]
+  currentRunText: string
   /** Implicit column counter for cells without r attribute */
-  implicitCol: number;
+  implicitCol: number
 }
 
 function createRowSaxState(): RowSaxState {
@@ -221,77 +221,77 @@ function createRowSaxState(): RowSaxState {
     inlineRichTextParts: [],
     currentRunText: "",
     implicitCol: 0,
-  };
+  }
 }
 
 function buildRowFromCells(cells: Array<{ col: number; value: CellValue }>): CellValue[] {
   // Use reduce instead of Math.max(...spread) to avoid RangeError on wide rows (>65K cols)
-  const maxCol = cells.reduce((m, c) => (c.col > m ? c.col : m), -1);
-  const values: CellValue[] = maxCol >= 0 ? Array.from({ length: maxCol + 1 }, () => null) : [];
+  const maxCol = cells.reduce((m, c) => (c.col > m ? c.col : m), -1)
+  const values: CellValue[] = maxCol >= 0 ? Array.from({ length: maxCol + 1 }, () => null) : []
   for (const cell of cells) {
-    values[cell.col] = cell.value;
+    values[cell.col] = cell.value
   }
-  return values;
+  return values
 }
 
 function handleOpenTag(tag: string, attrs: Record<string, string>, s: RowSaxState): void {
-  const local = tag.includes(":") ? tag.slice(tag.indexOf(":") + 1) : tag;
+  const local = tag.includes(":") ? tag.slice(tag.indexOf(":") + 1) : tag
 
   switch (local) {
     case "sheetData":
-      s.inSheetData = true;
-      break;
+      s.inSheetData = true
+      break
     case "row":
       if (s.inSheetData) {
-        s.inRow = true;
-        s.currentRowIndex = attrs["r"] ? Number(attrs["r"]) - 1 : s.currentRowIndex + 1;
-        s.currentRowCells = [];
-        s.implicitCol = 0;
+        s.inRow = true
+        s.currentRowIndex = attrs["r"] ? Number(attrs["r"]) - 1 : s.currentRowIndex + 1
+        s.currentRowCells = []
+        s.implicitCol = 0
       }
-      break;
+      break
     case "c":
       if (s.inRow) {
-        s.inCell = true;
-        s.cellRef = attrs["r"] ?? "";
-        s.cellType = attrs["t"] ?? "";
-        s.cellStyleIndex = attrs["s"] ? Number(attrs["s"]) : -1;
-        s.cellValueText = "";
-        s.inlineText = "";
-        s.inlineRichTextParts = [];
+        s.inCell = true
+        s.cellRef = attrs["r"] ?? ""
+        s.cellType = attrs["t"] ?? ""
+        s.cellStyleIndex = attrs["s"] ? Number(attrs["s"]) : -1
+        s.cellValueText = ""
+        s.inlineText = ""
+        s.inlineRichTextParts = []
       }
-      break;
+      break
     case "v":
-      if (s.inCell) s.inValue = true;
-      break;
+      if (s.inCell) s.inValue = true
+      break
     case "f":
-      if (s.inCell) s.inFormula = true;
-      break;
+      if (s.inCell) s.inFormula = true
+      break
     case "is":
-      if (s.inCell) s.inInlineStr = true;
-      break;
+      if (s.inCell) s.inInlineStr = true
+      break
     case "t":
       if (s.inInlineStr && !s.inInlineR) {
-        s.inInlineT = true;
+        s.inInlineT = true
       } else if (s.inInlineR) {
-        s.inInlineRT = true;
+        s.inInlineRT = true
       }
-      break;
+      break
     case "r":
       if (s.inInlineStr) {
-        s.inInlineR = true;
-        s.currentRunText = "";
+        s.inInlineR = true
+        s.currentRunText = ""
       }
-      break;
+      break
   }
 }
 
 function handleText(text: string, s: RowSaxState): void {
   if (s.inValue) {
-    s.cellValueText += text;
+    s.cellValueText += text
   } else if (s.inInlineT) {
-    s.inlineText += text;
+    s.inlineText += text
   } else if (s.inInlineRT) {
-    s.currentRunText += text;
+    s.currentRunText += text
   }
 }
 
@@ -305,20 +305,20 @@ function handleCloseTag(
   styles: ParsedStyles | null,
   dateSystem: "1900" | "1904",
 ): StreamRow | null {
-  const local = tag.includes(":") ? tag.slice(tag.indexOf(":") + 1) : tag;
+  const local = tag.includes(":") ? tag.slice(tag.indexOf(":") + 1) : tag
 
   switch (local) {
     case "sheetData":
-      s.inSheetData = false;
-      break;
+      s.inSheetData = false
+      break
     case "row":
       if (s.inRow) {
-        const values = buildRowFromCells(s.currentRowCells);
-        const row: StreamRow = { index: s.currentRowIndex, values };
-        s.inRow = false;
-        return row;
+        const values = buildRowFromCells(s.currentRowCells)
+        const row: StreamRow = { index: s.currentRowIndex, values }
+        s.inRow = false
+        return row
       }
-      break;
+      break
     case "c":
       if (s.inCell) {
         const value = resolveStreamCellValue(
@@ -330,43 +330,43 @@ function handleCloseTag(
           sharedStrings,
           styles,
           dateSystem,
-        );
+        )
         if (s.cellRef) {
-          const pos = parseCellRef(s.cellRef);
-          s.currentRowCells.push({ col: pos.col, value });
-          s.implicitCol = pos.col + 1;
+          const pos = parseCellRef(s.cellRef)
+          s.currentRowCells.push({ col: pos.col, value })
+          s.implicitCol = pos.col + 1
         } else {
           // Fallback: cells without r attribute use implicit column ordering
-          s.currentRowCells.push({ col: s.implicitCol, value });
-          s.implicitCol++;
+          s.currentRowCells.push({ col: s.implicitCol, value })
+          s.implicitCol++
         }
-        s.inCell = false;
+        s.inCell = false
       }
-      break;
+      break
     case "v":
-      s.inValue = false;
-      break;
+      s.inValue = false
+      break
     case "f":
-      s.inFormula = false;
-      break;
+      s.inFormula = false
+      break
     case "is":
-      s.inInlineStr = false;
-      break;
+      s.inInlineStr = false
+      break
     case "t":
       if (s.inInlineRT) {
-        s.inInlineRT = false;
+        s.inInlineRT = false
       } else if (s.inInlineT) {
-        s.inInlineT = false;
+        s.inInlineT = false
       }
-      break;
+      break
     case "r":
       if (s.inInlineR) {
-        s.inlineRichTextParts.push(decodeOoxmlEscapes(s.currentRunText));
-        s.inInlineR = false;
+        s.inlineRichTextParts.push(decodeOoxmlEscapes(s.currentRunText))
+        s.inInlineR = false
       }
-      break;
+      break
   }
-  return null;
+  return null
 }
 
 // ── Filter application ─────────────────────────────────────────────
@@ -382,14 +382,14 @@ function handleCloseTag(
  * `row.values[colIndex]` for columns inside the range.
  */
 function applyRangeFilter(row: StreamRow, range: RangeFilter): StreamRow | null {
-  if (row.index < range.startRow || row.index > range.endRow) return null;
-  const len = Math.max(row.values.length, range.endCol + 1);
-  const out: CellValue[] = Array.from({ length: len }, () => null);
-  const upper = Math.min(row.values.length - 1, range.endCol);
+  if (row.index < range.startRow || row.index > range.endRow) return null
+  const len = Math.max(row.values.length, range.endCol + 1)
+  const out: CellValue[] = Array.from({ length: len }, () => null)
+  const upper = Math.min(row.values.length - 1, range.endCol)
   for (let c = range.startCol; c <= upper; c++) {
-    out[c] = row.values[c] ?? null;
+    out[c] = row.values[c] ?? null
   }
-  return { index: row.index, values: out };
+  return { index: row.index, values: out }
 }
 
 // ── Streaming row parser via SAX (async — ReadableStream) ──────────
@@ -401,112 +401,112 @@ async function* parseWorksheetRowsStreaming(
   dateSystem: "1900" | "1904",
   filters: { range?: RangeFilter; maxRows?: number } = {},
 ): AsyncGenerator<StreamRow, void, undefined> {
-  const s = createRowSaxState();
-  const pendingRows: StreamRow[] = [];
-  let resolve: (() => void) | null = null;
-  let done = false;
-  let aborted = false;
+  const s = createRowSaxState()
+  const pendingRows: StreamRow[] = []
+  let resolve: (() => void) | null = null
+  let done = false
+  let aborted = false
 
   // Wrap the source reader so we can short-circuit chunk pulls (and cancel
   // the underlying ZIP/decompression stream) once a stop condition fires.
   // We hold the source reader exclusively here so that calling
   // `cancel(reason)` propagates without conflicting with locks.
-  const sourceReader = stream.getReader();
+  const sourceReader = stream.getReader()
   const cancelSource = (reason?: unknown): void => {
-    sourceReader.cancel(reason).catch(() => {});
-  };
+    sourceReader.cancel(reason).catch(() => {})
+  }
   const cancellable = new ReadableStream<Uint8Array>({
     async pull(controller) {
       if (aborted) {
-        controller.close();
-        return;
+        controller.close()
+        return
       }
       try {
-        const { done: rDone, value } = await sourceReader.read();
+        const { done: rDone, value } = await sourceReader.read()
         if (rDone) {
-          controller.close();
-          return;
+          controller.close()
+          return
         }
-        controller.enqueue(value);
+        controller.enqueue(value)
       } catch (err) {
-        controller.error(err);
+        controller.error(err)
       }
     },
     cancel(reason) {
-      cancelSource(reason);
+      cancelSource(reason)
     },
-  });
+  })
 
-  let emittedDataRows = 0;
-  const maxRows = filters.maxRows ?? 0;
-  const range = filters.range;
+  let emittedDataRows = 0
+  const maxRows = filters.maxRows ?? 0
+  const range = filters.range
 
   const parsePromise = parseSaxStream(cancellable, {
     onOpenTag(tag, attrs) {
-      if (aborted) return;
-      handleOpenTag(tag, attrs, s);
+      if (aborted) return
+      handleOpenTag(tag, attrs, s)
     },
     onText(text) {
-      if (aborted) return;
-      handleText(text, s);
+      if (aborted) return
+      handleText(text, s)
     },
     onCloseTag(tag) {
-      if (aborted) return;
-      const row = handleCloseTag(tag, s, sharedStrings, styles, dateSystem);
+      if (aborted) return
+      const row = handleCloseTag(tag, s, sharedStrings, styles, dateSystem)
       if (row) {
         // If the SAX-emitted row is past the range end, we can stop now —
         // worksheet rows are written in ascending order in valid OOXML.
         if (range && row.index > range.endRow) {
-          aborted = true;
-          cancelSource();
+          aborted = true
+          cancelSource()
           if (resolve) {
-            resolve();
-            resolve = null;
+            resolve()
+            resolve = null
           }
-          return;
+          return
         }
-        const filtered = range ? applyRangeFilter(row, range) : row;
+        const filtered = range ? applyRangeFilter(row, range) : row
         if (filtered) {
-          pendingRows.push(filtered);
-          emittedDataRows++;
+          pendingRows.push(filtered)
+          emittedDataRows++
           if (resolve) {
-            resolve();
-            resolve = null;
+            resolve()
+            resolve = null
           }
           if (maxRows > 0 && emittedDataRows >= maxRows) {
-            aborted = true;
-            cancelSource();
+            aborted = true
+            cancelSource()
           }
         }
       }
     },
   }).then(() => {
-    done = true;
+    done = true
     if (resolve) {
-      resolve();
-      resolve = null;
+      resolve()
+      resolve = null
     }
-  });
+  })
 
   try {
     while (!done || pendingRows.length > 0) {
       if (pendingRows.length > 0) {
-        yield pendingRows.shift()!;
+        yield pendingRows.shift()!
       } else if (!done) {
         await new Promise<void>((r) => {
-          resolve = r;
-        });
+          resolve = r
+        })
       }
     }
   } finally {
     // Release the upstream reader if the consumer abandoned the generator
     // before the stream finished. Cancellation is idempotent — if we've
     // already cancelled because of maxRows/range, this is a no-op.
-    aborted = true;
-    cancelSource();
+    aborted = true
+    cancelSource()
   }
 
-  await parsePromise.catch(() => {});
+  await parsePromise.catch(() => {})
 }
 
 // ── Cell value resolution (streaming — no Cell objects) ──────────────
@@ -524,47 +524,47 @@ function resolveStreamCellValue(
   switch (type) {
     case "s": {
       // Shared string
-      const idx = Number(valueText);
+      const idx = Number(valueText)
       if (!Number.isNaN(idx) && idx >= 0 && idx < sharedStrings.length) {
-        return sharedStrings[idx].text;
+        return sharedStrings[idx].text
       }
-      return null; // Out-of-bounds SST index — return null, not the raw index string
+      return null // Out-of-bounds SST index — return null, not the raw index string
     }
     case "str": {
       // Inline formula string result
-      return decodeOoxmlEscapes(valueText);
+      return decodeOoxmlEscapes(valueText)
     }
     case "inlineStr": {
       // Inline string with <is> element
       if (inlineRichTextParts.length > 0) {
-        return inlineRichTextParts.join("");
+        return inlineRichTextParts.join("")
       }
-      return decodeOoxmlEscapes(inlineText);
+      return decodeOoxmlEscapes(inlineText)
     }
     case "b": {
       // Boolean
-      return valueText === "1" || valueText.toLowerCase() === "true";
+      return valueText === "1" || valueText.toLowerCase() === "true"
     }
     case "e": {
       // Error
-      return valueText;
+      return valueText
     }
     case "n":
     default: {
       // Number (explicit or implied)
       if (valueText === "") {
-        return null;
+        return null
       }
 
-      const num = Number(valueText);
+      const num = Number(valueText)
       if (!Number.isNaN(num)) {
         // Check if this is a date via style
         if (styles && styleIndex >= 0 && isDateStyle(styles, styleIndex)) {
-          return serialToDate(num, dateSystem === "1904");
+          return serialToDate(num, dateSystem === "1904")
         }
-        return num;
+        return num
       }
-      return valueText || null;
+      return valueText || null
     }
   }
 }
@@ -597,111 +597,111 @@ export async function* streamXlsxRows(
   // Normalize input to Uint8Array for ZIP central directory parsing.
   // ReadableStream must be fully buffered because ZIP central directory
   // is at the end of the file.
-  let data: Uint8Array;
+  let data: Uint8Array
   if (input instanceof Uint8Array) {
-    data = input;
+    data = input
   } else if (input instanceof ArrayBuffer) {
-    data = new Uint8Array(input);
+    data = new Uint8Array(input)
   } else {
-    data = await bufferReadableStream(input);
+    data = await bufferReadableStream(input)
   }
 
   // Detect password-protected workbooks (OLE2/CFB envelope) up front so
   // streamers fail fast with a typed `EncryptedFileError` instead of a
   // generic ZIP ParseError. Decryption is tracked in #156.
-  assertNotEncrypted(data, "xlsx");
+  assertNotEncrypted(data, "xlsx")
 
   // 1. Open ZIP archive
-  let zip: ZipReader;
+  let zip: ZipReader
   try {
-    zip = new ZipReader(data);
+    zip = new ZipReader(data)
   } catch (err) {
-    if (err instanceof ZipError) throw err;
+    if (err instanceof ZipError) throw err
     throw new ParseError("Failed to open XLSX file: not a valid ZIP archive", undefined, {
       cause: err,
-    });
+    })
   }
 
   // 2. Validate content types
   if (!zip.has("[Content_Types].xml")) {
-    throw new ParseError("Invalid XLSX: missing [Content_Types].xml");
+    throw new ParseError("Invalid XLSX: missing [Content_Types].xml")
   }
-  const contentTypesXml = decodeUtf8(await zip.extract("[Content_Types].xml"));
-  parseContentTypes(contentTypesXml);
+  const contentTypesXml = decodeUtf8(await zip.extract("[Content_Types].xml"))
+  parseContentTypes(contentTypesXml)
 
   // 3. Parse _rels/.rels to find the workbook path
   if (!zip.has("_rels/.rels")) {
-    throw new ParseError("Invalid XLSX: missing _rels/.rels");
+    throw new ParseError("Invalid XLSX: missing _rels/.rels")
   }
-  const rootRelsXml = decodeUtf8(await zip.extract("_rels/.rels"));
-  const rootRels = parseRelationships(rootRelsXml);
-  const workbookRel = rootRels.find((r) => r.type === REL_WORKBOOK);
+  const rootRelsXml = decodeUtf8(await zip.extract("_rels/.rels"))
+  const rootRels = parseRelationships(rootRelsXml)
+  const workbookRel = rootRels.find((r) => r.type === REL_WORKBOOK)
   if (!workbookRel) {
-    throw new ParseError("Invalid XLSX: cannot find workbook relationship in _rels/.rels");
+    throw new ParseError("Invalid XLSX: cannot find workbook relationship in _rels/.rels")
   }
 
   const workbookPath = workbookRel.target.startsWith("/")
     ? workbookRel.target.slice(1)
-    : workbookRel.target;
+    : workbookRel.target
 
   // 4. Parse workbook relationships
-  const workbookDir = dirname(workbookPath);
+  const workbookDir = dirname(workbookPath)
   const workbookRelsPath = workbookDir
     ? `${workbookDir}/_rels/${workbookPath.slice(workbookDir.length + 1)}.rels`
-    : `_rels/${workbookPath}.rels`;
+    : `_rels/${workbookPath}.rels`
 
-  let workbookRels: Relationship[] = [];
+  let workbookRels: Relationship[] = []
   if (zip.has(workbookRelsPath)) {
-    const wbRelsXml = decodeUtf8(await zip.extract(workbookRelsPath));
-    workbookRels = parseRelationships(wbRelsXml);
+    const wbRelsXml = decodeUtf8(await zip.extract(workbookRelsPath))
+    workbookRels = parseRelationships(wbRelsXml)
   }
 
   // 5. Parse workbook XML for sheet names and date system
   if (!zip.has(workbookPath)) {
-    throw new ParseError(`Invalid XLSX: missing workbook at ${workbookPath}`);
+    throw new ParseError(`Invalid XLSX: missing workbook at ${workbookPath}`)
   }
-  const workbookXml = decodeUtf8(await zip.extract(workbookPath));
-  const { sheets: sheetInfos, dateSystem } = parseWorkbookXml(workbookXml, options);
+  const workbookXml = decodeUtf8(await zip.extract(workbookPath))
+  const { sheets: sheetInfos, dateSystem } = parseWorkbookXml(workbookXml, options)
 
   // 6. Parse shared strings (small, needed for cell resolution)
-  let sharedStrings: SharedString[] = [];
-  const ssRel = workbookRels.find((r) => r.type === REL_SHARED_STRINGS);
+  let sharedStrings: SharedString[] = []
+  const ssRel = workbookRels.find((r) => r.type === REL_SHARED_STRINGS)
   if (ssRel) {
-    const ssPath = resolvePath(workbookDir, ssRel.target);
+    const ssPath = resolvePath(workbookDir, ssRel.target)
     if (zip.has(ssPath)) {
-      const ssXml = decodeUtf8(await zip.extract(ssPath));
-      sharedStrings = parseSharedStrings(ssXml);
+      const ssXml = decodeUtf8(await zip.extract(ssPath))
+      sharedStrings = parseSharedStrings(ssXml)
     }
   }
 
   // 7. Parse styles (needed for date detection)
-  let parsedStyles: ParsedStyles | null = null;
-  const stylesRel = workbookRels.find((r) => r.type === REL_STYLES);
+  let parsedStyles: ParsedStyles | null = null
+  const stylesRel = workbookRels.find((r) => r.type === REL_STYLES)
   if (stylesRel) {
-    const stylesPath = resolvePath(workbookDir, stylesRel.target);
+    const stylesPath = resolvePath(workbookDir, stylesRel.target)
     if (zip.has(stylesPath)) {
-      const stylesXml = decodeUtf8(await zip.extract(stylesPath));
-      parsedStyles = parseStyles(stylesXml);
+      const stylesXml = decodeUtf8(await zip.extract(stylesPath))
+      parsedStyles = parseStyles(stylesXml)
     }
   }
 
   // 8. Build rId → worksheet path map
-  const sheetRelMap = new Map<string, string>();
+  const sheetRelMap = new Map<string, string>()
   for (const rel of workbookRels) {
     if (rel.type === REL_WORKSHEET) {
-      sheetRelMap.set(rel.id, resolvePath(workbookDir, rel.target));
+      sheetRelMap.set(rel.id, resolvePath(workbookDir, rel.target))
     }
   }
 
   // 9. Resolve the target sheet
-  const targetSheet = resolveTargetSheet(sheetInfos, options?.sheet);
+  const targetSheet = resolveTargetSheet(sheetInfos, options?.sheet)
   if (!targetSheet) {
-    return; // No matching sheet — yield nothing
+    return // No matching sheet — yield nothing
   }
 
-  const wsPath = sheetRelMap.get(targetSheet.rId);
+  const wsPath = sheetRelMap.get(targetSheet.rId)
   if (!wsPath || !zip.has(wsPath)) {
-    throw new ParseError(`Invalid XLSX: missing worksheet file for sheet "${targetSheet.name}"`);
+    throw new ParseError(`Invalid XLSX: missing worksheet file for sheet "${targetSheet.name}"`)
   }
 
   // 10. Build optional row/cell filters from ReadOptions.
@@ -709,19 +709,19 @@ export async function* streamXlsxRows(
   // both rows (skip outside) and cells (mask outside columns), maxRows
   // caps the number of yielded rows. Both stop pulling from the worksheet
   // stream as soon as no more rows can be emitted.
-  let rangeFilter: RangeFilter | undefined;
+  let rangeFilter: RangeFilter | undefined
   if (options?.range) {
-    rangeFilter = parseRangeFilter(options.range);
+    rangeFilter = parseRangeFilter(options.range)
   }
   const maxRowsLimit =
-    typeof options?.maxRows === "number" && options.maxRows > 0 ? options.maxRows : 0;
+    typeof options?.maxRows === "number" && options.maxRows > 0 ? options.maxRows : 0
 
   // 11. Stream worksheet rows
   // Use streaming decompression: pipe ZIP entry through DecompressionStream
   // directly into the SAX parser, yielding rows as they complete.
-  const wsStream = zip.extractStream(wsPath);
+  const wsStream = zip.extractStream(wsPath)
   yield* parseWorksheetRowsStreaming(wsStream, sharedStrings, parsedStyles, dateSystem, {
     range: rangeFilter,
     maxRows: maxRowsLimit > 0 ? maxRowsLimit : undefined,
-  });
+  })
 }

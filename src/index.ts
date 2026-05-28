@@ -1,36 +1,33 @@
 // ── High-Level API ──────────────────────────────────────────────────
-export { read, write, readObjects, writeObjects } from "./defter";
-export type { WriteObjectsTableOption } from "./defter";
+export { read, write, readObjects, writeObjects } from "./defter"
+export type { WriteObjectsTableOption } from "./defter"
 
 // ── XLSX ────────────────────────────────────────────────────────────
-export { readXlsx } from "./xlsx/reader";
-export { writeXlsx } from "./xlsx/writer";
-export { openXlsx, saveXlsx } from "./xlsx/roundtrip";
-export type { RoundtripWorkbook } from "./xlsx/roundtrip";
-export { hashSheetPassword } from "./xlsx/password";
-export { calculateColumnWidth, measureValueWidth, calculateRowHeight } from "./xlsx/auto-size";
-export { parseThemeColors, resolveThemeColor } from "./xlsx/theme";
-export { streamXlsxRows } from "./xlsx/stream-reader";
-export type { StreamRow } from "./xlsx/stream-reader";
-export { XlsxStreamWriter } from "./xlsx/stream-writer";
-export type { StreamWriterOptions } from "./xlsx/stream-writer";
-export { readXlsxObjects, writeXlsxObjects } from "./xlsx/objects";
+export { readXlsx } from "./xlsx/reader"
+export { writeXlsx } from "./xlsx/writer"
+export { link } from "./xlsx/hyperlink"
+export { openXlsx, saveXlsx } from "./xlsx/roundtrip"
+export type { RoundtripWorkbook } from "./xlsx/roundtrip"
+export { hashSheetPassword } from "./xlsx/password"
+export { calculateColumnWidth, measureValueWidth, calculateRowHeight } from "./xlsx/auto-size"
+export { parseThemeColors, resolveThemeColor } from "./xlsx/theme"
+export { streamXlsxRows } from "./xlsx/stream-reader"
+export type { StreamRow } from "./xlsx/stream-reader"
+export { XlsxStreamWriter } from "./xlsx/stream-writer"
+export type { StreamWriterOptions } from "./xlsx/stream-writer"
+export { readXlsxObjects, writeXlsxObjects } from "./xlsx/objects"
 export type {
   XlsxObjectsReadOptions,
   XlsxObjectsResult,
   XlsxObjectsWriteOptions,
-} from "./xlsx/objects";
+} from "./xlsx/objects"
 
 // ── ODS ────────────────────────────────────────────────────────────
-export { readOds } from "./ods/reader";
-export { writeOds } from "./ods/writer";
-export { streamOdsRows } from "./ods/stream";
-export { readOdsObjects, writeOdsObjects } from "./ods/objects";
-export type {
-  OdsObjectsReadOptions,
-  OdsObjectsResult,
-  OdsObjectsWriteOptions,
-} from "./ods/objects";
+export { readOds } from "./ods/reader"
+export { writeOds } from "./ods/writer"
+export { streamOdsRows } from "./ods/stream"
+export { readOdsObjects, writeOdsObjects } from "./ods/objects"
+export type { OdsObjectsReadOptions, OdsObjectsResult, OdsObjectsWriteOptions } from "./ods/objects"
 
 // ── CSV ────────────────────────────────────────────────────────────
 export {
@@ -42,8 +39,8 @@ export {
   writeCsvObjects,
   formatCsvValue,
   fetchCsv,
-} from "./csv/index";
-export { streamCsvRows, CsvStreamWriter } from "./csv/stream";
+} from "./csv/index"
+export { streamCsvRows, CsvStreamWriter } from "./csv/stream"
 
 // ── JSON ───────────────────────────────────────────────────────────
 export {
@@ -55,7 +52,7 @@ export {
   workbookToJson,
   NdjsonStreamWriter,
   readNdjsonStream,
-} from "./json";
+} from "./json"
 export type {
   JsonReadOptions,
   JsonReadResult,
@@ -64,44 +61,44 @@ export type {
   WorkbookToJsonOptions,
   NdjsonStreamReadOptions,
   FlattenOptions,
-} from "./json";
+} from "./json"
 
 // ── XML ────────────────────────────────────────────────────────────
-export { readXml, writeXml } from "./xml";
-export type { XmlReadOptions, XmlReadResult, XmlWriteOptions } from "./xml";
+export { readXml, writeXml } from "./xml"
+export type { XmlReadOptions, XmlReadResult, XmlWriteOptions } from "./xml"
 
 // ── Schema Validation ──────────────────────────────────────────────
-export { validateWithSchema } from "./_schema";
+export { validateWithSchema } from "./_schema"
 
 // ── Threaded Comments (Excel 365+) ─────────────────────────────────
-export { parsePersons, parseThreadedComments } from "./xlsx/threaded-comments-reader";
-export type { ThreadedComment, ThreadedCommentMention, ThreadedCommentPerson } from "./_types";
+export { parsePersons, parseThreadedComments } from "./xlsx/threaded-comments-reader"
+export type { ThreadedComment, ThreadedCommentMention, ThreadedCommentPerson } from "./_types"
 
 // ── Accessibility ──────────────────────────────────────────────────
-export * as a11y from "./a11y";
-export type { A11yIssue, A11ySeverity, A11yCode, A11yLocation, SheetA11y } from "./_types";
+export * as a11y from "./a11y"
+export type { A11yIssue, A11ySeverity, A11yCode, A11yLocation, SheetA11y } from "./_types"
 
 // ── External Workbook Links ────────────────────────────────────────
-export { parseExternalLink } from "./xlsx/external-link-reader";
+export { parseExternalLink } from "./xlsx/external-link-reader"
 export type {
   ExternalLink,
   ExternalCellType,
   ExternalCachedCell,
   ExternalSheetData,
   ExternalDefinedName,
-} from "./_types";
+} from "./_types"
 
 // ── Cell-Embedded Images (WPS DISPIMG) ────────────────────────────
-export { parseCellImages, assembleCellImages, REL_CELL_IMAGES } from "./xlsx/cell-images-reader";
-export type { ParsedCellImageRef } from "./xlsx/cell-images-reader";
-export type { CellImage } from "./_types";
+export { parseCellImages, assembleCellImages, REL_CELL_IMAGES } from "./xlsx/cell-images-reader"
+export type { ParsedCellImageRef } from "./xlsx/cell-images-reader"
+export type { CellImage } from "./_types"
 
 // ── Pivot Tables ───────────────────────────────────────────────────
 export {
   parsePivotTable,
   parsePivotCacheDefinition,
   attachPivotCacheFields,
-} from "./xlsx/pivot-reader";
+} from "./xlsx/pivot-reader"
 export type {
   PivotTable,
   PivotCache,
@@ -110,7 +107,7 @@ export type {
   PivotDataFieldFunction,
   WritePivotTable,
   WritePivotDataField,
-} from "./_types";
+} from "./_types"
 
 // ── Slicers & Timelines ────────────────────────────────────────────
 export {
@@ -118,7 +115,7 @@ export {
   parseSlicerCache,
   parseTimelines,
   parseTimelineCache,
-} from "./xlsx/slicer-reader";
+} from "./xlsx/slicer-reader"
 export type {
   Slicer,
   SlicerCache,
@@ -126,14 +123,14 @@ export type {
   SlicerCacheTableSource,
   Timeline,
   TimelineCache,
-} from "./_types";
+} from "./_types"
 
 // ── Charts ─────────────────────────────────────────────────────────
-export { parseChart } from "./xlsx/chart-reader";
-export { cloneChart, chartKindToWriteKind } from "./xlsx/chart-clone";
-export type { CloneChartOptions, CloneChartSeriesOverride } from "./xlsx/chart-clone";
-export { addChart, getCharts } from "./xlsx/chart-helpers";
-export type { ChartLocation } from "./xlsx/chart-helpers";
+export { parseChart } from "./xlsx/chart-reader"
+export { cloneChart, chartKindToWriteKind } from "./xlsx/chart-clone"
+export type { CloneChartOptions, CloneChartSeriesOverride } from "./xlsx/chart-clone"
+export { addChart, getCharts } from "./xlsx/chart-helpers"
+export type { ChartLocation } from "./xlsx/chart-helpers"
 export type {
   Chart,
   ChartAnchor,
@@ -159,7 +156,7 @@ export type {
   ChartProtection,
   ChartSeriesInfo,
   ChartView3D,
-} from "./_types";
+} from "./_types"
 
 // ── Date Utilities ─────────────────────────────────────────────────
 export {
@@ -170,17 +167,17 @@ export {
   parseDate,
   serialToTime,
   timeToSerial,
-} from "./_date";
+} from "./_date"
 
 // ── Number Format ─────────────────────────────────────────────────
-export { formatValue } from "./_format";
-export type { FormatOptions, LocaleFormat } from "./_format";
+export { formatValue } from "./_format"
+export type { FormatOptions, LocaleFormat } from "./_format"
 
 // ── Builder Pattern ──────────────────────────────────────────────
-export { WorkbookBuilder, SheetBuilder } from "./builder";
+export { WorkbookBuilder, SheetBuilder } from "./builder"
 
 // ── Template Engine ──────────────────────────────────────────────
-export { fillTemplate } from "./template";
+export { fillTemplate } from "./template"
 
 // ── Sheet Operations ──────────────────────────────────────────────
 export {
@@ -200,10 +197,10 @@ export {
   findCells,
   replaceCells,
   sortRows,
-} from "./sheet-ops";
+} from "./sheet-ops"
 
 // ── Web Worker Helpers ───────────────────────────────────────────
-export { serializeWorkbook, deserializeWorkbook, WORKER_SAFE_FUNCTIONS } from "./worker";
+export { serializeWorkbook, deserializeWorkbook, WORKER_SAFE_FUNCTIONS } from "./worker"
 export type {
   SerializedWorkbook,
   SerializedSheet,
@@ -211,7 +208,7 @@ export type {
   SerializedCellValue,
   SerializedSheetImage,
   SerializedWorkbookProperties,
-} from "./worker";
+} from "./worker"
 
 // ── Cell Utilities ─────────────────────────────────────────────────
 export {
@@ -224,18 +221,18 @@ export {
   isInRange,
   r1c1ToA1,
   a1ToR1C1,
-} from "./cell-utils";
+} from "./cell-utils"
 
 // ── Sheet Utilities ──────────────────────────────────────────────
-export { sheetToObjects, sheetToArrays } from "./sheet-utils";
+export { sheetToObjects, sheetToArrays } from "./sheet-utils"
 
 // ── Export (HTML / Markdown / JSON / TSV) ────────────────────────────
-export { toHtml, toMarkdown, toJson, fromHtml } from "./export/index";
-export type { HtmlExportOptions, MarkdownExportOptions, JsonExportOptions } from "./export/index";
-export { writeTsv, writeTsvObjects } from "./export/tsv";
+export { toHtml, toMarkdown, toJson, fromHtml } from "./export/index"
+export type { HtmlExportOptions, MarkdownExportOptions, JsonExportOptions } from "./export/index"
+export { writeTsv, writeTsvObjects } from "./export/tsv"
 
 // ── Image Utilities ──────────────────────────────────────────────
-export { imageFromBase64 } from "./image";
+export { imageFromBase64 } from "./image"
 
 // ── Errors ─────────────────────────────────────────────────────────
 export {
@@ -246,7 +243,7 @@ export {
   ValidationError,
   UnsupportedFormatError,
   EncryptedFileError,
-} from "./errors";
+} from "./errors"
 
 // ── Types ──────────────────────────────────────────────────────────
 export type {
@@ -256,6 +253,7 @@ export type {
   Cell,
   RichTextRun,
   Hyperlink,
+  HyperlinkValue,
   CellComment,
   // Style
   CellStyle,
@@ -313,4 +311,4 @@ export type {
   SchemaField,
   SchemaFieldType,
   ValidationError as ValidationErrorType,
-} from "./_types";
+} from "./_types"

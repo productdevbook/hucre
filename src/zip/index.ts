@@ -1,2 +1,2 @@
-export { ZipReader } from "./reader";
-export { ZipWriter } from "./writer";
+export { ZipReader } from "./reader"
+export { ZipWriter } from "./writer"

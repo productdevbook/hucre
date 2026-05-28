@@ -1,2 +1,2 @@
-export { readOds } from "./ods/reader";
-export { writeOds } from "./ods/writer";
+export { readOds } from "./ods/reader"
+export { writeOds } from "./ods/writer"
