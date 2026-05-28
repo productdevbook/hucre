@@ -95,8 +95,8 @@ function buildXls(): Uint8Array {
     concat([
       bof(0x0005),
       record(SID.DATEMODE, u16(0)),
-      record(SID.XF, [...u16(0), ...u16(0), ...new Array(16).fill(0)]), // general
-      record(SID.XF, [...u16(0), ...u16(14), ...new Array(16).fill(0)]), // date (builtin 14)
+      record(SID.XF, [...u16(0), ...u16(0), ...Array.from({ length: 16 }, () => 0)]), // general
+      record(SID.XF, [...u16(0), ...u16(14), ...Array.from({ length: 16 }, () => 0)]), // date (builtin 14)
       sstRecord(strings),
       record(SID.BOUNDSHEET, [...u32(sheetPos), 0, 0, ...shortStr("Sheet1")]),
       eof(),
