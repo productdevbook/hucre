@@ -25,7 +25,6 @@ import type {
   ChartBorderDash,
   ChartColor,
   ChartDataLabels,
-  ChartDataLabelsInfo,
   ChartDataPoint,
   ChartDataTable,
   ChartDisplayBlanksAs,
@@ -40,7 +39,6 @@ import type {
   ChartProtection,
   ChartScatterStyle,
   ChartSeries,
-  ChartSeriesInfo,
   ChartShape3D,
   ChartTrendline,
   ChartView3D,
@@ -48,9 +46,6 @@ import type {
   WriteChartKind,
 } from "../_types"
 import {
-  clampStrokeWidthPt as normalizeBorderWidthPt,
-  normalizeBorderDash,
-  normalizeRgbHex,
   resolveBorderDash,
   resolveBorderWidthPt,
   resolveLineCap,
@@ -62,16 +57,7 @@ import {
   resolveSideWallThickness,
   resolveView3D,
 } from "./chart/walls"
-import { normalizeLayoutCoordinate } from "./chart/layout"
 import {
-  normalizeTitleBold,
-  normalizeTitleColor,
-  normalizeTitleFontFamily,
-  normalizeTitleFontSize,
-  normalizeTitleItalic,
-  normalizeTitleRotation,
-  normalizeTitleStrike,
-  normalizeTitleUnderline,
   resolveCloneTitleBold,
   resolveCloneTitleBorderColor,
   resolveCloneTitleBorderWidth,
@@ -87,13 +73,6 @@ import {
   resolveCloneTitleUnderline,
 } from "./chart/title"
 import {
-  normalizeLegendBold,
-  normalizeLegendBorderWidth,
-  normalizeLegendFontFamily,
-  normalizeLegendItalic,
-  normalizeLegendLayout,
-  normalizeLegendStrikethrough,
-  normalizeLegendUnderline,
   resolveCloneLegendBold,
   resolveCloneLegendBorderColor,
   resolveCloneLegendBorderWidth,
@@ -108,18 +87,7 @@ import {
   resolveCloneLegendStrikethrough,
   resolveCloneLegendUnderline,
 } from "./chart/legend"
-import {
-  buildSeriesFromSource,
-  cloneMarker,
-  cloneStroke,
-  resolveExplosion,
-  resolveInvertIfNegative,
-  resolveMarker,
-  resolveShowLineMarkers,
-  resolveSmooth,
-  resolveStroke,
-} from "./chart/series"
-import { applyOverride } from "./chart/util"
+import { buildSeriesFromSource, resolveShowLineMarkers } from "./chart/series"
 import { resolveAxes, resolveCloneAutoTitleDeleted } from "./chart/axis"
 import {
   resolveCloneDropLines,
@@ -135,7 +103,7 @@ import {
   resolveCloneVaryColors,
 } from "./chart/plotArea"
 import { resolveCloneDataTable } from "./chart/dataTable"
-import { resolveChartDataLabels, resolveSeriesDataLabels } from "./chart/dataLabels"
+import { resolveChartDataLabels } from "./chart/dataLabels"
 import {
   resolveCloneChartSpaceBorderColor,
   resolveCloneChartSpaceFillColor,

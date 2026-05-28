@@ -19,7 +19,6 @@ import type {
   Chart,
   ChartColor,
   ChartDataLabels,
-  ChartDataLabelsInfo,
   ChartDataPoint,
   ChartErrorBars,
   ChartKind,
@@ -58,7 +57,6 @@ import {
   elementText,
   findChild,
   formulaText,
-  parseBoolAttr,
   readBoolAttr,
 } from "./util"
 import { buildSeriesDataLabels, parseDataLabels, resolveSeriesDataLabels } from "./dataLabels"

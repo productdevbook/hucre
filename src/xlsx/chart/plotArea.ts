@@ -19,8 +19,6 @@ import type {
   ChartColor,
   ChartKind,
   ChartLineAreaGrouping,
-  ChartLineCap,
-  ChartLineCompound,
   ChartManualLayout,
   ChartScatterStyle,
   SheetChart,
@@ -32,18 +30,11 @@ import {
   buildColorElement,
   clampStrokeWidthPt,
   normalizeBorderDash,
-  normalizeChartColor,
   normalizeLineCap,
   normalizeLineCompound,
-  normalizeRgbHex,
-  parseBorderCapFromSpPr,
-  parseBorderCompoundFromSpPr,
-  parseBorderDashFromSpPr,
   parseBorderWidthFromSpPr,
   parseSpPrBorderColor,
   parseSpPrFill,
-  resolveLineCap,
-  resolveLineCompound,
 } from "./shape"
 import {
   type ResolvedManualLayout,
@@ -52,7 +43,7 @@ import {
   normalizeManualLayout,
   parseManualLayout,
 } from "./layout"
-import { childElements, findChild, parseBoolAttr, parseNumericChildVal, readBoolAttr } from "./util"
+import { childElements, findChild } from "./util"
 import {
   AXIS_ID_CAT,
   AXIS_ID_VAL,

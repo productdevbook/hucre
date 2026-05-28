@@ -40,13 +40,7 @@ import type {
 import type { CloneChartOptions } from "../chart-clone"
 import type { XmlElement } from "../../xml/parser"
 import {
-  EMU_PER_PT,
   buildColorElement,
-  clampStrokeWidthPt,
-  normalizeBorderDash,
-  normalizeChartColor,
-  normalizeLineCap,
-  normalizeLineCompound,
   normalizeRgbHex,
   parseBorderCapFromSpPr,
   parseBorderCompoundFromSpPr,
@@ -57,16 +51,8 @@ import {
   parseSpPrFill,
   resolveBorderDash,
   resolveBorderWidthPt,
-  resolveChartColor,
-  resolveLineCap,
-  resolveLineCompound,
 } from "./shape"
-import {
-  type ResolvedManualLayout,
-  buildManualLayout,
-  normalizeManualLayout,
-  parseManualLayout,
-} from "./layout"
+import { type ResolvedManualLayout, buildManualLayout, parseManualLayout } from "./layout"
 import {
   applyOverride,
   childElements,
@@ -2796,30 +2782,6 @@ type ResolvedAxisCrosses =
 
 /** Recognized values of `<c:crosses>` per the OOXML `ST_Crosses` enum. */
 const VALID_AXIS_CROSSES: ReadonlySet<ChartAxisCrosses> = new Set(["autoZero", "min", "max"])
-
-/** Recognized values of `<c:builtInUnit>` per the OOXML `ST_BuiltInUnit` enum. */
-// (Reader-side `VALID_DISP_UNITS` already declared above; the writer
-// side carries its own copy under a distinct name to keep the two
-// reader / writer normalize paths independent.)
-const VALID_DISP_UNITS_WRITER: ReadonlySet<ChartAxisDispUnit> = new Set([
-  "hundreds",
-  "thousands",
-  "tenThousands",
-  "hundredThousands",
-  "millions",
-  "tenMillions",
-  "hundredMillions",
-  "billions",
-  "trillions",
-])
-
-/** Recognized values of `<c:crossBetween>` per the OOXML `ST_CrossBetween` enum. */
-// (Reader-side `VALID_CROSS_BETWEEN` already declared above; the
-// writer side carries its own copy under a distinct name.)
-const VALID_CROSS_BETWEEN_WRITER: ReadonlySet<ChartAxisCrossBetween> = new Set([
-  "between",
-  "midCat",
-])
 
 export const AXIS_ID_CAT = 111111111
 export const AXIS_ID_VAL = 222222222

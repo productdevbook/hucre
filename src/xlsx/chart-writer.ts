@@ -6,46 +6,15 @@
 // Chapter 21). Each chart is a self-contained <c:chartSpace> document
 // referenced from a drawing part via a `chart` relationship.
 
-import type {
-  ChartAxisCrossBetween,
-  ChartAxisCrosses,
-  ChartAxisDispUnit,
-  ChartAxisDispUnits,
-  ChartAxisGridlines,
-  ChartAxisLabelAlign,
-  ChartAxisNumberFormat,
-  ChartAxisScale,
-  ChartAxisTickLabelPosition,
-  ChartAxisTickMark,
-  ChartBorderDash,
-  ChartColor,
-  ChartDataLabels,
-  ChartDisplayBlanksAs,
-  ChartLineCap,
-  ChartLineCompound,
-  ChartLineDashStyle,
-  ChartLineStroke,
-  ChartManualLayout,
-  ChartMarker,
-  ChartMarkerSymbol,
-  ChartProtection,
-  ChartScatterStyle,
-  ChartSeries,
-  ChartView3D,
-  SheetChart,
-  WriteChartKind,
-} from "../_types"
-import { xmlDocument, xmlElement, xmlEscape, xmlSelfClose } from "../xml/writer"
+import type { ChartColor, ChartDisplayBlanksAs, SheetChart, WriteChartKind } from "../_types"
+import { xmlDocument, xmlElement, xmlSelfClose } from "../xml/writer"
 import {
   EMU_PER_PT,
-  VALID_DASH_STYLES,
   buildColorElement,
   clampStrokeWidthPt,
   normalizeBorderDash,
-  normalizeChartColor,
   normalizeLineCap,
   normalizeLineCompound,
-  normalizeRgbHex as normalizeRgbHexShared,
 } from "./chart/shape"
 import {
   buildBackWallThickness,
@@ -53,22 +22,8 @@ import {
   buildSideWallThickness,
   buildView3D,
 } from "./chart/walls"
-import { type ResolvedManualLayout, buildManualLayout, normalizeManualLayout } from "./chart/layout"
 import {
-  FONT_SIZE_MAX_PT,
-  FONT_SIZE_MIN_PT,
-  FONT_SZ_PER_POINT,
-  ROTATION_MAX_DEG,
-  ROTATION_MIN_DEG,
-  TXPR_ROT_PER_DEGREE,
-} from "./chart/text"
-import {
-  type LegendPos,
-  type ResolvedLegendEntry,
   buildLegend,
-  buildLegendSpPr,
-  buildLegendTxPr,
-  normalizeLegendFontFamily,
   resolveLegendBold,
   resolveLegendBorderColor,
   resolveLegendBorderDash,
@@ -87,15 +42,7 @@ import {
 } from "./chart/legend"
 import {
   buildTitle,
-  buildTitleSpPr,
-  normalizeTitleBold,
   normalizeTitleColor,
-  normalizeTitleFontFamily,
-  normalizeTitleFontSize,
-  normalizeTitleItalic,
-  normalizeTitleRotation,
-  normalizeTitleStrike,
-  normalizeTitleUnderline,
   resolveTitleBold,
   resolveTitleBorderColor,
   resolveTitleBorderCap,
@@ -113,48 +60,7 @@ import {
   resolveTitleStrike,
   resolveTitleUnderline,
 } from "./chart/title"
-import { buildDataTable, resolveDataTable } from "./chart/dataTable"
-import { buildChartLevelDataLabels, buildSeriesDataLabels } from "./chart/dataLabels"
-import { buildSeries } from "./chart/series"
-import {
-  AXIS_ID_CAT,
-  AXIS_ID_VAL,
-  AXIS_ID_VAL_X,
-  AXIS_ID_VAL_Y,
-  type AxisRenderOptions,
-  buildBarAxes,
-  buildScatterAxes,
-  normalizeAxisCrossBetween,
-  normalizeAxisCrosses,
-  normalizeAxisDispUnits,
-  normalizeAxisGridlines,
-  normalizeAxisHidden,
-  normalizeAxisLabelBold,
-  normalizeAxisLabelColor,
-  normalizeAxisLabelFontFamily,
-  normalizeAxisLabelFontSize,
-  normalizeAxisLabelItalic,
-  normalizeAxisLabelRotation,
-  normalizeAxisLabelStrike,
-  normalizeAxisLabelUnderline,
-  normalizeAxisLblAlgn,
-  normalizeAxisLblOffset,
-  normalizeAxisNumberFormat,
-  normalizeAxisScale,
-  normalizeAxisSkip,
-  normalizeAxisTitle,
-  normalizeAxisTitleBold,
-  normalizeAxisTitleColor,
-  normalizeAxisTitleFontFamily,
-  normalizeAxisTitleFontSize,
-  normalizeAxisTitleItalic,
-  normalizeAxisTitleRotation,
-  normalizeAxisTitleStrike,
-  normalizeAxisTitleUnderline,
-  normalizeTickLblPos,
-  normalizeTickMark,
-  resolveAutoTitleDeleted,
-} from "./chart/axis"
+import { resolveAutoTitleDeleted } from "./chart/axis"
 import { buildPlotArea } from "./chart/plotArea"
 
 // ── Namespaces ───────────────────────────────────────────────────────
@@ -422,51 +328,6 @@ export function writeChart(chart: SheetChart, sheetName: string): ChartWriteResu
 
   return { chartXml, chartRels }
 }
-
-// ── Title ────────────────────────────────────────────────────────────
-
-/**
- * OOXML's `<a:bodyPr rot="N"/>` attribute is in 60000ths of a degree —
- * the writer holds `titleRotation` in whole degrees and converts at
- * emit time. Excel's UI exposes the `-90..90` band; out-of-band values
- * clamp to the nearest endpoint so a corrupt template cannot leak
- * through to the writer either.
- *
- * Aliased onto the shared {@link TXPR_ROT_PER_DEGREE} /
- * {@link ROTATION_MIN_DEG} / {@link ROTATION_MAX_DEG} constants in
- * `chart/text` so every typography host (chart-title, axis-title,
- * tick-label, legend, data-label, data-table) shares the same conversion
- * factor.
- */
-const TITLE_ROT_PER_DEGREE = TXPR_ROT_PER_DEGREE
-const TITLE_ROTATION_MIN_DEG = ROTATION_MIN_DEG
-const TITLE_ROTATION_MAX_DEG = ROTATION_MAX_DEG
-
-/**
- * OOXML's `<a:defRPr sz="N"/>` / `<a:rPr sz="N"/>` attribute is in
- * 100ths of a point — the writer holds {@link SheetChart.titleFontSize}
- * in points and converts at emit time. The OOXML `ST_TextFontSize`
- * schema restricts `sz` to the inclusive `100..400000` band; the
- * writer's clamp uses the same range converted to points (`1..400`pt),
- * so any out-of-range value drops at emit time rather than surface a
- * token Excel would reject.
- *
- * Aliased onto the shared {@link FONT_SZ_PER_POINT} /
- * {@link FONT_SIZE_MIN_PT} / {@link FONT_SIZE_MAX_PT} constants in
- * `chart/text` so every typography host shares the same range.
- */
-const TITLE_FONT_SZ_PER_POINT = FONT_SZ_PER_POINT
-const TITLE_FONT_SIZE_MIN_PT = FONT_SIZE_MIN_PT
-const TITLE_FONT_SIZE_MAX_PT = FONT_SIZE_MAX_PT
-
-/**
- * Application-default `sz` value for the chart title's `<a:defRPr>` /
- * `<a:rPr>` slots — Excel renders the title at 14pt (`sz="1400"`)
- * unless the user pins a custom size. Absence of
- * {@link SheetChart.titleFontSize} resolves to this default so a fresh
- * chart matches Excel's reference serialization byte-for-byte.
- */
-const TITLE_DEFAULT_FONT_SIZE_SZ = 1400
 
 // ── Plot Area ────────────────────────────────────────────────────────
 
@@ -849,30 +710,6 @@ function resolveLang(chart: SheetChart): string | undefined {
   if (typeof raw !== "string") return undefined
   if (!/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(raw)) return undefined
   return raw
-}
-
-// ── Reference qualification ──────────────────────────────────────────
-
-/**
- * Ensure a range reference is sheet-qualified. Excel chart `<c:f>`
- * elements accept either `Sheet1!$A$2:$A$10` or the unquoted form
- * `Sheet1!A2:A10`; the input is preserved when a sheet is already
- * present. Bare ranges like `B2:B10` are auto-qualified with the
- * owning sheet's name.
- */
-function qualifyRef(ref: string, sheetName: string): string {
-  if (ref.includes("!")) return ref
-  return `${quoteSheetName(sheetName)}!${ref}`
-}
-
-/**
- * Quote a sheet name when it contains characters Excel considers
- * unsafe in a 3D reference (whitespace, punctuation, etc.). Single
- * quotes inside the name are doubled per the OOXML spec.
- */
-function quoteSheetName(name: string): string {
-  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return name
-  return `'${name.replace(/'/g, "''")}'`
 }
 
 // ── Helpers exposed for the drawing layer ────────────────────────────

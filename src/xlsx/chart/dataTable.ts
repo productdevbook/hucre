@@ -25,7 +25,6 @@ import {
   buildColorElement,
   clampStrokeWidthPt,
   normalizeBorderDash,
-  normalizeChartColor,
   normalizeLineCap,
   normalizeLineCompound,
   normalizeRgbHex,
@@ -36,10 +35,8 @@ import {
   parseSchemeClr,
   parseSpPrBorderColor,
   parseSpPrFill,
-  resolveLineCap,
-  resolveLineCompound,
 } from "./shape"
-import { findChild, parseBoolAttr } from "./util"
+import { findChild } from "./util"
 import { FONT_SIZE_MAX_PT, FONT_SIZE_MIN_PT, FONT_SZ_PER_POINT } from "./text"
 import { normalizeTitleColor, normalizeTitleFontSize } from "./title"
 

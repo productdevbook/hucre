@@ -14,48 +14,19 @@
 
 import type {
   Chart,
-  ChartAxisCrossBetween,
-  ChartAxisCrosses,
-  ChartAxisDispUnit,
-  ChartAxisDispUnits,
-  ChartAxisGridlines,
-  ChartAxisInfo,
-  ChartAxisLabelAlign,
-  ChartAxisNumberFormat,
-  ChartAxisScale,
-  ChartAxisTickLabelPosition,
-  ChartAxisTickMark,
   ChartBarGrouping,
-  ChartBorderDash,
   ChartColor,
-  ChartDataLabelPosition,
   ChartDataLabelsInfo,
-  ChartDataTable,
   ChartDisplayBlanksAs,
   ChartKind,
-  ChartLegendEntry,
-  ChartLegendPosition,
   ChartLineAreaGrouping,
-  ChartLineCap,
-  ChartLineCompound,
-  ChartLineDashStyle,
-  ChartLineStroke,
-  ChartManualLayout,
-  ChartMarker,
-  ChartMarkerSymbol,
   ChartProtection,
   ChartScatterStyle,
   ChartSeriesInfo,
-  ChartView3D,
 } from "../_types"
 import { parseXml } from "../xml/parser"
 import type { XmlElement } from "../xml/parser"
 import {
-  EMU_PER_PT,
-  STROKE_WIDTH_MAX_PT,
-  STROKE_WIDTH_MIN_PT,
-  VALID_DASH_STYLES,
-  normalizeRgbHex,
   parseBorderCapFromSpPr,
   parseBorderCompoundFromSpPr,
   parseBorderDashFromSpPr,
@@ -63,7 +34,6 @@ import {
   parseSpPrBorderColor,
   parseSpPrFill,
 } from "./chart/shape"
-import { parseManualLayout } from "./chart/layout"
 import {
   parseBackWallThickness,
   parseFloorThickness,
@@ -111,7 +81,7 @@ import {
 import { parseDataTable } from "./chart/dataTable"
 import { parseDataLabels } from "./chart/dataLabels"
 import { parseSeries } from "./chart/series"
-import { parseAutoTitleDeleted, parseAxisInfo } from "./chart/axis"
+import { parseAutoTitleDeleted } from "./chart/axis"
 import {
   parseAxes,
   parseBarGrouping,
@@ -923,94 +893,6 @@ export function parseChart(xml: string): Chart | undefined {
   return out
 }
 
-// ── Axes ──────────────────────────────────────────────────────────
-
-/**
- * Pull a finite numeric `val=".."` attribute off a named child of
- * `parent`. Tolerates whitespace and trailing zeros; returns
- * `undefined` for missing children, missing attributes, and values
- * that fail `Number.isFinite`.
- */
-function parseNumericChildVal(parent: XmlElement, localName: string): number | undefined {
-  const child = findChild(parent, localName)
-  if (!child) return undefined
-  const raw = child.attrs.val
-  if (typeof raw !== "string") return undefined
-  const trimmed = raw.trim()
-  if (trimmed.length === 0) return undefined
-  const value = Number(trimmed)
-  return Number.isFinite(value) ? value : undefined
-}
-
-/** Coerce an XML boolean attribute (`"0"`, `"1"`, `"true"`, `"false"`). */
-function parseBoolAttr(value: unknown): boolean | undefined {
-  if (typeof value !== "string") return undefined
-  const v = value.trim().toLowerCase()
-  if (v === "1" || v === "true") return true
-  if (v === "0" || v === "false") return false
-  return undefined
-}
-
-// ── Series ────────────────────────────────────────────────────────
-
-// ── Marker ────────────────────────────────────────────────────────
-
-const VALID_MARKER_SYMBOLS: ReadonlySet<ChartMarkerSymbol> = new Set([
-  "none",
-  "auto",
-  "circle",
-  "square",
-  "diamond",
-  "triangle",
-  "x",
-  "star",
-  "dot",
-  "dash",
-  "plus",
-])
-
-// ── Data Labels ───────────────────────────────────────────────────
-
-/**
- * Read a boolean-style `val` attribute. Excel emits `"1"` / `"0"` but
- * the OOXML spec also blesses `"true"` / `"false"`. Returns `undefined`
- * when the attribute is missing.
- */
-function readBoolAttr(el: XmlElement): boolean | undefined {
-  const v = el.attrs.val
-  if (typeof v !== "string") return undefined
-  return v === "1" || v.toLowerCase() === "true"
-}
-
-/** Read the `<c:tx>` series-name element (literal or strRef cache). */
-
-/**
- * Walk `<c:val>` / `<c:cat>` / `<c:xVal>` / `<c:yVal>` to its inner
- * `<c:f>` formula text. Returns `undefined` for embedded `<c:numLit>`
- * literal data (no formula) or when the element is absent.
- */
-function formulaText(wrapper: XmlElement | undefined): string | undefined {
-  if (!wrapper) return undefined
-  const numRef = findChild(wrapper, "numRef") ?? findChild(wrapper, "strRef")
-  if (numRef) {
-    const f = findChild(numRef, "f")
-    if (f) {
-      const text = elementText(f).trim()
-      if (text.length > 0) return text
-    }
-  }
-  // Some writers put <c:f> directly under <c:strRef> (already handled
-  // above via numRef fallback) or under the wrapper itself.
-  const direct = findChild(wrapper, "f")
-  if (direct) {
-    const text = elementText(direct).trim()
-    if (text.length > 0) return text
-  }
-  return undefined
-}
-
-/** Pull the first `<a:srgbClr val="RRGGBB">` under `<c:spPr>`. */
-
 // ── Stroke ────────────────────────────────────────────────────────
 //
 // `STROKE_WIDTH_MIN_PT`, `STROKE_WIDTH_MAX_PT`, `EMU_PER_PT`,
@@ -1099,31 +981,6 @@ function parseChartSpaceBorderColor(chartSpace: XmlElement): ChartColor | undefi
 // live in `./chart/layout.ts`. Imported at the top of this module so
 // every per-host `parseXxxLayout` wrapper shares one accept-or-drop
 // grammar.
-
-/**
- * Conversion factor between OOXML's `rot` attribute (60000ths of a
- * degree, the integer Excel writes inside `<a:bodyPr rot="N"/>`) and
- * whole degrees. Excel's UI exposes the -90..90 degree band — the
- * reader clamps anything outside that band so a corrupt template
- * cannot surface a value the writer would never emit.
- */
-const TITLE_ROT_PER_DEGREE = 60000
-const TITLE_ROTATION_MIN_DEG = -90
-const TITLE_ROTATION_MAX_DEG = 90
-
-/**
- * Conversion factor between OOXML's `sz` attribute (100ths of a point,
- * the integer Excel writes inside `<a:defRPr sz="N"/>` /
- * `<a:rPr sz="N"/>`) and whole / half points. The OOXML
- * `ST_TextFontSize` schema restricts `sz` to the inclusive
- * `100..400000` band — the writer's clamp uses the same range
- * converted to points (`1..400`), so any out-of-range value collapses
- * to `undefined` here rather than surface a token Excel would never
- * emit.
- */
-const TITLE_FONT_SZ_PER_POINT = 100
-const TITLE_FONT_SIZE_MIN_PT = 1
-const TITLE_FONT_SIZE_MAX_PT = 400
 
 // ── Title Italic ─────────────────────────────────────────────────────
 
@@ -1473,38 +1330,7 @@ function parseProtectionFlag(protection: XmlElement, local: string): boolean | u
 
 // ── First Slice Angle ─────────────────────────────────────────────
 
-/**
- * Parse an OOXML boolean attribute. The spec allows `"1"` / `"0"` /
- * `"true"` / `"false"`.
- */
-function readBoolVal(raw: string | undefined): boolean | undefined {
-  if (raw === undefined) return undefined
-  if (raw === "1" || raw === "true") return true
-  if (raw === "0" || raw === "false") return false
-  return undefined
-}
-
 // ── Internals ─────────────────────────────────────────────────────
-
-function collectTextRuns(el: XmlElement, out: string[]): void {
-  for (const child of el.children) {
-    if (typeof child === "string") continue
-    if (child.local === "t") {
-      out.push(elementText(child))
-    } else {
-      collectTextRuns(child, out)
-    }
-  }
-}
-
-function elementText(el: XmlElement): string {
-  let buf = ""
-  for (const child of el.children) {
-    if (typeof child === "string") buf += child
-    else buf += elementText(child)
-  }
-  return buf
-}
 
 function findChild(el: XmlElement, localName: string): XmlElement | undefined {
   for (const c of el.children) {

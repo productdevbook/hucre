@@ -13,7 +13,7 @@
 // patterns remain orchestration-shape rather than per-host.
 
 import type { ChartColor, ChartDisplayBlanksAs, ChartProtection } from "../../_types"
-import { normalizeChartColor, normalizeRgbHex } from "./shape"
+import { normalizeChartColor } from "./shape"
 
 /**
  * Resolve a `dispBlanksAs` override.
