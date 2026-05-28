@@ -164,6 +164,25 @@ export interface Hyperlink {
   location?: string
 }
 
+/**
+ * A rich hyperlink value that can be placed inline in a {@link WriteSheet.data}
+ * row object, keyed by a column's `key`. The display text and link target live
+ * together, so a "Link" column needs no parallel `cells` coordinate map.
+ *
+ * @example
+ * ```ts
+ * data: [{ id: "abc", link: { text: "Open", hyperlink: "https://example.com/abc" } }]
+ * ```
+ */
+export interface HyperlinkValue {
+  /** Display text shown in the cell. */
+  text: string
+  /** Link destination — an external URL, or an internal ref prefixed with `#` (e.g. `"#Sheet2!A1"`). */
+  hyperlink: string
+  /** Optional hover tooltip. */
+  tooltip?: string
+}
+
 // ── Comment ────────────────────────────────────────────────────────
 
 export interface CellComment {
@@ -1329,8 +1348,11 @@ export interface WriteSheet {
   columns?: ColumnDef[]
   /** Raw row data (array of arrays) */
   rows?: CellValue[][]
-  /** Object data (array of objects — uses column keys) */
-  data?: Array<Record<string, CellValue>>
+  /**
+   * Object data (array of objects — uses column keys). A value may be a scalar
+   * {@link CellValue} or a rich {@link HyperlinkValue} for inline clickable links.
+   */
+  data?: Array<Record<string, CellValue | HyperlinkValue>>
   /** Detailed cell overrides (keyed by "row,col") */
   cells?: Map<string, Partial<Cell>>
   merges?: MergeRange[]

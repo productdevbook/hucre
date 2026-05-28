@@ -5,6 +5,7 @@ import { parseXml } from "../src/xml/parser"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { collectHyperlinks } from "../src/xlsx/worksheet-writer"
+import { link } from "../src/xlsx/hyperlink"
 import type { WriteSheet, Cell } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -759,5 +760,131 @@ describe("XLSX hyperlink round-trip", () => {
     const cell = sheet.cells!.get("0,0")
     expect(cell!.hyperlink!.target).toBe("https://example.com")
     expect(cell!.value).toBe("Visit us")
+  })
+})
+
+// ── Inline hyperlinks in data rows (issue #325) ──────────────────────
+
+describe("inline hyperlinks in data rows", () => {
+  const columns = [
+    { header: "Link", key: "link" },
+    { header: "ID", key: "id" },
+  ]
+
+  it("writes a rich hyperlink value from a data row", async () => {
+    const written = await writeXlsx({
+      sheets: [
+        {
+          name: "Summary",
+          columns,
+          data: [{ link: { text: "Open", hyperlink: "https://example.com/items/abc" }, id: "abc" }],
+        },
+      ],
+    })
+
+    const workbook = await readXlsx(written)
+    const sheet = workbook.sheets[0]
+
+    // Header is row 0, data starts at row 1; link column is col 0
+    const cell = sheet.cells!.get("1,0")
+    expect(cell!.value).toBe("Open")
+    expect(cell!.hyperlink!.target).toBe("https://example.com/items/abc")
+  })
+
+  it("the link() helper produces the same result as the raw object", async () => {
+    const written = await writeXlsx({
+      sheets: [
+        {
+          name: "Summary",
+          columns,
+          data: [{ link: link("Open", "https://example.com/items/abc"), id: "abc" }],
+        },
+      ],
+    })
+
+    const workbook = await readXlsx(written)
+    const cell = workbook.sheets[0].cells!.get("1,0")
+    expect(cell!.value).toBe("Open")
+    expect(cell!.hyperlink!.target).toBe("https://example.com/items/abc")
+  })
+
+  it("round-trips a tooltip", async () => {
+    const written = await writeXlsx({
+      sheets: [
+        {
+          name: "Summary",
+          columns,
+          data: [{ link: link("Open", "https://example.com", "Click to open"), id: "abc" }],
+        },
+      ],
+    })
+
+    const wsDoc = findChild(
+      await parseXmlFromZip(written, "xl/worksheets/sheet1.xml"),
+      "hyperlinks",
+    )
+    const hl = findChildren(wsDoc, "hyperlink")[0]
+    expect(hl.attrs["tooltip"]).toBe("Click to open")
+    expect(hl.attrs["display"]).toBe("Open")
+  })
+
+  it("treats a #-prefixed hyperlink as an internal location (no relationship)", async () => {
+    const written = await writeXlsx({
+      sheets: [
+        {
+          name: "Summary",
+          columns,
+          data: [{ link: link("Go to Sheet2", "#Sheet2!A1"), id: "abc" }],
+        },
+      ],
+    })
+
+    const hyperlinks = findChild(
+      await parseXmlFromZip(written, "xl/worksheets/sheet1.xml"),
+      "hyperlinks",
+    )
+    const hl = findChildren(hyperlinks, "hyperlink")[0]
+    expect(hl.attrs["location"]).toBe("Sheet2!A1")
+    expect(hl.attrs["r:id"]).toBeUndefined()
+    // No external relationship part should be created for an internal link
+    expect(zipHas(written, "xl/worksheets/_rels/sheet1.xml.rels")).toBe(false)
+  })
+
+  it("leaves scalar values in data untouched", async () => {
+    const written = await writeXlsx({
+      sheets: [
+        {
+          name: "Summary",
+          columns,
+          data: [{ link: "plain text", id: "abc" }],
+        },
+      ],
+    })
+
+    const sheet = (await readXlsx(written)).sheets[0]
+    // Header row 0, data row 1; no hyperlinks means no <hyperlinks> section
+    expect(sheet.rows[1][0]).toBe("plain text")
+    expect(zipHas(written, "xl/worksheets/_rels/sheet1.xml.rels")).toBe(false)
+  })
+
+  it("collects hyperlinks from both data rows and the cells map", async () => {
+    const cells = new Map<string, Partial<Cell>>()
+    // Override the ID column (col 1) of the data row with its own hyperlink
+    cells.set("1,1", { value: "abc", hyperlink: { target: "https://example.com/by-id" } })
+
+    const written = await writeXlsx({
+      sheets: [
+        {
+          name: "Summary",
+          columns,
+          data: [{ link: link("Open", "https://example.com/items/abc"), id: "abc" }],
+          cells,
+        },
+      ],
+    })
+
+    const sheet = (await readXlsx(written)).sheets[0]
+    expect(sheet.cells!.get("1,0")!.hyperlink!.target).toBe("https://example.com/items/abc")
+    expect(sheet.cells!.get("1,1")!.hyperlink!.target).toBe("https://example.com/by-id")
   })
 })

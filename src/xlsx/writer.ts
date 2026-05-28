@@ -18,6 +18,7 @@ import type { PivotCacheRef, PivotCacheRel } from "./workbook-writer"
 import { createStylesCollector } from "./styles-writer"
 import { createSharedStrings, writeSharedStringsXml, writeWorksheetXml } from "./worksheet-writer"
 import type { WorksheetResult } from "./worksheet-writer"
+import { unwrapCellValue } from "./hyperlink"
 import { writeDrawing } from "./drawing-writer"
 import type { DrawingResult } from "./drawing-writer"
 import { writeChart } from "./chart-writer"
@@ -572,7 +573,7 @@ function collectSourceRows(sheet: WriteSheet): CellValue[][] {
       const row: CellValue[] = sheet.columns.map((c) => {
         if (!c.key) return null
         const v = obj[c.key]
-        return v === undefined ? null : (v as CellValue)
+        return v === undefined ? null : unwrapCellValue(v)
       })
       out.push(row)
     }

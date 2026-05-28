@@ -12,6 +12,7 @@ import type {
   MergeRange,
 } from "../_types"
 import { ZipWriter } from "../zip/writer"
+import { unwrapCellValue } from "../xlsx/hyperlink"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
 
 const encoder = /* @__PURE__ */ new TextEncoder()
@@ -741,7 +742,7 @@ function writeContentXml(options: WriteOptions): string {
       }
 
       for (const item of sheet.data) {
-        const row = keys.map((k) => (k in item ? item[k] : null))
+        const row = keys.map((k) => (k in item ? unwrapCellValue(item[k]) : null))
         rows.push(row)
       }
     }

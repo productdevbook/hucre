@@ -1,5 +1,7 @@
 export { readXlsx } from "./xlsx/reader"
 export { writeXlsx } from "./xlsx/writer"
+export { link } from "./xlsx/hyperlink"
+export type { HyperlinkValue } from "./_types"
 export { openXlsx, saveXlsx } from "./xlsx/roundtrip"
 export type { RoundtripWorkbook } from "./xlsx/roundtrip"
 export { hashSheetPassword } from "./xlsx/password"

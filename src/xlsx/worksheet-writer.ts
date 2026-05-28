@@ -16,9 +16,12 @@ import type {
   FontStyle,
   Color,
   Sparkline,
+  Hyperlink,
+  HyperlinkValue,
 } from "../_types"
 import type { StylesCollector } from "./styles-writer"
 import { dateToSerial } from "../_date"
+import { isHyperlinkValue } from "./hyperlink"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
 import { calculateColumnWidth } from "./auto-width"
 import { hashSheetPassword } from "./password"
@@ -157,6 +160,19 @@ interface ResolvedCell {
   formulaRef?: string
   formulaDynamic?: boolean
   richText?: RichTextRun[]
+  hyperlink?: Hyperlink
+}
+
+// ── Rich data-row values ───────────────────────────────────────────
+
+/** Convert a {@link HyperlinkValue} to the internal {@link Hyperlink} shape. */
+function toHyperlink(hv: HyperlinkValue): Hyperlink {
+  const internal = hv.hyperlink.startsWith("#")
+  const h: Hyperlink = internal
+    ? { target: "", location: hv.hyperlink.slice(1), display: hv.text }
+    : { target: hv.hyperlink, display: hv.text }
+  if (hv.tooltip !== undefined) h.tooltip = hv.tooltip
+  return h
 }
 
 // ── Default date format ────────────────────────────────────────────
@@ -622,15 +638,17 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
       const row: Array<ResolvedCell | null> = []
       for (let c = 0; c < keys.length; c++) {
         const key = keys[c]
-        const value = key !== undefined ? (obj[key] ?? null) : null
+        const raw = key !== undefined ? (obj[key] ?? null) : null
         const col = sheet.columns[c]
-        row.push({
-          value,
+        const cell: ResolvedCell = {
+          value: isHyperlinkValue(raw) ? raw.text : raw,
           style: col.style,
           ...(col.numFmt && !col.style?.numFmt
             ? { style: { ...col.style, numFmt: col.numFmt } }
             : {}),
-        })
+        }
+        if (isHyperlinkValue(raw)) cell.hyperlink = toHyperlink(raw)
+        row.push(cell)
       }
       resolved.push(row)
     }
@@ -674,6 +692,7 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
         formulaRef: cellOverride.formulaRef ?? existing?.formulaRef,
         formulaDynamic: cellOverride.formulaDynamic ?? existing?.formulaDynamic,
         richText: cellOverride.richText ?? existing?.richText,
+        hyperlink: cellOverride.hyperlink ?? existing?.hyperlink,
       }
     }
   }
@@ -983,43 +1002,42 @@ export function collectHyperlinks(sheet: WriteSheet): {
   xml: string
   relationships: HyperlinkRelationship[]
 } {
-  if (!sheet.cells) {
-    return { xml: "", relationships: [] }
-  }
+  // Resolve the full grid so links from both inline `data` values and the
+  // `cells` override map are collected from a single source, in row-major order.
+  const resolved = resolveRows(sheet)
 
   const hyperlinkElements: string[] = []
   const relationships: HyperlinkRelationship[] = []
   let rIdCounter = 1
 
-  for (const [key, cellOverride] of sheet.cells) {
-    if (!cellOverride.hyperlink) continue
+  for (let r = 0; r < resolved.length; r++) {
+    const row = resolved[r]
+    for (let c = 0; c < row.length; c++) {
+      const hl = row[c]?.hyperlink
+      if (!hl) continue
 
-    const [rowStr, colStr] = key.split(",")
-    const r = parseInt(rowStr, 10)
-    const c = parseInt(colStr, 10)
-    const ref = cellRef(r, c)
-    const hl = cellOverride.hyperlink
+      const ref = cellRef(r, c)
+      const attrs: Record<string, string> = { ref }
 
-    const attrs: Record<string, string> = { ref }
+      if (hl.location) {
+        // Internal hyperlink — uses location attribute directly, no relationship needed
+        attrs["location"] = hl.location
+      } else if (hl.target) {
+        // External hyperlink — needs a relationship entry
+        const rId = `rId${rIdCounter++}`
+        attrs["r:id"] = rId
+        relationships.push({ id: rId, target: hl.target })
+      }
 
-    if (hl.location) {
-      // Internal hyperlink — uses location attribute directly, no relationship needed
-      attrs["location"] = hl.location
-    } else if (hl.target) {
-      // External hyperlink — needs a relationship entry
-      const rId = `rId${rIdCounter++}`
-      attrs["r:id"] = rId
-      relationships.push({ id: rId, target: hl.target })
+      if (hl.tooltip) {
+        attrs["tooltip"] = hl.tooltip
+      }
+      if (hl.display) {
+        attrs["display"] = hl.display
+      }
+
+      hyperlinkElements.push(xmlSelfClose("hyperlink", attrs))
     }
-
-    if (hl.tooltip) {
-      attrs["tooltip"] = hl.tooltip
-    }
-    if (hl.display) {
-      attrs["display"] = hl.display
-    }
-
-    hyperlinkElements.push(xmlSelfClose("hyperlink", attrs))
   }
 
   if (hyperlinkElements.length === 0) {

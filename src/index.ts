@@ -5,6 +5,7 @@ export type { WriteObjectsTableOption } from "./defter"
 // ── XLSX ────────────────────────────────────────────────────────────
 export { readXlsx } from "./xlsx/reader"
 export { writeXlsx } from "./xlsx/writer"
+export { link } from "./xlsx/hyperlink"
 export { openXlsx, saveXlsx } from "./xlsx/roundtrip"
 export type { RoundtripWorkbook } from "./xlsx/roundtrip"
 export { hashSheetPassword } from "./xlsx/password"
@@ -252,6 +253,7 @@ export type {
   Cell,
   RichTextRun,
   Hyperlink,
+  HyperlinkValue,
   CellComment,
   // Style
   CellStyle,

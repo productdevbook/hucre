@@ -243,6 +243,31 @@ const buffer = await writeXlsx({
 })
 ```
 
+For tabular reports, put links **inline in `data` rows** instead of a parallel
+`cells` map — keyed by the column's `key`. Use the `link()` helper (or a plain
+`{ text, hyperlink, tooltip? }` object). A `#`-prefixed target is treated as an
+internal reference (`#Sheet2!A1`).
+
+```ts
+import { writeXlsx, link } from "hucre/xlsx"
+
+await writeXlsx({
+  sheets: [
+    {
+      name: "Summary",
+      columns: [
+        { header: "Link", key: "link" },
+        { header: "ID", key: "id" },
+      ],
+      data: [
+        { link: link("Open", "https://example.com/items/abc-123"), id: "abc-123" },
+        { link: { text: "Open", hyperlink: "https://example.com/items/def-456" }, id: "def-456" },
+      ],
+    },
+  ],
+})
+```
+
 ### Streaming
 
 Process large files row-by-row without loading everything into memory:
