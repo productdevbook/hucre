@@ -32,6 +32,9 @@ import { writeDrawing } from "./drawing-writer"
 import type { DrawingResult } from "./drawing-writer"
 import { writeChart } from "./chart-writer"
 import { cloneChart } from "./chart-clone"
+import { isOle2Container } from "../_input"
+import { EncryptedFileError } from "../errors"
+import { decryptAgile, encryptAgile } from "./crypto/agile"
 import { writeComments } from "./comments-writer"
 import type { CommentsResult } from "./comments-writer"
 import { writeTable } from "./table-writer"
@@ -118,7 +121,17 @@ export async function openXlsx(
   input: Uint8Array | ArrayBuffer,
   options?: ReadOptions,
 ): Promise<RoundtripWorkbook> {
-  const data = input instanceof Uint8Array ? input : new Uint8Array(input)
+  let data = input instanceof Uint8Array ? input : new Uint8Array(input)
+
+  // Decrypt password-protected workbooks up front so both the parse and
+  // the raw-entry capture below see the plaintext OOXML ZIP.
+  if (isOle2Container(data)) {
+    if (options?.password) {
+      data = await decryptAgile(data, options.password)
+    } else {
+      throw new EncryptedFileError("xlsx")
+    }
+  }
 
   // 1. Parse the workbook normally
   const workbook = await readXlsx(data, options)
@@ -154,8 +167,13 @@ export async function openXlsx(
 
 /**
  * Write a RoundtripWorkbook back to XLSX, preserving unmodified parts.
+ * Pass `{ encryption: { password } }` to emit a password-protected
+ * (ECMA-376 Agile) workbook.
  */
-export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array> {
+export async function saveXlsx(
+  workbook: RoundtripWorkbook,
+  saveOptions?: { encryption?: { password: string; spinCount?: number } },
+): Promise<Uint8Array> {
   const { sheets, properties, namedRanges, dateSystem, defaultFont, activeSheet } = workbook
 
   // Convert Sheet[] to WriteSheet[] for the writer infrastructure
@@ -1027,7 +1045,9 @@ export async function saveXlsx(workbook: RoundtripWorkbook): Promise<Uint8Array>
     }
   }
 
-  return zip.build()
+  const out = await zip.build()
+  const enc = saveOptions?.encryption
+  return enc?.password ? encryptAgile(out, enc.password, { spinCount: enc.spinCount }) : out
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────

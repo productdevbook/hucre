@@ -243,6 +243,7 @@ export {
   ValidationError,
   UnsupportedFormatError,
   EncryptedFileError,
+  DecryptionError,
 } from "./errors"
 
 // ── Types ──────────────────────────────────────────────────────────

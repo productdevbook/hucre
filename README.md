@@ -343,6 +343,41 @@ for (let i = 0; i < 3_000_000; i++) writer.addRow([i + 1, Math.random()])
 const buf = await writer.finish()
 ```
 
+### Password Protection
+
+Read and write password-protected XLSX workbooks (ECMA-376 **Agile**
+encryption — the Excel 2010+ scheme). Encryption is built on the
+platform's WebCrypto, so it stays zero-dependency and runs in Node, Deno,
+Bun, Cloudflare Workers, and browsers.
+
+```ts
+import { writeXlsx, readXlsx, readObjects, EncryptedFileError, DecryptionError } from "hucre"
+
+// Write an encrypted workbook
+const encrypted = await writeXlsx({
+  sheets: [{ name: "Secret", rows: [["pin", 1234]] }],
+  encryption: { password: "hunter2" },
+})
+
+// Read it back with the password
+const wb = await readXlsx(encrypted, { password: "hunter2" })
+
+// Works through every read entry point: read(), readObjects(), streamXlsxRows()
+const rows = await readObjects(encrypted, { password: "hunter2" })
+
+// Without a password an encrypted file throws EncryptedFileError;
+// with the wrong password it throws DecryptionError.
+try {
+  await readXlsx(encrypted)
+} catch (e) {
+  if (e instanceof EncryptedFileError) console.log("needs a password")
+}
+```
+
+The roundtrip path takes the same option: `await saveXlsx(wb, { encryption: { password } })`.
+The key-derivation iteration count defaults to Excel's 100000; lower it via
+`encryption: { password, spinCount }` when the speed/security trade-off calls for it.
+
 ### ODS (OpenDocument)
 
 ```ts

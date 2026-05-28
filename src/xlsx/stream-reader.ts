@@ -7,8 +7,9 @@ import type { CellValue, ReadOptions } from "../_types"
 import type { SharedString } from "./shared-strings"
 import type { ParsedStyles } from "./styles"
 import type { Relationship } from "./relationships"
-import { ParseError, ZipError } from "../errors"
-import { assertNotEncrypted } from "../_input"
+import { EncryptedFileError, ParseError, ZipError } from "../errors"
+import { isOle2Container } from "../_input"
+import { decryptAgile } from "./crypto/agile"
 import { ZipReader } from "../zip/reader"
 import { ZipStreamReader } from "../zip/stream-reader"
 import { parseXml, parseSaxStream, decodeOoxmlEscapes } from "../xml/parser"
@@ -768,10 +769,19 @@ export async function* streamXlsxRows(
     data = prep.data
   }
 
-  // Detect password-protected workbooks (OLE2/CFB envelope) up front so
-  // streamers fail fast with a typed `EncryptedFileError` instead of a
-  // generic ZIP ParseError. Decryption is tracked in #156.
-  assertNotEncrypted(data, "xlsx")
+  // Password-protected workbooks arrive as an OLE2/CFB envelope (a stream
+  // input falls back to a buffer in prepareStreaming, so we always have
+  // the full bytes here). Decrypt with a password, else fail fast with a
+  // typed `EncryptedFileError`. The decrypted package is a plain ZIP read
+  // via the buffered path below (one-pass streaming of encrypted input
+  // isn't possible — the whole package must be decrypted first).
+  if (isOle2Container(data)) {
+    if (options?.password) {
+      data = await decryptAgile(data, options.password)
+    } else {
+      throw new EncryptedFileError("xlsx")
+    }
+  }
 
   // 1. Open ZIP archive
   let zip: ZipReader

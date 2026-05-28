@@ -1344,6 +1344,17 @@ export interface WriteOptions {
   stringMode?: "shared" | "inline"
   /** VBA project binary (vbaProject.bin) to embed. Output becomes macro-enabled (.xlsm). */
   vbaProject?: Uint8Array
+  /**
+   * Encrypt the output as a password-protected workbook (ECMA-376 Agile,
+   * the Excel 2010+ scheme). The result is an OLE2/CFB container that Excel
+   * opens after prompting for the password.
+   *
+   * `spinCount` is the password key-derivation iteration count (default
+   * 100000, matching Excel). Lower it only when the speed/security trade-off
+   * genuinely calls for it — the value is stored in the file, so any reader
+   * (including Excel) honors it.
+   */
+  encryption?: { password: string; spinCount?: number }
 }
 
 export interface WriteSheet {

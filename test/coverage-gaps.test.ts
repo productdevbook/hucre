@@ -90,6 +90,7 @@ import {
   ValidationError,
   UnsupportedFormatError,
   EncryptedFileError,
+  DecryptionError,
 } from "../src/index"
 import type { CellValue } from "../src/_types"
 
@@ -204,6 +205,7 @@ describe("Coverage gaps: every exported function is callable (#135)", () => {
     expect(typeof ValidationError).toBe("function")
     expect(typeof UnsupportedFormatError).toBe("function")
     expect(typeof EncryptedFileError).toBe("function")
+    expect(typeof DecryptionError).toBe("function")
   })
 })
 

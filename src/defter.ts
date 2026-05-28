@@ -15,6 +15,7 @@ import type {
   TableColumn,
 } from "./_types"
 import { readXlsx } from "./xlsx/reader"
+import { decryptAgile } from "./xlsx/crypto/agile"
 import { writeXlsx } from "./xlsx/writer"
 import { readOds } from "./ods/reader"
 import { writeOds } from "./ods/writer"
@@ -82,15 +83,21 @@ function detectFormat(data: Uint8Array): "xlsx" | "ods" {
  * ReadableStream input is buffered fully before format detection runs.
  */
 export async function read(input: ReadInput, options?: ReadOptions): Promise<Workbook> {
-  const data = await readInputToUint8Array(input)
+  let data = await readInputToUint8Array(input)
 
-  // Surface password-protected workbooks (OLE2/CFB envelope) before
-  // `detectFormat` rejects them as "not a ZIP archive". The container
-  // alone doesn't tell us whether the encrypted package inside is XLSX
-  // or ODS, so we leave `format` unset on the error. Decryption is
-  // tracked in #156.
+  // Password-protected workbooks arrive as an OLE2/CFB envelope. With a
+  // password we decrypt the inner package (then `detectFormat` works on
+  // the plaintext ZIP); without one we surface a typed error. The
+  // container alone doesn't reveal XLSX vs ODS, so the no-password error
+  // leaves `format` unset. (ODS uses a different in-ZIP scheme, so only
+  // XLSX decryption is wired up — an ODS password yields a ZIP that
+  // detectFormat routes to readOds, which handles its own encryption.)
   if (isOle2Container(data)) {
-    throw new EncryptedFileError()
+    if (options?.password) {
+      data = await decryptAgile(data, options.password)
+    } else {
+      throw new EncryptedFileError()
+    }
   }
 
   const format = detectFormat(data)

@@ -71,9 +71,26 @@ export class EncryptedFileError extends DefterError {
     super(
       message ??
         (format
-          ? `File is password-protected (${format.toUpperCase()} encrypted with the OLE2/CFB container). Reading password-protected files is not yet supported.`
+          ? `File is password-protected (${format.toUpperCase()} encrypted with the OLE2/CFB container). Provide a password in options to decrypt it.`
           : "File is password-protected. Provide a password in options."),
     )
     this.format = format
+  }
+}
+
+/**
+ * Thrown when a password WAS supplied for an encrypted workbook but
+ * decryption failed — almost always a wrong password, occasionally a
+ * corrupt or unsupported encryption blob. Distinct from
+ * {@link EncryptedFileError} ("encrypted, and no password was given").
+ */
+export class DecryptionError extends DefterError {
+  override name = "DecryptionError"
+
+  constructor(
+    message = "Failed to decrypt: incorrect password or corrupt encryption data.",
+    options?: ErrorOptions,
+  ) {
+    super(message, options)
   }
 }

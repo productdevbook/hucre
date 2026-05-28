@@ -25,8 +25,9 @@ import { assembleCellImages, parseCellImages, REL_CELL_IMAGES } from "./cell-ima
 import { attachPivotCacheFields, parsePivotCacheDefinition, parsePivotTable } from "./pivot-reader"
 import { parseSlicers, parseSlicerCache, parseTimelines, parseTimelineCache } from "./slicer-reader"
 import { parseChart } from "./chart-reader"
-import { ParseError, ZipError } from "../errors"
-import { assertNotEncrypted, readInputToUint8Array } from "../_input"
+import { EncryptedFileError, ParseError, ZipError } from "../errors"
+import { isOle2Container, readInputToUint8Array } from "../_input"
+import { decryptAgile } from "./crypto/agile"
 import { ZipReader } from "../zip/reader"
 import { parseXml } from "../xml/parser"
 import { parseContentTypes } from "./content-types"
@@ -110,13 +111,18 @@ function dirname(path: string): string {
  * you need row-level streaming with low per-row memory.
  */
 export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise<Workbook> {
-  const data = await readInputToUint8Array(input)
+  let data = await readInputToUint8Array(input)
 
-  // Detect password-protected workbooks (OLE2/CFB envelope) and surface
-  // a typed `EncryptedFileError` instead of letting the ZIP reader fail
-  // with a generic "not a valid ZIP archive" ParseError. Decryption
-  // itself is tracked in #156.
-  assertNotEncrypted(data, "xlsx")
+  // Password-protected workbooks arrive as an OLE2/CFB envelope. With a
+  // password we decrypt the inner OOXML ZIP and continue; without one we
+  // surface a typed `EncryptedFileError` instead of a generic ZIP failure.
+  if (isOle2Container(data)) {
+    if (options?.password) {
+      data = await decryptAgile(data, options.password)
+    } else {
+      throw new EncryptedFileError("xlsx")
+    }
+  }
 
   // 1. Open ZIP archive
   let zip: ZipReader

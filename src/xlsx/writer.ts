@@ -22,6 +22,7 @@ import { unwrapCellValue } from "./hyperlink"
 import { writeDrawing } from "./drawing-writer"
 import type { DrawingResult } from "./drawing-writer"
 import { writeChart } from "./chart-writer"
+import { encryptAgile } from "./crypto/agile"
 import { writeComments } from "./comments-writer"
 import type { CommentsResult } from "./comments-writer"
 import { writeTable } from "./table-writer"
@@ -548,7 +549,9 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
     )
   }
 
-  return zip.build()
+  const out = await zip.build()
+  const enc = options.encryption
+  return enc?.password ? encryptAgile(out, enc.password, { spinCount: enc.spinCount }) : out
 }
 
 // ── Pivot Source Resolution ────────────────────────────────────────────
