@@ -187,7 +187,7 @@ describe("issue #136 — model charts survive the roundtrip (saveXlsx)", () => {
     const out = await openXlsx(await writeXlsx({ sheets: [dashboard] }))
     const outCharts = getCharts(out)
     expect(outCharts.length).toBe(kinds.length)
-    expect(outCharts.every((c) => /^Panel /.test(c.chart.title ?? ""))).toBe(true)
+    expect(outCharts.every((c) => (c.chart.title ?? "").startsWith("Panel "))).toBe(true)
   })
 
   it("a non-writable chart kind is skipped, not fatal, on save", async () => {
