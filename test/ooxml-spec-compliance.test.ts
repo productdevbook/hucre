@@ -3,6 +3,7 @@ import { ZipWriter } from "../src/zip/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { isDateStyle, parseStyles, resolveStyle } from "../src/xlsx/styles"
 import { createStylesCollector } from "../src/xlsx/styles-writer"
+import { writeWorkbookXml } from "../src/xlsx/workbook-writer"
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -364,5 +365,52 @@ describe("Bug #106: Missing cellStyles element in styles.xml", () => {
     expect(cellXfsIdx).toBeLessThan(cellStylesIdx)
     expect(cellStylesIdx).toBeLessThan(dxfsIdx)
     expect(dxfsIdx).toBeLessThan(tableStylesIdx)
+  })
+
+  // ── CT_Workbook element ordering ──────────────────────────────────
+  // ECMA-376 §18.2.27 fixes the sequence: sheets → externalReferences →
+  // definedNames → calcPr. Emitting definedNames before externalReferences
+  // produces a file that Numbers/QuickLook/openpyxl open fine but Excel
+  // flags as corrupt — especially when a defined name dereferences the
+  // external book (e.g. "[1]Daten!$C$1"), since the [1] reference resolves
+  // against an <externalReference> that has not been declared yet.
+
+  it("workbook.xml emits externalReferences before definedNames", () => {
+    const sheets = [{ name: "Sheet1" }]
+    const namedRanges = [{ name: "Lst_Faktoren", range: "[1]Daten!$C$183:$C$192" }]
+    const externalLinkRels = [{ rId: "rId13" }]
+
+    const xml = writeWorkbookXml(
+      sheets,
+      namedRanges,
+      undefined,
+      undefined,
+      undefined,
+      externalLinkRels,
+    )
+
+    const sheetsIdx = xml.indexOf("<sheets")
+    const externalRefsIdx = xml.indexOf("<externalReferences")
+    const definedNamesIdx = xml.indexOf("<definedNames")
+    const calcPrIdx = xml.indexOf("<calcPr")
+
+    // All four blocks present
+    expect(externalRefsIdx).toBeGreaterThan(-1)
+    expect(definedNamesIdx).toBeGreaterThan(-1)
+
+    // Required CT_Workbook sequence
+    expect(sheetsIdx).toBeLessThan(externalRefsIdx)
+    expect(externalRefsIdx).toBeLessThan(definedNamesIdx)
+    expect(definedNamesIdx).toBeLessThan(calcPrIdx)
+  })
+
+  it("workbook.xml keeps definedNames before calcPr when there is no external link", () => {
+    const sheets = [{ name: "Sheet1" }]
+    const namedRanges = [{ name: "MyRange", range: "Sheet1!$A$1:$B$2" }]
+
+    const xml = writeWorkbookXml(sheets, namedRanges)
+
+    expect(xml).not.toContain("<externalReferences")
+    expect(xml.indexOf("<definedNames")).toBeLessThan(xml.indexOf("<calcPr"))
   })
 })
