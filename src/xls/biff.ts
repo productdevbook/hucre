@@ -133,6 +133,12 @@ class BlockStream {
   atEnd(): boolean {
     return this.bi >= this.blocks.length
   }
+  /** Total bytes across all blocks — an upper bound on decodable records. */
+  totalBytes(): number {
+    let n = 0
+    for (const b of this.blocks) n += b.length
+    return n
+  }
   /** Move to the next block (used when a string's chars continue). */
   nextBlock(): void {
     this.bi++
@@ -177,8 +183,17 @@ export function parseSst(blocks: Uint8Array[]): string[] {
   const s = new BlockStream(blocks)
   s.skip(4) // cstTotal
   const cstUnique = s.u32()
+  // cstUnique is an untrusted u32. Each string costs at least 3 bytes
+  // (2-byte cch + 1-byte grbit), so a string count larger than the total
+  // available bytes is a corrupt / hostile header — cap the loop by the
+  // bytes actually present so we don't spin allocating empty strings.
+  const maxStrings = Math.min(cstUnique, s.totalBytes())
   const out: string[] = []
-  for (let i = 0; i < cstUnique; i++) out.push(readSstString(s))
+  for (let i = 0; i < maxStrings; i++) {
+    s.ensure()
+    if (s.atEnd()) break
+    out.push(readSstString(s))
+  }
   return out
 }
 

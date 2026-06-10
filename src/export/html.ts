@@ -275,7 +275,10 @@ function buildCellAttrs(
     const cell = sheet.cells?.get(`${row},${col}`)
     if (cell?.style) {
       const css = styleToCss(cell.style)
-      if (css) attrs.push(`style="${css}"`)
+      // Escape for the double-quoted attribute context — style values can
+      // derive from untrusted workbook content (e.g. a number-format
+      // string) and must not be able to break out of the attribute.
+      if (css) attrs.push(`style="${escapeHtml(css)}"`)
     }
   }
 

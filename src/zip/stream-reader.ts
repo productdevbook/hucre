@@ -18,6 +18,7 @@
 
 import { inflate } from "./deflate"
 import { ZipError } from "../errors"
+import { MAX_DECOMPRESSED_BYTES } from "../limits"
 
 const SIG_LOCAL_FILE = 0x04034b50
 const SIG_CENTRAL_DIR = 0x02014b50
@@ -182,7 +183,11 @@ export class ZipStreamReader {
     // Copy out of the leftover-backed view so later reads can't alias it.
     const owned = compressed.slice()
     if (entry.compressionMethod === 0) return owned
-    return inflate(owned)
+    const cap =
+      entry.uncompressedSize > 0
+        ? Math.min(entry.uncompressedSize, MAX_DECOMPRESSED_BYTES)
+        : MAX_DECOMPRESSED_BYTES
+    return inflate(owned, cap)
   }
 
   /**
@@ -235,7 +240,11 @@ export class ZipStreamReader {
           if (done) break
           if (value) chunks.push(value)
         }
-        controller.enqueue(inflate(concat(chunks)))
+        const cap =
+          entry.uncompressedSize > 0
+            ? Math.min(entry.uncompressedSize, MAX_DECOMPRESSED_BYTES)
+            : MAX_DECOMPRESSED_BYTES
+        controller.enqueue(inflate(concat(chunks), cap))
         controller.close()
       },
     })

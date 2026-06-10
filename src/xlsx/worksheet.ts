@@ -32,6 +32,8 @@ import type { Relationship } from "./relationships"
 import { resolveStyle, isDateStyle } from "./styles"
 import { serialToDate } from "../_date"
 import { parseSax, decodeOoxmlEscapes } from "../xml/parser"
+import { MAX_COL_INDEX, MAX_ROW_INDEX } from "../limits"
+import { ParseError } from "../errors"
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -1401,6 +1403,23 @@ function processCell(
 
   const pos = parseCellRef(ref)
   const { row, col } = pos
+
+  // Guard against malicious / corrupt cell references that would
+  // otherwise allocate billions of null slots and OOM the process.
+  if (
+    !Number.isInteger(row) ||
+    !Number.isInteger(col) ||
+    row < 0 ||
+    col < 0 ||
+    row > MAX_ROW_INDEX ||
+    col > MAX_COL_INDEX
+  ) {
+    throw new ParseError(
+      `Cell reference "${ref}" is outside the supported sheet bounds (max row ${
+        MAX_ROW_INDEX + 1
+      }, max col ${MAX_COL_INDEX + 1})`,
+    )
+  }
 
   // Ensure row array exists
   while (rows.length <= row) {

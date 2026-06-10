@@ -13,6 +13,7 @@ import { ZipReader } from "../../zip/reader"
 import { parseRelationships } from "../relationships"
 import { isDateFormat, serialToDate } from "../../_date"
 import { Cursor, decodeRk, iterateRecords } from "./record"
+import { MAX_COL_INDEX, MAX_ROW_INDEX } from "../../limits"
 
 // Record ids we care about (MS-XLSB §2.4).
 const BrtRowHdr = 0
@@ -232,6 +233,13 @@ function parseWorksheetBin(
   let row = 0
 
   const setCell = (col: number, value: CellValue): void => {
+    // Reject out-of-range column indices from untrusted u32 fields, which
+    // would otherwise grow a row to billions of null slots and OOM.
+    if (col < 0 || col > MAX_COL_INDEX) {
+      throw new ParseError(
+        `Cell column ${col} is outside the supported sheet bounds (max ${MAX_COL_INDEX + 1})`,
+      )
+    }
     let r = rows[row]
     if (!r) r = rows[row] = []
     while (r.length < col) r.push(null)
@@ -245,6 +253,11 @@ function parseWorksheetBin(
     switch (rec.id) {
       case BrtRowHdr: {
         row = new Cursor(rec.data).u32()
+        if (row < 0 || row > MAX_ROW_INDEX) {
+          throw new ParseError(
+            `Cell row ${row} is outside the supported sheet bounds (max ${MAX_ROW_INDEX + 1})`,
+          )
+        }
         break
       }
       case BrtCellBlank: {

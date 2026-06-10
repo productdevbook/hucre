@@ -14,6 +14,7 @@
 
 import { readCfb, writeCfb } from "./cfb"
 import { DecryptionError } from "../../errors"
+import { MAX_SPIN_COUNT } from "../../limits"
 
 // Block keys (MS-OFFCRYPTO §2.3.4.x).
 const BLOCK_VERIFIER_INPUT = new Uint8Array([0xfe, 0xa7, 0xd2, 0x76, 0x3b, 0x4b, 0x9e, 0x79])
@@ -76,7 +77,61 @@ export async function decryptAgile(data: Uint8Array, password: string): Promise<
   const secretKey = await deriveSecretKey(password, key)
   if (!secretKey) throw new DecryptionError("Incorrect password.")
 
+  // Data integrity (MS-OFFCRYPTO §2.3.4.14): verify the HMAC over the
+  // EncryptedPackage stream before trusting the decrypted bytes. Tamper or
+  // truncation of the ciphertext is rejected here rather than surfacing as
+  // silently-corrupt output.
+  await verifyDataIntegrity(xml, pkg, secretKey, keyData)
+
   return decryptPackage(pkg, secretKey, keyData)
+}
+
+/**
+ * Verify the `<dataIntegrity>` HMAC (MS-OFFCRYPTO §2.3.4.14). The HMAC key
+ * and value are AES-CBC encrypted with the package secret key; once
+ * recovered, the HMAC is computed over the entire EncryptedPackage stream
+ * (8-byte size prefix included). A mismatch means the ciphertext was
+ * tampered with or corrupted. No-op when the element is absent (older
+ * writers) or the hash isn't SHA-512.
+ */
+async function verifyDataIntegrity(
+  xml: string,
+  pkg: Uint8Array,
+  secretKey: Uint8Array,
+  keyData: AgileKeyData,
+): Promise<void> {
+  const tag = getElementTag(xml, "dataIntegrity")
+  if (!tag) return // not present — nothing to verify
+  if (keyData.hashAlgorithm !== "SHA-512") return // only SHA-512 HMAC supported
+
+  const encHmacKey = base64Decode(getAttr(tag, "encryptedHmacKey"))
+  const encHmacValue = base64Decode(getAttr(tag, "encryptedHmacValue"))
+  if (encHmacKey.length === 0 || encHmacValue.length === 0) return
+
+  const ivKey = await iv(
+    keyData.saltValue,
+    BLOCK_HMAC_KEY,
+    keyData.hashAlgorithm,
+    keyData.blockSize,
+  )
+  const ivVal = await iv(
+    keyData.saltValue,
+    BLOCK_HMAC_VALUE,
+    keyData.hashAlgorithm,
+    keyData.blockSize,
+  )
+  const hmacKey = await aesDecrypt(secretKey, ivKey, encHmacKey)
+  const expected = await aesDecrypt(secretKey, ivVal, encHmacValue)
+
+  const actual = await hmacSha512(hmacKey, pkg)
+  // Compare the leading hashSize (64) bytes — the decrypted value is
+  // block-padded to 16-byte alignment.
+  const n = Math.min(actual.length, expected.length)
+  let diff = actual.length === 0 ? 1 : 0
+  for (let i = 0; i < n; i++) diff |= actual[i] ^ expected[i]
+  if (diff !== 0) {
+    throw new DecryptionError("Encrypted package failed integrity check (HMAC mismatch).")
+  }
 }
 
 // ── Public: encrypt ──────────────────────────────────────────────────
@@ -417,12 +472,24 @@ function parseKeyData(xml: string): AgileKeyData {
 function parseKeyEncryptor(xml: string): AgileKeyInfo {
   const tag = getElementTag(xml, "encryptedKey")
   if (!tag) throw new DecryptionError("EncryptionInfo missing encryptedKey.")
+  const rawSpinCount = parseInt(getAttr(tag, "spinCount"), 10)
+  if (!Number.isFinite(rawSpinCount) || rawSpinCount < 0) {
+    throw new DecryptionError("EncryptionInfo has an invalid spinCount.")
+  }
+  // The spinCount drives the password-derivation loop. Cap the untrusted
+  // value so a hostile file can't pin a CPU for minutes (Office uses
+  // 100,000; the ceiling is deliberately generous).
+  if (rawSpinCount > MAX_SPIN_COUNT) {
+    throw new DecryptionError(
+      `EncryptionInfo spinCount ${rawSpinCount} exceeds the maximum of ${MAX_SPIN_COUNT}.`,
+    )
+  }
   return {
     saltValue: base64Decode(getAttr(tag, "saltValue")),
     hashAlgorithm: mapHash(getAttr(tag, "hashAlgorithm")),
     keyBytes: parseInt(getAttr(tag, "keyBits"), 10) / 8,
     blockSize: parseInt(getAttr(tag, "blockSize"), 10),
-    spinCount: parseInt(getAttr(tag, "spinCount"), 10),
+    spinCount: rawSpinCount,
     encryptedVerifierHashInput: base64Decode(getAttr(tag, "encryptedVerifierHashInput")),
     encryptedVerifierHashValue: base64Decode(getAttr(tag, "encryptedVerifierHashValue")),
     encryptedKeyValue: base64Decode(getAttr(tag, "encryptedKeyValue")),

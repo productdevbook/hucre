@@ -65,13 +65,18 @@ export function readCfb(data: Uint8Array): Map<string, Uint8Array> {
     if (s === FREESECT || s === ENDOFCHAIN) break
     fatSectorList.push(s)
   }
+  // Bound the DIFAT walk by the number of sectors that can physically fit
+  // in the file rather than the header-claimed `numDifatSectors`, which is
+  // untrusted and could be inflated to spin this loop.
+  const maxSectors = Math.floor(data.length / sectorSize) + 1
+  const difatLimit = Math.min(numDifatSectors, maxSectors)
   let difatSector = firstDifatSector
   let difatGuard = 0
   while (
     difatSector !== ENDOFCHAIN &&
     difatSector !== FREESECT &&
-    numDifatSectors > 0 &&
-    difatGuard++ < numDifatSectors + 1
+    difatLimit > 0 &&
+    difatGuard++ < difatLimit + 1
   ) {
     const sec = readSector(difatSector)
     const dv = new DataView(sec.buffer, sec.byteOffset, sec.byteLength)
@@ -147,6 +152,12 @@ export function readCfb(data: Uint8Array): Map<string, Uint8Array> {
   }
 
   const readMini = (start: number, size: number): Uint8Array => {
+    // `size` is an untrusted u32 from the directory entry. A mini stream
+    // cannot exceed the mini-stream container, so reject anything larger
+    // before allocating — otherwise a hostile size would OOM here.
+    if (size < 0 || size > miniStream.length) {
+      throw new ParseError("CFB: mini stream size out of range")
+    }
     const out = new Uint8Array(size)
     let s = start
     let off = 0
