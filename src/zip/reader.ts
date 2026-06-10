@@ -13,6 +13,9 @@ const SIG_CENTRAL_DIR = 0x02014b50
 const SIG_END_OF_CENTRAL_DIR = 0x06054b50
 const SIG_DATA_DESCRIPTOR = 0x08074b50
 
+/** 0xFFFFFFFF marker that signals a 32-bit ZIP field overflowed into ZIP64. */
+const ZIP64_SENTINEL = 0xffffffff
+
 // ── Types ───────────────────────────────────────────────────────────
 
 interface CentralDirEntry {
@@ -176,6 +179,20 @@ export class ZipReader {
     const centralDirSize = this.view.getUint32(eocdOffset + 12, true)
     const centralDirOffset = this.view.getUint32(eocdOffset + 16, true)
     const entryCount = this.view.getUint16(eocdOffset + 10, true)
+
+    // ZIP64: when the entry count or central-directory size/offset overflows
+    // the 16-/32-bit EOCD fields they hold a 0xFFFF / 0xFFFFFFFF sentinel and
+    // the real values live in a ZIP64 EOCD record we don't parse. Fail loudly
+    // instead of silently reading a truncated entry list or a garbage offset.
+    if (
+      entryCount === 0xffff ||
+      centralDirSize === ZIP64_SENTINEL ||
+      centralDirOffset === ZIP64_SENTINEL
+    ) {
+      throw new ZipError(
+        "ZIP64 archives are not supported (entry count or size exceeds the classic ZIP limits)",
+      )
+    }
 
     this.readCentralDirectory(centralDirOffset, centralDirSize, entryCount)
   }
