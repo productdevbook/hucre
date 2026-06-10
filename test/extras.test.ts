@@ -142,6 +142,21 @@ describe("fromHtml", () => {
     })
   })
 
+  it("handles a colspan cell after a rowspan-reserved column", () => {
+    // Row 0: A spans 2 rows in col 0; B spans 2 cols (col 1-2).
+    // Row 1: col 0 is reserved by A's rowspan, then C spans cols 1-2.
+    const html = `
+      <table>
+        <tr><td rowspan="2">A</td><td colspan="2">B</td></tr>
+        <tr><td colspan="2">C</td></tr>
+      </table>
+    `
+    const sheet = fromHtml(html)
+    expect(sheet.rows[0]).toEqual(["A", "B", null])
+    // C must land at col 1 (col 0 occupied by rowspan), not col 0.
+    expect(sheet.rows[1]).toEqual([null, "C", null])
+  })
+
   it("returns empty rows for an empty table", () => {
     const html = "<table></table>"
     const sheet = fromHtml(html)

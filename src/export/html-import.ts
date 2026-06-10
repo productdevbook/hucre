@@ -80,11 +80,12 @@ export function fromHtml(html: string, options?: { sheetName?: string }): Sheet 
         // Place the value
         currentRowCells.push(value)
 
-        // Fill extra colspan cells with null
+        // Fill the remaining colspan slots with null. Track the actual grid
+        // column via currentRowCells.length so any cells reserved by an
+        // earlier row's rowspan (occupied) are skipped correctly — the old
+        // arithmetic drifted as nulls were pushed.
         for (let c = 1; c < currentCellColspan; c++) {
-          const nextCol = col + c
-          // Skip occupied cells between colspan fills
-          while (occupied.has(`${currentRow},${nextCol + currentRowCells.length - col - 1}`)) {
+          while (occupied.has(`${currentRow},${currentRowCells.length}`)) {
             currentRowCells.push(null)
           }
           currentRowCells.push(null)
