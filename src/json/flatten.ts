@@ -30,7 +30,14 @@ export function flattenValue(
   const arrayJoin = options.arrayJoin ?? ", "
   const maxDepth = options.maxDepth ?? 32
 
-  const out: Record<string, CellValue> = {}
+  // Null-prototype so keys like "__proto__" / "constructor" (which
+  // JSON.parse produces as ordinary own properties) are stored as plain
+  // entries instead of hitting the prototype setter — which would silently
+  // drop the value (primitives) or corrupt the object (objects). Returned
+  // as-is: spread, JSON.stringify, Object.keys, and for-in all work on a
+  // null-prototype object; only inherited methods like .hasOwnProperty are
+  // absent (use Object.hasOwn / the `in` operator instead).
+  const out: Record<string, CellValue> = Object.create(null)
   walk(value, "", out, flatten, arrayJoin, maxDepth, 0)
   return out
 }
