@@ -133,4 +133,19 @@ describe("XLS (BIFF8) reader", () => {
     expect(wb.sheets[0].rows[1][0]).toBe("Ada")
     expect(wb.sheets[0].rows[1][1]).toBe(95)
   })
+
+  it("rejects BIFF5/7 (0x0500) workbooks with a clear error", async () => {
+    // A globals BOF declaring BIFF version 0x0500 (Excel 5/95), then EOF.
+    const biff5Bof = record(SID.BOF, [
+      ...u16(0x0500),
+      ...u16(0x0005),
+      ...u16(0),
+      ...u16(0),
+      ...u32(0),
+      ...u32(0),
+    ])
+    const stream = concat([biff5Bof, eof()])
+    const data = writeCfb([{ name: "Workbook", data: stream }])
+    await expect(readXls(data)).rejects.toThrow(/BIFF/)
+  })
 })

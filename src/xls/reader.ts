@@ -60,6 +60,26 @@ export async function readXls(
 
 function parseWorkbookRecords(stream: Uint8Array, options?: ReadOptions): Workbook {
   const records = parseRecords(stream)
+
+  // ── BIFF version gate ──
+  // The first record is the workbook globals BOF; its first u16 is the BIFF
+  // version (0x0600 = BIFF8). BIFF5/7 store strings as codepage byte strings
+  // with a different SST/record layout — parsing them as BIFF8 yields garbage
+  // names and cell text, so reject them with a clear error instead.
+  const bof = records[0]
+  if (!bof || bof.id !== SID.BOF) {
+    throw new ParseError("Invalid XLS: missing BOF record at start of Workbook stream")
+  }
+  if (bof.data.length >= 2) {
+    const biffVersion = new Reader(bof.data).u16()
+    if (biffVersion !== 0x0600) {
+      throw new ParseError(
+        `Unsupported XLS version (BIFF 0x${biffVersion.toString(16)}). ` +
+          "Only BIFF8 (Excel 97-2003) is supported; re-save the file as .xlsx or BIFF8 .xls.",
+      )
+    }
+  }
+
   const offsetToIndex = new Map<number, number>()
   for (let i = 0; i < records.length; i++) offsetToIndex.set(records[i].offset, i)
 
