@@ -9,14 +9,36 @@ export interface XmlWriterOptions {
 
 // ── Escaping ──────────────────────────────────────────────────────
 
+/** Encode a code point as the OOXML `_xHHHH_` escape (uppercase, 4 hex digits) */
+function xEscape(code: number): string {
+  return `_x${code.toString(16).toUpperCase().padStart(4, "0")}_`
+}
+
+/**
+ * Characters illegal in XML 1.0 (cannot be represented even as numeric
+ * character references): the C0 control range except tab (0x09), LF (0x0A)
+ * and CR (0x0D). OOXML encodes these as `_xHHHH_` in text content. CR is also
+ * encoded so it survives the XML line-ending normalization parsers apply on
+ * read (a literal CR in text content is folded to LF), preserving round-trips.
+ */
+function isIllegalXmlChar(code: number): boolean {
+  return (
+    (code >= 0x00 && code <= 0x08) ||
+    code === 0x0b ||
+    code === 0x0c ||
+    (code >= 0x0e && code <= 0x1f)
+  )
+}
+
 /** Escape text content for safe embedding in XML */
 export function xmlEscape(text: string): string {
   let result = ""
   let last = 0
 
   for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i)
     let replacement: string | undefined
-    switch (text.charCodeAt(i)) {
+    switch (code) {
       case 38: // &
         replacement = "&amp;"
         break
@@ -26,6 +48,18 @@ export function xmlEscape(text: string): string {
       case 62: // >
         replacement = "&gt;"
         break
+      case 13: // CR — encode so it round-trips through XML newline normalization
+        replacement = xEscape(13)
+        break
+      default:
+        // Strip/encode XML-1.0-illegal control chars so output is always
+        // well-formed. NOTE: a literal `_xHHHH_` already present in user data
+        // is NOT itself re-escaped here. Excel disambiguates by escaping a
+        // leading underscore as `_x005F_`; we deliberately skip that to avoid
+        // mangling existing data, accepting the rare ambiguity edge.
+        if (isIllegalXmlChar(code)) {
+          replacement = xEscape(code)
+        }
     }
     if (replacement) {
       result += text.slice(last, i) + replacement
@@ -69,6 +103,12 @@ export function xmlEscapeAttr(text: string): string {
       case 13: // carriage return
         replacement = "&#13;"
         break
+      default:
+        // XML-1.0-illegal control chars cannot be a numeric ref either;
+        // encode them via the OOXML `_xHHHH_` convention to stay well-formed.
+        if (isIllegalXmlChar(text.charCodeAt(i))) {
+          replacement = xEscape(text.charCodeAt(i))
+        }
     }
     if (replacement) {
       result += text.slice(last, i) + replacement

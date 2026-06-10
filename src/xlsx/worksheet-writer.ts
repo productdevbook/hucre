@@ -559,6 +559,18 @@ export function writeWorksheetXml(
     parts.push(xmlSelfClose("legacyDrawing", { "r:id": legacyDrawingRId }))
   }
 
+  // ── Picture (background image) — <picture r:id="..."/> ──
+  // CT_Worksheet sequence (§18.3.1.99) places `picture` before
+  // `tableParts`, and `extLst` (used here for sparklines) must be strictly
+  // LAST. Emit the picture here so a sheet with a background image plus a
+  // table and/or sparklines stays schema-valid.
+  let pictureRId: string | null = null
+  if (sheet.backgroundImage) {
+    pictureRId = `rId${nextRId}`
+    nextRId++
+    parts.push(xmlSelfClose("picture", { "r:id": pictureRId }))
+  }
+
   // ── Table Parts ──
   const tableEntries: Array<{ rId: string; globalTableIndex: number }> = []
   if (sheet.tables && sheet.tables.length > 0 && globalTableStartIndex !== undefined) {
@@ -573,17 +585,9 @@ export function writeWorksheetXml(
     parts.push(xmlElement("tableParts", { count: sheet.tables.length }, tablePartElements))
   }
 
-  // ── Sparklines (extLst) ──
+  // ── Sparklines (extLst) — must be the last child of the worksheet ──
   if (sheet.sparklines && sheet.sparklines.length > 0) {
     parts.push(serializeSparklines(sheet.sparklines))
-  }
-
-  // ── Picture (background image) — <picture r:id="..."/> ──
-  let pictureRId: string | null = null
-  if (sheet.backgroundImage) {
-    pictureRId = `rId${nextRId}`
-    nextRId++
-    parts.push(xmlSelfClose("picture", { "r:id": pictureRId }))
   }
 
   // ── Pivot Tables ── relationship-only; the worksheet body has no

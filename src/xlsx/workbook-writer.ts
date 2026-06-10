@@ -65,6 +65,20 @@ export function writeWorkbookXml(
     parts.push(xmlSelfClose("workbookPr", { date1904: 1 }))
   }
 
+  // workbookProtection — lock structure and/or windows. The CT_Workbook
+  // sequence in ECMA-376 §18.2.27 is: workbookPr → workbookProtection →
+  // bookViews → sheets, so workbookProtection must precede bookViews or
+  // strict Excel rejects the workbook as corrupt.
+  if (workbookProtection) {
+    const protAttrs: Record<string, string | number> = {}
+    if (workbookProtection.lockStructure) protAttrs["lockStructure"] = 1
+    if (workbookProtection.lockWindows) protAttrs["lockWindows"] = 1
+    if (workbookProtection.password) {
+      protAttrs["workbookPassword"] = hashSheetPassword(workbookProtection.password)
+    }
+    parts.push(xmlSelfClose("workbookProtection", protAttrs))
+  }
+
   // bookViews — tells Excel which sheet tab is active
   const activeTab = activeSheet ?? 0
   parts.push(
@@ -78,17 +92,6 @@ export function writeWorkbookXml(
       }),
     ]),
   )
-
-  // workbookProtection — lock structure and/or windows
-  if (workbookProtection) {
-    const protAttrs: Record<string, string | number> = {}
-    if (workbookProtection.lockStructure) protAttrs["lockStructure"] = 1
-    if (workbookProtection.lockWindows) protAttrs["lockWindows"] = 1
-    if (workbookProtection.password) {
-      protAttrs["workbookPassword"] = hashSheetPassword(workbookProtection.password)
-    }
-    parts.push(xmlSelfClose("workbookProtection", protAttrs))
-  }
 
   parts.push(xmlElement("sheets", undefined, sheetElements))
 

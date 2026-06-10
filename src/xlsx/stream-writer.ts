@@ -12,6 +12,7 @@ import { createSharedStrings, writeSharedStringsXml } from "./worksheet-writer"
 import { cellRef } from "./worksheet-writer"
 import { dateToSerial } from "../_date"
 import { xmlDocument, xmlElement, xmlSelfClose } from "../xml/writer"
+import { writeThemeXml } from "./theme-writer"
 
 const encoder = /* @__PURE__ */ new TextEncoder()
 
@@ -227,6 +228,11 @@ export class XlsxStreamWriter {
     // xl/styles.xml
     zip.add("xl/styles.xml", encoder.encode(this.styles.toXml()))
 
+    // xl/theme/theme1.xml — declared in [Content_Types].xml and referenced
+    // from workbook.xml.rels, so the part must actually be written or Excel
+    // rejects the workbook as corrupt (matches the batch writer).
+    zip.add("xl/theme/theme1.xml", encoder.encode(writeThemeXml()))
+
     // xl/sharedStrings.xml (if any strings)
     if (hasSharedStrings) {
       zip.add("xl/sharedStrings.xml", encoder.encode(writeSharedStringsXml(this.sharedStrings)))
@@ -394,6 +400,13 @@ export class XlsxStreamWriter {
 
     // Number
     if (typeof value === "number") {
+      // Infinity, -Infinity, and NaN cannot be represented in OOXML — emit as empty cell
+      if (!Number.isFinite(value)) {
+        if (styleIdx !== 0) {
+          return xmlSelfClose("c", { r: ref, s: styleIdx })
+        }
+        return null
+      }
       const attrs: Record<string, string | number> = { r: ref }
       if (styleIdx !== 0) attrs["s"] = styleIdx
       return xmlElement("c", attrs, [xmlElement("v", undefined, String(value))])
