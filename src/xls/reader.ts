@@ -45,6 +45,20 @@ export async function readXls(
   const stream = streams.get("Workbook") ?? streams.get("Book")
   if (!stream) throw new ParseError("Invalid XLS: missing Workbook stream")
 
+  // Record parsing reads many length-prefixed binary fields; a truncated or
+  // hostile file can make DataView accessors throw a raw RangeError. Wrap the
+  // whole pass so malformed input surfaces as the library's ParseError.
+  try {
+    return parseWorkbookRecords(stream, options)
+  } catch (err) {
+    if (err instanceof ParseError) throw err
+    throw new ParseError("Failed to parse XLS workbook (malformed or truncated)", undefined, {
+      cause: err,
+    })
+  }
+}
+
+function parseWorkbookRecords(stream: Uint8Array, options?: ReadOptions): Workbook {
   const records = parseRecords(stream)
   const offsetToIndex = new Map<number, number>()
   for (let i = 0; i < records.length; i++) offsetToIndex.set(records[i].offset, i)

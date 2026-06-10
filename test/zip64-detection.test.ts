@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { ZipWriter } from "../src/zip/writer"
-import { ZipReader, ZipError } from "../src/zip/reader"
+import { ZipReader } from "../src/zip/reader"
+import { ZipError } from "../src/errors"
 
 const enc = new TextEncoder()
 

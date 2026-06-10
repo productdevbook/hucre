@@ -46,6 +46,10 @@ function decodeEntities(text: string): string {
           ? parseInt(ref.slice(2), 16)
           : parseInt(ref.slice(1), 10)
       if (Number.isNaN(code)) return match
+      // A numeric reference outside the Unicode range (> 0x10FFFF) would make
+      // String.fromCodePoint throw a raw RangeError, escaping the library's
+      // error contract on hostile input. Leave such references unexpanded.
+      if (code < 0 || code > 0x10ffff) return match
       return String.fromCodePoint(code)
     }
     return ENTITY_MAP[ref] ?? match
@@ -442,11 +446,17 @@ export function parseXml(xml: string): XmlElement {
       stack[stack.length - 1].children.push(el)
       stack.push(el)
     },
-    onCloseTag(_tag) {
+    onCloseTag(tag) {
       if (stack.length <= 1) {
         throw new XmlError("Unexpected closing tag: no matching open tag")
       }
-      const el = stack.pop()!
+      const el = stack[stack.length - 1]
+      // A mismatched close tag (</b> closing <a>) means the document is
+      // malformed; mis-nesting silently would corrupt the parsed tree.
+      if (el.tag !== tag) {
+        throw new XmlError(`Mismatched closing tag: expected </${el.tag}> but found </${tag}>`)
+      }
+      stack.pop()
       // Collect direct text from text-only children
       if (el.children.length > 0) {
         const texts: string[] = []
@@ -463,6 +473,14 @@ export function parseXml(xml: string): XmlElement {
       stack[stack.length - 1].children.push(text)
     },
   })
+
+  // Any unclosed elements left on the stack mean the document was truncated
+  // mid-element; parsing "successfully" with silently missing data is worse
+  // than a clear error.
+  if (stack.length > 1) {
+    const unclosed = stack[stack.length - 1].tag
+    throw new XmlError(`Unexpected end of document: unclosed element <${unclosed}>`)
+  }
 
   // The root wrapper should have exactly one real child (the document element)
   if (root.children.length === 0) {

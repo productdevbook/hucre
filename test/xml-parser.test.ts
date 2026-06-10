@@ -545,6 +545,21 @@ describe("parseXml — errors", () => {
     expect(() => parseXml("<root></root")).toThrow(/unterminated/i)
   })
 
+  it("throws on a mismatched closing tag", () => {
+    expect(() => parseXml("<a><b></a></b>")).toThrow(/mismatched/i)
+  })
+
+  it("throws on a truncated document with an unclosed element", () => {
+    expect(() => parseXml("<a><b>text</b>")).toThrow(/unclosed/i)
+  })
+
+  it("leaves an out-of-range numeric character reference unexpanded instead of crashing", () => {
+    // &#x110000; (> U+10FFFF) would make String.fromCodePoint throw a raw
+    // RangeError; the parser must not crash on it.
+    const el = parseXml("<a>x&#x110000;y</a>")
+    expect(el.text).toBe("x&#x110000;y")
+  })
+
   it("includes position info in errors", () => {
     try {
       parseXml("<root>\n  <!-- unclosed")
