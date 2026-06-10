@@ -119,6 +119,27 @@ export async function readXlsb(
   }
   const workbookDir = dirname(workbookPath)
 
+  // Binary record parsing reads many length-prefixed fields; a truncated or
+  // hostile .bin can make the Cursor/DataView throw a raw RangeError. Wrap the
+  // parse so malformed input surfaces as the library's ParseError.
+  try {
+    return await parseXlsbParts(zip, workbookPath, workbookDir, date1904)
+  } catch (err) {
+    if (err instanceof ParseError || err instanceof EncryptedFileError || err instanceof ZipError) {
+      throw err
+    }
+    throw new ParseError("Failed to parse XLSB workbook (malformed or truncated)", undefined, {
+      cause: err,
+    })
+  }
+}
+
+async function parseXlsbParts(
+  zip: ZipReader,
+  workbookPath: string,
+  workbookDir: string,
+  date1904: boolean,
+): Promise<Workbook> {
   // Sheets (name + relId) from the workbook .bin.
   const sheetEntries = parseWorkbookBin(await zip.extract(workbookPath))
 

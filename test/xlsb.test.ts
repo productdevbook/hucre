@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { ZipWriter } from "../src/zip/writer"
 import { readXlsb } from "../src/xlsx/xlsb/reader"
 import { read } from "../src/defter"
+import { ParseError } from "../src/errors"
 
 // ── Minimal XLSB builder (test-only) ─────────────────────────────────
 // Emits valid MS-XLSB binary records so the reader can be round-tripped
@@ -166,5 +167,19 @@ describe("XLSB reader", () => {
     zw.add("xl/worksheets/sheet1.bin", ws)
     const out = await readXlsb(await zw.build())
     expect(out.sheets[0].rows[0][0]).toBeCloseTo(12.34, 5)
+  })
+
+  it("surfaces a malformed workbook.bin as ParseError, not a raw RangeError", async () => {
+    // A BrtBundleSh record whose body is truncated (only the 4-byte hsState,
+    // missing iTabID/relId/name) makes the Cursor read past the end.
+    const wb = rec(BrtBundleSh, u32(0))
+    const rels = `<?xml version="1.0"?><Relationships xmlns="${NS}"><Relationship Id="r" Type="${REL}/officeDocument" Target="xl/workbook.bin"/></Relationships>`
+    const ct = `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>`
+    const zw = new ZipWriter()
+    zw.add("[Content_Types].xml", enc.encode(ct))
+    zw.add("_rels/.rels", enc.encode(rels))
+    zw.add("xl/workbook.bin", wb)
+
+    await expect(readXlsb(await zw.build())).rejects.toBeInstanceOf(ParseError)
   })
 })
