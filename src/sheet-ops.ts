@@ -1227,12 +1227,14 @@ export function replaceCells(sheet: Sheet, find: CellValue | RegExp, replace: Ce
           }
           // Reset lastIndex after test() for global regexes
           find.lastIndex = 0
+          syncCellOverride(sheet, r, c, row[c]!)
           count++
         }
       } else {
         // Exact value matching
         if (value === find) {
           row[c] = replace
+          syncCellOverride(sheet, r, c, replace)
           count++
         }
       }
@@ -1255,12 +1257,56 @@ export function replaceCells(sheet: Sheet, find: CellValue | RegExp, replace: Ce
 export function sortRows(sheet: Sheet, colIndex: number, order?: "asc" | "desc"): void {
   const desc = order === "desc"
 
+  // When the sheet carries a per-cell override Map (styles/formulas/
+  // hyperlinks keyed by "row,col"), the row reordering has to be mirrored
+  // there or every override lands on the wrong row. Tag each row with its
+  // original index, sort, then rebuild the Map from old→new index.
+  if (sheet.cells && sheet.cells.size > 0) {
+    const tagged = sheet.rows.map((row, i) => ({ row, i }))
+    tagged.sort((a, b) => {
+      const va = colIndex < a.row.length ? (a.row[colIndex] ?? null) : null
+      const vb = colIndex < b.row.length ? (b.row[colIndex] ?? null) : null
+      const cmp = compareCellValues(va, vb)
+      return desc ? -cmp : cmp
+    })
+
+    const oldToNew = new Map<number, number>()
+    for (let newIdx = 0; newIdx < tagged.length; newIdx++) {
+      oldToNew.set(tagged[newIdx]!.i, newIdx)
+    }
+
+    const remapped = new Map<string, Cell>()
+    for (const [key, cell] of sheet.cells) {
+      const comma = key.indexOf(",")
+      const oldRow = Number(key.slice(0, comma))
+      const col = key.slice(comma + 1)
+      const newRow = oldToNew.get(oldRow)
+      // Keep non-positional keys untouched if any slipped in.
+      remapped.set(newRow === undefined ? key : `${newRow},${col}`, cell)
+    }
+
+    sheet.rows = tagged.map((t) => t.row)
+    sheet.cells = remapped
+    return
+  }
+
   sheet.rows.sort((a, b) => {
     const va = colIndex < a.length ? (a[colIndex] ?? null) : null
     const vb = colIndex < b.length ? (b[colIndex] ?? null) : null
     const cmp = compareCellValues(va, vb)
     return desc ? -cmp : cmp
   })
+}
+
+/**
+ * Keep a sheet's per-cell override Map in sync when a row value changes via
+ * {@link replaceCells}: if an override exists at (row,col), update its
+ * `value` so the writer (which prefers the override) doesn't emit the stale
+ * pre-replace value.
+ */
+function syncCellOverride(sheet: Sheet, row: number, col: number, value: CellValue): void {
+  const existing = sheet.cells?.get(`${row},${col}`)
+  if (existing) existing.value = value
 }
 
 /** Compare two cell values for sorting: nulls last, numbers < strings < booleans. */

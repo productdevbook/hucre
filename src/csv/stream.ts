@@ -13,9 +13,11 @@ function inferType(value: string, preserveLeadingZeros: boolean): CellValue {
   const trimmed = value.trim()
   if (trimmed === "") return value
 
+  // Only literal true/false — "yes"/"no" collide with real data (ISO code
+  // "NO", survey columns) and are left as strings. Mirrors parseCsv.
   const lower = trimmed.toLowerCase()
-  if (lower === "true" || lower === "yes") return true
-  if (lower === "false" || lower === "no") return false
+  if (lower === "true") return true
+  if (lower === "false") return false
 
   if (ISO_DATE_RE.test(trimmed)) {
     const d = new Date(trimmed)

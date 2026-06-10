@@ -342,10 +342,12 @@ function inferType(value: CellValue, preserveLeadingZeros: boolean): CellValue {
   const trimmed = value.trim()
   if (trimmed === "") return value
 
-  // Boolean detection
+  // Boolean detection — only the literal true/false. "yes"/"no" are NOT
+  // coerced: they collide with real data (the ISO country code "NO", a
+  // yes/no/maybe survey column) and most CSV libraries don't coerce them.
   const lower = trimmed.toLowerCase()
-  if (lower === "true" || lower === "yes") return true
-  if (lower === "false" || lower === "no") return false
+  if (lower === "true") return true
+  if (lower === "false") return false
 
   // ISO 8601 date detection (must come before number to avoid matching partial numbers)
   if (ISO_DATE_RE.test(trimmed)) {

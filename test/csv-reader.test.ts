@@ -295,9 +295,9 @@ describe("parseCsv", () => {
     expect(result).toEqual([[true, false]])
   })
 
-  it("should infer booleans: yes/no", () => {
+  it("should NOT coerce yes/no to booleans (collides with ISO code 'NO', surveys)", () => {
     const result = parseCsv("yes,no", { typeInference: true })
-    expect(result).toEqual([[true, false]])
+    expect(result).toEqual([["yes", "no"]])
   })
 
   it("should infer 1/0 as numbers (not booleans)", () => {

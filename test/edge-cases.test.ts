@@ -524,7 +524,7 @@ describe("CSV Edge Cases", () => {
     expect(rows[3][0]).toBe(1e5)
   })
 
-  it("type inference: true/TRUE/True/yes/YES", () => {
+  it("type inference: true/TRUE/True coerce; yes/YES stay strings", () => {
     const csv = "true\nTRUE\nTrue\nyes\nYES\nYes"
     const rows = parseCsv(csv, { typeInference: true })
 
@@ -532,9 +532,10 @@ describe("CSV Edge Cases", () => {
     expect(rows[0][0]).toBe(true)
     expect(rows[1][0]).toBe(true)
     expect(rows[2][0]).toBe(true)
-    expect(rows[3][0]).toBe(true)
-    expect(rows[4][0]).toBe(true)
-    expect(rows[5][0]).toBe(true)
+    // "yes"/"YES" are NOT coerced — they collide with real data.
+    expect(rows[3][0]).toBe("yes")
+    expect(rows[4][0]).toBe("YES")
+    expect(rows[5][0]).toBe("Yes")
   })
 
   it("type inference: null, undefined, NaN, Infinity should stay strings", () => {
