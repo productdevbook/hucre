@@ -11,6 +11,7 @@ import { isOle2Container, readInputToUint8Array } from "../../_input"
 import { decryptAgile } from "../crypto/agile"
 import { ZipReader } from "../../zip/reader"
 import { parseRelationships } from "../relationships"
+import { matchesRelType } from "../reader"
 import { isDateFormat, serialToDate } from "../../_date"
 import { Cursor, decodeRk, iterateRecords } from "./record"
 import { MAX_COL_INDEX, MAX_ROW_INDEX } from "../../limits"
@@ -35,13 +36,12 @@ const BrtBundleSh = 156
 const BrtBeginCellXFs = 617
 const BrtEndCellXFs = 618
 
-const REL_WORKBOOK =
-  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"
-const REL_WORKSHEET =
-  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"
-const REL_SHARED_STRINGS =
-  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings"
-const REL_STYLES = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"
+// Short relationship type names; matched leniently (Transitional + Strict)
+// via matchesRelType, consistent with the batch XLSX reader.
+const REL_WORKBOOK = "officeDocument"
+const REL_WORKSHEET = "worksheet"
+const REL_SHARED_STRINGS = "sharedStrings"
+const REL_STYLES = "styles"
 
 const BUILTIN_DATE_IDS = new Set([14, 15, 16, 17, 18, 19, 20, 21, 22, 45, 46, 47])
 
@@ -111,7 +111,7 @@ export async function readXlsb(
   let workbookPath = "xl/workbook.bin"
   if (zip.has("_rels/.rels")) {
     const rootRels = parseRelationships(decodeUtf8(await zip.extract("_rels/.rels")))
-    const wbRel = rootRels.find((r) => r.type === REL_WORKBOOK)
+    const wbRel = rootRels.find((r) => matchesRelType(r.type, REL_WORKBOOK))
     if (wbRel) workbookPath = wbRel.target.startsWith("/") ? wbRel.target.slice(1) : wbRel.target
   }
   if (!zip.has(workbookPath)) {
@@ -132,9 +132,9 @@ export async function readXlsb(
   if (zip.has(wbRelsPath)) {
     for (const rel of parseRelationships(decodeUtf8(await zip.extract(wbRelsPath)))) {
       const target = resolvePath(workbookDir, rel.target)
-      if (rel.type === REL_WORKSHEET) relMap.set(rel.id, target)
-      else if (rel.type === REL_SHARED_STRINGS) sharedStringsPath = target
-      else if (rel.type === REL_STYLES) stylesPath = target
+      if (matchesRelType(rel.type, REL_WORKSHEET)) relMap.set(rel.id, target)
+      else if (matchesRelType(rel.type, REL_SHARED_STRINGS)) sharedStringsPath = target
+      else if (matchesRelType(rel.type, REL_STYLES)) stylesPath = target
     }
   }
 

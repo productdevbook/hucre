@@ -75,12 +75,14 @@
     "release": "pnpm test && pnpm build && bumpp --commit --tag --push --all",
     "prepack": "pnpm build"
   },
+  "dependencies": {
+    "citty": "^0.2.1",
+    "consola": "^3.4.2"
+  },
   "devDependencies": {
     "@typescript/native-preview": "7.0.0-dev.20260316.1",
     "@vitest/coverage-v8": "^4.1.1",
     "bumpp": "^11.0.1",
-    "citty": "^0.2.1",
-    "consola": "^3.4.2",
     "obuild": "^0.4.32",
     "oxfmt": "^0.42.0",
     "oxlint": "^1.57.0",

@@ -274,7 +274,7 @@ const DAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
  * @param format - Excel number format string
  * @returns Formatted date string
  */
-export function formatDate(date: Date, format: string): string {
+export function formatDate(date: Date, format: string, serial?: number): string {
   const year = date.getUTCFullYear()
   const month = date.getUTCMonth() // 0-based
   const day = date.getUTCDate()
@@ -299,80 +299,114 @@ export function formatDate(date: Date, format: string): string {
   // We parse left to right, tracking whether the last date/time token was "h"/"hh".
   const tokens = tokenize(format)
 
-  let result = ""
-  let lastWasHour = false
+  // Elapsed-time totals (can exceed the usual ranges). Only meaningful when a
+  // serial value is provided. Negative serials clamp to 0 for elapsed display.
+  const totalSerial = serial !== undefined && serial > 0 ? serial : 0
+  const totalHours = Math.floor(totalSerial * 24)
+  const totalMinutes = Math.floor(totalSerial * 24 * 60)
+  const totalSeconds = Math.floor(totalSerial * 24 * 60 * 60)
 
-  for (const token of tokens) {
+  // Determine, for each "m"/"mm" token, whether it should render minutes.
+  // Excel: "m" is minutes when adjacent to an h/hh token (before, ignoring
+  // separators) OR an s/ss token (after, ignoring separators).
+  const isMinute: boolean[] = Array.from({ length: tokens.length }, () => false)
+  for (let t = 0; t < tokens.length; t++) {
+    const lt = tokens[t].toLowerCase()
+    if (lt !== "m" && lt !== "mm") continue
+    // Look backwards for an hour token (including elapsed [h])
+    let backHour = false
+    for (let k = t - 1; k >= 0; k--) {
+      const lk = tokens[k].toLowerCase()
+      if (lk === "h" || lk === "hh" || /^\[h+\]$/.test(lk)) {
+        backHour = true
+        break
+      }
+      if (/^[ymdhs]+$/.test(lk) || /^\[[ms]+\]$/.test(lk) || lk === "am/pm" || lk === "a/p") break
+      // separators / literals: keep scanning
+    }
+    // Look forwards for a seconds token
+    let fwdSecond = false
+    for (let k = t + 1; k < tokens.length; k++) {
+      const lk = tokens[k].toLowerCase()
+      if (lk === "s" || lk === "ss") {
+        fwdSecond = true
+        break
+      }
+      if (/^[ymdh]+$/.test(lk) || lk === "am/pm" || lk === "a/p") break
+      // separators / literals: keep scanning
+    }
+    isMinute[t] = backHour || fwdSecond
+  }
+
+  let result = ""
+
+  for (let t = 0; t < tokens.length; t++) {
+    const token = tokens[t]
     const lower = token.toLowerCase()
+
+    // Elapsed-time tokens [h]/[hh]/[m]/[s] etc.
+    if (token.startsWith("[") && token.endsWith("]")) {
+      const inner = lower.slice(1, -1)
+      if (/^h+$/.test(inner)) {
+        result += String(totalHours).padStart(inner.length, "0")
+      } else if (/^m+$/.test(inner)) {
+        result += String(totalMinutes).padStart(inner.length, "0")
+      } else if (/^s+$/.test(inner)) {
+        result += String(totalSeconds).padStart(inner.length, "0")
+      }
+      continue
+    }
 
     switch (lower) {
       case "yyyy":
         result += String(year)
-        lastWasHour = false
         break
       case "yy":
         result += String(year % 100).padStart(2, "0")
-        lastWasHour = false
         break
       case "mmmm":
         result += MONTH_NAMES[month]
-        lastWasHour = false
         break
       case "mmm":
         result += MONTH_ABBR[month]
-        lastWasHour = false
         break
       case "mm":
-        if (lastWasHour) {
-          // Minutes
+        if (isMinute[t]) {
           result += String(minutes).padStart(2, "0")
         } else {
-          // Month
           result += String(month + 1).padStart(2, "0")
         }
-        lastWasHour = false
         break
       case "m":
-        if (lastWasHour) {
-          // Minutes (no padding)
+        if (isMinute[t]) {
           result += String(minutes)
         } else {
-          // Month (no padding)
           result += String(month + 1)
         }
-        lastWasHour = false
         break
       case "dddd":
         result += DAY_NAMES[dayOfWeek]
-        lastWasHour = false
         break
       case "ddd":
         result += DAY_ABBR[dayOfWeek]
-        lastWasHour = false
         break
       case "dd":
         result += String(day).padStart(2, "0")
-        lastWasHour = false
         break
       case "d":
         result += String(day)
-        lastWasHour = false
         break
       case "hh":
         result += String(displayHours).padStart(2, "0")
-        lastWasHour = true
         break
       case "h":
         result += String(displayHours)
-        lastWasHour = true
         break
       case "ss":
         result += String(seconds).padStart(2, "0")
-        lastWasHour = false
         break
       case "s":
         result += String(seconds)
-        lastWasHour = false
         break
       case ".0":
       case ".00":
@@ -381,22 +415,17 @@ export function formatDate(date: Date, format: string): string {
           const decimals = lower.length - 1 // number of 0s
           const frac = String(ms).padStart(3, "0").slice(0, decimals)
           result += "." + frac
-          lastWasHour = false
         }
         break
       case "am/pm":
         result += ampm
-        lastWasHour = false
         break
       case "a/p":
         result += ampm.charAt(0)
-        lastWasHour = false
         break
       default:
         // Literal text (separators, spaces, etc.)
         result += token
-        // Don't reset lastWasHour for separators (e.g., "h:mm" — the colon
-        // between h and mm should not break the minute detection)
         break
     }
   }
@@ -424,10 +453,17 @@ function tokenize(format: string): string[] {
       }
     }
 
-    // Skip color directives like [Red]
+    // Elapsed-time directives like [h], [hh], [mm], [ss]
     if (format[i] === "[") {
       const end = format.indexOf("]", i)
       if (end !== -1) {
+        const inner = format.slice(i + 1, end)
+        if (/^h+$/i.test(inner) || /^m+$/i.test(inner) || /^s+$/i.test(inner)) {
+          tokens.push(format.slice(i, end + 1))
+          i = end + 1
+          continue
+        }
+        // Other directives (color, locale) — skip
         i = end + 1
         continue
       }

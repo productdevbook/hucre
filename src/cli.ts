@@ -1,17 +1,18 @@
 #!/usr/bin/env node
 
 // ── CLI Tool ────────────────────────────────────────────────────────
-// defter convert input.xlsx output.csv
-// defter convert input.csv output.xlsx
-// defter convert input.xlsx output.ods
-// defter inspect file.xlsx
-// defter inspect file.xlsx --sheet 0
-// defter validate data.xlsx --schema schema.json
+// hucre convert input.xlsx output.csv
+// hucre convert input.csv output.xlsx
+// hucre convert input.xlsx output.ods
+// hucre inspect file.xlsx
+// hucre inspect file.xlsx --sheet 0
+// hucre validate data.xlsx --schema schema.json
 // ─────────────────────────────────────────────────────────────────────
 
 import { defineCommand, runMain } from "citty"
 import { consola } from "consola"
 import { readFileSync, writeFileSync } from "node:fs"
+import { createRequire } from "node:module"
 import { extname } from "node:path"
 import { readXlsx } from "./xlsx/reader"
 import { writeXlsx } from "./xlsx/writer"
@@ -269,6 +270,11 @@ const validateCommand = defineCommand({
     const schemaPath = args.schema as string
     const sheetIdx = Number(args.sheet ?? "0")
 
+    if (Number.isNaN(sheetIdx)) {
+      consola.error(`Invalid sheet index: ${args.sheet}`)
+      process.exit(1)
+    }
+
     consola.start(`Validating ${filePath} with schema ${schemaPath}...`)
 
     // Read schema
@@ -309,10 +315,20 @@ const validateCommand = defineCommand({
 
 // ── Main Command ────────────────────────────────────────────────────
 
+const pkgVersion: string = (() => {
+  try {
+    const require = createRequire(import.meta.url)
+    const pkg = require("../package.json") as { version?: string }
+    return pkg.version ?? "0.0.0"
+  } catch {
+    return "0.0.0"
+  }
+})()
+
 const main = defineCommand({
   meta: {
     name: "hucre",
-    version: "0.0.1",
+    version: pkgVersion,
     description:
       "Spreadsheet Swiss Army knife. Convert, inspect, and validate XLSX, CSV, and ODS files.",
   },

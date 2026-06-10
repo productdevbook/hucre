@@ -12,6 +12,7 @@ import { isOle2Container } from "../_input"
 import { decryptAgile } from "./crypto/agile"
 import { ZipReader } from "../zip/reader"
 import { ZipStreamReader } from "../zip/stream-reader"
+import { matchesRelType } from "./reader"
 import { parseXml, parseSaxStream, decodeOoxmlEscapes } from "../xml/parser"
 import { parseContentTypes } from "./content-types"
 import { parseRelationships } from "./relationships"
@@ -58,14 +59,13 @@ function parseRangeFilter(ref: string): RangeFilter {
 }
 
 // ── OOXML Relationship Types ─────────────────────────────────────────
+// Use lenient matching (matchesRelType) so both Transitional and Strict
+// OOXML namespace URIs are accepted, matching the batch reader.
 
-const REL_WORKBOOK =
-  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"
-const REL_WORKSHEET =
-  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"
-const REL_SHARED_STRINGS =
-  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings"
-const REL_STYLES = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"
+const REL_WORKBOOK = "officeDocument"
+const REL_WORKSHEET = "worksheet"
+const REL_SHARED_STRINGS = "sharedStrings"
+const REL_STYLES = "styles"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -632,7 +632,7 @@ function resolveFromParts(
   parseContentTypes(decodeUtf8(ct))
 
   const rootRels = parseRelationships(decodeUtf8(rootRelsBytes))
-  const workbookRel = rootRels.find((r) => r.type === REL_WORKBOOK)
+  const workbookRel = rootRels.find((r) => matchesRelType(r.type, REL_WORKBOOK))
   if (!workbookRel) return null
   const workbookPath = workbookRel.target.startsWith("/")
     ? workbookRel.target.slice(1)
@@ -654,7 +654,7 @@ function resolveFromParts(
 
   const sheetRelMap = new Map<string, string>()
   for (const rel of workbookRels) {
-    if (rel.type === REL_WORKSHEET) {
+    if (matchesRelType(rel.type, REL_WORKSHEET)) {
       sheetRelMap.set(rel.id, resolvePath(workbookDir, rel.target))
     }
   }
@@ -665,7 +665,7 @@ function resolveFromParts(
   // collected (they precede the worksheet); otherwise we can't resolve
   // string cells while streaming, so bail to the buffered path.
   let sharedStrings: SharedString[] = []
-  const ssRel = workbookRels.find((r) => r.type === REL_SHARED_STRINGS)
+  const ssRel = workbookRels.find((r) => matchesRelType(r.type, REL_SHARED_STRINGS))
   if (ssRel) {
     const ssPath = resolvePath(workbookDir, ssRel.target)
     const ssBytes = parts.get(ssPath)
@@ -674,7 +674,7 @@ function resolveFromParts(
   }
 
   let parsedStyles: ParsedStyles | null = null
-  const stylesRel = workbookRels.find((r) => r.type === REL_STYLES)
+  const stylesRel = workbookRels.find((r) => matchesRelType(r.type, REL_STYLES))
   if (stylesRel) {
     const stylesPath = resolvePath(workbookDir, stylesRel.target)
     const stylesBytes = parts.get(stylesPath)
@@ -807,7 +807,7 @@ export async function* streamXlsxRows(
   }
   const rootRelsXml = decodeUtf8(await zip.extract("_rels/.rels"))
   const rootRels = parseRelationships(rootRelsXml)
-  const workbookRel = rootRels.find((r) => r.type === REL_WORKBOOK)
+  const workbookRel = rootRels.find((r) => matchesRelType(r.type, REL_WORKBOOK))
   if (!workbookRel) {
     throw new ParseError("Invalid XLSX: cannot find workbook relationship in _rels/.rels")
   }
@@ -837,7 +837,7 @@ export async function* streamXlsxRows(
 
   // 6. Parse shared strings (small, needed for cell resolution)
   let sharedStrings: SharedString[] = []
-  const ssRel = workbookRels.find((r) => r.type === REL_SHARED_STRINGS)
+  const ssRel = workbookRels.find((r) => matchesRelType(r.type, REL_SHARED_STRINGS))
   if (ssRel) {
     const ssPath = resolvePath(workbookDir, ssRel.target)
     if (zip.has(ssPath)) {
@@ -848,7 +848,7 @@ export async function* streamXlsxRows(
 
   // 7. Parse styles (needed for date detection)
   let parsedStyles: ParsedStyles | null = null
-  const stylesRel = workbookRels.find((r) => r.type === REL_STYLES)
+  const stylesRel = workbookRels.find((r) => matchesRelType(r.type, REL_STYLES))
   if (stylesRel) {
     const stylesPath = resolvePath(workbookDir, stylesRel.target)
     if (zip.has(stylesPath)) {
@@ -860,7 +860,7 @@ export async function* streamXlsxRows(
   // 8. Build rId → worksheet path map
   const sheetRelMap = new Map<string, string>()
   for (const rel of workbookRels) {
-    if (rel.type === REL_WORKSHEET) {
+    if (matchesRelType(rel.type, REL_WORKSHEET)) {
       sheetRelMap.set(rel.id, resolvePath(workbookDir, rel.target))
     }
   }

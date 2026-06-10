@@ -9,7 +9,7 @@ import { stripBom, detectDelimiter } from "./reader"
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$/
 
-function inferType(value: string): CellValue {
+function inferType(value: string, preserveLeadingZeros: boolean): CellValue {
   const trimmed = value.trim()
   if (trimmed === "") return value
 
@@ -20,6 +20,12 @@ function inferType(value: string): CellValue {
   if (ISO_DATE_RE.test(trimmed)) {
     const d = new Date(trimmed)
     if (!Number.isNaN(d.getTime())) return d
+  }
+
+  // Leading-zero preservation: keep strings like "0123", "007" as strings
+  // (aligns with parseCsv's default behaviour).
+  if (preserveLeadingZeros && trimmed.length > 1 && trimmed[0] === "0" && trimmed[1] !== ".") {
+    return value
   }
 
   const asNumber = parseNumber(trimmed)
@@ -64,6 +70,14 @@ export function* streamCsvRows(
   const skipEmptyRows = options?.skipEmptyRows ?? false
   const commentChar = options?.comment
   const isHeaderMode = options?.header ?? false
+  // Align inferType default with parseCsv (defaults to true).
+  const preserveLeadingZeros = options?.preserveLeadingZeros !== false
+  const maxRows = options?.maxRows
+  const skipLines = options?.skipLines ?? 0
+  // NOTE: transformValue, transformHeader, onRow and fastMode are NOT yet
+  // wired into the streaming reader. TODO: thread them through to reach full
+  // parity with parseCsv. For now we honor maxRows, skipLines and
+  // preserveLeadingZeros, which are the most impactful for correctness.
 
   if (skipBom) {
     input = stripBom(input)
@@ -77,6 +91,8 @@ export function* streamCsvRows(
   let i = 0
   let isFirstRow = true
   let _headerRow: string[] | null = null
+  let physicalLine = 0 // counts every parsed physical row (for skipLines)
+  let emittedDataRows = 0 // counts rows yielded (for maxRows)
 
   while (i < len) {
     // Parse one row
@@ -84,6 +100,10 @@ export function* streamCsvRows(
     let currentField = ""
     let inQuoted = false
     let rowDone = false
+    // Whether the current field was opened with a quote char.
+    let fieldWasQuoted = false
+    // Whether the FIRST field of this row was quoted.
+    let rowFirstQuoted = false
 
     while (i < len && !rowDone) {
       const ch = input[i]!
@@ -109,16 +129,20 @@ export function* streamCsvRows(
 
       // Not in quoted field
       if (startsWith(input, delimiter, i)) {
+        if (row.length === 0) rowFirstQuoted = fieldWasQuoted
         row.push(currentField)
         currentField = ""
+        fieldWasQuoted = false
         i += delimiter.length
         continue
       }
 
       // Check for line endings
       if (ch === "\r") {
+        if (row.length === 0) rowFirstQuoted = fieldWasQuoted
         row.push(currentField)
         currentField = ""
+        fieldWasQuoted = false
         if (i + 1 < len && input[i + 1] === "\n") {
           i += 2
         } else {
@@ -129,8 +153,10 @@ export function* streamCsvRows(
       }
 
       if (ch === "\n") {
+        if (row.length === 0) rowFirstQuoted = fieldWasQuoted
         row.push(currentField)
         currentField = ""
+        fieldWasQuoted = false
         i++
         rowDone = true
         continue
@@ -139,6 +165,7 @@ export function* streamCsvRows(
       // Start of quoted field
       if (ch === quote && currentField === "") {
         inQuoted = true
+        fieldWasQuoted = true
         i++
         continue
       }
@@ -147,9 +174,12 @@ export function* streamCsvRows(
       i++
     }
 
-    // End of input without trailing newline
+    // End of input without trailing newline.
+    // Preserve a final row whose single field was an explicit quoted-empty
+    // field ("").
     if (!rowDone) {
-      if (currentField !== "" || row.length > 0) {
+      if (currentField !== "" || row.length > 0 || fieldWasQuoted) {
+        if (row.length === 0) rowFirstQuoted = fieldWasQuoted
         row.push(currentField)
       } else {
         // Nothing left
@@ -157,12 +187,16 @@ export function* streamCsvRows(
       }
     }
 
+    // Skip leading physical lines if configured
+    physicalLine++
+    if (physicalLine <= skipLines) continue
+
     // Skip empty rows if configured
     if (row.length === 0) continue
     if (skipEmptyRows && row.every((cell) => cell === "")) continue
 
-    // Skip comment rows
-    if (commentChar && row.length > 0 && row[0].startsWith(commentChar)) {
+    // Skip comment rows — only physically-unquoted leading comment chars count.
+    if (commentChar && !rowFirstQuoted && row.length > 0 && row[0].startsWith(commentChar)) {
       continue
     }
 
@@ -174,9 +208,15 @@ export function* streamCsvRows(
     }
     isFirstRow = false
 
+    // Honor maxRows (counts data rows yielded)
+    if (maxRows !== undefined && maxRows >= 0 && emittedDataRows >= maxRows) {
+      return
+    }
+    emittedDataRows++
+
     // Apply type inference if requested
     if (doTypeInference) {
-      const typedRow: CellValue[] = row.map((v) => inferType(v))
+      const typedRow: CellValue[] = row.map((v) => inferType(v, preserveLeadingZeros))
       yield typedRow
     } else {
       yield row

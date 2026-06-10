@@ -246,6 +246,10 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
 
   // Current cell state
   let cellRef = ""
+  // Implicit-column tracking for cells lacking an `r` attribute (parity with
+  // the streaming reader). Reset at the start of each row.
+  let currentRowNum = 0 // 1-based row number from the row's `r` attr
+  let implicitCol = 0 // 0-based next implicit column index
   let cellType = ""
   let cellStyleIndex = -1
   let cellValueText = ""
@@ -309,6 +313,10 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
               break
             }
             inRow = true
+            // Track the row number and reset implicit-column counter so cells
+            // lacking an `r` attribute get sequential columns within this row.
+            currentRowNum = Number(attrs["r"]) || currentRowNum + 1
+            implicitCol = 0
             // Parse row-level attributes: ht, customHeight, hidden
             if (
               attrs["ht"] &&
@@ -745,15 +753,21 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
           break
         case "c":
           if (inCell) {
+            // Resolve effective row/col. Cells with an `r` attribute use it;
+            // cells without one fall back to implicit position within the row.
+            const effRow = cellRef ? parseCellRef(cellRef).row : currentRowNum - 1
+            const effCol = cellRef ? parseCellRef(cellRef).col : implicitCol
+            // Advance implicit column for the next cell in this row.
+            implicitCol = effCol + 1
+
             // Skip cells outside the range filter
             let skipCell = false
-            if (rangeFilter && cellRef) {
-              const pos = parseCellRef(cellRef)
+            if (rangeFilter) {
               if (
-                pos.row < rangeFilter.startRow ||
-                pos.row > rangeFilter.endRow ||
-                pos.col < rangeFilter.startCol ||
-                pos.col > rangeFilter.endCol
+                effRow < rangeFilter.startRow ||
+                effRow > rangeFilter.endRow ||
+                effCol < rangeFilter.startCol ||
+                effCol > rangeFilter.endCol
               ) {
                 skipCell = true
               }
@@ -775,12 +789,13 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
                 cellFormulaSi,
                 cellFormulaRef,
                 cellFormulaCm,
+                effRow,
+                effCol,
               )
               // Track max dimensions
-              if (cellRef) {
-                const pos = parseCellRef(cellRef)
-                if (pos.col > maxCol) maxCol = pos.col
-                if (pos.row > maxRow) maxRow = pos.row
+              if (effRow >= 0 && effCol >= 0) {
+                if (effCol > maxCol) maxCol = effCol
+                if (effRow > maxRow) maxRow = effRow
                 hasCells = true
               }
             }
@@ -1398,10 +1413,18 @@ function processCell(
   formulaSi?: number,
   formulaRef?: string,
   formulaCm?: boolean,
+  fallbackRow?: number,
+  fallbackCol?: number,
 ): void {
-  if (!ref) return
-
-  const pos = parseCellRef(ref)
+  // When the `r` attribute is missing, fall back to implicit row/col position
+  // (parity with the streaming reader).
+  const pos =
+    ref !== ""
+      ? parseCellRef(ref)
+      : fallbackRow !== undefined && fallbackCol !== undefined
+        ? { row: fallbackRow, col: fallbackCol }
+        : null
+  if (!pos) return
   const { row, col } = pos
 
   // Guard against malicious / corrupt cell references that would
@@ -1458,8 +1481,10 @@ function processCell(
           cellType = "string"
         }
       } else {
-        value = valueText
-        cellType = "string"
+        // Out-of-bounds SST index — return null (consistent with the
+        // streaming reader), not the raw index string.
+        value = null
+        cellType = "empty"
       }
       break
     }

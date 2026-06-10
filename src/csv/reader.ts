@@ -91,15 +91,25 @@ export function parseCsv(input: string, options?: CsvReadOptions): CellValue[][]
   const quote = opts.quote
   const escape = opts.escape
 
-  const rows = options?.fastMode
-    ? parseFast(input, delimiter)
-    : parseRaw(input, delimiter, quote, escape)
+  let rows: string[][]
+  let firstFieldQuoted: boolean[]
+  if (options?.fastMode) {
+    rows = parseFast(input, delimiter)
+    // Fast mode does no quote handling, so no field is ever "quoted".
+    firstFieldQuoted = Array.from({ length: rows.length }, () => false)
+  } else {
+    const parsed = parseRaw(input, delimiter, quote, escape)
+    rows = parsed.rows
+    firstFieldQuoted = parsed.firstFieldQuoted
+  }
 
-  // Filter comments
+  // Filter comments — only physically-unquoted leading comment chars count,
+  // so a quoted field like "#not a comment" is preserved.
   const commentChar = opts.comment
   let filtered: CellValue[][] = commentChar
-    ? rows.filter((row) => {
+    ? rows.filter((row, idx) => {
         if (row.length === 0) return true
+        if (firstFieldQuoted[idx]) return true
         const firstVal = row[0]
         if (typeof firstVal === "string" && firstVal.startsWith(commentChar)) {
           return false
@@ -220,13 +230,29 @@ function parseFast(input: string, delimiter: string): string[][] {
 
 // ── Core parser (RFC 4180) ───────────────────────────────────────────
 
-function parseRaw(input: string, delimiter: string, quote: string, escape: string): string[][] {
+function parseRaw(
+  input: string,
+  delimiter: string,
+  quote: string,
+  escape: string,
+): { rows: string[][]; firstFieldQuoted: boolean[] } {
   const rows: string[][] = []
+  // Tracks whether the FIRST field of each row was (at least partially) quoted.
+  // Used so comment filtering only applies to physically-unquoted leading #.
+  const firstFieldQuoted: boolean[] = []
   let currentRow: string[] = []
   let currentField = ""
   let inQuoted = false
+  // Whether the field currently being built was opened with a quote char.
+  let fieldWasQuoted = false
+  let rowFirstQuoted = false
   let i = 0
   const len = input.length
+
+  const pushRow = () => {
+    rows.push(currentRow)
+    firstFieldQuoted.push(rowFirstQuoted)
+  }
 
   while (i < len) {
     const ch = input[i]!
@@ -254,20 +280,25 @@ function parseRaw(input: string, delimiter: string, quote: string, escape: strin
 
     // Check for delimiter
     if (startsWith(input, delimiter, i)) {
+      if (currentRow.length === 0) rowFirstQuoted = fieldWasQuoted
       currentRow.push(currentField)
       currentField = ""
+      fieldWasQuoted = false
       i += delimiter.length
       continue
     }
 
     // Check for line endings
-    if (ch === "\r") {
+    if (ch === "\r" || ch === "\n") {
+      if (currentRow.length === 0) rowFirstQuoted = fieldWasQuoted
       currentRow.push(currentField)
       currentField = ""
-      rows.push(currentRow)
+      fieldWasQuoted = false
+      pushRow()
       currentRow = []
+      rowFirstQuoted = false
       // Consume \r\n as single line break
-      if (i + 1 < len && input[i + 1] === "\n") {
+      if (ch === "\r" && i + 1 < len && input[i + 1] === "\n") {
         i += 2
       } else {
         i++
@@ -275,18 +306,10 @@ function parseRaw(input: string, delimiter: string, quote: string, escape: strin
       continue
     }
 
-    if (ch === "\n") {
-      currentRow.push(currentField)
-      currentField = ""
-      rows.push(currentRow)
-      currentRow = []
-      i++
-      continue
-    }
-
     // Start of quoted field (only at the start of a field)
     if (ch === quote && currentField === "") {
       inQuoted = true
+      fieldWasQuoted = true
       i++
       continue
     }
@@ -296,14 +319,16 @@ function parseRaw(input: string, delimiter: string, quote: string, escape: strin
     i++
   }
 
-  // Handle last field/row
-  // Don't add a trailing empty row from a trailing newline
-  if (currentField !== "" || currentRow.length > 0) {
+  // Handle last field/row.
+  // Don't add a trailing empty row from a trailing newline, BUT preserve a
+  // final row whose single field was an explicit quoted-empty field ("").
+  if (currentField !== "" || currentRow.length > 0 || fieldWasQuoted) {
+    if (currentRow.length === 0) rowFirstQuoted = fieldWasQuoted
     currentRow.push(currentField)
-    rows.push(currentRow)
+    pushRow()
   }
 
-  return rows
+  return { rows, firstFieldQuoted }
 }
 
 // ── Type inference ───────────────────────────────────────────────────

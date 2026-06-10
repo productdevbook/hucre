@@ -35,6 +35,11 @@ function resolveLocale(locale?: string): LocaleFormat | undefined {
 export interface FormatOptions {
   /** BCP 47 locale tag for number formatting (e.g. "de-DE", "tr-TR"). */
   locale?: string
+  /**
+   * Use the 1904 date system (Excel for Mac legacy). When true, date serials
+   * are interpreted/produced relative to 1904-01-01 instead of 1900-01-01.
+   */
+  is1904?: boolean
 }
 
 /**
@@ -77,7 +82,7 @@ export function formatValue(value: unknown, numFmt: string, options?: FormatOpti
   // Convert Date to serial for numeric formatting
   let numValue: number
   if (value instanceof Date) {
-    numValue = dateToSerial(value)
+    numValue = dateToSerial(value, options?.is1904)
   } else if (typeof value === "number") {
     numValue = value
   } else {
@@ -123,7 +128,7 @@ export function formatValue(value: unknown, numFmt: string, options?: FormatOpti
   }
 
   const localeInfo = resolveLocale(options?.locale)
-  return applyNumberSection(numValue, section, localeInfo)
+  return applyNumberSection(numValue, section, localeInfo, options?.is1904)
 }
 
 // ── Section Parsing ─────────────────────────────────────────────────
@@ -286,7 +291,12 @@ function expandLiterals(fmt: string): string {
 
 // ── Number Section ──────────────────────────────────────────────────
 
-function applyNumberSection(value: number, section: string, locale?: LocaleFormat): string {
+function applyNumberSection(
+  value: number,
+  section: string,
+  locale?: LocaleFormat,
+  is1904?: boolean,
+): string {
   const cleaned = cleanSection(section)
 
   // Text format: @ — return as string
@@ -296,8 +306,8 @@ function applyNumberSection(value: number, section: string, locale?: LocaleForma
 
   // Check if it's a date format — delegate to formatDate
   if (isDateFormat(cleaned)) {
-    const date = serialToDate(value)
-    return formatDate(date, section) // Pass original section, formatDate handles [Red] etc
+    const date = serialToDate(value, is1904)
+    return formatDate(date, section, value) // Pass original section + serial for elapsed time
   }
 
   // Percentage: multiply by 100
