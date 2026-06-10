@@ -6,6 +6,7 @@ import { ParseError, ZipError } from "../errors"
 import { assertNotEncrypted } from "../_input"
 import { ZipReader } from "../zip/reader"
 import { parseSax } from "../xml/parser"
+import { MAX_COL_INDEX, MAX_ROW_INDEX } from "../limits"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -21,8 +22,10 @@ function toUint8Array(input: Uint8Array | ArrayBuffer): Uint8Array {
 // ── Row parser via SAX ──────────────────────────────────────────────
 
 interface OdsStreamRow {
-  /** 0-based row index */
+  /** 0-based row index within its sheet */
   index: number
+  /** 0-based index of the sheet (table) this row belongs to */
+  sheetIndex: number
   /** Cell values for this row */
   values: CellValue[]
 }
@@ -37,6 +40,7 @@ function* parseContentRows(xml: string): Generator<OdsStreamRow, void, undefined
   let inCell = false
   let inP = false
 
+  let sheetIndex = -1
   let currentRowIndex = -1
   let cellRepeat = 1
   let rowRepeat = 1
@@ -61,20 +65,28 @@ function* parseContentRows(xml: string): Generator<OdsStreamRow, void, undefined
         case "table":
           if (inSpreadsheet) {
             inTable = true
+            sheetIndex++
             currentRowIndex = -1
           }
           break
         case "table-row":
           if (inTable) {
             inRow = true
-            rowRepeat = Number(attrs["table:number-rows-repeated"] ?? "1")
+            // Clamp against a hostile huge number-rows-repeated on a row.
+            rowRepeat = Math.min(
+              Number(attrs["table:number-rows-repeated"] ?? "1"),
+              MAX_ROW_INDEX + 1,
+            )
             currentCells = []
           }
           break
         case "table-cell":
           if (inRow) {
             inCell = true
-            cellRepeat = Number(attrs["table:number-columns-repeated"] ?? "1")
+            cellRepeat = Math.min(
+              Number(attrs["table:number-columns-repeated"] ?? "1"),
+              MAX_COL_INDEX + 1,
+            )
             cellText = ""
             cellValueType = attrs["office:value-type"] ?? attrs["calcext:value-type"] ?? ""
             cellValue = attrs["office:value"] ?? ""
@@ -84,7 +96,10 @@ function* parseContentRows(xml: string): Generator<OdsStreamRow, void, undefined
           break
         case "covered-table-cell":
           if (inRow) {
-            const repeat = Number(attrs["table:number-columns-repeated"] ?? "1")
+            const repeat = Math.min(
+              Number(attrs["table:number-columns-repeated"] ?? "1"),
+              MAX_COL_INDEX + 1,
+            )
             for (let i = 0; i < repeat; i++) {
               currentCells.push(null)
             }
@@ -92,6 +107,20 @@ function* parseContentRows(xml: string): Generator<OdsStreamRow, void, undefined
           break
         case "p":
           if (inCell) inP = true
+          break
+        // Text content special elements — mirror collectText() in reader.ts so
+        // the streaming and batch readers return the same string for a cell.
+        case "s":
+          if (inP && inCell) {
+            const count = Number(attrs["text:c"] ?? "1")
+            cellText += " ".repeat(count > 0 ? count : 1)
+          }
+          break
+        case "line-break":
+          if (inP && inCell) cellText += "\n"
+          break
+        case "tab":
+          if (inP && inCell) cellText += "\t"
           break
       }
     },
@@ -138,6 +167,7 @@ function* parseContentRows(xml: string): Generator<OdsStreamRow, void, undefined
                 currentRowIndex++
                 completedRows.push({
                   index: currentRowIndex,
+                  sheetIndex,
                   values: r === 0 ? currentCells : [...currentCells],
                 })
               }

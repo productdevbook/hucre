@@ -17,6 +17,7 @@ import { ParseError, ZipError } from "../errors"
 import { assertNotEncrypted, readInputToUint8Array } from "../_input"
 import { ZipReader } from "../zip/reader"
 import { parseXml } from "../xml/parser"
+import { MAX_COL_INDEX, MAX_ROW_INDEX } from "../limits"
 import type { XmlElement } from "../xml/parser"
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -510,7 +511,11 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
       let col = 0
 
       for (const entry of cellEntries) {
-        for (let r = 0; r < entry.repeat; r++) {
+        // Clamp column repeats too: a non-trailing cell with a huge
+        // number-columns-repeated would otherwise allocate past Excel's
+        // column limit. (Trailing empty repeats are already trimmed above.)
+        const repeat = Math.min(entry.repeat, MAX_COL_INDEX + 1)
+        for (let r = 0; r < repeat; r++) {
           rowData.push(entry.value)
 
           // Collect merge ranges
@@ -568,8 +573,11 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
       }
 
       // Cap row repeats for empty rows to avoid memory issues
-      // (LibreOffice may emit large row repeats for trailing empty rows)
-      const effectiveRowRepeat = rowData.length > 0 ? rowRepeat : 0
+      // (LibreOffice may emit large row repeats for trailing empty rows).
+      // For non-empty rows, a hostile file can set a huge number-rows-repeated
+      // on a one-cell row to force millions of allocations — clamp to Excel's
+      // row limit.
+      const effectiveRowRepeat = rowData.length > 0 ? Math.min(rowRepeat, MAX_ROW_INDEX + 1) : 0
 
       for (let r = 0; r < effectiveRowRepeat; r++) {
         rows.push(effectiveRowRepeat === 1 && r === 0 ? rowData : [...rowData])
