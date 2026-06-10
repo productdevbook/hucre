@@ -186,7 +186,7 @@ const codeLengthOrder = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 
  * Decompress raw DEFLATE data (no zlib/gzip header).
  * Pure TypeScript implementation of RFC 1951.
  */
-export function inflate(data: Uint8Array, maxBytes = MAX_DECOMPRESSED_BYTES): Uint8Array {
+export function inflate(data: Uint8Array, maxBytes: number = MAX_DECOMPRESSED_BYTES): Uint8Array {
   const reader = new BitReader(data)
   // Dynamic output buffer
   let output = new Uint8Array(data.length * 3 || 1024)

@@ -7,7 +7,7 @@
  * decompress to. Defends against zip bombs that claim a small
  * compressed size but expand to gigabytes. Default ~2 GiB.
  */
-export const MAX_DECOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024
+export const MAX_DECOMPRESSED_BYTES: number = 2 * 1024 * 1024 * 1024
 
 /** Maximum row index (0-based) — Excel supports 1,048,576 rows. */
 export const MAX_ROW_INDEX = 1_048_575
