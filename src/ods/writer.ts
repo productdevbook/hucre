@@ -14,6 +14,7 @@ import type {
 import { ZipWriter } from "../zip/writer"
 import { unwrapCellValue } from "../xlsx/hyperlink"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
+import { replaceA1Ranges } from "../cell-utils"
 
 const encoder = /* @__PURE__ */ new TextEncoder()
 
@@ -472,16 +473,11 @@ function getOrCreateStyleName(collector: StyleCollector, style: CellStyle): stri
  * ODS formulas use `of:=` prefix and `[.A1]` cell references.
  */
 function excelFormulaToOds(formula: string): string {
-  // Convert cell references like A1, $A$1, A1:B2 to ODS [.A1] notation
-  // Handle range references like A1:B2 → [.A1:.B2]
-  const converted = formula.replace(
-    /(\$?[A-Z]{1,3}\$?\d+)(?::(\$?[A-Z]{1,3}\$?\d+))?/g,
-    (_match, ref1: string, ref2?: string) => {
-      if (ref2) {
-        return `[.${ref1}:.${ref2}]`
-      }
-      return `[.${ref1}]`
-    },
+  // Convert cell references like A1, $A$1, A1:B2 to ODS [.A1] notation,
+  // handling ranges (A1:B2 → [.A1:.B2]) while leaving function names
+  // (LOG10), string literals ("AB1"), and embedded identifiers untouched.
+  const converted = replaceA1Ranges(formula, (ref1, ref2) =>
+    ref2 ? `[.${ref1}:.${ref2}]` : `[.${ref1}]`,
   )
   return `of:=${converted}`
 }

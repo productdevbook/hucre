@@ -11,6 +11,61 @@ export { colToLetter, cellRef, rangeRef } from "./xlsx/worksheet-writer"
 // ── New Utilities ──────────────────────────────────────────────────
 
 /**
+ * Matches an A1-style cell reference that is NOT part of a larger
+ * identifier and NOT a function name. The negative lookbehind rejects a
+ * preceding letter/digit/underscore (so the "G10" inside "LOG10" or the
+ * tail of a defined name is left alone); the negative lookahead rejects a
+ * following "(" (so "SUM(" / "ATAN2(" are not treated as the column "SUM"
+ * etc.) and a following letter/digit (so "A1B" isn't split).
+ */
+const A1_REF_TOKEN = /(?<![A-Za-z0-9_$])(\$?[A-Z]{1,3}\$?\d+)(?![A-Za-z0-9_(])/g
+
+/** Like {@link A1_REF_TOKEN} but also captures an optional `:ref2` range tail. */
+const A1_RANGE_TOKEN =
+  /(?<![A-Za-z0-9_$])(\$?[A-Z]{1,3}\$?\d+)(?::(\$?[A-Z]{1,3}\$?\d+))?(?![A-Za-z0-9_(])/g
+
+/**
+ * Run a replacer over the A1 cell references / ranges in an Excel formula,
+ * skipping quoted string literals, function names, and embedded
+ * identifiers (same safety rules as {@link replaceA1Refs}). `replacer`
+ * receives the first ref and, for a range, the second; it returns the
+ * full replacement for the matched span.
+ */
+export function replaceA1Ranges(
+  formula: string,
+  replacer: (ref1: string, ref2?: string) => string,
+): string {
+  const parts = formula.split(/("(?:[^"]|"")*")/)
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 1) continue
+    parts[i] = parts[i].replace(A1_RANGE_TOKEN, (_m, r1: string, r2?: string) => replacer(r1, r2))
+  }
+  return parts.join("")
+}
+
+/**
+ * Run a replacer over the A1 cell references in an Excel formula while
+ * leaving quoted string literals (`"..."`), function names, and embedded
+ * identifiers untouched. The naive `/[A-Z]+\d+/g` approach corrupts
+ * `LOG10(...)`, `ATAN2`, and `"AB1"` — this splits the formula on string
+ * literals first and only rewrites refs in the code spans.
+ *
+ * `replacer` receives the matched reference text (e.g. `"$A$1"`) and
+ * returns its replacement.
+ */
+export function replaceA1Refs(formula: string, replacer: (ref: string) => string): string {
+  // Split on double-quoted string literals (Excel doubles "" to escape a
+  // quote, which this regex keeps inside one literal token).
+  const parts = formula.split(/("(?:[^"]|"")*")/)
+  for (let i = 0; i < parts.length; i++) {
+    // Odd indices are the captured string literals — leave them verbatim.
+    if (i % 2 === 1) continue
+    parts[i] = parts[i].replace(A1_REF_TOKEN, (m) => replacer(m))
+  }
+  return parts.join("")
+}
+
+/**
  * Convert a column letter (e.g. "A", "Z", "AA") to a 0-based column index.
  * This is the inverse of `colToLetter`.
  *
@@ -125,10 +180,15 @@ export function r1c1ToA1(formula: string, currentRow: number, currentCol: number
  * Replaces all A1 references in the formula string.
  */
 export function a1ToR1C1(formula: string, currentRow?: number, currentCol?: number): string {
-  // Match A1 patterns: $A$1, A1, $A1, A$1, AA100
-  return formula.replace(
-    /(\$?)([A-Z]{1,3})(\$?)(\d+)/g,
-    (_match, colDollar: string, colLetters: string, rowDollar: string, rowDigits: string) => {
+  // Match A1 patterns: $A$1, A1, $A1, A$1, AA100 — but skip refs inside
+  // function names ("LOG10") and string literals ("AB1").
+  return replaceA1Refs(formula, (ref) => {
+    const m = /(\$?)([A-Z]{1,3})(\$?)(\d+)/.exec(ref)!
+    const colDollar = m[1]
+    const colLetters = m[2]
+    const rowDollar = m[3]
+    const rowDigits = m[4]
+    {
       const col = letterToCol(colLetters) // 0-based
       const row = parseInt(rowDigits, 10) - 1 // 0-based
       const colAbs = colDollar === "$"
@@ -151,6 +211,6 @@ export function a1ToR1C1(formula: string, currentRow?: number, currentCol?: numb
       }
 
       return `R${rowPart}C${colPart}`
-    },
-  )
+    }
+  })
 }

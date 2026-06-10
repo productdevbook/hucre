@@ -222,4 +222,15 @@ describe("toMarkdown", () => {
     const pipeCounts = lines.map((l) => (l.match(/\|/g) || []).length)
     expect(new Set(pipeCounts).size).toBe(1)
   })
+
+  it("newlines inside a cell don't break the table structure", () => {
+    const sheet = makeSheet([["Col"], ["line1\nline2"], ["a\r\nb"]])
+    const md = toMarkdown(sheet)
+    const lines = md.split("\n")
+    // header + separator + 2 data rows = 4 lines; an embedded newline must
+    // not spill into extra table rows.
+    expect(lines).toHaveLength(4)
+    expect(md).toContain("line1<br>line2")
+    expect(md).toContain("a<br>b")
+  })
 })

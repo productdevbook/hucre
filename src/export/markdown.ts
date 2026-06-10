@@ -9,9 +9,13 @@ export interface MarkdownExportOptions {
   maxWidth?: number
 }
 
-/** Escape pipe characters in cell values */
+/**
+ * Escape characters that would break a Markdown table cell: pipes (column
+ * separators) and newlines (row separators). A literal newline inside a
+ * cell is rendered as `<br>` (GFM) so the table structure survives.
+ */
 function escapePipe(str: string): string {
-  return str.replace(/\|/g, "\\|")
+  return str.replace(/\|/g, "\\|").replace(/\r\n|\r|\n/g, "<br>")
 }
 
 /** Format a cell value as a string for Markdown output */
