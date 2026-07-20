@@ -7,13 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      citty:
-        specifier: ^0.2.1
-        version: 0.2.1
-      consola:
-        specifier: ^3.4.2
-        version: 3.4.2
     devDependencies:
       '@typescript/native-preview':
         specifier: 7.0.0-dev.20260316.1
@@ -24,6 +17,12 @@ importers:
       bumpp:
         specifier: ^11.0.1
         version: 11.0.1
+      citty:
+        specifier: ^0.2.1
+        version: 0.2.1
+      consola:
+        specifier: ^3.4.2
+        version: 3.4.2
       obuild:
         specifier: ^0.4.32
         version: 0.4.32(@typescript/native-preview@7.0.0-dev.20260316.1)(jiti@2.6.1)(magicast@0.5.2)(picomatch@4.0.4)(rollup@4.60.0)(typescript@6.0.2)
