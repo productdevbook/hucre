@@ -27,6 +27,7 @@ import {
 import { parseRelationships } from "./relationships"
 import { createStylesCollector } from "./styles-writer"
 import { createSharedStrings, writeSharedStringsXml, writeWorksheetXml } from "./worksheet-writer"
+import { writeFeaturePropertyBagXml } from "./feature-property-bag"
 import type { WorksheetResult } from "./worksheet-writer"
 import { writeDrawing } from "./drawing-writer"
 import type { DrawingResult } from "./drawing-writer"
@@ -196,6 +197,20 @@ export async function saveXlsx(
     veryHidden: sheet.veryHidden,
     tables: sheet.tables,
     rowDefs: sheet.rowDefs,
+    // Everything below is read by the reader and understood by the
+    // writer, and was simply missing from this map — so opening a
+    // workbook and saving it back destroyed it. See #359.
+    splitPane: sheet.splitPane,
+    rowBreaks: sheet.rowBreaks,
+    colBreaks: sheet.colBreaks,
+    outlineProperties: sheet.outlineProperties,
+    sparklines: sheet.sparklines,
+    textBoxes: sheet.textBoxes,
+    // `backgroundImage` is deliberately NOT forwarded. It needs a media
+    // part and a `<picture>` relationship, and this path emits neither —
+    // forwarding it produces a sheet referencing an rId that was never
+    // written, which Excel reports as corrupt. Losing the image is worse
+    // than it should be, but better than that. Tracked separately.
   }))
 
   // Create shared collectors
@@ -238,15 +253,21 @@ export async function saveXlsx(
 
   for (let i = 0; i < writeSheets.length; i++) {
     const sheet = writeSheets[i]
-    if (sheet.images && sheet.images.length > 0) {
-      const result = writeDrawing(sheet.images, globalImageIndex)
+    const images = sheet.images ?? []
+    const hasTextBoxes = sheet.textBoxes !== undefined && sheet.textBoxes.length > 0
+    // A drawing part hosts images *and* text boxes. Gating on images
+    // alone meant a text-box-only sheet produced no drawing, and a sheet
+    // with both produced one that silently dropped the text boxes —
+    // writer.ts has always handled both. See #359.
+    if (images.length > 0 || hasTextBoxes) {
+      const result = writeDrawing(images, globalImageIndex, sheet.textBoxes)
       drawingResults.push(result)
       drawingIndices.push(i + 1)
       for (const img of result.images) {
         const ext = img.path.split(".").pop()
         if (ext) imageExtensions.add(ext)
       }
-      globalImageIndex += sheet.images.length
+      globalImageIndex += images.length
     } else {
       drawingResults.push(null)
     }
@@ -710,6 +731,10 @@ export async function saveXlsx(
   // Excel doesn't see the preserved bytes as orphan.
   const allDrawingIndices = mergeSortedUnique(drawingIndices, preservedDrawingNumbers)
   const allChartIndices = mergeSortedUnique(chartIndices, newModelChartIndices)
+  // Worksheets are already serialized by this point, so the collector
+  // knows whether any cell asked for a checkbox xf. Previously hardcoded
+  // false, which dropped Excel 2024 checkboxes on every round trip (#359).
+  const hasFeaturePropertyBag = styles.hasCheckboxFeature()
   const ctOpts: ContentTypesOptions = {
     sheetCount: writeSheets.length,
     hasSharedStrings,
@@ -737,6 +762,7 @@ export async function saveXlsx(
     hasCoreProps: true,
     hasAppProps: true,
     hasMacros: workbook.hasMacros,
+    hasFeaturePropertyBag,
   }
   zip.add("[Content_Types].xml", encoder.encode(writeContentTypes(ctOpts)))
 
@@ -757,7 +783,10 @@ export async function saveXlsx(
         allNamedRanges.length > 0 ? allNamedRanges : undefined,
         dateSystem,
         activeSheet,
-        undefined,
+        // The reader populates this; passing undefined here silently
+        // unlocked every structurally-protected workbook that went
+        // through open → save. See #359.
+        workbook.workbookProtection,
         externalLinkRels.length > 0 ? externalLinkRels : undefined,
         pivotCacheRefs.length > 0 ? pivotCacheRefs : undefined,
         slicerCacheRels.length > 0 ? slicerCacheRels : undefined,
@@ -774,7 +803,7 @@ export async function saveXlsx(
         writeSheets.length,
         hasSharedStrings,
         workbook.hasMacros,
-        false, // hasFeaturePropertyBag — not yet roundtripped
+        hasFeaturePropertyBag,
         hasPersons,
         externalLinkRels.length > 0 ? externalLinkRels : undefined,
         pivotCacheRels.length > 0 ? pivotCacheRels : undefined,
@@ -787,6 +816,15 @@ export async function saveXlsx(
 
   // xl/styles.xml
   zip.add("xl/styles.xml", encoder.encode(styles.toXml()))
+
+  // xl/featurePropertyBag/featurePropertyBag.xml — declared above, so
+  // the part has to exist.
+  if (hasFeaturePropertyBag) {
+    zip.add(
+      "xl/featurePropertyBag/featurePropertyBag.xml",
+      encoder.encode(writeFeaturePropertyBagXml()),
+    )
+  }
 
   // xl/sharedStrings.xml
   if (hasSharedStrings) {
