@@ -83,7 +83,7 @@ describe("openXlsx → saveXlsx preserves sheet features", () => {
       sheets: [
         sheetWith({
           backgroundImage: png,
-          images: [{ data: png, extension: "png", anchor: { from: { row: 0, col: 0 } } }],
+          images: [{ data: png, type: "png", anchor: { from: { row: 0, col: 0 } } }],
         }),
       ],
     })
