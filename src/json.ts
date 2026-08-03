@@ -12,3 +12,6 @@ export type { NdjsonStreamReadOptions } from "./json/stream"
 
 export { flattenValue, collectHeaders } from "./json/flatten"
 export type { FlattenOptions } from "./json/flatten"
+
+// ── Shared types used by this entry point's signatures ──────────────
+export type { CellValue, Sheet, Workbook } from "./_types"

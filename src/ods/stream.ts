@@ -21,7 +21,7 @@ function toUint8Array(input: Uint8Array | ArrayBuffer): Uint8Array {
 
 // ── Row parser via SAX ──────────────────────────────────────────────
 
-interface OdsStreamRow {
+export interface OdsStreamRow {
   /** 0-based row index within its sheet */
   index: number
   /** 0-based index of the sheet (table) this row belongs to */

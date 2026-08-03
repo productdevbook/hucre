@@ -8,3 +8,4 @@ dist
 .env.local
 .vercel
 coverage
+.claude/worktrees

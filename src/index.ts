@@ -59,6 +59,10 @@ export {
   workbookToJson,
   NdjsonStreamWriter,
   readNdjsonStream,
+  // Exported from hucre/json but not from the root, so the two surfaces
+  // disagreed about what the JSON API is.
+  flattenValue,
+  collectHeaders,
 } from "./json"
 export type {
   JsonReadOptions,
@@ -319,4 +323,37 @@ export type {
   SchemaField,
   SchemaFieldType,
   ValidationError as ValidationErrorType,
+  // Sheet features reachable through WriteSheet / Sheet but previously
+  // unnameable — you could build one inline and never annotate it.
+  TableDefinition,
+  TableColumn,
+  Sparkline,
+  SheetTextBox,
+  PaperSize,
+  ValidationType,
+  ValidationOperator,
+  ConditionalRuleType,
+  // Chart sub-types reachable through SheetChart / ChartSeries / Chart.
+  ChartColor,
+  ChartThemeColor,
+  ChartThemeColorName,
+  ChartDataPoint,
+  ChartTrendline,
+  ChartTrendlineType,
+  ChartErrorBars,
+  ChartErrorBarDirection,
+  ChartErrorBarType,
+  ChartErrorBarValType,
+  ChartBorderDash,
+  ChartLineCap,
+  ChartLineCompound,
+  ChartScatterStyle,
+  ChartShape3D,
+  ChartAxisCrosses,
+  ChartAxisCrossBetween,
+  ChartAxisDispUnit,
+  ChartAxisDispUnits,
+  ChartAxisLabelAlign,
+  ChartAxisNumberFormat,
+  ChartAxisScale,
 } from "./_types"

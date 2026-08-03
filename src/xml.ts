@@ -6,3 +6,6 @@ export type { XmlReadOptions, XmlReadResult } from "./xml/data-reader"
 
 export { writeXml } from "./xml/data-writer"
 export type { XmlWriteOptions } from "./xml/data-writer"
+
+// ── Shared types used by this entry point's signatures ──────────────
+export type { CellValue } from "./_types"
