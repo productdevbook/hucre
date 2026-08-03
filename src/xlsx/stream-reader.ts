@@ -8,6 +8,7 @@ import type { SharedString } from "./shared-strings"
 import type { ParsedStyles } from "./styles"
 import type { Relationship } from "./relationships"
 import { EncryptedFileError, ParseError, ZipError } from "../errors"
+import { MAX_COL_INDEX } from "../limits"
 import { isOle2Container } from "../_input"
 import { decryptAgile } from "./crypto/agile"
 import { ZipReader } from "../zip/reader"
@@ -229,6 +230,15 @@ function createRowSaxState(): RowSaxState {
 function buildRowFromCells(cells: Array<{ col: number; value: CellValue }>): CellValue[] {
   // Use reduce instead of Math.max(...spread) to avoid RangeError on wide rows (>65K cols)
   const maxCol = cells.reduce((m, c) => (c.col > m ? c.col : m), -1)
+  // The batch reader bound-checks cell coordinates; this one did not, so
+  // `<c r="AAAAAA1">` allocated a 12M-element array per row and a longer
+  // reference reached a raw RangeError, escaping the typed-error
+  // contract. See #363.
+  if (maxCol > MAX_COL_INDEX) {
+    throw new ParseError(
+      `Cell column ${maxCol} is outside the supported sheet bounds (max ${MAX_COL_INDEX + 1})`,
+    )
+  }
   const values: CellValue[] = maxCol >= 0 ? Array.from({ length: maxCol + 1 }, () => null) : []
   for (const cell of cells) {
     values[cell.col] = cell.value
@@ -443,7 +453,7 @@ async function* parseWorksheetRowsStreaming(
   const maxRows = filters.maxRows ?? 0
   const range = filters.range
 
-  const parsePromise = parseSaxStream(cancellable, {
+  const parsePromiseRaw = parseSaxStream(cancellable, {
     onOpenTag(tag, attrs) {
       if (aborted) return
       handleOpenTag(tag, attrs, s)
@@ -460,6 +470,7 @@ async function* parseWorksheetRowsStreaming(
         // worksheet rows are written in ascending order in valid OOXML.
         if (range && row.index > range.endRow) {
           aborted = true
+          stoppedEarly = true
           cancelSource()
           if (resolve) {
             resolve()
@@ -477,17 +488,34 @@ async function* parseWorksheetRowsStreaming(
           }
           if (maxRows > 0 && emittedDataRows >= maxRows) {
             aborted = true
+            stoppedEarly = true
             cancelSource()
           }
         }
       }
     },
-  }).then(() => {
+  })
+  // Both settlements have to wake the consumer loop below. Handling only
+  // fulfilment left `done` false forever on a parse error, so the loop
+  // awaited a promise nobody would ever resolve — the generator hung
+  // instead of surfacing the error. See #363.
+  let parseError: unknown
+  let parseFailed = false
+  // `aborted` is also set by the generator's finally block, so it cannot
+  // tell a deliberate early stop from ordinary completion. Track the
+  // former separately, since only then is a parser error expected.
+  let stoppedEarly = false
+  const wake = (): void => {
     done = true
     if (resolve) {
       resolve()
       resolve = null
     }
+  }
+  const parsePromise = parsePromiseRaw.then(wake, (err: unknown) => {
+    parseError = err
+    parseFailed = true
+    wake()
   })
 
   try {
@@ -508,7 +536,12 @@ async function* parseWorksheetRowsStreaming(
     cancelSource()
   }
 
-  await parsePromise.catch(() => {})
+  await parsePromise
+  // A parse failure used to be swallowed here, so a malformed sheet
+  // looked like a short-but-successful read. Cancellation is different:
+  // when we stopped the source ourselves for maxRows/range, whatever the
+  // parser reports on the way down is expected, not an error.
+  if (parseFailed && !stoppedEarly) throw parseError
 }
 
 // ── Cell value resolution (streaming — no Cell objects) ──────────────

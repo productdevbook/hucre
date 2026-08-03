@@ -1,5 +1,18 @@
 import type { Sheet, CellValue, MergeRange } from "../_types"
 import { parseSax } from "../xml/parser"
+import { MAX_COL_INDEX, MAX_ROW_INDEX, MAX_SPAN_CELLS } from "../limits"
+
+/**
+ * Bound a `colspan` / `rowspan` attribute. Non-numeric and non-positive
+ * values collapse to 1, which is the HTML default; anything past the
+ * sheet's own limit is clamped, since a span wider than the grid cannot
+ * mean anything useful.
+ */
+function clampSpan(raw: string | undefined, max: number): number {
+  const value = Number(raw ?? "1")
+  if (!Number.isFinite(value) || value < 1) return 1
+  return Math.min(Math.trunc(value), max)
+}
 
 /**
  * Parse an HTML table string into a Sheet.
@@ -50,8 +63,17 @@ export function fromHtml(html: string, options?: { sheetName?: string }): Sheet 
       if ((local === "td" || local === "th") && inRow) {
         inCell = true
         currentCellText = ""
-        currentCellColspan = attrs.colspan ? parseInt(attrs.colspan, 10) || 1 : 1
-        currentCellRowspan = attrs.rowspan ? parseInt(attrs.rowspan, 10) || 1 : 1
+        // fromHtml exists to consume markup the caller did not write, so
+        // spans are bounded: rowspan x colspan drives a nested loop of Set
+        // insertions, and 100000 x 100000 is 1e10 of them. See #363.
+        currentCellColspan = clampSpan(attrs.colspan, MAX_COL_INDEX + 1)
+        currentCellRowspan = clampSpan(attrs.rowspan, MAX_ROW_INDEX + 1)
+        // Clamping each span alone is not enough: the reservation below
+        // is a nested loop, so the cost is their product. Shrink the
+        // rowspan until the rectangle fits.
+        if (currentCellColspan * currentCellRowspan > MAX_SPAN_CELLS) {
+          currentCellRowspan = Math.max(1, Math.floor(MAX_SPAN_CELLS / currentCellColspan))
+        }
       }
     },
 

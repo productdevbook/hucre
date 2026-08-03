@@ -6,7 +6,7 @@ import { ParseError, ZipError } from "../errors"
 import { assertNotEncrypted } from "../_input"
 import { ZipReader } from "../zip/reader"
 import { parseSax } from "../xml/parser"
-import { MAX_COL_INDEX, MAX_ROW_INDEX } from "../limits"
+import { MAX_COL_INDEX, MAX_REPEAT_COUNT, MAX_ROW_INDEX } from "../limits"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -112,8 +112,12 @@ function* parseContentRows(xml: string): Generator<OdsStreamRow, void, undefined
         // the streaming and batch readers return the same string for a cell.
         case "s":
           if (inP && inCell) {
-            const count = Number(attrs["text:c"] ?? "1")
-            cellText += " ".repeat(count > 0 ? count : 1)
+            // Same cap as the batch reader — an uncapped text:c reaches
+            // a raw RangeError. See #363.
+            const raw = Number(attrs["text:c"] ?? "1")
+            const count =
+              !Number.isFinite(raw) || raw < 1 ? 1 : Math.min(Math.trunc(raw), MAX_REPEAT_COUNT)
+            cellText += " ".repeat(count)
           }
           break
         case "line-break":

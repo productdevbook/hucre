@@ -17,7 +17,18 @@ import { ParseError, ZipError } from "../errors"
 import { assertNotEncrypted, readInputToUint8Array } from "../_input"
 import { ZipReader } from "../zip/reader"
 import { parseXml } from "../xml/parser"
-import { MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
+import { MAX_COL_INDEX, MAX_REPEAT_COUNT, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
+
+/**
+ * Bound a repeat count taken from the file so it can drive
+ * `String.repeat` safely. Non-numeric and non-positive values collapse
+ * to 1, matching the ODF default for an omitted `text:c`.
+ */
+function clampRepeat(raw: string | undefined): number {
+  const value = Number(raw ?? "1")
+  if (!Number.isFinite(value) || value < 1) return 1
+  return Math.min(Math.trunc(value), MAX_REPEAT_COUNT)
+}
 import type { XmlElement } from "../xml/parser"
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -166,7 +177,11 @@ function serializeDataStyleChildren(
     if (typeof child === "string") continue
     const local = child.local || child.tag
     if (local === "number") {
-      const decimals = parseInt(child.attrs["number:decimal-places"] ?? "0", 10)
+      // Reached while parsing styles.xml, before any cell data.
+      const decimals = Math.min(
+        parseInt(child.attrs["number:decimal-places"] ?? "0", 10) || 0,
+        MAX_REPEAT_COUNT,
+      )
       const grouping = child.attrs["number:grouping"] === "true"
       const integerPart = grouping ? "#,##0" : "0"
       out += decimals > 0 ? `${integerPart}.${"0".repeat(decimals)}` : integerPart
@@ -293,8 +308,10 @@ function collectText(el: XmlElement): string {
       const local = child.local || child.tag
       if (local === "s") {
         // <text:s/> or <text:s text:c="N"/> — space characters
-        const count = Number(child.attrs["text:c"] ?? "1")
-        text += " ".repeat(count > 0 ? count : 1)
+        // Free-form integer from the file — uncapped it reaches a raw
+        // RangeError, or allocates a gigabyte for one cell. See #363.
+        const count = clampRepeat(child.attrs["text:c"])
+        text += " ".repeat(count)
       } else if (local === "line-break") {
         // <text:line-break/> — newline
         text += "\n"
