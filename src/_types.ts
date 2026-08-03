@@ -1319,6 +1319,14 @@ export interface ReadOptions {
   maxRows?: number
   /** Cell range to read (e.g. "A1:D10"). Only cells within this range are returned. */
   range?: string
+  /**
+   * Maximum number of bytes buffered from a `ReadableStream` input.
+   * Default: 1 GiB ({@link MAX_INPUT_BYTES}). A stream that exceeds it
+   * fails with a `ParseError` instead of growing until the process runs
+   * out of memory. Ignored for `Uint8Array` / `ArrayBuffer` input, which
+   * the caller has already allocated.
+   */
+  maxInputBytes?: number
 }
 
 // ── Write Options ──────────────────────────────────────────────────

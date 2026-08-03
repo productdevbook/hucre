@@ -90,7 +90,7 @@ export async function readXlsb(
   input: Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>,
   options?: ReadOptions,
 ): Promise<Workbook> {
-  let data = await readInputToUint8Array(input)
+  let data = await readInputToUint8Array(input, options?.maxInputBytes)
   if (isOle2Container(data)) {
     if (options?.password) data = await decryptAgile(data, options.password)
     else throw new EncryptedFileError("xlsx")

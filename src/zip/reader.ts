@@ -4,6 +4,7 @@
 
 import { ZipError } from "../errors"
 import { MAX_DECOMPRESSED_BYTES } from "../limits"
+import { byteLimitStream } from "./byte-limit"
 import { crc32, inflate } from "./deflate"
 
 // ── ZIP Signatures ──────────────────────────────────────────────────
@@ -63,9 +64,13 @@ async function decompressDeflateRaw(
       const writer = ds.writable.getWriter()
       const reader = ds.readable.getReader()
 
-      // Write data and close
-      writer.write(data as unknown as BufferSource)
-      writer.close()
+      // Write data and close. Both promises are deliberately not awaited
+      // (awaiting the write before reading would deadlock on backpressure),
+      // but they must still be handled: when the size cap below cancels the
+      // reader, they reject with AbortError, and an unhandled rejection
+      // takes the whole process down instead of surfacing the ZipError.
+      void writer.write(data as unknown as BufferSource).catch(() => {})
+      void writer.close().catch(() => {})
 
       // Read all chunks
       const chunks: Uint8Array[] = []
@@ -519,6 +524,15 @@ export class ZipReader {
         })
       }
 
+      // Bound the output by the declared uncompressed size (when present)
+      // and the absolute cap — exactly what the buffered path does. Without
+      // it the native DecompressionStream below happily expanded a bomb the
+      // buffered reader rejects.
+      const declaredCap =
+        entry.uncompressedSize > 0
+          ? Math.min(entry.uncompressedSize, MAX_DECOMPRESSED_BYTES)
+          : MAX_DECOMPRESSED_BYTES
+
       if (checkDecompressionStream()) {
         const inputStream = new ReadableStream({
           start(controller) {
@@ -526,16 +540,14 @@ export class ZipReader {
             controller.close()
           },
         })
-        return inputStream.pipeThrough(
-          new DecompressionStream("deflate-raw"),
-        ) as ReadableStream<Uint8Array>
+        return (
+          inputStream.pipeThrough(
+            new DecompressionStream("deflate-raw"),
+          ) as ReadableStream<Uint8Array>
+        ).pipeThrough(byteLimitStream(declaredCap))
       }
 
       // Fallback: inflate synchronously and emit as stream
-      const declaredCap =
-        entry.uncompressedSize > 0
-          ? Math.min(entry.uncompressedSize, MAX_DECOMPRESSED_BYTES)
-          : MAX_DECOMPRESSED_BYTES
       const inflated = inflate(compressedData, declaredCap)
       return new ReadableStream<Uint8Array>({
         start(controller) {

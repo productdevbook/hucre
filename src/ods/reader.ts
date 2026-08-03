@@ -718,7 +718,7 @@ function parseMetaXml(xml: string): Partial<WorkbookProperties> {
  * because the ZIP central directory lives at the end of the archive.
  */
 export async function readOds(input: ReadInput, options?: ReadOptions): Promise<Workbook> {
-  const data = await readInputToUint8Array(input)
+  const data = await readInputToUint8Array(input, options?.maxInputBytes)
 
   // ODF supports password-encrypted documents via the same OLE2 / CFB
   // envelope Office uses for XLSX. Catch it before the ZIP reader does

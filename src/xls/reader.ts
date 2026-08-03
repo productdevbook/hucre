@@ -34,7 +34,7 @@ export async function readXls(
   input: Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>,
   options?: ReadOptions,
 ): Promise<Workbook> {
-  const data = await readInputToUint8Array(input)
+  const data = await readInputToUint8Array(input, options?.maxInputBytes)
   let streams: Map<string, Uint8Array>
   try {
     streams = readCfb(data)
@@ -132,7 +132,12 @@ function parseWorkbookRecords(stream: Uint8Array, options?: ReadOptions): Workbo
           if (records[j].id !== SID.CONTINUE) break
           blocks.push(records[j].data)
         }
-        sst.push(...parseSst(blocks))
+        // A loop, not `push(...parseSst(blocks))`: spreading an array as
+        // arguments puts one stack slot per element, so a workbook with a
+        // few hundred thousand shared strings — an ordinary large .xls —
+        // threw `RangeError: Maximum call stack size exceeded`, which the
+        // caller reported as "malformed or truncated".
+        for (const s of parseSst(blocks)) sst.push(s)
         break
       }
       default:

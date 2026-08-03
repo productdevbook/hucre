@@ -87,7 +87,7 @@ function detectFormat(data: Uint8Array): "xlsx" | "ods" {
  * ReadableStream input is buffered fully before format detection runs.
  */
 export async function read(input: ReadInput, options?: ReadOptions): Promise<Workbook> {
-  let data = await readInputToUint8Array(input)
+  let data = await readInputToUint8Array(input, options?.maxInputBytes)
 
   // Password-protected workbooks arrive as an OLE2/CFB envelope. With a
   // password we decrypt the inner package (then `detectFormat` works on

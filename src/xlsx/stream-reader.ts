@@ -732,35 +732,44 @@ async function prepareStreaming(
 ): Promise<PrepareResult> {
   const zr = new ZipStreamReader(input)
   const parts = new Map<string, Uint8Array>()
+  const maxInputBytes = options?.maxInputBytes
   let resolved: ResolvedMeta | null = null
 
-  for (;;) {
-    const entry = await zr.nextEntry()
-    if (!entry) {
-      // Reached the central directory without streaming the target — fall
-      // back so the buffered path handles resolution / "sheet not found".
-      return { mode: "fallback", data: await zr.drainToBuffer() }
-    }
-    if (!entry.streamable) {
-      return { mode: "fallback", data: await zr.drainToBuffer() }
-    }
-
-    if (isWorksheetEntry(entry.name)) {
-      if (!resolved) resolved = resolveFromParts(parts, options)
-      if (!resolved) return { mode: "fallback", data: await zr.drainToBuffer() }
-      if (entry.name === resolved.wsPath) {
-        const wsStream = zr.entryStream(entry)
-        return { mode: "stream", wsStream, meta: resolved }
+  // Anything that escapes this loop abandons the reader mid-archive. Without
+  // the close() the source stayed locked forever — the caller could neither
+  // retry nor release whatever backs the stream.
+  try {
+    for (;;) {
+      const entry = await zr.nextEntry()
+      if (!entry) {
+        // Reached the central directory without streaming the target — fall
+        // back so the buffered path handles resolution / "sheet not found".
+        return { mode: "fallback", data: await zr.drainToBuffer(maxInputBytes) }
       }
-      await zr.skipEntry()
-      continue
-    }
+      if (!entry.streamable) {
+        return { mode: "fallback", data: await zr.drainToBuffer(maxInputBytes) }
+      }
 
-    if (shouldCollectEntry(entry.name)) {
-      parts.set(entry.name, await zr.readEntryBytes(entry))
-    } else {
-      await zr.skipEntry()
+      if (isWorksheetEntry(entry.name)) {
+        if (!resolved) resolved = resolveFromParts(parts, options)
+        if (!resolved) return { mode: "fallback", data: await zr.drainToBuffer(maxInputBytes) }
+        if (entry.name === resolved.wsPath) {
+          const wsStream = zr.entryStream(entry)
+          return { mode: "stream", wsStream, meta: resolved }
+        }
+        await zr.skipEntry()
+        continue
+      }
+
+      if (shouldCollectEntry(entry.name)) {
+        parts.set(entry.name, await zr.readEntryBytes(entry))
+      } else {
+        await zr.skipEntry()
+      }
     }
+  } catch (err) {
+    await zr.close()
+    throw err
   }
 }
 

@@ -9,6 +9,24 @@
  */
 export const MAX_DECOMPRESSED_BYTES: number = 2 * 1024 * 1024 * 1024
 
+/**
+ * Cap on the number of bytes buffered out of a `ReadableStream` input.
+ *
+ * Every format entry point funnels stream input through
+ * `readInputToUint8Array`, which used to accumulate chunks with no ceiling
+ * at all — so `read(response.body)` grew until V8 died, long before the
+ * ZIP layer's {@link MAX_DECOMPRESSED_BYTES} could apply to anything.
+ * Bounding each chunk would be useless here: chunks are individually tiny,
+ * it is the running total that has to be checked.
+ *
+ * 1 GiB is far above any real workbook (the largest spreadsheets in the
+ * wild are tens of MB, and a container this size already decompresses past
+ * what the readers can hold), while keeping the peak cost of buffering —
+ * chunks plus the single joined copy — inside a default Node heap. Callers
+ * with genuinely larger input can raise it with `maxInputBytes`.
+ */
+export const MAX_INPUT_BYTES: number = 1024 * 1024 * 1024
+
 /** Maximum row index (0-based) — Excel supports 1,048,576 rows. */
 export const MAX_ROW_INDEX = 1_048_575
 

@@ -19,6 +19,13 @@ export type XmlNode = XmlElement | string
 export interface SaxHandlers {
   onOpenTag?: (tag: string, attrs: Record<string, string>) => void
   onCloseTag?: (tag: string) => void
+  /**
+   * Text content. {@link parseSaxStream} may split a *very* long run
+   * (larger than {@link SAX_TEXT_FLUSH_CHARS}) across several calls rather
+   * than holding it all in one buffer, so handlers should accumulate text
+   * until the enclosing element closes instead of assigning it. Splits
+   * never land inside an entity reference or a surrogate pair.
+   */
   onText?: (text: string) => void
   onCData?: (text: string) => void
 }
@@ -271,24 +278,80 @@ export async function parseSaxStream(
   let buf = ""
   let bomStripped = false
 
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buf += decoder.decode(value, { stream: true })
+  // Handlers are expected to throw (the XLSX row parser aborts that way),
+  // and so is the source stream. Either way the reader has to be released,
+  // or the ZIP / decompression stream underneath it stays locked for the
+  // life of the process.
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
 
-    if (!bomStripped) {
-      if (buf.charCodeAt(0) === 0xfeff) buf = buf.slice(1)
-      bomStripped = true
+      if (!bomStripped) {
+        if (buf.charCodeAt(0) === 0xfeff) buf = buf.slice(1)
+        bomStripped = true
+      }
+
+      buf = processSaxBuffer(buf, handlers, false)
     }
 
-    buf = processSaxBuffer(buf, handlers, false)
+    // Flush remaining decoder state
+    buf += decoder.decode()
+    if (buf.length > 0) {
+      processSaxBuffer(buf, handlers, true)
+    }
+  } finally {
+    try {
+      await reader.cancel()
+    } catch {
+      // Already closed or errored — nothing left to release.
+    }
+    try {
+      reader.releaseLock()
+    } catch {
+      // ignore
+    }
   }
+}
 
-  // Flush remaining decoder state
-  buf += decoder.decode()
-  if (buf.length > 0) {
-    processSaxBuffer(buf, handlers, true)
+/**
+ * How much text may pile up at the end of a chunk before the streaming
+ * parser flushes it instead of carrying it into the next chunk.
+ *
+ * The carried remainder is re-copied on every chunk, so a single text run
+ * that spans the whole document costs O(n²): measured, one 32 MiB run took
+ * 25 s against 0.4 s for 4 MiB. Flushing bounds the remainder and makes it
+ * linear.
+ *
+ * 256 KiB is well past any legitimate single text node in a spreadsheet
+ * part (an Excel cell tops out at 32,767 characters), so ordinary
+ * documents still see exactly one `onText` call per run and nothing about
+ * their parse changes.
+ */
+export const SAX_TEXT_FLUSH_CHARS = 256 * 1024
+
+/** Longest run treated as a possibly-incomplete entity reference (`&#x1F600;` is 9). */
+const MAX_ENTITY_CHARS = 64
+
+/**
+ * Largest index in `[from, to)` at which a text run can be cut without
+ * corrupting it: never inside an entity reference, never between the two
+ * halves of a surrogate pair. Returns `from` when no safe cut exists.
+ */
+function safeTextSplit(buf: string, from: number, to: number): number {
+  let cut = to
+  // An unterminated '&' near the end may be the start of an entity that
+  // continues in the next chunk — hold it back. Beyond MAX_ENTITY_CHARS it
+  // cannot be one, and backing off forever would restore the O(n²) we're
+  // fixing.
+  const amp = buf.lastIndexOf("&", cut - 1)
+  if (amp >= from && to - amp <= MAX_ENTITY_CHARS && buf.indexOf(";", amp) === -1) {
+    cut = amp
   }
+  const last = cut > from ? buf.charCodeAt(cut - 1) : 0
+  if (last >= 0xd800 && last <= 0xdbff) cut-- // don't orphan a high surrogate
+  return cut > from ? cut : from
 }
 
 /**
@@ -408,7 +471,16 @@ function processSaxBuffer(buf: string, handlers: SaxHandlers, final: boolean): s
     while (i < len && buf.charCodeAt(i) !== 60 /* < */) i++
 
     if (i >= len && !final) {
-      // Text might continue in next chunk — hold it
+      // Text might continue in the next chunk — hold it. A run longer than
+      // SAX_TEXT_FLUSH_CHARS would be re-copied on every chunk from here on
+      // (quadratic), so flush what is safe to emit and keep only the tail.
+      if (len - textStart > SAX_TEXT_FLUSH_CHARS) {
+        const cut = safeTextSplit(buf, textStart, len)
+        if (cut > textStart) {
+          handlers.onText?.(decodeEntities(buf.slice(textStart, cut)))
+          return buf.slice(cut)
+        }
+      }
       return buf.slice(textStart)
     }
 

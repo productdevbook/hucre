@@ -111,7 +111,7 @@ function dirname(path: string): string {
  * you need row-level streaming with low per-row memory.
  */
 export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise<Workbook> {
-  let data = await readInputToUint8Array(input)
+  let data = await readInputToUint8Array(input, options?.maxInputBytes)
 
   // Password-protected workbooks arrive as an OLE2/CFB envelope. With a
   // password we decrypt the inner OOXML ZIP and continue; without one we
