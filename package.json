@@ -66,6 +66,7 @@
   },
   "scripts": {
     "build": "obuild",
+    "verify:package": "pnpm build && node scripts/verify-package.mjs",
     "dev": "vitest",
     "lint": "oxlint . && oxfmt --check .",
     "lint:fix": "oxlint . --fix && oxfmt .",

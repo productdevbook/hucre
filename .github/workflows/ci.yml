@@ -41,3 +41,5 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm build
+      - name: Verify packaged artifact
+        run: node scripts/verify-package.mjs
