@@ -85,6 +85,28 @@ export function parseCellRef(ref: string): { row: number; col: number } {
 }
 
 /**
+ * Bound a 1-based `<col min>` / `<col max>` attribute so it can safely
+ * drive a loop.
+ *
+ * Without this a single `max="1e999"` makes the expansion loop run
+ * forever (#355). An overflowing magnitude and outright garbage are
+ * treated differently on purpose: `1e999` parses to `Infinity`, which
+ * says "wider than representable", so it clamps to the last column the
+ * same way an absurd-but-finite `99999999` does. A value that is not a
+ * number at all carries no such intent and collapses to `fallback`,
+ * dropping the malformed element.
+ */
+function clampColumnBound(raw: string | undefined, fallback: number): number {
+  const value = Number(raw ?? "")
+  if (Number.isNaN(value)) return fallback
+  // Math.trunc leaves ±Infinity intact, so -Infinity fails the `< 1`
+  // guard below and +Infinity is capped by the Math.min.
+  const truncated = Math.trunc(value)
+  if (truncated < 1) return fallback
+  return Math.min(truncated, MAX_COL_INDEX + 1)
+}
+
+/**
  * Parse a range reference like "A1:B2" into start and end positions.
  */
 function parseRangeRef(ref: string): MergeRange {
@@ -276,8 +298,14 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
           break
         case "col":
           if (inCols) {
-            const minCol = Number(attrs["min"] || "0")
-            const maxCol2 = Number(attrs["max"] || "0")
+            // `min`/`max` are 1-based and drive the loop below, so they are
+            // bounded before use: `max="1e999"` parses to Infinity and would
+            // spin forever, and any finite value past Excel's column count
+            // would allocate until the heap gives out. A range wider than the
+            // sheet can hold is malformed, so it is clamped rather than
+            // honoured. See #355.
+            const minCol = clampColumnBound(attrs["min"], 1)
+            const maxCol2 = clampColumnBound(attrs["max"], 0)
             const width = attrs["width"] ? Number(attrs["width"]) : undefined
             const hidden = attrs["hidden"] === "1" || attrs["hidden"] === "true"
             const outlineLevel = attrs["outlineLevel"] ? Number(attrs["outlineLevel"]) : undefined
