@@ -1,9 +1,23 @@
 // ── CSV Streaming ────────────────────────────────────────────────────
 // Stream CSV rows as a synchronous generator (line by line).
-// Stream CSV writer builds output incrementally.
+//
+// Two writers share the row formatter below:
+//
+// • `CsvStreamWriter` — incremental. Formats each row on arrival but
+//   retains every line until `finish()` joins them, so peak memory is
+//   O(data).
+//
+// • `writeCsvStream()` — genuinely streaming. Rows are pulled from a
+//   source on demand and encoded lines are flushed as they accumulate,
+//   so peak memory is independent of the row count.
 
 import type { CellValue, CsvReadOptions, CsvWriteOptions } from "../_types"
 import { stripBom, detectDelimiter } from "./reader"
+
+const TEXT_ENCODER = /* @__PURE__ */ new TextEncoder()
+
+/** Flush the line accumulator once it crosses this many characters. */
+const CHUNK_THRESHOLD = 64 * 1024
 
 // ── Type inference (duplicated from reader to avoid coupling) ────────
 
@@ -230,17 +244,18 @@ export function* streamCsvRows(
 
 const UTF8_BOM = "\uFEFF"
 
-export class CsvStreamWriter {
-  private delimiter: string
-  private lineSeparator: string
+/**
+ * Turns row values into a CSV line. Both writers share one of these so
+ * their output stays character-identical.
+ */
+class CsvRowFormatter {
+  readonly delimiter: string
+  readonly lineSeparator: string
+  readonly bom: boolean
   private quote: string
   private quoteStyle: "all" | "required" | "none"
-  private bom: boolean
   private dateFormat: string | undefined
   private nullValue: string
-  private lines: string[] = []
-  private headerWritten = false
-  private headers: string[] | boolean | undefined
 
   constructor(options?: CsvWriteOptions) {
     this.delimiter = options?.delimiter ?? ","
@@ -250,36 +265,17 @@ export class CsvStreamWriter {
     this.bom = options?.bom ?? false
     this.dateFormat = options?.dateFormat
     this.nullValue = options?.nullValue ?? ""
-    this.headers = options?.headers
-
-    // Write header row immediately if string array provided
-    if (Array.isArray(this.headers) && !this.headerWritten) {
-      const headerLine = this.headers.map((h) => this.quoteField(h)).join(this.delimiter)
-      this.lines.push(headerLine)
-      this.headerWritten = true
-    }
   }
 
-  /** Add a row of values */
-  addRow(values: CellValue[]): void {
-    const line = values.map((v) => this.formatAndQuote(v)).join(this.delimiter)
-    this.lines.push(line)
+  /** Format one row of values into a delimited line. */
+  formatRow(values: CellValue[]): string {
+    return values.map((v) => this.formatAndQuote(v)).join(this.delimiter)
   }
 
-  /** Finalize and return the CSV string */
-  finish(): string {
-    const parts: string[] = []
-
-    if (this.bom) {
-      parts.push(UTF8_BOM)
-    }
-
-    parts.push(this.lines.join(this.lineSeparator))
-
-    return parts.join("")
+  /** Format a header line — plain strings, quoted by the same rules. */
+  formatHeader(headers: string[]): string {
+    return headers.map((h) => this.quoteField(h)).join(this.delimiter)
   }
-
-  // ── Private helpers ───────────────────────────────────────────────
 
   private formatAndQuote(value: CellValue): string {
     if (value === null || value === undefined) {
@@ -354,4 +350,180 @@ export class CsvStreamWriter {
       .replace("mm", String(minutes).padStart(2, "0"))
       .replace("ss", String(seconds).padStart(2, "0"))
   }
+}
+
+// ── Incremental CSV Writer (buffered) ────────────────────────────────
+
+/**
+ * Incremental CSV writer.
+ *
+ * Each `addRow()` is formatted immediately, but every line is retained
+ * until {@link CsvStreamWriter.finish} joins them, so peak memory scales
+ * with the data. For constant-memory output use {@link writeCsvStream}.
+ */
+export class CsvStreamWriter {
+  private formatter: CsvRowFormatter
+  private lineSeparator: string
+  private bom: boolean
+  private lines: string[] = []
+  private headerWritten = false
+  private headers: string[] | boolean | undefined
+
+  constructor(options?: CsvWriteOptions) {
+    this.formatter = new CsvRowFormatter(options)
+    this.lineSeparator = this.formatter.lineSeparator
+    this.bom = this.formatter.bom
+    this.headers = options?.headers
+
+    // Write header row immediately if string array provided
+    if (Array.isArray(this.headers) && !this.headerWritten) {
+      this.lines.push(this.formatter.formatHeader(this.headers))
+      this.headerWritten = true
+    }
+  }
+
+  /** Add a row of values */
+  addRow(values: CellValue[]): void {
+    this.lines.push(this.formatter.formatRow(values))
+  }
+
+  /** Finalize and return the CSV string */
+  finish(): string {
+    const parts: string[] = []
+
+    if (this.bom) {
+      parts.push(UTF8_BOM)
+    }
+
+    parts.push(this.lines.join(this.lineSeparator))
+
+    return parts.join("")
+  }
+}
+
+// ── True Streaming CSV Writer ────────────────────────────────────────
+
+/** A streamed row: positional values, or an object read through headers. */
+export type CsvStreamRow = CellValue[] | Record<string, CellValue>
+
+/**
+ * Write CSV as a byte stream, pulling rows from `rows` only as the
+ * consumer reads.
+ *
+ * Peak memory is independent of the row count — lines are formatted,
+ * encoded, and flushed as they accumulate, and nothing is retained.
+ *
+ * ```ts
+ * return new Response(writeCsvStream(rowCursor, { headers: ["id", "name"] }), {
+ *   headers: { "content-type": "text/csv; charset=utf-8" },
+ * })
+ * ```
+ *
+ * Object rows are projected through a column order resolved the same way
+ * {@link writeCsvObjects} resolves it: `columns` if given, else an
+ * explicit `headers` array, else the keys of the first row. A header line
+ * is emitted unless `headers: false`.
+ */
+export function writeCsvStream(
+  rows: AsyncIterable<CsvStreamRow> | Iterable<CsvStreamRow>,
+  options?: CsvWriteOptions,
+): ReadableStream<Uint8Array> {
+  const chunks = csvStreamChunks(rows, options)
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await chunks.next()
+        if (done) {
+          controller.close()
+          return
+        }
+        controller.enqueue(value)
+      } catch (err) {
+        controller.error(err)
+      }
+    },
+    async cancel(reason) {
+      await chunks.return?.(reason)
+    },
+  })
+}
+
+/** Format rows into ~64 KB encoded chunks, pulling lazily. */
+async function* csvStreamChunks(
+  rows: AsyncIterable<CsvStreamRow> | Iterable<CsvStreamRow>,
+  options?: CsvWriteOptions,
+): AsyncGenerator<Uint8Array> {
+  const formatter = new CsvRowFormatter(options)
+  const lineSeparator = formatter.lineSeparator
+
+  let pending = ""
+  let wroteAnyLine = false
+
+  const push = (line: string): Uint8Array | undefined => {
+    // `finish()` joins with the separator rather than terminating each
+    // line, so the separator goes *before* every line but the first.
+    pending += wroteAnyLine ? lineSeparator + line : line
+    wroteAnyLine = true
+    if (pending.length < CHUNK_THRESHOLD) return undefined
+    const chunk = TEXT_ENCODER.encode(pending)
+    pending = ""
+    return chunk
+  }
+
+  if (formatter.bom) pending += UTF8_BOM
+
+  const iterator: AsyncIterator<CsvStreamRow> | Iterator<CsvStreamRow> =
+    Symbol.asyncIterator in Object(rows)
+      ? (rows as AsyncIterable<CsvStreamRow>)[Symbol.asyncIterator]()
+      : (rows as Iterable<CsvStreamRow>)[Symbol.iterator]()
+
+  // Column order for object rows, resolved on the first one seen.
+  const explicitColumns = options?.columns
+  const headerOption = options?.headers
+  let columns: string[] | undefined =
+    explicitColumns ?? (Array.isArray(headerOption) ? headerOption : undefined)
+  let headerEmitted = false
+
+  const emitHeader = (names: string[]): Uint8Array | undefined => {
+    headerEmitted = true
+    if (headerOption === false) return undefined
+    return push(formatter.formatHeader(names))
+  }
+
+  // An explicit column order means the header line is known up front, so
+  // it goes out before the first row is even pulled.
+  if (columns) {
+    const chunk = emitHeader(columns)
+    if (chunk) yield chunk
+  }
+
+  try {
+    for (;;) {
+      const result = await iterator.next()
+      if (result.done) break
+      const row = result.value
+
+      let values: CellValue[]
+      if (Array.isArray(row)) {
+        values = row
+      } else {
+        if (!columns) {
+          columns = Object.keys(row)
+          if (!headerEmitted) {
+            const chunk = emitHeader(columns)
+            if (chunk) yield chunk
+          }
+        }
+        values = columns.map((key) => row[key] ?? null)
+      }
+
+      const chunk = push(formatter.formatRow(values))
+      if (chunk) yield chunk
+    }
+  } finally {
+    await iterator.return?.()
+  }
+
+  if (pending.length > 0) yield TEXT_ENCODER.encode(pending)
 }

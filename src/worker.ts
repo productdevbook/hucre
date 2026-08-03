@@ -437,6 +437,7 @@ export const WORKER_SAFE_FUNCTIONS: string[] = [
   "formatCsvValue",
   "streamCsvRows",
   "CsvStreamWriter",
+  "writeCsvStream",
   // Schema
   "validateWithSchema",
   // Date utilities

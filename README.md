@@ -1250,7 +1250,7 @@ For new code prefer `writeJson` / `workbookToJson` from `hucre/json` — same re
 ### CSV
 
 ```ts
-import { parseCsv, parseCsvObjects, writeCsv, detectDelimiter } from "hucre/csv"
+import { parseCsv, parseCsvObjects, writeCsv, writeCsvStream, detectDelimiter } from "hucre/csv"
 
 // Parse — auto-detects delimiter, handles RFC 4180 edge cases
 const rows = parseCsv(csvString, { typeInference: true })
@@ -1261,9 +1261,22 @@ const { data, headers } = parseCsvObjects(csvString, { header: true })
 // Write
 const csv = writeCsv(rows, { delimiter: ";", bom: true })
 
+// Stream write — rows are pulled as the consumer reads, so peak memory
+// doesn't grow with the row count. Takes any Iterable or AsyncIterable
+// of value arrays or objects.
+return new Response(writeCsvStream(dbCursor, { headers: ["id", "name"] }), {
+  headers: { "content-type": "text/csv; charset=utf-8" },
+})
+
 // Detect delimiter
 detectDelimiter(csvString) // "," or ";" or "\t" or "|"
 ```
+
+`writeCsvStream` is to `CsvStreamWriter` what `writeXlsxStream` is to
+`XlsxStreamWriter`: the class formats each row on arrival but retains
+every line until `finish()` returns one string, while the function
+flushes as it goes. Writing 3,000,000 rows (254 MB of CSV) under a
+128 MB heap cap, the stream completes; the class runs out of memory.
 
 ### Schema Validation
 
@@ -1420,30 +1433,31 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 
 ### CSV
 
-| Function                           | Description                                  |
-| ---------------------------------- | -------------------------------------------- |
-| `parseCsv(input, options?)`        | Parse CSV string → `CellValue[][]`           |
-| `parseCsvObjects(input, options?)` | Parse CSV with headers → `{ data, headers }` |
-| `writeCsv(rows, options?)`         | Write `CellValue[][]` → CSV string           |
-| `writeCsvObjects(data, options?)`  | Write objects → CSV string                   |
-| `detectDelimiter(input)`           | Auto-detect delimiter character              |
-| `streamCsvRows(input, options?)`   | Generator yielding CSV rows                  |
-| `CsvStreamWriter`                  | Class for incremental CSV writing            |
-| `writeTsv(rows, options?)`         | Write TSV (tab-separated)                    |
-| `fetchCsv(url, options?)`          | Fetch and parse CSV from URL                 |
+| Function                           | Description                                       |
+| ---------------------------------- | ------------------------------------------------- |
+| `parseCsv(input, options?)`        | Parse CSV string → `CellValue[][]`                |
+| `parseCsvObjects(input, options?)` | Parse CSV with headers → `{ data, headers }`      |
+| `writeCsv(rows, options?)`         | Write `CellValue[][]` → CSV string                |
+| `writeCsvObjects(data, options?)`  | Write objects → CSV string                        |
+| `detectDelimiter(input)`           | Auto-detect delimiter character                   |
+| `streamCsvRows(input, options?)`   | Generator yielding CSV rows                       |
+| `writeCsvStream(rows, options?)`   | Constant-memory CSV writing → `ReadableStream`    |
+| `CsvStreamWriter`                  | Incremental CSV writing; buffers until `finish()` |
+| `writeTsv(rows, options?)`         | Write TSV (tab-separated)                         |
+| `fetchCsv(url, options?)`          | Fetch and parse CSV from URL                      |
 
 ### JSON
 
-| Function                          | Description                                                    |
-| --------------------------------- | -------------------------------------------------------------- |
-| `parseJson(input, options?)`      | Parse JSON string/Uint8Array → `{ data, headers }`             |
-| `parseValue(value, options?)`     | Same on already-parsed JSON                                    |
-| `parseNdjson(input, options?)`    | Parse NDJSON / JSON Lines (`onError` skips invalid)            |
-| `writeJson(data, options?)`       | Serialize rows to a JSON string                                |
-| `writeNdjson(data, options?)`     | Serialize rows to NDJSON, one object per line                  |
-| `workbookToJson(wb, options?)`    | Convert a `Workbook` to JSON (single-sheet array or per-sheet) |
-| `readNdjsonStream(stream, opts?)` | Async generator over a `ReadableStream<Uint8Array>`            |
-| `NdjsonStreamWriter`              | Incremental writer with `toStream(): ReadableStream`           |
+| Function                          | Description                                                     |
+| --------------------------------- | --------------------------------------------------------------- |
+| `parseJson(input, options?)`      | Parse JSON string/Uint8Array → `{ data, headers }`              |
+| `parseValue(value, options?)`     | Same on already-parsed JSON                                     |
+| `parseNdjson(input, options?)`    | Parse NDJSON / JSON Lines (`onError` skips invalid)             |
+| `writeJson(data, options?)`       | Serialize rows to a JSON string                                 |
+| `writeNdjson(data, options?)`     | Serialize rows to NDJSON, one object per line                   |
+| `workbookToJson(wb, options?)`    | Convert a `Workbook` to JSON (single-sheet array or per-sheet)  |
+| `readNdjsonStream(stream, opts?)` | Async generator over a `ReadableStream<Uint8Array>`             |
+| `NdjsonStreamWriter`              | Incremental writer; `toStream()` releases rows as they are sent |
 
 ### XML
 

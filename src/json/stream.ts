@@ -52,17 +52,24 @@ export class NdjsonStreamWriter {
   /**
    * Expose the writer as a `ReadableStream<Uint8Array>`. The stream
    * remains open until {@link end} is called.
+   *
+   * Consumed rows are released as they are enqueued, so a writer that is
+   * only ever drained through the stream holds no more than the rows
+   * written since the last pull. Note that {@link toString} then has
+   * nothing left to return — pick one drain or the other.
    */
   toStream(): ReadableStream<Uint8Array> {
     const buffer = this.buffer
     const isDone = () => this.done
-    let cursor = 0
 
     return new ReadableStream<Uint8Array>({
       pull: (controller) => {
-        while (cursor < buffer.length) {
-          controller.enqueue(TEXT_ENCODER.encode(buffer[cursor]!))
-          cursor++
+        // Detach rather than walk a cursor: holding on to already-sent
+        // rows would make the stream O(total) instead of O(pending).
+        if (buffer.length > 0) {
+          for (const row of buffer.splice(0, buffer.length)) {
+            controller.enqueue(TEXT_ENCODER.encode(row))
+          }
         }
         if (isDone()) {
           controller.close()
