@@ -12,6 +12,7 @@ import type {
   MergeRange,
 } from "../_types"
 import { ZipWriter } from "../zip/writer"
+import { validateSheetNames } from "../_validate"
 import { unwrapCellValue } from "../xlsx/hyperlink"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
 import { replaceA1Ranges } from "../cell-utils"
@@ -540,6 +541,12 @@ function cellToOds(value: CellValue, ctx?: CellContext): string {
   }
 
   if (typeof value === "number") {
+    // NaN / Infinity are not valid ODF floats — office:value="NaN" makes
+    // LibreOffice read garbage. The XLSX writer already emits an empty
+    // cell for these; ODS never got the same treatment. See #364.
+    if (!Number.isFinite(value)) {
+      return xmlElement("table:table-cell", attrs, [])
+    }
     attrs["office:value-type"] = "float"
     attrs["office:value"] = String(value)
     children.push(xmlElement("text:p", undefined, formatNumberDisplay(value)))
@@ -554,6 +561,12 @@ function cellToOds(value: CellValue, ctx?: CellContext): string {
   }
 
   if (value instanceof Date) {
+    // An unparseable Date produced office:date-value="NaN-NaN-NaNT..."
+    // — a corrupt file rather than an error. Emit an empty cell, the same
+    // way non-finite numbers are handled. See #364.
+    if (Number.isNaN(value.getTime())) {
+      return xmlElement("table:table-cell", attrs, [])
+    }
     const dateStr = formatOdsDateValue(value)
     attrs["office:value-type"] = "date"
     attrs["office:date-value"] = dateStr
@@ -976,6 +989,10 @@ function writeManifestXml(): string {
  * Returns a Uint8Array containing the ZIP archive.
  */
 export async function writeOds(options: WriteOptions): Promise<WriteOutput> {
+  // Same rules as XLSX: LibreOffice enforces Excel's sheet-name limits
+  // for interoperability. See #364.
+  validateSheetNames(options.sheets)
+
   const zip = new ZipWriter()
 
   // mimetype MUST be the first entry and MUST be stored uncompressed

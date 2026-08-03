@@ -36,7 +36,8 @@ function escapeAttr(s: string): string {
 
 function valueToString(value: CellValue): string {
   if (value === null || value === undefined) return ""
-  if (value instanceof Date) return value.toISOString()
+  // See #364 — an unparseable Date threw a raw RangeError mid-write.
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? "" : value.toISOString()
   return String(value)
 }
 

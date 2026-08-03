@@ -251,10 +251,13 @@ describe("writeXlsxStream", () => {
     expect(workbook.sheets[0].rows).toEqual([])
   })
 
-  it("rejects a maxRowsPerSheet below 2", () => {
-    expect(() =>
-      collect(writeXlsxStream({ name: "S", maxRowsPerSheet: 1 }, [[1]])),
-    ).rejects.toThrow(/maxRowsPerSheet must be at least 2/)
+  it("rejects a maxRowsPerSheet below 2, before returning a stream", () => {
+    // Validation moved ahead of the generator (#364): a deferred throw
+    // would surface only after the caller had handed the stream to a
+    // Response, too late to act on.
+    expect(() => writeXlsxStream({ name: "S", maxRowsPerSheet: 1 }, [[1]])).toThrow(
+      /maxRowsPerSheet must be at least 2/,
+    )
   })
 
   it("carries freeze panes and column widths onto every sheet", async () => {

@@ -267,6 +267,8 @@ function formatNumber(n: number): string {
 
 function formatDate(d: Date, format?: string): string {
   if (!format) {
+    // See #364 — an unparseable Date threw a raw RangeError mid-write.
+    if (Number.isNaN(d.getTime())) return ""
     return d.toISOString()
   }
 

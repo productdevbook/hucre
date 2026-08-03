@@ -252,6 +252,7 @@ export {
   ZipError,
   XmlError,
   ValidationError,
+  InvalidArgumentError,
   UnsupportedFormatError,
   EncryptedFileError,
   DecryptionError,

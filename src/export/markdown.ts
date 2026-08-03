@@ -22,6 +22,8 @@ function escapePipe(str: string): string {
 function formatCellValue(value: CellValue): string {
   if (value === null || value === undefined) return ""
   if (value instanceof Date) {
+    // See #364 — an unparseable Date threw a raw RangeError mid-write.
+    if (Number.isNaN(value.getTime())) return ""
     return value.toISOString().slice(0, 10)
   }
   if (typeof value === "boolean") return String(value)

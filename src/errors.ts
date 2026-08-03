@@ -47,6 +47,19 @@ export class ValidationError extends DefterError {
   }
 }
 
+/**
+ * A caller passed something the format cannot represent — an illegal
+ * sheet name, an out-of-range coordinate, a value past a hard limit.
+ *
+ * Distinct from {@link ValidationError}, whose constructor takes a list
+ * of row/column schema failures and models *imported data* being wrong.
+ * This one models *arguments* being wrong, and is thrown before any
+ * output is produced rather than collected alongside it.
+ */
+export class InvalidArgumentError extends DefterError {
+  override name = "InvalidArgumentError"
+}
+
 export class UnsupportedFormatError extends DefterError {
   override name = "UnsupportedFormatError"
 

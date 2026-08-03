@@ -191,16 +191,18 @@ describe("XLSX Writer Edge Cases", () => {
     expect(wb.sheets[0].name).toBe(specialName)
   })
 
-  it("multiple sheets with same-looking names (case variation)", async () => {
-    const wb = await writeAndRead([
-      { name: "Sheet1", rows: [["a"]] },
-      { name: "sheet1", rows: [["b"]] },
-      { name: "SHEET1", rows: [["c"]] },
-    ])
-    expect(wb.sheets).toHaveLength(3)
-    expect(wb.sheets[0].name).toBe("Sheet1")
-    expect(wb.sheets[1].name).toBe("sheet1")
-    expect(wb.sheets[2].name).toBe("SHEET1")
+  it("rejects sheet names that differ only in case", async () => {
+    // Excel compares sheet names case-insensitively, so a workbook
+    // carrying all three opens as damaged. ExcelJS agrees — it refuses
+    // the second with "Worksheet name already exists". This test used to
+    // assert the opposite; see #364.
+    await expect(
+      writeAndRead([
+        { name: "Sheet1", rows: [["a"]] },
+        { name: "sheet1", rows: [["b"]] },
+        { name: "SHEET1", rows: [["c"]] },
+      ]),
+    ).rejects.toThrow(/Duplicate sheet name/)
   })
 
   it("column XFD (16383 = max Excel column)", async () => {

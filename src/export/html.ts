@@ -114,6 +114,10 @@ function styleToCss(style: CellStyle): string {
 function formatCellValue(value: CellValue): string {
   if (value === null || value === undefined) return ""
   if (value instanceof Date) {
+    // An unparseable Date threw a raw RangeError from toISOString,
+    // untyped and mid-write. Empty matches what the XLSX and ODS
+    // writers emit for a value the format cannot represent. See #364.
+    if (Number.isNaN(value.getTime())) return ""
     return value.toISOString().slice(0, 10)
   }
   if (typeof value === "boolean") return String(value)

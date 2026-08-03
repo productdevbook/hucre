@@ -32,6 +32,7 @@ import type { PivotWriteResult } from "./pivot-writer"
 import { xmlDocument, xmlSelfClose } from "../xml/writer"
 import { writeCoreProperties, writeAppProperties, writeCustomProperties } from "./doc-props-writer"
 import { writeThemeXml } from "./theme-writer"
+import { validateSheetNames } from "../_validate"
 
 const encoder = /* @__PURE__ */ new TextEncoder()
 
@@ -71,6 +72,10 @@ function effectiveProperties(options: WriteOptions): WorkbookProperties | undefi
  */
 export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
   const { sheets, defaultFont, dateSystem, namedRanges, activeSheet, workbookProtection } = options
+
+  // Before any bytes are produced, so a rejected workbook leaves no
+  // half-written output. See #364.
+  validateSheetNames(sheets)
 
   const properties = effectiveProperties(options)
 

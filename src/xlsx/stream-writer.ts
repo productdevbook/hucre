@@ -21,6 +21,8 @@ import { createSharedStrings, writeSharedStringsXml } from "./worksheet-writer"
 import { cellRef } from "./worksheet-writer"
 import type { SharedStringsCollector } from "./worksheet-writer"
 import { writeThemeXml } from "./theme-writer"
+import { validateSheetName } from "../_validate"
+import { InvalidArgumentError } from "../errors"
 import { dateToSerial } from "../_date"
 import { xmlDocument, xmlDeclaration, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
 
@@ -344,7 +346,7 @@ function headerFromColumns(columns: ColumnDef[] | undefined): CellValue[] | null
 
 function validateMaxRowsPerSheet(value: number): void {
   if (value < 2) {
-    throw new Error("maxRowsPerSheet must be at least 2 (one header + one data row)")
+    throw new InvalidArgumentError("maxRowsPerSheet must be at least 2 (one header + one data row)")
   }
 }
 
@@ -391,6 +393,10 @@ export class XlsxStreamWriter {
       dateSystem: this.dateSystem,
     })
 
+    // The base name is the caller's; rollover names are generated, and
+    // those are still truncated below because the `_2` suffix can push a
+    // legal 31-character base over the limit. See #364.
+    validateSheetName(this.sheetName, 0)
     validateMaxRowsPerSheet(this.maxRowsPerSheet)
 
     // If columns have headers, write the header row immediately
@@ -557,6 +563,13 @@ export function writeXlsxStream(
   options: XlsxWriteStreamOptions,
   rows: AsyncIterable<XlsxStreamRow> | Iterable<XlsxStreamRow>,
 ): ReadableStream<Uint8Array> {
+  // Validate before returning the stream, not inside the generator.
+  // Generator bodies do not run until first pull, so a deferred throw
+  // would surface only after the caller had already handed the stream to
+  // a Response — too late to do anything about. See #364.
+  validateSheetName(options.name, 0)
+  validateMaxRowsPerSheet(options.maxRowsPerSheet ?? XLSX_MAX_ROWS_PER_SHEET)
+
   return zipStream(xlsxStreamEntries(options, rows), { zip64: options.zip64 })
 }
 
@@ -571,8 +584,6 @@ async function* xlsxStreamEntries(
   const inlineStrings = options.inlineStrings ?? true
   const compress = options.compress ?? true
   const columns = options.columns
-
-  validateMaxRowsPerSheet(maxRowsPerSheet)
 
   const serializer = new RowSerializer({ columns, dateSystem, inlineStrings })
   const prelude = buildSheetPrelude(columns, options.freezePane).join("")

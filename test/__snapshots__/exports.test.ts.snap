@@ -82,6 +82,7 @@ exports[`export surface snapshot > root 1`] = `
   "DecryptionError",
   "DefterError",
   "EncryptedFileError",
+  "InvalidArgumentError",
   "NdjsonStreamWriter",
   "ParseError",
   "REL_CELL_IMAGES",

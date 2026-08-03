@@ -353,6 +353,9 @@ class CsvRowFormatter {
 
   private formatDate(d: Date): string {
     if (!this.dateFormat) {
+      // See #364 — an unparseable Date threw a raw RangeError, and in a
+      // streaming writer that lands after bytes have gone to the client.
+      if (Number.isNaN(d.getTime())) return ""
       return d.toISOString()
     }
 
