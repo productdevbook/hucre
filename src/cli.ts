@@ -296,7 +296,8 @@ const validateCommand = defineCommand({
     }
 
     const sheet = workbook.sheets[sheetIdx]!
-    const result = validateWithSchema(sheet.rows, schema, { headerRow: 1 })
+    // headerRow is 0-based since v1 — the first row (#365).
+    const result = validateWithSchema(sheet.rows, schema, { headerRow: 0 })
 
     if (result.errors.length === 0) {
       consola.success(`Valid! ${result.data.length} row(s) passed validation.`)

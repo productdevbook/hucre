@@ -5,7 +5,15 @@ export interface HtmlExportOptions {
   styles?: boolean
   /** Add CSS classes for cell types (num, bool, date, null). Default: true */
   classes?: boolean
-  /** Use first row as <thead>. Default: false */
+  /**
+   * Treat the first row as the table header (`<thead>`). Default: false.
+   *
+   * Renamed from `headerRow`, which elsewhere in the library is a 0-based
+   * row *index*. One name meaning both "which row" and "is there one"
+   * was the sharpest edge in the option set. See #365.
+   */
+  hasHeaderRow?: boolean
+  /** @deprecated Renamed to {@link HtmlExportOptions.hasHeaderRow}. */
   headerRow?: boolean
   /** Custom CSS class prefix. Default: "hucre" */
   classPrefix?: string
@@ -171,12 +179,23 @@ function buildMergeMap(
 /**
  * Export a sheet as an HTML <table> string.
  */
+/**
+ * Options after defaults are applied. `headerRow` is absent: it is the
+ * deprecated spelling of `hasHeaderRow` and is folded into it, so the
+ * resolved shape carries one field rather than two that can disagree.
+ */
+type ResolvedHtmlOptions = Required<
+  Omit<HtmlExportOptions, "caption" | "ariaLabel" | "headerRow">
+> &
+  Pick<HtmlExportOptions, "caption" | "ariaLabel">
+
 export function toHtml(sheet: Sheet, options?: HtmlExportOptions): string {
-  const opts: Required<Omit<HtmlExportOptions, "caption" | "ariaLabel">> &
-    Pick<HtmlExportOptions, "caption" | "ariaLabel"> = {
+  const opts: ResolvedHtmlOptions = {
     styles: options?.styles ?? false,
     classes: options?.classes ?? true,
-    headerRow: options?.headerRow ?? false,
+    // Accept the deprecated name for one major so existing calls keep
+    // working. See #365.
+    hasHeaderRow: options?.hasHeaderRow ?? options?.headerRow ?? false,
     classPrefix: options?.classPrefix ?? "hucre",
     includeStyleTag: options?.includeStyleTag ?? false,
     caption: options?.caption,
@@ -186,7 +205,7 @@ export function toHtml(sheet: Sheet, options?: HtmlExportOptions): string {
   const prefix = opts.classPrefix
   const tableAttrs: string[] = []
   if (opts.includeStyleTag) tableAttrs.push(`class="${prefix}-table"`)
-  if (opts.headerRow) tableAttrs.push(`role="table"`)
+  if (opts.hasHeaderRow) tableAttrs.push(`role="table"`)
   if (opts.ariaLabel) tableAttrs.push(`aria-label="${escapeHtml(opts.ariaLabel)}"`)
   const tableAttrStr = tableAttrs.length > 0 ? " " + tableAttrs.join(" ") : ""
 
@@ -215,10 +234,10 @@ export function toHtml(sheet: Sheet, options?: HtmlExportOptions): string {
     parts.push(`<caption>${escapeHtml(opts.caption)}</caption>`)
   }
 
-  const startRow = opts.headerRow ? 1 : 0
+  const startRow = opts.hasHeaderRow ? 1 : 0
 
   // Header row
-  if (opts.headerRow && rows.length > 0) {
+  if (opts.hasHeaderRow && rows.length > 0) {
     parts.push("<thead>")
     parts.push("<tr>")
     const row = rows[0]
@@ -262,8 +281,7 @@ function buildCellAttrs(
   row: number,
   col: number,
   sheet: Sheet,
-  opts: Required<Omit<HtmlExportOptions, "caption" | "ariaLabel">> &
-    Pick<HtmlExportOptions, "caption" | "ariaLabel">,
+  opts: ResolvedHtmlOptions,
   mergeInfo: { colspan?: number; rowspan?: number; hidden?: boolean } | undefined,
 ): string {
   const attrs: string[] = []

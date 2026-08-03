@@ -90,14 +90,15 @@ describe("header matching", () => {
     expect(data[0]!.price).toBeNull()
   })
 
-  it("should use header row at different position (headerRow: 2)", () => {
+  it("should use header row at a different position", () => {
     const rows: CellValue[][] = [["This is a title row"], ["Name", "Price"], ["Widget", 9.99]]
     const schema: SchemaDefinition = {
       name: { column: "Name", type: "string" },
       price: { column: "Price", type: "number" },
     }
+    // 0-based since v1: the second row. See #365.
     const { data, errors } = validateWithSchema(rows, schema, {
-      headerRow: 2,
+      headerRow: 1,
     })
     expect(errors).toHaveLength(0)
     expect(data).toEqual([{ name: "Widget", price: 9.99 }])
@@ -112,29 +113,29 @@ describe("type coercion — string", () => {
   })
 
   it("should convert number to string: 42 → '42'", () => {
-    const { data } = validateWithSchema([[42]], mkSchema(), { headerRow: 0 })
+    const { data } = validateWithSchema([[42]], mkSchema(), { headerRow: -1 })
     expect(data[0]!.val).toBe("42")
   })
 
   it("should convert boolean to string: true → 'true'", () => {
-    const { data } = validateWithSchema([[true]], mkSchema(), { headerRow: 0 })
+    const { data } = validateWithSchema([[true]], mkSchema(), { headerRow: -1 })
     expect(data[0]!.val).toBe("true")
   })
 
   it("should convert Date to ISO string", () => {
     const d = new Date(Date.UTC(2024, 0, 15))
-    const { data } = validateWithSchema([[d]], mkSchema(), { headerRow: 0 })
+    const { data } = validateWithSchema([[d]], mkSchema(), { headerRow: -1 })
     expect(data[0]!.val).toBe(d.toISOString())
   })
 
   it("should convert null to null (empty string → null since isEmpty)", () => {
-    const { data } = validateWithSchema([[null]], mkSchema(), { headerRow: 0 })
+    const { data } = validateWithSchema([[null]], mkSchema(), { headerRow: -1 })
     expect(data[0]!.val).toBeNull()
   })
 
   it("should keep string as-is but trim", () => {
     const { data } = validateWithSchema([["  hello  "]], mkSchema(), {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(data[0]!.val).toBe("hello")
   })
@@ -149,7 +150,7 @@ describe("type coercion — number", () => {
 
   it('should convert string "42" → 42', () => {
     const { data, errors } = validateWithSchema([["42"]], mkSchema(), {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(0)
     expect(data[0]!.val).toBe(42)
@@ -157,21 +158,21 @@ describe("type coercion — number", () => {
 
   it('should convert string "3.14" → 3.14', () => {
     const { data } = validateWithSchema([["3.14"]], mkSchema(), {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(data[0]!.val).toBe(3.14)
   })
 
   it('should convert string "-10" → -10', () => {
     const { data } = validateWithSchema([["-10"]], mkSchema(), {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(data[0]!.val).toBe(-10)
   })
 
   it('should error on string "abc"', () => {
     const { errors } = validateWithSchema([["abc"]], mkSchema(), {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(1)
     expect(errors[0]!.message).toContain("Expected number")
@@ -180,7 +181,7 @@ describe("type coercion — number", () => {
 
   it("should return null for empty string (not required)", () => {
     const { data, errors } = validateWithSchema([[""]], mkSchema(), {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(0)
     expect(data[0]!.val).toBeNull()
@@ -192,7 +193,7 @@ describe("type coercion — number", () => {
       b: { columnIndex: 1, type: "number" },
     }
     const { data } = validateWithSchema([[true, false]], schema, {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(data[0]!.a).toBe(1)
     expect(data[0]!.b).toBe(0)
@@ -200,14 +201,14 @@ describe("type coercion — number", () => {
 
   it("should keep number as-is", () => {
     const { data } = validateWithSchema([[42.5]], mkSchema(), {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(data[0]!.val).toBe(42.5)
   })
 
   it("should return null for null (not required)", () => {
     const { data, errors } = validateWithSchema([[null]], mkSchema(), {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(0)
     expect(data[0]!.val).toBeNull()
@@ -215,7 +216,7 @@ describe("type coercion — number", () => {
 
   it('should strip commas: "1,234.56" → 1234.56', () => {
     const { data, errors } = validateWithSchema([["1,234.56"]], mkSchema(), {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(0)
     expect(data[0]!.val).toBe(1234.56)
@@ -231,7 +232,7 @@ describe("type coercion — integer", () => {
 
   it('should convert string "42" → 42', () => {
     const { data, errors } = validateWithSchema([["42"]], mkSchema(), {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(0)
     expect(data[0]!.val).toBe(42)
@@ -239,7 +240,7 @@ describe("type coercion — integer", () => {
 
   it('should error on string "3.14" (not integer)', () => {
     const { errors } = validateWithSchema([["3.14"]], mkSchema(), {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(1)
     expect(errors[0]!.message).toContain("Expected integer")
@@ -247,7 +248,7 @@ describe("type coercion — integer", () => {
 
   it("should error on number 3.14", () => {
     const { errors } = validateWithSchema([[3.14]], mkSchema(), {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(1)
     expect(errors[0]!.message).toContain("Expected integer")
@@ -255,7 +256,7 @@ describe("type coercion — integer", () => {
 
   it("should allow number 42.0 → 42", () => {
     const { data, errors } = validateWithSchema([[42.0]], mkSchema(), {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(0)
     expect(data[0]!.val).toBe(42)
@@ -263,7 +264,7 @@ describe("type coercion — integer", () => {
 
   it('should error on string "abc"', () => {
     const { errors } = validateWithSchema([["abc"]], mkSchema(), {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(1)
     expect(errors[0]!.message).toContain("Expected integer")
@@ -280,7 +281,7 @@ describe("type coercion — boolean", () => {
   it('should convert "true"/"TRUE"/"True" → true', () => {
     for (const v of ["true", "TRUE", "True"]) {
       const { data, errors } = validateWithSchema([[v]], mkSchema(), {
-        headerRow: 0,
+        headerRow: -1,
       })
       expect(errors).toHaveLength(0)
       expect(data[0]!.val).toBe(true)
@@ -290,7 +291,7 @@ describe("type coercion — boolean", () => {
   it('should convert "false"/"FALSE"/"False" → false', () => {
     for (const v of ["false", "FALSE", "False"]) {
       const { data, errors } = validateWithSchema([[v]], mkSchema(), {
-        headerRow: 0,
+        headerRow: -1,
       })
       expect(errors).toHaveLength(0)
       expect(data[0]!.val).toBe(false)
@@ -303,7 +304,7 @@ describe("type coercion — boolean", () => {
       b: { columnIndex: 1, type: "boolean" },
     }
     const { data } = validateWithSchema([["yes", "no"]], schema, {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(data[0]!.a).toBe(true)
     expect(data[0]!.b).toBe(false)
@@ -315,7 +316,7 @@ describe("type coercion — boolean", () => {
       b: { columnIndex: 1, type: "boolean" },
     }
     const { data } = validateWithSchema([["1", "0"]], schema, {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(data[0]!.a).toBe(true)
     expect(data[0]!.b).toBe(false)
@@ -326,14 +327,14 @@ describe("type coercion — boolean", () => {
       a: { columnIndex: 0, type: "boolean" },
       b: { columnIndex: 1, type: "boolean" },
     }
-    const { data } = validateWithSchema([[1, 0]], schema, { headerRow: 0 })
+    const { data } = validateWithSchema([[1, 0]], schema, { headerRow: -1 })
     expect(data[0]!.a).toBe(true)
     expect(data[0]!.b).toBe(false)
   })
 
   it('should error on string "abc"', () => {
     const { errors } = validateWithSchema([["abc"]], mkSchema(), {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(1)
     expect(errors[0]!.message).toContain("Expected boolean")
@@ -345,7 +346,7 @@ describe("type coercion — boolean", () => {
       b: { columnIndex: 1, type: "boolean" },
     }
     const { data, errors } = validateWithSchema([[true, false]], schema, {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(0)
     expect(data[0]!.a).toBe(true)
@@ -363,7 +364,7 @@ describe("type coercion — date", () => {
   it("should pass through Date objects", () => {
     const d = new Date(Date.UTC(2024, 0, 15))
     const { data, errors } = validateWithSchema([[d]], mkSchema(), {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(0)
     expect(data[0]!.val).toBeInstanceOf(Date)
@@ -374,7 +375,7 @@ describe("type coercion — date", () => {
     const serial = 45307 // some Excel serial
     const expected = serialToDate(serial)
     const { data, errors } = validateWithSchema([[serial]], mkSchema(), {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(0)
     expect(data[0]!.val).toBeInstanceOf(Date)
@@ -382,7 +383,7 @@ describe("type coercion — date", () => {
   })
 
   it("should parse ISO date string", () => {
-    const { data, errors } = validateWithSchema([["2024-01-15"]], mkSchema(), { headerRow: 0 })
+    const { data, errors } = validateWithSchema([["2024-01-15"]], mkSchema(), { headerRow: -1 })
     expect(errors).toHaveLength(0)
     expect(data[0]!.val).toBeInstanceOf(Date)
     expect((data[0]!.val as Date).toISOString()).toContain("2024-01-15")
@@ -390,7 +391,7 @@ describe("type coercion — date", () => {
 
   it('should error on unparseable string "abc"', () => {
     const { errors } = validateWithSchema([["abc"]], mkSchema(), {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(1)
     expect(errors[0]!.message).toContain("Expected date")
@@ -398,7 +399,7 @@ describe("type coercion — date", () => {
 
   it("should return null for null (not required)", () => {
     const { data, errors } = validateWithSchema([[null]], mkSchema(), {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(0)
     expect(data[0]!.val).toBeNull()
@@ -412,7 +413,7 @@ describe("required validation", () => {
     const schema: SchemaDefinition = {
       name: { columnIndex: 0, type: "string", required: true },
     }
-    const { errors } = validateWithSchema([[null]], schema, { headerRow: 0 })
+    const { errors } = validateWithSchema([[null]], schema, { headerRow: -1 })
     expect(errors).toHaveLength(1)
     expect(errors[0]!.row).toBe(1)
     expect(errors[0]!.message).toContain("Required field")
@@ -423,7 +424,7 @@ describe("required validation", () => {
       name: { columnIndex: 0, type: "string" },
     }
     const { data, errors } = validateWithSchema([[null]], schema, {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(0)
     expect(data[0]!.name).toBeNull()
@@ -433,7 +434,7 @@ describe("required validation", () => {
     const schema: SchemaDefinition = {
       name: { columnIndex: 0, type: "string", required: true },
     }
-    const { errors } = validateWithSchema([[""]], schema, { headerRow: 0 })
+    const { errors } = validateWithSchema([[""]], schema, { headerRow: -1 })
     expect(errors).toHaveLength(1)
     expect(errors[0]!.message).toContain("Required field")
   })
@@ -443,7 +444,7 @@ describe("required validation", () => {
       count: { columnIndex: 0, type: "number", required: true },
     }
     const { data, errors } = validateWithSchema([[0]], schema, {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(0)
     expect(data[0]!.count).toBe(0)
@@ -454,7 +455,7 @@ describe("required validation", () => {
       active: { columnIndex: 0, type: "boolean", required: true },
     }
     const { data, errors } = validateWithSchema([[false]], schema, {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(0)
     expect(data[0]!.active).toBe(false)
@@ -472,7 +473,7 @@ describe("pattern validation", () => {
         pattern: /^[^@]+@[^@]+$/,
       },
     }
-    const { errors } = validateWithSchema([["user@example.com"]], schema, { headerRow: 0 })
+    const { errors } = validateWithSchema([["user@example.com"]], schema, { headerRow: -1 })
     expect(errors).toHaveLength(0)
   })
 
@@ -485,7 +486,7 @@ describe("pattern validation", () => {
       },
     }
     const { errors } = validateWithSchema([["invalid"]], schema, {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(1)
     expect(errors[0]!.message).toContain("does not match pattern")
@@ -500,7 +501,7 @@ describe("pattern validation", () => {
       },
     }
     // After number coercion, value is a number, not a string. Pattern is skipped.
-    const { errors } = validateWithSchema([["42"]], schema, { headerRow: 0 })
+    const { errors } = validateWithSchema([["42"]], schema, { headerRow: -1 })
     expect(errors).toHaveLength(0)
   })
 })
@@ -512,7 +513,7 @@ describe("min/max validation", () => {
     const schema: SchemaDefinition = {
       price: { columnIndex: 0, type: "number", min: 0 },
     }
-    const { errors } = validateWithSchema([[-1]], schema, { headerRow: 0 })
+    const { errors } = validateWithSchema([[-1]], schema, { headerRow: -1 })
     expect(errors).toHaveLength(1)
     expect(errors[0]!.message).toContain("below minimum")
   })
@@ -521,7 +522,7 @@ describe("min/max validation", () => {
     const schema: SchemaDefinition = {
       qty: { columnIndex: 0, type: "number", max: 10 },
     }
-    const { errors } = validateWithSchema([[42]], schema, { headerRow: 0 })
+    const { errors } = validateWithSchema([[42]], schema, { headerRow: -1 })
     expect(errors).toHaveLength(1)
     expect(errors[0]!.message).toContain("exceeds maximum")
   })
@@ -530,7 +531,7 @@ describe("min/max validation", () => {
     const schema: SchemaDefinition = {
       qty: { columnIndex: 0, type: "number", min: 0, max: 100 },
     }
-    const { errors } = validateWithSchema([[50]], schema, { headerRow: 0 })
+    const { errors } = validateWithSchema([[50]], schema, { headerRow: -1 })
     expect(errors).toHaveLength(0)
   })
 
@@ -538,7 +539,7 @@ describe("min/max validation", () => {
     const schema: SchemaDefinition = {
       code: { columnIndex: 0, type: "string", min: 3 },
     }
-    const { errors } = validateWithSchema([["ab"]], schema, { headerRow: 0 })
+    const { errors } = validateWithSchema([["ab"]], schema, { headerRow: -1 })
     expect(errors).toHaveLength(1)
     expect(errors[0]!.message).toContain("below minimum")
   })
@@ -548,7 +549,7 @@ describe("min/max validation", () => {
       code: { columnIndex: 0, type: "string", max: 5 },
     }
     const { errors } = validateWithSchema([["toolong"]], schema, {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(1)
     expect(errors[0]!.message).toContain("exceeds maximum")
@@ -559,7 +560,7 @@ describe("min/max validation", () => {
       code: { columnIndex: 0, type: "string", min: 2, max: 10 },
     }
     const { errors } = validateWithSchema([["hello"]], schema, {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(0)
   })
@@ -577,7 +578,7 @@ describe("enum validation", () => {
       },
     }
     const { errors } = validateWithSchema([["active"]], schema, {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(0)
   })
@@ -591,7 +592,7 @@ describe("enum validation", () => {
       },
     }
     const { errors } = validateWithSchema([["deleted"]], schema, {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(1)
     expect(errors[0]!.message).toContain("must be one of")
@@ -612,7 +613,7 @@ describe("custom validate function", () => {
       },
     }
     const { errors } = validateWithSchema([["SKU-001"]], schema, {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(0)
   })
@@ -625,7 +626,7 @@ describe("custom validate function", () => {
         validate: () => false,
       },
     }
-    const { errors } = validateWithSchema([["BAD"]], schema, { headerRow: 0 })
+    const { errors } = validateWithSchema([["BAD"]], schema, { headerRow: -1 })
     expect(errors).toHaveLength(1)
     expect(errors[0]!.message).toContain("Custom validation failed")
   })
@@ -639,7 +640,7 @@ describe("custom validate function", () => {
           typeof v === "string" && v.startsWith("SKU-") ? true : "SKU must start with 'SKU-'",
       },
     }
-    const { errors } = validateWithSchema([["BAD"]], schema, { headerRow: 0 })
+    const { errors } = validateWithSchema([["BAD"]], schema, { headerRow: -1 })
     expect(errors).toHaveLength(1)
     expect(errors[0]!.message).toBe("SKU must start with 'SKU-'")
   })
@@ -657,7 +658,7 @@ describe("transform function", () => {
       },
     }
     const { data, errors } = validateWithSchema([["hello"]], schema, {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(0)
     expect(data[0]!.code).toBe("HELLO")
@@ -671,7 +672,7 @@ describe("transform function", () => {
         transform: (v) => Math.round((v as number) * 100),
       },
     }
-    const { data } = validateWithSchema([[9.99]], schema, { headerRow: 0 })
+    const { data } = validateWithSchema([[9.99]], schema, { headerRow: -1 })
     expect(data[0]!.price).toBe(999)
   })
 })
@@ -683,7 +684,7 @@ describe("default values", () => {
     const schema: SchemaDefinition = {
       status: { columnIndex: 0, type: "string", default: "active" },
     }
-    const { data } = validateWithSchema([[null]], schema, { headerRow: 0 })
+    const { data } = validateWithSchema([[null]], schema, { headerRow: -1 })
     expect(data[0]!.status).toBe("active")
   })
 
@@ -693,7 +694,7 @@ describe("default values", () => {
     }
     // Row only has 1 column, so index 5 is out of bounds (→ null)
     const { data } = validateWithSchema([["Widget"]], schema, {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(data[0]!.status).toBe("active")
   })
@@ -702,7 +703,7 @@ describe("default values", () => {
     const schema: SchemaDefinition = {
       status: { columnIndex: 0, type: "string", default: "active" },
     }
-    const { data } = validateWithSchema([[""]], schema, { headerRow: 0 })
+    const { data } = validateWithSchema([[""]], schema, { headerRow: -1 })
     expect(data[0]!.status).toBe("active")
   })
 
@@ -711,7 +712,7 @@ describe("default values", () => {
       status: { columnIndex: 0, type: "string", default: "active" },
     }
     const { data } = validateWithSchema([["inactive"]], schema, {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(data[0]!.status).toBe("inactive")
   })
@@ -727,7 +728,7 @@ describe("skip empty rows", () => {
   it("should skip row with all nulls", () => {
     const rows: CellValue[][] = [["Alice"], [null], ["Bob"]]
     const { data } = validateWithSchema(rows, schema, {
-      headerRow: 0,
+      headerRow: -1,
       skipEmptyRows: true,
     })
     expect(data).toHaveLength(2)
@@ -738,7 +739,7 @@ describe("skip empty rows", () => {
   it("should skip row with all empty strings", () => {
     const rows: CellValue[][] = [["Alice"], [""], ["Bob"]]
     const { data } = validateWithSchema(rows, schema, {
-      headerRow: 0,
+      headerRow: -1,
       skipEmptyRows: true,
     })
     expect(data).toHaveLength(2)
@@ -755,7 +756,7 @@ describe("skip empty rows", () => {
       ["Bob", "Brown"],
     ]
     const { data } = validateWithSchema(rows, schema2, {
-      headerRow: 0,
+      headerRow: -1,
       skipEmptyRows: true,
     })
     expect(data).toHaveLength(3)
@@ -771,7 +772,7 @@ describe("error collection", () => {
       price: { columnIndex: 1, type: "number", required: true },
     }
     const { errors } = validateWithSchema([[null, null]], schema, {
-      headerRow: 0,
+      headerRow: -1,
     })
     expect(errors).toHaveLength(2)
   })
@@ -781,7 +782,7 @@ describe("error collection", () => {
       price: { columnIndex: 0, type: "number" },
     }
     const rows: CellValue[][] = [["abc"], ["def"]]
-    const { errors } = validateWithSchema(rows, schema, { headerRow: 0 })
+    const { errors } = validateWithSchema(rows, schema, { headerRow: -1 })
     expect(errors).toHaveLength(2)
     expect(errors[0]!.row).toBe(1)
     expect(errors[1]!.row).toBe(2)
@@ -791,7 +792,7 @@ describe("error collection", () => {
     const schema: SchemaDefinition = {
       price: { column: "Price", columnIndex: 0, type: "number" },
     }
-    const { errors } = validateWithSchema([["abc"]], schema, { headerRow: 0 })
+    const { errors } = validateWithSchema([["abc"]], schema, { headerRow: -1 })
     expect(errors).toHaveLength(1)
     const err = errors[0]!
     expect(err.row).toBe(1)
@@ -808,7 +809,7 @@ describe("error collection", () => {
     }
     expect(() =>
       validateWithSchema([[null, null]], schema, {
-        headerRow: 0,
+        headerRow: -1,
         errorMode: "throw",
       }),
     ).toThrow(ValidationError)
@@ -820,7 +821,7 @@ describe("error collection", () => {
       price: { columnIndex: 1, type: "number", required: true },
     }
     const { errors } = validateWithSchema([[null, null]], schema, {
-      headerRow: 0,
+      headerRow: -1,
       errorMode: "collect",
     })
     expect(errors).toHaveLength(2)
@@ -856,7 +857,7 @@ describe("edge cases", () => {
       name: { columnIndex: 0, type: "string" },
     }
     const rows: CellValue[][] = [["Alice", "extra1", "extra2"]]
-    const { data } = validateWithSchema(rows, schema, { headerRow: 0 })
+    const { data } = validateWithSchema(rows, schema, { headerRow: -1 })
     expect(data).toHaveLength(1)
     expect(data[0]!.name).toBe("Alice")
     expect(Object.keys(data[0]!)).toEqual(["name"])
@@ -869,7 +870,7 @@ describe("edge cases", () => {
       c: { columnIndex: 2, type: "string" },
     }
     const rows: CellValue[][] = [["only-one"]]
-    const { data } = validateWithSchema(rows, schema, { headerRow: 0 })
+    const { data } = validateWithSchema(rows, schema, { headerRow: -1 })
     expect(data[0]!.a).toBe("only-one")
     expect(data[0]!.b).toBeNull()
     expect(data[0]!.c).toBeNull()

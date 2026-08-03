@@ -1293,6 +1293,27 @@ export interface SheetFilterInfo {
  */
 export type SheetFilter = (info: SheetFilterInfo, index: number) => boolean
 
+/**
+ * Options accepted by every reader.
+ *
+ * Support is not uniform, and the type cannot express that — so it is
+ * stated here rather than left for a caller to discover:
+ *
+ * | option       | xlsx | ods | xlsb | xls |
+ * | ------------ | ---- | --- | ---- | --- |
+ * | `sheets`     | yes  | yes | no   | no  |
+ * | `dateSystem` | yes  | no  | yes  | yes |
+ * | `readStyles` | yes  | yes | no   | no  |
+ * | `password`   | yes  | no  | yes  | no  |
+ * | `maxRows`    | yes  | no  | no   | no  |
+ * | `range`      | yes  | no  | no   | no  |
+ *
+ * `maxInputBytes` applies wherever the input is a `ReadableStream`.
+ *
+ * `headerRow` and `schema` used to live here and were honoured by no
+ * reader at all; they were removed before v1 rather than frozen. Header
+ * selection belongs on the `*Objects` readers, which do implement it.
+ */
 export interface ReadOptions {
   /**
    * Which sheets to read.
@@ -1305,10 +1326,6 @@ export interface ReadOptions {
    * Default: all sheets.
    */
   sheets?: Array<number | string> | SheetFilter
-  /** Which row is the header row (1-based). Default: none */
-  headerRow?: number
-  /** Schema for validation and type coercion */
-  schema?: SchemaDefinition
   /** Date system override. Default: auto-detect from file */
   dateSystem?: "1900" | "1904" | "auto"
   /** Whether to read styles. Default: false (faster without) */

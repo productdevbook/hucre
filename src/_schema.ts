@@ -22,16 +22,42 @@ import { serialToDate, parseDate } from "./_date"
  * @param options - Validation options
  * @returns Object with validated data and any errors
  */
+/**
+ * Options for {@link validateWithSchema}.
+ *
+ * Named and exported rather than inline so callers can build one in a
+ * typed variable — it was an anonymous object type.
+ */
+export interface SchemaValidateOptions {
+  /**
+   * 0-based index of the header row, or `-1` when the rows carry no
+   * header at all (schemas keyed by `columnIndex`). Default: 0.
+   *
+   * This was 1-based until v1 — the only place in the library that was.
+   * Every other `headerRow`, on the `*Objects` readers, `sheetToObjects`
+   * and the JSON exporters, is 0-based, and one option name meaning two
+   * different things is an off-by-one that only surfaces in user data.
+   *
+   * Two migrations, both mechanical:
+   * - `headerRow: N` for N >= 1 becomes `N - 1`. The default still means
+   *   the first row, so code relying on it is unaffected.
+   * - `headerRow: 0`, which used to mean "no header row", becomes `-1`.
+   *   The two concepts were conflated by the old 1-based numbering; they
+   *   are now distinct.
+   */
+  headerRow?: number
+  /** Skip rows where every cell is null or empty. Default: false. */
+  skipEmptyRows?: boolean
+  /** Collect errors alongside the data, or throw on the first. Default: "collect". */
+  errorMode?: "collect" | "throw"
+}
+
 export function validateWithSchema<T extends Record<string, unknown> = Record<string, unknown>>(
   rows: CellValue[][],
   schema: SchemaDefinition,
-  options?: {
-    headerRow?: number
-    skipEmptyRows?: boolean
-    errorMode?: "collect" | "throw"
-  },
+  options?: SchemaValidateOptions,
 ): { data: T[]; errors: SchemaValidationIssue[] } {
-  const headerRowNum = options?.headerRow ?? 1
+  const headerRowIndex = options?.headerRow ?? 0
   const skipEmptyRows = options?.skipEmptyRows ?? false
   const errorMode = options?.errorMode ?? "collect"
 
@@ -49,8 +75,7 @@ export function validateWithSchema<T extends Record<string, unknown> = Record<st
 
   // ── Step 1: Build column index mapping ──────────────────────────
 
-  // Extract headers from the header row (0-based index)
-  const headerRowIndex = headerRowNum - 1
+  // Extract headers from the header row
   const headerRow = headerRowIndex >= 0 && headerRowIndex < rows.length ? rows[headerRowIndex]! : []
 
   // Build a map: normalized header name → column index

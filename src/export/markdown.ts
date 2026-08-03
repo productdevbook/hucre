@@ -1,7 +1,14 @@
 import type { Sheet, CellValue } from "../_types"
 
 export interface MarkdownExportOptions {
-  /** Use first row as header. Default: true */
+  /**
+   * Treat the first row as the table header. Default: true.
+   *
+   * Renamed from `headerRow`, which elsewhere in the library is a 0-based
+   * row *index*. See #365.
+   */
+  hasHeaderRow?: boolean
+  /** @deprecated Renamed to {@link MarkdownExportOptions.hasHeaderRow}. */
   headerRow?: boolean
   /** Alignment per column. Default: left for strings, right for numbers */
   alignment?: Array<"left" | "center" | "right">
@@ -85,8 +92,11 @@ function padCell(value: string, width: number, align: "left" | "center" | "right
  * Export a sheet as a Markdown table string.
  */
 export function toMarkdown(sheet: Sheet, options?: MarkdownExportOptions): string {
-  const opts: Required<MarkdownExportOptions> = {
-    headerRow: options?.headerRow ?? true,
+  // `headerRow` is omitted: deprecated spelling of `hasHeaderRow`,
+  // folded into it below.
+  const opts: Required<Omit<MarkdownExportOptions, "headerRow">> = {
+    // Accept the deprecated name for one major. See #365.
+    hasHeaderRow: options?.hasHeaderRow ?? options?.headerRow ?? true,
     alignment: options?.alignment ?? [],
     maxWidth: options?.maxWidth ?? 50,
   }
@@ -112,7 +122,7 @@ export function toMarkdown(sheet: Sheet, options?: MarkdownExportOptions): strin
   })
 
   // Determine the data start row (skip header if headerRow is true)
-  const dataStartRow = opts.headerRow ? 1 : 0
+  const dataStartRow = opts.hasHeaderRow ? 1 : 0
 
   // Determine alignments
   const alignments: Array<"left" | "center" | "right"> = []
@@ -136,7 +146,7 @@ export function toMarkdown(sheet: Sheet, options?: MarkdownExportOptions): strin
 
   const lines: string[] = []
 
-  if (opts.headerRow) {
+  if (opts.hasHeaderRow) {
     // Header row
     const headerCells = formatted[0].map((val, c) => padCell(val, widths[c], alignments[c]))
     lines.push("|" + headerCells.join("|") + "|")
