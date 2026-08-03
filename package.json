@@ -76,14 +76,14 @@
     "prepack": "pnpm build"
   },
   "devDependencies": {
-    "@typescript/native-preview": "7.0.0-dev.20260316.1",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "@vitest/coverage-v8": "^4.1.10",
-    "bumpp": "^12.0.0",
+    "bumpp": "^12.1.1",
     "citty": "^0.2.2",
     "consola": "^3.4.2",
     "obuild": "^0.4.38",
-    "oxfmt": "^0.59.0",
-    "oxlint": "^1.74.0",
+    "oxfmt": "^0.61.0",
+    "oxlint": "^1.76.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   },
