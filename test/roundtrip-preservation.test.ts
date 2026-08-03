@@ -48,22 +48,19 @@ describe("openXlsx → saveXlsx preserves sheet features", () => {
     expect(workbook.sheets[0].colBreaks).toEqual([3])
   })
 
-  it("drops the background image rather than emitting a dangling reference", async () => {
-    // Known gap: this path writes neither the media part nor the picture
-    // relationship, so forwarding backgroundImage would emit a <picture>
-    // pointing at an rId that does not exist — a file Excel calls
-    // corrupt. Until the media plumbing lands, losing it is the safer
-    // failure. This test pins that choice so it is deliberate, not drift.
+  it("keeps the background image and its relationship", async () => {
     const png = new Uint8Array([
       0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
       0x52,
     ])
     const { saved, workbook } = await cycle({ sheets: [sheetWith({ backgroundImage: png })] })
-    expect(workbook.sheets[0].backgroundImage).toBeUndefined()
+    expect(workbook.sheets[0].backgroundImage).toEqual(png)
 
     const zip = new ZipReader(saved)
     const sheetXml = new TextDecoder().decode(await zip.extract("xl/worksheets/sheet1.xml"))
-    expect(sheetXml).not.toContain("<picture")
+    expect(sheetXml).toContain("<picture")
+    expect(zip.has("xl/worksheets/_rels/sheet1.xml.rels")).toBe(true)
+    expect(zip.has("xl/media/image1.png")).toBe(true)
   })
 
   it("keeps sparklines", async () => {

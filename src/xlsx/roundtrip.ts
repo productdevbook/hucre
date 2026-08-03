@@ -71,6 +71,7 @@ const NS_RELATIONSHIPS = "http://schemas.openxmlformats.org/package/2006/relatio
 const REL_HYPERLINK =
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
 const REL_DRAWING = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing"
+const REL_IMAGE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
 const REL_COMMENTS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments"
 const REL_VML_DRAWING =
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing"
@@ -206,11 +207,7 @@ export async function saveXlsx(
     outlineProperties: sheet.outlineProperties,
     sparklines: sheet.sparklines,
     textBoxes: sheet.textBoxes,
-    // `backgroundImage` is deliberately NOT forwarded. It needs a media
-    // part and a `<picture>` relationship, and this path emits neither —
-    // forwarding it produces a sheet referencing an rId that was never
-    // written, which Excel reports as corrupt. Losing the image is worse
-    // than it should be, but better than that. Tracked separately.
+    backgroundImage: sheet.backgroundImage,
   }))
 
   // Create shared collectors
@@ -273,6 +270,18 @@ export async function saveXlsx(
     }
   }
 
+  const backgroundImagePaths: Array<string | null> = []
+  for (const sheet of writeSheets) {
+    if (sheet.backgroundImage) {
+      const path = `xl/media/image${globalImageIndex}.png`
+      backgroundImagePaths.push(path)
+      imageExtensions.add("png")
+      globalImageIndex++
+    } else {
+      backgroundImagePaths.push(null)
+    }
+  }
+
   // Generate comments data for sheets that have comments
   const commentsResults: Array<CommentsResult | null> = []
   const commentIndices: number[] = []
@@ -329,6 +338,7 @@ export async function saveXlsx(
         regeneratedPaths.add(img.path)
       }
     }
+    if (backgroundImagePaths[i]) regeneratedPaths.add(backgroundImagePaths[i]!)
 
     const comments = commentsResults[i]
     if (comments) {
@@ -842,6 +852,7 @@ export async function saveXlsx(
     const hasDrawing = drawing !== null && result.drawingRId !== null
     const hasComments = comments !== null && result.legacyDrawingRId !== null
     const hasTables = result.tables.length > 0
+    const hasPicture = result.pictureRId !== null && backgroundImagePaths[i] !== null
     const slicerTargets = sheetSlicerTargets[i] ?? []
     const timelineTargets = sheetTimelineTargets[i] ?? []
     const hasSlicers = slicerTargets.length > 0
@@ -869,6 +880,7 @@ export async function saveXlsx(
       hasDrawing ||
       hasComments ||
       hasTables ||
+      hasPicture ||
       hasSlicers ||
       hasTimelines ||
       hasThreadedComments ||
@@ -940,6 +952,17 @@ export async function saveXlsx(
           }),
         )
         bumpToAfter(tableEntry.rId)
+      }
+
+      if (hasPicture && result.pictureRId && backgroundImagePaths[i]) {
+        relElements.push(
+          xmlSelfClose("Relationship", {
+            Id: result.pictureRId,
+            Type: REL_IMAGE,
+            Target: `../${backgroundImagePaths[i]!.slice(3)}`,
+          }),
+        )
+        bumpToAfter(result.pictureRId)
       }
 
       // Re-emit slicer relationships read from the original sheet rels.
@@ -1039,6 +1062,10 @@ export async function saveXlsx(
       for (const img of drawing.images) {
         zip.add(img.path, img.data, { compress: false })
       }
+    }
+
+    if (hasPicture && backgroundImagePaths[i] && writeSheets[i].backgroundImage) {
+      zip.add(backgroundImagePaths[i]!, writeSheets[i].backgroundImage!, { compress: false })
     }
 
     // Add model-chart drawing + chart bodies (issue #136)
