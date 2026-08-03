@@ -62,41 +62,58 @@ import { readXml, writeXml } from "hucre/xml" // Tabular XML
 
 ### vs JavaScript / TypeScript Libraries
 
-|                         | hucre     | SheetJS CE    | ExcelJS   | xlsx-js-style |
-| ----------------------- | --------- | ------------- | --------- | ------------- |
-| **Dependencies**        | 0         | 0\*           | 12 (CVEs) | 0\*           |
-| **Bundle (gzip)**       | ~18 KB    | ~300 KB       | ~500 KB   | ~300 KB       |
-| **ESM native**          | Yes       | Partial       | No (CJS)  | Partial       |
-| **TypeScript**          | Native    | Bolted-on     | Bolted-on | Bolted-on     |
-| **Edge runtime**        | Yes       | No            | No        | No            |
-| **CSP compliant**       | Yes       | Yes           | No (eval) | Yes           |
-| **npm published**       | Yes       | No (CDN only) | Stale     | Yes           |
-| **Read + Write**        | Yes       | Yes (Pro $)   | Yes       | Yes           |
-| **Styling**             | Yes       | No (Pro $)    | Yes       | Yes           |
-| **Cond. formatting**    | Yes (all) | No (Pro $)    | Partial   | No            |
-| **Stream read + write** | Yes       | CSV only      | Yes       | CSV only      |
-| **ODS support**         | Yes       | Yes           | No        | Yes           |
-| **Round-trip**          | Yes       | Partial       | Partial   | Partial       |
-| **Sparklines**          | Yes       | No            | No        | No            |
-| **Tables**              | Yes       | Yes           | Yes       | Yes           |
-| **Images**              | Yes       | No (Pro $)    | Yes       | No            |
+|                         | hucre                | SheetJS CE    | ExcelJS   | xlsx-js-style |
+| ----------------------- | -------------------- | ------------- | --------- | ------------- |
+| **Dependencies**        | 0                    | 0\*           | 9         | 0\*           |
+| **Bundle (gzip)**       | 2–114 KB<sup>†</sup> | ~300 KB       | ~500 KB   | ~300 KB       |
+| **ESM native**          | Yes                  | Partial       | No (CJS)  | Partial       |
+| **TypeScript**          | Native               | Bolted-on     | Bolted-on | Bolted-on     |
+| **Edge runtime**        | Yes                  | No            | No        | No            |
+| **CSP compliant**       | Yes                  | Yes           | No (eval) | Yes           |
+| **npm published**       | Yes                  | No (CDN only) | Stale     | Yes           |
+| **Read + Write**        | Yes                  | Yes (Pro $)   | Yes       | Yes           |
+| **Styling**             | Yes                  | No (Pro $)    | Yes       | Yes           |
+| **Cond. formatting**    | 13 types<sup>‡</sup> | No (Pro $)    | Yes       | No            |
+| **Stream read + write** | Yes                  | CSV only      | Yes       | CSV only      |
+| **ODS support**         | Yes                  | Yes           | No        | Yes           |
+| **Round-trip**          | Yes                  | Partial       | Partial   | Partial       |
+| **Sparklines**          | Yes                  | No            | No        | No            |
+| **Tables**              | Yes                  | Yes           | Yes       | Yes           |
+| **Images**              | Yes                  | No (Pro $)    | Yes       | No            |
 
 \* SheetJS removed itself from npm; must install from CDN tarball.
 
+† Depends on what you import — hucre is fully tree-shakeable, so there is no
+single number. Minified + gzipped, bundled with rolldown against `dist/`:
+`{ parseCsv, writeCsv }` from `hucre/csv` = **2.3 KB**, `{ readXlsx }` from
+`hucre/xlsx` = **32 KB**, `{ readXlsx, writeXlsx }` = **64 KB**, the entire
+library (`export * from "hucre"`) = **114 KB**.
+
+‡ `cellIs`, `expression`, `colorScale`, `dataBar`, `iconSet`, `containsText`,
+`notContainsText`, `beginsWith`, `endsWith`, `containsBlanks`,
+`notContainsBlanks`, `duplicateValues`, `uniqueValues` — read and written.
+`top10` and `aboveAverage` round-trip in their default form only (the writer
+emits no `rank` / `percent` / `bottom` or `aboveAverage` / `equalAverage` /
+`stdDev` attributes), and `timePeriod` rules are dropped on read.
+
 ### vs Libraries in Other Languages
 
-|                       | hucre (TS)   | openpyxl (Py) | XlsxWriter (Py) | rust_xlsxwriter | Apache POI (Java) |
-| --------------------- | ------------ | ------------- | --------------- | --------------- | ----------------- |
-| **Read XLSX**         | Yes          | Yes           | No              | No              | Yes               |
-| **Write XLSX**        | Yes          | Yes           | Yes             | Yes             | Yes               |
-| **Streaming**         | Read+Write   | Write-only    | const_memory    | const_memory    | SXSSF (write)     |
-| **Charts**            | Round-trip   | 15+ types     | 9 types         | 12+ types       | Limited           |
-| **Pivot tables**      | Read + Write | Read-only     | No              | No              | Limited           |
-| **Cond. formatting**  | Yes (all)    | Yes           | Yes             | Yes             | Yes               |
-| **Sparklines**        | Yes          | No            | Yes             | Yes             | No                |
-| **Formula eval**      | No           | No            | No              | No              | Yes               |
-| **Multi-format**      | XLSX/ODS/CSV | XLSX only     | XLSX only       | XLSX only       | XLS/XLSX          |
-| **Zero dependencies** | Yes          | lxml optional | No              | Yes             | No                |
+|                       | hucre (TS)          | openpyxl (Py) | XlsxWriter (Py) | rust_xlsxwriter | Apache POI (Java) |
+| --------------------- | ------------------- | ------------- | --------------- | --------------- | ----------------- |
+| **Read XLSX**         | Yes                 | Yes           | No              | No              | Yes               |
+| **Write XLSX**        | Yes                 | Yes           | Yes             | Yes             | Yes               |
+| **Streaming**         | Read+Write          | Read+Write    | const_memory    | const_memory    | SXSSF (write)     |
+| **Charts**            | Round-trip          | 15+ types     | 9 types         | 12+ types       | Limited           |
+| **Pivot tables**      | Read + Write (skel) | Read-only     | No              | No              | Limited           |
+| **Cond. formatting**  | 13 types (see ‡)    | Yes           | Yes             | Yes             | Yes               |
+| **Sparklines**        | Yes                 | Yes           | Yes             | Yes             | No                |
+| **Formula eval**      | No                  | No            | No              | No              | Yes               |
+| **Multi-format**      | XLSX/ODS/CSV        | XLSX only     | XLSX only       | XLSX only       | XLS/XLSX          |
+| **Zero dependencies** | Yes                 | lxml optional | No              | Yes             | No                |
+
+"Read + Write (skel)" for pivot tables: hucre writes the pivot cache, layout
+and relationships, but not the pre-computed value cells — Excel fills those
+in on first open. See [Pivot Tables](#pivot-tables).
 
 ## Features
 
@@ -157,7 +174,7 @@ const buffer = await writeXlsx({
 })
 ```
 
-Features: cell styles, auto column widths, merged cells, freeze/split panes, auto-filter with criteria, data validation, hyperlinks, images (PNG/JPEG/GIF/SVG/WebP), comments, tables, conditional formatting (cellIs/colorScale/dataBar/iconSet), named ranges, print settings, page breaks, sheet protection, workbook protection, rich text, shared/array/dynamic formulas, sparklines, textboxes, background images, number formats, hidden sheets, Excel 2024 native checkboxes, HTML/Markdown/JSON/TSV export, template engine.
+Features: cell styles, auto column widths, merged cells, freeze/split panes, auto-filter (with per-column value filters — `<filters><filter val="…"/></filters>`; custom/dynamic/colour criteria are not emitted), data validation, hyperlinks, images (PNG/JPEG/GIF/SVG/WebP), comments, tables, conditional formatting (13 rule types — see the footnote above), named ranges, print settings, page breaks, sheet protection, workbook protection, rich text, shared/array/dynamic formulas, sparklines, textboxes, background images, number formats, hidden sheets, Excel 2024 native checkboxes, HTML/Markdown/JSON/TSV export, template engine.
 
 ### Auto Column Width
 
@@ -718,11 +735,21 @@ means `parseChart` surfaces the field on `Chart` (or
 `ChartAxisInfo` / `ChartDataLabelsInfo` / `ChartDataTable` for nested
 slots); "Write" means `writeXlsx` emits it from the matching
 `SheetChart` field; "Clone" means `cloneChart` carries it through
-with the standard `undefined` / `null` / value override grammar.
+with the standard `undefined` / `null` / value override grammar. `—`
+means the layer does not cover it.
+
+The write side is narrower than the read side on chart kinds:
+`WriteChartKind` is `bar | column | line | pie | doughnut | scatter |
+area`, and `SheetChart.type` holds a single kind — so combo charts
+(several chart-type elements in one plot area) parse fine but cannot be
+authored. `writeXlsx` throws on any other kind; `cloneChart` throws on a
+bubble / radar / surface / stock source unless `options.type` coerces it
+to a writable kind.
 
 | Family                                                                                                                       | Read | Write | Clone |
 | ---------------------------------------------------------------------------------------------------------------------------- | :--: | :---: | :---: |
-| Chart kinds (bar / column / line / pie / doughnut / area / scatter / bubble / combo)                                         |  x   |   x   |   x   |
+| Chart kinds — bar / column / line / pie / doughnut / area / scatter                                                          |  x   |   x   |   x   |
+| Chart kinds — bubble / radar / surface / stock / 3-D variants, and combo (multi-kind plot areas)                             |  x   |   —   |   —   |
 | Title text + visibility (`title`, `showTitle`, `autoTitleDeleted`)                                                           |  x   |   x   |   x   |
 | Title typography (size / bold / italic / strike / underline / color / family)                                                |  x   |   x   |   x   |
 | Title rotation, manual layout                                                                                                |  x   |   x   |   x   |
@@ -827,7 +854,7 @@ const xlsx = await writeXlsx({ sheets: [dashboard] })
 ```
 
 Every knob the writer accepts lives on the `SheetChart` type — see
-[`SheetChart` in `src/_types.ts`](./src/_types.ts) for the full
+[`SheetChart` in `src/xlsx/chart/types.ts`](https://github.com/productdevbook/hucre/blob/main/src/xlsx/chart/types.ts) for the full
 field list with per-field semantics, OOXML mapping, and clamp /
 default behavior. The capability table above lists the families
 covered.
@@ -875,7 +902,7 @@ A common pattern is "template -> override -> write" — keep one
 chart-of-each-flavour template and use `cloneChart` to spawn many
 variants without re-encoding the whole `<c:chartSpace>` tree by
 hand. See [`CloneChartOptions` in
-`src/xlsx/chart-clone.ts`](./src/xlsx/chart-clone.ts) for the full
+`src/xlsx/chart-clone.ts`](https://github.com/productdevbook/hucre/blob/main/src/xlsx/chart-clone.ts) for the full
 override surface (every knob on `SheetChart` has a matching
 `undefined | null | value` override field).
 
@@ -1115,7 +1142,7 @@ for (const issue of a11y.audit(wb)) {
 }
 
 // Color contrast helpers (WCAG 2.1 sRGB)
-a11y.contrastRatio("0969DA", "FFFFFF") // ≈ 4.93 (passes AA)
+a11y.contrastRatio("0969DA", "FFFFFF") // ≈ 5.19 (passes AA)
 a11y.relativeLuminance("808080")
 ```
 
@@ -1200,7 +1227,14 @@ for await (const row of readNdjsonStream(request.body!)) {
 
 ### XML
 
-Read and write tabular XML — product feeds (GS1 GDSN, Trendyol, marketplace exports), ERP dumps (SAP B1, Logo GO, Netsis), CRM catalogs. SAX-based: 50–200 MB feeds don't load into memory.
+Read and write tabular XML — product feeds (GS1 GDSN, Trendyol, marketplace exports), ERP dumps (SAP B1, Logo GO, Netsis), CRM catalogs.
+
+`readXml` parses with the SAX parser internally, but it is not a streaming
+API: it takes a complete XML `string` and returns every row at once, so both
+the document and the full row set live in memory. Omitting `rowTag` costs a
+second pass over the input for auto-detection. `maxRows` caps the rows you get
+back, not the parse — the document is still walked in full. A streaming XML
+reader is not implemented yet.
 
 ```ts
 import { readXml, writeXml } from "hucre/xml"
@@ -1353,7 +1387,8 @@ hucre works everywhere — no Node.js APIs (`fs`, `crypto`, `Buffer`) in core.
 ## Architecture
 
 ```
-hucre (~37 KB gzipped)
+hucre (~114 KB gzipped for the whole barrel; 2–64 KB for the common
+       subpath imports — see the bundle-size footnote above)
 ├── zip/            Zero-dep DEFLATE/inflate + ZIP read/write (+ streaming both ways)
 ├── xml/            SAX parser + XML writer (CSP-compliant, no eval)
 ├── xlsx/
@@ -1461,10 +1496,10 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 
 ### XML
 
-| Function                   | Description                                              |
-| -------------------------- | -------------------------------------------------------- |
-| `readXml(input, options?)` | SAX-based XML reader, auto-detects repeating row element |
-| `writeXml(data, options?)` | Serialize rows to XML; `@`-keys → attributes             |
+| Function                   | Description                                               |
+| -------------------------- | --------------------------------------------------------- |
+| `readXml(input, options?)` | XML string → rows; auto-detects the repeating row element |
+| `writeXml(data, options?)` | Serialize rows to XML; `@`-keys → attributes              |
 
 ### Sheet Operations
 
@@ -1531,7 +1566,7 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | --------------------------- | -------------------------------------------------------------------- |
 | `serializeWorkbook(wb)`     | Convert Workbook for `postMessage` (Maps → objects, Dates → strings) |
 | `deserializeWorkbook(data)` | Restore Workbook from serialized form                                |
-| `WORKER_SAFE_FUNCTIONS`     | List of all hucre functions safe for Web Workers (all of them)       |
+| `WORKER_SAFE_FUNCTIONS`     | Names of the 40 exports verified safe for Web Workers (of 125 total) |
 
 ## Development
 
@@ -1539,7 +1574,8 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 pnpm install
 pnpm dev          # vitest watch
 pnpm test         # lint + typecheck + test
-pnpm build        # obuild (minified, tree-shaken)
+pnpm build        # obuild: src/ transpiled file-by-file into dist/ (+ .d.mts),
+                  # plus a bundled, minified dist/cli.mjs
 pnpm lint:fix     # oxlint + oxfmt
 pnpm typecheck    # tsc
 ```
@@ -1548,31 +1584,30 @@ pnpm typecheck    # tsc
 
 Contributions are welcome! Please [open an issue](https://github.com/productdevbook/hucre/issues) or submit a PR.
 
-127 of 135 tracked features are implemented. See the [issue tracker](https://github.com/productdevbook/hucre/issues) for the roadmap.
+See the [issue tracker](https://github.com/productdevbook/hucre/issues) for the roadmap.
 
 ### Roadmap
 
-**Upcoming Engine Features:**
+**Not implemented yet:**
 
-- Chart creation (bar, line, pie, scatter, area + subtypes) — synthesize from a fresh write (read + roundtrip already supported)
-- XLS BIFF8 read (legacy Excel 97-2003)
-- XLSB binary format read
 - Formula evaluation engine
-- File encryption/decryption (AES-256, MS-OFFCRYPTO)
+- Chart authoring for the remaining kinds — bubble, radar, surface, stock, and combo (multi-kind plot areas); these read and round-trip today
+- Streaming XML reader (`readXml` takes a whole string today)
+- Conditional formatting: `timePeriod` rules, and the `rank` / `percent` / `bottom` / `aboveAverage` / `equalAverage` / `stdDev` knobs on `top10` and `aboveAverage`
+- Auto-filter criteria beyond value lists (custom, dynamic, colour, icon filters)
+- Pre-computed pivot value cells (the writer emits the structure; Excel computes on open)
 - Threaded comments (Excel 365+) — synthesize from a fresh write (read + roundtrip already supported)
-- Checkboxes (Excel 2024+)
-- VBA/macro injection
 - Slicers & timeline filters — synthesize from a fresh write (read + roundtrip already supported)
 - WPS DISPIMG cell-embedded images — synthesize from a fresh write (read + roundtrip already supported)
-- R1C1 notation support
-- Accessibility helpers (WCAG 2.1 AA)
+- VBA/macro injection
+- XLS / XLSB writing (both formats are read-only today)
 
 ## Alternatives
 
 Looking for a different approach? These libraries may fit your use case:
 
 - **[SheetJS (xlsx)](https://github.com/SheetJS/sheetjs)** — The most popular spreadsheet library. Feature-rich but large bundle (~300 KB), removed from npm (CDN-only), styling requires Pro license.
-- **[ExcelJS](https://github.com/exceljs/exceljs)** — Read/write/stream XLSX with styling. Mature but has 12 dependencies (some with CVEs), CJS-only, no ESM.
+- **[ExcelJS](https://github.com/exceljs/exceljs)** — Read/write/stream XLSX with styling. Mature but has 9 direct dependencies (4.4.0), CJS-only, no ESM.
 - **[xlsx-js-style](https://github.com/gitbrent/xlsx-js-style)** — SheetJS fork that adds cell styling. Same bundle size and limitations as SheetJS.
 - **[xlsmith](https://github.com/ChronicStone/xlsmith)** — Schema-driven Excel report builder with typed column definitions, formula helpers, conditional styles, and summary rows. Great for structured report generation.
 - **[xlsx-populate](https://github.com/dtjohnson/xlsx-populate)** — Template-based XLSX manipulation. Good for filling existing templates, limited write-from-scratch support.
