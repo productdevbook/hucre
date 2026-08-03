@@ -285,19 +285,19 @@ describe("parseSharedStrings — <rPr> colour", () => {
   // sibling implementations — src/xlsx/styles.ts:232 and the inline-string
   // path at src/xlsx/worksheet.ts:1686 — use
   // `rgb.length === 8 ? rgb.slice(2) : rgb`. Consequences below.
-  it.skip("must not mutate a 6-digit RGB value that has no alpha byte", () => {
+  it("must not mutate a 6-digit RGB value that has no alpha byte", () => {
     // rgb="FF0000" (plain red, written by several non-Excel producers)
     // currently becomes "0000".
     expect(runFont('<color rgb="FF0000"/>')?.color).toEqual({ rgb: "FF0000" })
   })
 
-  it.skip("must strip a non-opaque alpha byte like every other colour parser", () => {
+  it("must strip a non-opaque alpha byte like every other colour parser", () => {
     // rgb="80FF0000" currently stays 8 characters long, so `Color.rgb`
     // stops being a hex RGB triplet.
     expect(runFont('<color rgb="80FF0000"/>')?.color).toEqual({ rgb: "FF0000" })
   })
 
-  it.skip("must agree with the styles.xml colour parser on identical input", () => {
+  it("must agree with the styles.xml colour parser on identical input", () => {
     const cases = ["FFFF0000", "80FF0000", "00FF00FF", "FF0000"]
     const styles = parseStyles(
       `<styleSheet xmlns="${SST_NS}"><fonts>${cases

@@ -31,6 +31,11 @@ const PLACEHOLDER_RE = /\{\{\s*([^}\s]+)\s*\}\}/g
  * ```
  */
 export function fillTemplate(workbook: Workbook, data: Record<string, CellValue>): Workbook {
+  // Every lookup below uses Object.hasOwn rather than `key in data`.
+  // `in` walks the prototype chain, so a template containing
+  // `{{toString}}` used to resolve to Object.prototype.toString and put
+  // a *function* into a cell — outside CellValue entirely. `constructor`,
+  // `valueOf`, `hasOwnProperty` and `__proto__` behaved the same way.
   for (const sheet of workbook.sheets) {
     for (let r = 0; r < sheet.rows.length; r++) {
       const row = sheet.rows[r]!
@@ -45,7 +50,7 @@ export function fillTemplate(workbook: Workbook, data: Record<string, CellValue>
         const singleMatch = val.match(/^\{\{\s*([^}\s]+)\s*\}\}$/)
         if (singleMatch) {
           const key = singleMatch[1]!
-          if (key in data) {
+          if (Object.hasOwn(data, key)) {
             row[c] = data[key]!
           }
           // If key not in data, leave as-is
@@ -54,7 +59,7 @@ export function fillTemplate(workbook: Workbook, data: Record<string, CellValue>
 
         // Multiple placeholders or mixed text: string replacement
         const replaced = val.replace(PLACEHOLDER_RE, (match, key: string) => {
-          if (key in data) {
+          if (Object.hasOwn(data, key)) {
             const replacement = data[key]
             if (replacement === null) return ""
             if (replacement instanceof Date) return replacement.toISOString()
@@ -76,7 +81,7 @@ export function fillTemplate(workbook: Workbook, data: Record<string, CellValue>
         const singleMatch = cell.value.match(/^\{\{\s*([^}\s]+)\s*\}\}$/)
         if (singleMatch) {
           const dataKey = singleMatch[1]!
-          if (dataKey in data) {
+          if (Object.hasOwn(data, dataKey)) {
             cell.value = data[dataKey]!
             // Update cell type based on value
             if (typeof cell.value === "number") cell.type = "number"
@@ -88,7 +93,7 @@ export function fillTemplate(workbook: Workbook, data: Record<string, CellValue>
         }
 
         cell.value = cell.value.replace(PLACEHOLDER_RE, (match, k: string) => {
-          if (k in data) {
+          if (Object.hasOwn(data, k)) {
             const replacement = data[k]
             if (replacement === null) return ""
             if (replacement instanceof Date) return replacement.toISOString()

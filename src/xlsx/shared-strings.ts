@@ -121,7 +121,17 @@ function parseRunProperties(rPr: XmlElement): FontStyle {
         break
       case "color":
         font.color = {}
-        if (child.attrs["rgb"]) font.color.rgb = child.attrs["rgb"].replace(/^FF/, "")
+        if (child.attrs["rgb"]) {
+          // Strip the alpha channel positionally, matching styles.ts and
+          // the inline-string path in worksheet.ts. A `replace(/^FF/, "")`
+          // here mangled anything that merely started with FF: the 6-digit
+          // "FF0000" became "0000", and a non-opaque "80FF0000" kept its
+          // alpha, violating Color.rgb's "hex RGB without '#'". The same
+          // run parsed differently depending on whether it lived in
+          // sharedStrings.xml or an inline <is>.
+          const raw = child.attrs["rgb"]
+          font.color.rgb = raw.length === 8 ? raw.slice(2) : raw
+        }
         if (child.attrs["theme"]) font.color.theme = Number(child.attrs["theme"])
         if (child.attrs["tint"]) font.color.tint = Number(child.attrs["tint"])
         if (child.attrs["indexed"]) font.color.indexed = Number(child.attrs["indexed"])

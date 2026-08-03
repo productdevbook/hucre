@@ -236,20 +236,20 @@ describe("fillTemplate — structural edge cases", () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("fillTemplate — inherited Object.prototype keys", () => {
-  it.skip("leaves {{toString}} alone when `data` has no own `toString`", () => {
+  it("leaves {{toString}} alone when `data` has no own `toString`", () => {
     const wb = workbookWithCells([["0,0", cell("{{toString}}")]], [["{{toString}}"]])
     fillTemplate(wb, { name: "Acme" })
     expect(wb.sheets[0].rows[0][0]).toBe("{{toString}}")
     expect(wb.sheets[0].cells!.get("0,0")!.value).toBe("{{toString}}")
   })
 
-  it.skip("leaves an inherited key alone inside mixed text", () => {
+  it("leaves an inherited key alone inside mixed text", () => {
     const wb: Workbook = { sheets: [{ name: "S", rows: [["Hi {{constructor}}"]] }] }
     fillTemplate(wb, { name: "Acme" })
     expect(wb.sheets[0].rows[0][0]).toBe("Hi {{constructor}}")
   })
 
-  it.skip("leaves {{__proto__}} alone rather than injecting Object.prototype", () => {
+  it("leaves {{__proto__}} alone rather than injecting Object.prototype", () => {
     const wb: Workbook = { sheets: [{ name: "S", rows: [["{{__proto__}}"]] }] }
     fillTemplate(wb, {})
     expect(wb.sheets[0].rows[0][0]).toBe("{{__proto__}}")

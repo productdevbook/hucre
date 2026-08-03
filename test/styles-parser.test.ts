@@ -662,7 +662,7 @@ describe("isDateStyle", () => {
   // *before* consulting numFmts, so the two disagree: a cell redefining id
   // 14 as "#,##0" is formatted as a number yet still converted to a Date by
   // the reader. Fix: look up styles.numFmts first in isDateStyle too.
-  it.skip("must let a redefined built-in id override the date-id table", () => {
+  it("must let a redefined built-in id override the date-id table", () => {
     const styles = styleSheet(`
       <numFmts count="2">
         <numFmt numFmtId="14" formatCode="#,##0"/>

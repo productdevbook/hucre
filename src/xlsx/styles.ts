@@ -543,15 +543,22 @@ export function isDateStyle(styles: ParsedStyles, styleIndex: number): boolean {
 
   const numFmtId = xf.numFmtId
 
-  // Check built-in date format IDs
-  if (DATE_FMT_IDS.has(numFmtId)) {
-    return true
-  }
-
-  // Check custom number formats
+  // A workbook may redefine a built-in id (ECMA-376 §18.8.30), and
+  // resolveStyle already honours that — `numFmts.get(id) ?? BUILTIN[id]`.
+  // Consulting DATE_FMT_IDS first disagreed with it: a file redefining
+  // id 14 as "#,##0" resolved to a numeric format *and* reported as a
+  // date, so the reader converted the serial to a Date and then formatted
+  // it numerically. The reverse — id 3 redefined as "yyyy-mm-dd" — was
+  // missed entirely. Same precedence in both functions.
   const customFmt = styles.numFmts.get(numFmtId)
   if (customFmt) {
     return isDateFormat(customFmt)
+  }
+
+  // Built-in date format IDs, several of which are locale-dependent and
+  // carry no format string to inspect.
+  if (DATE_FMT_IDS.has(numFmtId)) {
+    return true
   }
 
   // Check built-in format string
