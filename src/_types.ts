@@ -1437,8 +1437,6 @@ export interface OutlineProperties {
 export interface CsvReadOptions {
   /** Field delimiter. Default: auto-detect */
   delimiter?: string
-  /** Line separator. Default: auto-detect */
-  lineSeparator?: string
   /** Quote character. Default: " */
   quote?: string
   /** Escape character. Default: " (RFC 4180 doubled quotes) */
@@ -1453,8 +1451,6 @@ export interface CsvReadOptions {
   preserveLeadingZeros?: boolean
   /** Schema for validation */
   schema?: SchemaDefinition
-  /** Encoding. Default: "utf-8" */
-  encoding?: string
   /** Skip empty rows. Default: false */
   skipEmptyRows?: boolean
   /** Comment character (lines starting with this are skipped) */
@@ -1534,7 +1530,14 @@ export interface SchemaField {
 
 export type SchemaDefinition = Record<string, SchemaField>
 
-export interface ValidationError {
+/**
+ * One row/column schema failure produced by `validateWithSchema`.
+ *
+ * Named `SchemaValidationIssue` rather than `ValidationError` because the
+ * `ValidationError` *class* (see `./errors`) is what strict mode throws;
+ * this is the plain record collected in non-strict mode.
+ */
+export interface SchemaValidationIssue {
   /** 1-based row number */
   row: number
   /** Column name or index */
@@ -1545,27 +1548,6 @@ export interface ValidationError {
   value: unknown
   /** Field name in the schema */
   field: string
-}
-
-export interface ReadResult<T = Record<string, unknown>> {
-  /** Parsed and validated rows */
-  data: T[]
-  /** Validation errors (if schema provided) */
-  errors: ValidationError[]
-  /** Raw sheet data */
-  sheets: Sheet[]
-}
-
-// ── Streaming Types ────────────────────────────────────────────────
-
-export interface StreamReadOptions extends ReadOptions {
-  /** Batch size for row events. Default: 1 */
-  batchSize?: number
-}
-
-export interface StreamWriteOptions extends WriteOptions {
-  /** Sheet being written */
-  sheet: WriteSheet
 }
 
 // ── Streaming ──────────────────────────────────────────────────────

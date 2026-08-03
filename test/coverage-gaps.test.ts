@@ -63,7 +63,6 @@ import {
   // Worker
   serializeWorkbook,
   deserializeWorkbook,
-  WORKER_SAFE_FUNCTIONS,
   // Cell utils
   parseCellRef,
   colToLetter,
@@ -83,6 +82,7 @@ import {
   // Image
   imageFromBase64,
   // Errors
+  HucreError,
   DefterError,
   ParseError,
   ZipError,
@@ -168,7 +168,6 @@ describe("Coverage gaps: every exported function is callable (#135)", () => {
   it("all worker helpers exist", () => {
     expect(typeof serializeWorkbook).toBe("function")
     expect(typeof deserializeWorkbook).toBe("function")
-    expect(Array.isArray(WORKER_SAFE_FUNCTIONS)).toBe(true)
   })
 
   it("all cell utils exist", () => {
@@ -198,7 +197,9 @@ describe("Coverage gaps: every exported function is callable (#135)", () => {
   })
 
   it("all error classes exist", () => {
-    expect(typeof DefterError).toBe("function")
+    expect(typeof HucreError).toBe("function")
+    // Deprecated alias — same class object, so `instanceof` still works.
+    expect(DefterError).toBe(HucreError)
     expect(typeof ParseError).toBe("function")
     expect(typeof ZipError).toBe("function")
     expect(typeof XmlError).toBe("function")

@@ -9,7 +9,7 @@ import type {
   SchemaDefinition,
   SchemaField,
   SchemaFieldType,
-  ValidationError as ValidationErrorType,
+  SchemaValidationIssue,
 } from "./_types"
 import { ValidationError } from "./errors"
 import { serialToDate, parseDate } from "./_date"
@@ -30,7 +30,7 @@ export function validateWithSchema<T extends Record<string, unknown> = Record<st
     skipEmptyRows?: boolean
     errorMode?: "collect" | "throw"
   },
-): { data: T[]; errors: ValidationErrorType[] } {
+): { data: T[]; errors: SchemaValidationIssue[] } {
   const headerRowNum = options?.headerRow ?? 1
   const skipEmptyRows = options?.skipEmptyRows ?? false
   const errorMode = options?.errorMode ?? "collect"
@@ -67,7 +67,7 @@ export function validateWithSchema<T extends Record<string, unknown> = Record<st
 
   // Resolve each schema field to a column index
   const fieldColumnMap = new Map<string, number>()
-  const errors: ValidationErrorType[] = []
+  const errors: SchemaValidationIssue[] = []
 
   for (const fieldName of fieldNames) {
     const field = schema[fieldName]!
@@ -120,7 +120,7 @@ export function validateWithSchema<T extends Record<string, unknown> = Record<st
 
       // Check required
       if (field.required && isEmpty(rawValue)) {
-        const err: ValidationErrorType = {
+        const err: SchemaValidationIssue = {
           row: displayRow,
           column: displayColumn,
           message: `Required field '${displayColumn}' is empty`,
@@ -153,7 +153,7 @@ export function validateWithSchema<T extends Record<string, unknown> = Record<st
       if (field.type) {
         const result = coerceValue(rawValue, field.type, displayColumn)
         if (result.error) {
-          const err: ValidationErrorType = {
+          const err: SchemaValidationIssue = {
             row: displayRow,
             column: displayColumn,
             message: result.error,
@@ -179,7 +179,7 @@ export function validateWithSchema<T extends Record<string, unknown> = Record<st
       // Pattern validation (strings only)
       if (field.pattern && typeof coerced === "string") {
         if (!field.pattern.test(coerced)) {
-          const err: ValidationErrorType = {
+          const err: SchemaValidationIssue = {
             row: displayRow,
             column: displayColumn,
             message: `'${displayColumn}' does not match pattern`,
@@ -221,7 +221,7 @@ export function validateWithSchema<T extends Record<string, unknown> = Record<st
       if (field.enum) {
         if (!field.enum.includes(coerced as never)) {
           const allowed = field.enum.map((v) => String(v)).join(", ")
-          const err: ValidationErrorType = {
+          const err: SchemaValidationIssue = {
             row: displayRow,
             column: displayColumn,
             message: `'${displayColumn}' must be one of: ${allowed}`,
@@ -244,7 +244,7 @@ export function validateWithSchema<T extends Record<string, unknown> = Record<st
         if (result !== true) {
           const message =
             typeof result === "string" ? result : `Custom validation failed for '${displayColumn}'`
-          const err: ValidationErrorType = {
+          const err: SchemaValidationIssue = {
             row: displayRow,
             column: displayColumn,
             message,
@@ -472,7 +472,7 @@ function validateMinMax(
   row: number,
   rawValue: unknown,
   fieldName: string,
-): ValidationErrorType | null {
+): SchemaValidationIssue | null {
   if (typeof value === "number") {
     if (field.min != null && value < field.min) {
       return {

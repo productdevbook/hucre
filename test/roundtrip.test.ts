@@ -3,7 +3,8 @@ import { ZipReader } from "../src/zip/reader"
 import { ZipWriter } from "../src/zip/writer"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
-import { openXlsx, saveXlsx } from "../src/xlsx/roundtrip"
+import { openXlsx, saveXlsx, ROUNDTRIP_STATE } from "../src/xlsx/roundtrip"
+import { InvalidArgumentError } from "../src/errors"
 import type { WriteSheet, Cell } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -102,10 +103,11 @@ describe("roundtrip — openXlsx", () => {
     const xlsx = await createBasicXlsx([{ name: "Sheet1", rows: [["A"]] }])
 
     const wb = await openXlsx(xlsx)
-    expect(wb._rawEntries).toBeInstanceOf(Map)
-    expect(wb._rawEntries.size).toBeGreaterThan(0)
-    expect(wb._rawEntries.has("xl/workbook.xml")).toBe(true)
-    expect(wb._rawEntries.has("xl/styles.xml")).toBe(true)
+    const { rawEntries } = wb[ROUNDTRIP_STATE]
+    expect(rawEntries).toBeInstanceOf(Map)
+    expect(rawEntries.size).toBeGreaterThan(0)
+    expect(rawEntries.has("xl/workbook.xml")).toBe(true)
+    expect(rawEntries.has("xl/styles.xml")).toBe(true)
   })
 
   it("stores content types and root rels", async () => {
@@ -113,16 +115,38 @@ describe("roundtrip — openXlsx", () => {
 
     const wb = await openXlsx(xlsx)
     // The content types XML contains the namespace with "content-types"
-    expect(wb._contentTypes).toContain("content-types")
-    expect(wb._rootRels).toContain("Relationships")
+    expect(wb[ROUNDTRIP_STATE].contentTypes).toContain("content-types")
+    expect(wb[ROUNDTRIP_STATE].rootRels).toContain("Relationships")
   })
 
-  it("initializes _modifiedParts as empty set", async () => {
+  it("initializes modifiedParts as empty set", async () => {
     const xlsx = await createBasicXlsx([{ name: "Sheet1", rows: [["A"]] }])
 
     const wb = await openXlsx(xlsx)
-    expect(wb._modifiedParts).toBeInstanceOf(Set)
-    expect(wb._modifiedParts.size).toBe(0)
+    expect(wb[ROUNDTRIP_STATE].modifiedParts).toBeInstanceOf(Set)
+    expect(wb[ROUNDTRIP_STATE].modifiedParts.size).toBe(0)
+  })
+
+  it("keeps the preservation state off the public shape", async () => {
+    const xlsx = await createBasicXlsx([{ name: "Sheet1", rows: [["A"]] }])
+
+    const wb = await openXlsx(xlsx)
+    // v1 freezes the public surface. The preservation state is reachable
+    // only through the opaque symbol: no enumerable `_rawEntries` and
+    // friends for consumers to accidentally depend on.
+    const own = Object.keys(wb)
+    for (const leaked of ["_rawEntries", "_modifiedParts", "_contentTypes", "_rootRels"]) {
+      expect(own).not.toContain(leaked)
+      expect(wb as unknown as Record<string, unknown>).not.toHaveProperty(leaked)
+    }
+    expect(Object.keys(JSON.parse(JSON.stringify(wb)))).not.toContain("_rawEntries")
+    // …but it is still there, and still non-enumerable.
+    expect(Object.getOwnPropertyDescriptor(wb, ROUNDTRIP_STATE)?.enumerable).toBe(false)
+  })
+
+  it("rejects a plain Workbook that never went through openXlsx", async () => {
+    const wb = { sheets: [{ name: "Sheet1", rows: [["A"]], cells: new Map() }] }
+    await expect(saveXlsx(wb as never)).rejects.toThrow(InvalidArgumentError)
   })
 
   it("accepts ArrayBuffer input", async () => {
@@ -134,7 +158,7 @@ describe("roundtrip — openXlsx", () => {
 
     const wb = await openXlsx(arrayBuffer)
     expect(wb.sheets[0].rows[0][0]).toBe("Test")
-    expect(wb._rawEntries.size).toBeGreaterThan(0)
+    expect(wb[ROUNDTRIP_STATE].rawEntries.size).toBeGreaterThan(0)
   })
 })
 

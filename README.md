@@ -1566,7 +1566,9 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | --------------------------- | -------------------------------------------------------------------- |
 | `serializeWorkbook(wb)`     | Convert Workbook for `postMessage` (Maps → objects, Dates → strings) |
 | `deserializeWorkbook(data)` | Restore Workbook from serialized form                                |
-| `WORKER_SAFE_FUNCTIONS`     | Names of the 40 exports verified safe for Web Workers (of 125 total) |
+
+Every export in this library is worker-safe: there are no DOM or Node-only
+dependencies, so anything can be called from inside a Web Worker.
 
 ## Development
 

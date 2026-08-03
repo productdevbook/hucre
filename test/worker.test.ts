@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { serializeWorkbook, deserializeWorkbook, WORKER_SAFE_FUNCTIONS } from "../src/worker"
+import { serializeWorkbook, deserializeWorkbook } from "../src/worker"
 import type { Workbook, Sheet, Cell } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -882,35 +882,5 @@ describe("round-trip: serialize -> deserialize", () => {
 
     // Properties dates should be restored
     expect(result.properties!.created).toBeInstanceOf(Date)
-  })
-})
-
-// ── WORKER_SAFE_FUNCTIONS ───────────────────────────────────────────
-
-describe("WORKER_SAFE_FUNCTIONS", () => {
-  it("is a non-empty array of strings", () => {
-    expect(Array.isArray(WORKER_SAFE_FUNCTIONS)).toBe(true)
-    expect(WORKER_SAFE_FUNCTIONS.length).toBeGreaterThan(0)
-    for (const fn of WORKER_SAFE_FUNCTIONS) {
-      expect(typeof fn).toBe("string")
-    }
-  })
-
-  it("includes core API functions", () => {
-    expect(WORKER_SAFE_FUNCTIONS).toContain("read")
-    expect(WORKER_SAFE_FUNCTIONS).toContain("write")
-    expect(WORKER_SAFE_FUNCTIONS).toContain("readXlsx")
-    expect(WORKER_SAFE_FUNCTIONS).toContain("writeXlsx")
-    expect(WORKER_SAFE_FUNCTIONS).toContain("readOds")
-    expect(WORKER_SAFE_FUNCTIONS).toContain("writeOds")
-    expect(WORKER_SAFE_FUNCTIONS).toContain("parseCsv")
-  })
-
-  it("includes utility functions", () => {
-    expect(WORKER_SAFE_FUNCTIONS).toContain("serialToDate")
-    expect(WORKER_SAFE_FUNCTIONS).toContain("dateToSerial")
-    expect(WORKER_SAFE_FUNCTIONS).toContain("insertRows")
-    expect(WORKER_SAFE_FUNCTIONS).toContain("deleteRows")
-    expect(WORKER_SAFE_FUNCTIONS).toContain("validateWithSchema")
   })
 })

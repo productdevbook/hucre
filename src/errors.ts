@@ -1,12 +1,32 @@
-export class DefterError extends Error {
-  override name = "DefterError"
+/**
+ * Root of the error hierarchy. Every error this library throws is an
+ * instance of it, so `catch (e) { if (e instanceof HucreError) … }` is
+ * the catch-all.
+ */
+export class HucreError extends Error {
+  override name = "HucreError"
 
   constructor(message: string, options?: ErrorOptions) {
     super(message, options)
   }
 }
 
-export class ParseError extends DefterError {
+/**
+ * @deprecated Renamed to {@link HucreError} — the package is `hucre`, not
+ * `defter`. This alias is the same class object, so every existing
+ * `instanceof DefterError` check keeps working. It will be removed in a
+ * future major version.
+ */
+export const DefterError = HucreError
+
+/**
+ * @deprecated Renamed to {@link HucreError}. Type-side alias kept so
+ * `catch (e: unknown) { e as DefterError }` and any annotation of the base
+ * class still compiles.
+ */
+export type DefterError = HucreError
+
+export class ParseError extends HucreError {
   override name = "ParseError"
 
   constructor(
@@ -22,15 +42,15 @@ export class ParseError extends DefterError {
   }
 }
 
-export class ZipError extends DefterError {
+export class ZipError extends HucreError {
   override name = "ZipError"
 }
 
-export class XmlError extends DefterError {
+export class XmlError extends HucreError {
   override name = "XmlError"
 }
 
-export class ValidationError extends DefterError {
+export class ValidationError extends HucreError {
   override name = "ValidationError"
 
   constructor(
@@ -56,11 +76,11 @@ export class ValidationError extends DefterError {
  * This one models *arguments* being wrong, and is thrown before any
  * output is produced rather than collected alongside it.
  */
-export class InvalidArgumentError extends DefterError {
+export class InvalidArgumentError extends HucreError {
   override name = "InvalidArgumentError"
 }
 
-export class UnsupportedFormatError extends DefterError {
+export class UnsupportedFormatError extends HucreError {
   override name = "UnsupportedFormatError"
 
   constructor(format: string) {
@@ -68,7 +88,7 @@ export class UnsupportedFormatError extends DefterError {
   }
 }
 
-export class EncryptedFileError extends DefterError {
+export class EncryptedFileError extends HucreError {
   override name = "EncryptedFileError"
 
   /**
@@ -97,7 +117,7 @@ export class EncryptedFileError extends DefterError {
  * corrupt or unsupported encryption blob. Distinct from
  * {@link EncryptedFileError} ("encrypted, and no password was given").
  */
-export class DecryptionError extends DefterError {
+export class DecryptionError extends HucreError {
   override name = "DecryptionError"
 
   constructor(

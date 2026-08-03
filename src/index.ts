@@ -212,7 +212,7 @@ export {
 } from "./sheet-ops"
 
 // ── Web Worker Helpers ───────────────────────────────────────────
-export { serializeWorkbook, deserializeWorkbook, WORKER_SAFE_FUNCTIONS } from "./worker"
+export { serializeWorkbook, deserializeWorkbook } from "./worker"
 export type {
   SerializedWorkbook,
   SerializedSheet,
@@ -248,6 +248,8 @@ export { imageFromBase64 } from "./image"
 
 // ── Errors ─────────────────────────────────────────────────────────
 export {
+  HucreError,
+  /** @deprecated Use {@link HucreError}. Same class object — `instanceof` is unaffected. */
   DefterError,
   ParseError,
   ZipError,
@@ -308,7 +310,6 @@ export type {
   // Read
   ReadOptions,
   ReadInput,
-  ReadResult,
   SheetFilter,
   SheetFilterInfo,
   // Write
@@ -324,7 +325,7 @@ export type {
   SchemaDefinition,
   SchemaField,
   SchemaFieldType,
-  ValidationError as ValidationErrorType,
+  SchemaValidationIssue,
   // Sheet features reachable through WriteSheet / Sheet but previously
   // unnameable — you could build one inline and never annotate it.
   TableDefinition,

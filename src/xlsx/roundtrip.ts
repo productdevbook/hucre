@@ -34,7 +34,7 @@ import type { DrawingResult } from "./drawing-writer"
 import { writeChart } from "./chart-writer"
 import { cloneChart } from "./chart-clone"
 import { isOle2Container } from "../_input"
-import { EncryptedFileError } from "../errors"
+import { EncryptedFileError, InvalidArgumentError } from "../errors"
 import { decryptAgile, encryptAgile } from "./crypto/agile"
 import { writeComments } from "./comments-writer"
 import type { CommentsResult } from "./comments-writer"
@@ -45,15 +45,37 @@ import { writeCoreProperties, writeAppProperties } from "./doc-props-writer"
 
 // ── Types ────────────────────────────────────────────────────────────
 
-export interface RoundtripWorkbook extends Workbook {
+/**
+ * Everything `saveXlsx` needs from the original file in order to re-emit
+ * the parts this library does not model. Deliberately **not** part of the
+ * public surface: it is reachable only through the opaque
+ * {@link ROUNDTRIP_STATE} key, so the preservation strategy can change
+ * without a breaking release.
+ *
+ * @internal
+ */
+export interface RoundtripState {
   /** Raw ZIP entries from the original file (for preservation) */
-  _rawEntries: Map<string, Uint8Array>
+  rawEntries: Map<string, Uint8Array>
   /** Paths of parts that were modified and need regeneration */
-  _modifiedParts: Set<string>
+  modifiedParts: Set<string>
   /** Original content types XML */
-  _contentTypes: string
+  contentTypes: string
   /** Original root rels XML */
-  _rootRels: string
+  rootRels: string
+}
+
+/**
+ * Opaque key under which {@link openXlsx} stashes the preservation state on
+ * the workbook it returns. A symbol, and defined non-enumerably, so the
+ * state never shows up in `Object.keys`, `JSON.stringify`, or a spread —
+ * consumers cannot accidentally grow a dependency on its shape.
+ *
+ * @internal
+ */
+export const ROUNDTRIP_STATE: unique symbol = Symbol("hucre.xlsx.roundtripState")
+
+export interface RoundtripWorkbook extends Workbook {
   /**
    * Whether the workbook contains VBA macros (xl/vbaProject.bin).
    * When true, saveXlsx uses XLSM content types
@@ -61,6 +83,28 @@ export interface RoundtripWorkbook extends Workbook {
    * The output should be saved with an `.xlsm` extension.
    */
   hasMacros?: boolean
+  /**
+   * Internal preservation state. Opaque by design — read or write it and
+   * your code breaks on the next patch release.
+   *
+   * @internal
+   */
+  readonly [ROUNDTRIP_STATE]: RoundtripState
+}
+
+/**
+ * Read the preservation state off a workbook produced by {@link openXlsx}.
+ *
+ * @internal
+ */
+function roundtripState(workbook: RoundtripWorkbook): RoundtripState {
+  const state = workbook[ROUNDTRIP_STATE]
+  if (!state) {
+    throw new InvalidArgumentError(
+      "saveXlsx expects a workbook returned by openXlsx — this one carries no round-trip state. Use writeXlsx to write a plain Workbook.",
+    )
+  }
+  return state
 }
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -151,15 +195,23 @@ export async function openXlsx(
   // 4. Detect VBA macros
   const hasMacros = rawEntries.has("xl/vbaProject.bin")
 
-  // 5. Build RoundtripWorkbook
-  const rtWorkbook: RoundtripWorkbook = {
-    ...workbook,
-    _rawEntries: rawEntries,
-    _modifiedParts: new Set<string>(),
-    _contentTypes: contentTypes,
-    _rootRels: rootRels,
-    hasMacros,
+  // 5. Build RoundtripWorkbook. The preservation state is attached under a
+  //    non-enumerable symbol so it survives `saveXlsx` without becoming a
+  //    frozen part of the public shape.
+  const rtWorkbook = { ...workbook, hasMacros } as RoundtripWorkbook
+
+  const state: RoundtripState = {
+    rawEntries,
+    modifiedParts: new Set<string>(),
+    contentTypes,
+    rootRels,
   }
+  Object.defineProperty(rtWorkbook, ROUNDTRIP_STATE, {
+    value: state,
+    enumerable: false,
+    writable: false,
+    configurable: false,
+  })
 
   return rtWorkbook
 }
@@ -176,6 +228,7 @@ export async function saveXlsx(
   saveOptions?: { encryption?: { password: string; spinCount?: number } },
 ): Promise<Uint8Array> {
   const { sheets, properties, namedRanges, dateSystem, defaultFont, activeSheet } = workbook
+  const { rawEntries } = roundtripState(workbook)
 
   // Convert Sheet[] to WriteSheet[] for the writer infrastructure
   const writeSheets: WriteSheet[] = sheets.map((sheet) => ({
@@ -348,16 +401,16 @@ export async function saveXlsx(
   const threadedCommentSheetIndices: number[] = []
   for (let i = 0; i < worksheetResults.length; i++) {
     const probe = `xl/threadedComments/threadedComment${i + 1}.xml`
-    if (workbook._rawEntries.has(probe)) threadedCommentSheetIndices.push(i + 1)
+    if (rawEntries.has(probe)) threadedCommentSheetIndices.push(i + 1)
   }
-  const hasPersons = workbook._rawEntries.has("xl/persons/person.xml")
+  const hasPersons = rawEntries.has("xl/persons/person.xml")
 
   // Collect external link parts that survived in the raw entries.
   // Roundtrip preserves the externalLinkN.xml bodies and their _rels;
   // the workbook.xml + workbook.xml.rels are regenerated and need to
   // re-declare each link so Excel keeps the references.
   const externalLinkIndices: number[] = []
-  for (const path of workbook._rawEntries.keys()) {
+  for (const path of rawEntries.keys()) {
     const m = path.match(/^xl\/externalLinks\/externalLink(\d+)\.xml$/i)
     if (m) externalLinkIndices.push(parseInt(m[1], 10))
   }
@@ -380,7 +433,7 @@ export async function saveXlsx(
   // workbook (xl/slicers/slicer3.xml may belong to sheet2, etc.).
   const slicerIndices: number[] = []
   const timelineIndices: number[] = []
-  for (const path of workbook._rawEntries.keys()) {
+  for (const path of rawEntries.keys()) {
     let m = path.match(/^xl\/pivotCache\/pivotCacheDefinition(\d+)\.xml$/i)
     if (m) {
       pivotCacheDefinitionIndices.push(parseInt(m[1], 10))
@@ -424,7 +477,7 @@ export async function saveXlsx(
 
   // Detect WPS-style cell-images registry. The XML body and its rels
   // sit at xl/cellimages.xml and xl/_rels/cellimages.xml.rels — both
-  // survive in `_rawEntries`, but the workbook.xml.rels is regenerated
+  // survive in the preserved raw entries, but the workbook.xml.rels is regenerated
   // and must re-declare the relationship so Excel/WPS still resolve
   // `=_xlfn.DISPIMG("<id>", 1)` formulas.
   //
@@ -432,8 +485,8 @@ export async function saveXlsx(
   // those paths would normally be filtered out as "regenerated" because
   // sheet drawings re-emit them, so we collect the explicit paths here
   // and preserve them later.
-  const hasCellImages = workbook._rawEntries.has("xl/cellimages.xml")
-  const cellImageMediaPaths = collectCellImageMediaPaths(workbook._rawEntries)
+  const hasCellImages = rawEntries.has("xl/cellimages.xml")
+  const cellImageMediaPaths = collectCellImageMediaPaths(rawEntries)
 
   // rIds for external link relationships: assigned after all
   // sheet/styles/sharedStrings/theme/macros/featurePropertyBag/persons rIds.
@@ -484,13 +537,13 @@ export async function saveXlsx(
   // sheet's original rels (xl/worksheets/_rels/sheetN.xml.rels) so the
   // regenerated rels can re-declare them. We only need the (sheetIndex
   // → list of {target}) mapping; rIds are reassigned per sheet below.
-  const sheetSlicerTargets = collectSheetCacheTargets(workbook, sheets, "slicer")
-  const sheetTimelineTargets = collectSheetCacheTargets(workbook, sheets, "timeline")
+  const sheetSlicerTargets = collectSheetCacheTargets(rawEntries, sheets, "slicer")
+  const sheetTimelineTargets = collectSheetCacheTargets(rawEntries, sheets, "timeline")
 
   // Map each pivot table to the sheet that hosts it. The mapping is
   // recovered by walking each sheet's original _rels file — that's
   // where Excel stored the pivotTable -> sheet wiring originally.
-  const sheetPivotTableTargets = collectSheetPivotTableTargets(workbook, sheets)
+  const sheetPivotTableTargets = collectSheetPivotTableTargets(rawEntries, sheets)
 
   // ── Chart preservation ─────────────────────────────────────────
   // Detect chart parts that survived in the raw entries. We need to:
@@ -509,7 +562,7 @@ export async function saveXlsx(
   const chartIndices: number[] = []
   const chartStyleIndices: number[] = []
   const chartColorsIndices: number[] = []
-  for (const path of workbook._rawEntries.keys()) {
+  for (const path of rawEntries.keys()) {
     let m = path.match(/^xl\/charts\/chart(\d+)\.xml$/i)
     if (m) {
       chartIndices.push(parseInt(m[1], 10))
@@ -553,7 +606,7 @@ export async function saveXlsx(
     }
     // First pass: discover which drawing files have chart references.
     const chartDrawingNumbers = new Set<number>()
-    for (const [path, data] of workbook._rawEntries) {
+    for (const [path, data] of rawEntries) {
       const m = path.match(/^xl\/drawings\/drawing(\d+)\.xml$/i)
       if (!m) continue
       const drawingNum = parseInt(m[1], 10)
@@ -563,7 +616,7 @@ export async function saveXlsx(
       preservedDrawingPaths.add(path.toLowerCase())
       preservedDrawingNumbers.push(drawingNum)
       const relsPath = `xl/drawings/_rels/drawing${drawingNum}.xml.rels`
-      if (workbook._rawEntries.has(relsPath)) {
+      if (rawEntries.has(relsPath)) {
         preservedDrawingPaths.add(relsPath.toLowerCase())
       }
     }
@@ -575,7 +628,7 @@ export async function saveXlsx(
       for (let i = 0; i < sheets.length; i++) {
         const expected = `xl/worksheets/_rels/sheet${i + 1}.xml.rels`
         let bytes: Uint8Array | undefined
-        for (const [p, d] of workbook._rawEntries) {
+        for (const [p, d] of rawEntries) {
           if (p.toLowerCase() === expected) {
             bytes = d
             break
@@ -622,7 +675,7 @@ export async function saveXlsx(
   {
     const sheetHasOriginalDrawingRel = (i: number): boolean => {
       const expected = `xl/worksheets/_rels/sheet${i + 1}.xml.rels`
-      for (const [p, d] of workbook._rawEntries) {
+      for (const [p, d] of rawEntries) {
         if (p.toLowerCase() !== expected) continue
         return parseRelationships(new TextDecoder("utf-8").decode(d)).some((r) =>
           r.type.endsWith("/relationships/drawing"),
@@ -634,7 +687,7 @@ export async function saveXlsx(
     // Allocate drawing / chart numbers past anything already used so the
     // new parts never collide with a preserved or regenerated drawing.
     const usedDrawingNumbers = new Set<number>(preservedDrawingNumbers)
-    for (const path of workbook._rawEntries.keys()) {
+    for (const path of rawEntries.keys()) {
       const m = path.match(/^xl\/drawings\/drawing(\d+)\.xml$/i)
       if (m) usedDrawingNumbers.add(parseInt(m[1], 10))
     }
@@ -681,7 +734,7 @@ export async function saveXlsx(
   const zip = new ZipWriter()
 
   // 1. Add all preserved raw entries (parts we don't regenerate)
-  for (const [path, data] of workbook._rawEntries) {
+  for (const [path, data] of rawEntries) {
     // Remove calcChain.xml — it becomes stale when formulas change.
     // Excel rebuilds it automatically when opening the file.
     if (path.toLowerCase() === "xl/calcchain.xml") continue
@@ -1251,7 +1304,7 @@ function toWriteCharts(charts: Array<Chart | SheetChart>): SheetChart[] {
  * `"../slicers/slicer1.xml"`).
  */
 function collectSheetCacheTargets(
-  workbook: { _rawEntries: Map<string, Uint8Array> },
+  rawEntries: ReadonlyMap<string, Uint8Array>,
   sheets: Sheet[],
   kind: "slicer" | "timeline",
 ): string[][] {
@@ -1264,7 +1317,7 @@ function collectSheetCacheTargets(
     // case — match case-insensitively.
     const expected = `xl/worksheets/_rels/sheet${i + 1}.xml.rels`
     let bytes: Uint8Array | undefined
-    for (const [path, data] of workbook._rawEntries) {
+    for (const [path, data] of rawEntries) {
       if (path.toLowerCase() === expected) {
         bytes = data
         break
@@ -1292,14 +1345,14 @@ function collectSheetCacheTargets(
  * into the regenerated rels.
  */
 function collectSheetPivotTableTargets(
-  workbook: RoundtripWorkbook,
+  rawEntries: ReadonlyMap<string, Uint8Array>,
   sheets: ReadonlyArray<{ name: string }>,
 ): string[][] {
   const decoder = new TextDecoder("utf-8")
   const out: string[][] = sheets.map(() => [])
   for (let i = 0; i < sheets.length; i++) {
     const relsPath = `xl/worksheets/_rels/sheet${i + 1}.xml.rels`
-    const data = workbook._rawEntries.get(relsPath)
+    const data = rawEntries.get(relsPath)
     if (!data) continue
     let rels
     try {

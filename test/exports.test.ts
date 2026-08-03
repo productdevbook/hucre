@@ -225,6 +225,9 @@ describe("hucre (root)", () => {
     expectExports(
       root,
       [
+        "HucreError",
+        // Deprecated alias for HucreError, kept so v0 error handlers do
+        // not break. Still has to be exported.
         "DefterError",
         "ParseError",
         "ZipError",
