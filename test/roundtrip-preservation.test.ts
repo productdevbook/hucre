@@ -48,22 +48,50 @@ describe("openXlsx → saveXlsx preserves sheet features", () => {
     expect(workbook.sheets[0].colBreaks).toEqual([3])
   })
 
-  it("drops the background image rather than emitting a dangling reference", async () => {
-    // Known gap: this path writes neither the media part nor the picture
-    // relationship, so forwarding backgroundImage would emit a <picture>
-    // pointing at an rId that does not exist — a file Excel calls
-    // corrupt. Until the media plumbing lands, losing it is the safer
-    // failure. This test pins that choice so it is deliberate, not drift.
+  it("keeps the background image, with its media part and relationship", async () => {
+    // This used to be dropped, because forwarding it alone emitted a
+    // <picture> pointing at an rId that was never written — a file Excel
+    // calls corrupt. The media path and relationship exist now (#367).
     const png = new Uint8Array([
       0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
       0x52,
     ])
     const { saved, workbook } = await cycle({ sheets: [sheetWith({ backgroundImage: png })] })
-    expect(workbook.sheets[0].backgroundImage).toBeUndefined()
+
+    expect(workbook.sheets[0].backgroundImage).toBeInstanceOf(Uint8Array)
+    expect(Array.from(workbook.sheets[0].backgroundImage!)).toEqual(Array.from(png))
 
     const zip = new ZipReader(saved)
     const sheetXml = new TextDecoder().decode(await zip.extract("xl/worksheets/sheet1.xml"))
-    expect(sheetXml).not.toContain("<picture")
+    expect(sheetXml).toContain("<picture")
+
+    // The reference has to resolve: both the relationship and the bytes.
+    const rels = new TextDecoder().decode(await zip.extract("xl/worksheets/_rels/sheet1.xml.rels"))
+    const target = rels.match(/Target="\.\.\/(media\/[^"]+)"/)
+    expect(target, "no image relationship in the sheet rels").not.toBeNull()
+    expect(zip.has(`xl/${target![1]}`)).toBe(true)
+  })
+
+  it("does not collide a background image with drawing images", async () => {
+    // Both live in xl/media and are numbered from one shared counter;
+    // numbering them independently would overwrite one with the other.
+    const png = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+      0x52,
+    ])
+    const { saved } = await cycle({
+      sheets: [
+        sheetWith({
+          backgroundImage: png,
+          images: [{ data: png, extension: "png", anchor: { from: { row: 0, col: 0 } } }],
+        }),
+      ],
+    })
+
+    const zip = new ZipReader(saved)
+    const media = zip.entries().filter((e) => e.startsWith("xl/media/"))
+    expect(new Set(media).size).toBe(media.length)
+    expect(media.length).toBe(2)
   })
 
   it("keeps sparklines", async () => {

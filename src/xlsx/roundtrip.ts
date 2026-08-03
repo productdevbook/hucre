@@ -119,6 +119,7 @@ const REL_COMMENTS = "http://schemas.openxmlformats.org/officeDocument/2006/rela
 const REL_VML_DRAWING =
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing"
 const REL_TABLE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/table"
+const REL_IMAGE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
 const REL_SLICER = "http://schemas.microsoft.com/office/2007/relationships/slicer"
 const REL_TIMELINE = "http://schemas.microsoft.com/office/2011/relationships/timeline"
 const REL_THREADED_COMMENT =
@@ -259,11 +260,7 @@ export async function saveXlsx(
     outlineProperties: sheet.outlineProperties,
     sparklines: sheet.sparklines,
     textBoxes: sheet.textBoxes,
-    // `backgroundImage` is deliberately NOT forwarded. It needs a media
-    // part and a `<picture>` relationship, and this path emits neither —
-    // forwarding it produces a sheet referencing an rId that was never
-    // written, which Excel reports as corrupt. Losing the image is worse
-    // than it should be, but better than that. Tracked separately.
+    backgroundImage: sheet.backgroundImage,
   }))
 
   // Create shared collectors
@@ -323,6 +320,21 @@ export async function saveXlsx(
       globalImageIndex += images.length
     } else {
       drawingResults.push(null)
+    }
+  }
+
+  // Background images live in xl/media alongside drawing images, so the
+  // index has to come from the same counter — numbering them
+  // independently would collide. This mirrors writer.ts. See #367.
+  const backgroundImagePaths: Array<string | null> = []
+  for (const sheet of writeSheets) {
+    if (sheet.backgroundImage) {
+      const bgPath = `xl/media/image${globalImageIndex}.png`
+      backgroundImagePaths.push(bgPath)
+      imageExtensions.add("png")
+      globalImageIndex++
+    } else {
+      backgroundImagePaths.push(null)
     }
   }
 
@@ -915,6 +927,10 @@ export async function saveXlsx(
     // the reference below.
     const modelDrawing = modelChartDrawings[i]
     const hasModelChartDrawing = modelDrawing !== null
+    // The worksheet writer emits <picture r:id> whenever the sheet has a
+    // background image; without the matching relationship and media part
+    // that reference dangles, which Excel reports as corrupt. See #367.
+    const hasPicture = result.pictureRId !== null && backgroundImagePaths[i] !== null
     let worksheetXml = result.xml
 
     if (
@@ -927,7 +943,8 @@ export async function saveXlsx(
       hasThreadedComments ||
       hasSheetPivotTables ||
       hasPreservedDrawing ||
-      hasModelChartDrawing
+      hasModelChartDrawing ||
+      hasPicture
     ) {
       const relElements: string[] = []
       // Track the highest existing rId so newly added slicer/timeline
@@ -993,6 +1010,21 @@ export async function saveXlsx(
           }),
         )
         bumpToAfter(tableEntry.rId)
+      }
+
+      // Background image (picture) relationship. The worksheet writer has
+      // already emitted <picture r:id> pointing at this rId. See #367.
+      if (hasPicture && result.pictureRId && backgroundImagePaths[i]) {
+        const bgMediaPath = backgroundImagePaths[i]!
+        relElements.push(
+          xmlSelfClose("Relationship", {
+            Id: result.pictureRId,
+            Type: REL_IMAGE,
+            // "xl/media/imageN.png" → "../media/imageN.png"
+            Target: `../${bgMediaPath.slice(3)}`,
+          }),
+        )
+        bumpToAfter(result.pictureRId)
       }
 
       // Re-emit slicer relationships read from the original sheet rels.
@@ -1084,6 +1116,13 @@ export async function saveXlsx(
     // Worksheet body — added after rels processing so the chart
     // re-anchor injection above can patch the XML before it's written.
     zip.add(`xl/worksheets/sheet${i + 1}.xml`, encoder.encode(worksheetXml))
+
+    // Background image bytes. Stored uncompressed — PNG/JPEG are already
+    // compressed, so deflating again only costs time.
+    const bgPath = backgroundImagePaths[i]
+    if (hasPicture && bgPath && writeSheets[i]!.backgroundImage) {
+      zip.add(bgPath, writeSheets[i]!.backgroundImage!, { compress: false })
+    }
 
     // Add drawing files
     if (drawing) {
