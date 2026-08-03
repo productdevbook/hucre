@@ -14,13 +14,14 @@ function findEocd(buf: Uint8Array): number {
   throw new Error("EOCD not found")
 }
 
-describe("ZipReader — ZIP64 sentinel detection", () => {
-  it("throws a clear error instead of mis-parsing a ZIP64-escaped entry count", async () => {
+describe("ZipReader — malformed ZIP64 escapes", () => {
+  it("throws instead of mis-parsing an escape with no ZIP64 records behind it", async () => {
     const zip = new ZipWriter()
     zip.add("a.txt", enc.encode("hello"))
     const buf = await zip.build()
 
-    // Forge a ZIP64 escape: set the EOCD entry-count fields to 0xFFFF.
+    // Forge a ZIP64 escape on an archive that has no ZIP64 EOCD record.
+    // Well-formed ZIP64 archives are covered in zip64.test.ts.
     const eocd = findEocd(buf)
     const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength)
     view.setUint16(eocd + 8, 0xffff, true) // total entries on this disk

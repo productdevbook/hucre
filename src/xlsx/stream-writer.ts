@@ -72,6 +72,16 @@ export interface XlsxWriteStreamOptions extends StreamWriterOptions {
   inlineStrings?: boolean
   /** DEFLATE the parts. Default `true`. */
   compress?: boolean
+  /**
+   * Emit ZIP64 records, lifting the 4 GiB ceiling on any single part and
+   * on the archive. Default `false`.
+   *
+   * Turn this on when one worksheet's XML may exceed 4 GiB — very wide
+   * sheets near the per-sheet row cap can. With it off, an overflow
+   * throws rather than writing a corrupt file. ZIP64 archives need a
+   * ZIP64-aware consumer; Excel 2007+ and hucre's own reader qualify.
+   */
+  zip64?: boolean
 }
 
 /** A streamed row: positional values, or an object read through `columns[].key`. */
@@ -537,8 +547,9 @@ export class XlsxStreamWriter {
  * Notes:
  * - Strings are written inline by default; see {@link XlsxWriteStreamOptions.inlineStrings}.
  * - Part sizes are unknown up front, so entries carry ZIP data
- *   descriptors. Zip64 is not emitted, which caps any single part — and
- *   the archive — at 4 GiB.
+ *   descriptors. By default no ZIP64 records are emitted, which caps any
+ *   single part — and the archive — at 4 GiB; see
+ *   {@link XlsxWriteStreamOptions.zip64}.
  * - Compression needs `CompressionStream`; without it parts are stored
  *   uncompressed rather than buffered.
  */
@@ -546,7 +557,7 @@ export function writeXlsxStream(
   options: XlsxWriteStreamOptions,
   rows: AsyncIterable<XlsxStreamRow> | Iterable<XlsxStreamRow>,
 ): ReadableStream<Uint8Array> {
-  return zipStream(xlsxStreamEntries(options, rows))
+  return zipStream(xlsxStreamEntries(options, rows), { zip64: options.zip64 })
 }
 
 /** Lazily produce the ZIP entries for a streamed workbook. */

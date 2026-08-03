@@ -372,10 +372,30 @@ Streaming trade-offs worth knowing:
   That's the same layout `archiver`/`zip-stream` emit, which is what
   ExcelJS's own streaming writer produces. Verified against `hucre`'s
   reader, ExcelJS, and `unzip`.
-- Zip64 is not emitted, so any single part — and the whole archive — caps
-  at 4 GiB. Crossing it throws rather than writing a broken file.
+- ZIP64 records are off by default, which caps any single part — and the
+  whole archive — at 4 GiB. Crossing that throws rather than writing a
+  broken file. Pass `zip64: true` to lift it (see below).
 - Compression uses the platform `CompressionStream`. Without it, parts are
   stored uncompressed rather than buffered.
+
+#### ZIP64 — past 4 GiB
+
+Reading ZIP64 archives needs no configuration: `readXlsx`, `openXlsx`, and
+`streamXlsxRows` resolve ZIP64 EOCD records and per-entry extra fields
+transparently, whether the producer escaped every field or only the ones
+that actually overflowed.
+
+Writing is opt-in, because part sizes aren't known when their headers go
+out — it can't be decided per entry mid-stream:
+
+```ts
+const stream = writeXlsxStream({ name: "Huge", columns, zip64: true }, rows)
+```
+
+Turn it on when one worksheet's XML may cross 4 GiB — very wide sheets
+near the per-sheet row cap can. ZIP64 archives need a ZIP64-aware
+consumer; the output here is verified against Info-ZIP's `unzip`,
+ExcelJS, and `hucre`'s own reader.
 
 #### Auto-split past Excel's row limit
 

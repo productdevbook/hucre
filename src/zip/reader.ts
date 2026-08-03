@@ -12,9 +12,15 @@ const SIG_LOCAL_FILE = 0x04034b50
 const SIG_CENTRAL_DIR = 0x02014b50
 const SIG_END_OF_CENTRAL_DIR = 0x06054b50
 const SIG_DATA_DESCRIPTOR = 0x08074b50
+const SIG_ZIP64_EOCD = 0x06064b50
+const SIG_ZIP64_EOCD_LOCATOR = 0x07064b50
 
 /** 0xFFFFFFFF marker that signals a 32-bit ZIP field overflowed into ZIP64. */
 const ZIP64_SENTINEL = 0xffffffff
+/** 0xFFFF marker for the 16-bit entry-count fields. */
+const ZIP64_SENTINEL_16 = 0xffff
+/** Header id of the ZIP64 extended information extra field. */
+const ZIP64_EXTRA_ID = 0x0001
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -176,25 +182,71 @@ export class ZipReader {
       throw new ZipError("End of Central Directory not found — not a valid ZIP file")
     }
 
-    const centralDirSize = this.view.getUint32(eocdOffset + 12, true)
-    const centralDirOffset = this.view.getUint32(eocdOffset + 16, true)
-    const entryCount = this.view.getUint16(eocdOffset + 10, true)
+    let centralDirSize = this.view.getUint32(eocdOffset + 12, true)
+    let centralDirOffset = this.view.getUint32(eocdOffset + 16, true)
+    let entryCount = this.view.getUint16(eocdOffset + 10, true)
 
     // ZIP64: when the entry count or central-directory size/offset overflows
     // the 16-/32-bit EOCD fields they hold a 0xFFFF / 0xFFFFFFFF sentinel and
-    // the real values live in a ZIP64 EOCD record we don't parse. Fail loudly
-    // instead of silently reading a truncated entry list or a garbage offset.
+    // the real values live in a ZIP64 EOCD record. Producers also emit these
+    // records defensively on small archives, so a sentinel is not by itself
+    // evidence that the archive is huge.
     if (
-      entryCount === 0xffff ||
+      entryCount === ZIP64_SENTINEL_16 ||
       centralDirSize === ZIP64_SENTINEL ||
       centralDirOffset === ZIP64_SENTINEL
     ) {
-      throw new ZipError(
-        "ZIP64 archives are not supported (entry count or size exceeds the classic ZIP limits)",
-      )
+      const zip64 = this.readZip64EndOfCentralDir(eocdOffset)
+      entryCount = zip64.entryCount
+      centralDirSize = zip64.centralDirSize
+      centralDirOffset = zip64.centralDirOffset
     }
 
     this.readCentralDirectory(centralDirOffset, centralDirSize, entryCount)
+  }
+
+  /**
+   * Resolve the real directory bounds from the ZIP64 EOCD record.
+   *
+   * The 20-byte ZIP64 locator sits immediately before the classic EOCD and
+   * points at the ZIP64 EOCD record, which repeats the same fields at 64-bit
+   * width.
+   */
+  private readZip64EndOfCentralDir(eocdOffset: number): {
+    entryCount: number
+    centralDirSize: number
+    centralDirOffset: number
+  } {
+    const locatorOffset = eocdOffset - 20
+    if (locatorOffset < 0 || this.view.getUint32(locatorOffset, true) !== SIG_ZIP64_EOCD_LOCATOR) {
+      throw new ZipError("ZIP64 End of Central Directory locator not found")
+    }
+
+    const recordOffset = this.readUint64(locatorOffset + 8, "ZIP64 EOCD offset")
+    if (recordOffset + 56 > this.data.length) {
+      throw new ZipError("ZIP64 End of Central Directory record extends beyond file")
+    }
+    if (this.view.getUint32(recordOffset, true) !== SIG_ZIP64_EOCD) {
+      throw new ZipError("Invalid ZIP64 End of Central Directory signature")
+    }
+
+    return {
+      entryCount: this.readUint64(recordOffset + 32, "ZIP64 entry count"),
+      centralDirSize: this.readUint64(recordOffset + 40, "ZIP64 central directory size"),
+      centralDirOffset: this.readUint64(recordOffset + 48, "ZIP64 central directory offset"),
+    }
+  }
+
+  /** Read a 64-bit little-endian field, refusing values JS can't index with. */
+  private readUint64(offset: number, what: string): number {
+    if (offset + 8 > this.data.length) {
+      throw new ZipError(`${what} extends beyond file`)
+    }
+    const value = this.view.getBigUint64(offset, true)
+    if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new ZipError(`${what} (${value}) exceeds the addressable range`)
+    }
+    return Number(value)
   }
 
   private readCentralDirectory(offset: number, _size: number, expectedCount: number): void {
@@ -215,15 +267,35 @@ export class ZipReader {
       const generalFlag = this.view.getUint16(pos + 8, true)
       const compressionMethod = this.view.getUint16(pos + 10, true)
       const entryCrc32 = this.view.getUint32(pos + 16, true)
-      const compressedSize = this.view.getUint32(pos + 20, true)
-      const uncompressedSize = this.view.getUint32(pos + 24, true)
+      let compressedSize = this.view.getUint32(pos + 20, true)
+      let uncompressedSize = this.view.getUint32(pos + 24, true)
       const fileNameLength = this.view.getUint16(pos + 28, true)
       const extraFieldLength = this.view.getUint16(pos + 30, true)
       const commentLength = this.view.getUint16(pos + 32, true)
-      const localHeaderOffset = this.view.getUint32(pos + 42, true)
+      let localHeaderOffset = this.view.getUint32(pos + 42, true)
 
       const fileNameBytes = this.data.subarray(pos + 46, pos + 46 + fileNameLength)
       const fileName = new TextDecoder().decode(fileNameBytes)
+
+      // Any field left at the sentinel is carried at 64-bit width in the
+      // ZIP64 extra field instead.
+      if (
+        compressedSize === ZIP64_SENTINEL ||
+        uncompressedSize === ZIP64_SENTINEL ||
+        localHeaderOffset === ZIP64_SENTINEL
+      ) {
+        const zip64 = this.readZip64Extra(
+          pos + 46 + fileNameLength,
+          extraFieldLength,
+          uncompressedSize === ZIP64_SENTINEL,
+          compressedSize === ZIP64_SENTINEL,
+          localHeaderOffset === ZIP64_SENTINEL,
+          fileName,
+        )
+        if (zip64.uncompressedSize !== undefined) uncompressedSize = zip64.uncompressedSize
+        if (zip64.compressedSize !== undefined) compressedSize = zip64.compressedSize
+        if (zip64.localHeaderOffset !== undefined) localHeaderOffset = zip64.localHeaderOffset
+      }
 
       const hasDataDescriptor = (generalFlag & 0x08) !== 0
 
@@ -242,6 +314,61 @@ export class ZipReader {
 
       pos += 46 + fileNameLength + extraFieldLength + commentLength
     }
+  }
+
+  /**
+   * Pull the overflowed fields out of a central-directory ZIP64 extra field.
+   *
+   * The record is positional: only the fields whose 32-bit counterpart held
+   * the sentinel are present, always in the order size → compressed size →
+   * local header offset → disk number.
+   */
+  private readZip64Extra(
+    offset: number,
+    length: number,
+    wantUncompressed: boolean,
+    wantCompressed: boolean,
+    wantOffset: boolean,
+    fileName: string,
+  ): { uncompressedSize?: number; compressedSize?: number; localHeaderOffset?: number } {
+    const end = Math.min(offset + length, this.data.length)
+    let pos = offset
+
+    while (pos + 4 <= end) {
+      const headerId = this.view.getUint16(pos, true)
+      const dataSize = this.view.getUint16(pos + 2, true)
+      const dataStart = pos + 4
+
+      if (headerId !== ZIP64_EXTRA_ID) {
+        pos = dataStart + dataSize
+        continue
+      }
+
+      const dataEnd = dataStart + dataSize
+      let cursor = dataStart
+      const result: {
+        uncompressedSize?: number
+        compressedSize?: number
+        localHeaderOffset?: number
+      } = {}
+
+      const take = (what: string): number => {
+        if (cursor + 8 > dataEnd) {
+          throw new ZipError(`Truncated ZIP64 extra field for entry: ${fileName}`)
+        }
+        const value = this.readUint64(cursor, what)
+        cursor += 8
+        return value
+      }
+
+      if (wantUncompressed) result.uncompressedSize = take("ZIP64 uncompressed size")
+      if (wantCompressed) result.compressedSize = take("ZIP64 compressed size")
+      if (wantOffset) result.localHeaderOffset = take("ZIP64 local header offset")
+
+      return result
+    }
+
+    throw new ZipError(`Missing ZIP64 extra field for entry: ${fileName}`)
   }
 
   private async extractEntry(entry: CentralDirEntry): Promise<Uint8Array> {
@@ -270,12 +397,14 @@ export class ZipReader {
       // Try to read from data descriptor after compressed data.
       // This is a tricky case; we rely on central dir being authoritative.
       // If central dir also has zeros, we need to find the data descriptor.
+      // A sentinel here means the real value lives in the local ZIP64 extra
+      // field; taking it literally would read 4 GiB past the entry.
       const localCompressedSize = this.view.getUint32(pos + 18, true)
-      if (localCompressedSize > 0) {
+      if (localCompressedSize > 0 && localCompressedSize !== ZIP64_SENTINEL) {
         compressedSize = localCompressedSize
       }
       const localUncompressedSize = this.view.getUint32(pos + 22, true)
-      if (localUncompressedSize > 0) {
+      if (localUncompressedSize > 0 && localUncompressedSize !== ZIP64_SENTINEL) {
         uncompressedSize = localUncompressedSize
       }
 
