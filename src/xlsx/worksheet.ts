@@ -609,7 +609,17 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
           pageMargins = parsePageMarginsAttrs(attrs)
           break
         case "pageSetup":
-          pageSetup = parsePageSetupAttrs(attrs)
+          // Merge, don't replace: <printOptions> is written before
+          // <pageSetup> in a worksheet, so assigning here dropped
+          // whatever it had already contributed. See #360.
+          pageSetup = { ...pageSetup, ...parsePageSetupAttrs(attrs) }
+          break
+        case "printOptions":
+          // <printOptions> was never parsed, so showGridLines and
+          // showRowColHeaders were write-only fields that always read back
+          // as undefined. It can appear before or after <pageSetup>, so
+          // merge rather than assign. See #360.
+          pageSetup = applyPrintOptionsAttrs(pageSetup, attrs)
           break
         case "headerFooter":
           inHeaderFooter = true
@@ -1739,6 +1749,28 @@ const PAPER_SIZE_REVERSE: Record<number, PaperSize> = {
   13: "b5",
 }
 
+/**
+ * Merge `<printOptions>` attributes into the sheet's page setup.
+ *
+ * The element can appear either side of `<pageSetup>` in a worksheet, so
+ * this merges into whatever exists rather than replacing it — and creates
+ * the object when `<printOptions>` comes first.
+ */
+function applyPrintOptionsAttrs(
+  existing: PageSetup | undefined,
+  attrs: Record<string, string>,
+): PageSetup {
+  const ps: PageSetup = existing ?? {}
+  const isTrue = (value: string | undefined): boolean => value === "1" || value === "true"
+
+  if (isTrue(attrs["gridLines"])) ps.showGridLines = true
+  if (isTrue(attrs["headings"])) ps.showRowColHeaders = true
+  if (isTrue(attrs["horizontalCentered"])) ps.horizontalCentered = true
+  if (isTrue(attrs["verticalCentered"])) ps.verticalCentered = true
+
+  return ps
+}
+
 function parsePageSetupAttrs(attrs: Record<string, string>): PageSetup {
   const ps: PageSetup = {}
 
@@ -1762,6 +1794,9 @@ function parsePageSetupAttrs(attrs: Record<string, string>): PageSetup {
     if (attrs["fitToHeight"]) ps.fitToHeight = Number(attrs["fitToHeight"])
   }
 
+  // Excel writes the centering flags on <printOptions>; hucre used to
+  // write them here. Keep accepting them from <pageSetup> so files from
+  // older versions still round-trip. See #360.
   if (attrs["horizontalCentered"] === "1" || attrs["horizontalCentered"] === "true") {
     ps.horizontalCentered = true
   }

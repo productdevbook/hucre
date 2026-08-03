@@ -478,9 +478,16 @@ export function writeWorksheetXml(
     parts.push(hyperlinksXml)
   }
 
-  // ── Print Options (only when pageSetup exists) ──
-  if (sheet.pageSetup) {
-    parts.push(xmlSelfClose("printOptions", { headings: 0, gridLines: 0 }))
+  // ── Print Options ──
+  // Per ECMA-376 these four live on <printOptions>, not <pageSetup>, and
+  // every attribute defaults to false — so the element is emitted only
+  // when something is actually non-default. It used to be written
+  // unconditionally with hardcoded zeros whenever any pageSetup existed,
+  // which meant setting a page margin silently turned off printed
+  // gridlines and headings. See #360.
+  const printOptionsXml = serializePrintOptions(sheet.pageSetup)
+  if (printOptionsXml) {
+    parts.push(printOptionsXml)
   }
 
   // ── Page Margins ──
@@ -1099,6 +1106,31 @@ function serializePageMargins(margins?: PageMargins): string {
   })
 }
 
+// ── Print Options Serialization ──────────────────────────────────────
+
+/**
+ * Serialize `<printOptions>`, or return `""` when everything is at its
+ * OOXML default.
+ *
+ * `gridLines` and `headings` control what appears on *paper*, and both
+ * default to false. `horizontalCentered` / `verticalCentered` belong here
+ * too — hucre used to read and write them on `<pageSetup>`, which
+ * round-tripped through hucre only because it was consistently wrong in
+ * both directions; Excel ignored them entirely.
+ */
+function serializePrintOptions(ps: PageSetup | undefined): string {
+  if (!ps) return ""
+
+  const attrs: Record<string, string | number> = {}
+  if (ps.showGridLines) attrs["gridLines"] = 1
+  if (ps.showRowColHeaders) attrs["headings"] = 1
+  if (ps.horizontalCentered) attrs["horizontalCentered"] = 1
+  if (ps.verticalCentered) attrs["verticalCentered"] = 1
+
+  if (Object.keys(attrs).length === 0) return ""
+  return xmlSelfClose("printOptions", attrs)
+}
+
 // ── Page Setup Serialization ─────────────────────────────────────────
 
 function serializePageSetup(ps: PageSetup): string {
@@ -1126,14 +1158,6 @@ function serializePageSetup(ps: PageSetup): string {
     if (ps.fitToHeight !== undefined) {
       attrs["fitToHeight"] = ps.fitToHeight
     }
-  }
-
-  if (ps.horizontalCentered) {
-    attrs["horizontalCentered"] = 1
-  }
-
-  if (ps.verticalCentered) {
-    attrs["verticalCentered"] = 1
   }
 
   // Only emit if there are attributes beyond default

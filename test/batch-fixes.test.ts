@@ -164,7 +164,10 @@ describe("#128: Worksheet element ordering per OOXML spec", () => {
       view: { tabColor: { rgb: "FF0000" } },
       autoFilter: { range: "A1:B2" },
       merges: [{ startRow: 0, startCol: 0, endRow: 0, endCol: 1 }],
-      pageSetup: { orientation: "landscape" },
+      // showGridLines keeps <printOptions> in the output. It is emitted
+      // only when something is non-default now (#360), and the point of
+      // this test is the ordering, not the emission rule.
+      pageSetup: { orientation: "landscape", showGridLines: true },
     }
 
     const xml = writeXml(sheet)

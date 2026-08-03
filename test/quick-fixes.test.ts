@@ -76,11 +76,11 @@ describe("#101: <dimension> element", () => {
 // ── #102: printOptions element ───────────────────────────────────────
 
 describe("#102: <printOptions> element", () => {
-  it("emits <printOptions> when pageSetup exists", () => {
+  it("emits <printOptions> carrying the values that were set", () => {
     const sheet: WriteSheet = {
       name: "Test",
       rows: [["Data"]],
-      pageSetup: { orientation: "landscape" },
+      pageSetup: { orientation: "landscape", showGridLines: true, showRowColHeaders: true },
     }
 
     const xml = writeXml(sheet)
@@ -88,8 +88,23 @@ describe("#102: <printOptions> element", () => {
 
     const printOptions = findChild(doc, "printOptions")
     expect(printOptions).toBeDefined()
-    expect(printOptions.attrs["headings"]).toBe("0")
-    expect(printOptions.attrs["gridLines"]).toBe("0")
+    expect(printOptions.attrs["gridLines"]).toBe("1")
+    expect(printOptions.attrs["headings"]).toBe("1")
+  })
+
+  it("omits <printOptions> when a pageSetup carries none of its values", () => {
+    // It used to be written unconditionally with hardcoded zeros, so
+    // setting an unrelated page option turned printed gridlines off. Those
+    // zeros are also OOXML's defaults, which makes the element pure noise
+    // when nothing was asked for. See #360.
+    const sheet: WriteSheet = {
+      name: "Test",
+      rows: [["Data"]],
+      pageSetup: { orientation: "landscape" },
+    }
+
+    const doc = parseSheet(writeXml(sheet))
+    expect(findChild(doc, "printOptions")).toBeUndefined()
   })
 
   it("does not emit <printOptions> when pageSetup is absent", () => {
