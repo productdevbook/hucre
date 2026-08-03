@@ -71,12 +71,11 @@
     "lint:fix": "oxlint . --fix && oxfmt .",
     "fmt": "oxfmt .",
     "test": "pnpm lint && pnpm typecheck && vitest run",
-    "typecheck": "tsgo --noEmit",
+    "typecheck": "tsc --noEmit",
     "release": "pnpm test && pnpm build && bumpp --commit --tag --push --all",
     "prepack": "pnpm build"
   },
   "devDependencies": {
-    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "@vitest/coverage-v8": "^4.1.10",
     "bumpp": "^12.1.1",
     "citty": "^0.2.2",

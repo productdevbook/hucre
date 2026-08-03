@@ -1507,7 +1507,7 @@ pnpm dev          # vitest watch
 pnpm test         # lint + typecheck + test
 pnpm build        # obuild (minified, tree-shaken)
 pnpm lint:fix     # oxlint + oxfmt
-pnpm typecheck    # tsgo
+pnpm typecheck    # tsc
 ```
 
 ## Contributing
