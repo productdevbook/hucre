@@ -17,7 +17,7 @@ import { ParseError, ZipError } from "../errors"
 import { assertNotEncrypted, readInputToUint8Array } from "../_input"
 import { ZipReader } from "../zip/reader"
 import { parseXml } from "../xml/parser"
-import { MAX_COL_INDEX, MAX_ROW_INDEX } from "../limits"
+import { MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
 import type { XmlElement } from "../xml/parser"
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -578,6 +578,14 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
       // on a one-cell row to force millions of allocations — clamp to Excel's
       // row limit.
       const effectiveRowRepeat = rowData.length > 0 ? Math.min(rowRepeat, MAX_ROW_INDEX + 1) : 0
+
+      // Each repeat attribute is capped on its own, but the aggregate is
+      // not: one row of 16,384 cells repeated 1,048,576 times is 1.7e10
+      // slots from a couple hundred bytes of content.xml. See #363.
+      const projected = (rows.length + effectiveRowRepeat) * rowData.length
+      if (projected > MAX_TOTAL_CELLS) {
+        throw new ParseError(`Sheet spans ${projected} cells, over the ${MAX_TOTAL_CELLS} limit`)
+      }
 
       for (let r = 0; r < effectiveRowRepeat; r++) {
         rows.push(effectiveRowRepeat === 1 && r === 0 ? rowData : [...rowData])

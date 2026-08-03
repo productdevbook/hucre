@@ -32,7 +32,7 @@ import type { Relationship } from "./relationships"
 import { resolveStyle, isDateStyle } from "./styles"
 import { serialToDate } from "../_date"
 import { parseSax, decodeOoxmlEscapes } from "../xml/parser"
-import { MAX_COL_INDEX, MAX_ROW_INDEX } from "../limits"
+import { MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
 import { ParseError } from "../errors"
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -1036,6 +1036,18 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   // Ensure all rows have consistent length
   if (hasCells) {
     const colCount = maxCol + 1
+    // The cost of a sheet is its bounding box, not its cell count — the
+    // loop below fills every slot in it. Two in-bounds cells at opposite
+    // corners describe 1.7e10 slots, which V8 answers with an OOM the
+    // caller cannot catch, so the product is checked before allocating.
+    const totalCells = (maxRow + 1) * colCount
+    if (totalCells > MAX_TOTAL_CELLS) {
+      throw new ParseError(
+        `Sheet "${name}" spans ${maxRow + 1} rows x ${colCount} columns ` +
+          `(${totalCells} cells), over the ${MAX_TOTAL_CELLS} limit. ` +
+          `Use the \`range\` or \`maxRows\` read option to bound the area read.`,
+      )
+    }
     for (let r = 0; r <= maxRow; r++) {
       if (!rows[r]) {
         rows[r] = Array.from({ length: colCount }, () => null) as CellValue[]

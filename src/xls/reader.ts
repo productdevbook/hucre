@@ -6,6 +6,7 @@
 
 import type { CellValue, MergeRange, ReadOptions, Sheet, Workbook } from "../_types"
 import { ParseError } from "../errors"
+import { MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
 import { readInputToUint8Array } from "../_input"
 import { readCfb } from "../xlsx/crypto/cfb"
 import { isDateFormat, serialToDate } from "../_date"
@@ -172,7 +173,28 @@ function parseSheet(
   const rows: CellValue[][] = []
   const merges: MergeRange[] = []
 
+  // BIFF row/col are u16, so each is bounded at 65,535 on its own — but
+  // their product is not, and `rows` is a dense rectangle. 65,535 rows of
+  // 65,536 slots is 4.3e9 allocations from a few hundred KB of input.
+  // The XLSB reader already guards its coordinates this way; this one did
+  // not. See #363.
+  let widestCol = 0
   const setCell = (row: number, col: number, value: CellValue): void => {
+    if (row < 0 || row > MAX_ROW_INDEX) {
+      throw new ParseError(
+        `Cell row ${row} is outside the supported sheet bounds (max ${MAX_ROW_INDEX + 1})`,
+      )
+    }
+    if (col < 0 || col > MAX_COL_INDEX) {
+      throw new ParseError(
+        `Cell column ${col} is outside the supported sheet bounds (max ${MAX_COL_INDEX + 1})`,
+      )
+    }
+    if (col >= widestCol) widestCol = col + 1
+    const boundingBox = Math.max(rows.length, row + 1) * widestCol
+    if (boundingBox > MAX_TOTAL_CELLS) {
+      throw new ParseError(`Sheet spans ${boundingBox} cells, over the ${MAX_TOTAL_CELLS} limit`)
+    }
     let r = rows[row]
     if (!r) r = rows[row] = []
     while (r.length < col) r.push(null)
