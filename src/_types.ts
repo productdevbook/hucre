@@ -1463,6 +1463,15 @@ export interface CsvReadOptions {
   transformValue?: (value: CellValue, header: string, row: number, col: number) => CellValue
   /** Fast mode: skip quote handling and just split by delimiter/newlines. Faster for files known to have no quoted fields. Default: false */
   fastMode?: boolean
+  /**
+   * Drop the header row from the output instead of yielding it.
+   *
+   * `header: true` only marks the first row as a header — it is still
+   * returned, and only used to name columns for {@link transformValue}.
+   * Set this when you want the header consumed rather than emitted.
+   * Default: false
+   */
+  skipHeaderRow?: boolean
 }
 
 export interface CsvWriteOptions {

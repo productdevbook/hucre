@@ -1433,18 +1433,18 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 
 ### CSV
 
-| Function                           | Description                                       |
-| ---------------------------------- | ------------------------------------------------- |
-| `parseCsv(input, options?)`        | Parse CSV string → `CellValue[][]`                |
-| `parseCsvObjects(input, options?)` | Parse CSV with headers → `{ data, headers }`      |
-| `writeCsv(rows, options?)`         | Write `CellValue[][]` → CSV string                |
-| `writeCsvObjects(data, options?)`  | Write objects → CSV string                        |
-| `detectDelimiter(input)`           | Auto-detect delimiter character                   |
-| `streamCsvRows(input, options?)`   | Generator yielding CSV rows                       |
-| `writeCsvStream(rows, options?)`   | Constant-memory CSV writing → `ReadableStream`    |
-| `CsvStreamWriter`                  | Incremental CSV writing; buffers until `finish()` |
-| `writeTsv(rows, options?)`         | Write TSV (tab-separated)                         |
-| `fetchCsv(url, options?)`          | Fetch and parse CSV from URL                      |
+| Function                           | Description                                             |
+| ---------------------------------- | ------------------------------------------------------- |
+| `parseCsv(input, options?)`        | Parse CSV string → `CellValue[][]`                      |
+| `parseCsvObjects(input, options?)` | Parse CSV with headers → `{ data, headers }`            |
+| `writeCsv(rows, options?)`         | Write `CellValue[][]` → CSV string                      |
+| `writeCsvObjects(data, options?)`  | Write objects → CSV string                              |
+| `detectDelimiter(input)`           | Auto-detect delimiter character                         |
+| `streamCsvRows(input, options?)`   | Generator yielding CSV rows; same options as `parseCsv` |
+| `writeCsvStream(rows, options?)`   | Constant-memory CSV writing → `ReadableStream`          |
+| `CsvStreamWriter`                  | Incremental CSV writing; buffers until `finish()`       |
+| `writeTsv(rows, options?)`         | Write TSV (tab-separated)                               |
+| `fetchCsv(url, options?)`          | Fetch and parse CSV from URL                            |
 
 ### JSON
 

@@ -86,14 +86,16 @@ export function* streamCsvRows(
   const skipEmptyRows = options?.skipEmptyRows ?? false
   const commentChar = options?.comment
   const isHeaderMode = options?.header ?? false
+  const skipHeaderRow = options?.skipHeaderRow ?? false
   // Align inferType default with parseCsv (defaults to true).
   const preserveLeadingZeros = options?.preserveLeadingZeros !== false
   const maxRows = options?.maxRows
   const skipLines = options?.skipLines ?? 0
-  // NOTE: transformValue, transformHeader, onRow and fastMode are NOT yet
-  // wired into the streaming reader. TODO: thread them through to reach full
-  // parity with parseCsv. For now we honor maxRows, skipLines and
-  // preserveLeadingZeros, which are the most impactful for correctness.
+  const transformValue = options?.transformValue
+  const onRow = options?.onRow
+  // Fast mode trades quote handling for speed, exactly as in parseCsv —
+  // fields are split on the delimiter with no quote awareness at all.
+  const fastMode = options?.fastMode ?? false
 
   if (skipBom) {
     input = stripBom(input)
@@ -106,7 +108,7 @@ export function* streamCsvRows(
 
   let i = 0
   let isFirstRow = true
-  let _headerRow: string[] | null = null
+  let headerRow: string[] | null = null
   let physicalLine = 0 // counts every parsed physical row (for skipLines)
   let emittedDataRows = 0 // counts rows yielded (for maxRows)
 
@@ -178,8 +180,10 @@ export function* streamCsvRows(
         continue
       }
 
-      // Start of quoted field
-      if (ch === quote && currentField === "") {
+      // Start of quoted field. In fast mode the quote char is just another
+      // character, so `inQuoted` is never entered and the branches above
+      // stay dead — matching parseFast's plain split.
+      if (!fastMode && ch === quote && currentField === "") {
         inQuoted = true
         fieldWasQuoted = true
         i++
@@ -216,27 +220,44 @@ export function* streamCsvRows(
       continue
     }
 
-    // Handle header row
-    if (isFirstRow && isHeaderMode) {
-      _headerRow = row
-      isFirstRow = false
-      continue
+    // Capture the header row. Like parseCsv, `header: true` only marks it —
+    // the row is still yielded, and is used to name columns for
+    // transformValue. `skipHeaderRow` is the opt-in that consumes it.
+    const isHeaderRowNow = isFirstRow && isHeaderMode
+    if (isHeaderRowNow) {
+      headerRow = row
     }
     isFirstRow = false
+
+    if (isHeaderRowNow && skipHeaderRow) continue
 
     // Honor maxRows (counts data rows yielded)
     if (maxRows !== undefined && maxRows >= 0 && emittedDataRows >= maxRows) {
       return
     }
+    const rowIndex = emittedDataRows
     emittedDataRows++
 
     // Apply type inference if requested
-    if (doTypeInference) {
-      const typedRow: CellValue[] = row.map((v) => inferType(v, preserveLeadingZeros))
-      yield typedRow
-    } else {
-      yield row
+    let outRow: CellValue[] = doTypeInference
+      ? row.map((v) => inferType(v, preserveLeadingZeros))
+      : row
+
+    // transformValue — after type inference, matching parseCsv's ordering.
+    if (transformValue) {
+      outRow = outRow.map((val, colIdx) =>
+        transformValue(
+          val,
+          headerRow ? String(headerRow[colIdx] ?? colIdx) : String(colIdx),
+          rowIndex,
+          colIdx,
+        ),
+      )
     }
+
+    onRow?.(outRow, rowIndex)
+
+    yield outRow
   }
 }
 
