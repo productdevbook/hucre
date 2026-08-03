@@ -332,12 +332,12 @@ function* rows() {
 
 return new Response(
   writeXlsxStream(
+    rows(), // any Iterable or AsyncIterable — a DB cursor, another stream, …
     {
       name: "BigData",
       columns: [{ header: "ID" }, { header: "Value" }],
       freezePane: { rows: 1 },
     },
-    rows(), // any Iterable or AsyncIterable — a DB cursor, another stream, …
   ),
   {
     headers: {
@@ -406,7 +406,7 @@ Writing is opt-in, because part sizes aren't known when their headers go
 out — it can't be decided per entry mid-stream:
 
 ```ts
-const stream = writeXlsxStream({ name: "Huge", columns, zip64: true }, rows)
+const stream = writeXlsxStream(rows, { name: "Huge", columns, zip64: true })
 ```
 
 Turn it on when one worksheet's XML may cross 4 GiB — very wide sheets
@@ -1188,7 +1188,7 @@ import {
   writeNdjson,
   workbookToJson,
   NdjsonStreamWriter,
-  readNdjsonStream,
+  streamNdjsonRows,
 } from "hucre/json"
 
 // Read — top-level array, { products: [...] } shape, or single object
@@ -1220,7 +1220,7 @@ return new Response(writer.toStream(), {
 })
 
 // Streaming read
-for await (const row of readNdjsonStream(request.body!)) {
+for await (const row of streamNdjsonRows(request.body!)) {
   console.log(row)
 }
 ```
@@ -1437,7 +1437,7 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `openXlsx(input, options?)`        | Open for round-trip (preserves unknown parts)                               |
 | `saveXlsx(workbook)`               | Save round-trip workbook back to XLSX                                       |
 | `streamXlsxRows(input, options?)`  | AsyncGenerator yielding rows one at a time                                  |
-| `writeXlsxStream(options, rows)`   | Constant-memory XLSX writing — returns a `ReadableStream<Uint8Array>`       |
+| `writeXlsxStream(rows, options)`   | Constant-memory XLSX writing — returns a `ReadableStream<Uint8Array>`       |
 | `XlsxStreamWriter`                 | Incremental row-by-row XLSX writing; auto-splits past `maxRowsPerSheet`     |
 | `XLSX_MAX_ROWS_PER_SHEET`          | Excel hard row limit (1,048,576) — exported constant                        |
 | `parseExternalLink(xml, relsXml?)` | Parse `xl/externalLinks/externalLinkN.xml` → `ExternalLink`                 |
@@ -1491,7 +1491,7 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `writeJson(data, options?)`       | Serialize rows to a JSON string                                 |
 | `writeNdjson(data, options?)`     | Serialize rows to NDJSON, one object per line                   |
 | `workbookToJson(wb, options?)`    | Convert a `Workbook` to JSON (single-sheet array or per-sheet)  |
-| `readNdjsonStream(stream, opts?)` | Async generator over a `ReadableStream<Uint8Array>`             |
+| `streamNdjsonRows(stream, opts?)` | Async generator over a `ReadableStream<Uint8Array>`             |
 | `NdjsonStreamWriter`              | Incremental writer; `toStream()` releases rows as they are sent |
 
 ### XML

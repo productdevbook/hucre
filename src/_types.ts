@@ -1560,6 +1560,32 @@ export interface StreamWriteOptions extends WriteOptions {
   sheet: WriteSheet
 }
 
+// ── Streaming ──────────────────────────────────────────────────────
+
+/**
+ * One row yielded by a streaming reader.
+ *
+ * Shared by `streamXlsxRows` and `streamOdsRows`, which previously had
+ * two near-identical shapes under two names. `index` is carried because
+ * sheet rows are sparse — a file may jump from row 1 to row 500, and
+ * position in the iteration cannot recover that.
+ *
+ * `streamCsvRows` deliberately yields a bare `CellValue[]` instead: CSV
+ * rows are dense and positional, so an index would be pure ceremony, and
+ * the bare array is what keeps it the streaming mirror of `parseCsv`.
+ */
+export interface StreamRow {
+  /** 0-based row index within its sheet */
+  index: number
+  /**
+   * 0-based index of the sheet this row came from. Present only for
+   * readers that stream more than one sheet.
+   */
+  sheetIndex?: number
+  /** Cell values for this row */
+  values: CellValue[]
+}
+
 // ── Input/Output Types ─────────────────────────────────────────────
 
 export type ReadInput = Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>

@@ -109,11 +109,11 @@ describe("zipStreamChunks", () => {
 describe("writeXlsxStream", () => {
   it("writes a workbook readable by readXlsx", async () => {
     const stream = writeXlsxStream(
-      { name: "Data", columns: [{ header: "ID" }, { header: "Name" }] },
       [
         [1, "Alice"],
         [2, "Bob"],
       ],
+      { name: "Data", columns: [{ header: "ID" }, { header: "Name" }] },
     )
 
     const workbook = await readXlsx(await collect(stream))
@@ -127,13 +127,17 @@ describe("writeXlsxStream", () => {
   })
 
   it("accepts an async row source", async () => {
-    const stream = writeXlsxStream({ name: "S" }, asyncRows([["a"], ["b"], ["c"]]))
+    const stream = writeXlsxStream(asyncRows([["a"], ["b"], ["c"]]), { name: "S" })
     const workbook = await readXlsx(await collect(stream))
     expect(workbook.sheets[0].rows).toEqual([["a"], ["b"], ["c"]])
   })
 
   it("accepts object rows through column keys", async () => {
     const stream = writeXlsxStream(
+      [
+        { id: 1, name: "Alice" },
+        { id: 2, name: "Bob" },
+      ],
       {
         name: "S",
         columns: [
@@ -141,10 +145,6 @@ describe("writeXlsxStream", () => {
           { key: "name", header: "Name" },
         ],
       },
-      [
-        { id: 1, name: "Alice" },
-        { id: 2, name: "Bob" },
-      ],
     )
     const workbook = await readXlsx(await collect(stream))
     expect(workbook.sheets[0].rows).toEqual([
@@ -156,7 +156,7 @@ describe("writeXlsxStream", () => {
 
   it("round-trips every cell type", async () => {
     const date = new Date(Date.UTC(2024, 0, 15))
-    const stream = writeXlsxStream({ name: "S" }, [["text", 42, true, false, null, date]])
+    const stream = writeXlsxStream([["text", 42, true, false, null, date]], { name: "S" })
     const workbook = await readXlsx(await collect(stream))
     const row = workbook.sheets[0].rows[0]
     expect(row[0]).toBe("text")
@@ -168,7 +168,7 @@ describe("writeXlsxStream", () => {
   })
 
   it("writes inline strings by default (no sharedStrings part)", async () => {
-    const bytes = await collect(writeXlsxStream({ name: "S" }, [["hello"]]))
+    const bytes = await collect(writeXlsxStream([["hello"]], { name: "S" }))
     const zip = new ZipReader(bytes)
     expect(zip.has("xl/sharedStrings.xml")).toBe(false)
     const sheet = new TextDecoder().decode(await zip.extract("xl/worksheets/sheet1.xml"))
@@ -178,7 +178,7 @@ describe("writeXlsxStream", () => {
 
   it("uses the shared string table when asked", async () => {
     const bytes = await collect(
-      writeXlsxStream({ name: "S", inlineStrings: false }, [["hello"], ["hello"]]),
+      writeXlsxStream([["hello"], ["hello"]], { name: "S", inlineStrings: false }),
     )
     const zip = new ZipReader(bytes)
     expect(zip.has("xl/sharedStrings.xml")).toBe(true)
@@ -189,19 +189,19 @@ describe("writeXlsxStream", () => {
   })
 
   it("preserves significant whitespace in inline strings", async () => {
-    const bytes = await collect(writeXlsxStream({ name: "S" }, [["  padded  "], ["a\nb"]]))
+    const bytes = await collect(writeXlsxStream([["  padded  "], ["a\nb"]], { name: "S" }))
     const workbook = await readXlsx(bytes)
     expect(workbook.sheets[0].rows).toEqual([["  padded  "], ["a\nb"]])
   })
 
   it("escapes XML-hostile characters", async () => {
-    const bytes = await collect(writeXlsxStream({ name: "S" }, [["<a> & \"b\" 'c'"]]))
+    const bytes = await collect(writeXlsxStream([["<a> & \"b\" 'c'"]], { name: "S" }))
     const workbook = await readXlsx(bytes)
     expect(workbook.sheets[0].rows[0][0]).toBe("<a> & \"b\" 'c'")
   })
 
   it("declares every part it references", async () => {
-    const bytes = await collect(writeXlsxStream({ name: "S" }, [["x"]]))
+    const bytes = await collect(writeXlsxStream([["x"]], { name: "S" }))
     const zip = new ZipReader(bytes)
     const contentTypes = new TextDecoder().decode(await zip.extract("[Content_Types].xml"))
 
@@ -214,10 +214,11 @@ describe("writeXlsxStream", () => {
     const rows: CellValue[][] = []
     for (let i = 1; i <= 6; i++) rows.push([i])
 
-    const stream = writeXlsxStream(
-      { name: "Big", columns: [{ header: "N" }], maxRowsPerSheet: 3 },
-      rows,
-    )
+    const stream = writeXlsxStream(rows, {
+      name: "Big",
+      columns: [{ header: "N" }],
+      maxRowsPerSheet: 3,
+    })
     const workbook = await readXlsx(await collect(stream))
 
     expect(workbook.sheets.map((s) => s.name)).toEqual(["Big", "Big_2", "Big_3"])
@@ -228,24 +229,26 @@ describe("writeXlsxStream", () => {
 
   it("does not repeat headers when told not to", async () => {
     const rows: CellValue[][] = [[1], [2], [3], [4]]
-    const stream = writeXlsxStream(
-      { name: "Big", columns: [{ header: "N" }], maxRowsPerSheet: 2, repeatHeaders: false },
-      rows,
-    )
+    const stream = writeXlsxStream(rows, {
+      name: "Big",
+      columns: [{ header: "N" }],
+      maxRowsPerSheet: 2,
+      repeatHeaders: false,
+    })
     const workbook = await readXlsx(await collect(stream))
     expect(workbook.sheets[0].rows).toEqual([["N"], [1]])
     expect(workbook.sheets[1].rows).toEqual([[2], [3]])
   })
 
   it("emits a single sheet when the row count lands exactly on the cap", async () => {
-    const stream = writeXlsxStream({ name: "S", maxRowsPerSheet: 3 }, [[1], [2], [3]])
+    const stream = writeXlsxStream([[1], [2], [3]], { name: "S", maxRowsPerSheet: 3 })
     const workbook = await readXlsx(await collect(stream))
     expect(workbook.sheets).toHaveLength(1)
     expect(workbook.sheets[0].rows).toEqual([[1], [2], [3]])
   })
 
   it("handles an empty row source", async () => {
-    const workbook = await readXlsx(await collect(writeXlsxStream({ name: "Empty" }, [])))
+    const workbook = await readXlsx(await collect(writeXlsxStream([], { name: "Empty" })))
     expect(workbook.sheets).toHaveLength(1)
     expect(workbook.sheets[0].name).toBe("Empty")
     expect(workbook.sheets[0].rows).toEqual([])
@@ -255,22 +258,19 @@ describe("writeXlsxStream", () => {
     // Validation moved ahead of the generator (#364): a deferred throw
     // would surface only after the caller had handed the stream to a
     // Response, too late to act on.
-    expect(() => writeXlsxStream({ name: "S", maxRowsPerSheet: 1 }, [[1]])).toThrow(
+    expect(() => writeXlsxStream([[1]], { name: "S", maxRowsPerSheet: 1 })).toThrow(
       /maxRowsPerSheet must be at least 2/,
     )
   })
 
   it("carries freeze panes and column widths onto every sheet", async () => {
     const bytes = await collect(
-      writeXlsxStream(
-        {
-          name: "S",
-          columns: [{ header: "A", width: 25 }],
-          freezePane: { rows: 1 },
-          maxRowsPerSheet: 2,
-        },
-        [[1], [2]],
-      ),
+      writeXlsxStream([[1], [2]], {
+        name: "S",
+        columns: [{ header: "A", width: 25 }],
+        freezePane: { rows: 1 },
+        maxRowsPerSheet: 2,
+      }),
     )
     const zip = new ZipReader(bytes)
     const decoder = new TextDecoder()
@@ -283,7 +283,7 @@ describe("writeXlsxStream", () => {
 
   it("applies column number formats", async () => {
     const bytes = await collect(
-      writeXlsxStream({ name: "S", columns: [{ header: "Amount", numFmt: "#,##0.00" }] }, [[12.5]]),
+      writeXlsxStream([[12.5]], { name: "S", columns: [{ header: "Amount", numFmt: "#,##0.00" }] }),
     )
     const zip = new ZipReader(bytes)
     const styles = new TextDecoder().decode(await zip.extract("xl/styles.xml"))
@@ -292,7 +292,7 @@ describe("writeXlsxStream", () => {
 
   it("honours the 1904 date system", async () => {
     const bytes = await collect(
-      writeXlsxStream({ name: "S", dateSystem: "1904" }, [[new Date(Date.UTC(2024, 0, 15))]]),
+      writeXlsxStream([[new Date(Date.UTC(2024, 0, 15))]], { name: "S", dateSystem: "1904" }),
     )
     const zip = new ZipReader(bytes)
     const workbookXml = new TextDecoder().decode(await zip.extract("xl/workbook.xml"))
@@ -302,7 +302,7 @@ describe("writeXlsxStream", () => {
   })
 
   it("stores uncompressed parts when asked", async () => {
-    const bytes = await collect(writeXlsxStream({ name: "S", compress: false }, [["x"]]))
+    const bytes = await collect(writeXlsxStream([["x"]], { name: "S", compress: false }))
     const workbook = await readXlsx(bytes)
     expect(workbook.sheets[0].rows).toEqual([["x"]])
   })
@@ -311,7 +311,7 @@ describe("writeXlsxStream", () => {
     const rows: CellValue[][] = []
     for (let i = 0; i < 20_000; i++) rows.push([i, `value-${i}`, i * 1.5])
 
-    const chunks = await collectChunks(writeXlsxStream({ name: "S", compress: false }, rows))
+    const chunks = await collectChunks(writeXlsxStream(rows, { name: "S", compress: false }))
     // The worksheet alone spans many 64 KB flushes, so the archive must
     // arrive as many chunks — a buffered writer would produce a handful.
     expect(chunks.length).toBeGreaterThan(20)
@@ -326,7 +326,7 @@ describe("writeXlsxStream", () => {
       }
     }
 
-    const stream = writeXlsxStream({ name: "S", compress: false }, infinite())
+    const stream = writeXlsxStream(infinite(), { name: "S", compress: false })
     const reader = stream.getReader()
     await reader.read()
     await reader.cancel()
@@ -350,7 +350,7 @@ describe("writeXlsxStream", () => {
     const bufferedBook = await readXlsx(await buffered.finish())
 
     const streamedBook = await readXlsx(
-      await collect(writeXlsxStream({ name: "S", columns: [{ header: "ID" }] }, rows)),
+      await collect(writeXlsxStream(rows, { name: "S", columns: [{ header: "ID" }] })),
     )
 
     expect(streamedBook.sheets[0].rows).toEqual(bufferedBook.sheets[0].rows)

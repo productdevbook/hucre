@@ -3,7 +3,7 @@
 // Parses shared strings and styles upfront (small), then streams
 // worksheet rows without buffering the entire sheet in memory.
 
-import type { CellValue, ReadOptions } from "../_types"
+import type { CellValue, ReadOptions, StreamRow } from "../_types"
 import type { SharedString } from "./shared-strings"
 import type { ParsedStyles } from "./styles"
 import type { Relationship } from "./relationships"
@@ -24,12 +24,10 @@ import { serialToDate } from "../_date"
 
 // ── Types ────────────────────────────────────────────────────────────
 
-export interface StreamRow {
-  /** 0-based row index */
-  index: number
-  /** Cell values for this row */
-  values: CellValue[]
-}
+// StreamRow now lives in _types.ts and is shared with the ODS reader —
+// the two had near-identical shapes under two names. Re-exported here so
+// `import type { StreamRow } from "hucre/xlsx"` keeps working.
+export type { StreamRow } from "../_types"
 
 // ── Range filter ────────────────────────────────────────────────────
 

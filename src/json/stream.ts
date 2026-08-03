@@ -89,7 +89,7 @@ export interface NdjsonStreamReadOptions extends FlattenOptions {
   flattenRows?: boolean
 }
 
-export async function* readNdjsonStream<
+export async function* streamNdjsonRows<
   T extends Record<string, CellValue> = Record<string, CellValue>,
 >(
   stream: ReadableStream<Uint8Array>,
@@ -175,3 +175,10 @@ function dateReplacer(_key: string, value: unknown): unknown {
   if (value instanceof Date) return value.toISOString()
   return value
 }
+
+/**
+ * @deprecated Renamed to {@link streamNdjsonRows} so every streaming
+ * reader in the library reads `stream*Rows`. This alias will be removed
+ * in a future major.
+ */
+export const readNdjsonStream = streamNdjsonRows

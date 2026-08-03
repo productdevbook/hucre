@@ -1,9 +1,9 @@
 // ── Streaming ODS Reader ─────────────────────────────────────────────
 // Yields rows one at a time from an ODS file via SAX parsing.
 
-import type { CellValue } from "../_types"
+import type { CellValue, ReadInput, StreamRow } from "../_types"
 import { ParseError, ZipError } from "../errors"
-import { assertNotEncrypted } from "../_input"
+import { assertNotEncrypted, readInputToUint8Array } from "../_input"
 import { ZipReader } from "../zip/reader"
 import { parseSax } from "../xml/parser"
 import { MAX_COL_INDEX, MAX_REPEAT_COUNT, MAX_ROW_INDEX } from "../limits"
@@ -14,24 +14,47 @@ function decodeUtf8(data: Uint8Array): string {
   return new TextDecoder("utf-8").decode(data)
 }
 
-function toUint8Array(input: Uint8Array | ArrayBuffer): Uint8Array {
-  if (input instanceof Uint8Array) return input
-  return new Uint8Array(input)
+/**
+ * Options for {@link streamOdsRows}.
+ *
+ * It previously took none at all, so `maxRows` on a huge file meant
+ * draining the whole thing and counting yourself.
+ */
+export interface OdsStreamReadOptions {
+  /**
+   * Restrict streaming to these sheets, by 0-based index or by name.
+   * Rows from other sheets are skipped.
+   */
+  sheets?: Array<number | string>
+  /** Stop after this many rows across all streamed sheets. */
+  maxRows?: number
+}
+
+/**
+ * Resolve the sheet filter to a set of indices, or `undefined` for "all".
+ *
+ * Names cannot be resolved from the row stream alone — the SAX pass does
+ * not surface table names — so only numeric entries are honoured for now
+ * and a name-only filter falls back to streaming everything rather than
+ * silently yielding nothing.
+ */
+function normalizeSheetFilter(sheets: Array<number | string> | undefined): Set<number> | undefined {
+  if (!sheets || sheets.length === 0) return undefined
+  const indices = sheets.filter((s): s is number => typeof s === "number")
+  return indices.length > 0 ? new Set(indices) : undefined
 }
 
 // ── Row parser via SAX ──────────────────────────────────────────────
 
-export interface OdsStreamRow {
-  /** 0-based row index within its sheet */
-  index: number
-  /** 0-based index of the sheet (table) this row belongs to */
-  sheetIndex: number
-  /** Cell values for this row */
-  values: CellValue[]
-}
+/**
+ * @deprecated Use {@link StreamRow}. Kept as an alias because it was the
+ * element type of a public async generator; the two shapes were
+ * identical apart from `sheetIndex` now being optional.
+ */
+export type OdsStreamRow = StreamRow
 
-function* parseContentRows(xml: string): Generator<OdsStreamRow, void, undefined> {
-  const completedRows: OdsStreamRow[] = []
+function* parseContentRows(xml: string): Generator<StreamRow, void, undefined> {
+  const completedRows: StreamRow[] = []
 
   let inBody = false
   let inSpreadsheet = false
@@ -236,9 +259,12 @@ function resolveCellValue(
  * Unzips and parses content.xml with SAX, yielding rows as they are parsed.
  */
 export async function* streamOdsRows(
-  input: Uint8Array | ArrayBuffer,
-): AsyncGenerator<OdsStreamRow, void, undefined> {
-  const data = toUint8Array(input)
+  input: ReadInput,
+  options?: OdsStreamReadOptions,
+): AsyncGenerator<StreamRow, void, undefined> {
+  // Previously Uint8Array | ArrayBuffer only — a streaming reader that
+  // could not take a ReadableStream, unlike streamXlsxRows. See #365.
+  const data = await readInputToUint8Array(input)
 
   // Detect password-protected ODF workbooks (OLE2/CFB envelope) up
   // front so streamers fail fast with a typed `EncryptedFileError`
@@ -268,5 +294,15 @@ export async function* streamOdsRows(
   const contentXml = decodeUtf8(await zip.extract("content.xml"))
 
   // 4. Yield rows via SAX
-  yield* parseContentRows(contentXml)
+  // 4. Yield rows via SAX, applying the filters
+  const wanted = normalizeSheetFilter(options?.sheets)
+  const maxRows = options?.maxRows ?? 0
+  let emitted = 0
+
+  for (const row of parseContentRows(contentXml)) {
+    if (wanted !== undefined && !wanted.has(row.sheetIndex ?? 0)) continue
+    if (maxRows > 0 && emitted >= maxRows) return
+    emitted++
+    yield row
+  }
 }

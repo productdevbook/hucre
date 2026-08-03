@@ -542,7 +542,7 @@ export class XlsxStreamWriter {
  * record per part is retained.
  *
  * ```ts
- * return new Response(writeXlsxStream({ name: "Export", columns }, rowSource), {
+ * return new Response(writeXlsxStream(rowSource, { name: "Export", columns }), {
  *   headers: {
  *     "content-type":
  *       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -560,8 +560,8 @@ export class XlsxStreamWriter {
  *   uncompressed rather than buffered.
  */
 export function writeXlsxStream(
-  options: XlsxWriteStreamOptions,
   rows: AsyncIterable<XlsxStreamRow> | Iterable<XlsxStreamRow>,
+  options: XlsxWriteStreamOptions,
 ): ReadableStream<Uint8Array> {
   // Validate before returning the stream, not inside the generator.
   // Generator bodies do not run until first pull, so a deferred throw

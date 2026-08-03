@@ -184,6 +184,7 @@ describe("hucre/json", () => {
         "writeNdjson",
         "workbookToJson",
         "NdjsonStreamWriter",
+        "streamNdjsonRows",
         "readNdjsonStream",
         "flattenValue",
         "collectHeaders",

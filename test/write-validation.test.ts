@@ -143,7 +143,7 @@ describe("sheet name validation applies to every writer", () => {
   })
 
   it("writeXlsxStream", () => {
-    expect(() => writeXlsxStream({ name: "x".repeat(40) }, [])).toThrow(InvalidArgumentError)
+    expect(() => writeXlsxStream([], { name: "x".repeat(40) })).toThrow(InvalidArgumentError)
   })
 
   it("still allows the streaming writer to truncate its own generated names", async () => {

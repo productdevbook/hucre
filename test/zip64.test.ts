@@ -280,14 +280,11 @@ describe("ZipReader — ZIP64 input", () => {
       [2, "Bob", false],
     ]
     const bytes = await collect(
-      writeXlsxStream(
-        {
-          name: "Data",
-          columns: [{ header: "ID" }, { header: "Name" }, { header: "Flag" }],
-          zip64: true,
-        },
-        rows,
-      ),
+      writeXlsxStream(rows, {
+        name: "Data",
+        columns: [{ header: "ID" }, { header: "Name" }, { header: "Flag" }],
+        zip64: true,
+      }),
     )
 
     const workbook = await readXlsx(bytes)

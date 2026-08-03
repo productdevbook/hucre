@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { NdjsonStreamWriter, readNdjsonStream } from "../src/json"
+import { NdjsonStreamWriter, streamNdjsonRows, readNdjsonStream } from "../src/json"
 
 function streamFromString(s: string): ReadableStream<Uint8Array> {
   const enc = new TextEncoder()
@@ -65,11 +65,11 @@ describe("NdjsonStreamWriter", () => {
   })
 })
 
-describe("readNdjsonStream", () => {
+describe("streamNdjsonRows", () => {
   it("yields parsed rows from a stream", async () => {
     const stream = streamFromString('{"a":1}\n{"a":2}\n{"a":3}\n')
     const rows: unknown[] = []
-    for await (const row of readNdjsonStream(stream)) {
+    for await (const row of streamNdjsonRows(stream)) {
       rows.push(row)
     }
     expect(rows).toEqual([{ a: 1 }, { a: 2 }, { a: 3 }])
@@ -78,21 +78,21 @@ describe("readNdjsonStream", () => {
   it("handles split-across-chunk lines", async () => {
     const stream = chunkedStream(['{"a":', '1}\n{"a"', ":2}\n"])
     const rows: unknown[] = []
-    for await (const row of readNdjsonStream(stream)) rows.push(row)
+    for await (const row of streamNdjsonRows(stream)) rows.push(row)
     expect(rows).toEqual([{ a: 1 }, { a: 2 }])
   })
 
   it("handles trailing line without newline", async () => {
     const stream = streamFromString('{"a":1}\n{"a":2}')
     const rows: unknown[] = []
-    for await (const row of readNdjsonStream(stream)) rows.push(row)
+    for await (const row of streamNdjsonRows(stream)) rows.push(row)
     expect(rows).toEqual([{ a: 1 }, { a: 2 }])
   })
 
   it("flattens rows when flattenRows: true", async () => {
     const stream = streamFromString('{"a":{"b":1}}\n{"a":{"b":2}}\n')
     const rows: Record<string, unknown>[] = []
-    for await (const row of readNdjsonStream(stream, { flattenRows: true })) {
+    for await (const row of streamNdjsonRows(stream, { flattenRows: true })) {
       rows.push(row)
     }
     expect(rows).toEqual([{ "a.b": 1 }, { "a.b": 2 }])
@@ -101,7 +101,7 @@ describe("readNdjsonStream", () => {
   it("throws on invalid line by default", async () => {
     const stream = streamFromString('{"a":1}\n{bad}\n')
     await expect(async () => {
-      for await (const _ of readNdjsonStream(stream)) {
+      for await (const _ of streamNdjsonRows(stream)) {
         // consume
       }
     }).rejects.toThrow(/line 2/)
@@ -111,12 +111,20 @@ describe("readNdjsonStream", () => {
     const stream = streamFromString('{"a":1}\n{bad}\n{"a":2}\n')
     const errs: number[] = []
     const rows: unknown[] = []
-    for await (const row of readNdjsonStream(stream, {
+    for await (const row of streamNdjsonRows(stream, {
       onError: (_l, ln) => errs.push(ln),
     })) {
       rows.push(row)
     }
     expect(rows).toEqual([{ a: 1 }, { a: 2 }])
     expect(errs).toEqual([2])
+  })
+})
+
+describe("readNdjsonStream (deprecated alias)", () => {
+  it("is the same function as streamNdjsonRows", () => {
+    // Renamed so every streaming reader in the library reads
+    // stream*Rows; the old name stays for one major. See #365.
+    expect(readNdjsonStream).toBe(streamNdjsonRows)
   })
 })

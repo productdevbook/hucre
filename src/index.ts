@@ -58,6 +58,7 @@ export {
   writeNdjson,
   workbookToJson,
   NdjsonStreamWriter,
+  streamNdjsonRows,
   readNdjsonStream,
   // Exported from hucre/json but not from the root, so the two surfaces
   // disagreed about what the JSON API is.
