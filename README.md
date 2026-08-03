@@ -89,7 +89,7 @@ import { readXml, writeXml } from "hucre/xml" // Tabular XML
 | --------------------- | ------------ | ------------- | --------------- | --------------- | ----------------- |
 | **Read XLSX**         | Yes          | Yes           | No              | No              | Yes               |
 | **Write XLSX**        | Yes          | Yes           | Yes             | Yes             | Yes               |
-| **Streaming**         | Read+Write   | Write-only    | No              | const_memory    | SXSSF (write)     |
+| **Streaming**         | Read+Write   | Write-only    | const_memory    | const_memory    | SXSSF (write)     |
 | **Charts**            | Round-trip   | 15+ types     | 9 types         | 12+ types       | Limited           |
 | **Pivot tables**      | Read + Write | Read-only     | No              | No              | Limited           |
 | **Cond. formatting**  | Yes (all)    | Yes           | Yes             | Yes             | Yes               |
@@ -273,7 +273,7 @@ await writeXlsx({
 Process large files row-by-row without loading everything into memory:
 
 ```ts
-import { streamXlsxRows, XlsxStreamWriter } from "hucre/xlsx"
+import { streamXlsxRows, writeXlsxStream, XlsxStreamWriter } from "hucre/xlsx"
 
 // Stream read — async generator yields rows one at a time
 for await (const row of streamXlsxRows(buffer)) {
@@ -307,7 +307,31 @@ for await (const row of streamXlsxRows(buffer, { range: "B2:D1000" })) {
   // row.values[1..3] carry B/C/D
 }
 
-// Stream write — add rows incrementally
+// Stream write — the workbook is emitted as bytes while rows are pulled
+// from the source, so peak memory doesn't grow with the row count.
+function* rows() {
+  for (let i = 0; i < 5_000_000; i++) yield [i + 1, Math.random()]
+}
+
+return new Response(
+  writeXlsxStream(
+    {
+      name: "BigData",
+      columns: [{ header: "ID" }, { header: "Value" }],
+      freezePane: { rows: 1 },
+    },
+    rows(), // any Iterable or AsyncIterable — a DB cursor, another stream, …
+  ),
+  {
+    headers: {
+      "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    },
+  },
+)
+
+// Incremental write — serializes each row on arrival, but holds the
+// serialized parts until finish() returns one buffer. Use it when you
+// need a Uint8Array anyway; use writeXlsxStream for constant memory.
 const writer = new XlsxStreamWriter({
   name: "BigData",
   columns: [{ header: "ID" }, { header: "Value" }],
@@ -319,11 +343,47 @@ for (let i = 0; i < 100_000; i++) {
 const buffer = await writer.finish()
 ```
 
+#### Which writer to use
+
+|             | `writeXlsxStream()`             | `XlsxStreamWriter`                |
+| ----------- | ------------------------------- | --------------------------------- |
+| Output      | `ReadableStream<Uint8Array>`    | `Promise<Uint8Array>`             |
+| Rows        | pulled from an (async) iterable | pushed via `addRow` / `addObject` |
+| Peak memory | O(distinct styles) — flat       | O(data)                           |
+| Strings     | inline by default               | shared string table               |
+
+Measured on 5 columns of mixed text/number/date data, writing to a sink
+that discards the bytes (Node 24):
+
+|      Rows | `writeXlsxStream` peak heap | `XlsxStreamWriter` peak heap |
+| --------: | --------------------------: | ---------------------------: |
+|   300,000 |                       41 MB |                       328 MB |
+| 1,000,000 |                       67 MB |                     1,037 MB |
+| 3,000,000 |                       70 MB |                   not viable |
+
+Streaming trade-offs worth knowing:
+
+- Strings are written inline (`t="inlineStr"`) by default. A shared
+  string table has to live in memory until the workbook closes, which
+  would undo the constant-memory guarantee — pass `inlineStrings: false`
+  when the data is repetitive and file size matters more.
+- Part sizes aren't known when their ZIP headers go out, so entries carry
+  trailing ZIP data descriptors and `[Content_Types].xml` is written last.
+  That's the same layout `archiver`/`zip-stream` emit, which is what
+  ExcelJS's own streaming writer produces. Verified against `hucre`'s
+  reader, ExcelJS, and `unzip`.
+- Zip64 is not emitted, so any single part — and the whole archive — caps
+  at 4 GiB. Crossing it throws rather than writing a broken file.
+- Compression uses the platform `CompressionStream`. Without it, parts are
+  stored uncompressed rather than buffered.
+
 #### Auto-split past Excel's row limit
 
 Pass `maxRowsPerSheet` to spill into `{name}_2`, `{name}_3`, … when the
 data crosses Excel's 1,048,576-row hard limit (default). The captured
 header row is repeated on every rolled sheet.
+
+Both writers do this.
 
 ```ts
 import { XlsxStreamWriter, XLSX_MAX_ROWS_PER_SHEET } from "hucre/xlsx"
@@ -1261,13 +1321,13 @@ hucre works everywhere — no Node.js APIs (`fs`, `crypto`, `Buffer`) in core.
 
 ```
 hucre (~37 KB gzipped)
-├── zip/            Zero-dep DEFLATE/inflate + ZIP read/write
+├── zip/            Zero-dep DEFLATE/inflate + ZIP read/write (+ streaming both ways)
 ├── xml/            SAX parser + XML writer (CSP-compliant, no eval)
 ├── xlsx/
 │   ├── reader      Shared strings, styles, worksheets, relationships
 │   ├── writer      Styles, shared strings, drawing, tables, comments
 │   ├── roundtrip   Open → modify → save with preservation
-│   ├── stream-*    Streaming reader (AsyncGenerator) + writer
+│   ├── stream-*    Streaming reader (AsyncGenerator) + incremental/streaming writers
 │   └── auto-width  Font-aware column width calculation
 ├── ods/            OpenDocument Spreadsheet read/write
 ├── csv/            RFC 4180 parser/writer + streaming
@@ -1309,6 +1369,7 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `openXlsx(input, options?)`        | Open for round-trip (preserves unknown parts)                               |
 | `saveXlsx(workbook)`               | Save round-trip workbook back to XLSX                                       |
 | `streamXlsxRows(input, options?)`  | AsyncGenerator yielding rows one at a time                                  |
+| `writeXlsxStream(options, rows)`   | Constant-memory XLSX writing — returns a `ReadableStream<Uint8Array>`       |
 | `XlsxStreamWriter`                 | Incremental row-by-row XLSX writing; auto-splits past `maxRowsPerSheet`     |
 | `XLSX_MAX_ROWS_PER_SHEET`          | Excel hard row limit (1,048,576) — exported constant                        |
 | `parseExternalLink(xml, relsXml?)` | Parse `xl/externalLinks/externalLinkN.xml` → `ExternalLink`                 |

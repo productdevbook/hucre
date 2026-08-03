@@ -423,6 +423,7 @@ export const WORKER_SAFE_FUNCTIONS: string[] = [
   "hashSheetPassword",
   "streamXlsxRows",
   "XlsxStreamWriter",
+  "writeXlsxStream",
   // ODS
   "readOds",
   "writeOds",
