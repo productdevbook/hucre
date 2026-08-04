@@ -75,7 +75,7 @@ import { readXml, writeXml } from "hucre/xml" // Tabular XML
 | **Styling**             | Yes                  | No (Pro $)    | Yes       | Yes           |
 | **Cond. formatting**    | 13 types<sup>‡</sup> | No (Pro $)    | Yes       | No            |
 | **Stream read + write** | Yes                  | CSV only      | Yes       | CSV only      |
-| **ODS support**         | Yes                  | Yes           | No        | Yes           |
+| **ODS support**         | Yes<sup>§</sup>      | Yes           | No        | Yes           |
 | **Round-trip**          | Yes                  | Partial       | Partial   | Partial       |
 | **Sparklines**          | Yes                  | No            | No        | No            |
 | **Tables**              | Yes                  | Yes           | Yes       | Yes           |
@@ -95,6 +95,12 @@ library (`export * from "hucre"`) = **114 KB**.
 `top10` and `aboveAverage` round-trip in their default form only (the writer
 emits no `rank` / `percent` / `bottom` or `aboveAverage` / `equalAverage` /
 `stdDev` attributes), and `timePeriod` rules are dropped on read.
+
+§ Values, formulas and merges round-trip in full; cell styling covers six
+facets (bold, italic, size, font colour, background colour, number format).
+Borders, alignment, column widths, freeze panes, validation, named ranges,
+images and page setup are not modelled in either direction, so ODS → ODS is
+lossless while XLSX → ODS drops them. See [What ODS carries](#what-ods-carries).
 
 ### vs Libraries in Other Languages
 
@@ -550,6 +556,46 @@ import { readOds, writeOds } from "hucre/ods"
 const wb = await readOds(buffer)
 const ods = await writeOds({ sheets: [{ name: "Sheet1", rows: [["Hello", 42]] }] })
 ```
+
+#### What ODS carries
+
+The ODS reader and writer model the same narrow set, so **ODS → ODS is
+lossless**. The loss shows up when converting _into_ ODS from a format
+that models more, which in practice means XLSX.
+
+|                                                            | ODS                                                                                         |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Cell values — string, number, boolean, date                | yes                                                                                         |
+| Formulas, including the `of:=` translation                 | yes                                                                                         |
+| Merged cells                                               | yes                                                                                         |
+| Cell styles                                                | **six facets only**: bold, italic, font size, font colour, background colour, number format |
+| Document properties                                        | six fields: title, subject, creator, description, keywords, created                         |
+| Borders, alignment, font name, underline, strikethrough    | no                                                                                          |
+| Column widths, row heights, hidden rows and columns        | no                                                                                          |
+| Freeze and split panes, sheet views, tab colour            | no                                                                                          |
+| Data validation, conditional formatting, auto-filter       | no                                                                                          |
+| Named ranges, tables, images, page setup, sheet protection | no                                                                                          |
+| Hidden sheets                                              | no                                                                                          |
+
+So `readXlsx` → `writeOds` keeps values, formulas, merges and those six
+style facets, and drops the rest **silently** — there is no warning,
+because from ODS's side nothing was lost.
+
+Two consequences worth knowing before you rely on it:
+
+- Two cell styles that differ _only_ in an unsupported property (say two
+  different borders) are treated as the same style and share one
+  definition.
+- A cell styled entirely with unsupported properties gets no style
+  reference at all, rather than an empty one.
+
+The reader reads `content.xml` and `meta.xml`. It does not open
+`styles.xml` or `settings.xml`, which is where LibreOffice puts named and
+default cell styles and all page setup — so a LibreOffice-authored file
+reads back with its direct formatting only.
+
+Widening the ODS model is open work; this table is the current contract,
+not a permanent one.
 
 ### Round-trip Preservation
 

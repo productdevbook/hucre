@@ -19,5 +19,11 @@
     "types": []
   },
   "include": ["src", "test"],
-  "exclude": ["src/cli.ts", "src/cli", "test/cli.test.ts", "test/threaded-comments-write.test.ts"]
+  "exclude": [
+    "src/cli.ts",
+    "src/cli",
+    "test/cli.test.ts",
+    "test/threaded-comments-write.test.ts",
+    "test/ods-fidelity.test.ts"
+  ]
 }
