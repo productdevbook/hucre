@@ -25,12 +25,19 @@ export { calculateColumnWidth, measureValueWidth, calculateRowHeight } from "./x
 export { parseThemeColors, resolveThemeColor } from "./xlsx/theme"
 export { streamXlsxRows } from "./xlsx/stream-reader"
 export type { StreamRow } from "./xlsx/stream-reader"
-export { XlsxStreamWriter, writeXlsxStream, XLSX_MAX_ROWS_PER_SHEET } from "./xlsx/stream-writer"
+export {
+  XlsxStreamWriter,
+  writeXlsxStream,
+  writeXlsxStreamSheets,
+  XLSX_MAX_ROWS_PER_SHEET,
+} from "./xlsx/stream-writer"
 export type {
   StreamWriterOptions,
   XlsxStreamWriterOptions,
   XlsxWriteStreamOptions,
+  XlsxWriteStreamWorkbookOptions,
   XlsxStreamRow,
+  XlsxStreamSheet,
 } from "./xlsx/stream-writer"
 export { readXlsxObjects, writeXlsxObjects } from "./xlsx/objects"
 export type {

@@ -21,7 +21,7 @@ import { createSharedStrings, writeSharedStringsXml } from "./worksheet-writer"
 import { cellRef } from "./worksheet-writer"
 import type { SharedStringsCollector } from "./worksheet-writer"
 import { writeThemeXml } from "./theme-writer"
-import { validateSheetName } from "../_validate"
+import { MAX_SHEET_NAME_LENGTH, validateSheetName, validateSheetNames } from "../_validate"
 import { InvalidArgumentError } from "../errors"
 import { dateToSerial } from "../_date"
 import { xmlDocument, xmlDeclaration, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
@@ -98,6 +98,56 @@ export interface XlsxWriteStreamOptions extends StreamWriterOptions {
 /** A streamed row: positional values, or an object read through `columns[].key`. */
 export type XlsxStreamRow = CellValue[] | Record<string, unknown>
 
+/**
+ * One sheet of a streamed workbook, with its own name and layout.
+ *
+ * `rows` is pulled only as the consumer reads, exactly as in
+ * {@link writeXlsxStream} — it is the sheet *list* that is eager, not the
+ * data. See {@link writeXlsxStreamSheets}.
+ */
+export interface XlsxStreamSheet {
+  /**
+   * Sheet name. Must be unique across the workbook, compared
+   * case-insensitively, because Excel compares them that way.
+   */
+  name: string
+  /** Rows for this sheet, pulled on demand. */
+  rows: AsyncIterable<XlsxStreamRow> | Iterable<XlsxStreamRow>
+  /** Column definitions for this sheet. */
+  columns?: ColumnDef[]
+  /** Freeze pane for this sheet. */
+  freezePane?: FreezePane
+  /** Overrides the workbook-level rollover cap for this sheet alone. */
+  maxRowsPerSheet?: number
+  /** Overrides the workbook-level header repetition for this sheet alone. */
+  repeatHeaders?: boolean
+}
+
+/**
+ * Workbook-wide options for {@link writeXlsxStreamSheets}.
+ *
+ * The per-sheet half of {@link XlsxWriteStreamOptions} — `name`,
+ * `columns`, `freezePane` — moves to {@link XlsxStreamSheet}, since a
+ * multi-sheet workbook has one of each *per sheet*. What is left is what
+ * a workbook has exactly one of: the date system, the string strategy,
+ * and the ZIP settings. `maxRowsPerSheet` and `repeatHeaders` stay here
+ * as defaults every sheet inherits unless it sets its own.
+ */
+export interface XlsxWriteStreamWorkbookOptions {
+  /** Date system. Default: "1900" */
+  dateSystem?: "1900" | "1904"
+  /** Default rollover cap; see {@link XlsxWriteStreamOptions.maxRowsPerSheet}. */
+  maxRowsPerSheet?: number
+  /** Default header repetition; see {@link XlsxWriteStreamOptions.repeatHeaders}. */
+  repeatHeaders?: boolean
+  /** See {@link XlsxWriteStreamOptions.inlineStrings}. */
+  inlineStrings?: boolean
+  /** DEFLATE the parts. Default `true`. */
+  compress?: boolean
+  /** See {@link XlsxWriteStreamOptions.zip64}. */
+  zip64?: boolean
+}
+
 /** Excel's hard row limit since Excel 2007 (2^20). */
 export const XLSX_MAX_ROWS_PER_SHEET = 1_048_576
 
@@ -114,6 +164,15 @@ interface RowSerializerOptions {
   columns?: ColumnDef[]
   dateSystem?: "1900" | "1904"
   inlineStrings?: boolean
+  /**
+   * Collectors to write into. A multi-sheet workbook hands the same two
+   * to every sheet's serializer, because `xl/styles.xml` and
+   * `xl/sharedStrings.xml` are workbook-wide parts: a style registered
+   * while serializing sheet 2 has to end up in the same table sheet 1
+   * indexes into. Omitted, each serializer gets its own pair.
+   */
+  styles?: StylesCollector
+  sharedStrings?: SharedStringsCollector
 }
 
 /**
@@ -122,13 +181,15 @@ interface RowSerializerOptions {
  * one of these so their output stays byte-identical.
  */
 class RowSerializer {
-  readonly styles: StylesCollector = createStylesCollector()
-  readonly sharedStrings: SharedStringsCollector = createSharedStrings()
+  readonly styles: StylesCollector
+  readonly sharedStrings: SharedStringsCollector
   private columns: ColumnDef[] | undefined
   private is1904: boolean
   private inlineStrings: boolean
 
   constructor(options: RowSerializerOptions) {
+    this.styles = options.styles ?? createStylesCollector()
+    this.sharedStrings = options.sharedStrings ?? createSharedStrings()
     this.columns = options.columns
     this.is1904 = options.dateSystem === "1904"
     this.inlineStrings = options.inlineStrings ?? false
@@ -312,21 +373,51 @@ function buildSheetPrelude(columns: ColumnDef[] | undefined, freezePane: FreezeP
 function generateSheetNames(baseName: string, count: number): string[] {
   const names: string[] = []
   for (let i = 0; i < count; i++) {
-    if (i === 0) {
-      names.push(truncateSheetName(baseName))
-    } else {
-      const suffix = `_${i + 1}`
-      const room = 31 - suffix.length
-      const base = baseName.length > room ? baseName.slice(0, room) : baseName
-      names.push(base + suffix)
-    }
+    names.push(i === 0 ? truncateSheetName(baseName) : suffixSheetName(baseName, i + 1))
   }
   return names
 }
 
+/** `{baseName}_{ordinal}`, trimmed so the whole name still fits Excel's cap. */
+function suffixSheetName(baseName: string, ordinal: number): string {
+  const suffix = `_${ordinal}`
+  const room = MAX_SHEET_NAME_LENGTH - suffix.length
+  const base = baseName.length > room ? baseName.slice(0, room) : baseName
+  return base + suffix
+}
+
+/**
+ * Name the `part`-th worksheet a single sheet rolled over into, skipping
+ * any name already taken.
+ *
+ * One sheet's rollover can land on a name another sheet declared: a
+ * workbook holding `Data` and `Data_2` rolls `Data` straight into the
+ * name its neighbour owns, and Excel refuses to open a file with two
+ * sheets of the same name. Bumping the ordinal until the name is free
+ * keeps the rollover invisible to callers who never hit it, and keeps
+ * the file valid for the ones who do.
+ */
+function claimSheetName(baseName: string, part: number, taken: Set<string>): string {
+  let ordinal = part + 1
+  let candidate = part === 0 ? truncateSheetName(baseName) : suffixSheetName(baseName, ordinal)
+
+  while (taken.has(candidate.toLowerCase())) {
+    ordinal++
+    candidate = suffixSheetName(baseName, ordinal)
+  }
+
+  taken.add(candidate.toLowerCase())
+  return candidate
+}
+
 /** Build xl/workbook.xml for `count` sheets carrying the base name. */
 function buildWorkbookXml(baseName: string, count: number, dateSystem: "1900" | "1904"): string {
-  const sheetNames = generateSheetNames(baseName, count)
+  return buildWorkbookXmlFor(generateSheetNames(baseName, count), dateSystem)
+}
+
+/** Build xl/workbook.xml for sheets whose names are already resolved. */
+function buildWorkbookXmlFor(sheetNames: string[], dateSystem: "1900" | "1904"): string {
+  const count = sheetNames.length
   const sheetElements: string[] = []
   for (let s = 0; s < count; s++) {
     sheetElements.push(
@@ -600,113 +691,183 @@ export function writeXlsxStream(
   rows: AsyncIterable<XlsxStreamRow> | Iterable<XlsxStreamRow>,
   options: XlsxWriteStreamOptions,
 ): ReadableStream<Uint8Array> {
-  // Validate before returning the stream, not inside the generator.
-  // Generator bodies do not run until first pull, so a deferred throw
-  // would surface only after the caller had already handed the stream to
-  // a Response — too late to do anything about. See #364.
-  validateSheetName(options.name, 0)
-  validateMaxRowsPerSheet(options.maxRowsPerSheet ?? XLSX_MAX_ROWS_PER_SHEET)
+  const { name, columns, freezePane, ...workbook } = options
 
-  return zipStream(xlsxStreamEntries(options, rows), { zip64: options.zip64 })
+  return writeXlsxStreamSheets([{ name, rows, columns, freezePane }], workbook)
+}
+
+/**
+ * Write a multi-sheet XLSX workbook as a byte stream, pulling each
+ * sheet's rows only as the consumer reads.
+ *
+ * {@link writeXlsxStream} streams a single sheet; a workbook that needs
+ * two of them — a report and its rejects, say — had no streaming path at
+ * all and had to fall back to {@link writeXlsx}, which builds the whole
+ * object model first. This keeps the same guarantee across any number of
+ * sheets: peak memory tracks the *distinct styles and strings*, not the
+ * rows.
+ *
+ * ```ts
+ * return new Response(
+ *   writeXlsxStreamSheets([
+ *     { name: "Accepted", rows: accepted, columns },
+ *     { name: "Rejected", rows: rejected, columns },
+ *   ]),
+ *   { headers: { "content-type": XLSX_MIME } },
+ * )
+ * ```
+ *
+ * The sheet *list* is eager while the rows stay lazy. Sheets are few and
+ * their names have to be validated before this returns, for the reason
+ * given in {@link writeXlsxStream}: a generator that throws on first pull
+ * throws after the caller already handed the stream to a `Response`.
+ *
+ * Notes:
+ * - Sheets are written in the order given, and each one is drained before
+ *   the next is pulled — the source for sheet 2 is not touched until
+ *   sheet 1 runs out.
+ * - `xl/styles.xml` and `xl/sharedStrings.xml` are workbook-wide, so a
+ *   style or string is registered once no matter how many sheets use it.
+ * - A sheet past its row cap rolls over exactly as in
+ *   {@link writeXlsxStream}, and the rollover skips names already taken
+ *   by another sheet.
+ */
+export function writeXlsxStreamSheets(
+  sheets: readonly XlsxStreamSheet[],
+  options: XlsxWriteStreamWorkbookOptions = {},
+): ReadableStream<Uint8Array> {
+  if (sheets.length === 0) {
+    throw new InvalidArgumentError("A workbook needs at least one sheet")
+  }
+
+  validateSheetNames(sheets)
+  for (const sheet of sheets) {
+    validateMaxRowsPerSheet(
+      sheet.maxRowsPerSheet ?? options.maxRowsPerSheet ?? XLSX_MAX_ROWS_PER_SHEET,
+    )
+  }
+
+  return zipStream(xlsxStreamEntries(sheets, options), { zip64: options.zip64 })
 }
 
 /** Lazily produce the ZIP entries for a streamed workbook. */
 async function* xlsxStreamEntries(
-  options: XlsxWriteStreamOptions,
-  rows: AsyncIterable<XlsxStreamRow> | Iterable<XlsxStreamRow>,
+  sheets: readonly XlsxStreamSheet[],
+  options: XlsxWriteStreamWorkbookOptions,
 ): AsyncGenerator<ZipStreamEntry> {
   const dateSystem = options.dateSystem ?? "1900"
-  const maxRowsPerSheet = options.maxRowsPerSheet ?? XLSX_MAX_ROWS_PER_SHEET
-  const repeatHeaders = options.repeatHeaders ?? true
   const inlineStrings = options.inlineStrings ?? true
   const compress = options.compress ?? true
-  const columns = options.columns
 
-  const serializer = new RowSerializer({ columns, dateSystem, inlineStrings })
-  const prelude = buildSheetPrelude(columns, options.freezePane).join("")
-  const cursor = createRowCursor(rows)
+  // Workbook-wide parts: every sheet writes into the same two tables.
+  const styles = createStylesCollector()
+  const sharedStrings = createSharedStrings()
 
-  let headerRow = headerFromColumns(columns)
-  let globalRowCount = 0
+  const sheetNames: string[] = []
+  const takenNames = new Set(sheets.map((sheet) => sheet.name.toLowerCase()))
 
-  /** Stream one worksheet, stopping at the row cap or when rows run out. */
-  async function* sheetChunks(sheetIndex: number): AsyncGenerator<Uint8Array> {
-    const chunker = new XmlChunker()
+  for (const sheet of sheets) {
+    const maxRowsPerSheet =
+      sheet.maxRowsPerSheet ?? options.maxRowsPerSheet ?? XLSX_MAX_ROWS_PER_SHEET
+    const repeatHeaders = sheet.repeatHeaders ?? options.repeatHeaders ?? true
 
-    const open =
-      xmlDeclaration() +
-      `<worksheet xmlns="${NS_SPREADSHEET}" xmlns:r="${NS_R}">` +
-      prelude +
-      "<sheetData>"
-    const openChunk = chunker.push(open)
-    if (openChunk) yield openChunk
+    const serializer = new RowSerializer({
+      columns: sheet.columns,
+      dateSystem,
+      inlineStrings,
+      styles,
+      sharedStrings,
+    })
+    const prelude = buildSheetPrelude(sheet.columns, sheet.freezePane).join("")
+    const cursor = createRowCursor(sheet.rows)
 
-    let rowIndex = 0
+    let headerRow = headerFromColumns(sheet.columns)
+    let sheetRowCount = 0
 
-    // Sheet 0 emits the column header as a real row (matching the
-    // incremental writer); later sheets repeat it when asked to.
-    if (headerRow && (sheetIndex === 0 || repeatHeaders)) {
-      const xml = serializer.serializeRow(rowIndex, headerRow)
-      rowIndex++
-      if (sheetIndex === 0) globalRowCount++
-      if (xml) {
-        const chunk = chunker.push(xml)
-        if (chunk) yield chunk
+    /** Stream one worksheet, stopping at the row cap or when rows run out. */
+    async function* sheetChunks(part: number): AsyncGenerator<Uint8Array> {
+      const chunker = new XmlChunker()
+
+      const open =
+        xmlDeclaration() +
+        `<worksheet xmlns="${NS_SPREADSHEET}" xmlns:r="${NS_R}">` +
+        prelude +
+        "<sheetData>"
+      const openChunk = chunker.push(open)
+      if (openChunk) yield openChunk
+
+      let rowIndex = 0
+
+      // The first part emits the column header as a real row (matching the
+      // incremental writer); later parts repeat it when asked to.
+      if (headerRow && (part === 0 || repeatHeaders)) {
+        const xml = serializer.serializeRow(rowIndex, headerRow)
+        rowIndex++
+        if (part === 0) sheetRowCount++
+        if (xml) {
+          const chunk = chunker.push(xml)
+          if (chunk) yield chunk
+        }
       }
+
+      while (rowIndex < maxRowsPerSheet) {
+        const row = await cursor.next()
+        if (row === undefined) break
+
+        const values = Array.isArray(row) ? row : objectToValues(row, requireColumns(sheet.columns))
+
+        // Without column headers the first row doubles as the repeated header.
+        if (sheetRowCount === 0 && !headerRow) {
+          headerRow = values.slice()
+        }
+
+        const xml = serializer.serializeRow(rowIndex, values)
+        rowIndex++
+        sheetRowCount++
+        if (xml) {
+          const chunk = chunker.push(xml)
+          if (chunk) yield chunk
+        }
+      }
+
+      const closeChunk = chunker.push("</sheetData></worksheet>")
+      if (closeChunk) yield closeChunk
+      const tail = chunker.flush()
+      if (tail) yield tail
     }
 
-    while (rowIndex < maxRowsPerSheet) {
-      const row = await cursor.next()
-      if (row === undefined) break
+    try {
+      for (let part = 0; ; part++) {
+        // The declared name is already reserved; a rollover has to claim
+        // a free one.
+        sheetNames.push(
+          part === 0 ? truncateSheetName(sheet.name) : claimSheetName(sheet.name, part, takenNames),
+        )
 
-      const values = Array.isArray(row) ? row : objectToValues(row, requireColumns(columns))
-
-      // Without column headers the first row doubles as the repeated header.
-      if (globalRowCount === 0 && !headerRow) {
-        headerRow = values.slice()
+        yield {
+          path: `xl/worksheets/sheet${sheetNames.length}.xml`,
+          data: sheetChunks(part),
+          compress,
+        }
+        // The ZIP writer drains each entry before pulling the next, so by
+        // now the sheet above is closed and the cursor is positioned on the
+        // first row that didn't fit.
+        if ((await cursor.peek()) === undefined) break
       }
-
-      const xml = serializer.serializeRow(rowIndex, values)
-      rowIndex++
-      globalRowCount++
-      if (xml) {
-        const chunk = chunker.push(xml)
-        if (chunk) yield chunk
-      }
+    } finally {
+      await cursor.close()
     }
-
-    const closeChunk = chunker.push("</sheetData></worksheet>")
-    if (closeChunk) yield closeChunk
-    const tail = chunker.flush()
-    if (tail) yield tail
   }
 
-  let sheetCount = 0
-  try {
-    for (;;) {
-      const sheetIndex = sheetCount++
-      yield {
-        path: `xl/worksheets/sheet${sheetIndex + 1}.xml`,
-        data: sheetChunks(sheetIndex),
-        compress,
-      }
-      // The ZIP writer drains each entry before pulling the next, so by
-      // now the sheet above is closed and the cursor is positioned on the
-      // first row that didn't fit.
-      if ((await cursor.peek()) === undefined) break
-    }
-  } finally {
-    await cursor.close()
-  }
+  const sheetCount = sheetNames.length
+  const hasSharedStrings = sharedStrings.count() > 0
 
-  const hasSharedStrings = serializer.sharedStrings.count() > 0
-
-  yield { path: "xl/styles.xml", data: encoder.encode(serializer.styles.toXml()), compress }
+  yield { path: "xl/styles.xml", data: encoder.encode(styles.toXml()), compress }
 
   if (hasSharedStrings) {
     yield {
       path: "xl/sharedStrings.xml",
-      data: encoder.encode(writeSharedStringsXml(serializer.sharedStrings)),
+      data: encoder.encode(writeSharedStringsXml(sharedStrings)),
       compress,
     }
   }
@@ -715,7 +876,7 @@ async function* xlsxStreamEntries(
 
   yield {
     path: "xl/workbook.xml",
-    data: encoder.encode(buildWorkbookXml(options.name, sheetCount, dateSystem)),
+    data: encoder.encode(buildWorkbookXmlFor(sheetNames, dateSystem)),
     compress,
   }
 
@@ -835,5 +996,5 @@ function objectToValues(item: Record<string, unknown>, columns: ColumnDef[]): Ce
 
 /** Excel sheet names cap at 31 characters. */
 function truncateSheetName(name: string): string {
-  return name.length > 31 ? name.slice(0, 31) : name
+  return name.length > MAX_SHEET_NAME_LENGTH ? name.slice(0, MAX_SHEET_NAME_LENGTH) : name
 }

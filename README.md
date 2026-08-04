@@ -296,7 +296,12 @@ await writeXlsx({
 Process large files row-by-row without loading everything into memory:
 
 ```ts
-import { streamXlsxRows, writeXlsxStream, XlsxStreamWriter } from "hucre/xlsx"
+import {
+  streamXlsxRows,
+  writeXlsxStream,
+  writeXlsxStreamSheets,
+  XlsxStreamWriter,
+} from "hucre/xlsx"
 
 // Stream read — async generator yields rows one at a time
 for await (const row of streamXlsxRows(buffer)) {
@@ -352,6 +357,21 @@ return new Response(
   },
 )
 
+// Stream write, several sheets — same guarantee across a workbook that
+// holds more than one sheet. Each sheet brings its own name, columns and
+// rows; the row sources are pulled one sheet at a time, in order.
+return new Response(
+  writeXlsxStreamSheets([
+    { name: "Accepted", rows: accepted(), columns },
+    { name: "Rejected", rows: rejected(), columns },
+  ]),
+  {
+    headers: {
+      "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    },
+  },
+)
+
 // Incremental write — serializes each row on arrival, but holds the
 // serialized parts until finish() returns one buffer. Use it when you
 // need a Uint8Array anyway; use writeXlsxStream for constant memory.
@@ -368,12 +388,13 @@ const buffer = await writer.finish()
 
 #### Which writer to use
 
-|             | `writeXlsxStream()`             | `XlsxStreamWriter`                |
-| ----------- | ------------------------------- | --------------------------------- |
-| Output      | `ReadableStream<Uint8Array>`    | `Promise<Uint8Array>`             |
-| Rows        | pulled from an (async) iterable | pushed via `addRow` / `addObject` |
-| Peak memory | O(distinct styles) — flat       | O(data)                           |
-| Strings     | inline by default               | shared string table               |
+|             | `writeXlsxStream()`                          | `XlsxStreamWriter`                |
+| ----------- | -------------------------------------------- | --------------------------------- |
+| Output      | `ReadableStream<Uint8Array>`                 | `Promise<Uint8Array>`             |
+| Rows        | pulled from an (async) iterable              | pushed via `addRow` / `addObject` |
+| Peak memory | O(distinct styles) — flat                    | O(data)                           |
+| Strings     | inline by default                            | shared string table               |
+| Sheets      | one, or several with `writeXlsxStreamSheets` | one, plus auto-split parts        |
 
 Measured on 5 columns of mixed text/number/date data, writing to a sink
 that discards the bytes (Node 24):

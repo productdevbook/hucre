@@ -95,6 +95,7 @@ exports[`export surface snapshot > hucre/xlsx 1`] = `
   "writeXlsx",
   "writeXlsxObjects",
   "writeXlsxStream",
+  "writeXlsxStreamSheets",
 ]
 `;
 
@@ -238,6 +239,7 @@ exports[`export surface snapshot > root 1`] = `
   "writeXlsx",
   "writeXlsxObjects",
   "writeXlsxStream",
+  "writeXlsxStreamSheets",
   "writeXml",
 ]
 `;

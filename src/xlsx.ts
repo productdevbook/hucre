@@ -18,12 +18,19 @@ export type { RoundtripWorkbook } from "./xlsx/roundtrip"
 export { hashSheetPassword } from "./xlsx/password"
 export { streamXlsxRows } from "./xlsx/stream-reader"
 export type { StreamRow } from "./xlsx/stream-reader"
-export { XlsxStreamWriter, writeXlsxStream, XLSX_MAX_ROWS_PER_SHEET } from "./xlsx/stream-writer"
+export {
+  XlsxStreamWriter,
+  writeXlsxStream,
+  writeXlsxStreamSheets,
+  XLSX_MAX_ROWS_PER_SHEET,
+} from "./xlsx/stream-writer"
 export type {
   StreamWriterOptions,
   XlsxStreamWriterOptions,
   XlsxWriteStreamOptions,
+  XlsxWriteStreamWorkbookOptions,
   XlsxStreamRow,
+  XlsxStreamSheet,
 } from "./xlsx/stream-writer"
 
 // ── Sizing & theme helpers ─────────────────────────────────────────

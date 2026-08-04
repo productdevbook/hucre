@@ -55,7 +55,12 @@ import type {
 } from "../src/csv"
 import type { OdsObjectsResult, OdsStreamRow } from "../src/ods"
 import type { JsonReadResult, NdjsonStreamWriterOptions } from "../src/json"
-import type { XlsxObjectsResult, XlsxStreamWriterOptions } from "../src/xlsx"
+import type {
+  XlsxObjectsResult,
+  XlsxStreamSheet,
+  XlsxStreamWriterOptions,
+  XlsxWriteStreamWorkbookOptions,
+} from "../src/xlsx"
 
 /** Referencing each type keeps the imports load-bearing rather than unused. */
 type _SurfaceCheck = [
@@ -97,7 +102,9 @@ type _SurfaceCheck = [
   WriteOptions,
   WriteSheet,
   XlsxObjectsResult,
+  XlsxStreamSheet,
   XlsxStreamWriterOptions,
+  XlsxWriteStreamWorkbookOptions,
 ]
 
 /**
@@ -148,7 +155,13 @@ describe("hucre/xlsx", () => {
   it("exports the streaming API", () => {
     expectExports(
       xlsx,
-      ["streamXlsxRows", "XlsxStreamWriter", "writeXlsxStream", "XLSX_MAX_ROWS_PER_SHEET"],
+      [
+        "streamXlsxRows",
+        "XlsxStreamWriter",
+        "writeXlsxStream",
+        "writeXlsxStreamSheets",
+        "XLSX_MAX_ROWS_PER_SHEET",
+      ],
       "hucre/xlsx",
     )
   })
