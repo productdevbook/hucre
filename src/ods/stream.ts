@@ -6,6 +6,7 @@ import { ParseError, ZipError } from "../errors"
 import { assertNotEncrypted, readInputToUint8Array } from "../_input"
 import { ZipReader } from "../zip/reader"
 import { parseSax } from "../xml/parser"
+import { parseOdsDateTime } from "./reader"
 import { MAX_COL_INDEX, MAX_REPEAT_COUNT, MAX_ROW_INDEX } from "../limits"
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -252,10 +253,9 @@ function resolveCellValue(
       if (boolValue === "false") return false
       return null
     case "date":
-      if (dateValue) {
-        const d = new Date(dateValue)
-        if (!Number.isNaN(d.getTime())) return d
-      }
+      // Same UTC reading as readOds — a streamed row must not disagree with
+      // the same file read whole. See #415.
+      if (dateValue) return parseOdsDateTime(dateValue) ?? null
       return null
     case "string":
       return text || ""

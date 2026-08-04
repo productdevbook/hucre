@@ -141,6 +141,8 @@ function parseStyles(doc: XmlElement): Map<string, OdsStyleDef> {
  */
 function parseDataStyles(autoStyles: XmlElement): Map<string, string> {
   const out = new Map<string, string>()
+  /** style name → the sections it maps to, by `<style:map>` condition */
+  const mapped = new Map<string, Array<{ condition: string; target: string }>>()
 
   for (const child of autoStyles.children) {
     if (typeof child === "string") continue
@@ -161,7 +163,41 @@ function parseDataStyles(autoStyles: XmlElement): Map<string, string> {
       const truncate = child.attrs["number:truncate-on-overflow"]
       code = serializeDataStyleChildren(child, "time", truncate === "false")
     }
-    if (code) out.set(name, code)
+    if (!code) continue
+    out.set(name, code)
+
+    const maps = findChildren(child, "map")
+    if (maps.length > 0) {
+      mapped.set(
+        name,
+        maps.map((m) => ({
+          condition: m.attrs["style:condition"] ?? "",
+          target: m.attrs["style:apply-style-name"] ?? "",
+        })),
+      )
+    }
+  }
+
+  // Reassemble Excel's `positive;negative;zero` from the styles a
+  // `<style:map>` chains together. The style a cell points at holds the
+  // negative section, and the maps name the styles for the other two — the
+  // inverse of what getOrCreateDataStyleName writes, and of what
+  // LibreOffice writes.
+  for (const [name, maps] of mapped) {
+    let positive: string | undefined
+    let zero: string | undefined
+    for (const { condition, target } of maps) {
+      const code = out.get(target)
+      if (!code) continue
+      if (condition.includes(">")) positive = code
+      else if (condition.includes("=")) zero = code
+    }
+    // Without a section for the values the main style does not cover, the
+    // maps describe something this reader cannot express — keep the main
+    // style's own code rather than inventing sections around it.
+    if (!positive) continue
+    const negative = out.get(name)!
+    out.set(name, zero ? `${positive};${negative};${zero}` : `${positive};${negative}`)
   }
 
   return out
@@ -329,6 +365,34 @@ function collectText(el: XmlElement): string {
 
 // ── Formula Parsing ─────────────────────────────────────────────────
 
+/** A cell, whole-column or whole-row address, as it appears after the dot. */
+const ODS_ADDRESS = /^\$?(?:[A-Za-z]{1,3}(?:\$?\d+)?|\d+)$/
+
+/**
+ * Convert one side of an OpenFormula reference — everything between the
+ * brackets, or between the brackets and the `:` — to its Excel spelling.
+ * Returns `undefined` when the text is not an address, which is the signal
+ * to leave the reference alone rather than mangle it.
+ */
+function odsAddressToExcel(part: string): string | undefined {
+  // The separator is the *last* dot: a sheet name may contain one
+  // (`['Q1.2024'.A1]`), an address never does.
+  const dot = part.lastIndexOf(".")
+  if (dot < 0) return undefined
+  const address = part.slice(dot + 1)
+  if (!ODS_ADDRESS.test(address)) return undefined
+
+  let sheet = part.slice(0, dot)
+  // An external reference (`['budget.ods'#$Sheet1.A1]`) has no Excel
+  // spelling this reader can produce — leave the whole thing verbatim.
+  if (sheet.includes("#")) return undefined
+  // `$Sheet1` marks the sheet absolute; Excel has no notation for that, and
+  // a cross-sheet reference never shifts on copy anyway.
+  if (sheet.startsWith("$")) sheet = sheet.slice(1)
+
+  return sheet ? `${sheet}!${address}` : address
+}
+
 /**
  * Convert an ODS formula to Excel-style formula.
  * ODS: "of:=SUM([.A1:.A10])" → "SUM(A1:A10)"
@@ -340,13 +404,56 @@ function odsFormulaToExcel(formula: string): string {
   else if (f.startsWith("oooc:=")) f = f.slice(6)
   else if (f.startsWith("=")) f = f.slice(1)
 
-  // Convert [.A1:.B2] → A1:B2 and [.A1] → A1
-  f = f.replace(/\[\.([^\]:.]+)(?::\.([^\]]+))?\]/g, (_match, ref1: string, ref2?: string) => {
-    if (ref2) return `${ref1}:${ref2}`
-    return ref1
-  })
+  // Convert [.A1:.B2] → A1:B2, [.A1] → A1, and the cross-sheet forms
+  // LibreOffice writes — [$Sheet2.A1] / [Sheet2.A1] → Sheet2!A1,
+  // [$Sheet2.A1:.B2] → Sheet2!A1:B2. Matching on a literal `[.` (as this
+  // did) decoded only the local forms and left every cross-sheet reference
+  // in the file as raw ODF text. See #405.
+  //
+  // Split on string literals first, as the writer does, so a bracketed
+  // token inside one is left as the text it is.
+  const parts = f.split(/("(?:[^"]|"")*")/)
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 1) continue
+    parts[i] = parts[i]!.replace(/\[([^\]]*)\]/g, (match, body: string) => {
+      // A sheet name cannot contain `:`, so this only ever splits a range.
+      const halves = body.split(":")
+      if (halves.length > 2) return match
+      const first = odsAddressToExcel(halves[0]!)
+      if (first === undefined) return match
+      if (halves.length === 1) return first
+      const second = odsAddressToExcel(halves[1]!)
+      if (second === undefined) return match
+      return `${first}:${second}`
+    })
+  }
 
-  return f
+  return parts.join("")
+}
+
+// ── Date Parsing ────────────────────────────────────────────────────
+
+/**
+ * Parse an ODF date (`xsd:date` / `xsd:dateTime`), whose zone designator is
+ * optional.
+ *
+ * `new Date(text)` cannot be used directly: ECMAScript reads an unqualified
+ * date-*time* as local but a date-*only* string as UTC. The writer builds
+ * `office:date-value` out of UTC components, so the reader used to shift
+ * every value by the machine's offset — and because the shifted value was
+ * written back out the same way, the error accumulated with each save.
+ * Silent on a UTC machine, one day off after four round trips in Tokyo.
+ * See #415.
+ *
+ * An explicit offset (`...+02:00`, `...Z`) is what the file says and is
+ * honoured; only an unqualified time is taken to mean UTC.
+ */
+export function parseOdsDateTime(text: string): Date | undefined {
+  const trimmed = text.trim()
+  const timeAt = trimmed.indexOf("T")
+  const zoned = timeAt >= 0 && /(?:Z|[+-]\d{2}:?\d{2})$/.test(trimmed.slice(timeAt + 1))
+  const date = new Date(timeAt >= 0 && !zoned ? `${trimmed}Z` : trimmed)
+  return Number.isNaN(date.getTime()) ? undefined : date
 }
 
 // ── Cell Value Parsing ──────────────────────────────────────────────
@@ -382,10 +489,7 @@ function parseCellValue(cell: XmlElement): CellValue {
 
     case "date": {
       const dateVal = cell.attrs["office:date-value"]
-      if (dateVal) {
-        const d = new Date(dateVal)
-        if (!Number.isNaN(d.getTime())) return d
-      }
+      if (dateVal) return parseOdsDateTime(dateVal) ?? null
       return null
     }
 
@@ -718,14 +822,16 @@ function parseMetaXml(xml: string): Partial<WorkbookProperties> {
         break
       case "creation-date":
         if (text) {
-          const d = new Date(text)
-          if (!Number.isNaN(d.getTime())) props.created = d
+          // LibreOffice writes these without a zone designator, so they
+          // need the same UTC reading as office:date-value. See #415.
+          const d = parseOdsDateTime(text)
+          if (d) props.created = d
         }
         break
       case "date":
         if (text) {
-          const d = new Date(text)
-          if (!Number.isNaN(d.getTime())) props.modified = d
+          const d = parseOdsDateTime(text)
+          if (d) props.modified = d
         }
         break
     }

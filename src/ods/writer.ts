@@ -9,7 +9,9 @@ import type {
   WriteSheet,
   Cell,
   CellStyle,
+  FontStyle,
   MergeRange,
+  RichTextRun,
 } from "../_types"
 import { ZipWriter } from "../zip/writer"
 import { validateSheetNames } from "../_validate"
@@ -281,9 +283,80 @@ function buildDateChildren(code: string): string[] {
 }
 
 /**
- * Convert an Excel-style `numFmt` code into an ODS data-style definition.
- * Returns `undefined` for codes the writer cannot translate — those are
- * silently dropped rather than emitting an invalid style.
+ * Split an Excel format code into its `positive;negative;zero;text`
+ * sections. A `;` inside a quoted literal or a bracketed tag is part of the
+ * section, not a separator.
+ */
+function splitFormatSections(code: string): string[] {
+  const sections: string[] = []
+  let current = ""
+  let quoted = false
+  let bracketed = false
+
+  for (let i = 0; i < code.length; i++) {
+    const ch = code[i]!
+    if (ch === "\\" && i + 1 < code.length) {
+      current += ch + code[++i]
+      continue
+    }
+    if (quoted) {
+      current += ch
+      if (ch === '"') quoted = false
+      continue
+    }
+    if (ch === '"') quoted = true
+    else if (ch === "[") bracketed = true
+    else if (ch === "]") bracketed = false
+    else if (ch === ";" && !bracketed) {
+      sections.push(current)
+      current = ""
+      continue
+    }
+    current += ch
+  }
+  sections.push(current)
+  return sections
+}
+
+/** Strip Excel's non-printing directives from a run of literal text. */
+function unquoteLiteral(text: string): string {
+  return (
+    text
+      // `_x` reserves the width of `x`; `*x` repeats `x` to fill the cell —
+      // both are spacing hints with no ODF equivalent and no text of their own.
+      .replace(/[_*]./g, "")
+      .replace(/\\(.)/g, "$1")
+      .replace(/"/g, "")
+  )
+}
+
+/**
+ * The literal text around the `#`/`0` core of a numeric section — the `-`
+ * of `-#,##0.00`, the parentheses of `(#,##0.00)`, a trailing unit. Without
+ * it a negative section renders unsigned, which matters because ODF reaches
+ * that section through a `<style:map>` rather than by negating.
+ */
+function numberLiterals(code: string): { prefix: string; suffix: string } {
+  const first = code.search(/[#0?]/)
+  if (first < 0) return { prefix: unquoteLiteral(code), suffix: "" }
+  let last = first
+  for (let i = code.length - 1; i > first; i--) {
+    if (/[#0?]/.test(code[i]!)) {
+      last = i
+      break
+    }
+  }
+  return {
+    prefix: unquoteLiteral(code.slice(0, first)),
+    suffix: unquoteLiteral(code.slice(last + 1)),
+  }
+}
+
+/**
+ * Convert one section of an Excel-style `numFmt` code into an ODS
+ * data-style definition. Returns `undefined` for sections the writer cannot
+ * translate — those are silently dropped rather than emitting an invalid
+ * style.
  */
 function translateNumFmt(code: string): OdsNumFmtDef | undefined {
   if (!code) return undefined
@@ -292,9 +365,6 @@ function translateNumFmt(code: string): OdsNumFmtDef | undefined {
   // "General" or "@" (text) — no data style needed
   if (trimmed === "General" || trimmed === "@" || trimmed === "") return undefined
 
-  // Take only the first section (before `;`); negative/zero sections are
-  // ODS' `<style:map>` territory and outside this writer's scope.
-  //
   // Excel's built-in date and time codes carry a locale prefix —
   // `[$-409]mmm-yy`, `[$-F800]dddd, mmmm dd, yyyy`. It is a hint about
   // which locale's month and day names to use, not content, and ODF
@@ -303,11 +373,17 @@ function translateNumFmt(code: string): OdsNumFmtDef | undefined {
   // <number:text>, so the code round-tripped as `"["$"-"4""0""9""]"mmm-yy`.
   // A currency symbol written as `[$€-407]` keeps its symbol, because
   // detectCurrencySymbol reads that form before we get here. See #390.
-  const firstSection = trimmed.split(";")[0]!.replace(/\[\$-[^\]]*\]/g, "")
+  //
+  // A colour tag (`[Red]`) is dropped for the same reason — and dropping it
+  // is what keeps `[White]0.00` from being mistaken for a time format by
+  // the bare `h` in "White".
+  const section = trimmed
+    .replace(/\[\$-[^\]]*\]/g, "")
+    .replace(/\[(?:black|blue|cyan|green|magenta|red|white|yellow|color\s*\d+)\]/gi, "")
 
-  if (isPercentageFormat(firstSection)) {
-    const decimals = decimalsFromCode(firstSection)
-    const grouping = hasGrouping(firstSection)
+  if (isPercentageFormat(section)) {
+    const decimals = decimalsFromCode(section)
+    const grouping = hasGrouping(section)
     const children = [
       buildNumberChild(decimals, grouping),
       xmlElement("number:text", undefined, "%"),
@@ -315,26 +391,26 @@ function translateNumFmt(code: string): OdsNumFmtDef | undefined {
     return { kind: "percentage", children }
   }
 
-  const currency = detectCurrencySymbol(firstSection)
+  const currency = detectCurrencySymbol(section)
   if (currency) {
-    const decimals = decimalsFromCode(firstSection)
-    const grouping = hasGrouping(firstSection)
+    const decimals = decimalsFromCode(section)
+    const grouping = hasGrouping(section)
     const symbol = xmlElement("number:currency-symbol", undefined, xmlEscape(currency))
     const number = buildNumberChild(decimals, grouping)
     // Detect symbol position: leading vs trailing
-    const beforeNum = /^[^0#]*(\$|\[\$|"[$€£¥₺₽₹])/.test(firstSection)
+    const beforeNum = /^[^0#]*(\$|\[\$|"[$€£¥₺₽₹])/.test(section)
     const children = beforeNum ? [symbol, number] : [number, symbol]
     return { kind: "currency", children, attrs: { "number:automatic-order": "true" } }
   }
 
-  const time = isTimeFormat(firstSection)
-  const date = isDateFormat(firstSection)
+  const time = isTimeFormat(section)
+  const date = isDateFormat(section)
   // Bracketed-hour durations like `[HH]:MM` are pure time; check time first.
-  const isElapsed = /\[[hHmMsS]+\]/.test(firstSection)
+  const isElapsed = /\[[hHmMsS]+\]/.test(section)
   if (isElapsed || (time && !date)) {
     const def: OdsNumFmtDef = {
       kind: "time",
-      children: buildDateChildren(firstSection),
+      children: buildDateChildren(section),
     }
     // `[H]`, `[M]`, `[S]` request a duration presentation that doesn't wrap
     // at 24h — ODS marks this with `number:truncate-on-overflow="false"`.
@@ -342,13 +418,22 @@ function translateNumFmt(code: string): OdsNumFmtDef | undefined {
     return def
   }
   if (date) {
-    return { kind: "date", children: buildDateChildren(firstSection) }
+    return { kind: "date", children: buildDateChildren(section) }
   }
 
   // Plain number
-  const decimals = decimalsFromCode(firstSection)
-  const grouping = hasGrouping(firstSection)
-  return { kind: "number", children: [buildNumberChild(decimals, grouping)] }
+  const { prefix, suffix } = numberLiterals(section)
+  const children: string[] = []
+  if (prefix) children.push(xmlElement("number:text", undefined, xmlEscape(prefix)))
+  // A section with no `#`/`0` at all is pure literal text — Excel's third
+  // section is often `"-"` for zero — and gets no <number:number> child.
+  if (/[#0?]/.test(section)) {
+    children.push(buildNumberChild(decimalsFromCode(section), hasGrouping(section)))
+  } else if (children.length === 0) {
+    return undefined
+  }
+  if (suffix) children.push(xmlElement("number:text", undefined, xmlEscape(suffix)))
+  return { kind: "number", children }
 }
 
 // ── Style Generation ────────────────────────────────────────────────
@@ -367,23 +452,25 @@ function styleKey(style: CellStyle): string {
   return parts.join("|")
 }
 
+/**
+ * The `<style:text-properties>` attributes a font maps onto. Shared by cell
+ * styles and by the `text`-family styles rich-text runs reference, so a run
+ * and a whole-cell font of the same description serialize identically.
+ */
+function fontTextProps(font: FontStyle | undefined): Record<string, string> {
+  const props: Record<string, string> = {}
+  if (!font) return props
+  if (font.bold) props["fo:font-weight"] = "bold"
+  if (font.italic) props["fo:font-style"] = "italic"
+  if (font.size) props["fo:font-size"] = `${font.size}pt`
+  if (font.color?.rgb) props["fo:color"] = `#${font.color.rgb}`
+  return props
+}
+
 /** Generate a <style:style> element for a cell style */
 function generateStyleElement(name: string, style: CellStyle, dataStyleName?: string): string {
-  const textProps: Record<string, string> = {}
+  const textProps = fontTextProps(style.font)
   const cellProps: Record<string, string> = {}
-
-  if (style.font?.bold) {
-    textProps["fo:font-weight"] = "bold"
-  }
-  if (style.font?.italic) {
-    textProps["fo:font-style"] = "italic"
-  }
-  if (style.font?.size) {
-    textProps["fo:font-size"] = `${style.font.size}pt`
-  }
-  if (style.font?.color?.rgb) {
-    textProps["fo:color"] = `#${style.font.color.rgb}`
-  }
 
   if (style.fill?.type === "pattern" && style.fill.fgColor?.rgb) {
     cellProps["fo:background-color"] = `#${style.fill.fgColor.rgb}`
@@ -418,6 +505,12 @@ interface StyleCollector {
   dataStyleElements: Map<string, string>
   /** Counter for generating unique data-style names */
   dataStyleCounter: number
+  /** Map from font key → text-style name (e.g. "T1"), for rich-text runs */
+  textStyleMap: Map<string, string>
+  /** Map from text-style name → XML element string */
+  textStyleElements: Map<string, string>
+  /** Counter for generating unique text-style names */
+  textStyleCounter: number
 }
 
 function createStyleCollector(): StyleCollector {
@@ -428,24 +521,101 @@ function createStyleCollector(): StyleCollector {
     dataStyleMap: new Map(),
     dataStyleElements: new Map(),
     dataStyleCounter: 100,
+    textStyleMap: new Map(),
+    textStyleElements: new Map(),
+    textStyleCounter: 1,
   }
+}
+
+/**
+ * A `text`-family style for one rich-text run. Runs reference it from
+ * `<text:span text:style-name="T1">`; a run with nothing to say about its
+ * font gets no style and is written as bare text.
+ */
+function getOrCreateTextStyleName(collector: StyleCollector, font: FontStyle): string {
+  const props = fontTextProps(font)
+  if (Object.keys(props).length === 0) return ""
+
+  const key = styleKey({ font })
+  const existing = collector.textStyleMap.get(key)
+  if (existing) return existing
+
+  const name = `T${collector.textStyleCounter++}`
+  collector.textStyleMap.set(key, name)
+  collector.textStyleElements.set(
+    name,
+    xmlElement(
+      "style:style",
+      { "style:name": name, "style:family": "text" },
+      xmlSelfClose("style:text-properties", props),
+    ),
+  )
+  return name
+}
+
+/** Emit one `<number:*-style>` element and return the name it was given. */
+function emitDataStyle(
+  collector: StyleCollector,
+  def: OdsNumFmtDef,
+  extraChildren: string[] = [],
+  isVolatile = false,
+): string {
+  const name = `N${collector.dataStyleCounter++}`
+  const attrs: Record<string, string> = { "style:name": name }
+  // A style only reachable through another style's <style:map> is marked
+  // volatile so consumers keep it even though no cell references it.
+  if (isVolatile) attrs["style:volatile"] = "true"
+  if (def.attrs) Object.assign(attrs, def.attrs)
+
+  collector.dataStyleElements.set(
+    name,
+    xmlElement(`number:${def.kind}-style`, attrs, [...def.children, ...extraChildren]),
+  )
+  return name
 }
 
 function getOrCreateDataStyleName(collector: StyleCollector, numFmt: string): string | undefined {
   const existing = collector.dataStyleMap.get(numFmt)
   if (existing) return existing
 
-  const def = translateNumFmt(numFmt)
-  if (!def) return undefined
+  const sections = splitFormatSections(numFmt)
+  const positive = translateNumFmt(sections[0]!)
+  if (!positive) return undefined
 
-  const name = `N${collector.dataStyleCounter++}`
+  // Excel packs up to four sections into one code — positive;negative;zero;text
+  // — while ODF gives each its own data style and links them from one
+  // "main" style with <style:map>. Keeping only the first section threw the
+  // rest away. See #405.
+  //
+  // The negative section is the main style and the others hang off it, which
+  // is the shape LibreOffice writes: a style reached through a map renders
+  // the value as-is, so the negative section has to carry its own minus.
+  // The fourth (text) section has no ODF counterpart and is dropped.
+  const negative = sections.length > 1 ? translateNumFmt(sections[1]!) : undefined
+  const zero = sections.length > 2 ? translateNumFmt(sections[2]!) : undefined
+
+  let name: string
+  if (!negative) {
+    name = emitDataStyle(collector, positive)
+  } else {
+    const maps = [
+      xmlSelfClose("style:map", {
+        "style:condition": "value()>0",
+        "style:apply-style-name": emitDataStyle(collector, positive, [], true),
+      }),
+    ]
+    if (zero) {
+      maps.push(
+        xmlSelfClose("style:map", {
+          "style:condition": "value()=0",
+          "style:apply-style-name": emitDataStyle(collector, zero, [], true),
+        }),
+      )
+    }
+    name = emitDataStyle(collector, negative, maps)
+  }
+
   collector.dataStyleMap.set(numFmt, name)
-
-  const tag = `number:${def.kind}-style`
-  const attrs: Record<string, string> = { "style:name": name }
-  if (def.attrs) Object.assign(attrs, def.attrs)
-
-  collector.dataStyleElements.set(name, xmlElement(tag, attrs, def.children))
   return name
 }
 
@@ -482,16 +652,34 @@ function getOrCreateStyleName(collector: StyleCollector, style: CellStyle): stri
 // ── Formula Conversion ──────────────────────────────────────────────
 
 /**
+ * The sheet part of an OpenFormula reference. It lives *inside* the
+ * brackets and carries `$` to mark the sheet absolute, the way LibreOffice
+ * writes it: `[$Sheet2.A1]`. A local reference has no sheet part at all,
+ * just the dot: `[.A1]`.
+ */
+function odsSheetLocator(sheet: string | undefined): string {
+  return sheet ? `$${sheet}` : ""
+}
+
+/**
  * Convert an Excel-style formula to ODS formula syntax.
  * ODS formulas use `of:=` prefix and `[.A1]` cell references.
  */
 function excelFormulaToOds(formula: string): string {
   // Convert cell references like A1, $A$1, A1:B2 to ODS [.A1] notation,
-  // handling ranges (A1:B2 → [.A1:.B2]) while leaving function names
-  // (LOG10), string literals ("AB1"), and embedded identifiers untouched.
-  const converted = replaceA1Ranges(formula, (ref1, ref2) =>
-    ref2 ? `[.${ref1}:.${ref2}]` : `[.${ref1}]`,
-  )
+  // handling ranges (A1:B2 → [.A1:.B2]) and cross-sheet references
+  // (Sheet2!A1 → [$Sheet2.A1]) while leaving function names (LOG10),
+  // string literals ("AB1"), and embedded identifiers untouched.
+  //
+  // The whole reference must be bracketed, sheet included — `Sheet2.[.A1]`
+  // parses as nothing at all and LibreOffice refuses to evaluate the
+  // formula. See #405.
+  const converted = replaceA1Ranges(formula, ({ sheet1, ref1, sheet2, ref2 }) => {
+    const start = `${odsSheetLocator(sheet1)}.${ref1}`
+    // The second half of a range normally omits the sheet — it defaults to
+    // the first half's — and only a 3-D range spells one out.
+    return ref2 ? `[${start}:${odsSheetLocator(sheet2)}.${ref2}]` : `[${start}]`
+  })
   return `of:=${converted}`
 }
 
@@ -507,7 +695,54 @@ interface CellContext {
   rowSpan?: number
 }
 
-function cellToOds(value: CellValue, ctx?: CellContext): string {
+/** Serialize rich-text runs as `<text:span>`s, styled per run. */
+function richTextSpans(runs: RichTextRun[], collector: StyleCollector): string {
+  let out = ""
+  for (const run of runs) {
+    const text = xmlEscape(run.text)
+    const styleName = run.font ? getOrCreateTextStyleName(collector, run.font) : ""
+    out += styleName ? xmlElement("text:span", { "text:style-name": styleName }, text) : text
+  }
+  return out
+}
+
+/**
+ * The `<text:p>` holding a cell's visible content: the rich-text runs when
+ * the cell has any, otherwise `display`.
+ *
+ * In ODF the anchor of a hyperlink *is* the cell's text, so a link on a
+ * number, a date or a boolean is written exactly like one on a string —
+ * the typed value stays in `office:value` / `office:date-value` beside it.
+ * `Hyperlink.display` therefore replaces the text rather than sitting next
+ * to it as it does in OOXML; a string cell whose display text differs from
+ * its value reads back as the display text, because that is the only text
+ * the format stores.
+ */
+function cellTextP(
+  display: string,
+  ctx: CellContext | undefined,
+  collector: StyleCollector,
+): string {
+  const runs = ctx?.cellOverride?.richText
+  const hyperlink = ctx?.cellOverride?.hyperlink
+
+  let content = runs && runs.length > 0 ? richTextSpans(runs, collector) : xmlEscape(display)
+  if (hyperlink) {
+    const anchor = hyperlink.display !== undefined ? xmlEscape(hyperlink.display) : content
+    content = xmlElement(
+      "text:a",
+      { "xlink:href": hyperlink.target, "xlink:type": "simple" },
+      anchor,
+    )
+  }
+  return xmlElement("text:p", undefined, content)
+}
+
+function cellToOds(
+  value: CellValue,
+  ctx: CellContext | undefined,
+  collector: StyleCollector,
+): string {
   const attrs: Record<string, string> = {}
   const children: string[] = []
 
@@ -529,8 +764,26 @@ function cellToOds(value: CellValue, ctx?: CellContext): string {
 
   // Hyperlink
   const hyperlink = ctx?.cellOverride?.hyperlink
+  const richText = ctx?.cellOverride?.richText
+
+  // A rich-text cell keeps its content in the runs and carries no scalar
+  // value, so every branch below would have skipped it and written an empty
+  // cell — the text simply vanished from content.xml. The runs win over
+  // `value` the same way they do in the XLSX writer. See #405.
+  if (richText && richText.length > 0) {
+    attrs["office:value-type"] = "string"
+    children.push(cellTextP("", ctx, collector))
+    return xmlElement("table:table-cell", attrs, children)
+  }
 
   if (value === null || value === undefined) {
+    // A hyperlink with its own display text still has something to show in
+    // an otherwise empty cell; a bare target has no anchor text to use.
+    if (hyperlink?.display !== undefined) {
+      attrs["office:value-type"] = "string"
+      children.push(cellTextP("", ctx, collector))
+      return xmlElement("table:table-cell", attrs, children)
+    }
     if (Object.keys(attrs).length === 0) {
       return xmlSelfClose("table:table-cell")
     }
@@ -539,16 +792,7 @@ function cellToOds(value: CellValue, ctx?: CellContext): string {
 
   if (typeof value === "string") {
     attrs["office:value-type"] = "string"
-    if (hyperlink) {
-      const linkEl = xmlElement(
-        "text:a",
-        { "xlink:href": hyperlink.target, "xlink:type": "simple" },
-        xmlEscape(value),
-      )
-      children.push(xmlElement("text:p", undefined, linkEl))
-    } else {
-      children.push(xmlElement("text:p", undefined, xmlEscape(value)))
-    }
+    children.push(cellTextP(value, ctx, collector))
     return xmlElement("table:table-cell", attrs, children)
   }
 
@@ -561,14 +805,14 @@ function cellToOds(value: CellValue, ctx?: CellContext): string {
     }
     attrs["office:value-type"] = "float"
     attrs["office:value"] = String(value)
-    children.push(xmlElement("text:p", undefined, formatNumberDisplay(value)))
+    children.push(cellTextP(formatNumberDisplay(value), ctx, collector))
     return xmlElement("table:table-cell", attrs, children)
   }
 
   if (typeof value === "boolean") {
     attrs["office:value-type"] = "boolean"
     attrs["office:boolean-value"] = value ? "true" : "false"
-    children.push(xmlElement("text:p", undefined, value ? "TRUE" : "FALSE"))
+    children.push(cellTextP(value ? "TRUE" : "FALSE", ctx, collector))
     return xmlElement("table:table-cell", attrs, children)
   }
 
@@ -582,7 +826,7 @@ function cellToOds(value: CellValue, ctx?: CellContext): string {
     const dateStr = formatOdsDateValue(value)
     attrs["office:value-type"] = "date"
     attrs["office:date-value"] = dateStr
-    children.push(xmlElement("text:p", undefined, dateStr))
+    children.push(cellTextP(dateStr, ctx, collector))
     return xmlElement("table:table-cell", attrs, children)
   }
 
@@ -737,7 +981,7 @@ function rowToOds(
       }
     }
 
-    cellElements.push(cellToOds(cell, ctx))
+    cellElements.push(cellToOds(cell, ctx, styleCollector))
     i++
   }
 
@@ -856,6 +1100,7 @@ function writeContentXml(options: WriteOptions): string {
   const allStyleParts: string[] = [
     ...styleCollector.dataStyleElements.values(),
     ...styleCollector.styleElements.values(),
+    ...styleCollector.textStyleElements.values(),
   ]
   const styleXml =
     allStyleParts.length > 0

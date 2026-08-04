@@ -20,25 +20,75 @@ export { colToLetter, cellRef, rangeRef } from "./xlsx/worksheet-writer"
  */
 const A1_REF_TOKEN = /(?<![A-Za-z0-9_$])(\$?[A-Z]{1,3}\$?\d+)(?![A-Za-z0-9_(])/g
 
-/** Like {@link A1_REF_TOKEN} but also captures an optional `:ref2` range tail. */
-const A1_RANGE_TOKEN =
-  /(?<![A-Za-z0-9_$])(\$?[A-Z]{1,3}\$?\d+)(?::(\$?[A-Z]{1,3}\$?\d+))?(?![A-Za-z0-9_(])/g
+/**
+ * The sheet a reference is qualified with, written either Excel's way
+ * (`Sheet2!A1`, `'My Sheet'!A1`) or with the dot separator OpenFormula and
+ * LibreOffice's UI use (`Sheet2.A1`). A name needing quotes is quoted the
+ * same way in both dialects — single quotes, an embedded quote doubled —
+ * so the quoted form passes through untouched.
+ */
+const SHEET_QUALIFIER = "(?:\\$?(?:'(?:[^']|'')*'|[A-Za-z_][A-Za-z0-9_]*)[.!])?"
+
+/** The reference itself, as matched inside {@link A1_RANGE_TOKEN}. */
+const A1_REF = "\\$?[A-Z]{1,3}\\$?\\d+"
+
+/**
+ * Like {@link A1_REF_TOKEN} but also captures the sheet qualifier of each
+ * reference and an optional `:ref2` range tail. The qualifier has to be part
+ * of the match, not something the caller finds afterwards: a consumer that
+ * only ever sees `A1` cannot tell `Sheet2!A1` from `A1`, and the ODS writer
+ * used to prove it by emitting `Sheet2.[.A1]` — brackets around the cell but
+ * not the sheet, which is not a reference ODF recognises. The lookbehind
+ * also rejects a preceding `.`/`!` so that a qualifier this pattern failed
+ * to parse can never be left outside the match.
+ */
+const A1_RANGE_TOKEN = new RegExp(
+  `(?<![A-Za-z0-9_$.!])(${SHEET_QUALIFIER})(${A1_REF})(?::(${SHEET_QUALIFIER})(${A1_REF}))?(?![A-Za-z0-9_(])`,
+  "g",
+)
+
+/** One A1 reference or range matched by {@link replaceA1Ranges}. */
+export interface A1RangeMatch {
+  /** Sheet qualifier of the first ref, separator stripped — `undefined` when the ref is local. */
+  sheet1?: string
+  ref1: string
+  /** Sheet qualifier of the second ref; only a 3-D range such as `Sheet1!A1:Sheet3!B2` has one. */
+  sheet2?: string
+  /** Present only for a range. */
+  ref2?: string
+}
+
+/** Strip the `.`/`!` separator and the `$` of an absolute sheet locator. */
+function normalizeQualifier(raw: string): string | undefined {
+  if (!raw) return undefined
+  const name = raw.slice(0, -1)
+  return name.startsWith("$") ? name.slice(1) : name
+}
 
 /**
  * Run a replacer over the A1 cell references / ranges in an Excel formula,
  * skipping quoted string literals, function names, and embedded
  * identifiers (same safety rules as {@link replaceA1Refs}). `replacer`
- * receives the first ref and, for a range, the second; it returns the
- * full replacement for the matched span.
+ * receives the reference's parts and returns the full replacement for the
+ * matched span, sheet qualifier included.
  */
 export function replaceA1Ranges(
   formula: string,
-  replacer: (ref1: string, ref2?: string) => string,
+  replacer: (match: A1RangeMatch) => string,
 ): string {
   const parts = formula.split(/("(?:[^"]|"")*")/)
   for (let i = 0; i < parts.length; i++) {
     if (i % 2 === 1) continue
-    parts[i] = parts[i].replace(A1_RANGE_TOKEN, (_m, r1: string, r2?: string) => replacer(r1, r2))
+    parts[i] = parts[i].replace(
+      A1_RANGE_TOKEN,
+      (_m, q1: string, r1: string, q2?: string, r2?: string) =>
+        replacer({
+          sheet1: normalizeQualifier(q1),
+          ref1: r1,
+          sheet2: q2 ? normalizeQualifier(q2) : undefined,
+          ref2: r2,
+        }),
+    )
   }
   return parts.join("")
 }
