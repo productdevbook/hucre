@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import * as root from "../src/index"
 import {
   DefterError,
+  fromHtml,
   HucreError,
   InvalidArgumentError,
   jsonToWorkbook,
@@ -191,6 +192,46 @@ describe("readObjects and sheetToObjects return { data, headers }", () => {
   it("throws ParseError for a missing sheet instead of returning []", async () => {
     const buf = await writeXlsx({ sheets: [{ name: "S", rows: [["a"]] }] })
     await expect(readObjects(buf, { sheet: "nope" })).rejects.toThrow(HucreError)
+  })
+})
+
+// ── "fromHtml reads cell text the way parseCsv does" ────────────────
+
+describe("fromHtml reads cell text the way parseCsv does", () => {
+  const cell = (text: string) => fromHtml(`<table><tr><td>${text}</td></tr></table>`).rows[0][0]
+
+  it("keeps leading zeros instead of turning 007 into 7", () => {
+    expect(cell("007")).toBe("007")
+  })
+
+  it("matches the guide's before/after table", () => {
+    expect(cell("0x1A")).toBe("0x1A")
+    expect(cell("Infinity")).toBe("Infinity")
+    expect(cell("1,234")).toBe(1234)
+    expect(cell("true")).toBe(true)
+    expect(cell("2024-01-15")).toBeInstanceOf(Date)
+  })
+
+  it("defaults typeInference to true, where parseCsv defaults it to false", () => {
+    expect(cell("42")).toBe(42)
+    expect(parseCsv("42")[0][0]).toBe("42")
+  })
+
+  it("returns cell text exactly as written under typeInference: false", () => {
+    const rows = fromHtml("<table><tr><td>42</td></tr></table>", { typeInference: false }).rows
+    expect(rows[0][0]).toBe("42")
+  })
+
+  it("surfaces a header row and a caption on sheet.a11y", () => {
+    const sheet = fromHtml(
+      "<table><caption>Sales</caption><thead><tr><th>A</th></tr></thead>" +
+        "<tbody><tr><td>1</td></tr></tbody></table>",
+    )
+    expect(sheet.a11y).toEqual({ summary: "Sales", headerRow: 0 })
+  })
+
+  it("returns the rows it read instead of throwing on malformed markup", () => {
+    expect(fromHtml("<table><tr><td>a</td></tr></table><!-- unterminated").rows).toEqual([["a"]])
   })
 })
 

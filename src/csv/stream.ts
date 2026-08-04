@@ -14,50 +14,12 @@
 import type { CellValue, CsvReadOptions, CsvWriteOptions } from "../_types"
 import { stripBom, detectDelimiter } from "./reader"
 import { escapeFormula, unescapeFormula } from "./formula"
-import { reviveIsoDate } from "../_date"
+import { inferType } from "../_infer"
 
 const TEXT_ENCODER = /* @__PURE__ */ new TextEncoder()
 
 /** Flush the line accumulator once it crosses this many characters. */
 const CHUNK_THRESHOLD = 64 * 1024
-
-// ── Type inference (duplicated from reader to avoid coupling) ────────
-// The date rule is the one part that is *not* duplicated: it lives in
-// `_date.ts` so CSV, streaming CSV and JSON all accept the same instants.
-
-function inferType(value: string, preserveLeadingZeros: boolean): CellValue {
-  const trimmed = value.trim()
-  if (trimmed === "") return value
-
-  // Only literal true/false — "yes"/"no" collide with real data (ISO code
-  // "NO", survey columns) and are left as strings. Mirrors parseCsv.
-  const lower = trimmed.toLowerCase()
-  if (lower === "true") return true
-  if (lower === "false") return false
-
-  const asDate = reviveIsoDate(trimmed)
-  if (asDate) return asDate
-
-  // Leading-zero preservation: keep strings like "0123", "007" as strings
-  // (aligns with parseCsv's default behaviour).
-  if (preserveLeadingZeros && trimmed.length > 1 && trimmed[0] === "0" && trimmed[1] !== ".") {
-    return value
-  }
-
-  const asNumber = parseNumber(trimmed)
-  if (asNumber !== null) return asNumber
-
-  return value
-}
-
-function parseNumber(s: string): number | null {
-  const stripped = s.replace(/,(\d{3})/g, "$1")
-  if (stripped === "" || stripped === "-" || stripped === "+") return null
-  if (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(stripped)) return null
-  const n = Number(stripped)
-  if (Number.isNaN(n) || !Number.isFinite(n)) return null
-  return n
-}
 
 // ── Helpers ──────────────────────────────────────────────────────────
 

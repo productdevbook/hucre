@@ -1111,7 +1111,7 @@ moveSheet(workbook, 0, 2) // Reorder sheets
 import { toHtml, toMarkdown } from "hucre"
 
 const html = toHtml(workbook.sheets[0], {
-  headerRow: true,
+  hasHeaderRow: true,
   styles: true,
   classes: true,
 })
@@ -1120,6 +1120,61 @@ const md = toMarkdown(workbook.sheets[0])
 // | Name   | Price  | Stock |
 // |--------|-------:|------:|
 // | Widget |   9.99 |   142 |
+```
+
+**Markdown is terminal output, not interchange.** `toMarkdown` truncates any
+cell over `maxWidth` characters (default 50) with a `...` suffix and turns
+newlines into `<br>`. Both are one-way, and there is no `fromMarkdown` —
+nor will there be. Use CSV or JSON to move data.
+
+### Reading HTML tables
+
+`fromHtml` parses a table — anyone's table, not just hucre's — into a sheet:
+
+```ts
+import { fromHtml } from "hucre"
+
+const sheet = fromHtml(scrapedHtml, {
+  sheetName: "Scraped",
+  typeInference: true, // default: numbers, booleans and ISO dates from text
+  preserveLeadingZeros: true, // default: "007" stays a string
+})
+```
+
+It reads `<table>`, `<thead>`, `<tbody>`, `<tfoot>`, `<tr>`, `<td>`, `<th>`,
+`<caption>`, `colspan` and `rowspan`. Nested tables read as the text of the
+cell holding them, and markup the scanner cannot finish (an unterminated
+comment, a truncated tag) ends the parse there and returns the rows read so
+far rather than throwing.
+
+**`fromHtml` is not the inverse of `toHtml`.** HTML export is presentation
+output; the table it writes is meant for a browser, and most of what makes it
+readable there has no way back into a sheet:
+
+| `toHtml` writes                                    | `fromHtml` reads          |
+| -------------------------------------------------- | ------------------------- |
+| `colspan` / `rowspan`                              | ✅ `sheet.merges`         |
+| `<thead>`, or a row of all `<th>`                  | ✅ `sheet.a11y.headerRow` |
+| `<caption>`                                        | ✅ `sheet.a11y.summary`   |
+| `hucre-num` / `-bool` / `-date` / `-null` classes  | ✅ the cell's type        |
+| inline `style=` (fonts, fills, borders, alignment) | ❌ not read               |
+| the `<style>` block                                | ❌ not read               |
+| `role` / `aria-label`                              | ❌ not read               |
+
+So values, structure and types survive a round trip through hucre's own HTML;
+formatting does not. Two other asymmetries worth knowing: cell text is trimmed
+on read (whitespace around a `<td>` is indentation, not data) while `toHtml`
+writes values as they are, and a `Date` is written as `YYYY-MM-DD`, so the
+time of day is gone before the reader ever sees it.
+
+Re-exporting a sheet that came from HTML keeps the structure if you hand the
+two a11y hints back:
+
+```ts
+const again = toHtml(sheet, {
+  hasHeaderRow: sheet.a11y?.headerRow === 0,
+  caption: sheet.a11y?.summary,
+})
 ```
 
 ### Number Format Renderer
@@ -1684,13 +1739,13 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 
 ### Export
 
-| Function                      | Description                                      |
-| ----------------------------- | ------------------------------------------------ |
-| `toHtml(sheet, options?)`     | HTML `<table>` with styles, a11y, dark/light CSS |
-| `toMarkdown(sheet, options?)` | Markdown table with auto-alignment               |
-| `toJson(sheet, options?)`     | JSON (objects, arrays, or columns format)        |
-| `fromHtml(html, options?)`    | Parse HTML table string → Sheet                  |
-| `writeTsv(rows, options?)`    | Write TSV (tab-separated)                        |
+| Function                      | Description                                                                                        |
+| ----------------------------- | -------------------------------------------------------------------------------------------------- |
+| `toHtml(sheet, options?)`     | HTML `<table>` with styles, a11y, dark/light CSS                                                   |
+| `toMarkdown(sheet, options?)` | Markdown table, auto-alignment — output only, and truncating                                       |
+| `toJson(sheet, options?)`     | JSON (objects, arrays, or columns format)                                                          |
+| `fromHtml(html, options?)`    | Parse HTML table string → Sheet (values, structure and types — [not styles](#reading-html-tables)) |
+| `writeTsv(rows, options?)`    | Write TSV (tab-separated)                                                                          |
 
 ### Builder
 

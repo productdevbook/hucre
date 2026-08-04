@@ -15,6 +15,7 @@ If a change here breaks something and the reason isn't clear, please open an iss
 | [`hasHeaderRow` on the exporters](#hasheaderrow-on-tohtml-and-tomarkdown)                            | you pass `headerRow` to `toHtml` / `toMarkdown`                                                   |
 | [`streamCsvRows` header handling](#streamcsvrows-matches-parsecsv)                                   | you call `streamCsvRows({ header: true })`                                                        |
 | [`readObjects` / `sheetToObjects` return shape](#readobjects-and-sheettoobjects-return-data-headers) | you call either                                                                                   |
+| [`fromHtml` type inference](#fromhtml-reads-cell-text-the-way-parsecsv-does)                         | you call `fromHtml` on tables with codes, IDs, booleans or dates                                  |
 | [`HucreError`](#deftererror-is-now-hucreerror)                                                       | nothing — the old name still works                                                                |
 | [`readNdjsonStream`](#readndjsonstream-is-now-streamndjsonrows)                                      | nothing — the old name still works                                                                |
 | [Sheet names are validated](#sheet-names-are-validated-on-write)                                     | you write sheet names with `: * ? / \ [ ]`, over 31 chars, or duplicates                          |
@@ -95,6 +96,30 @@ Three smaller behaviour changes come with `readObjects` joining the family — i
 - empty-string header keys are **kept** (only `readObjects` dropped them)
 - fully empty rows are **skipped** by default
 - a missing sheet **throws** `ParseError` instead of returning `[]`
+
+## `fromHtml` reads cell text the way `parseCsv` does
+
+`fromHtml` ran a bare `Number()` on every cell, with no way to turn it off, so a scraped table of ZIP codes or product codes came back as arithmetic. It now shares one inference implementation with `parseCsv` and takes the same two options under the same names.
+
+```diff
+- fromHtml("<table><tr><td>007</td></tr></table>").rows   // [[7]]
++ fromHtml("<table><tr><td>007</td></tr></table>").rows   // [["007"]]
+```
+
+Every difference points the same way — less coercion, except where a value was previously left as a string that no spreadsheet would call one:
+
+| cell text    | before         | now                                            |
+| ------------ | -------------- | ---------------------------------------------- |
+| `007`        | `7`            | `"007"` — `preserveLeadingZeros`, default true |
+| `0x1A`       | `26`           | `"0x1A"` — hex, binary and octal are not cells |
+| `Infinity`   | `Infinity`     | `"Infinity"`                                   |
+| `1,234`      | `"1,234"`      | `1234`                                         |
+| `true`       | `"true"`       | `true`                                         |
+| `2024-01-15` | `"2024-01-15"` | a `Date`                                       |
+
+`typeInference` defaults to **true** here, where `parseCsv` defaults it to false. A CSV field is text and quoting can say so; an HTML table has no such convention, `fromHtml` has always coerced, and returning `"42"` for `<td>42</td>` would restring every existing caller's data silently. Pass `typeInference: false` for cell text exactly as written.
+
+Two additions come with it. A `<thead>` row (or a row of all `<th>`) now sets `sheet.a11y.headerRow`, and `<caption>` text becomes `sheet.a11y.summary` — a sheet from `fromHtml` may now carry an `a11y` object where it carried none. And malformed markup no longer throws: `fromHtml` is documented as best-effort, and it now behaves that way, returning the rows it read instead of an `XmlError`. If you wrapped it in a `try`/`catch` for that, the `catch` is dead code.
 
 ## `DefterError` is now `HucreError`
 
@@ -235,7 +260,7 @@ Several inputs could previously hang or kill the process. If you accept uploads,
 - ODS `<text:s text:c>` and `number:decimal-places` could allocate gigabytes
 - `read(response.body)` had **no size ceiling** at all; there is now `ReadOptions.maxInputBytes`, defaulting to 1 GiB
 - the zip-bomb cap covered only 3 of 4 decompression paths
-- `fromHtml` could hang on a hostile `rowspan` × `colspan`
+- `fromHtml` could hang on a hostile `rowspan` × `colspan`, and 175 KB of `<td colspan="16384">` still allocated 82 million array slots; the cells a table describes are now counted against `MAX_TOTAL_CELLS` and the rowspan reservations against `MAX_SPAN_CELLS`, both throwing `ParseError`
 
 Very large legitimate files may now hit a limit that used to be absent. Every one is a named constant in `src/limits.ts`, and the errors say which.
 

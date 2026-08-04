@@ -63,13 +63,17 @@ export const MAX_TOTAL_CELLS = 20_000_000
 export const MAX_REPEAT_COUNT = 100_000
 
 /**
- * Cap on the number of grid cells one HTML table cell may reserve
- * through `rowspan` x `colspan`.
+ * Cap on the number of grid cells reserved through `rowspan` x `colspan`
+ * while reading an HTML table — both by one cell and by the document as a
+ * whole.
  *
  * The reservation is a nested loop of Set insertions, so the cost is the
  * product — clamping each span on its own still leaves 16,384 x
  * 1,048,576. `fromHtml` exists to consume markup the caller did not
  * write, which makes this the cheapest hang in the library to trigger.
+ * The per-cell bound alone was not enough either: a page of three
+ * thousand `rowspan="1000000"` cells pays it three thousand times over,
+ * so the live reservation set is held to the same ceiling.
  */
 export const MAX_SPAN_CELLS = 1_000_000
 

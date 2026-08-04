@@ -259,7 +259,12 @@ export type { SheetObjectsResult, SheetToObjectsOptions } from "./sheet-utils"
 
 // ── Export (HTML / Markdown / JSON / TSV) ────────────────────────────
 export { toHtml, toMarkdown, toJson, fromHtml } from "./export/index"
-export type { HtmlExportOptions, MarkdownExportOptions, JsonExportOptions } from "./export/index"
+export type {
+  HtmlExportOptions,
+  HtmlImportOptions,
+  MarkdownExportOptions,
+  JsonExportOptions,
+} from "./export/index"
 export { writeTsv, writeTsvObjects } from "./export/tsv"
 
 // ── Image Utilities ──────────────────────────────────────────────
