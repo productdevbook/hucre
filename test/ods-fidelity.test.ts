@@ -109,13 +109,13 @@ describe("the facets the README says are not carried", () => {
 
 describe("ODS → ODS is lossless, which is the point of the table", () => {
   it("returns everything it wrote", async () => {
-    // Dates are excluded here on purpose: they drift by the local UTC
-    // offset on every round trip, cumulatively, because the writer emits
-    // UTC components and the reader parses the unqualified string as
-    // local time. Tracked as #415 — asserting the drift here would pin
-    // the bug, and asserting the fix would fail until it lands.
+    // Dates are back in as of #415. They used to drift by the local UTC
+    // offset on every round trip, cumulatively — the writer emitted UTC
+    // components and the reader parsed the unqualified string as local
+    // time — which is silent on a UTC machine and so invisible to CI.
+    // Keep them here: this assertion is the one that would notice.
     const buf = await writeOds({
-      sheets: [{ name: "S", rows: [["a", 1, true, null]] }],
+      sheets: [{ name: "S", rows: [["a", 1, true, new Date(Date.UTC(2024, 0, 15))]] }],
     })
     const first = await readOds(buf)
     const second = await readOds(await writeOds({ sheets: first.sheets as never }))
