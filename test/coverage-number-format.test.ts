@@ -417,6 +417,43 @@ describe("formatValue — Excel parity", () => {
     expect(formatValue(2.5, "? ?/?")).toBe("2 1/2")
   })
 
+  // ── #397 ──────────────────────────────────────────────────────────
+  //
+  // With no placeholder at all ahead of the slash there is nowhere to put
+  // the whole part, so Excel folds it into the numerator: the fraction is
+  // improper. Formatting the remainder alone dropped it — 2.5 read back as
+  // one half.
+  it("folds the whole part into the numerator when the format has no integer slot", () => {
+    expect(formatValue(2.5, "??/??")).toBe(" 5/ 2")
+    expect(formatValue(2.5, "??/2")).toBe(" 5/2")
+  })
+
+  it("keeps the sign of an improper fraction", () => {
+    expect(formatValue(-2.5, "??/??")).toBe("- 5/ 2")
+  })
+
+  // A whole number under an improper format still has to render as a
+  // fraction — "??/??" has no other place to show it.
+  it("gives a whole number a denominator of one under an improper format", () => {
+    expect(formatValue(3, "??/??")).toBe(" 3/ 1")
+  })
+
+  // A denominator the format fixes can round the remainder away: 0.1 over
+  // halves is 0. Excel renders the whole part rather than a zero numerator
+  // — it never shows "3 0/2". The whole-number path is shared, so 3.1 and
+  // 3 print alike under "# ?/2".
+  it("drops the fraction area when the remainder rounds to a zero numerator", () => {
+    expect(formatValue(3.1, "# ?/2")).toBe("3")
+    expect(formatValue(3.1, "# ?/2")).toBe(formatValue(3, "# ?/2"))
+    expect(formatValue(-3.1, "# ?/2")).toBe("-3")
+  })
+
+  // The remainder only rounds away against a coarse denominator; a search
+  // that can reach the value still renders a fraction.
+  it("still renders a fraction when the denominator can represent the remainder", () => {
+    expect(formatValue(3.1, "# ??/??")).toBe("3  1/10")
+  })
+
   // "?" renders insignificant decimals as spaces so decimal points line up
   // down a column, where "0" would render them as zeros.
   it("pads insignificant decimals with spaces for a ? placeholder", () => {

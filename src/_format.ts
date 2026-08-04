@@ -410,23 +410,24 @@ function isFractionFormat(fmt: string): boolean {
 }
 
 function formatFraction(value: number, fmt: string): string {
-  const intPart = Math.trunc(value)
-  let frac = Math.abs(value - intPart)
-
-  if (frac === 0) {
-    // Show integer only for whole numbers
-    const showInt = fmt.includes("#") || /^[0?]/.test(fmt.trim())
-    if (showInt && intPart !== 0) {
-      return String(intPart)
-    }
-    return String(intPart) + "      " // padded like Excel
-  }
-
   // Determine denominator precision from format
   const fracMatch = fmt.match(FRACTION_PARTS)
   if (!fracMatch) {
     return String(value)
   }
+
+  // A whole part is only rendered when the format has a placeholder in front
+  // of the fraction — "?" counts just as much as "#" and "0" ("? ?/?" is a
+  // mixed number, "??/??" is improper.)
+  const wholeFmt = fmt.slice(0, fracMatch.index)
+  const hasIntPart = /[#0?]/.test(wholeFmt)
+
+  const intPart = Math.trunc(value)
+  // With no whole-part placeholder there is nowhere to put the integer, so
+  // Excel folds it into the numerator: 2.5 under "??/??" is "5/2", not
+  // "1/2". Formatting the remainder alone would drop the whole part
+  // silently — a different number, not a different presentation. See #397.
+  const target = hasIntPart ? Math.abs(value - intPart) : Math.abs(value)
 
   const denomLen = fracMatch[2].length
 
@@ -436,22 +437,34 @@ function formatFraction(value: number, fmt: string): string {
   let bestNum: number
   let bestDen: number
 
-  if (fixedDenom > 0) {
+  if (target === 0) {
+    bestNum = 0
+    bestDen = fixedDenom > 0 ? fixedDenom : 1
+  } else if (fixedDenom > 0) {
     bestDen = fixedDenom
-    bestNum = Math.round(frac * fixedDenom)
+    bestNum = Math.round(target * fixedDenom)
   } else {
     // Find best fraction with denominator up to 10^denomLen
     const maxDen = Math.pow(10, denomLen) - 1
-    const result = findBestFraction(frac, maxDen)
+    const result = findBestFraction(target, maxDen)
     bestNum = result.num
     bestDen = result.den
   }
 
-  // Build the formatted string. A whole part is only rendered when the
-  // format has a placeholder in front of the fraction — "?" counts just as
-  // much as "#" and "0" ("? ?/?" is a mixed number, "??/??" is improper.)
-  const wholeFmt = fmt.slice(0, fracMatch.index)
-  const hasIntPart = /[#0?]/.test(wholeFmt)
+  // Nothing left for the fraction area: either the value is whole, or the
+  // remainder rounded away against a denominator the format fixed (0.1 over
+  // halves). Excel prints the whole part rather than a zero numerator —
+  // "3 0/2" is not something it ever renders. See #397.
+  if (bestNum === 0) {
+    // Show integer only for whole numbers
+    const showInt = fmt.includes("#") || /^[0?]/.test(fmt.trim())
+    if (showInt && intPart !== 0) {
+      return String(intPart)
+    }
+    return String(intPart) + "      " // padded like Excel
+  }
+
+  // Build the formatted string.
   // The sign has to come from the value: Math.trunc(-0.5) is -0, which is
   // neither `!== 0` nor `< 0`, so the sign would be lost for -1 < value < 0.
   const sign = value < 0 ? "-" : ""

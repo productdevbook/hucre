@@ -458,6 +458,7 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
     const tableRows = findChildren(table, "table-row")
 
     let currentRow = 0
+    let pendingEmptyRows = 0
 
     for (const tableRow of tableRows) {
       const rowRepeat = Number(tableRow.attrs["table:number-rows-repeated"] ?? "1")
@@ -589,12 +590,40 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
         }
       }
 
-      // Cap row repeats for empty rows to avoid memory issues
-      // (LibreOffice may emit large row repeats for trailing empty rows).
-      // For non-empty rows, a hostile file can set a huge number-rows-repeated
-      // on a one-cell row to force millions of allocations — clamp to Excel's
-      // row limit.
-      const effectiveRowRepeat = rowData.length > 0 ? Math.min(rowRepeat, MAX_ROW_INDEX + 1) : 0
+      if (rowData.length === 0) {
+        // An empty row is held back rather than pushed. Whether it is data
+        // depends on what comes after it: an interior one carries position
+        // and has to survive, while the run LibreOffice pads the end of a
+        // sheet with — one row repeated a million times — is not. Deciding
+        // that here would need lookahead; deferring costs nothing and keeps
+        // the trailing run from ever being allocated. See #394.
+        // A malformed repeat parses to NaN, and the populated path drops
+        // such a row outright (Math.min(NaN, …) is NaN, so its loop never
+        // runs) — keep NaN out of the accumulator rather than letting it
+        // poison every later flush.
+        if (rowRepeat > 0) pendingEmptyRows += rowRepeat
+        // The row counter still advances: merges and `cells` are keyed off
+        // it, so it has to track the file's own row numbering either way.
+        currentRow += rowRepeat
+        continue
+      }
+
+      // A populated row makes every held-back empty row an interior one, so
+      // flush them at the positions the file gave them. They carry no cells,
+      // which puts them outside the MAX_TOTAL_CELLS guard below — bound them
+      // by the sheet's row limit instead, or a file of nothing but huge
+      // repeated empty rows would allocate without limit.
+      if (pendingEmptyRows > 0) {
+        const flush = Math.min(pendingEmptyRows, MAX_ROW_INDEX + 1 - rows.length)
+        for (let r = 0; r < flush; r++) {
+          rows.push([])
+        }
+        pendingEmptyRows = 0
+      }
+
+      // A hostile file can set a huge number-rows-repeated on a one-cell row
+      // to force millions of allocations — clamp to Excel's row limit.
+      const effectiveRowRepeat = Math.min(rowRepeat, MAX_ROW_INDEX + 1)
 
       // Each repeat attribute is capped on its own, but the aggregate is
       // not: one row of 16,384 cells repeated 1,048,576 times is 1.7e10
@@ -612,14 +641,11 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
         }
         currentRow++
       }
-
-      if (effectiveRowRepeat === 0) {
-        // Still advance row counter for empty repeated rows
-        currentRow += rowRepeat
-      }
     }
 
-    // Trim trailing empty rows
+    // Trim trailing empty rows. The walk above no longer pushes any (a run
+    // of empty rows is only flushed once a populated row follows it), so
+    // this is a backstop rather than the mechanism.
     while (rows.length > 0 && rows[rows.length - 1].length === 0) {
       rows.pop()
     }

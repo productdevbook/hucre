@@ -660,10 +660,11 @@ describe("ODS reader — repeated cells, covered cells and merges", () => {
     expect(sheet.merges).toEqual([{ startRow: 0, startCol: 0, endRow: 0, endCol: 1 }])
   })
 
-  it("advances the row counter across empty repeated rows", async () => {
-    // LibreOffice pads the tail of a sheet with a single empty row repeated
-    // a million times; those must not become a million row arrays, but the
-    // rows after them must still land at the right index.
+  it("keeps empty repeated rows that sit between populated ones", async () => {
+    // An empty row with a populated row after it is interior: it carries
+    // position, so it has to occupy its own index. The `cells` key and the
+    // array index are the same coordinate, and they used to disagree —
+    // the key said 6 while the row landed at 1. See #394.
     const wb = await readBody(
       table(
         `<table:table-row><table:table-cell office:value-type="string"><text:p>a</text:p></table:table-cell></table:table-row>` +
@@ -672,8 +673,64 @@ describe("ODS reader — repeated cells, covered cells and merges", () => {
       ),
     )
     const sheet = wb.sheets[0]!
-    expect(sheet.rows.length).toBe(2)
+    expect(sheet.rows.length).toBe(7)
+    expect(sheet.rows.slice(1, 6)).toEqual([[], [], [], [], []])
+    expect(sheet.rows[6]).toEqual([1])
     expect([...sheet.cells!.keys()]).toEqual(["6,0"])
+  })
+
+  it("drops a trailing run of empty repeated rows instead of materializing it", async () => {
+    // LibreOffice pads the tail of a sheet with a single empty row repeated
+    // a million times. Nothing follows it, so it is padding rather than
+    // position — it must not become a million row arrays.
+    const wb = await readBody(
+      table(
+        `<table:table-row><table:table-cell office:value-type="string"><text:p>a</text:p></table:table-cell></table:table-row>` +
+          `<table:table-row table:number-rows-repeated="1048570"><table:table-cell/></table:table-row>`,
+      ),
+    )
+    expect(wb.sheets[0]!.rows).toEqual([["a"]])
+  })
+
+  it("keeps a blank separator row between two populated ones", async () => {
+    // The shape every ODS with a title block or a gap between sections has.
+    // Collapsing it shifted every row below by one, so merge ranges and
+    // `cells` keys stopped lining up with the file. See #394.
+    const body = table(
+      `<table:table-row><table:table-cell office:value-type="string"><text:p>a</text:p></table:table-cell></table:table-row>` +
+        `<table:table-row/>` +
+        `<table:table-row><table:table-cell office:value-type="string"><text:p>b</text:p></table:table-cell></table:table-row>`,
+    )
+    const wb = await readBody(body)
+    expect(wb.sheets[0]!.rows).toEqual([["a"], [], ["b"]])
+
+    // The streaming reader never emitted the empty row, but it carries the
+    // row number on each `StreamRow` rather than in the array position, so
+    // it always agreed with the file. Now the two readers agree with it too.
+    const data = await odsFile({ content: contentXml(body) })
+    const streamed = await collectStream(data)
+    expect(streamed.map((r) => [r.index, r.values])).toEqual([
+      [0, ["a"]],
+      [2, ["b"]],
+    ])
+  })
+
+  it("keeps a merge anchored below a blank separator row on its own row", async () => {
+    const wb = await readBody(
+      table(
+        `<table:table-row><table:table-cell office:value-type="string"><text:p>title</text:p></table:table-cell></table:table-row>` +
+          `<table:table-row/>` +
+          `<table:table-row>` +
+          `<table:table-cell table:number-columns-spanned="2" office:value-type="string"><text:p>wide</text:p></table:table-cell>` +
+          `<table:covered-table-cell/>` +
+          `</table:table-row>`,
+      ),
+    )
+    const sheet = wb.sheets[0]!
+    // The covered cell is a trailing null, so it trims off the row itself;
+    // the merge it belongs to is what has to keep the row number.
+    expect(sheet.rows).toEqual([["title"], [], ["wide"]])
+    expect(sheet.merges).toEqual([{ startRow: 2, startCol: 0, endRow: 2, endCol: 1 }])
   })
 })
 
@@ -1262,38 +1319,29 @@ describe("ODS writer — columns + data", () => {
     expect(wb.sheets[0]!.rows).toEqual([])
   })
 
-  // ── Known defect ─────────────────────────────────────────────────
   it("writes a cells override that sits on a trailing empty cell", async () => {
-    // src/ods/writer.ts:629-642 computes `lastMeaningful` from the row's own
-    // values and then extends it only for merge starts and covered cells —
-    // never for `sheet.cells`. Any override whose column is at or past the
-    // row's last non-null value is therefore never emitted: the row stops
-    // short of it. The same holds for an override below the last row, since
-    // writeContentXml iterates `rows` (src/ods/writer.ts:736) and sizes the
-    // table from `rows` + `merges` only (src/ods/writer.ts:762-772).
-    // The XLSX writer grows the grid for exactly this case
-    // (src/xlsx/worksheet-writer.ts:679-692), so one WriteSheet produces two
-    // different documents depending on the output format.
-    // Input:    rows [[1, null, null]], cells { "0,2": { formula: "NOW()" } }
-    // Expected: <table:table-cell table:formula="of:=NOW()"> in column C
-    // Actual:   the row ends after column A; the override is dropped
+    // src/ods/writer.ts computes `lastMeaningful` from the row's own values;
+    // it now extends the row for `sheet.cells` too, and grows the table past
+    // the last `rows` entry for an override below it. Without that, an
+    // override at or past a row's last non-null value was simply dropped —
+    // and the XLSX writer grows the grid for exactly this case, so one
+    // WriteSheet produced two different documents per output format.
     const cells = new Map<string, Partial<Cell>>()
     cells.set("0,2", { value: null, formula: "NOW()" })
     cells.set("2,0", { value: "z" })
     const data = await writeOds({ sheets: [{ name: "S", rows: [[1, null, null]], cells }] })
 
-    // The column-wise override round-trips.
-    const wb = await readOds(data)
-    expect(wb.sheets[0]!.cells?.get("0,2")?.formula).toBe("NOW()")
-
-    // The row-wise one is asserted on the emitted XML rather than the
-    // round-trip, because the reader collapses an *interior* empty row
-    // instead of preserving its position — a separate defect, filed
-    // separately. The writer's half is what this fix is about.
     const xml = new TextDecoder().decode(await new ZipReader(data).extract("content.xml"))
     const emittedRows = xml.match(/<table:table-row[\s\S]*?(?:<\/table:table-row>|\/>)/g) ?? []
     expect(emittedRows).toHaveLength(3)
     expect(emittedRows[2]).toContain("<text:p>z</text:p>")
+
+    // Both overrides round-trip. The row-wise one used to be asserted on the
+    // emitted XML alone, because the reader collapsed the interior empty row
+    // between them and "z" read back at index 1. See #394.
+    const wb = await readOds(data)
+    expect(wb.sheets[0]!.cells?.get("0,2")?.formula).toBe("NOW()")
+    expect(wb.sheets[0]!.rows).toEqual([[1, null, null], [], ["z"]])
   })
 
   it("writes a self-closing cell for a null override with nothing else on it", async () => {

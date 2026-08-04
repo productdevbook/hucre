@@ -781,15 +781,14 @@ describe("ODS Reader", () => {
     })
 
     const workbook = await readOds(written)
-    expect(workbook.sheets[0].rows.length).toBe(2) // middle empty row trimmed from end? no, row 3 exists
-    // Actually: row 0 has data, row 1 is empty (trimmed because all null), row 2 has data
-    // The reader trims trailing null cells and skips fully-empty rows...
-    // But with the new reader, fully empty rows between data rows are still skipped
-    // Row 0: ["A1", null x 8, "J1"] -> ["A1", null, null, null, null, null, null, null, null, "J1"]
-    // Row 1: all null -> skipped
-    // Row 2: ["A3"] -> ["A3"]
+    // Row 0: ["A1", null x 8, "J1"] -> trailing nulls trimmed, "J1" keeps col 9
+    // Row 1: all null -> [], an interior empty row keeps its position (#394)
+    // Row 2: ["A3"] -> ["A3"], still at index 2
+    expect(workbook.sheets[0].rows.length).toBe(3)
     expect(workbook.sheets[0].rows[0][0]).toBe("A1")
     expect(workbook.sheets[0].rows[0][9]).toBe("J1")
+    expect(workbook.sheets[0].rows[1]).toEqual([])
+    expect(workbook.sheets[0].rows[2][0]).toBe("A3")
   })
 
   it("reads cells with number-columns-repeated correctly", async () => {
