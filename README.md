@@ -1820,6 +1820,21 @@ If you only read and write spreadsheets, you do not need anything here.
 These names are still exported from the root for backward compatibility,
 marked deprecated.
 
+## Read/write parity
+
+hucre reads more than it writes, in specific and documented places — and
+XLSX has two write paths with different fidelity, which is the single
+biggest source of surprise.
+
+**[docs/PARITY.md](docs/PARITY.md)** states it per format: what round-trips,
+what is read-only, what is write-only, and why. If you hit a loss that is
+not on that page, it is a bug worth reporting.
+
+The short version: use `openXlsx`/`saveXlsx` when editing someone else's
+workbook — parts hucre does not model are copied byte-for-byte. Use
+`readXlsx`/`writeXlsx` when producing a new one, where only what
+`WriteSheet` and `WriteOptions` describe survives.
+
 ## Migrating to v1
 
 v1 makes the public API a stability commitment, and getting there meant

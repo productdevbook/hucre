@@ -17,7 +17,8 @@
     "src/cli",
     "test/cli.test.ts",
     "test/threaded-comments-write.test.ts",
-    "test/ods-fidelity.test.ts"
+    "test/ods-fidelity.test.ts",
+    "test/parity-statement.test.ts"
   ],
   "exclude": []
 }

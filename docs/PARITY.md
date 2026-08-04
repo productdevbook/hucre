@@ -1,0 +1,221 @@
+# Read/write parity
+
+What hucre reads, what it writes, and where those differ.
+
+This exists because a gap you discover is worse than a gap you were told
+about. v1 makes the public API a stability commitment, and part of that
+commitment is being honest about the edges: everything below is either at
+parity or listed here as an exception.
+
+If you hit a loss that is **not** on this page, that is a bug — please
+open an issue. That is the whole point of writing it down.
+
+## The one thing to read first
+
+XLSX has **two** write paths, and they have different fidelity. Most
+confusion about what hucre preserves comes from conflating them.
+
+|                | entry points             | behaviour                                                                                                                         |
+| -------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Authoring**  | `readXlsx` / `writeXlsx` | the workbook is rebuilt from the model. Only what `WriteSheet` and `WriteOptions` describe comes out                              |
+| **Round-trip** | `openXlsx` / `saveXlsx`  | parts hucre does not regenerate are copied byte-for-byte, with relationships and content types re-declared so they stay reachable |
+
+So `readXlsx` → `writeXlsx` on a workbook with charts, macros or pivot
+tables gives you a workbook without them. `openXlsx` → `saveXlsx` on the
+same file keeps them, whether or not hucre understands them.
+
+Pick the round-trip path when you are **editing someone's file**. Pick the
+authoring path when you are **producing a new one**.
+
+## XLSX
+
+### Read + write, at parity
+
+Cell values and types, formulas (shared, array and dynamic), rich text,
+hyperlinks with tooltips, comments, checkboxes, the full cell style model
+(fonts, pattern and gradient fills, borders including diagonal, every
+alignment field, number formats, protection), merges, data validations,
+all 15 conditional-rule types **including their dxf styles**, auto-filters
+with value filters, freeze and split panes, sheet protection, page setup
+including print areas and print titles, headers and footers, sheet views
+and tab colours, hidden and very-hidden sheets, tables, row and column
+definitions, manual page breaks, outline properties, sparklines, text
+boxes, background images, images, document properties, named ranges, the
+1904 date system, workbook protection, theme colours, Excel 2024
+checkboxes, and encryption.
+
+`test/xlsx-write-read-parity.test.ts` holds every field of `WriteSheet`
+and `WriteOptions` in a register typed over `keyof Required<…>`. Adding a
+field to either interface fails `tsc` until it is registered — as a probe
+that round-trips, or as a one-way entry with its reason. That register,
+not this list, is the thing that stays current.
+
+### Read and round-trip only — no authoring API
+
+These are parsed into the model and preserved through `openXlsx` →
+`saveXlsx`, but there is no way to create one from scratch:
+
+|                                         | model field                                                                 |
+| --------------------------------------- | --------------------------------------------------------------------------- |
+| Slicers and their caches                | `Sheet.slicers`, `Workbook.slicerCaches`                                    |
+| Timeline filters and their caches       | `Sheet.timelines`, `Workbook.timelineCaches`                                |
+| Threaded comments and their person list | `Sheet.threadedComments`, `Workbook.persons`                                |
+| External workbook links                 | `Workbook.externalLinks`                                                    |
+| WPS DISPIMG cell images                 | `Workbook.cellImages`                                                       |
+| Theme colours from the file             | `Workbook.themeColors` — `writeXlsx` always emits the standard Office theme |
+
+`WriteSheet` has no fields for these, deliberately: a typed field that is
+silently discarded is worse than no field at all, which is why
+`WriteSheet.threadedComments` was removed rather than left in place.
+
+### Charts
+
+16 chart kinds are read and round-tripped; **7 can be authored** (bar,
+column, line, pie, scatter, area, doughnut). `bar3D`, `line3D`, `pie3D`,
+`area3D`, `bubble`, `radar`, `surface`, `surface3D`, `stock` and `ofPie`
+read and survive `saveXlsx`, but `SheetChart` cannot express them.
+
+### Pivot tables
+
+Read and written, but **the two types are disjoint**. `PivotTable` (what
+the reader produces: layout, fields, cache id) is not accepted by the
+writer, and `WritePivotTable` (source range plus rows/columns/pages/values)
+is not what the reader returns. A pivot table therefore cannot be
+round-tripped _through the model_ — `openXlsx`/`saveXlsx` preserves it as
+a raw part instead. The writer also emits the pivot structure without
+pre-computed value cells; Excel computes them on open.
+
+`Workbook.pivotCaches` follows from that: it is the read model's view of
+the workbook-level caches, and has no write counterpart because
+`WritePivotTable` builds its own cache from the source range.
+
+### Write-only, by design
+
+| field                                                     | why                                                                                                                                                                        |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WriteOptions.vbaProject`                                 | attaches a macro project; `Workbook` has no counterpart, so `readXlsx` → `writeXlsx` **drops macros silently**. Use `openXlsx`/`saveXlsx` to edit a macro-enabled workbook |
+| `WriteOptions.encryption`                                 | a property of the container, not of the workbook. Read back with `ReadOptions.password`                                                                                    |
+| `WriteOptions.stringMode`                                 | an encoding choice with nothing to surface on read                                                                                                                         |
+| `WriteSheet.data`                                         | the object form of `rows`; comes back as `rows`                                                                                                                            |
+| `WriteSheet.a11y`                                         | authoring metadata. `a11y.summary` is promoted to `properties.description` and does survive; `a11y.headerRow` has no cell to live in                                       |
+| `SheetProtection.password`, `workbookProtection.password` | the file holds a one-way digest, never the password. The digest is read; the password cannot be                                                                            |
+
+## ODS
+
+ODS reads and writes the same narrow model, so **ODS → ODS is lossless**.
+The loss is in conversion _into_ ODS from a format that models more.
+
+Carried: cell values, formulas (including cross-sheet references), merges,
+hyperlinks on any cell type, rich text, multi-section number formats,
+document properties (six fields), and six style facets — bold, italic,
+font size, font colour, background colour, number format.
+
+Not modelled in **either** direction: borders, alignment, font name,
+underline, strikethrough, column widths, row heights, hidden rows and
+columns, freeze and split panes, data validation, conditional formatting,
+auto-filter, named ranges, tables, images, page setup, sheet protection,
+tab colour, hidden sheets, and `time` cells (which read back as the raw
+ISO duration string).
+
+The reader opens `content.xml` and `meta.xml`. It does not open
+`styles.xml` or `settings.xml`, which is where LibreOffice keeps named and
+default cell styles and all page setup — so a LibreOffice-authored file
+reads back with its direct formatting only.
+
+See [What ODS carries](../README.md#what-ods-carries) for the consequences
+worth knowing before relying on it.
+
+## XLS and XLSB — read only
+
+No writer exists for either. What the readers surface is narrower than
+XLSX, which matters because converting to XLSX can only carry what was
+read:
+
+|                                                 | XLS (BIFF8) | XLSB |
+| ----------------------------------------------- | ----------- | ---- |
+| Sheet names, strings, numbers, booleans, errors | yes         | yes  |
+| Dates, honouring the file's 1900/1904 flag      | yes         | yes  |
+| Formula **values** (never the formula text)     | yes         | yes  |
+| Merges                                          | yes         | yes  |
+| Everything else on `Sheet` / `Workbook`         | no          | no   |
+
+So **XLS/XLSB → XLSX is a values-and-names conversion**. Every formula
+becomes a hard-coded value, styles and dimensions are dropped, hidden
+sheets become visible, and workbook properties and named ranges are lost.
+
+BIFF5 and BIFF7 are rejected outright rather than misread — only BIFF8
+(Excel 97-2003) is supported.
+
+## CSV / TSV
+
+Symmetric: delimiter (including tab auto-detection), quote character, line
+separator, header handling, `skipHeaderRow`, type inference, leading-zero
+preservation, comment lines, and formula-injection escaping — which now
+has an inverse in `unescapeFormulae`.
+
+One-way, and documented on each option:
+
+| option               | why                                                                                                                          |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `nullValue`          | CSV has no null. Any token you choose reads back as that string, and treating `""` as null would guess for every empty field |
+| custom `dateFormat`  | the reader recognises ISO only, and `03/04/2024` cannot be disambiguated. The ISO default does round-trip                    |
+| `quoteStyle: "none"` | produces output no read option can reliably parse back — inherent to the mode                                                |
+
+`CsvReadOptions.escape` is honoured on read with no writer counterpart:
+hucre can read a backslash-escaped dialect it does not write.
+
+There is no `parseTsv`. TSV reads through `parseCsv` because tab is an
+auto-detect candidate — which is a guess, and a single-column TSV or one
+whose values contain commas can lose to `,`. Pass `delimiter: "\t"` when
+you know.
+
+## JSON / NDJSON
+
+The most symmetric formats in the library. Values, types and ISO dates
+round-trip in both the whole-string and streaming readers and writers.
+
+Nesting is the exception worth understanding. `flatten` turns
+`{user:{name}}` into `{"user.name"}` by default on read, and
+`unflatten: true` reverses it on write — but not exactly, and it cannot
+be made exact: `flatten` does not escape dots that were already in a key,
+so `{"a.b": 1}` and `{a:{b:1}}` are indistinguishable by the time the
+inverse runs. Every dot is treated as a separator. Primitive arrays are
+joined into one cell and are not recoverable at all.
+
+`workbookToJson` emits a bare array for a one-sheet workbook and a
+sheet-keyed object otherwise; `shape: "sheets"` pins the keyed form, and
+`jsonToWorkbook` reads either. `parseJson` on a multi-sheet document
+throws rather than returning one row of stringified sheets.
+
+`format: "arrays"` and `format: "columns"` (in `src/export/json.ts`) are
+write-only — handoffs to a charting library or dataframe, with no reader.
+
+## XML
+
+Reads and writes nested data, and its writer is the one that un-flattens
+dot-paths. Its asymmetry is the mirror image of JSON's: `readXml` returns
+every value as a string, with no type-inference option.
+
+## HTML
+
+`fromHtml` reconstructs values, types, merges, header structure
+(`<thead>` or an all-`<th>` row → `a11y.headerRow`), and `<caption>` →
+`a11y.summary`. Type CSS classes are honoured as declarations, so a
+string `"42"` written by `toHtml` comes back a string.
+
+Not reconstructed: inline styles, the `<style>` block, `role` and
+`aria-label`. There is nowhere in `Sheet` for CSS to live, and inventing
+a place for it would be a bigger lie than saying HTML export is
+presentation output. Cell text is trimmed on read and preserved on write —
+indentation in markup is not data.
+
+## Markdown — write only
+
+There is no `fromMarkdown`, and none is planned. `toMarkdown` is a
+terminal output format, not an interchange one: it truncates any cell over
+50 characters by default and converts newlines to `<br>` with no inverse.
+
+---
+
+Every gap on this page is either a deliberate scope decision or has an
+open issue. Anything else is a bug.
