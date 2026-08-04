@@ -527,6 +527,67 @@ describe("formatValue — Excel parity", () => {
     expect(formatValue(0.5, "0%")).toBe("50%")
   })
 
+  // ── #426 ──────────────────────────────────────────────────────────
+  //
+  // The fraction path built its output from the digits alone, so literal
+  // text was dropped where every other path keeps it — "$?/?" rendered as
+  // "5/2". Literals are read with the same `extractLiterals` the plain
+  // number path uses, so a bare "$", a quoted run and a "\$" escape mean
+  // the same thing under a fraction as under "0.00".
+  it("keeps literal text around a fraction", () => {
+    expect(formatValue(2.5, "$?/?")).toBe("$5/2")
+    expect(formatValue(2.5, '"USD "?/?')).toBe("USD 5/2")
+    expect(formatValue(2.5, '?/?" kg"')).toBe("5/2 kg")
+    expect(formatValue(2.5, "\\$# ?/?")).toBe("$2 1/2")
+    expect(formatValue(2.5, "# ?/?\\!")).toBe("2 1/2!")
+  })
+
+  // The padding belongs to the fraction, not to the field, so a prefix
+  // lands outside it: "$ 5/ 2", never " $5/ 2".
+  it("puts a literal prefix outside the placeholder padding", () => {
+    expect(formatValue(2.5, "$??/??")).toBe("$ 5/ 2")
+    expect(formatValue(2.5, '# ??/??" in"')).toBe("2  1/ 2 in")
+  })
+
+  // The prefix leads the sign, as it does for "$#,##0.00" — the two paths
+  // agree on where the minus goes.
+  it("writes a literal prefix ahead of the sign", () => {
+    expect(formatValue(-2.5, "$# ?/?")).toBe("$-2 1/2")
+    expect(formatValue(-2.5, "$#,##0.00")).toBe("$-2.50")
+  })
+
+  // Whole numbers and zero take an earlier exit out of the formatter; the
+  // literals have to survive that route too.
+  it("keeps literals on the paths that print no fraction", () => {
+    expect(formatValue(3, "$# ?/?")).toBe("$3")
+    expect(formatValue(3.1, "$# ?/2")).toBe("$3")
+    expect(formatValue(0, "$# ?/?")).toBe("$0      ")
+  })
+
+  // A negative section is handed the absolute value, so its "-" is literal
+  // text in the format — dropping literals dropped the sign with them, and
+  // -2.5 read back as positive.
+  it("keeps the sign a negative fraction section writes for itself", () => {
+    expect(formatValue(-2.5, "# ?/?;-# ?/?")).toBe("-2 1/2")
+    expect(formatValue(-2.5, "$# ?/?;($# ?/?)")).toBe("($2 1/2)")
+  })
+
+  // Sections are split before any of this, so one section's literals cannot
+  // reach another's output.
+  it("keeps each section's literals to itself", () => {
+    expect(formatValue(2.5, '"a"# ?/?;"b"# ?/?')).toBe("a2 1/2")
+    expect(formatValue(-2.5, '"a"# ?/?;"b"# ?/?')).toBe("b2 1/2")
+  })
+
+  // What separates the whole part from the numerator is the format's own
+  // literal text — the space in "# ?/?" is not punctuation the formatter
+  // owns, and a quoted placeholder character is text rather than an
+  // integer slot, so '"#"?/?' is an improper fraction.
+  it("takes the whole-part separator from the format", () => {
+    expect(formatValue(2.5, '#" and "?/?')).toBe("2 and 1/2")
+    expect(formatValue(2.5, '"#"?/?')).toBe("#5/2")
+  })
+
   // "?" renders insignificant decimals as spaces so decimal points line up
   // down a column, where "0" would render them as zeros.
   it("pads insignificant decimals with spaces for a ? placeholder", () => {
