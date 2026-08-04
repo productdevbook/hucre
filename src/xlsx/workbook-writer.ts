@@ -4,6 +4,7 @@
 import type { WriteSheet, NamedRange } from "../_types"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
 import { hashSheetPassword } from "./password"
+import { METADATA_REL_TYPE } from "./metadata"
 
 const NS_SPREADSHEET = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 const NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -253,6 +254,7 @@ export function writeWorkbookRels(
   slicerCacheRels?: ReadonlyArray<CacheRel>,
   timelineCacheRels?: ReadonlyArray<CacheRel>,
   hasCellImages?: boolean,
+  hasMetadata?: boolean,
 ): string {
   const children: string[] = []
 
@@ -299,6 +301,21 @@ export function writeWorkbookRels(
     }),
   )
   nextRid++
+
+  // Cell metadata relationship (dynamic arrays). Placed between
+  // sharedStrings/theme and vbaProject, where Excel and XlsxWriter put
+  // it; `computeExternalLinkRelStart` in roundtrip.ts mirrors this
+  // position and has to move with it.
+  if (hasMetadata) {
+    children.push(
+      xmlSelfClose("Relationship", {
+        Id: `rId${nextRid}`,
+        Type: METADATA_REL_TYPE,
+        Target: "metadata.xml",
+      }),
+    )
+    nextRid++
+  }
 
   // VBA project relationship (for macro-enabled workbooks)
   if (hasMacros) {

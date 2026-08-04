@@ -28,6 +28,7 @@ import { parseRelationships } from "./relationships"
 import { createStylesCollector } from "./styles-writer"
 import { createSharedStrings, writeSharedStringsXml, writeWorksheetXml } from "./worksheet-writer"
 import { writeFeaturePropertyBagXml } from "./feature-property-bag"
+import { METADATA_PART_PATH, writeMetadataXml } from "./metadata"
 import type { WorksheetResult } from "./worksheet-writer"
 import { writeDrawing } from "./drawing-writer"
 import type { DrawingResult } from "./drawing-writer"
@@ -300,6 +301,12 @@ export async function saveXlsx(
   }
 
   const hasSharedStrings = sharedStrings.count() > 0
+  // Any cell written with `cm` needs xl/metadata.xml alongside it. When
+  // the opened package already carried one we drop those bytes and emit
+  // ours instead: the indexes on the cells are ours (always 1), so the
+  // records they resolve against have to be too — and two entries for
+  // the same path would be a corrupt archive. See #423.
+  const hasMetadata = worksheetResults.some((r) => r.hasDynamicArray)
 
   // Generate drawing data for sheets that have images
   const drawingResults: Array<DrawingResult | null> = []
@@ -511,6 +518,7 @@ export async function saveXlsx(
     !!workbook.hasMacros,
     false, // featurePropertyBag — not yet roundtripped
     hasPersons,
+    hasMetadata,
   )
   const externalLinkRels = externalLinkIndices.map((idx) => ({
     rId: `rId${nextWorkbookRelId++}`,
@@ -778,6 +786,11 @@ export async function saveXlsx(
       if (isRegenerated && cellImageMediaPaths.has(lowerPath)) {
         isRegenerated = false
       }
+      // The opened package's own metadata part is replaced, not kept,
+      // whenever we emit ours — see `hasMetadata` above.
+      if (!isRegenerated && hasMetadata && lowerPath === METADATA_PART_PATH) {
+        isRegenerated = true
+      }
       // Drawings whose only contents are chart graphicFrames don't get
       // re-emitted by hucre's drawing writer; force-preserve them so
       // the chart references survive intact.
@@ -831,6 +844,7 @@ export async function saveXlsx(
     hasAppProps: true,
     hasMacros: workbook.hasMacros,
     hasFeaturePropertyBag,
+    hasMetadata,
   }
   zip.add("[Content_Types].xml", encoder.encode(writeContentTypes(ctOpts)))
 
@@ -878,12 +892,19 @@ export async function saveXlsx(
         slicerCacheRels.length > 0 ? slicerCacheRels : undefined,
         timelineCacheRels.length > 0 ? timelineCacheRels : undefined,
         hasCellImages,
+        hasMetadata,
       ),
     ),
   )
 
   // xl/styles.xml
   zip.add("xl/styles.xml", encoder.encode(styles.toXml()))
+
+  // xl/metadata.xml — declared above, so the part has to exist. Any
+  // copy the opened package carried was skipped during preservation.
+  if (hasMetadata) {
+    zip.add(METADATA_PART_PATH, encoder.encode(writeMetadataXml()))
+  }
 
   // xl/featurePropertyBag/featurePropertyBag.xml — declared above, so
   // the part has to exist.
@@ -1416,8 +1437,8 @@ function collectSheetPivotTableTargets(
  * Mirror the `nextRid` counter inside `writeWorkbookRels` to determine
  * the starting rId for external link relationships. Keep this in sync
  * with `writeWorkbookRels` — order is: worksheets, styles, optional
- * sharedStrings, theme, optional vbaProject, optional FeaturePropertyBag,
- * optional persons, then externalLinks.
+ * sharedStrings, theme, optional metadata, optional vbaProject, optional
+ * FeaturePropertyBag, optional persons, then externalLinks.
  */
 function computeExternalLinkRelStart(
   sheetCount: number,
@@ -1425,11 +1446,13 @@ function computeExternalLinkRelStart(
   hasMacros: boolean,
   hasFeaturePropertyBag: boolean,
   hasPersons: boolean,
+  hasMetadata: boolean,
 ): number {
   let next = sheetCount + 1 // worksheets occupy rId1..rId{sheetCount}
   next++ // styles
   if (hasSharedStrings) next++
   next++ // theme
+  if (hasMetadata) next++
   if (hasMacros) next++
   if (hasFeaturePropertyBag) next++
   if (hasPersons) next++

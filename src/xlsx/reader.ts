@@ -36,6 +36,7 @@ import { parseRelationships } from "./relationships"
 import { parseSharedStrings } from "./shared-strings"
 import { parseStyles } from "./styles"
 import { parseWorksheet } from "./worksheet"
+import { parseDynamicArrayCellMetadata } from "./metadata"
 import type { ParsedStyles } from "./styles"
 import type { SharedString } from "./shared-strings"
 import type { Relationship } from "./relationships"
@@ -345,6 +346,19 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
     if (cache) timelineCaches.push(cache)
   }
 
+  // 7i. Parse cell metadata (xl/metadata.xml). Cells point into its
+  // cellMetadata collection with `cm`; for hucre the only records that
+  // matter are the dynamic-array (XLDAPR) ones. Resolved once for the
+  // whole package because the part is workbook-level.
+  let dynamicArrayCm: Set<number> | undefined
+  const metadataRel = workbookRels.find((r) => matchesRelType(r.type, "sheetMetadata"))
+  if (metadataRel) {
+    const metadataPath = resolvePath(workbookDir, metadataRel.target)
+    if (zip.has(metadataPath)) {
+      dynamicArrayCm = parseDynamicArrayCellMetadata(decodeUtf8(await zip.extract(metadataPath)))
+    }
+  }
+
   // 8. Build a map of rId → sheet relationship for worksheet paths
   const sheetRelMap = new Map<string, string>()
   for (const rel of workbookRels) {
@@ -387,6 +401,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
       worksheetRels,
       maxRows: options?.maxRows,
       range: options?.range,
+      dynamicArrayCm,
     }
 
     const wsXml = decodeUtf8(await zip.extract(wsPath))

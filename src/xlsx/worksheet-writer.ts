@@ -25,6 +25,7 @@ import { dateToSerial } from "../_date"
 import { isHyperlinkValue } from "./hyperlink"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
 import { calculateColumnWidth } from "./auto-width"
+import { DYNAMIC_ARRAY_CM } from "./metadata"
 import { hashSheetPassword } from "./password"
 import { validateColumnIndex } from "../_validate"
 
@@ -56,6 +57,11 @@ export interface WorksheetResult {
    * `xl/pivotTables/pivotTableN.xml` path.
    */
   pivotTables: Array<{ rId: string; globalPivotIndex: number }>
+  /**
+   * Whether any cell was written with `cm`. The package must then ship
+   * xl/metadata.xml, or the index points at nothing — see ./metadata.ts.
+   */
+  hasDynamicArray: boolean
 }
 
 const NS_SPREADSHEET = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -185,7 +191,16 @@ function toHyperlink(hv: HyperlinkValue): Hyperlink {
 
 const DEFAULT_DATE_FORMAT = "yyyy-mm-dd"
 
-/** Known Excel error value strings */
+/**
+ * Known Excel error value strings.
+ *
+ * The first eight are the ST_CellType `e` values ECMA-376 enumerates.
+ * `#SPILL!` and `#CALC!` are the two errors dynamic arrays introduced —
+ * they are not in the standard's list, but Excel stores them the same
+ * way (`t="e"` with the literal text in `<v>`), and without them a
+ * `#SPILL!` read out of a real workbook came back as a *shared string*
+ * on the way in again, losing its error type entirely (#423).
+ */
 const EXCEL_ERRORS = new Set([
   "#VALUE!",
   "#REF!",
@@ -195,6 +210,8 @@ const EXCEL_ERRORS = new Set([
   "#DIV/0!",
   "#NUM!",
   "#GETTING_DATA",
+  "#SPILL!",
+  "#CALC!",
 ])
 
 // ── Worksheet Writer ───────────────────────────────────────────────
@@ -389,6 +406,7 @@ export function writeWorksheetXml(
 
   // ── Sheet Data ──
   const rowElements: string[] = []
+  let hasDynamicArray = false
 
   for (let r = 0; r < rowCount; r++) {
     const row = resolvedRows[r]
@@ -406,6 +424,16 @@ export function writeWorksheetXml(
       for (let c = 0; c < row.length; c++) {
         const resolved = row[c]
         if (!resolved) continue
+
+        // Mirrors the condition serializeCell applies below: `cm` only
+        // goes out on a cell that actually carries a formula.
+        if (
+          resolved.formulaDynamic &&
+          resolved.formula !== undefined &&
+          resolved.formula !== null
+        ) {
+          hasDynamicArray = true
+        }
 
         const cellXml = serializeCell(r, c, resolved, styles, sharedStrings, is1904, inlineStrings)
         if (cellXml) {
@@ -632,6 +660,7 @@ export function writeWorksheetXml(
     tables: tableEntries,
     pictureRId,
     pivotTables: pivotEntries,
+    hasDynamicArray,
   }
 }
 
@@ -795,6 +824,12 @@ function serializeCell(
   if (formula !== undefined && formula !== null) {
     const cellAttrs: Record<string, string | number> = { r: ref }
     if (styleIdx !== 0) cellAttrs["s"] = styleIdx
+    // `cm` is a CT_Cell attribute (§18.3.1.4) — hucre used to write it on
+    // `<f>`, where the schema has no such attribute, so Excel ignored it
+    // and the flag survived only because hucre also read it back from
+    // there (#423). The index is one-based into xl/metadata.xml's
+    // cellMetadata collection; see ./metadata.ts for the part itself.
+    if (formulaDynamic) cellAttrs["cm"] = DYNAMIC_ARRAY_CM
 
     // Build <f> element with appropriate attributes
     let fElement: string
@@ -811,13 +846,13 @@ function serializeCell(
     } else if (formulaType === "array") {
       const fAttrs: Record<string, string | number> = { t: "array" }
       if (formulaRef) fAttrs["ref"] = formulaRef
-      if (formulaDynamic) fAttrs["cm"] = 1
       fElement = xmlElement("f", fAttrs, xmlEscape(formula))
     } else {
       // Normal formula. `formulaDynamic` used to be honoured only inside
       // the `t="array"` branch above, so a spilling function written
-      // without `formulaType: "array"` silently lost the flag (#407).
-      fElement = xmlElement("f", formulaDynamic ? { cm: 1 } : undefined, xmlEscape(formula))
+      // without `formulaType: "array"` silently lost the flag (#407); it
+      // now lands on `<c>` for both shapes.
+      fElement = xmlElement("f", undefined, xmlEscape(formula))
     }
 
     const children: string[] = [fElement]

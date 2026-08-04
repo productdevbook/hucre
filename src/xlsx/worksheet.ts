@@ -49,6 +49,27 @@ export interface WorksheetContext {
   maxRows?: number
   /** Cell range filter (e.g. "A1:D10"). Only cells within this range are returned. */
   range?: string
+  /**
+   * One-based `cm` indexes that xl/metadata.xml resolves to a
+   * dynamic-array (XLDAPR) record. Undefined when the package ships no
+   * metadata part — see {@link isDynamicArrayCm}.
+   */
+  dynamicArrayCm?: Set<number>
+}
+
+/**
+ * Decide whether a cell's `cm` index marks a dynamic array.
+ *
+ * With a metadata part present the index is resolved properly. Without
+ * one there is nothing to resolve against, and the only producer known
+ * to emit a bare `cm` is hucre itself before #423 — which always meant
+ * "dynamic array" — so any non-zero index is taken at its word.
+ */
+function isDynamicArrayCm(raw: string | undefined, ctx: WorksheetContext): boolean {
+  if (raw === undefined) return false
+  const index = Number(raw)
+  if (!Number.isFinite(index) || index <= 0) return false
+  return ctx.dynamicArrayCm ? ctx.dynamicArrayCm.has(index) : true
 }
 
 // ── Cell Reference Parsing ───────────────────────────────────────────
@@ -399,7 +420,12 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
             cellFormulaType = ""
             cellFormulaSi = -1
             cellFormulaRef = ""
-            cellFormulaCm = false
+            // `cm` lives on `<c>` (§18.3.1.4) and is a one-based index
+            // into xl/metadata.xml's cellMetadata collection, not a
+            // boolean. hucre used to both write and read it on `<f>`,
+            // which round-tripped with itself and with nothing else
+            // (#423).
+            cellFormulaCm = isDynamicArrayCm(attrs["cm"], ctx)
             inlineText = ""
             inlineRichText = []
           }
@@ -420,7 +446,10 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
             if (attrs["ref"]) {
               cellFormulaRef = attrs["ref"]
             }
-            if (attrs["cm"] === "1") {
+            // Every hucre release up to 0.6 wrote the marker here, so
+            // keep honouring it — those files are in the wild and the
+            // attribute is meaningless on `<f>` for any other reason.
+            if (attrs["cm"] !== undefined && isDynamicArrayCm(attrs["cm"], ctx)) {
               cellFormulaCm = true
             }
           }

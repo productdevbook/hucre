@@ -833,15 +833,36 @@ describe("formulas", () => {
     })
   })
 
-  it("flags a dynamic array formula", () => {
+  it("flags a dynamic array formula from cm on the cell", () => {
     const s = data(
-      `<row r="1"><c r="A1"><f t="array" ref="A1:A3" cm="1">SEQUENCE(3)</f>` + `<v>1</v></c></row>`,
+      `<row r="1"><c r="A1" cm="1"><f t="array" ref="A1:A3">SEQUENCE(3)</f>` + `<v>1</v></c></row>`,
+      { dynamicArrayCm: new Set([1]) },
     )
     expect(s.cells!.get("0,0")).toMatchObject({
       formulaType: "array",
       formulaRef: "A1:A3",
       formulaDynamic: true,
     })
+  })
+
+  // hucre wrote `cm` here up to 0.6 (#423). The attribute means nothing
+  // on `<f>` per the schema, so those files can only have come from
+  // hucre — keep reading them rather than silently dropping the flag.
+  it("still flags a dynamic array formula from cm on <f> (pre-0.7 hucre files)", () => {
+    const s = data(
+      `<row r="1"><c r="A1"><f t="array" ref="A1:A3" cm="1">SEQUENCE(3)</f>` + `<v>1</v></c></row>`,
+    )
+    expect(s.cells!.get("0,0")).toMatchObject({ formulaDynamic: true })
+  })
+
+  it("ignores a cm that the metadata part does not map to a dynamic array", () => {
+    const s = data(
+      `<row r="1"><c r="A1" cm="2"><f>SUM(B1:B3)</f><v>1</v></c></row>`,
+      // Only index 1 is XLDAPR in this package; 2 is some other kind of
+      // cell metadata and says nothing about spilling.
+      { dynamicArrayCm: new Set([1]) },
+    )
+    expect(s.cells!.get("0,0")!.formulaDynamic).toBeUndefined()
   })
 })
 

@@ -15,6 +15,7 @@ import {
   parseTimelines,
 } from "../src/xlsx/slicer-reader"
 import { parseComments } from "../src/xlsx/comments-reader"
+import { parseDynamicArrayCellMetadata } from "../src/xlsx/metadata"
 import { parsePersons, parseThreadedComments } from "../src/xlsx/threaded-comments-reader"
 import { parseCsv, parseCsvObjects } from "../src/csv/reader"
 
@@ -890,6 +891,57 @@ describe("parseCsv — type inference", () => {
     expect(parseCsv('"1,234.56";"1,23"', { typeInference: true, delimiter: ";" })).toEqual([
       [1234.56, "1,23"],
     ])
+  })
+})
+
+// ── xl/metadata.xml (what `cm` on a cell points at) ──────────────────
+//
+// `cm` is a one-based index into the cellMetadata collection
+// ([MS-OI29500] §18.3.1.4 note a); resolving it means walking
+// rc/@t → metadataType and rc/@v → futureMetadata block.
+
+describe("parseDynamicArrayCellMetadata", () => {
+  const metadataXml = (body: string): string =>
+    `${XML_DECL}<metadata xmlns="${NS_MAIN}" xmlns:xda="xda">${body}</metadata>`
+
+  const XLDAPR_TYPE =
+    '<metadataTypes count="1"><metadataType name="XLDAPR" minSupportedVersion="120000" cellMeta="1"/></metadataTypes>'
+  const XLDAPR_FUTURE =
+    '<futureMetadata name="XLDAPR" count="1"><bk><extLst><ext uri="{BDBB8CDC-FA1E-496E-A857-3C3F30C029C3}"><xda:dynamicArrayProperties fDynamic="1" fCollapsed="0"/></ext></extLst></bk></futureMetadata>'
+
+  it("resolves the block Excel writes for a spilling formula", () => {
+    const xml = metadataXml(
+      `${XLDAPR_TYPE}${XLDAPR_FUTURE}<cellMetadata count="1"><bk><rc t="1" v="0"/></bk></cellMetadata>`,
+    )
+    expect([...parseDynamicArrayCellMetadata(xml)]).toEqual([1])
+  })
+
+  it("counts cellMetadata blocks from one, skipping non-XLDAPR records", () => {
+    const xml = metadataXml(
+      '<metadataTypes count="2"><metadataType name="XLMDX"/><metadataType name="XLDAPR"/></metadataTypes>' +
+        '<futureMetadata name="XLDAPR" count="1"><bk/></futureMetadata>' +
+        '<cellMetadata count="2"><bk><rc t="1" v="0"/></bk><bk><rc t="2" v="0"/></bk></cellMetadata>',
+    )
+    expect([...parseDynamicArrayCellMetadata(xml)]).toEqual([2])
+  })
+
+  it("honours fDynamic=0 — an array formula that is not spilling", () => {
+    const xml = metadataXml(
+      `${XLDAPR_TYPE}<futureMetadata name="XLDAPR" count="1"><bk><extLst><ext uri="{bdbb8cdc-fa1e-496e-a857-3c3f30c029c3}"><xda:dynamicArrayProperties fDynamic="0"/></ext></extLst></bk></futureMetadata>` +
+        '<cellMetadata count="1"><bk><rc t="1" v="0"/></bk></cellMetadata>',
+    )
+    expect(parseDynamicArrayCellMetadata(xml).size).toBe(0)
+  })
+
+  it("trusts the type name when there is no futureMetadata block to check", () => {
+    const xml = metadataXml(
+      `${XLDAPR_TYPE}<cellMetadata count="1"><bk><rc t="1" v="7"/></bk></cellMetadata>`,
+    )
+    expect([...parseDynamicArrayCellMetadata(xml)]).toEqual([1])
+  })
+
+  it("returns nothing for a part with no cellMetadata at all", () => {
+    expect(parseDynamicArrayCellMetadata(metadataXml(XLDAPR_TYPE)).size).toBe(0)
   })
 })
 

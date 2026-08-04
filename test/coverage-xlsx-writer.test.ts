@@ -139,6 +139,22 @@ describe("styled cells of every value shape", () => {
     expect(xml).toMatch(/<c r="A1" t="e" s="\d+"><v>#DIV\/0!<\/v><\/c>/)
   })
 
+  // The two errors dynamic arrays brought with them. ECMA-376 doesn't
+  // enumerate them, so they used to fall through to the string branch
+  // and came back from a read as text, not as errors (#423).
+  it("writes the dynamic-array errors as error cells", async () => {
+    const xml = await sheetXml({
+      name: "S",
+      cells: cellMap([
+        ["0,0", { value: "#SPILL!" }],
+        ["0,1", { value: "#CALC!" }],
+      ]),
+    })
+
+    expect(xml).toContain('<c r="A1" t="e"><v>#SPILL!</v></c>')
+    expect(xml).toContain('<c r="B1" t="e"><v>#CALC!</v></c>')
+  })
+
   it("keeps the style index on an inline string when stringMode is inline", async () => {
     const xml = await sheetXml(
       { name: "S", cells: cellMap([["0,0", { value: "hello", style: styled }]]) },

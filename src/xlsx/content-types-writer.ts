@@ -2,6 +2,7 @@
 // Generates [Content_Types].xml for an XLSX package.
 
 import { xmlDocument, xmlSelfClose } from "../xml/writer"
+import { METADATA_CONTENT_TYPE, METADATA_PART_PATH } from "./metadata"
 
 const NS_CONTENT_TYPES = "http://schemas.openxmlformats.org/package/2006/content-types"
 
@@ -137,6 +138,8 @@ export interface ContentTypesOptions {
   hasMacros?: boolean
   /** Whether Excel 2024 checkbox FeaturePropertyBag is present. */
   hasFeaturePropertyBag?: boolean
+  /** Whether `xl/metadata.xml` (dynamic-array cell metadata) is present. */
+  hasMetadata?: boolean
 }
 
 /** Generate [Content_Types].xml for XLSX */
@@ -423,6 +426,16 @@ export function writeContentTypes(
         }),
       )
     }
+  }
+
+  // Override for the cell-metadata part (dynamic arrays)
+  if (opts.hasMetadata) {
+    children.push(
+      xmlSelfClose("Override", {
+        PartName: `/${METADATA_PART_PATH}`,
+        ContentType: METADATA_CONTENT_TYPE,
+      }),
+    )
   }
 
   // Override for FeaturePropertyBag (Excel 2024 checkboxes)

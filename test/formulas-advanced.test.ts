@@ -200,7 +200,10 @@ describe("array formula writing", () => {
     expect(fEl.attrs["cm"]).toBeUndefined()
   })
 
-  it("writes dynamic array formula with cm=1", async () => {
+  // This used to assert `cm` on `<f>`, i.e. it pinned the bug in #423:
+  // CT_Cell carries `cm` (§18.3.1.4), CT_CellFormula has no such
+  // attribute, so Excel never saw the marker at all.
+  it("writes dynamic array formula with cm=1 on the cell, not the formula", async () => {
     const cells = new Map<string, Partial<Cell>>()
     cells.set("1,1", {
       formula: "SORT(A2:A10)",
@@ -224,10 +227,101 @@ describe("array formula writing", () => {
     const b2 = allCells.find((c: any) => c.attrs["r"] === "B2")
     const fEl = findChild(b2, "f")
 
+    expect(b2.attrs["cm"]).toBe("1")
+    expect(fEl.attrs["cm"]).toBeUndefined()
     expect(fEl.attrs["t"]).toBe("array")
     expect(fEl.attrs["ref"]).toBe("B2:B10")
-    expect(fEl.attrs["cm"]).toBe("1")
     expect(getElementText(fEl)).toBe("SORT(A2:A10)")
+  })
+
+  it("marks a plain (non-array) dynamic formula on the cell too", async () => {
+    const cells = new Map<string, Partial<Cell>>()
+    cells.set("0,0", { formula: "UNIQUE(B1:B5)", formulaDynamic: true })
+
+    const xlsx = await writeXlsx({ sheets: [{ name: "Sheet1", rows: [[null]], cells }] })
+    const doc = parseXml(await extractXml(xlsx, "xl/worksheets/sheet1.xml"))
+    const a1 = findCellElements(doc).find((c: any) => c.attrs["r"] === "A1")
+
+    expect(a1.attrs["cm"]).toBe("1")
+    expect(findChild(a1, "f").attrs["cm"]).toBeUndefined()
+  })
+})
+
+// ── The metadata part `cm` indexes into ──────────────────────────────
+
+describe("dynamic array cell metadata part", () => {
+  const dynamicSheet: WriteSheet = {
+    name: "Sheet1",
+    rows: [[null]],
+    cells: new Map<string, Partial<Cell>>([
+      ["0,0", { formula: "UNIQUE(B1:B5)", formulaDynamic: true }],
+    ]),
+  }
+
+  it("ships xl/metadata.xml with the XLDAPR records cm=1 resolves through", async () => {
+    const xlsx = await writeXlsx({ sheets: [dynamicSheet] })
+    const doc = parseXml(await extractXml(xlsx, "xl/metadata.xml"))
+
+    // metadataTypes[0] is XLDAPR, so `rc/@t="1"` (one-based) selects it.
+    const type = findChild(findChild(doc, "metadataTypes"), "metadataType")
+    expect(type.attrs["name"]).toBe("XLDAPR")
+    expect(type.attrs["cellMeta"]).toBe("1")
+    expect(type.attrs["minSupportedVersion"]).toBe("120000")
+
+    // futureMetadata block 0 holds the dynamic-array properties, which
+    // is what `rc/@v="0"` points at ([MS-XLSX] Metadata).
+    const future = findChild(doc, "futureMetadata")
+    expect(future.attrs["name"]).toBe("XLDAPR")
+    const ext = findChild(findChild(findChild(future, "bk"), "extLst"), "ext")
+    expect(ext.attrs["uri"].toLowerCase()).toBe("{bdbb8cdc-fa1e-496e-a857-3c3f30c029c3}")
+    expect(findChild(ext, "dynamicArrayProperties").attrs["fDynamic"]).toBe("1")
+
+    // cellMetadata block 1 — the one `cm="1"` on the cell indexes.
+    const rc = findChild(findChild(findChild(doc, "cellMetadata"), "bk"), "rc")
+    expect(rc.attrs["t"]).toBe("1")
+    expect(rc.attrs["v"]).toBe("0")
+  })
+
+  it("declares the part and relates it from the workbook", async () => {
+    const xlsx = await writeXlsx({ sheets: [dynamicSheet] })
+
+    const contentTypes = await extractXml(xlsx, "[Content_Types].xml")
+    expect(contentTypes).toContain(
+      '<Override PartName="/xl/metadata.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml"/>',
+    )
+
+    const rels = await extractXml(xlsx, "xl/_rels/workbook.xml.rels")
+    expect(rels).toContain(
+      'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata" Target="metadata.xml"',
+    )
+
+    // Whatever else is declared must be in the archive as well — a part
+    // that is announced and missing is what Excel calls corrupt (#367).
+    const zip = new ZipReader(xlsx)
+    for (const match of contentTypes.matchAll(/PartName="\/([^"]+)"/g)) {
+      expect(zip.has(match[1]!), `missing part ${match[1]}`).toBe(true)
+    }
+    // ...and every workbook relationship has to resolve, too.
+    for (const match of rels.matchAll(/Target="([^"]+)"/g)) {
+      expect(zip.has(`xl/${match[1]}`), `dangling rel ${match[1]}`).toBe(true)
+    }
+  })
+
+  it("writes no metadata part when nothing is a dynamic array", async () => {
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [[1]],
+          cells: new Map<string, Partial<Cell>>([
+            ["0,1", { formula: "SUM(A1:A2)", formulaType: "array", formulaRef: "B1:B1" }],
+          ]),
+        },
+      ],
+    })
+    const zip = new ZipReader(xlsx)
+    expect(zip.has("xl/metadata.xml")).toBe(false)
+    expect(await extractXml(xlsx, "[Content_Types].xml")).not.toContain("sheetMetadata")
   })
 })
 

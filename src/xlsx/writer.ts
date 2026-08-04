@@ -12,6 +12,7 @@ import type {
 import { ZipWriter } from "../zip/writer"
 import { writeContentTypes } from "./content-types-writer"
 import { writeFeaturePropertyBagXml } from "./feature-property-bag"
+import { METADATA_PART_PATH, writeMetadataXml } from "./metadata"
 import type { ContentTypesOptions } from "./content-types-writer"
 import { writeRootRels, writeWorkbookXml, writeWorkbookRels } from "./workbook-writer"
 import type { PivotCacheRef, PivotCacheRel } from "./workbook-writer"
@@ -279,6 +280,9 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
   // [Content_Types].xml
   const hasMacros = options.vbaProject !== undefined && options.vbaProject.length > 0
   const hasFeaturePropertyBag = styles.hasCheckboxFeature()
+  // A `cm` on a cell is an index into xl/metadata.xml; the part has to
+  // ship with it or the index resolves to nothing (#423).
+  const hasMetadata = worksheetResults.some((r) => r.hasDynamicArray)
 
   const ctOpts: ContentTypesOptions = {
     sheetCount: sheets.length,
@@ -296,6 +300,7 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
     hasCustomProps,
     hasMacros,
     hasFeaturePropertyBag,
+    hasMetadata,
   }
   zip.add("[Content_Types].xml", encoder.encode(writeContentTypes(ctOpts)))
 
@@ -345,6 +350,10 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
         undefined,
         undefined,
         pivotCacheRels.length > 0 ? pivotCacheRels : undefined,
+        undefined,
+        undefined,
+        undefined,
+        hasMetadata,
       ),
     ),
   )
@@ -358,6 +367,12 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
   // xl/sharedStrings.xml (if any strings)
   if (hasSharedStrings) {
     zip.add("xl/sharedStrings.xml", encoder.encode(writeSharedStringsXml(sharedStrings)))
+  }
+
+  // xl/metadata.xml — declared in the content types and related from
+  // the workbook above, so the part itself has to be here.
+  if (hasMetadata) {
+    zip.add(METADATA_PART_PATH, encoder.encode(writeMetadataXml()))
   }
 
   // xl/vbaProject.bin (if macros provided)

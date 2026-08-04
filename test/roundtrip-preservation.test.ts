@@ -192,6 +192,34 @@ describe("openXlsx → saveXlsx preserves workbook-level state", () => {
     expect(zip.has("xl/featurePropertyBag/featurePropertyBag.xml")).toBe(true)
   })
 
+  it("keeps dynamic arrays without ever shipping two metadata parts", async () => {
+    // The written file already carries xl/metadata.xml, so saveXlsx has
+    // to replace it rather than preserve it alongside its own — two
+    // entries for one path is a corrupt archive, and a preserved foreign
+    // one would not match the `cm` indexes hucre re-emits (#423).
+    const { saved, workbook } = await cycle({
+      sheets: [
+        {
+          name: "S",
+          rows: [[null]],
+          cells: new Map([["0,0", { formula: "UNIQUE(B1:B5)", formulaDynamic: true }]]),
+        },
+      ],
+    })
+
+    expect(workbook.sheets[0].cells?.get("0,0")?.formulaDynamic).toBe(true)
+
+    const zip = new ZipReader(saved)
+    const metadataEntries = zip.entries().filter((e) => e.toLowerCase() === "xl/metadata.xml")
+    expect(metadataEntries).toHaveLength(1)
+
+    const rels = new TextDecoder().decode(await zip.extract("xl/_rels/workbook.xml.rels"))
+    expect(rels).toContain('Target="metadata.xml"')
+    // rIds must stay unique once the metadata relationship joins them.
+    const ids = [...rels.matchAll(/Id="([^"]+)"/g)].map((m) => m[1])
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
   it("does not emit a featurePropertyBag part when nothing uses one", async () => {
     const { saved } = await cycle({ sheets: [sheetWith({})] })
     const zip = new ZipReader(saved)
