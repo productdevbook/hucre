@@ -1456,12 +1456,28 @@ export interface OutlineProperties {
 
 // ── CSV Options ────────────────────────────────────────────────────
 
+/**
+ * Options shared by `parseCsv`, `parseCsvObjects` and `streamCsvRows` —
+ * every one of them means the same thing in all three.
+ *
+ * `schema` used to live here and was honoured by no CSV reader at all; it
+ * was removed before v1 rather than frozen. Validate with
+ * `validateWithSchema` on the parsed rows, which does implement it.
+ */
 export interface CsvReadOptions {
   /** Field delimiter. Default: auto-detect */
   delimiter?: string
   /** Quote character. Default: " */
   quote?: string
-  /** Escape character. Default: " (RFC 4180 doubled quotes) */
+  /**
+   * Escape character. Default: " (RFC 4180 doubled quotes)
+   *
+   * Read-only on purpose: set it to read a foreign dialect (a backslash
+   * escape, say), but the writers always emit RFC 4180 doubled quotes.
+   * Writing a backslash dialect losslessly would need the escape character
+   * itself escaped, which this parser does not decode — a half-implemented
+   * `escape` on the write side would corrupt a value ending in one.
+   */
   escape?: string
   /** Whether first row is header. Default: false */
   header?: boolean
@@ -1471,8 +1487,6 @@ export interface CsvReadOptions {
   typeInference?: boolean
   /** Keep strings with leading zeros (e.g. "0123") as strings instead of converting to numbers. Default: true */
   preserveLeadingZeros?: boolean
-  /** Schema for validation */
-  schema?: SchemaDefinition
   /** Skip empty rows. Default: false */
   skipEmptyRows?: boolean
   /** Comment character (lines starting with this are skipped) */
@@ -1498,6 +1512,18 @@ export interface CsvReadOptions {
    * Default: false
    */
   skipHeaderRow?: boolean
+  /**
+   * Undo {@link CsvWriteOptions.escapeFormulae}: drop the leading `'` from
+   * values that start with one of the characters the writer escapes for
+   * (`= + - @ | \t \r \n \0`). Runs before type inference, so `'-5` reads
+   * back as the number -5. Default: false
+   *
+   * Set it only for input produced with `escapeFormulae: true` — a source
+   * value that genuinely began `'-5` is written unescaped, and this cannot
+   * tell the two apart. Values whose apostrophe is followed by anything
+   * else (`'quoted'`, `'tis`) are never touched.
+   */
+  unescapeFormulae?: boolean
 }
 
 export interface CsvWriteOptions {
@@ -1513,12 +1539,44 @@ export interface CsvWriteOptions {
   headers?: string[] | boolean
   /** Prepend UTF-8 BOM (for Excel compatibility). Default: false */
   bom?: boolean
-  /** Date format string. Default: ISO 8601 */
+  /**
+   * Date format string. Default: ISO 8601
+   *
+   * **One-way.** The readers recognize ISO 8601 and nothing else, so a
+   * `Date` written with the default round-trips as a `Date` under
+   * `typeInference`, while any custom format comes back a string — a
+   * reader cannot tell `03/04/2024` in one convention from the other.
+   * Use a custom format for output people read, not for output hucre
+   * reads back.
+   */
   dateFormat?: string
-  /** Null/undefined representation. Default: "" */
+  /**
+   * Null/undefined representation. Default: ""
+   *
+   * **One-way.** CSV has no null, so nothing on the read side turns the
+   * token back into `null` — `nullValue: "NULL"` reads as the string
+   * `"NULL"`, and the default reads as `""`. That is true of the default
+   * too, which is why there is no inverse option: restoring `null` for
+   * `""` would have to guess for every empty field in the file.
+   */
   nullValue?: string
-  /** Escape formula injection by prefixing cells starting with =, +, -, @, \t, \r with a single quote. Default: false */
+  /**
+   * Escape formula injection by prefixing cells starting with =, +, -, @, \t, \r with a single quote. Default: false
+   *
+   * Reverse it on the way back in with
+   * {@link CsvReadOptions.unescapeFormulae}; without that, the `'` is
+   * part of the value and every round trip keeps it (#408).
+   */
   escapeFormulae?: boolean
+  /**
+   * Comment character used by the reader this output is written for.
+   * Values starting with it are quoted, so the reader keeps them as data
+   * instead of discarding the line. Default: unset — a value starting with
+   * `#` is written bare, and a reader with `comment: "#"` drops the row.
+   *
+   * No effect under `quoteStyle: "none"`, which cannot quote anything.
+   */
+  comment?: string
   /** Column keys to include (for writeCsvObjects). When provided, only these columns are output in this order. */
   columns?: string[]
 }

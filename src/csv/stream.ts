@@ -13,6 +13,7 @@
 
 import type { CellValue, CsvReadOptions, CsvWriteOptions } from "../_types"
 import { stripBom, detectDelimiter } from "./reader"
+import { escapeFormula, unescapeFormula } from "./formula"
 
 const TEXT_ENCODER = /* @__PURE__ */ new TextEncoder()
 
@@ -87,6 +88,7 @@ export function* streamCsvRows(
   const commentChar = options?.comment
   const isHeaderMode = options?.header ?? false
   const skipHeaderRow = options?.skipHeaderRow ?? false
+  const unescapeFormulae = options?.unescapeFormulae ?? false
   // Align inferType default with parseCsv (defaults to true).
   const preserveLeadingZeros = options?.preserveLeadingZeros !== false
   const maxRows = options?.maxRows
@@ -220,12 +222,16 @@ export function* streamCsvRows(
       continue
     }
 
+    // Undo the writer's formula escape first, so type inference and header
+    // names both see the value that was written, not `'` + the value.
+    const fields = unescapeFormulae ? row.map(unescapeFormula) : row
+
     // Capture the header row. Like parseCsv, `header: true` only marks it —
     // the row is still yielded, and is used to name columns for
     // transformValue. `skipHeaderRow` is the opt-in that consumes it.
     const isHeaderRowNow = isFirstRow && isHeaderMode
     if (isHeaderRowNow) {
-      headerRow = row
+      headerRow = fields
     }
     isFirstRow = false
 
@@ -240,8 +246,8 @@ export function* streamCsvRows(
 
     // Apply type inference if requested
     let outRow: CellValue[] = doTypeInference
-      ? row.map((v) => inferType(v, preserveLeadingZeros))
-      : row
+      ? fields.map((v) => inferType(v, preserveLeadingZeros))
+      : fields
 
     // transformValue — after type inference, matching parseCsv's ordering.
     if (transformValue) {
@@ -277,6 +283,8 @@ class CsvRowFormatter {
   private quoteStyle: "all" | "required" | "none"
   private dateFormat: string | undefined
   private nullValue: string
+  private escapeFormulae: boolean
+  private comment: string | undefined
 
   constructor(options?: CsvWriteOptions) {
     this.delimiter = options?.delimiter ?? ","
@@ -286,6 +294,12 @@ class CsvRowFormatter {
     this.bom = options?.bom ?? false
     this.dateFormat = options?.dateFormat
     this.nullValue = options?.nullValue ?? ""
+    // Both of these were honoured by writeCsv alone until #408, so the
+    // same options produced different bytes depending on which writer you
+    // reached for — and one of the two was the injection escape.
+    this.escapeFormulae = options?.escapeFormulae ?? false
+    // "" would make startsWith() true for every value, so treat it as unset.
+    this.comment = options?.comment || undefined
   }
 
   /** Format one row of values into a delimited line. */
@@ -318,7 +332,8 @@ class CsvRowFormatter {
       return this.quoteField(this.formatDate(value))
     }
 
-    return this.quoteField(String(value))
+    const str = String(value)
+    return this.quoteField(this.escapeFormulae ? escapeFormula(str) : str)
   }
 
   private quoteField(value: string): string {
@@ -331,7 +346,10 @@ class CsvRowFormatter {
       value.includes(this.delimiter) ||
       value.includes(this.quote) ||
       value.includes("\n") ||
-      value.includes("\r")
+      value.includes("\r") ||
+      // A leading comment character is quoted so a reader configured with
+      // `comment` keeps the row rather than dropping the line (#408).
+      (this.comment !== undefined && value.startsWith(this.comment))
 
     if (!needsQuoting) {
       return value

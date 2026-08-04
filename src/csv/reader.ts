@@ -1,5 +1,6 @@
 import type { CellValue, CsvReadOptions } from "../_types"
 import { rowsToObjects } from "../_objects"
+import { unescapeFormula } from "./formula"
 
 // ── Public API ───────────────────────────────────────────────────────
 
@@ -126,6 +127,26 @@ export function parseCsv(input: string, options?: CsvReadOptions): CellValue[][]
     )
   }
 
+  // Undo the writer's formula escape before anything else looks at the
+  // values, so type inference and header names see what was written rather
+  // than `'` + the value (#408).
+  if (opts.unescapeFormulae) {
+    filtered = filtered.map((row) =>
+      row.map((v) => (typeof v === "string" ? unescapeFormula(v) : v)),
+    )
+  }
+
+  // `header: true` only marks the first row — it still comes back, and only
+  // names columns for transformValue. `skipHeaderRow` is the opt-in that
+  // consumes it, honoured by streamCsvRows and, until #408, ignored here.
+  // The row is captured before it goes, because transformValue names its
+  // columns from it either way, and it drops before maxRows so that limit
+  // counts data rows in both readers.
+  const headerRow = opts.header && filtered.length > 0 ? filtered[0]! : null
+  if (opts.header && opts.skipHeaderRow && filtered.length > 0) {
+    filtered = filtered.slice(1)
+  }
+
   // Limit to maxRows data rows
   if (opts.maxRows !== undefined && opts.maxRows >= 0 && filtered.length > opts.maxRows) {
     filtered = filtered.slice(0, opts.maxRows)
@@ -140,9 +161,8 @@ export function parseCsv(input: string, options?: CsvReadOptions): CellValue[][]
   // transformValue callback — applied after type inference
   const transformValue = options?.transformValue
   if (transformValue) {
-    // When we don't have headers we pass column index as the header name
-    // Detect headers from first row if header option is set
-    const headerRow = options?.header && filtered.length > 0 ? filtered[0]! : null
+    // When we don't have headers we pass column index as the header name;
+    // `headerRow` above is the first row when `header` is set.
     filtered = filtered.map((row, rowIdx) =>
       row.map((val, colIdx) => {
         const header = headerRow ? String(headerRow[colIdx] ?? colIdx) : String(colIdx)
@@ -388,6 +408,8 @@ function normalizeReadOptions(options?: CsvReadOptions) {
     skipEmptyRows: options?.skipEmptyRows ?? false,
     comment: options?.comment,
     header: options?.header ?? false,
+    skipHeaderRow: options?.skipHeaderRow ?? false,
+    unescapeFormulae: options?.unescapeFormulae ?? false,
     maxRows: options?.maxRows,
   }
 }

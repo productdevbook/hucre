@@ -14,12 +14,14 @@ import {
   toHtml,
   toMarkdown,
   validateWithSchema,
+  writeCsv,
   writeCsvStream,
   writeXlsx,
   writeXlsxStream,
 } from "../src/index"
 import { readXlsx } from "../src/xlsx/reader"
 import { parseCsv } from "../src/csv/reader"
+import type { CsvReadOptions } from "../src/_types"
 import { MAX_INPUT_BYTES } from "../src/limits"
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -124,8 +126,9 @@ describe("streamCsvRows matches parseCsv", () => {
     ])
   })
 
-  it("drops it only when asked, via skipHeaderRow", () => {
+  it("drops it only when asked, via skipHeaderRow — in both readers", () => {
     expect([...streamCsvRows(source, { header: true, skipHeaderRow: true })]).toEqual([["1", "2"]])
+    expect(parseCsv(source, { header: true, skipHeaderRow: true })).toEqual([["1", "2"]])
   })
 
   it("actually runs onRow and transformValue, which used to be ignored", () => {
@@ -290,6 +293,19 @@ describe("removed API that never did anything", () => {
     expect(workbook.sheets[0].threadedComments).toBeUndefined()
   })
 
+  it("no longer accepts CsvReadOptions.schema", () => {
+    // A removed *type member* leaves no runtime trace, so the claim is a
+    // compile-time one: if `schema` came back, the @ts-expect-error below
+    // would itself be the error. The row of data proves what the option
+    // never did — parseCsv returned it unvalidated.
+    const options: CsvReadOptions = {
+      header: true,
+      // @ts-expect-error — removed in v1; no CSV reader ever validated with it
+      schema: { a: { type: "number", required: true } },
+    }
+    expect(parseCsv("a\r\nnot-a-number", options)).toEqual([["a"], ["not-a-number"]])
+  })
+
   it("keeps RoundtripWorkbook's internals off the object", async () => {
     const buf = await writeXlsx({ sheets: [{ name: "S", rows: [["a"]] }] })
     const workbook = await openXlsx(buf)
@@ -332,6 +348,25 @@ describe("reading untrusted files", () => {
 describe("also worth knowing", () => {
   it("exports writeCsvStream, the counterpart to writeXlsxStream", () => {
     expect(typeof writeCsvStream).toBe("function")
+  })
+
+  it("gives escapeFormulae a way back in, and only where it applies", () => {
+    const written = writeCsv([["-5", "'quoted'"]], { escapeFormulae: true })
+    expect(written).toBe("'-5,'quoted'")
+    expect(parseCsv(written, { unescapeFormulae: true })).toEqual([["-5", "'quoted'"]])
+  })
+
+  it("escapes formulae in the streaming CSV writers too", async () => {
+    const escaped = writeCsv([["=SUM(A1)"]], { escapeFormulae: true })
+    const streamed = await bytes(writeCsvStream([["=SUM(A1)"]], { escapeFormulae: true }))
+    expect(new TextDecoder().decode(streamed)).toBe(escaped)
+  })
+
+  it("quotes values a comment-configured reader would delete", () => {
+    const written = writeCsv([["#1", "a"]], { comment: "#" })
+    expect(parseCsv(written, { comment: "#" })).toEqual([["#1", "a"]])
+    // …and without the option, the guide's warning holds.
+    expect(parseCsv(writeCsv([["#1", "a"]]), { comment: "#" })).toEqual([])
   })
 
   it("has a hucre/ooxml entry point that still re-exports from the root", async () => {

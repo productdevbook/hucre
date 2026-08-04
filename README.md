@@ -1380,6 +1380,18 @@ return new Response(writeCsvStream(dbCursor, { headers: ["id", "name"] }), {
 detectDelimiter(csvString) // "," or ";" or "\t" or "|"
 ```
 
+Round-tripping through hucre: `escapeFormulae` (which prefixes `= + - @ |`
+values with `'` so a spreadsheet cannot execute them) is reversed by
+`unescapeFormulae` on the read side, and `comment` on the write side quotes
+values that a reader configured with the same character would otherwise
+delete as comment lines. `nullValue` and a custom `dateFormat` are one-way
+— nothing on the read side restores a `null` or parses a non-ISO date.
+
+```ts
+const csv = writeCsv([["-5"]], { escapeFormulae: true }) // "'-5"
+parseCsv(csv, { unescapeFormulae: true, typeInference: true }) // [[-5]]
+```
+
 `writeCsvStream` is to `CsvStreamWriter` what `writeXlsxStream` is to
 `XlsxStreamWriter`: the class formats each row on arrival but retains
 every line until `finish()` returns one string, while the function

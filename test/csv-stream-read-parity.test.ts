@@ -11,6 +11,8 @@ function stream(input: string, options?: CsvReadOptions): CellValue[][] {
 
 const SIMPLE = "name,qty\r\nfoo,1\r\nbar,2\r\n"
 const QUOTED = 'a,"b,c"\r\n"x""y",z\r\n'
+// As writeCsv({ escapeFormulae: true }) emits it.
+const ESCAPED = "'-5,'=SUM(A1)\r\n'@x,plain\r\n"
 const MESSY = [
   "# leading comment",
   "name;qty;when",
@@ -30,6 +32,7 @@ describe("streamCsvRows / parseCsv parity", () => {
     ["simple", SIMPLE],
     ["quoted", QUOTED],
     ["messy", MESSY],
+    ["escaped", ESCAPED],
   ]
 
   const optionCases: Array<[string, CsvReadOptions]> = [
@@ -47,6 +50,13 @@ describe("streamCsvRows / parseCsv parity", () => {
     ["comment", { comment: "#" }],
     ["delimiter ;", { delimiter: ";" }],
     ["skipBom off", { skipBom: false }],
+    // Both were on CsvReadOptions but implemented in one reader only —
+    // skipHeaderRow in streamCsvRows, and neither honoured unescapeFormulae
+    // before it existed (#408).
+    ["header + skipHeaderRow", { header: true, skipHeaderRow: true }],
+    ["header + skipHeaderRow + maxRows 1", { header: true, skipHeaderRow: true, maxRows: 1 }],
+    ["unescapeFormulae", { unescapeFormulae: true }],
+    ["unescapeFormulae + typeInference", { unescapeFormulae: true, typeInference: true }],
   ]
 
   for (const [inputLabel, input] of inputs) {
@@ -160,6 +170,14 @@ describe("streamCsvRows — onRow", () => {
 })
 
 describe("streamCsvRows — skipHeaderRow", () => {
+  it("drops the header row in parseCsv too", () => {
+    // It was honoured here and ignored there — one option, two behaviours,
+    // which is the divergence this whole file exists to prevent (#408).
+    expect(parseCsv(SIMPLE, { header: true, skipHeaderRow: true })).toEqual(
+      stream(SIMPLE, { header: true, skipHeaderRow: true }),
+    )
+  })
+
   it("drops the header row when asked", () => {
     expect(stream(SIMPLE, { header: true, skipHeaderRow: true })).toEqual([
       ["foo", "1"],

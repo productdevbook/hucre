@@ -139,8 +139,11 @@ Each of these was exported or declared and had no effect. v1 would have frozen t
 | `WORKER_SAFE_FUNCTIONS`                       | 40 entries against ~125 exports; every export is worker-safe |
 | `ReadOptions.headerRow`, `ReadOptions.schema` | honoured by no reader                                        |
 | `CsvReadOptions.lineSeparator`, `.encoding`   | never read (`CsvWriteOptions.lineSeparator` is fine)         |
+| `CsvReadOptions.schema`                       | zero references under `src/csv/` — no CSV reader validated   |
 | `isoDates` on the JSON writers                | see below                                                    |
 | `WriteSheet.threadedComments`                 | typed and accepted; no writer ever produced the part         |
+
+`CsvReadOptions.schema` never validated anything: `parseCsv` returned every row exactly as parsed whatever you passed. Validate the parsed rows with `validateWithSchema`, which is what the option looked like it was doing.
 
 `isoDates` is worth explaining because it _looked_ like it worked. `JSON.stringify` calls `Date.prototype.toJSON` **before** consulting the replacer, so a replacer testing `value instanceof Date` is never reached — `isoDates: false` produced byte-identical output. Dates still serialize as ISO strings, exactly as before.
 
@@ -176,5 +179,9 @@ Very large legitimate files may now hit a limit that used to be absent. Every on
 - **Format entry points export their own types**, so `import type { WriteSheet } from "hucre/xlsx"` works without a second import from the root.
 - **`streamOdsRows` takes options and a `ReadableStream`.** It previously accepted neither.
 - **`writeCsvStream` exists** — constant-memory CSV writing, the counterpart to `writeXlsxStream`.
+- **A CSV write option now has a way back in.** `escapeFormulae: true` prefixed `= + - @ | \t \r \n \0` values with `'` and nothing removed it, so a round trip through hucre turned `-5` into `'-5` permanently. `parseCsv` and `streamCsvRows` take `unescapeFormulae: true`, which drops that `'` — and only where the writer would have added one, so `'quoted'` is left alone. `nullValue` and a custom `dateFormat` remain one-way by decision; both are documented as such on the option.
+- **The streaming CSV writers escape formulae too.** `escapeFormulae` was honoured by `writeCsv` alone — `CsvStreamWriter` and `writeCsvStream` ignored it silently, which for an injection escape meant the protection you asked for was simply absent. If you passed it to either, their output changes.
+- **`parseCsv` honours `skipHeaderRow`.** It was implemented in `streamCsvRows` and ignored here, so the same option on the same options type behaved two ways. `parseCsv(input, { header: true, skipHeaderRow: true })` now drops the header row, and `maxRows` counts data rows in both readers.
+- **`CsvWriteOptions.comment` quotes values that would read as comments.** A value starting with `#`, written bare, is deleted by a reader configured with `comment: "#"` — the whole row, silently. Pass the same character to the writer and those values are quoted instead. Off by default; the output is unchanged unless you set it.
 - **ZIP64 archives are readable**, and writable via `zip64: true`.
 - **`hucre/ooxml` exists.** The low-level OOXML part parsers — `parseChart`, `parsePivotTable`, `parseSlicers`, `parseThemeColors` and friends — have a home of their own, explicitly outside the v1 stability commitment. They are still exported from the root, marked deprecated, so nothing breaks.

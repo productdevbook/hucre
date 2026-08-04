@@ -1,4 +1,5 @@
 import type { CellValue, CsvWriteOptions } from "../_types"
+import { escapeFormula } from "./formula"
 
 // ── BOM constant ─────────────────────────────────────────────────────
 
@@ -37,7 +38,7 @@ export function formatCsvValue(value: CellValue, options?: CsvWriteOptions): str
   if (opts.escapeFormulae) {
     str = escapeFormula(str)
   }
-  return quoteField(str, opts.delimiter, opts.quote, opts.quoteStyle)
+  return quoteField(str, opts)
 }
 
 /**
@@ -55,11 +56,7 @@ export function writeCsv(rows: CellValue[][], options?: CsvWriteOptions): string
   // Headers row
   if (opts.headers) {
     if (Array.isArray(opts.headers)) {
-      parts.push(
-        opts.headers
-          .map((h) => quoteField(h, opts.delimiter, opts.quote, opts.quoteStyle))
-          .join(opts.delimiter),
-      )
+      parts.push(opts.headers.map((h) => quoteField(h, opts)).join(opts.delimiter))
       if (rows.length > 0) {
         parts.push(opts.lineSeparator)
       }
@@ -142,6 +139,7 @@ interface NormalizedWriteOptions {
   dateFormat: string | undefined
   nullValue: string
   escapeFormulae: boolean
+  comment: string | undefined
 }
 
 function normalizeWriteOptions(options?: CsvWriteOptions): NormalizedWriteOptions {
@@ -155,45 +153,9 @@ function normalizeWriteOptions(options?: CsvWriteOptions): NormalizedWriteOption
     dateFormat: options?.dateFormat,
     nullValue: options?.nullValue ?? "",
     escapeFormulae: options?.escapeFormulae ?? false,
+    // "" would make startsWith() true for every value, so treat it as unset.
+    comment: options?.comment || undefined,
   }
-}
-
-// Characters that trigger formula interpretation in Excel/Sheets/LibreOffice
-// Covers: formulas (=), unary operators (+, -), at-sign (@), whitespace injection (\t, \r, \n), null byte (\0)
-const FORMULA_PREFIXES = ["=", "+", "-", "@", "\t", "\r", "\n", "\0", "|"]
-
-// DDE and dangerous function patterns (case-insensitive)
-const DANGEROUS_PATTERNS = [
-  /^=cmd\b/i,
-  /^=HYPERLINK\s*\(/i,
-  /^=IMPORTXML\s*\(/i,
-  /^=IMPORTDATA\s*\(/i,
-  /^=IMPORTFEED\s*\(/i,
-  /^=IMPORTHTML\s*\(/i,
-  /^=IMPORTRANGE\s*\(/i,
-  /^=IMAGE\s*\(/i,
-]
-
-/**
- * Prefix a string value with a single quote if it starts with a formula-triggering character
- * or matches a dangerous function/DDE pattern.
- */
-function escapeFormula(value: string): string {
-  if (value.length === 0) return value
-
-  // Check prefix characters
-  if (FORMULA_PREFIXES.includes(value[0]!)) {
-    return "'" + value
-  }
-
-  // Check dangerous patterns (DDE, data exfiltration via HYPERLINK, etc.)
-  for (const pattern of DANGEROUS_PATTERNS) {
-    if (pattern.test(value)) {
-      return "'" + value
-    }
-  }
-
-  return value
 }
 
 function formatAndQuote(value: CellValue, opts: NormalizedWriteOptions): string {
@@ -207,50 +169,51 @@ function formatAndQuote(value: CellValue, opts: NormalizedWriteOptions): string 
 
   if (typeof value === "boolean") {
     const raw = value ? "true" : "false"
-    return quoteField(raw, opts.delimiter, opts.quote, opts.quoteStyle)
+    return quoteField(raw, opts)
   }
 
   if (typeof value === "number") {
     const raw = formatNumber(value)
-    return quoteField(raw, opts.delimiter, opts.quote, opts.quoteStyle)
+    return quoteField(raw, opts)
   }
 
   if (value instanceof Date) {
     const raw = formatDate(value, opts.dateFormat)
-    return quoteField(raw, opts.delimiter, opts.quote, opts.quoteStyle)
+    return quoteField(raw, opts)
   }
 
   let str = String(value)
   if (opts.escapeFormulae) {
     str = escapeFormula(str)
   }
-  return quoteField(str, opts.delimiter, opts.quote, opts.quoteStyle)
+  return quoteField(str, opts)
 }
 
-function quoteField(
-  value: string,
-  delimiter: string,
-  quote: string,
-  quoteStyle: "all" | "required" | "none",
-): string {
-  if (quoteStyle === "none") {
+function quoteField(value: string, opts: NormalizedWriteOptions): string {
+  if (opts.quoteStyle === "none") {
     return value
   }
 
   const needsQuoting =
-    quoteStyle === "all" ||
-    value.includes(delimiter) ||
-    value.includes(quote) ||
+    opts.quoteStyle === "all" ||
+    value.includes(opts.delimiter) ||
+    value.includes(opts.quote) ||
     value.includes("\n") ||
-    value.includes("\r")
+    value.includes("\r") ||
+    // A leading comment character is quoted so a reader configured with
+    // `comment` keeps the row instead of dropping the whole line (#408).
+    // The reader only skips *unquoted* leading comment chars, so quoting
+    // is a complete fix — and it is applied wherever the value sits, since
+    // a caller may reorder or concatenate what we hand back.
+    (opts.comment !== undefined && value.startsWith(opts.comment))
 
   if (!needsQuoting) {
     return value
   }
 
   // Escape quote characters by doubling them
-  const escaped = value.replaceAll(quote, quote + quote)
-  return quote + escaped + quote
+  const escaped = value.replaceAll(opts.quote, opts.quote + opts.quote)
+  return opts.quote + escaped + opts.quote
 }
 
 function formatNumber(n: number): string {
