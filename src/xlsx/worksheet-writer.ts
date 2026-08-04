@@ -2,6 +2,7 @@
 // Generates xl/worksheets/sheetN.xml for an XLSX package.
 
 import type {
+  RowDef,
   WriteSheet,
   CellValue,
   CellStyle,
@@ -85,6 +86,36 @@ export function colToLetter(col: number): string {
 }
 
 /** Build a cell reference like "A1" from 0-based row and col */
+/**
+ * The `<row>` attributes a row definition asks for. Shared with the streaming
+ * writers so a `RowDef` means the same thing whichever writer serialises it.
+ */
+export function rowAttributes(
+  rowIndex: number,
+  rowDef?: RowDef,
+): Record<string, string | number | boolean> {
+  const attrs: Record<string, string | number | boolean> = { r: rowIndex + 1 }
+  if (rowDef?.height !== undefined) {
+    attrs["ht"] = rowDef.height
+    attrs["customHeight"] = 1
+  }
+  if (rowDef?.hidden) attrs["hidden"] = 1
+  if (rowDef?.outlineLevel) attrs["outlineLevel"] = rowDef.outlineLevel
+  if (rowDef?.collapsed) attrs["collapsed"] = 1
+  return attrs
+}
+
+/** True when a row definition asks for anything at all. */
+export function hasRowAttributes(rowDef?: RowDef): boolean {
+  return (
+    rowDef !== undefined &&
+    (rowDef.height !== undefined ||
+      Boolean(rowDef.hidden) ||
+      Boolean(rowDef.outlineLevel) ||
+      Boolean(rowDef.collapsed))
+  )
+}
+
 export function cellRef(row: number, col: number): string {
   return colToLetter(col) + (row + 1)
 }
@@ -444,20 +475,7 @@ export function writeWorksheetXml(
     }
 
     if (hasAnyCells || hasRowDef) {
-      const rowAttrs: Record<string, string | number | boolean> = { r: r + 1 }
-      if (rowDef?.height !== undefined) {
-        rowAttrs["ht"] = rowDef.height
-        rowAttrs["customHeight"] = 1
-      }
-      if (rowDef?.hidden) {
-        rowAttrs["hidden"] = 1
-      }
-      if (rowDef?.outlineLevel) {
-        rowAttrs["outlineLevel"] = rowDef.outlineLevel
-      }
-      if (rowDef?.collapsed) {
-        rowAttrs["collapsed"] = 1
-      }
+      const rowAttrs = rowAttributes(r, rowDef)
       if (hasAnyCells) {
         rowElements.push(xmlElement("row", rowAttrs, cellElements))
       } else {

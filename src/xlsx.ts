@@ -24,6 +24,7 @@ export type {
   XlsxStreamWriterOptions,
   XlsxWriteStreamOptions,
   XlsxStreamRow,
+  StreamStyledCell,
 } from "./xlsx/stream-writer"
 
 // ── Sizing & theme helpers ─────────────────────────────────────────
