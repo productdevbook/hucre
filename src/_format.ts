@@ -402,11 +402,21 @@ function formatExponentialString(expStr: string, fmt: string): string {
 const FRACTION_PARTS = /([?#0]+)\/(\d+|[?#0]+)/
 
 function isFractionFormat(fmt: string): boolean {
-  // Matches patterns like "# ?/?", "# ??/??", "# ?/8", etc.
-  // The denominator may be a fixed number — Excel's built-in "As halves"
-  // (`# ?/2`), "As eighths" (`# ?/8`) and "As sixteenths" (`# ??/16`).
-  // But not date formats or paths
-  return /[#0?]\s*[?#0]+\/(?:\d+|[?#0]+)/.test(fmt)
+  // A slash with digit placeholders against it: "# ?/?", "# ??/??", and the
+  // fixed-denominator built-ins "As halves" (`# ?/2`), "As eighths" (`# ?/8`),
+  // "As sixteenths" (`# ??/16`).
+  //
+  // One placeholder either side is enough — "?/?" and "0/2" are as much
+  // fractions as "??/??" is. The old pattern wanted a placeholder *before*
+  // the numerator run, so a one-character numerator never matched and the
+  // format fell through to formatNumber, which renders the "/" as a literal
+  // and loses the numerator: 2.5 under "?/?" came out " /3". See #402.
+  //
+  // Recognising and parsing off the same pattern keeps the two from
+  // disagreeing about what a fraction is. Nothing else is dragged in: dates
+  // are claimed before this is reached and put no placeholder against their
+  // slashes, and an escaped slash ("0\/0") still carries its backslash.
+  return FRACTION_PARTS.test(fmt)
 }
 
 function formatFraction(value: number, fmt: string): string {
@@ -431,7 +441,11 @@ function formatFraction(value: number, fmt: string): string {
 
   const denomLen = fracMatch[2].length
 
-  // Check for fixed denominator (all digits)
+  // A denominator written in digits is fixed ("?/16"); one written in
+  // placeholders is searched for. "0" and "00" are both at once, but a
+  // literal denominator of zero means nothing, so they parse to 0 and the
+  // guard below sends them to the search — which is where Excel puts them,
+  // since "0" is a placeholder character.
   const fixedDenom = /^\d+$/.test(fracMatch[2]) ? Number.parseInt(fracMatch[2], 10) : 0
 
   let bestNum: number

@@ -454,6 +454,79 @@ describe("formatValue — Excel parity", () => {
     expect(formatValue(3.1, "# ??/??")).toBe("3  1/10")
   })
 
+  // ── #402 ──────────────────────────────────────────────────────────
+  //
+  // One placeholder either side of the slash is a fraction. Recognition
+  // used to demand two before it, so "?/?" was formatted as a plain number
+  // — which renders the "/" as a literal and puts the digits in the one
+  // placeholder it can see, losing the numerator entirely: 2.5 came out
+  // " /3".
+  it("reads a single placeholder either side of the slash as a fraction", () => {
+    expect(formatValue(2.5, "?/?")).toBe("5/2")
+    expect(formatValue(0.5, "?/?")).toBe("1/2")
+    expect(formatValue(0.125, "?/?")).toBe("1/8")
+  })
+
+  // Padding follows the width of the format, so the one-character form has
+  // nothing to pad — "?/?" gives "5/2" where "??/??" gives " 5/ 2".
+  it("pads a one-character fraction to its own width, not the two-character one", () => {
+    expect(formatValue(2.5, "?/?")).toBe("5/2")
+    expect(formatValue(2.5, "??/??")).toBe(" 5/ 2")
+  })
+
+  // No placeholder ahead of the slash, so the whole part folds into the
+  // numerator exactly as it does under "??/??".
+  it("folds the whole part into a single-placeholder numerator", () => {
+    expect(formatValue(3, "?/?")).toBe("3/1")
+    expect(formatValue(-2.5, "?/?")).toBe("-5/2")
+    expect(formatValue(-0.5, "?/?")).toBe("-1/2")
+  })
+
+  // A one-character denominator holds a one-digit search, the same rule the
+  // wider formats follow: "?/?" searches to 9, "?/???" to 999.
+  it("keeps the denominator search at one digit for a one-character denominator", () => {
+    expect(formatValue(3.1, "?/?")).toBe("28/9")
+    expect(formatValue(3.1, "??/??")).toBe("31/10")
+  })
+
+  // A literal denominator still reads as literal when the numerator is one
+  // character: "0/2" is halves, not a one-digit search.
+  it("honours a fixed denominator behind a single-placeholder numerator", () => {
+    expect(formatValue(0.5, "0/2")).toBe("1/2")
+    expect(formatValue(2.5, "0/2")).toBe("5/2")
+    expect(formatValue(0.125, "?/8")).toBe("1/8")
+    expect(formatValue(2.5, "?/8")).toBe("20/8")
+  })
+
+  // "#", "0" and "?" are all digit placeholders, so these are the same
+  // format as "?/?" wearing different padding rules — none of which show
+  // for a numerator that fills its width anyway.
+  it("treats #, 0 and ? alike on either side of the slash", () => {
+    expect(formatValue(2.5, "#/#")).toBe("5/2")
+    expect(formatValue(2.5, "0/0")).toBe("5/2")
+    expect(formatValue(2.5, "0/0")).toBe(formatValue(2.5, "?/?"))
+  })
+
+  // The whole-part detection from #397 reads the text in front of the
+  // fraction, so a one-character fraction group changes nothing about it.
+  it("still finds the whole part in front of a one-character fraction", () => {
+    expect(formatValue(2.5, "# ?/?")).toBe("2 1/2")
+    expect(formatValue(3, "# ?/?")).toBe("3")
+    expect(formatValue(3.1, "# ?/2")).toBe("3")
+  })
+
+  // The widened pattern must not drag non-fractions in with it. A date
+  // format is claimed before fractions are considered, and neither it nor a
+  // plain number puts a digit placeholder against a slash.
+  it("leaves formats that are not fractions alone", () => {
+    expect(formatValue(45000, "m/d/yyyy")).toBe("3/15/2023")
+    expect(formatValue(45000, "yyyy/mm/dd")).toBe("2023/03/15")
+    expect(formatValue(3.7, "0")).toBe("4")
+    expect(formatValue(3.7, "0.00")).toBe("3.70")
+    expect(formatValue(1234.5, "#,##0.00")).toBe("1,234.50")
+    expect(formatValue(0.5, "0%")).toBe("50%")
+  })
+
   // "?" renders insignificant decimals as spaces so decimal points line up
   // down a column, where "0" would render them as zeros.
   it("pads insignificant decimals with spaces for a ? placeholder", () => {
