@@ -3,7 +3,16 @@ import type { Sheet, CellValue } from "../_types"
 export interface JsonExportOptions {
   /** Which row is headers (0-based). Default: 0 */
   headerRow?: number
-  /** Output format. Default: "objects" */
+  /**
+   * Output format. Default: "objects"
+   *
+   * Only `"objects"` has a reader: `parseJson` reads it back, and
+   * `jsonToWorkbook` reads a whole workbook of it. `"arrays"` and
+   * `"columns"` are **write-only** presentation shapes — handoffs to a
+   * charting library or a dataframe, which is the reason they exist — and
+   * `parseJson` will not reconstruct a table from either. Export in
+   * `"objects"` if the JSON has to come back into hucre.
+   */
   format?: "objects" | "arrays" | "columns"
   /** Pretty print. Default: false */
   pretty?: boolean
@@ -23,9 +32,12 @@ function dateReplacer(_key: string, value: unknown): unknown {
  * Export a sheet as a JSON string.
  *
  * Formats:
- * - `"objects"` (default): `[{Name:"Widget", Price:9.99}, ...]`
- * - `"arrays"`: `{headers:["Name","Price"], data:[["Widget",9.99], ...]}`
- * - `"columns"`: `{Name:["Widget","Gadget"], Price:[9.99,24.5]}` (columnar)
+ * - `"objects"` (default): `[{Name:"Widget", Price:9.99}, ...]` — readable
+ *   back with `parseJson`
+ * - `"arrays"`: `{headers:["Name","Price"], data:[["Widget",9.99], ...]}` —
+ *   write-only
+ * - `"columns"`: `{Name:["Widget","Gadget"], Price:[9.99,24.5]}` (columnar) —
+ *   write-only
  */
 export function toJson(sheet: Sheet, options?: JsonExportOptions): string {
   const headerRowIdx = options?.headerRow ?? 0

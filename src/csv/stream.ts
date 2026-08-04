@@ -14,6 +14,7 @@
 import type { CellValue, CsvReadOptions, CsvWriteOptions } from "../_types"
 import { stripBom, detectDelimiter } from "./reader"
 import { escapeFormula, unescapeFormula } from "./formula"
+import { reviveIsoDate } from "../_date"
 
 const TEXT_ENCODER = /* @__PURE__ */ new TextEncoder()
 
@@ -21,8 +22,8 @@ const TEXT_ENCODER = /* @__PURE__ */ new TextEncoder()
 const CHUNK_THRESHOLD = 64 * 1024
 
 // ── Type inference (duplicated from reader to avoid coupling) ────────
-
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$/
+// The date rule is the one part that is *not* duplicated: it lives in
+// `_date.ts` so CSV, streaming CSV and JSON all accept the same instants.
 
 function inferType(value: string, preserveLeadingZeros: boolean): CellValue {
   const trimmed = value.trim()
@@ -34,10 +35,8 @@ function inferType(value: string, preserveLeadingZeros: boolean): CellValue {
   if (lower === "true") return true
   if (lower === "false") return false
 
-  if (ISO_DATE_RE.test(trimmed)) {
-    const d = new Date(trimmed)
-    if (!Number.isNaN(d.getTime())) return d
-  }
+  const asDate = reviveIsoDate(trimmed)
+  if (asDate) return asDate
 
   // Leading-zero preservation: keep strings like "0123", "007" as strings
   // (aligns with parseCsv's default behaviour).

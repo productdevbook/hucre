@@ -1307,6 +1307,7 @@ import {
   writeJson,
   writeNdjson,
   workbookToJson,
+  jsonToWorkbook,
   NdjsonStreamWriter,
   streamNdjsonRows,
 } from "hucre/json"
@@ -1321,15 +1322,37 @@ parseJson(text, { rowsAt: "data.rows" })
 parseJson('[{"sku":"P1","pricing":{"cost":100}}]')
 // → data: [{ sku: "P1", "pricing.cost": 100 }]
 
+// Flattening is lossy on the way back: writing returns the dot-path key, not
+// the nesting. Pass `unflatten` to rebuild it — opt-in, because a header like
+// "Q1.2024" is a column name, not a path.
+writeJson(data, { unflatten: true })
+// → [{ "sku": "P1", "pricing": { "cost": 100 } }]
+// Two things it cannot undo: a primitive array joined into "1, 2" stays a
+// string, and a key that already contained a dot comes back nested.
+
+// JSON has no date type, so ISO strings stay strings unless you ask —
+// same option name and same rule as the CSV reader
+parseJson('[{"at":"2024-01-15T10:30:00Z"}]', { typeInference: true })
+// → data: [{ at: Date }]
+
 // NDJSON / JSON Lines — one object per line
 const out = parseNdjson(ndjsonText, {
   onError: (line, ln) => console.warn(`bad line ${ln}`), // skip + report
 })
 
-// Round-trip a workbook (single sheet → array, multi-sheet → { Sheet: [...] })
+// Round-trip a workbook, at any sheet count
 import { readXlsx } from "hucre/xlsx"
 const wb = await readXlsx(buffer)
 const json = workbookToJson(wb, { pretty: true })
+// `workbookToJson` emits a bare array for one sheet and { Sheet: [...] }
+// beyond that — a shape that depends on the data. Pin it with
+// `shape: "sheets"`, and read either shape back with `jsonToWorkbook`.
+const restored = jsonToWorkbook(json)
+
+// `parseJson` reads one table, so a multi-sheet document throws rather than
+// collapsing into a single row of stringified sheets. Pick a sheet with
+// `rowsAt`, or use `jsonToWorkbook` for all of them.
+parseJson(workbookToJson(wb), { rowsAt: "Sheet2" })
 
 // Streaming write — works in Cloudflare Workers / Deno / Node 18+
 const writer = new NdjsonStreamWriter()
@@ -1395,9 +1418,14 @@ const xml = writeXml(
 import { toJson } from "hucre"
 
 toJson(sheet, { format: "objects" }) // [{Name:"Widget", Price:9.99}, ...]
-toJson(sheet, { format: "columns" }) // {Name:["Widget"], Price:[9.99]}
-toJson(sheet, { format: "arrays" }) // {headers:[...], data:[[...]]}
+toJson(sheet, { format: "columns" }) // {Name:["Widget"], Price:[9.99]}  — write-only
+toJson(sheet, { format: "arrays" }) // {headers:[...], data:[[...]]}     — write-only
 ```
+
+Only `"objects"` has a reader. `"columns"` and `"arrays"` are presentation
+shapes for handing a sheet to a charting library or a dataframe; `parseJson`
+will not reconstruct a table from either. Export in `"objects"` if the JSON has
+to come back into hucre.
 
 For new code prefer `writeJson` / `workbookToJson` from `hucre/json` — same result, consistent with `parseJson`/`parseNdjson`/`writeNdjson`.
 
@@ -1622,7 +1650,10 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `parseNdjson(input, options?)`    | Parse NDJSON / JSON Lines (`onError` skips invalid)                                    |
 | `writeJson(data, options?)`       | Serialize rows to a JSON string                                                        |
 | `writeNdjson(data, options?)`     | Serialize rows to NDJSON, one object per line                                          |
-| `workbookToJson(wb, options?)`    | Convert a `Workbook` to JSON (single-sheet array or per-sheet)                         |
+| `workbookToJson(wb, options?)`    | Convert a `Workbook` to JSON (single-sheet array or per-sheet; `shape` pins it)        |
+| `jsonToWorkbook(input, options?)` | Read either `workbookToJson` shape back into a `Workbook`                              |
+| `flattenValue(value, options?)`   | Flatten one value into dot-path keyed cells                                            |
+| `unflattenRow(row)`               | Rebuild a dot-path keyed row into nested objects — the inverse                         |
 | `streamNdjsonRows(stream, opts?)` | Async generator over a `ReadableStream<Uint8Array>`                                    |
 | `NdjsonStreamWriter`              | Incremental writer (`addRow`/`addObject`); `toStream()` releases rows as they are sent |
 

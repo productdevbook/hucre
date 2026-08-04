@@ -1,6 +1,7 @@
 import type { CellValue, CsvReadOptions } from "../_types"
 import { rowsToObjects } from "../_objects"
 import { unescapeFormula } from "./formula"
+import { reviveIsoDate } from "../_date"
 
 // ── Public API ───────────────────────────────────────────────────────
 
@@ -346,8 +347,6 @@ function parseRaw(
 
 // ── Type inference ───────────────────────────────────────────────────
 
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$/
-
 function inferType(value: CellValue, preserveLeadingZeros: boolean): CellValue {
   if (value === null) return null
   if (typeof value !== "string") return value
@@ -362,11 +361,10 @@ function inferType(value: CellValue, preserveLeadingZeros: boolean): CellValue {
   if (lower === "true") return true
   if (lower === "false") return false
 
-  // ISO 8601 date detection (must come before number to avoid matching partial numbers)
-  if (ISO_DATE_RE.test(trimmed)) {
-    const d = new Date(trimmed)
-    if (!Number.isNaN(d.getTime())) return d
-  }
+  // ISO 8601 date detection (must come before number to avoid matching partial numbers).
+  // Shared with the JSON reader so `typeInference` means one thing library-wide.
+  const asDate = reviveIsoDate(trimmed)
+  if (asDate) return asDate
 
   // Leading-zero preservation: keep strings like "0123", "007", "00" as strings.
   // Exceptions: "0.xxx" decimals are still parsed.

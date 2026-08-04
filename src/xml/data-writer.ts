@@ -116,6 +116,8 @@ function buildTree(row: Record<string, CellValue>, attrPrefix: string, textKey: 
   return root
 }
 
+// `json/unflatten.ts` reconstructs a tree from dot-paths too. The two are
+// intentionally separate — see the note at the top of that file for why.
 function insert(
   node: TreeNode,
   key: string,

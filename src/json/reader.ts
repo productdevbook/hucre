@@ -2,7 +2,7 @@
 // Read JSON arrays / single objects / { rowsAt: [...] } shapes
 // into tabular { data, headers }.
 
-import type { CellValue } from "../_types"
+import type { CellValue, Sheet, Workbook } from "../_types"
 import { ParseError } from "../errors"
 import { collectHeaders, flattenValue, type FlattenOptions } from "./flatten"
 
@@ -115,11 +115,46 @@ function extractRows(value: unknown, rowsAt: string | undefined): unknown[] {
     if (arrayEntries.length === 1) {
       return arrayEntries[0]![1] as unknown[]
     }
+
+    // A workbook is not a table. `workbookToJson` emits multi-sheet output as
+    // `{ "Sheet1": [...], "Sheet2": [...] }`, and this used to fall through to
+    // the single-row branch below and hand back one row whose cells were
+    // JSON-stringified sheets (#409) — a silent nonsense that only appeared
+    // once a workbook grew a second sheet. Say so instead.
+    if (looksLikeSheetMap(entries)) {
+      throw new ParseError(
+        `JSON looks like a multi-sheet workbook ({"${entries[0]![0]}": [...], "${entries[1]![0]}": [...]}), not a single table. ` +
+          `Use jsonToWorkbook() to read every sheet, rowsAt: "${entries[0]![0]}" to pick one, ` +
+          `or rowsAt: "" to read the object itself as one row.`,
+      )
+    }
+
     // Fallback: treat as single row
     return [obj]
   }
 
   throw new ParseError("JSON input must be an object or an array of objects")
+}
+
+/**
+ * Does this object look like `{ sheetName: rowObjects[] }`?
+ *
+ * Deliberately strict: every property must be an array, at least two of them,
+ * and every element of every array a plain object. `{ a: [1, 2], b: [3, 4] }`
+ * is a perfectly good single row with two list-valued columns and still reads
+ * as one, because its elements are not rows.
+ */
+function looksLikeSheetMap(entries: [string, unknown][]): boolean {
+  if (entries.length < 2) return false
+  let sawRow = false
+  for (const [, v] of entries) {
+    if (!Array.isArray(v)) return false
+    for (const el of v) {
+      if (el === null || typeof el !== "object" || Array.isArray(el)) return false
+      sawRow = true
+    }
+  }
+  return sawRow
 }
 
 function rowsToResult<T extends Record<string, CellValue>>(
@@ -130,6 +165,7 @@ function rowsToResult<T extends Record<string, CellValue>>(
     flatten: options?.flatten,
     arrayJoin: options?.arrayJoin,
     maxDepth: options?.maxDepth,
+    typeInference: options?.typeInference,
   }
 
   const limit = options?.maxRows ?? Infinity
@@ -175,6 +211,77 @@ function rowsToResult<T extends Record<string, CellValue>>(
   }
 
   return { data, headers }
+}
+
+/** Options for {@link jsonToWorkbook}. */
+export interface JsonToWorkbookOptions extends Omit<JsonReadOptions, "rowsAt"> {
+  /** Sheet name for input that carries none (a bare array). Default: "Sheet1". */
+  sheetName?: string
+}
+
+/**
+ * Read the output of `workbookToJson` back into a `Workbook` — the inverse
+ * that `parseJson` cannot be, because a workbook is more than one table.
+ *
+ * Accepts both shapes `workbookToJson` emits, so the round trip no longer
+ * depends on how many sheets the workbook happened to have (#409):
+ *
+ *   - a bare array → one sheet, named by `sheetName`
+ *   - `{ "Sheet1": [...], "Sheet2": [...] }` → one sheet per key, in order
+ *   - any other object → one sheet holding it as a single row
+ *
+ * Each sheet is a header row followed by its data rows, matching what
+ * `readXlsx` and friends return, so the result can go straight back into
+ * `writeXlsx` / `writeOds`.
+ */
+export function jsonToWorkbook(
+  input: string | Uint8Array | unknown,
+  options?: JsonToWorkbookOptions,
+): Workbook {
+  let value: unknown = input
+  if (typeof input === "string" || input instanceof Uint8Array) {
+    const text = toString(input)
+    if (text.trim() === "") return { sheets: [] }
+    try {
+      value = JSON.parse(text)
+    } catch (err) {
+      throw new ParseError(`Invalid JSON: ${(err as Error).message}`, undefined, { cause: err })
+    }
+  }
+
+  const defaultName = options?.sheetName ?? "Sheet1"
+
+  if (Array.isArray(value)) {
+    return { sheets: [rowsToSheet(defaultName, value, options)] }
+  }
+
+  if (value === null || value === undefined || typeof value !== "object") {
+    throw new ParseError("JSON input must be an object or an array of objects")
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>)
+  // An empty object is an empty workbook — that is what workbookToJson emits
+  // for one, and reading it as a single blank row would be worse.
+  if (entries.length === 0) return { sheets: [] }
+
+  if (entries.every(([, v]) => Array.isArray(v))) {
+    return {
+      sheets: entries.map(([name, rows]) => rowsToSheet(name, rows as unknown[], options)),
+    }
+  }
+
+  return { sheets: [rowsToSheet(defaultName, [value], options)] }
+}
+
+function rowsToSheet(name: string, rows: unknown[], options?: JsonToWorkbookOptions): Sheet {
+  const { data, headers } = rowsToResult(rows, options)
+  const grid: CellValue[][] = [headers]
+  for (const row of data) {
+    grid.push(headers.map((h) => row[h] ?? null))
+  }
+  // No headers means no rows at all; a sheet with a lone empty header row
+  // would read back as a one-column table that was never there.
+  return { name, rows: headers.length === 0 ? [] : grid }
 }
 
 /**

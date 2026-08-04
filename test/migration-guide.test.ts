@@ -4,7 +4,11 @@ import {
   DefterError,
   HucreError,
   InvalidArgumentError,
+  jsonToWorkbook,
+  NdjsonStreamWriter,
   openXlsx,
+  parseJson,
+  parseNdjson,
   readNdjsonStream,
   readObjects,
   saveXlsx,
@@ -13,9 +17,13 @@ import {
   streamNdjsonRows,
   toHtml,
   toMarkdown,
+  unflattenRow,
   validateWithSchema,
   writeCsv,
+  workbookToJson,
   writeCsvStream,
+  writeJson,
+  writeNdjson,
   writeXlsx,
   writeXlsxStream,
 } from "../src/index"
@@ -23,6 +31,7 @@ import { readXlsx } from "../src/xlsx/reader"
 import { parseCsv } from "../src/csv/reader"
 import type { CsvReadOptions } from "../src/_types"
 import { MAX_INPUT_BYTES } from "../src/limits"
+import type { Workbook } from "../src/_types"
 
 // ═══════════════════════════════════════════════════════════════════════
 // MIGRATION.md is a promise to people upgrading from 0.6.x, and an
@@ -266,6 +275,108 @@ describe("sheet names are validated on write", () => {
   })
 })
 
+// ── "parseJson rejects a workbook instead of mangling it" ───────────
+
+describe("parseJson rejects a workbook instead of mangling it", () => {
+  const wb: Workbook = {
+    sheets: [
+      { name: "S1", rows: [["a"], [1]] },
+      { name: "S2", rows: [["b"], [2]] },
+    ],
+  }
+
+  it("throws ParseError where it used to return one row of nonsense", () => {
+    expect(() => parseJson(workbookToJson(wb))).toThrow(HucreError)
+  })
+
+  it("offers all three ways forward the guide's diff lists", () => {
+    const json = workbookToJson(wb)
+    expect(jsonToWorkbook(json)).toEqual(wb)
+    expect(parseJson(json, { rowsAt: "S1" }).data).toEqual([{ a: 1 }])
+    expect(parseJson(json, { rowsAt: "" }).data).toEqual([{ S1: '[{"a":1}]', S2: '[{"b":2}]' }])
+  })
+
+  it("still reads { a: [1,2], b: [3,4] } as one row — the guard is that narrow", () => {
+    expect(parseJson('{"a":[1,2],"b":[3,4]}').data).toEqual([{ a: "1, 2", b: "3, 4" }])
+  })
+
+  it("keeps today's count-dependent shape under the default, and pins it under shape: sheets", () => {
+    expect(workbookToJson({ sheets: [wb.sheets[0]!] })).toBe('[{"a":1}]')
+    expect(workbookToJson({ sheets: [wb.sheets[0]!] }, { shape: "sheets" })).toBe(
+      '{"S1":[{"a":1}]}',
+    )
+  })
+})
+
+// ── "Nested JSON can be rebuilt: unflattenRow" ──────────────────────
+
+describe("nested JSON can be rebuilt", () => {
+  it("is opt-in — the default still destroys the nesting, as it always did", () => {
+    expect(writeJson(parseJson('[{"user":{"name":"Ada"}}]').data)).toBe('[{"user.name":"Ada"}]')
+  })
+
+  it("restores it under unflatten: true", () => {
+    const out = writeJson(parseJson('[{"user":{"name":"Ada"}}]').data, { unflatten: true })
+    expect(JSON.parse(out)).toEqual([{ user: { name: "Ada" } }])
+  })
+
+  it("takes the same option on writeNdjson and NdjsonStreamWriter", () => {
+    expect(writeNdjson([{ "user.name": "Ada" }], { unflatten: true })).toBe(
+      '{"user":{"name":"Ada"}}\n',
+    )
+    const w = new NdjsonStreamWriter({ unflatten: true })
+    w.addObject({ "user.name": "Ada" })
+    expect(w.finish()).toBe('{"user":{"name":"Ada"}}\n')
+  })
+
+  it("does not undo the two losses the guide says it cannot", () => {
+    // A joined primitive array is a string by then; a literal dot is a path.
+    expect(JSON.parse(writeJson(parseJson('[{"a":[1,2]}]').data, { unflatten: true }))).toEqual([
+      { a: "1, 2" },
+    ])
+    expect(JSON.stringify(unflattenRow({ "a.b": 1 }))).toBe('{"a":{"b":1}}')
+  })
+})
+
+// ── "Dates come back from JSON" ─────────────────────────────────────
+
+describe("dates come back from JSON", () => {
+  const at = new Date("2024-01-15T10:30:00.000Z")
+
+  it("is off by default in both readers", () => {
+    expect(parseJson(writeJson([{ at }])).data[0]!.at).toBe(at.toISOString())
+    expect(parseCsv(`at\n${at.toISOString()}`, { header: true })[1]![0]).toBe(at.toISOString())
+  })
+
+  it("revives the Date under typeInference: true", () => {
+    expect(parseJson(writeJson([{ at }]), { typeInference: true }).data[0]!.at).toEqual(at)
+  })
+
+  it("accepts the same instants everywhere the option exists", () => {
+    for (const raw of ["2024-01-15", "2024-01-15T10:30:00Z", "2024-13-45", "3/4/2021", "2024"]) {
+      const viaCsv = parseCsv(`v\n"${raw}"`, { typeInference: true, header: true })[1]![0]
+      const viaStream = [
+        ...streamCsvRows(`v\n"${raw}"`, { typeInference: true, header: true }),
+      ][1]![0]
+      const viaJson = parseJson(`[{"v":${JSON.stringify(raw)}}]`, { typeInference: true }).data[0]!
+        .v
+      const viaNdjson = parseNdjson(`{"v":${JSON.stringify(raw)}}`, { typeInference: true })
+        .data[0]!.v
+      const asDate = (v: unknown) => v instanceof Date
+      expect([raw, asDate(viaJson), asDate(viaNdjson), asDate(viaStream)]).toEqual([
+        raw,
+        asDate(viaCsv),
+        asDate(viaCsv),
+        asDate(viaCsv),
+      ])
+    }
+  })
+
+  it("infers only dates for JSON — a string stays a string", () => {
+    expect(parseJson('[{"n":"007"}]', { typeInference: true }).data[0]!.n).toBe("007")
+  })
+})
+
 // ── "Removed API that never did anything" ───────────────────────────
 
 describe("removed API that never did anything", () => {
@@ -346,6 +457,22 @@ describe("reading untrusted files", () => {
 // ── "Also worth knowing" ────────────────────────────────────────────
 
 describe("also worth knowing", () => {
+  it("has no reader for toJson's write-only arrays and columns formats", async () => {
+    // The guide's claim is a negative, so what it can check is that the
+    // readable format really is readable and the other two really are not.
+    const { toJson } = await import("../src/export/json")
+    const sheet = {
+      name: "S",
+      rows: [
+        ["a", "b"],
+        [1, 2],
+      ],
+    }
+    expect(parseJson(toJson(sheet)).data).toEqual([{ a: 1, b: 2 }])
+    expect(parseJson(toJson(sheet, { format: "arrays" })).data).not.toEqual([{ a: 1, b: 2 }])
+    expect(parseJson(toJson(sheet, { format: "columns" })).data).not.toEqual([{ a: 1, b: 2 }])
+  })
+
   it("exports writeCsvStream, the counterpart to writeXlsxStream", () => {
     expect(typeof writeCsvStream).toBe("function")
   })

@@ -18,6 +18,7 @@ If a change here breaks something and the reason isn't clear, please open an iss
 | [`HucreError`](#deftererror-is-now-hucreerror)                                                       | nothing — the old name still works                                                                |
 | [`readNdjsonStream`](#readndjsonstream-is-now-streamndjsonrows)                                      | nothing — the old name still works                                                                |
 | [Sheet names are validated](#sheet-names-are-validated-on-write)                                     | you write sheet names with `: * ? / \ [ ]`, over 31 chars, or duplicates                          |
+| [`parseJson` on a multi-sheet document](#parsejson-rejects-a-workbook-instead-of-mangling-it)        | you pass `workbookToJson` output of ≠1 sheet back into `parseJson`       |
 | [Removed dead API](#removed-api-that-never-did-anything)                                             | you reference `ReadResult`, `WORKER_SAFE_FUNCTIONS`, `isoDates`, `WriteSheet.threadedComments`, … |
 | [Files that were silently corrupt](#files-that-were-silently-wrong)                                  | you round-trip workbooks, or print them                                                           |
 
@@ -128,6 +129,72 @@ It throws rather than sanitizing on purpose: truncating a name or stripping its 
 
 If you generate sheet names from user data — report titles, date ranges, file names — sanitize before calling.
 
+## `parseJson` rejects a workbook instead of mangling it
+
+`workbookToJson` emits a bare array for a one-sheet workbook and
+`{ "Sheet1": [...], "Sheet2": [...] }` for anything else. `parseJson` only
+ever unwrapped a _single_ array-valued property, so the multi-sheet shape fell
+through to "treat the object as one row" and came back as one row whose cells
+were JSON-stringified sheets — silently, and only once a workbook grew a second
+sheet.
+
+It now throws `ParseError`, and there are three ways forward:
+
+```diff
+- parseJson(workbookToJson(wb))                    // one row of nonsense
++ jsonToWorkbook(workbookToJson(wb))               // every sheet, as a Workbook
++ parseJson(workbookToJson(wb), { rowsAt: "S1" })  // one named sheet as a table
++ parseJson(json, { rowsAt: "" })                  // the old single-row reading
+```
+
+The guard is deliberately narrow: it only fires when **every** property is an
+array of plain objects and there are at least two of them. `{ a: [1, 2], b: [3, 4] }`
+is a row with two list-valued columns and still reads as one row.
+
+Two additions come with it, neither of them breaking:
+
+- **`jsonToWorkbook`** reads either shape back into a `Workbook`, so the round
+  trip no longer depends on the sheet count.
+- **`workbookToJson(wb, { shape: "sheets" })`** always emits the keyed object.
+  The default `"auto"` keeps today's count-dependent shape.
+
+## Nested JSON can be rebuilt: `unflattenRow`
+
+`parseJson` flattens `{user: {name}}` to a `"user.name"` column by default, and
+nothing reversed it, so `parseJson` → `writeJson` permanently destroyed the
+nesting. There is now an inverse, and the writers take it as an **opt-in**:
+
+```diff
+- writeJson(parseJson(text).data)                    // { "user.name": "Ada" }
++ writeJson(parseJson(text).data, { unflatten: true }) // { user: { name: "Ada" } }
+```
+
+Opt-in rather than on by default because `writeJson` takes any flat row set,
+most of which never went through `flatten` — and spreadsheet headers contain
+dots routinely (`Q1.2024`, `v1.2`). Nesting those by default would be a new
+silent mangling in the fix for one. `writeNdjson` and `NdjsonStreamWriter` take
+the same option; `unflattenRow` / `unflattenRows` are exported directly.
+
+Two things it does not undo, because they are not recoverable from the flat
+form: a primitive array joined into `"1, 2"` stays a string, and a key that
+contained a literal dot comes back nested.
+
+## Dates come back from JSON
+
+The CSV reader has always inferred ISO 8601 dates under `typeInference`. The
+JSON reader had no equivalent, so a `Date` written by `writeJson` came back a
+string. The same option name now does the same job on both:
+
+```diff
+- parseJson(writeJson([{ at: new Date() }])).data[0].at  // string
++ parseJson(writeJson([{ at: new Date() }]), { typeInference: true }).data[0].at // Date
+```
+
+Off by default in both readers, and it accepts exactly the instants CSV
+accepts — the rule is one function now, shared by `parseCsv`, `streamCsvRows`,
+`parseJson`, `parseNdjson` and `streamNdjsonRows`. It infers **only** dates for
+JSON: numbers and booleans are already typed there, so `"007"` stays a string.
+
 ## Removed API that never did anything
 
 Each of these was exported or declared and had no effect. v1 would have frozen them permanently.
@@ -178,6 +245,7 @@ Very large legitimate files may now hit a limit that used to be absent. Every on
 - **`hucre/xlsx` and `hucre/ods` export what the README documents.** `readXlsxObjects`, `readOdsObjects`, `streamOdsRows`, and others were root-only despite documented subpath imports.
 - **Format entry points export their own types**, so `import type { WriteSheet } from "hucre/xlsx"` works without a second import from the root.
 - **`streamOdsRows` takes options and a `ReadableStream`.** It previously accepted neither.
+- **`toJson`'s `"arrays"` and `"columns"` formats are write-only**, and now say so. They are handoffs to a charting library or a dataframe; only `"objects"` has a reader. Export in `"objects"` if the JSON has to come back into hucre.
 - **`writeCsvStream` exists** — constant-memory CSV writing, the counterpart to `writeXlsxStream`.
 - **A CSV write option now has a way back in.** `escapeFormulae: true` prefixed `= + - @ | \t \r \n \0` values with `'` and nothing removed it, so a round trip through hucre turned `-5` into `'-5` permanently. `parseCsv` and `streamCsvRows` take `unescapeFormulae: true`, which drops that `'` — and only where the writer would have added one, so `'quoted'` is left alone. `nullValue` and a custom `dateFormat` remain one-way by decision; both are documented as such on the option.
 - **The streaming CSV writers escape formulae too.** `escapeFormulae` was honoured by `writeCsv` alone — `CsvStreamWriter` and `writeCsvStream` ignored it silently, which for an injection escape meant the protection you asked for was simply absent. If you passed it to either, their output changes.

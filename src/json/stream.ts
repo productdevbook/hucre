@@ -3,7 +3,8 @@
 
 import type { CellValue } from "../_types"
 import { InvalidArgumentError, ParseError } from "../errors"
-import { flattenValue, type FlattenOptions } from "./flatten"
+import { flattenValue, reviveDates, type FlattenOptions } from "./flatten"
+import { unflattenRow } from "./unflatten"
 
 const TEXT_ENCODER = new TextEncoder()
 const TEXT_DECODER = new TextDecoder("utf-8")
@@ -25,6 +26,12 @@ export interface NdjsonStreamWriterOptions {
    * without it rather than guessing a key order.
    */
   columns?: string[]
+  /**
+   * Rebuild dot-path keys into nested objects before writing each line.
+   * Default: false — same opt-in as `writeNdjson`, for the same reason;
+   * `JsonWriteOptions.unflatten` in json/writer.ts carries the argument.
+   */
+  unflatten?: boolean
 }
 
 /**
@@ -45,9 +52,11 @@ export class NdjsonStreamWriter {
   private buffer: string[] = []
   private done = false
   private columns: string[] | undefined
+  private unflatten: boolean
 
   constructor(options?: NdjsonStreamWriterOptions) {
     this.columns = options?.columns
+    this.unflatten = options?.unflatten ?? false
   }
 
   /**
@@ -57,7 +66,7 @@ export class NdjsonStreamWriter {
     if (this.done) {
       throw new Error("Cannot write to NdjsonStreamWriter after finish()/end()")
     }
-    this.buffer.push(JSON.stringify(row) + "\n")
+    this.buffer.push(JSON.stringify(this.unflatten ? unflattenRow(row) : row) + "\n")
   }
 
   /**
@@ -177,6 +186,19 @@ export async function* streamNdjsonRows<
     flatten: options?.flatten,
     arrayJoin: options?.arrayJoin,
     maxDepth: options?.maxDepth,
+    typeInference: options?.typeInference,
+  }
+
+  // Rows yielded without `flattenRows` never reach `flattenValue`, which is
+  // where inference normally happens — so they get the same rule applied to
+  // the tree directly.
+  const reviveWholeRow = (options?.typeInference ?? false) && !flatten
+
+  const emit = (parsed: unknown): T => {
+    if (flatten && parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return flattenValue(parsed, flatOpts) as T
+    }
+    return (reviveWholeRow ? reviveDates(parsed, options?.maxDepth ?? 32) : parsed) as T
   }
 
   try {
@@ -193,11 +215,7 @@ export async function* streamNdjsonRows<
         if (line.trim() === "") continue
         const parsed = tryParseLine(line, lineNumber, options?.onError)
         if (parsed === SKIP) continue
-        if (flatten && parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          yield flattenValue(parsed, flatOpts) as T
-        } else {
-          yield parsed as T
-        }
+        yield emit(parsed)
       }
       if (done) {
         // Flush trailing partial line (no newline)
@@ -206,13 +224,7 @@ export async function* streamNdjsonRows<
         if (trailing !== "") {
           lineNumber++
           const parsed = tryParseLine(trailing, lineNumber, options?.onError)
-          if (parsed !== SKIP) {
-            if (flatten && parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-              yield flattenValue(parsed, flatOpts) as T
-            } else {
-              yield parsed as T
-            }
-          }
+          if (parsed !== SKIP) yield emit(parsed)
         }
         break
       }

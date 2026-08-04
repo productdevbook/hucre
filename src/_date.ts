@@ -539,6 +539,31 @@ function tokenize(format: string): string[] {
 }
 
 /**
+ * Strict ISO 8601 shape accepted by type inference: a bare date, or a date
+ * with a time and an optional zone. Deliberately narrower than
+ * {@link parseDate} — inference runs over every string cell in a file, so it
+ * must not claim `"3/4/2021"` (ambiguous) or `"2021"` (a year, or a number).
+ */
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$/
+
+/**
+ * Revive an ISO 8601 string as a `Date`, or return null if it is not one.
+ *
+ * Shared by the CSV and JSON readers so `typeInference` means the same thing
+ * in both — they used to disagree, because only CSV had a notion of dates at
+ * all and JSON handed ISO strings back as strings (#409).
+ *
+ * @param value - Candidate string (trimmed by the caller or here)
+ * @returns Date, or null when the string is not a valid ISO 8601 instant
+ */
+export function reviveIsoDate(value: string): Date | null {
+  const trimmed = value.trim()
+  if (!ISO_DATE_RE.test(trimmed)) return null
+  const d = new Date(trimmed)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+/**
  * Parse a date string into a Date (UTC).
  * Supports ISO 8601 and common US/EU formats.
  *

@@ -69,6 +69,7 @@ export {
   writeJson,
   writeNdjson,
   workbookToJson,
+  jsonToWorkbook,
   NdjsonStreamWriter,
   streamNdjsonRows,
   readNdjsonStream,
@@ -76,16 +77,20 @@ export {
   // disagreed about what the JSON API is.
   flattenValue,
   collectHeaders,
+  unflattenRow,
+  unflattenRows,
 } from "./json"
 export type {
   JsonReadOptions,
   JsonReadResult,
+  JsonToWorkbookOptions,
   NdjsonReadOptions,
   JsonWriteOptions,
   WorkbookToJsonOptions,
   NdjsonStreamReadOptions,
   NdjsonStreamWriterOptions,
   FlattenOptions,
+  UnflattenedRow,
 } from "./json"
 
 // ── XML ────────────────────────────────────────────────────────────
