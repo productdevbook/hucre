@@ -514,8 +514,9 @@ const same = await read(bytes) // auto-detected (XLSX vs XLSB vs ODS)
 ```
 
 Decodes shared strings, RK / floating-point numbers, inline strings,
-booleans, error codes, cached formula values, and dates (via the binary
-style table). Read-only; password-protected `.xlsb` also decrypts with
+booleans, error codes, cached formula values, merged cells, and dates (via
+the binary style table, honouring the workbook's own 1900/1904 date
+system). Read-only; password-protected `.xlsb` also decrypts with
 `{ password }`.
 
 ### XLS (Legacy Excel 97-2003) — read
@@ -533,6 +534,13 @@ const same = await read(bytes) // auto-detected
 Decodes the shared-string table (with CONTINUE spanning), RK / MULRK /
 number / boolean / error cells, labels, cached formula values, dates, and
 merged cells. Read-only.
+
+Both legacy readers surface sheet names, cell values, and merges — and
+nothing else. Formulas arrive as their **cached value**, never as formula
+text; styles, column widths, row heights, sheet visibility, named ranges
+and workbook properties are not read. Converting `.xls` / `.xlsb` to
+`.xlsx` through hucre is therefore a values-and-sheet-names conversion,
+not a faithful copy.
 
 ### ODS (OpenDocument)
 
@@ -1026,10 +1034,17 @@ const xlsx = await writeObjects(products, { sheetName: "Products" })
 ```bash
 npx hucre convert input.xlsx output.csv
 npx hucre convert input.csv output.xlsx
+npx hucre convert legacy.xls output.xlsx # .xls / .xlsb read as input
 npx hucre inspect file.xlsx
 npx hucre inspect file.xlsx --sheet 0
 npx hucre validate data.xlsx --schema schema.json
 ```
+
+Input: `.xlsx`, `.ods`, `.csv`, `.tsv`, `.xls`, `.xlsb`. Output: the first
+four — `.xls` and `.xlsb` are read-only formats, and naming one as the
+output says so. `convert` carries cell values and sheet names only; from a
+legacy binary input that is all there is (see the notes on each format
+above).
 
 ### Sheet Operations
 

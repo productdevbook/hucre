@@ -8,6 +8,7 @@ import {
   convertCommand,
   delimiterForExtension,
   detectFormatFromExtension,
+  detectOutputFormat,
   formatCellValue,
   inspectCommand,
   mainCommand,
@@ -18,6 +19,8 @@ import {
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { writeOds } from "../src/ods/writer"
+import { writeCfb } from "../src/xlsx/crypto/cfb"
+import { ZipWriter } from "../src/zip/writer"
 
 // ═══════════════════════════════════════════════════════════════════════
 // #399 — the CLI was the only module in the tree at 0% coverage, because
@@ -62,6 +65,102 @@ async function makeXlsx(name: string, rows: unknown[][], sheet = "Sheet1"): Prom
   return p
 }
 
+// ── Legacy read-only fixtures (#411) ────────────────────────────────
+// There is no .xls or .xlsb writer to build these with, so both are
+// assembled by hand — the smallest file each reader accepts — to exercise
+// `convert legacy.xls out.xlsx`, which used to fail on the extension
+// alone.
+
+const u16 = (n: number): number[] => [n & 0xff, (n >> 8) & 0xff]
+const u32 = (n: number): number[] => [
+  n & 0xff,
+  (n >> 8) & 0xff,
+  (n >> 16) & 0xff,
+  (n >>> 24) & 0xff,
+]
+const chars = (s: string): number[] => [...s].map((c) => c.charCodeAt(0))
+
+/** A one-sheet BIFF8 .xls holding a single LABEL cell. */
+function makeXls(name: string, text: string): string {
+  const biff = (sid: number, data: number[]): number[] => [
+    ...u16(sid),
+    ...u16(data.length),
+    ...data,
+  ]
+  const bof = (dt: number): number[] =>
+    biff(0x0809, [...u16(0x0600), ...u16(dt), ...u16(0), ...u16(0), ...u32(0), ...u32(0)])
+  const eof = (): number[] => biff(0x000a, [])
+  const sheet = [
+    ...bof(0x0010),
+    ...biff(0x0204, [...u16(0), ...u16(0), ...u16(0), ...u16(text.length), 0, ...chars(text)]),
+    ...eof(),
+  ]
+  // BOUNDSHEET carries the sheet substream's byte offset, so the globals
+  // are laid out twice: once to measure, once for real.
+  const globals = (sheetPos: number): number[] => [
+    ...bof(0x0005),
+    ...biff(0x0085, [...u32(sheetPos), 0, 0, "Legacy".length, 0, ...chars("Legacy")]),
+    ...eof(),
+  ]
+  const stream = new Uint8Array([...globals(globals(0).length), ...sheet])
+  const p = path(name)
+  writeFileSync(p, writeCfb([{ name: "Workbook", data: stream }]))
+  return p
+}
+
+/** A one-sheet .xlsb holding a single inline-string cell. */
+async function makeXlsb(name: string, text: string): Promise<string> {
+  const varint = (n: number): number[] => {
+    const out: number[] = []
+    let s = n
+    do {
+      let b = s & 0x7f
+      s >>>= 7
+      if (s) b |= 0x80
+      out.push(b)
+    } while (s)
+    return out
+  }
+  const rec = (id: number, body: number[]): number[] => [
+    ...(id < 0x80 ? [id] : [(id & 0x7f) | 0x80, (id >> 7) & 0x7f]),
+    ...varint(body.length),
+    ...body,
+  ]
+  /** XLWideString: u32 char count + UTF-16LE units. */
+  const wstr = (s: string): number[] => [
+    ...u32(s.length),
+    ...[...s].flatMap((c) => u16(c.charCodeAt(0))),
+  ]
+
+  const ws = [
+    ...rec(0, u32(0)), // BrtRowHdr
+    ...rec(6, [...u32(0), ...u32(0), ...wstr(text)]), // BrtCellSt
+  ]
+  const wb = rec(156, [...u32(0), ...u32(0), ...wstr("rId1"), ...wstr("Legacy")]) // BrtBundleSh
+  const ns = "http://schemas.openxmlformats.org/package/2006/relationships"
+  const rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  const enc = new TextEncoder()
+  const zw = new ZipWriter()
+  zw.add(
+    "_rels/.rels",
+    enc.encode(
+      `<Relationships xmlns="${ns}"><Relationship Id="r" Type="${rel}/officeDocument" Target="xl/workbook.bin"/></Relationships>`,
+    ),
+  )
+  zw.add("xl/workbook.bin", new Uint8Array(wb))
+  zw.add(
+    "xl/_rels/workbook.bin.rels",
+    enc.encode(
+      `<Relationships xmlns="${ns}"><Relationship Id="rId1" Type="${rel}/worksheet" Target="worksheets/sheet1.bin"/></Relationships>`,
+    ),
+  )
+  zw.add("xl/worksheets/sheet1.bin", new Uint8Array(ws))
+
+  const p = path(name)
+  writeFileSync(p, await zw.build())
+  return p
+}
+
 // ── Format detection ────────────────────────────────────────────────
 
 describe("detectFormatFromExtension", () => {
@@ -72,14 +171,39 @@ describe("detectFormatFromExtension", () => {
     expect(detectFormatFromExtension("a.tsv")).toBe("csv")
   })
 
+  it("maps the read-only legacy extensions too", () => {
+    expect(detectFormatFromExtension("a.xls")).toBe("xls")
+    expect(detectFormatFromExtension("a.XLSB")).toBe("xlsb")
+  })
+
   it("rejects anything else, naming what is supported", () => {
+    // The supported list now distinguishes the two directions, so the
+    // message says which formats are input-only rather than leaving a
+    // user to infer it from a failure two commands later.
     expect(() => detectFormatFromExtension("a.numbers")).toThrow(CliError)
     expect(() => detectFormatFromExtension("a.numbers")).toThrow(/\.xlsx, \.ods, \.csv, \.tsv/)
+    expect(() => detectFormatFromExtension("a.numbers")).toThrow(/read-only: \.xls, \.xlsb/)
   })
 
   it("says so when there is no extension at all", () => {
     expect(() => detectFormatFromExtension("README")).toThrow(/\(none\)/)
   })
+})
+
+describe("detectOutputFormat", () => {
+  it("accepts every writable format", () => {
+    expect(detectOutputFormat("a.xlsx")).toBe("xlsx")
+    expect(detectOutputFormat("a.ods")).toBe("ods")
+    expect(detectOutputFormat("a.tsv")).toBe("csv")
+  })
+
+  for (const ext of [".xls", ".xlsb"]) {
+    it(`refuses to write ${ext}, and says it is read-only rather than unsupported`, () => {
+      expect(() => detectOutputFormat(`out${ext}`)).toThrow(CliError)
+      expect(() => detectOutputFormat(`out${ext}`)).toThrow(/read-only format/)
+      expect(() => detectOutputFormat(`out${ext}`)).not.toThrow(/Unsupported file extension/)
+    })
+  }
 })
 
 // ── The .tsv delimiter bug ──────────────────────────────────────────
@@ -186,6 +310,34 @@ describe("convert", () => {
     await expect(run(convertCommand, { input, output: path("out.pdf") })).rejects.toThrow(CliError)
   })
 
+  // ── Legacy input formats (#411) ───────────────────────────────────
+  // The readers shipped, but the CLI's extension switch did not know
+  // about them, so the most obvious use of a read-only format —
+  // rescuing an archive into .xlsx — failed before a byte was read.
+
+  it("converts a legacy .xls to xlsx", async () => {
+    const input = makeXls("legacy.xls", "from-xls")
+    await run(convertCommand, { input, output: path("out.xlsx") })
+    const back = await readXlsx(readFileSync(path("out.xlsx")))
+    expect(back.sheets[0].name).toBe("Legacy")
+    expect(back.sheets[0].rows[0]).toEqual(["from-xls"])
+  })
+
+  it("converts an .xlsb to csv", async () => {
+    const input = await makeXlsb("legacy.xlsb", "from-xlsb")
+    await run(convertCommand, { input, output: path("out.csv") })
+    expect(readFileSync(path("out.csv"), "utf-8")).toContain("from-xlsb")
+  })
+
+  it("refuses .xls and .xlsb as an output target", async () => {
+    const input = await makeXlsx("in.xlsx", [["a"]])
+    for (const out of ["out.xls", "out.xlsb"]) {
+      await expect(run(convertCommand, { input, output: path(out) })).rejects.toThrow(
+        /read-only format/,
+      )
+    }
+  })
+
   it("says in --help that it carries values only", () => {
     expect(convertCommand.meta).toMatchObject({
       description: expect.stringContaining("cell values only"),
@@ -214,6 +366,13 @@ describe("inspect", () => {
     expect(out).toMatch(/string: \d/)
     expect(out).toMatch(/number: \d/)
     expect(out).toMatch(/boolean: \d/)
+  })
+
+  it("inspects a legacy .xls", async () => {
+    await run(inspectCommand, { file: makeXls("legacy.xls", "cell"), sheet: "0" })
+    const out = logs.join("\n")
+    expect(out).toContain('"Legacy"')
+    expect(out).toContain("cell")
   })
 
   it("prints document properties when the file carries them", async () => {

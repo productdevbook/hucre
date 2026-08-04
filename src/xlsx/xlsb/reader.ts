@@ -5,7 +5,7 @@
 // of XML. We reuse the ZIP layer + the XML rels parser, and decode the
 // `.bin` parts with the record reader. Read-only (MS-XLSB).
 
-import type { CellValue, ReadOptions, Sheet, Workbook } from "../../_types"
+import type { CellValue, MergeRange, ReadOptions, Sheet, Workbook } from "../../_types"
 import { EncryptedFileError, ParseError, ZipError } from "../../errors"
 import { isOle2Container, readInputToUint8Array } from "../../_input"
 import { decryptAgile } from "../crypto/agile"
@@ -32,7 +32,9 @@ const BrtFmlaError = 11
 const BrtSSTItem = 19
 const BrtFmt = 44
 const BrtXF = 47
+const BrtWbProp = 153
 const BrtBundleSh = 156
+const BrtMergeCell = 176
 const BrtBeginCellXFs = 617
 const BrtEndCellXFs = 618
 
@@ -104,8 +106,6 @@ export async function readXlsb(
     throw new ParseError("Failed to open XLSB: not a valid ZIP archive", undefined, { cause: err })
   }
 
-  const date1904 = options?.dateSystem === "1904"
-
   // Locate the workbook part via the root relationships (fallback to the
   // conventional path).
   let workbookPath = "xl/workbook.bin"
@@ -123,7 +123,7 @@ export async function readXlsb(
   // hostile .bin can make the Cursor/DataView throw a raw RangeError. Wrap the
   // parse so malformed input surfaces as the library's ParseError.
   try {
-    return await parseXlsbParts(zip, workbookPath, workbookDir, date1904)
+    return await parseXlsbParts(zip, workbookPath, workbookDir, options?.dateSystem)
   } catch (err) {
     if (err instanceof ParseError || err instanceof EncryptedFileError || err instanceof ZipError) {
       throw err
@@ -138,10 +138,15 @@ async function parseXlsbParts(
   zip: ZipReader,
   workbookPath: string,
   workbookDir: string,
-  date1904: boolean,
+  dateSystem: ReadOptions["dateSystem"],
 ): Promise<Workbook> {
-  // Sheets (name + relId) from the workbook .bin.
-  const sheetEntries = parseWorkbookBin(await zip.extract(workbookPath))
+  // Sheets (name + relId) and the workbook's own date system from the .bin.
+  const { sheets: sheetEntries, file1904 } = parseWorkbookBin(await zip.extract(workbookPath))
+
+  // The file's flag wins unless the caller pinned a system, exactly as the
+  // XLSX and XLS readers do — a Mac-authored 1904 workbook read with the
+  // documented default ("auto") was otherwise 1462 days out on every date.
+  const date1904 = !dateSystem || dateSystem === "auto" ? file1904 : dateSystem === "1904"
 
   // Workbook relationships (XML) → relId → part path.
   const wbRelsPath = workbookDir
@@ -173,8 +178,15 @@ async function parseXlsbParts(
       sheets.push({ name: entry.name, rows: [] })
       continue
     }
-    const rows = parseWorksheetBin(await zip.extract(path), sharedStrings, dateXf, date1904)
-    sheets.push({ name: entry.name, rows })
+    const { rows, merges } = parseWorksheetBin(
+      await zip.extract(path),
+      sharedStrings,
+      dateXf,
+      date1904,
+    )
+    const sheet: Sheet = { name: entry.name, rows }
+    if (merges.length > 0) sheet.merges = merges
+    sheets.push(sheet)
   }
 
   return { sheets }
@@ -187,18 +199,26 @@ interface SheetEntry {
   relId: string
 }
 
-function parseWorkbookBin(bin: Uint8Array): SheetEntry[] {
+function parseWorkbookBin(bin: Uint8Array): { sheets: SheetEntry[]; file1904: boolean } {
   const out: SheetEntry[] = []
+  let file1904 = false
   for (const rec of iterateRecords(bin)) {
-    if (rec.id !== BrtBundleSh) continue
-    const c = new Cursor(rec.data)
-    c.u32() // hsState
-    c.u32() // iTabID
-    const relId = c.nullableWideString()
-    const name = c.wideString()
-    out.push({ name, relId })
+    if (rec.id === BrtWbProp) {
+      // BrtWbProp (record 153, MS-XLSB §2.4): a 32-bit flag word, then
+      // dwThemeVersion, then strName. Bit 0 of the flag word is f1904 —
+      // the 1904 date system, XLSB's equivalent of workbookPr/@date1904 in
+      // XLSX and the DATEMODE record in BIFF8. No record means 1900.
+      file1904 = (new Cursor(rec.data).u32() & 0x01) !== 0
+    } else if (rec.id === BrtBundleSh) {
+      const c = new Cursor(rec.data)
+      c.u32() // hsState
+      c.u32() // iTabID
+      const relId = c.nullableWideString()
+      const name = c.wideString()
+      out.push({ name, relId })
+    }
   }
-  return out
+  return { sheets: out, file1904 }
 }
 
 // ── sharedStrings.bin ────────────────────────────────────────────────
@@ -249,8 +269,9 @@ function parseWorksheetBin(
   sst: string[],
   dateXf: boolean[],
   date1904: boolean,
-): CellValue[][] {
+): { rows: CellValue[][]; merges: MergeRange[] } {
   const rows: CellValue[][] = []
+  const merges: MergeRange[] = []
   let row = 0
 
   const setCell = (col: number, value: CellValue): void => {
@@ -333,10 +354,24 @@ function parseWorksheetBin(
         setCell(col, sst[idx] ?? "")
         break
       }
+      case BrtMergeCell: {
+        // BrtMergeCell (record 176, MS-XLSB §2.4) carries one UncheckedRfX
+        // (§2.5): rwFirst, rwLast, colFirst, colLast as four u32s — one
+        // record per merged range, unlike BIFF8's MERGECELLS, which packs
+        // a count and the whole list into a single record.
+        const c = new Cursor(rec.data)
+        merges.push({
+          startRow: c.u32(),
+          endRow: c.u32(),
+          startCol: c.u32(),
+          endCol: c.u32(),
+        })
+        break
+      }
       default:
         break
     }
   }
 
-  return rows
+  return { rows, merges }
 }

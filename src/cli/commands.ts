@@ -14,6 +14,8 @@ import { createRequire } from "node:module"
 import { extname } from "node:path"
 import { readXlsx } from "../xlsx/reader"
 import { writeXlsx } from "../xlsx/writer"
+import { readXlsb } from "../xlsx/xlsb/reader"
+import { readXls } from "../xls/reader"
 import { readOds } from "../ods/reader"
 import { writeOds } from "../ods/writer"
 import { parseCsv } from "../csv/reader"
@@ -37,10 +39,17 @@ export class CliError extends Error {
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-export type Format = "xlsx" | "ods" | "csv"
+export type Format = "xlsx" | "ods" | "csv" | "xls" | "xlsb"
+
+/** The formats hucre can write; `.xls` and `.xlsb` are read-only. */
+export type WritableFormat = Exclude<Format, "xls" | "xlsb">
 
 /** Text formats carry their separator in the extension, not the format. */
 const DELIMITERS: Record<string, string> = { ".csv": ",", ".tsv": "\t" }
+
+const READ_ONLY_FORMATS = new Set<Format>(["xls", "xlsb"])
+
+const SUPPORTED = ".xlsx, .ods, .csv, .tsv (read-only: .xls, .xlsb)"
 
 export function detectFormatFromExtension(filePath: string): Format {
   const ext = extname(filePath).toLowerCase()
@@ -52,11 +61,36 @@ export function detectFormatFromExtension(filePath: string): Format {
     case ".csv":
     case ".tsv":
       return "csv"
+    // The legacy binary readers ship in the library, so the CLI can open
+    // these too — `hucre convert legacy.xls out.xlsx` is the whole reason
+    // a read-only reader is useful at the terminal. Input only; see
+    // detectOutputFormat.
+    case ".xls":
+      return "xls"
+    case ".xlsb":
+      return "xlsb"
     default:
-      throw new CliError(
-        `Unsupported file extension: ${ext || "(none)"}. Supported: .xlsx, .ods, .csv, .tsv`,
-      )
+      throw new CliError(`Unsupported file extension: ${ext || "(none)"}. Supported: ${SUPPORTED}`)
   }
+}
+
+/**
+ * Detect the format of a file we are about to *write*.
+ *
+ * `.xls` and `.xlsb` are readable but not writable, and "unsupported
+ * extension" would be a lie about a file the CLI just opened happily —
+ * so name the actual reason.
+ */
+export function detectOutputFormat(filePath: string): WritableFormat {
+  const format = detectFormatFromExtension(filePath)
+  if (READ_ONLY_FORMATS.has(format)) {
+    throw new CliError(
+      `Cannot write .${format}: it is a read-only format in hucre — ` +
+        "readable as input, but there is no writer for it. " +
+        "Write .xlsx, .ods, .csv or .tsv instead.",
+    )
+  }
+  return format as WritableFormat
 }
 
 /**
@@ -78,6 +112,10 @@ export async function readFile(filePath: string): Promise<Workbook> {
   switch (format) {
     case "xlsx":
       return readXlsx(input)
+    case "xlsb":
+      return readXlsb(input)
+    case "xls":
+      return readXls(input)
     case "ods":
       return readOds(input)
     case "csv": {
@@ -120,7 +158,7 @@ export const convertCommand = defineCommand({
   async run({ args }) {
     const inputPath = args.input as string
     const outputPath = args.output as string
-    const outputFormat = detectFormatFromExtension(outputPath)
+    const outputFormat = detectOutputFormat(outputPath)
 
     consola.start(`Reading ${inputPath}...`)
     const workbook = await readFile(inputPath)
@@ -359,7 +397,8 @@ export const mainCommand = defineCommand({
     name: "hucre",
     version: pkgVersion,
     description:
-      "Spreadsheet Swiss Army knife. Convert, inspect, and validate XLSX, CSV, and ODS files.",
+      "Spreadsheet Swiss Army knife. Convert, inspect, and validate XLSX, CSV, " +
+      "and ODS files; reads legacy .xls and .xlsb as input.",
   },
   subCommands: {
     convert: convertCommand,
