@@ -588,6 +588,65 @@ describe("formatValue — Excel parity", () => {
     expect(formatValue(2.5, '"#"?/?')).toBe("#5/2")
   })
 
+  // ── #429 ──────────────────────────────────────────────────────────
+  //
+  // Detection scanned the raw format for placeholders around a slash, so a
+  // *literal* containing both was read as a fraction spec and the whole
+  // format was reinterpreted. A regression from #402: unifying detection
+  // with the parse regex inherited the parse regex's blind spot, where the
+  // old pattern had excluded this case by accident.
+
+  it("does not read a quoted literal as a fraction spec", () => {
+    expect(formatValue(3.5, '0.00" 0/2"')).toBe("3.50 0/2")
+    expect(formatValue(3.5, '#,##0.00" 0/2"')).toBe("3.50 0/2")
+  })
+
+  it("does not read an escaped slash as a fraction bar", () => {
+    expect(formatValue(3.5, "0.00\\/2")).toBe("3.50/2")
+  })
+
+  it("still leaves the formats that never tripped it alone", () => {
+    // "1" is not a placeholder, so these were unaffected either way —
+    // pinned so the mask cannot start eating them.
+    expect(formatValue(3.5, '0.00" 1/2"')).toBe("3.50 1/2")
+    expect(formatValue(3.5, '0" m/s"')).toBe("4 m/s")
+    expect(formatValue(3.5, '#,##0.00" km/h"')).toBe("3.50 km/h")
+  })
+
+  it("still recognises a real fraction that also carries literals", () => {
+    // The mask must not blind detection to the fraction itself.
+    expect(formatValue(2.5, '?/?" kg"')).toBe("5/2 kg")
+    expect(formatValue(2.5, '"about "# ?/?')).toBe("about 2 1/2")
+  })
+
+  // maskLiterals and extractLiterals are both private, so their agreement
+  // is checked through behaviour: each literal shape has to mean the same
+  // thing under a number format and under a fraction format. Two
+  // implementations of one concept is what produced #429.
+  it("means the same thing by 'literal' on both paths", () => {
+    const shapes: Array<[string, string, string]> = [
+      // literal, number format, fraction format
+      ['"x"', '"x"0.00', '"x"# ?/?'],
+      ["\\x", "\\x0.00", "\\x# ?/?"],
+      ['" 0/2"', '0.00" 0/2"', '# ?/?" 0/2"'],
+    ]
+    for (const [, numFmt, fracFmt] of shapes) {
+      const asNumber = formatValue(2.5, numFmt)
+      const asFraction = formatValue(2.5, fracFmt)
+      // Same leading literal, same trailing literal — only the middle,
+      // which is the actual number, differs.
+      expect(asNumber.startsWith("x") ? asFraction.startsWith("x") : true).toBe(true)
+      expect(asNumber.endsWith(" 0/2") ? asFraction.endsWith(" 0/2") : true).toBe(true)
+    }
+  })
+
+  it("survives an unterminated quote without swallowing the fraction", () => {
+    // extractLiterals consumes an unterminated quote to the end of the
+    // format; the mask has to agree, or the two disagree about where the
+    // literal stops.
+    expect(formatValue(2.5, '# ?/?"trailing')).toBe("2 1/2trailing")
+  })
+
   // "?" renders insignificant decimals as spaces so decimal points line up
   // down a column, where "0" would render them as zeros.
   it("pads insignificant decimals with spaces for a ? placeholder", () => {

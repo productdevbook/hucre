@@ -416,12 +416,66 @@ function isFractionFormat(fmt: string): boolean {
   // disagreeing about what a fraction is. Nothing else is dragged in: dates
   // are claimed before this is reached and put no placeholder against their
   // slashes, and an escaped slash ("0\/0") still carries its backslash.
-  return FRACTION_PARTS.test(fmt)
+  return FRACTION_PARTS.test(maskLiterals(fmt))
 }
 
+/**
+ * Blank out quoted runs and escaped characters, keeping the string the
+ * same length so an index into the result still points at the original.
+ *
+ * Fraction detection scans for placeholders around a slash, and a literal
+ * can contain both: `0.00" 0/2"` was read as a fraction spec and rendered
+ * `"3 1/2"` instead of `"3.50 0/2"`. See #429 — a regression from #402,
+ * where unifying detection with the parse regex inherited the parse
+ * regex's blind spot. The old pattern excluded this case by accident,
+ * through the same quirk that made `"?/?"` unrecognisable.
+ *
+ * This shares its definition of "literal" with {@link extractLiterals} —
+ * a quoted run, or a backslash and the character after it. A test pins
+ * the two in agreement, because two implementations of one concept is
+ * what caused #429 in the first place.
+ */
+function maskLiterals(fmt: string): string {
+  let out = ""
+  let i = 0
+
+  while (i < fmt.length) {
+    const ch = fmt[i]
+
+    if (ch === '"') {
+      const close = fmt.indexOf('"', i + 1)
+      // An unterminated quote runs to the end, matching extractLiterals,
+      // which consumes to the end rather than treating the quote as data.
+      const end = close === -1 ? fmt.length : close + 1
+      out += MASK.repeat(end - i)
+      i = end
+      continue
+    }
+
+    if (ch === "\\") {
+      // The backslash and whatever it escapes, even at the very end.
+      const span = i + 1 < fmt.length ? 2 : 1
+      out += MASK.repeat(span)
+      i += span
+      continue
+    }
+
+    out += ch
+    i++
+  }
+
+  return out
+}
+
+/** Stands in for a literal character: never a placeholder, never a slash. */
+const MASK = "\u0001"
+
 function formatFraction(value: number, fmt: string): string {
-  // Determine denominator precision from format
-  const fracMatch = fmt.match(FRACTION_PARTS)
+  // Determine denominator precision from format. Matched against the
+  // masked form so a slash inside a literal cannot be mistaken for the
+  // fraction bar; the mask preserves length, so the index and the
+  // placeholder groups still describe the real format. See #429.
+  const fracMatch = maskLiterals(fmt).match(FRACTION_PARTS)
   if (!fracMatch) {
     return String(value)
   }
