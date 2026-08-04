@@ -758,7 +758,7 @@ describe("sortRows", () => {
   // of sort direction. `compareCellValues` returns +1 for a null `a`, and
   // "desc" negates the whole comparison, so blanks float to the top.
   // src/sheet-ops.ts:1270 (and the mirror at 1297).
-  it.skip("keeps blanks last when sorting descending, as Excel does", () => {
+  it("keeps blanks last when sorting descending, as Excel does", () => {
     const s = sheet({ rows: [[1], [], [3], [2]] })
 
     sortRows(s, 0, "desc")
@@ -780,12 +780,13 @@ describe("sortRows", () => {
 
     sortRows(s, 0, "desc")
 
-    // The short row carries no value, so it sorts as a blank (see the
-    // skipped test above for where that lands under "desc").
-    expect(s.rows.map((r) => r[0] ?? null)).toEqual([null, "c", "b", "a"])
-    expect(s.cells!.get("1,0")!.value).toBe("c")
-    expect(s.cells!.get("2,0")!.value).toBe("b")
-    expect(s.cells!.get("3,0")!.value).toBe("a")
+    // The short row carries no value, so it sorts as a blank — and blanks
+    // sink in both directions now (#392). This test previously asserted
+    // the pre-fix order, with the blank floating to the top.
+    expect(s.rows.map((r) => r[0] ?? null)).toEqual(["c", "b", "a", null])
+    expect(s.cells!.get("0,0")!.value).toBe("c")
+    expect(s.cells!.get("1,0")!.value).toBe("b")
+    expect(s.cells!.get("2,0")!.value).toBe("a")
     expect(s.cells!.get("99,0")!.value).toBe("orphan")
   })
 

@@ -62,6 +62,7 @@ function* parseContentRows(xml: string): Generator<StreamRow, void, undefined> {
   let inRow = false
   let inCell = false
   let inP = false
+  let inAnnotation = false
 
   let sheetIndex = -1
   let currentRowIndex = -1
@@ -128,8 +129,16 @@ function* parseContentRows(xml: string): Generator<StreamRow, void, undefined> {
             }
           }
           break
+        case "annotation":
+          // A cell comment carries its own <text:p>. The batch reader
+          // takes only direct children of the cell, so folding the
+          // annotation into the value made the two readers disagree —
+          // the divergence test/ods-stream-parity.test.ts exists to
+          // catch. See #393.
+          inAnnotation = true
+          break
         case "p":
-          if (inCell) inP = true
+          if (inCell && !inAnnotation) inP = true
           break
         // Text content special elements — mirror collectText() in reader.ts so
         // the streaming and batch readers return the same string for a cell.
@@ -162,6 +171,9 @@ function* parseContentRows(xml: string): Generator<StreamRow, void, undefined> {
       const local = tag.includes(":") ? tag.slice(tag.indexOf(":") + 1) : tag
 
       switch (local) {
+        case "annotation":
+          inAnnotation = false
+          break
         case "p":
           inP = false
           break

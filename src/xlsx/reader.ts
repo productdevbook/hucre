@@ -364,10 +364,13 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
       throw new ParseError(`Invalid XLSX: missing worksheet file for sheet "${info.name}"`)
     }
 
-    // Check for worksheet-level relationships (hyperlinks, etc.)
+    // Check for worksheet-level relationships (hyperlinks, etc.).
+    // relsPathFor handles a root-level part; the hand-rolled slice here
+    // ate the first character when dirname returned "", so sheet1.xml
+    // looked for _rels/heet1.xml.rels and every relationship-reached
+    // feature silently vanished. See #391.
     const wsDir = dirname(wsPath)
-    const wsFileName = wsPath.slice(wsDir.length + 1)
-    const wsRelsPath = wsDir ? `${wsDir}/_rels/${wsFileName}.rels` : `_rels/${wsFileName}.rels`
+    const wsRelsPath = relsPathFor(wsPath)
     let worksheetRels: Relationship[] | undefined
     if (zip.has(wsRelsPath)) {
       const wsRelsXml = decodeUtf8(await zip.extract(wsRelsPath))
@@ -742,12 +745,11 @@ async function extractSheetDrawing(
 
   const drawingXml = decodeUtf8(await zip.extract(drawingPath))
 
-  // Parse drawing relationships
+  // Parse drawing relationships. Same fix as the worksheet path — the
+  // hand-rolled slice dropped the first character for a root-level
+  // drawing. See #391.
   const drawDir = dirname(drawingPath)
-  const drawFileName = drawingPath.slice(drawDir.length + 1)
-  const drawRelsPath = drawDir
-    ? `${drawDir}/_rels/${drawFileName}.rels`
-    : `_rels/${drawFileName}.rels`
+  const drawRelsPath = relsPathFor(drawingPath)
 
   const imageRelMap = new Map<string, string>()
   // Chart relationships are resolved by the same .rels file. We collect

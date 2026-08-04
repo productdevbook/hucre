@@ -116,11 +116,14 @@ function detectCurrencySymbol(code: string): string | undefined {
   // "$" or "€" etc. as a quoted literal
   const quoted = code.match(/"([^"]+)"/)
   if (quoted && /[$€£¥₺₽₹]/.test(quoted[1])) return quoted[1]
-  // Bare $ at the start
-  if (code.startsWith("$") || /[$€£¥₺₽₹]/.test(code)) {
-    const m = code.match(/[$€£¥₺₽₹]/)
-    if (m) return m[0]
-  }
+  // Bare $ or another symbol, outside any bracketed section. Excel's
+  // built-in date and time formats carry a locale tag like [$-F800], and
+  // scanning the whole code found the `$` inside it — so the long-date
+  // format became a currency style and every date token was lost. See
+  // #390.
+  const outsideBrackets = code.replace(/\[[^\]]*\]/g, "")
+  const bare = outsideBrackets.match(/[$€£¥₺₽₹]/)
+  if (bare) return bare[0]
   return undefined
 }
 
@@ -291,7 +294,16 @@ function translateNumFmt(code: string): OdsNumFmtDef | undefined {
 
   // Take only the first section (before `;`); negative/zero sections are
   // ODS' `<style:map>` territory and outside this writer's scope.
-  const firstSection = trimmed.split(";")[0]
+  //
+  // Excel's built-in date and time codes carry a locale prefix —
+  // `[$-409]mmm-yy`, `[$-F800]dddd, mmmm dd, yyyy`. It is a hint about
+  // which locale's month and day names to use, not content, and ODF
+  // expresses that through the style's language attributes rather than
+  // inline. Left in place it was serialized character by character as
+  // <number:text>, so the code round-tripped as `"["$"-"4""0""9""]"mmm-yy`.
+  // A currency symbol written as `[$€-407]` keeps its symbol, because
+  // detectCurrencySymbol reads that form before we get here. See #390.
+  const firstSection = trimmed.split(";")[0]!.replace(/\[\$-[^\]]*\]/g, "")
 
   if (isPercentageFormat(firstSection)) {
     const decimals = decimalsFromCode(firstSection)
@@ -633,10 +645,15 @@ function rowToOds(
   ) {
     lastMeaningful--
   }
-  // Also consider merge starts and covered cells beyond data
+  // Also consider merge starts, covered cells, and per-cell overrides
+  // beyond the last data value. An override carries a formula, a style or
+  // a comment that the row array cannot express, so stopping at the last
+  // non-null value dropped it silently — and the XLSX writer grows its
+  // grid for exactly this case, so one WriteSheet produced different
+  // documents per format. See #393.
   for (let c = lastMeaningful + 1; c <= effectiveMax; c++) {
     const key = `${rowIndex},${c}`
-    if (mergeMap.starts.has(key) || mergeMap.covered.has(key)) {
+    if (mergeMap.starts.has(key) || mergeMap.covered.has(key) || sheet.cells?.has(key)) {
       lastMeaningful = c
     }
   }
@@ -665,10 +682,15 @@ function rowToOds(
       continue
     }
 
-    const cell = i < row.length ? row[i] : null
-
-    // Get cell override for formulas, hyperlinks, styles
+    // Get cell override for values, formulas, hyperlinks, styles
     const cellOverride = sheet.cells?.get(key)
+
+    // The override's value wins, matching resolveRows in the XLSX writer.
+    // Reading only from `row` meant an override past the row's last value
+    // serialized as an empty cell even once the grid had been grown to
+    // reach it. See #393.
+    const cell =
+      cellOverride?.value !== undefined ? cellOverride.value : i < row.length ? row[i] : null
 
     // Build cell context
     const ctx: CellContext = {}
@@ -753,6 +775,24 @@ function writeContentXml(options: WriteOptions): string {
       for (const item of sheet.data) {
         const row = keys.map((k) => (k in item ? unwrapCellValue(item[k]) : null))
         rows.push(row)
+      }
+    }
+
+    // Grow the grid to reach any per-cell override that sits past the
+    // last row. The row loop below iterates `rows`, so an override at a
+    // higher row index was never visited — the row-wise half of the same
+    // defect as the trailing-column case in serializeRow. See #393.
+    if (sheet.cells && sheet.cells.size > 0) {
+      let maxOverrideRow = -1
+      for (const key of sheet.cells.keys()) {
+        const comma = key.indexOf(",")
+        if (comma === -1) continue
+        const r = Number(key.slice(0, comma))
+        if (Number.isInteger(r) && r > maxOverrideRow) maxOverrideRow = r
+      }
+      if (maxOverrideRow >= rows.length) {
+        if (rows === sheet.rows) rows = [...rows]
+        while (rows.length <= maxOverrideRow) rows.push([])
       }
     }
 

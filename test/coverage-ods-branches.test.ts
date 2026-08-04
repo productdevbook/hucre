@@ -956,7 +956,7 @@ describe("streamOdsRows — cell shapes", () => {
   })
 
   // ── Known defect ─────────────────────────────────────────────────
-  it.skip("does not fold a cell annotation into the cell value (BUG)", async () => {
+  it("does not fold a cell annotation into the cell value", async () => {
     // src/ods/stream.ts:131 sets `inP` for *any* <text:p> seen while inside
     // a <table:table-cell>, including the paragraphs of the
     // <office:annotation> LibreOffice writes as the cell's first child for
@@ -1183,7 +1183,7 @@ describe("ODS writer — date format code round-trips", () => {
   })
 
   // ── Known defect ─────────────────────────────────────────────────
-  it.skip("treats [$-409] as a locale tag, not a currency symbol (BUG)", async () => {
+  it("treats [$-409] as a locale tag, not a currency symbol", async () => {
     // src/ods/writer.ts:120 — detectCurrencySymbol() falls through to a bare
     // /[$€£¥₺₽₹]/ scan of the whole code. Excel's locale prefix `[$-409]`
     // (and `[$-F800]`, used by the built-in long-date format) contains a "$",
@@ -1263,7 +1263,7 @@ describe("ODS writer — columns + data", () => {
   })
 
   // ── Known defect ─────────────────────────────────────────────────
-  it.skip("writes a cells override that sits on a trailing empty cell (BUG)", async () => {
+  it("writes a cells override that sits on a trailing empty cell", async () => {
     // src/ods/writer.ts:629-642 computes `lastMeaningful` from the row's own
     // values and then extends it only for merge starts and covered cells —
     // never for `sheet.cells`. Any override whose column is at or past the
@@ -1280,11 +1280,20 @@ describe("ODS writer — columns + data", () => {
     const cells = new Map<string, Partial<Cell>>()
     cells.set("0,2", { value: null, formula: "NOW()" })
     cells.set("2,0", { value: "z" })
-    const wb = await readOds(
-      await writeOds({ sheets: [{ name: "S", rows: [[1, null, null]], cells }] }),
-    )
+    const data = await writeOds({ sheets: [{ name: "S", rows: [[1, null, null]], cells }] })
+
+    // The column-wise override round-trips.
+    const wb = await readOds(data)
     expect(wb.sheets[0]!.cells?.get("0,2")?.formula).toBe("NOW()")
-    expect(wb.sheets[0]!.rows[2]).toEqual(["z"])
+
+    // The row-wise one is asserted on the emitted XML rather than the
+    // round-trip, because the reader collapses an *interior* empty row
+    // instead of preserving its position — a separate defect, filed
+    // separately. The writer's half is what this fix is about.
+    const xml = new TextDecoder().decode(await new ZipReader(data).extract("content.xml"))
+    const emittedRows = xml.match(/<table:table-row[\s\S]*?(?:<\/table:table-row>|\/>)/g) ?? []
+    expect(emittedRows).toHaveLength(3)
+    expect(emittedRows[2]).toContain("<text:p>z</text:p>")
   })
 
   it("writes a self-closing cell for a null override with nothing else on it", async () => {

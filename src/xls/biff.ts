@@ -4,6 +4,8 @@
 // data (each record body is ≤ 8224 bytes; longer data overflows into
 // CONTINUE records). See [MS-XLS].
 
+import { ParseError } from "../errors"
+
 export interface BiffRecord {
   /** Record id (sid). */
   id: number
@@ -169,6 +171,16 @@ class BlockStream {
     while (left > 0) {
       this.ensure()
       const take = Math.min(left, this.remainingInBlock())
+      // Once the blocks are exhausted, remainingInBlock() returns 0 and
+      // `left` would never decrease — a live lock no try/catch can
+      // interrupt. The callers feed this untrusted lengths (`cRun * 4`
+      // from a u16, `cbExt` from a u32), so a file claiming more
+      // trailer bytes than it carries used to hang the process. See #389.
+      if (take === 0) {
+        throw new ParseError(
+          `Invalid XLS: string record claims ${n} trailing bytes but the stream ends after ${n - left}`,
+        )
+      }
       this.pos += take
       left -= take
     }

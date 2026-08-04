@@ -402,20 +402,25 @@ describe("parseSst — rich, phonetic, wide and continued strings", () => {
 
   // BUG (reported): BlockStream.skip in src/xls/biff.ts:166-175 spins
   // forever once every block is exhausted — `ensure()` cannot advance past
-  // the last block, `remainingInBlock()` then returns 0 (biff.ts:131), and
-  // `left` never decreases. readSstString reaches it with an untrusted cRun
-  // (biff.ts:222) or cbExt (biff.ts:223), so an .xls whose rich-run count
-  // overruns the record hangs the process. Un-skipping this test hangs the
-  // suite; the wrapping try/catch in readXls cannot help with a live lock.
-  it.skip("does not hang on a rich-run count that overruns the record", async () => {
-    const rich = [...u16(1), 0x08, ...u16(0xffff), ...chars("A")]
-    const sst = record(SID.SST, [...u32(1), ...u32(1), ...rich])
-    const data = xlsFile({
-      globals: [...xf(0), ...sst],
-      sheets: [{ name: "S", records: [...bof(0x0010), ...eof()] }],
-    })
-    await expect(readXls(data)).rejects.toThrow()
-  })
+  // the last block, `remainingInBlock()` then returned 0 and `left` never
+  // decreased. readSstString reaches skip() with an untrusted cRun (a u16)
+  // or cbExt (a u32), so an .xls claiming more trailer bytes than it
+  // carries used to hang the process — a live lock readXls's try/catch
+  // could not interrupt. Fixed in #389; the timeout keeps a regression a
+  // failure rather than a hung CI job.
+  it(
+    "does not hang on a rich-run count that overruns the record",
+    { timeout: 15_000 },
+    async () => {
+      const rich = [...u16(1), 0x08, ...u16(0xffff), ...chars("A")]
+      const sst = record(SID.SST, [...u32(1), ...u32(1), ...rich])
+      const data = xlsFile({
+        globals: [...xf(0), ...sst],
+        sheets: [{ name: "S", records: [...bof(0x0010), ...eof()] }],
+      })
+      await expect(readXls(data)).rejects.toThrow()
+    },
+  )
 })
 
 // ═══════════════════════════════════════════════════════════════════════

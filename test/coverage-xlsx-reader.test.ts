@@ -1113,7 +1113,7 @@ describe("more relationship shapes", () => {
   // background silently vanish. Verified directly: the same package with
   // the rels part deliberately misnamed `_rels/heet1.xml.rels` DOES
   // resolve the hyperlink, while the correctly named one does not.
-  it.skip("reads a drawing stored at the package root", async () => {
+  it("reads a drawing stored at the package root", async () => {
     const wb = await readExact({
       "[Content_Types].xml": CONTENT_TYPES,
       "_rels/.rels": relsXml([{ id: "rId1", type: "officeDocument", target: "workbook.xml" }]),

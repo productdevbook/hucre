@@ -1266,8 +1266,7 @@ export function sortRows(sheet: Sheet, colIndex: number, order?: "asc" | "desc")
     tagged.sort((a, b) => {
       const va = colIndex < a.row.length ? (a.row[colIndex] ?? null) : null
       const vb = colIndex < b.row.length ? (b.row[colIndex] ?? null) : null
-      const cmp = compareCellValues(va, vb)
-      return desc ? -cmp : cmp
+      return compareCellValues(va, vb, desc)
     })
 
     const oldToNew = new Map<number, number>()
@@ -1293,8 +1292,7 @@ export function sortRows(sheet: Sheet, colIndex: number, order?: "asc" | "desc")
   sheet.rows.sort((a, b) => {
     const va = colIndex < a.length ? (a[colIndex] ?? null) : null
     const vb = colIndex < b.length ? (b[colIndex] ?? null) : null
-    const cmp = compareCellValues(va, vb)
-    return desc ? -cmp : cmp
+    return compareCellValues(va, vb, desc)
   })
 }
 
@@ -1310,12 +1308,24 @@ function syncCellOverride(sheet: Sheet, row: number, col: number, value: CellVal
 }
 
 /** Compare two cell values for sorting: nulls last, numbers < strings < booleans. */
-function compareCellValues(a: CellValue, b: CellValue): number {
-  // Nulls last
+/**
+ * Compare two cell values for {@link sortRows}.
+ *
+ * `desc` is applied to the *value* comparison only. Negating the whole
+ * result flipped the null rule with it, so descending floated blanks to
+ * the top — against this function's own contract and against Excel,
+ * which sinks blanks in both directions. See #392.
+ */
+function compareCellValues(a: CellValue, b: CellValue, desc = false): number {
+  // Nulls last, regardless of direction
   if (a === null && b === null) return 0
   if (a === null) return 1
   if (b === null) return -1
 
+  return desc ? -compareNonNull(a, b) : compareNonNull(a, b)
+}
+
+function compareNonNull(a: CellValue, b: CellValue): number {
   const ta = typeRank(a)
   const tb = typeRank(b)
   if (ta !== tb) return ta - tb

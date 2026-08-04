@@ -486,8 +486,13 @@ export class ZipReader {
     let { compressedSize } = entry
 
     if (entry.hasDataDescriptor && compressedSize === 0) {
+      // Same sentinel guard as extractEntry: 0xFFFFFFFF means the real
+      // size lives in the ZIP64 extra field, so taking it literally
+      // reads 4 GiB past the entry. A ZIP64 streaming producer writes
+      // exactly this, and without the check extract() succeeded while
+      // extractStream() threw. See #393.
       const localCompressedSize = this.view.getUint32(pos + 18, true)
-      if (localCompressedSize > 0) {
+      if (localCompressedSize > 0 && localCompressedSize !== ZIP64_SENTINEL) {
         compressedSize = localCompressedSize
       }
       if (compressedSize === 0) {

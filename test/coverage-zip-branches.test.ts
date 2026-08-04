@@ -579,7 +579,7 @@ describe("ZipReader — extractStream", () => {
   // `extract()` (see "ignores a ZIP64 sentinel in the local header…" above)
   // but throws "Compressed data extends beyond file" through
   // `extractStream()`, because 0xFFFFFFFF is taken as a real length.
-  it.skip("ignores a ZIP64 sentinel in the local header when streaming", async () => {
+  it("ignores a ZIP64 sentinel in the local header when streaming", async () => {
     const payload = enc.encode("streamed content")
     const buf = buildZip([
       {
