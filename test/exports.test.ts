@@ -12,6 +12,7 @@ import * as csv from "../src/csv"
 import * as ods from "../src/ods"
 import * as json from "../src/json"
 import * as xml from "../src/xml"
+import * as ooxml from "../src/ooxml"
 
 // ── Type-level surface ───────────────────────────────────────────────
 // Values can be asserted at runtime; types cannot. Importing them here
@@ -229,6 +230,44 @@ describe("hucre/json", () => {
   })
 })
 
+describe("hucre/ooxml", () => {
+  it("exports the low-level OOXML part parsers", () => {
+    expectExports(
+      ooxml,
+      [
+        "parseChart",
+        "cloneChart",
+        "chartKindToWriteKind",
+        "addChart",
+        "getCharts",
+        "parsePivotTable",
+        "parsePivotCacheDefinition",
+        "attachPivotCacheFields",
+        "parseSlicers",
+        "parseSlicerCache",
+        "parseTimelines",
+        "parseTimelineCache",
+        "parsePersons",
+        "parseThreadedComments",
+        "parseExternalLink",
+        "parseCellImages",
+        "assembleCellImages",
+        "parseThemeColors",
+        "resolveThemeColor",
+      ],
+      "hucre/ooxml",
+    )
+  })
+
+  it("is still reachable from the root, for now", () => {
+    // Moved rather than removed: the root re-exports stay, marked
+    // deprecated, so nothing breaks at v1. See #365.
+    for (const name of names(ooxml)) {
+      expect(names(root), `root no longer exports ${name}`).toContain(name)
+    }
+  })
+})
+
 describe("hucre/xml", () => {
   it("exports the documented API", () => {
     expectExports(xml, ["readXml", "writeXml"], "hucre/xml")
@@ -304,5 +343,9 @@ describe("export surface snapshot", () => {
 
   it("hucre/xml", () => {
     expect(names(xml)).toMatchSnapshot()
+  })
+
+  it("hucre/ooxml", () => {
+    expect(names(ooxml)).toMatchSnapshot()
   })
 })

@@ -42,6 +42,31 @@ exports[`export surface snapshot > hucre/ods 1`] = `
 ]
 `;
 
+exports[`export surface snapshot > hucre/ooxml 1`] = `
+[
+  "REL_CELL_IMAGES",
+  "addChart",
+  "assembleCellImages",
+  "attachPivotCacheFields",
+  "chartKindToWriteKind",
+  "cloneChart",
+  "getCharts",
+  "parseCellImages",
+  "parseChart",
+  "parseExternalLink",
+  "parsePersons",
+  "parsePivotCacheDefinition",
+  "parsePivotTable",
+  "parseSlicerCache",
+  "parseSlicers",
+  "parseThemeColors",
+  "parseThreadedComments",
+  "parseTimelineCache",
+  "parseTimelines",
+  "resolveThemeColor",
+]
+`;
+
 exports[`export surface snapshot > hucre/xlsx 1`] = `
 [
   "XLSX_MAX_ROWS_PER_SHEET",

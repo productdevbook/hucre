@@ -12,6 +12,16 @@ export { openXlsx, saveXlsx } from "./xlsx/roundtrip"
 export type { RoundtripWorkbook } from "./xlsx/roundtrip"
 export { hashSheetPassword } from "./xlsx/password"
 export { calculateColumnWidth, measureValueWidth, calculateRowHeight } from "./xlsx/auto-size"
+// ── Low-level OOXML part parsers ───────────────────────────────────
+//
+// These take a raw XML string from inside an .xlsx package and return
+// hucre's internal model of it. They now live at `hucre/ooxml`, which is
+// explicitly outside the v1 stability commitment — their shapes mirror
+// the parse pipeline and move when it does.
+//
+// Kept here for backward compatibility. Prefer `hucre/ooxml`.
+//
+// @deprecated Import from `hucre/ooxml` instead.
 export { parseThemeColors, resolveThemeColor } from "./xlsx/theme"
 export { streamXlsxRows } from "./xlsx/stream-reader"
 export type { StreamRow } from "./xlsx/stream-reader"

@@ -176,3 +176,4 @@ Very large legitimate files may now hit a limit that used to be absent. Every on
 - **`streamOdsRows` takes options and a `ReadableStream`.** It previously accepted neither.
 - **`writeCsvStream` exists** — constant-memory CSV writing, the counterpart to `writeXlsxStream`.
 - **ZIP64 archives are readable**, and writable via `zip64: true`.
+- **`hucre/ooxml` exists.** The low-level OOXML part parsers — `parseChart`, `parsePivotTable`, `parseSlicers`, `parseThemeColors` and friends — have a home of their own, explicitly outside the v1 stability commitment. They are still exported from the root, marked deprecated, so nothing breaks.

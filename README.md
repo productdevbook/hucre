@@ -1623,6 +1623,26 @@ pnpm lint:fix     # oxlint + oxfmt
 pnpm typecheck    # tsc
 ```
 
+### `hucre/ooxml` — low-level part parsers
+
+`parseChart`, `parsePivotTable`, `parseSlicers`, `parseThemeColors` and
+friends take a raw XML string from inside an `.xlsx` package and return
+hucre's internal model of it.
+
+```ts
+import { parseChart, parsePivotTable } from "hucre/ooxml"
+```
+
+**This entry point is explicitly outside the v1 stability commitment.**
+Its shapes mirror the OOXML parse pipeline and move when that pipeline
+moves — freezing them would mean the internals could never change without
+a major bump. Everything else (`hucre`, `hucre/xlsx`, `hucre/csv`,
+`hucre/ods`, `hucre/json`, `hucre/xml`) is stable.
+
+If you only read and write spreadsheets, you do not need anything here.
+These names are still exported from the root for backward compatibility,
+marked deprecated.
+
 ## Migrating to v1
 
 v1 makes the public API a stability commitment, and getting there meant
