@@ -275,7 +275,14 @@ describe("named ranges — reading (round-trip)", () => {
     expect(nr.comment).toBe("Annual budget data")
   })
 
-  it("reads print area as named range", async () => {
+  // These two used to assert the reader surfaced the print area *only* as
+  // an opaque `_xlnm.Print_Area` entry in `namedRanges`, with
+  // `pageSetup.printArea` left undefined. That is the defect from #407 —
+  // the same setting having one representation on write and a different,
+  // unconnected one on read — written down as an expectation. They are
+  // replaced rather than relaxed: the reserved names are now folded back
+  // into the `pageSetup` they were derived from.
+  it("reads print area back into pageSetup, not namedRanges", async () => {
     const data = await writeXlsx({
       sheets: [
         {
@@ -287,31 +294,55 @@ describe("named ranges — reading (round-trip)", () => {
     })
 
     const workbook = await readXlsx(data)
-    expect(workbook.namedRanges).toBeDefined()
-
-    const printArea = workbook.namedRanges!.find((nr) => nr.name === "_xlnm.Print_Area")
-    expect(printArea).toBeDefined()
-    expect(printArea!.range).toBe("Sheet1!$A$1:$D$50")
-    expect(printArea!.scope).toBe("Sheet1")
+    expect(workbook.sheets[0].pageSetup?.printArea).toBe("$A$1:$D$50")
+    expect(workbook.namedRanges).toBeUndefined()
   })
 
-  it("reads print titles as named range", async () => {
+  it("reads print titles back into pageSetup, not namedRanges", async () => {
     const data = await writeXlsx({
       sheets: [
         {
           name: "Sheet1",
           rows: [["Header"]],
-          pageSetup: { printTitlesRow: "$1:$1" },
+          pageSetup: { printTitlesRow: "$1:$1", printTitlesColumn: "$A:$A" },
         },
       ],
     })
 
     const workbook = await readXlsx(data)
+    expect(workbook.sheets[0].pageSetup?.printTitlesRow).toBe("$1:$1")
+    expect(workbook.sheets[0].pageSetup?.printTitlesColumn).toBe("$A:$A")
+    expect(workbook.namedRanges).toBeUndefined()
+  })
 
-    const printTitles = workbook.namedRanges!.find((nr) => nr.name === "_xlnm.Print_Titles")
-    expect(printTitles).toBeDefined()
-    expect(printTitles!.range).toBe("Sheet1!$1:$1")
-    expect(printTitles!.scope).toBe("Sheet1")
+  it("keeps user-defined names alongside a consumed print area", async () => {
+    const data = await writeXlsx({
+      namedRanges: [{ name: "Budget", range: "Sheet1!$A$1:$A$5" }],
+      sheets: [
+        {
+          name: "Sheet1",
+          rows: [["Data"]],
+          pageSetup: { printArea: "$A$1:$D$50" },
+        },
+      ],
+    })
+
+    const workbook = await readXlsx(data)
+    expect(workbook.namedRanges).toEqual([{ name: "Budget", range: "Sheet1!$A$1:$A$5" }])
+    expect(workbook.sheets[0].pageSetup?.printArea).toBe("$A$1:$D$50")
+  })
+
+  it("leaves an unscoped print area in namedRanges", async () => {
+    // A workbook-level _xlnm.Print_Area cannot be attributed to a sheet,
+    // so there is no pageSetup to fold it into. Dropping it would lose it.
+    const data = await writeXlsx({
+      namedRanges: [{ name: "_xlnm.Print_Area", range: "Sheet1!$A$1:$B$2" }],
+      sheets: [{ name: "Sheet1", rows: [["Data"]] }],
+    })
+
+    const workbook = await readXlsx(data)
+    expect(workbook.namedRanges).toEqual([{ name: "_xlnm.Print_Area", range: "Sheet1!$A$1:$B$2" }])
+    expect(workbook.sheets[0].pageSetup?.printArea).toBeUndefined()
   })
 
   it("no namedRanges property when none exist", async () => {

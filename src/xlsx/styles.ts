@@ -25,6 +25,13 @@ export interface ParsedStyles {
   fills: FillStyle[]
   borders: BorderStyle[]
   cellXfs: CellXf[]
+  /**
+   * Differential formats from `<dxfs>`, indexed by the `dxfId` that
+   * conditional-formatting rules (and table styles) reference. Unlike
+   * cellXfs these carry their font/fill/border inline rather than by id,
+   * so each entry is already a complete {@link CellStyle}.
+   */
+  dxfs: CellStyle[]
 }
 
 export interface CellXf {
@@ -107,6 +114,7 @@ export function parseStyles(xml: string): ParsedStyles {
   const fills: FillStyle[] = []
   const borders: BorderStyle[] = []
   const cellXfs: CellXf[] = []
+  const dxfs: CellStyle[] = []
 
   for (const child of doc.children) {
     if (typeof child === "string") continue
@@ -128,10 +136,13 @@ export function parseStyles(xml: string): ParsedStyles {
       case "cellXfs":
         parseCellXfs(child, cellXfs)
         break
+      case "dxfs":
+        parseDxfs(child, dxfs)
+        break
     }
   }
 
-  return { numFmts, fonts, fills, borders, cellXfs }
+  return { numFmts, fonts, fills, borders, cellXfs, dxfs }
 }
 
 // ── Number Formats ───────────────────────────────────────────────────
@@ -424,6 +435,65 @@ function parseCellXf(el: XmlElement): CellXf {
   }
 
   return xf
+}
+
+// ── Differential Formats (dxf) ───────────────────────────────────────
+
+function parseDxfs(el: XmlElement, dxfs: CellStyle[]): void {
+  for (const child of el.children) {
+    if (typeof child === "string") continue
+    const local = child.local || child.tag
+    if (local === "dxf") {
+      dxfs.push(parseDxf(child))
+    }
+  }
+}
+
+/**
+ * A `<dxf>` is a *sparse* format: every child is optional and whatever it
+ * omits is inherited from the cell it applies to. So each absent child
+ * must stay absent on the resulting {@link CellStyle} — filling in a
+ * default here would turn "leave the cell's own font alone" into "force
+ * Calibri 11", which is what Excel would then render.
+ */
+function parseDxf(el: XmlElement): CellStyle {
+  const style: CellStyle = {}
+
+  for (const child of el.children) {
+    if (typeof child === "string") continue
+    const local = child.local || child.tag
+
+    switch (local) {
+      case "font":
+        style.font = parseFont(child)
+        break
+      case "numFmt": {
+        // dxf number formats carry their format string inline; the id is
+        // local to the dxfs block and means nothing outside it. Fall back
+        // to the builtin table only when a writer emitted the id alone.
+        const formatCode = child.attrs["formatCode"]
+        if (formatCode) {
+          style.numFmt = formatCode
+        } else {
+          const id = Number(child.attrs["numFmtId"])
+          const builtin = Number.isNaN(id) ? undefined : BUILTIN_NUM_FMTS[id]
+          if (builtin) style.numFmt = builtin
+        }
+        break
+      }
+      case "fill":
+        style.fill = parseFill(child)
+        break
+      case "border":
+        style.border = parseBorder(child)
+        break
+      case "alignment":
+        style.alignment = parseAlignment(child)
+        break
+    }
+  }
+
+  return style
 }
 
 const FPB_XF_EXT_URI = "{C7286773-470A-42A8-94C5-96B5CB345126}"

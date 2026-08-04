@@ -2,6 +2,7 @@
 // Reads Office Open XML (.xlsx) spreadsheet files.
 
 import type {
+  Sheet,
   Workbook,
   ReadOptions,
   ReadInput,
@@ -179,6 +180,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
     dateSystem,
     namedRanges,
     workbookProtection,
+    activeSheet,
     pivotCacheRefs,
   } = parseWorkbookXml(workbookXml, options)
 
@@ -417,6 +419,8 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
             const chart = parseChart(chartXml)
             if (!chart) continue
             if (chartRef.anchor) chart.anchor = chartRef.anchor
+            if (chartRef.altText) chart.altText = chartRef.altText
+            if (chartRef.frameTitle) chart.frameTitle = chartRef.frameTitle
             charts.push(chart)
           }
           if (charts.length > 0) sheet.charts = charts
@@ -615,8 +619,9 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
     dateSystem,
   }
 
-  if (namedRanges.length > 0) {
-    workbook.namedRanges = namedRanges
+  const remainingNames = applyPrintDefinedNames(sheets, namedRanges)
+  if (remainingNames.length > 0) {
+    workbook.namedRanges = remainingNames
   }
 
   if (properties) {
@@ -629,6 +634,18 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
 
   if (workbookProtection) {
     workbook.workbookProtection = workbookProtection
+  }
+
+  if (activeSheet !== undefined) {
+    workbook.activeSheet = activeSheet
+  }
+
+  // The workbook's default font is fonts[0] in styles.xml — the entry
+  // every xf inherits from unless it names another. Surfacing it closes
+  // the WriteOptions.defaultFont round trip.
+  const baseFont = parsedStyles?.fonts[0]
+  if (baseFont && Object.keys(baseFont).length > 0) {
+    workbook.defaultFont = baseFont
   }
 
   if (persons && persons.length > 0) {
@@ -719,6 +736,10 @@ interface DrawingChartRef {
   path: string
   /** Cell anchor surfaced through {@link Chart.anchor}. */
   anchor?: ChartAnchor
+  /** `<xdr:cNvPr @descr>` surfaced through {@link Chart.altText}. */
+  altText?: string
+  /** `<xdr:cNvPr @title>` surfaced through {@link Chart.frameTitle}. */
+  frameTitle?: string
 }
 
 interface DrawingExtraction {
@@ -793,6 +814,14 @@ async function extractSheetDrawing(
           const anchor = local === "absoluteAnchor" ? undefined : parseChartCellAnchor(child, local)
           const ref: DrawingChartRef = { path: chartPath }
           if (anchor) ref.anchor = anchor
+          // Accessibility metadata sits on the frame in the drawing, not
+          // in the chart part — collect it while we still have the anchor.
+          const frame = findChildEl(child, "graphicFrame")
+          if (frame) {
+            const meta = findCNvPrMeta(frame, "nvGraphicFramePr")
+            if (meta.altText) ref.altText = meta.altText
+            if (meta.title) ref.frameTitle = meta.title
+          }
           chartRefs.push(ref)
         }
       }
@@ -817,6 +846,8 @@ async function extractSheetDrawing(
             type: imageInfo.type,
             anchor: imageInfo.anchor,
           }
+          if (imageInfo.width !== undefined) img.width = imageInfo.width
+          if (imageInfo.height !== undefined) img.height = imageInfo.height
           if (imageInfo.altText !== undefined) img.altText = imageInfo.altText
           if (imageInfo.title !== undefined) img.title = imageInfo.title
           images.push(img)
@@ -912,6 +943,8 @@ function parseTwoCellAnchor(
   mediaPath: string
   type: SheetImage["type"]
   anchor: SheetImage["anchor"]
+  width?: number
+  height?: number
   altText?: string
   title?: string
 } | null {
@@ -922,6 +955,7 @@ function parseTwoCellAnchor(
   let embedId: string | undefined
   let altText: string | undefined
   let title: string | undefined
+  let size: { width: number; height: number } | undefined
 
   for (const child of el.children) {
     if (typeof child === "string") continue
@@ -946,6 +980,7 @@ function parseTwoCellAnchor(
       const meta = findCNvPrMeta(c, "nvPicPr")
       altText = meta.altText
       title = meta.title
+      size = findShapeExtent(c)
     }
   }
 
@@ -962,6 +997,8 @@ function parseTwoCellAnchor(
     mediaPath: string
     type: SheetImage["type"]
     anchor: SheetImage["anchor"]
+    width?: number
+    height?: number
     altText?: string
     title?: string
   } = {
@@ -972,9 +1009,40 @@ function parseTwoCellAnchor(
       to: { row: toRow, col: toCol },
     },
   }
+  if (size) {
+    result.width = size.width
+    result.height = size.height
+  }
   if (altText) result.altText = altText
   if (title) result.title = title
   return result
+}
+
+/**
+ * Pull the rendered size off a `<xdr:pic>` / `<xdr:sp>` shape's
+ * `<xdr:spPr><a:xfrm><a:ext cx cy>`, converted from EMU to pixels.
+ *
+ * On a `twoCellAnchor` the from/to cells are what Excel actually honours,
+ * but `a:ext` is still required by the schema and every writer — hucre's
+ * included — records the intended size there. Reading it is the only way
+ * to recover {@link SheetImage.width} from a hucre-written file, which
+ * always uses `twoCellAnchor` (#407).
+ */
+function findShapeExtent(shapeEl: {
+  children: Array<unknown>
+}): { width: number; height: number } | undefined {
+  const spPr = findChildEl(shapeEl, "spPr")
+  if (!spPr) return undefined
+  const xfrm = findChildEl(spPr, "xfrm")
+  if (!xfrm) return undefined
+  const ext = findChildEl(xfrm, "ext")
+  if (!ext) return undefined
+  const cx = Number(ext.attrs["cx"])
+  const cy = Number(ext.attrs["cy"])
+  // A zero / absent extent is a placeholder, not a 0×0 shape — the chart
+  // writer emits exactly that. Report nothing rather than a size of 0.
+  if (!(cx > 0) || !(cy > 0)) return undefined
+  return { width: Math.round(cx / EMU_PER_PIXEL), height: Math.round(cy / EMU_PER_PIXEL) }
 }
 
 /** Parse a twoCellAnchor element that contains a textbox shape (sp with txBox="1") */
@@ -1074,6 +1142,12 @@ function parseTwoCellAnchorTextBox(el: { children: Array<unknown> }): SheetTextB
       from: { row: fromRow, col: fromCol },
       to: { row: toRow, col: toCol },
     },
+  }
+
+  const size = findShapeExtent(spElement)
+  if (size) {
+    tb.width = size.width
+    tb.height = size.height
   }
 
   // Pull alt text / title off cNvPr so screen-reader metadata round-trips.
@@ -1265,14 +1339,15 @@ function parseOneCellAnchor(
 }
 
 /**
- * Walk a `<xdr:pic>` or `<xdr:sp>` element and extract `descr=`/`title=`
- * from its `xdr:cNvPr`. The cNvPr element lives inside an `nv*Pr`
- * wrapper named `nvPicPr` (pictures) or `nvSpPr` (shapes). Returns
- * empty fields when neither attribute is present.
+ * Walk a `<xdr:pic>`, `<xdr:sp>` or `<xdr:graphicFrame>` element and
+ * extract `descr=`/`title=` from its `xdr:cNvPr`. The cNvPr element lives
+ * inside an `nv*Pr` wrapper named `nvPicPr` (pictures), `nvSpPr` (shapes)
+ * or `nvGraphicFramePr` (charts). Returns empty fields when neither
+ * attribute is present.
  */
 function findCNvPrMeta(
   parentEl: { children: Array<unknown> },
-  wrapperName: "nvPicPr" | "nvSpPr",
+  wrapperName: "nvPicPr" | "nvSpPr" | "nvGraphicFramePr",
 ): { altText?: string; title?: string } {
   const wrapper = findChildEl(parentEl, wrapperName)
   if (!wrapper) return {}
@@ -1342,6 +1417,75 @@ function findEmbedAttr(attrs: Record<string, string>): string | undefined {
   return undefined
 }
 
+// ── Print Defined Names ──────────────────────────────────────────────
+
+/**
+ * Fold the reserved `_xlnm.Print_Area` / `_xlnm.Print_Titles` defined
+ * names back into the owning sheet's {@link PageSetup} and return the
+ * defined names that remain.
+ *
+ * The writer only ever *derives* these two names from `pageSetup`
+ * (`buildNamedRanges`), so `pageSetup` is the single authoring surface.
+ * Leaving them in `namedRanges` as well would give the same setting two
+ * unconnected representations depending on the direction of travel
+ * (#407) — and would make `openXlsx` → `saveXlsx` emit each name twice,
+ * once from the carried-over `namedRanges` entry and once re-derived
+ * from `pageSetup`. So they are consumed, not copied.
+ *
+ * A name we cannot attribute to a sheet we actually read — no
+ * `localSheetId`, or a sheet skipped by `ReadOptions.sheets` — is left
+ * alone; dropping it would lose information with nowhere else to go.
+ */
+function applyPrintDefinedNames(sheets: Sheet[], namedRanges: NamedRange[]): NamedRange[] {
+  if (namedRanges.length === 0) return namedRanges
+
+  const byName = new Map<string, Sheet>()
+  for (const sheet of sheets) byName.set(sheet.name, sheet)
+
+  const remaining: NamedRange[] = []
+  for (const nr of namedRanges) {
+    const isPrintArea = nr.name === "_xlnm.Print_Area"
+    const isPrintTitles = nr.name === "_xlnm.Print_Titles"
+    const sheet = nr.scope !== undefined ? byName.get(nr.scope) : undefined
+    if ((!isPrintArea && !isPrintTitles) || !sheet) {
+      remaining.push(nr)
+      continue
+    }
+
+    const pageSetup = sheet.pageSetup ?? (sheet.pageSetup = {})
+    if (isPrintArea) {
+      const area = nr.range
+        .split(",")
+        .map(stripSheetQualifier)
+        .filter((part) => part.length > 0)
+        .join(",")
+      if (area) pageSetup.printArea = area
+    } else {
+      // Print_Titles packs the repeat-rows and repeat-columns ranges into
+      // one comma-separated value, in either order. A row range is all
+      // digits ("$1:$1"), a column range all letters ("$A:$A").
+      for (const raw of nr.range.split(",")) {
+        const part = stripSheetQualifier(raw)
+        if (!part) continue
+        if (/\d/.test(part)) pageSetup.printTitlesRow = part
+        else pageSetup.printTitlesColumn = part
+      }
+    }
+  }
+
+  return remaining
+}
+
+/**
+ * Drop the `Sheet1!` / `'My Sheet'!` prefix from one range of a defined
+ * name, leaving the bare A1 reference that {@link PageSetup} stores.
+ */
+function stripSheetQualifier(range: string): string {
+  const trimmed = range.trim()
+  const bang = trimmed.lastIndexOf("!")
+  return bang === -1 ? trimmed : trimmed.slice(bang + 1)
+}
+
 // ── Workbook XML Parsing ─────────────────────────────────────────────
 
 interface SheetInfo {
@@ -1359,6 +1503,13 @@ function parseWorkbookXml(
   dateSystem: "1900" | "1904"
   namedRanges: NamedRange[]
   workbookProtection?: { lockStructure?: boolean; lockWindows?: boolean }
+  /**
+   * `<bookViews><workbookView activeTab>` — the tab Excel opens on.
+   * Omitted when the file declares tab 0, which is the OOXML default and
+   * therefore indistinguishable from "the file said nothing"; the same
+   * collapse the chart reader applies to `<c:overlay val="0"/>`.
+   */
+  activeSheet?: number
   /**
    * Pivot cache wiring read off the workbook's `<pivotCaches>` block.
    * Each entry maps a cacheId (Excel's stable handle) to an rId in
@@ -1381,6 +1532,7 @@ function parseWorkbookXml(
   }
 
   let wbProtection: { lockStructure?: boolean; lockWindows?: boolean } | undefined
+  let activeSheet: number | undefined
 
   // First pass: collect sheets (needed for resolving localSheetId)
   for (const child of doc.children) {
@@ -1406,6 +1558,18 @@ function parseWorkbookXml(
         wbProtection = {}
         if (lockStructure) wbProtection.lockStructure = true
         if (lockWindows) wbProtection.lockWindows = true
+      }
+    }
+
+    if (local === "bookViews") {
+      for (const viewChild of child.children) {
+        if (typeof viewChild === "string") continue
+        const viewLocal = viewChild.local || viewChild.tag
+        if (viewLocal !== "workbookView") continue
+        const tab = Number(viewChild.attrs["activeTab"])
+        // Excel writes one workbookView per window; the first is the one
+        // that decides the opening tab.
+        if (Number.isInteger(tab) && tab > 0 && activeSheet === undefined) activeSheet = tab
       }
     }
 
@@ -1493,6 +1657,7 @@ function parseWorkbookXml(
     dateSystem,
     namedRanges,
     workbookProtection: wbProtection,
+    activeSheet,
     pivotCacheRefs,
   }
 }
@@ -1570,7 +1735,10 @@ function parseTableXml(xml: string): TableDefinition | null {
   let style: string | undefined
   let showRowStripes: boolean | undefined
   let showColumnStripes: boolean | undefined
-  let showAutoFilter = true
+  // The filter dropdowns exist only if <autoFilter> does — a table part
+  // with no such child renders none. Starting from `true` made a table
+  // written with `showAutoFilter: false` read back as `true` (#407).
+  let showAutoFilter = false
 
   for (const child of doc.children) {
     if (typeof child === "string") continue
@@ -1635,9 +1803,7 @@ function parseTableXml(xml: string): TableDefinition | null {
   if (showColumnStripes !== undefined) {
     tableDef.showColumnStripes = showColumnStripes
   }
-  if (showAutoFilter !== undefined) {
-    tableDef.showAutoFilter = showAutoFilter
-  }
+  tableDef.showAutoFilter = showAutoFilter
   if (showTotalRow) {
     tableDef.showTotalRow = true
   }

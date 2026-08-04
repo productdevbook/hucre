@@ -5,6 +5,7 @@ import type {
   WriteSheet,
   CellValue,
   CellStyle,
+  ColumnDef,
   ConditionalRule,
   DataValidation,
   SheetProtection,
@@ -240,6 +241,13 @@ export function writeWorksheetXml(
         outlineAttrs["summaryRight"] = sheet.outlineProperties.summaryRight ? 1 : 0
       }
       sheetPrChildren.push(xmlSelfClose("outlinePr", outlineAttrs))
+    }
+    // `<pageSetup fitToWidth>` alone does nothing in Excel — the scaling
+    // mode is switched by this flag, and the fit counts are read only
+    // once it is on. It also carries `fitToPage: true` on its own, which
+    // previously emitted no XML whatsoever. See #407.
+    if (sheet.pageSetup?.fitToPage) {
+      sheetPrChildren.push(xmlSelfClose("pageSetUpPr", { fitToPage: 1 }))
     }
     if (sheetPrChildren.length > 0) {
       parts.push(xmlElement("sheetPr", undefined, sheetPrChildren))
@@ -629,6 +637,17 @@ export function writeWorksheetXml(
 
 // ── Row Resolution ─────────────────────────────────────────────────
 
+/**
+ * The default cell style a column contributes to every cell beneath it.
+ * `numFmt` is folded into the style object, but an explicit
+ * `style.numFmt` wins — it is the more specific of the two spellings.
+ */
+function columnCellStyle(col: ColumnDef | undefined): CellStyle | undefined {
+  if (!col) return undefined
+  if (col.numFmt && !col.style?.numFmt) return { ...col.style, numFmt: col.numFmt }
+  return col.style
+}
+
 function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
   const resolved: Array<Array<ResolvedCell | null>> = []
 
@@ -655,13 +674,9 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
       for (let c = 0; c < keys.length; c++) {
         const key = keys[c]
         const raw = key !== undefined ? (obj[key] ?? null) : null
-        const col = sheet.columns[c]
         const cell: ResolvedCell = {
           value: isHyperlinkValue(raw) ? raw.text : raw,
-          style: col.style,
-          ...(col.numFmt && !col.style?.numFmt
-            ? { style: { ...col.style, numFmt: col.numFmt } }
-            : {}),
+          style: columnCellStyle(sheet.columns[c]),
         }
         if (isHyperlinkValue(raw)) cell.hyperlink = toHyperlink(raw)
         row.push(cell)
@@ -669,12 +684,18 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
       resolved.push(row)
     }
   } else if (sheet.rows) {
-    // Array-based rows
+    // Array-based rows. `columns` means the same thing here as on the
+    // `data[]` path: its style and numFmt are the column's default
+    // formatting. They used to apply only to `data[]`, so the same
+    // `columns` array meant two different things depending on which row
+    // source you picked (#407). Unlike `data[]` there is no header row to
+    // exempt — hucre cannot tell which of the caller's rows is one.
     for (const row of sheet.rows) {
       const resolvedRow: Array<ResolvedCell | null> = []
       for (let c = 0; c < row.length; c++) {
         const value = row[c]
-        resolvedRow.push({ value })
+        const style = sheet.columns ? columnCellStyle(sheet.columns[c]) : undefined
+        resolvedRow.push(style ? { value, style } : { value })
       }
       resolved.push(resolvedRow)
     }
@@ -793,8 +814,10 @@ function serializeCell(
       if (formulaDynamic) fAttrs["cm"] = 1
       fElement = xmlElement("f", fAttrs, xmlEscape(formula))
     } else {
-      // Normal formula
-      fElement = xmlElement("f", undefined, xmlEscape(formula))
+      // Normal formula. `formulaDynamic` used to be honoured only inside
+      // the `t="array"` branch above, so a spilling function written
+      // without `formulaType: "array"` silently lost the flag (#407).
+      fElement = xmlElement("f", formulaDynamic ? { cm: 1 } : undefined, xmlEscape(formula))
     }
 
     const children: string[] = [fElement]

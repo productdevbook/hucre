@@ -7437,6 +7437,18 @@ export interface Chart {
    */
   anchor?: ChartAnchor
   /**
+   * Alternative text for screen readers, pulled from the host drawing's
+   * `<xdr:graphicFrame><xdr:cNvPr @descr>`. Lives on the drawing rather
+   * than in `chartN.xml`, which is why it arrives alongside
+   * {@link anchor} rather than from the chart part itself.
+   */
+  altText?: string
+  /**
+   * Caption on the chart frame, from `<xdr:cNvPr @title>`. Distinct from
+   * {@link title}, which is the `<c:title>` rendered above the plot area.
+   */
+  frameTitle?: string
+  /**
    * Legend placement pulled from `<c:legend><c:legendPos val=".."/>`.
    * Reported as `false` when the chart explicitly omits the legend
    * element (Excel's "no legend" state). `undefined` means the chart

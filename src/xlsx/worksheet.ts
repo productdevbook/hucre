@@ -5,6 +5,7 @@ import type {
   Sheet,
   Cell,
   CellValue,
+  CellStyle,
   MergeRange,
   RichTextRun,
   FontStyle,
@@ -170,6 +171,7 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   // Sheet view settings (gridlines, zoom, RTL, tab color)
   let sheetView: SheetView | undefined
   let inSheetPr = false
+  let fitToPageFlag = false
   let outlineProperties: import("../_types").OutlineProperties | undefined
 
   // Freeze/Split pane parsed from <pane> element
@@ -464,6 +466,15 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
                 attrs["summaryRight"] === "1" || attrs["summaryRight"] === "true"
             }
             if (Object.keys(outline).length > 0) outlineProperties = outline
+          }
+          break
+        case "pageSetUpPr":
+          // The real home of the fit-to-page toggle: <pageSetup> only
+          // carries the page counts. Recorded separately from the
+          // <pageSetup> attributes because the two elements are far apart
+          // in the document and either may be absent. See #407.
+          if (inSheetPr) {
+            fitToPageFlag = attrs["fitToPage"] === "1" || attrs["fitToPage"] === "true"
           }
           break
         case "tabColor":
@@ -935,6 +946,7 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
               dbColor,
               isCfvos,
               isAttrs,
+              ctx.styles?.dxfs,
             )
             if (cfRule) {
               conditionalRules.push(cfRule)
@@ -1170,10 +1182,13 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   }
 
   // Attach page setup (merge margins into pageSetup if present)
-  if (pageSetup || pageMargins) {
+  if (pageSetup || pageMargins || fitToPageFlag) {
     const ps: PageSetup = pageSetup ?? {}
     if (pageMargins) {
       ps.margins = pageMargins
+    }
+    if (fitToPageFlag) {
+      ps.fitToPage = true
     }
     sheet.pageSetup = ps
   }
@@ -1390,6 +1405,7 @@ function buildConditionalRule(
   dbColor: string,
   isCfvos: Array<{ type: string; value?: string }>,
   isAttrsObj: Record<string, string>,
+  dxfs: CellStyle[] | undefined,
 ): ConditionalRule | null {
   const typeStr = attrs["type"]
   if (!typeStr || !VALID_CF_TYPES.has(typeStr)) return null
@@ -1407,8 +1423,17 @@ function buildConditionalRule(
     rule.operator = operatorStr as ValidationOperator
   }
 
-  // dxfId — we store it but don't resolve to a style (dxf styles are not parsed in the reader yet)
-  // The round-trip test will check the type/priority/formulas; style is write-only for now.
+  // dxfId indexes the workbook's <dxfs> block, so the rule's formatting
+  // only exists once styles.xml has been parsed. A file can legitimately
+  // reference a dxfId we have no entry for (styles.xml missing, or the
+  // index out of range); leave `style` absent rather than invent one.
+  const dxfId = Number(attrs["dxfId"])
+  if (dxfs && !Number.isNaN(dxfId)) {
+    const dxf = dxfs[dxfId]
+    // An empty <dxf/> carries no formatting — surfacing `{}` would claim
+    // a style the rule does not have.
+    if (dxf && Object.keys(dxf).length > 0) rule.style = dxf
+  }
 
   // stopIfTrue
   if (attrs["stopIfTrue"] === "1" || attrs["stopIfTrue"] === "true") {
@@ -1672,9 +1697,12 @@ function processCell(
         if (formulaRef) {
           cell.formulaRef = formulaRef
         }
-        if (formulaCm) {
-          cell.formulaDynamic = true
-        }
+      }
+      // The dynamic-array flag is independent of the formula type — the
+      // reader used to surface it only for `t="array"`, mirroring the
+      // writer's matching restriction (#407).
+      if (formulaCm) {
+        cell.formulaDynamic = true
       }
     }
     if (richText) {

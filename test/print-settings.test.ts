@@ -129,6 +129,26 @@ describe("page setup — writing", () => {
     expect(ps).toBeDefined()
     expect(ps.attrs["fitToWidth"]).toBe("1")
     expect(ps.attrs["fitToHeight"]).toBe("0")
+
+    // The page counts do nothing on their own — Excel reads them only once
+    // the scaling mode is switched by <sheetPr><pageSetUpPr fitToPage>.
+    const sheetPr = findChild(doc, "sheetPr")
+    expect(findChild(sheetPr, "pageSetUpPr").attrs["fitToPage"]).toBe("1")
+  })
+
+  it("writes fitToPage on its own", () => {
+    // `fitToPage: true` with neither count used to emit nothing at all:
+    // no <pageSetup>, no <pageSetUpPr>, no warning. See #407.
+    const sheet: WriteSheet = {
+      name: "Test",
+      rows: [["Data"]],
+      pageSetup: { fitToPage: true },
+    }
+
+    const doc = parseSheet(writeXml(sheet))
+    const sheetPr = findChild(doc, "sheetPr")
+    expect(sheetPr).toBeDefined()
+    expect(findChild(sheetPr, "pageSetUpPr").attrs["fitToPage"]).toBe("1")
   })
 
   it("writes all paper sizes correctly", () => {
@@ -424,6 +444,18 @@ describe("page setup — round-trip", () => {
     expect(ps!.fitToPage).toBe(true)
     expect(ps!.fitToWidth).toBe(1)
     expect(ps!.fitToHeight).toBe(0)
+  })
+
+  it("round-trips fitToPage on its own", async () => {
+    const data = await writeXlsx({
+      sheets: [{ name: "Sheet1", rows: [["Data"]], pageSetup: { fitToPage: true } }],
+    })
+
+    const workbook = await readXlsx(data)
+    const ps = workbook.sheets[0].pageSetup
+    expect(ps!.fitToPage).toBe(true)
+    expect(ps!.fitToWidth).toBeUndefined()
+    expect(ps!.fitToHeight).toBeUndefined()
   })
 
   it("round-trips all paper sizes", async () => {

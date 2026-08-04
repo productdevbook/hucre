@@ -215,7 +215,11 @@ export interface Cell {
   formulaSharedIndex?: number
   /** Range this formula applies to (ref attribute on master cell) */
   formulaRef?: string
-  /** Dynamic array flag (cm="1") */
+  /**
+   * Dynamic array flag (`cm="1"`). Independent of {@link formulaType} —
+   * a spilling function set as a plain formula carries it just as an
+   * explicit `"array"` formula does.
+   */
   formulaDynamic?: boolean
   richText?: RichTextRun[]
   hyperlink?: Hyperlink
@@ -233,9 +237,13 @@ export interface ColumnDef {
   width?: number
   /** Auto-calculate optimal width from cell content */
   autoWidth?: boolean
-  /** Default style for the column */
+  /**
+   * Default style for every cell in the column. Applies whether the rows
+   * come from {@link WriteSheet.data} or {@link WriteSheet.rows} — on the
+   * `data[]` path the generated header row gets it too.
+   */
   style?: CellStyle
-  /** Number format */
+  /** Number format. Folded into {@link style}; an explicit `style.numFmt` wins. */
   numFmt?: string
   /** Hide column */
   hidden?: boolean
@@ -419,8 +427,17 @@ export interface PageSetup {
   fitToHeight?: number
   scale?: number
   margins?: PageMargins
+  /**
+   * Print area as a bare A1 range (e.g. `"$A$1:$D$50"`), without a sheet
+   * qualifier. Stored in the file as the reserved `_xlnm.Print_Area`
+   * defined name; the reader folds that name back into this field rather
+   * than surfacing it in {@link Workbook.namedRanges}, so the setting has
+   * one representation in both directions.
+   */
   printArea?: string
+  /** Rows repeated at the top of every page (e.g. `"$1:$1"`). Stored in `_xlnm.Print_Titles`. */
   printTitlesRow?: string
+  /** Columns repeated at the left of every page (e.g. `"$A:$A"`). Stored in `_xlnm.Print_Titles`. */
   printTitlesColumn?: string
   showGridLines?: boolean
   showRowColHeaders?: boolean
@@ -547,6 +564,11 @@ export interface SheetImage {
     from: { row: number; col: number }
     to?: { row: number; col: number }
   }
+  /**
+   * Rendered size in pixels at 96 DPI, stored as EMU in the drawing's
+   * `<a:ext>`. Absent on write means the writer's own default size, which
+   * is then what the reader reports — a file records a size either way.
+   */
   width?: number
   height?: number
   /** Alternative text for screen readers (lands in xdr:cNvPr/@descr). */
@@ -700,7 +722,11 @@ export interface TableDefinition {
   showRowStripes?: boolean
   /** Show banded columns. Default: false */
   showColumnStripes?: boolean
-  /** Show auto-filter. Default: true */
+  /**
+   * Show auto-filter. Default when writing: true. On read this reports
+   * whether the table part actually carries an `<autoFilter>` — a table
+   * without one has no filter dropdowns, so it reads back `false`.
+   */
   showAutoFilter?: boolean
   /** Show total row. Default: false */
   showTotalRow?: boolean
@@ -1217,9 +1243,18 @@ export interface Workbook {
   namedRanges?: NamedRange[]
   /** Date system: 1900 (default/Windows) or 1904 (Mac) */
   dateSystem?: "1900" | "1904"
-  /** Default font for the workbook */
+  /**
+   * Default font for the workbook — `fonts[0]` in `xl/styles.xml`, the
+   * entry every cell format inherits from unless it names another.
+   */
   defaultFont?: FontStyle
-  /** Active sheet index */
+  /**
+   * Active sheet index — the tab the file opens on.
+   *
+   * Undefined when the file opens on the first tab: `activeTab="0"` is the
+   * OOXML default and is indistinguishable from a file that says nothing,
+   * so both collapse to `undefined` and round-trip identically.
+   */
   activeSheet?: number
   /** Theme color palette (resolved from xl/theme/theme1.xml) */
   themeColors?: string[]

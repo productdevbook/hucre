@@ -2827,8 +2827,15 @@ export function cloneChart(source: Chart, options: CloneChartOptions): SheetChar
   }
 
   if (options.showTitle !== undefined) out.showTitle = options.showTitle
-  if (options.altText !== undefined) out.altText = options.altText
-  if (options.frameTitle !== undefined) out.frameTitle = options.frameTitle
+
+  // Accessibility metadata lives on the source's host drawing frame, not
+  // in its chart part; the reader surfaces it on `Chart` so a clone can
+  // carry it forward. Override wins, absence inherits — same rule as the
+  // rest of the clone surface.
+  const altText = options.altText !== undefined ? options.altText : source.altText
+  if (altText !== undefined) out.altText = altText
+  const frameTitle = options.frameTitle !== undefined ? options.frameTitle : source.frameTitle
+  if (frameTitle !== undefined) out.frameTitle = frameTitle
 
   // `titleOverlay` only renders inside `<c:title>`, so a clone that
   // omits the title (resolved title is undefined or `showTitle === false`)
