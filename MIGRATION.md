@@ -18,7 +18,7 @@ If a change here breaks something and the reason isn't clear, please open an iss
 | [`HucreError`](#deftererror-is-now-hucreerror)                                                       | nothing — the old name still works                                                                |
 | [`readNdjsonStream`](#readndjsonstream-is-now-streamndjsonrows)                                      | nothing — the old name still works                                                                |
 | [Sheet names are validated](#sheet-names-are-validated-on-write)                                     | you write sheet names with `: * ? / \ [ ]`, over 31 chars, or duplicates                          |
-| [`parseJson` on a multi-sheet document](#parsejson-rejects-a-workbook-instead-of-mangling-it)        | you pass `workbookToJson` output of ≠1 sheet back into `parseJson`       |
+| [`parseJson` on a multi-sheet document](#parsejson-rejects-a-workbook-instead-of-mangling-it)        | you pass `workbookToJson` output of ≠1 sheet back into `parseJson`                                |
 | [Removed dead API](#removed-api-that-never-did-anything)                                             | you reference `ReadResult`, `WORKER_SAFE_FUNCTIONS`, `isoDates`, `WriteSheet.threadedComments`, … |
 | [Files that were silently corrupt](#files-that-were-silently-wrong)                                  | you round-trip workbooks, or print them                                                           |
 
