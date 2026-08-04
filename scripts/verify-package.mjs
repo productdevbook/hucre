@@ -11,7 +11,7 @@
 // Run: node scripts/verify-package.mjs
 
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -65,6 +65,25 @@ check("dist/cli.mjs imports nothing outside node: and its own dist", () => {
     external.length === 0,
     `bare imports would not resolve for an installed user: ${[...new Set(external)].join(", ")}`,
   )
+})
+
+// ── Static check: every shipped module keeps its types ─────────────
+//
+// A declaration oxc cannot infer under --isolatedDeclarations only warns
+// during the build: the .mjs is written, the .d.mts is not, and the
+// package ships an entry whose types resolve to nothing. Only the bundled
+// CLI (built with `dts: false`) and its inlined chunks are exempt.
+
+check("every shipped module has a matching .d.mts", () => {
+  const distDir = join(repoRoot, "dist")
+  const orphans = readdirSync(distDir, { recursive: true })
+    .map((entry) => String(entry).replaceAll("\\", "/"))
+    .filter(
+      (entry) => entry.endsWith(".mjs") && entry !== "cli.mjs" && !entry.startsWith("_chunks/"),
+    )
+    .filter((entry) => !existsSync(join(distDir, `${entry.slice(0, -4)}.d.mts`)))
+
+  assert(orphans.length === 0, `declaration files missing for: ${orphans.join(", ")}`)
 })
 
 check("package.json declares no runtime dependencies", () => {

@@ -329,7 +329,7 @@ export async function parseSaxStream(
  * documents still see exactly one `onText` call per run and nothing about
  * their parse changes.
  */
-export const SAX_TEXT_FLUSH_CHARS = 256 * 1024
+export const SAX_TEXT_FLUSH_CHARS: number = 256 * 1024
 
 /** Longest run treated as a possibly-incomplete entity reference (`&#x1F600;` is 9). */
 const MAX_ENTITY_CHARS = 64

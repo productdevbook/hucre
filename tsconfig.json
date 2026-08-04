@@ -10,6 +10,16 @@
     "forceConsistentCasingInFileNames": true,
     "noImplicitOverride": true,
     "noEmit": true,
+    // obuild emits .d.mts through oxc's isolated-declarations transform: it
+    // looks at one file at a time and refuses to guess a type it cannot read
+    // off the source. When it refuses, the build *warns* and moves on — the
+    // .mjs ships, the .d.mts silently does not, and `dist/index.d.mts` is
+    // left importing a declaration file that was never written. v0.6.2 went
+    // out that way, missing types for `errors`, `json/stream` and
+    // `xml/parser`. Typechecking under the same rule turns that warning into
+    // a `pnpm test` failure, where it is impossible to miss.
+    "declaration": true,
+    "isolatedDeclarations": true,
     // No ambient types, deliberately. The library is platform-neutral —
     // Web APIs only, no `node:` imports — and leaving `process`, `Buffer`
     // and friends undeclared is what keeps it that way: reaching for one

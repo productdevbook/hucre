@@ -17,7 +17,7 @@ export class HucreError extends Error {
  * `instanceof DefterError` check keeps working. It will be removed in a
  * future major version.
  */
-export const DefterError = HucreError
+export const DefterError: typeof HucreError = HucreError
 
 /**
  * @deprecated Renamed to {@link HucreError}. Type-side alias kept so

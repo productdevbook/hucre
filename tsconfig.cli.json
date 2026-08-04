@@ -10,7 +10,11 @@
   // `process` and `Buffer` leak into the platform-neutral library.
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": ["node"]
+    "types": ["node"],
+    // The CLI is bundled with `dts: false` — nothing ever emits declarations
+    // for it — so the isolated-declarations rule the library is held to
+    // (see tsconfig.json) would only be annotation busywork here.
+    "isolatedDeclarations": false
   },
   "include": [
     "src/cli.ts",

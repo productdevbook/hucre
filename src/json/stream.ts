@@ -261,4 +261,4 @@ function tryParseLine(
  * reader in the library reads `stream*Rows`. This alias will be removed
  * in a future major.
  */
-export const readNdjsonStream = streamNdjsonRows
+export const readNdjsonStream: typeof streamNdjsonRows = streamNdjsonRows
