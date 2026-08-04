@@ -36,6 +36,7 @@ import { cloneChart } from "./chart-clone"
 import { isOle2Container } from "../_input"
 import { EncryptedFileError, InvalidArgumentError } from "../errors"
 import { decryptAgile, encryptAgile } from "./crypto/agile"
+import { assignBackgroundImagePaths } from "./background-image"
 import { writeComments } from "./comments-writer"
 import type { CommentsResult } from "./comments-writer"
 import { writeTable } from "./table-writer"
@@ -330,18 +331,15 @@ export async function saveXlsx(
 
   // Background images live in xl/media alongside drawing images, so the
   // index has to come from the same counter — numbering them
-  // independently would collide. This mirrors writer.ts. See #367.
-  const backgroundImagePaths: Array<string | null> = []
-  for (const sheet of writeSheets) {
-    if (sheet.backgroundImage) {
-      const bgPath = `xl/media/image${globalImageIndex}.png`
-      backgroundImagePaths.push(bgPath)
-      imageExtensions.add("png")
-      globalImageIndex++
-    } else {
-      backgroundImagePaths.push(null)
-    }
-  }
+  // independently would collide. Shared with writer.ts rather than
+  // mirrored: two copies is how both ended up hard-coding .png for every
+  // image, whatever it was. See #367, #427.
+  const { paths: backgroundImagePaths, nextIndex: afterBackgrounds } = assignBackgroundImagePaths(
+    writeSheets,
+    globalImageIndex,
+    imageExtensions,
+  )
+  globalImageIndex = afterBackgrounds
 
   // Generate comments data for sheets that have comments
   const commentsResults: Array<CommentsResult | null> = []
@@ -1025,7 +1023,7 @@ export async function saveXlsx(
           xmlSelfClose("Relationship", {
             Id: result.pictureRId,
             Type: REL_IMAGE,
-            // "xl/media/imageN.png" → "../media/imageN.png"
+            // "xl/media/imageN.<ext>" → "../media/imageN.<ext>"
             Target: `../${bgMediaPath.slice(3)}`,
           }),
         )

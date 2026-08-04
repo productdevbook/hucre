@@ -19,6 +19,7 @@ import { createStylesCollector } from "./styles-writer"
 import { createSharedStrings, writeSharedStringsXml, writeWorksheetXml } from "./worksheet-writer"
 import type { WorksheetResult } from "./worksheet-writer"
 import { unwrapCellValue } from "./hyperlink"
+import { assignBackgroundImagePaths } from "./background-image"
 import { writeDrawing } from "./drawing-writer"
 import type { DrawingResult } from "./drawing-writer"
 import { writeChart } from "./chart-writer"
@@ -188,20 +189,14 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
     }
   }
 
-  // Track background image paths per sheet (for picture relationships)
-  const backgroundImagePaths: Array<string | null> = []
-  for (let i = 0; i < sheets.length; i++) {
-    const sheet = sheets[i]
-    if (sheet.backgroundImage) {
-      // Background images are stored as PNG by default
-      const bgPath = `xl/media/image${globalImageIndex}.png`
-      backgroundImagePaths.push(bgPath)
-      imageExtensions.add("png")
-      globalImageIndex++
-    } else {
-      backgroundImagePaths.push(null)
-    }
-  }
+  // Track background image paths per sheet (for picture relationships).
+  // The format comes from the bytes, not from a guess — see #427.
+  const { paths: backgroundImagePaths, nextIndex: afterBackgrounds } = assignBackgroundImagePaths(
+    sheets,
+    globalImageIndex,
+    imageExtensions,
+  )
+  globalImageIndex = afterBackgrounds
 
   // Generate comments data for sheets that have comments
   const commentsResults: Array<CommentsResult | null> = []
@@ -454,7 +449,7 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
       // Background image (picture) relationship
       if (hasPicture && result.pictureRId && backgroundImagePaths[i]) {
         const bgMediaPath = backgroundImagePaths[i]!
-        const relTarget = `../${bgMediaPath.slice(3)}` // Remove "xl/" prefix → "../media/imageN.png"
+        const relTarget = `../${bgMediaPath.slice(3)}` // strip "xl/" → "../media/imageN.<ext>"
         relElements.push(
           xmlSelfClose("Relationship", {
             Id: result.pictureRId,
