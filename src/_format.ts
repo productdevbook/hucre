@@ -398,10 +398,15 @@ function formatExponentialString(expStr: string, fmt: string): string {
 
 // ── Fraction Format ─────────────────────────────────────────────────
 
+/** Numerator/denominator part of a fraction format; the denominator may be a literal number ("?/16"). */
+const FRACTION_PARTS = /([?#0]+)\/(\d+|[?#0]+)/
+
 function isFractionFormat(fmt: string): boolean {
   // Matches patterns like "# ?/?", "# ??/??", "# ?/8", etc.
+  // The denominator may be a fixed number — Excel's built-in "As halves"
+  // (`# ?/2`), "As eighths" (`# ?/8`) and "As sixteenths" (`# ??/16`).
   // But not date formats or paths
-  return /[#0?]\s*[?#0]+\/[?#0]+/.test(fmt)
+  return /[#0?]\s*[?#0]+\/(?:\d+|[?#0]+)/.test(fmt)
 }
 
 function formatFraction(value: number, fmt: string): string {
@@ -418,7 +423,7 @@ function formatFraction(value: number, fmt: string): string {
   }
 
   // Determine denominator precision from format
-  const fracMatch = fmt.match(/([?#0]+)\/([?#0]+)/)
+  const fracMatch = fmt.match(FRACTION_PARTS)
   if (!fracMatch) {
     return String(value)
   }
@@ -442,9 +447,16 @@ function formatFraction(value: number, fmt: string): string {
     bestDen = result.den
   }
 
-  // Build the formatted string
-  const hasIntPart = fmt.includes("#") || fmt.includes("0")
-  const prefix = intPart !== 0 && hasIntPart ? String(intPart) + " " : intPart < 0 ? "-" : ""
+  // Build the formatted string. A whole part is only rendered when the
+  // format has a placeholder in front of the fraction — "?" counts just as
+  // much as "#" and "0" ("? ?/?" is a mixed number, "??/??" is improper.)
+  const wholeFmt = fmt.slice(0, fracMatch.index)
+  const hasIntPart = /[#0?]/.test(wholeFmt)
+  // The sign has to come from the value: Math.trunc(-0.5) is -0, which is
+  // neither `!== 0` nor `< 0`, so the sign would be lost for -1 < value < 0.
+  const sign = value < 0 ? "-" : ""
+  const whole = hasIntPart && intPart !== 0 ? String(Math.abs(intPart)) + " " : ""
+  const prefix = sign + whole
 
   const numStr = String(bestNum).padStart(fracMatch[1].length, " ")
   const denStr = String(bestDen).padStart(fracMatch[2].length, " ")
@@ -482,15 +494,14 @@ function formatNumber(value: number, fmt: string, locale?: LocaleFormat): string
     return prefix + suffix
   }
 
-  const hasThousands = core.includes(",") && /[#0?],/.test(core)
-  const useThousandSep = hasThousands && !core.match(/,{2,}/) // ,, means scale down
+  // A comma *between* digit placeholders turns on group separators; a comma
+  // *after* the last placeholder scales the value down by 1000 each. The two
+  // are independent — "#,##0,," both groups and divides by a million.
+  const useThousandSep = /[#0?],[#0?]/.test(core)
 
   // Count trailing commas (each divides by 1000)
-  let scaleDown = 0
-  const scaleMatch = core.match(/(,+)(?=[^#0?]*$)/)
-  if (scaleMatch && !useThousandSep) {
-    scaleDown = scaleMatch[1].length
-  }
+  const scaleMatch = core.match(/,+$/)
+  const scaleDown = scaleMatch ? scaleMatch[0].length : 0
 
   let scaledValue = value
   for (let s = 0; s < scaleDown; s++) {
@@ -538,8 +549,8 @@ function formatNumber(value: number, fmt: string, locale?: LocaleFormat): string
 
   // Combine
   let result = prefix
-  if (isNegative && fmt.indexOf("-") === -1) {
-    // Only add minus if the format doesn't explicitly have one
+  if (isNegative && !prefix.includes("-")) {
+    // Only add minus if the format doesn't already write one itself
     result += "-"
   }
   result += localizedInt + localizedDec + suffix
@@ -594,8 +605,12 @@ function extractLiterals(fmt: string): { prefix: string; suffix: string; core: s
       continue
     }
 
-    // Digit placeholders or format chars
-    if ("#0?.,%Ee+-".includes(ch)) {
+    // Digit placeholders or format chars.
+    // "+" and "-" are deliberately *not* here: Excel treats them as literal
+    // text (the explicit sign of a negative section, for instance), so they
+    // must reach the prefix/suffix rather than being swallowed by `core`,
+    // where nothing would ever render them.
+    if ("#0?.,%Ee".includes(ch)) {
       if (afterDigits && "#0?".includes(ch)) {
         // More digit placeholders after suffix text — unusual but handle it
         core += suffix + ch
@@ -652,29 +667,64 @@ function formatIntegerPart(intStr: string, fmt: string, useThousandSep: boolean)
   const minDigits = (fmt.match(/0/g) || []).length
   const hasHash = fmt.includes("#")
 
-  // Pad with leading zeros if needed
-  let padded = intStr
-  if (padded.length < minDigits) {
-    padded = padded.padStart(minDigits, "0")
+  // If all # and value is 0, show nothing (e.g. "#.00" renders 0.5 as ".50")
+  let digits = intStr
+  if (digits === "0" && minDigits === 0 && hasHash) {
+    digits = ""
   }
 
-  // If all # and value is 0, show nothing (or just 0 if minDigits > 0)
-  if (padded === "0" && minDigits === 0 && hasHash) {
-    padded = ""
+  // Plain run of digit placeholders — pad and group as a single block.
+  if (!/[^0#?]/.test(fmt)) {
+    let padded = digits
+    if (padded.length < minDigits) {
+      padded = padded.padStart(minDigits, "0")
+    }
+    if (useThousandSep && padded.length > 0) {
+      padded = addThousandSeparators(padded)
+    }
+    return padded
   }
 
-  // Add thousand separators
-  if (useThousandSep && padded.length > 0) {
-    padded = addThousandSeparators(padded)
+  // The format interleaves literal characters with digit placeholders —
+  // Excel's Special formats ("000-00-0000", "(000) 000-0000"). Excel fills
+  // placeholders right-to-left, keeps the literals in place, and lets the
+  // leftmost placeholder absorb every surplus digit.
+  const firstPlaceholder = fmt.search(/[0#?]/)
+  const out: string[] = []
+  let d = digits.length - 1
+
+  for (let i = fmt.length - 1; i >= 0; i--) {
+    const ch = fmt[i]
+    if (ch !== "0" && ch !== "#" && ch !== "?") {
+      out.push(ch)
+      continue
+    }
+    if (d >= 0) {
+      if (i === firstPlaceholder) {
+        out.push(digits.slice(0, d + 1))
+        d = -1
+      } else {
+        out.push(digits[d])
+        d--
+      }
+    } else if (ch === "0") {
+      out.push("0")
+    } else if (ch === "?") {
+      out.push(" ")
+    }
   }
 
-  return padded
+  return out.reverse().join("")
 }
 
 function formatDecimalPart(decStr: string, fmt: string): string {
   // The format contains 0, #, ? placeholders
   let result = ""
   const cleanFmt = fmt.replace(/[^0#?]/g, "")
+  // `decStr` comes from toFixed(), so it is always padded out to the full
+  // placeholder count. Trailing zeros there are insignificant digits, which
+  // is what "?" renders as a space.
+  const significant = decStr.replace(/0+$/, "").length
 
   for (let i = 0; i < cleanFmt.length; i++) {
     const placeholder = cleanFmt[i]
@@ -694,7 +744,7 @@ function formatDecimalPart(decStr: string, fmt: string): string {
         break
       case "?":
         // Show digit or space
-        if (i < decStr.length) {
+        if (i < significant) {
           result += digit
         } else {
           result += " "

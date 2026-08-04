@@ -372,83 +372,61 @@ describe("formatValue — fractions", () => {
 })
 
 // ═══════════════════════════════════════════════════════════════════════
-// Known deviations from Excel — see the report accompanying this file
+// Excel parity — the defects reported in #388
 // ═══════════════════════════════════════════════════════════════════════
 
-describe("formatValue — Excel parity gaps", () => {
-  // BUG: src/_format.ts:541 decides whether to prepend "-" from
-  // `value < 0`, but `formatValue` already replaced the value with its
-  // absolute value when it picked the negative section (line 108), so
-  // `isNegative` is always false there. The explicit "-" written in the
-  // format is swallowed into `core` by `extractLiterals` (line 598 puts
-  // "-" in the placeholder set) and `formatIntegerPart` never emits it,
-  // so the sign disappears entirely.
-  // Excel renders -42 as "-42.00" under "0.00;-0.00".
-  it.skip("keeps the explicit minus sign of a negative section", () => {
+describe("formatValue — Excel parity", () => {
+  // A negative section is handed the absolute value, since the section
+  // itself supplies the presentation of the sign — so the "-" written in
+  // the format has to survive as literal text. `extractLiterals` therefore
+  // keeps "+" and "-" out of `core`, where no placeholder would render them.
+  it("keeps the explicit minus sign of a negative section", () => {
     expect(formatValue(-42, "0.00;-0.00")).toBe("-42.00")
     expect(formatValue(-1234.5, "#,##0.00;-#,##0.00")).toBe("-1,234.50")
   })
 
-  // BUG: src/_format.ts:485-493. A single trailing comma is Excel's
-  // "scale by 1000" directive, but `useThousandSep` is true for any
-  // format containing `[#0?],` — which a trailing comma also satisfies —
-  // and the scaling block is gated on `!useThousandSep`, so it never
-  // runs. Excel renders 1234567 as "1,235" under "#,##0," and as "1235"
-  // under "0,".
-  it.skip("divides by a thousand for a single trailing comma", () => {
+  // A comma after the last digit placeholder scales the value by 1000; a
+  // comma between placeholders turns on group separators. The two are
+  // independent, so "#,##0," does both while "0," only scales.
+  it("divides by a thousand for a single trailing comma", () => {
     expect(formatValue(1234567, "#,##0,")).toBe("1,235")
     expect(formatValue(1234567, "0,")).toBe("1235")
   })
 
-  // BUG: src/_format.ts:485. When the scaling *does* apply (",,") the
-  // same flag turns group separators off, so the scaled result loses its
-  // commas. Excel renders 1234567890 as "1,235" under "#,##0,,".
-  it.skip("keeps group separators on a scaled-down value", () => {
+  it("keeps group separators on a scaled-down value", () => {
     expect(formatValue(1234567890, "#,##0,,")).toBe("1,235")
   })
 
-  // BUG: src/_format.ts:404. `isFractionFormat` requires the denominator
-  // to be made of `?`, `#` or `0`, so Excel's fixed-denominator fraction
-  // formats ("As halves" = `# ?/2`, "As eighths" = `# ?/8`, "As
-  // sixteenths" = `# ??/16`) are not recognised as fractions at all and
-  // fall through to plain number formatting: 3.5 renders as "4/2".
-  // `formatFraction`'s own `fixedDenom` branch (lines 429-443) is
-  // therefore dead code — it can never be reached.
-  it.skip("honours a fixed denominator written in the format", () => {
+  // Excel's built-in fixed-denominator fractions: "As halves" (`# ?/2`),
+  // "As eighths" (`# ?/8`), "As sixteenths" (`# ??/16`). The numerator is
+  // rounded onto the denominator the format names rather than searched for.
+  it("honours a fixed denominator written in the format", () => {
     expect(formatValue(3.5, "# ?/2")).toBe("3 1/2")
     expect(formatValue(3.5, "# ?/8")).toBe("3 4/8")
   })
 
-  // BUG: src/_format.ts:447. For -0.5 the integer part is `-0`, and both
-  // `intPart !== 0` and `intPart < 0` are false for negative zero, so no
-  // sign is emitted. Excel renders -0.5 as "-1/2" under "# ?/?".
-  it.skip("keeps the sign of a negative value smaller than one", () => {
+  // Math.trunc(-0.5) is -0, so the sign cannot be read off the whole part
+  // — it has to come from the value itself.
+  it("keeps the sign of a negative value smaller than one", () => {
     expect(formatValue(-0.5, "# ?/?")).toBe("-1/2")
   })
 
-  // BUG: src/_format.ts:446. `hasIntPart` only looks for `#` and `0`, so
-  // a `?` integer placeholder is not recognised and the whole part is
-  // dropped from a mixed number. Excel renders 2.5 as "2 1/2" under
-  // "? ?/?".
-  it.skip("keeps the whole part in front of a ?-placeholder fraction", () => {
+  // A "?" in front of the fraction is a whole-number placeholder just like
+  // "#" and "0", so "? ?/?" is a mixed number.
+  it("keeps the whole part in front of a ?-placeholder fraction", () => {
     expect(formatValue(2.5, "? ?/?")).toBe("2 1/2")
   })
 
-  // BUG: src/_format.ts:695-702. The `?` decimal placeholder is meant to
-  // render insignificant digits as spaces so decimal points line up, but
-  // `decStr` is produced by `toFixed(decimalPlaces)` and therefore always
-  // has exactly as many digits as the format has placeholders — the
-  // `else result += " "` arm can never run and `?` behaves like `0`.
-  // Excel renders 0.5 as "0.5  " under "0.???".
-  it.skip("pads insignificant decimals with spaces for a ? placeholder", () => {
+  // "?" renders insignificant decimals as spaces so decimal points line up
+  // down a column, where "0" would render them as zeros.
+  it("pads insignificant decimals with spaces for a ? placeholder", () => {
     expect(formatValue(0.5, "0.???")).toBe("0.5  ")
   })
 
-  // BUG: src/_format.ts:598. Literal characters that sit *between* digit
-  // placeholders (rather than before or after the number) are folded into
-  // `core` and then dropped, because `formatIntegerPart` only understands
-  // `0` and `#`. This breaks Excel's fixed-width identifier formats.
-  it.skip("keeps separators written between digit groups", () => {
+  // Excel's Special formats (SSN, phone number) put literal characters
+  // *between* digit placeholders. Placeholders are filled right-to-left and
+  // the literals stay where the format put them.
+  it("keeps separators written between digit groups", () => {
     expect(formatValue(123456789, "000-00-0000")).toBe("123-45-6789")
     expect(formatValue(5551234567, "(000) 000-0000")).toBe("(555) 123-4567")
   })
