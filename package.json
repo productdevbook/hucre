@@ -77,11 +77,12 @@
     "lint:fix": "oxlint . --fix && oxfmt .",
     "fmt": "oxfmt .",
     "test": "pnpm lint && pnpm typecheck && vitest run",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.cli.json",
     "release": "pnpm test && pnpm build && bumpp --commit --tag --push --all",
     "prepack": "pnpm build"
   },
   "devDependencies": {
+    "@types/node": "^26.1.2",
     "@vitest/coverage-v8": "^4.1.10",
     "bumpp": "^12.1.1",
     "citty": "^0.2.2",

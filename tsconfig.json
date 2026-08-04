@@ -9,8 +9,15 @@
     "isolatedModules": true,
     "forceConsistentCasingInFileNames": true,
     "noImplicitOverride": true,
-    "noEmit": true
+    "noEmit": true,
+    // No ambient types, deliberately. The library is platform-neutral —
+    // Web APIs only, no `node:` imports — and leaving `process`, `Buffer`
+    // and friends undeclared is what keeps it that way: reaching for one
+    // is a type error here rather than something that quietly works on
+    // the machine it was written on. The CLI is the one part allowed node
+    // builtins, and it is checked by tsconfig.cli.json instead. See #399.
+    "types": []
   },
   "include": ["src", "test"],
-  "exclude": ["src/cli.ts"]
+  "exclude": ["src/cli.ts", "src/cli", "test/cli.test.ts"]
 }

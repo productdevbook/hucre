@@ -1,0 +1,16 @@
+{
+  // The CLI, and only the CLI, gets node's ambient types.
+  //
+  // It used to be excluded from typechecking altogether — `src/cli.ts`
+  // sat in tsconfig.json's `exclude` list, so the one part of hucre that
+  // ships as an executable was the one part `tsc` never looked at. That
+  // is how #357 (a published binary that could not start) got through.
+  // Splitting it into its own project restores the check without letting
+  // `process` and `Buffer` leak into the platform-neutral library.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["src/cli.ts", "src/cli", "test/cli.test.ts"],
+  "exclude": []
+}
