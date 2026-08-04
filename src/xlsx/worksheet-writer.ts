@@ -25,6 +25,7 @@ import { isHyperlinkValue } from "./hyperlink"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
 import { calculateColumnWidth } from "./auto-width"
 import { hashSheetPassword } from "./password"
+import { validateColumnIndex } from "../_validate"
 
 // ── Hyperlink Relationship ────────────────────────────────────────
 
@@ -63,6 +64,10 @@ const NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationship
 
 /** Convert a 0-based column index to an Excel column letter (A, B, ... Z, AA, AB, ...) */
 export function colToLetter(col: number): string {
+  // Pure arithmetic on an unchecked number produced references no reader
+  // can parse — "@" for -1, a NUL character for NaN, "XFE" one past the
+  // last column. See #364.
+  validateColumnIndex(col)
   let result = ""
   let c = col
   do {

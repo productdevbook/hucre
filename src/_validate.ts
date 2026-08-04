@@ -8,12 +8,31 @@
 // no half-written output.
 
 import { InvalidArgumentError } from "./errors"
+import { MAX_COL_INDEX } from "./limits"
 
 /**
  * Excel's hard limit on a sheet name. Enforced by Excel's UI, by the
  * XLSX format, and by LibreOffice for ODS.
  */
 export const MAX_SHEET_NAME_LENGTH = 31
+
+/**
+ * Excel's limit on the text in one cell, and on a formula's length.
+ *
+ * Neither is enforced, and that is deliberate. Both are *application*
+ * limits, not format limits: ECMA-376 imposes no such cap, the file
+ * stays valid OOXML, and LibreOffice, pandas and hucre's own reader all
+ * handle longer values. Excel truncates the display rather than refusing
+ * the file. Throwing here would make hucre stricter than the format it
+ * writes, and would break using it as a general interchange engine.
+ *
+ * Sheet names are different, and are enforced: an illegal one makes the
+ * whole workbook unreadable rather than one cell lossy. See #364.
+ *
+ * Exported so a caller targeting Excel specifically can check.
+ */
+export const MAX_CELL_TEXT_LENGTH = 32_767
+export const MAX_FORMULA_LENGTH = 8_192
 
 /**
  * Characters Excel forbids in a sheet name. They collide with range
@@ -95,5 +114,22 @@ export function validateSheetNames(sheets: ReadonlyArray<{ name: string }>): voi
       )
     }
     seen.set(key, i)
+  }
+}
+
+/**
+ * Guard a 0-based column index before it becomes an `r=` attribute.
+ *
+ * `colToLetter` is pure arithmetic and produced nonsense for anything
+ * outside the grid — `-1` gave `"@"`, `NaN` gave a NUL character, `1.5`
+ * silently truncated, and `16384` gave `"XFE"`, one past Excel's last
+ * column. Each produced a cell reference no reader can parse, from a
+ * file that otherwise looked fine. See #364.
+ */
+export function validateColumnIndex(col: number): void {
+  if (!Number.isInteger(col) || col < 0 || col > MAX_COL_INDEX) {
+    throw new InvalidArgumentError(
+      `Column index ${col} is not a valid 0-based column ` + `(Excel allows 0..${MAX_COL_INDEX})`,
+    )
   }
 }
