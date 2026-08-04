@@ -8,18 +8,18 @@ If a change here breaks something and the reason isn't clear, please open an iss
 
 ## At a glance
 
-| Change                                                                                               | Affects you if…                                                          |
-| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [`writeXlsxStream` argument order](#writexlsxstream-takes-rows-first)                                | you call `writeXlsxStream`                                               |
-| [`headerRow` is 0-based everywhere](#headerrow-means-one-thing-now)                                  | you pass `headerRow` to `validateWithSchema`                             |
-| [`hasHeaderRow` on the exporters](#hasheaderrow-on-tohtml-and-tomarkdown)                            | you pass `headerRow` to `toHtml` / `toMarkdown`                          |
-| [`streamCsvRows` header handling](#streamcsvrows-matches-parsecsv)                                   | you call `streamCsvRows({ header: true })`                               |
-| [`readObjects` / `sheetToObjects` return shape](#readobjects-and-sheettoobjects-return-data-headers) | you call either                                                          |
-| [`HucreError`](#deftererror-is-now-hucreerror)                                                       | nothing — the old name still works                                       |
-| [`readNdjsonStream`](#readndjsonstream-is-now-streamndjsonrows)                                      | nothing — the old name still works                                       |
-| [Sheet names are validated](#sheet-names-are-validated-on-write)                                     | you write sheet names with `: * ? / \ [ ]`, over 31 chars, or duplicates |
-| [Removed dead API](#removed-api-that-never-did-anything)                                             | you reference `ReadResult`, `WORKER_SAFE_FUNCTIONS`, `isoDates`, …       |
-| [Files that were silently corrupt](#files-that-were-silently-wrong)                                  | you round-trip workbooks, or print them                                  |
+| Change                                                                                               | Affects you if…                                                                                   |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| [`writeXlsxStream` argument order](#writexlsxstream-takes-rows-first)                                | you call `writeXlsxStream`                                                                        |
+| [`headerRow` is 0-based everywhere](#headerrow-means-one-thing-now)                                  | you pass `headerRow` to `validateWithSchema`                                                      |
+| [`hasHeaderRow` on the exporters](#hasheaderrow-on-tohtml-and-tomarkdown)                            | you pass `headerRow` to `toHtml` / `toMarkdown`                                                   |
+| [`streamCsvRows` header handling](#streamcsvrows-matches-parsecsv)                                   | you call `streamCsvRows({ header: true })`                                                        |
+| [`readObjects` / `sheetToObjects` return shape](#readobjects-and-sheettoobjects-return-data-headers) | you call either                                                                                   |
+| [`HucreError`](#deftererror-is-now-hucreerror)                                                       | nothing — the old name still works                                                                |
+| [`readNdjsonStream`](#readndjsonstream-is-now-streamndjsonrows)                                      | nothing — the old name still works                                                                |
+| [Sheet names are validated](#sheet-names-are-validated-on-write)                                     | you write sheet names with `: * ? / \ [ ]`, over 31 chars, or duplicates                          |
+| [Removed dead API](#removed-api-that-never-did-anything)                                             | you reference `ReadResult`, `WORKER_SAFE_FUNCTIONS`, `isoDates`, `WriteSheet.threadedComments`, … |
+| [Files that were silently corrupt](#files-that-were-silently-wrong)                                  | you round-trip workbooks, or print them                                                           |
 
 ---
 
@@ -140,6 +140,7 @@ Each of these was exported or declared and had no effect. v1 would have frozen t
 | `ReadOptions.headerRow`, `ReadOptions.schema` | honoured by no reader                                        |
 | `CsvReadOptions.lineSeparator`, `.encoding`   | never read (`CsvWriteOptions.lineSeparator` is fine)         |
 | `isoDates` on the JSON writers                | see below                                                    |
+| `WriteSheet.threadedComments`                 | typed and accepted; no writer ever produced the part         |
 
 `isoDates` is worth explaining because it _looked_ like it worked. `JSON.stringify` calls `Date.prototype.toJSON` **before** consulting the replacer, so a replacer testing `value instanceof Date` is never reached — `isoDates: false` produced byte-identical output. Dates still serialize as ISO strings, exactly as before.
 

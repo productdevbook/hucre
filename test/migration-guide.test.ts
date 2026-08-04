@@ -274,6 +274,22 @@ describe("removed API that never did anything", () => {
     })
   }
 
+  it("no longer accepts WriteSheet.threadedComments", async () => {
+    // Typed and accepted, written by nothing — see #404. Removing it is
+    // the only option that tells the caller anything.
+    const buf = await writeXlsx({
+      sheets: [
+        {
+          name: "S",
+          rows: [["a"]],
+          threadedComments: [{ id: "{c1}", ref: "A1", personId: "{p1}", text: "hi" }],
+        } as never,
+      ],
+    })
+    const workbook = await openXlsx(buf)
+    expect(workbook.sheets[0].threadedComments).toBeUndefined()
+  })
+
   it("keeps RoundtripWorkbook's internals off the object", async () => {
     const buf = await writeXlsx({ sheets: [{ name: "S", rows: [["a"]] }] })
     const workbook = await openXlsx(buf)
