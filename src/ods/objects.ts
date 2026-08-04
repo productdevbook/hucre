@@ -2,7 +2,7 @@
 // Header-row-based read/write helpers that mirror parseCsvObjects ergonomics.
 
 import type { CellValue, ReadInput, ReadOptions, WriteOutput } from "../_types"
-import { ParseError } from "../errors"
+import { rowsToObjects, selectSheet } from "../_objects"
 import { readOds } from "./reader"
 import { writeOds } from "./writer"
 
@@ -44,14 +44,10 @@ export interface OdsObjectsResult<T extends Record<string, CellValue> = Record<s
 export async function readOdsObjects<
   T extends Record<string, CellValue> = Record<string, CellValue>,
 >(input: ReadInput, options?: OdsObjectsReadOptions): Promise<OdsObjectsResult<T>> {
-  const headerRowIdx = options?.headerRow ?? 0
-  const skipEmpty = options?.skipEmptyRows ?? true
-  const sheetSelector = options?.sheet ?? 0
-
   const {
-    sheet: _sheet,
-    headerRow: _hr,
-    skipEmptyRows: _se,
+    sheet: sheetSelector = 0,
+    headerRow = 0,
+    skipEmptyRows = true,
     transformHeader,
     transformValue,
     maxRows,
@@ -59,58 +55,15 @@ export async function readOdsObjects<
   } = options ?? {}
 
   const wb = await readOds(input, readOpts)
-  if (wb.sheets.length === 0) {
-    throw new ParseError("Workbook contains no sheets")
-  }
+  const sheet = selectSheet(wb, sheetSelector)
 
-  const sheet =
-    typeof sheetSelector === "number"
-      ? wb.sheets[sheetSelector]
-      : wb.sheets.find((s) => s.name === sheetSelector)
-
-  if (!sheet) {
-    throw new ParseError(
-      typeof sheetSelector === "number"
-        ? `Sheet index ${sheetSelector} out of range (workbook has ${wb.sheets.length} sheet(s))`
-        : `Sheet "${sheetSelector}" not found`,
-    )
-  }
-
-  if (sheet.rows.length <= headerRowIdx) {
-    return { data: [], headers: [] }
-  }
-
-  const headerRow = sheet.rows[headerRowIdx]!
-  let headers = headerRow.map((h) => {
-    if (h === null || h === undefined) return ""
-    return String(h).trim()
+  return rowsToObjects<T>(sheet.rows, {
+    headerRow,
+    skipEmptyRows,
+    transformHeader,
+    transformValue,
+    maxRows,
   })
-
-  if (transformHeader) {
-    headers = headers.map((h, i) => transformHeader(h, i))
-  }
-
-  const data: T[] = []
-  for (let i = headerRowIdx + 1; i < sheet.rows.length; i++) {
-    if (maxRows !== undefined && data.length >= maxRows) break
-    const row = sheet.rows[i]!
-
-    if (skipEmpty && row.every((v) => v === null || v === undefined || v === "")) {
-      continue
-    }
-
-    const obj: Record<string, CellValue> = {}
-    for (let j = 0; j < headers.length; j++) {
-      let val: CellValue = j < row.length ? (row[j] ?? null) : null
-      if (transformValue) {
-        val = transformValue(val, headers[j]!, i, j)
-      }
-      obj[headers[j]!] = val
-    }
-    data.push(obj as T)
-  }
-
-  return { data, headers }
 }
 
 /**

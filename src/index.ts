@@ -1,6 +1,6 @@
 // ── High-Level API ──────────────────────────────────────────────────
 export { read, write, readObjects, writeObjects } from "./defter"
-export type { WriteObjectsTableOption } from "./defter"
+export type { ReadObjectsOptions, ReadObjectsResult, WriteObjectsTableOption } from "./defter"
 
 // ── XLSX ────────────────────────────────────────────────────────────
 export { readXlsx } from "./xlsx/reader"
@@ -18,6 +18,7 @@ export type { StreamRow } from "./xlsx/stream-reader"
 export { XlsxStreamWriter, writeXlsxStream, XLSX_MAX_ROWS_PER_SHEET } from "./xlsx/stream-writer"
 export type {
   StreamWriterOptions,
+  XlsxStreamWriterOptions,
   XlsxWriteStreamOptions,
   XlsxStreamRow,
 } from "./xlsx/stream-writer"
@@ -46,8 +47,9 @@ export {
   formatCsvValue,
   fetchCsv,
 } from "./csv/index"
+export type { CsvObjectsResult } from "./csv/index"
 export { streamCsvRows, CsvStreamWriter, writeCsvStream } from "./csv/stream"
-export type { CsvStreamRow } from "./csv/stream"
+export type { CsvStreamRow, CsvStreamWriterOptions } from "./csv/stream"
 
 // ── JSON ───────────────────────────────────────────────────────────
 export {
@@ -72,6 +74,7 @@ export type {
   JsonWriteOptions,
   WorkbookToJsonOptions,
   NdjsonStreamReadOptions,
+  NdjsonStreamWriterOptions,
   FlattenOptions,
 } from "./json"
 
@@ -237,6 +240,7 @@ export {
 
 // ── Sheet Utilities ──────────────────────────────────────────────
 export { sheetToObjects, sheetToArrays } from "./sheet-utils"
+export type { SheetObjectsResult, SheetToObjectsOptions } from "./sheet-utils"
 
 // ── Export (HTML / Markdown / JSON / TSV) ────────────────────────────
 export { toHtml, toMarkdown, toJson, fromHtml } from "./export/index"

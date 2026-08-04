@@ -61,6 +61,15 @@ export interface StreamWriterOptions {
   repeatHeaders?: boolean
 }
 
+/**
+ * Constructor options for {@link XlsxStreamWriter}.
+ *
+ * Alias of {@link StreamWriterOptions}, which occupies a generic name for
+ * an XLSX-only type (#365 item 8). Prefer this one — every stream writer
+ * in the library names its options `<Writer>Options`.
+ */
+export type XlsxStreamWriterOptions = StreamWriterOptions
+
 export interface XlsxWriteStreamOptions extends StreamWriterOptions {
   /**
    * Write strings as inline `<is><t>` cells instead of routing them
@@ -381,7 +390,7 @@ export class XlsxStreamWriter {
   /** Captured for `repeatHeaders`. Set when the first row is written. */
   private headerRowValues: CellValue[] | null = null
 
-  constructor(options: StreamWriterOptions) {
+  constructor(options: XlsxStreamWriterOptions) {
     this.sheetName = options.name
     this.columns = options.columns
     this.freezePane = options.freezePane
@@ -527,6 +536,34 @@ export class XlsxStreamWriter {
     )
 
     return zip.build()
+  }
+
+  /**
+   * Emit the finished workbook as a `ReadableStream<Uint8Array>`.
+   *
+   * **This is not a constant-memory stream.** Every serialized row is
+   * still buffered; {@link finish} runs first and the whole archive is
+   * enqueued as one chunk. It exists so a writer can be handed to a
+   * `Response` body or a file sink without a manual buffer step — not to
+   * bound memory. For output whose peak memory is independent of the row
+   * count, use {@link writeXlsxStream}, which pulls rows from an iterable
+   * and emits the ZIP chunk by chunk.
+   *
+   * `finish()` runs when the stream is first read, so rows added between
+   * `toStream()` and the first pull are still included, and the stream
+   * closes right after — no separate `finish()` call is needed (though
+   * one is harmless: `finish()` is idempotent here).
+   */
+  toStream(): ReadableStream<Uint8Array> {
+    const finish = (): Promise<Uint8Array> => this.finish()
+    return new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        // A rejected `pull` errors the stream, so a failing `finish()`
+        // surfaces to the consumer rather than hanging it.
+        controller.enqueue(await finish())
+        controller.close()
+      },
+    })
   }
 }
 

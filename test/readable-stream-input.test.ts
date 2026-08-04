@@ -153,9 +153,9 @@ describe("read() — ReadableStream input", () => {
   it("readObjects accepts a stream", async () => {
     const xlsx = await writeXlsx({ sheets: SAMPLE_SHEETS })
 
-    const objects = await readObjects(toReadableStream(xlsx))
+    const { data } = await readObjects(toReadableStream(xlsx))
 
-    expect(objects).toEqual([
+    expect(data).toEqual([
       { id: 1, name: "alpha", amount: 10.5 },
       { id: 2, name: "beta", amount: 20.25 },
     ])

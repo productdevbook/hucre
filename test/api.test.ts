@@ -149,30 +149,29 @@ describe("write()", () => {
 // ── readObjects() ───────────────────────────────────────────────────
 
 describe("readObjects()", () => {
-  it("returns array of objects with headers as keys", async () => {
+  it("returns { data, headers } — the same shape as every other *Objects reader", async () => {
     const xlsx = await makeXlsx([
       ["Name", "Age", "Active"],
       ["Alice", 30, true],
       ["Bob", 25, false],
     ])
 
-    const objects = await readObjects(xlsx)
+    const { data, headers } = await readObjects(xlsx)
 
-    expect(objects).toHaveLength(2)
-    expect(objects[0]).toEqual({ Name: "Alice", Age: 30, Active: true })
-    expect(objects[1]).toEqual({ Name: "Bob", Age: 25, Active: false })
+    expect(headers).toEqual(["Name", "Age", "Active"])
+    expect(data).toHaveLength(2)
+    expect(data[0]).toEqual({ Name: "Alice", Age: 30, Active: true })
+    expect(data[1]).toEqual({ Name: "Bob", Age: 25, Active: false })
   })
 
-  it("returns empty array for empty sheet", async () => {
+  it("returns empty data and headers for an empty sheet", async () => {
     const xlsx = await makeXlsx([])
-    const objects = await readObjects(xlsx)
-    expect(objects).toEqual([])
+    expect(await readObjects(xlsx)).toEqual({ data: [], headers: [] })
   })
 
-  it("returns empty array for header-only sheet", async () => {
+  it("returns the headers but no data for a header-only sheet", async () => {
     const xlsx = await makeXlsx([["Name", "Age"]])
-    const objects = await readObjects(xlsx)
-    expect(objects).toEqual([])
+    expect(await readObjects(xlsx)).toEqual({ data: [], headers: ["Name", "Age"] })
   })
 
   it("handles null values in data rows", async () => {
@@ -182,11 +181,11 @@ describe("readObjects()", () => {
       [null, 100],
     ])
 
-    const objects = await readObjects(xlsx)
+    const { data } = await readObjects(xlsx)
 
-    expect(objects).toHaveLength(2)
-    expect(objects[0]).toEqual({ Name: "Alice", Score: null })
-    expect(objects[1]).toEqual({ Name: null, Score: 100 })
+    expect(data).toHaveLength(2)
+    expect(data[0]).toEqual({ Name: "Alice", Score: null })
+    expect(data[1]).toEqual({ Name: null, Score: 100 })
   })
 
   it("works with ODS input", async () => {
@@ -195,37 +194,110 @@ describe("readObjects()", () => {
       ["Pen", 1.5],
     ])
 
-    const objects = await readObjects(ods)
+    const { data, headers } = await readObjects(ods)
 
-    expect(objects).toHaveLength(1)
-    expect(objects[0]).toEqual({ Product: "Pen", Price: 1.5 })
+    expect(headers).toEqual(["Product", "Price"])
+    expect(data).toHaveLength(1)
+    expect(data[0]).toEqual({ Product: "Pen", Price: 1.5 })
   })
 
-  it("skips empty-string headers", async () => {
+  it("keys empty-string headers like the format-specific readers do", async () => {
+    // Pre-v1 this reader — and only this reader — dropped "" keys. The
+    // XLSX/ODS/CSV readers all keep them, so it converged on those.
     const xlsx = await makeXlsx([
       ["Name", "", "Age"],
       ["Alice", "ignore", 30],
     ])
 
-    const objects = await readObjects(xlsx)
+    const { data, headers } = await readObjects(xlsx)
 
-    expect(objects).toHaveLength(1)
-    // Empty header key should be skipped
-    expect(objects[0]!["Name"]).toBe("Alice")
-    expect(objects[0]!["Age"]).toBe(30)
-    expect(objects[0]![""]).toBeUndefined()
+    expect(headers).toEqual(["Name", "", "Age"])
+    expect(data).toHaveLength(1)
+    expect(data[0]!["Name"]).toBe("Alice")
+    expect(data[0]!["Age"]).toBe(30)
+    expect(data[0]![""]).toBe("ignore")
   })
 
-  it("returns empty array when workbook has no sheets", async () => {
-    // Edge case: workbook with empty sheets array
-    // We can't really create a file with zero sheets, but we can create one
-    // with an empty first sheet
+  it("returns empty data for a workbook whose first sheet has no rows", async () => {
     const xlsx = await writeXlsx({
       sheets: [{ name: "Empty", rows: [] }],
     })
 
-    const objects = await readObjects(xlsx)
-    expect(objects).toEqual([])
+    expect(await readObjects(xlsx)).toEqual({ data: [], headers: [] })
+  })
+
+  // ── option parity with readXlsxObjects / readOdsObjects ───────────
+
+  it("selects a sheet by index and by name", async () => {
+    const xlsx = await writeXlsx({
+      sheets: [
+        { name: "First", rows: [["A"], [1]] },
+        { name: "Second", rows: [["B"], [2]] },
+      ],
+    })
+
+    expect((await readObjects(xlsx, { sheet: 1 })).data).toEqual([{ B: 2 }])
+    expect((await readObjects(xlsx, { sheet: "Second" })).data).toEqual([{ B: 2 }])
+  })
+
+  it("throws for a sheet selector that resolves to nothing", async () => {
+    const xlsx = await makeXlsx([["A"], [1]])
+    await expect(readObjects(xlsx, { sheet: 9 })).rejects.toThrow(/out of range/)
+    await expect(readObjects(xlsx, { sheet: "Nope" })).rejects.toThrow(/not found/)
+  })
+
+  it("honours headerRow", async () => {
+    const xlsx = await makeXlsx([["report title"], ["Name", "Score"], ["Alice", 100]])
+    const { data, headers } = await readObjects(xlsx, { headerRow: 1 })
+    expect(headers).toEqual(["Name", "Score"])
+    expect(data).toEqual([{ Name: "Alice", Score: 100 }])
+  })
+
+  it("skips fully empty rows by default, and keeps them when asked", async () => {
+    const xlsx = await writeXlsx({
+      sheets: [
+        {
+          name: "S",
+          rows: [
+            ["A", "B"],
+            [null, null],
+            ["x", "y"],
+          ],
+        },
+      ],
+    })
+
+    expect((await readObjects(xlsx)).data).toEqual([{ A: "x", B: "y" }])
+    expect((await readObjects(xlsx, { skipEmptyRows: false })).data).toEqual([
+      { A: null, B: null },
+      { A: "x", B: "y" },
+    ])
+  })
+
+  it("honours transformHeader and transformValue", async () => {
+    const xlsx = await makeXlsx([
+      ["First Name", "Score"],
+      ["Alice", "100"],
+    ])
+
+    const { data, headers } = await readObjects(xlsx, {
+      transformHeader: (h) => h.toLowerCase().replace(/ /g, "_"),
+      transformValue: (v, header) => (header === "score" ? Number(v) : v),
+    })
+
+    expect(headers).toEqual(["first_name", "score"])
+    expect(data).toEqual([{ first_name: "Alice", score: 100 }])
+  })
+
+  it("honours maxRows on the projected rows, for every format", async () => {
+    const rows = [["N"], [1], [2], [3]]
+    const xlsx = await makeXlsx(rows)
+    const ods = await makeOds(rows)
+
+    expect((await readObjects(xlsx, { maxRows: 2 })).data).toEqual([{ N: 1 }, { N: 2 }])
+    // ReadOptions.maxRows is XLSX-only; this one is applied after the read,
+    // so ODS honours it too.
+    expect((await readObjects(ods, { maxRows: 2 })).data).toEqual([{ N: 1 }, { N: 2 }])
   })
 })
 
@@ -347,8 +419,8 @@ describe("round-trip", () => {
     ]
 
     const output = await writeObjects(original)
-    const result = await readObjects(output)
+    const { data } = await readObjects(output)
 
-    expect(result).toEqual(original)
+    expect(data).toEqual(original)
   })
 })

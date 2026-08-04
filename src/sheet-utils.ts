@@ -2,41 +2,47 @@
 // Helper functions to convert Sheet data into objects or arrays.
 
 import type { CellValue, Sheet } from "./_types"
+import { rowsToObjects } from "./_objects"
 
 /**
- * Convert sheet rows to an array of objects using a row as headers.
+ * Options for {@link sheetToObjects}.
+ */
+export interface SheetToObjectsOptions {
+  /** 0-based row index to use as headers. Default: 0. */
+  headerRow?: number
+}
+
+/**
+ * Result shape for {@link sheetToObjects}, mirroring `XlsxObjectsResult`
+ * and `OdsObjectsResult`.
+ */
+export interface SheetObjectsResult<
+  T extends Record<string, CellValue> = Record<string, CellValue>,
+> {
+  data: T[]
+  headers: string[]
+}
+
+/**
+ * Convert sheet rows to objects keyed by a header row, plus the detected
+ * headers.
+ *
+ * Every row after the header row is returned as-is: this is a pure
+ * in-memory projection with no filtering or transform hooks. For
+ * `skipEmptyRows` / `transformHeader` / `transformValue` / `maxRows`, read
+ * through `readXlsxObjects`, `readOdsObjects`, or `readObjects` instead.
  *
  * @param sheet - The sheet to convert
- * @param options.headerRow - 0-based row index to use as headers (default: 0)
- * @returns Array of objects keyed by header values
+ * @returns `{ data, headers }` — the same shape every `*Objects` reader returns
  */
-export function sheetToObjects<T = Record<string, CellValue>>(
+export function sheetToObjects<T extends Record<string, CellValue> = Record<string, CellValue>>(
   sheet: Sheet,
-  options?: { headerRow?: number },
-): T[] {
-  const headerRowIdx = options?.headerRow ?? 0
-
-  if (sheet.rows.length <= headerRowIdx) {
-    return []
-  }
-
-  const headerRow = sheet.rows[headerRowIdx]!
-  const headers = headerRow.map((h) => {
-    if (h === null || h === undefined) return ""
-    return String(h).trim()
+  options?: SheetToObjectsOptions,
+): SheetObjectsResult<T> {
+  return rowsToObjects<T>(sheet.rows, {
+    headerRow: options?.headerRow ?? 0,
+    skipEmptyRows: false,
   })
-
-  const result: T[] = []
-  for (let i = headerRowIdx + 1; i < sheet.rows.length; i++) {
-    const row = sheet.rows[i]!
-    const obj: Record<string, CellValue> = {}
-    for (let j = 0; j < headers.length; j++) {
-      obj[headers[j]!] = j < row.length ? (row[j] ?? null) : null
-    }
-    result.push(obj as T)
-  }
-
-  return result
 }
 
 /**

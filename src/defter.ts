@@ -14,6 +14,7 @@ import type {
   TableDefinition,
   TableColumn,
 } from "./_types"
+import { rowsToObjects, selectSheet } from "./_objects"
 import { readXlsx } from "./xlsx/reader"
 import { readXlsb, looksLikeXlsb } from "./xlsx/xlsb/reader"
 import { readXls, looksLikeXls } from "./xls/reader"
@@ -144,50 +145,85 @@ export async function write(
 }
 
 /**
- * Quick helper: read a file and get the first sheet as array of objects.
- * Assumes first row is headers.
+ * Options for {@link readObjects}.
+ *
+ * The projection knobs are the same set — and the same defaults — as
+ * `XlsxObjectsReadOptions` and `OdsObjectsReadOptions`. They are applied
+ * to the workbook `read()` returns, so every one of them is honoured for
+ * every format `read()` can detect (XLSX, XLSB, XLS, ODS).
+ *
+ * The inherited {@link ReadOptions} fields are a different story: they are
+ * handed to the format reader and are honoured as unevenly as ever (see
+ * #365 item 4). `sheets` is omitted because {@link sheet} supersedes it.
+ */
+export interface ReadObjectsOptions extends Omit<ReadOptions, "sheets"> {
+  /** Sheet to read from. Index (0-based) or sheet name. Default: 0. */
+  sheet?: number | string
+  /** 0-based row index to use as headers. Default: 0. */
+  headerRow?: number
+  /** Skip rows where every cell is null/empty. Default: true. */
+  skipEmptyRows?: boolean
+  /** Transform header values (after String/trim normalization). */
+  transformHeader?: (header: string, index: number) => string
+  /** Transform each cell value. */
+  transformValue?: (
+    value: CellValue,
+    header: string,
+    rowIndex: number,
+    colIndex: number,
+  ) => CellValue
+  /**
+   * Maximum number of data rows to return (after the header row).
+   *
+   * Shadows `ReadOptions.maxRows` — this one is applied to the projected
+   * rows for every format, rather than to the XLSX parse only. The
+   * format reader is never handed a `maxRows`.
+   */
+  maxRows?: number
+}
+
+/**
+ * Result shape for {@link readObjects} — the same `{ data, headers }`
+ * every other `*Objects` reader returns.
+ */
+export interface ReadObjectsResult<
+  T extends Record<string, CellValue> = Record<string, CellValue>,
+> {
+  data: T[]
+  headers: string[]
+}
+
+/**
+ * Quick helper: read a file and get a sheet as objects keyed by a header
+ * row, plus the detected headers.
+ *
+ * Format-agnostic counterpart to `readXlsxObjects` / `readOdsObjects` —
+ * same options, same defaults, same `{ data, headers }` result.
  */
 export async function readObjects<T extends Record<string, CellValue> = Record<string, CellValue>>(
   input: ReadInput,
-  options?: ReadOptions,
-): Promise<T[]> {
-  const workbook = await read(input, options)
+  options?: ReadObjectsOptions,
+): Promise<ReadObjectsResult<T>> {
+  const {
+    sheet: sheetSelector = 0,
+    headerRow = 0,
+    skipEmptyRows = true,
+    transformHeader,
+    transformValue,
+    maxRows,
+    ...readOpts
+  } = options ?? {}
 
-  if (workbook.sheets.length === 0) {
-    return []
-  }
+  const workbook = await read(input, readOpts)
+  const sheet = selectSheet(workbook, sheetSelector)
 
-  const sheet = workbook.sheets[0]!
-  const rows = sheet.rows
-
-  if (rows.length === 0) {
-    return []
-  }
-
-  // First row is headers
-  const headerRow = rows[0]!
-  const headers = headerRow.map((h) => {
-    if (h === null || h === undefined) return ""
-    return String(h).trim()
+  return rowsToObjects<T>(sheet.rows, {
+    headerRow,
+    skipEmptyRows,
+    transformHeader,
+    transformValue,
+    maxRows,
   })
-
-  if (headers.length === 0) {
-    return []
-  }
-
-  const data: T[] = []
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i]!
-    const obj: Record<string, CellValue> = {}
-    for (let j = 0; j < headers.length; j++) {
-      const key = headers[j]!
-      if (key === "") continue
-      obj[key] = j < row.length ? (row[j] ?? null) : null
-    }
-    data.push(obj as T)
-  }
-
-  return data
 }
 
 /** Options for writeObjects table generation */

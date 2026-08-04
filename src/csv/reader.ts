@@ -1,4 +1,5 @@
 import type { CellValue, CsvReadOptions } from "../_types"
+import { rowsToObjects } from "../_objects"
 
 // ── Public API ───────────────────────────────────────────────────────
 
@@ -162,13 +163,26 @@ export function parseCsv(input: string, options?: CsvReadOptions): CellValue[][]
 }
 
 /**
+ * Result shape for {@link parseCsvObjects}, mirroring `XlsxObjectsResult`
+ * and `OdsObjectsResult`.
+ *
+ * Named rather than inline so callers can annotate a variable, a function
+ * return, or a Promise with it — the anonymous shape could not be spelled
+ * at all (#365).
+ */
+export interface CsvObjectsResult<T extends Record<string, CellValue> = Record<string, CellValue>> {
+  data: T[]
+  headers: string[]
+}
+
+/**
  * Parse CSV with a header row, returning an array of objects
  * and the detected headers.
  */
 export function parseCsvObjects<T extends Record<string, CellValue> = Record<string, CellValue>>(
   input: string,
   options?: CsvReadOptions & { header: true },
-): { data: T[]; headers: string[] } {
+): CsvObjectsResult<T> {
   // Pass through without transformValue/transformHeader to parseCsv — we handle them here
   const { transformHeader, transformValue, ...restOptions } = options ?? {}
   const rows = parseCsv(input, {
@@ -178,36 +192,15 @@ export function parseCsvObjects<T extends Record<string, CellValue> = Record<str
     transformHeader: undefined,
   })
 
-  if (rows.length === 0) {
-    return { data: [], headers: [] }
-  }
-
-  const headerRow = rows[0]!
-  let headers = headerRow.map((h) => {
-    if (h === null) return ""
-    return String(h).trim()
+  // `skipEmptyRows` is a `parseCsv` option applied above, so the row set
+  // handed over here is already filtered — projecting it must not filter
+  // a second time.
+  return rowsToObjects<T>(rows, {
+    headerRow: 0,
+    skipEmptyRows: false,
+    transformHeader,
+    transformValue,
   })
-
-  // Apply transformHeader callback
-  if (transformHeader) {
-    headers = headers.map((h, i) => transformHeader(h, i))
-  }
-
-  const data: T[] = []
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i]!
-    const obj: Record<string, CellValue> = {}
-    for (let j = 0; j < headers.length; j++) {
-      let val: CellValue = j < row.length ? row[j]! : null
-      if (transformValue) {
-        val = transformValue(val, headers[j]!, i, j)
-      }
-      obj[headers[j]!] = val
-    }
-    data.push(obj as T)
-  }
-
-  return { data, headers }
 }
 
 // ── Fast parser (no quote handling) ──────────────────────────────────

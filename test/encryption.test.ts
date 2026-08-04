@@ -92,8 +92,8 @@ describe("decryption across the read entry points", () => {
 
   it("readObjects() decrypts", async () => {
     const enc = await writeXlsx({ ...book(), encryption: { password: "pw", spinCount: 64 } })
-    const objs = await readObjects<{ Name: string; Score: number }>(enc, { password: "pw" })
-    expect(objs).toEqual([
+    const { data } = await readObjects<{ Name: string; Score: number }>(enc, { password: "pw" })
+    expect(data).toEqual([
       { Name: "Ada", Score: 95 },
       { Name: "Linus", Score: 88 },
     ])

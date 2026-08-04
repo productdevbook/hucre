@@ -21,6 +21,7 @@ export type { StreamRow } from "./xlsx/stream-reader"
 export { XlsxStreamWriter, writeXlsxStream, XLSX_MAX_ROWS_PER_SHEET } from "./xlsx/stream-writer"
 export type {
   StreamWriterOptions,
+  XlsxStreamWriterOptions,
   XlsxWriteStreamOptions,
   XlsxStreamRow,
 } from "./xlsx/stream-writer"

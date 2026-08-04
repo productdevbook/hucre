@@ -2,13 +2,21 @@
 
 import type { CellValue, Workbook } from "../_types"
 
+/**
+ * `Date` values always serialize as ISO strings.
+ *
+ * There used to be an `isoDates` option here, and it never did anything:
+ * `JSON.stringify` calls `Date.prototype.toJSON` *before* consulting the
+ * replacer, so a replacer testing `value instanceof Date` is never
+ * reached. `isoDates: false` produced byte-identical output. Removed
+ * before v1 rather than frozen — and there is no honest alternative
+ * behaviour to give it, since JSON cannot carry a Date at all.
+ */
 export interface JsonWriteOptions {
   /** Pretty-print with 2-space indent. Default: false. */
   pretty?: boolean
   /** Indent string when `pretty` is true. Default: "  ". */
   indent?: string
-  /** Convert `Date` cells to ISO strings. Default: true. */
-  isoDates?: boolean
 }
 
 /**
@@ -17,22 +25,16 @@ export interface JsonWriteOptions {
 export function writeJson(data: Record<string, CellValue>[], options?: JsonWriteOptions): string {
   const pretty = options?.pretty ?? false
   const indent = options?.indent ?? "  "
-  const isoDates = options?.isoDates ?? true
-  return JSON.stringify(data, isoDates ? dateReplacer : undefined, pretty ? indent : undefined)
+  return JSON.stringify(data, undefined, pretty ? indent : undefined)
 }
 
 /**
  * Serialize an array of row objects to NDJSON / JSON Lines.
  * One JSON object per line, terminated by `\n`.
  */
-export function writeNdjson(
-  data: Record<string, CellValue>[],
-  options?: { isoDates?: boolean },
-): string {
-  const isoDates = options?.isoDates ?? true
+export function writeNdjson(data: Record<string, CellValue>[]): string {
   if (data.length === 0) return ""
-  const replacer = isoDates ? dateReplacer : undefined
-  return data.map((row) => JSON.stringify(row, replacer)).join("\n") + "\n"
+  return data.map((row) => JSON.stringify(row)).join("\n") + "\n"
 }
 
 /**
@@ -79,8 +81,7 @@ export function workbookToJson(wb: Workbook, options?: WorkbookToJsonOptions): s
 
   const pretty = options?.pretty ?? false
   const indent = options?.indent ?? "  "
-  const isoDates = options?.isoDates ?? true
-  return JSON.stringify(all, isoDates ? dateReplacer : undefined, pretty ? indent : undefined)
+  return JSON.stringify(all, undefined, pretty ? indent : undefined)
 }
 
 function sheetToRowObjects(rows: CellValue[][], headerRowIdx: number): Record<string, CellValue>[] {
@@ -98,9 +99,4 @@ function sheetToRowObjects(rows: CellValue[][], headerRowIdx: number): Record<st
     result.push(obj)
   }
   return result
-}
-
-function dateReplacer(_key: string, value: unknown): unknown {
-  if (value instanceof Date) return value.toISOString()
-  return value
 }

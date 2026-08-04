@@ -378,6 +378,31 @@ that discards the bytes (Node 24):
 | 1,000,000 |                       67 MB |                     1,037 MB |
 | 3,000,000 |                       70 MB |                   not viable |
 
+#### One surface across the incremental writers
+
+`XlsxStreamWriter`, `CsvStreamWriter`, and `NdjsonStreamWriter` share one
+vocabulary, so a format-agnostic export helper can be written once:
+
+| Method            | Behaviour                                                         |
+| ----------------- | ----------------------------------------------------------------- |
+| `addRow(values)`  | Append positional values                                          |
+| `addObject(item)` | Append an object, projected through the writer's column order     |
+| `finish()`        | Close the writer and return its output (`string` or `Uint8Array`) |
+| `toStream()`      | Output as a `ReadableStream<Uint8Array>`                          |
+
+Two caveats worth stating plainly:
+
+- `toStream()` on `XlsxStreamWriter` and `CsvStreamWriter` **does not bound
+  memory**. Both buffer everything until `finish()`; the stream just hands
+  you the finished bytes. `writeXlsxStream` / `writeCsvStream` are the
+  constant-memory paths. `NdjsonStreamWriter.toStream()` is the only live
+  drain — it releases rows as they are enqueued and stays open until
+  `finish()`.
+- `NdjsonStreamWriter.addRow` needs `columns` (`new NdjsonStreamWriter({
+columns: [...] })`), because NDJSON rows are objects and positional
+  values have no key names otherwise. It throws rather than guessing.
+  Its old `write()` / `end()` are kept as `@deprecated` aliases.
+
 Streaming trade-offs worth knowing:
 
 - Strings are written inline (`t="inlineStr"`) by default. A shared
@@ -460,7 +485,7 @@ const encrypted = await writeXlsx({
 const wb = await readXlsx(encrypted, { password: "hunter2" })
 
 // Works through every read entry point: read(), readObjects(), streamXlsxRows()
-const rows = await readObjects(encrypted, { password: "hunter2" })
+const { data: rows } = await readObjects(encrypted, { password: "hunter2" })
 
 // Without a password an encrypted file throws EncryptedFileError;
 // with the wrong password it throws DecryptionError.
@@ -964,8 +989,15 @@ import { read, write, readObjects, writeObjects } from "hucre"
 // Auto-detect XLSX vs ODS
 const wb = await read(buffer)
 
-// Quick: file → array of objects
-const products = await readObjects<{ name: string; price: number }>(buffer)
+// Quick: file → objects, plus the headers they were keyed by. Same
+// { data, headers } shape — and the same options — as readXlsxObjects /
+// readOdsObjects / parseCsvObjects.
+const { data: products, headers } = await readObjects<{ name: string; price: number }>(buffer, {
+  sheet: 0, // index or name (default: 0)
+  headerRow: 0, // 0-based (default: 0)
+  skipEmptyRows: true, // default
+  maxRows: 1000, // optional cap on the returned rows
+})
 
 // Quick: objects → XLSX
 const xlsx = await writeObjects(products, { sheetName: "Products" })
@@ -1178,6 +1210,15 @@ const xlsx = await writeXlsxObjects(
 )
 ```
 
+Every `*Objects` reader — `readObjects`, `readXlsxObjects`,
+`readOdsObjects`, `parseCsvObjects`, `parseJson`, `readXml` — returns the
+same `{ data, headers }` shape, under a named type
+(`XlsxObjectsResult`, `OdsObjectsResult`, `CsvObjectsResult`,
+`ReadObjectsResult`, `SheetObjectsResult`, `JsonReadResult`). `readObjects`
+is the format-agnostic one: it takes the same options as the two above and
+applies them to whatever `read()` detected, so `maxRows` and `skipEmptyRows`
+work for ODS and XLS too.
+
 ### JSON / NDJSON
 
 ```ts
@@ -1213,8 +1254,8 @@ const json = workbookToJson(wb, { pretty: true })
 
 // Streaming write — works in Cloudflare Workers / Deno / Node 18+
 const writer = new NdjsonStreamWriter()
-for await (const row of source) writer.write(row)
-writer.end()
+for await (const row of source) writer.addObject(row)
+writer.finish() // `write()` / `end()` still work as deprecated aliases
 return new Response(writer.toStream(), {
   headers: { "content-type": "application/x-ndjson" },
 })
@@ -1419,42 +1460,42 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 
 ### High-level
 
-| Function                       | Description                                       |
-| ------------------------------ | ------------------------------------------------- |
-| `read(input, options?)`        | Auto-detect format (XLSX/ODS), returns `Workbook` |
-| `write(options)`               | Write XLSX or ODS (via `format` option)           |
-| `readObjects(input, options?)` | File → array of objects (first row = headers)     |
-| `writeObjects(data, options?)` | Objects → XLSX/ODS                                |
+| Function                       | Description                                                    |
+| ------------------------------ | -------------------------------------------------------------- |
+| `read(input, options?)`        | Auto-detect format (XLSX/ODS), returns `Workbook`              |
+| `write(options)`               | Write XLSX or ODS (via `format` option)                        |
+| `readObjects(input, options?)` | File → `{ data, headers }` (format-agnostic `*Objects` reader) |
+| `writeObjects(data, options?)` | Objects → XLSX/ODS                                             |
 
 ### XLSX
 
-| Function                           | Description                                                                 |
-| ---------------------------------- | --------------------------------------------------------------------------- |
-| `readXlsx(input, options?)`        | Parse XLSX from `Uint8Array \| ArrayBuffer \| ReadableStream<Uint8Array>`   |
-| `writeXlsx(options)`               | Generate XLSX, returns `Uint8Array`                                         |
-| `readXlsxObjects(input, options?)` | Read sheet as `{ data, headers }` — mirror of CSV                           |
-| `writeXlsxObjects(data, options?)` | Write objects to XLSX (auto-derives headers from keys)                      |
-| `openXlsx(input, options?)`        | Open for round-trip (preserves unknown parts)                               |
-| `saveXlsx(workbook)`               | Save round-trip workbook back to XLSX                                       |
-| `streamXlsxRows(input, options?)`  | AsyncGenerator yielding rows one at a time                                  |
-| `writeXlsxStream(rows, options)`   | Constant-memory XLSX writing — returns a `ReadableStream<Uint8Array>`       |
-| `XlsxStreamWriter`                 | Incremental row-by-row XLSX writing; auto-splits past `maxRowsPerSheet`     |
-| `XLSX_MAX_ROWS_PER_SHEET`          | Excel hard row limit (1,048,576) — exported constant                        |
-| `parseExternalLink(xml, relsXml?)` | Parse `xl/externalLinks/externalLinkN.xml` → `ExternalLink`                 |
-| `parseCellImages(xml)`             | Parse `xl/cellimages.xml` → `ParsedCellImageRef[]` (WPS DISPIMG)            |
-| `assembleCellImages(refs, media)`  | Combine parsed refs with resolved media bytes → `CellImage[]`               |
-| `parseSlicers(xml)`                | Parse `xl/slicers/slicerN.xml` → `Slicer[]`                                 |
-| `parseSlicerCache(xml)`            | Parse `xl/slicerCaches/slicerCacheN.xml` → `SlicerCache \| undefined`       |
-| `parseTimelines(xml)`              | Parse `xl/timelines/timelineN.xml` → `Timeline[]`                           |
-| `parseTimelineCache(xml)`          | Parse `xl/timelineCaches/timelineCacheN.xml` → `TimelineCache \| undefined` |
-| `parsePivotTable(xml)`             | Parse `xl/pivotTables/pivotTableN.xml` → `PivotTable \| undefined`          |
-| `parsePivotCacheDefinition(xml)`   | Parse `xl/pivotCache/pivotCacheDefinitionN.xml` → `PivotCache \| undefined` |
-| `attachPivotCacheFields(pt, c)`    | Overlay `PivotCache.fieldNames` onto a `PivotTable.fields[].name`           |
-| `parseChart(xml)`                  | Parse `xl/charts/chartN.xml` → `Chart \| undefined`                         |
-| `cloneChart(source, options)`      | Convert a parsed `Chart` into a writer-ready `SheetChart`                   |
-| `chartKindToWriteKind(kind)`       | Map a read-side `ChartKind` onto its writable counterpart, if any           |
-| `getCharts(workbook)`              | Enumerate every chart anchored on the workbook with its sheet context       |
-| `addChart(sheet, chart)`           | Append a `SheetChart` to a `WriteSheet`, lazily creating the array          |
+| Function                           | Description                                                                         |
+| ---------------------------------- | ----------------------------------------------------------------------------------- |
+| `readXlsx(input, options?)`        | Parse XLSX from `Uint8Array \| ArrayBuffer \| ReadableStream<Uint8Array>`           |
+| `writeXlsx(options)`               | Generate XLSX, returns `Uint8Array`                                                 |
+| `readXlsxObjects(input, options?)` | Read sheet as `{ data, headers }` — mirror of CSV                                   |
+| `writeXlsxObjects(data, options?)` | Write objects to XLSX (auto-derives headers from keys)                              |
+| `openXlsx(input, options?)`        | Open for round-trip (preserves unknown parts)                                       |
+| `saveXlsx(workbook)`               | Save round-trip workbook back to XLSX                                               |
+| `streamXlsxRows(input, options?)`  | AsyncGenerator yielding rows one at a time                                          |
+| `writeXlsxStream(rows, options)`   | Constant-memory XLSX writing — returns a `ReadableStream<Uint8Array>`               |
+| `XlsxStreamWriter`                 | Incremental XLSX writing (`addRow`/`addObject`); auto-splits past `maxRowsPerSheet` |
+| `XLSX_MAX_ROWS_PER_SHEET`          | Excel hard row limit (1,048,576) — exported constant                                |
+| `parseExternalLink(xml, relsXml?)` | Parse `xl/externalLinks/externalLinkN.xml` → `ExternalLink`                         |
+| `parseCellImages(xml)`             | Parse `xl/cellimages.xml` → `ParsedCellImageRef[]` (WPS DISPIMG)                    |
+| `assembleCellImages(refs, media)`  | Combine parsed refs with resolved media bytes → `CellImage[]`                       |
+| `parseSlicers(xml)`                | Parse `xl/slicers/slicerN.xml` → `Slicer[]`                                         |
+| `parseSlicerCache(xml)`            | Parse `xl/slicerCaches/slicerCacheN.xml` → `SlicerCache \| undefined`               |
+| `parseTimelines(xml)`              | Parse `xl/timelines/timelineN.xml` → `Timeline[]`                                   |
+| `parseTimelineCache(xml)`          | Parse `xl/timelineCaches/timelineCacheN.xml` → `TimelineCache \| undefined`         |
+| `parsePivotTable(xml)`             | Parse `xl/pivotTables/pivotTableN.xml` → `PivotTable \| undefined`                  |
+| `parsePivotCacheDefinition(xml)`   | Parse `xl/pivotCache/pivotCacheDefinitionN.xml` → `PivotCache \| undefined`         |
+| `attachPivotCacheFields(pt, c)`    | Overlay `PivotCache.fieldNames` onto a `PivotTable.fields[].name`                   |
+| `parseChart(xml)`                  | Parse `xl/charts/chartN.xml` → `Chart \| undefined`                                 |
+| `cloneChart(source, options)`      | Convert a parsed `Chart` into a writer-ready `SheetChart`                           |
+| `chartKindToWriteKind(kind)`       | Map a read-side `ChartKind` onto its writable counterpart, if any                   |
+| `getCharts(workbook)`              | Enumerate every chart anchored on the workbook with its sheet context               |
+| `addChart(sheet, chart)`           | Append a `SheetChart` to a `WriteSheet`, lazily creating the array                  |
 
 ### ODS
 
@@ -1468,31 +1509,31 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 
 ### CSV
 
-| Function                           | Description                                             |
-| ---------------------------------- | ------------------------------------------------------- |
-| `parseCsv(input, options?)`        | Parse CSV string → `CellValue[][]`                      |
-| `parseCsvObjects(input, options?)` | Parse CSV with headers → `{ data, headers }`            |
-| `writeCsv(rows, options?)`         | Write `CellValue[][]` → CSV string                      |
-| `writeCsvObjects(data, options?)`  | Write objects → CSV string                              |
-| `detectDelimiter(input)`           | Auto-detect delimiter character                         |
-| `streamCsvRows(input, options?)`   | Generator yielding CSV rows; same options as `parseCsv` |
-| `writeCsvStream(rows, options?)`   | Constant-memory CSV writing → `ReadableStream`          |
-| `CsvStreamWriter`                  | Incremental CSV writing; buffers until `finish()`       |
-| `writeTsv(rows, options?)`         | Write TSV (tab-separated)                               |
-| `fetchCsv(url, options?)`          | Fetch and parse CSV from URL                            |
+| Function                           | Description                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------ |
+| `parseCsv(input, options?)`        | Parse CSV string → `CellValue[][]`                                       |
+| `parseCsvObjects(input, options?)` | Parse CSV with headers → `CsvObjectsResult` (`{ data, headers }`)        |
+| `writeCsv(rows, options?)`         | Write `CellValue[][]` → CSV string                                       |
+| `writeCsvObjects(data, options?)`  | Write objects → CSV string                                               |
+| `detectDelimiter(input)`           | Auto-detect delimiter character                                          |
+| `streamCsvRows(input, options?)`   | Generator yielding CSV rows; same options as `parseCsv`                  |
+| `writeCsvStream(rows, options?)`   | Constant-memory CSV writing → `ReadableStream`                           |
+| `CsvStreamWriter`                  | Incremental CSV writing (`addRow`/`addObject`); buffers until `finish()` |
+| `writeTsv(rows, options?)`         | Write TSV (tab-separated)                                                |
+| `fetchCsv(url, options?)`          | Fetch and parse CSV from URL                                             |
 
 ### JSON
 
-| Function                          | Description                                                     |
-| --------------------------------- | --------------------------------------------------------------- |
-| `parseJson(input, options?)`      | Parse JSON string/Uint8Array → `{ data, headers }`              |
-| `parseValue(value, options?)`     | Same on already-parsed JSON                                     |
-| `parseNdjson(input, options?)`    | Parse NDJSON / JSON Lines (`onError` skips invalid)             |
-| `writeJson(data, options?)`       | Serialize rows to a JSON string                                 |
-| `writeNdjson(data, options?)`     | Serialize rows to NDJSON, one object per line                   |
-| `workbookToJson(wb, options?)`    | Convert a `Workbook` to JSON (single-sheet array or per-sheet)  |
-| `streamNdjsonRows(stream, opts?)` | Async generator over a `ReadableStream<Uint8Array>`             |
-| `NdjsonStreamWriter`              | Incremental writer; `toStream()` releases rows as they are sent |
+| Function                          | Description                                                                            |
+| --------------------------------- | -------------------------------------------------------------------------------------- |
+| `parseJson(input, options?)`      | Parse JSON string/Uint8Array → `{ data, headers }`                                     |
+| `parseValue(value, options?)`     | Same on already-parsed JSON                                                            |
+| `parseNdjson(input, options?)`    | Parse NDJSON / JSON Lines (`onError` skips invalid)                                    |
+| `writeJson(data, options?)`       | Serialize rows to a JSON string                                                        |
+| `writeNdjson(data, options?)`     | Serialize rows to NDJSON, one object per line                                          |
+| `workbookToJson(wb, options?)`    | Convert a `Workbook` to JSON (single-sheet array or per-sheet)                         |
+| `streamNdjsonRows(stream, opts?)` | Async generator over a `ReadableStream<Uint8Array>`                                    |
+| `NdjsonStreamWriter`              | Incremental writer (`addRow`/`addObject`); `toStream()` releases rows as they are sent |
 
 ### XML
 

@@ -138,8 +138,9 @@ describe("sheetToObjects", () => {
         ["Bob", 25, "Paris"],
       ],
     })
-    const result = sheetToObjects(sheet)
-    expect(result).toEqual([
+    const { data, headers } = sheetToObjects(sheet)
+    expect(headers).toEqual(["Name", "Age", "City"])
+    expect(data).toEqual([
       { Name: "Alice", Age: 30, City: "London" },
       { Name: "Bob", Age: 25, City: "Paris" },
     ])
@@ -149,16 +150,17 @@ describe("sheetToObjects", () => {
     const sheet = makeSheet({
       rows: [["metadata row"], ["Name", "Score"], ["Alice", 100], ["Bob", 85]],
     })
-    const result = sheetToObjects(sheet, { headerRow: 1 })
-    expect(result).toEqual([
+    const { data, headers } = sheetToObjects(sheet, { headerRow: 1 })
+    expect(headers).toEqual(["Name", "Score"])
+    expect(data).toEqual([
       { Name: "Alice", Score: 100 },
       { Name: "Bob", Score: 85 },
     ])
   })
 
-  it("should return empty array for empty sheet", () => {
+  it("should return empty data and headers for empty sheet", () => {
     const sheet = makeSheet({ rows: [] })
-    expect(sheetToObjects(sheet)).toEqual([])
+    expect(sheetToObjects(sheet)).toEqual({ data: [], headers: [] })
   })
 
   it("should handle null header values as empty string keys", () => {
@@ -168,16 +170,32 @@ describe("sheetToObjects", () => {
         ["Alice", "x", 30],
       ],
     })
-    const result = sheetToObjects(sheet)
-    expect(result).toEqual([{ Name: "Alice", "": "x", Age: 30 }])
+    const { data, headers } = sheetToObjects(sheet)
+    expect(headers).toEqual(["Name", "", "Age"])
+    expect(data).toEqual([{ Name: "Alice", "": "x", Age: 30 }])
   })
 
   it("should fill missing columns with null", () => {
     const sheet = makeSheet({
       rows: [["A", "B", "C"], ["x"]],
     })
-    const result = sheetToObjects(sheet)
-    expect(result).toEqual([{ A: "x", B: null, C: null }])
+    const { data } = sheetToObjects(sheet)
+    expect(data).toEqual([{ A: "x", B: null, C: null }])
+  })
+
+  it("should keep empty rows — it is a pure projection with no filtering", () => {
+    const sheet = makeSheet({
+      rows: [
+        ["A", "B"],
+        [null, null],
+        ["x", "y"],
+      ],
+    })
+    const { data } = sheetToObjects(sheet)
+    expect(data).toEqual([
+      { A: null, B: null },
+      { A: "x", B: "y" },
+    ])
   })
 })
 

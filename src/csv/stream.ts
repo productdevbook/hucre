@@ -379,6 +379,15 @@ class CsvRowFormatter {
 // ── Incremental CSV Writer (buffered) ────────────────────────────────
 
 /**
+ * Constructor options for {@link CsvStreamWriter} — the same options
+ * `writeCsv` / `writeCsvStream` take.
+ *
+ * Exists as a name of its own so every stream writer in the library has
+ * one (`XlsxStreamWriterOptions`, `NdjsonStreamWriterOptions`).
+ */
+export type CsvStreamWriterOptions = CsvWriteOptions
+
+/**
  * Incremental CSV writer.
  *
  * Each `addRow()` is formatted immediately, but every line is retained
@@ -392,12 +401,15 @@ export class CsvStreamWriter {
   private lines: string[] = []
   private headerWritten = false
   private headers: string[] | boolean | undefined
+  /** Column order for object rows, resolved on the first one seen. */
+  private columns: string[] | undefined
 
-  constructor(options?: CsvWriteOptions) {
+  constructor(options?: CsvStreamWriterOptions) {
     this.formatter = new CsvRowFormatter(options)
     this.lineSeparator = this.formatter.lineSeparator
     this.bom = this.formatter.bom
     this.headers = options?.headers
+    this.columns = options?.columns ?? (Array.isArray(this.headers) ? this.headers : undefined)
 
     // Write header row immediately if string array provided
     if (Array.isArray(this.headers) && !this.headerWritten) {
@@ -411,6 +423,25 @@ export class CsvStreamWriter {
     this.lines.push(this.formatter.formatRow(values))
   }
 
+  /**
+   * Add a row from an object, projected through a column order resolved
+   * exactly as {@link writeCsvStream} resolves it: `columns` if given,
+   * else an explicit `headers` array, else the keys of the first object.
+   *
+   * A header line is emitted before the first object row unless one was
+   * already written or `headers: false` was passed.
+   */
+  addObject(item: Record<string, CellValue>): void {
+    if (!this.columns) {
+      this.columns = Object.keys(item)
+    }
+    if (!this.headerWritten && this.headers !== false) {
+      this.lines.push(this.formatter.formatHeader(this.columns))
+      this.headerWritten = true
+    }
+    this.addRow(this.columns.map((key) => item[key] ?? null))
+  }
+
   /** Finalize and return the CSV string */
   finish(): string {
     const parts: string[] = []
@@ -422,6 +453,32 @@ export class CsvStreamWriter {
     parts.push(this.lines.join(this.lineSeparator))
 
     return parts.join("")
+  }
+
+  /**
+   * Emit the finished CSV as a `ReadableStream<Uint8Array>`.
+   *
+   * **This is not a constant-memory stream.** Every row added so far is
+   * still buffered; {@link finish} runs first and the whole result is
+   * enqueued as one chunk. It exists so a writer can be handed to a
+   * `Response` body or a file sink without a manual encode step — not to
+   * bound memory. For output whose peak memory is independent of the row
+   * count, use {@link writeCsvStream}, which pulls rows from an iterable
+   * and flushes as it goes.
+   *
+   * `finish()` runs when the stream is first read, so rows added between
+   * `toStream()` and the first pull are still included, and the stream
+   * closes right after — no separate `finish()` call is needed (though
+   * one is harmless: `finish()` is idempotent here).
+   */
+  toStream(): ReadableStream<Uint8Array> {
+    const finish = (): Uint8Array => TEXT_ENCODER.encode(this.finish())
+    return new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(finish())
+        controller.close()
+      },
+    })
   }
 }
 

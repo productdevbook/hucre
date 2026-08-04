@@ -31,8 +31,11 @@ import type {
   DataValidation,
   MergeRange,
   PaperSize,
+  ReadObjectsOptions,
+  ReadObjectsResult,
   ReadOptions,
   Sheet,
+  SheetObjectsResult,
   SheetTextBox,
   Sparkline,
   TableColumn,
@@ -43,9 +46,15 @@ import type {
   WriteOptions,
   WriteSheet,
 } from "../src/index"
-import type { CsvReadOptions, CsvWriteOptions } from "../src/csv"
-import type { OdsStreamRow } from "../src/ods"
-import type { XlsxObjectsResult } from "../src/xlsx"
+import type {
+  CsvObjectsResult,
+  CsvReadOptions,
+  CsvStreamWriterOptions,
+  CsvWriteOptions,
+} from "../src/csv"
+import type { OdsObjectsResult, OdsStreamRow } from "../src/ods"
+import type { JsonReadResult, NdjsonStreamWriterOptions } from "../src/json"
+import type { XlsxObjectsResult, XlsxStreamWriterOptions } from "../src/xlsx"
 
 /** Referencing each type keeps the imports load-bearing rather than unused. */
 type _SurfaceCheck = [
@@ -59,14 +68,24 @@ type _SurfaceCheck = [
   ColumnDef,
   ConditionalRule,
   ConditionalRuleType,
+  // Every `*Objects` reader's result type is nameable, and they are all
+  // the same `{ data, headers }` shape (#365 item 6).
+  CsvObjectsResult,
   CsvReadOptions,
+  CsvStreamWriterOptions,
   CsvWriteOptions,
   DataValidation,
+  JsonReadResult,
   MergeRange,
+  NdjsonStreamWriterOptions,
+  OdsObjectsResult,
   OdsStreamRow,
   PaperSize,
+  ReadObjectsOptions,
+  ReadObjectsResult,
   ReadOptions,
   Sheet,
+  SheetObjectsResult,
   SheetTextBox,
   Sparkline,
   TableColumn,
@@ -77,6 +96,22 @@ type _SurfaceCheck = [
   WriteOptions,
   WriteSheet,
   XlsxObjectsResult,
+  XlsxStreamWriterOptions,
+]
+
+/**
+ * #365 item 6: every `*Objects` reader returns the *same* `{ data, headers }`
+ * type, not merely a similar one. `tsc --noEmit` is the assertion.
+ */
+type Assert<T extends true> = T
+type Mutual<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
+
+type _ObjectsResultsAgree = [
+  Assert<Mutual<ReadObjectsResult, XlsxObjectsResult>>,
+  Assert<Mutual<ReadObjectsResult, OdsObjectsResult>>,
+  Assert<Mutual<ReadObjectsResult, CsvObjectsResult>>,
+  Assert<Mutual<ReadObjectsResult, SheetObjectsResult>>,
+  Assert<Mutual<ReadObjectsResult, JsonReadResult>>,
 ]
 
 // ── Helpers ──────────────────────────────────────────────────────────
