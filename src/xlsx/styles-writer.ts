@@ -259,7 +259,25 @@ interface XfEntry {
   hasCheckboxFeature?: boolean
 }
 
-export function createStylesCollector(defaultFont?: FontStyle): StylesCollector {
+export interface StylesCollectorOptions {
+  /**
+   * Reuse a cell format across cells that pass the *same* style object,
+   * skipping the key rebuild. Only sound when the caller cannot mutate a
+   * style between the cells that use it — true for `writeXlsx`, which is
+   * handed the whole document and serialises it without yielding, and false
+   * for the streaming writers, which take rows from caller code.
+   *
+   * Default: false.
+   */
+  reuseStyleIdentity?: boolean
+}
+
+export function createStylesCollector(
+  defaultFont?: FontStyle,
+  options?: StylesCollectorOptions,
+): StylesCollector {
+  const reuseStyleIdentity = options?.reuseStyleIdentity ?? false
+
   // ── Defaults ──
   // Default font (Calibri 11)
   const baseFont: FontStyle = {
@@ -401,7 +419,23 @@ export function createStylesCollector(defaultFont?: FontStyle): StylesCollector 
     return registerXf(style ?? {}, true)
   }
 
+  // One style object is typically shared by a whole column, or by the whole
+  // sheet. Keying it by identity skips rebuilding the font/fill/border keys —
+  // each of which serialises part of the style into a string — once per cell.
+  //
+  // Off by default, because it is only sound when the caller cannot mutate a
+  // style between the cells that use it. `writeXlsx` gets the whole document
+  // up front and serialises it without yielding, so nothing of the caller's
+  // runs in between; the streaming writers take rows from caller code and do
+  // not enable it. See `reuseStyleIdentity`.
+  const xfByStyleIdentity = reuseStyleIdentity ? new WeakMap<CellStyle, number>() : undefined
+
   function registerXf(style: CellStyle, checkbox: boolean): number {
+    if (xfByStyleIdentity && !checkbox) {
+      const cached = xfByStyleIdentity.get(style)
+      if (cached !== undefined) return cached
+    }
+
     const fontId = style.font ? addFont(style.font) : 0
     const fillId = style.fill ? addFill(style.fill) : 0
     const borderId = style.border ? addBorder(style.border) : 0
@@ -418,7 +452,10 @@ export function createStylesCollector(defaultFont?: FontStyle): StylesCollector 
     ].join("|")
 
     const existing = xfMap.get(key)
-    if (existing !== undefined) return existing
+    if (existing !== undefined) {
+      if (xfByStyleIdentity && !checkbox) xfByStyleIdentity.set(style, existing)
+      return existing
+    }
 
     const id = xfs.length
     xfs.push({
@@ -432,6 +469,7 @@ export function createStylesCollector(defaultFont?: FontStyle): StylesCollector 
       hasCheckboxFeature: checkbox || undefined,
     })
     xfMap.set(key, id)
+    if (xfByStyleIdentity && !checkbox) xfByStyleIdentity.set(style, id)
     return id
   }
 

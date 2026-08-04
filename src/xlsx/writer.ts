@@ -82,7 +82,9 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
   const properties = effectiveProperties(options)
 
   // Create shared collectors
-  const styles = createStylesCollector(defaultFont)
+  // Safe here: the document arrives whole and is serialised without yielding
+  // to caller code, so a style object cannot change between the cells using it.
+  const styles = createStylesCollector(defaultFont, { reuseStyleIdentity: true })
   const sharedStrings = createSharedStrings()
 
   // Pre-compute global table start indices per sheet
