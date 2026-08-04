@@ -555,6 +555,24 @@ workbook.sheets[0].rows[0][0] = "Updated!"
 const output = await saveXlsx(workbook) // Charts, VBA, themes preserved
 ```
 
+Preservation is a property of **this** path. `openXlsx`/`saveXlsx` copies
+every part it does not regenerate byte-for-byte, so anything hucre does
+not model survives. `readXlsx`/`writeXlsx` is the authoring path: it
+rebuilds the workbook from the model, and only what `WriteSheet` and
+`WriteOptions` describe comes out the other side. Reading an `.xlsm` with
+`readXlsx` and writing it back leaves no `xl/vbaProject.bin` — use
+`openXlsx`/`saveXlsx` to edit a macro-enabled workbook.
+
+To attach a macro project to a workbook you are authoring, pass the
+binary to `writeXlsx` — the output becomes macro-enabled:
+
+```ts
+await writeXlsx({
+  sheets: [{ name: "Sheet1", rows }],
+  vbaProject: await readFile("vbaProject.bin"), // output is .xlsm
+})
+```
+
 ### External Workbook References
 
 `[N]Sheet!Ref` references to other workbooks are read into a typed
@@ -1670,10 +1688,9 @@ See the [issue tracker](https://github.com/productdevbook/hucre/issues) for the 
 - Conditional formatting: `timePeriod` rules, and the `rank` / `percent` / `bottom` / `aboveAverage` / `equalAverage` / `stdDev` knobs on `top10` and `aboveAverage`
 - Auto-filter criteria beyond value lists (custom, dynamic, colour, icon filters)
 - Pre-computed pivot value cells (the writer emits the structure; Excel computes on open)
-- Threaded comments (Excel 365+) — synthesize from a fresh write (read + roundtrip already supported)
+- Threaded comments (Excel 365+) — synthesize from a fresh write (read + roundtrip already supported). `WriteSheet` has no `threadedComments` field; it is not silently accepted
 - Slicers & timeline filters — synthesize from a fresh write (read + roundtrip already supported)
 - WPS DISPIMG cell-embedded images — synthesize from a fresh write (read + roundtrip already supported)
-- VBA/macro injection
 - XLS / XLSB writing (both formats are read-only today)
 
 ## Alternatives

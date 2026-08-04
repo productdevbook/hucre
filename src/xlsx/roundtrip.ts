@@ -261,6 +261,11 @@ export async function saveXlsx(
     sparklines: sheet.sparklines,
     textBoxes: sheet.textBoxes,
     backgroundImage: sheet.backgroundImage,
+    // `threadedComments`, `pivotTables`, `charts` and `a11y` are absent on
+    // purpose: the writer cannot author them, so they survive this path by
+    // raw-part preservation instead. `WriteSheet` no longer declares a
+    // `threadedComments` field at all, which is what stops someone adding
+    // a line here and assuming it does something — see #404.
   }))
 
   // Create shared collectors

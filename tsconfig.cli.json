@@ -1,7 +1,8 @@
 {
-  // The CLI, and only the CLI, gets node's ambient types.
+  // The files allowed node's ambient types. The CLI is the main occupant,
+  // hence the name, plus the handful of tests that read from disk.
   //
-  // It used to be excluded from typechecking altogether — `src/cli.ts`
+  // The CLI used to be excluded from typechecking altogether — `src/cli.ts`
   // sat in tsconfig.json's `exclude` list, so the one part of hucre that
   // ships as an executable was the one part `tsc` never looked at. That
   // is how #357 (a published binary that could not start) got through.
@@ -11,6 +12,6 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["src/cli.ts", "src/cli", "test/cli.test.ts"],
+  "include": ["src/cli.ts", "src/cli", "test/cli.test.ts", "test/threaded-comments-write.test.ts"],
   "exclude": []
 }

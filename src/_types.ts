@@ -1428,8 +1428,13 @@ export interface WriteSheet {
    * share the worksheet's drawing part with images and text boxes.
    */
   charts?: SheetChart[]
-  /** Excel 365 threaded comments for this sheet. */
-  threadedComments?: ThreadedComment[]
+  // No `threadedComments` here, deliberately. Authoring Excel 365 threaded
+  // comments is a roadmap item, not a shipped feature: it needs a
+  // `xl/threadedComments/` part, a workbook-wide `xl/persons/person.xml`,
+  // and the legacy `<comment>` fallback Excel expects alongside them. The
+  // field used to sit here typed and accepted, and was silently discarded
+  // — see #404. `Sheet.threadedComments` is real: they are read, and
+  // preserved through `openXlsx` → `saveXlsx`.
   /**
    * Pivot tables anchored on this sheet. The source data is read from
    * either the same sheet or a sibling sheet identified by
