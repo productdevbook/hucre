@@ -514,7 +514,10 @@ export function writeWorksheetXml(
   }
 
   // ── Hyperlinks ──
-  const { xml: hyperlinksXml, relationships: hyperlinkRelationships } = collectHyperlinks(sheet)
+  const { xml: hyperlinksXml, relationships: hyperlinkRelationships } = collectHyperlinks(
+    sheet,
+    resolvedRows,
+  )
   if (hyperlinksXml) {
     parts.push(hyperlinksXml)
   }
@@ -1072,13 +1075,18 @@ function serializeDataValidations(validations: DataValidation[]): string {
  * Collect hyperlinks from the sheet's cell overrides and generate
  * the `<hyperlinks>` XML section plus external relationship entries.
  */
-export function collectHyperlinks(sheet: WriteSheet): {
+export function collectHyperlinks(
+  sheet: WriteSheet,
+  preResolved?: Array<Array<ResolvedCell | null>>,
+): {
   xml: string
   relationships: HyperlinkRelationship[]
 } {
   // Resolve the full grid so links from both inline `data` values and the
   // `cells` override map are collected from a single source, in row-major order.
-  const resolved = resolveRows(sheet)
+  // `writeWorksheetXml` has already paid for that grid, so it hands it over
+  // rather than making us rebuild every cell of the sheet a second time.
+  const resolved = preResolved ?? resolveRows(sheet)
 
   const hyperlinkElements: string[] = []
   const relationships: HyperlinkRelationship[] = []
