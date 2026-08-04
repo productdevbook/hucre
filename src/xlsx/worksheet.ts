@@ -170,6 +170,7 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   // Sheet view settings (gridlines, zoom, RTL, tab color)
   let sheetView: SheetView | undefined
   let inSheetPr = false
+  let outlineProperties: import("../_types").OutlineProperties | undefined
 
   // Freeze/Split pane parsed from <pane> element
   let freezePane: FreezePane | undefined
@@ -447,6 +448,23 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
           break
         case "sheetPr":
           inSheetPr = true
+          break
+        case "outlinePr":
+          // Write-only until now: the type and the writer existed, but
+          // nothing parsed it, so Sheet.outlineProperties was always
+          // undefined and open -> save could not preserve it. See #359.
+          if (inSheetPr) {
+            const outline: import("../_types").OutlineProperties = {}
+            if (attrs["summaryBelow"] !== undefined) {
+              outline.summaryBelow =
+                attrs["summaryBelow"] === "1" || attrs["summaryBelow"] === "true"
+            }
+            if (attrs["summaryRight"] !== undefined) {
+              outline.summaryRight =
+                attrs["summaryRight"] === "1" || attrs["summaryRight"] === "true"
+            }
+            if (Object.keys(outline).length > 0) outlineProperties = outline
+          }
           break
         case "tabColor":
           if (inSheetPr) {
@@ -1181,6 +1199,11 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   // Attach sparklines
   if (sparklines.length > 0) {
     sheet.sparklines = sparklines
+  }
+
+  // Attach outline properties
+  if (outlineProperties) {
+    sheet.outlineProperties = outlineProperties
   }
 
   return sheet
