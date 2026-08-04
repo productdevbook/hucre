@@ -33,7 +33,8 @@
     "hucre": "./dist/cli.mjs"
   },
   "files": [
-    "dist"
+    "dist",
+    "MIGRATION.md"
   ],
   "type": "module",
   "module": "./dist/index.mjs",

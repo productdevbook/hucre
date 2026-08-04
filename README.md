@@ -1623,6 +1623,17 @@ pnpm lint:fix     # oxlint + oxfmt
 pnpm typecheck    # tsc
 ```
 
+## Migrating to v1
+
+v1 makes the public API a stability commitment, and getting there meant
+fixing things that could not be fixed afterwards without a major bump —
+an inverted argument order, an option that meant four different things,
+and a handful of exports that never did anything.
+
+**[MIGRATION.md](./MIGRATION.md)** lists every change that can affect
+existing code, with a table at the top so you can tell in a few seconds
+whether any of it applies to you. Most projects need to change nothing.
+
 ## Contributing
 
 Contributions are welcome! Please [open an issue](https://github.com/productdevbook/hucre/issues) or submit a PR.
