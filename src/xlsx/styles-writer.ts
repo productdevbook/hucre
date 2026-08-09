@@ -2,14 +2,15 @@
 // Generates xl/styles.xml for an XLSX package.
 
 import type {
-  CellStyle,
-  FontStyle,
-  FillStyle,
-  BorderStyle,
   AlignmentStyle,
-  Color,
   BorderSide,
+  BorderStyle,
   CellProtection,
+  CellStyle,
+  Color,
+  FillStyle,
+  FontStyle,
+  PatternFill,
 } from "../_types"
 import { xmlDocument, xmlElement, xmlSelfClose } from "../xml/writer"
 
@@ -272,6 +273,56 @@ export interface StylesCollectorOptions {
   reuseStyleIdentity?: boolean
 }
 
+/**
+ * The collector keeps the style objects it is handed until `toXml()` runs, so
+ * a caller that mutates one after use would retroactively change formatting
+ * already assigned to earlier cells — and leave the stored dedup key
+ * disagreeing with the value serialised under it. Snapshot on the way in.
+ *
+ * Only reached when a format is registered for the first time, so this costs
+ * one shallow copy per distinct format, not per cell.
+ */
+function cloneColor(color?: Color): Color | undefined {
+  return color === undefined ? undefined : { ...color }
+}
+
+function cloneFont(font: FontStyle): FontStyle {
+  const copy: FontStyle = { ...font }
+  if (font.color) copy.color = cloneColor(font.color)
+  return copy
+}
+
+function cloneFill(fill: FillStyle): FillStyle {
+  if (fill.type === "gradient") {
+    return {
+      ...fill,
+      stops: fill.stops.map((stop) => ({
+        ...stop,
+        color: { ...stop.color },
+      })),
+    }
+  }
+  const copy: PatternFill = { ...fill }
+  if (fill.fgColor) copy.fgColor = cloneColor(fill.fgColor)
+  if (fill.bgColor) copy.bgColor = cloneColor(fill.bgColor)
+  return copy
+}
+
+function cloneBorderSide(side?: BorderSide): BorderSide | undefined {
+  if (side === undefined) return undefined
+  const copy: BorderSide = { ...side }
+  if (side.color) copy.color = cloneColor(side.color)
+  return copy
+}
+
+function cloneBorder(border: BorderStyle): BorderStyle {
+  const copy: BorderStyle = { ...border }
+  for (const side of ["top", "right", "bottom", "left", "diagonal"] as const) {
+    if (border[side]) copy[side] = cloneBorderSide(border[side])
+  }
+  return copy
+}
+
 export function createStylesCollector(
   defaultFont?: FontStyle,
   options?: StylesCollectorOptions,
@@ -328,7 +379,7 @@ export function createStylesCollector(
     if (existing !== undefined) return existing
 
     const id = fonts.length
-    fonts.push({ key, font })
+    fonts.push({ key, font: cloneFont(font) })
     fontMap.set(key, id)
     return id
   }
@@ -339,7 +390,7 @@ export function createStylesCollector(
     if (existing !== undefined) return existing
 
     const id = fills.length
-    fills.push({ key, fill })
+    fills.push({ key, fill: cloneFill(fill) })
     fillMap.set(key, id)
     return id
   }
@@ -350,7 +401,7 @@ export function createStylesCollector(
     if (existing !== undefined) return existing
 
     const id = borders.length
-    borders.push({ key, border })
+    borders.push({ key, border: cloneBorder(border) })
     borderMap.set(key, id)
     return id
   }
@@ -464,8 +515,8 @@ export function createStylesCollector(
       fontId,
       fillId,
       borderId,
-      alignment: style.alignment,
-      protection: style.protection,
+      alignment: style.alignment ? { ...style.alignment } : undefined,
+      protection: style.protection ? { ...style.protection } : undefined,
       hasCheckboxFeature: checkbox || undefined,
     })
     xfMap.set(key, id)
