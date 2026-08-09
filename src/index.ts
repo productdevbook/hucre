@@ -38,6 +38,7 @@ export type {
   XlsxWriteStreamWorkbookOptions,
   XlsxStreamRow,
   XlsxStreamSheet,
+  StreamStyledCell,
 } from "./xlsx/stream-writer"
 export { readXlsxObjects, writeXlsxObjects } from "./xlsx/objects"
 export type {

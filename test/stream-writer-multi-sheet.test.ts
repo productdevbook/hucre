@@ -293,6 +293,59 @@ describe("writeXlsxStreamSheets", () => {
   })
 })
 
+describe("writeXlsxStreamSheets — formatting is per sheet", () => {
+  // `rowDefs` and `merges` describe one sheet's layout, so a workbook of
+  // several has to keep them apart: a height or a range declared for the
+  // report must not follow the sheet after it.
+  it("keeps each sheet's cell styles, row heights and merges to itself", async () => {
+    const title = { font: { name: "Manrope", size: 20, bold: true } }
+
+    const wb = await readXlsx(
+      await drain(
+        writeXlsxStreamSheets([
+          {
+            name: "Report",
+            rows: [[{ value: "Q3", style: title }, null, null], ["data"]],
+            rowDefs: new Map([[0, { height: 30 }]]),
+            merges: [{ startRow: 0, startCol: 0, endRow: 0, endCol: 2 }],
+          },
+          {
+            name: "Rejects",
+            rows: [["plain"], ["also plain"]],
+            rowDefs: new Map([[1, { hidden: true }]]),
+          },
+        ]),
+      ),
+      { readStyles: true },
+    )
+
+    const [report, rejects] = wb.sheets
+
+    expect(report!.cells!.get("0,0")!.style!.font!.name).toBe("Manrope")
+    expect(report!.rowDefs!.get(0)!.height).toBe(30)
+    expect(report!.merges).toEqual([{ startRow: 0, startCol: 0, endRow: 0, endCol: 2 }])
+
+    // Nothing of the first sheet's layout leaks into the second.
+    expect(rejects!.merges ?? []).toEqual([])
+    expect(rejects!.rowDefs?.get(0)?.height).toBeUndefined()
+    expect(rejects!.rowDefs!.get(1)!.hidden).toBe(true)
+  })
+
+  it("keys a sheet's rowDefs by its own rows, not the workbook's", async () => {
+    const wb = await readXlsx(
+      await drain(
+        writeXlsxStreamSheets([
+          { name: "First", rows: [["a"], ["b"]] },
+          { name: "Second", rows: [["c"]], rowDefs: new Map([[0, { height: 44 }]]) },
+        ]),
+      ),
+    )
+
+    expect(wb.sheets[0]!.rowDefs?.get(0)?.height).toBeUndefined()
+    expect(wb.sheets[1]!.rowDefs!.get(0)!.height).toBe(44)
+  })
+})
+
 describe("writeXlsxStream — single-sheet behaviour is unchanged", () => {
   it("produces the same bytes as the multi-sheet writer given one sheet", async () => {
     const rows = [
@@ -305,5 +358,18 @@ describe("writeXlsxStream — single-sheet behaviour is unchanged", () => {
     const multi = await drain(writeXlsxStreamSheets([{ name: "Report", rows, columns }]))
 
     expect(single).toEqual(multi)
+  })
+
+  it("carries row heights and merges through the delegation", async () => {
+    const rowDefs = new Map([[0, { height: 30 }]])
+    const merges = [{ startRow: 0, startCol: 0, endRow: 0, endCol: 2 }]
+    const rows = [["wide", null, null]]
+
+    const wb = await readXlsx(
+      await drain(writeXlsxStream(rows, { name: "Report", rowDefs, merges })),
+    )
+
+    expect(wb.sheets[0]!.rowDefs!.get(0)!.height).toBe(30)
+    expect(wb.sheets[0]!.merges).toEqual(merges)
   })
 })

@@ -11,14 +11,14 @@
 //   source on demand and the ZIP is emitted chunk by chunk, so peak
 //   memory is O(distinct styles), independent of row count.
 
-import type { CellValue, CellStyle, ColumnDef, FreezePane } from "../_types"
+import type { CellValue, CellStyle, ColumnDef, FreezePane, MergeRange, RowDef } from "../_types"
 import { ZipWriter } from "../zip/writer"
 import { zipStream, type ZipStreamEntry } from "../zip/stream-writer"
 import { writeContentTypes } from "./content-types-writer"
 import { writeRootRels, writeWorkbookRels } from "./workbook-writer"
 import { createStylesCollector, type StylesCollector } from "./styles-writer"
 import { createSharedStrings, writeSharedStringsXml } from "./worksheet-writer"
-import { cellRef } from "./worksheet-writer"
+import { cellRef, hasRowAttributes, rowAttributes } from "./worksheet-writer"
 import type { SharedStringsCollector } from "./worksheet-writer"
 import { writeThemeXml } from "./theme-writer"
 import { MAX_SHEET_NAME_LENGTH, validateSheetName, validateSheetNames } from "../_validate"
@@ -59,6 +59,19 @@ export interface StreamWriterOptions {
    * Set to `false` to leave new sheets without a header row.
    */
   repeatHeaders?: boolean
+  /**
+   * Row-level properties — `height`, `hidden`, `outlineLevel`, `collapsed` —
+   * keyed by 0-based row index, counted the way the caller sees it: the key
+   * keeps rising past a rollover, where the per-sheet index restarts at 0.
+   * Consulted as each row is emitted, so it costs nothing per row that has
+   * no entry.
+   */
+  rowDefs?: Map<number, RowDef>
+  /**
+   * Merged ranges. Written after the sheet data of the first sheet, so they
+   * do not have to be known before the rows are streamed.
+   */
+  merges?: MergeRange[]
 }
 
 /**
@@ -95,8 +108,53 @@ export interface XlsxWriteStreamOptions extends StreamWriterOptions {
   zip64?: boolean
 }
 
+/**
+ * A cell that carries its own formatting inside a streamed row.
+ *
+ * Without it a streamed sheet can only be styled a whole column at a time,
+ * which cannot express a title, a subtotal or a header band — the parts of a
+ * report that differ from the data rows below them.
+ */
+export interface StreamStyledCell {
+  value?: CellValue
+  style?: CellStyle
+  formula?: string
+}
+
 /** A streamed row: positional values, or an object read through `columns[].key`. */
-export type XlsxStreamRow = CellValue[] | Record<string, unknown>
+export type XlsxStreamRow = Array<CellValue | StreamStyledCell> | Record<string, unknown>
+
+function serializeMergeCells(merges: MergeRange[]): string {
+  return xmlElement(
+    "mergeCells",
+    { count: merges.length },
+    merges.map((merge) =>
+      xmlSelfClose("mergeCell", {
+        ref: `${cellRef(merge.startRow, merge.startCol)}:${cellRef(merge.endRow, merge.endCol)}`,
+      }),
+    ),
+  )
+}
+
+/**
+ * Copy a captured header row. `slice()` alone keeps a reference to each styled
+ * cell, so a caller reusing one wrapper for later rows would see the header
+ * repeated on rolled-over sheets carrying the mutated value.
+ */
+function snapshotRow(
+  values: Array<CellValue | StreamStyledCell>,
+): Array<CellValue | StreamStyledCell> {
+  return values.map((value) => (isStreamStyledCell(value) ? { ...value } : value))
+}
+
+function isStreamStyledCell(value: CellValue | StreamStyledCell): value is StreamStyledCell {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !(value instanceof Date) &&
+    ("value" in value || "style" in value || "formula" in value)
+  )
+}
 
 /**
  * One sheet of a streamed workbook, with its own name and layout.
@@ -117,6 +175,10 @@ export interface XlsxStreamSheet {
   columns?: ColumnDef[]
   /** Freeze pane for this sheet. */
   freezePane?: FreezePane
+  /** Row-level properties for this sheet; see {@link StreamWriterOptions.rowDefs}. */
+  rowDefs?: Map<number, RowDef>
+  /** Merged ranges for this sheet; see {@link StreamWriterOptions.merges}. */
+  merges?: MergeRange[]
   /** Overrides the workbook-level rollover cap for this sheet alone. */
   maxRowsPerSheet?: number
   /** Overrides the workbook-level header repetition for this sheet alone. */
@@ -127,8 +189,9 @@ export interface XlsxStreamSheet {
  * Workbook-wide options for {@link writeXlsxStreamSheets}.
  *
  * The per-sheet half of {@link XlsxWriteStreamOptions} — `name`,
- * `columns`, `freezePane` — moves to {@link XlsxStreamSheet}, since a
- * multi-sheet workbook has one of each *per sheet*. What is left is what
+ * `columns`, `freezePane`, `rowDefs`, `merges` — moves to
+ * {@link XlsxStreamSheet}, since a multi-sheet workbook has one of each
+ * *per sheet*. What is left is what
  * a workbook has exactly one of: the date system, the string strategy,
  * and the ZIP settings. `maxRowsPerSheet` and `repeatHeaders` stay here
  * as defaults every sheet inherits unless it sets its own.
@@ -196,24 +259,43 @@ class RowSerializer {
   }
 
   /** Serialize one row. Returns `null` when every cell was empty. */
-  serializeRow(rowIndex: number, values: CellValue[]): string | null {
+  serializeRow(
+    rowIndex: number,
+    values: Array<CellValue | StreamStyledCell>,
+    rowDef?: RowDef,
+  ): string | null {
     const cellElements: string[] = []
 
     for (let c = 0; c < values.length; c++) {
       const colDef = this.columns?.[c]
-      let style: CellStyle | undefined = colDef?.style
+      const raw = values[c]
+      const styled = isStreamStyledCell(raw)
+      const value = styled ? (raw.value ?? null) : (raw as CellValue)
+      let style: CellStyle | undefined = (styled && raw.style) || colDef?.style
 
       // If numFmt on column but not in style, merge
       if (colDef?.numFmt && (!style || !style.numFmt)) {
         style = { ...style, numFmt: colDef.numFmt }
       }
 
-      const cellXml = this.serializeCell(rowIndex, c, values[c], style)
+      const cellXml = this.serializeCell(
+        rowIndex,
+        c,
+        value,
+        style,
+        styled ? raw.formula : undefined,
+      )
       if (cellXml) cellElements.push(cellXml)
     }
 
-    if (cellElements.length === 0) return null
-    return xmlElement("row", { r: rowIndex + 1 }, cellElements)
+    const attrs = rowAttributes(rowIndex, rowDef)
+
+    if (cellElements.length === 0) {
+      // A row with no cells still has to be emitted when its definition asks
+      // for something — a height, or a hidden/grouped row the caller wants.
+      return hasRowAttributes(rowDef) ? xmlSelfClose("row", attrs) : null
+    }
+    return xmlElement("row", attrs, cellElements)
   }
 
   private serializeCell(
@@ -221,6 +303,7 @@ class RowSerializer {
     col: number,
     value: CellValue,
     style: CellStyle | undefined,
+    formula?: string,
   ): string | null {
     let effectiveStyle = style
 
@@ -235,6 +318,32 @@ class RowSerializer {
     }
 
     const ref = cellRef(row, col)
+
+    if (formula !== undefined) {
+      const attrs: Record<string, string | number> = { r: ref }
+      if (styleIdx !== 0) attrs.s = styleIdx
+      const children = [xmlElement("f", undefined, xmlEscape(formula))]
+
+      // Cached result, typed the way the worksheet writer types it: a bare
+      // <v> is read as a number, so text and booleans need their `t`.
+      if (typeof value === "string") {
+        attrs.t = "str"
+        children.push(xmlElement("v", undefined, xmlEscape(value)))
+      } else if (typeof value === "boolean") {
+        attrs.t = "b"
+        children.push(xmlElement("v", undefined, value ? "1" : "0"))
+      } else if (typeof value === "number") {
+        // Same guard as the plain numeric branch: NaN and the infinities have
+        // no OOXML representation, so the cache is dropped rather than written
+        // as something no reader can parse.
+        if (Number.isFinite(value)) {
+          children.push(xmlElement("v", undefined, String(value)))
+        }
+      } else if (value instanceof Date) {
+        children.push(xmlElement("v", undefined, String(dateToSerial(value, this.is1904))))
+      }
+      return xmlElement("c", attrs, children)
+    }
 
     // Null — skip if no style
     if (value === null || value === undefined) {
@@ -465,6 +574,8 @@ export class XlsxStreamWriter {
   private columns: ColumnDef[] | undefined
   private freezePane: FreezePane | undefined
   private dateSystem: "1900" | "1904"
+  private rowDefs: Map<number, RowDef> | undefined
+  private merges: MergeRange[] | undefined
   private maxRowsPerSheet: number
   private repeatHeaders: boolean
   private serializer: RowSerializer
@@ -479,7 +590,7 @@ export class XlsxStreamWriter {
   private rowCount = 0
   private maxCols = 0
   /** Captured for `repeatHeaders`. Set when the first row is written. */
-  private headerRowValues: CellValue[] | null = null
+  private headerRowValues: Array<CellValue | StreamStyledCell> | null = null
 
   constructor(options: XlsxStreamWriterOptions) {
     this.sheetName = options.name
@@ -488,6 +599,8 @@ export class XlsxStreamWriter {
     this.dateSystem = options.dateSystem ?? "1900"
     this.maxRowsPerSheet = options.maxRowsPerSheet ?? XLSX_MAX_ROWS_PER_SHEET
     this.repeatHeaders = options.repeatHeaders ?? true
+    this.rowDefs = options.rowDefs
+    this.merges = options.merges
     this.serializer = new RowSerializer({
       columns: options.columns,
       dateSystem: this.dateSystem,
@@ -507,13 +620,13 @@ export class XlsxStreamWriter {
     }
   }
 
-  /** Add a row of values */
-  addRow(values: CellValue[]): void {
+  /** Add a row of values, each optionally carrying its own style or formula. */
+  addRow(values: Array<CellValue | StreamStyledCell>): void {
     // Capture the very first row as a fallback header for repeatHeaders, in
     // case the caller didn't supply column definitions but does want their
     // first row repeated when sheets roll over.
     if (this.rowCount === 0 && !this.headerRowValues) {
-      this.headerRowValues = values.slice()
+      this.headerRowValues = snapshotRow(values)
     }
 
     // Roll over before writing this row when the current sheet is full.
@@ -522,6 +635,7 @@ export class XlsxStreamWriter {
     }
 
     const rowIndex = this.currentSheetRowCount
+    const globalRow = this.rowCount
     this.currentSheetRowCount++
     this.rowCount++
 
@@ -529,7 +643,9 @@ export class XlsxStreamWriter {
       this.maxCols = values.length
     }
 
-    this.emit(rowIndex, values)
+    // rowDefs are keyed by the caller's row number, which keeps counting past
+    // a rollover — `rowIndex` restarts at 0 on every generated sheet.
+    this.emit(rowIndex, values, globalRow)
   }
 
   /**
@@ -546,12 +662,18 @@ export class XlsxStreamWriter {
       // the rollover guard at the top.
       const rowIndex = this.currentSheetRowCount
       this.currentSheetRowCount++
-      this.emit(rowIndex, this.headerRowValues)
+      // The repeated header is the same logical row as the original, so it
+      // carries the same row definition.
+      this.emit(rowIndex, this.headerRowValues, 0)
     }
   }
 
-  private emit(rowIndex: number, values: CellValue[]): void {
-    const xml = this.serializer.serializeRow(rowIndex, values)
+  private emit(
+    rowIndex: number,
+    values: Array<CellValue | StreamStyledCell>,
+    globalRow: number,
+  ): void {
+    const xml = this.serializer.serializeRow(rowIndex, values, this.rowDefs?.get(globalRow))
     if (xml) {
       this.sheetFragments[this.sheetFragments.length - 1]!.push(xml)
     }
@@ -612,6 +734,12 @@ export class XlsxStreamWriter {
       const worksheetParts: string[] = []
       worksheetParts.push(...sheetPrelude)
       worksheetParts.push(xmlElement("sheetData", undefined, fragments.length > 0 ? fragments : ""))
+      // Merges belong to the first sheet: a rollover splits one logical sheet
+      // into several, and a range copied onto the continuation would cover
+      // rows it was never meant to.
+      if (s === 0 && this.merges?.length) {
+        worksheetParts.push(serializeMergeCells(this.merges))
+      }
       const worksheetXml = xmlDocument(
         "worksheet",
         { xmlns: NS_SPREADSHEET, "xmlns:r": NS_R },
@@ -691,9 +819,9 @@ export function writeXlsxStream(
   rows: AsyncIterable<XlsxStreamRow> | Iterable<XlsxStreamRow>,
   options: XlsxWriteStreamOptions,
 ): ReadableStream<Uint8Array> {
-  const { name, columns, freezePane, ...workbook } = options
+  const { name, columns, freezePane, rowDefs, merges, ...workbook } = options
 
-  return writeXlsxStreamSheets([{ name, rows, columns, freezePane }], workbook)
+  return writeXlsxStreamSheets([{ name, rows, columns, freezePane, rowDefs, merges }], workbook)
 }
 
 /**
@@ -781,7 +909,7 @@ async function* xlsxStreamEntries(
     const prelude = buildSheetPrelude(sheet.columns, sheet.freezePane).join("")
     const cursor = createRowCursor(sheet.rows)
 
-    let headerRow = headerFromColumns(sheet.columns)
+    let headerRow: Array<CellValue | StreamStyledCell> | null = headerFromColumns(sheet.columns)
     let sheetRowCount = 0
 
     /** Stream one worksheet, stopping at the row cap or when rows run out. */
@@ -801,7 +929,8 @@ async function* xlsxStreamEntries(
       // The first part emits the column header as a real row (matching the
       // incremental writer); later parts repeat it when asked to.
       if (headerRow && (part === 0 || repeatHeaders)) {
-        const xml = serializer.serializeRow(rowIndex, headerRow)
+        // The header is the caller's row 0, whichever part it is repeated on.
+        const xml = serializer.serializeRow(rowIndex, headerRow, sheet.rowDefs?.get(0))
         rowIndex++
         if (part === 0) sheetRowCount++
         if (xml) {
@@ -818,10 +947,13 @@ async function* xlsxStreamEntries(
 
         // Without column headers the first row doubles as the repeated header.
         if (sheetRowCount === 0 && !headerRow) {
-          headerRow = values.slice()
+          headerRow = snapshotRow(values)
         }
 
-        const xml = serializer.serializeRow(rowIndex, values)
+        // rowDefs are keyed by the caller's row number within this sheet,
+        // which keeps counting past a rollover — `rowIndex` restarts at 0 on
+        // every part.
+        const xml = serializer.serializeRow(rowIndex, values, sheet.rowDefs?.get(sheetRowCount))
         rowIndex++
         sheetRowCount++
         if (xml) {
@@ -830,7 +962,15 @@ async function* xlsxStreamEntries(
         }
       }
 
-      const closeChunk = chunker.push("</sheetData></worksheet>")
+      // Merges belong to the sheet's first part: a rollover splits one
+      // logical sheet into several, and a range copied onto the continuation
+      // would cover rows it was never meant to.
+      let sheetTail = "</sheetData>"
+      if (part === 0 && sheet.merges?.length) {
+        sheetTail += serializeMergeCells(sheet.merges)
+      }
+      sheetTail += "</worksheet>"
+      const closeChunk = chunker.push(sheetTail)
       if (closeChunk) yield closeChunk
       const tail = chunker.flush()
       if (tail) yield tail

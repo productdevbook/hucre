@@ -2,6 +2,7 @@
 // Generates xl/worksheets/sheetN.xml for an XLSX package.
 
 import type {
+  RowDef,
   WriteSheet,
   CellValue,
   CellStyle,
@@ -85,6 +86,36 @@ export function colToLetter(col: number): string {
 }
 
 /** Build a cell reference like "A1" from 0-based row and col */
+/**
+ * The `<row>` attributes a row definition asks for. Shared with the streaming
+ * writers so a `RowDef` means the same thing whichever writer serialises it.
+ */
+export function rowAttributes(
+  rowIndex: number,
+  rowDef?: RowDef,
+): Record<string, string | number | boolean> {
+  const attrs: Record<string, string | number | boolean> = { r: rowIndex + 1 }
+  if (rowDef?.height !== undefined) {
+    attrs["ht"] = rowDef.height
+    attrs["customHeight"] = 1
+  }
+  if (rowDef?.hidden) attrs["hidden"] = 1
+  if (rowDef?.outlineLevel) attrs["outlineLevel"] = rowDef.outlineLevel
+  if (rowDef?.collapsed) attrs["collapsed"] = 1
+  return attrs
+}
+
+/** True when a row definition asks for anything at all. */
+export function hasRowAttributes(rowDef?: RowDef): boolean {
+  return (
+    rowDef !== undefined &&
+    (rowDef.height !== undefined ||
+      Boolean(rowDef.hidden) ||
+      Boolean(rowDef.outlineLevel) ||
+      Boolean(rowDef.collapsed))
+  )
+}
+
 export function cellRef(row: number, col: number): string {
   return colToLetter(col) + (row + 1)
 }
@@ -444,20 +475,7 @@ export function writeWorksheetXml(
     }
 
     if (hasAnyCells || hasRowDef) {
-      const rowAttrs: Record<string, string | number | boolean> = { r: r + 1 }
-      if (rowDef?.height !== undefined) {
-        rowAttrs["ht"] = rowDef.height
-        rowAttrs["customHeight"] = 1
-      }
-      if (rowDef?.hidden) {
-        rowAttrs["hidden"] = 1
-      }
-      if (rowDef?.outlineLevel) {
-        rowAttrs["outlineLevel"] = rowDef.outlineLevel
-      }
-      if (rowDef?.collapsed) {
-        rowAttrs["collapsed"] = 1
-      }
+      const rowAttrs = rowAttributes(r, rowDef)
       if (hasAnyCells) {
         rowElements.push(xmlElement("row", rowAttrs, cellElements))
       } else {
@@ -514,7 +532,10 @@ export function writeWorksheetXml(
   }
 
   // ── Hyperlinks ──
-  const { xml: hyperlinksXml, relationships: hyperlinkRelationships } = collectHyperlinks(sheet)
+  const { xml: hyperlinksXml, relationships: hyperlinkRelationships } = collectHyperlinks(
+    sheet,
+    resolvedRows,
+  )
   if (hyperlinksXml) {
     parts.push(hyperlinksXml)
   }
@@ -1072,13 +1093,18 @@ function serializeDataValidations(validations: DataValidation[]): string {
  * Collect hyperlinks from the sheet's cell overrides and generate
  * the `<hyperlinks>` XML section plus external relationship entries.
  */
-export function collectHyperlinks(sheet: WriteSheet): {
+export function collectHyperlinks(
+  sheet: WriteSheet,
+  preResolved?: Array<Array<ResolvedCell | null>>,
+): {
   xml: string
   relationships: HyperlinkRelationship[]
 } {
   // Resolve the full grid so links from both inline `data` values and the
   // `cells` override map are collected from a single source, in row-major order.
-  const resolved = resolveRows(sheet)
+  // `writeWorksheetXml` has already paid for that grid, so it hands it over
+  // rather than making us rebuild every cell of the sheet a second time.
+  const resolved = preResolved ?? resolveRows(sheet)
 
   const hyperlinkElements: string[] = []
   const relationships: HyperlinkRelationship[] = []

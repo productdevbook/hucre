@@ -40,6 +40,36 @@ function zipHas(data: Uint8Array, path: string): boolean {
 // ── collectHyperlinks unit tests ─────────────────────────────────────
 
 describe("collectHyperlinks", () => {
+  it("produces the same result from a pre-resolved grid as it does on its own", () => {
+    const cells = new Map<string, Partial<Cell>>()
+    cells.set("0,0", {
+      value: "Click me",
+      hyperlink: { target: "https://example.com" },
+    })
+    cells.set("1,2", {
+      value: "Internal",
+      hyperlink: { target: "", location: "Sheet2!A1" },
+    })
+    const sheet: WriteSheet = {
+      name: "Sheet1",
+      rows: [["Click me"], [null, null, "Internal"]],
+      cells,
+    }
+
+    // The grid writeWorksheetXml has already built, in the shape resolveRows
+    // returns: row-major, with the `cells` overrides folded in.
+    const preResolved = [
+      [{ value: "Click me", hyperlink: { target: "https://example.com" } }],
+      [null, null, { value: "Internal", hyperlink: { target: "", location: "Sheet2!A1" } }],
+    ]
+
+    const onItsOwn = collectHyperlinks(sheet)
+    const fromCaller = collectHyperlinks(sheet, preResolved)
+
+    expect(fromCaller).toEqual(onItsOwn)
+    expect(fromCaller.relationships).toHaveLength(1)
+  })
+
   it("returns empty when no cells", () => {
     const sheet: WriteSheet = { name: "Sheet1", rows: [["Hello"]] }
     const result = collectHyperlinks(sheet)
