@@ -2,14 +2,15 @@
 // Generates xl/styles.xml for an XLSX package.
 
 import type {
-  CellStyle,
-  FontStyle,
-  FillStyle,
-  BorderStyle,
   AlignmentStyle,
-  Color,
   BorderSide,
+  BorderStyle,
   CellProtection,
+  CellStyle,
+  Color,
+  FillStyle,
+  FontStyle,
+  PatternFill,
 } from "../_types"
 import { xmlDocument, xmlElement, xmlSelfClose } from "../xml/writer"
 
@@ -259,7 +260,75 @@ interface XfEntry {
   hasCheckboxFeature?: boolean
 }
 
-export function createStylesCollector(defaultFont?: FontStyle): StylesCollector {
+export interface StylesCollectorOptions {
+  /**
+   * Reuse a cell format across cells that pass the *same* style object,
+   * skipping the key rebuild. Only sound when the caller cannot mutate a
+   * style between the cells that use it — true for `writeXlsx`, which is
+   * handed the whole document and serialises it without yielding, and false
+   * for the streaming writers, which take rows from caller code.
+   *
+   * Default: false.
+   */
+  reuseStyleIdentity?: boolean
+}
+
+/**
+ * The collector keeps the style objects it is handed until `toXml()` runs, so
+ * a caller that mutates one after use would retroactively change formatting
+ * already assigned to earlier cells — and leave the stored dedup key
+ * disagreeing with the value serialised under it. Snapshot on the way in.
+ *
+ * Only reached when a format is registered for the first time, so this costs
+ * one shallow copy per distinct format, not per cell.
+ */
+function cloneColor(color?: Color): Color | undefined {
+  return color === undefined ? undefined : { ...color }
+}
+
+function cloneFont(font: FontStyle): FontStyle {
+  const copy: FontStyle = { ...font }
+  if (font.color) copy.color = cloneColor(font.color)
+  return copy
+}
+
+function cloneFill(fill: FillStyle): FillStyle {
+  if (fill.type === "gradient") {
+    return {
+      ...fill,
+      stops: fill.stops.map((stop) => ({
+        ...stop,
+        color: { ...stop.color },
+      })),
+    }
+  }
+  const copy: PatternFill = { ...fill }
+  if (fill.fgColor) copy.fgColor = cloneColor(fill.fgColor)
+  if (fill.bgColor) copy.bgColor = cloneColor(fill.bgColor)
+  return copy
+}
+
+function cloneBorderSide(side?: BorderSide): BorderSide | undefined {
+  if (side === undefined) return undefined
+  const copy: BorderSide = { ...side }
+  if (side.color) copy.color = cloneColor(side.color)
+  return copy
+}
+
+function cloneBorder(border: BorderStyle): BorderStyle {
+  const copy: BorderStyle = { ...border }
+  for (const side of ["top", "right", "bottom", "left", "diagonal"] as const) {
+    if (border[side]) copy[side] = cloneBorderSide(border[side])
+  }
+  return copy
+}
+
+export function createStylesCollector(
+  defaultFont?: FontStyle,
+  options?: StylesCollectorOptions,
+): StylesCollector {
+  const reuseStyleIdentity = options?.reuseStyleIdentity ?? false
+
   // ── Defaults ──
   // Default font (Calibri 11)
   const baseFont: FontStyle = {
@@ -310,7 +379,7 @@ export function createStylesCollector(defaultFont?: FontStyle): StylesCollector 
     if (existing !== undefined) return existing
 
     const id = fonts.length
-    fonts.push({ key, font })
+    fonts.push({ key, font: cloneFont(font) })
     fontMap.set(key, id)
     return id
   }
@@ -321,7 +390,7 @@ export function createStylesCollector(defaultFont?: FontStyle): StylesCollector 
     if (existing !== undefined) return existing
 
     const id = fills.length
-    fills.push({ key, fill })
+    fills.push({ key, fill: cloneFill(fill) })
     fillMap.set(key, id)
     return id
   }
@@ -332,7 +401,7 @@ export function createStylesCollector(defaultFont?: FontStyle): StylesCollector 
     if (existing !== undefined) return existing
 
     const id = borders.length
-    borders.push({ key, border })
+    borders.push({ key, border: cloneBorder(border) })
     borderMap.set(key, id)
     return id
   }
@@ -401,7 +470,23 @@ export function createStylesCollector(defaultFont?: FontStyle): StylesCollector 
     return registerXf(style ?? {}, true)
   }
 
+  // One style object is typically shared by a whole column, or by the whole
+  // sheet. Keying it by identity skips rebuilding the font/fill/border keys —
+  // each of which serialises part of the style into a string — once per cell.
+  //
+  // Off by default, because it is only sound when the caller cannot mutate a
+  // style between the cells that use it. `writeXlsx` gets the whole document
+  // up front and serialises it without yielding, so nothing of the caller's
+  // runs in between; the streaming writers take rows from caller code and do
+  // not enable it. See `reuseStyleIdentity`.
+  const xfByStyleIdentity = reuseStyleIdentity ? new WeakMap<CellStyle, number>() : undefined
+
   function registerXf(style: CellStyle, checkbox: boolean): number {
+    if (xfByStyleIdentity && !checkbox) {
+      const cached = xfByStyleIdentity.get(style)
+      if (cached !== undefined) return cached
+    }
+
     const fontId = style.font ? addFont(style.font) : 0
     const fillId = style.fill ? addFill(style.fill) : 0
     const borderId = style.border ? addBorder(style.border) : 0
@@ -418,7 +503,10 @@ export function createStylesCollector(defaultFont?: FontStyle): StylesCollector 
     ].join("|")
 
     const existing = xfMap.get(key)
-    if (existing !== undefined) return existing
+    if (existing !== undefined) {
+      if (xfByStyleIdentity && !checkbox) xfByStyleIdentity.set(style, existing)
+      return existing
+    }
 
     const id = xfs.length
     xfs.push({
@@ -427,11 +515,12 @@ export function createStylesCollector(defaultFont?: FontStyle): StylesCollector 
       fontId,
       fillId,
       borderId,
-      alignment: style.alignment,
-      protection: style.protection,
+      alignment: style.alignment ? { ...style.alignment } : undefined,
+      protection: style.protection ? { ...style.protection } : undefined,
       hasCheckboxFeature: checkbox || undefined,
     })
     xfMap.set(key, id)
+    if (xfByStyleIdentity && !checkbox) xfByStyleIdentity.set(style, id)
     return id
   }
 
