@@ -60,7 +60,9 @@ export interface StreamWriterOptions {
    */
   repeatHeaders?: boolean
   /**
-   * Row-level properties keyed by 0-based row index — today only `height`.
+   * Row-level properties — `height`, `hidden`, `outlineLevel`, `collapsed` —
+   * keyed by 0-based row index, counted the way the caller sees it: the key
+   * keeps rising past a rollover, where the per-sheet index restarts at 0.
    * Consulted as each row is emitted, so it costs nothing per row that has
    * no entry.
    */

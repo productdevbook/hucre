@@ -352,6 +352,24 @@ return new Response(
   },
 )
 
+// A streamed row can carry formatting per cell, not just per column —
+// enough for a title, a subtotal line or a header band. A cell that brings
+// its own style overrides its column's; a bare value still inherits it.
+// Row heights and merges travel alongside, so a report header no longer
+// forces a fall back to writeXlsx.
+writeXlsxStream(
+  [
+    [{ value: "Q3 Report", style: { font: { size: 20, bold: true } } }, null, null],
+    [{ formula: "SUM(A3:A99)" }, "Total"],
+    ...dataRows,
+  ],
+  {
+    name: "Report",
+    rowDefs: new Map([[0, { height: 30 }]]),
+    merges: [{ startRow: 0, startCol: 0, endRow: 0, endCol: 2 }],
+  },
+)
+
 // Incremental write — serializes each row on arrival, but holds the
 // serialized parts until finish() returns one buffer. Use it when you
 // need a Uint8Array anyway; use writeXlsxStream for constant memory.
