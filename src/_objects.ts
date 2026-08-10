@@ -37,6 +37,37 @@ export interface ObjectsResult<T extends Record<string, CellValue> = Record<stri
 }
 
 /**
+ * Make a header list usable as object keys, by renaming only what would
+ * otherwise be lost.
+ *
+ * A header that is unique — **including a single blank one** — is left
+ * exactly as it is. An empty header keying `""` is a settled contract
+ * across every `*Objects` reader and is pinned by several tests; the loss
+ * was never the blank key, it was the *second* column sharing it.
+ *
+ * So only repeats are renamed. A repeated name gets `_2`, `_3`; a
+ * repeated blank gets `column<N>` for its 1-based position, since `_2`
+ * alone would read as nothing at all.
+ */
+export function disambiguate(headers: string[]): string[] {
+  const used = new Set<string>()
+  return headers.map((header, index) => {
+    if (!used.has(header)) {
+      used.add(header)
+      return header
+    }
+    let name = header === "" ? `column${index + 1}` : `${header}_2`
+    let ordinal = 2
+    while (used.has(name)) {
+      ordinal++
+      name = header === "" ? `column${index + 1}_${ordinal}` : `${header}_${ordinal}`
+    }
+    used.add(name)
+    return name
+  })
+}
+
+/**
  * Project `rows` onto objects keyed by the header row.
  *
  * `rowIndex` handed to `transformValue` is the index into `rows`, not the
@@ -67,6 +98,15 @@ export function rowsToObjects<T extends Record<string, CellValue> = Record<strin
   if (transformHeader) {
     headers = headers.map((h, i) => transformHeader(h, i))
   }
+
+  // Two columns sharing a header used to collapse into one key: the later
+  // column overwrote the earlier and its values were gone. That is not
+  // exotic input — it is what a real spreadsheet looks like when someone
+  // repeated a label or left two spacer columns. See #439 §AG.
+  //
+  // Only repeats are renamed; the first column with a given name keeps it,
+  // which is what a caller reading `data[0].name` expects.
+  headers = disambiguate(headers)
 
   const data: T[] = []
   for (let i = headerRowIdx + 1; i < rows.length; i++) {
