@@ -186,7 +186,13 @@ export function writeSharedStringsXml(sharedStrings: SharedStringsCollector): st
 
 // ── Resolved Cell Data ─────────────────────────────────────────────
 
-interface ResolvedCell {
+/**
+ * One cell, with everything the serializer needs already worked out.
+ *
+ * Exported because the streaming writers build these too — see
+ * {@link serializeCell}.
+ */
+export interface ResolvedCell {
   value: CellValue
   style?: CellStyle
   checkbox?: boolean
@@ -814,7 +820,19 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
 
 // ── Cell Serialization ─────────────────────────────────────────────
 
-function serializeCell(
+/**
+ * Serialize one `<c>`.
+ *
+ * The single implementation. There used to be a second one inside
+ * `stream-writer`'s `RowSerializer`, and the two had drifted in both
+ * directions: the streaming copy could not write an error value, rich
+ * text, a checkbox xf, a shared or array formula, or the dynamic-array
+ * `cm`, while this one was the copy that forgot `xml:space="preserve"`.
+ * Every feature added to one had to be re-derived in the other, and #436
+ * had to do exactly that for formula-result typing and the non-finite
+ * guard. See #439 §B.
+ */
+export function serializeCell(
   row: number,
   col: number,
   resolved: ResolvedCell,
@@ -903,7 +921,8 @@ function serializeCell(
 
     const children: string[] = [fElement]
 
-    // Cached formula result
+    // Cached formula result. A bare <v> reads back as a number, so text
+    // and booleans need their `t`.
     if (formulaResult !== undefined && formulaResult !== null) {
       if (typeof formulaResult === "string") {
         cellAttrs["t"] = "str"
@@ -912,7 +931,16 @@ function serializeCell(
         cellAttrs["t"] = "b"
         children.push(xmlElement("v", undefined, formulaResult ? "1" : "0"))
       } else if (typeof formulaResult === "number") {
-        children.push(xmlElement("v", undefined, String(formulaResult)))
+        // Same guard as the plain numeric branch below: NaN and the
+        // infinities have no OOXML representation, so the cache is
+        // dropped rather than written as something no reader can parse.
+        // #436 added this to the streaming copy of the serializer; this
+        // one never had it, and merging the two is what surfaced that.
+        if (Number.isFinite(formulaResult)) {
+          children.push(xmlElement("v", undefined, String(formulaResult)))
+        }
+      } else if (formulaResult instanceof Date) {
+        children.push(xmlElement("v", undefined, String(dateToSerial(formulaResult, is1904))))
       }
     }
 

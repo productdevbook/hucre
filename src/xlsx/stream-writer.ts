@@ -18,20 +18,18 @@ import { writeContentTypes } from "./content-types-writer"
 import { writeRootRels, writeWorkbookRels } from "./workbook-writer"
 import { createStylesCollector, type StylesCollector } from "./styles-writer"
 import { createSharedStrings, writeSharedStringsXml } from "./worksheet-writer"
-import { cellRef, hasRowAttributes, rowAttributes } from "./worksheet-writer"
+import {
+  cellRef,
+  hasRowAttributes,
+  rowAttributes,
+  serializeCell,
+  type ResolvedCell,
+} from "./worksheet-writer"
 import type { SharedStringsCollector } from "./worksheet-writer"
 import { writeThemeXml } from "./theme-writer"
 import { MAX_SHEET_NAME_LENGTH, validateSheetName, validateSheetNames } from "../_validate"
 import { InvalidArgumentError } from "../errors"
-import { dateToSerial } from "../_date"
-import {
-  xmlDocument,
-  xmlDeclaration,
-  xmlElement,
-  xmlSelfClose,
-  xmlEscape,
-  xmlTextElement,
-} from "../xml/writer"
+import { xmlDocument, xmlDeclaration, xmlElement, xmlSelfClose } from "../xml/writer"
 
 const encoder = /* @__PURE__ */ new TextEncoder()
 
@@ -221,10 +219,6 @@ export interface XlsxWriteStreamWorkbookOptions {
 /** Excel's hard row limit since Excel 2007 (2^20). */
 export const XLSX_MAX_ROWS_PER_SHEET = 1_048_576
 
-// ── Default date format ─────────────────────────────────────────────
-
-const DEFAULT_DATE_FORMAT = "yyyy-mm-dd"
-
 /** Flush the XML accumulator once it crosses this many characters. */
 const CHUNK_THRESHOLD = 64 * 1024
 
@@ -305,6 +299,15 @@ class RowSerializer {
     return xmlElement("row", attrs, cellElements)
   }
 
+  /**
+   * Hand one cell to the shared serializer.
+   *
+   * This used to be a second implementation of `<c>`, and the two had
+   * drifted in both directions — see the note on `serializeCell` in
+   * worksheet-writer. Building a `ResolvedCell` and delegating means a
+   * streamed row now gets error values, the `xml:space` handling and the
+   * formula-result typing from the same place the authoring path does.
+   */
   private serializeCell(
     row: number,
     col: number,
@@ -312,97 +315,23 @@ class RowSerializer {
     style: CellStyle | undefined,
     formula?: string,
   ): string | null {
-    let effectiveStyle = style
-
-    // Add default date format for Date values without explicit format
-    if (value instanceof Date && (!effectiveStyle || !effectiveStyle.numFmt)) {
-      effectiveStyle = { ...effectiveStyle, numFmt: DEFAULT_DATE_FORMAT }
-    }
-
-    let styleIdx = 0
-    if (effectiveStyle) {
-      styleIdx = this.styles.addStyle(effectiveStyle)
-    }
-
-    const ref = cellRef(row, col)
-
+    const resolved: ResolvedCell = { value, style }
     if (formula !== undefined) {
-      const attrs: Record<string, string | number> = { r: ref }
-      if (styleIdx !== 0) attrs.s = styleIdx
-      const children = [xmlElement("f", undefined, xmlEscape(formula))]
-
-      // Cached result, typed the way the worksheet writer types it: a bare
-      // <v> is read as a number, so text and booleans need their `t`.
-      if (typeof value === "string") {
-        attrs.t = "str"
-        children.push(xmlElement("v", undefined, xmlEscape(value)))
-      } else if (typeof value === "boolean") {
-        attrs.t = "b"
-        children.push(xmlElement("v", undefined, value ? "1" : "0"))
-      } else if (typeof value === "number") {
-        // Same guard as the plain numeric branch: NaN and the infinities have
-        // no OOXML representation, so the cache is dropped rather than written
-        // as something no reader can parse.
-        if (Number.isFinite(value)) {
-          children.push(xmlElement("v", undefined, String(value)))
-        }
-      } else if (value instanceof Date) {
-        children.push(xmlElement("v", undefined, String(dateToSerial(value, this.is1904))))
-      }
-      return xmlElement("c", attrs, children)
+      resolved.formula = formula
+      // A streamed cell carries one value, and when it also carries a
+      // formula that value is the cached result.
+      resolved.formulaResult = value
+      resolved.value = null
     }
-
-    // Null — skip if no style
-    if (value === null || value === undefined) {
-      if (styleIdx !== 0) {
-        return xmlSelfClose("c", { r: ref, s: styleIdx })
-      }
-      return null
-    }
-
-    // String
-    if (typeof value === "string") {
-      if (this.inlineStrings) {
-        const attrs: Record<string, string | number> = { r: ref, t: "inlineStr" }
-        if (styleIdx !== 0) attrs["s"] = styleIdx
-        return xmlElement("c", attrs, [xmlElement("is", undefined, [xmlTextElement(value)])])
-      }
-      const ssIdx = this.sharedStrings.add(value)
-      const attrs: Record<string, string | number> = { r: ref, t: "s" }
-      if (styleIdx !== 0) attrs["s"] = styleIdx
-      return xmlElement("c", attrs, [xmlElement("v", undefined, String(ssIdx))])
-    }
-
-    // Number
-    if (typeof value === "number") {
-      // Infinity, -Infinity, and NaN cannot be represented in OOXML — emit as empty cell
-      if (!Number.isFinite(value)) {
-        if (styleIdx !== 0) {
-          return xmlSelfClose("c", { r: ref, s: styleIdx })
-        }
-        return null
-      }
-      const attrs: Record<string, string | number> = { r: ref }
-      if (styleIdx !== 0) attrs["s"] = styleIdx
-      return xmlElement("c", attrs, [xmlElement("v", undefined, String(value))])
-    }
-
-    // Boolean
-    if (typeof value === "boolean") {
-      const attrs: Record<string, string | number> = { r: ref, t: "b" }
-      if (styleIdx !== 0) attrs["s"] = styleIdx
-      return xmlElement("c", attrs, [xmlElement("v", undefined, value ? "1" : "0")])
-    }
-
-    // Date — convert to serial number
-    if (value instanceof Date) {
-      const serial = dateToSerial(value, this.is1904)
-      const attrs: Record<string, string | number> = { r: ref }
-      if (styleIdx !== 0) attrs["s"] = styleIdx
-      return xmlElement("c", attrs, [xmlElement("v", undefined, String(serial))])
-    }
-
-    return null
+    return serializeCell(
+      row,
+      col,
+      resolved,
+      this.styles,
+      this.sharedStrings,
+      this.is1904,
+      this.inlineStrings,
+    )
   }
 }
 

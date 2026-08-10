@@ -15,6 +15,12 @@ open an issue. That is the whole point of writing it down.
 XLSX has **two** write paths, and they have different fidelity. Most
 confusion about what hucre preserves comes from conflating them.
 
+(Both, and the streaming writers, now serialize a cell through one
+implementation — so an error value, `xml:space` handling and formula
+result typing mean the same thing whichever writer you use. What differs
+between the paths is what the _model_ can express, not how a cell is
+written.)
+
 |                | entry points             | behaviour                                                                                                                         |
 | -------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
 | **Authoring**  | `readXlsx` / `writeXlsx` | the workbook is rebuilt from the model. Only what `WriteSheet` and `WriteOptions` describe comes out                              |
