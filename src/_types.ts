@@ -1575,7 +1575,14 @@ export interface CsvWriteOptions {
   /** Prepend UTF-8 BOM (for Excel compatibility). Default: false */
   bom?: boolean
   /**
-   * Date format string. Default: ISO 8601
+   * Date format string. Default: ISO 8601 (`toISOString()`).
+   *
+   * Takes the same tokens as the exported `formatDate` and as a `numFmt`
+   * anywhere else in the library — `yyyy`/`yy`, `mmmm`/`mmm`/`mm`/`m`,
+   * `dddd`/`ddd`/`dd`/`d`, `hh`/`h`, `mm`/`m` (minutes, after an hour
+   * token), `ss`, `AM/PM` — and is case-insensitive, so `YYYY-MM-DD` and
+   * `yyyy-mm-dd` both work. Components are read in **UTC**, matching the
+   * ISO default and every other date path in the library.
    *
    * **One-way.** The readers recognize ISO 8601 and nothing else, so a
    * `Date` written with the default round-trips as a `Date` under

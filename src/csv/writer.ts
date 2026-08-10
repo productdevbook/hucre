@@ -1,5 +1,6 @@
 import type { CellValue, CsvWriteOptions } from "../_types"
 import { escapeFormula } from "./formula"
+import { formatDate as formatExcelDate } from "../_date"
 
 // ── BOM constant ─────────────────────────────────────────────────────
 
@@ -228,26 +229,20 @@ function formatNumber(n: number): string {
   return String(n)
 }
 
+/**
+ * Render a `Date` for CSV output.
+ *
+ * Delegates to the library's own {@link formatExcelDate}, so a format
+ * string means the same thing here as it does in a `numFmt`, in
+ * `formatValue`, and in the public `formatDate` export. This file used to
+ * carry a private substitute that accepted a different vocabulary
+ * (`YYYY MM DD HH mm ss`), read *local* time components while the
+ * no-format path read UTC, and substituted with a non-global `.replace()`
+ * so a repeated token stayed literal. See #439.
+ */
 function formatDate(d: Date, format?: string): string {
-  if (!format) {
-    // See #364 — an unparseable Date threw a raw RangeError mid-write.
-    if (Number.isNaN(d.getTime())) return ""
-    return d.toISOString()
-  }
-
-  // Simple date format placeholders
-  const year = d.getFullYear()
-  const month = d.getMonth() + 1
-  const day = d.getDate()
-  const hours = d.getHours()
-  const minutes = d.getMinutes()
-  const seconds = d.getSeconds()
-
-  return format
-    .replace("YYYY", String(year))
-    .replace("MM", String(month).padStart(2, "0"))
-    .replace("DD", String(day).padStart(2, "0"))
-    .replace("HH", String(hours).padStart(2, "0"))
-    .replace("mm", String(minutes).padStart(2, "0"))
-    .replace("ss", String(seconds).padStart(2, "0"))
+  // See #364 — an unparseable Date threw a raw RangeError mid-write.
+  if (Number.isNaN(d.getTime())) return ""
+  if (!format) return d.toISOString()
+  return formatExcelDate(d, format)
 }

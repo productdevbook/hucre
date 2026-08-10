@@ -15,6 +15,7 @@ import type { CellValue, CsvReadOptions, CsvWriteOptions } from "../_types"
 import { stripBom, detectDelimiter } from "./reader"
 import { escapeFormula, unescapeFormula } from "./formula"
 import { inferType } from "../_infer"
+import { formatDate as formatExcelDate } from "../_date"
 
 const TEXT_ENCODER = /* @__PURE__ */ new TextEncoder()
 
@@ -330,28 +331,13 @@ class CsvRowFormatter {
     return String(n)
   }
 
+  /** Same contract as the buffered writer's — see src/csv/writer.ts. */
   private formatDate(d: Date): string {
-    if (!this.dateFormat) {
-      // See #364 — an unparseable Date threw a raw RangeError, and in a
-      // streaming writer that lands after bytes have gone to the client.
-      if (Number.isNaN(d.getTime())) return ""
-      return d.toISOString()
-    }
-
-    const year = d.getFullYear()
-    const month = d.getMonth() + 1
-    const day = d.getDate()
-    const hours = d.getHours()
-    const minutes = d.getMinutes()
-    const seconds = d.getSeconds()
-
-    return this.dateFormat
-      .replace("YYYY", String(year))
-      .replace("MM", String(month).padStart(2, "0"))
-      .replace("DD", String(day).padStart(2, "0"))
-      .replace("HH", String(hours).padStart(2, "0"))
-      .replace("mm", String(minutes).padStart(2, "0"))
-      .replace("ss", String(seconds).padStart(2, "0"))
+    // See #364 — an unparseable Date threw a raw RangeError, and in a
+    // streaming writer that lands after bytes have gone to the client.
+    if (Number.isNaN(d.getTime())) return ""
+    if (!this.dateFormat) return d.toISOString()
+    return formatExcelDate(d, this.dateFormat)
   }
 }
 
