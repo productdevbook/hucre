@@ -61,14 +61,18 @@ async function injectEntries(
 ): Promise<Uint8Array> {
   const zip = new ZipReader(original)
   const writer = new ZipWriter()
+  const replacing = new Set(extras.map((e) => e.path))
 
-  // Copy all original entries
+  // Copy the original entries, skipping any the caller is replacing. This
+  // used to append the extras on top and rely on ZipWriter tolerating a
+  // duplicate path — which produced an archive with two entries of one
+  // name, something Excel treats as damaged. ZipWriter refuses now.
   for (const path of zip.entries()) {
+    if (replacing.has(path)) continue
     const data = await zip.extract(path)
     writer.add(path, data, { compress: false })
   }
 
-  // Add extra entries
   for (const entry of extras) {
     writer.add(entry.path, entry.data, { compress: false })
   }

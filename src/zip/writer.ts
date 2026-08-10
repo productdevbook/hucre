@@ -4,6 +4,7 @@
 
 import { crc32, deflate } from "./deflate"
 import { canDeflateRaw } from "./capability"
+import { ZipError } from "../errors"
 
 // ── ZIP Signatures ──────────────────────────────────────────────────
 
@@ -60,9 +61,18 @@ interface PendingEntry {
 
 export class ZipWriter {
   private entries: PendingEntry[] = []
+  private paths = new Set<string>()
 
   /** Add a file entry to the archive */
   add(path: string, data: Uint8Array, options?: { compress?: boolean }): void {
+    // An OOXML package with two parts of one name is a file Excel refuses
+    // to open, and `extract` would quietly hand back whichever came last.
+    // The streaming writer has always refused this; the buffered one
+    // accepted it silently. See #439 §AY.
+    if (this.paths.has(path)) {
+      throw new ZipError(`Duplicate ZIP entry: "${path}"`)
+    }
+    this.paths.add(path)
     const compress = options?.compress ?? true
     this.entries.push({ path, data, compress })
   }

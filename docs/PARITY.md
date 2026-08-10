@@ -213,6 +213,23 @@ reads back with its direct formatting only.
 See [What ODS carries](../README.md#what-ods-carries) for the consequences
 worth knowing before relying on it.
 
+## `Sheet.rows` is not guaranteed rectangular
+
+Every reader returns `rows: CellValue[][]`, and they do not agree on the
+shape of an empty row. `readXlsx` pads to the sheet's bounding box, so an
+all-empty row comes back as `[null, null, …]`; `readOds` returns `[]` for
+it, and `parseCsv` returns whatever the file had, so a short line stays
+short.
+
+Code that walks a sheet generically — `sheetToObjects`, `toHtml`,
+`toMarkdown`, `a11y.audit`, the schema validator — has to read
+`row[i] ?? null` rather than assume a slot exists. That is what they all
+do; it is written down here because nothing said so.
+
+The streaming readers _do_ agree: `streamXlsxRows` and `streamOdsRows`
+both skip an entirely empty row and keep the true index on `StreamRow`,
+so a gap in the indexes is the signal.
+
 ## Read options, per reader
 
 `ReadOptions` is one interface for `readXlsx`, `readOds`, `readXlsb`,

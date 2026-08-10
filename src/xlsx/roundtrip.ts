@@ -27,7 +27,7 @@ import {
 import { parseRelationships } from "./relationships"
 import { createStylesCollector } from "./styles-writer"
 import { createSharedStrings, writeSharedStringsXml, writeWorksheetXml } from "./worksheet-writer"
-import { writeFeaturePropertyBagXml } from "./feature-property-bag"
+import { FEATURE_PROPERTY_BAG_PART_PATH, writeFeaturePropertyBagXml } from "./feature-property-bag"
 import { METADATA_PART_PATH, writeMetadataXml } from "./metadata"
 import type { WorksheetResult } from "./worksheet-writer"
 import { writeDrawing } from "./drawing-writer"
@@ -753,6 +753,11 @@ export async function saveXlsx(
     }
   }
 
+  // Known before the preservation walk because the worksheets were
+  // serialized far above — the walk needs it to skip the opened package's
+  // own copy of the part we are about to emit.
+  const hasFeaturePropertyBag = styles.hasCheckboxFeature()
+
   // Build ZIP archive
   const zip = new ZipWriter()
 
@@ -791,6 +796,15 @@ export async function saveXlsx(
       if (!isRegenerated && hasMetadata && lowerPath === METADATA_PART_PATH) {
         isRegenerated = true
       }
+      // Same for the feature property bag, which had no such rule: a
+      // workbook opened with Excel 2024 checkboxes had its bag preserved
+      // *and* re-emitted, so the saved package carried the part twice.
+      // Excel treats a package with two parts of one name as damaged.
+      // `ZipWriter` used to accept the duplicate silently, which is how
+      // this survived — see #439 §AY.
+      if (!isRegenerated && hasFeaturePropertyBag && lowerPath === FEATURE_PROPERTY_BAG_PART_PATH) {
+        isRegenerated = true
+      }
       // Drawings whose only contents are chart graphicFrames don't get
       // re-emitted by hucre's drawing writer; force-preserve them so
       // the chart references survive intact.
@@ -815,7 +829,6 @@ export async function saveXlsx(
   // Worksheets are already serialized by this point, so the collector
   // knows whether any cell asked for a checkbox xf. Previously hardcoded
   // false, which dropped Excel 2024 checkboxes on every round trip (#359).
-  const hasFeaturePropertyBag = styles.hasCheckboxFeature()
   const ctOpts: ContentTypesOptions = {
     sheetCount: writeSheets.length,
     hasSharedStrings,

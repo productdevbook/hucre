@@ -26,6 +26,9 @@ export const FPB_REL_TYPE =
 /** Content-type for the part. */
 export const FPB_CONTENT_TYPE = "application/vnd.ms-excel.featurepropertybag+xml"
 
+/** Where the part lives in the package, lower-cased for path comparison. */
+export const FEATURE_PROPERTY_BAG_PART_PATH = "xl/featurepropertybag/featurepropertybag.xml"
+
 /** Path inside the XLSX archive. */
 export const FPB_PART_PATH = "xl/featurePropertyBag/featurePropertyBag.xml"
 

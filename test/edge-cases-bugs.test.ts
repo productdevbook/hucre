@@ -10,6 +10,7 @@ import { writeCsv } from "../src/csv/writer"
 import { validateWithSchema } from "../src/_schema"
 import { serialToDate, dateToSerial } from "../src/_date"
 import { ZipWriter } from "../src/zip/writer"
+import { ZipError } from "../src/errors"
 import { ZipReader } from "../src/zip/reader"
 import { parseXml } from "../src/xml/parser"
 import { writeOds } from "../src/ods/writer"
@@ -369,21 +370,19 @@ describe("CSV: unusual content", () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("ZIP: edge cases", () => {
-  it("add same path twice - last one wins", async () => {
+  it("refuses the same path twice", () => {
     const zip = new ZipWriter()
     const enc = new TextEncoder()
 
     zip.add("file.txt", enc.encode("first"))
-    zip.add("file.txt", enc.encode("second"))
 
-    const data = await zip.build()
-    const reader = new ZipReader(data)
-
-    // Both entries exist in the archive
-    const entries = reader.entries()
-    const fileEntries = entries.filter((e) => e === "file.txt")
-    // ZIP allows duplicate entries
-    expect(fileEntries.length).toBeGreaterThanOrEqual(1)
+    // The container format tolerates duplicates; an OOXML *package* does
+    // not — Excel treats two parts of one name as damaged, and `extract`
+    // would quietly hand back whichever came last. The streaming writer
+    // has always refused this; the buffered one accepted it silently,
+    // which is how saveXlsx came to emit the feature property bag twice.
+    // See #439 §AY.
+    expect(() => zip.add("file.txt", enc.encode("second"))).toThrow(ZipError)
   })
 
   it("very small data (just 'PK' signature) rejects", () => {
