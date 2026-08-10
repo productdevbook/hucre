@@ -24,6 +24,39 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The package claims Node 18+. Nothing checked that, and the one
+        # job that ran was whatever `lts/*` resolved to on the day.
+        node: [18, 20, 22, lts/*]
+    name: node ${{ matrix.node }}
+    steps:
+      - uses: actions/checkout@v5
+      - run: corepack enable
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      # `pnpm test` is lint + typecheck + vitest, so running the first two
+      # again here would double every job's work for nothing.
+      - name: Test
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+      - name: Verify packaged artifact
+        run: node scripts/verify-package.mjs
+
+  timezone:
+    # Everything above runs in UTC, which is where a whole class of date bug
+    # hides: #415 was silent in CI for exactly that reason, and the CSV
+    # dateFormat defect in #439 Part 8 was too. One non-UTC job closes it.
+    runs-on: ubuntu-latest
+    name: node lts (TZ=Asia/Tokyo)
+    env:
+      TZ: Asia/Tokyo
     steps:
       - uses: actions/checkout@v5
       - run: corepack enable
@@ -31,15 +64,37 @@ jobs:
         with:
           node-version: lts/*
           cache: pnpm
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Lint
-        run: pnpm lint
-      - name: Typecheck
-        run: pnpm typecheck
-      - name: Test
-        run: pnpm test
-      - name: Build
-        run: pnpm build
-      - name: Verify packaged artifact
-        run: node scripts/verify-package.mjs
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+
+  runtimes:
+    # The package advertises Deno and Bun. Neither was ever exercised.
+    runs-on: ubuntu-latest
+    name: ${{ matrix.runtime }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [bun, deno]
+    steps:
+      - uses: actions/checkout@v5
+      - run: corepack enable
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - if: matrix.runtime == 'bun'
+        uses: oven-sh/setup-bun@v2
+      - if: matrix.runtime == 'deno'
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      # A smoke test, not the suite: the point is that the built ESM loads
+      # and the core paths run on a runtime that is not Node.
+      - if: matrix.runtime == 'bun'
+        run: bun scripts/smoke.mjs
+      - if: matrix.runtime == 'deno'
+        run: deno run --allow-read scripts/smoke.mjs

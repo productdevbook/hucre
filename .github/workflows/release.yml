@@ -40,6 +40,9 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Verify packaged artifact
+        run: node scripts/verify-package.mjs
+
       - name: Publish to npm
         run: pnpm publish --provenance --access public --no-git-checks
         env:

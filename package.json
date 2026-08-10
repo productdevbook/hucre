@@ -34,9 +34,11 @@
   },
   "files": [
     "dist",
-    "MIGRATION.md"
+    "MIGRATION.md",
+    "docs/PARITY.md"
   ],
   "type": "module",
+  "sideEffects": false,
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "exports": {
@@ -92,6 +94,9 @@
     "oxlint": "^1.76.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "packageManager": "pnpm@11.15.1"
 }
