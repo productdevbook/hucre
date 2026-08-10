@@ -72,6 +72,7 @@
     }
   },
   "scripts": {
+    "bench": "node bench/index.mjs",
     "build": "obuild",
     "verify:package": "pnpm build && node scripts/verify-package.mjs",
     "dev": "vitest",

@@ -9,3 +9,6 @@ dist
 .vercel
 coverage
 .claude/worktrees
+
+# bench fixtures are generated, and large
+bench/.fixtures

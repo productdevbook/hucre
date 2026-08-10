@@ -415,14 +415,39 @@ const buffer = await writer.finish()
 | Strings     | inline by default                            | shared string table               |
 | Sheets      | one, or several with `writeXlsxStreamSheets` | one, plus auto-split parts        |
 
-Measured on 5 columns of mixed text/number/date data, writing to a sink
-that discards the bytes (Node 24):
+Measured with `pnpm bench` — the scenarios are in `bench/`, so these are
+reproducible rather than quoted. 5 columns of mixed text/number/date data,
+writing to a sink that discards the bytes (Node 24):
 
 |      Rows | `writeXlsxStream` peak heap | `XlsxStreamWriter` peak heap |
 | --------: | --------------------------: | ---------------------------: |
 |   300,000 |                       41 MB |                       328 MB |
 | 1,000,000 |                       67 MB |                     1,037 MB |
 | 3,000,000 |                       70 MB |                   not viable |
+
+#### What the streaming _reader_ costs
+
+The write table above is the flattering half. `streamXlsxRows` is
+constant-memory in **rows** and linear in **distinct strings**, because
+`xl/sharedStrings.xml` is a workbook-wide part that has to be read up
+front. Two fixtures of the same shape and size, 100,000 rows × 12
+columns, differing only in how many distinct strings they contain:
+
+|                              | 400,000 distinct strings | 10 distinct strings |
+| ---------------------------- | -----------------------: | ------------------: |
+| `readXlsx`                   |        2,721 ms / 662 MB |   1,896 ms / 392 MB |
+| `readXlsx` + `maxRows: 1000` |        1,953 ms / 656 MB |   1,150 ms / 221 MB |
+| `streamXlsxRows`             |        2,446 ms / 556 MB |    1,592 ms / 90 MB |
+
+Two things worth knowing before you rely on either:
+
+- An export of names, SKUs or free text is the high-cardinality case, and
+  there the streaming reader is not much better than the buffering one.
+- **`maxRows` bounds the output, not the work.** Asking for 1,000 rows of
+  100,000 saved 28% of the time and 1% of the memory on the
+  high-cardinality fixture.
+
+Run `pnpm bench` to see both on your own machine.
 
 #### One surface across the incremental writers
 
