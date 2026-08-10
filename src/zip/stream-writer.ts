@@ -15,6 +15,7 @@
 
 import { CRC32_INIT, crc32Update, crc32Final } from "./deflate"
 import { ZipError } from "../errors"
+import { canDeflateRaw } from "./capability"
 
 // ── ZIP Signatures ──────────────────────────────────────────────────
 
@@ -79,19 +80,6 @@ export interface ZipStreamOptions {
 }
 
 // ── Compression ─────────────────────────────────────────────────────
-
-let hasCompressionStream: boolean | undefined
-
-function checkCompressionStream(): boolean {
-  if (hasCompressionStream === undefined) {
-    try {
-      hasCompressionStream = typeof CompressionStream !== "undefined"
-    } catch {
-      hasCompressionStream = false
-    }
-  }
-  return hasCompressionStream
-}
 
 /** Pipe chunks through `deflate-raw`, preserving backpressure both ways. */
 async function* deflateRawChunks(source: AsyncIterable<Uint8Array>): AsyncGenerator<Uint8Array> {
@@ -357,7 +345,7 @@ export async function* zipStreamChunks(
   const records: CentralRecord[] = []
   const seen = new Set<string>()
   let offset = 0
-  const canDeflate = checkCompressionStream()
+  const canDeflate = canDeflateRaw()
 
   for await (const entry of entries) {
     if (seen.has(entry.path)) {

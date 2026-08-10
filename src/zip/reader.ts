@@ -6,6 +6,7 @@ import { ZipError } from "../errors"
 import { MAX_DECOMPRESSED_BYTES } from "../limits"
 import { byteLimitStream } from "./byte-limit"
 import { crc32, inflate } from "./deflate"
+import { canInflateRaw } from "./capability"
 
 // ── ZIP Signatures ──────────────────────────────────────────────────
 
@@ -38,27 +39,11 @@ interface CentralDirEntry {
 
 // ── Decompression ───────────────────────────────────────────────────
 
-let hasDecompressionStream: boolean | undefined
-
-function checkDecompressionStream(): boolean {
-  if (hasDecompressionStream === undefined) {
-    try {
-      hasDecompressionStream =
-        typeof DecompressionStream !== "undefined" &&
-        typeof ReadableStream !== "undefined" &&
-        typeof Response !== "undefined"
-    } catch {
-      hasDecompressionStream = false
-    }
-  }
-  return hasDecompressionStream
-}
-
 async function decompressDeflateRaw(
   data: Uint8Array,
   maxBytes = MAX_DECOMPRESSED_BYTES,
 ): Promise<Uint8Array> {
-  if (checkDecompressionStream()) {
+  if (canInflateRaw()) {
     try {
       const ds = new DecompressionStream("deflate-raw")
       const writer = ds.writable.getWriter()
@@ -538,7 +523,7 @@ export class ZipReader {
           ? Math.min(entry.uncompressedSize, MAX_DECOMPRESSED_BYTES)
           : MAX_DECOMPRESSED_BYTES
 
-      if (checkDecompressionStream()) {
+      if (canInflateRaw()) {
         const inputStream = new ReadableStream({
           start(controller) {
             controller.enqueue(compressedData)

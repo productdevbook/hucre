@@ -3,6 +3,7 @@
 // Supports STORE (method 0) and DEFLATE (method 8).
 
 import { crc32, deflate } from "./deflate"
+import { canDeflateRaw } from "./capability"
 
 // ── ZIP Signatures ──────────────────────────────────────────────────
 
@@ -12,24 +13,8 @@ const SIG_END_OF_CENTRAL_DIR = 0x06054b50
 
 // ── Compression ─────────────────────────────────────────────────────
 
-let hasCompressionStream: boolean | undefined
-
-function checkCompressionStream(): boolean {
-  if (hasCompressionStream === undefined) {
-    try {
-      hasCompressionStream =
-        typeof CompressionStream !== "undefined" &&
-        typeof ReadableStream !== "undefined" &&
-        typeof Response !== "undefined"
-    } catch {
-      hasCompressionStream = false
-    }
-  }
-  return hasCompressionStream
-}
-
 async function compressDeflateRaw(data: Uint8Array): Promise<Uint8Array> {
-  if (checkCompressionStream()) {
+  if (canDeflateRaw()) {
     try {
       const cs = new CompressionStream("deflate-raw")
       const writer = cs.writable.getWriter()

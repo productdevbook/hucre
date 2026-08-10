@@ -20,6 +20,7 @@ import { byteLimitStream } from "./byte-limit"
 import { inflate } from "./deflate"
 import { ParseError, ZipError } from "../errors"
 import { MAX_DECOMPRESSED_BYTES, MAX_INPUT_BYTES } from "../limits"
+import { canInflateRaw } from "./capability"
 
 const SIG_LOCAL_FILE = 0x04034b50
 const SIG_CENTRAL_DIR = 0x02014b50
@@ -27,21 +28,6 @@ const ZIP64_SENTINEL = 0xffffffff
 const FLAG_DATA_DESCRIPTOR = 0x0008
 
 const EMPTY = new Uint8Array(0)
-
-let hasDecompressionStream: boolean | undefined
-function checkDecompressionStream(): boolean {
-  if (hasDecompressionStream === undefined) {
-    try {
-      hasDecompressionStream =
-        typeof DecompressionStream !== "undefined" &&
-        typeof ReadableStream !== "undefined" &&
-        typeof Response !== "undefined"
-    } catch {
-      hasDecompressionStream = false
-    }
-  }
-  return hasDecompressionStream
-}
 
 /** One local-file-header record surfaced by {@link ZipStreamReader.nextEntry}. */
 export interface ZipStreamEntry {
@@ -230,7 +216,7 @@ export class ZipStreamReader {
       entry.uncompressedSize > 0
         ? Math.min(entry.uncompressedSize, MAX_DECOMPRESSED_BYTES)
         : MAX_DECOMPRESSED_BYTES
-    if (checkDecompressionStream()) {
+    if (canInflateRaw()) {
       return (
         raw.pipeThrough(
           new DecompressionStream("deflate-raw") as unknown as ReadableWritablePair<

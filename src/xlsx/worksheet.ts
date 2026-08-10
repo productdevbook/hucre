@@ -22,7 +22,6 @@ import type {
   PageSetup,
   PageMargins,
   HeaderFooter,
-  PaperSize,
   FreezePane,
   SplitPane,
   Sparkline,
