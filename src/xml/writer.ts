@@ -156,6 +156,30 @@ export function xmlSelfClose(tag: string, attrs?: Record<string, AttrValue>): st
   return `<${tag}${serializeAttrs(attrs)}/>`
 }
 
+/**
+ * Build an OOXML `<t>` element, declaring `xml:space="preserve"` when the
+ * text has whitespace an XML consumer is entitled to collapse.
+ *
+ * Every `<t>` in the package has to make this decision — shared strings,
+ * inline strings, and each rich-text run — and the check used to be
+ * copy-pasted at each site. The inline-string branch of the worksheet
+ * writer was the copy that never got it, so `writeXlsx` with
+ * `stringMode: "inline"` emitted `<t>  padded  </t>` and Excel trimmed
+ * the padding. One function, so there is nothing left to forget.
+ */
+export function xmlTextElement(value: string): string {
+  const escaped = xmlEscape(value)
+  const needsPreserve =
+    value.length > 0 &&
+    (value[0] === " " ||
+      value[value.length - 1] === " " ||
+      value.includes("\n") ||
+      value.includes("\t"))
+  return needsPreserve
+    ? `<t xml:space="preserve">${escaped}</t>`
+    : xmlElement("t", undefined, escaped)
+}
+
 /** Build an XML element string with optional children */
 export function xmlElement(
   tag: string,

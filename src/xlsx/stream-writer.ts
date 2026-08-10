@@ -24,7 +24,14 @@ import { writeThemeXml } from "./theme-writer"
 import { MAX_SHEET_NAME_LENGTH, validateSheetName, validateSheetNames } from "../_validate"
 import { InvalidArgumentError } from "../errors"
 import { dateToSerial } from "../_date"
-import { xmlDocument, xmlDeclaration, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
+import {
+  xmlDocument,
+  xmlDeclaration,
+  xmlElement,
+  xmlSelfClose,
+  xmlEscape,
+  xmlTextElement,
+} from "../xml/writer"
 
 const encoder = /* @__PURE__ */ new TextEncoder()
 
@@ -358,7 +365,7 @@ class RowSerializer {
       if (this.inlineStrings) {
         const attrs: Record<string, string | number> = { r: ref, t: "inlineStr" }
         if (styleIdx !== 0) attrs["s"] = styleIdx
-        return xmlElement("c", attrs, [xmlElement("is", undefined, [textElement(value)])])
+        return xmlElement("c", attrs, [xmlElement("is", undefined, [xmlTextElement(value)])])
       }
       const ssIdx = this.sharedStrings.add(value)
       const attrs: Record<string, string | number> = { r: ref, t: "s" }
@@ -397,20 +404,6 @@ class RowSerializer {
 
     return null
   }
-}
-
-/** `<t>` element, preserving significant whitespace like the shared-string writer. */
-function textElement(value: string): string {
-  const escaped = xmlEscape(value)
-  const needsPreserve =
-    value.length > 0 &&
-    (value[0] === " " ||
-      value[value.length - 1] === " " ||
-      value.includes("\n") ||
-      value.includes("\t"))
-  return needsPreserve
-    ? `<t xml:space="preserve">${escaped}</t>`
-    : xmlElement("t", undefined, escaped)
 }
 
 // ── Shared Sheet Scaffolding ────────────────────────────────────────

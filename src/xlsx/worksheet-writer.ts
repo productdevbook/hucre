@@ -24,7 +24,7 @@ import type {
 import type { StylesCollector } from "./styles-writer"
 import { dateToSerial } from "../_date"
 import { isHyperlinkValue } from "./hyperlink"
-import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
+import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape, xmlTextElement } from "../xml/writer"
 import { calculateColumnWidth } from "./auto-width"
 import { DYNAMIC_ARRAY_CM } from "./metadata"
 import { hashSheetPassword } from "./password"
@@ -177,14 +177,7 @@ export function writeSharedStringsXml(sharedStrings: SharedStringsCollector): st
 
   const children: string[] = []
   for (const str of strings) {
-    const escaped = xmlEscape(str)
-    const needsPreserve =
-      str.length > 0 &&
-      (str[0] === " " || str[str.length - 1] === " " || str.includes("\n") || str.includes("\t"))
-    const tElement = needsPreserve
-      ? `<t xml:space="preserve">${escaped}</t>`
-      : xmlElement("t", undefined, escaped)
-    children.push(xmlElement("si", undefined, [tElement]))
+    children.push(xmlElement("si", undefined, [xmlTextElement(str)]))
   }
 
   return xmlDocument("sst", { xmlns: NS_SPREADSHEET, count, uniqueCount: count }, children)
@@ -915,9 +908,7 @@ function serializeCell(
       // Inline string: <c t="inlineStr"><is><t>value</t></is></c>
       const attrs: Record<string, string | number> = { r: ref, t: "inlineStr" }
       if (styleIdx !== 0) attrs["s"] = styleIdx
-      return xmlElement("c", attrs, [
-        xmlElement("is", undefined, [xmlElement("t", undefined, xmlEscape(value))]),
-      ])
+      return xmlElement("c", attrs, [xmlElement("is", undefined, [xmlTextElement(value)])])
     }
     const ssIdx = sharedStrings.add(value)
     const attrs: Record<string, string | number> = { r: ref, t: "s" }
@@ -1336,20 +1327,8 @@ function serializeRichTextRuns(runs: RichTextRun[]): string[] {
       }
     }
 
-    // Run text (<t>)
-    // Use xml:space="preserve" to preserve whitespace
-    const text = xmlEscape(run.text)
-    const needsPreserve =
-      run.text.length > 0 &&
-      (run.text[0] === " " ||
-        run.text[run.text.length - 1] === " " ||
-        run.text.includes("\n") ||
-        run.text.includes("\t"))
-    if (needsPreserve) {
-      runChildren.push(`<t xml:space="preserve">${text}</t>`)
-    } else {
-      runChildren.push(xmlElement("t", undefined, text))
-    }
+    // Run text (<t>), with xml:space="preserve" when the run needs it.
+    runChildren.push(xmlTextElement(run.text))
 
     elements.push(xmlElement("r", undefined, runChildren))
   }
