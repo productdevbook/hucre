@@ -779,8 +779,18 @@ export function groupRows(sheet: Sheet, startRow: number, endRow: number, level:
 function cloneCell(cell: Cell): Cell {
   const result: Cell = { value: cell.value, type: cell.type }
   if (cell.style) result.style = cloneCellStyle(cell.style)
+  if (cell.checkbox !== undefined) result.checkbox = cell.checkbox
   if (cell.formula !== undefined) result.formula = cell.formula
   if (cell.formulaResult !== undefined) result.formulaResult = cell.formulaResult
+  // The formula's *shape*, not just its text. Dropping these turned a
+  // shared-formula slave cell — `{ formula: "", formulaType: "shared",
+  // formulaSharedIndex: 3 }` — into a plain `{ formula: "" }`, which the
+  // writer then emitted as an empty `<f/>`. An array formula lost its
+  // spill range, and a dynamic array lost its metadata link (#423).
+  if (cell.formulaType !== undefined) result.formulaType = cell.formulaType
+  if (cell.formulaSharedIndex !== undefined) result.formulaSharedIndex = cell.formulaSharedIndex
+  if (cell.formulaRef !== undefined) result.formulaRef = cell.formulaRef
+  if (cell.formulaDynamic !== undefined) result.formulaDynamic = cell.formulaDynamic
   if (cell.richText)
     result.richText = cell.richText.map((r) => ({
       text: r.text,
@@ -894,16 +904,15 @@ export function cloneSheet(sheet: Sheet, newName: string): Sheet {
 
   // Deep copy images
   if (sheet.images) {
-    cloned.images = sheet.images.map((img) => ({
-      data: new Uint8Array(img.data),
-      type: img.type,
-      anchor: {
-        from: { ...img.anchor.from },
-        to: img.anchor.to ? { ...img.anchor.to } : undefined,
-      },
-      width: img.width,
-      height: img.height,
-    }))
+    // Spread rather than enumerate: listing the fields by hand is how
+    // `altText` and `title` came to be dropped. Only the two nested
+    // members need their own copy.
+    cloned.images = sheet.images.map((img) => {
+      const copy = { ...img, data: new Uint8Array(img.data) }
+      copy.anchor = { ...img.anchor, from: { ...img.anchor.from } }
+      if (img.anchor.to) copy.anchor.to = { ...img.anchor.to }
+      return copy
+    })
   }
 
   // Copy protection
@@ -952,6 +961,29 @@ export function cloneSheet(sheet: Sheet, newName: string): Sheet {
   if (sheet.charts && sheet.charts.length > 0) {
     cloned.charts = structuredClone(sheet.charts)
   }
+
+  // ── The rest of the sheet ──
+  //
+  // These used to be dropped silently — a "deep clone" that returned a
+  // sheet with no sparklines, no text boxes, no page breaks and no
+  // background image. `copySheetToWorkbook` is built on this, so copying
+  // a sheet between workbooks lost them too. See #439 §N.
+  //
+  // Everything here is plain JSON-serialisable data except the background
+  // image, which is bytes, so `structuredClone` is the faithful copy for
+  // the trees and a `slice()` for the buffer.
+  if (sheet.splitPane) cloned.splitPane = { ...sheet.splitPane }
+  if (sheet.rowBreaks) cloned.rowBreaks = [...sheet.rowBreaks]
+  if (sheet.colBreaks) cloned.colBreaks = [...sheet.colBreaks]
+  if (sheet.outlineProperties) cloned.outlineProperties = { ...sheet.outlineProperties }
+  if (sheet.backgroundImage) cloned.backgroundImage = sheet.backgroundImage.slice()
+  if (sheet.sparklines) cloned.sparklines = structuredClone(sheet.sparklines)
+  if (sheet.textBoxes) cloned.textBoxes = structuredClone(sheet.textBoxes)
+  if (sheet.threadedComments) cloned.threadedComments = structuredClone(sheet.threadedComments)
+  if (sheet.pivotTables) cloned.pivotTables = structuredClone(sheet.pivotTables)
+  if (sheet.slicers) cloned.slicers = structuredClone(sheet.slicers)
+  if (sheet.timelines) cloned.timelines = structuredClone(sheet.timelines)
+  if (sheet.a11y) cloned.a11y = { ...sheet.a11y }
 
   return cloned
 }

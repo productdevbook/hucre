@@ -24,8 +24,18 @@ export interface SerializedCell {
   value: SerializedCellValue
   type: Cell["type"]
   style?: Cell["style"]
+  checkbox?: Cell["checkbox"]
   formula?: Cell["formula"]
   formulaResult?: SerializedCellValue
+  /**
+   * The formula's shape, not just its text. Without these a shared-formula
+   * slave cell — `{ formula: "", formulaType: "shared", si }` — arrives as
+   * `{ formula: "" }`, which the writer emits as an empty `<f/>`.
+   */
+  formulaType?: Cell["formulaType"]
+  formulaSharedIndex?: Cell["formulaSharedIndex"]
+  formulaRef?: Cell["formulaRef"]
+  formulaDynamic?: Cell["formulaDynamic"]
   richText?: Cell["richText"]
   hyperlink?: Cell["hyperlink"]
   comment?: Cell["comment"]
@@ -66,6 +76,19 @@ export interface SerializedSheet {
   veryHidden?: Sheet["veryHidden"]
   tables?: Sheet["tables"]
   a11y?: Sheet["a11y"]
+  splitPane?: Sheet["splitPane"]
+  rowBreaks?: Sheet["rowBreaks"]
+  colBreaks?: Sheet["colBreaks"]
+  outlineProperties?: Sheet["outlineProperties"]
+  /** As a plain array, for the same reason as {@link SerializedSheetImage.data}. */
+  backgroundImage?: number[]
+  sparklines?: Sheet["sparklines"]
+  textBoxes?: Sheet["textBoxes"]
+  threadedComments?: Sheet["threadedComments"]
+  pivotTables?: Sheet["pivotTables"]
+  slicers?: Sheet["slicers"]
+  timelines?: Sheet["timelines"]
+  charts?: Sheet["charts"]
 }
 
 /** Serialized WorkbookProperties with Dates as ISO markers. */
@@ -93,6 +116,14 @@ export interface SerializedWorkbook {
   defaultFont?: Workbook["defaultFont"]
   activeSheet?: Workbook["activeSheet"]
   externalLinks?: Workbook["externalLinks"]
+  themeColors?: Workbook["themeColors"]
+  workbookProtection?: Workbook["workbookProtection"]
+  persons?: Workbook["persons"]
+  /** `data` as a plain array on each entry, as elsewhere in this module. */
+  cellImages?: Array<Omit<NonNullable<Workbook["cellImages"]>[number], "data"> & { data: number[] }>
+  pivotCaches?: Workbook["pivotCaches"]
+  slicerCaches?: Workbook["slicerCaches"]
+  timelineCaches?: Workbook["timelineCaches"]
 }
 
 // ── Serialize ───────────────────────────────────────────────────────
@@ -116,10 +147,15 @@ function serializeCell(cell: Cell): SerializedCell {
     type: cell.type,
   }
   if (cell.style !== undefined) out.style = cell.style
+  if (cell.checkbox !== undefined) out.checkbox = cell.checkbox
   if (cell.formula !== undefined) out.formula = cell.formula
   if (cell.formulaResult !== undefined) {
     out.formulaResult = serializeCellValue(cell.formulaResult)
   }
+  if (cell.formulaType !== undefined) out.formulaType = cell.formulaType
+  if (cell.formulaSharedIndex !== undefined) out.formulaSharedIndex = cell.formulaSharedIndex
+  if (cell.formulaRef !== undefined) out.formulaRef = cell.formulaRef
+  if (cell.formulaDynamic !== undefined) out.formulaDynamic = cell.formulaDynamic
   if (cell.richText !== undefined) out.richText = cell.richText
   if (cell.hyperlink !== undefined) out.hyperlink = cell.hyperlink
   if (cell.comment !== undefined) out.comment = cell.comment
@@ -180,10 +216,30 @@ function serializeSheet(sheet: Sheet): SerializedSheet {
   if (sheet.pageSetup) out.pageSetup = sheet.pageSetup
   if (sheet.headerFooter) out.headerFooter = sheet.headerFooter
   if (sheet.view) out.view = sheet.view
-  if (sheet.hidden) out.hidden = sheet.hidden
-  if (sheet.veryHidden) out.veryHidden = sheet.veryHidden
+  // `!== undefined`, not truthiness: an explicit `false` is a value the
+  // caller set and it should survive the trip. `cloneSheet` already did
+  // this; this copy did not.
+  if (sheet.hidden !== undefined) out.hidden = sheet.hidden
+  if (sheet.veryHidden !== undefined) out.veryHidden = sheet.veryHidden
   if (sheet.tables) out.tables = sheet.tables
   if (sheet.a11y) out.a11y = sheet.a11y
+
+  // ── The rest of the sheet ──
+  // These used to be dropped on the way through, so "parse in a worker,
+  // postMessage the result" handed the main thread a quietly poorer
+  // workbook. See #439 §N.
+  if (sheet.splitPane) out.splitPane = sheet.splitPane
+  if (sheet.rowBreaks) out.rowBreaks = sheet.rowBreaks
+  if (sheet.colBreaks) out.colBreaks = sheet.colBreaks
+  if (sheet.outlineProperties) out.outlineProperties = sheet.outlineProperties
+  if (sheet.backgroundImage) out.backgroundImage = Array.from(sheet.backgroundImage)
+  if (sheet.sparklines) out.sparklines = sheet.sparklines
+  if (sheet.textBoxes) out.textBoxes = sheet.textBoxes
+  if (sheet.threadedComments) out.threadedComments = sheet.threadedComments
+  if (sheet.pivotTables) out.pivotTables = sheet.pivotTables
+  if (sheet.slicers) out.slicers = sheet.slicers
+  if (sheet.timelines) out.timelines = sheet.timelines
+  if (sheet.charts) out.charts = sheet.charts
 
   return out
 }
@@ -245,6 +301,15 @@ export function serializeWorkbook(wb: Workbook): SerializedWorkbook {
   if (wb.defaultFont) out.defaultFont = wb.defaultFont
   if (wb.activeSheet !== undefined) out.activeSheet = wb.activeSheet
   if (wb.externalLinks) out.externalLinks = wb.externalLinks
+  if (wb.themeColors) out.themeColors = wb.themeColors
+  if (wb.workbookProtection) out.workbookProtection = wb.workbookProtection
+  if (wb.persons) out.persons = wb.persons
+  if (wb.cellImages) {
+    out.cellImages = wb.cellImages.map((img) => ({ ...img, data: Array.from(img.data) }))
+  }
+  if (wb.pivotCaches) out.pivotCaches = wb.pivotCaches
+  if (wb.slicerCaches) out.slicerCaches = wb.slicerCaches
+  if (wb.timelineCaches) out.timelineCaches = wb.timelineCaches
 
   return out
 }
@@ -270,10 +335,15 @@ function deserializeCell(sc: SerializedCell): Cell {
     type: sc.type,
   }
   if (sc.style !== undefined) cell.style = sc.style
+  if (sc.checkbox !== undefined) cell.checkbox = sc.checkbox
   if (sc.formula !== undefined) cell.formula = sc.formula
   if (sc.formulaResult !== undefined) {
     cell.formulaResult = deserializeCellValue(sc.formulaResult)
   }
+  if (sc.formulaType !== undefined) cell.formulaType = sc.formulaType
+  if (sc.formulaSharedIndex !== undefined) cell.formulaSharedIndex = sc.formulaSharedIndex
+  if (sc.formulaRef !== undefined) cell.formulaRef = sc.formulaRef
+  if (sc.formulaDynamic !== undefined) cell.formulaDynamic = sc.formulaDynamic
   if (sc.richText !== undefined) cell.richText = sc.richText
   if (sc.hyperlink !== undefined) cell.hyperlink = sc.hyperlink
   if (sc.comment !== undefined) cell.comment = sc.comment
@@ -333,10 +403,23 @@ function deserializeSheet(ss: SerializedSheet): Sheet {
   if (ss.pageSetup) sheet.pageSetup = ss.pageSetup
   if (ss.headerFooter) sheet.headerFooter = ss.headerFooter
   if (ss.view) sheet.view = ss.view
-  if (ss.hidden) sheet.hidden = ss.hidden
-  if (ss.veryHidden) sheet.veryHidden = ss.veryHidden
+  if (ss.hidden !== undefined) sheet.hidden = ss.hidden
+  if (ss.veryHidden !== undefined) sheet.veryHidden = ss.veryHidden
   if (ss.tables) sheet.tables = ss.tables
   if (ss.a11y) sheet.a11y = ss.a11y
+
+  if (ss.splitPane) sheet.splitPane = ss.splitPane
+  if (ss.rowBreaks) sheet.rowBreaks = ss.rowBreaks
+  if (ss.colBreaks) sheet.colBreaks = ss.colBreaks
+  if (ss.outlineProperties) sheet.outlineProperties = ss.outlineProperties
+  if (ss.backgroundImage) sheet.backgroundImage = new Uint8Array(ss.backgroundImage)
+  if (ss.sparklines) sheet.sparklines = ss.sparklines
+  if (ss.textBoxes) sheet.textBoxes = ss.textBoxes
+  if (ss.threadedComments) sheet.threadedComments = ss.threadedComments
+  if (ss.pivotTables) sheet.pivotTables = ss.pivotTables
+  if (ss.slicers) sheet.slicers = ss.slicers
+  if (ss.timelines) sheet.timelines = ss.timelines
+  if (ss.charts) sheet.charts = ss.charts
 
   return sheet
 }
@@ -398,6 +481,15 @@ export function deserializeWorkbook(data: SerializedWorkbook): Workbook {
   if (data.defaultFont) wb.defaultFont = data.defaultFont
   if (data.activeSheet !== undefined) wb.activeSheet = data.activeSheet
   if (data.externalLinks) wb.externalLinks = data.externalLinks
+  if (data.themeColors) wb.themeColors = data.themeColors
+  if (data.workbookProtection) wb.workbookProtection = data.workbookProtection
+  if (data.persons) wb.persons = data.persons
+  if (data.cellImages) {
+    wb.cellImages = data.cellImages.map((img) => ({ ...img, data: new Uint8Array(img.data) }))
+  }
+  if (data.pivotCaches) wb.pivotCaches = data.pivotCaches
+  if (data.slicerCaches) wb.slicerCaches = data.slicerCaches
+  if (data.timelineCaches) wb.timelineCaches = data.timelineCaches
 
   return wb
 }
