@@ -181,6 +181,25 @@ reads back with its direct formatting only.
 See [What ODS carries](../README.md#what-ods-carries) for the consequences
 worth knowing before relying on it.
 
+## Read options, per reader
+
+`ReadOptions` is one interface for `readXlsx`, `readOds`, `readXlsb`,
+`readXls` and `read`. Not every option means something to every format:
+
+| option          | `readXlsx` | `readOds` | `readXlsb` | `readXls` |
+| --------------- | :--------: | :-------: | :--------: | :-------: |
+| `maxInputBytes` |    yes     |    yes    |    yes     |    yes    |
+| `sheets`        |    yes     |    yes    |     —      |     —     |
+| `readStyles`    |    yes     |    yes    |    n/a     |    n/a    |
+| `dateSystem`    |    yes     |    n/a    |    yes     |    yes    |
+| `password`      |    yes     |     —     |    yes     |     —     |
+| `maxRows`       |    yes     |    yes    |     —      |     —     |
+| `range`         |    yes     |    yes    |     —      |     —     |
+
+`n/a` means the option cannot apply: ODS stores ISO date strings, so
+there is no 1900/1904 system to pick, and neither legacy reader surfaces
+styles at all. A `—` is a gap, not a decision.
+
 ## XLS and XLSB — read only
 
 No writer exists for either. What the readers surface is narrower than

@@ -17,6 +17,7 @@ import { ParseError, ZipError } from "../errors"
 import { assertNotEncrypted, readInputToUint8Array } from "../_input"
 import { ZipReader } from "../zip/reader"
 import { parseXml } from "../xml/parser"
+import { parseRange } from "../cell-utils"
 import { MAX_COL_INDEX, MAX_REPEAT_COUNT, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
 
 /**
@@ -564,7 +565,16 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
     let currentRow = 0
     let pendingEmptyRows = 0
 
+    // `maxRows` and `range` are on the shared `ReadOptions`, whose doc makes
+    // no format-specific claim — but this reader used to read neither, so a
+    // caller bounding a large ODS file got the whole thing and no warning.
+    // See #439 §U. `maxRows` stops the walk; `range` masks afterwards,
+    // matching what readXlsx returns for the same option.
+    const maxRowsLimit = options?.maxRows ?? 0 // 0 = unlimited
+    const rangeFilter = options?.range ? parseRange(options.range) : undefined
+
     for (const tableRow of tableRows) {
+      if (maxRowsLimit > 0 && rows.length >= maxRowsLimit) break
       const rowRepeat = Number(tableRow.attrs["table:number-rows-repeated"] ?? "1")
 
       // Collect cell entries with their repeat counts first,
@@ -752,6 +762,26 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
     // this is a backstop rather than the mechanism.
     while (rows.length > 0 && rows[rows.length - 1].length === 0) {
       rows.pop()
+    }
+
+    // `maxRows` can overshoot by the tail of a repeated row, since a single
+    // <table-row table:number-rows-repeated="N"> expands after the check.
+    if (maxRowsLimit > 0 && rows.length > maxRowsLimit) rows.length = maxRowsLimit
+
+    // `range` masks rather than drops, so column indexes stay stable and a
+    // row outside the span is present and empty — the same shape readXlsx
+    // returns for the same option.
+    if (rangeFilter) {
+      for (let r = 0; r < rows.length; r++) {
+        const row = rows[r]!
+        const inRowSpan = r >= rangeFilter.startRow && r <= rangeFilter.endRow
+        for (let c = 0; c < row.length; c++) {
+          if (!inRowSpan || c < rangeFilter.startCol || c > rangeFilter.endCol) {
+            row[c] = null
+            cells.delete(`${r},${c}`)
+          }
+        }
+      }
     }
 
     const sheet: Sheet = { name, rows }

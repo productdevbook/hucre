@@ -56,6 +56,7 @@ export function* streamCsvRows(
   const maxRows = options?.maxRows
   const skipLines = options?.skipLines ?? 0
   const transformValue = options?.transformValue
+  const transformHeader = options?.transformHeader
   const onRow = options?.onRow
   // Fast mode trades quote handling for speed, exactly as in parseCsv —
   // fields are split on the delimiter with no quote awareness at all.
@@ -192,8 +193,15 @@ export function* streamCsvRows(
     // the row is still yielded, and is used to name columns for
     // transformValue. `skipHeaderRow` is the opt-in that consumes it.
     const isHeaderRowNow = isFirstRow && isHeaderMode
+    let emitFields = fields
     if (isHeaderRowNow) {
-      headerRow = fields
+      // Same contract as parseCsv: `transformHeader` rewrites the header
+      // row, and the rewritten names are what `transformValue` sees. This
+      // reader used not to read the option at all. See #439 §V.
+      emitFields = transformHeader
+        ? fields.map((value, index) => transformHeader(String(value ?? ""), index))
+        : fields
+      headerRow = emitFields
     }
     isFirstRow = false
 
@@ -208,8 +216,8 @@ export function* streamCsvRows(
 
     // Apply type inference if requested
     let outRow: CellValue[] = doTypeInference
-      ? fields.map((v) => inferType(v, preserveLeadingZeros))
-      : fields
+      ? emitFields.map((v) => inferType(v, preserveLeadingZeros))
+      : emitFields
 
     // transformValue — after type inference, matching parseCsv's ordering.
     if (transformValue) {

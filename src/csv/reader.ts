@@ -143,6 +143,19 @@ export function parseCsv(input: string, options?: CsvReadOptions): CellValue[][]
   // The row is captured before it goes, because transformValue names its
   // columns from it either way, and it drops before maxRows so that limit
   // counts data rows in both readers.
+  // `transformHeader` used to be honoured by parseCsvObjects alone, where
+  // it renames the object keys — even though CsvReadOptions says every one
+  // of its options "means the same thing in all three" readers. Here and in
+  // streamCsvRows it rewrites the header row itself, which then names the
+  // columns `transformValue` sees. See #439 §V.
+  const transformHeader = options?.transformHeader
+  if (opts.header && transformHeader && filtered.length > 0) {
+    filtered = [
+      filtered[0]!.map((value, index) => transformHeader(String(value ?? ""), index)),
+      ...filtered.slice(1),
+    ]
+  }
+
   const headerRow = opts.header && filtered.length > 0 ? filtered[0]! : null
   if (opts.header && opts.skipHeaderRow && filtered.length > 0) {
     filtered = filtered.slice(1)
