@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────
 
 import { isDateFormat, formatDate, serialToDate, dateToSerial } from "./_date"
+import { InvalidArgumentError } from "./errors"
 
 // ── Locale Definitions ──────────────────────────────────────────────
 
@@ -19,17 +20,64 @@ export interface LocaleFormat {
   currency: string
 }
 
-const LOCALE_MAP: Record<string, LocaleFormat> = {
-  "en-US": { decimal: ".", thousands: ",", currency: "$" },
-  "de-DE": { decimal: ",", thousands: ".", currency: "\u20AC" },
-  "fr-FR": { decimal: ",", thousands: "\u00A0", currency: "\u20AC" },
-  "tr-TR": { decimal: ",", thousands: ".", currency: "\u20BA" },
+/**
+ * Currency symbols hucre has always carried for these four tags.
+ *
+ * The formatter does not read this field and never has — only `decimal`
+ * and `thousands` are used — but `LocaleFormat` is public, so the values
+ * it used to return are kept for the tags that had them.
+ */
+const KNOWN_CURRENCY: Record<string, string> = {
+  "en-US": "$",
+  "de-DE": "\u20AC",
+  "fr-FR": "\u20AC",
+  "tr-TR": "\u20BA",
 }
 
-/** Resolve a locale string to its format definition, or undefined if unsupported. */
+const localeCache = new Map<string, LocaleFormat>()
+
+/**
+ * Resolve a BCP 47 tag to its separators.
+ *
+ * This used to be a four-entry table — `en-US`, `de-DE`, `fr-FR`,
+ * `tr-TR` — and any other tag resolved to `undefined`, which the
+ * formatter treated as "use the defaults". So
+ * `formatValue(1234.5, "#,##0.00", { locale: "es-ES" })` returned
+ * `1,234.50`: an en-US rendering, silently, for a locale the caller had
+ * explicitly asked for. See #439 §R.
+ *
+ * `Intl.NumberFormat` knows every tag, and separators are all the
+ * formatter needs, so the table is gone. A tag `Intl` rejects now throws
+ * rather than being answered wrongly.
+ */
 function resolveLocale(locale?: string): LocaleFormat | undefined {
   if (!locale) return undefined
-  return LOCALE_MAP[locale]
+
+  const cached = localeCache.get(locale)
+  if (cached) return cached
+
+  let parts: Intl.NumberFormatPart[]
+  try {
+    parts = new Intl.NumberFormat(locale).formatToParts(1234567.8)
+  } catch (error) {
+    throw new InvalidArgumentError(
+      `Unusable locale "${locale}". Pass a BCP 47 tag Intl.NumberFormat accepts, ` +
+        "or omit `locale` for the default separators.",
+      { cause: error },
+    )
+  }
+
+  // Separators only. The formatter groups in threes, so a locale that
+  // groups differently — Indian lakh/crore, say — gets the right
+  // separator in the wrong places. That predates this change and is a
+  // deeper piece of work than reading a tag.
+  const resolved: LocaleFormat = {
+    decimal: parts.find((p) => p.type === "decimal")?.value ?? ".",
+    thousands: parts.find((p) => p.type === "group")?.value ?? ",",
+    currency: KNOWN_CURRENCY[locale] ?? "",
+  }
+  localeCache.set(locale, resolved)
+  return resolved
 }
 
 export interface FormatOptions {

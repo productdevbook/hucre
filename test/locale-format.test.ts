@@ -56,15 +56,25 @@ describe("formatValue — fr-FR locale", () => {
     expect(formatValue(3.14, "0.00", { locale })).toBe("3,14")
   })
 
-  it("uses non-breaking space as thousands separator", () => {
+  // The separators come from Intl now rather than a four-entry table, so
+  // the expectation comes from Intl too. It used to be hard-coded as
+  // U+00A0; CLDR specifies U+202F (narrow no-break space) for French
+  // grouping, and pinning either literal would make the test a hostage to
+  // the runtime's ICU version.
+  const group = new Intl.NumberFormat(locale)
+    .formatToParts(1234567)
+    .find((p) => p.type === "group")!.value
+
+  it("uses the platform's thousands separator for fr-FR", () => {
     const result = formatValue(1234567, "#,##0", { locale })
-    // fr-FR uses \u00A0 (non-breaking space) as thousands separator
-    expect(result).toBe("1\u00A0234\u00A0567")
+    expect(result).toBe(`1${group}234${group}567`)
+    // Whatever ICU says, it is a space of some kind and not a comma.
+    expect(group).toMatch(/^\s$/u)
   })
 
   it("combines both separators", () => {
     const result = formatValue(9876.54, "#,##0.00", { locale })
-    expect(result).toBe("9\u00A0876,54")
+    expect(result).toBe(`9${group}876,54`)
   })
 })
 

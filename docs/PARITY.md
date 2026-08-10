@@ -272,8 +272,20 @@ you know.
 
 ## JSON / NDJSON
 
-The most symmetric formats in the library. Values, types and ISO dates
-round-trip in both the whole-string and streaming readers and writers.
+The most symmetric formats in the library. Values and types round-trip in
+both the whole-string and streaming readers and writers.
+
+ISO dates round-trip **under `typeInference`**, which is off by default.
+JSON already carries numbers and booleans, so the only type it genuinely
+cannot express is a date — and reviving one means deciding that a string
+which looks like a date was meant as one, which is the caller's call:
+
+```ts
+parseJson(json).data[0].when // "2024-01-15T00:00:00.000Z"
+parseJson(json, { typeInference: true }).data[0].when // Date
+```
+
+Same option, same default, same reasoning as `CsvReadOptions`.
 
 Nesting is the exception worth understanding. `flatten` turns
 `{user:{name}}` into `{"user.name"}` by default on read, and
