@@ -351,6 +351,7 @@ export type {
   ReadInput,
   SheetFilter,
   SheetFilterInfo,
+  ReadWarning,
   // Write
   WriteOptions,
   WriteSheet,

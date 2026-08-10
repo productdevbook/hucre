@@ -402,6 +402,8 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
       maxRows: options?.maxRows,
       range: options?.range,
       dynamicArrayCm,
+      sheetName: info.name,
+      onWarning: options?.onWarning,
     }
 
     const wsXml = decodeUtf8(await zip.extract(wsPath))

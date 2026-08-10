@@ -230,6 +230,34 @@ The streaming readers _do_ agree: `streamXlsxRows` and `streamOdsRows`
 both skip an entirely empty row and keep the true index on `StreamRow`,
 so a gap in the indexes is the signal.
 
+## The readers are lenient, and will tell you
+
+A corrupt reference does not throw. A cell pointing at a shared string
+the file does not have reads as `null`; a cell naming a format that is
+not there reads unstyled. That is the right default for a format you
+receive rather than control — half a sheet is usually more useful than an
+exception.
+
+It used to be the only mode, which made a damaged file indistinguishable
+from a clean one. `ReadOptions.onWarning` is the other half:
+
+```ts
+const warnings: ReadWarning[] = []
+const wb = await readXlsx(bytes, { onWarning: (w) => warnings.push(w) })
+
+// unresolved-shared-string — Cell A1 points at shared string 9999, which
+// the file does not have (3 present). Read as empty.
+```
+
+Each warning carries a `code`, a sentence, and the sheet and cell it came
+from. Nothing changes when the option is omitted, and a file hucre wrote
+produces none.
+
+Structural damage still throws: a missing `xl/workbook.xml`, or a
+worksheet part a sheet declares and the archive does not contain, is a
+`ParseError`. The difference is whether the answer would be _short_ or
+_wrong_.
+
 ## Read options, per reader
 
 `ReadOptions` is one interface for `readXlsx`, `readOds`, `readXlsb`,

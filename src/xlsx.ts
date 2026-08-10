@@ -60,6 +60,7 @@ export type {
   MergeRange,
   ReadInput,
   ReadOptions,
+  ReadWarning,
   Sheet,
   SheetChart,
   Sparkline,

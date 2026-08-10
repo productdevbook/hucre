@@ -2,6 +2,7 @@
 // Parses xl/worksheets/sheetN.xml into a Sheet object.
 
 import type {
+  ReadWarning,
   Sheet,
   Cell,
   CellValue,
@@ -50,6 +51,10 @@ export interface WorksheetContext {
   maxRows?: number
   /** Cell range filter (e.g. "A1:D10"). Only cells within this range are returned. */
   range?: string
+  /** Name of the sheet being parsed, so a warning can say where it was. */
+  sheetName?: string
+  /** Where a dropped reference is reported; see ReadOptions.onWarning. */
+  onWarning?: (warning: ReadWarning) => void
   /**
    * One-based `cm` indexes that xl/metadata.xml resolves to a
    * dynamic-array (XLDAPR) record. Undefined when the package ships no
@@ -1651,7 +1656,17 @@ function processCell(
         }
       } else {
         // Out-of-bounds SST index — return null (consistent with the
-        // streaming reader), not the raw index string.
+        // streaming reader), not the raw index string. Reported, because
+        // `null` here is otherwise indistinguishable from an empty cell.
+        ctx.onWarning?.({
+          code: "unresolved-shared-string",
+          message:
+            `Cell ${ref || `${row},${col}`} points at shared string ${valueText}, ` +
+            `which the file does not have (${ctx.sharedStrings.length} present). Read as empty.`,
+          sheet: ctx.sheetName,
+          row,
+          col,
+        })
         value = null
         cellType = "empty"
       }
@@ -1783,6 +1798,18 @@ function processCell(
       const style = resolveStyle(ctx.styles, styleIndex)
       if (Object.keys(style).length > 0) {
         cell.style = style
+      } else if (styleIndex >= ctx.styles.cellXfs.length) {
+        // The xf the cell names is not in the file, so the cell comes back
+        // unstyled — indistinguishable from one that never had a format.
+        ctx.onWarning?.({
+          code: "unresolved-style",
+          message:
+            `Cell ${ref || `${row},${col}`} points at cell format ${styleIndex}, ` +
+            `which the file does not have (${ctx.styles.cellXfs.length} present). Read unstyled.`,
+          sheet: ctx.sheetName,
+          row,
+          col,
+        })
       }
     }
     cells.set(`${row},${col}`, cell)

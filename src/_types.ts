@@ -1368,6 +1368,21 @@ export interface Workbook {
   timelineCaches?: TimelineCache[]
 }
 
+// ── Read diagnostics ───────────────────────────────────────────────
+
+/** What a reader had to drop, and where. */
+export interface ReadWarning {
+  /** What kind of problem this is, for programmatic handling. */
+  code: "unresolved-shared-string" | "unresolved-style" | "unresolved-dxf"
+  /** A sentence a person can act on. */
+  message: string
+  /** The sheet it happened in, when the reader knows. */
+  sheet?: string
+  /** 0-based cell position, when the problem is a cell's. */
+  row?: number
+  col?: number
+}
+
 // ── Read Options ───────────────────────────────────────────────────
 
 /**
@@ -1457,6 +1472,27 @@ export interface ReadOptions {
    * the caller has already allocated.
    */
   maxInputBytes?: number
+  /**
+   * Called for each thing a reader had to drop.
+   *
+   * The readers are lenient on purpose — a corrupt reference yields
+   * `null` rather than an exception, because a spreadsheet is a format
+   * you receive rather than one you control. But leniency used to be the
+   * *only* mode: a cell pointing at a shared string that is not there
+   * came back as `null`, indistinguishable from a cell that was
+   * genuinely empty, and nothing said which. See #439 §S.
+   *
+   * ```ts
+   * const warnings: ReadWarning[] = []
+   * const wb = await readXlsx(bytes, { onWarning: (w) => warnings.push(w) })
+   * if (warnings.length) console.warn(`${warnings.length} problem(s) in this file`)
+   * ```
+   *
+   * Nothing changes when it is omitted. This is a side channel, not part
+   * of the document, which is why it is a callback rather than a field on
+   * `Workbook`.
+   */
+  onWarning?: (warning: ReadWarning) => void
 }
 
 // ── Write Options ──────────────────────────────────────────────────
