@@ -50,6 +50,12 @@ the thing it points at rather than the test:
 writes. It ends with "Anything else is a bug", which is a commitment: if
 your change adds a loss, the page has to say so in the same PR.
 
+## Node 24 is the floor
+
+Do not write code that has to work below it — see CLAUDE.md. `engines`,
+the CI matrix and the release workflow all say 24, and they have to stay
+in step.
+
 ## Platform neutrality
 
 The library core uses Web APIs only — no `node:` imports, no `process`, no

@@ -27,11 +27,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The versions the toolchain runs on. pnpm 11 requires Node 22.13,
-        # so the package's *supported* floor is checked by the `runtime`
-        # job below against the built artifact instead — which is the more
-        # honest test anyway: what ships is dist/, not the dev setup.
-        node: [22, lts/*]
+        # Node 24 is the floor — see CLAUDE.md. `lts/*` is kept alongside
+        # the pinned version so a new LTS shows up here rather than in
+        # someone's install.
+        node: [24, lts/*]
     name: node ${{ matrix.node }}
     steps:
       - uses: actions/checkout@v5
@@ -64,7 +63,7 @@ jobs:
       - run: corepack enable
       - uses: actions/setup-node@v6
         with:
-          node-version: lts/*
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
@@ -72,39 +71,25 @@ jobs:
   runtime:
     # Does the *shipped* artifact run where the README says it does?
     #
-    # This is separate from `build` on purpose. The toolchain needs a
-    # recent Node (pnpm 11 requires 22.13), but what users install is
-    # dist/, and its floor is whatever Web APIs the code touches —
-    # CompressionStream, ReadableStream, crypto.subtle. So: build once on
-    # a version the toolchain likes, then run a smoke test under each
-    # runtime the package claims.
-    #
-    # Node 18 and Deno and Bun were all advertised and none was ever
-    # exercised.
+    # Separate from `build` because what users install is dist/, not the
+    # dev setup — and because Bun and Deno are advertised and were never
+    # exercised. Node itself is covered by the matrix above.
     runs-on: ubuntu-latest
     name: runtime ${{ matrix.runtime }}
     strategy:
       fail-fast: false
       matrix:
-        runtime: [node18, node20, bun, deno]
+        runtime: [bun, deno]
     steps:
       - uses: actions/checkout@v5
       - run: corepack enable
       - uses: actions/setup-node@v6
         with:
-          node-version: lts/*
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
-      - if: matrix.runtime == 'node18'
-        uses: actions/setup-node@v6
-        with:
-          node-version: 18
-      - if: matrix.runtime == 'node20'
-        uses: actions/setup-node@v6
-        with:
-          node-version: 20
       - if: matrix.runtime == 'bun'
         uses: oven-sh/setup-bun@v2
       - if: matrix.runtime == 'deno'
@@ -114,8 +99,6 @@ jobs:
 
       # A smoke test, not the suite: vitest is a Node harness, and the
       # question here is whether dist/ loads and works on this runtime.
-      - if: startsWith(matrix.runtime, 'node')
-        run: node --version && node scripts/smoke.mjs
       - if: matrix.runtime == 'bun'
         run: bun scripts/smoke.mjs
       - if: matrix.runtime == 'deno'

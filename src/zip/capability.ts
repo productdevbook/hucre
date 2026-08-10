@@ -1,9 +1,13 @@
 // ── Compression capability ───────────────────────────────────────────
 //
 // `deflate-raw` is the format a ZIP needs, and it is not the same
-// question as "does this runtime have CompressionStream". Node 18 has the
-// constructor and rejects `deflate-raw`: it shipped with `gzip` and
-// `deflate` only, and the raw format arrived in Node 20.
+// question as "does this runtime have CompressionStream". Node 18 had the
+// constructor and rejected `deflate-raw` — it shipped with `gzip` and
+// `deflate`, and the raw format arrived in Node 20.
+//
+// Node is no longer the case this defends against: the floor is 24 (see
+// CLAUDE.md). It stays because hucre runs in browsers and on Workers too,
+// where the same split exists and the version is not ours to choose.
 //
 // Four modules each kept their own memoized flag, and every one of them
 // probed the constructor's *existence*. The buffered writer got away with

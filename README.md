@@ -1757,7 +1757,7 @@ hucre works everywhere — no Node.js APIs (`fs`, `crypto`, `Buffer`) in core.
 
 | Runtime               | Status       |
 | --------------------- | ------------ |
-| Node.js 18+           | Full support |
+| Node.js 24+           | Full support |
 | Deno                  | Full support |
 | Bun                   | Full support |
 | Modern browsers       | Full support |
