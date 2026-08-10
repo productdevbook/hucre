@@ -416,16 +416,60 @@ export interface NamedRange {
 
 // ── Page Setup / Print ─────────────────────────────────────────────
 
-export type PaperSize =
+/**
+ * A paper size, either by name or by its raw OOXML `paperSize` code.
+ *
+ * The names cover what people ask for; the number is the escape hatch.
+ * Excel defines about 120 codes and hucre used to model nine, dropping
+ * anything else **silently** on read — so a workbook set to A6 lost its
+ * page size with no error and nothing in the parity statement. A code
+ * with no name here now round-trips as the number it is. See #439 §Q.
+ */
+export type PaperSize = PaperSizeName | (number & {})
+
+export type PaperSizeName =
   | "letter"
+  | "letterSmall"
+  | "tabloid"
+  | "ledger"
   | "legal"
+  | "statement"
+  | "executive"
   | "a3"
   | "a4"
+  | "a4Small"
   | "a5"
   | "b4"
   | "b5"
-  | "executive"
-  | "tabloid"
+  | "folio"
+  | "quarto"
+  | "note"
+  | "envelope9"
+  | "envelope10"
+  | "envelope11"
+  | "envelope12"
+  | "envelope14"
+  | "cSheet"
+  | "dSheet"
+  | "eSheet"
+  | "envelopeDL"
+  | "envelopeC5"
+  | "envelopeC3"
+  | "envelopeC4"
+  | "envelopeC6"
+  | "envelopeC65"
+  | "envelopeB4"
+  | "envelopeB5"
+  | "envelopeB6"
+  | "envelopeItaly"
+  | "envelopeMonarch"
+  | "envelopePersonal"
+  | "fanfoldUS"
+  | "fanfoldGermanStd"
+  | "fanfoldGermanLegal"
+  | "a6"
+  | "japanesePostcard"
+  | "japaneseDoublePostcard"
 
 export interface PageSetup {
   paperSize?: PaperSize

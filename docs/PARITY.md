@@ -64,7 +64,8 @@ hyperlinks with tooltips, comments, checkboxes, the full cell style model
 alignment field, number formats, protection), merges, data validations,
 all 15 conditional-rule types **including their dxf styles**, auto-filters
 with value filters, freeze and split panes, sheet protection, page setup
-including print areas and print titles, headers and footers, sheet views
+including print areas, print titles and every OOXML paper size (by
+name where hucre has one, by code otherwise), headers and footers, sheet views
 and tab colours, hidden and very-hidden sheets, tables, row and column
 definitions, manual page breaks, outline properties, sparklines, text
 boxes, background images, images, document properties, named ranges, the

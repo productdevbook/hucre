@@ -32,6 +32,7 @@ import type { ParsedStyles } from "./styles"
 import type { Relationship } from "./relationships"
 import { resolveStyle, isDateStyle } from "./styles"
 import { cloneCellStyle } from "../_style"
+import { PAPER_SIZE_REVERSE } from "./worksheet-writer"
 import { serialToDate } from "../_date"
 import { parseSax, decodeOoxmlEscapes } from "../xml/parser"
 import { MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
@@ -1859,17 +1860,9 @@ function parsePageMarginsAttrs(attrs: Record<string, string>): PageMargins {
 // ── Page Setup Parser ──────────────────────────────────────────────────
 
 /** Reverse map: XLSX paper size number → PaperSize string */
-const PAPER_SIZE_REVERSE: Record<number, PaperSize> = {
-  1: "letter",
-  3: "tabloid",
-  5: "legal",
-  7: "executive",
-  8: "a3",
-  9: "a4",
-  11: "a5",
-  12: "b4",
-  13: "b5",
-}
+// The name↔code table lives with the writer, so the two cannot disagree —
+// there used to be a second copy here, and keeping two tables in step is
+// exactly the kind of thing nobody checks. See #439 §Q.
 
 /**
  * Merge `<printOptions>` attributes into the sheet's page setup.
@@ -1898,8 +1891,8 @@ function parsePageSetupAttrs(attrs: Record<string, string>): PageSetup {
 
   if (attrs["paperSize"]) {
     const num = Number(attrs["paperSize"])
-    const name = PAPER_SIZE_REVERSE[num]
-    if (name) ps.paperSize = name
+    // A code with no name round-trips as the number rather than vanishing.
+    if (Number.isInteger(num) && num > 0) ps.paperSize = PAPER_SIZE_REVERSE[num] ?? num
   }
 
   if (attrs["orientation"] === "landscape" || attrs["orientation"] === "portrait") {

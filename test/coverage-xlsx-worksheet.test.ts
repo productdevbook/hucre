@@ -694,10 +694,16 @@ describe("conditional formatting", () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("page setup", () => {
-  it("ignores a paper size hucre has no name for", () => {
-    // The reverse map only covers the sizes the writer can emit; an
-    // unmapped number is dropped rather than surfaced as a raw code.
+  it("keeps a paper size hucre has no name for, as the code it is", () => {
+    // Dropping it lost the page size with no error and nothing in the
+    // parity statement. `PaperSize` admits a raw code, so an unnamed one
+    // round-trips as the number. See #439 §Q.
     const s = sheet(`<sheetData/><pageSetup paperSize="256" orientation="sideways" scale="80"/>`)
+    expect(s.pageSetup).toEqual({ paperSize: 256, scale: 80 })
+  })
+
+  it("still ignores a paper size that is not a usable code", () => {
+    const s = sheet(`<sheetData/><pageSetup paperSize="0" scale="80"/>`)
     expect(s.pageSetup).toEqual({ scale: 80 })
   })
 

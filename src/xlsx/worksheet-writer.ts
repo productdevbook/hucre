@@ -14,6 +14,7 @@ import type {
   PageMargins,
   HeaderFooter,
   PaperSize,
+  PaperSizeName,
   RichTextRun,
   FontStyle,
   Color,
@@ -1174,22 +1175,70 @@ export function collectHyperlinks(
 
 // ── Paper Size Map ──────────────────────────────────────────────────
 
-const PAPER_SIZE_MAP: Record<PaperSize, number> = {
+/**
+ * Named paper sizes → the OOXML `paperSize` code (ECMA-376 §18.3.1.63).
+ *
+ * A code with no name here is still writable and readable — `PaperSize`
+ * admits a raw number — so the nine names this used to hold are no longer
+ * the whole of what a sheet can say. See #439 §Q.
+ */
+export const PAPER_SIZE_MAP: Record<PaperSizeName, number> = {
   letter: 1,
+  letterSmall: 2,
+  tabloid: 3,
+  ledger: 4,
   legal: 5,
+  statement: 6,
+  executive: 7,
   a3: 8,
   a4: 9,
+  a4Small: 10,
   a5: 11,
   b4: 12,
   b5: 13,
-  executive: 7,
-  tabloid: 3,
+  folio: 14,
+  quarto: 15,
+  note: 18,
+  envelope9: 19,
+  envelope10: 20,
+  envelope11: 21,
+  envelope12: 22,
+  envelope14: 23,
+  cSheet: 24,
+  dSheet: 25,
+  eSheet: 26,
+  envelopeDL: 27,
+  envelopeC5: 28,
+  envelopeC3: 29,
+  envelopeC4: 30,
+  envelopeC6: 31,
+  envelopeC65: 32,
+  envelopeB4: 33,
+  envelopeB5: 34,
+  envelopeB6: 35,
+  envelopeItaly: 36,
+  envelopeMonarch: 37,
+  envelopePersonal: 38,
+  fanfoldUS: 39,
+  fanfoldGermanStd: 40,
+  fanfoldGermanLegal: 41,
+  a6: 70,
+  japanesePostcard: 43,
+  japaneseDoublePostcard: 69,
 }
 
-/** Reverse map: XLSX paper size number → PaperSize string */
-export const PAPER_SIZE_REVERSE: Record<number, PaperSize> = {}
+/** Reverse map: OOXML paper size code → the name, when there is one. */
+export const PAPER_SIZE_REVERSE: Record<number, PaperSizeName> = {}
 for (const [name, num] of Object.entries(PAPER_SIZE_MAP)) {
-  PAPER_SIZE_REVERSE[num] = name as PaperSize
+  PAPER_SIZE_REVERSE[num] = name as PaperSizeName
+}
+
+/** Resolve a `PaperSize` to the code that goes in the file. */
+export function paperSizeCode(size: PaperSize): number | undefined {
+  if (typeof size === "number") {
+    return Number.isInteger(size) && size > 0 ? size : undefined
+  }
+  return PAPER_SIZE_MAP[size as PaperSizeName]
 }
 
 // ── Page Margins Serialization ──────────────────────────────────────
@@ -1247,8 +1296,8 @@ function serializePrintOptions(ps: PageSetup | undefined): string {
 function serializePageSetup(ps: PageSetup): string {
   const attrs: Record<string, string | number> = {}
 
-  if (ps.paperSize) {
-    const num = PAPER_SIZE_MAP[ps.paperSize]
+  if (ps.paperSize !== undefined) {
+    const num = paperSizeCode(ps.paperSize)
     if (num !== undefined) {
       attrs["paperSize"] = num
     }

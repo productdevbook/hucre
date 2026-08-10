@@ -372,6 +372,7 @@ export type {
   Sparkline,
   SheetTextBox,
   PaperSize,
+  PaperSizeName,
   ValidationType,
   ValidationOperator,
   ConditionalRuleType,
