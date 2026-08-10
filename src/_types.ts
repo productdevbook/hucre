@@ -774,6 +774,22 @@ export interface Sheet {
   columns?: ColumnDef[]
   /** Row-level properties (keyed by 0-based row index) */
   rowDefs?: Map<number, RowDef>
+  /**
+   * Default row height in points, for rows with no `rowDefs` entry.
+   * Excel's own default is 15. Written to `<sheetFormatPr defaultRowHeight>`.
+   *
+   * Before this existed the writer emitted a hard-coded 15 and the reader
+   * looked at `<sheetFormatPr>` not at all, so a workbook whose default was
+   * 24 came back through readXlsx → writeXlsx with every unstyled row
+   * shortened. See #439 §X.
+   */
+  defaultRowHeight?: number
+  /**
+   * Default column width in characters, for columns with no `columns[]`
+   * entry. Written to `<sheetFormatPr defaultColWidth>`; absent means
+   * Excel picks its own from the default font.
+   */
+  defaultColWidth?: number
   merges?: MergeRange[]
   dataValidations?: DataValidation[]
   conditionalRules?: ConditionalRule[]
@@ -1447,6 +1463,22 @@ export interface WriteSheet {
   data?: Array<Record<string, CellValue | HyperlinkValue>>
   /** Detailed cell overrides (keyed by "row,col") */
   cells?: Map<string, Partial<Cell>>
+  /**
+   * Default row height in points, for rows with no `rowDefs` entry.
+   * Excel's own default is 15. Written to `<sheetFormatPr defaultRowHeight>`.
+   *
+   * Before this existed the writer emitted a hard-coded 15 and the reader
+   * looked at `<sheetFormatPr>` not at all, so a workbook whose default was
+   * 24 came back through readXlsx → writeXlsx with every unstyled row
+   * shortened. See #439 §X.
+   */
+  defaultRowHeight?: number
+  /**
+   * Default column width in characters, for columns with no `columns[]`
+   * entry. Written to `<sheetFormatPr defaultColWidth>`; absent means
+   * Excel picks its own from the default font.
+   */
+  defaultColWidth?: number
   merges?: MergeRange[]
   dataValidations?: DataValidation[]
   conditionalRules?: ConditionalRule[]

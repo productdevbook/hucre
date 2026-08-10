@@ -1001,6 +1001,8 @@ export function cloneSheet(sheet: Sheet, newName: string): Sheet {
   if (sheet.slicers) cloned.slicers = structuredClone(sheet.slicers)
   if (sheet.timelines) cloned.timelines = structuredClone(sheet.timelines)
   if (sheet.a11y) cloned.a11y = { ...sheet.a11y }
+  if (sheet.defaultRowHeight !== undefined) cloned.defaultRowHeight = sheet.defaultRowHeight
+  if (sheet.defaultColWidth !== undefined) cloned.defaultColWidth = sheet.defaultColWidth
 
   return cloned
 }

@@ -379,7 +379,16 @@ export function writeWorksheetXml(
   )
 
   // ── SheetFormatPr ──
-  parts.push(xmlSelfClose("sheetFormatPr", { defaultRowHeight: 15 }))
+  // `defaultRowHeight` is required by the schema, so 15 — Excel's own
+  // default — stands in when the sheet does not say. It used to be
+  // hard-coded, which meant a file whose default was 24 lost it on the way
+  // through. See #439 §X.
+  const formatPrAttrs: Record<string, string | number> = {
+    defaultRowHeight: sheet.defaultRowHeight ?? 15,
+  }
+  if (sheet.defaultRowHeight !== undefined) formatPrAttrs["customHeight"] = 1
+  if (sheet.defaultColWidth !== undefined) formatPrAttrs["defaultColWidth"] = sheet.defaultColWidth
+  parts.push(xmlSelfClose("sheetFormatPr", formatPrAttrs))
 
   // ── Columns ──
   if (sheet.columns && sheet.columns.length > 0) {
@@ -402,7 +411,26 @@ export function writeWorksheetXml(
         })
       }
 
-      if (effectiveWidth !== undefined || col.hidden || col.outlineLevel || col.collapsed) {
+      // A column format has to land on `<col style="N">` as well as on the
+      // cells. Stamping the cells alone made it look right for the rows
+      // hucre wrote and nowhere else: in Excel a column format applies to
+      // every cell in the column including ones nobody has typed in yet,
+      // so a "currency" column stopped being one the moment the user
+      // added a row. It also meant the format vanished on read, since the
+      // reader has only `<col>` to look at. See #439 §W.
+      const columnStyle: CellStyle | undefined =
+        col.numFmt && !col.style?.numFmt
+          ? { ...col.style, numFmt: col.numFmt }
+          : (col.style ?? undefined)
+      const columnStyleId = columnStyle ? styles.addStyle(columnStyle) : 0
+
+      if (
+        effectiveWidth !== undefined ||
+        col.hidden ||
+        col.outlineLevel ||
+        col.collapsed ||
+        columnStyleId !== 0
+      ) {
         const colAttrs: Record<string, string | number | boolean> = {
           min: i + 1,
           max: i + 1,
@@ -410,6 +438,9 @@ export function writeWorksheetXml(
         if (effectiveWidth !== undefined) {
           colAttrs["width"] = effectiveWidth
           colAttrs["customWidth"] = true
+        }
+        if (columnStyleId !== 0) {
+          colAttrs["style"] = columnStyleId
         }
         if (col.hidden) {
           colAttrs["hidden"] = true

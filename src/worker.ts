@@ -76,6 +76,8 @@ export interface SerializedSheet {
   veryHidden?: Sheet["veryHidden"]
   tables?: Sheet["tables"]
   a11y?: Sheet["a11y"]
+  defaultRowHeight?: Sheet["defaultRowHeight"]
+  defaultColWidth?: Sheet["defaultColWidth"]
   splitPane?: Sheet["splitPane"]
   rowBreaks?: Sheet["rowBreaks"]
   colBreaks?: Sheet["colBreaks"]
@@ -228,6 +230,8 @@ function serializeSheet(sheet: Sheet): SerializedSheet {
   // These used to be dropped on the way through, so "parse in a worker,
   // postMessage the result" handed the main thread a quietly poorer
   // workbook. See #439 §N.
+  if (sheet.defaultRowHeight !== undefined) out.defaultRowHeight = sheet.defaultRowHeight
+  if (sheet.defaultColWidth !== undefined) out.defaultColWidth = sheet.defaultColWidth
   if (sheet.splitPane) out.splitPane = sheet.splitPane
   if (sheet.rowBreaks) out.rowBreaks = sheet.rowBreaks
   if (sheet.colBreaks) out.colBreaks = sheet.colBreaks
@@ -408,6 +412,8 @@ function deserializeSheet(ss: SerializedSheet): Sheet {
   if (ss.tables) sheet.tables = ss.tables
   if (ss.a11y) sheet.a11y = ss.a11y
 
+  if (ss.defaultRowHeight !== undefined) sheet.defaultRowHeight = ss.defaultRowHeight
+  if (ss.defaultColWidth !== undefined) sheet.defaultColWidth = ss.defaultColWidth
   if (ss.splitPane) sheet.splitPane = ss.splitPane
   if (ss.rowBreaks) sheet.rowBreaks = ss.rowBreaks
   if (ss.colBreaks) sheet.colBreaks = ss.colBreaks

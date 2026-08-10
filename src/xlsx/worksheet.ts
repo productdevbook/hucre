@@ -31,6 +31,7 @@ import type { SharedString } from "./shared-strings"
 import type { ParsedStyles } from "./styles"
 import type { Relationship } from "./relationships"
 import { resolveStyle, isDateStyle } from "./styles"
+import { cloneCellStyle } from "../_style"
 import { serialToDate } from "../_date"
 import { parseSax, decodeOoxmlEscapes } from "../xml/parser"
 import { MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
@@ -242,6 +243,8 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
 
   // Column definitions (width, hidden, outlineLevel, collapsed) parsed from <col> elements
   const columnDefs: import("../_types").ColumnDef[] = []
+  let defaultRowHeight: number | undefined
+  let defaultColWidth: number | undefined
   let inCols = false
 
   // SAX parsing state
@@ -334,6 +337,15 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
             const hidden = attrs["hidden"] === "1" || attrs["hidden"] === "true"
             const outlineLevel = attrs["outlineLevel"] ? Number(attrs["outlineLevel"]) : undefined
             const collapsed = attrs["collapsed"] === "1" || attrs["collapsed"] === "true"
+            const bestFit = attrs["bestFit"] === "1" || attrs["bestFit"] === "true"
+            // `style` is the column's default cell format — the thing that
+            // makes a whole column currency, including the cells nobody has
+            // typed in. It was read by neither side; see #439 §W.
+            const styleIndex = attrs["style"] !== undefined ? Number(attrs["style"]) : undefined
+            const columnStyle =
+              ctx.readStyles && ctx.styles && styleIndex !== undefined && styleIndex >= 0
+                ? resolveStyle(ctx.styles, styleIndex)
+                : undefined
 
             // Expand column range (min and max are 1-based in OOXML)
             for (let c = minCol; c <= maxCol2; c++) {
@@ -349,12 +361,37 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
                 def.outlineLevel = outlineLevel
               }
               if (collapsed) def.collapsed = true
+              if (bestFit) def.autoWidth = true
+              if (columnStyle && Object.keys(columnStyle).length > 0) {
+                // Each column gets its own copy: `columnDefs` is the caller's
+                // to edit, and `resolveStyle` hands out shared records.
+                def.style = cloneCellStyle(columnStyle)
+              }
               if (Object.keys(def).length > 0) {
                 columnDefs[idx] = def
               }
             }
           }
           break
+        case "sheetFormatPr": {
+          const dh = attrs["defaultRowHeight"]
+          const dw = attrs["defaultColWidth"]
+          // Excel writes 15 whether or not the sheet means anything by it,
+          // so only a value that differs is a statement worth surfacing —
+          // otherwise every sheet would come back carrying a default it
+          // never set.
+          if (dh !== undefined) {
+            const height = Number(dh)
+            if (Number.isFinite(height) && height > 0 && height !== 15) {
+              defaultRowHeight = height
+            }
+          }
+          if (dw !== undefined) {
+            const widthValue = Number(dw)
+            if (Number.isFinite(widthValue) && widthValue > 0) defaultColWidth = widthValue
+          }
+          break
+        }
         case "sheetData":
           inSheetData = true
           break
@@ -1180,6 +1217,9 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
     sheet.cells = cells
   }
   // Attach column definitions (width, hidden, outlineLevel, collapsed)
+  if (defaultRowHeight !== undefined) sheet.defaultRowHeight = defaultRowHeight
+  if (defaultColWidth !== undefined) sheet.defaultColWidth = defaultColWidth
+
   if (columnDefs.some((c) => Object.keys(c).length > 0)) {
     sheet.columns = columnDefs
   }

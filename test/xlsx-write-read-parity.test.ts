@@ -281,6 +281,19 @@ const SHEET_FIELDS: { [K in keyof Required<WriteSheet>]: Entry<WriteSheet[K]> } 
     expected: { height: 30, outlineLevel: 1 },
   },
 
+  defaultRowHeight: {
+    // Not 15: that is Excel's own default, and the reader deliberately
+    // does not surface it — every sheet carries it whether or not the
+    // author meant anything by it.
+    value: 24,
+    read: (sheet) => sheet.defaultRowHeight,
+  },
+
+  defaultColWidth: {
+    value: 18,
+    read: (sheet) => sheet.defaultColWidth,
+  },
+
   outlineProperties: {
     value: { summaryBelow: false, summaryRight: false },
     read: (sheet) => sheet.outlineProperties,

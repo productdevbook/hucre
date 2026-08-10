@@ -50,6 +50,8 @@ const FULL_SHEET: Required<Sheet> = {
   cells: new Map<string, Cell>([["0,0", FULL_CELL]]),
   columns: [{ width: 12, style: { font: { name: "Arial" } } }],
   rowDefs: new Map([[0, { height: 30, hidden: true }]]),
+  defaultRowHeight: 24,
+  defaultColWidth: 18,
   merges: [{ startRow: 0, startCol: 0, endRow: 0, endCol: 1 }],
   dataValidations: [{ type: "list", range: "A1:A9", values: ["x", "y"] }],
   conditionalRules: [
