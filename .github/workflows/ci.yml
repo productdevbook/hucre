@@ -27,9 +27,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The package claims Node 18+. Nothing checked that, and the one
-        # job that ran was whatever `lts/*` resolved to on the day.
-        node: [18, 20, 22, lts/*]
+        # The versions the toolchain runs on. pnpm 11 requires Node 22.13,
+        # so the package's *supported* floor is checked by the `runtime`
+        # job below against the built artifact instead — which is the more
+        # honest test anyway: what ships is dist/, not the dev setup.
+        node: [22, lts/*]
     name: node ${{ matrix.node }}
     steps:
       - uses: actions/checkout@v5
@@ -67,14 +69,24 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
-  runtimes:
-    # The package advertises Deno and Bun. Neither was ever exercised.
+  runtime:
+    # Does the *shipped* artifact run where the README says it does?
+    #
+    # This is separate from `build` on purpose. The toolchain needs a
+    # recent Node (pnpm 11 requires 22.13), but what users install is
+    # dist/, and its floor is whatever Web APIs the code touches —
+    # CompressionStream, ReadableStream, crypto.subtle. So: build once on
+    # a version the toolchain likes, then run a smoke test under each
+    # runtime the package claims.
+    #
+    # Node 18 and Deno and Bun were all advertised and none was ever
+    # exercised.
     runs-on: ubuntu-latest
-    name: ${{ matrix.runtime }}
+    name: runtime ${{ matrix.runtime }}
     strategy:
       fail-fast: false
       matrix:
-        runtime: [bun, deno]
+        runtime: [node18, node20, bun, deno]
     steps:
       - uses: actions/checkout@v5
       - run: corepack enable
@@ -85,6 +97,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
+      - if: matrix.runtime == 'node18'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 18
+      - if: matrix.runtime == 'node20'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
       - if: matrix.runtime == 'bun'
         uses: oven-sh/setup-bun@v2
       - if: matrix.runtime == 'deno'
@@ -92,8 +112,10 @@ jobs:
         with:
           deno-version: v2.x
 
-      # A smoke test, not the suite: the point is that the built ESM loads
-      # and the core paths run on a runtime that is not Node.
+      # A smoke test, not the suite: vitest is a Node harness, and the
+      # question here is whether dist/ loads and works on this runtime.
+      - if: startsWith(matrix.runtime, 'node')
+        run: node --version && node scripts/smoke.mjs
       - if: matrix.runtime == 'bun'
         run: bun scripts/smoke.mjs
       - if: matrix.runtime == 'deno'
