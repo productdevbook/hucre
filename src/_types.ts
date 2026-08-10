@@ -196,6 +196,14 @@ export interface CellComment {
 export interface Cell {
   value: CellValue
   type: CellType
+  /**
+   * The cell's format.
+   *
+   * On a cell that came from a reader, the nested `font` / `fill` /
+   * `border` objects are **shared** with every other cell of the same
+   * format — see {@link ReadOptions.readStyles}. Copy with
+   * `cloneCellStyle` before mutating one cell's format in place.
+   */
   style?: CellStyle
   /**
    * Render this cell as an Excel 2024 native checkbox. Only meaningful for
@@ -1363,7 +1371,17 @@ export interface ReadOptions {
   sheets?: Array<number | string> | SheetFilter
   /** Date system override. Default: auto-detect from file */
   dateSystem?: "1900" | "1904" | "auto"
-  /** Whether to read styles. Default: false (faster without) */
+  /**
+   * Whether to read styles. Default: false (faster without).
+   *
+   * **A resolved style's parts are shared, not copied.** `xl/styles.xml`
+   * holds one font, fill and border record per distinct format, and every
+   * cell that indexes it gets that same object — copying per cell nearly
+   * doubles peak memory on a styled read for a guarantee most callers
+   * never need. So `cells.get(a).style.font === cells.get(b).style.font`
+   * whenever `a` and `b` share a format, and writing through one changes
+   * both. Use `cloneCellStyle` before editing a single cell's format.
+   */
   readStyles?: boolean
   /** Password for encrypted files */
   password?: string

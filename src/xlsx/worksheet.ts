@@ -1460,7 +1460,9 @@ function buildConditionalRule(
   if (dxfs && !Number.isNaN(dxfId)) {
     const dxf = dxfs[dxfId]
     // An empty <dxf/> carries no formatting — surfacing `{}` would claim
-    // a style the rule does not have.
+    // a style the rule does not have. Shared with any other rule pointing
+    // at the same dxfId, following the same contract as a resolved cell
+    // style; see resolveStyle in ./styles.ts.
     if (dxf && Object.keys(dxf).length > 0) rule.style = dxf
   }
 

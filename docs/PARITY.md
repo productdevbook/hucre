@@ -50,6 +50,35 @@ field to either interface fails `tsc` until it is registered — as a probe
 that round-trips, or as a one-way entry with its reason. That register,
 not this list, is the thing that stays current.
 
+### Styles read out of a file are shared, not copied
+
+`readXlsx(…, { readStyles: true })` gives every cell its own `CellStyle`
+wrapper, but the `font`, `fill`, `border`, `alignment` and `protection`
+objects inside it are **the parsed records themselves** — one per distinct
+format in `xl/styles.xml`, referenced by every cell that uses it. So
+
+```ts
+cells.get("0,0").style.font === cells.get("5,3").style.font // true, same format
+```
+
+and writing through one changes every cell that shares it. Copying per
+cell nearly doubles peak memory on a styled read — 407 MB against 787 MB
+over 720,000 styled cells — for a guarantee most callers never need,
+since a resolved style is normally read and not written through.
+
+Use `cloneCellStyle` before editing one cell's format:
+
+```ts
+import { cloneCellStyle } from "hucre"
+
+const mine = cloneCellStyle(cell.style!)
+mine.font!.bold = true
+cell.style = mine
+```
+
+The same holds for a conditional rule's `style`, which is the workbook's
+`<dxf>` record shared by every rule pointing at it.
+
 ### Read and round-trip only — no authoring API
 
 These are parsed into the model and preserved through `openXlsx` →

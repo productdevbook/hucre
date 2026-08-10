@@ -209,6 +209,9 @@ export {
 
 // ── Number Format ─────────────────────────────────────────────────
 export { formatValue } from "./_format"
+
+// ── Style Utilities ───────────────────────────────────────────────
+export { cloneCellStyle } from "./_style"
 export type { FormatOptions, LocaleFormat } from "./_format"
 
 // ── Builder Pattern ──────────────────────────────────────────────

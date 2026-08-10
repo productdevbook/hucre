@@ -4,6 +4,7 @@
 import type { Sheet, MergeRange, RowDef, Workbook, Cell, CellStyle, CellValue } from "./_types"
 import { parseCellRef } from "./xlsx/worksheet"
 import { rangeRef } from "./xlsx/worksheet-writer"
+import { cloneCellStyle } from "./_style"
 
 // ── Range Helpers ────────────────────────────────────────────────────
 
@@ -775,70 +776,9 @@ export function groupRows(sheet: Sheet, startRow: number, endRow: number, level:
 
 // ── Deep Clone Helpers ────────────────────────────────────────────────
 
-function cloneStyle(style: CellStyle): CellStyle {
-  const result: CellStyle = {}
-  if (style.font)
-    result.font = { ...style.font, color: style.font.color ? { ...style.font.color } : undefined }
-  if (style.fill) {
-    if (style.fill.type === "pattern") {
-      result.fill = {
-        type: "pattern",
-        pattern: style.fill.pattern,
-        fgColor: style.fill.fgColor ? { ...style.fill.fgColor } : undefined,
-        bgColor: style.fill.bgColor ? { ...style.fill.bgColor } : undefined,
-      }
-    } else {
-      result.fill = {
-        type: "gradient",
-        degree: style.fill.degree,
-        stops: style.fill.stops.map((s) => ({ position: s.position, color: { ...s.color } })),
-      }
-    }
-  }
-  if (style.border) {
-    result.border = {
-      ...style.border,
-      top: style.border.top
-        ? {
-            ...style.border.top,
-            color: style.border.top.color ? { ...style.border.top.color } : undefined,
-          }
-        : undefined,
-      right: style.border.right
-        ? {
-            ...style.border.right,
-            color: style.border.right.color ? { ...style.border.right.color } : undefined,
-          }
-        : undefined,
-      bottom: style.border.bottom
-        ? {
-            ...style.border.bottom,
-            color: style.border.bottom.color ? { ...style.border.bottom.color } : undefined,
-          }
-        : undefined,
-      left: style.border.left
-        ? {
-            ...style.border.left,
-            color: style.border.left.color ? { ...style.border.left.color } : undefined,
-          }
-        : undefined,
-      diagonal: style.border.diagonal
-        ? {
-            ...style.border.diagonal,
-            color: style.border.diagonal.color ? { ...style.border.diagonal.color } : undefined,
-          }
-        : undefined,
-    }
-  }
-  if (style.alignment) result.alignment = { ...style.alignment }
-  if (style.numFmt !== undefined) result.numFmt = style.numFmt
-  if (style.protection) result.protection = { ...style.protection }
-  return result
-}
-
 function cloneCell(cell: Cell): Cell {
   const result: Cell = { value: cell.value, type: cell.type }
-  if (cell.style) result.style = cloneStyle(cell.style)
+  if (cell.style) result.style = cloneCellStyle(cell.style)
   if (cell.formula !== undefined) result.formula = cell.formula
   if (cell.formulaResult !== undefined) result.formulaResult = cell.formulaResult
   if (cell.richText)
@@ -888,7 +828,7 @@ export function cloneSheet(sheet: Sheet, newName: string): Sheet {
   if (sheet.columns) {
     cloned.columns = sheet.columns.map((col) => ({
       ...col,
-      style: col.style ? cloneStyle(col.style) : undefined,
+      style: col.style ? cloneCellStyle(col.style) : undefined,
     }))
   }
 
@@ -918,7 +858,7 @@ export function cloneSheet(sheet: Sheet, newName: string): Sheet {
   if (sheet.conditionalRules) {
     cloned.conditionalRules = sheet.conditionalRules.map((rule) => {
       const clonedRule = { ...rule }
-      if (rule.style) clonedRule.style = cloneStyle(rule.style)
+      if (rule.style) clonedRule.style = cloneCellStyle(rule.style)
       if (rule.formula && Array.isArray(rule.formula)) clonedRule.formula = [...rule.formula]
       if (rule.colorScale) {
         clonedRule.colorScale = {

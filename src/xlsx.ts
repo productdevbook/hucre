@@ -35,6 +35,7 @@ export type {
 } from "./xlsx/stream-writer"
 
 // ── Sizing & theme helpers ─────────────────────────────────────────
+export { cloneCellStyle } from "./_style"
 export { calculateColumnWidth, measureValueWidth } from "./xlsx/auto-width"
 export { calculateRowHeight } from "./xlsx/auto-size"
 export { parseThemeColors, resolveThemeColor } from "./xlsx/theme"
