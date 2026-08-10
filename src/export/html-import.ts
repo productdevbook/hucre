@@ -3,6 +3,7 @@ import { parseSax } from "../xml/parser"
 import { XmlError, ParseError } from "../errors"
 import { inferType } from "../_infer"
 import { MAX_COL_INDEX, MAX_ROW_INDEX, MAX_SPAN_CELLS, MAX_TOTAL_CELLS } from "../limits"
+import { decodeHtmlEntities } from "./html-entities"
 
 /** Type marker `toHtml` writes as a CSS class on a cell. */
 type DeclaredType = "num" | "bool" | "date" | "null"
@@ -37,6 +38,20 @@ export interface HtmlImportOptions {
   classes?: boolean
   /** Class prefix those type classes were written with. Default: "hucre" */
   classPrefix?: string
+  /**
+   * Which `<table>` in the document to read, 0-based. Default: 0.
+   *
+   * A document with several tables used to have all of them concatenated
+   * into one sheet — rows appended, merges renumbered as though it were
+   * one table, and captions joined without a separator. Of the three
+   * possible behaviours (throw, take the first, concatenate) that was the
+   * one that produced plausible-looking wrong data, since a page with a
+   * nav table above the data table silently prepended the nav. See #439.
+   *
+   * Out of range yields an empty sheet, the same as a document with no
+   * table at all.
+   */
+  tableIndex?: number
 }
 
 /**
@@ -86,8 +101,12 @@ export function fromHtml(html: string, options?: HtmlImportOptions): Sheet {
   const useClasses = options?.classes !== false
   const classPrefix = options?.classPrefix ?? "hucre"
 
+  const wantedTable = options?.tableIndex ?? 0
+
   const rows: CellValue[][] = []
   const merges: MergeRange[] = []
+  /** Which of the emitted rows came from `<tfoot>`; see the reorder below. */
+  const fromTfoot: boolean[] = []
 
   // Track which cells are occupied by rowspan from previous rows.
   // Key: "row,col" → true
@@ -99,6 +118,17 @@ export function fromHtml(html: string, options?: HtmlImportOptions): Sheet {
   // 1 is the table being read; deeper markup contributes its text to the
   // cell that contains it, which is what a browser shows there.
   let tableDepth = 0
+  /** How many top-level tables have been opened, so `tableIndex` can pick one. */
+  let tableOrdinal = -1
+  /**
+   * Inside `<script>` or `<style>`. HTML5 parses both as raw text —
+   * nothing in them is markup — but an XML parser cannot know that, so a
+   * `</td>` inside a JavaScript string closed the cell and the script's
+   * source became its value. While this is set every tag and every run of
+   * text is ignored until the matching close. See #439 §AS.
+   */
+  let rawTextTag: string | null = null
+  let inTfoot = false
   let inRow = false
   let inCell = false
   let inCaption = false
@@ -149,7 +179,10 @@ export function fromHtml(html: string, options?: HtmlImportOptions): Sheet {
 
   function endRow(): void {
     inRow = false
-    if (rows.length <= MAX_ROW_INDEX) rows.push(currentRowCells)
+    if (rows.length <= MAX_ROW_INDEX) {
+      rows.push(currentRowCells)
+      fromTfoot.push(inTfoot)
+    }
     if (
       headerRow === undefined &&
       rowCellCount > 0 &&
@@ -180,7 +213,7 @@ export function fromHtml(html: string, options?: HtmlImportOptions): Sheet {
 
     if (col > MAX_COL_INDEX) return
 
-    const value = parseValue(currentCellText.trim(), currentCellType)
+    const value = parseValue(decodeHtmlEntities(currentCellText).trim(), currentCellType)
 
     // Place the value
     pushSlot(value)
@@ -248,14 +281,34 @@ export function fromHtml(html: string, options?: HtmlImportOptions): Sheet {
       onOpenTag(tag, attrs) {
         const local = tagLocal(tag)
 
+        // Raw text: nothing inside <script> or <style> is markup.
+        if (rawTextTag !== null) return
+        if (local === "script" || local === "style") {
+          rawTextTag = local
+          return
+        }
+
         if (local === "table") {
+          if (tableDepth === 0) tableOrdinal++
           tableDepth++
           return
         }
 
         // Depth 0 is markup around the table; depth 2+ is a nested table,
         // whose text keeps flowing into the enclosing cell through onText.
-        if (tableDepth !== 1) return
+        if (tableDepth !== 1 || tableOrdinal !== wantedTable) return
+
+        // <br> is a line break in the cell's text, not nothing. Dropping
+        // it ran two visible lines together into one word (#439 §AR).
+        if (local === "br") {
+          if (inCell) currentCellText += "\n"
+          return
+        }
+
+        if (local === "tfoot") {
+          inTfoot = true
+          return
+        }
 
         if (local === "caption" && !inCell) {
           inCaption = true
@@ -296,6 +349,7 @@ export function fromHtml(html: string, options?: HtmlImportOptions): Sheet {
       },
 
       onText(text) {
+        if (rawTextTag !== null) return
         if (inCell) {
           currentCellText += text
           return
@@ -306,18 +360,26 @@ export function fromHtml(html: string, options?: HtmlImportOptions): Sheet {
       onCloseTag(tag) {
         const local = tagLocal(tag)
 
+        if (rawTextTag !== null) {
+          // Only the matching close ends raw text. A </td> inside a script
+          // is script source, not the end of a cell.
+          if (local === rawTextTag) rawTextTag = null
+          return
+        }
+
         if (local === "table") {
-          if (tableDepth === 1) {
+          if (tableDepth === 1 && tableOrdinal === wantedTable) {
             // Nothing after this can close them, so flush what is open.
             if (inCell) closeCell()
             if (inRow) endRow()
             inThead = false
+            inTfoot = false
           }
           if (tableDepth > 0) tableDepth--
           return
         }
 
-        if (tableDepth !== 1) return
+        if (tableDepth !== 1 || tableOrdinal !== wantedTable) return
 
         if ((local === "td" || local === "th") && inCell) {
           closeCell()
@@ -337,6 +399,11 @@ export function fromHtml(html: string, options?: HtmlImportOptions): Sheet {
 
         if (local === "thead") {
           inThead = false
+          return
+        }
+
+        if (local === "tfoot") {
+          inTfoot = false
         }
       },
     })
@@ -351,11 +418,39 @@ export function fromHtml(html: string, options?: HtmlImportOptions): Sheet {
   if (inCell) closeCell()
   if (inRow) endRow()
 
+  // ── <tfoot> renders last, wherever it was declared ──
+  //
+  // HTML permits <tfoot> before <tbody> and every browser still paints it
+  // at the bottom — that ordering is the reason the element exists, since
+  // it lets a long table stream its footer first. Emitting rows in
+  // document order put the totals above the data they total (#439 §AU).
+  //
+  // Merges and the header index are remapped through the permutation. A
+  // rowspan reaching across the tfoot/tbody boundary cannot be made to
+  // mean anything after the move, and no real table has one.
+  if (fromTfoot.some(Boolean) && !fromTfoot.every(Boolean)) {
+    const order = [
+      ...rows.map((_, i) => i).filter((i) => !fromTfoot[i]),
+      ...rows.map((_, i) => i).filter((i) => fromTfoot[i]),
+    ]
+    const newIndexOf = new Map(order.map((oldIndex, newIndex) => [oldIndex, newIndex]))
+    const reordered = order.map((i) => rows[i]!)
+    rows.length = 0
+    rows.push(...reordered)
+    for (const merge of merges) {
+      const start = newIndexOf.get(merge.startRow)
+      const end = newIndexOf.get(merge.endRow)
+      if (start !== undefined) merge.startRow = start
+      if (end !== undefined) merge.endRow = end
+    }
+    if (headerRow !== undefined) headerRow = newIndexOf.get(headerRow) ?? headerRow
+  }
+
   // The two things a table says about itself that a sheet has somewhere to
   // put: which row is the header, and what the table is called. Both land
   // on a11y because that is where hucre already keeps them, and both are
   // what `audit` looks for.
-  const summary = caption.trim()
+  const summary = decodeHtmlEntities(caption).trim()
   const a11y: SheetA11y = {}
   if (summary !== "") a11y.summary = summary
   if (headerRow !== undefined) a11y.headerRow = headerRow

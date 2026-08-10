@@ -259,6 +259,13 @@ every value as a string, with no type-inference option.
 `a11y.summary`. Type CSS classes are honoured as declarations, so a
 string `"42"` written by `toHtml` comes back a string.
 
+Named HTML entities are decoded from the HTML 4.01 set plus `&apos;`; a
+reference outside it is left as written rather than guessed at. `<br>`
+becomes a newline. `<script>` and `<style>` are skipped as raw text, the
+way HTML5 parses them. `<tfoot>` is placed last however it was declared,
+matching where a browser renders it. A document with several tables reads
+the first unless `tableIndex` says otherwise.
+
 Not reconstructed: inline styles, the `<style>` block, `role` and
 `aria-label`. There is nowhere in `Sheet` for CSS to live, and inventing
 a place for it would be a bigger lie than saying HTML export is

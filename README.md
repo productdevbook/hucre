@@ -1206,10 +1206,17 @@ import { fromHtml } from "hucre"
 
 const sheet = fromHtml(scrapedHtml, {
   sheetName: "Scraped",
+  tableIndex: 0, // default: the first table in the document
   typeInference: true, // default: numbers, booleans and ISO dates from text
   preserveLeadingZeros: true, // default: "007" stays a string
 })
 ```
+
+Named HTML entities (`&nbsp;`, `&mdash;`, `&euro;`, …) are decoded, `<br>`
+becomes a newline inside the cell, `<script>` and `<style>` contents are
+skipped rather than read as text, and `<tfoot>` lands at the bottom of the
+sheet wherever it was declared — which is where a browser paints it. A
+document with several tables reads the first; pass `tableIndex` for another.
 
 It reads `<table>`, `<thead>`, `<tbody>`, `<tfoot>`, `<tr>`, `<td>`, `<th>`,
 `<caption>`, `colspan` and `rowspan`. Nested tables read as the text of the
