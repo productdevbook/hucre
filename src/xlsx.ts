@@ -36,6 +36,8 @@ export type {
 
 // ── Sizing & theme helpers ─────────────────────────────────────────
 export { cloneCellStyle } from "./_style"
+export { toWriteOptions, toWriteSheet } from "./write-model"
+export type { WriteModelDrop, ToWriteOptionsOptions } from "./write-model"
 export { calculateColumnWidth, measureValueWidth } from "./xlsx/auto-width"
 export { calculateRowHeight } from "./xlsx/auto-size"
 export { parseThemeColors, resolveThemeColor } from "./xlsx/theme"

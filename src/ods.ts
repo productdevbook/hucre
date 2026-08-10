@@ -6,6 +6,8 @@ export { writeOds } from "./ods/writer"
 export { streamOdsRows } from "./ods/stream"
 export type { OdsStreamRow } from "./ods/stream"
 export { readOdsObjects, writeOdsObjects } from "./ods/objects"
+export { toWriteOptions, toWriteSheet } from "./write-model"
+export type { WriteModelDrop, ToWriteOptionsOptions } from "./write-model"
 export type { OdsObjectsReadOptions, OdsObjectsResult, OdsObjectsWriteOptions } from "./ods/objects"
 
 // ── Shared types used by this entry point's signatures ──────────────

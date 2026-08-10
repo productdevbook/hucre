@@ -220,6 +220,10 @@ export { WorkbookBuilder, SheetBuilder } from "./builder"
 // ── Template Engine ──────────────────────────────────────────────
 export { fillTemplate } from "./template"
 
+// ── Read model → write model ─────────────────────────────────────
+export { toWriteOptions, toWriteSheet } from "./write-model"
+export type { WriteModelDrop, ToWriteOptionsOptions } from "./write-model"
+
 // ── Sheet Operations ──────────────────────────────────────────────
 export {
   insertRows,

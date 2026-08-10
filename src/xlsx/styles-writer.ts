@@ -10,7 +10,6 @@ import type {
   Color,
   FillStyle,
   FontStyle,
-  PatternFill,
 } from "../_types"
 import { xmlDocument, xmlElement, xmlSelfClose } from "../xml/writer"
 import { cloneBorder, cloneFill, cloneFont } from "../_style"

@@ -1,7 +1,7 @@
 // ── Sheet Operations ────────────────────────────────────────────────
 // In-memory row/column manipulation utilities for Sheet objects.
 
-import type { Sheet, MergeRange, RowDef, Workbook, Cell, CellStyle, CellValue } from "./_types"
+import type { Sheet, MergeRange, RowDef, Workbook, Cell, CellValue } from "./_types"
 import { parseCellRef } from "./xlsx/worksheet"
 import { rangeRef } from "./xlsx/worksheet-writer"
 import { cloneCellStyle } from "./_style"

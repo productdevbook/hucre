@@ -637,6 +637,36 @@ reads back with its direct formatting only.
 Widening the ODS model is open work; this table is the current contract,
 not a permanent one.
 
+### Read, edit, write
+
+`readXlsx` returns a `Workbook`; `writeXlsx` takes `WriteOptions`. They
+are different types — `Chart` is not `SheetChart`, `PivotTable` is not
+`WritePivotTable` — so `writeXlsx({ sheets: wb.sheets })` does not
+typecheck. `toWriteOptions` converts:
+
+```ts
+import { readXlsx, toWriteOptions, writeXlsx } from "hucre"
+
+const wb = await readXlsx(buffer)
+wb.sheets[0].rows[0][0] = "edited"
+
+const out = await writeXlsx(toWriteOptions(wb))
+```
+
+This is the **authoring** path, so it carries only what `WriteSheet` and
+`WriteOptions` describe. Pass `onDrop` to see what it could not:
+
+```ts
+toWriteOptions(wb, {
+  onDrop: ({ field, sheet, reason }) => console.warn(`dropped ${field}`, sheet, reason),
+})
+// dropped charts  Sheet1  the read model (`Chart`) and the write model …
+```
+
+Editing someone else's file rather than producing a new one? Use
+`openXlsx` / `saveXlsx` below instead — that path preserves the parts
+hucre does not regenerate, so nothing is dropped.
+
 ### Round-trip Preservation
 
 Open, modify, save — without losing charts, macros, or features hucre doesn't natively handle:
@@ -1683,33 +1713,34 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 
 ### XLSX
 
-| Function                           | Description                                                                         |
-| ---------------------------------- | ----------------------------------------------------------------------------------- |
-| `readXlsx(input, options?)`        | Parse XLSX from `Uint8Array \| ArrayBuffer \| ReadableStream<Uint8Array>`           |
-| `writeXlsx(options)`               | Generate XLSX, returns `Uint8Array`                                                 |
-| `readXlsxObjects(input, options?)` | Read sheet as `{ data, headers }` — mirror of CSV                                   |
-| `writeXlsxObjects(data, options?)` | Write objects to XLSX (auto-derives headers from keys)                              |
-| `openXlsx(input, options?)`        | Open for round-trip (preserves unknown parts)                                       |
-| `saveXlsx(workbook)`               | Save round-trip workbook back to XLSX                                               |
-| `streamXlsxRows(input, options?)`  | AsyncGenerator yielding rows one at a time                                          |
-| `writeXlsxStream(rows, options)`   | Constant-memory XLSX writing — returns a `ReadableStream<Uint8Array>`               |
-| `XlsxStreamWriter`                 | Incremental XLSX writing (`addRow`/`addObject`); auto-splits past `maxRowsPerSheet` |
-| `XLSX_MAX_ROWS_PER_SHEET`          | Excel hard row limit (1,048,576) — exported constant                                |
-| `parseExternalLink(xml, relsXml?)` | Parse `xl/externalLinks/externalLinkN.xml` → `ExternalLink`                         |
-| `parseCellImages(xml)`             | Parse `xl/cellimages.xml` → `ParsedCellImageRef[]` (WPS DISPIMG)                    |
-| `assembleCellImages(refs, media)`  | Combine parsed refs with resolved media bytes → `CellImage[]`                       |
-| `parseSlicers(xml)`                | Parse `xl/slicers/slicerN.xml` → `Slicer[]`                                         |
-| `parseSlicerCache(xml)`            | Parse `xl/slicerCaches/slicerCacheN.xml` → `SlicerCache \| undefined`               |
-| `parseTimelines(xml)`              | Parse `xl/timelines/timelineN.xml` → `Timeline[]`                                   |
-| `parseTimelineCache(xml)`          | Parse `xl/timelineCaches/timelineCacheN.xml` → `TimelineCache \| undefined`         |
-| `parsePivotTable(xml)`             | Parse `xl/pivotTables/pivotTableN.xml` → `PivotTable \| undefined`                  |
-| `parsePivotCacheDefinition(xml)`   | Parse `xl/pivotCache/pivotCacheDefinitionN.xml` → `PivotCache \| undefined`         |
-| `attachPivotCacheFields(pt, c)`    | Overlay `PivotCache.fieldNames` onto a `PivotTable.fields[].name`                   |
-| `parseChart(xml)`                  | Parse `xl/charts/chartN.xml` → `Chart \| undefined`                                 |
-| `cloneChart(source, options)`      | Convert a parsed `Chart` into a writer-ready `SheetChart`                           |
-| `chartKindToWriteKind(kind)`       | Map a read-side `ChartKind` onto its writable counterpart, if any                   |
-| `getCharts(workbook)`              | Enumerate every chart anchored on the workbook with its sheet context               |
-| `addChart(sheet, chart)`           | Append a `SheetChart` to a `WriteSheet`, lazily creating the array                  |
+| Function                           | Description                                                                             |
+| ---------------------------------- | --------------------------------------------------------------------------------------- |
+| `readXlsx(input, options?)`        | Parse XLSX from `Uint8Array \| ArrayBuffer \| ReadableStream<Uint8Array>`               |
+| `writeXlsx(options)`               | Generate XLSX, returns `Uint8Array`                                                     |
+| `readXlsxObjects(input, options?)` | Read sheet as `{ data, headers }` — mirror of CSV                                       |
+| `writeXlsxObjects(data, options?)` | Write objects to XLSX (auto-derives headers from keys)                                  |
+| `openXlsx(input, options?)`        | Open for round-trip (preserves unknown parts)                                           |
+| `saveXlsx(workbook)`               | Save round-trip workbook back to XLSX                                                   |
+| `streamXlsxRows(input, options?)`  | AsyncGenerator yielding rows one at a time                                              |
+| `writeXlsxStream(rows, options)`   | Constant-memory XLSX writing — returns a `ReadableStream<Uint8Array>`                   |
+| `toWriteOptions(workbook, opts?)`  | Convert a read `Workbook` into `WriteOptions`; `onDrop` reports what it could not carry |
+| `XlsxStreamWriter`                 | Incremental XLSX writing (`addRow`/`addObject`); auto-splits past `maxRowsPerSheet`     |
+| `XLSX_MAX_ROWS_PER_SHEET`          | Excel hard row limit (1,048,576) — exported constant                                    |
+| `parseExternalLink(xml, relsXml?)` | Parse `xl/externalLinks/externalLinkN.xml` → `ExternalLink`                             |
+| `parseCellImages(xml)`             | Parse `xl/cellimages.xml` → `ParsedCellImageRef[]` (WPS DISPIMG)                        |
+| `assembleCellImages(refs, media)`  | Combine parsed refs with resolved media bytes → `CellImage[]`                           |
+| `parseSlicers(xml)`                | Parse `xl/slicers/slicerN.xml` → `Slicer[]`                                             |
+| `parseSlicerCache(xml)`            | Parse `xl/slicerCaches/slicerCacheN.xml` → `SlicerCache \| undefined`                   |
+| `parseTimelines(xml)`              | Parse `xl/timelines/timelineN.xml` → `Timeline[]`                                       |
+| `parseTimelineCache(xml)`          | Parse `xl/timelineCaches/timelineCacheN.xml` → `TimelineCache \| undefined`             |
+| `parsePivotTable(xml)`             | Parse `xl/pivotTables/pivotTableN.xml` → `PivotTable \| undefined`                      |
+| `parsePivotCacheDefinition(xml)`   | Parse `xl/pivotCache/pivotCacheDefinitionN.xml` → `PivotCache \| undefined`             |
+| `attachPivotCacheFields(pt, c)`    | Overlay `PivotCache.fieldNames` onto a `PivotTable.fields[].name`                       |
+| `parseChart(xml)`                  | Parse `xl/charts/chartN.xml` → `Chart \| undefined`                                     |
+| `cloneChart(source, options)`      | Convert a parsed `Chart` into a writer-ready `SheetChart`                               |
+| `chartKindToWriteKind(kind)`       | Map a read-side `ChartKind` onto its writable counterpart, if any                       |
+| `getCharts(workbook)`              | Enumerate every chart anchored on the workbook with its sheet context                   |
+| `addChart(sheet, chart)`           | Append a `SheetChart` to a `WriteSheet`, lazily creating the array                      |
 
 ### ODS
 

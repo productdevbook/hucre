@@ -27,6 +27,33 @@ same file keeps them, whether or not hucre understands them.
 Pick the round-trip path when you are **editing someone's file**. Pick the
 authoring path when you are **producing a new one**.
 
+### Getting from one model to the other
+
+`readXlsx` returns a `Workbook` and `writeXlsx` takes `WriteOptions`, and
+neither is assignable to the other — `Chart` is not `SheetChart`, and
+`PivotTable` is not `WritePivotTable`. `toWriteOptions` converts, drops
+what the authoring model has no field for, and tells you what went:
+
+```ts
+import { readXlsx, toWriteOptions, writeXlsx } from "hucre"
+
+const wb = await readXlsx(bytes)
+wb.sheets[0].rows[0][0] = "edited"
+
+const out = await writeXlsx(
+  toWriteOptions(wb, {
+    onDrop: ({ field, sheet, reason }) => console.warn(`dropped ${field}`, sheet, reason),
+  }),
+)
+```
+
+It drops exactly the fields listed below — `slicers`, `timelines`,
+`threadedComments`, `charts`, `pivotTables` per sheet, and `themeColors`,
+`externalLinks`, `cellImages`, `persons`, `pivotCaches`, `slicerCaches`,
+`timelineCaches` per workbook — and `test/write-model.test.ts` derives
+that set from the types, so a new field with no counterpart fails until
+someone decides.
+
 ## XLSX
 
 ### Read + write, at parity
