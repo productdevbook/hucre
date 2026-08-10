@@ -173,19 +173,9 @@ export function reviveDates(value: unknown, maxDepth = 32, depth = 0): unknown {
 }
 
 /**
- * Compute the union of all keys appearing in a list of flattened rows,
- * preserving first-seen order.
+ * The union of every key appearing in a list of flattened rows, in
+ * first-seen order. Lives in `_objects` so the object writers can reach
+ * it without depending on the JSON module; re-exported here because this
+ * is where `hucre/json` has always published it from.
  */
-export function collectHeaders(rows: Record<string, CellValue>[]): string[] {
-  const seen = new Set<string>()
-  const headers: string[] = []
-  for (const row of rows) {
-    for (const key of Object.keys(row)) {
-      if (!seen.has(key)) {
-        seen.add(key)
-        headers.push(key)
-      }
-    }
-  }
-  return headers
-}
+export { collectHeaders } from "../_objects"

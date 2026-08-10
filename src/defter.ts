@@ -14,7 +14,7 @@ import type {
   TableDefinition,
   TableColumn,
 } from "./_types"
-import { rowsToObjects, selectSheet } from "./_objects"
+import { collectHeaders, rowsToObjects, selectSheet } from "./_objects"
 import { readXlsx } from "./xlsx/reader"
 import { readXlsb, looksLikeXlsb } from "./xlsx/xlsb/reader"
 import { readXls, looksLikeXls } from "./xls/reader"
@@ -268,8 +268,8 @@ export async function writeObjects(
     })
   }
 
-  // Infer columns from first object's keys
-  const keys = Object.keys(data[0]!)
+  // Column set is the union of every record's keys, not just the first's.
+  const keys = collectHeaders(data)
 
   // Build rows: header row + data rows
   const rows: CellValue[][] = []

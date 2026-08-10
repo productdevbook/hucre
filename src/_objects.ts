@@ -115,3 +115,26 @@ export function selectSheet(workbook: Workbook, selector: number | string): Shee
 
   return sheet
 }
+
+/**
+ * The union of every key appearing in a list of objects, in first-seen
+ * order.
+ *
+ * The object writers used to take their column set from `data[0]` alone,
+ * so any key absent from the first record — an optional field, a column
+ * that appears halfway through an export — was dropped along with the
+ * rows that only had it. See #439.
+ */
+export function collectHeaders(rows: Record<string, CellValue>[]): string[] {
+  const seen = new Set<string>()
+  const headers: string[] = []
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      if (!seen.has(key)) {
+        seen.add(key)
+        headers.push(key)
+      }
+    }
+  }
+  return headers
+}

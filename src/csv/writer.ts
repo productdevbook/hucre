@@ -1,6 +1,7 @@
 import type { CellValue, CsvWriteOptions } from "../_types"
 import { escapeFormula } from "./formula"
 import { formatDate as formatExcelDate } from "../_date"
+import { collectHeaders } from "../_objects"
 
 // ── BOM constant ─────────────────────────────────────────────────────
 
@@ -100,13 +101,13 @@ export function writeCsvObjects(
     if (data.length === 0) {
       return opts.bom ? UTF8_BOM : ""
     }
-    headers = Object.keys(data[0]!)
+    headers = collectHeaders(data)
   } else {
     // headers === false — no header row, but we still need column order
     if (data.length === 0) {
       return opts.bom ? UTF8_BOM : ""
     }
-    headers = Object.keys(data[0]!)
+    headers = collectHeaders(data)
     // Convert to rows and write without headers
     const rows: CellValue[][] = data.map((obj) =>
       headers.map((key) => {

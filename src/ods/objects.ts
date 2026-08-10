@@ -2,7 +2,7 @@
 // Header-row-based read/write helpers that mirror parseCsvObjects ergonomics.
 
 import type { CellValue, ReadInput, ReadOptions, WriteOutput } from "../_types"
-import { rowsToObjects, selectSheet } from "../_objects"
+import { collectHeaders, rowsToObjects, selectSheet } from "../_objects"
 import { readOds } from "./reader"
 import { writeOds } from "./writer"
 
@@ -91,7 +91,7 @@ export async function writeOdsObjects(
   const sheetName = options?.sheetName ?? "Sheet1"
   const writeHeaders = options?.writeHeaders ?? true
 
-  const headers = options?.headers ?? (data.length > 0 ? Object.keys(data[0]!) : [])
+  const headers = options?.headers ?? collectHeaders(data)
 
   const rows: CellValue[][] = []
   if (writeHeaders) {
