@@ -1200,6 +1200,21 @@ const copy = cloneSheet(sheet, "Copy") // Deep clone
 moveSheet(workbook, 0, 2) // Reorder sheets
 ```
 
+`insertRows`, `deleteRows`, `insertColumns` and `deleteColumns` move the
+references too — formula text, the formulas inside data validations and
+conditional rules, sparkline ranges, page breaks and text-box anchors —
+so a formula below an insertion still points at its own arguments. A
+reference into a deleted row becomes `#REF!`; a range the deletion clips
+shrinks; a reference qualified with another sheet is left alone.
+
+Two limits worth knowing:
+
+- **Workbook-level references are out of reach.** These functions take a
+  `Sheet`, so `Workbook.namedRanges`, defined names, external-link caches
+  and pivot caches cannot be updated from here.
+- **`sortRows` does not rewrite formulas.** Sorting has no correct answer
+  for a relative reference, which is why Excel warns about it too.
+
 ### HTML & Markdown Export
 
 ```ts

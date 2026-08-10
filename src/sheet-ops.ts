@@ -6,6 +6,7 @@ import { parseCellRef } from "./xlsx/worksheet"
 import { rangeRef } from "./xlsx/worksheet-writer"
 import { cloneCellStyle } from "./_style"
 import { InvalidArgumentError } from "./errors"
+import { shiftFormula, shiftRangeRef, type RefShift } from "./_refs"
 
 // ── Range Helpers ────────────────────────────────────────────────────
 
@@ -51,6 +52,102 @@ function shiftRangeCols(range: string, threshold: number, delta: number): string
   if (r.startCol >= threshold) r.startCol += delta
   if (r.endCol >= threshold) r.endCol += delta
   return buildRange(r)
+}
+
+// ── Reference maintenance ────────────────────────────────────────────
+
+/**
+ * Move everything on a sheet that *names* a position rather than
+ * occupying one: formula text, the formulas inside data validations and
+ * conditional rules, sparkline ranges, page breaks and text-box anchors.
+ *
+ * The cells themselves are moved by the caller; this is the other half,
+ * and it was missing entirely. A formula below an insertion still pointed
+ * where its arguments used to be, which is the one thing "insert a row"
+ * is supposed to take care of. See #439 §D.
+ *
+ * Not covered, and not coverable from here: `Workbook.namedRanges`,
+ * defined names, external-link caches and pivot caches all live on the
+ * workbook, and these operations are handed a `Sheet`.
+ */
+function shiftReferences(sheet: Sheet, shift: RefShift): void {
+  if (sheet.cells) {
+    for (const cell of sheet.cells.values()) {
+      if (cell.formula) cell.formula = shiftFormula(cell.formula, shift)
+      if (cell.formulaRef) cell.formulaRef = shiftFormula(cell.formulaRef, shift)
+    }
+  }
+
+  if (sheet.dataValidations) {
+    for (const dv of sheet.dataValidations) {
+      if (dv.formula1) dv.formula1 = shiftFormula(dv.formula1, shift)
+      if (dv.formula2) dv.formula2 = shiftFormula(dv.formula2, shift)
+    }
+  }
+
+  if (sheet.conditionalRules) {
+    for (const rule of sheet.conditionalRules) {
+      if (Array.isArray(rule.formula)) {
+        rule.formula = rule.formula.map((f) => shiftFormula(f, shift))
+      } else if (typeof rule.formula === "string") {
+        rule.formula = shiftFormula(rule.formula, shift)
+      }
+    }
+  }
+
+  if (sheet.sparklines) {
+    // A sparkline whose whole source was deleted has nothing left to draw.
+    sheet.sparklines = sheet.sparklines.filter((sparkline) => {
+      const dataRange = shiftRangeRef(sparkline.dataRange, shift)
+      if (dataRange === undefined) return false
+      sparkline.dataRange = dataRange
+      const location = shiftRangeRef(sparkline.location, shift)
+      if (location === undefined) return false
+      sparkline.location = location
+      return true
+    })
+  }
+
+  const breaks = shift.axis === "row" ? sheet.rowBreaks : sheet.colBreaks
+  if (breaks) {
+    const moved: number[] = []
+    for (const at of breaks) {
+      const next = shiftIndex(at, shift)
+      if (next !== null && !moved.includes(next)) moved.push(next)
+    }
+    moved.sort((a, b) => a - b)
+    if (shift.axis === "row") sheet.rowBreaks = moved
+    else sheet.colBreaks = moved
+  }
+
+  if (sheet.textBoxes) {
+    for (const box of sheet.textBoxes) {
+      shiftAnchor(box.anchor, shift)
+    }
+  }
+}
+
+/** One index, or `null` when the row or column it names was deleted. */
+function shiftIndex(value: number, shift: RefShift): number | null {
+  if (shift.delta > 0) return value >= shift.at ? value + shift.delta : value
+  const removed = -shift.delta
+  if (value >= shift.at + removed) return value - removed
+  if (value >= shift.at) return null
+  return value
+}
+
+/** Move a drawing anchor's corners, clamping one that lands in the gap. */
+function shiftAnchor(
+  anchor: { from: { row: number; col: number }; to?: { row: number; col: number } },
+  shift: RefShift,
+): void {
+  const key = shift.axis === "row" ? "row" : "col"
+  const from = shiftIndex(anchor.from[key], shift)
+  anchor.from[key] = from ?? shift.at
+  if (anchor.to) {
+    const to = shiftIndex(anchor.to[key], shift)
+    anchor.to[key] = to ?? shift.at
+  }
 }
 
 // ── Row Width Helper ─────────────────────────────────────────────────
@@ -172,6 +269,8 @@ export function insertRows(sheet: Sheet, rowIndex: number, count: number): void 
       }
     }
   }
+
+  shiftReferences(sheet, { axis: "row", at: rowIndex, delta: count })
 }
 
 // ── Delete Rows ──────────────────────────────────────────────────────
@@ -330,6 +429,8 @@ export function deleteRows(sheet: Sheet, rowIndex: number, count: number): void 
       }
     }
   }
+
+  shiftReferences(sheet, { axis: "row", at: rowIndex, delta: -count })
 }
 
 /**
@@ -451,6 +552,8 @@ export function insertColumns(sheet: Sheet, colIndex: number, count: number): vo
       }
     }
   }
+
+  shiftReferences(sheet, { axis: "col", at: colIndex, delta: count })
 }
 
 // ── Delete Columns ───────────────────────────────────────────────────
@@ -593,6 +696,8 @@ export function deleteColumns(sheet: Sheet, colIndex: number, count: number): vo
       }
     }
   }
+
+  shiftReferences(sheet, { axis: "col", at: colIndex, delta: -count })
 }
 
 /**
