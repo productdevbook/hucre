@@ -15,7 +15,7 @@ import type {
   FillPattern,
 } from "../_types"
 import { parseXml } from "../xml/parser"
-import { isDateFormat } from "../_date"
+import { isBuiltinDateFormatId, isDateFormat } from "../_date"
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -91,14 +91,6 @@ const BUILTIN_NUM_FMTS: Record<number, string> = {
   48: "##0.0E+0",
   49: "@",
 }
-
-// ── Date Format Detection ────────────────────────────────────────────
-
-/** Built-in format IDs that represent date/time formats */
-const DATE_FMT_IDS = new Set([
-  14, 15, 16, 17, 18, 19, 20, 21, 22, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 45, 46, 47, 50, 51,
-  52, 53, 54, 55, 56, 57, 58,
-])
 
 // ── Parser ───────────────────────────────────────────────────────────
 
@@ -615,7 +607,7 @@ export function isDateStyle(styles: ParsedStyles, styleIndex: number): boolean {
 
   // A workbook may redefine a built-in id (ECMA-376 §18.8.30), and
   // resolveStyle already honours that — `numFmts.get(id) ?? BUILTIN[id]`.
-  // Consulting DATE_FMT_IDS first disagreed with it: a file redefining
+  // Consulting the built-in id table first disagreed with it: a file redefining
   // id 14 as "#,##0" resolved to a numeric format *and* reported as a
   // date, so the reader converted the serial to a Date and then formatted
   // it numerically. The reverse — id 3 redefined as "yyyy-mm-dd" — was
@@ -627,7 +619,7 @@ export function isDateStyle(styles: ParsedStyles, styleIndex: number): boolean {
 
   // Built-in date format IDs, several of which are locale-dependent and
   // carry no format string to inspect.
-  if (DATE_FMT_IDS.has(numFmtId)) {
+  if (isBuiltinDateFormatId(numFmtId)) {
     return true
   }
 

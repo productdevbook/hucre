@@ -9,10 +9,8 @@ import { ParseError } from "../errors"
 import { MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
 import { readInputToUint8Array } from "../_input"
 import { readCfb } from "../xlsx/crypto/cfb"
-import { isDateFormat, serialToDate } from "../_date"
+import { isBuiltinDateFormatId, isDateFormat, serialToDate } from "../_date"
 import { decodeRk, parseRecords, parseSst, Reader, SID, type BiffRecord } from "./biff"
-
-const BUILTIN_DATE_IDS = new Set([14, 15, 16, 17, 18, 19, 20, 21, 22, 45, 46, 47])
 
 const ERROR_TEXT: Record<number, string> = {
   0x00: "#NULL!",
@@ -146,7 +144,7 @@ function parseWorkbookRecords(stream: Uint8Array, options?: ReadOptions): Workbo
   }
 
   const dateXf = xfFmtIds.map((id) => {
-    if (BUILTIN_DATE_IDS.has(id)) return true
+    if (isBuiltinDateFormatId(id)) return true
     const code = fmtCodes.get(id)
     return code ? isDateFormat(code) : false
   })

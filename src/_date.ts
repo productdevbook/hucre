@@ -144,6 +144,22 @@ const DATE_FORMAT_IDS = new Set([
 ])
 
 /**
+ * Whether a built-in `numFmtId` names a date or time format.
+ *
+ * The set covers ECMA-376 §18.8.30's date and time built-ins, including
+ * the CJK block (27-36) and the Thai/Chinese/Korean extended block
+ * (50-58). Those two blocks carry no `formatCode` in the file, so a
+ * reader that misses them has no second chance: the cell falls through
+ * to "not a date" and the serial number is handed back raw.
+ *
+ * The XLS and XLSB readers each used to keep a 12-entry table of their
+ * own, missing both blocks — see #439.
+ */
+export function isBuiltinDateFormatId(id: number): boolean {
+  return DATE_FORMAT_IDS.has(id)
+}
+
+/**
  * Check if an Excel number format string represents a date/time format.
  * Used to distinguish dates from plain numbers when reading cells.
  *

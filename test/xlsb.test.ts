@@ -88,18 +88,23 @@ const NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 const wbProp = (date1904: boolean): Uint8Array =>
   rec(BrtWbProp, concat([u32(date1904 ? 1 : 0), u32(0), nwstr(null)]))
 
-async function buildXlsb(opts: { date1904?: boolean } = {}): Promise<Uint8Array> {
+async function buildXlsb(
+  opts: { date1904?: boolean; dateFmtId?: number } = {},
+): Promise<Uint8Array> {
   // Shared strings: 0:"Name" 1:"Score" 2:"Ada"
   const sst = concat([
     rec(BrtSSTItem, concat([[0], wstr("Name")])),
     rec(BrtSSTItem, concat([[0], wstr("Score")])),
     rec(BrtSSTItem, concat([[0], wstr("Ada")])),
   ])
-  // Styles: xf0 general (iFmt 0), xf1 date (iFmt 14 builtin)
+  // Styles: xf0 general (iFmt 0), xf1 date (a built-in date iFmt).
+  // The id is a parameter because the built-in date set is wider than the
+  // familiar 14-22 block — see the CJK case below.
+  const dateFmtId = opts.dateFmtId ?? 14
   const styles = concat([
     rec(BrtBeginCellXFs, u32(2)),
     rec(BrtXF, concat([u16(0), u16(0), u16(0), u16(0), u16(0), [0, 0]])),
-    rec(BrtXF, concat([u16(0), u16(14), u16(0), u16(0), u16(0), [0, 0]])),
+    rec(BrtXF, concat([u16(0), u16(dateFmtId), u16(0), u16(0), u16(0), [0, 0]])),
     rec(BrtEndCellXFs, []),
   ])
   // Worksheet rows.
@@ -245,6 +250,33 @@ describe("XLSB reader", () => {
         dateSystem: "1904",
       })
       expect(serial45000(pinned1904)).toBe("2027-03-16T00:00:00.000Z")
+    })
+  })
+
+  // ── #439: the built-in date set is wider than 14-22 / 45-47 ──────────
+  // The CJK block (27-36) and the Thai/Chinese/Korean block (50-58) are
+  // date and time formats too, and they carry no formatCode in the file —
+  // so a reader that does not know them has no fallback and hands back the
+  // raw serial. This reader used to keep a 12-entry table of its own.
+  describe("built-in date format ids outside the familiar block", () => {
+    const CJK_AND_EXTENDED = [
+      27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 50, 51, 52, 53, 54, 55, 56, 57, 58,
+    ]
+
+    for (const id of CJK_AND_EXTENDED) {
+      it(`reads a cell styled with built-in format ${id} as a Date`, async () => {
+        const wb = await readXlsb(await buildXlsb({ dateFmtId: id }))
+
+        expect(wb.sheets[0].rows[1][3]).toBeInstanceOf(Date)
+      })
+    }
+
+    it("still treats a non-date built-in as a number", async () => {
+      // 3 is "#,##0" — a numeric built-in, and one that carries no
+      // formatCode either, so it exercises the same fallback path.
+      const wb = await readXlsb(await buildXlsb({ dateFmtId: 3 }))
+
+      expect(wb.sheets[0].rows[1][3]).toBe(45000)
     })
   })
 
