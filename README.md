@@ -180,7 +180,7 @@ const buffer = await writeXlsx({
 })
 ```
 
-Features: cell styles, auto column widths, merged cells, freeze/split panes, auto-filter (with per-column value filters — `<filters><filter val="…"/></filters>`; custom/dynamic/colour criteria are not emitted), data validation, hyperlinks, images (PNG/JPEG/GIF/SVG/WebP), comments, tables, conditional formatting (13 rule types — see the footnote above), named ranges, print settings, page breaks, sheet protection, workbook protection, rich text, shared/array/dynamic formulas, sparklines, textboxes, background images, number formats, hidden sheets, Excel 2024 native checkboxes, HTML/Markdown/JSON/TSV export, template engine.
+Features: cell styles, auto column widths, merged cells, freeze/split panes, auto-filter (with per-column value filters — `<filters><filter val="…"/></filters>`; custom/dynamic/colour criteria are not emitted), data validation, hyperlinks, images (PNG/JPEG/GIF/SVG/WebP), comments, tables, conditional formatting (all 15 rule types, with their dxf styles), named ranges, print settings, page breaks, sheet protection, workbook protection, rich text, shared/array/dynamic formulas, sparklines, textboxes, background images, number formats, hidden sheets, Excel 2024 native checkboxes, HTML/Markdown/JSON/TSV export, template engine.
 
 ### Auto Column Width
 
@@ -1648,7 +1648,7 @@ Schema field options:
 
 ### Date Utilities
 
-Timezone-safe Excel date serial number conversion:
+Excel serial number conversion, in UTC:
 
 ```ts
 import { serialToDate, dateToSerial, isDateFormat, formatDate } from "hucre"
@@ -1660,7 +1660,30 @@ isDateFormat("#,##0.00") // false
 formatDate(new Date(), "yyyy-mm-dd") // "2026-03-24"
 ```
 
-Handles the Lotus 1-2-3 bug (serial 60), 1900/1904 date systems, and time fractions correctly.
+**Every date path in hucre reads UTC components**, which is what makes
+the conversions consistent between the readers, the writers and
+`formatValue`. It is also the one thing worth knowing before you build a
+`Date` yourself:
+
+```ts
+dateToSerial(new Date("2024-01-15")) // 45306    — parsed as UTC midnight
+dateToSerial(new Date(2024, 0, 15)) //  45305.875 in UTC+3
+
+// The second is *local* midnight, which is 21:00 the previous day in UTC —
+// so Excel shows "14 Jan 2024 21:00". Build the instant you mean:
+dateToSerial(new Date(Date.UTC(2024, 0, 15))) // 45306
+```
+
+hucre converts the instant, not the wall-clock date; it does not guess a
+calendar day out of a timezone. Pass `Date.UTC(...)` when you mean a day.
+
+Both date systems are handled, and so is the Lotus 1-2-3 phantom
+29 February 1900 — with one caveat worth stating, since Excel's own model
+is contradictory here. Serial 60 is that phantom day, and it has no real
+instant to map to, so `serialToDate(60)` and `serialToDate(59)` both give
+28 February 1900 and `dateToSerial` sends that back as 59. A workbook
+that actually contains serial 60 therefore shifts by a day on rewrite.
+Excel produces it only for files inherited from Lotus.
 
 ## Platform Support
 
@@ -1699,7 +1722,7 @@ hucre (~114 KB gzipped for the whole barrel; 2–64 KB for the common
 ├── cell-utils      parseCellRef, colToLetter, parseRange, isInRange
 ├── image           imageFromBase64 utility
 ├── worker          Web Worker serialization helpers
-├── _date           Timezone-safe serial ↔ Date, Lotus bug, 1900/1904
+├── _date           UTC serial ↔ Date, Lotus bug, 1900/1904
 ├── _format         Number format renderer (locale-aware)
 ├── _schema         Schema validation, type coercion, error collection
 └── cli             Convert, inspect, validate (citty + consola)

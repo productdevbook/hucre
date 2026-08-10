@@ -48,6 +48,11 @@ export function serialToDate(serial: number, is1904?: boolean): Date {
   // - Serial 60 = phantom "Feb 29, 1900"
   // - Serials > 60: subtract 1 to account for the phantom day
 
+  // Serial 60 is the phantom 29 February 1900, a date with no instant to
+  // map to. It collapses onto 28 February — the same Date serial 59 gives —
+  // so a workbook that really contains 60 shifts by a day on rewrite.
+  // Documented in docs/PARITY.md rather than papered over: any other
+  // mapping would put a real date on a serial Excel does not agree exists.
   if (serial === LOTUS_BUG_SERIAL) {
     // Return "Feb 29, 1900" even though it doesn't exist historically.
     // Excel treats this as a real date, so we must too.
@@ -72,9 +77,18 @@ export function serialToDate(serial: number, is1904?: boolean): Date {
 
 /**
  * Convert a JavaScript Date to an Excel serial number.
- * Uses UTC components of the date.
  *
- * @param date - JavaScript Date (UTC components are used)
+ * The **instant** is converted, against a UTC epoch — not the wall-clock
+ * date the machine would show. `new Date(2024, 0, 15)` is local midnight,
+ * which in UTC+3 is 21:00 on the 14th, and comes out as 45305.875 rather
+ * than 45306. That is not a bug to route around: hucre reads UTC
+ * components on every date path, which is what keeps the readers, the
+ * writers and `formatValue` consistent with each other.
+ *
+ * Build the instant you mean — `Date.UTC(2024, 0, 15)` — when you mean a
+ * calendar day.
+ *
+ * @param date - JavaScript Date; its instant is converted
  * @param is1904 - Whether to use the 1904 date system (default: false = 1900)
  * @returns Excel serial number (with fractional time portion)
  */

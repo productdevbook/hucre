@@ -157,6 +157,31 @@ the workbook-level caches, and has no write counterpart because
 | `WriteSheet.a11y`                                         | authoring metadata. `a11y.summary` is promoted to `properties.description` and does survive; `a11y.headerRow` has no cell to live in                                       |
 | `SheetProtection.password`, `workbookProtection.password` | the file holds a one-way digest, never the password. The digest is read; the password cannot be                                                                            |
 
+### Losses inside fields that otherwise round-trip
+
+Three cases where a field is carried but a particular _value_ is not.
+
+**A cell whose text is literally `_x0041_` reads back as `A`.** OOXML uses
+`_xHHHH_` to encode characters XML cannot hold, and hucre decodes it on
+read. Excel disambiguates by escaping a leading underscore as `_x005F_`;
+hucre deliberately does not, because doing so would mangle the far more
+common case of ordinary text that happens to contain an underscore. The
+ambiguity is accepted, and now written down.
+
+**Serial 60 collapses onto 59.** Serial 60 in the 1900 system is the
+Lotus 1-2-3 phantom 29 February 1900, a date that does not exist. It has
+no instant to map to, so `serialToDate(60)` gives 28 February 1900 —
+the same as serial 59 — and writing that back produces 59. A workbook
+containing serial 60 shifts by one day on rewrite. Excel produces it only
+for files inherited from Lotus.
+
+**A `Date` you build with local components is converted as an instant.**
+`dateToSerial(new Date(2024, 0, 15))` in UTC+3 is 45305.875, not 45306,
+because local midnight is 21:00 the previous day in UTC. hucre reads UTC
+components everywhere, which is what keeps the readers, the writers and
+`formatValue` consistent; it does not infer a calendar day from a
+timezone. Use `Date.UTC(...)` when you mean a day.
+
 ## ODS
 
 ODS reads and writes the same narrow model, so **ODS → ODS is lossless**.
