@@ -5,6 +5,7 @@ import type { Sheet, MergeRange, RowDef, Workbook, Cell, CellValue } from "./_ty
 import { parseCellRef } from "./xlsx/worksheet"
 import { rangeRef } from "./xlsx/worksheet-writer"
 import { cloneCellStyle } from "./_style"
+import { InvalidArgumentError } from "./errors"
 
 // ── Range Helpers ────────────────────────────────────────────────────
 
@@ -237,8 +238,17 @@ export function deleteRows(sheet: Sheet, rowIndex: number, count: number): void 
       }
     }
 
-    // Remove degenerate merges (start > end)
-    sheet.merges = sheet.merges.filter((m) => m.startRow <= m.endRow && m.startCol <= m.endCol)
+    // Drop merges that no longer merge anything. `start > end` is
+    // incoherent; `start === end` on both axes is a one-cell merge, which
+    // is not what any spreadsheet means by the word — Excel writes
+    // `<mergeCell ref="B3:B3"/>` for nothing, and a shrunk range should
+    // disappear the way a fully-deleted one already does.
+    sheet.merges = sheet.merges.filter(
+      (m) =>
+        m.startRow <= m.endRow &&
+        m.startCol <= m.endCol &&
+        !(m.startRow === m.endRow && m.startCol === m.endCol),
+    )
   }
 
   // Update data validations
@@ -511,7 +521,14 @@ export function deleteColumns(sheet: Sheet, colIndex: number, count: number): vo
       }
     }
 
-    sheet.merges = sheet.merges.filter((m) => m.startRow <= m.endRow && m.startCol <= m.endCol)
+    // Same rule as deleteRows: a range shrunk to one cell is no longer a
+    // merge.
+    sheet.merges = sheet.merges.filter(
+      (m) =>
+        m.startRow <= m.endRow &&
+        m.startCol <= m.endCol &&
+        !(m.startRow === m.endRow && m.startCol === m.endCol),
+    )
   }
 
   // Update data validations
@@ -1149,18 +1166,31 @@ export function removeSheet(workbook: Workbook, index: number): void {
  */
 export function findCells(
   sheet: Sheet,
-  predicate: CellValue | ((value: CellValue, row: number, col: number) => boolean),
+  predicate: CellValue | RegExp | ((value: CellValue, row: number, col: number) => boolean),
 ): Array<{ row: number; col: number; value: CellValue }> {
   const results: Array<{ row: number; col: number; value: CellValue }> = []
   const isFn = typeof predicate === "function"
+  // `replaceCells` has always taken a RegExp; this one took a predicate
+  // instead, so "find the cells I am about to replace" could not be
+  // written with the same argument. Both take all three forms now.
+  const isRegExp = predicate instanceof RegExp
 
   for (let r = 0; r < sheet.rows.length; r++) {
     const row = sheet.rows[r]!
     for (let c = 0; c < row.length; c++) {
       const value = row[c] ?? null
-      const match = isFn
-        ? (predicate as (value: CellValue, row: number, col: number) => boolean)(value, r, c)
-        : value === predicate
+      let match: boolean
+      if (isFn) {
+        match = (predicate as (value: CellValue, row: number, col: number) => boolean)(value, r, c)
+      } else if (isRegExp) {
+        // Same rule as replaceCells: a RegExp tests strings only. `lastIndex`
+        // on a /g pattern would make the result depend on call order, so it
+        // is reset before each test.
+        predicate.lastIndex = 0
+        match = typeof value === "string" && predicate.test(value)
+      } else {
+        match = value === predicate
+      }
       if (match) {
         results.push({ row: r, col: c, value })
       }
@@ -1229,23 +1259,38 @@ export function replaceCells(sheet: Sheet, find: CellValue | RegExp, replace: Ce
 export function sortRows(sheet: Sheet, colIndex: number, order?: "asc" | "desc"): void {
   const desc = order === "desc"
 
-  // When the sheet carries a per-cell override Map (styles/formulas/
-  // hyperlinks keyed by "row,col"), the row reordering has to be mirrored
-  // there or every override lands on the wrong row. Tag each row with its
-  // original index, sort, then rebuild the Map from old→new index.
+  // A merged range pins cells to positions, and a sort moves rows past
+  // those positions — there is no arrangement that keeps both. Excel
+  // refuses the operation outright for the same reason; sorting anyway
+  // left the merge covering whatever happened to land there. A merge
+  // wholly inside one row is unaffected, since that row moves as a unit.
+  const spansRows = sheet.merges?.some((m) => m.endRow > m.startRow)
+  if (spansRows) {
+    throw new InvalidArgumentError(
+      "Cannot sort rows: the sheet has a merged range spanning more than one row, " +
+        "and no ordering can keep both the sort and the merge. Remove the merge first.",
+    )
+  }
+
+  // Everything keyed by row index has to move with its row: the per-cell
+  // override Map (styles, formulas, hyperlinks), the row definitions
+  // (heights, hidden, outline levels), and single-row merges. Tag each row
+  // with its original index, sort, then remap through old→new.
+  const tagged = sheet.rows.map((row, i) => ({ row, i }))
+  tagged.sort((a, b) => {
+    const va = colIndex < a.row.length ? (a.row[colIndex] ?? null) : null
+    const vb = colIndex < b.row.length ? (b.row[colIndex] ?? null) : null
+    return compareCellValues(va, vb, desc)
+  })
+
+  const oldToNew = new Map<number, number>()
+  for (let newIdx = 0; newIdx < tagged.length; newIdx++) {
+    oldToNew.set(tagged[newIdx]!.i, newIdx)
+  }
+
+  sheet.rows = tagged.map((t) => t.row)
+
   if (sheet.cells && sheet.cells.size > 0) {
-    const tagged = sheet.rows.map((row, i) => ({ row, i }))
-    tagged.sort((a, b) => {
-      const va = colIndex < a.row.length ? (a.row[colIndex] ?? null) : null
-      const vb = colIndex < b.row.length ? (b.row[colIndex] ?? null) : null
-      return compareCellValues(va, vb, desc)
-    })
-
-    const oldToNew = new Map<number, number>()
-    for (let newIdx = 0; newIdx < tagged.length; newIdx++) {
-      oldToNew.set(tagged[newIdx]!.i, newIdx)
-    }
-
     const remapped = new Map<string, Cell>()
     for (const [key, cell] of sheet.cells) {
       const comma = key.indexOf(",")
@@ -1255,17 +1300,26 @@ export function sortRows(sheet: Sheet, colIndex: number, order?: "asc" | "desc")
       // Keep non-positional keys untouched if any slipped in.
       remapped.set(newRow === undefined ? key : `${newRow},${col}`, cell)
     }
-
-    sheet.rows = tagged.map((t) => t.row)
     sheet.cells = remapped
-    return
   }
 
-  sheet.rows.sort((a, b) => {
-    const va = colIndex < a.length ? (a[colIndex] ?? null) : null
-    const vb = colIndex < b.length ? (b[colIndex] ?? null) : null
-    return compareCellValues(va, vb, desc)
-  })
+  if (sheet.rowDefs && sheet.rowDefs.size > 0) {
+    const remapped = new Map<number, RowDef>()
+    for (const [row, def] of sheet.rowDefs) {
+      remapped.set(oldToNew.get(row) ?? row, def)
+    }
+    sheet.rowDefs = remapped
+  }
+
+  if (sheet.merges) {
+    for (const merge of sheet.merges) {
+      const moved = oldToNew.get(merge.startRow)
+      if (moved !== undefined) {
+        merge.startRow = moved
+        merge.endRow = moved
+      }
+    }
+  }
 }
 
 /**
