@@ -23,7 +23,8 @@
     "test/threaded-comments-write.test.ts",
     "test/ods-fidelity.test.ts",
     "test/parity-statement.test.ts",
-    "test/write-model.test.ts"
+    "test/write-model.test.ts",
+    "test/builder-coverage.test.ts"
   ],
   "exclude": []
 }

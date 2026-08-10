@@ -1337,6 +1337,32 @@ const xlsx = await WorkbookBuilder.create()
   .build()
 ```
 
+It reaches the whole model, not a subset of it. Beyond `columns` / `row` /
+`merge` / `freeze` / `validation` / `cell` there are named methods for
+conditional rules, auto-filter, split panes, row definitions, page setup,
+headers and footers, sheet views, protection, tables, images and charts —
+and `set()` for anything else on `WriteSheet`:
+
+```ts
+const xlsx = await WorkbookBuilder.create()
+  .namedRanges([{ name: "Prices", range: "Products!$B$2:$B$3" }])
+  .addSheet("Products")
+  .rows(data)
+  .pageSetup({ orientation: "landscape", paperSize: "a4" })
+  .conditionalRule({
+    type: "cellIs",
+    priority: 1,
+    range: "B2:B99",
+    operator: "greaterThan",
+    formula: ["100"],
+  })
+  .set({ rowBreaks: [40], outlineProperties: { summaryBelow: false } })
+  .build()
+```
+
+`set()` exists so the builder cannot fall behind the type: whatever
+`WriteSheet` or `WriteOptions` grows, it can already be expressed.
+
 ### Template Engine
 
 Fill `{{placeholders}}` in existing XLSX templates:

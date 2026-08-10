@@ -36,6 +36,8 @@ export class WorkbookBuilder {
   private _defaultFont?: WriteOptions["defaultFont"]
   private _dateSystem?: WriteOptions["dateSystem"]
   private _activeSheet?: WriteOptions["activeSheet"]
+  /** The rest of `WriteOptions`, set through {@link set}. */
+  private _rest: Partial<Omit<WriteOptions, "sheets">> = {}
 
   static create(): WorkbookBuilder {
     return new WorkbookBuilder()
@@ -76,8 +78,49 @@ export class WorkbookBuilder {
   }
 
   /** Build the workbook and return the XLSX as a Uint8Array. */
+
+  /** Define workbook-level named ranges. */
+  namedRanges(ranges: NonNullable<WriteOptions["namedRanges"]>): this {
+    this._rest.namedRanges = ranges
+    return this
+  }
+
+  /** Lock the workbook's structure and/or windows. */
+  protect(protection: NonNullable<WriteOptions["workbookProtection"]>): this {
+    this._rest.workbookProtection = protection
+    return this
+  }
+
+  /** Store strings in a shared table (default) or inline per cell. */
+  stringMode(mode: NonNullable<WriteOptions["stringMode"]>): this {
+    this._rest.stringMode = mode
+    return this
+  }
+
+  /** Encrypt the output (ECMA-376 Agile). */
+  encrypt(encryption: NonNullable<WriteOptions["encryption"]>): this {
+    this._rest.encryption = encryption
+    return this
+  }
+
+  /** Embed a VBA project, making the output macro-enabled. */
+  vbaProject(project: NonNullable<WriteOptions["vbaProject"]>): this {
+    this._rest.vbaProject = project
+    return this
+  }
+
+  /**
+   * Set any other `WriteOptions` field. The escape hatch, so the builder
+   * cannot fall behind the type. `sheets` comes from `addSheet`.
+   */
+  set(fields: Partial<Omit<WriteOptions, "sheets">>): this {
+    Object.assign(this._rest, fields)
+    return this
+  }
+
   async build(): Promise<Uint8Array> {
     return writeXlsx({
+      ...this._rest,
       sheets: this.sheets.map((s) => s._toWriteSheet()),
       properties: this._properties,
       defaultFont: this._defaultFont,
@@ -99,6 +142,16 @@ export class SheetBuilder {
   private _cells?: Map<string, Partial<Cell>>
   private _hidden?: boolean
   private _veryHidden?: boolean
+  /**
+   * Everything else on `WriteSheet`, set through {@link set}.
+   *
+   * The builder used to reach eight of the type's fields, so the first
+   * sheet needing a page setup or a conditional rule had to abandon it
+   * entirely. The named methods below cover what a builder is for; `set`
+   * covers the rest without this class having to grow a method per field
+   * and drift behind the type. See #439 §AJ.
+   */
+  private _rest: Partial<WriteSheet> = {}
 
   constructor(
     private _name: string,
@@ -168,6 +221,88 @@ export class SheetBuilder {
     return this
   }
 
+  /** Add a conditional formatting rule. */
+  conditionalRule(rule: NonNullable<WriteSheet["conditionalRules"]>[number]): this {
+    ;(this._rest.conditionalRules ??= []).push(rule)
+    return this
+  }
+
+  /** Set the auto-filter range (and optional per-column value filters). */
+  autoFilter(filter: NonNullable<WriteSheet["autoFilter"]>): this {
+    this._rest.autoFilter = filter
+    return this
+  }
+
+  /** Split the sheet into panes, in twips. */
+  split(xSplit?: number, ySplit?: number): this {
+    this._rest.splitPane = { xSplit, ySplit }
+    return this
+  }
+
+  /** Set row-level properties — height, hidden, outline level, collapsed. */
+  rowDef(
+    row: number,
+    def: NonNullable<WriteSheet["rowDefs"]> extends Map<number, infer T> ? T : never,
+  ): this {
+    ;(this._rest.rowDefs ??= new Map()).set(row, def)
+    return this
+  }
+
+  /** Page setup: orientation, scale, margins, print area, paper size. */
+  pageSetup(setup: NonNullable<WriteSheet["pageSetup"]>): this {
+    this._rest.pageSetup = setup
+    return this
+  }
+
+  /** Headers and footers. */
+  headerFooter(hf: NonNullable<WriteSheet["headerFooter"]>): this {
+    this._rest.headerFooter = hf
+    return this
+  }
+
+  /** Sheet view: grid lines, zoom, tab colour, right-to-left. */
+  view(view: NonNullable<WriteSheet["view"]>): this {
+    this._rest.view = view
+    return this
+  }
+
+  /** Protect the sheet. */
+  protect(protection: NonNullable<WriteSheet["protection"]>): this {
+    this._rest.protection = protection
+    return this
+  }
+
+  /** Define an Excel table (ListObject) over a range. */
+  table(table: NonNullable<WriteSheet["tables"]>[number]): this {
+    ;(this._rest.tables ??= []).push(table)
+    return this
+  }
+
+  /** Place an image. */
+  image(image: NonNullable<WriteSheet["images"]>[number]): this {
+    ;(this._rest.images ??= []).push(image)
+    return this
+  }
+
+  /** Add a chart. */
+  chart(chart: NonNullable<WriteSheet["charts"]>[number]): this {
+    ;(this._rest.charts ??= []).push(chart)
+    return this
+  }
+
+  /**
+   * Set any other `WriteSheet` field — sparklines, text boxes, page
+   * breaks, outline properties, a background image, pivot tables, a11y
+   * metadata.
+   *
+   * The escape hatch, so the builder cannot fall behind the type. `name`
+   * is fixed by `addSheet` and is rejected here.
+   */
+  set(fields: Partial<Omit<WriteSheet, "name">>): this {
+    Object.assign(this._rest, fields)
+    return this
+  }
+
   /** Go back to the workbook builder to add another sheet or finish. */
   done(): WorkbookBuilder {
     return this._wb
@@ -181,6 +316,7 @@ export class SheetBuilder {
   /** @internal Assemble this builder's state into a WriteSheet. */
   _toWriteSheet(): WriteSheet {
     return {
+      ...this._rest,
       name: this._name,
       columns: this._columns.length > 0 ? this._columns : undefined,
       rows: this._rows,
