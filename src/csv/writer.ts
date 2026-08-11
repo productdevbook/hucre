@@ -218,15 +218,35 @@ function quoteField(value: string, opts: NormalizedWriteOptions): string {
   return opts.quote + escaped + opts.quote
 }
 
+/**
+ * Render a number for CSV.
+ *
+ * Excel shows a value written in exponent notation as `1E-07`, so the
+ * plain decimal form is preferred where there is one — but only when it
+ * is *the same number*. The expansion used to be unconditional, and
+ * `toFixed(20)` caps at twenty decimal places:
+ *
+ *   Number.EPSILON  →  "0.00000000000000022204"   (five digits kept)
+ *   Number.MIN_VALUE →  "0.0"                      (all of them lost)
+ *
+ * So the smallest values a caller could put in a cell came back as zero.
+ * A prettier rendering is not worth a different number. See #474.
+ */
 function formatNumber(n: number): string {
-  // Avoid scientific notation for large integers
+  if (!Number.isFinite(n)) return String(n)
+
+  // Large integers: `1e+21` reads as text in some importers.
   if (Number.isInteger(n) && Math.abs(n) >= 1e15) {
-    return n.toFixed(0)
+    const plain = n.toFixed(0)
+    if (Number(plain) === n) return plain
   }
-  // For very small numbers that would use scientific notation
+
+  // Small magnitudes, where JS switches to exponent notation at 1e-7.
   if (Math.abs(n) > 0 && Math.abs(n) < 1e-6) {
-    return n.toFixed(20).replace(/0+$/, "").replace(/\.$/, ".0")
+    const plain = n.toFixed(20).replace(/0+$/, "").replace(/\.$/, ".0")
+    if (Number(plain) === n) return plain
   }
+
   return String(n)
 }
 

@@ -97,6 +97,31 @@ and does not survive being opened in Excel.** Set it when something other
 than Excel will read the file — a second tool, a diff, hucre itself — and
 do not rely on it as the number a person will see.
 
+### Numbers are written at full precision, not Excel's 15 digits
+
+`1e21` is written `1e+21` and `0.1 + 0.2` is written
+`0.30000000000000004` — seventeen significant digits, where Excel writes
+`1E+21` and caps its _display_ at fifteen. Both spellings are conformant
+`xsd:double`; the lexical space is `[Ee](\+|-)?[0-9]+`, so a lowercase
+`e` is correct rather than merely tolerated.
+
+The precision is the part that matters. `String(value)` is the only
+spelling that round-trips a double exactly, and every extreme does:
+`1e-7`, `1e300`, `Number.MIN_VALUE`, `Number.EPSILON`,
+`Number.MAX_SAFE_INTEGER`. Rounding to fifteen digits to look more like a
+file Excel wrote would turn `0.1 + 0.2` into `0.3` — a number the caller
+did not write. A library for moving data faithfully should not make that
+trade, and `test/number-serialisation.test.ts` pins it so the change
+cannot land quietly.
+
+The one loss is negative zero: `String(-0)` is `"0"`, and Excel has no
+signed zero either, so the sign goes.
+
+CSV has the same guarantee. It prefers the plain decimal form where Excel
+would otherwise show `1E-07` — but only when that form is the same
+number, which it was not for the smallest values (`Number.MIN_VALUE` used
+to come out as `0.0`).
+
 ### Ranges: two spellings, one meaning
 
 Ranges are A1 strings on `DataValidation.range`, `ConditionalRule.range`,
