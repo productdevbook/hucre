@@ -735,7 +735,7 @@ describe("chart parts survive the roundtrip", () => {
 })
 
 describe("model charts added to an opened workbook", () => {
-  it("skips a sheet that already owns a hucre-managed image drawing", async () => {
+  it("folds into the drawing a sheet already owns for its images", async () => {
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
     const wb = await openXlsx(
       await writeXlsx({
@@ -749,12 +749,16 @@ describe("model charts added to an opened workbook", () => {
     )
     // @ts-expect-error Sheet.charts is the read model; the roundtrip
     // bridge accepts write-model entries here (issue #136).
-    wb.sheets[0].charts = [chartOn(7, "Too late")]
+    wb.sheets[0].charts = [chartOn(7, "In time")]
     const saved = await saveXlsx(wb)
 
-    // The image drawing is rebuilt; adding a chart to it is out of scope,
-    // so no chart part appears.
-    expect(entries(saved).some((n) => n.startsWith("xl/charts/"))).toBe(false)
+    // hucre authored that image drawing this run, so it is hucre's to
+    // extend — the chart goes into it rather than being dropped. Skipping
+    // was the old behaviour and it lost the chart outright. See #465.
+    expect(entries(saved).some((n) => n.startsWith("xl/charts/"))).toBe(true)
+    expect(entries(saved).filter((n) => /^xl\/drawings\/drawing\d+\.xml$/.test(n))).toEqual([
+      "xl/drawings/drawing1.xml",
+    ])
   })
 
   it("skips a sheet whose original drawing hucre is no longer rebuilding", async () => {

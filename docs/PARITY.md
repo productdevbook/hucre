@@ -138,6 +138,15 @@ column, line, pie, scatter, area, doughnut). `bar3D`, `line3D`, `pie3D`,
 `area3D`, `bubble`, `radar`, `surface`, `surface3D`, `stock` and `ofPie`
 read and survive `saveXlsx`, but `SheetChart` cannot express them.
 
+That last sentence has one exception, and it follows from the format: a
+worksheet carries exactly one `<drawing>` element, so images and charts on
+a sheet have to share one drawing part. When a sheet has hucre-managed
+images, hucre regenerates that part — and can only put back the charts it
+can author. So on **a sheet that also has images**, a chart of one of the
+nine unauthorable kinds is dropped; the seven authorable kinds survive
+with their anchors. A chart on a sheet hucre leaves alone is preserved as
+raw bytes regardless of kind, which is the common case. See #465.
+
 ### Pivot tables
 
 Read and written, but **the two types are disjoint**. `PivotTable` (what

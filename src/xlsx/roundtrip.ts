@@ -312,12 +312,18 @@ export async function saveXlsx(
   const drawingResults: Array<DrawingResult | null> = []
   const drawingIndices: number[] = []
   const imageExtensions = new Set<string>()
+  // Where each sheet's images started in the global media numbering. The
+  // chart pass below rebuilds some of these drawings and has to hand
+  // `writeDrawing` the same start index, or the second pass would number
+  // the media parts differently from the ones actually written. See #465.
+  const imageStartIndices: number[] = []
   let globalImageIndex = 1
 
   for (let i = 0; i < writeSheets.length; i++) {
     const sheet = writeSheets[i]
     const images = sheet.images ?? []
     const hasTextBoxes = sheet.textBoxes !== undefined && sheet.textBoxes.length > 0
+    imageStartIndices.push(globalImageIndex)
     // A drawing part hosts images *and* text boxes. Gating on images
     // alone meant a text-box-only sheet produced no drawing, and a sheet
     // with both produced one that silently dropped the text boxes —
@@ -578,10 +584,10 @@ export async function saveXlsx(
   //      and Excel drops the chart on next open.
   //
   // For sheets that hucre *does* regenerate (because the sheet has
-  // hucre-managed images), the chart graphicFrame inside the drawing
-  // is currently rebuilt without the chart anchor; that's a Phase 2
-  // limitation — for now we still preserve the chart bodies so a
-  // future merge step can re-anchor them.
+  // hucre-managed images), the charts are re-authored from the model
+  // into that same drawing by the model-chart pass below, anchors and
+  // all — see #465. Preserving the original bodies here still matters
+  // for every sheet hucre leaves alone.
   const chartIndices: number[] = []
   const chartStyleIndices: number[] = []
   const chartColorsIndices: number[] = []
@@ -679,14 +685,18 @@ export async function saveXlsx(
   // charts appended to a workbook after openXlsx — are serialized here
   // through the same drawing + chart pipeline the fresh writer uses.
   //
-  // SAFETY: we only emit model charts for a sheet that has NO drawing of
-  // its own already in play — no hucre-regenerated image drawing
-  // (`drawingResults[i]`), no preserved original chart drawing
-  // (`sheetPreservedDrawingTargets[i]`), and no other original drawing
-  // relationship. That keeps this purely additive: it never rewrites or
-  // collides with a drawing the roundtrip is already preserving. Adding
-  // a chart to a sheet that already owns a drawing is out of scope for
-  // the roundtrip path — use the fresh writeXlsx path for that.
+  // SAFETY: we never touch a drawing the roundtrip is *preserving* —
+  // a preserved original chart drawing (`sheetPreservedDrawingTargets[i]`)
+  // or any other original drawing relationship is left exactly alone, so
+  // this can neither rewrite nor collide with foreign XML.
+  //
+  // A drawing hucre itself regenerated this run (`drawingResults[i]`, for
+  // images and text boxes) is different: hucre owns every byte of it, so
+  // the charts are folded into that same drawing rather than skipped.
+  // Skipping was the old behaviour and it lost the chart outright — a
+  // sheet with both an image and a chart came back with the image and no
+  // chart at all, because the worksheet carries one `<drawing>` element
+  // and the regenerated one had no graphicFrame in it. See #465.
   type ChartFileEntry = { globalIndex: number; xml: string; rels: string }
   interface ModelChartDrawing {
     drawing: DrawingResult
@@ -694,6 +704,8 @@ export async function saveXlsx(
     charts: ChartFileEntry[]
   }
   const modelChartDrawings: Array<ModelChartDrawing | null> = sheets.map(() => null)
+  /** Chart bodies folded into a sheet's regenerated *image* drawing (#465). */
+  const imageDrawingCharts: Array<ChartFileEntry[]> = sheets.map(() => [])
   const newModelChartIndices: number[] = []
   {
     const sheetHasOriginalDrawingRel = (i: number): boolean => {
@@ -723,16 +735,18 @@ export async function saveXlsx(
     for (let i = 0; i < sheets.length; i++) {
       const srcCharts = sheets[i].charts
       if (!srcCharts || srcCharts.length === 0) continue
-      // Skip sheets that already own a drawing — see SAFETY note above.
-      if (drawingResults[i]) continue
-      if (sheetPreservedDrawingTargets[i] !== undefined) continue
-      if (sheetHasOriginalDrawingRel(i)) continue
+      // Never touch a drawing we are preserving — see SAFETY note above.
+      // A drawing hucre regenerated this run is ours to extend, and is
+      // handled by the `ownsImageDrawing` branch below.
+      const ownsImageDrawing = drawingResults[i] !== null
+      if (!ownsImageDrawing) {
+        if (sheetPreservedDrawingTargets[i] !== undefined) continue
+        if (sheetHasOriginalDrawingRel(i)) continue
+      }
 
       const writeCharts = toWriteCharts(srcCharts as Array<Chart | SheetChart>)
       if (writeCharts.length === 0) continue
 
-      const drawingNumber = nextDrawingNumber++
-      const drawing = writeDrawing([], globalImageIndex, undefined, writeCharts, nextChartNumber)
       const charts: ChartFileEntry[] = []
       for (let c = 0; c < writeCharts.length; c++) {
         const written = writeChart(writeCharts[c], sheets[i].name)
@@ -740,12 +754,32 @@ export async function saveXlsx(
         charts.push({ globalIndex: g, xml: written.chartXml, rels: written.chartRels })
         newModelChartIndices.push(g)
       }
+
+      if (ownsImageDrawing) {
+        // Rebuild the drawing hucre already produced for this sheet's
+        // images and text boxes, this time with the graphicFrames in it.
+        // Same drawing number (i + 1) and same media start index, so the
+        // worksheet's existing `<drawing>` reference and every image part
+        // this loop already accounted for stay exactly as they were.
+        const sheet = writeSheets[i]
+        drawingResults[i] = writeDrawing(
+          sheet.images ?? [],
+          imageStartIndices[i],
+          sheet.textBoxes,
+          writeCharts,
+          nextChartNumber,
+        )
+        imageDrawingCharts[i] = charts
+      } else {
+        const drawingNumber = nextDrawingNumber++
+        const drawing = writeDrawing([], globalImageIndex, undefined, writeCharts, nextChartNumber)
+        modelChartDrawings[i] = { drawing, drawingNumber, charts }
+        drawingIndices.push(drawingNumber)
+        regeneratedPaths.add(`xl/drawings/drawing${drawingNumber}.xml`)
+        regeneratedPaths.add(`xl/drawings/_rels/drawing${drawingNumber}.xml.rels`)
+      }
       nextChartNumber += writeCharts.length
 
-      modelChartDrawings[i] = { drawing, drawingNumber, charts }
-      drawingIndices.push(drawingNumber)
-      regeneratedPaths.add(`xl/drawings/drawing${drawingNumber}.xml`)
-      regeneratedPaths.add(`xl/drawings/_rels/drawing${drawingNumber}.xml.rels`)
       for (const cf of charts) {
         regeneratedPaths.add(`xl/charts/chart${cf.globalIndex}.xml`)
         regeneratedPaths.add(`xl/charts/_rels/chart${cf.globalIndex}.xml.rels`)
@@ -1167,6 +1201,11 @@ export async function saveXlsx(
       zip.add(`xl/drawings/_rels/drawing${i + 1}.xml.rels`, encoder.encode(drawing.drawingRels))
       for (const img of drawing.images) {
         zip.add(img.path, img.data, { compress: false })
+      }
+      // Charts folded into this same drawing (#465).
+      for (const cf of imageDrawingCharts[i]) {
+        zip.add(`xl/charts/chart${cf.globalIndex}.xml`, encoder.encode(cf.xml))
+        zip.add(`xl/charts/_rels/chart${cf.globalIndex}.xml.rels`, encoder.encode(cf.rels))
       }
     }
 
