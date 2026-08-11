@@ -1136,7 +1136,7 @@ export async function saveXlsx(
             Target: preservedDrawingTarget,
           }),
         )
-        worksheetXml = injectWorksheetDrawing(worksheetXml, preservedDrawingRId)
+        worksheetXml = insertDrawingElement(worksheetXml, result, preservedDrawingRId)
       }
 
       // Wire up the model-chart drawing (issue #136): emit the drawing
@@ -1150,7 +1150,7 @@ export async function saveXlsx(
             Target: `../drawings/drawing${modelDrawing.drawingNumber}.xml`,
           }),
         )
-        worksheetXml = injectWorksheetDrawing(worksheetXml, modelDrawingRId)
+        worksheetXml = insertDrawingElement(worksheetXml, result, modelDrawingRId)
       }
 
       // Threaded comments (Excel 365). The rId only needs to be unique
@@ -1296,42 +1296,32 @@ const REL_TYPE_SLICER = /\/relationships\/slicer$/
 const REL_TYPE_TIMELINE = /\/relationships\/timeline$/
 
 /**
- * Insert `<drawing r:id="rIdN"/>` into a worksheet body emitted by the
- * worksheet writer. Per OOXML schema (CT_Worksheet) the element must
- * appear after `cellWatches`/`ignoredErrors`/`smartTags` and before
- * `legacyDrawing` / `legacyDrawingHF` / `picture` / `oleObjects` /
- * `controls` / `webPublishItems` / `tableParts` / `extLst`.
+ * Insert `<drawing r:id="rIdN"/>` into a worksheet body the writer just
+ * produced.
  *
- * The writer never emits a `<drawing>` for chart-only sheets, so we
- * splice one into the regenerated XML at the first valid insertion
- * point. Falls back to inserting just before `</worksheet>` when none
- * of the later-position siblings are present.
+ * Per CT_Worksheet the element must appear after
+ * `cellWatches`/`ignoredErrors`/`smartTags` and before `legacyDrawing`,
+ * `picture`, `oleObjects`, `controls`, `webPublishItems`, `tableParts`
+ * and `extLst`. The writer never emits one for a sheet whose drawing is
+ * *preserved* rather than generated, and the body is serialized before
+ * the rId is known — so one has to go in afterwards.
+ *
+ * This used to find the spot by searching the finished string for
+ * thirteen candidate successor tags and inserting before the first
+ * present, falling back to `</worksheet>`. Safe, because the input is
+ * hucre's own output and cell text is escaped — but it was a heuristic
+ * standing in for something the writer knows exactly. It now says so:
+ * `drawingInsertOffset` is the position, and this is one splice. See
+ * #474.
  */
-function injectWorksheetDrawing(worksheetXml: string, rId: string): string {
-  if (worksheetXml.includes("<drawing ")) return worksheetXml // already present
-  const tag = `<drawing r:id="${rId}"/>`
-  const candidates = [
-    "<legacyDrawing ",
-    "<legacyDrawingHF ",
-    "<picture ",
-    "<oleObjects ",
-    "<oleObjects>",
-    "<controls ",
-    "<controls>",
-    "<webPublishItems ",
-    "<webPublishItems>",
-    "<tableParts ",
-    "<tableParts>",
-    "<extLst ",
-    "<extLst>",
-  ]
-  for (const c of candidates) {
-    const idx = worksheetXml.indexOf(c)
-    if (idx >= 0) return worksheetXml.slice(0, idx) + tag + worksheetXml.slice(idx)
-  }
-  const closeIdx = worksheetXml.lastIndexOf("</worksheet>")
-  if (closeIdx < 0) return worksheetXml
-  return worksheetXml.slice(0, closeIdx) + tag + worksheetXml.slice(closeIdx)
+function insertDrawingElement(worksheetXml: string, result: WorksheetResult, rId: string): string {
+  // A sheet that already has its own drawing is not this function's
+  // business; the caller's guards mean it should never arrive here.
+  if (worksheetXml.includes("<drawing ")) return worksheetXml
+
+  const at = result.drawingInsertOffset
+  if (at < 0 || at > worksheetXml.length) return worksheetXml
+  return `${worksheetXml.slice(0, at)}<drawing r:id="${rId}"/>${worksheetXml.slice(at)}`
 }
 
 /**

@@ -41,6 +41,16 @@ export interface HyperlinkRelationship {
 
 export interface WorksheetResult {
   xml: string
+  /**
+   * Character offset in {@link xml} where a `<drawing>` element belongs.
+   *
+   * The roundtrip has to insert one for a drawing it preserves rather
+   * than generates, and the worksheet body is serialized before the rId
+   * is known. This is the writer saying where, exactly, instead of the
+   * caller searching the finished string for a tag to sit in front of.
+   * See #474.
+   */
+  drawingInsertOffset: number
   hyperlinkRelationships: HyperlinkRelationship[]
   /** The rId used for the drawing reference (if sheet has images) */
   drawingRId: string | null
@@ -636,6 +646,12 @@ export function writeWorksheetXml(
   const hasImages = sheet.images && sheet.images.length > 0
   const hasTextBoxes = sheet.textBoxes && sheet.textBoxes.length > 0
   const hasCharts = sheet.charts && sheet.charts.length > 0
+  // Where a `<drawing>` element belongs in CT_Worksheet's element order.
+  // Recorded even when this writer emits none, because the roundtrip has
+  // to put one here for a drawing it is *preserving* rather than
+  // generating — and it used to find the spot by searching the finished
+  // string for thirteen candidate successor tags. See #474.
+  const drawingSlot = parts.length
   if (hasImages || hasTextBoxes || hasCharts) {
     // Drawing rId comes after all hyperlink rIds
     drawingRId = `rId${nextRId}`
@@ -706,8 +722,11 @@ export function writeWorksheetXml(
     }
   }
 
+  const xml = xmlDocument("worksheet", { xmlns: NS_SPREADSHEET, "xmlns:r": NS_R }, parts)
+
   return {
-    xml: xmlDocument("worksheet", { xmlns: NS_SPREADSHEET, "xmlns:r": NS_R }, parts),
+    xml,
+    drawingInsertOffset: offsetOfPart(xml, parts, drawingSlot),
     hyperlinkRelationships,
     drawingRId,
     legacyDrawingRId,
@@ -1713,4 +1732,23 @@ function serializeSparklines(sparklines: Sparkline[]): string {
   )
 
   return xmlElement("extLst", undefined, [extEl])
+}
+
+/**
+ * Character offset in a rendered document at which `parts[index]` starts.
+ *
+ * `xmlDocument` prepends a declaration and the root open tag, then joins
+ * the parts in order — so the offset is that prefix plus the lengths of
+ * everything before `index`. Derived from the rendered string rather than
+ * assumed, so a change to how the prologue is written cannot silently
+ * move it.
+ */
+function offsetOfPart(xml: string, parts: string[], index: number): number {
+  const body = parts.join("")
+  const bodyStart = body.length === 0 ? xml.lastIndexOf("</worksheet>") : xml.indexOf(body)
+  if (bodyStart < 0) return xml.lastIndexOf("</worksheet>")
+
+  let offset = bodyStart
+  for (let i = 0; i < index; i++) offset += parts[i]!.length
+  return offset
 }
