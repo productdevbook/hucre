@@ -1348,6 +1348,36 @@ function serializePageSetup(ps: PageSetup): string {
     }
   }
 
+  // A custom page size, for the sizes that have no code. Excel reads
+  // these in preference to `paperSize` when both are present, which is
+  // why they are emitted alongside rather than instead. See #470.
+  if (ps.paperWidth !== undefined) attrs["paperWidth"] = ps.paperWidth
+  if (ps.paperHeight !== undefined) attrs["paperHeight"] = ps.paperHeight
+
+  // `firstPageNumber` on its own does nothing in Excel — the flag is what
+  // turns it on. Writing the number without the flag would be a field
+  // that looks set and prints 1, so the flag is implied by the number
+  // unless the caller says otherwise.
+  if (ps.firstPageNumber !== undefined) attrs["firstPageNumber"] = ps.firstPageNumber
+  const useFirst = ps.useFirstPageNumber ?? (ps.firstPageNumber !== undefined ? true : undefined)
+  if (useFirst !== undefined) attrs["useFirstPageNumber"] = useFirst ? 1 : 0
+
+  // Everything below is written only when it differs from the CT_PageSetup
+  // default, so a sheet that sets none of them emits no <pageSetup> at all.
+  if (ps.pageOrder !== undefined && ps.pageOrder !== "downThenOver") {
+    attrs["pageOrder"] = ps.pageOrder
+  }
+  if (ps.blackAndWhite) attrs["blackAndWhite"] = 1
+  if (ps.draft) attrs["draft"] = 1
+  if (ps.cellComments !== undefined && ps.cellComments !== "none") {
+    attrs["cellComments"] = ps.cellComments
+  }
+  if (ps.errors !== undefined && ps.errors !== "displayed") attrs["errors"] = ps.errors
+  if (ps.copies !== undefined) attrs["copies"] = ps.copies
+  if (ps.horizontalDpi !== undefined) attrs["horizontalDpi"] = ps.horizontalDpi
+  if (ps.verticalDpi !== undefined) attrs["verticalDpi"] = ps.verticalDpi
+  if (ps.usePrinterDefaults === false) attrs["usePrinterDefaults"] = 0
+
   // Only emit if there are attributes beyond default
   if (Object.keys(attrs).length === 0) {
     return ""

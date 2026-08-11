@@ -69,9 +69,14 @@ hyperlinks with tooltips, comments, checkboxes, the full cell style model
 (fonts, pattern and gradient fills, borders including diagonal, every
 alignment field, number formats, protection), merges, data validations,
 all 15 conditional-rule types **including their dxf styles**, auto-filters
-with value filters, freeze and split panes, sheet protection, page setup
-including print areas, print titles and every OOXML paper size (by
-name where hucre has one, by code otherwise), headers and footers, sheet views
+with value filters, freeze and split panes, sheet protection, every
+attribute of `CT_PageSetup` bar one — print areas, print titles, every
+OOXML paper size (by name where hucre has one, by code otherwise) plus
+custom `paperWidth` / `paperHeight` for the sizes that have none, page
+order, first page number, draft and black-and-white, comment and error
+printing, copies, DPI and printer defaults; the exception is `r:id`,
+which points at a binary printer-settings part and has no portable
+meaning — headers and footers, sheet views
 and tab colours, hidden and very-hidden sheets, tables, row and column
 definitions, manual page breaks, outline properties, sparklines, text
 boxes, background images, images, document properties, named ranges, the

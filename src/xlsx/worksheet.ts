@@ -1950,7 +1950,63 @@ function parsePageSetupAttrs(attrs: Record<string, string>): PageSetup {
     ps.verticalCentered = true
   }
 
+  // ── The rest of CT_PageSetup (#470) ──────────────────────────────
+  // Read unconditionally, defaults included: this is the roundtrip path
+  // as well as the read path, and dropping an attribute because it
+  // happened to equal its default would rewrite a file the caller only
+  // opened. The writer is the side that elides defaults.
+  if (attrs["paperWidth"]) ps.paperWidth = attrs["paperWidth"]
+  if (attrs["paperHeight"]) ps.paperHeight = attrs["paperHeight"]
+
+  const firstPageNumber = intAttr(attrs["firstPageNumber"])
+  if (firstPageNumber !== undefined) ps.firstPageNumber = firstPageNumber
+  if (attrs["useFirstPageNumber"] !== undefined) {
+    ps.useFirstPageNumber = isTruthyAttr(attrs["useFirstPageNumber"])
+  }
+
+  if (attrs["pageOrder"] === "overThenDown" || attrs["pageOrder"] === "downThenOver") {
+    ps.pageOrder = attrs["pageOrder"]
+  }
+  if (isTruthyAttr(attrs["blackAndWhite"])) ps.blackAndWhite = true
+  if (isTruthyAttr(attrs["draft"])) ps.draft = true
+
+  const comments = attrs["cellComments"]
+  if (comments === "none" || comments === "asDisplayed" || comments === "atEnd") {
+    ps.cellComments = comments
+  }
+
+  const errors = attrs["errors"]
+  if (errors === "displayed" || errors === "blank" || errors === "dash" || errors === "NA") {
+    ps.errors = errors
+  }
+
+  const copies = intAttr(attrs["copies"])
+  if (copies !== undefined) ps.copies = copies
+  const hDpi = intAttr(attrs["horizontalDpi"])
+  if (hDpi !== undefined) ps.horizontalDpi = hDpi
+  const vDpi = intAttr(attrs["verticalDpi"])
+  if (vDpi !== undefined) ps.verticalDpi = vDpi
+  if (attrs["usePrinterDefaults"] !== undefined) {
+    ps.usePrinterDefaults = isTruthyAttr(attrs["usePrinterDefaults"])
+  }
+
   return ps
+}
+
+/** `"1"` / `"true"` — the two spellings ECMA-376 allows for xsd:boolean. */
+function isTruthyAttr(value: string | undefined): boolean {
+  return value === "1" || value === "true"
+}
+
+/**
+ * A non-negative integer attribute, or `undefined` when it is absent or
+ * not one. A hostile `copies="NaN"` becoming `NaN` on the model would
+ * serialize back out as the literal string `NaN`.
+ */
+function intAttr(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined
+  const n = Number(value)
+  return Number.isInteger(n) && n >= 0 ? n : undefined
 }
 
 // ── Color Attribute Parser ──────────────────────────────────────────────

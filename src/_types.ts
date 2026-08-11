@@ -495,6 +495,54 @@ export interface PageSetup {
   showRowColHeaders?: boolean
   horizontalCentered?: boolean
   verticalCentered?: boolean
+  /**
+   * Page number to print on the first page. Excel only honours it when
+   * `useFirstPageNumber` is also set, and the writer sets that flag for
+   * you whenever this is present — a `firstPageNumber` that silently did
+   * nothing would be worse than not having the field.
+   */
+  firstPageNumber?: number
+  /**
+   * Whether {@link firstPageNumber} is used at all. Written implicitly
+   * with `firstPageNumber`; carried here so a file that sets the flag
+   * without the number, or vice versa, round-trips as it was.
+   */
+  useFirstPageNumber?: boolean
+  /**
+   * Order pages are laid out in when the sheet is wider and taller than
+   * one page. Default: `"downThenOver"`.
+   */
+  pageOrder?: "downThenOver" | "overThenDown"
+  /** Print without colour. */
+  blackAndWhite?: boolean
+  /** Print without graphics. */
+  draft?: boolean
+  /** Where cell comments are printed. Default: `"none"`. */
+  cellComments?: "none" | "asDisplayed" | "atEnd"
+  /** How cells holding errors are printed. Default: `"displayed"`. */
+  errors?: "displayed" | "blank" | "dash" | "NA"
+  /** Number of copies. Default: 1. */
+  copies?: number
+  /** Horizontal print resolution in DPI. Default: 600. */
+  horizontalDpi?: number
+  /** Vertical print resolution in DPI. Default: 600. */
+  verticalDpi?: number
+  /**
+   * Custom page width as an ST_PositiveUniversalMeasure — a number with a
+   * unit, e.g. `"210mm"`, `"8.5in"`, `"21cm"`. The only way to express a
+   * page size that has no {@link PaperSize} code.
+   *
+   * Excel reads this in preference to `paperSize` when both are present.
+   * Set it together with {@link paperHeight}; one alone describes nothing.
+   */
+  paperWidth?: string
+  /** Custom page height; see {@link paperWidth}. */
+  paperHeight?: string
+  /**
+   * Whether the printer's own defaults are used for the settings this
+   * sheet does not name. Default: true.
+   */
+  usePrinterDefaults?: boolean
 }
 
 export interface PageMargins {
