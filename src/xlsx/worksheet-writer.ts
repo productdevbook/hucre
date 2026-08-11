@@ -84,6 +84,10 @@ const NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationship
 
 /** Convert a 0-based column index to an Excel column letter (A, B, ... Z, AA, AB, ...) */
 export function colToLetter(col: number): string {
+  // Memoising this was tried and measured: it is 10 ms of a 2,814 ms
+  // write, 0.36%, and the change did not show above run-to-run noise. A
+  // cache that cannot be measured is complexity for nothing. See #472.
+  //
   // Pure arithmetic on an unchecked number produced references no reader
   // can parse — "@" for -1, a NUL character for NaN, "XFE" one past the
   // last column. See #364.
@@ -855,6 +859,34 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
  * had to do exactly that for formula-result typing and the non-finite
  * guard. See #439 §B.
  */
+/**
+ * The cell shapes that make up essentially all of a data sheet, emitted
+ * straight into a string.
+ *
+ * `xmlElement` is the right tool for the document's structure — a hundred
+ * elements built once each — and the wrong one for the two million built
+ * here. Per cell it allocated an attrs object literal, a children array,
+ * a joined string, and then the element; profiling `writeXlsx` at
+ * 100,000 x 12 put `xmlElement` at 16.6% of on-CPU time and the garbage
+ * collector at 20.3%. See #472.
+ *
+ * The attribute order — `r`, then `t`, then `s` — is the order the object
+ * literals produced, and the output is byte-identical. The formula and
+ * rich-text paths still go through `xmlElement`: they are a small
+ * fraction of any real sheet and they are the shapes worth keeping
+ * readable.
+ */
+function simpleCell(ref: string, styleIdx: number, type: string, content: string): string {
+  if (styleIdx === 0) {
+    return type === ""
+      ? `<c r="${ref}"><v>${content}</v></c>`
+      : `<c r="${ref}" t="${type}"><v>${content}</v></c>`
+  }
+  return type === ""
+    ? `<c r="${ref}" s="${styleIdx}"><v>${content}</v></c>`
+    : `<c r="${ref}" t="${type}" s="${styleIdx}"><v>${content}</v></c>`
+}
+
 export function serializeCell(
   row: number,
   col: number,
@@ -980,23 +1012,22 @@ export function serializeCell(
 
   // Error value (e.g. #VALUE!, #REF!, #N/A, #NAME?, #NULL!, #DIV/0!, #NUM!)
   if (typeof value === "string" && EXCEL_ERRORS.has(value)) {
-    const attrs: Record<string, string | number> = { r: ref, t: "e" }
-    if (styleIdx !== 0) attrs["s"] = styleIdx
-    return xmlElement("c", attrs, [xmlElement("v", undefined, value)])
+    return simpleCell(ref, styleIdx, "e", value)
   }
 
   // String value
   if (typeof value === "string") {
     if (inlineStrings) {
       // Inline string: <c t="inlineStr"><is><t>value</t></is></c>
-      const attrs: Record<string, string | number> = { r: ref, t: "inlineStr" }
-      if (styleIdx !== 0) attrs["s"] = styleIdx
-      return xmlElement("c", attrs, [xmlElement("is", undefined, [xmlTextElement(value)])])
+      // `writeXlsxStream` defaults to this path, so it is as hot as the
+      // shared-string one and gets the same treatment. `xmlTextElement`
+      // still decides `xml:space`; only the wrappers are inlined.
+      const inner = `<is>${xmlTextElement(value)}</is>`
+      return styleIdx === 0
+        ? `<c r="${ref}" t="inlineStr">${inner}</c>`
+        : `<c r="${ref}" t="inlineStr" s="${styleIdx}">${inner}</c>`
     }
-    const ssIdx = sharedStrings.add(value)
-    const attrs: Record<string, string | number> = { r: ref, t: "s" }
-    if (styleIdx !== 0) attrs["s"] = styleIdx
-    return xmlElement("c", attrs, [xmlElement("v", undefined, String(ssIdx))])
+    return simpleCell(ref, styleIdx, "s", String(sharedStrings.add(value)))
   }
 
   // Number value
@@ -1008,24 +1039,17 @@ export function serializeCell(
       }
       return null
     }
-    const attrs: Record<string, string | number> = { r: ref }
-    if (styleIdx !== 0) attrs["s"] = styleIdx
-    return xmlElement("c", attrs, [xmlElement("v", undefined, String(value))])
+    return simpleCell(ref, styleIdx, "", String(value))
   }
 
   // Boolean value
   if (typeof value === "boolean") {
-    const attrs: Record<string, string | number> = { r: ref, t: "b" }
-    if (styleIdx !== 0) attrs["s"] = styleIdx
-    return xmlElement("c", attrs, [xmlElement("v", undefined, value ? "1" : "0")])
+    return simpleCell(ref, styleIdx, "b", value ? "1" : "0")
   }
 
   // Date value
   if (value instanceof Date) {
-    const serial = dateToSerial(value, is1904)
-    const attrs: Record<string, string | number> = { r: ref }
-    if (styleIdx !== 0) attrs["s"] = styleIdx
-    return xmlElement("c", attrs, [xmlElement("v", undefined, String(serial))])
+    return simpleCell(ref, styleIdx, "", String(dateToSerial(value, is1904)))
   }
 
   return null
