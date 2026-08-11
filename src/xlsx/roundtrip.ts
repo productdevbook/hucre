@@ -175,7 +175,7 @@ export async function openXlsx(
   // the raw-entry capture below see the plaintext OOXML ZIP.
   if (isOle2Container(data)) {
     if (options?.password) {
-      data = await decryptAgile(data, options.password)
+      data = await decryptAgile(data, options.password, options.maxSpinCount)
     } else {
       throw new EncryptedFileError("xlsx")
     }
@@ -185,7 +185,7 @@ export async function openXlsx(
   const workbook = await readXlsx(data, options)
 
   // 2. Extract ALL raw ZIP entries
-  const zip = new ZipReader(data)
+  const zip = new ZipReader(data, options?.maxDecompressedBytes)
   const rawEntries = await zip.extractAll()
 
   // 3. Read content types and root rels for preservation

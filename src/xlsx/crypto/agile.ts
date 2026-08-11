@@ -51,7 +51,11 @@ interface AgileKeyData {
  * Throws {@link DecryptionError} for a wrong password or unsupported
  * encryption variant.
  */
-export async function decryptAgile(data: Uint8Array, password: string): Promise<Uint8Array> {
+export async function decryptAgile(
+  data: Uint8Array,
+  password: string,
+  maxSpinCount: number = MAX_SPIN_COUNT,
+): Promise<Uint8Array> {
   let streams: Map<string, Uint8Array>
   try {
     streams = readCfb(data)
@@ -71,7 +75,7 @@ export async function decryptAgile(data: Uint8Array, password: string): Promise<
     )
   }
   const xml = new TextDecoder("utf-8").decode(info.subarray(8))
-  const key = parseKeyEncryptor(xml)
+  const key = parseKeyEncryptor(xml, maxSpinCount)
   const keyData = parseKeyData(xml)
 
   const secretKey = await deriveSecretKey(password, key)
@@ -469,7 +473,7 @@ function parseKeyData(xml: string): AgileKeyData {
   }
 }
 
-function parseKeyEncryptor(xml: string): AgileKeyInfo {
+function parseKeyEncryptor(xml: string, maxSpinCount: number): AgileKeyInfo {
   const tag = getElementTag(xml, "encryptedKey")
   if (!tag) throw new DecryptionError("EncryptionInfo missing encryptedKey.")
   const rawSpinCount = parseInt(getAttr(tag, "spinCount"), 10)
@@ -479,9 +483,10 @@ function parseKeyEncryptor(xml: string): AgileKeyInfo {
   // The spinCount drives the password-derivation loop. Cap the untrusted
   // value so a hostile file can't pin a CPU for minutes (Office uses
   // 100,000; the ceiling is deliberately generous).
-  if (rawSpinCount > MAX_SPIN_COUNT) {
+  if (rawSpinCount > maxSpinCount) {
     throw new DecryptionError(
-      `EncryptionInfo spinCount ${rawSpinCount} exceeds the maximum of ${MAX_SPIN_COUNT}.`,
+      `EncryptionInfo spinCount ${rawSpinCount} exceeds the maximum of ${maxSpinCount}. ` +
+        "Raise `maxSpinCount` to agree to spend that time.",
     )
   }
   return {

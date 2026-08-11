@@ -51,6 +51,8 @@ export interface WorksheetContext {
   maxRows?: number
   /** Cell range filter (e.g. "A1:D10"). Only cells within this range are returned. */
   range?: string
+  /** Bounding-box ceiling; see ReadOptions.maxTotalCells. Default {@link MAX_TOTAL_CELLS}. */
+  maxTotalCells?: number
   /** Name of the sheet being parsed, so a warning can say where it was. */
   sheetName?: string
   /** Where a dropped reference is reported; see ReadOptions.onWarning. */
@@ -1152,11 +1154,13 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
     // corners describe 1.7e10 slots, which V8 answers with an OOM the
     // caller cannot catch, so the product is checked before allocating.
     const totalCells = (maxRow + 1) * colCount
-    if (totalCells > MAX_TOTAL_CELLS) {
+    const cellLimit = ctx.maxTotalCells ?? MAX_TOTAL_CELLS
+    if (totalCells > cellLimit) {
       throw new ParseError(
         `Sheet "${name}" spans ${maxRow + 1} rows x ${colCount} columns ` +
-          `(${totalCells} cells), over the ${MAX_TOTAL_CELLS} limit. ` +
-          `Use the \`range\` or \`maxRows\` read option to bound the area read.`,
+          `(${totalCells} cells), over the ${cellLimit} limit. ` +
+          `Use the \`range\` or \`maxRows\` read option to bound the area read, ` +
+          `or raise \`maxTotalCells\` if the sheet really is this large.`,
       )
     }
     for (let r = 0; r <= maxRow; r++) {

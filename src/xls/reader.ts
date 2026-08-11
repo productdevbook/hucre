@@ -159,7 +159,17 @@ function parseWorkbookRecords(stream: Uint8Array, options?: ReadOptions): Workbo
       sheets.push({ name: bs.name, rows: [] })
       continue
     }
-    sheets.push(parseSheet(records, startIdx, bs.name, sst, isDate, date1904))
+    sheets.push(
+      parseSheet(
+        records,
+        startIdx,
+        bs.name,
+        sst,
+        isDate,
+        date1904,
+        options?.maxTotalCells ?? MAX_TOTAL_CELLS,
+      ),
+    )
   }
 
   return { sheets }
@@ -172,6 +182,7 @@ function parseSheet(
   sst: string[],
   isDate: (ixfe: number) => boolean,
   date1904: boolean,
+  cellLimit: number,
 ): Sheet {
   const rows: CellValue[][] = []
   const merges: MergeRange[] = []
@@ -195,8 +206,11 @@ function parseSheet(
     }
     if (col >= widestCol) widestCol = col + 1
     const boundingBox = Math.max(rows.length, row + 1) * widestCol
-    if (boundingBox > MAX_TOTAL_CELLS) {
-      throw new ParseError(`Sheet spans ${boundingBox} cells, over the ${MAX_TOTAL_CELLS} limit`)
+    if (boundingBox > cellLimit) {
+      throw new ParseError(
+        `Sheet spans ${boundingBox} cells, over the ${cellLimit} limit. ` +
+          "Raise `maxTotalCells` if the sheet really is this large.",
+      )
     }
     let r = rows[row]
     if (!r) r = rows[row] = []

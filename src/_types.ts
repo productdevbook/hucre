@@ -1473,6 +1473,41 @@ export interface ReadOptions {
    */
   maxInputBytes?: number
   /**
+   * Maximum number of cells a single sheet may be normalized into —
+   * `rows` is a dense rectangle, so this bounds the bounding box rather
+   * than the cell count. Default: 20,000,000 ({@link MAX_TOTAL_CELLS}).
+   *
+   * The default refuses two legal cells at `A1` and `XFD1048576`, which
+   * describe 1.7e10 slots from a few hundred bytes of XML. It also
+   * refuses a legitimate 25-million-cell sheet, which is why this is a
+   * number rather than a ceiling: raise it when you know the file, and
+   * budget roughly 8 bytes per slot for the array alone.
+   *
+   * Honoured by `readXlsx`, `readOds` and `readXls`.
+   */
+  maxTotalCells?: number
+  /**
+   * Maximum number of bytes any single ZIP entry may decompress to.
+   * Default: 2 GiB ({@link MAX_DECOMPRESSED_BYTES}).
+   *
+   * This is the zip-bomb bound — an entry that claims a small compressed
+   * size and expands past it fails with a `ZipError` rather than being
+   * allowed to allocate. Raising it is the one on this list where a
+   * caller should be sure the input is trusted.
+   *
+   * Honoured wherever the container is a ZIP: `readXlsx`, `readOds`.
+   */
+  maxDecompressedBytes?: number
+  /**
+   * Maximum password-derivation spin count accepted from an encrypted
+   * workbook. Default: 10,000,000 ({@link MAX_SPIN_COUNT}).
+   *
+   * Office writes 100,000. The bound exists so a hostile file cannot
+   * name a count that pins a CPU for minutes; raising it means agreeing
+   * to spend that time.
+   */
+  maxSpinCount?: number
+  /**
    * Called for each thing a reader had to drop.
    *
    * The readers are lenient on purpose — a corrupt reference yields

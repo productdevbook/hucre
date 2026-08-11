@@ -92,13 +92,13 @@ export async function readXlsb(
 ): Promise<Workbook> {
   let data = await readInputToUint8Array(input, options?.maxInputBytes)
   if (isOle2Container(data)) {
-    if (options?.password) data = await decryptAgile(data, options.password)
+    if (options?.password) data = await decryptAgile(data, options.password, options.maxSpinCount)
     else throw new EncryptedFileError("xlsx")
   }
 
   let zip: ZipReader
   try {
-    zip = new ZipReader(data)
+    zip = new ZipReader(data, options?.maxDecompressedBytes)
   } catch (err) {
     if (err instanceof ZipError) throw err
     throw new ParseError("Failed to open XLSB: not a valid ZIP archive", undefined, { cause: err })

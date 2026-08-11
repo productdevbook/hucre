@@ -817,7 +817,7 @@ export async function* streamXlsxRows(
   // isn't possible — the whole package must be decrypted first).
   if (isOle2Container(data)) {
     if (options?.password) {
-      data = await decryptAgile(data, options.password)
+      data = await decryptAgile(data, options.password, options.maxSpinCount)
     } else {
       throw new EncryptedFileError("xlsx")
     }
@@ -826,7 +826,7 @@ export async function* streamXlsxRows(
   // 1. Open ZIP archive
   let zip: ZipReader
   try {
-    zip = new ZipReader(data)
+    zip = new ZipReader(data, options?.maxDecompressedBytes)
   } catch (err) {
     if (err instanceof ZipError) throw err
     throw new ParseError("Failed to open XLSX file: not a valid ZIP archive", undefined, {

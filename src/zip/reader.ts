@@ -105,7 +105,19 @@ export class ZipReader {
   private centralDir: CentralDirEntry[] = []
   private entryMap: Map<string, CentralDirEntry> = new Map()
 
-  constructor(private data: Uint8Array) {
+  /**
+   * Absolute ceiling on what any one entry may decompress to — the
+   * zip-bomb bound. Defaults to {@link MAX_DECOMPRESSED_BYTES}; readers
+   * pass `ReadOptions.maxDecompressedBytes` through when the caller has
+   * said the input is trusted. See #471.
+   */
+  private maxDecompressedBytes: number
+
+  constructor(
+    private data: Uint8Array,
+    maxDecompressedBytes: number = MAX_DECOMPRESSED_BYTES,
+  ) {
+    this.maxDecompressedBytes = maxDecompressedBytes
     if (data.length < 22) {
       throw new ZipError("Data too small to be a valid ZIP archive")
     }
@@ -429,8 +441,8 @@ export class ZipReader {
         // declared and trustworthy) as well as the absolute hard cap.
         const declaredCap =
           uncompressedSize > 0
-            ? Math.min(uncompressedSize, MAX_DECOMPRESSED_BYTES)
-            : MAX_DECOMPRESSED_BYTES
+            ? Math.min(uncompressedSize, this.maxDecompressedBytes)
+            : this.maxDecompressedBytes
         result = await decompressDeflateRaw(compressedData, declaredCap)
       }
     } else {
@@ -520,8 +532,8 @@ export class ZipReader {
       // buffered reader rejects.
       const declaredCap =
         entry.uncompressedSize > 0
-          ? Math.min(entry.uncompressedSize, MAX_DECOMPRESSED_BYTES)
-          : MAX_DECOMPRESSED_BYTES
+          ? Math.min(entry.uncompressedSize, this.maxDecompressedBytes)
+          : this.maxDecompressedBytes
 
       if (canInflateRaw()) {
         const inputStream = new ReadableStream({

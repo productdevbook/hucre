@@ -272,19 +272,42 @@ _wrong_.
 `ReadOptions` is one interface for `readXlsx`, `readOds`, `readXlsb`,
 `readXls` and `read`. Not every option means something to every format:
 
-| option          | `readXlsx` | `readOds` | `readXlsb` | `readXls` |
-| --------------- | :--------: | :-------: | :--------: | :-------: |
-| `maxInputBytes` |    yes     |    yes    |    yes     |    yes    |
-| `sheets`        |    yes     |    yes    |     —      |     —     |
-| `readStyles`    |    yes     |    yes    |    n/a     |    n/a    |
-| `dateSystem`    |    yes     |    n/a    |    yes     |    yes    |
-| `password`      |    yes     |     —     |    yes     |     —     |
-| `maxRows`       |    yes     |    yes    |     —      |     —     |
-| `range`         |    yes     |    yes    |     —      |     —     |
+| option                 | `readXlsx` | `readOds` | `readXlsb` | `readXls` |
+| ---------------------- | :--------: | :-------: | :--------: | :-------: |
+| `maxInputBytes`        |    yes     |    yes    |    yes     |    yes    |
+| `maxTotalCells`        |    yes     |    yes    |     —      |    yes    |
+| `maxDecompressedBytes` |    yes     |    yes    |    yes     |    n/a    |
+| `maxSpinCount`         |    yes     |    n/a    |    yes     |    n/a    |
+| `sheets`               |    yes     |    yes    |     —      |     —     |
+| `readStyles`           |    yes     |    yes    |    n/a     |    n/a    |
+| `dateSystem`           |    yes     |    n/a    |    yes     |    yes    |
+| `password`             |    yes     |     —     |    yes     |     —     |
+| `maxRows`              |    yes     |    yes    |     —      |     —     |
+| `range`                |    yes     |    yes    |     —      |     —     |
 
 `n/a` means the option cannot apply: ODS stores ISO date strings, so
-there is no 1900/1904 system to pick, and neither legacy reader surfaces
-styles at all. A `—` is a gap, not a decision.
+there is no 1900/1904 system to pick, neither legacy reader surfaces
+styles at all, `.xls` is a CFB container rather than a ZIP, and ODS
+encryption is not implemented (#156). A `—` is a gap, not a decision.
+
+### Resource limits
+
+The bounds in `src/limits.ts` are exported from the root, so a caller can
+quote `MAX_TOTAL_CELLS` in their own message instead of hard-coding
+20,000,000. Three of them are also `ReadOptions` fields, per the table
+above; the defaults do not change.
+
+Two are still constants only, because both clamp rather than throw — a
+file over the bound is read with the excess trimmed, not rejected, so
+there is nothing for a caller to rescue:
+
+| bound              | where                         |
+| ------------------ | ----------------------------- |
+| `MAX_REPEAT_COUNT` | ODS `text:c` / decimal places |
+| `MAX_SPAN_CELLS`   | HTML `rowspan` x `colspan`    |
+
+`MAX_SPAN_CELLS` also belongs to `fromHtml`, which takes its own options
+type rather than `ReadOptions`.
 
 ## XLS and XLSB — read only
 

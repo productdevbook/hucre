@@ -329,6 +329,31 @@ describe("hucre (root)", () => {
       "hucre",
     )
   })
+
+  it("exports the resource limits", () => {
+    // #471 — these were reachable from nowhere, so a caller who wanted to
+    // name the bound in their own message had to hard-code 20,000,000 and
+    // hope it did not move.
+    expectExports(
+      root,
+      [
+        "MAX_COL_INDEX",
+        "MAX_DECOMPRESSED_BYTES",
+        "MAX_INPUT_BYTES",
+        "MAX_REPEAT_COUNT",
+        "MAX_ROW_INDEX",
+        "MAX_SPAN_CELLS",
+        "MAX_SPIN_COUNT",
+        "MAX_TOTAL_CELLS",
+      ],
+      "hucre",
+    )
+
+    // Quotable means the value, not just the name.
+    expect(root.MAX_TOTAL_CELLS).toBe(20_000_000)
+    expect(root.MAX_ROW_INDEX).toBe(1_048_575)
+    expect(root.MAX_COL_INDEX).toBe(16_383)
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════════════

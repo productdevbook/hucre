@@ -302,6 +302,24 @@ export {
   DecryptionError,
 } from "./errors"
 
+// ── Resource limits ────────────────────────────────────────────────
+//
+// The bounds the readers defend themselves with. They are exported so a
+// caller can quote the number in their own message, compare against it
+// before handing a file over, or pass a raised one back in through the
+// matching `ReadOptions` field — rather than hard-coding 20,000,000 and
+// hoping it does not move. See #471.
+export {
+  MAX_COL_INDEX,
+  MAX_DECOMPRESSED_BYTES,
+  MAX_INPUT_BYTES,
+  MAX_REPEAT_COUNT,
+  MAX_ROW_INDEX,
+  MAX_SPAN_CELLS,
+  MAX_SPIN_COUNT,
+  MAX_TOTAL_CELLS,
+} from "./limits"
+
 // ── Types ──────────────────────────────────────────────────────────
 export type {
   // Cell

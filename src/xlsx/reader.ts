@@ -120,7 +120,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
   // surface a typed `EncryptedFileError` instead of a generic ZIP failure.
   if (isOle2Container(data)) {
     if (options?.password) {
-      data = await decryptAgile(data, options.password)
+      data = await decryptAgile(data, options.password, options.maxSpinCount)
     } else {
       throw new EncryptedFileError("xlsx")
     }
@@ -129,7 +129,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
   // 1. Open ZIP archive
   let zip: ZipReader
   try {
-    zip = new ZipReader(data)
+    zip = new ZipReader(data, options?.maxDecompressedBytes)
   } catch (err) {
     if (err instanceof ZipError) throw err
     throw new ParseError("Failed to open XLSX file: not a valid ZIP archive", undefined, {
@@ -401,6 +401,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
       worksheetRels,
       maxRows: options?.maxRows,
       range: options?.range,
+      maxTotalCells: options?.maxTotalCells,
       dynamicArrayCm,
       sheetName: info.name,
       onWarning: options?.onWarning,

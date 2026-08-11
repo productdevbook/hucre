@@ -110,7 +110,7 @@ export async function read(input: ReadInput, options?: ReadOptions): Promise<Wor
       return readXls(data, options)
     }
     if (options?.password) {
-      data = await decryptAgile(data, options.password)
+      data = await decryptAgile(data, options.password, options.maxSpinCount)
     } else {
       throw new EncryptedFileError()
     }

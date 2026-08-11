@@ -518,6 +518,8 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
   const doc = parseXml(xml)
   const sheets: Sheet[] = []
 
+  const cellLimit = options?.maxTotalCells ?? MAX_TOTAL_CELLS
+
   // Parse styles for use when readStyles is enabled
   const readStyles = options?.readStyles ?? false
   const styleDefs = readStyles ? parseStyles(doc) : new Map<string, OdsStyleDef>()
@@ -743,8 +745,11 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
       // not: one row of 16,384 cells repeated 1,048,576 times is 1.7e10
       // slots from a couple hundred bytes of content.xml. See #363.
       const projected = (rows.length + effectiveRowRepeat) * rowData.length
-      if (projected > MAX_TOTAL_CELLS) {
-        throw new ParseError(`Sheet spans ${projected} cells, over the ${MAX_TOTAL_CELLS} limit`)
+      if (projected > cellLimit) {
+        throw new ParseError(
+          `Sheet spans ${projected} cells, over the ${cellLimit} limit. ` +
+            "Raise `maxTotalCells` if the sheet really is this large.",
+        )
       }
 
       for (let r = 0; r < effectiveRowRepeat; r++) {
@@ -891,7 +896,7 @@ export async function readOds(input: ReadInput, options?: ReadOptions): Promise<
   // 1. Open ZIP archive
   let zip: ZipReader
   try {
-    zip = new ZipReader(data)
+    zip = new ZipReader(data, options?.maxDecompressedBytes)
   } catch (err) {
     if (err instanceof ZipError) throw err
     throw new ParseError("Failed to open ODS file: not a valid ZIP archive", undefined, {

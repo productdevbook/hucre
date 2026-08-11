@@ -29,6 +29,11 @@ export interface OdsStreamReadOptions {
   sheets?: Array<number | string>
   /** Stop after this many rows across all streamed sheets. */
   maxRows?: number
+  /**
+   * Zip-bomb ceiling for any one entry; see `ReadOptions.maxDecompressedBytes`.
+   * Default: 2 GiB ({@link MAX_DECOMPRESSED_BYTES}).
+   */
+  maxDecompressedBytes?: number
 }
 
 /**
@@ -286,7 +291,7 @@ export async function* streamOdsRows(
   // 1. Open ZIP archive
   let zip: ZipReader
   try {
-    zip = new ZipReader(data)
+    zip = new ZipReader(data, options?.maxDecompressedBytes)
   } catch (err) {
     if (err instanceof ZipError) throw err
     throw new ParseError("Failed to open ODS file: not a valid ZIP archive", undefined, {
