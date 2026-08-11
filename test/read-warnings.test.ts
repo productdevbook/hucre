@@ -119,3 +119,142 @@ describe("a clean file says nothing", () => {
     expect(without.sheets[0]!.rows).toEqual(withSink.sheets[0]!.rows)
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════
+// #474 — `onWarning` was wired at the two sites measured as silent. Three
+// more follow the same shape, each with a test rather than a speculative
+// call. One of them, `unresolved-dxf`, was already in the `ReadWarning`
+// union and emitted from nowhere.
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("a conditional rule's formatting that resolves to nothing", () => {
+  async function ruled(): Promise<Uint8Array> {
+    return writeXlsx({
+      sheets: [
+        {
+          name: "Data",
+          rows: [[1], [2]],
+          conditionalRules: [
+            {
+              type: "cellIs",
+              priority: 1,
+              range: "A1:A2",
+              operator: "greaterThan",
+              formula: "1",
+              style: { fill: { type: "pattern", pattern: "solid", fgColor: { rgb: "FFFF00" } } },
+            },
+          ],
+        },
+      ],
+    })
+  }
+
+  it("names the dxfId and says what the rule keeps", async () => {
+    const bytes = await damage(await ruled(), SHEET, (xml) =>
+      xml.replace(/dxfId="\d+"/, 'dxfId="42"'),
+    )
+
+    const warnings: ReadWarning[] = []
+    const wb = await readXlsx(bytes, { readStyles: true, onWarning: (w) => warnings.push(w) })
+
+    // Still lenient: the rule survives without its formatting, because a
+    // rule that paints nothing is closer to the file than no rule at all.
+    expect(wb.sheets[0]!.conditionalRules).toHaveLength(1)
+    expect(wb.sheets[0]!.conditionalRules![0]!.style).toBeUndefined()
+
+    const dxf = warnings.find((w) => w.code === "unresolved-dxf")
+    expect(dxf).toBeDefined()
+    expect(dxf!.message).toContain("42")
+    expect(dxf!.message).toContain("A1:A2")
+    expect(dxf!.sheet).toBe("Data")
+  })
+
+  it("says nothing when the rule's format is there", async () => {
+    const warnings: ReadWarning[] = []
+    await readXlsx(await ruled(), { readStyles: true, onWarning: (w) => warnings.push(w) })
+
+    expect(warnings.filter((w) => w.code === "unresolved-dxf")).toEqual([])
+  })
+})
+
+describe("a hyperlink pointing at a relationship that is not there", () => {
+  async function linked(): Promise<Uint8Array> {
+    return writeXlsx({
+      sheets: [
+        {
+          name: "Data",
+          rows: [["click"]],
+          cells: new Map([
+            ["0,0", { value: "click", hyperlink: { target: "https://example.com" } }],
+          ]),
+        },
+      ],
+    })
+  }
+
+  it("names the cell and the rId", async () => {
+    // Drop the relationship, keep the reference — a real shape, since the
+    // two live in different parts of the package.
+    const bytes = await damage(await linked(), "xl/worksheets/_rels/sheet1.xml.rels", (xml) =>
+      xml.replace(/<Relationship [^>]*hyperlink[^>]*\/>/, ""),
+    )
+
+    const warnings: ReadWarning[] = []
+    const wb = await readXlsx(bytes, { onWarning: (w) => warnings.push(w) })
+
+    // Lenient: an empty target, not an exception.
+    expect(wb.sheets[0]!.cells?.get("0,0")?.hyperlink?.target).toBe("")
+
+    const warning = warnings.find((w) => w.code === "unresolved-hyperlink")
+    expect(warning).toBeDefined()
+    expect(warning!.message).toContain("A1")
+    expect(warning!.row).toBe(0)
+    expect(warning!.col).toBe(0)
+    expect(warning!.sheet).toBe("Data")
+  })
+
+  it("says nothing about a link that resolves", async () => {
+    const warnings: ReadWarning[] = []
+    await readXlsx(await linked(), { onWarning: (w) => warnings.push(w) })
+
+    expect(warnings.filter((w) => w.code === "unresolved-hyperlink")).toEqual([])
+  })
+})
+
+describe("a paper size that is not a usable code", () => {
+  async function printed(): Promise<Uint8Array> {
+    return writeXlsx({
+      sheets: [{ name: "Data", rows: [["a"]], pageSetup: { paperSize: "a4" } }],
+    })
+  }
+
+  it("names what the file said", async () => {
+    const bytes = await damage(await printed(), SHEET, (xml) =>
+      xml.replace(/paperSize="\d+"/, 'paperSize="0"'),
+    )
+
+    const warnings: ReadWarning[] = []
+    const wb = await readXlsx(bytes, { onWarning: (w) => warnings.push(w) })
+
+    expect(wb.sheets[0]!.pageSetup?.paperSize).toBeUndefined()
+
+    const warning = warnings.find((w) => w.code === "unusable-paper-size")
+    expect(warning).toBeDefined()
+    expect(warning!.message).toContain('"0"')
+    expect(warning!.sheet).toBe("Data")
+  })
+
+  it("says nothing about a code with no name, which is still a size", async () => {
+    // 999 has no name in hucre's table; it round-trips as the number
+    // rather than vanishing, so there is nothing to report.
+    const bytes = await damage(await printed(), SHEET, (xml) =>
+      xml.replace(/paperSize="\d+"/, 'paperSize="999"'),
+    )
+
+    const warnings: ReadWarning[] = []
+    const wb = await readXlsx(bytes, { onWarning: (w) => warnings.push(w) })
+
+    expect(wb.sheets[0]!.pageSetup?.paperSize).toBe(999)
+    expect(warnings.filter((w) => w.code === "unusable-paper-size")).toEqual([])
+  })
+})

@@ -714,7 +714,7 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
           // Merge, don't replace: <printOptions> is written before
           // <pageSetup> in a worksheet, so assigning here dropped
           // whatever it had already contributed. See #360.
-          pageSetup = { ...pageSetup, ...parsePageSetupAttrs(attrs) }
+          pageSetup = { ...pageSetup, ...parsePageSetupAttrs(attrs, ctx) }
           break
         case "printOptions":
           // <printOptions> was never parsed, so showGridLines and
@@ -1020,6 +1020,7 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
               isCfvos,
               isAttrs,
               ctx.styles?.dxfs,
+              ctx,
             )
             if (cfRule) {
               conditionalRules.push(cfRule)
@@ -1208,6 +1209,19 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
       const target = relMap.get(hl.rId)
       if (target) {
         hyperlink.target = target
+      } else {
+        // The cell keeps a hyperlink with an empty target, which reads as
+        // a link that goes nowhere rather than as a missing relationship.
+        // See #474.
+        ctx.onWarning?.({
+          code: "unresolved-hyperlink",
+          message:
+            `Cell ${hl.ref} links through ${hl.rId}, which the sheet's ` +
+            "relationships do not define. Read with an empty target.",
+          sheet: ctx.sheetName,
+          row: pos.row,
+          col: pos.col,
+        })
       }
     }
 
@@ -1484,6 +1498,7 @@ function buildConditionalRule(
   isCfvos: Array<{ type: string; value?: string }>,
   isAttrsObj: Record<string, string>,
   dxfs: CellStyle[] | undefined,
+  ctx?: WorksheetContext,
 ): ConditionalRule | null {
   const typeStr = attrs["type"]
   if (!typeStr || !VALID_CF_TYPES.has(typeStr)) return null
@@ -1513,6 +1528,19 @@ function buildConditionalRule(
     // at the same dxfId, following the same contract as a resolved cell
     // style; see resolveStyle in ./styles.ts.
     if (dxf && Object.keys(dxf).length > 0) rule.style = dxf
+    // A rule whose formatting silently vanished still applies — it just
+    // paints nothing, which looks like the rule not working rather than
+    // like a damaged file. See #474.
+    else if (!dxf) {
+      ctx?.onWarning?.({
+        code: "unresolved-dxf",
+        message:
+          `Conditional rule on ${sqref} asks for differential format ${dxfId}, ` +
+          `which the file does not have (${dxfs.length} present). The rule keeps ` +
+          "its condition and loses its formatting.",
+        sheet: ctx.sheetName,
+      })
+    }
   }
 
   // stopIfTrue
@@ -1916,13 +1944,25 @@ function applyPrintOptionsAttrs(
   return ps
 }
 
-function parsePageSetupAttrs(attrs: Record<string, string>): PageSetup {
+function parsePageSetupAttrs(attrs: Record<string, string>, ctx?: WorksheetContext): PageSetup {
   const ps: PageSetup = {}
 
   if (attrs["paperSize"]) {
     const num = Number(attrs["paperSize"])
     // A code with no name round-trips as the number rather than vanishing.
     if (Number.isInteger(num) && num > 0) ps.paperSize = PAPER_SIZE_REVERSE[num] ?? num
+    else {
+      // Anything else is not a paper size, so the sheet comes back
+      // claiming the default one. Reported, because the printed output
+      // then differs from the file and nothing else says why. See #474.
+      ctx?.onWarning?.({
+        code: "unusable-paper-size",
+        message:
+          `Page setup names paper size "${attrs["paperSize"]}", which is not a ` +
+          "positive integer code. Dropped; the sheet reads with no paper size set.",
+        sheet: ctx.sheetName,
+      })
+    }
   }
 
   if (attrs["orientation"] === "landscape" || attrs["orientation"] === "portrait") {

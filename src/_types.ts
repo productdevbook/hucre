@@ -1421,7 +1421,12 @@ export interface Workbook {
 /** What a reader had to drop, and where. */
 export interface ReadWarning {
   /** What kind of problem this is, for programmatic handling. */
-  code: "unresolved-shared-string" | "unresolved-style" | "unresolved-dxf"
+  code:
+    | "unresolved-shared-string"
+    | "unresolved-style"
+    | "unresolved-dxf"
+    | "unresolved-hyperlink"
+    | "unusable-paper-size"
   /** A sentence a person can act on. */
   message: string
   /** The sheet it happened in, when the reader knows. */

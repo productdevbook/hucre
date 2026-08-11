@@ -323,6 +323,19 @@ Each warning carries a `code`, a sentence, and the sheet and cell it came
 from. Nothing changes when the option is omitted, and a file hucre wrote
 produces none.
 
+| code                       | what silently went missing                                    |
+| -------------------------- | ------------------------------------------------------------- |
+| `unresolved-shared-string` | a cell's text; reads as empty                                 |
+| `unresolved-style`         | a cell's format; reads unstyled                               |
+| `unresolved-dxf`           | a conditional rule's formatting; the rule keeps its condition |
+| `unresolved-hyperlink`     | a link's target; reads as an empty target                     |
+| `unusable-paper-size`      | the sheet's paper size; reads as unset                        |
+
+Each is a place where leniency produces something _indistinguishable from
+correct_ — an empty cell, an unstyled cell, a rule that paints nothing, a
+link that goes nowhere. Where a reader drops something that is visibly
+absent instead, there is no warning, because none is needed.
+
 Structural damage still throws: a missing `xl/workbook.xml`, or a
 worksheet part a sheet declares and the archive does not contain, is a
 `ParseError`. The difference is whether the answer would be _short_ or
