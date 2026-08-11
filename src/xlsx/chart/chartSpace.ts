@@ -243,9 +243,7 @@ export function resolveCloneProtection(
  * the field rather than carry a value the writer would silently elide
  * back to absence.
  */
-export function normalizeClonePlotAreaFillColor(
-  value: ChartColor | undefined,
-): ChartColor | undefined {
+function normalizeClonePlotAreaFillColor(value: ChartColor | undefined): ChartColor | undefined {
   return normalizeChartColor(value)
 }
 
@@ -261,9 +259,7 @@ export function normalizeClonePlotAreaFillColor(
  * would silently elide back to absence. Mirrors
  * {@link normalizeClonePlotAreaFillColor} — same hex grammar.
  */
-export function normalizeClonePlotAreaBorderColor(
-  value: ChartColor | undefined,
-): ChartColor | undefined {
+function normalizeClonePlotAreaBorderColor(value: ChartColor | undefined): ChartColor | undefined {
   return normalizeChartColor(value)
 }
 
@@ -279,9 +275,7 @@ export function normalizeClonePlotAreaBorderColor(
  * so the cloned chart drops the field rather than carry a value the
  * writer would silently elide back to absence.
  */
-export function normalizeCloneChartSpaceFillColor(
-  value: ChartColor | undefined,
-): ChartColor | undefined {
+function normalizeCloneChartSpaceFillColor(value: ChartColor | undefined): ChartColor | undefined {
   return normalizeChartColor(value)
 }
 
@@ -328,7 +322,7 @@ export function resolveCloneChartSpaceFillColor(
  * so the cloned chart drops the field rather than carry a value the
  * writer would silently elide back to absence.
  */
-export function normalizeCloneChartSpaceBorderColor(
+function normalizeCloneChartSpaceBorderColor(
   value: ChartColor | undefined,
 ): ChartColor | undefined {
   return normalizeChartColor(value)

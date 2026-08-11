@@ -39,6 +39,60 @@ function findChild(el: XmlElement, localName: string): XmlElement | undefined {
   return undefined
 }
 
+// ── The walk ──────────────────────────────────────────────────────
+//
+// Both hosts end at the same `<a:defRPr>`; they differ only in how you
+// get there. Written out at each call site, that walk appeared 43 times
+// across five files — axis.ts alone had 14 — so reading one axis
+// re-walked the same subtree once per attribute, and adding a property
+// meant another copy of it. See #466.
+
+/**
+ * `host` → `<c:txPr>` → `<a:p>` → `<a:pPr>` → `<a:defRPr>`.
+ *
+ * The text-properties body: what the legend, axis tick labels,
+ * data-labels and data-table hosts use. Scoped to the host's *own*
+ * `<c:txPr>`, so a `<a:defRPr>` inside a sibling `<c:title><c:tx>
+ * <c:rich>` cannot leak in — which is why this is a walk and not a
+ * recursive search.
+ *
+ * Returns `undefined` at the first missing link, so a malformed chain
+ * surfaces as absence rather than a fabricated value.
+ */
+export function resolveTxPrDefRPr(host: XmlElement): XmlElement | undefined {
+  const txPr = findChild(host, "txPr")
+  if (!txPr) return undefined
+  return resolveParagraphDefRPr(txPr)
+}
+
+/**
+ * `host` → `<c:title>` → `<c:tx>` → `<c:rich>` → `<a:p>` → `<a:pPr>` →
+ * `<a:defRPr>`.
+ *
+ * The rich-text body: what the chart title and axis titles use. Takes
+ * the element that *owns* the title — `<c:chart>` for the chart title,
+ * the axis element for an axis title — because that is where both
+ * callers start.
+ */
+export function resolveTitleDefRPr(host: XmlElement): XmlElement | undefined {
+  const title = findChild(host, "title")
+  if (!title) return undefined
+  const tx = findChild(title, "tx")
+  if (!tx) return undefined
+  const rich = findChild(tx, "rich")
+  if (!rich) return undefined
+  return resolveParagraphDefRPr(rich)
+}
+
+/** The shared tail: `<a:p>` → `<a:pPr>` → `<a:defRPr>`. */
+function resolveParagraphDefRPr(body: XmlElement): XmlElement | undefined {
+  const p = findChild(body, "p")
+  if (!p) return undefined
+  const pPr = findChild(p, "pPr")
+  if (!pPr) return undefined
+  return findChild(pPr, "defRPr")
+}
+
 // ── Rotation constants ────────────────────────────────────────────
 
 /**

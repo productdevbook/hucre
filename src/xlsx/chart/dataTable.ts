@@ -37,7 +37,7 @@ import {
   parseSpPrFill,
 } from "./shape"
 import { findChild } from "./util"
-import { FONT_SIZE_MAX_PT, FONT_SIZE_MIN_PT, FONT_SZ_PER_POINT } from "./text"
+import { FONT_SIZE_MAX_PT, FONT_SIZE_MIN_PT, FONT_SZ_PER_POINT, resolveTxPrDefRPr } from "./text"
 import { normalizeTitleColor, normalizeTitleFontSize } from "./title"
 
 const TITLE_FONT_SZ_PER_POINT = FONT_SZ_PER_POINT
@@ -128,13 +128,7 @@ export function parseDataTable(plotArea: XmlElement): ChartDataTable | undefined
  * writer's emit path.
  */
 export function parseDataTableBold(dTable: XmlElement): boolean | undefined {
-  const txPr = findChild(dTable, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(dTable)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.b
   if (typeof raw !== "string") return undefined
@@ -168,13 +162,7 @@ export function parseDataTableBold(dTable: XmlElement): boolean | undefined {
  * back into the writer's emit path.
  */
 export function parseDataTableItalic(dTable: XmlElement): boolean | undefined {
-  const txPr = findChild(dTable, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(dTable)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.i
   if (typeof raw !== "string") return undefined
@@ -216,13 +204,7 @@ export function parseDataTableItalic(dTable: XmlElement): boolean | undefined {
  * writer's emit path.
  */
 export function parseDataTableUnderline(dTable: XmlElement): boolean | undefined {
-  const txPr = findChild(dTable, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(dTable)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.u
   if (raw === "sng") return true
@@ -249,13 +231,7 @@ export function parseDataTableUnderline(dTable: XmlElement): boolean | undefined
  * slots straight back into the writer's emit path.
  */
 export function parseDataTableStrikethrough(dTable: XmlElement): boolean | undefined {
-  const txPr = findChild(dTable, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(dTable)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.strike
   if (raw === "sngStrike") return true
@@ -284,13 +260,7 @@ export function parseDataTableStrikethrough(dTable: XmlElement): boolean | undef
  * so a parsed value slots straight back into the writer's emit path.
  */
 export function parseDataTableFontFamily(dTable: XmlElement): string | undefined {
-  const txPr = findChild(dTable, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(dTable)
   if (!defRPr) return undefined
   const latin = findChild(defRPr, "latin")
   if (!latin) return undefined
@@ -401,13 +371,7 @@ export function parseDataTableBorderColor(dTable: XmlElement): ChartColor | unde
  * writer's emit path.
  */
 export function parseDataTableFontColor(dTable: XmlElement): ChartColor | undefined {
-  const txPr = findChild(dTable, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(dTable)
   if (!defRPr) return undefined
   const solidFill = findChild(defRPr, "solidFill")
   if (!solidFill) return undefined
@@ -434,13 +398,7 @@ export function parseDataTableFontColor(dTable: XmlElement): ChartColor | undefi
  * the writer's emit path.
  */
 export function parseDataTableFontSize(dTable: XmlElement): number | undefined {
-  const txPr = findChild(dTable, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(dTable)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.sz
   if (typeof raw !== "string") return undefined
@@ -591,7 +549,7 @@ export function resolveDataTable(chart: SheetChart):
  * (Excel's UI step is 0.5pt), and the same OOXML conversion (100ths of
  * a point at emit time).
  */
-export function resolveDataTableFontSize(value: number | undefined): number | undefined {
+function resolveDataTableFontSize(value: number | undefined): number | undefined {
   return normalizeTitleFontSize(value)
 }
 
@@ -607,7 +565,7 @@ export function resolveDataTableFontSize(value: number | undefined): number | un
  * axis-title / axis tick-label / legend / data-label color resolvers
  * exactly.
  */
-export function resolveDataTableFontColor(value: ChartColor | undefined): ChartColor | undefined {
+function resolveDataTableFontColor(value: ChartColor | undefined): ChartColor | undefined {
   return normalizeTitleColor(value)
 }
 
@@ -622,7 +580,7 @@ export function resolveDataTableFontColor(value: ChartColor | undefined): ChartC
  * tokens (typed escapes from an untyped caller) collapse to
  * `undefined`.
  */
-export function resolveDataTableBold(value: boolean | undefined): boolean | undefined {
+function resolveDataTableBold(value: boolean | undefined): boolean | undefined {
   if (value === true) return true
   if (value === false) return false
   return undefined
@@ -639,7 +597,7 @@ export function resolveDataTableBold(value: boolean | undefined): boolean | unde
  * `false` pass through; non-boolean tokens (typed escapes from an
  * untyped caller) collapse to `undefined`.
  */
-export function resolveDataTableItalic(value: boolean | undefined): boolean | undefined {
+function resolveDataTableItalic(value: boolean | undefined): boolean | undefined {
   if (value === true) return true
   if (value === false) return false
   return undefined
@@ -658,7 +616,7 @@ export function resolveDataTableItalic(value: boolean | undefined): boolean | un
  * `u="sng"` (Excel's UI variant — single underline) and `false` into
  * `u="none"` at emit time.
  */
-export function resolveDataTableUnderline(value: boolean | undefined): boolean | undefined {
+function resolveDataTableUnderline(value: boolean | undefined): boolean | undefined {
   if (value === true) return true
   if (value === false) return false
   return undefined
@@ -679,7 +637,7 @@ export function resolveDataTableUnderline(value: boolean | undefined): boolean |
  * mirroring how `resolveTitleStrike` / `resolveLegendStrikethrough` /
  * `resolveDataLabelsStrikethrough` land on their `<a:defRPr>` slots.
  */
-export function resolveDataTableStrikethrough(value: boolean | undefined): boolean | undefined {
+function resolveDataTableStrikethrough(value: boolean | undefined): boolean | undefined {
   if (value === true) return true
   return undefined
 }
@@ -696,7 +654,7 @@ export function resolveDataTableStrikethrough(value: boolean | undefined): boole
  * resolvers exactly so a single configuration call threads cleanly
  * through every typography slot Excel exposes.
  */
-export function resolveDataTableFontFamily(value: string | undefined): string | undefined {
+function resolveDataTableFontFamily(value: string | undefined): string | undefined {
   if (typeof value !== "string") return undefined
   const trimmed = value.trim()
   if (trimmed.length === 0) return undefined
@@ -718,7 +676,7 @@ export function resolveDataTableFontFamily(value: string | undefined): string | 
  * (ECMA-376 Part 1, §21.2.2.54), distinct from the `<c:txPr>` block
  * that carries {@link ChartDataTable.fontColor}.
  */
-export function resolveDataTableFillColor(value: ChartColor | undefined): ChartColor | undefined {
+function resolveDataTableFillColor(value: ChartColor | undefined): ChartColor | undefined {
   return normalizeTitleColor(value)
 }
 
@@ -740,7 +698,7 @@ export function resolveDataTableFillColor(value: ChartColor | undefined): ChartC
  * slot on the `CT_ShapeProperties` schema — but lands on `<c:dTable>`'s
  * own `<c:spPr>` block.
  */
-export function resolveDataTableBorderColor(value: ChartColor | undefined): ChartColor | undefined {
+function resolveDataTableBorderColor(value: ChartColor | undefined): ChartColor | undefined {
   return normalizeTitleColor(value)
 }
 
@@ -914,7 +872,7 @@ export function buildDataTableSpPr(
  * canonical default-paragraph slot every other typography reader
  * expects.
  */
-export function buildDataTableTxPr(
+function buildDataTableTxPr(
   fontSizePt: number | undefined,
   rgbHex: ChartColor | undefined,
   bold: boolean | undefined,

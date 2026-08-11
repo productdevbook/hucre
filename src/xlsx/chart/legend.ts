@@ -47,7 +47,7 @@ import {
   parseManualLayout,
 } from "./layout"
 import { childElements, findChild, readBoolVal } from "./util"
-import { FONT_SIZE_MAX_PT, FONT_SIZE_MIN_PT, FONT_SZ_PER_POINT } from "./text"
+import { FONT_SIZE_MAX_PT, FONT_SIZE_MIN_PT, FONT_SZ_PER_POINT, resolveTxPrDefRPr } from "./text"
 import { normalizeTitleColor, normalizeTitleFontSize } from "./title"
 
 // ── Legend types (writer-side) ────────────────────────────────────
@@ -207,69 +207,59 @@ export function parseLegendEntries(chartEl: XmlElement): ChartLegendEntry[] | un
     const deleteFlag = deleteEl !== undefined ? readBoolVal(deleteEl.attrs.val) === true : false
     const entry: ChartLegendEntry = { idx, delete: deleteFlag }
 
-    // Walk `<c:legendEntry><c:txPr><a:p><a:pPr><a:defRPr ...>` for the
-    // per-entry typography overrides. Mirror the same path the
-    // chart-level legend font-size / bold / italic readers use.
-    const txPr = findChild(child, "txPr")
-    if (txPr) {
-      const p = findChild(txPr, "p")
-      if (p) {
-        const pPr = findChild(p, "pPr")
-        if (pPr) {
-          const defRPr = findChild(pPr, "defRPr")
-          if (defRPr) {
-            const sz = defRPr.attrs.sz
-            if (typeof sz === "string") {
-              const trimmed = sz.trim()
-              if (trimmed.length > 0) {
-                const parsed = Number.parseInt(trimmed, 10)
-                if (Number.isFinite(parsed)) {
-                  const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2)
-                  const points = halfSteps / 2
-                  if (points >= TITLE_FONT_SIZE_MIN_PT && points <= TITLE_FONT_SIZE_MAX_PT) {
-                    entry.fontSize = points
-                  }
-                }
-              }
-            }
-            const b = defRPr.attrs.b
-            if (typeof b === "string") {
-              const v = readBoolVal(b)
-              if (v === true) entry.bold = true
-            }
-            const i = defRPr.attrs.i
-            if (typeof i === "string") {
-              const v = readBoolVal(i)
-              if (v === true) entry.italic = true
-            }
-            const u = defRPr.attrs.u
-            if (typeof u === "string" && u === "sng") entry.underline = true
-            const strike = defRPr.attrs.strike
-            if (typeof strike === "string" && strike === "sngStrike") entry.strikethrough = true
-
-            // Font color
-            const solidFill = findChild(defRPr, "solidFill")
-            if (solidFill) {
-              const srgb = findChild(solidFill, "srgbClr")
-              if (srgb) {
-                const v = srgb.attrs.val
-                if (typeof v === "string") {
-                  const hex = v.replace(/^#/, "").toUpperCase()
-                  if (/^[0-9A-F]{6}$/.test(hex)) entry.color = hex
-                }
-              }
-            }
-
-            // Font family
-            const latin = findChild(defRPr, "latin")
-            if (latin) {
-              const tf = latin.attrs.typeface
-              if (typeof tf === "string") {
-                const trimmed = tf.trim()
-                if (trimmed.length > 0) entry.fontFamily = trimmed
-              }
+    // Per-entry typography overrides, on the same path the chart-level
+    // legend readers use — `<c:legendEntry>` is just another host.
+    const defRPr = resolveTxPrDefRPr(child)
+    if (defRPr) {
+      const sz = defRPr.attrs.sz
+      if (typeof sz === "string") {
+        const trimmed = sz.trim()
+        if (trimmed.length > 0) {
+          const parsed = Number.parseInt(trimmed, 10)
+          if (Number.isFinite(parsed)) {
+            const halfSteps = Math.round((parsed / TITLE_FONT_SZ_PER_POINT) * 2)
+            const points = halfSteps / 2
+            if (points >= TITLE_FONT_SIZE_MIN_PT && points <= TITLE_FONT_SIZE_MAX_PT) {
+              entry.fontSize = points
             }
           }
+        }
+      }
+      const b = defRPr.attrs.b
+      if (typeof b === "string") {
+        const v = readBoolVal(b)
+        if (v === true) entry.bold = true
+      }
+      const i = defRPr.attrs.i
+      if (typeof i === "string") {
+        const v = readBoolVal(i)
+        if (v === true) entry.italic = true
+      }
+      const u = defRPr.attrs.u
+      if (typeof u === "string" && u === "sng") entry.underline = true
+      const strike = defRPr.attrs.strike
+      if (typeof strike === "string" && strike === "sngStrike") entry.strikethrough = true
+
+      // Font color
+      const solidFill = findChild(defRPr, "solidFill")
+      if (solidFill) {
+        const srgb = findChild(solidFill, "srgbClr")
+        if (srgb) {
+          const v = srgb.attrs.val
+          if (typeof v === "string") {
+            const hex = v.replace(/^#/, "").toUpperCase()
+            if (/^[0-9A-F]{6}$/.test(hex)) entry.color = hex
+          }
+        }
+      }
+
+      // Font family
+      const latin = findChild(defRPr, "latin")
+      if (latin) {
+        const tf = latin.attrs.typeface
+        if (typeof tf === "string") {
+          const trimmed = tf.trim()
+          if (trimmed.length > 0) entry.fontFamily = trimmed
         }
       }
     }
@@ -306,13 +296,7 @@ export function parseLegendEntries(chartEl: XmlElement): ChartLegendEntry[] | un
 export function parseLegendFontSize(chartEl: XmlElement): number | undefined {
   const legend = findChild(chartEl, "legend")
   if (!legend) return undefined
-  const txPr = findChild(legend, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(legend)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.sz
   if (typeof raw !== "string") return undefined
@@ -357,13 +341,7 @@ export function parseLegendFontSize(chartEl: XmlElement): number | undefined {
 export function parseLegendBold(chartEl: XmlElement): boolean | undefined {
   const legend = findChild(chartEl, "legend")
   if (!legend) return undefined
-  const txPr = findChild(legend, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(legend)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.b
   // OOXML `xsd:boolean` accepts `"1"` / `"true"` (truthy) and `"0"` /
@@ -396,13 +374,7 @@ export function parseLegendBold(chartEl: XmlElement): boolean | undefined {
 export function parseLegendItalic(chartEl: XmlElement): boolean | undefined {
   const legend = findChild(chartEl, "legend")
   if (!legend) return undefined
-  const txPr = findChild(legend, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(legend)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.i
   if (raw === "1" || raw === "true") return true
@@ -432,13 +404,7 @@ export function parseLegendItalic(chartEl: XmlElement): boolean | undefined {
 export function parseLegendUnderline(chartEl: XmlElement): boolean | undefined {
   const legend = findChild(chartEl, "legend")
   if (!legend) return undefined
-  const txPr = findChild(legend, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(legend)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.u
   if (raw === "sng") return true
@@ -469,13 +435,7 @@ export function parseLegendUnderline(chartEl: XmlElement): boolean | undefined {
 export function parseLegendStrikethrough(chartEl: XmlElement): boolean | undefined {
   const legend = findChild(chartEl, "legend")
   if (!legend) return undefined
-  const txPr = findChild(legend, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(legend)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.strike
   if (raw === "sngStrike") return true
@@ -508,13 +468,7 @@ export function parseLegendStrikethrough(chartEl: XmlElement): boolean | undefin
 export function parseLegendFontColor(chartEl: XmlElement): ChartColor | undefined {
   const legend = findChild(chartEl, "legend")
   if (!legend) return undefined
-  const txPr = findChild(legend, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(legend)
   if (!defRPr) return undefined
   const solidFill = findChild(defRPr, "solidFill")
   if (!solidFill) return undefined
@@ -549,13 +503,7 @@ export function parseLegendFontColor(chartEl: XmlElement): ChartColor | undefine
 export function parseLegendFontFamily(chartEl: XmlElement): string | undefined {
   const legend = findChild(chartEl, "legend")
   if (!legend) return undefined
-  const txPr = findChild(legend, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(legend)
   if (!defRPr) return undefined
   const latin = findChild(defRPr, "latin")
   if (!latin) return undefined
@@ -990,7 +938,7 @@ export function buildLegendSpPr(
  * default explicitly, which is functionally identical to absence but
  * lets a clone target override an upstream `1` from a templated chart.
  */
-export function buildLegendTxPr(
+function buildLegendTxPr(
   fontSizePt: number | undefined,
   bold: boolean | undefined,
   italic: boolean | undefined,
@@ -1212,7 +1160,7 @@ export function resolveLegendFontColor(chart: SheetChart): ChartColor | undefine
  * the theme typeface (Excel's reference behavior for a fresh legend
  * without a custom font picked).
  */
-export function normalizeLegendFontFamily(value: string | undefined): string | undefined {
+function normalizeLegendFontFamily(value: string | undefined): string | undefined {
   if (typeof value !== "string") return undefined
   const trimmed = value.trim()
   if (trimmed.length === 0) return undefined
@@ -1456,7 +1404,7 @@ export function resolveLegendBorderDash(chart: SheetChart): ChartBorderDash | un
  * the field rather than carry a value the writer would silently elide
  * back to absence.
  */
-export function normalizeLegendBold(value: boolean | undefined): boolean | undefined {
+function normalizeLegendBold(value: boolean | undefined): boolean | undefined {
   if (value === true) return true
   if (value === false) return false
   return undefined
@@ -1468,7 +1416,7 @@ export function normalizeLegendBold(value: boolean | undefined): boolean | undef
  * literally, every other token (typed escape from an untyped caller)
  * collapses to `undefined`.
  */
-export function normalizeLegendItalic(value: boolean | undefined): boolean | undefined {
+function normalizeLegendItalic(value: boolean | undefined): boolean | undefined {
   if (value === true) return true
   if (value === false) return false
   return undefined
@@ -1479,7 +1427,7 @@ export function normalizeLegendItalic(value: boolean | undefined): boolean | und
  * Mirrors the writer's `resolveLegendUnderline` — `true` / `false`
  * pass through literally, every other token collapses to `undefined`.
  */
-export function normalizeLegendUnderline(value: boolean | undefined): boolean | undefined {
+function normalizeLegendUnderline(value: boolean | undefined): boolean | undefined {
   if (value === true) return true
   if (value === false) return false
   return undefined
@@ -1499,7 +1447,7 @@ export function normalizeLegendUnderline(value: boolean | undefined): boolean | 
  * writer's `<a:defRPr>` slot does the `false` collapse to attribute
  * omission.
  */
-export function normalizeLegendStrikethrough(value: boolean | undefined): boolean | undefined {
+function normalizeLegendStrikethrough(value: boolean | undefined): boolean | undefined {
   if (value === true) return true
   if (value === false) return false
   return undefined
@@ -1531,7 +1479,7 @@ export function normalizeLegendLayout(
  * collapse to `undefined` so the cloned chart drops the field rather
  * than carry a value the writer would silently elide back to absence.
  */
-export function normalizeLegendBorderWidth(value: number | undefined): number | undefined {
+function normalizeLegendBorderWidth(value: number | undefined): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined
   // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
   const snapped = Math.round(value * 4) / 4

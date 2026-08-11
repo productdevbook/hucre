@@ -235,7 +235,7 @@ export function parseBorderCompoundFromSpPr(parent: XmlElement): ChartLineCompou
  * Recognized values of {@link ChartThemeColorName} — the OOXML
  * `ST_SchemeColorVal` enum on `<a:schemeClr val="..."/>`.
  */
-export const VALID_THEME_COLOR_NAMES: ReadonlySet<ChartThemeColorName> = new Set([
+const VALID_THEME_COLOR_NAMES: ReadonlySet<ChartThemeColorName> = new Set([
   "bg1",
   "tx1",
   "bg2",
@@ -385,13 +385,6 @@ export function buildColorElement(value: ChartColor): string {
     return xmlSelfClose("a:schemeClr", { val: value.theme })
   }
   return xmlElement("a:schemeClr", { val: value.theme }, children)
-}
-
-/**
- * Build a `<a:solidFill>` block wrapping the supplied color reference.
- */
-export function buildSolidFill(value: ChartColor): string {
-  return xmlElement("a:solidFill", undefined, [buildColorElement(value)])
 }
 
 /**

@@ -1187,7 +1187,7 @@ export function buildPlotAreaSpPr(chart: SheetChart): string | undefined {
  * the chart-level {@link normalizeTitleColor} so the two share the same
  * sRGB grammar.
  */
-export function normalizePlotAreaFillColor(value: ChartColor | undefined): ChartColor | undefined {
+function normalizePlotAreaFillColor(value: ChartColor | undefined): ChartColor | undefined {
   return normalizeTitleColor(value)
 }
 
@@ -1215,7 +1215,7 @@ export function normalizePlotAreaBorderColor(
   return normalizeTitleColor(value)
 }
 
-export function buildBarChart(chart: SheetChart, sheetName: string): string {
+function buildBarChart(chart: SheetChart, sheetName: string): string {
   const grouping = chart.barGrouping ?? "clustered"
   const barDir = chart.type === "bar" ? "bar" : "col"
   const isStacked = grouping === "percentStacked" || grouping === "stacked"
@@ -1298,7 +1298,7 @@ export function buildBarChart(chart: SheetChart, sheetName: string): string {
  * the bar width with no natural wrap-around (a `600` group spacing is
  * not the same as `100`).
  */
-export function clampGapWidth(value: number | undefined): number | undefined {
+function clampGapWidth(value: number | undefined): number | undefined {
   if (value === undefined || !Number.isFinite(value)) return undefined
   const rounded = Math.round(value)
   if (rounded < 0) return 0
@@ -1317,7 +1317,7 @@ export function clampGapWidth(value: number | undefined): number | undefined {
  * series fully separated and series fully overlapped — wrapping makes
  * no physical sense).
  */
-export function clampOverlap(value: number | undefined): number | undefined {
+function clampOverlap(value: number | undefined): number | undefined {
   if (value === undefined || !Number.isFinite(value)) return undefined
   const rounded = Math.round(value)
   if (rounded < -100) return -100
@@ -1325,7 +1325,7 @@ export function clampOverlap(value: number | undefined): number | undefined {
   return rounded
 }
 
-export function buildLineChart(chart: SheetChart, sheetName: string): string {
+function buildLineChart(chart: SheetChart, sheetName: string): string {
   const grouping = chart.lineGrouping ?? "standard"
   const children: string[] = [
     xmlSelfClose("c:grouping", { val: grouping }),
@@ -1409,7 +1409,7 @@ export function buildLineChart(chart: SheetChart, sheetName: string): string {
  * fresh toggle. A richer model — per-bar styling — can layer on top
  * in a follow-up if needed.
  */
-export function buildUpDownBars(gapWidth: number | undefined): string {
+function buildUpDownBars(gapWidth: number | undefined): string {
   const resolved = clampUpDownBarsGapWidth(gapWidth) ?? 150
   return xmlElement("c:upDownBars", undefined, [xmlSelfClose("c:gapWidth", { val: resolved })])
 }
@@ -1430,14 +1430,14 @@ export function buildUpDownBars(gapWidth: number | undefined): string {
  * silently rewriting an `800` to `500` would mislead the caller about
  * what Excel ends up rendering.
  */
-export function clampUpDownBarsGapWidth(value: number | undefined): number | undefined {
+function clampUpDownBarsGapWidth(value: number | undefined): number | undefined {
   if (value === undefined || !Number.isFinite(value)) return undefined
   const rounded = Math.round(value)
   if (rounded < 0 || rounded > 500) return undefined
   return rounded
 }
 
-export function buildAreaChart(chart: SheetChart, sheetName: string): string {
+function buildAreaChart(chart: SheetChart, sheetName: string): string {
   const grouping = chart.areaGrouping ?? "standard"
   const children: string[] = [
     xmlSelfClose("c:grouping", { val: grouping }),
@@ -1506,7 +1506,7 @@ export function buildPieChart(chart: SheetChart, sheetName: string): string {
   return xmlElement("c:pieChart", undefined, children)
 }
 
-export function buildDoughnutChart(chart: SheetChart, sheetName: string): string {
+function buildDoughnutChart(chart: SheetChart, sheetName: string): string {
   const children: string[] = [
     xmlSelfClose("c:varyColors", { val: resolveVaryColors(chart) ? 1 : 0 }),
   ]
@@ -1577,7 +1577,7 @@ export function clampHoleSize(value: number | undefined): number {
   return rounded
 }
 
-export function buildScatterChart(chart: SheetChart, sheetName: string): string {
+function buildScatterChart(chart: SheetChart, sheetName: string): string {
   const children: string[] = [
     xmlSelfClose("c:scatterStyle", { val: resolveScatterStyle(chart) }),
     xmlSelfClose("c:varyColors", { val: resolveVaryColors(chart) ? 1 : 0 }),
@@ -1625,7 +1625,7 @@ export function buildScatterChart(chart: SheetChart, sheetName: string): string 
  * value (matching Excel's reference output) keeps the rendered intent
  * unambiguous on roundtrip.
  */
-export function resolveVaryColors(chart: SheetChart): boolean {
+function resolveVaryColors(chart: SheetChart): boolean {
   if (typeof chart.varyColors === "boolean") return chart.varyColors
   return VARY_COLORS_DEFAULT_TRUE_TYPES.has(chart.type)
 }
@@ -1642,7 +1642,7 @@ export function resolveVaryColors(chart: SheetChart): boolean {
  * OOXML schema lists it as required there — omitting it would produce
  * an invalid chart document Excel refuses to open.
  */
-export function resolveScatterStyle(chart: SheetChart): ChartScatterStyle {
+function resolveScatterStyle(chart: SheetChart): ChartScatterStyle {
   const raw = chart.scatterStyle
   if (raw && SCATTER_STYLE_VALUES.has(raw)) return raw
   return "lineMarker"
@@ -1829,7 +1829,7 @@ export function resolveClonePlotAreaBorderColor(
  * collapse to `undefined` so the cloned chart drops the field rather
  * than carry a value the writer would silently elide back to absence.
  */
-export function normalizeClonePlotAreaBorderWidth(value: number | undefined): number | undefined {
+function normalizeClonePlotAreaBorderWidth(value: number | undefined): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined
   // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
   const snapped = Math.round(value * 4) / 4

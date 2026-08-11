@@ -42,7 +42,7 @@ import {
   parseSpPrFill,
 } from "./shape"
 import { elementText, findChild, readBoolAttr } from "./util"
-import { FONT_SIZE_MAX_PT, FONT_SIZE_MIN_PT, FONT_SZ_PER_POINT } from "./text"
+import { FONT_SIZE_MAX_PT, FONT_SIZE_MIN_PT, FONT_SZ_PER_POINT, resolveTxPrDefRPr } from "./text"
 import { normalizeTitleColor, normalizeTitleFontSize } from "./title"
 import type { SheetChart } from "../../_types"
 
@@ -314,13 +314,7 @@ export function parseDataLabels(el: XmlElement): ChartDataLabelsInfo | undefined
  * writer's emit path.
  */
 export function parseDataLabelsFontSize(dLbls: XmlElement): number | undefined {
-  const txPr = findChild(dLbls, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(dLbls)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.sz
   if (typeof raw !== "string") return undefined
@@ -359,13 +353,7 @@ export function parseDataLabelsFontSize(dLbls: XmlElement): number | undefined {
  * writer's emit path.
  */
 export function parseDataLabelsFontColor(dLbls: XmlElement): ChartColor | undefined {
-  const txPr = findChild(dLbls, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(dLbls)
   if (!defRPr) return undefined
   const solidFill = findChild(defRPr, "solidFill")
   if (!solidFill) return undefined
@@ -391,13 +379,7 @@ export function parseDataLabelsFontColor(dLbls: XmlElement): ChartColor | undefi
  * emit path.
  */
 export function parseDataLabelsBold(dLbls: XmlElement): boolean | undefined {
-  const txPr = findChild(dLbls, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(dLbls)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.b
   if (raw === "1" || raw === "true") return true
@@ -419,13 +401,7 @@ export function parseDataLabelsBold(dLbls: XmlElement): boolean | undefined {
  * emit path.
  */
 export function parseDataLabelsItalic(dLbls: XmlElement): boolean | undefined {
-  const txPr = findChild(dLbls, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(dLbls)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.i
   if (raw === "1" || raw === "true") return true
@@ -451,13 +427,7 @@ export function parseDataLabelsItalic(dLbls: XmlElement): boolean | undefined {
  * back into the writer's emit path.
  */
 export function parseDataLabelsUnderline(dLbls: XmlElement): boolean | undefined {
-  const txPr = findChild(dLbls, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(dLbls)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.u
   if (raw === "sng") return true
@@ -483,13 +453,7 @@ export function parseDataLabelsUnderline(dLbls: XmlElement): boolean | undefined
  * straight back into the writer's emit path.
  */
 export function parseDataLabelsStrikethrough(dLbls: XmlElement): boolean | undefined {
-  const txPr = findChild(dLbls, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(dLbls)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.strike
   if (raw === "sngStrike") return true
@@ -518,13 +482,7 @@ export function parseDataLabelsStrikethrough(dLbls: XmlElement): boolean | undef
  * value slots straight back into the writer's emit path.
  */
 export function parseDataLabelsFontFamily(dLbls: XmlElement): string | undefined {
-  const txPr = findChild(dLbls, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(dLbls)
   if (!defRPr) return undefined
   const latin = findChild(defRPr, "latin")
   if (!latin) return undefined
@@ -561,7 +519,7 @@ export function parseDataLabelsFontFamily(dLbls: XmlElement): string | undefined
  * {@link parseLegendFillColor} so a parsed value slots straight into
  * the writer-side {@link ChartDataLabels.fillColor}.
  */
-export function parseDataLabelsFillColor(dLbls: XmlElement): ChartColor | undefined {
+function parseDataLabelsFillColor(dLbls: XmlElement): ChartColor | undefined {
   return parseSpPrFill(dLbls)
 }
 
@@ -599,7 +557,7 @@ export function parseDataLabelsFillColor(dLbls: XmlElement): ChartColor | undefi
  * (`<a:ln><a:solidFill>`) child rather than the fill (`<a:solidFill>`)
  * child.
  */
-export function parseDataLabelsBorderColor(dLbls: XmlElement): ChartColor | undefined {
+function parseDataLabelsBorderColor(dLbls: XmlElement): ChartColor | undefined {
   return parseSpPrBorderColor(dLbls)
 }
 
@@ -617,7 +575,7 @@ export function parseDataLabelsBorderColor(dLbls: XmlElement): ChartColor | unde
  * surfaces `true`. Mirrors how the axis-side numFmt parser shapes its
  * output.
  */
-export function parseDataLabelsNumberFormat(el: XmlElement): ChartAxisNumberFormat | undefined {
+function parseDataLabelsNumberFormat(el: XmlElement): ChartAxisNumberFormat | undefined {
   const numFmt = findChild(el, "numFmt")
   if (!numFmt) return undefined
   const formatCode = numFmt.attrs.formatCode
@@ -818,7 +776,7 @@ export function buildDataLabelsBody(dl: ChartDataLabels, chartType: WriteChartKi
  * survives, every other shape (`undefined` / `false` / non-boolean)
  * collapses so the writer's `val` attribute defaults to `0`.
  */
-export function resolveDataLabelsNumberFormat(
+function resolveDataLabelsNumberFormat(
   value: ChartAxisNumberFormat | undefined,
 ): ChartAxisNumberFormat | undefined {
   if (!value) return undefined
@@ -841,7 +799,7 @@ export function resolveDataLabelsNumberFormat(
  * rounding (Excel's UI step is 0.5pt), and the same OOXML conversion
  * (100ths of a point at emit time).
  */
-export function resolveDataLabelsFontSize(value: number | undefined): number | undefined {
+function resolveDataLabelsFontSize(value: number | undefined): number | undefined {
   return normalizeTitleFontSize(value)
 }
 
@@ -856,7 +814,7 @@ export function resolveDataLabelsFontSize(value: number | undefined): number | u
  * accept-with-or-without-`#` grammar matches the chart-title /
  * axis-title / axis tick-label / legend color resolvers exactly.
  */
-export function resolveDataLabelsFontColor(value: ChartColor | undefined): ChartColor | undefined {
+function resolveDataLabelsFontColor(value: ChartColor | undefined): ChartColor | undefined {
   return normalizeTitleColor(value)
 }
 
@@ -870,7 +828,7 @@ export function resolveDataLabelsFontColor(value: ChartColor | undefined): Chart
  * only literal `true` / `false` pass through; non-boolean tokens
  * (typed escapes from an untyped caller) collapse to `undefined`.
  */
-export function resolveDataLabelsBold(value: boolean | undefined): boolean | undefined {
+function resolveDataLabelsBold(value: boolean | undefined): boolean | undefined {
   if (value === true) return true
   if (value === false) return false
   return undefined
@@ -886,7 +844,7 @@ export function resolveDataLabelsBold(value: boolean | undefined): boolean | und
  * only literal `true` / `false` pass through; non-boolean tokens
  * (typed escapes from an untyped caller) collapse to `undefined`.
  */
-export function resolveDataLabelsItalic(value: boolean | undefined): boolean | undefined {
+function resolveDataLabelsItalic(value: boolean | undefined): boolean | undefined {
   if (value === true) return true
   if (value === false) return false
   return undefined
@@ -905,7 +863,7 @@ export function resolveDataLabelsItalic(value: boolean | undefined): boolean | u
  * UI variant — single underline) and `false` into `u="none"` at emit
  * time.
  */
-export function resolveDataLabelsUnderline(value: boolean | undefined): boolean | undefined {
+function resolveDataLabelsUnderline(value: boolean | undefined): boolean | undefined {
   if (value === true) return true
   if (value === false) return false
   return undefined
@@ -943,7 +901,7 @@ export function resolveDataLabelsStrikethrough(value: boolean | undefined): bool
  * exactly so a single configuration call threads cleanly through
  * every typography slot Excel exposes.
  */
-export function resolveDataLabelsFontFamily(value: string | undefined): string | undefined {
+function resolveDataLabelsFontFamily(value: string | undefined): string | undefined {
   if (typeof value !== "string") return undefined
   const trimmed = value.trim()
   if (trimmed.length === 0) return undefined
@@ -965,7 +923,7 @@ export function resolveDataLabelsFontFamily(value: string | undefined): string |
  * resolvers feed disjoint slots so a caller can pin both without
  * conflict.
  */
-export function resolveDataLabelsFillColor(value: ChartColor | undefined): ChartColor | undefined {
+function resolveDataLabelsFillColor(value: ChartColor | undefined): ChartColor | undefined {
   return normalizeTitleColor(value)
 }
 
@@ -987,9 +945,7 @@ export function resolveDataLabelsFillColor(value: ChartColor | undefined): Chart
  * grammar, same `<a:ln>` slot on the `CT_ShapeProperties` schema —
  * but lands on `<c:dLbls>`'s own `<c:spPr>` block.
  */
-export function resolveDataLabelsBorderColor(
-  value: ChartColor | undefined,
-): ChartColor | undefined {
+function resolveDataLabelsBorderColor(value: ChartColor | undefined): ChartColor | undefined {
   return normalizeTitleColor(value)
 }
 
@@ -1024,7 +980,7 @@ export function resolveDataLabelsBorderColor(
  * the background and outline of each label box, while the legend /
  * data-table variants paint a different chart-frame element.
  */
-export function buildDataLabelsSpPr(
+function buildDataLabelsSpPr(
   fillRgbHex: ChartColor | undefined,
   borderRgbHex: ChartColor | undefined,
   borderWidthPt: number | undefined,
@@ -1115,7 +1071,7 @@ export function buildDataLabelsSpPr(
  * canonical default-paragraph slot every other typography reader
  * expects.
  */
-export function buildDataLabelsTxPr(
+function buildDataLabelsTxPr(
   fontSizePt: number | undefined,
   rgbHex: ChartColor | undefined,
   bold: boolean | undefined,

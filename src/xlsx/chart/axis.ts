@@ -83,6 +83,7 @@ import {
 } from "./title"
 import type { SheetChart } from "../../_types"
 import { normalizeLegendLayout } from "./legend"
+import { resolveTitleDefRPr, resolveTxPrDefRPr } from "./text"
 
 const TITLE_FONT_SZ_PER_POINT = FONT_SZ_PER_POINT
 const TITLE_FONT_SIZE_MIN_PT = FONT_SIZE_MIN_PT
@@ -876,13 +877,7 @@ export function parseAxisLabelRotation(axis: XmlElement): number | undefined {
  * {@link SheetChart.axes}.x.labelFontSize.
  */
 export function parseAxisLabelFontSize(axis: XmlElement): number | undefined {
-  const txPr = findChild(axis, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(axis)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.sz
   if (typeof raw !== "string") return undefined
@@ -927,13 +922,7 @@ export function parseAxisLabelFontSize(axis: XmlElement): number | undefined {
  * {@link SheetChart.axes}.x.labelBold.
  */
 export function parseAxisLabelBold(axis: XmlElement): boolean | undefined {
-  const txPr = findChild(axis, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(axis)
   if (!defRPr) return undefined
   const parsed = parseBoolAttr(defRPr.attrs.b)
   // The OOXML default `false` collapses to `undefined` so absence and
@@ -963,13 +952,7 @@ export function parseAxisLabelBold(axis: XmlElement): boolean | undefined {
  * {@link SheetChart.axes}.x.labelItalic.
  */
 export function parseAxisLabelItalic(axis: XmlElement): boolean | undefined {
-  const txPr = findChild(axis, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(axis)
   if (!defRPr) return undefined
   const parsed = parseBoolAttr(defRPr.attrs.i)
   // The OOXML default `false` collapses to `undefined` so absence and
@@ -1009,13 +992,7 @@ export function parseAxisLabelItalic(axis: XmlElement): boolean | undefined {
  * fill cannot leak in.
  */
 export function parseAxisLabelColor(axis: XmlElement): ChartColor | undefined {
-  const txPr = findChild(axis, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(axis)
   if (!defRPr) return undefined
   const solidFill = findChild(defRPr, "solidFill")
   if (!solidFill) return undefined
@@ -1061,13 +1038,7 @@ export function parseAxisLabelColor(axis: XmlElement): ChartColor | undefined {
  * {@link SheetChart.axes}.x.labelUnderline.
  */
 export function parseAxisLabelUnderline(axis: XmlElement): boolean | undefined {
-  const txPr = findChild(axis, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(axis)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.u
   // Only the UI-default `"sng"` surfaces as `true`. The OOXML
@@ -1115,13 +1086,7 @@ export function parseAxisLabelUnderline(axis: XmlElement): boolean | undefined {
  * {@link SheetChart.axes}.x.labelStrike.
  */
 export function parseAxisLabelStrike(axis: XmlElement): boolean | undefined {
-  const txPr = findChild(axis, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(axis)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.strike
   // Only the UI-default `"sngStrike"` surfaces as `true`. The OOXML
@@ -1164,13 +1129,7 @@ export function parseAxisLabelStrike(axis: XmlElement): boolean | undefined {
  * `<c:title><c:tx><c:rich>` body cannot leak in.
  */
 export function parseAxisLabelFontFamily(axis: XmlElement): string | undefined {
-  const txPr = findChild(axis, "txPr")
-  if (!txPr) return undefined
-  const p = findChild(txPr, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTxPrDefRPr(axis)
   if (!defRPr) return undefined
   const latin = findChild(defRPr, "latin")
   if (!latin) return undefined
@@ -1536,21 +1495,7 @@ export function parseAxisTitleRotation(axis: XmlElement): number | undefined {
  * the writer-side {@link SheetChart.axes}.x.axisTitleFontSize.
  */
 export function parseAxisTitleFontSize(axis: XmlElement): number | undefined {
-  const title = findChild(axis, "title")
-  if (!title) return undefined
-  const tx = findChild(title, "tx")
-  if (!tx) return undefined
-  const rich = findChild(tx, "rich")
-  if (!rich) return undefined
-  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
-  // default-paragraph font size. The reader walks the canonical chain
-  // and bails on the first missing link so a malformed `<c:rich>`
-  // surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTitleDefRPr(axis)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.sz
   if (typeof raw !== "string") return undefined
@@ -1596,21 +1541,7 @@ export function parseAxisTitleFontSize(axis: XmlElement): number | undefined {
  * writer-side {@link SheetChart.axes}.x.axisTitleBold.
  */
 export function parseAxisTitleBold(axis: XmlElement): boolean | undefined {
-  const title = findChild(axis, "title")
-  if (!title) return undefined
-  const tx = findChild(title, "tx")
-  if (!tx) return undefined
-  const rich = findChild(tx, "rich")
-  if (!rich) return undefined
-  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
-  // default-paragraph bold flag. The reader walks the canonical chain
-  // and bails on the first missing link so a malformed `<c:rich>`
-  // surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTitleDefRPr(axis)
   if (!defRPr) return undefined
   const parsed = parseBoolAttr(defRPr.attrs.b)
   // The OOXML default `false` collapses to `undefined` so absence and
@@ -1648,21 +1579,7 @@ export function parseAxisTitleBold(axis: XmlElement): boolean | undefined {
  * writer-side {@link SheetChart.axes}.x.axisTitleItalic.
  */
 export function parseAxisTitleItalic(axis: XmlElement): boolean | undefined {
-  const title = findChild(axis, "title")
-  if (!title) return undefined
-  const tx = findChild(title, "tx")
-  if (!tx) return undefined
-  const rich = findChild(tx, "rich")
-  if (!rich) return undefined
-  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
-  // default-paragraph italic flag. The reader walks the canonical chain
-  // and bails on the first missing link so a malformed `<c:rich>`
-  // surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTitleDefRPr(axis)
   if (!defRPr) return undefined
   const parsed = parseBoolAttr(defRPr.attrs.i)
   // The OOXML default `false` collapses to `undefined` so absence and
@@ -1709,22 +1626,7 @@ export function parseAxisTitleItalic(axis: XmlElement): boolean | undefined {
  * writer-side {@link SheetChart.axes}.x.axisTitleColor.
  */
 export function parseAxisTitleColor(axis: XmlElement): ChartColor | undefined {
-  const title = findChild(axis, "title")
-  if (!title) return undefined
-  const tx = findChild(title, "tx")
-  if (!tx) return undefined
-  const rich = findChild(tx, "rich")
-  if (!rich) return undefined
-  // `<a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr>` is the OOXML path
-  // Excel writes for the default-paragraph font color. The reader walks
-  // the canonical chain and bails on the first missing link so a
-  // malformed `<c:rich>` surfaces as absence rather than a fabricated
-  // value.
-  const p = findChild(rich, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTitleDefRPr(axis)
   if (!defRPr) return undefined
   const solidFill = findChild(defRPr, "solidFill")
   if (!solidFill) return undefined
@@ -1772,21 +1674,7 @@ export function parseAxisTitleColor(axis: XmlElement): ChartColor | undefined {
  * writer-side {@link SheetChart.axes}.x.axisTitleStrike.
  */
 export function parseAxisTitleStrike(axis: XmlElement): boolean | undefined {
-  const title = findChild(axis, "title")
-  if (!title) return undefined
-  const tx = findChild(title, "tx")
-  if (!tx) return undefined
-  const rich = findChild(tx, "rich")
-  if (!rich) return undefined
-  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
-  // default-paragraph strikethrough flag. The reader walks the
-  // canonical chain and bails on the first missing link so a malformed
-  // `<c:rich>` surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTitleDefRPr(axis)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.strike
   // Only the UI-default `"sngStrike"` surfaces as `true`. The OOXML
@@ -1839,21 +1727,7 @@ export function parseAxisTitleStrike(axis: XmlElement): boolean | undefined {
  * the writer-side {@link SheetChart.axes}.x.axisTitleUnderline.
  */
 export function parseAxisTitleUnderline(axis: XmlElement): boolean | undefined {
-  const title = findChild(axis, "title")
-  if (!title) return undefined
-  const tx = findChild(title, "tx")
-  if (!tx) return undefined
-  const rich = findChild(tx, "rich")
-  if (!rich) return undefined
-  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
-  // default-paragraph underline flag. The reader walks the canonical
-  // chain and bails on the first missing link so a malformed
-  // `<c:rich>` surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTitleDefRPr(axis)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.u
   // Only the UI-default `"sng"` surfaces as `true`. The OOXML
@@ -1901,22 +1775,7 @@ export function parseAxisTitleUnderline(axis: XmlElement): boolean | undefined {
  * writer-side {@link SheetChart.axes}.x.axisTitleFontFamily.
  */
 export function parseAxisTitleFontFamily(axis: XmlElement): string | undefined {
-  const title = findChild(axis, "title")
-  if (!title) return undefined
-  const tx = findChild(title, "tx")
-  if (!tx) return undefined
-  const rich = findChild(tx, "rich")
-  if (!rich) return undefined
-  // `<a:p><a:pPr><a:defRPr><a:latin>` is the OOXML path Excel writes
-  // for the default-paragraph typeface. The reader walks the
-  // canonical chain and bails on the first missing link so a
-  // malformed `<c:rich>` surfaces as absence rather than a fabricated
-  // value.
-  const p = findChild(rich, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTitleDefRPr(axis)
   if (!defRPr) return undefined
   const latin = findChild(defRPr, "latin")
   if (!latin) return undefined
@@ -2107,7 +1966,7 @@ export function parseAxisTitleFillColor(axis: XmlElement): ChartColor | undefine
  * {@link parseTitleBorderColor} so a parsed value slots straight
  * into the writer-side {@link SheetChart.axes.x.axisTitleBorderColor}.
  */
-export function parseAxisTitleBorderColor(axis: XmlElement): ChartColor | undefined {
+function parseAxisTitleBorderColor(axis: XmlElement): ChartColor | undefined {
   const title = findChild(axis, "title")
   if (!title) return undefined
   return parseSpPrBorderColor(title)
@@ -2129,7 +1988,7 @@ export function parseAxisTitleBorderColor(axis: XmlElement): ChartColor | undefi
  * and {@link parseAxisTitleBorderDash}: all three readers walk
  * disjoint slots of the shared `<a:ln>` element.
  */
-export function parseAxisTitleBorderWidth(axis: XmlElement): number | undefined {
+function parseAxisTitleBorderWidth(axis: XmlElement): number | undefined {
   const title = findChild(axis, "title")
   if (!title) return undefined
   return parseBorderWidthFromSpPr(title)
@@ -2143,7 +2002,7 @@ export function parseAxisTitleBorderWidth(axis: XmlElement): number | undefined 
  * is missing at any link, when the attribute is absent / unrecognized,
  * or when it matches the OOXML default `"solid"`.
  */
-export function parseAxisTitleBorderDash(axis: XmlElement): ChartBorderDash | undefined {
+function parseAxisTitleBorderDash(axis: XmlElement): ChartBorderDash | undefined {
   const title = findChild(axis, "title")
   if (!title) return undefined
   return parseBorderDashFromSpPr(title)
@@ -2154,7 +2013,7 @@ export function parseAxisTitleBorderDash(axis: XmlElement): ChartBorderDash | un
  * scoped to an axis element. Returns the {@link ChartLineCap} or
  * `undefined` for absence / OOXML default `"flat"`.
  */
-export function parseAxisTitleBorderCap(axis: XmlElement): ChartLineCap | undefined {
+function parseAxisTitleBorderCap(axis: XmlElement): ChartLineCap | undefined {
   const title = findChild(axis, "title")
   if (!title) return undefined
   return parseBorderCapFromSpPr(title)
@@ -2165,7 +2024,7 @@ export function parseAxisTitleBorderCap(axis: XmlElement): ChartLineCap | undefi
  * scoped to an axis element. Returns the {@link ChartLineCompound} or
  * `undefined` for absence / OOXML default `"sng"`.
  */
-export function parseAxisTitleBorderCompound(axis: XmlElement): ChartLineCompound | undefined {
+function parseAxisTitleBorderCompound(axis: XmlElement): ChartLineCompound | undefined {
   const title = findChild(axis, "title")
   if (!title) return undefined
   return parseBorderCompoundFromSpPr(title)
@@ -2882,9 +2741,7 @@ export function normalizeAxisGridlines(
  * before the optional `<c:title>`. Excel's strict-validator rejects
  * any other position.
  */
-export function buildAxisGridlines(
-  gridlines: { major: boolean; minor: boolean } | undefined,
-): string[] {
+function buildAxisGridlines(gridlines: { major: boolean; minor: boolean } | undefined): string[] {
   if (!gridlines) return []
   const out: string[] = []
   if (gridlines.major) out.push(xmlElement("c:majorGridlines", undefined, []))
@@ -3226,7 +3083,7 @@ export function normalizeAxisLabelFontFamily(value: string | undefined): string 
  * with no custom color matches Excel's reference serialization (the
  * tick labels inherit the theme text color in that case).
  */
-export function buildAxisTxPr(
+function buildAxisTxPr(
   rotationDeg: number | undefined,
   fontSizePt: number | undefined,
   bold: boolean | undefined,
@@ -3356,7 +3213,7 @@ export function normalizeAxisCrosses(
  * (which always pins `<c:crosses val="autoZero"/>` on every axis) is
  * preserved on freshly-drawn charts.
  */
-export function buildAxisCrosses(resolved: ResolvedAxisCrosses): string {
+function buildAxisCrosses(resolved: ResolvedAxisCrosses): string {
   switch (resolved.kind) {
     case "numeric":
       return xmlSelfClose("c:crossesAt", { val: resolved.value })
@@ -3375,7 +3232,7 @@ export function buildAxisCrosses(resolved: ResolvedAxisCrosses): string {
  *
  * Returns the children to splice in after `<c:orientation>`.
  */
-export function buildAxisScalingExtras(scale: ChartAxisScale | undefined): {
+function buildAxisScalingExtras(scale: ChartAxisScale | undefined): {
   before: string[]
   after: string[]
 } {
@@ -3398,10 +3255,7 @@ export function buildAxisScalingExtras(scale: ChartAxisScale | undefined): {
  * `"minMax"` (the OOXML default) for a forward axis, `"maxMin"` when
  * the caller pinned `reverse: true` to flip the plotting order.
  */
-export function buildAxisScaling(
-  scale: ChartAxisScale | undefined,
-  reverse: boolean = false,
-): string {
+function buildAxisScaling(scale: ChartAxisScale | undefined, reverse: boolean = false): string {
   const { before, after } = buildAxisScalingExtras(scale)
   const children: string[] = [
     ...before,
@@ -3416,7 +3270,7 @@ export function buildAxisScaling(
  * sit later in the axis-element child sequence (after `<c:numFmt>`,
  * before `<c:crossAx>` per CT_CatAx / CT_ValAx).
  */
-export function buildAxisTickUnits(scale: ChartAxisScale | undefined): string[] {
+function buildAxisTickUnits(scale: ChartAxisScale | undefined): string[] {
   if (!scale) return []
   const out: string[] = []
   if (scale.majorUnit !== undefined) {
@@ -3567,7 +3421,7 @@ export function normalizeAxisCrossBetween(
  * Returns an empty array when the axis declares no number format — the
  * writer then leaves Excel's default linked behaviour untouched.
  */
-export function buildAxisNumFmt(numFmt: ChartAxisNumberFormat | undefined): string[] {
+function buildAxisNumFmt(numFmt: ChartAxisNumberFormat | undefined): string[] {
   if (!numFmt) return []
   const sourceLinked = numFmt.sourceLinked === true ? 1 : 0
   return [xmlSelfClose("c:numFmt", { formatCode: numFmt.formatCode, sourceLinked })]
@@ -3609,7 +3463,7 @@ export function normalizeTickLblPos(
  * `tickLblPos="nextTo"`) match Excel's reference serialization, so
  * absence and the default round-trip identically through the reader.
  */
-export function buildAxisTickRendering(
+function buildAxisTickRendering(
   majorTickMark: ChartAxisTickMark | undefined,
   minorTickMark: ChartAxisTickMark | undefined,
   tickLblPos: ChartAxisTickLabelPosition | undefined,
@@ -3636,7 +3490,7 @@ export function buildAxisTickRendering(
  * {@link normalizeAxisSkip} having already collapsed `1` and out-of-
  * range inputs to `undefined`).
  */
-export function buildAxisSkips(
+function buildAxisSkips(
   tickLblSkip: number | undefined,
   tickMarkSkip: number | undefined,
 ): string[] {
@@ -4001,7 +3855,7 @@ export function buildScatterAxes(opts: AxisRenderOptions): string[] {
  * matches Excel's reference serialization byte-for-byte (the title
  * inherits the theme text color in that case).
  */
-export function buildAxisTitle(
+function buildAxisTitle(
   label: string,
   rotationDeg: number | undefined,
   fontSizePt: number | undefined,
@@ -5456,7 +5310,7 @@ export function applyTickLblPosOverride(
  * collapses to `undefined` so absence and the default round-trip
  * identically — symmetric with the parser-side default-collapse.
  */
-export function applyLabelRotationOverride(
+function applyLabelRotationOverride(
   source: number | undefined,
   override: number | null | undefined,
 ): number | undefined {
@@ -5475,7 +5329,7 @@ export function applyLabelRotationOverride(
  * collapses to absence — symmetric with the writer-side
  * {@link normalizeAxisLabelRotation} contract.
  */
-export function clampLabelRotationDeg(value: number): number | undefined {
+function clampLabelRotationDeg(value: number): number | undefined {
   let degrees = Math.round(value)
   if (degrees < -90) degrees = -90
   else if (degrees > 90) degrees = 90
@@ -5682,7 +5536,7 @@ export function applyLabelFontFamilyOverride(
  * collapses to `undefined` so the cloned chart drops the field
  * rather than carry a value the writer would silently elide.
  */
-export function normalizeLabelFontFamily(value: string | undefined): string | undefined {
+function normalizeLabelFontFamily(value: string | undefined): string | undefined {
   if (typeof value !== "string") return undefined
   const trimmed = value.trim()
   if (trimmed.length === 0) return undefined
@@ -5701,7 +5555,7 @@ export function normalizeLabelFontFamily(value: string | undefined): string | un
  * cloned shape never carries a rotation that the writer would silently
  * elide.
  */
-export function applyAxisTitleRotationOverride(
+function applyAxisTitleRotationOverride(
   source: number | undefined,
   override: number | null | undefined,
 ): number | undefined {
@@ -5729,7 +5583,7 @@ export function applyAxisTitleRotationOverride(
  * scopes the size emission to `<c:title>`, which is omitted when the
  * axis renders no title).
  */
-export function applyAxisTitleFontSizeOverride(
+function applyAxisTitleFontSizeOverride(
   source: number | undefined,
   override: number | null | undefined,
 ): number | undefined {
@@ -5810,7 +5664,7 @@ export function applyAxisTitleItalicOverride(
  * scopes the fill emission to `<c:title>`, which is omitted when
  * the axis renders no title).
  */
-export function applyAxisTitleColorOverride(
+function applyAxisTitleColorOverride(
   source: ChartColor | undefined,
   override: ChartColor | null | undefined,
 ): ChartColor | undefined {
@@ -5843,7 +5697,7 @@ export function applyAxisTitleColorOverride(
  * scopes the fill emission to `<c:title>`, which is omitted when
  * the axis renders no title).
  */
-export function applyAxisTitleFillColorOverride(
+function applyAxisTitleFillColorOverride(
   source: ChartColor | undefined,
   override: ChartColor | null | undefined,
 ): ChartColor | undefined {
@@ -5883,7 +5737,7 @@ export function applyAxisTitleFillColorOverride(
  * scopes the stroke emission to `<c:title>`, which is omitted when
  * the axis renders no title).
  */
-export function applyAxisTitleBorderColorOverride(
+function applyAxisTitleBorderColorOverride(
   source: ChartColor | undefined,
   override: ChartColor | null | undefined,
 ): ChartColor | undefined {
@@ -5961,7 +5815,7 @@ export function applyAxisTitleUnderlineOverride(
  * writer scopes the element emission to `<c:title>`, which is omitted
  * when the axis renders no title).
  */
-export function applyAxisTitleFontFamilyOverride(
+function applyAxisTitleFontFamilyOverride(
   source: string | undefined,
   override: string | null | undefined,
 ): string | undefined {
@@ -5979,7 +5833,7 @@ export function applyAxisTitleFontFamilyOverride(
  * caller) collapses to `undefined` so the cloned chart drops the
  * field rather than carry a value the writer would silently elide.
  */
-export function normalizeAxisTitleFontFamilyClone(value: string | undefined): string | undefined {
+function normalizeAxisTitleFontFamilyClone(value: string | undefined): string | undefined {
   if (typeof value !== "string") return undefined
   const trimmed = value.trim()
   if (trimmed.length === 0) return undefined
@@ -6053,7 +5907,7 @@ export function applyAxisTitleOverlayOverride(
  * `<c:layout>` emission to `<c:title>`, which is omitted when the axis
  * renders no title).
  */
-export function resolveAxisTitleLayout(
+function resolveAxisTitleLayout(
   sourceValue: ChartManualLayout | undefined,
   override: ChartManualLayout | null | undefined,
 ): ChartManualLayout | undefined {
@@ -6075,7 +5929,7 @@ export function resolveAxisTitleLayout(
  * orientation, so the dropped state is indistinguishable from a literal
  * `false`.
  */
-export function applyReverseOverride(
+function applyReverseOverride(
   source: boolean | undefined,
   override: boolean | null | undefined,
 ): boolean | undefined {

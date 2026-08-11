@@ -65,6 +65,7 @@ import {
   ROTATION_MIN_DEG,
   TXPR_ROT_PER_DEGREE,
 } from "./text"
+import { resolveTitleDefRPr } from "./text"
 
 // ── Constants (chart-title scope) ──────────────────────────────────
 
@@ -246,21 +247,7 @@ export function parseTitleRotation(chartEl: XmlElement): number | undefined {
  * data-labels block) cannot leak in.
  */
 export function parseTitleFontSize(chartEl: XmlElement): number | undefined {
-  const title = findChild(chartEl, "title")
-  if (!title) return undefined
-  const tx = findChild(title, "tx")
-  if (!tx) return undefined
-  const rich = findChild(tx, "rich")
-  if (!rich) return undefined
-  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
-  // default-paragraph font size. The reader walks the canonical chain
-  // and bails on the first missing link so a malformed `<c:rich>`
-  // surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTitleDefRPr(chartEl)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.sz
   if (typeof raw !== "string") return undefined
@@ -301,21 +288,7 @@ export function parseTitleFontSize(chartEl: XmlElement): number | undefined {
  * data-labels block) cannot leak in.
  */
 export function parseTitleBold(chartEl: XmlElement): boolean | undefined {
-  const title = findChild(chartEl, "title")
-  if (!title) return undefined
-  const tx = findChild(title, "tx")
-  if (!tx) return undefined
-  const rich = findChild(tx, "rich")
-  if (!rich) return undefined
-  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
-  // default-paragraph bold flag. The reader walks the canonical chain
-  // and bails on the first missing link so a malformed `<c:rich>`
-  // surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTitleDefRPr(chartEl)
   if (!defRPr) return undefined
   const parsed = parseBoolAttr(defRPr.attrs.b)
   // The OOXML default `false` collapses to `undefined` so absence and
@@ -348,21 +321,7 @@ export function parseTitleBold(chartEl: XmlElement): boolean | undefined {
  * data-labels block) cannot leak in.
  */
 export function parseTitleItalic(chartEl: XmlElement): boolean | undefined {
-  const title = findChild(chartEl, "title")
-  if (!title) return undefined
-  const tx = findChild(title, "tx")
-  if (!tx) return undefined
-  const rich = findChild(tx, "rich")
-  if (!rich) return undefined
-  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
-  // default-paragraph italic flag. The reader walks the canonical chain
-  // and bails on the first missing link so a malformed `<c:rich>`
-  // surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTitleDefRPr(chartEl)
   if (!defRPr) return undefined
   const parsed = parseBoolAttr(defRPr.attrs.i)
   // The OOXML default `false` collapses to `undefined` so absence and
@@ -399,22 +358,7 @@ export function parseTitleItalic(chartEl: XmlElement): boolean | undefined {
  * a data-labels block) cannot leak in.
  */
 export function parseTitleColor(chartEl: XmlElement): ChartColor | undefined {
-  const title = findChild(chartEl, "title")
-  if (!title) return undefined
-  const tx = findChild(title, "tx")
-  if (!tx) return undefined
-  const rich = findChild(tx, "rich")
-  if (!rich) return undefined
-  // `<a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr>` (or `<a:schemeClr>`)
-  // is the OOXML path Excel writes for the default-paragraph font color.
-  // The reader walks the canonical chain and bails on the first missing
-  // link so a malformed `<c:rich>` surfaces as absence rather than a
-  // fabricated value.
-  const p = findChild(rich, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTitleDefRPr(chartEl)
   if (!defRPr) return undefined
   const solidFill = findChild(defRPr, "solidFill")
   if (!solidFill) return undefined
@@ -614,22 +558,7 @@ export function parseTitleBorderCompound(chartEl: XmlElement): ChartLineCompound
  * leak in.
  */
 export function parseTitleStrike(chartEl: XmlElement): boolean | undefined {
-  const title = findChild(chartEl, "title")
-  if (!title) return undefined
-  const tx = findChild(title, "tx")
-  if (!tx) return undefined
-  const rich = findChild(tx, "rich")
-  if (!rich) return undefined
-  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
-  // default-paragraph strikethrough flag. The reader walks the
-  // canonical chain and bails on the first missing link so a
-  // malformed `<c:rich>` surfaces as absence rather than a fabricated
-  // value.
-  const p = findChild(rich, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTitleDefRPr(chartEl)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.strike
   // Only the UI-default `"sngStrike"` surfaces as `true`. The OOXML
@@ -673,21 +602,7 @@ export function parseTitleStrike(chartEl: XmlElement): boolean | undefined {
  * leak in.
  */
 export function parseTitleUnderline(chartEl: XmlElement): boolean | undefined {
-  const title = findChild(chartEl, "title")
-  if (!title) return undefined
-  const tx = findChild(title, "tx")
-  if (!tx) return undefined
-  const rich = findChild(tx, "rich")
-  if (!rich) return undefined
-  // `<a:p><a:pPr><a:defRPr>` is the OOXML path Excel writes for the
-  // default-paragraph underline flag. The reader walks the canonical
-  // chain and bails on the first missing link so a malformed
-  // `<c:rich>` surfaces as absence rather than a fabricated value.
-  const p = findChild(rich, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTitleDefRPr(chartEl)
   if (!defRPr) return undefined
   const raw = defRPr.attrs.u
   // Only the UI-default `"sng"` surfaces as `true`. The OOXML
@@ -727,22 +642,7 @@ export function parseTitleUnderline(chartEl: XmlElement): boolean | undefined {
  * leak in.
  */
 export function parseTitleFontFamily(chartEl: XmlElement): string | undefined {
-  const title = findChild(chartEl, "title")
-  if (!title) return undefined
-  const tx = findChild(title, "tx")
-  if (!tx) return undefined
-  const rich = findChild(tx, "rich")
-  if (!rich) return undefined
-  // `<a:p><a:pPr><a:defRPr><a:latin>` is the OOXML path Excel writes
-  // for the default-paragraph typeface. The reader walks the
-  // canonical chain and bails on the first missing link so a
-  // malformed `<c:rich>` surfaces as absence rather than a fabricated
-  // value.
-  const p = findChild(rich, "p")
-  if (!p) return undefined
-  const pPr = findChild(p, "pPr")
-  if (!pPr) return undefined
-  const defRPr = findChild(pPr, "defRPr")
+  const defRPr = resolveTitleDefRPr(chartEl)
   if (!defRPr) return undefined
   const latin = findChild(defRPr, "latin")
   if (!latin) return undefined
@@ -1799,7 +1699,7 @@ export function resolveCloneTitleBorderColor(
  * collapse to `undefined` so the cloned chart drops the field rather
  * than carry a value the writer would silently elide back to absence.
  */
-export function normalizeTitleBorderWidth(value: number | undefined): number | undefined {
+function normalizeTitleBorderWidth(value: number | undefined): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined
   // Snap to the 0.25 pt grid Excel's UI exposes (Math.round(x * 4) / 4).
   const snapped = Math.round(value * 4) / 4
