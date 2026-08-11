@@ -1259,6 +1259,12 @@ cell over `maxWidth` characters (default 50) with a `...` suffix and turns
 newlines into `<br>`. Both are one-way, and there is no `fromMarkdown` —
 nor will there be. Use CSV or JSON to move data.
 
+Cell text is escaped so it renders as itself: a cell reading
+`*not emphasis*` comes out as those words rather than as emphasis. Pass
+`escapeInline: false` when the cells hold Markdown you want rendered — a
+column of `**bold**` labels, say. Pipes and newlines are escaped either
+way, because losing those loses the table.
+
 ### Reading HTML tables
 
 `fromHtml` parses a table — anyone's table, not just hucre's — into a sheet:

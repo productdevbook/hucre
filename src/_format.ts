@@ -18,6 +18,16 @@ export interface LocaleFormat {
   thousands: string
   /** Currency symbol */
   currency: string
+  /**
+   * Digits per group, right to left: the first entry is the rightmost
+   * group and the last repeats for everything further left.
+   *
+   * `[3]` for most locales. `[3, 2]` for the Indian system, where
+   * 12,345,678 is written 1,23,45,678 — the separator was already right
+   * there and the positions were not. Read from `Intl`, so any locale
+   * that groups unusually is covered without a table. See #474.
+   */
+  groupSizes: number[]
 }
 
 /**
@@ -67,17 +77,68 @@ function resolveLocale(locale?: string): LocaleFormat | undefined {
     )
   }
 
-  // Separators only. The formatter groups in threes, so a locale that
-  // groups differently — Indian lakh/crore, say — gets the right
-  // separator in the wrong places. That predates this change and is a
-  // deeper piece of work than reading a tag.
   const resolved: LocaleFormat = {
     decimal: parts.find((p) => p.type === "decimal")?.value ?? ".",
     thousands: parts.find((p) => p.type === "group")?.value ?? ",",
     currency: KNOWN_CURRENCY[locale] ?? "",
+    groupSizes: readGroupSizes(locale),
   }
   localeCache.set(locale, resolved)
   return resolved
+}
+
+/**
+ * Ask `Intl` where a locale puts its group separators, by formatting a
+ * number long enough to show three groups and measuring the digit runs.
+ *
+ * Deriving beats tabulating: `en-IN`, `hi-IN`, `bn-IN`, `ne-NP` and the
+ * rest come out right without anyone listing them, and a locale whose
+ * grouping `Intl` later revises follows along.
+ */
+function readGroupSizes(locale: string): number[] {
+  let formatted: string
+  try {
+    formatted = new Intl.NumberFormat(locale, { useGrouping: true }).format(1234567890)
+  } catch {
+    return [3]
+  }
+
+  // Runs of digits, left to right; reverse so index 0 is the rightmost.
+  const runs = (formatted.match(/\d+/g) ?? []).map((r) => r.length).reverse()
+  if (runs.length < 2) return [3]
+
+  // The leftmost run is whatever digits were left over, not a group size.
+  const sizes = runs.slice(0, -1)
+  // Collapse a uniform tail: [3, 3, 3] is [3], [3, 2, 2] is [3, 2].
+  while (sizes.length > 1 && sizes[sizes.length - 1] === sizes[sizes.length - 2]) {
+    sizes.pop()
+  }
+  return sizes.every((n) => n > 0) ? sizes : [3]
+}
+
+/**
+ * Re-group an already-grouped integer string for a locale.
+ *
+ * The formatter groups in threes with `,` before this runs, which is
+ * right for almost every locale and wrong for the Indian system. Anything
+ * that is not plain digits and commas is left alone — a Special format
+ * like `000-00-0000` interleaves literals, and re-grouping those digits
+ * would be nonsense.
+ */
+function regroup(intStr: string, sizes: number[], separator: string): string {
+  if (!/^[\d,]*$/.test(intStr)) return intStr.replace(/,/g, separator)
+
+  const digits = intStr.replace(/,/g, "")
+  if (digits.length === 0) return intStr
+
+  const out: string[] = []
+  let remaining = digits
+  for (let i = 0; remaining.length > 0; i++) {
+    const size = sizes[Math.min(i, sizes.length - 1)]!
+    out.unshift(remaining.slice(-size))
+    remaining = remaining.slice(0, -size)
+  }
+  return out.join(separator)
 }
 
 export interface FormatOptions {
@@ -692,8 +753,11 @@ function formatNumber(value: number, fmt: string, locale?: LocaleFormat): string
   let localizedInt = formattedInt
   let localizedDec = formattedDec
   if (locale) {
-    if (locale.thousands !== "," && useThousandSep) {
-      localizedInt = localizedInt.replace(/,/g, locale.thousands)
+    // Unconditional when the format asked for grouping: the separator and
+    // the positions both come from the locale, and a locale that matches
+    // the defaults regroups to the same string anyway.
+    if (useThousandSep) {
+      localizedInt = regroup(localizedInt, locale.groupSizes, locale.thousands)
     }
     if (locale.decimal !== "." && localizedDec.length > 0) {
       // Replace the leading "." with locale decimal

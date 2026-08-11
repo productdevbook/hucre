@@ -18,6 +18,7 @@ import { assertNotEncrypted, readInputToUint8Array } from "../_input"
 import { ZipReader } from "../zip/reader"
 import { parseXml } from "../xml/parser"
 import { parseRange } from "../cell-utils"
+import { parseUtcDefaultDateTime } from "../_date"
 import { MAX_COL_INDEX, MAX_REPEAT_COUNT, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
 
 /**
@@ -450,11 +451,7 @@ function odsFormulaToExcel(formula: string): string {
  * honoured; only an unqualified time is taken to mean UTC.
  */
 export function parseOdsDateTime(text: string): Date | undefined {
-  const trimmed = text.trim()
-  const timeAt = trimmed.indexOf("T")
-  const zoned = timeAt >= 0 && /(?:Z|[+-]\d{2}:?\d{2})$/.test(trimmed.slice(timeAt + 1))
-  const date = new Date(timeAt >= 0 && !zoned ? `${trimmed}Z` : trimmed)
-  return Number.isNaN(date.getTime()) ? undefined : date
+  return parseUtcDefaultDateTime(text)
 }
 
 // ── Cell Value Parsing ──────────────────────────────────────────────

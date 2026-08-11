@@ -83,6 +83,20 @@ boxes, background images, images, document properties, named ranges, the
 1904 date system, workbook protection, theme colours, Excel 2024
 checkboxes, and encryption.
 
+### Formula results are write-only in practice
+
+`writeXlsx` writes the `formulaResult` you give it into `<v>`, so the
+value is genuinely in the file. But hucre has no formula engine, so it
+cannot know whether that cached value still matches the formula — and a
+stale `<v>` is a workbook that shows the wrong number. Every workbook
+hucre writes therefore carries `calcPr fullCalcOnLoad="1"`, which tells
+Excel to recalculate everything on open and discard the cached results.
+
+The practical consequence: **`formulaResult` survives a hucre round-trip
+and does not survive being opened in Excel.** Set it when something other
+than Excel will read the file — a second tool, a diff, hucre itself — and
+do not rely on it as the number a person will see.
+
 `test/xlsx-write-read-parity.test.ts` holds every field of `WriteSheet`
 and `WriteOptions` in a register typed over `keyof Required<…>`. Adding a
 field to either interface fails `tsc` until it is registered — as a probe

@@ -3,6 +3,7 @@
 
 import type { WorkbookProperties } from "../_types"
 import { parseXml } from "../xml/parser"
+import { parseUtcDefaultDateTime } from "../_date"
 import type { XmlElement } from "../xml/parser"
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -19,11 +20,18 @@ function getChildText(parent: XmlElement, localName: string): string | undefined
   return undefined
 }
 
+/**
+ * Parse a `dcterms:created` / `dcterms:modified` value.
+ *
+ * W3CDTF requires a zone designator on a date-time and hucre's own writer
+ * always emits `Z`, so compliant files were never at risk. A producer
+ * that omits it, though, was read as *local* time — the same workbook
+ * opened in Istanbul and in Tokyo reported timestamps six hours apart.
+ * See #474.
+ */
 function parseW3CDTF(value: string): Date | undefined {
   if (!value) return undefined
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return undefined
-  return d
+  return parseUtcDefaultDateTime(value)
 }
 
 // ── core.xml parsing ────────────────────────────────────────────────

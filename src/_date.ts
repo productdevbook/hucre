@@ -594,6 +594,28 @@ export function reviveIsoDate(value: string): Date | null {
 }
 
 /**
+ * Parse an ISO-8601-shaped date-time, reading an unqualified time as UTC.
+ *
+ * `new Date("2024-01-15T10:30:00")` is **local** time under ECMA-262, so
+ * the same file read in Istanbul and in Tokyo produces instants six hours
+ * apart. Every format hucre reads records an absolute moment, so a bare
+ * time is taken to mean UTC — an explicit `Z` or `+02:00` is what the
+ * file says and is honoured untouched.
+ *
+ * Third home for this fix: ODS cell values (#415), ODS streaming, and now
+ * `docProps/core.xml`, where a non-compliant producer that omits the zone
+ * designator W3CDTF requires used to shift `created` / `modified` by the
+ * reader's offset. See #474.
+ */
+export function parseUtcDefaultDateTime(text: string): Date | undefined {
+  const trimmed = text.trim()
+  const timeAt = trimmed.indexOf("T")
+  const zoned = timeAt >= 0 && /(?:Z|[+-]\d{2}:?\d{2})$/.test(trimmed.slice(timeAt + 1))
+  const date = new Date(timeAt >= 0 && !zoned ? `${trimmed}Z` : trimmed)
+  return Number.isNaN(date.getTime()) ? undefined : date
+}
+
+/**
  * Parse a date string into a Date (UTC).
  * Supports ISO 8601 and common US/EU formats.
  *
