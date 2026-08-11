@@ -1630,6 +1630,22 @@ export interface OutlineProperties {
  * `validateWithSchema` on the parsed rows, which does implement it.
  */
 export interface CsvReadOptions {
+  /**
+   * How to decode byte input. Ignored when a string is passed — the
+   * caller has already decided.
+   *
+   * Any label from the WHATWG Encoding Standard, which is what
+   * `TextDecoder` accepts: `"utf-8"`, `"utf-16le"`, `"windows-1254"`,
+   * `"iso-8859-9"`, and the rest. Default: the encoding the file's
+   * byte-order mark declares, or UTF-8 when it carries none.
+   *
+   * There is no detection beyond the mark. A mark is a statement the file
+   * makes about itself; telling windows-1254 from windows-1252 by byte
+   * frequency is a guess, and a wrong one often enough to be worse than
+   * asking. If your source is a legacy-encoded export — Excel on a
+   * Turkish or Central European Windows, say — name it. See #475.
+   */
+  encoding?: string
   /** Field delimiter. Default: auto-detect */
   delimiter?: string
   /** Quote character. Default: " */

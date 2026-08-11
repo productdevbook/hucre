@@ -2,6 +2,7 @@ import type { CellValue, CsvReadOptions } from "../_types"
 import { rowsToObjects } from "../_objects"
 import { unescapeFormula } from "./formula"
 import { inferType } from "../_infer"
+import { decodeCsvInput, type CsvInput } from "./encoding"
 
 // ── Public API ───────────────────────────────────────────────────────
 
@@ -57,11 +58,15 @@ export function detectDelimiter(input: string): string {
 /**
  * Parse a CSV string into a 2D array of cell values.
  */
-export function parseCsv(input: string, options?: CsvReadOptions): CellValue[][] {
+export function parseCsv(input: CsvInput, options?: CsvReadOptions): CellValue[][] {
   const opts = normalizeReadOptions(options)
 
+  // Bytes are decoded here, honouring the byte-order mark; a string is
+  // whatever the caller already decoded. See ./encoding.ts.
+  let text = decodeCsvInput(input, options?.encoding)
+
   if (opts.skipBom) {
-    input = stripBom(input)
+    text = stripBom(text)
   }
 
   // Skip the first N lines before parsing
@@ -69,11 +74,11 @@ export function parseCsv(input: string, options?: CsvReadOptions): CellValue[][]
   if (skipLines && skipLines > 0) {
     let linesSkipped = 0
     let pos = 0
-    while (linesSkipped < skipLines && pos < input.length) {
-      const ch = input[pos]!
+    while (linesSkipped < skipLines && pos < text.length) {
+      const ch = text[pos]!
       if (ch === "\r") {
         linesSkipped++
-        if (pos + 1 < input.length && input[pos + 1] === "\n") {
+        if (pos + 1 < text.length && text[pos + 1] === "\n") {
           pos += 2
         } else {
           pos++
@@ -85,23 +90,23 @@ export function parseCsv(input: string, options?: CsvReadOptions): CellValue[][]
         pos++
       }
     }
-    input = input.slice(pos)
+    text = text.slice(pos)
   }
 
-  if (input.length === 0) return []
+  if (text.length === 0) return []
 
-  const delimiter = opts.delimiter ?? detectDelimiter(input)
+  const delimiter = opts.delimiter ?? detectDelimiter(text)
   const quote = opts.quote
   const escape = opts.escape
 
   let rows: string[][]
   let firstFieldQuoted: boolean[]
   if (options?.fastMode) {
-    rows = parseFast(input, delimiter)
+    rows = parseFast(text, delimiter)
     // Fast mode does no quote handling, so no field is ever "quoted".
     firstFieldQuoted = Array.from({ length: rows.length }, () => false)
   } else {
-    const parsed = parseRaw(input, delimiter, quote, escape)
+    const parsed = parseRaw(text, delimiter, quote, escape)
     rows = parsed.rows
     firstFieldQuoted = parsed.firstFieldQuoted
   }
@@ -214,7 +219,7 @@ export interface CsvObjectsResult<T extends Record<string, CellValue> = Record<s
  * and the detected headers.
  */
 export function parseCsvObjects<T extends Record<string, CellValue> = Record<string, CellValue>>(
-  input: string,
+  input: CsvInput,
   options?: CsvReadOptions & { header: true },
 ): CsvObjectsResult<T> {
   // Pass through without transformValue/transformHeader to parseCsv — we handle them here

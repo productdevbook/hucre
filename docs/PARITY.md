@@ -305,6 +305,14 @@ separator, header handling, `skipHeaderRow`, type inference, leading-zero
 preservation, comment lines, and formula-injection escaping — which now
 has an inverse in `unescapeFormulae`.
 
+**Encoding is read, not guessed.** The readers take bytes and honour a
+byte-order mark — UTF-8, UTF-16LE, UTF-16BE — and fall back to UTF-8.
+Anything else has to be named through `encoding`, because an encoding like
+windows-1254 leaves no trace in the file and distinguishing it from
+windows-1252 by byte frequency is a guess. The write side emits UTF-8
+only; `bom: true` is the option that makes Excel read it correctly on
+every locale.
+
 One-way, and documented on each option:
 
 | option               | why                                                                                                                          |

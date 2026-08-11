@@ -15,6 +15,7 @@ import type { CellValue, CsvReadOptions, CsvWriteOptions } from "../_types"
 import { stripBom, detectDelimiter } from "./reader"
 import { escapeFormula, unescapeFormula } from "./formula"
 import { inferType } from "../_infer"
+import { decodeCsvInput, type CsvInput } from "./encoding"
 import { formatDate as formatExcelDate } from "../_date"
 
 const TEXT_ENCODER = /* @__PURE__ */ new TextEncoder()
@@ -39,9 +40,18 @@ function startsWith(str: string, prefix: string, offset: number): boolean {
  * Processes the string incrementally and yields one row at a time.
  */
 export function* streamCsvRows(
-  input: string,
+  input: CsvInput,
   options?: CsvReadOptions,
 ): Generator<CellValue[], void, undefined> {
+  // Same decoding as parseCsv — see ./encoding.ts. This generator walks a
+  // whole string either way, so taking bytes costs nothing and removes
+  // the trap of the caller decoding chunks by hand.
+  //
+  // For a genuinely chunked source, pipe it through `TextDecoderStream`
+  // before joining: a multi-byte character split across two chunks is the
+  // thing that decoder exists to handle.
+  let text = decodeCsvInput(input, options?.encoding)
+
   const skipBom = options?.skipBom !== false
   const quote = options?.quote ?? '"'
   const escape = options?.escape ?? '"'
@@ -63,13 +73,13 @@ export function* streamCsvRows(
   const fastMode = options?.fastMode ?? false
 
   if (skipBom) {
-    input = stripBom(input)
+    text = stripBom(text)
   }
 
-  if (input.length === 0) return
+  if (text.length === 0) return
 
-  const delimiter = options?.delimiter ?? detectDelimiter(input)
-  const len = input.length
+  const delimiter = options?.delimiter ?? detectDelimiter(text)
+  const len = text.length
 
   let i = 0
   let isFirstRow = true
@@ -89,11 +99,11 @@ export function* streamCsvRows(
     let rowFirstQuoted = false
 
     while (i < len && !rowDone) {
-      const ch = input[i]!
+      const ch = text[i]!
 
       if (inQuoted) {
         // Check for escape sequence
-        if (ch === escape && i + 1 < len && input[i + 1] === quote) {
+        if (ch === escape && i + 1 < len && text[i + 1] === quote) {
           currentField += quote
           i += 2
           continue
@@ -111,7 +121,7 @@ export function* streamCsvRows(
       }
 
       // Not in quoted field
-      if (startsWith(input, delimiter, i)) {
+      if (startsWith(text, delimiter, i)) {
         if (row.length === 0) rowFirstQuoted = fieldWasQuoted
         row.push(currentField)
         currentField = ""
@@ -126,7 +136,7 @@ export function* streamCsvRows(
         row.push(currentField)
         currentField = ""
         fieldWasQuoted = false
-        if (i + 1 < len && input[i + 1] === "\n") {
+        if (i + 1 < len && text[i + 1] === "\n") {
           i += 2
         } else {
           i++
@@ -159,7 +169,7 @@ export function* streamCsvRows(
       i++
     }
 
-    // End of input without trailing newline.
+    // End of text without trailing newline.
     // Preserve a final row whose single field was an explicit quoted-empty
     // field ("").
     if (!rowDone) {

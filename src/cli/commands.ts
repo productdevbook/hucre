@@ -104,7 +104,7 @@ export function delimiterForExtension(filePath: string): string {
   return DELIMITERS[extname(filePath).toLowerCase()] ?? ","
 }
 
-export async function readFile(filePath: string): Promise<Workbook> {
+export async function readFile(filePath: string, encoding?: string): Promise<Workbook> {
   const format = detectFormatFromExtension(filePath)
   const data = readFileSync(filePath)
   const input = new Uint8Array(data)
@@ -119,8 +119,16 @@ export async function readFile(filePath: string): Promise<Workbook> {
     case "ods":
       return readOds(input)
     case "csv": {
-      const text = new TextDecoder("utf-8").decode(input)
-      const rows = parseCsv(text, { delimiter: delimiterForExtension(filePath) })
+      // The bytes go to parseCsv, which reads the byte-order mark. This
+      // used to decode UTF-8 unconditionally, so a CSV out of a Turkish or
+      // Central European Excel — windows-1254, windows-1250 — converted to
+      // mojibake, silently, from the one place in the library that has the
+      // bytes and could know better. `--encoding` covers what no mark can
+      // say. See #475.
+      const rows = parseCsv(input, {
+        delimiter: delimiterForExtension(filePath),
+        encoding,
+      })
       return {
         sheets: [{ name: "Sheet1", rows }],
       }
@@ -154,6 +162,12 @@ export const convertCommand = defineCommand({
       description: "Output file path",
       required: true,
     },
+    encoding: {
+      type: "string",
+      description:
+        "Character encoding of a CSV/TSV input (e.g. windows-1254). " +
+        "Default: the file's byte-order mark, or utf-8.",
+    },
   },
   async run({ args }) {
     const inputPath = args.input as string
@@ -161,7 +175,7 @@ export const convertCommand = defineCommand({
     const outputFormat = detectOutputFormat(outputPath)
 
     consola.start(`Reading ${inputPath}...`)
-    const workbook = await readFile(inputPath)
+    const workbook = await readFile(inputPath, args.encoding as string | undefined)
     consola.success(`Read ${workbook.sheets.length} sheet(s)`)
 
     consola.start(`Writing ${outputPath}...`)
@@ -220,12 +234,18 @@ export const inspectCommand = defineCommand({
       type: "string",
       description: "Sheet index to show detailed data (0-based)",
     },
+    encoding: {
+      type: "string",
+      description:
+        "Character encoding of a CSV/TSV input (e.g. windows-1254). " +
+        "Default: the file's byte-order mark, or utf-8.",
+    },
   },
   async run({ args }) {
     const filePath = args.file as string
 
     consola.start(`Inspecting ${filePath}...`)
-    const workbook = await readFile(filePath)
+    const workbook = await readFile(filePath, args.encoding as string | undefined)
 
     consola.info(`Sheets: ${workbook.sheets.length}`)
 
@@ -352,7 +372,7 @@ export const validateCommand = defineCommand({
     }
 
     // Read spreadsheet
-    const workbook = await readFile(filePath)
+    const workbook = await readFile(filePath, args.encoding as string | undefined)
 
     if (sheetIdx < 0 || sheetIdx >= workbook.sheets.length) {
       throw new CliError(

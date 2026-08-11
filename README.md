@@ -1632,8 +1632,9 @@ For new code prefer `writeJson` / `workbookToJson` from `hucre/json` — same re
 ```ts
 import { parseCsv, parseCsvObjects, writeCsv, writeCsvStream, detectDelimiter } from "hucre/csv"
 
-// Parse — auto-detects delimiter, handles RFC 4180 edge cases
+// Parse — takes a string or bytes, auto-detects delimiter, RFC 4180
 const rows = parseCsv(csvString, { typeInference: true })
+const fromDisk = parseCsv(await readFile("data.csv"), { typeInference: true })
 
 // Parse with headers — returns typed objects
 const { data, headers } = parseCsvObjects(csvString, { header: true })
@@ -1669,6 +1670,43 @@ parseCsv(csv, { unescapeFormulae: true, typeInference: true }) // [[-5]]
 every line until `finish()` returns one string, while the function
 flushes as it goes. Writing 3,000,000 rows (254 MB of CSV) under a
 128 MB heap cap, the stream completes; the class runs out of memory.
+
+#### Character encoding
+
+`parseCsv`, `parseCsvObjects` and `streamCsvRows` take **bytes as well as a
+string**. Given bytes they read the byte-order mark, which is the one thing
+a file can say about its own encoding:
+
+| leading bytes | read as                                               |
+| ------------- | ----------------------------------------------------- |
+| `EF BB BF`    | UTF-8                                                 |
+| `FF FE`       | UTF-16LE — what Excel's "Save as Unicode Text" writes |
+| `FE FF`       | UTF-16BE                                              |
+| anything else | UTF-8, unless you say otherwise                       |
+
+There is no detection past the mark. An encoding like windows-1254 leaves
+no trace a parser can read — telling it from windows-1252 means guessing
+from byte frequencies, which is wrong often enough to be worse than
+asking. So name it:
+
+```ts
+// Excel on a Turkish Windows writes CSV as windows-1254
+const rows = parseCsv(bytes, { encoding: "windows-1254" })
+```
+
+Any label `TextDecoder` accepts works — the WHATWG Encoding Standard's
+full set, legacy single-byte encodings included. Passing a string skips
+all of this: you have already decided.
+
+The CLI takes `--encoding` for the same reason, and reads the mark
+without being asked:
+
+```bash
+hucre convert veriler.csv out.xlsx --encoding windows-1254
+```
+
+On the write side there is nothing to configure: `writeCsv` emits UTF-8,
+and `bom: true` is what makes Excel open it correctly on every locale.
 
 ### Schema Validation
 

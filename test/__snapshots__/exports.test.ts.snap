@@ -3,6 +3,8 @@
 exports[`export surface snapshot > hucre/csv 1`] = `
 [
   "CsvStreamWriter",
+  "decodeCsvInput",
+  "detectBom",
   "detectDelimiter",
   "fetchCsv",
   "formatCsvValue",
@@ -147,9 +149,11 @@ exports[`export surface snapshot > root 1`] = `
   "copyRange",
   "copySheetToWorkbook",
   "dateToSerial",
+  "decodeCsvInput",
   "deleteColumns",
   "deleteRows",
   "deserializeWorkbook",
+  "detectBom",
   "detectDelimiter",
   "fetchCsv",
   "fillTemplate",
