@@ -1883,3 +1883,40 @@ export interface StreamRow {
 
 export type ReadInput = Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>
 export type WriteOutput = Uint8Array
+
+// ── Incremental writers ────────────────────────────────────────────
+
+/**
+ * The vocabulary `XlsxStreamWriter`, `CsvStreamWriter` and
+ * `NdjsonStreamWriter` share, so a format-agnostic export helper can be
+ * written once.
+ *
+ * The README has claimed this since before v1 and nothing enforced it:
+ * there was no `implements` anywhere in `src/`, so when #436 widened
+ * `XlsxStreamWriter.addRow` to accept `StreamStyledCell`, nothing failed
+ * and the drift was left for a reader to discover. Declaring the type is
+ * what turns the next divergence into a compile error. See #468.
+ *
+ * Two of the members are deliberately loose, because the three writers
+ * genuinely differ and pretending otherwise would be worse than saying so:
+ *
+ * - **`finish()`** returns `string` from the text writers and
+ *   `Promise<Uint8Array>` from XLSX. A helper written against this
+ *   interface has to `await` it — which is harmless on a `string` — and
+ *   narrow the result before using it. Converging the two is a real API
+ *   decision and a breaking one; the interface is worth having either way.
+ * - **`addRow` / `addObject`** promise only the narrow parameter here.
+ *   `XlsxStreamWriter` accepts more (`StreamStyledCell`, `unknown`
+ *   values), which is contravariant and therefore fine — a writer may
+ *   take more than the interface promises, never less.
+ */
+export interface SpreadsheetStreamWriter {
+  /** Append a row of positional values. */
+  addRow(values: CellValue[]): void
+  /** Append a row from an object, projected through the writer's columns. */
+  addObject(item: Record<string, CellValue>): void
+  /** Close the writer and return its output. */
+  finish(): string | Promise<Uint8Array>
+  /** Output as a `ReadableStream<Uint8Array>`. */
+  toStream(): ReadableStream<Uint8Array>
+}

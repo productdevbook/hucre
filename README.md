@@ -451,8 +451,9 @@ Run `pnpm bench` to see both on your own machine.
 
 #### One surface across the incremental writers
 
-`XlsxStreamWriter`, `CsvStreamWriter`, and `NdjsonStreamWriter` share one
-vocabulary, so a format-agnostic export helper can be written once:
+`XlsxStreamWriter`, `CsvStreamWriter`, and `NdjsonStreamWriter` all
+implement `SpreadsheetStreamWriter`, so a format-agnostic export helper
+can be written once:
 
 | Method            | Behaviour                                                         |
 | ----------------- | ----------------------------------------------------------------- |
@@ -461,8 +462,29 @@ vocabulary, so a format-agnostic export helper can be written once:
 | `finish()`        | Close the writer and return its output (`string` or `Uint8Array`) |
 | `toStream()`      | Output as a `ReadableStream<Uint8Array>`                          |
 
-Two caveats worth stating plainly:
+```ts
+import type { SpreadsheetStreamWriter } from "hucre"
 
+async function exportAll(writer: SpreadsheetStreamWriter, rows: Array<Record<string, CellValue>>) {
+  for (const row of rows) writer.addObject(row)
+  return await writer.finish() // string | Uint8Array — narrow at the call site
+}
+```
+
+This was a convention until v1.0.1 and nothing enforced it: there was no
+shared interface, so when `XlsxStreamWriter.addRow` widened to accept
+styled cells, nothing failed and the drift was left for a reader to
+find. The `implements` is what makes the next divergence a compile error
+(#468).
+
+Four caveats worth stating plainly:
+
+- **`finish()` is not one type.** The text writers return `string`, XLSX
+  returns `Promise<Uint8Array>`, and the interface says so rather than
+  pretending otherwise. `await` covers both; narrow before use.
+- **Construction is not shared.** `XlsxStreamWriter` takes a sheet `name`
+  and `ColumnDef[]`; the two text writers take a plain key list. The
+  helper is written once — building the writer is still per-format.
 - `toStream()` on `XlsxStreamWriter` and `CsvStreamWriter` **does not bound
   memory**. Both buffer everything until `finish()`; the stream just hands
   you the finished bytes. `writeXlsxStream` / `writeCsvStream` are the

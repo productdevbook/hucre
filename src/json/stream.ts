@@ -1,7 +1,7 @@
 // ── NDJSON Streaming ─────────────────────────────────────────────────
 // CF Workers / Deno / Node 18+ compatible: uses WHATWG ReadableStream only.
 
-import type { CellValue } from "../_types"
+import type { CellValue, SpreadsheetStreamWriter } from "../_types"
 import { InvalidArgumentError, ParseError } from "../errors"
 import { flattenValue, reviveDates, type FlattenOptions } from "./flatten"
 import { unflattenRow } from "./unflatten"
@@ -48,7 +48,7 @@ export interface NdjsonStreamWriterOptions {
  * return new Response(body, { headers: { 'content-type': 'application/x-ndjson' } })
  * ```
  */
-export class NdjsonStreamWriter {
+export class NdjsonStreamWriter implements SpreadsheetStreamWriter {
   private buffer: string[] = []
   private done = false
   private columns: string[] | undefined

@@ -11,7 +11,7 @@
 //   source on demand and encoded lines are flushed as they accumulate,
 //   so peak memory is independent of the row count.
 
-import type { CellValue, CsvReadOptions, CsvWriteOptions } from "../_types"
+import type { CellValue, CsvReadOptions, CsvWriteOptions, SpreadsheetStreamWriter } from "../_types"
 import { stripBom, detectDelimiter } from "./reader"
 import { escapeFormula, unescapeFormula } from "./formula"
 import { inferType } from "../_infer"
@@ -377,7 +377,7 @@ export type CsvStreamWriterOptions = CsvWriteOptions
  * until {@link CsvStreamWriter.finish} joins them, so peak memory scales
  * with the data. For constant-memory output use {@link writeCsvStream}.
  */
-export class CsvStreamWriter {
+export class CsvStreamWriter implements SpreadsheetStreamWriter {
   private formatter: CsvRowFormatter
   private lineSeparator: string
   private bom: boolean

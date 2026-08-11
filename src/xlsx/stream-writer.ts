@@ -11,7 +11,15 @@
 //   source on demand and the ZIP is emitted chunk by chunk, so peak
 //   memory is O(distinct styles), independent of row count.
 
-import type { CellValue, CellStyle, ColumnDef, FreezePane, MergeRange, RowDef } from "../_types"
+import type {
+  CellValue,
+  CellStyle,
+  ColumnDef,
+  FreezePane,
+  MergeRange,
+  RowDef,
+  SpreadsheetStreamWriter,
+} from "../_types"
 import { ZipWriter } from "../zip/writer"
 import { zipStream, type ZipStreamEntry } from "../zip/stream-writer"
 import { writeContentTypes } from "./content-types-writer"
@@ -491,7 +499,7 @@ function validateMaxRowsPerSheet(value: number): void {
  * assembles the archive, so peak memory still scales with the data.
  * For constant-memory output use {@link writeXlsxStream} instead.
  */
-export class XlsxStreamWriter {
+export class XlsxStreamWriter implements SpreadsheetStreamWriter {
   private sheetName: string
   private columns: ColumnDef[] | undefined
   private freezePane: FreezePane | undefined

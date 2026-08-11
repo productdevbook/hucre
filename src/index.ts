@@ -322,6 +322,11 @@ export {
 
 // ── Types ──────────────────────────────────────────────────────────
 export type {
+  /**
+   * The vocabulary the three incremental writers share. Implemented by
+   * `XlsxStreamWriter`, `CsvStreamWriter` and `NdjsonStreamWriter`. See #468.
+   */
+  SpreadsheetStreamWriter,
   // Cell
   CellValue,
   CellType,
