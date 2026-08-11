@@ -3,6 +3,8 @@
 
 export { readOds } from "./ods/reader"
 export { writeOds } from "./ods/writer"
+export { writeOdsStream } from "./ods/stream-writer"
+export type { OdsWriteRow, OdsWriteCell, OdsStreamWriteOptions } from "./ods/stream-writer"
 export { streamOdsRows } from "./ods/stream"
 export type { OdsStreamRow } from "./ods/stream"
 export { readOdsObjects, writeOdsObjects } from "./ods/objects"

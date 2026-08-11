@@ -50,6 +50,8 @@ export type {
 // ── ODS ────────────────────────────────────────────────────────────
 export { readOds } from "./ods/reader"
 export { writeOds } from "./ods/writer"
+export { writeOdsStream } from "./ods/stream-writer"
+export type { OdsWriteRow, OdsWriteCell, OdsStreamWriteOptions } from "./ods/stream-writer"
 export { streamOdsRows } from "./ods/stream"
 export { readOdsObjects, writeOdsObjects } from "./ods/objects"
 export type { OdsObjectsReadOptions, OdsObjectsResult, OdsObjectsWriteOptions } from "./ods/objects"
@@ -83,6 +85,7 @@ export {
   NdjsonStreamWriter,
   streamNdjsonRows,
   readNdjsonStream,
+  writeNdjsonStream,
   // Exported from hucre/json but not from the root, so the two surfaces
   // disagreed about what the JSON API is.
   flattenValue,
@@ -98,6 +101,7 @@ export type {
   JsonWriteOptions,
   WorkbookToJsonOptions,
   NdjsonStreamReadOptions,
+  NdjsonStreamRow,
   NdjsonStreamWriterOptions,
   FlattenOptions,
   UnflattenedRow,

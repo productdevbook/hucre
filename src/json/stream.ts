@@ -262,3 +262,100 @@ function tryParseLine(
  * in a future major.
  */
 export const readNdjsonStream: typeof streamNdjsonRows = streamNdjsonRows
+
+// ── True Streaming NDJSON Writer ─────────────────────────────────────
+
+/** A streamed row: an object, or positional values read through `columns`. */
+export type NdjsonStreamRow = Record<string, CellValue> | CellValue[]
+
+/**
+ * Write NDJSON as a byte stream, pulling rows from `rows` only as the
+ * consumer reads.
+ *
+ * `NdjsonStreamWriter.toStream()` already streamed live, but it is a
+ * class the caller has to drive — and `writeXlsxStream` /
+ * `writeCsvStream` are the shape that reads naturally at a `Response`
+ * boundary. NDJSON, of all formats, should not be the one that lacks it.
+ * See #467.
+ *
+ * ```ts
+ * return new Response(writeNdjsonStream(rowCursor), {
+ *   headers: { "content-type": "application/x-ndjson" },
+ * })
+ * ```
+ *
+ * Peak memory is independent of the row count: each row is serialized,
+ * encoded and enqueued on its own, and nothing is retained.
+ *
+ * Positional rows need `columns`, for the same reason
+ * {@link NdjsonStreamWriter.addRow} does — NDJSON rows are objects, so
+ * values with no key names describe nothing.
+ */
+export function writeNdjsonStream(
+  rows: AsyncIterable<NdjsonStreamRow> | Iterable<NdjsonStreamRow>,
+  options?: NdjsonStreamWriterOptions,
+): ReadableStream<Uint8Array> {
+  const chunks = ndjsonStreamChunks(rows, options)
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await chunks.next()
+        if (done) {
+          controller.close()
+          return
+        }
+        controller.enqueue(value)
+      } catch (err) {
+        controller.error(err)
+      }
+    },
+    async cancel(reason) {
+      await chunks.return?.(reason)
+    },
+  })
+}
+
+/** Serialize rows into ~64 KB encoded chunks, pulling lazily. */
+async function* ndjsonStreamChunks(
+  rows: AsyncIterable<NdjsonStreamRow> | Iterable<NdjsonStreamRow>,
+  options?: NdjsonStreamWriterOptions,
+): AsyncGenerator<Uint8Array> {
+  const columns = options?.columns
+  const unflatten = options?.unflatten ?? false
+
+  // Batching is what keeps this from being one syscall-sized write per
+  // row; the same 64 KB the CSV writer uses.
+  const CHUNK_BYTES = 64 * 1024
+  let pending: string[] = []
+  let pendingBytes = 0
+
+  for await (const row of rows) {
+    let object: Record<string, CellValue>
+    if (Array.isArray(row)) {
+      if (!columns) {
+        throw new InvalidArgumentError(
+          "writeNdjsonStream needs `columns` for positional rows — NDJSON rows " +
+            "are objects, so values with no key names describe nothing. Pass " +
+            "`{ columns: [...] }` or yield objects.",
+        )
+      }
+      object = {}
+      for (let i = 0; i < columns.length; i++) object[columns[i]!] = row[i] ?? null
+    } else {
+      object = row
+    }
+
+    const line = `${JSON.stringify(unflatten ? unflattenRow(object) : object)}\n`
+    pending.push(line)
+    pendingBytes += line.length
+
+    if (pendingBytes >= CHUNK_BYTES) {
+      yield TEXT_ENCODER.encode(pending.join(""))
+      pending = []
+      pendingBytes = 0
+    }
+  }
+
+  if (pending.length > 0) yield TEXT_ENCODER.encode(pending.join(""))
+}

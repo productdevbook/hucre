@@ -411,6 +411,39 @@ for (let i = 0; i < 100_000; i++) {
 const buffer = await writer.finish()
 ```
 
+#### Across the formats
+
+```ts
+import { writeOdsStream } from "hucre/ods"
+import { writeNdjsonStream } from "hucre/json"
+
+return new Response(writeOdsStream(rowCursor, { name: "Export" }), {
+  headers: { "content-type": "application/vnd.oasis.opendocument.spreadsheet" },
+})
+
+return new Response(writeNdjsonStream(rowCursor), {
+  headers: { "content-type": "application/x-ndjson" },
+})
+```
+
+|        | whole read | whole write | stream read | stream write | incremental writer |
+| ------ | :--------: | :---------: | :---------: | :----------: | :----------------: |
+| XLSX   |     ✔      |      ✔      |      ✔      |  ✔ (multi)   |         ✔          |
+| CSV    |     ✔      |      ✔      |      ✔      |      ✔       |         ✔          |
+| NDJSON |     ✔      |      ✔      |      ✔      |      ✔       |         ✔          |
+| ODS    |     ✔      |      ✔      |      ✔      |      ✔       |         —          |
+| XML    |     ✔      |      ✔      |      —      |      —       |         —          |
+
+`writeOdsStream` carries **values, not formatting**, and that follows from
+the format: ODF puts `<office:automatic-styles>` before the body, so a
+style first seen on row 900,000 has nowhere to be declared — the same
+shape as the shared-string table, which the XLSX streaming writer answers
+with inline strings and ODF has no equivalent for. Column widths and a
+header row are carried, because `columns` is known before the first row.
+`writeOds` remains the path for a document that needs styling.
+
+XML is the remaining gap, on both sides.
+
 #### Which writer to use
 
 |             | `writeXlsxStream()`                          | `XlsxStreamWriter`                |

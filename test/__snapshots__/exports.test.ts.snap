@@ -34,6 +34,7 @@ exports[`export surface snapshot > hucre/json 1`] = `
   "workbookToJson",
   "writeJson",
   "writeNdjson",
+  "writeNdjsonStream",
 ]
 `;
 
@@ -46,6 +47,7 @@ exports[`export surface snapshot > hucre/ods 1`] = `
   "toWriteSheet",
   "writeOds",
   "writeOdsObjects",
+  "writeOdsStream",
 ]
 `;
 
@@ -260,9 +262,11 @@ exports[`export surface snapshot > root 1`] = `
   "writeCsvStream",
   "writeJson",
   "writeNdjson",
+  "writeNdjsonStream",
   "writeObjects",
   "writeOds",
   "writeOdsObjects",
+  "writeOdsStream",
   "writeTsv",
   "writeTsvObjects",
   "writeXlsx",

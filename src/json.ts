@@ -12,8 +12,17 @@ export type {
 export { writeJson, writeNdjson, workbookToJson } from "./json/writer"
 export type { JsonWriteOptions, WorkbookToJsonOptions } from "./json/writer"
 
-export { NdjsonStreamWriter, streamNdjsonRows, readNdjsonStream } from "./json/stream"
-export type { NdjsonStreamReadOptions, NdjsonStreamWriterOptions } from "./json/stream"
+export {
+  NdjsonStreamWriter,
+  streamNdjsonRows,
+  readNdjsonStream,
+  writeNdjsonStream,
+} from "./json/stream"
+export type {
+  NdjsonStreamReadOptions,
+  NdjsonStreamWriterOptions,
+  NdjsonStreamRow,
+} from "./json/stream"
 
 export { flattenValue, collectHeaders } from "./json/flatten"
 export type { FlattenOptions } from "./json/flatten"

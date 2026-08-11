@@ -35,7 +35,7 @@ const NS_DC = "http://purl.org/dc/elements/1.1/"
 const NS_XLINK = "http://www.w3.org/1999/xlink"
 const NS_OF = "urn:oasis:names:tc:opendocument:xmlns:of:1.2"
 
-const MIMETYPE = "application/vnd.oasis.opendocument.spreadsheet"
+export const MIMETYPE = "application/vnd.oasis.opendocument.spreadsheet"
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -44,7 +44,7 @@ const MIMETYPE = "application/vnd.oasis.opendocument.spreadsheet"
  * - Integers (including floats with no fractional part like 12.0) → "12"
  * - Floats → reasonable decimal places, no floating-point artifacts
  */
-function formatNumberDisplay(value: number): string {
+export function formatNumberDisplay(value: number): string {
   if (Number.isInteger(value)) return String(value)
   // Use toPrecision(15) to avoid floating-point artifacts (JS has ~17 significant digits),
   // then parseFloat to strip trailing zeros
@@ -55,7 +55,7 @@ function formatOdsDate(date: Date): string {
   return date.toISOString().replace(/\.\d{3}Z$/, "Z")
 }
 
-function formatOdsDateValue(date: Date): string {
+export function formatOdsDateValue(date: Date): string {
   // ODS date values use ISO 8601 without time zone: YYYY-MM-DDTHH:MM:SS
   // Must use UTC methods to avoid local timezone offset corruption
   const y = date.getUTCFullYear()
@@ -665,7 +665,7 @@ function odsSheetLocator(sheet: string | undefined): string {
  * Convert an Excel-style formula to ODS formula syntax.
  * ODS formulas use `of:=` prefix and `[.A1]` cell references.
  */
-function excelFormulaToOds(formula: string): string {
+export function excelFormulaToOds(formula: string): string {
   // Convert cell references like A1, $A$1, A1:B2 to ODS [.A1] notation,
   // handling ranges (A1:B2 → [.A1:.B2]) and cross-sheet references
   // (Sheet2!A1 → [$Sheet2.A1]) while leaving function names (LOG10),
@@ -1139,7 +1139,7 @@ function writeContentXml(options: WriteOptions): string {
 
 // ── meta.xml ────────────────────────────────────────────────────────
 
-function writeMetaXml(props?: WorkbookProperties): string {
+export function writeMetaXml(props?: WorkbookProperties): string {
   const children: string[] = []
 
   if (props?.title) {
@@ -1182,7 +1182,7 @@ function writeMetaXml(props?: WorkbookProperties): string {
 
 // ── styles.xml ──────────────────────────────────────────────────────
 
-function writeStylesXml(): string {
+export function writeStylesXml(): string {
   // ODS spec requires these child elements even if empty:
   // office:font-face-decls, office:styles, office:automatic-styles, office:master-styles
   const children: string[] = []
@@ -1209,7 +1209,7 @@ function writeStylesXml(): string {
 
 // ── settings.xml ─────────────────────────────────────────────────────
 
-function writeSettingsXml(): string {
+export function writeSettingsXml(): string {
   const NS_CONFIG = "urn:oasis:names:tc:opendocument:xmlns:config:1.0"
 
   return xmlDocument(
@@ -1225,7 +1225,7 @@ function writeSettingsXml(): string {
 
 // ── manifest.xml ────────────────────────────────────────────────────
 
-function writeManifestXml(): string {
+export function writeManifestXml(): string {
   const NS_MANIFEST = "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"
 
   const entries: string[] = []
