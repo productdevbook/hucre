@@ -97,6 +97,23 @@ and does not survive being opened in Excel.** Set it when something other
 than Excel will read the file — a second tool, a diff, hucre itself — and
 do not rely on it as the number a person will see.
 
+### Ranges: two spellings, one meaning
+
+Ranges are A1 strings on `DataValidation.range`, `ConditionalRule.range`,
+`AutoFilter.range`, `TableDefinition.range`, `NamedRange.range`,
+`PageSetup.printArea` and `ReadOptions.range`, and coordinate objects on
+`MergeRange`, `SheetImage.anchor` and the sparkline fields. There was no
+rule to hold in your head about which a field wanted.
+
+The authoring surfaces that take a rectangle now take either —
+`WriteSheet.merges`, `XlsxStreamWriter`'s `merges`, and `copyRange` — and
+`toRange` / `toRanges` are exported for anywhere else. `Sheet.merges`
+stays coordinates, because that is what the reader produces and a read
+model with two spellings would push the normalising onto every consumer.
+
+`SheetImage.anchor` is a different shape — a corner plus an optional
+second corner, not a rectangle — and is unchanged.
+
 `test/xlsx-write-read-parity.test.ts` holds every field of `WriteSheet`
 and `WriteOptions` in a register typed over `keyof Required<…>`. Adding a
 field to either interface fails `tsc` until it is registered — as a probe

@@ -371,7 +371,7 @@ writeXlsxStream(
   {
     name: "Report",
     rowDefs: new Map([[0, { height: 30 }]]),
-    merges: [{ startRow: 0, startCol: 0, endRow: 0, endCol: 2 }],
+    merges: ["A1:C1"], // or [{ startRow: 0, startCol: 0, endRow: 0, endCol: 2 }]
   },
 )
 

@@ -1642,7 +1642,13 @@ export interface WriteSheet {
    * Excel picks its own from the default font.
    */
   defaultColWidth?: number
-  merges?: MergeRange[]
+  /**
+   * Merged ranges, as coordinates or as A1 strings — `"A1:C1"` and
+   * `{ startRow: 0, startCol: 0, endRow: 0, endCol: 2 }` mean the same
+   * thing. See #474; the read model stays coordinates, because that is
+   * what the reader produces.
+   */
+  merges?: Array<MergeRange | string>
   dataValidations?: DataValidation[]
   conditionalRules?: ConditionalRule[]
   autoFilter?: AutoFilter

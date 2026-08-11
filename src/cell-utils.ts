@@ -264,3 +264,41 @@ export function a1ToR1C1(formula: string, currentRow?: number, currentCol?: numb
     }
   })
 }
+
+// ── Range normalisation ─────────────────────────────────────────────
+
+/**
+ * A rectangular range, either way of writing one.
+ *
+ * Ranges arrive as A1 strings in half the API — `DataValidation.range`,
+ * `ConditionalRule.range`, `AutoFilter.range`, `TableDefinition.range`,
+ * `NamedRange.range`, `PageSetup.printArea`, `ReadOptions.range` — and as
+ * coordinate objects in the other half. There was no rule to hold in your
+ * head about which form a field wanted, and both directions show up
+ * constantly in user code. The authoring surfaces now take either. See
+ * #474.
+ */
+export type RangeLike =
+  | string
+  | { startRow: number; startCol: number; endRow: number; endCol: number }
+
+/** Normalise a {@link RangeLike} to coordinates. */
+export function toRange(range: RangeLike): {
+  startRow: number
+  startCol: number
+  endRow: number
+  endCol: number
+} {
+  return typeof range === "string" ? parseRange(range) : range
+}
+
+/** Normalise a list of {@link RangeLike}, or `undefined` for an absent one. */
+export function toRanges(
+  ranges: RangeLike[] | undefined,
+): Array<{ startRow: number; startCol: number; endRow: number; endCol: number }> | undefined {
+  if (!ranges) return undefined
+  // Nothing to normalise is the common case; do not allocate for it.
+  return ranges.some((r) => typeof r === "string")
+    ? ranges.map(toRange)
+    : (ranges as Array<{ startRow: number; startCol: number; endRow: number; endCol: number }>)
+}

@@ -268,7 +268,11 @@ export {
   isInRange,
   r1c1ToA1,
   a1ToR1C1,
+  // Normalise either spelling of a range to coordinates (#474).
+  toRange,
+  toRanges,
 } from "./cell-utils"
+export type { RangeLike } from "./cell-utils"
 
 // ── Sheet Utilities ──────────────────────────────────────────────
 export { sheetToObjects, sheetToArrays } from "./sheet-utils"

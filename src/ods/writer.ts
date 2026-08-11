@@ -17,7 +17,7 @@ import { ZipWriter } from "../zip/writer"
 import { validateSheetNames } from "../_validate"
 import { unwrapCellValue } from "../xlsx/hyperlink"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
-import { replaceA1Ranges } from "../cell-utils"
+import { replaceA1Ranges, toRanges } from "../cell-utils"
 
 const encoder = /* @__PURE__ */ new TextEncoder()
 
@@ -1040,24 +1040,28 @@ function writeContentXml(options: WriteOptions): string {
       }
     }
 
+    // A `WriteSheet` merge may be an A1 string; normalise once, here,
+    // rather than at each of the three places below. See #474.
+    const merges = toRanges(sheet.merges)
+
     // Build merge map
-    const mergeMap = buildMergeMap(sheet.merges)
+    const mergeMap = buildMergeMap(merges)
 
     // Determine column count (max width across all rows, considering merges)
     let colCount = 0
     for (const row of rows) {
       if (row.length > colCount) colCount = row.length
     }
-    if (sheet.merges) {
-      for (const m of sheet.merges) {
+    if (merges) {
+      for (const m of merges) {
         if (m.endCol + 1 > colCount) colCount = m.endCol + 1
       }
     }
 
     // Determine max row needed (considering merges)
     let rowCount = rows.length
-    if (sheet.merges) {
-      for (const m of sheet.merges) {
+    if (merges) {
+      for (const m of merges) {
         if (m.endRow + 1 > rowCount) rowCount = m.endRow + 1
       }
     }

@@ -1,6 +1,7 @@
 // ── Worksheet XML Writer ─────────────────────────────────────────────
 // Generates xl/worksheets/sheetN.xml for an XLSX package.
 
+import { toRanges } from "../cell-utils"
 import type {
   RowDef,
   WriteSheet,
@@ -543,13 +544,16 @@ export function writeWorksheetXml(
   }
 
   // ── Merge Cells ──
-  if (sheet.merges && sheet.merges.length > 0) {
-    const mergeElements = sheet.merges.map((m) =>
+  // A merge may be given as an A1 string; both forms mean the same
+  // rectangle and the file only knows one of them. See #474.
+  const merges = toRanges(sheet.merges)
+  if (merges && merges.length > 0) {
+    const mergeElements = merges.map((m) =>
       xmlSelfClose("mergeCell", {
         ref: rangeRef(m.startRow, m.startCol, m.endRow, m.endCol),
       }),
     )
-    parts.push(xmlElement("mergeCells", { count: sheet.merges.length }, mergeElements))
+    parts.push(xmlElement("mergeCells", { count: merges.length }, mergeElements))
   }
 
   // ── Conditional Formatting ──

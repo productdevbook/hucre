@@ -3,6 +3,7 @@
 
 import type { Sheet, MergeRange, RowDef, Workbook, Cell, CellValue } from "./_types"
 import { parseCellRef } from "./xlsx/worksheet"
+import { toRange, type RangeLike } from "./cell-utils"
 import { rangeRef } from "./xlsx/worksheet-writer"
 import { cloneCellStyle } from "./_style"
 import { InvalidArgumentError } from "./errors"
@@ -1135,9 +1136,17 @@ export function copySheetToWorkbook(
  */
 export function copyRange(
   sheet: Sheet,
-  source: { startRow: number; startCol: number; endRow: number; endCol: number },
-  target: { startRow: number; startCol: number },
+  sourceRange: RangeLike,
+  targetStart: { startRow: number; startCol: number } | string,
 ): void {
+  // Either form of either argument — `copyRange(s, "A1:C3", "E1")` and the
+  // coordinate spelling describe the same move. See #474.
+  const source = toRange(sourceRange)
+  const target =
+    typeof targetStart === "string"
+      ? (({ row, col }) => ({ startRow: row, startCol: col }))(parseCellRef(targetStart))
+      : targetStart
+
   const rowCount = source.endRow - source.startRow + 1
   const colCount = source.endCol - source.startCol + 1
 

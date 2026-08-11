@@ -20,6 +20,7 @@ import type {
   RowDef,
   SpreadsheetStreamWriter,
 } from "../_types"
+import { toRanges } from "../cell-utils"
 import { ZipWriter } from "../zip/writer"
 import { zipStream, type ZipStreamEntry } from "../zip/stream-writer"
 import { writeContentTypes } from "./content-types-writer"
@@ -84,7 +85,7 @@ export interface StreamWriterOptions {
    * Merged ranges. Written after the sheet data of the first sheet, so they
    * do not have to be known before the rows are streamed.
    */
-  merges?: MergeRange[]
+  merges?: Array<MergeRange | string>
 }
 
 /**
@@ -137,7 +138,9 @@ export interface StreamStyledCell {
 /** A streamed row: positional values, or an object read through `columns[].key`. */
 export type XlsxStreamRow = Array<CellValue | StreamStyledCell> | Record<string, unknown>
 
-function serializeMergeCells(merges: MergeRange[]): string {
+function serializeMergeCells(input: Array<MergeRange | string>): string {
+  // A merge may be given as an A1 string; the file only knows coordinates.
+  const merges = toRanges(input)!
   return xmlElement(
     "mergeCells",
     { count: merges.length },
@@ -191,7 +194,7 @@ export interface XlsxStreamSheet {
   /** Row-level properties for this sheet; see {@link StreamWriterOptions.rowDefs}. */
   rowDefs?: Map<number, RowDef>
   /** Merged ranges for this sheet; see {@link StreamWriterOptions.merges}. */
-  merges?: MergeRange[]
+  merges?: Array<MergeRange | string>
   /** Overrides the workbook-level rollover cap for this sheet alone. */
   maxRowsPerSheet?: number
   /** Overrides the workbook-level header repetition for this sheet alone. */
@@ -505,7 +508,7 @@ export class XlsxStreamWriter implements SpreadsheetStreamWriter {
   private freezePane: FreezePane | undefined
   private dateSystem: "1900" | "1904"
   private rowDefs: Map<number, RowDef> | undefined
-  private merges: MergeRange[] | undefined
+  private merges: Array<MergeRange | string> | undefined
   private maxRowsPerSheet: number
   private repeatHeaders: boolean
   private serializer: RowSerializer

@@ -43,8 +43,28 @@ export { calculateRowHeight } from "./xlsx/auto-size"
 export { parseThemeColors, resolveThemeColor } from "./xlsx/theme"
 
 // ── Cell Utilities ─────────────────────────────────────────────────
-export { parseCellRef } from "./xlsx/worksheet"
-export { colToLetter, cellRef, rangeRef } from "./xlsx/worksheet-writer"
+//
+// All nine, from one module. `hucre/xlsx` used to carry four of them and
+// the root the other five, so anyone here who wanted `letterToCol` — a
+// pure string helper with nothing XLSX-specific about it — had to pull a
+// second entry point for it. The JSON surface had exactly this
+// disagreement and it was settled before v1; this one was missed. See
+// #474.
+export {
+  parseCellRef,
+  colToLetter,
+  cellRef,
+  rangeRef,
+  letterToCol,
+  parseRange,
+  isInRange,
+  r1c1ToA1,
+  a1ToR1C1,
+  // Normalise either spelling of a range to coordinates (#474).
+  toRange,
+  toRanges,
+} from "./cell-utils"
+export type { RangeLike } from "./cell-utils"
 
 // ── Shared types used by this entry point's signatures ──────────────
 // Re-exported so `import type { WriteSheet } from "hucre/xlsx"` works
