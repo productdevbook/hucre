@@ -75,6 +75,9 @@
     "bench": "node bench/index.mjs",
     "build": "obuild",
     "verify:package": "pnpm build && node scripts/verify-package.mjs",
+    "coverage": "vitest run --coverage",
+    "size": "pnpm build && node scripts/size.mjs",
+    "size:update": "pnpm build && node scripts/size.mjs --update",
     "dev": "vitest",
     "lint": "oxlint . && oxfmt --check .",
     "lint:fix": "oxlint . --fix && oxfmt .",
@@ -93,6 +96,7 @@
     "obuild": "^0.4.38",
     "oxfmt": "^0.61.0",
     "oxlint": "^1.76.0",
+    "rolldown": "^1.2.3",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   },

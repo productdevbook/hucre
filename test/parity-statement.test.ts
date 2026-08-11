@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { fieldsOf } from "./_reflect"
 import { readFileSync } from "node:fs"
 import type { Sheet, WriteOptions, WriteSheet, Workbook } from "../src/_types"
 
@@ -17,19 +18,6 @@ import type { Sheet, WriteOptions, WriteSheet, Workbook } from "../src/_types"
 
 const parity = (): string => readFileSync(new URL("../docs/PARITY.md", import.meta.url), "utf-8")
 const readme = (): string => readFileSync(new URL("../README.md", import.meta.url), "utf-8")
-
-/**
- * Field names of an interface, read out of the source.
- *
- * Types are erased at run time, so the alternative is transcribing the
- * lists by hand — which is exactly the drift this file exists to catch.
- */
-function fieldsOf(iface: string): string[] {
-  const source = readFileSync(new URL("../src/_types.ts", import.meta.url), "utf-8")
-  const body = new RegExp(`export interface ${iface} \\{([\\s\\S]*?)\\n\\}`).exec(source)
-  if (!body) throw new Error(`interface ${iface} not found — did it get renamed?`)
-  return [...body[1].matchAll(/^ {2}(\w+)\??:/gm)].map((m) => m[1])
-}
 
 const writeFields = new Set([...fieldsOf("WriteOptions"), ...fieldsOf("WriteSheet")])
 const readFields = new Set([...fieldsOf("Workbook"), ...fieldsOf("Sheet")])

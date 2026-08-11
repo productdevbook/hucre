@@ -50,6 +50,27 @@ jobs:
       - name: Verify packaged artifact
         run: node scripts/verify-package.mjs
 
+  budgets:
+    # Two numbers that were true and enforced by nothing: 98.8% coverage,
+    # and a bundle size the README only ever compared *against* a
+    # competitor without publishing. Either can slide a release at a time
+    # until someone notices. One job, no matrix — these do not vary by
+    # runtime. See #474.
+    runs-on: ubuntu-latest
+    name: coverage + size
+    steps:
+      - uses: actions/checkout@v5
+      - run: corepack enable
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Coverage thresholds
+        run: pnpm coverage
+      - name: Bundle-size budget
+        run: pnpm size
+
   timezone:
     # Everything above runs in UTC, which is where a whole class of date bug
     # hides: #415 was silent in CI for exactly that reason, and the CSV

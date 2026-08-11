@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { fieldsOf } from "./_reflect"
 import { readFileSync } from "node:fs"
 import { WorkbookBuilder } from "../src/builder"
 import { readXlsx } from "../src/xlsx/reader"
@@ -15,14 +16,6 @@ import { readXlsx } from "../src/xlsx/reader"
 // The named methods below cover what a builder is for; `set` covers the
 // rest, so the class cannot fall behind the type again.
 // ═══════════════════════════════════════════════════════════════════════
-
-/** Field names of an interface, read out of the source — see write-model.test.ts. */
-function fieldsOf(iface: string): string[] {
-  const source = readFileSync(new URL("../src/_types.ts", import.meta.url), "utf-8")
-  const body = new RegExp(`export interface ${iface} \\{([\\s\\S]*?)\\n\\}`).exec(source)
-  if (!body) throw new Error(`interface ${iface} not found — did it get renamed?`)
-  return [...body[1]!.matchAll(/^ {2}([a-zA-Z0-9]+)\??:/gm)].map((m) => m[1]!)
-}
 
 describe("the builder can express the whole model", () => {
   it("reaches every WriteSheet field", async () => {

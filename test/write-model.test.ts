@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { fieldsOf } from "./_reflect"
 import { readFileSync } from "node:fs"
 import { toWriteOptions, toWriteSheet, type WriteModelDrop } from "../src/write-model"
 import { writeXlsx } from "../src/xlsx/writer"
@@ -17,18 +18,6 @@ import type { Sheet, Workbook } from "../src/_types"
 // decided which fields to drop. `toWriteOptions` makes the decisions once
 // and makes the loss observable.
 // ═══════════════════════════════════════════════════════════════════════
-
-/**
- * Field names of an interface, read out of the source. Same trick as
- * test/parity-statement.test.ts: types are erased at run time, and
- * transcribing the lists is exactly the drift this guards against.
- */
-function fieldsOf(iface: string): string[] {
-  const source = readFileSync(new URL("../src/_types.ts", import.meta.url), "utf-8")
-  const body = new RegExp(`export interface ${iface} \\{([\\s\\S]*?)\\n\\}`).exec(source)
-  if (!body) throw new Error(`interface ${iface} not found — did it get renamed?`)
-  return [...body[1]!.matchAll(/^ {2}([a-zA-Z0-9]+)\??:/gm)].map((m) => m[1]!)
-}
 
 describe("the drop list stays exhaustive", () => {
   it("names every Sheet field with no WriteSheet counterpart", () => {

@@ -65,7 +65,7 @@ import { readXml, writeXml } from "hucre/xml" // Tabular XML
 |                         | hucre                | SheetJS CE    | ExcelJS   | xlsx-js-style |
 | ----------------------- | -------------------- | ------------- | --------- | ------------- |
 | **Dependencies**        | 0                    | 0\*           | 9         | 0\*           |
-| **Bundle (gzip)**       | 2–114 KB<sup>†</sup> | ~300 KB       | ~500 KB   | ~300 KB       |
+| **Bundle (gzip)**       | 4–127 KB<sup>†</sup> | ~300 KB       | ~500 KB   | ~300 KB       |
 | **ESM native**          | Yes                  | Partial       | No (CJS)  | Partial       |
 | **TypeScript**          | Native               | Bolted-on     | Bolted-on | Bolted-on     |
 | **Edge runtime**        | Yes                  | No            | No        | No            |
@@ -85,9 +85,15 @@ import { readXml, writeXml } from "hucre/xml" // Tabular XML
 
 † Depends on what you import — hucre is fully tree-shakeable, so there is no
 single number. Minified + gzipped, bundled with rolldown against `dist/`:
-`{ parseCsv, writeCsv }` from `hucre/csv` = **2.3 KB**, `{ readXlsx }` from
-`hucre/xlsx` = **32 KB**, `{ readXlsx, writeXlsx }` = **64 KB**, the entire
-library (`export * from "hucre"`) = **114 KB**.
+`{ parseCsv, writeCsv }` from `hucre/csv` = **3.7 KB**, `{ readXlsx }` from
+`hucre/xlsx` = **34 KB**, `{ readXlsx, writeXlsx }` = **68 KB**, the entire
+library (`export * from "hucre"`) = **127 KB**.
+
+These four are measured by `pnpm size` and pinned in
+`scripts/size-budget.json`, so CI fails when one grows past its budget.
+They are in the README because they had already drifted once — the
+previous figures (2.3 / 32 / 64 / 114 KB) were true when written and were
+enforced by nothing.
 
 ‡ `cellIs`, `expression`, `colorScale`, `dataBar`, `iconSet`, `containsText`,
 `notContainsText`, `beginsWith`, `endsWith`, `containsBlanks`,
