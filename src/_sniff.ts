@@ -1,0 +1,128 @@
+// ── Text-format detection ───────────────────────────────────────────
+//
+// `read()` dispatched on container bytes — the ZIP shape for XLSX/ODS,
+// the OLE2 shape for XLS and encrypted packages — and gave up on
+// anything else. A CSV file read off disk is a `Uint8Array` like any
+// other, so `read(bytes)` on one answered
+//
+//   UnsupportedFormatError: Unsupported format: unknown (not a ZIP archive)
+//
+// which is a correct error for a function that cannot do the job, under a
+// README heading that says **Unified API**. See #469.
+//
+// What this does is decide, not guess. Every format here announces itself
+// in its first non-whitespace character or two, which is a far weaker
+// claim than the delimiter auto-detection the CSV reader already makes.
+// CSV is the fallback rather than a positive match, because "text that is
+// not any of the others" is what CSV actually is.
+
+import { detectBom } from "./csv/encoding"
+
+/** A text format `read()` can dispatch to. */
+export type TextFormat = "json" | "ndjson" | "xml" | "html" | "csv"
+
+/** How many bytes are enough to decide. */
+const PREFIX_BYTES = 4096
+
+/**
+ * Decide which text format some bytes hold, or `null` when they are not
+ * text at all.
+ *
+ * `null` is the important return: it means the caller should keep its
+ * existing "this is not a spreadsheet" error rather than handing binary
+ * rubbish to the CSV parser, which would cheerfully make a sheet of it.
+ */
+export function detectTextFormat(data: Uint8Array): TextFormat | null {
+  const bom = detectBom(data)
+  const body = bom ? data.subarray(bom.length) : data
+
+  // A NUL byte in the first few KB means binary. UTF-16 is the exception
+  // — it is full of them by construction — and the mark is what says so.
+  const prefix = body.subarray(0, PREFIX_BYTES)
+  const utf16 = bom?.encoding === "utf-16le" || bom?.encoding === "utf-16be"
+  if (!utf16 && prefix.includes(0)) return null
+
+  const label = bom?.encoding ?? "utf-8"
+  let head: string
+  try {
+    head = new TextDecoder(label, { fatal: false }).decode(prefix)
+  } catch {
+    return null
+  }
+
+  const trimmed = head.trimStart()
+  if (trimmed.length === 0) return null
+
+  const first = trimmed[0]!
+
+  if (first === "<") return sniffMarkup(trimmed)
+  if (first === "{" || first === "[") return sniffJson(data, bom?.length ?? 0, label, first)
+
+  // Not a positive match for anything else — which is what CSV is.
+  return "csv"
+}
+
+/**
+ * XML or HTML.
+ *
+ * Both open with `<`. HTML announces itself with a doctype, an `<html>`
+ * root, or — for the fragment case `fromHtml` exists to handle — a bare
+ * `<table>`. Anything else with an XML declaration or a plain tag is XML.
+ */
+function sniffMarkup(trimmed: string): TextFormat {
+  const lower = trimmed.slice(0, 512).toLowerCase()
+
+  // A declaration or a processing instruction settles it before any tag.
+  // XHTML is the ambiguous case and is treated as XML: it parses as XML
+  // by definition, which is the more conservative of the two answers.
+  if (lower.startsWith("<?xml")) return "xml"
+
+  if (
+    lower.startsWith("<!doctype html") ||
+    lower.startsWith("<html") ||
+    lower.startsWith("<table") ||
+    lower.startsWith("<!--")
+  ) {
+    return "html"
+  }
+
+  return "xml"
+}
+
+/**
+ * JSON or NDJSON.
+ *
+ * `[` is JSON: an NDJSON file whose first line is an array is legal and
+ * essentially unheard of, and reading it as JSON gives the same rows.
+ *
+ * `{` is decided by trying. If the whole document parses, it is JSON. If
+ * it does not but the first two lines each do, it is NDJSON — which is
+ * exactly the shape that makes the whole fail to parse.
+ */
+function sniffJson(data: Uint8Array, bomLength: number, label: string, first: string): TextFormat {
+  if (first === "[") return "json"
+
+  let text: string
+  try {
+    text = new TextDecoder(label, { fatal: false }).decode(data.subarray(bomLength))
+  } catch {
+    return "json"
+  }
+
+  try {
+    JSON.parse(text)
+    return "json"
+  } catch {
+    // Not one document. Two lines that each parse is what NDJSON is.
+    const lines = text.split("\n").filter((l) => l.trim().length > 0)
+    if (lines.length < 2) return "json"
+    for (const line of lines.slice(0, 2)) {
+      try {
+        JSON.parse(line)
+      } catch {
+        return "json"
+      }
+    }
+    return "ndjson"
+  }
+}

@@ -26,6 +26,17 @@ import { readOds } from "./ods/reader"
 import { writeOds } from "./ods/writer"
 import { EncryptedFileError, UnsupportedFormatError } from "./errors"
 import { isOle2Container, readInputToUint8Array } from "./_input"
+import { detectTextFormat, type TextFormat } from "./_sniff"
+import { parseCsv } from "./csv/reader"
+import { writeCsv } from "./csv/writer"
+import { writeTsv } from "./export/tsv"
+import { jsonToWorkbook, parseNdjson } from "./json/reader"
+import { writeJson, writeNdjson } from "./json/writer"
+import { readXml } from "./xml/data-reader"
+import { writeXml } from "./xml/data-writer"
+import { fromHtml } from "./export/html-import"
+import { toHtml } from "./export/html"
+import { toMarkdown } from "./export/markdown"
 
 // ── Format Detection ────────────────────────────────────────────────
 
@@ -116,6 +127,14 @@ export async function read(input: ReadInput, options?: ReadOptions): Promise<Wor
     }
   }
 
+  // Not a container. Every text format the library reads announces
+  // itself in its first non-whitespace character or two, so `read()` no
+  // longer stops at the ZIP boundary. See #469.
+  if (data.length < 4 || data[0] !== 0x50 || data[1] !== 0x4b) {
+    const text = detectTextFormat(data)
+    if (text !== null) return readTextFormat(data, text)
+  }
+
   const format = detectFormat(data)
 
   if (format === "ods") {
@@ -132,16 +151,111 @@ export async function read(input: ReadInput, options?: ReadOptions): Promise<Wor
 }
 
 /**
+ * Turn a detected text format into a workbook.
+ *
+ * Each of these readers already exists and is exported; what was missing
+ * was `read()` knowing to call one. The tabular readers hand back
+ * `{ data, headers }`, so the header row is put back at the top — a
+ * workbook is a grid, and dropping the names would lose them.
+ */
+function readTextFormat(data: Uint8Array, format: TextFormat): Workbook {
+  switch (format) {
+    case "csv":
+      return { sheets: [{ name: "Sheet1", rows: parseCsv(data) }] }
+    case "json":
+      return jsonToWorkbook(data)
+    case "ndjson": {
+      const { data: rows, headers } = parseNdjson(data)
+      return { sheets: [{ name: "Sheet1", rows: withHeaderRow(rows, headers) }] }
+    }
+    case "xml": {
+      const { data: rows, headers } = readXml(data)
+      return { sheets: [{ name: "Sheet1", rows: withHeaderRow(rows, headers) }] }
+    }
+    case "html":
+      return { sheets: [fromHtml(new TextDecoder("utf-8").decode(data))] }
+  }
+}
+
+/** Put the header names back at row 0, the way a grid holds them. */
+function withHeaderRow(rows: Array<Record<string, CellValue>>, headers: string[]): CellValue[][] {
+  return [headers, ...rows.map((row) => headers.map((h) => row[h] ?? null))]
+}
+
+/** Every format {@link write} can produce. */
+export type WriteFormat =
+  | "xlsx"
+  | "ods"
+  | "csv"
+  | "tsv"
+  | "json"
+  | "ndjson"
+  | "xml"
+  | "html"
+  | "markdown"
+
+/**
  * Write a workbook to the specified format.
+ *
+ * The union used to be `"xlsx" | "ods"` while the library could write
+ * nine things, so the one function meant to be format-agnostic covered
+ * two of them. See #469.
+ *
+ * The text formats are single-sheet by nature and take the first sheet;
+ * they also carry values and not formatting, which is the same trade
+ * `hucre convert` documents. The return is always bytes, so a caller can
+ * hand the result to `Response` or `writeFile` without branching.
  */
 export async function write(
-  options: WriteOptions & { format?: "xlsx" | "ods" },
+  options: WriteOptions & { format?: WriteFormat },
 ): Promise<WriteOutput> {
   const format = options.format ?? "xlsx"
-  if (format === "ods") {
-    return writeOds(options)
+  if (format === "xlsx") return writeXlsx(options)
+  if (format === "ods") return writeOds(options)
+
+  const sheet = options.sheets[0]
+  if (!sheet) {
+    throw new UnsupportedFormatError(`${format} needs a sheet to write, and the workbook has none.`)
   }
-  return writeXlsx(options)
+  const rows = sheet.rows ?? []
+
+  const encoder = new TextEncoder()
+  switch (format) {
+    case "csv":
+      return encoder.encode(writeCsv(rows))
+    case "tsv":
+      return encoder.encode(writeTsv(rows))
+    case "json":
+      return encoder.encode(writeJson(rowsToRecords(rows)))
+    case "ndjson":
+      return encoder.encode(writeNdjson(rowsToRecords(rows)))
+    case "xml":
+      return encoder.encode(writeXml(rowsToRecords(rows)))
+    case "html":
+      return encoder.encode(toHtml({ name: sheet.name, rows }))
+    case "markdown":
+      return encoder.encode(toMarkdown({ name: sheet.name, rows }))
+  }
+}
+
+/**
+ * Read the first row as field names and project the rest against it.
+ *
+ * The record-shaped writers need names; a `WriteSheet` is a grid. This is
+ * the same convention `writeCsvObjects` and the CLI use, and the same one
+ * {@link withHeaderRow} inverts on the way in.
+ */
+function rowsToRecords(rows: CellValue[][]): Array<Record<string, CellValue>> {
+  const [header, ...body] = rows
+  if (!header) return []
+  const names = header.map((h, i) => (h === null || h === undefined ? `column${i + 1}` : String(h)))
+  return body.map((row) => {
+    const out: Record<string, CellValue> = {}
+    names.forEach((name, i) => {
+      out[name] = row[i] ?? null
+    })
+    return out
+  })
 }
 
 /**

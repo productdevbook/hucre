@@ -1181,8 +1181,14 @@ Auto-detect format and work with simple helpers:
 ```ts
 import { read, write, readObjects, writeObjects } from "hucre"
 
-// Auto-detect XLSX vs ODS
+// Auto-detect. Containers by their magic bytes — XLSX, XLSB, XLS, ODS —
+// and the text formats by their opening: CSV, JSON, NDJSON, XML, HTML.
 const wb = await read(buffer)
+
+// Write any of nine. Default xlsx; always returns bytes, so nothing
+// downstream has to branch on the format.
+const bytes = await write({ sheets, format: "ndjson" })
+// "xlsx" | "ods" | "csv" | "tsv" | "json" | "ndjson" | "xml" | "html" | "markdown"
 
 // Quick: file → objects, plus the headers they were keyed by. Same
 // { data, headers } shape — and the same options — as readXlsxObjects /
@@ -1198,22 +1204,50 @@ const { data: products, headers } = await readObjects<{ name: string; price: num
 const xlsx = await writeObjects(products, { sheetName: "Products" })
 ```
 
+Detection **decides rather than guesses**: every text format announces
+itself in its first non-whitespace character or two, which is a far
+weaker claim than the delimiter auto-detection `parseCsv` already makes.
+CSV is the fallback, because "text that is not any of the others" is what
+CSV is. Bytes that are not text at all still get the same
+`UnsupportedFormatError` as before — a NUL in the first few KB is where
+that line is drawn.
+
+The text formats are single-sheet by nature: `write()` takes the first
+sheet for those, and carries values rather than formatting. The
+record-shaped ones (`json`, `ndjson`, `xml`) read row 0 as field names,
+which is the convention `read()` inverts on the way back in.
+
 ### CLI
 
 ```bash
 npx hucre convert input.xlsx output.csv
 npx hucre convert input.csv output.xlsx
 npx hucre convert legacy.xls output.xlsx # .xls / .xlsb read as input
+npx hucre convert data.csv report.md     # .json .ndjson .xml .html .md too
+
+# stdin and stdout, the usual `-`
+cat data.csv | npx hucre convert - out.xlsx
+npx hucre convert in.xlsx - --to csv
+cat data.csv | npx hucre convert - - --to md
+
 npx hucre inspect file.xlsx
 npx hucre inspect file.xlsx --sheet 0
 npx hucre validate data.xlsx --schema schema.json
 ```
 
-Input: `.xlsx`, `.ods`, `.csv`, `.tsv`, `.xls`, `.xlsb`. Output: the first
-four — `.xls` and `.xlsb` are read-only formats, and naming one as the
-output says so. `convert` carries cell values and sheet names only; from a
-legacy binary input that is all there is (see the notes on each format
-above).
+Input: `.xlsx`, `.ods`, `.csv`, `.tsv`, `.json`, `.ndjson`/`.jsonl`,
+`.xml`, `.html`, `.xls`, `.xlsb`. Output: the same minus `.xls` and
+`.xlsb`, which are read-only formats — naming one as the output says so —
+plus `.md`, which is write-only, because there is no `fromMarkdown` and
+there will not be.
+
+`-` reads stdin or writes stdout. From a pipe there is no extension to go
+on, so the input format comes from the content and the output format from
+`--to`; guessing a binary default would spray a ZIP into a terminal.
+Progress messages go to stderr whenever stdout is the file.
+
+`convert` carries cell values and sheet names only; from a legacy binary
+input that is all there is (see the notes on each format above).
 
 ### Sheet Operations
 

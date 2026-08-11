@@ -560,3 +560,115 @@ describe("formatCellValue", () => {
     expect(formatCellValue("x")).toBe("x")
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════
+// #469 — JSON, NDJSON, XML, HTML and Markdown all had readers and/or
+// writers in the library and none was reachable from the terminal. Nor
+// was stdin or stdout, which is most of what a CLI is for.
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("convert reaches the formats the library has", () => {
+  async function csvFile(name = "in.csv"): Promise<string> {
+    const p = path(name)
+    writeFileSync(p, "name,qty\nWidget,3\nGadget,7\n", "utf-8")
+    return p
+  }
+
+  it("writes JSON", async () => {
+    const out = path("out.json")
+    await run(convertCommand, { input: await csvFile(), output: out })
+
+    expect(JSON.parse(readFileSync(out, "utf-8"))).toEqual([
+      { name: "Widget", qty: "3" },
+      { name: "Gadget", qty: "7" },
+    ])
+  })
+
+  it("writes NDJSON, one object per line", async () => {
+    const out = path("out.ndjson")
+    await run(convertCommand, { input: await csvFile(), output: out })
+
+    const lines = readFileSync(out, "utf-8").trim().split("\n")
+    expect(lines).toHaveLength(2)
+    expect(JSON.parse(lines[0]!)).toEqual({ name: "Widget", qty: "3" })
+  })
+
+  it("takes .jsonl as a name for the same thing", () => {
+    expect(detectFormatFromExtension("a.jsonl")).toBe("ndjson")
+    expect(detectFormatFromExtension("a.ndjson")).toBe("ndjson")
+  })
+
+  it("writes XML, HTML and Markdown", async () => {
+    for (const [ext, needle] of [
+      ["xml", "<name>"],
+      ["html", "<table"],
+      ["md", "| name"],
+    ] as const) {
+      const out = path(`out.${ext}`)
+      await run(convertCommand, { input: await csvFile(), output: out })
+
+      expect(readFileSync(out, "utf-8"), ext).toContain(needle)
+    }
+  })
+
+  it("reads JSON back into a spreadsheet", async () => {
+    const src = path("in.json")
+    writeFileSync(src, JSON.stringify([{ name: "Widget", qty: 3 }]), "utf-8")
+
+    const out = path("out.xlsx")
+    await run(convertCommand, { input: src, output: out })
+
+    const wb = await readXlsx(new Uint8Array(readFileSync(out)))
+    expect(wb.sheets[0]!.rows).toEqual([
+      ["name", "qty"],
+      ["Widget", 3],
+    ])
+  })
+
+  it("refuses to read Markdown, because there is no reader", async () => {
+    // Output only, and saying so is better than a confusing parse error.
+    const src = path("in.md")
+    writeFileSync(src, "| a |\n| - |\n| 1 |\n", "utf-8")
+
+    await expect(run(convertCommand, { input: src, output: path("o.csv") })).rejects.toThrow(
+      /output only/,
+    )
+  })
+})
+
+describe("convert names the formats it cannot write", () => {
+  it("lists the writable ones when asked for a read-only format", () => {
+    expect(() => detectOutputFormat("a.xls")).toThrow(/read-only/)
+    expect(() => detectOutputFormat("a.xls")).toThrow(/\.json/)
+  })
+
+  it("still rejects an extension that is nothing", () => {
+    expect(() => detectFormatFromExtension("a.pdf")).toThrow(CliError)
+  })
+})
+
+describe("the stdin/stdout convention", () => {
+  it("asks for --to when writing to a pipe, rather than guessing", async () => {
+    // There is no extension to read, and defaulting to a binary format
+    // would spray a ZIP into a terminal.
+    const src = path("in.csv")
+    writeFileSync(src, "a,b\n1,2\n", "utf-8")
+
+    await expect(run(convertCommand, { input: src, output: "-" })).rejects.toThrow(/--to/)
+  })
+
+  it("resolves --to through the same table as an extension", async () => {
+    const src = path("in.csv")
+    writeFileSync(src, "a,b\n1,2\n", "utf-8")
+
+    // A format that does not exist fails the same way a bad extension does.
+    await expect(run(convertCommand, { input: src, output: "-", to: "pdf" })).rejects.toThrow(
+      CliError,
+    )
+
+    // And a read-only one is named as read-only, not as unknown.
+    await expect(run(convertCommand, { input: src, output: "-", to: "xls" })).rejects.toThrow(
+      /read-only/,
+    )
+  })
+})

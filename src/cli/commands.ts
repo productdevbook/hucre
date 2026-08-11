@@ -21,6 +21,7 @@ import { writeOds } from "../ods/writer"
 import { parseCsv } from "../csv/reader"
 import { writeCsv } from "../csv/writer"
 import { validateWithSchema } from "../_schema"
+import { read, write } from "../defter"
 import type { Workbook, CellValue, WriteOptions, SchemaDefinition } from "../_types"
 
 // ── Errors ──────────────────────────────────────────────────────────
@@ -39,7 +40,17 @@ export class CliError extends Error {
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-export type Format = "xlsx" | "ods" | "csv" | "xls" | "xlsb"
+export type Format =
+  | "xlsx"
+  | "ods"
+  | "csv"
+  | "xls"
+  | "xlsb"
+  | "json"
+  | "ndjson"
+  | "xml"
+  | "html"
+  | "markdown"
 
 /** The formats hucre can write; `.xls` and `.xlsb` are read-only. */
 export type WritableFormat = Exclude<Format, "xls" | "xlsb">
@@ -49,8 +60,22 @@ const DELIMITERS: Record<string, string> = { ".csv": ",", ".tsv": "\t" }
 
 const READ_ONLY_FORMATS = new Set<Format>(["xls", "xlsb"])
 
-const SUPPORTED = ".xlsx, .ods, .csv, .tsv (read-only: .xls, .xlsb)"
+/**
+ * The stdin/stdout convention. `hucre convert - out.xlsx` reads the
+ * pipe; `hucre convert in.csv -` writes to it. Most of what a CLI is for
+ * was unreachable without this. See #469.
+ */
+export const STDIO = "-"
 
+const SUPPORTED =
+  ".xlsx, .ods, .csv, .tsv, .json, .ndjson, .jsonl, .xml, .html, .md " + "(read-only: .xls, .xlsb)"
+
+/**
+ * Map a file extension to a format.
+ *
+ * JSON, NDJSON, XML, HTML and Markdown all had readers and/or writers in
+ * the library and none was reachable from the terminal. See #469.
+ */
 export function detectFormatFromExtension(filePath: string): Format {
   const ext = extname(filePath).toLowerCase()
   switch (ext) {
@@ -69,6 +94,19 @@ export function detectFormatFromExtension(filePath: string): Format {
       return "xls"
     case ".xlsb":
       return "xlsb"
+    case ".json":
+      return "json"
+    case ".ndjson":
+    case ".jsonl":
+      return "ndjson"
+    case ".xml":
+      return "xml"
+    case ".html":
+    case ".htm":
+      return "html"
+    case ".md":
+    case ".markdown":
+      return "markdown"
     default:
       throw new CliError(`Unsupported file extension: ${ext || "(none)"}. Supported: ${SUPPORTED}`)
   }
@@ -87,7 +125,7 @@ export function detectOutputFormat(filePath: string): WritableFormat {
     throw new CliError(
       `Cannot write .${format}: it is a read-only format in hucre — ` +
         "readable as input, but there is no writer for it. " +
-        "Write .xlsx, .ods, .csv or .tsv instead.",
+        `Write one of: ${SUPPORTED.replace(/ \(read-only.*$/, "")}.`,
     )
   }
   return format as WritableFormat
@@ -104,7 +142,22 @@ export function delimiterForExtension(filePath: string): string {
   return DELIMITERS[extname(filePath).toLowerCase()] ?? ","
 }
 
+/**
+ * Read every byte from stdin.
+ *
+ * `readFileSync(0)` is the whole of it — the pipe is a file descriptor
+ * and Node reads it to EOF. See #469.
+ */
+export function readStdin(): Uint8Array {
+  return new Uint8Array(readFileSync(0))
+}
+
 export async function readFile(filePath: string, encoding?: string): Promise<Workbook> {
+  // From a pipe there is no extension to go on, so the content decides —
+  // which is what `read()` is for, and it now covers the text formats
+  // too (#469).
+  if (filePath === STDIO) return read(readStdin())
+
   const format = detectFormatFromExtension(filePath)
   const data = readFileSync(filePath)
   const input = new Uint8Array(data)
@@ -133,6 +186,19 @@ export async function readFile(filePath: string, encoding?: string): Promise<Wor
         sheets: [{ name: "Sheet1", rows }],
       }
     }
+    // The remaining text formats have no extension-specific handling the
+    // library does not already do — `read()` sniffs the same bytes and
+    // dispatches to the same reader.
+    case "json":
+    case "ndjson":
+    case "xml":
+    case "html":
+      return read(input)
+    case "markdown":
+      throw new CliError(
+        "Markdown is output only in hucre — there is no `fromMarkdown`, " +
+          "and there will not be. Use .csv or .json to bring data back in.",
+      )
   }
 }
 
@@ -168,54 +234,97 @@ export const convertCommand = defineCommand({
         "Character encoding of a CSV/TSV input (e.g. windows-1254). " +
         "Default: the file's byte-order mark, or utf-8.",
     },
+    to: {
+      type: "string",
+      description:
+        "Output format when writing to stdout (`-`), which has no " +
+        "extension to read. E.g. `--to csv`.",
+    },
   },
   async run({ args }) {
     const inputPath = args.input as string
     const outputPath = args.output as string
-    const outputFormat = detectOutputFormat(outputPath)
+    // Writing to a pipe has no extension either, and guessing would be
+    // worse than asking: `--to` names the format. See #469.
+    const outputFormat =
+      outputPath === STDIO
+        ? stdoutFormat(args.to as string | undefined)
+        : detectOutputFormat(outputPath)
 
-    consola.start(`Reading ${inputPath}...`)
-    const workbook = await readFile(inputPath, args.encoding as string | undefined)
-    consola.success(`Read ${workbook.sheets.length} sheet(s)`)
-
-    consola.start(`Writing ${outputPath}...`)
-
-    if (outputFormat === "csv") {
-      // CSV: use first sheet only
-      const sheet = workbook.sheets[0]
-      if (!sheet) {
-        throw new CliError("No sheets found in input file")
-      }
-      // Every row goes through writeCsv, including the first. It used to
-      // be pulled out as `headers` and stringified separately, so a Date
-      // in row 0 came out ISO while the same Date in row 1 came out in
-      // writeCsv's format — one column, two formats, decided by which
-      // row the value happened to land in.
-      const csv = writeCsv(sheet.rows, { delimiter: delimiterForExtension(outputPath) })
-      writeFileSync(outputPath, csv, "utf-8")
-    } else {
-      // XLSX or ODS
-      const writeOptions: WriteOptions = {
-        sheets: workbook.sheets.map((sheet) => ({
-          name: sheet.name,
-          rows: sheet.rows,
-        })),
-        properties: workbook.properties,
-      }
-
-      let output: Uint8Array
-      if (outputFormat === "ods") {
-        output = await writeOds(writeOptions)
-      } else {
-        output = await writeXlsx(writeOptions)
-      }
-
-      writeFileSync(outputPath, output)
+    // Progress goes to stderr, always — with `-` as the output, stdout is
+    // the file, and a "Reading..." line in it would corrupt the result.
+    const toStdout = outputPath === STDIO
+    const say = (fn: (m: string) => void, message: string): void => {
+      if (!toStdout) fn(message)
     }
 
-    consola.success(`Written to ${outputPath}`)
+    say(consola.start, `Reading ${inputPath === STDIO ? "stdin" : inputPath}...`)
+    const workbook = await readFile(inputPath, args.encoding as string | undefined)
+    say(consola.success, `Read ${workbook.sheets.length} sheet(s)`)
+
+    say(consola.start, `Writing ${outputPath}...`)
+
+    const output = await renderWorkbook(workbook, outputFormat, outputPath)
+    if (toStdout) writeFileSync(1, output)
+    else writeFileSync(outputPath, output)
+
+    say(consola.success, `Written to ${outputPath}`)
   },
 })
+
+/**
+ * Resolve the format for `-` output. There is no extension to read, and
+ * defaulting to a binary format would spray a ZIP into a terminal.
+ */
+function stdoutFormat(to: string | undefined): WritableFormat {
+  if (!to) {
+    throw new CliError(
+      "Writing to stdout needs `--to` to say which format " +
+        "(e.g. `--to csv`), because there is no extension to read.",
+    )
+  }
+  // `.x` so the same table decides, and the same error names the same
+  // supported list.
+  const format = detectFormatFromExtension(`out.${to.toLowerCase()}`)
+  if (READ_ONLY_FORMATS.has(format)) {
+    throw new CliError(`Cannot write ${to}: it is a read-only format in hucre.`)
+  }
+  return format as WritableFormat
+}
+
+/**
+ * Render a workbook to the bytes of one format.
+ *
+ * CSV keeps its own path because the delimiter comes from the output
+ * *extension* rather than the format — `.tsv` is tab-separated, and a
+ * file named `.tsv` full of commas lies about itself (#365). Everything
+ * else goes through the library's own `write()`, which is the function
+ * that is supposed to know how to do this.
+ */
+async function renderWorkbook(
+  workbook: Workbook,
+  format: WritableFormat,
+  outputPath: string,
+): Promise<Uint8Array> {
+  const encoder = new TextEncoder()
+
+  if (format === "csv") {
+    const sheet = workbook.sheets[0]
+    if (!sheet) throw new CliError("No sheets found in input file")
+    // Every row goes through writeCsv, including the first. It used to
+    // be pulled out as `headers` and stringified separately, so a Date
+    // in row 0 came out ISO while the same Date in row 1 came out in
+    // writeCsv's format — one column, two formats, decided by which
+    // row the value happened to land in.
+    return encoder.encode(writeCsv(sheet.rows, { delimiter: delimiterForExtension(outputPath) }))
+  }
+
+  const writeOptions: WriteOptions = {
+    sheets: workbook.sheets.map((sheet) => ({ name: sheet.name, rows: sheet.rows })),
+    properties: workbook.properties,
+  }
+  return write({ ...writeOptions, format })
+}
 
 // ── Inspect Command ─────────────────────────────────────────────────
 
