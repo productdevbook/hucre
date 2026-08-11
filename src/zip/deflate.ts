@@ -51,7 +51,7 @@ class BitReader {
   readBits(n: number): number {
     while (this.bitCount < n) {
       if (this.pos >= this.data.length) {
-        throw new Error("Unexpected end of DEFLATE data")
+        throw new ZipError("Unexpected end of DEFLATE data")
       }
       this.bitBuf |= this.data[this.pos++] << this.bitCount
       this.bitCount += 8
@@ -70,7 +70,7 @@ class BitReader {
 
   readByte(): number {
     if (this.pos >= this.data.length) {
-      throw new Error("Unexpected end of DEFLATE data")
+      throw new ZipError("Unexpected end of DEFLATE data")
     }
     return this.data[this.pos++]
   }
@@ -145,7 +145,7 @@ function decodeSymbol(reader: BitReader, tree: HuffmanTree): number {
     code <<= 1
   }
 
-  throw new Error("Invalid Huffman code")
+  throw new ZipError("Invalid Huffman code")
 }
 
 // ── Fixed Huffman Tables (RFC 1951 Section 3.2.6) ───────────────────
@@ -329,7 +329,7 @@ export function inflate(data: Uint8Array, maxBytes: number = MAX_DECOMPRESSED_BY
 
       inflateBlock(litLenTree, distTree)
     } else {
-      throw new Error(`Invalid DEFLATE block type: ${btype}`)
+      throw new ZipError(`Invalid DEFLATE block type: ${btype}`)
     }
   } while (bfinal === 0)
 

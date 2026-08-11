@@ -1427,6 +1427,7 @@ export interface ReadWarning {
     | "unresolved-dxf"
     | "unresolved-hyperlink"
     | "unusable-paper-size"
+    | "malformed-cell-ref"
   /** A sentence a person can act on. */
   message: string
   /** The sheet it happened in, when the reader knows. */

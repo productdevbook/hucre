@@ -1633,21 +1633,35 @@ function processCell(
   if (!pos) return
   const { row, col } = pos
 
-  // Guard against malicious / corrupt cell references that would
-  // otherwise allocate billions of null slots and OOM the process.
-  if (
-    !Number.isInteger(row) ||
-    !Number.isInteger(col) ||
-    row < 0 ||
-    col < 0 ||
-    row > MAX_ROW_INDEX ||
-    col > MAX_COL_INDEX
-  ) {
+  // Two different failures, treated differently on purpose — the same
+  // distinction `clampColumnBound` draws a few lines down.
+  //
+  // A reference *past the grid* (`AAAAAA1`, row 2,000,000) is a resource
+  // claim: honouring it would allocate billions of null slots and OOM
+  // the process, and there is no partial answer that is not a fabricated
+  // one. That throws, and always has.
+  //
+  // A reference that is *not a reference* (`B` with no row, `A0`) claims
+  // nothing. It used to throw too, so one malformed `r` attribute cost
+  // the whole sheet where every other content damage costs one cell.
+  // It now drops the cell and says so. See #473.
+  if (row > MAX_ROW_INDEX || col > MAX_COL_INDEX) {
     throw new ParseError(
       `Cell reference "${ref}" is outside the supported sheet bounds (max row ${
         MAX_ROW_INDEX + 1
       }, max col ${MAX_COL_INDEX + 1})`,
     )
+  }
+  if (!Number.isInteger(row) || !Number.isInteger(col) || row < 0 || col < 0) {
+    ctx.onWarning?.({
+      code: "malformed-cell-ref",
+      message:
+        `Cell reference "${ref}" is not a cell reference — a column needs a ` +
+        "row number and rows are 1-based. The cell is dropped; the rest of " +
+        "the sheet is read.",
+      sheet: ctx.sheetName,
+    })
+    return
   }
 
   // Ensure row array exists

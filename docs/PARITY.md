@@ -323,13 +323,14 @@ Each warning carries a `code`, a sentence, and the sheet and cell it came
 from. Nothing changes when the option is omitted, and a file hucre wrote
 produces none.
 
-| code                       | what silently went missing                                    |
-| -------------------------- | ------------------------------------------------------------- |
-| `unresolved-shared-string` | a cell's text; reads as empty                                 |
-| `unresolved-style`         | a cell's format; reads unstyled                               |
-| `unresolved-dxf`           | a conditional rule's formatting; the rule keeps its condition |
-| `unresolved-hyperlink`     | a link's target; reads as an empty target                     |
-| `unusable-paper-size`      | the sheet's paper size; reads as unset                        |
+| code                       | what silently went missing                                     |
+| -------------------------- | -------------------------------------------------------------- |
+| `unresolved-shared-string` | a cell's text; reads as empty                                  |
+| `unresolved-style`         | a cell's format; reads unstyled                                |
+| `unresolved-dxf`           | a conditional rule's formatting; the rule keeps its condition  |
+| `unresolved-hyperlink`     | a link's target; reads as an empty target                      |
+| `unusable-paper-size`      | the sheet's paper size; reads as unset                         |
+| `malformed-cell-ref`       | one cell whose `r` is not a reference; the sheet is still read |
 
 Each is a place where leniency produces something _indistinguishable from
 correct_ — an empty cell, an unstyled cell, a rule that paints nothing, a
@@ -410,6 +411,24 @@ Symmetric: delimiter (including tab auto-detection), quote character, line
 separator, header handling, `skipHeaderRow`, type inference, leading-zero
 preservation, comment lines, and formula-injection escaping — which now
 has an inverse in `unescapeFormulae`.
+
+Two things a `writeCsv` → `parseCsv` round-trip does not carry, both
+facts about the format rather than defects. Property testing found them
+(#473); they are here so nobody has to find them again.
+
+**A final row holding a single empty cell is lost.** It renders as
+nothing after the preceding line's terminator, and a file ending in a
+terminator is universally read as having no record after it. RFC 4180
+leaves the trailing CRLF optional and says nothing about the ambiguity.
+A trailing row of _two_ empty cells survives — it renders as a bare
+delimiter — and so does an empty row anywhere but the end.
+
+**Delimiter auto-detection is a guess, and a file can defeat it.**
+`[["with,comma"], ["with\ttab"]]` written with the default comma quotes
+its one comma, so the only unquoted separator character left in the file
+is a tab — and `parseCsv` is right to read it as tab-separated. Pass
+`delimiter` when you know it; there is no reading of those bytes that
+recovers the intent.
 
 **Encoding is read, not guessed.** The readers take bytes and honour a
 byte-order mark — UTF-8, UTF-16LE, UTF-16BE — and fall back to UTF-8.
