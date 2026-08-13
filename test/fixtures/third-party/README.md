@@ -7,7 +7,7 @@ but hucre's own output, so a writer bug the reader mirrored was
 invisible — and three of the defects fixed in the #439 round were exactly
 that shape. See #464.
 
-Three producers, two formats:
+Three producers, four formats:
 
 |            | `*.xlsx`                       | `sheetjs-*.ods`                                            | `libreoffice-basic.ods`   | `sheetjs-*.{xlsb,xls}`             |
 | ---------- | ------------------------------ | ---------------------------------------------------------- | ------------------------- | ---------------------------------- |
@@ -25,12 +25,11 @@ named the XLS and XLSB readers "the sharp end", and openpyxl writes
 
 ## What they are, and what they are not
 
-Both are independent implementations with their own element ordering,
-their own defaults, and their own idea of what a minimal document
-contains. Neither is **Excel, LibreOffice or Google Sheets**, and #464
-asks for those too. What these give is the class of divergence a
-golden-model test needs — bytes hucre did not write — from producers that
-run anywhere and whose output is reproducible.
+All three are independent of hucre, with their own element ordering,
+defaults, and idea of what a minimal document contains. ExcelJS and
+SheetJS are independent implementations; LibreOffice is the application
+#464 specifically asked for. Together they give a golden-model test the
+class of divergence it needs — bytes hucre did not write.
 
 Two things SheetJS specifically will **not** emit, both now covered by
 the LibreOffice fixture:
@@ -40,12 +39,12 @@ the LibreOffice fixture:
 - error cells. SheetJS writes an error as an empty
   `<table:table-cell/>`, so there is no error in the file to read.
 
+### They found three
+
 `libreoffice-basic.ods` is LibreOffice's conversion of the project-owned
 `../excel-basic.xlsx`. It found that a default-styled empty cell repeated
 to the edge of every row made `readOds` return 16,384 columns from five
 values. It also carries LibreOffice's error-cell spelling.
-
-### It found two
 
 The ODS corpus earned itself on the first run. A multi-line cell has two
 spellings in ODF: `<text:line-break/>` inside one paragraph, which is
@@ -72,10 +71,10 @@ changes the bytes without breaking anything.
 
 ## Licensing
 
-ExcelJS is MIT; SheetJS Community Edition is Apache-2.0. Every value
-inside these files was written in the generator scripts in this
-repository. Nothing is scraped and no third-party document is
-redistributed.
+ExcelJS is MIT; SheetJS Community Edition is Apache-2.0. The LibreOffice
+fixture is a conversion of the project-owned `excel-basic.xlsx`; every
+value in all of these files was authored in this repository. Nothing is
+scraped and no third-party document is redistributed.
 
 ## Regenerating
 
