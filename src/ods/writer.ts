@@ -492,7 +492,7 @@ function generateStyleElement(name: string, style: CellStyle, dataStyleName?: st
 
 // ── Style Collector ────────────────────────────────────────────────
 
-interface StyleCollector {
+export interface StyleCollector {
   /** Map from style key → style name (e.g. "ce1") */
   styleMap: Map<string, string>
   /** Map from style name → XML element string */
@@ -513,7 +513,7 @@ interface StyleCollector {
   textStyleCounter: number
 }
 
-function createStyleCollector(): StyleCollector {
+export function createStyleCollector(): StyleCollector {
   return {
     styleMap: new Map(),
     styleElements: new Map(),
@@ -629,7 +629,7 @@ function hasVisualProps(style: CellStyle): boolean {
   )
 }
 
-function getOrCreateStyleName(collector: StyleCollector, style: CellStyle): string {
+export function getOrCreateStyleName(collector: StyleCollector, style: CellStyle): string {
   const key = styleKey(style)
   if (!key) return "" // No style properties
 
@@ -685,7 +685,7 @@ export function excelFormulaToOds(formula: string): string {
 
 // ── Cell Serialization ──────────────────────────────────────────────
 
-interface CellContext {
+export interface CellContext {
   /** Cell override from sheet.cells */
   cellOverride?: Partial<Cell>
   /** Style name to apply (from style collector) */
@@ -738,7 +738,7 @@ function cellTextP(
   return xmlElement("text:p", undefined, content)
 }
 
-function cellToOds(
+export function cellToOds(
   value: CellValue,
   ctx: CellContext | undefined,
   collector: StyleCollector,

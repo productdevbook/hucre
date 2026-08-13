@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest"
 import { XlsxStreamWriter } from "../src/xlsx/stream-writer"
 import { CsvStreamWriter } from "../src/csv/stream"
 import { NdjsonStreamWriter } from "../src/json/stream"
+import { OdsStreamWriter } from "../src/ods/incremental-writer"
+import { readOds } from "../src/ods/reader"
 import { readXlsx } from "../src/xlsx/reader"
 import { parseCsv } from "../src/csv/reader"
 import type { CellValue, SpreadsheetStreamWriter } from "../src/_types"
@@ -54,6 +56,16 @@ function writers(): Array<[string, SpreadsheetStreamWriter]> {
     ["XlsxStreamWriter", new XlsxStreamWriter({ name: "Sheet1", columns: COLUMN_DEFS })],
     ["CsvStreamWriter", new CsvStreamWriter({ columns: KEYS, headers: ["Name", "Qty"] })],
     ["NdjsonStreamWriter", new NdjsonStreamWriter({ columns: KEYS })],
+    [
+      "OdsStreamWriter",
+      new OdsStreamWriter({
+        name: "S",
+        columns: [
+          { header: "Name", key: "name" },
+          { header: "Qty", key: "qty" },
+        ],
+      }),
+    ],
   ]
 }
 
@@ -90,6 +102,15 @@ describe("the three writers satisfy one interface", () => {
       ["Name", "Qty"],
       ["Widget", "3"],
       ["Gadget", "7"],
+    ])
+
+    // ODS: bytes, and a document that reads back.
+    const odsBytes = out.get("OdsStreamWriter")
+    expect(odsBytes).toBeInstanceOf(Uint8Array)
+    expect((await readOds(odsBytes as Uint8Array)).sheets[0]!.rows).toEqual([
+      ["Name", "Qty"],
+      ["Widget", 3],
+      ["Gadget", 7],
     ])
 
     // NDJSON: one object per line.

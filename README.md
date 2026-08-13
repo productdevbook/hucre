@@ -441,7 +441,7 @@ for await (const row of streamXmlRows(bytes, { rowTag: "record" })) {
 | XLSX   |     ✔      |      ✔      |      ✔      |  ✔ (multi)   |         ✔          |
 | CSV    |     ✔      |      ✔      |      ✔      |      ✔       |         ✔          |
 | NDJSON |     ✔      |      ✔      |      ✔      |      ✔       |         ✔          |
-| ODS    |     ✔      |      ✔      |      ✔      |      ✔       |         —          |
+| ODS    |     ✔      |      ✔      |      ✔      |      ✔       |         ✔          |
 | XML    |     ✔      |      ✔      |      ✔      |      ✔       |         —          |
 
 `writeOdsStream` carries **values, not formatting**, and that follows from
@@ -459,11 +459,16 @@ which needs the whole document — a streaming reader cannot know a key
 that appears only in a later row. For the same reason it takes `rowTag`
 from the first child of the root rather than from the most frequent one.
 
-The only cell left is an incremental ODS writer. `writeOdsStream` covers
-the streaming case; a buffering class could carry the styles it cannot,
-which would leave two ODS writers with different capabilities and no
-obvious rule for choosing — so it is an open question rather than an
-oversight.
+ODS now has both writers, and the rule for choosing is the same one XLSX
+already has: `writeOdsStream` for constant memory and values only,
+`OdsStreamWriter` when you want the styles and can afford to buffer.
+
+That difference is the format's, not a gap: ODF puts
+`<office:automatic-styles>` **before** the body, so a style first seen on
+row 900,000 has nowhere to be declared once the body has gone out. A
+buffering writer holds the rows until `finish()` and writes the style
+block from everything it saw, which is exactly what buys it per-cell
+styles and column widths.
 
 #### Which writer to use
 
@@ -511,9 +516,9 @@ Run `pnpm bench` to see both on your own machine.
 
 #### One surface across the incremental writers
 
-`XlsxStreamWriter`, `CsvStreamWriter`, and `NdjsonStreamWriter` all
-implement `SpreadsheetStreamWriter`, so a format-agnostic export helper
-can be written once:
+`XlsxStreamWriter`, `CsvStreamWriter`, `NdjsonStreamWriter` and
+`OdsStreamWriter` all implement `SpreadsheetStreamWriter`, so a
+format-agnostic export helper can be written once:
 
 | Method            | Behaviour                                                         |
 | ----------------- | ----------------------------------------------------------------- |

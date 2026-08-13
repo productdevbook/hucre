@@ -40,6 +40,7 @@ exports[`export surface snapshot > hucre/json 1`] = `
 
 exports[`export surface snapshot > hucre/ods 1`] = `
 [
+  "OdsStreamWriter",
   "readOds",
   "readOdsObjects",
   "streamOdsRows",
@@ -141,6 +142,7 @@ exports[`export surface snapshot > root 1`] = `
   "MAX_SPIN_COUNT",
   "MAX_TOTAL_CELLS",
   "NdjsonStreamWriter",
+  "OdsStreamWriter",
   "ParseError",
   "REL_CELL_IMAGES",
   "SheetBuilder",
