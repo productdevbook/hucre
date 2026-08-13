@@ -35,8 +35,74 @@ import { cloneCellStyle } from "../_style"
 import { PAPER_SIZE_REVERSE } from "./worksheet-writer"
 import { serialToDate } from "../_date"
 import { parseSax, decodeOoxmlEscapes } from "../xml/parser"
-import { MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
+import { MAX_CELL_MAP_ENTRIES, MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
 import { ParseError } from "../errors"
+
+/**
+ * The message for a sheet whose bounding box is over the limit.
+ *
+ * Pure, and exported, because the branch that matters cannot be reached
+ * from a test workbook: telling a caller *not* to try `sparse` needs a
+ * sheet with more than 16.7 million filled cells, which is a couple of
+ * gigabytes to build for one string.
+ *
+ * The advice is the point. A sparse sheet — 82k values over a 305M-slot
+ * box, 0.03% filled — wants `sparse: true`, and a dense one cannot use
+ * it: the cell count that blew the box limit is the same count that
+ * blows the `Map` behind `cells`. The message used to offer it either
+ * way. See #501, #527.
+ */
+export function oversizeSheetMessage(
+  name: string,
+  rowCount: number,
+  colCount: number,
+  totalCells: number,
+  cellCount: number,
+  cellLimit: number,
+): string {
+  const density = totalCells > 0 ? (100 * cellCount) / totalCells : 100
+  const sparseWouldFit = cellCount <= MAX_CELL_MAP_ENTRIES
+
+  return (
+    `Sheet "${name}" spans ${rowCount} rows x ${colCount} columns ` +
+    `(${totalCells} cells, ${density.toFixed(2)}% of them filled), ` +
+    `over the ${cellLimit} limit.\n` +
+    `  - streamXlsxRows(input) reads it a row at a time, whatever the box.\n` +
+    (sparseWouldFit
+      ? `  - readXlsx(input, { sparse: true }) returns the cells and no grid.\n`
+      : `  - \`sparse: true\` cannot help here: ${cellCount} filled cells is past ` +
+        `the ${MAX_CELL_MAP_ENTRIES} a Map can hold.\n`) +
+    `  - \`range\` or \`maxRows\` bound the area, if you know where the data is.\n` +
+    `  - \`maxTotalCells\` raises the bound, if the sheet really is this large.`
+  )
+}
+
+/**
+ * Refuse the cell that would overflow `Sheet.cells`.
+ *
+ * V8 caps a `Map` at 2^24 entries and answers the next `set` with a raw
+ * `RangeError: Map maximum size exceeded` — not a `HucreError`, naming
+ * no sheet, saying nothing about spreadsheets. Checking the size first
+ * costs one comparison per cell and turns that into a `ParseError` that
+ * names where to go instead.
+ *
+ * `has` is only consulted at the boundary, so the common path is the
+ * comparison alone.
+ */
+export function assertCellMapCapacity(
+  cells: Map<string, Cell>,
+  key: string,
+  sheetName: string | undefined,
+): void {
+  if (cells.size < MAX_CELL_MAP_ENTRIES || cells.has(key)) return
+
+  throw new ParseError(
+    `Sheet "${sheetName ?? "?"}" has more than ${MAX_CELL_MAP_ENTRIES} filled cells, ` +
+      `which is the most \`Sheet.cells\` can hold — a Map caps at 2^24 entries.\n` +
+      `  - streamXlsxRows(input) reads it a row at a time and has no such bound.\n` +
+      `The file is not damaged; it is larger than this model.`,
+  )
+}
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -1206,15 +1272,8 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
       //
       // `streamXlsxRows` reads exactly this file today, one row at a
       // time, and the message never mentioned it. See #501.
-      const density = totalCells > 0 ? (100 * cellCount) / totalCells : 100
       throw new ParseError(
-        `Sheet "${name}" spans ${maxRow + 1} rows x ${colCount} columns ` +
-          `(${totalCells} cells, ${density.toFixed(2)}% of them filled), ` +
-          `over the ${cellLimit} limit.\n` +
-          `  - streamXlsxRows(input) reads it a row at a time, whatever the box.\n` +
-          `  - readXlsx(input, { sparse: true }) returns the cells and no grid.\n` +
-          `  - \`range\` or \`maxRows\` bound the area, if you know where the data is.\n` +
-          `  - \`maxTotalCells\` raises the bound, if the sheet really is this large.`,
+        oversizeSheetMessage(name, maxRow + 1, colCount, totalCells, cellCount, cellLimit),
       )
     }
     for (let r = 0; r <= maxRow; r++) {
@@ -1248,6 +1307,9 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
         value: (rows[pos.row] && rows[pos.row][pos.col]) ?? null,
         type: "string",
       }
+      // Far fewer hyperlinks than cells in any real file, but this is
+      // the other place `cells` grows and the check is one comparison.
+      assertCellMapCapacity(cells, key, name)
       cells.set(key, cell)
     }
 
@@ -1965,7 +2027,9 @@ function processCell(
         })
       }
     }
-    cells.set(`${row},${col}`, cell)
+    const cellKey = `${row},${col}`
+    assertCellMapCapacity(cells, cellKey, ctx.sheetName)
+    cells.set(cellKey, cell)
   }
 }
 

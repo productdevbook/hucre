@@ -171,6 +171,27 @@ different problem with a different answer.
 `Sheet.rows` — `sheetToObjects`, `readObjects`, the writers — sees an
 empty sheet; `cells` is the whole answer.
 
+**`sparse` has a ceiling of its own: 16,777,216 filled cells.** `cells`
+is a `Map`, and V8 caps a `Map` at 2^24 entries. That is not a bound
+hucre chose and it cannot raise it without `Sheet.cells` ceasing to be a
+`Map`, which would break every caller using it as one.
+
+It matters because the two ways a sheet can be over the bounding-box
+limit want different answers, and only one of them is `sparse`:
+
+| the sheet is…             | example                    | use              |
+| ------------------------- | -------------------------- | ---------------- |
+| a large box, mostly empty | 82k values over 305M slots | `sparse: true`   |
+| genuinely dense and large | 28.4M filled of 30.2M      | `streamXlsxRows` |
+
+For the second, the cell count that blew the box limit is the same count
+that blows the `Map`, so `sparse` cannot work by construction. The
+oversize error now says which case it is looking at and stops offering
+`sparse` when the filled count is already past what a `Map` holds; going
+over anyway is a `ParseError` naming the sheet, not a raw
+`RangeError: Map maximum size exceeded`. `streamXlsxRows` has no such
+bound. See #527.
+
 ### A style-only cell does not widen the sheet
 
 Excel writes a self-closing `<c r="WVF45" s="3"/>` for every position

@@ -50,6 +50,31 @@ export const MAX_COL_INDEX = 16_383
 export const MAX_TOTAL_CELLS = 20_000_000
 
 /**
+ * How many entries `Sheet.cells` can hold.
+ *
+ * Not a policy — a `Map` in V8 caps at 2^24 entries and throws
+ * `RangeError: Map maximum size exceeded` on the one after. Verified:
+ * the 16,777,216th `set` succeeds and the next throws, a real
+ * `RangeError` with no `code`.
+ *
+ * It matters because `sparse: true` is one of the escapes the
+ * {@link MAX_TOTAL_CELLS} error offers, and `cells` is the only place a
+ * sparse read puts anything. For a sheet over the bounding-box limit
+ * because its box is large and mostly empty, that advice is right. For
+ * one over it because the sheet is genuinely dense — 916,449 x 33 at 94%
+ * filled, from a real corpus — the cell count that blew the box limit is
+ * the same count that blows this one, so the advice led somewhere that
+ * could not work.
+ *
+ * hucre cannot raise this bound without replacing `Sheet.cells` with
+ * something that is not a `Map`, which is a breaking change to a public
+ * field. What it can do is not recommend a path that is already too
+ * small, and fail as a `ParseError` naming the sheet rather than as a
+ * raw `RangeError`. See #527.
+ */
+export const MAX_CELL_MAP_ENTRIES = 16_777_216
+
+/**
  * Cap on any `String.repeat` count taken from file content.
  *
  * ODS expresses runs of spaces as `<text:s text:c="N"/>` and decimal
