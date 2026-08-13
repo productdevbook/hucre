@@ -499,6 +499,25 @@ The streaming readers _do_ agree: `streamXlsxRows` and `streamOdsRows`
 both skip an entirely empty row and keep the true index on `StreamRow`,
 so a gap in the indexes is the signal.
 
+### `streamXmlRows` gives you a row's own keys, not a rectangle
+
+XML rows are objects rather than arrays, and the two XML readers differ
+in one way worth knowing before you swap one for the other.
+
+`readXml` returns a **rectangle**: it collects the union of every row's
+keys and fills the gaps, so a record with no `<note>` still comes back
+with `note: null` and an empty `<record/>` is a row of nulls.
+
+Knowing that union means having read the last row, so `streamXmlRows`
+cannot do it — each row carries **only the keys it had**, and an empty
+`<record/>` yields `{}`. Read `values.note ?? null` rather than
+`values.note` when moving code across; `undefined` is where `null` used
+to be.
+
+It is the same cause as the `rowTag` difference already documented on
+that function: what a streaming reader gives up is everything that
+depends on the end of the document.
+
 ## The readers are lenient, and will tell you
 
 A corrupt reference does not throw. A cell pointing at a shared string

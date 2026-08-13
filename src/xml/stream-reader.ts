@@ -61,6 +61,17 @@ export interface XmlStreamReadOptions extends Pick<
  * `readXml` instead counts every child and takes the most frequent,
  * which needs the whole document and so is not something a streaming
  * reader can do.
+ *
+ * **`values` holds only the keys that row had.** `readXml` returns a
+ * rectangle: it collects the union of every row's keys and fills the
+ * gaps with `null`, so a record with no `<note>` still has `note: null`.
+ * Knowing that union means having read the last row, so a streaming
+ * reader cannot do it either — a record with no `<note>` yields an
+ * object with no `note` key, and an empty `<record/>` yields `{}`.
+ *
+ * Read `values.note ?? null` rather than `values.note` if you are moving
+ * code from `readXml`, and reach for `readXml` when you want the table
+ * shape more than the memory.
  */
 export async function* streamXmlRows<T = Record<string, CellValue>>(
   input: string | Uint8Array,
