@@ -40,10 +40,30 @@
 //   unzip -o ECMA-376-4_5th_edition_december_2016.zip OfficeOpenXML-XMLSchema-Transitional.zip
 //   unzip -o OfficeOpenXML-XMLSchema-Transitional.zip -d xsd-t
 //
-//   node scripts/validate-ooxml.mjs --schema xsd-t/sml.xsd
+//   node scripts/validate-ooxml.mjs --schema xsd-t/sml.xsd [--opc opc/]
 //
 // `--schema` must point at `sml.xsd` inside the extracted directory: it
 // imports its siblings by relative path.
+//
+// `--opc` is optional and covers the package itself — `[Content_Types].xml`,
+// every `.rels`, and `docProps/core.xml`. Those schemas are in Part 2:
+//
+//   curl -sSLO https://ecma-international.org/wp-content/uploads/ECMA-376-2_5th_edition_december_2021.zip
+//   unzip -o ECMA-376-2_5th_edition_december_2021.zip OpenPackagingConventions-XMLSchema.zip
+//   unzip -o OpenPackagingConventions-XMLSchema.zip -d opc
+//
+// `opc-coreProperties.xsd` then needs one edit before it will load at
+// all: it imports the Dublin Core schemas over plain HTTP, and
+// dublincore.org answers with a 302 that Java does not follow — the
+// parser reads the string "302 Found" as schema content and gives up.
+// Fetch them and make the imports relative:
+//
+//   cd opc
+//   for f in dc dcterms dcmitype; do
+//     curl -sSLO "http://dublincore.org/schemas/xmls/qdc/2003/04/02/$f.xsd"
+//   done
+//   sed -i 's|http://dublincore.org/schemas/xmls/qdc/2003/04/02/||g' \
+//     opc-coreProperties.xsd dc.xsd dcterms.xsd
 
 import { execFileSync } from "node:child_process"
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs"
@@ -56,6 +76,7 @@ for (let i = 2; i < process.argv.length; i += 2) {
   args.set(process.argv[i].replace(/^--/, ""), process.argv[i + 1])
 }
 const schema = args.get("schema")
+const opc = args.get("opc")
 const dist = args.get("dist") ?? new URL("../dist/index.mjs", import.meta.url).href
 
 if (!schema) {
@@ -262,15 +283,22 @@ function partsToCheck(pkg, schemaDir) {
     } else if (part === "docProps/app.xml") {
       out.push([part, join(schemaDir, "shared-documentPropertiesExtended.xsd")])
     }
+    // The package itself, when the Part 2 schemas were given. A
+    // malformed `.rels` breaks the whole workbook rather than one sheet,
+    // so it is worth the extra download.
+    else if (opc && part === "[Content_Types].xml") {
+      out.push([part, join(opc, "opc-contentTypes.xsd")])
+    } else if (opc && /(^|\/)_rels\/[^/]+\.rels$/.test(part)) {
+      out.push([part, join(opc, "opc-relationships.xsd")])
+    } else if (opc && part === "docProps/core.xml") {
+      out.push([part, join(opc, "opc-coreProperties.xsd")])
+    }
     // Not checked, and why:
     //
-    //   [Content_Types].xml, *.rels, docProps/core.xml   their schemas are
-    //     in ECMA-376 Part 2 (OPC), a separate download from the Part 4
-    //     set this script asks for.
-    //   xl/drawings/vmlDrawing*.vml                      `vml-main.xsd`
-    //     does not load in `javax.xml.validation` at all — it throws
-    //     before reading any document. VML is a legacy format with a
-    //     famously loose schema, and this is not the place to fight it.
+    //   xl/drawings/vmlDrawing*.vml   `vml-main.xsd` does not load in
+    //     `javax.xml.validation` at all — it throws before reading any
+    //     document. VML is a legacy format with a famously loose schema,
+    //     and this is not the place to fight it.
   }
   return out
 }
