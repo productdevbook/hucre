@@ -870,6 +870,21 @@ export type SheetKind = "worksheet" | "chartsheet" | "dialogsheet" | "macrosheet
 
 export interface Sheet {
   name: string
+  /**
+   * Cell values as a **dense rectangle**: every row is an array, every
+   * row is the same length, and no element is `undefined`.
+   *
+   * That is what makes `rows[r][c]` safe without a guard on either
+   * index, and it is what the readers' bounding-box limits are sized
+   * against — the cost of a sheet is its box, not its cell count, which
+   * is why {@link ReadOptions.maxTotalCells} bounds the product.
+   *
+   * It went unwritten and two readers did not hold it: `readXls` and
+   * `readXlsb` padded a row only to its own last cell and never
+   * allocated a row Excel left empty, so one authored sheet saved three
+   * ways came back three shapes, and a gap row came back as `undefined`
+   * — which `CellValue` cannot express. See #494.
+   */
   rows: CellValue[][]
   /**
    * The kind of tab this is. Absent means `"worksheet"`, which is what

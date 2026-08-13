@@ -12,6 +12,7 @@ import { decryptAgile } from "../crypto/agile"
 import { ZipReader } from "../../zip/reader"
 import { parseRelationships } from "../relationships"
 import { matchesRelType } from "../reader"
+import { densify } from "../../xls/reader"
 import { isBuiltinDateFormatId, isDateFormat, serialToDate } from "../../_date"
 import { Cursor, decodeRk, iterateRecords } from "./record"
 import { MAX_COL_INDEX, MAX_ROW_INDEX } from "../../limits"
@@ -272,6 +273,7 @@ function parseWorksheetBin(
   const merges: MergeRange[] = []
   let row = 0
 
+  let widestCol = 0
   const setCell = (col: number, value: CellValue): void => {
     // Reject out-of-range column indices from untrusted u32 fields, which
     // would otherwise grow a row to billions of null slots and OOM.
@@ -280,6 +282,7 @@ function parseWorksheetBin(
         `Cell column ${col} is outside the supported sheet bounds (max ${MAX_COL_INDEX + 1})`,
       )
     }
+    if (col >= widestCol) widestCol = col + 1
     let r = rows[row]
     if (!r) r = rows[row] = []
     while (r.length < col) r.push(null)
@@ -370,6 +373,11 @@ function parseWorksheetBin(
         break
     }
   }
+
+  // Same shape as the XLS reader: rows are built only where cells landed,
+  // so a sheet came back ragged and a row with no cell records came back
+  // as an `undefined` hole. See #494.
+  densify(rows, widestCol)
 
   return { rows, merges }
 }

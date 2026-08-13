@@ -122,6 +122,21 @@ would otherwise show `1E-07` — but only when that form is the same
 number, which it was not for the smallest values (`Number.MIN_VALUE` used
 to come out as `0.0`).
 
+### `Sheet.rows` is a dense rectangle
+
+Every row is an array, every row is the same length, and no element is
+`undefined`. That is what makes `rows[r][c]` safe without guarding either
+index, and it is what the readers' limits are sized against — the cost of
+a sheet is its bounding box rather than its cell count, which is why
+`maxTotalCells` bounds the product.
+
+The contract went unwritten and two readers did not hold it. `readXls`
+and `readXlsb` padded a row only to its _own_ last cell and never
+allocated a row the file left empty, so one authored sheet saved three
+ways came back three shapes, and a gap row came back as `undefined` —
+which `CellValue` cannot express. Fixed in #494; it is now stated on
+`Sheet.rows` as well as here.
+
 ### Line endings are normalized on the way in
 
 XML 1.0 §2.11 requires a processor to turn a literal CRLF, and a literal

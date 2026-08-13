@@ -313,6 +313,15 @@ function parseSheet(
     }
   }
 
+  // `rows` is a dense rectangle — the bounding-box guard above is sized
+  // on that assumption and `CellValue` has no `undefined` member — but
+  // `setCell` only pads a row up to its *own* last written column, and
+  // never allocates a row with no cell records at all. So a sheet came
+  // back ragged, and a row Excel left empty came back as a hole rather
+  // than a row. `readXlsx` normalizes at the end of its parse; this and
+  // the XLSB reader did not. See #494.
+  densify(rows, widestCol)
+
   const sheet: Sheet = { name, rows }
   if (merges.length > 0) sheet.merges = merges
   return sheet
@@ -338,4 +347,19 @@ function readChars(r: Reader, cch: number): string {
   let s = ""
   for (let i = 0; i < cch; i++) s += String.fromCharCode(compressed ? r.u8() : r.u16())
   return s
+}
+
+/**
+ * Fill a sparsely-built row array out to a rectangle.
+ *
+ * Two separate holes, both from building rows only where cells landed: a
+ * row index never touched is `undefined` — which `CellValue` cannot
+ * express — and a row that ended early is shorter than the sheet. See
+ * #494.
+ */
+export function densify(rows: CellValue[][], width: number): void {
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r] ?? (rows[r] = [])
+    while (row.length < width) row.push(null)
+  }
 }

@@ -121,7 +121,10 @@ describe("XLS (BIFF8) reader", () => {
     expect(wb.sheets.length).toBe(1)
     expect(wb.sheets[0].name).toBe("Sheet1")
     const rows = wb.sheets[0].rows
-    expect(rows[0]).toEqual(["Name", "Score"])
+    // Padded to the sheet width, not to this row's own last cell:
+    // `rows` is a dense rectangle, which these readers used to leave
+    // ragged while readXlsx did not. See #494.
+    expect(rows[0]).toEqual(["Name", "Score", null, null])
     expect(rows[1][0]).toBe("Ada")
     expect(rows[1][1]).toBe(95)
     expect(rows[1][2]).toBeCloseTo(3.14, 5)

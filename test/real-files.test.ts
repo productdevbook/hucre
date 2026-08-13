@@ -339,7 +339,7 @@ describe("workbooks written by Excel, not by this test suite", () => {
     const rowsOf = async (file: string, reader: typeof readXlsx): Promise<Flat[][]> =>
       (await modelOf(file, reader)).sheets[0]?.rows ?? []
 
-    it.fails("#494 — reads the same values whichever container Excel saved it in", async () => {
+    it("#494 — reads the same values whichever container Excel saved it in", async () => {
       const xlsx = await rowsOf("excel-basic.xlsx", readXlsx)
       expect(await rowsOf("excel-basic.xls", readXls)).toEqual(xlsx)
       expect(await rowsOf("excel-basic.xlsb", readXlsb)).toEqual(xlsx)
