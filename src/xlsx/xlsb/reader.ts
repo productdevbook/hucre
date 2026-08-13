@@ -58,8 +58,6 @@ const ERROR_TEXT: Record<number, string> = {
   0x2b: "#GETTING_DATA",
 }
 
-const decoder = new TextDecoder("utf-8")
-
 function decodeUtf8(d: Uint8Array, path = "(unknown)"): string {
   return decodePart(d, path)
 }

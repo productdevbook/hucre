@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest"
 import { fieldsOf } from "./_reflect"
-import { readFileSync } from "node:fs"
 import { toWriteOptions, toWriteSheet, type WriteModelDrop } from "../src/write-model"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"

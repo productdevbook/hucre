@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest"
 import { fieldsOf } from "./_reflect"
-import { readFileSync } from "node:fs"
 import { WorkbookBuilder } from "../src/builder"
 import { readXlsx } from "../src/xlsx/reader"
 
