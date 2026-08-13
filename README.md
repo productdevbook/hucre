@@ -186,6 +186,28 @@ const buffer = await writeXlsx({
 })
 ```
 
+A row entry may be a value or a cell object, so styling one cell does not
+mean naming its position again in a parallel map:
+
+```ts
+await writeXlsx({
+  sheets: [
+    {
+      name: "Report",
+      rows: [
+        [{ value: "Region", style: { font: { bold: true } } }, "Revenue"],
+        ["EU", { value: 12500, style: { numFmt: "$#,##0.00" } }],
+        ["Total", { formula: "SUM(B2:B2)" }],
+      ],
+    },
+  ],
+})
+```
+
+Anything a cell carries works there — `style`, `formula`, `richText`,
+`hyperlink`, `checkbox`. `cells` still takes a `"row,col"` map, and wins
+where both describe the same position.
+
 Features: cell styles, auto column widths, merged cells, freeze/split panes, auto-filter (with per-column value filters — `<filters><filter val="…"/></filters>`; custom/dynamic/colour criteria are not emitted), data validation, hyperlinks, images (PNG/JPEG/GIF/SVG/WebP), comments, tables, conditional formatting (all 15 rule types, with their dxf styles), named ranges, print settings, page breaks, sheet protection, workbook protection, rich text, shared/array/dynamic formulas, sparklines, textboxes, background images, number formats, hidden sheets, Excel 2024 native checkboxes, HTML/Markdown/JSON/TSV export, template engine.
 
 ### Auto Column Width

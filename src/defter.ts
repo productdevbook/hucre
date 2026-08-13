@@ -37,6 +37,7 @@ import { writeXml } from "./xml/data-writer"
 import { fromHtml } from "./export/html-import"
 import { toHtml } from "./export/html"
 import { toMarkdown } from "./export/markdown"
+import { toCellValues } from "./_inline-cells"
 
 // ── Format Detection ────────────────────────────────────────────────
 
@@ -217,7 +218,10 @@ export async function write(
   if (!sheet) {
     throw new UnsupportedFormatError(`${format} needs a sheet to write, and the workbook has none.`)
   }
-  const rows = sheet.rows ?? []
+  // These formats carry values and nothing else, so an inline cell object
+  // reduces to its value here rather than going through the `cells` split
+  // the two spreadsheet writers do. See #433.
+  const rows = toCellValues(sheet.rows ?? [])
 
   const encoder = new TextEncoder()
   switch (format) {

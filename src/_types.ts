@@ -1685,8 +1685,17 @@ export interface WriteOptions {
 export interface WriteSheet {
   name: string
   columns?: ColumnDef[]
-  /** Raw row data (array of arrays) */
-  rows?: CellValue[][]
+  /**
+   * Raw row data (array of arrays).
+   *
+   * An entry is a {@link CellValue}, or a cell object — `{ value, style }`,
+   * `{ formula }`, anything a {@link Cell} carries — written where the
+   * value goes. The streaming writers have taken that shape since they
+   * existed; the buffered ones now do too, so styling one cell no longer
+   * means naming its position again in {@link cells} (#433). Where both
+   * describe a position, {@link cells} wins.
+   */
+  rows?: Array<Array<CellValue | Partial<Cell>>>
   /**
    * Object data (array of objects — uses column keys). A value may be a scalar
    * {@link CellValue} or a rich {@link HyperlinkValue} for inline clickable links.

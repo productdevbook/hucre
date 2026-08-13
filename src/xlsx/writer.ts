@@ -9,6 +9,7 @@ import type {
   WriteSheet,
 } from "../_types"
 import { ZipWriter } from "../zip/writer"
+import { splitInlineCellsInSheets, toCellValue } from "../_inline-cells"
 import { writeContentTypes } from "./content-types-writer"
 import { FPB_PART_PATH, writeFeaturePropertyBagXml } from "./feature-property-bag"
 import { METADATA_PART_PATH, writeMetadataXml } from "./metadata"
@@ -72,7 +73,11 @@ function effectiveProperties(options: WriteOptions): WorkbookProperties | undefi
  * Returns a Uint8Array containing the ZIP archive.
  */
 export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
-  const { sheets, defaultFont, dateSystem, namedRanges, activeSheet, workbookProtection } = options
+  // A cell object written inline in `rows` becomes a `cells` entry before
+  // anything reads the grid, so every consumer below still sees values.
+  // See #433 and `src/_inline-cells.ts`.
+  const sheets = splitInlineCellsInSheets(options.sheets)
+  const { defaultFont, dateSystem, namedRanges, activeSheet, workbookProtection } = options
 
   // Before any bytes are produced, so a rejected workbook leaves no
   // half-written output. See #364.
@@ -595,7 +600,9 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
  */
 function collectSourceRows(sheet: WriteSheet): CellValue[][] {
   if (sheet.rows && sheet.rows.length > 0) {
-    return sheet.rows.map((row) => [...row])
+    // A pivot sources values; `writeXlsx` has already lifted any inline
+    // cell objects, and `toCellValue` keeps this correct on its own.
+    return sheet.rows.map((row) => row.map(toCellValue))
   }
   if (sheet.data && sheet.data.length > 0 && sheet.columns && sheet.columns.length > 0) {
     const out: CellValue[][] = []

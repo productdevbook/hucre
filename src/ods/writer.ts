@@ -19,6 +19,7 @@ import { validateSheetNames } from "../_validate"
 import { unwrapCellValue } from "../xlsx/hyperlink"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape as escapeXmlText } from "../xml/writer"
 import { replaceA1Ranges, toRanges } from "../cell-utils"
+import { splitInlineCellsInSheets, toCellValues } from "../_inline-cells"
 
 const encoder = /* @__PURE__ */ new TextEncoder()
 
@@ -1230,7 +1231,7 @@ function writeContentXml(options: WriteOptions): string {
     // Resolve rows from rows or data
     let rows: CellValue[][] = []
     if (sheet.rows) {
-      rows = sheet.rows
+      rows = toCellValues(sheet.rows)
     } else if (sheet.data && sheet.columns) {
       // Generate header row + data rows from objects
       const keys = sheet.columns.map((c) => c.key ?? c.header ?? "")
@@ -1518,6 +1519,11 @@ export function writeManifestXml(): string {
  * Returns a Uint8Array containing the ZIP archive.
  */
 export async function writeOds(options: WriteOptions): Promise<WriteOutput> {
+  // A cell object written inline in `rows` becomes a `cells` entry before
+  // anything reads the grid — the same normalisation `writeXlsx` does, in
+  // one implementation. See #433 and `src/_inline-cells.ts`.
+  options = { ...options, sheets: splitInlineCellsInSheets(options.sheets) }
+
   // Same rules as XLSX: LibreOffice enforces Excel's sheet-name limits
   // for interoperability. See #364.
   validateSheetNames(options.sheets)

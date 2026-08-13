@@ -31,6 +31,7 @@ import { calculateColumnWidth } from "./auto-width"
 import { DYNAMIC_ARRAY_CM } from "./metadata"
 import { hashSheetPassword } from "./password"
 import { validateColumnIndex } from "../_validate"
+import { toCellValue } from "../_inline-cells"
 
 // ── Hyperlink Relationship ────────────────────────────────────────
 
@@ -829,7 +830,11 @@ function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
     for (const row of sheet.rows) {
       const resolvedRow: Array<ResolvedCell | null> = []
       for (let c = 0; c < row.length; c++) {
-        const value = row[c]
+        // `writeXlsx` lifts an inline cell object into `cells` before this
+        // runs, so the entry is a value by then. Reading it through
+        // `toCellValue` keeps `resolveRows` correct for a caller that
+        // reached it another way, rather than emitting `[object Object]`.
+        const value = toCellValue(row[c]!)
         const style = sheet.columns ? columnCellStyle(sheet.columns[c]) : undefined
         resolvedRow.push(style ? { value, style } : { value })
       }

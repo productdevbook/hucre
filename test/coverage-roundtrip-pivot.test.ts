@@ -6,7 +6,7 @@ import { cloneChart } from "../src/xlsx/chart-clone"
 import { ZipReader } from "../src/zip/reader"
 import { ZipWriter } from "../src/zip/writer"
 import { EncryptedFileError } from "../src/errors"
-import type { Chart, SheetChart, WritePivotTable, WriteSheet } from "../src/_types"
+import type { CellValue, Chart, SheetChart, WritePivotTable, WriteSheet } from "../src/_types"
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder("utf-8")
@@ -39,16 +39,18 @@ async function withParts(
   return out.build()
 }
 
-const SALES: WriteSheet = {
-  name: "Data",
-  rows: [
-    ["Region", "Product", "Quarter", "Revenue"],
-    ["EU", "Widget", "Q1", 100],
-    ["US", "Widget", "Q1", 200],
-    ["EU", "Gadget", "Q2", 50],
-    ["US", "Gadget", "Q2", 75],
-  ],
-}
+// Declared as its own grid rather than read back off `SALES` — a
+// `WriteSheet` row may now hold a cell object as well as a value (#433),
+// and `resolvePivotSource` takes values.
+const SALES_ROWS: CellValue[][] = [
+  ["Region", "Product", "Quarter", "Revenue"],
+  ["EU", "Widget", "Q1", 100],
+  ["US", "Widget", "Q1", 200],
+  ["EU", "Gadget", "Q2", 50],
+  ["US", "Gadget", "Q2", 75],
+]
+
+const SALES: WriteSheet = { name: "Data", rows: SALES_ROWS }
 
 // ═══════════════════════════════════════════════════════════════════════
 // pivot-writer — axis placement
@@ -171,7 +173,7 @@ describe("pivot data fields", () => {
         rows: ["Region"],
         values: [{ field: "Revenue", function: fn }],
       }
-      const source = resolvePivotSource(pivot, "Data", SALES.rows!)
+      const source = resolvePivotSource(pivot, "Data", SALES_ROWS)
       const { pivotTableXml } = writePivotTable(pivot, source, 0)
       expect(pivotTableXml).toContain(`name="${label}"`)
       expect(pivotTableXml).toContain(`subtotal="${fn}"`)
@@ -228,7 +230,7 @@ describe("pivot cache fields", () => {
       columns: ["Region"],
       values: [{ field: "Revenue" }],
     }
-    const source = resolvePivotSource(pivot, "Data", SALES.rows!)
+    const source = resolvePivotSource(pivot, "Data", SALES_ROWS)
     const { pivotTableXml } = writePivotTable(pivot, source, 0)
 
     expect(pivotTableXml).toContain("<colFields")
@@ -280,7 +282,7 @@ describe("pivot input validation", () => {
       rows: ["Region"],
       values: [{ field: "Revenue" }],
     }
-    const source = resolvePivotSource(pivot, "Data", SALES.rows!)
+    const source = resolvePivotSource(pivot, "Data", SALES_ROWS)
 
     expect(() => writePivotTable(pivot, source, 0)).toThrow(/A1-style reference/)
   })
