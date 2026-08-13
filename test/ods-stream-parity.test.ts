@@ -33,6 +33,57 @@ describe("streamOdsRows — text element parity with batch reader", () => {
     for await (const row of streamOdsRows(buf)) rows.push(row)
     expect(rows[0].values[0]).toBe("a  b\tc\nd")
   })
+
+  it("joins consecutive text:p with a newline, the way collectText does", async () => {
+    // A multi-line cell has two spellings in ODF, and this file had only
+    // ever been tested on one of them. `<text:line-break/>` inside a
+    // single paragraph was covered above; **separate paragraphs** were
+    // not, and the streaming reader ran them together — "linebreak" for
+    // a cell the batch reader read as "line\nbreak".
+    //
+    // Which spelling you get depends on the writer: hucre emits
+    // `<text:line-break/>`, so a suite that only ever parsed hucre's own
+    // output could not see this. SheetJS emits paragraphs, and the #464
+    // corpus is what found it.
+    const buf = await odsFromContent(
+      `<table:table table:name="S"><table:table-row><table:table-cell office:value-type="string">` +
+        `<text:p>line</text:p><text:p>break</text:p>` +
+        `</table:table-cell></table:table-row></table:table>`,
+    )
+    const rows = []
+    for await (const row of streamOdsRows(buf)) rows.push(row)
+
+    expect(rows[0].values[0]).toBe("line\nbreak")
+    expect((await readOds(buf)).sheets[0]!.rows[0]![0]).toBe("line\nbreak")
+  })
+
+  it("counts an empty paragraph as a line, not as nothing", async () => {
+    // `join("\n")` over ["a", "", "b"] is "a\n\nb". A fix that appended a
+    // newline only when the text so far was non-empty would give "a\nb"
+    // and lose the blank line.
+    const buf = await odsFromContent(
+      `<table:table table:name="S"><table:table-row><table:table-cell office:value-type="string">` +
+        `<text:p>a</text:p><text:p></text:p><text:p>b</text:p>` +
+        `</table:table-cell></table:table-row></table:table>`,
+    )
+    const rows = []
+    for await (const row of streamOdsRows(buf)) rows.push(row)
+
+    expect(rows[0].values[0]).toBe("a\n\nb")
+    expect((await readOds(buf)).sheets[0]!.rows[0]![0]).toBe("a\n\nb")
+  })
+
+  it("does not put a newline before the first paragraph", async () => {
+    const buf = await odsFromContent(
+      `<table:table table:name="S"><table:table-row><table:table-cell office:value-type="string">` +
+        `<text:p>only</text:p>` +
+        `</table:table-cell></table:table-row></table:table>`,
+    )
+    const rows = []
+    for await (const row of streamOdsRows(buf)) rows.push(row)
+
+    expect(rows[0].values[0]).toBe("only")
+  })
 })
 
 describe("streamOdsRows — sheet index", () => {

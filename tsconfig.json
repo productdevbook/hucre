@@ -44,6 +44,7 @@
     "test/reflect.test.ts",
     // Reads the fixture corpus off disk, so it needs `node:fs`.
     "test/third-party-fixtures.test.ts",
+    "test/ods-third-party.test.ts",
     "test/builder-coverage.test.ts"
   ]
 }

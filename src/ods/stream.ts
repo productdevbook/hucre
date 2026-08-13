@@ -76,6 +76,18 @@ function* parseContentRows(xml: string): Generator<StreamRow, void, undefined> {
   let rowRepeat = 1
   let currentCells: CellValue[] = []
   let cellText = ""
+  /**
+   * How many `<text:p>` this cell has opened.
+   *
+   * The batch reader builds a cell's text as
+   * `paragraphs.map(collectText).join("\n")`, so consecutive paragraphs
+   * are separated by a newline. Streaming has no array to join — the
+   * text accumulates as it arrives — so the separator has to be written
+   * when the *second* and later paragraphs open. A count rather than a
+   * "is cellText empty" test, because an empty paragraph is still a
+   * line: `join("\n")` over `["a", "", "b"]` is `"a\n\nb"`.
+   */
+  let cellParagraphs = 0
   let cellValueType = ""
   let cellValue = ""
   let cellBoolValue = ""
@@ -118,6 +130,7 @@ function* parseContentRows(xml: string): Generator<StreamRow, void, undefined> {
               MAX_COL_INDEX + 1,
             )
             cellText = ""
+            cellParagraphs = 0
             cellValueType = attrs["office:value-type"] ?? attrs["calcext:value-type"] ?? ""
             cellValue = attrs["office:value"] ?? ""
             cellBoolValue = attrs["office:boolean-value"] ?? ""
@@ -144,7 +157,17 @@ function* parseContentRows(xml: string): Generator<StreamRow, void, undefined> {
           inAnnotation = true
           break
         case "p":
-          if (inCell && !inAnnotation) inP = true
+          if (inCell && !inAnnotation) {
+            // A cell's paragraphs are its lines. The batch reader joins
+            // them with "\n"; here the newline goes in as each paragraph
+            // after the first opens. Without it a two-paragraph cell —
+            // which is how SheetJS and LibreOffice spell a line break,
+            // where hucre spells it `<text:line-break/>` — came back with
+            // the lines run together. See #464.
+            if (cellParagraphs > 0) cellText += "\n"
+            cellParagraphs++
+            inP = true
+          }
           break
         // Text content special elements — mirror collectText() in reader.ts so
         // the streaming and batch readers return the same string for a cell.
