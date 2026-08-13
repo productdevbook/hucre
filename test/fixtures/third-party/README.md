@@ -22,7 +22,7 @@ someone with those tools; this needed only `npm i exceljs`.
 ## Licensing
 
 ExcelJS is MIT. Every value inside these files was written in
-`scripts/make-fixtures.mjs` in this repository. Nothing is scraped and no
+`scripts/fixtures/make-exceljs-fixtures.mjs` in this repository. Nothing is scraped and no
 third-party document is redistributed.
 
 ## Regenerating
@@ -32,7 +32,7 @@ bytes, so neither CI nor a contributor needs it:
 
 ```bash
 mkdir -p /tmp/gen && cd /tmp/gen && npm init -y && npm i exceljs
-node /path/to/hucre/scripts/make-fixtures.mjs /tmp/gen/node_modules
+node /path/to/hucre/scripts/fixtures/make-exceljs-fixtures.mjs /tmp/gen/node_modules
 ```
 
 Regenerating changes the bytes (timestamps, ExcelJS version). The tests

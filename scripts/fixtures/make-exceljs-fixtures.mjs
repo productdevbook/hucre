@@ -16,7 +16,7 @@
 // once-in-a-while thing:
 //
 //   mkdir -p /tmp/gen && cd /tmp/gen && npm init -y && npm i exceljs
-//   node /path/to/hucre/scripts/make-fixtures.mjs /tmp/gen/node_modules
+//   node /path/to/hucre/scripts/fixtures/make-exceljs-fixtures.mjs /tmp/gen/node_modules
 //
 // Licensing: ExcelJS is MIT, and every value in these files was written
 // here. Nothing is scraped and no third-party document is redistributed.
@@ -28,14 +28,16 @@ import { createRequire } from "node:module"
 
 const modulesDir = process.argv[2]
 if (!modulesDir) {
-  console.error("usage: node scripts/make-fixtures.mjs <path-to-node_modules-with-exceljs>")
+  console.error(
+    "usage: node scripts/fixtures/make-exceljs-fixtures.mjs <path-to-node_modules-with-exceljs>",
+  )
   process.exit(1)
 }
 
 const require = createRequire(join(modulesDir, "index.js"))
 const ExcelJS = require("exceljs")
 
-const outDir = fileURLToPath(new URL("../test/fixtures/third-party", import.meta.url))
+const outDir = fileURLToPath(new URL("../../test/fixtures/third-party", import.meta.url))
 mkdirSync(outDir, { recursive: true })
 
 /** Written to disk and asserted against in test/third-party-fixtures.test.ts. */
