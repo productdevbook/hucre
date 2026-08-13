@@ -17,7 +17,7 @@
 
 import type { CellValue, WorkbookProperties } from "../_types"
 import { zipStream, type ZipStreamEntry } from "../zip/stream-writer"
-import { xmlEscape } from "../xml/writer"
+import { xmlEscapeAttr } from "../xml/writer"
 import { validateSheetNames } from "../_validate"
 
 import {
@@ -29,6 +29,7 @@ import {
   formatOdsDateValue,
   formatNumberDisplay,
   excelFormulaToOds,
+  odsEscape,
 } from "./writer"
 
 const encoder = /* @__PURE__ */ new TextEncoder()
@@ -130,7 +131,7 @@ async function* contentChunks(
 
   yield* push(CONTENT_HEAD)
   yield* push(automaticStyles(columns))
-  yield* push(`<office:body><office:spreadsheet><table:table table:name="${xmlEscape(name)}">`)
+  yield* push(`<office:body><office:spreadsheet><table:table table:name="${xmlEscapeAttr(name)}">`)
 
   // Column declarations, which have to precede every row.
   const colCount = columns?.length ?? 0
@@ -203,7 +204,7 @@ function serializeRow(row: OdsWriteRow): string {
  * garbage and which used to make a corrupt file (#364).
  */
 function serializeCell(value: CellValue, formula?: string): string {
-  const attrs = formula ? ` table:formula="${xmlEscape(excelFormulaToOds(formula))}"` : ""
+  const attrs = formula ? ` table:formula="${xmlEscapeAttr(excelFormulaToOds(formula))}"` : ""
 
   if (value === null || value === undefined) {
     return attrs ? `<table:table-cell${attrs}/>` : "<table:table-cell/>"
@@ -212,7 +213,7 @@ function serializeCell(value: CellValue, formula?: string): string {
   if (typeof value === "string") {
     return (
       `<table:table-cell${attrs} office:value-type="string">` +
-      `<text:p>${xmlEscape(value)}</text:p></table:table-cell>`
+      `<text:p>${odsEscape(value)}</text:p></table:table-cell>`
     )
   }
 
@@ -220,7 +221,7 @@ function serializeCell(value: CellValue, formula?: string): string {
     if (!Number.isFinite(value)) return `<table:table-cell${attrs}></table:table-cell>`
     return (
       `<table:table-cell${attrs} office:value-type="float" office:value="${value}">` +
-      `<text:p>${xmlEscape(formatNumberDisplay(value))}</text:p></table:table-cell>`
+      `<text:p>${odsEscape(formatNumberDisplay(value))}</text:p></table:table-cell>`
     )
   }
 

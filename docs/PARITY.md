@@ -392,12 +392,21 @@ the workbook-level caches, and has no write counterpart because
 
 Three cases where a field is carried but a particular _value_ is not.
 
-**A cell whose text is literally `_x0041_` reads back as `A`.** OOXML uses
-`_xHHHH_` to encode characters XML cannot hold, and hucre decodes it on
-read. Excel disambiguates by escaping a leading underscore as `_x005F_`;
-hucre deliberately does not, because doing so would mangle the far more
-common case of ordinary text that happens to contain an underscore. The
-ambiguity is accepted, and now written down.
+**A cell whose text is literally `_x0041_` reads back as `A` — in XLSX.**
+OOXML uses `_xHHHH_` to encode characters XML cannot hold, and hucre
+decodes it on read. Excel disambiguates by escaping a leading underscore
+as `_x005F_`; hucre deliberately does not, because doing so would mangle
+the far more common case of ordinary text that happens to contain an
+underscore. The ambiguity is accepted, and now written down.
+
+It is an OOXML convention and the loss is OOXML's alone. ODF has no
+`_xHHHH_`, so the same string round-trips through ODS unchanged. The ODS
+writer used to borrow the spelling for carriage returns, which meant
+`"a\r\nb"` came back as `"a_x000D_\nb"` — and LibreOffice showed those
+seven characters too, since to anything but Excel that is all they are.
+ODS now writes `&#13;`, which is what XML gives you for this: a character
+reference is not subject to the end-of-line normalisation of §2.11, so it
+survives any conforming parse.
 
 **Serial 60 collapses onto 59.** Serial 60 in the 1900 system is the
 Lotus 1-2-3 phantom 29 February 1900, a date that does not exist. It has

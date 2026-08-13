@@ -12,6 +12,10 @@ import {
   parseRange,
 } from "../src/cell-utils"
 import { MAX_COL_INDEX, MAX_ROW_INDEX } from "../src/limits"
+import { writeXlsx } from "../src/xlsx/writer"
+import { readXlsx } from "../src/xlsx/reader"
+import { writeOds } from "../src/ods/writer"
+import { readOds } from "../src/ods/reader"
 import { seeded } from "./_fuzz"
 import type { CellValue } from "../src/_types"
 
@@ -228,5 +232,111 @@ describe("the A1 reference helpers are inverses", () => {
         endCol,
       })
     }
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+// The binary formats had no property test. Everything above is a parser
+// with a *string* inverse; `writeXlsx`/`readXlsx` and `writeOds`/
+// `readOds` are inverses too, and nobody had pointed random values at
+// them.
+//
+// Doing so found two defects in the ODS writer on the first run — a
+// carriage return written as Excel's `_x000D_`, and, chasing that, a
+// sheet name escaped with the text escaper inside an attribute. Both are
+// pinned properly in test/ods-escaping.test.ts; this is the thing that
+// noticed, kept so it can notice the next one.
+// ═══════════════════════════════════════════════════════════════════════
+
+/** Values chosen to sit where a spreadsheet writer has to make a choice. */
+const AWKWARD_CELLS: CellValue[] = [
+  ...AWKWARD,
+  "with\rbare cr",
+  "trailing\r",
+  "<xml>&amp;</xml>",
+  "]]>",
+  "a".repeat(300),
+  0,
+  -12.5,
+  1e21,
+  1e-7,
+  Number.MAX_SAFE_INTEGER,
+  0.1 + 0.2,
+  true,
+  false,
+  null,
+]
+
+function randomBinaryCell(rnd: () => number): CellValue {
+  if (rnd() < 0.12) {
+    return new Date(
+      Date.UTC(1900 + Math.floor(rnd() * 200), Math.floor(rnd() * 12), 1 + Math.floor(rnd() * 28)),
+    )
+  }
+  return AWKWARD_CELLS[Math.floor(rnd() * AWKWARD_CELLS.length)]!
+}
+
+/**
+ * Trailing empties are trimmed on read, so the comparison is on the
+ * trimmed form — the readers do not promise to hand back a row's shape,
+ * only its values. `docs/PARITY.md` says so.
+ */
+function trimTrailing(row: CellValue[]): unknown[] {
+  const out = [...row]
+  while (out.length > 0 && (out[out.length - 1] === null || out[out.length - 1] === "")) out.pop()
+  return out.map((v) => (v instanceof Date ? `D:${v.toISOString()}` : v))
+}
+
+describe("write then read is the identity, for the binary formats", () => {
+  const cases = [
+    ["xlsx", writeXlsx, readXlsx],
+    ["ods", writeOds, readOds],
+  ] as const
+
+  for (const [label, write, read] of cases) {
+    it(`${label} carries every value it was given`, async () => {
+      const rnd = seeded(SEED)
+
+      for (let run = 0; run < 60; run++) {
+        const rows: CellValue[][] = Array.from({ length: 1 + Math.floor(rnd() * 5) }, () =>
+          Array.from({ length: 1 + Math.floor(rnd() * 5) }, () => randomBinaryCell(rnd)),
+        )
+
+        const bytes = await (write as typeof writeXlsx)({ sheets: [{ name: "S", rows }] })
+        const back = (await (read as typeof readXlsx)(bytes)).sheets[0]!.rows
+
+        for (let i = 0; i < rows.length; i++) {
+          expect(trimTrailing(back[i] ?? []), `${label} run ${run} row ${i}`).toEqual(
+            trimTrailing(rows[i]!),
+          )
+        }
+      }
+    })
+  }
+})
+
+describe("the one value the generator above deliberately leaves out", () => {
+  // `docs/PARITY.md` records that a cell whose text is literally
+  // `_x0041_` reads back as `A`: OOXML uses `_xHHHH_` for characters XML
+  // cannot hold, hucre decodes it on read, and it does not re-escape a
+  // leading underscore on write because that would mangle the far more
+  // common ordinary text containing one. The ambiguity is accepted.
+  //
+  // It is accepted **for XLSX**. ODS never had the convention, and since
+  // the CR fix does not write it either, the same string survives there.
+  // Feeding it to the property test above would have looked like a bug
+  // in one format and a pass in the other, so it is stated here instead.
+  const LITERAL = "_x000D_ already"
+
+  it("xlsx decodes it, as documented", async () => {
+    const bytes = await writeXlsx({ sheets: [{ name: "S", rows: [[LITERAL]] }] })
+
+    expect((await readXlsx(bytes)).sheets[0]!.rows[0]![0]).toBe("\r already")
+  })
+
+  it("ods carries it through unchanged", async () => {
+    const bytes = await writeOds({ sheets: [{ name: "S", rows: [[LITERAL]] }] })
+
+    expect((await readOds(bytes)).sheets[0]!.rows[0]![0]).toBe(LITERAL)
   })
 })

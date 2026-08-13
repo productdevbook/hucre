@@ -16,10 +16,26 @@ import type {
 import { ZipWriter } from "../zip/writer"
 import { validateSheetNames } from "../_validate"
 import { unwrapCellValue } from "../xlsx/hyperlink"
-import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
+import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape as escapeXmlText } from "../xml/writer"
 import { replaceA1Ranges, toRanges } from "../cell-utils"
 
 const encoder = /* @__PURE__ */ new TextEncoder()
+
+/**
+ * Escape text content for an ODF document.
+ *
+ * The whole of this file — and the two streaming ODS writers, which
+ * import this — goes through here rather than calling `xmlEscape`
+ * directly, so that the carriage-return spelling is decided once.
+ *
+ * ODF has no `_xHHHH_` convention. Sharing the XLSX escaper meant a
+ * string with a CR in it was written as `_x000D_` and read back with the
+ * escape still in it — and LibreOffice showed the same seven characters,
+ * because to anything that is not Excel that is all they are.
+ */
+export function odsEscape(text: string): string {
+  return escapeXmlText(text, "charRef")
+}
 
 // ── ODS Namespaces ──────────────────────────────────────────────────
 
@@ -270,12 +286,12 @@ function buildDateChildren(code: string): string[] {
       out.push(xmlSelfClose("number:am-pm"))
       lastWasHours = false
     } else if (tok.startsWith('"') && tok.endsWith('"')) {
-      out.push(xmlElement("number:text", undefined, xmlEscape(tok.slice(1, -1))))
+      out.push(xmlElement("number:text", undefined, odsEscape(tok.slice(1, -1))))
     } else if (tok.startsWith("\\") && tok.length === 2) {
-      out.push(xmlElement("number:text", undefined, xmlEscape(tok.slice(1))))
+      out.push(xmlElement("number:text", undefined, odsEscape(tok.slice(1))))
     } else {
       // Literal separator (`-`, `/`, `:`, `.`, ` `, etc.)
-      out.push(xmlElement("number:text", undefined, xmlEscape(tok)))
+      out.push(xmlElement("number:text", undefined, odsEscape(tok)))
     }
   }
 
@@ -395,7 +411,7 @@ function translateNumFmt(code: string): OdsNumFmtDef | undefined {
   if (currency) {
     const decimals = decimalsFromCode(section)
     const grouping = hasGrouping(section)
-    const symbol = xmlElement("number:currency-symbol", undefined, xmlEscape(currency))
+    const symbol = xmlElement("number:currency-symbol", undefined, odsEscape(currency))
     const number = buildNumberChild(decimals, grouping)
     // Detect symbol position: leading vs trailing
     const beforeNum = /^[^0#]*(\$|\[\$|"[$€£¥₺₽₹])/.test(section)
@@ -424,7 +440,7 @@ function translateNumFmt(code: string): OdsNumFmtDef | undefined {
   // Plain number
   const { prefix, suffix } = numberLiterals(section)
   const children: string[] = []
-  if (prefix) children.push(xmlElement("number:text", undefined, xmlEscape(prefix)))
+  if (prefix) children.push(xmlElement("number:text", undefined, odsEscape(prefix)))
   // A section with no `#`/`0` at all is pure literal text — Excel's third
   // section is often `"-"` for zero — and gets no <number:number> child.
   if (/[#0?]/.test(section)) {
@@ -432,7 +448,7 @@ function translateNumFmt(code: string): OdsNumFmtDef | undefined {
   } else if (children.length === 0) {
     return undefined
   }
-  if (suffix) children.push(xmlElement("number:text", undefined, xmlEscape(suffix)))
+  if (suffix) children.push(xmlElement("number:text", undefined, odsEscape(suffix)))
   return { kind: "number", children }
 }
 
@@ -699,7 +715,7 @@ export interface CellContext {
 function richTextSpans(runs: RichTextRun[], collector: StyleCollector): string {
   let out = ""
   for (const run of runs) {
-    const text = xmlEscape(run.text)
+    const text = odsEscape(run.text)
     const styleName = run.font ? getOrCreateTextStyleName(collector, run.font) : ""
     out += styleName ? xmlElement("text:span", { "text:style-name": styleName }, text) : text
   }
@@ -726,9 +742,9 @@ function cellTextP(
   const runs = ctx?.cellOverride?.richText
   const hyperlink = ctx?.cellOverride?.hyperlink
 
-  let content = runs && runs.length > 0 ? richTextSpans(runs, collector) : xmlEscape(display)
+  let content = runs && runs.length > 0 ? richTextSpans(runs, collector) : odsEscape(display)
   if (hyperlink) {
-    const anchor = hyperlink.display !== undefined ? xmlEscape(hyperlink.display) : content
+    const anchor = hyperlink.display !== undefined ? odsEscape(hyperlink.display) : content
     content = xmlElement(
       "text:a",
       { "xlink:href": hyperlink.target, "xlink:type": "simple" },
@@ -1143,19 +1159,19 @@ export function writeMetaXml(props?: WorkbookProperties): string {
   const children: string[] = []
 
   if (props?.title) {
-    children.push(xmlElement("dc:title", undefined, xmlEscape(props.title)))
+    children.push(xmlElement("dc:title", undefined, odsEscape(props.title)))
   }
   if (props?.subject) {
-    children.push(xmlElement("dc:subject", undefined, xmlEscape(props.subject)))
+    children.push(xmlElement("dc:subject", undefined, odsEscape(props.subject)))
   }
   if (props?.creator) {
-    children.push(xmlElement("meta:initial-creator", undefined, xmlEscape(props.creator)))
+    children.push(xmlElement("meta:initial-creator", undefined, odsEscape(props.creator)))
   }
   if (props?.description) {
-    children.push(xmlElement("dc:description", undefined, xmlEscape(props.description)))
+    children.push(xmlElement("dc:description", undefined, odsEscape(props.description)))
   }
   if (props?.keywords) {
-    children.push(xmlElement("meta:keyword", undefined, xmlEscape(props.keywords)))
+    children.push(xmlElement("meta:keyword", undefined, odsEscape(props.keywords)))
   }
   if (props?.created) {
     children.push(xmlElement("meta:creation-date", undefined, formatOdsDate(props.created)))
