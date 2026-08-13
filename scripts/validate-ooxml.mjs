@@ -18,7 +18,8 @@
 //
 // A chart is DrawingML, not SpreadsheetML — `sml.xsd` has never heard of
 // `c:chartSpace` — so each part is checked against the schema that
-// describes it rather than all of them against one.
+// describes it rather than all of them against one. The theme is
+// DrawingML too, and `docProps/app.xml` has its own shared schema.
 //
 // Two things to know before reading its output.
 //
@@ -250,13 +251,26 @@ function partsToCheck(pkg, schemaDir) {
   for (const part of all) {
     if (/^xl\/(workbook|styles|sharedStrings)\.xml$/.test(part)) out.push([part, schema])
     else if (/^xl\/(worksheets|tables)\/[^/]+\.xml$/.test(part)) out.push([part, schema])
+    else if (/^xl\/comments\d+\.xml$/.test(part)) out.push([part, schema])
     else if (/^xl\/charts\/chart\d+\.xml$/.test(part)) {
       out.push([part, join(schemaDir, "dml-chart.xsd")])
     } else if (/^xl\/drawings\/drawing\d+\.xml$/.test(part)) {
       out.push([part, join(schemaDir, "dml-spreadsheetDrawing.xsd")])
+    } else if (part === "xl/theme/theme1.xml") {
+      // The theme is DrawingML, like the charts.
+      out.push([part, join(schemaDir, "dml-main.xsd")])
+    } else if (part === "docProps/app.xml") {
+      out.push([part, join(schemaDir, "shared-documentPropertiesExtended.xsd")])
     }
-    // Relationship parts, content types, docProps and VML have their own
-    // schemas elsewhere in the package and are not this script's business.
+    // Not checked, and why:
+    //
+    //   [Content_Types].xml, *.rels, docProps/core.xml   their schemas are
+    //     in ECMA-376 Part 2 (OPC), a separate download from the Part 4
+    //     set this script asks for.
+    //   xl/drawings/vmlDrawing*.vml                      `vml-main.xsd`
+    //     does not load in `javax.xml.validation` at all — it throws
+    //     before reading any document. VML is a legacy format with a
+    //     famously loose schema, and this is not the place to fight it.
   }
   return out
 }
