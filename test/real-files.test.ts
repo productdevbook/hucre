@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { readFileSync } from "node:fs"
-import { read, readXls, readXlsb, readXlsx } from "../src/index"
+import { read, readXls, readXlsb, readXlsx, streamXlsxRows } from "../src/index"
 import type { Cell, CellStyle, ReadOptions, Sheet, Workbook } from "../src/_types"
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -383,23 +383,44 @@ describe("workbooks written by Excel, not by this test suite", () => {
 
   // A chart sheet — a chart on its own tab — is not a worksheet, and
   // xl/workbook.xml's <sheets> lists it anyway; the relationship type is
-  // what separates the kinds. It gets its own block rather than a golden
-  // model because today the read throws, so there is no model to compare.
+  // what separates the kinds.
   //
-  // This one is not hypothetical: it is the single largest failure in a
+  // This one was not hypothetical: it was the single largest failure in a
   // corpus of real instrument-exported workbooks, 52 files out of 538.
+  // Fixed in #499 — the block below is what it does now.
   describe("excel-chartsheet.xlsx", () => {
-    it.fails("#499 — a workbook containing a chart sheet can be read at all", async () => {
+    it("#499 — the workbook reads, and the worksheet beside it survives", async () => {
       const wb = await readXlsx(bytes("excel-chartsheet.xlsx"))
-      // The chart sheet carries no cells, so whatever it is represented
-      // as, the ordinary worksheet next to it has to survive.
+
       expect(wb.sheets.some((s) => s.rows.length > 0)).toBe(true)
     })
 
-    it("fails the way #499 describes, and not some other way", async () => {
-      await expect(readXlsx(bytes("excel-chartsheet.xlsx"))).rejects.toThrow(
-        /missing worksheet file for sheet/,
-      )
+    it("keeps the chart sheet as a tab, so the indices are Excel's", async () => {
+      // Skipping it would renumber every sheet after it, which is a
+      // quieter kind of wrong than throwing.
+      const wb = await readXlsx(bytes("excel-chartsheet.xlsx"))
+
+      expect(wb.sheets).toHaveLength(2)
+      expect(wb.sheets.map((s) => s.kind)).toEqual(["chartsheet", undefined])
+      expect(wb.sheets[0]?.rows).toEqual([])
+    })
+
+    it("streams the worksheet by name", async () => {
+      const rows: unknown[][] = []
+      for await (const row of streamXlsxRows(bytes("excel-chartsheet.xlsx"), { sheet: 1 })) {
+        rows.push(row.values)
+      }
+
+      expect(rows.length).toBeGreaterThan(0)
+    })
+
+    it("streams a chart sheet as nothing, rather than throwing", async () => {
+      const rows: unknown[][] = []
+      for await (const row of streamXlsxRows(bytes("excel-chartsheet.xlsx"), { sheet: 0 })) {
+        rows.push(row.values)
+      }
+
+      expect(rows).toEqual([])
     })
   })
 

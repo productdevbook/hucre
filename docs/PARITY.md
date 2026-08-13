@@ -122,6 +122,26 @@ would otherwise show `1E-07` — but only when that form is the same
 number, which it was not for the smallest values (`Number.MIN_VALUE` used
 to come out as `0.0`).
 
+### Not every tab is a worksheet
+
+`xl/workbook.xml`'s `<sheets>` lists every tab whatever its kind — chart
+sheets, dialog sheets and macro sheets included — and the _relationship
+type_ is what tells them apart. A chart sheet used to make the whole
+workbook unreadable: its rId was not in the worksheet map, so the lookup
+missed and the reader threw, taking every ordinary worksheet beside it
+down too. On one corpus of real instrument-exported files that was 52
+failures out of 538. See #499.
+
+A non-worksheet tab now reads as an empty `Sheet` carrying
+`kind: "chartsheet"` (or `"dialogsheet"`). It is kept rather than skipped
+so `sheets: [2]` still selects Excel's third tab — renumbering would be a
+quieter kind of wrong. `kind` is **read-only**: hucre writes worksheets,
+and `toWriteOptions` reports it as a drop.
+
+`streamXlsxRows` on a non-worksheet tab yields nothing rather than
+throwing. A missing worksheet _part_ is still a `ParseError`, because
+that is damage rather than a different kind of tab.
+
 ### Ranges: two spellings, one meaning
 
 Ranges are A1 strings on `DataValidation.range`, `ConditionalRule.range`,

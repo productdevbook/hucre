@@ -43,6 +43,7 @@ const FULL_CELL: Required<Cell> = {
 /** Every field of `Sheet`, same reason. */
 const FULL_SHEET: Required<Sheet> = {
   name: "Full",
+  kind: "worksheet",
   rows: [
     ["a", 1],
     ["b", 2],

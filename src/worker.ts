@@ -73,6 +73,7 @@ export interface SerializedSheet {
   headerFooter?: Sheet["headerFooter"]
   view?: Sheet["view"]
   hidden?: Sheet["hidden"]
+  kind?: Sheet["kind"]
   veryHidden?: Sheet["veryHidden"]
   tables?: Sheet["tables"]
   a11y?: Sheet["a11y"]
@@ -222,6 +223,7 @@ function serializeSheet(sheet: Sheet): SerializedSheet {
   // caller set and it should survive the trip. `cloneSheet` already did
   // this; this copy did not.
   if (sheet.hidden !== undefined) out.hidden = sheet.hidden
+  if (sheet.kind !== undefined) out.kind = sheet.kind
   if (sheet.veryHidden !== undefined) out.veryHidden = sheet.veryHidden
   if (sheet.tables) out.tables = sheet.tables
   if (sheet.a11y) out.a11y = sheet.a11y
@@ -408,6 +410,7 @@ function deserializeSheet(ss: SerializedSheet): Sheet {
   if (ss.headerFooter) sheet.headerFooter = ss.headerFooter
   if (ss.view) sheet.view = ss.view
   if (ss.hidden !== undefined) sheet.hidden = ss.hidden
+  if (ss.kind !== undefined) sheet.kind = ss.kind
   if (ss.veryHidden !== undefined) sheet.veryHidden = ss.veryHidden
   if (ss.tables) sheet.tables = ss.tables
   if (ss.a11y) sheet.a11y = ss.a11y

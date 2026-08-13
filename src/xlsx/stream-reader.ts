@@ -684,9 +684,15 @@ function resolveFromParts(
   if (!targetSheet) return null
 
   const sheetRelMap = new Map<string, string>()
+  // A tab that is not a worksheet has no rows. Recognising it here is
+  // what separates "nothing to stream" from "the part is missing", which
+  // is real damage and still throws. See #499.
+  const nonWorksheetRIds = new Set<string>()
   for (const rel of workbookRels) {
     if (matchesRelType(rel.type, REL_WORKSHEET)) {
       sheetRelMap.set(rel.id, resolvePath(workbookDir, rel.target))
+    } else if (matchesRelType(rel.type, "chartsheet") || matchesRelType(rel.type, "dialogsheet")) {
+      nonWorksheetRIds.add(rel.id)
     }
   }
   const wsPath = sheetRelMap.get(targetSheet.rId)
@@ -899,9 +905,15 @@ export async function* streamXlsxRows(
 
   // 8. Build rId → worksheet path map
   const sheetRelMap = new Map<string, string>()
+  // A tab that is not a worksheet has no rows. Recognising it here is
+  // what separates "nothing to stream" from "the part is missing", which
+  // is real damage and still throws. See #499.
+  const nonWorksheetRIds = new Set<string>()
   for (const rel of workbookRels) {
     if (matchesRelType(rel.type, REL_WORKSHEET)) {
       sheetRelMap.set(rel.id, resolvePath(workbookDir, rel.target))
+    } else if (matchesRelType(rel.type, "chartsheet") || matchesRelType(rel.type, "dialogsheet")) {
+      nonWorksheetRIds.add(rel.id)
     }
   }
 
@@ -910,6 +922,8 @@ export async function* streamXlsxRows(
   if (!targetSheet) {
     return // No matching sheet — yield nothing
   }
+
+  if (nonWorksheetRIds.has(targetSheet.rId)) return
 
   const wsPath = sheetRelMap.get(targetSheet.rId)
   if (!wsPath || !zip.has(wsPath)) {

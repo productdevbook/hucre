@@ -42,6 +42,7 @@ const NO_AUTHORING_API =
 
 /** Sheet fields with no `WriteSheet` counterpart at all. */
 const SHEET_DROPS: Record<string, string> = {
+  kind: "hucre writes worksheets. A chart sheet or dialog sheet is read as an empty sheet so the tab indices line up, and writing one back is not something the writer can do.",
   slicers: NO_AUTHORING_API,
   timelines: NO_AUTHORING_API,
   threadedComments: NO_AUTHORING_API,

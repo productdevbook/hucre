@@ -858,9 +858,32 @@ export interface RowDef {
 
 // ── Sheet ──────────────────────────────────────────────────────────
 
+/**
+ * What kind of sheet a tab holds.
+ *
+ * `xl/workbook.xml`'s `<sheets>` lists every tab whatever its kind —
+ * ECMA-376 `CT_Sheet` covers worksheets, chart sheets, dialog sheets and
+ * macro sheets alike, and the *relationship type* is what tells them
+ * apart. Only a worksheet has cells.
+ */
+export type SheetKind = "worksheet" | "chartsheet" | "dialogsheet" | "macrosheet"
+
 export interface Sheet {
   name: string
   rows: CellValue[][]
+  /**
+   * The kind of tab this is. Absent means `"worksheet"`, which is what
+   * all but a handful of sheets are.
+   *
+   * A workbook containing a chart sheet used to fail to read *entirely*
+   * — the chart sheet's relationship is not a `worksheet` one, so the
+   * lookup missed and the reader threw, taking every ordinary worksheet
+   * beside it down too. Non-worksheet tabs are now read as empty sheets
+   * so the indices still line up with Excel's tab bar, and this field is
+   * what tells you one apart from a worksheet that happens to be empty.
+   * Read-only: hucre cannot author a chart sheet. See #499.
+   */
+  kind?: SheetKind
   /** Detailed cell data (keyed by "row,col" e.g. "0,2") */
   cells?: Map<string, Cell>
   columns?: ColumnDef[]

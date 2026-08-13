@@ -947,6 +947,7 @@ export function cloneSheet(sheet: Sheet, newName: string): Sheet {
   const rows = sheet.rows.map((row) => [...row])
 
   const cloned: Sheet = { name: newName, rows }
+  if (sheet.kind !== undefined) cloned.kind = sheet.kind
 
   // Deep copy cells Map
   if (sheet.cells && sheet.cells.size > 0) {

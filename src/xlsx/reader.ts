@@ -3,6 +3,7 @@
 
 import type {
   Sheet,
+  SheetKind,
   Workbook,
   ReadOptions,
   ReadInput,
@@ -361,9 +362,19 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
 
   // 8. Build a map of rId → sheet relationship for worksheet paths
   const sheetRelMap = new Map<string, string>()
+  // …and one for the tabs that are not worksheets. `<sheets>` lists
+  // every tab whatever its kind and the relationship type is what tells
+  // them apart, so a chart sheet's rId simply never entered the map
+  // above — and the lookup below threw, taking every ordinary worksheet
+  // in the book down with it. See #499.
+  const nonWorksheetKinds = new Map<string, SheetKind>()
   for (const rel of workbookRels) {
     if (matchesRelType(rel.type, "worksheet")) {
       sheetRelMap.set(rel.id, resolvePath(workbookDir, rel.target))
+    } else if (matchesRelType(rel.type, "chartsheet")) {
+      nonWorksheetKinds.set(rel.id, "chartsheet")
+    } else if (matchesRelType(rel.type, "dialogsheet")) {
+      nonWorksheetKinds.set(rel.id, "dialogsheet")
     }
   }
 
@@ -375,6 +386,19 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
 
   const sheets = []
   for (const info of sheetsToRead) {
+    // A tab that is not a worksheet has no cells to read. It becomes an
+    // empty sheet rather than being skipped, so `sheets: [2]` still
+    // selects what Excel's third tab is — renumbering would be a quieter
+    // kind of wrong.
+    const kind = nonWorksheetKinds.get(info.rId)
+    if (kind !== undefined) {
+      const placeholder: Sheet = { name: info.name, rows: [], kind }
+      if (info.state === "hidden") placeholder.hidden = true
+      if (info.state === "veryHidden") placeholder.veryHidden = true
+      sheets.push(placeholder)
+      continue
+    }
+
     const wsPath = sheetRelMap.get(info.rId)
     if (!wsPath || !zip.has(wsPath)) {
       throw new ParseError(`Invalid XLSX: missing worksheet file for sheet "${info.name}"`)
