@@ -12,6 +12,7 @@
 // anything but the ODS writer.
 
 import { colToLetter, letterToCol, replaceA1Ranges, type A1RangeMatch } from "./cell-utils"
+import { MAX_COL_INDEX, MAX_ROW_INDEX } from "./limits"
 
 /** What moved, from where, by how much. */
 export interface RefShift {
@@ -69,9 +70,16 @@ const REF_ERROR = "#REF!"
  * formula is *copied*, not when the grid moves underneath it, and Excel
  * shifts `$A$5` on an insert exactly as it shifts `A5`.
  */
-function shiftCoordinate(value: number, shift: RefShift): number | null {
+function shiftCoordinate(value: number, shift: RefShift, max: number): number | null {
   if (shift.delta > 0) {
-    return value >= shift.at ? value + shift.delta : value
+    if (value < shift.at) return value
+    // An insert can push a reference past the last row or column, and
+    // then it has nowhere to point — the same state a deletion leaves it
+    // in, so it gets the same `null`. Without this the row axis produced
+    // `A1048577`, a row that cannot exist, and the column axis threw out
+    // of `colToLetter` and took the whole `insertColumns` with it.
+    const moved = value + shift.delta
+    return moved > max ? null : moved
   }
   const removed = -shift.delta
   if (value >= shift.at + removed) return value - removed
@@ -138,8 +146,10 @@ function shiftMatch(match: A1RangeMatch, shift: RefShift): string {
   const start = parseRef(match.ref1)
   if (!start) return rebuild(match)
 
+  const max = shift.axis === "row" ? MAX_ROW_INDEX : MAX_COL_INDEX
+
   if (match.ref2 === undefined) {
-    const moved = shiftCoordinate(coordinateOf(start, shift.axis), shift)
+    const moved = shiftCoordinate(coordinateOf(start, shift.axis), shift, max)
     if (moved === null) return REF_ERROR
     return `${qualifierOf(match)}${formatRef(withCoordinate(start, shift.axis, moved))}`
   }
@@ -157,11 +167,19 @@ function shiftMatch(match: A1RangeMatch, shift: RefShift): string {
     if (startAt >= shift.at && endAt < shift.at + removed) return REF_ERROR
   }
 
+  const rawStart = shiftCoordinate(startAt, shift, max)
+  const rawEnd = shiftCoordinate(endAt, shift, max)
+
+  // An insert that pushes the *start* off the end leaves nothing to point
+  // at. One that pushes only the end off clips the range there, which is
+  // the same shape as a deletion clipping it.
+  if (shift.delta > 0 && rawStart === null) return REF_ERROR
+
   // Clamp each endpoint into the surviving grid rather than letting it
   // become #REF!: a range clipped by a deletion shrinks, which is what
   // Excel does and what the caller means.
-  const movedStart = shiftCoordinate(startAt, shift) ?? shift.at
-  const movedEnd = shiftCoordinate(endAt, shift) ?? Math.max(shift.at - 1, 0)
+  const movedStart = rawStart ?? shift.at
+  const movedEnd = rawEnd ?? (shift.delta > 0 ? max : Math.max(shift.at - 1, 0))
 
   const lo = Math.min(movedStart, movedEnd)
   const hi = Math.max(movedStart, movedEnd)
