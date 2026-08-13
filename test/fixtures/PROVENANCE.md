@@ -177,7 +177,8 @@ is the only fixture here that documents something working.
 
 ### What it found
 
-Six reader defects, in code that was at 98.8% coverage:
+Six reader defects, in code that was at 98.8% coverage. All six are
+fixed; each entry names the change that closed it:
 
 - **[#493][]** — `readXlsx` does not apply XML line-ending normalization,
   so a newline Excel wrote as a literal CRLF comes back as `\r\n`. The
@@ -199,9 +200,11 @@ Six reader defects, in code that was at 98.8% coverage:
   dense rectangle, so a read costs the bounding box rather than the cell
   count, and ~30 values placed out to column 15,312 describe 30.6M slots.
 
-All six are recorded in `test/real-files.test.ts` with `it.fails` and
-their issue number, not fixed there. Each fix belongs in its own change
-with its own failing test first, per `CONTRIBUTING.md`.
+Each was recorded here first with `it.fails` and its issue number rather
+than fixed in the corpus change, and each then got its own fix with its
+own failing test, per `CONTRIBUTING.md`. Those markers are all gone now —
+the assertions they guarded are ordinary passing tests, which is what a
+`knownDefects` entry is for: it retires itself.
 
 #493 and #494 came from the authored fixtures. **#499 came from pointing
 hucre at a corpus of real instrument-exported workbooks** — 538 files
