@@ -1166,10 +1166,14 @@ describe("ODS writer — date format code round-trips", () => {
   })
 
   it("drops formats it cannot translate rather than emitting an empty style", async () => {
-    // "General" and "@" have no ODF data-style equivalent; the cell style
-    // would carry nothing else, so no <style:style> is emitted at all.
+    // "General" is the absence of a format, so the cell style carries
+    // nothing else and no <style:style> is emitted at all.
+    //
+    // `@` used to be asserted here too, on the belief that ODF had no
+    // equivalent. It has one — `<number:text-style>` — and now round
+    // trips; see test/ods-text-format.test.ts.
     expect(await roundTrip("General")).toBeUndefined()
-    expect(await roundTrip("@")).toBeUndefined()
+    expect(await roundTrip("@")).toBe("@")
   })
 
   it("shares one data style between two different cell styles", async () => {

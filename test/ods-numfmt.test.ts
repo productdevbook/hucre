@@ -191,15 +191,19 @@ describe("ODS writer — numFmt data styles", () => {
     expect(findChildren(autoStyles, "style")).toHaveLength(2)
   })
 
-  it("ignores numFmt = 'General' / '@'", async () => {
+  it("ignores numFmt = 'General'", async () => {
+    // `General` is the absence of a format, so there is nothing to write.
+    // `@` used to be bundled in here on the belief that ODF had no
+    // spelling for it; it does — `<number:text-style>` — and it is
+    // covered in test/ods-text-format.test.ts.
     const cells = new Map<string, Partial<Cell>>()
     cells.set("0,0", { value: 1, style: { numFmt: "General" } })
-    cells.set("0,1", { value: 2, style: { numFmt: "@" } })
     const data = await writeOds({
-      sheets: [{ name: "Sheet1", rows: [[1, 2]], cells }],
+      sheets: [{ name: "Sheet1", rows: [[1]], cells }],
     })
     const autoStyles = await getAutomaticStyles(data)
     expect(findChildren(autoStyles, "number-style")).toHaveLength(0)
+    expect(findChildren(autoStyles, "text-style")).toHaveLength(0)
     expect(findChildren(autoStyles, "percentage-style")).toHaveLength(0)
     expect(findChildren(autoStyles, "date-style")).toHaveLength(0)
     expect(findChildren(autoStyles, "time-style")).toHaveLength(0)

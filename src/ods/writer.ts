@@ -95,7 +95,7 @@ export function formatOdsDateValue(date: Date): string {
 // references a data style by name through `style:data-style-name` on
 // its `<style:style>` element.
 
-type OdsNumFmtKind = "number" | "percentage" | "currency" | "date" | "time"
+type OdsNumFmtKind = "number" | "percentage" | "currency" | "date" | "time" | "text"
 
 interface OdsNumFmtDef {
   /** Element local name (no namespace prefix) */
@@ -437,8 +437,18 @@ function translateNumFmt(code: string): OdsNumFmtDef | undefined {
   if (!code) return undefined
 
   const trimmed = code.trim()
-  // "General" or "@" (text) — no data style needed
-  if (trimmed === "General" || trimmed === "@" || trimmed === "") return undefined
+  // `General` is the *absence* of a format, and so is the empty string.
+  if (trimmed === "General" || trimmed === "") return undefined
+
+  // `@` is not. It says "show this as text", and ODF spells that
+  // `<number:text-style>` with a `<number:text-content/>` placeholder —
+  // LibreOffice writes one into every document it saves. #535 recorded
+  // this as a loss ODS could not carry, which was wrong; the report in
+  // #547 found the spelling by crossing the grammar with a LibreOffice
+  // file.
+  if (trimmed === "@") {
+    return { kind: "text", children: [xmlSelfClose("number:text-content")] }
+  }
 
   // Excel's built-in date and time codes carry a locale prefix —
   // `[$-409]mmm-yy`, `[$-F800]dddd, mmmm dd, yyyy`. It is a hint about

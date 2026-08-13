@@ -162,6 +162,8 @@ function parseDataStyles(autoStyles: XmlElement): Map<string, string> {
       code = serializeDataStyleChildren(child, "currency")
     } else if (local === "date-style") {
       code = serializeDataStyleChildren(child, "date")
+    } else if (local === "text-style") {
+      code = serializeDataStyleChildren(child, "text")
     } else if (local === "time-style") {
       const truncate = child.attrs["number:truncate-on-overflow"]
       code = serializeDataStyleChildren(child, "time", truncate === "false")
@@ -208,7 +210,7 @@ function parseDataStyles(autoStyles: XmlElement): Map<string, string> {
 
 function serializeDataStyleChildren(
   el: XmlElement,
-  kind: "number" | "percentage" | "currency" | "date" | "time",
+  kind: "number" | "percentage" | "currency" | "date" | "time" | "text",
   bracketDuration = false,
 ): string {
   let out = ""
@@ -246,6 +248,9 @@ function serializeDataStyleChildren(
         "0".repeat(integerDigits) +
         (decimals > 0 ? `.${"0".repeat(decimals)}` : "") +
         `E+${"0".repeat(exponentDigits)}`
+    } else if (local === "text-content") {
+      // The placeholder for the cell's own text — Excel's `@`.
+      out += "@"
     } else if (local === "currency-symbol") {
       const text = child.children.filter((c: unknown) => typeof c === "string").join("")
       out += `"${text}"`

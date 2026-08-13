@@ -126,10 +126,14 @@ describe("the number-format codes ODS still cannot carry", () => {
     expect((await styleOf("0.00_);(0.00)"))?.numFmt).toBe("0.00;(0.00)")
   })
 
-  it("has no data style for the text format", async () => {
-    // A cell already holding a string is unaffected — this only matters
-    // for a number one asked to display as text.
-    expect((await styleOf("@"))?.numFmt).toBeUndefined()
+  it("carries the text format after all", async () => {
+    // This test used to assert the opposite, and the comment above it in
+    // PARITY.md said `@` had no data style to write. Both were wrong:
+    // ODF spells it `<number:text-style>`, which is what LibreOffice
+    // writes. Kept here pointing the right way so the mistake is not
+    // re-made from this file; the real coverage is in
+    // test/ods-text-format.test.ts.
+    expect((await styleOf("@"))?.numFmt).toBe("@")
   })
 
   it("makes an optional digit a mandatory one", async () => {
