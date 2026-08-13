@@ -108,7 +108,7 @@ export type {
 } from "./json"
 
 // ── XML ────────────────────────────────────────────────────────────
-export { readXml, writeXml } from "./xml"
+export { readXml, writeXml, writeXmlStream } from "./xml"
 export type { XmlReadOptions, XmlReadResult, XmlWriteOptions } from "./xml"
 
 // ── Schema Validation ──────────────────────────────────────────────

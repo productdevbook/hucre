@@ -207,3 +207,109 @@ function renderElement(
 
   return `<${tag}${attrStr}>${sep}${inner.join("")}${pad(depth)}</${tag}>`
 }
+
+// ── True Streaming XML Writer ────────────────────────────────────────
+
+const TEXT_ENCODER = /* @__PURE__ */ new TextEncoder()
+
+/**
+ * Write an XML document as a byte stream, pulling rows from `rows` only
+ * as the consumer reads.
+ *
+ * XML was the one format with no streaming on either side, which made it
+ * the odd one out of five. See #467.
+ *
+ * ```ts
+ * return new Response(writeXmlStream(rowCursor, { rowTag: "record" }), {
+ *   headers: { "content-type": "application/xml; charset=utf-8" },
+ * })
+ * ```
+ *
+ * Peak memory is independent of the row count: each row is rendered,
+ * encoded and enqueued on its own, and nothing is retained. The
+ * declaration and the root element are written around them, so the
+ * result is the same document {@link writeXml} produces from the same
+ * rows — there is a test asserting exactly that.
+ *
+ * The *reader* is still not streaming: `src/xml/parser.ts` is push-based,
+ * so a streaming reader needs a pull-based row scanner rather than a
+ * wrapper around what is there. That is its own change.
+ */
+export function writeXmlStream(
+  rows: AsyncIterable<Record<string, CellValue>> | Iterable<Record<string, CellValue>>,
+  options?: XmlWriteOptions,
+): ReadableStream<Uint8Array> {
+  const chunks = xmlStreamChunks(rows, options)
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await chunks.next()
+        if (done) {
+          controller.close()
+          return
+        }
+        controller.enqueue(value)
+      } catch (err) {
+        controller.error(err)
+      }
+    },
+    async cancel(reason) {
+      await chunks.return?.(reason)
+    },
+  })
+}
+
+/** Render rows into ~64 KB encoded chunks, pulling lazily. */
+async function* xmlStreamChunks(
+  rows: AsyncIterable<Record<string, CellValue>> | Iterable<Record<string, CellValue>>,
+  options?: XmlWriteOptions,
+): AsyncGenerator<Uint8Array> {
+  const rootTag = options?.rootTag ?? "root"
+  const rowTag = options?.rowTag ?? "row"
+  const attrPrefix = options?.attrPrefix ?? "@"
+  const textKey = options?.textKey ?? "#text"
+  const declaration = options?.declaration ?? true
+  const pretty = options?.pretty ?? false
+  const indent = options?.indent ?? "  "
+
+  // Validated up front, so a bad tag fails before any bytes go out
+  // rather than half way through a response.
+  validateName(rootTag, "rootTag")
+  validateName(rowTag, "rowTag")
+
+  const sep = pretty ? "\n" : ""
+  const pad = pretty ? indent : ""
+
+  const CHUNK_BYTES = 64 * 1024
+  let pending: string[] = []
+  let pendingBytes = 0
+
+  const push = function* (text: string): Generator<Uint8Array> {
+    pending.push(text)
+    pendingBytes += text.length
+    if (pendingBytes >= CHUNK_BYTES) {
+      yield TEXT_ENCODER.encode(pending.join(""))
+      pending = []
+      pendingBytes = 0
+    }
+  }
+
+  if (declaration) {
+    yield* push('<?xml version="1.0" encoding="UTF-8"?>')
+    if (pretty) yield* push("\n")
+  }
+  yield* push(`<${rootTag}>`)
+  yield* push(sep)
+
+  for await (const row of rows) {
+    yield* push(pad)
+    yield* push(renderElement(rowTag, buildTree(row, attrPrefix, textKey), pretty, indent, 1))
+    yield* push(sep)
+  }
+
+  yield* push(`</${rootTag}>`)
+  if (pretty) yield* push("\n")
+
+  if (pending.length > 0) yield TEXT_ENCODER.encode(pending.join(""))
+}

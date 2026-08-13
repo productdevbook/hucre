@@ -416,6 +416,7 @@ const buffer = await writer.finish()
 ```ts
 import { writeOdsStream } from "hucre/ods"
 import { writeNdjsonStream } from "hucre/json"
+import { writeXmlStream } from "hucre/xml"
 
 return new Response(writeOdsStream(rowCursor, { name: "Export" }), {
   headers: { "content-type": "application/vnd.oasis.opendocument.spreadsheet" },
@@ -423,6 +424,10 @@ return new Response(writeOdsStream(rowCursor, { name: "Export" }), {
 
 return new Response(writeNdjsonStream(rowCursor), {
   headers: { "content-type": "application/x-ndjson" },
+})
+
+return new Response(writeXmlStream(rowCursor, { rowTag: "record" }), {
+  headers: { "content-type": "application/xml; charset=utf-8" },
 })
 ```
 
@@ -432,7 +437,7 @@ return new Response(writeNdjsonStream(rowCursor), {
 | CSV    |     ✔      |      ✔      |      ✔      |      ✔       |         ✔          |
 | NDJSON |     ✔      |      ✔      |      ✔      |      ✔       |         ✔          |
 | ODS    |     ✔      |      ✔      |      ✔      |      ✔       |         —          |
-| XML    |     ✔      |      ✔      |      —      |      —       |         —          |
+| XML    |     ✔      |      ✔      |      —      |      ✔       |         —          |
 
 `writeOdsStream` carries **values, not formatting**, and that follows from
 the format: ODF puts `<office:automatic-styles>` before the body, so a
@@ -442,7 +447,10 @@ with inline strings and ODF has no equivalent for. Column widths and a
 header row are carried, because `columns` is known before the first row.
 `writeOds` remains the path for a document that needs styling.
 
-XML is the remaining gap, on both sides.
+XML's **reader** is the remaining gap. `src/xml/parser.ts` is push-based,
+so a streaming reader needs a pull-based row scanner rather than a
+wrapper around what is there — that is its own change, not an oversight
+in this table.
 
 #### Which writer to use
 
