@@ -132,6 +132,32 @@ describe("the number-format codes ODS still cannot carry", () => {
     expect((await styleOf("@"))?.numFmt).toBeUndefined()
   })
 
+  it("makes an optional digit a mandatory one", async () => {
+    // `#` means "a digit if there is one" and `0` means "always a digit".
+    // ODF counts digits, so `#.##` displays 1234.50 where Excel showed
+    // 1234.5.
+    expect((await styleOf("#"))?.numFmt).toBe("0")
+    expect((await styleOf("#.##"))?.numFmt).toBe("0.00")
+  })
+
+  it("keeps the elapsed marker on hours but not on minutes or seconds", async () => {
+    expect((await styleOf("[hh]:mm"))?.numFmt).toBe("[hh]:mm")
+    expect((await styleOf("[mm]:ss"))?.numFmt).toBe("mm:ss")
+    expect((await styleOf("[ss]"))?.numFmt).toBe("ss")
+  })
+
+  it("drops a colour tag, which is what keeps [White] out of the time branch", async () => {
+    expect((await styleOf("0.00;[Red]-0.00"))?.numFmt).toBe("0.00;-0.00")
+  })
+
+  it("drops empty trailing sections", async () => {
+    expect((await styleOf("0.00;;"))?.numFmt).toBe("0.00")
+  })
+
+  it("and General is no loss — it is the absence of a data style", async () => {
+    expect((await styleOf("General"))?.numFmt).toBeUndefined()
+  })
+
   it("flattens engineering notation to plain scientific", async () => {
     // `##0.0E+0` steps the integer part in threes. ODF spells that with
     // `number:exponent-interval`, which the writer does not emit, so the

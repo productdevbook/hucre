@@ -274,6 +274,12 @@ function serializeDataStyleChildren(
       out += child.attrs["number:style"] === "long" ? "mm" : "m"
     } else if (local === "seconds") {
       out += child.attrs["number:style"] === "long" ? "ss" : "s"
+      // `number:decimal-places` on seconds is Excel's `ss.0` / `ss.00`.
+      const places = Math.min(
+        parseInt(child.attrs["number:decimal-places"] ?? "0", 10) || 0,
+        MAX_REPEAT_COUNT,
+      )
+      if (places > 0) out += `.${"0".repeat(places)}`
     } else if (local === "am-pm") {
       out += "AM/PM"
     }

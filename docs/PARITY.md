@@ -461,13 +461,21 @@ tab colour, hidden sheets, and `time` cells (which read back as the raw
 ISO duration string).
 
 Number format is carried, but not every Excel code has an ODF spelling.
-Three that do not survive intact, measured rather than assumed:
+These do not survive intact. Every row was measured through the round
+trip rather than reasoned about:
 
-| code            | comes back as | why                                                                                              |
-| --------------- | ------------- | ------------------------------------------------------------------------------------------------ |
-| `0.00_);(0.00)` | `0.00;(0.00)` | `_)` reserves the width of a character. ODF has no equivalent, so the padding is dropped         |
-| `@`             | _(General)_   | the text format has no data style to write; a cell already carrying a string is unaffected       |
-| `##0.0E+0`      | `0.0E+0`      | engineering notation steps the integer part in threes, which ODF spells with `exponent-interval` |
+| code              | comes back as | why                                                                                              |
+| ----------------- | ------------- | ------------------------------------------------------------------------------------------------ |
+| `0.00_);(0.00)`   | `0.00;(0.00)` | `_)` reserves the width of a character. ODF has no equivalent, so the padding is dropped         |
+| `@`               | _(General)_   | the text format has no data style to write; a cell already carrying a string is unaffected       |
+| `##0.0E+0`        | `0.0E+0`      | engineering notation steps the integer part in threes, which ODF spells with `exponent-interval` |
+| `#`, `#.##`       | `0`, `0.00`   | `#` is an optional digit and `0` a mandatory one. ODF counts digits, so the distinction goes     |
+| `[mm]:ss`, `[ss]` | `mm:ss`, `ss` | the elapsed marker survives on hours (`[hh]:mm`) but not on minutes or seconds alone             |
+| `0.00;[Red]-0.00` | `0.00;-0.00`  | colour tags are dropped on purpose — it is what stops `[White]0.00` being read as a time format  |
+| `0.00;;`          | `0.00`        | empty trailing sections have nothing to write                                                    |
+
+`General` returning no `numFmt` is not in that list: General _is_ the
+absence of a data style, so there is nothing lost.
 
 Ordinary scientific formats — `0.00E+00` and its widths — do round-trip,
 through `<number:scientific-number>`. They did not until it was written:

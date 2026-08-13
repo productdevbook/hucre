@@ -319,11 +319,27 @@ function buildDateChildren(code: string): string[] {
     } else if (lower === "h") {
       out.push(xmlSelfClose("number:hours"))
       lastWasHours = true
-    } else if (lower === "ss") {
-      out.push(xmlSelfClose("number:seconds", { "number:style": "long" }))
-      lastWasHours = false
-    } else if (lower === "s") {
-      out.push(xmlSelfClose("number:seconds"))
+    } else if (lower === "ss" || lower === "s") {
+      // Excel spells fractional seconds by writing the places after the
+      // token — `ss.0`, `ss.00`. ODF puts the count on the element. The
+      // tokeniser hands `.` and each `0` over separately, so they are
+      // consumed here; left alone they fell through to the literal-text
+      // branch and `hh:mm:ss.0` came back as `hh:mm:ss."0"`, a format
+      // that displays the digit rather than the fraction.
+      const attrs: Record<string, string> = {}
+      if (lower === "ss") attrs["number:style"] = "long"
+
+      if (tokens[i + 1] === ".") {
+        let j = i + 2
+        while (tokens[j] === "0") j++
+        const places = j - (i + 2)
+        if (places > 0) {
+          attrs["number:decimal-places"] = String(places)
+          i = j - 1
+        }
+      }
+
+      out.push(xmlSelfClose("number:seconds", attrs))
       lastWasHours = false
     } else if (lower === "am/pm") {
       out.push(xmlSelfClose("number:am-pm"))
