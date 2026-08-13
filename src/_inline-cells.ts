@@ -108,7 +108,7 @@ export function splitInlineCells(sheet: WriteSheet): WriteSheet {
 
   for (let r = 0; r < rows.length; r++) {
     const row = rows[r]!
-    const plain: CellValue[] = new Array(row.length)
+    const plain: CellValue[] = []
     for (let c = 0; c < row.length; c++) {
       const v = row[c]
       if (isInlineCell(v)) {
@@ -116,9 +116,9 @@ export function splitInlineCells(sheet: WriteSheet): WriteSheet {
         // The value stays in the grid too, so everything that reads only
         // `rows` — auto-width, a pivot's source range, a table's extent —
         // sees the cell rather than a hole.
-        plain[c] = v.value ?? null
+        plain.push(v.value ?? null)
       } else {
-        plain[c] = v as CellValue
+        plain.push(v as CellValue)
       }
     }
     plainRows[r] = plain

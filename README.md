@@ -1854,8 +1854,24 @@ without being asked:
 hucre convert veriler.csv out.xlsx --encoding windows-1254
 ```
 
-On the write side there is nothing to configure: `writeCsv` emits UTF-8,
-and `bom: true` is what makes Excel open it correctly on every locale.
+On the write side the output is always UTF-8 — `TextEncoder` encodes
+nothing else, by specification, so writing windows-1254 is not something a
+Web-API-only library can do. What matters instead is the mark, because
+Excel on a non-UTF-8 locale reads a UTF-8 CSV as its system code page
+without one:
+
+```ts
+writeCsv(rows, { bom: true })
+await write({ sheets, format: "csv", csv: { delimiter: ";", bom: true } })
+```
+
+```bash
+hucre convert veriler.xlsx out.csv --bom
+```
+
+Each text format takes its own bag through `write` — `csv`, `tsv`, `json`,
+`ndjson`, `xml`, `html`, `markdown` — so the format-agnostic entry can
+configure the writer it dispatches to.
 
 ### Schema Validation
 

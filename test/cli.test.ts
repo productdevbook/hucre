@@ -230,6 +230,33 @@ describe("tab-separated files", () => {
     expect(readFileSync(path("out.csv"), "utf-8")).toContain("h1,h2")
   })
 
+  it("writes a UTF-8 BOM when asked, and not otherwise", async () => {
+    // Excel on a non-UTF-8 locale reads a UTF-8 CSV as the system code
+    // page unless the file opens with EF BB BF, so `convert x.xlsx
+    // out.csv` produced mojibake and there was no way to ask for better.
+    // See #475 — which answered the read side and documented `bom: true`
+    // as the write side's remedy, while the CLI could not pass it.
+    const input = await makeXlsx("in.xlsx", [["Şehir", "Ürün"]])
+
+    await run(convertCommand, { input, output: path("plain.csv") })
+    const plain = readFileSync(path("plain.csv"))
+    expect(plain[0]).not.toBe(0xef)
+
+    await run(convertCommand, { input, output: path("bom.csv"), bom: true })
+    const withBom = readFileSync(path("bom.csv"))
+    expect([withBom[0], withBom[1], withBom[2]]).toEqual([0xef, 0xbb, 0xbf])
+    // The mark is a prefix, not a replacement — the rows are still there.
+    expect(new TextDecoder().decode(withBom)).toContain("Şehir")
+  })
+
+  it("writes the BOM on .tsv too", async () => {
+    const input = await makeXlsx("in.xlsx", [["a", "b"]])
+    await run(convertCommand, { input, output: path("bom.tsv"), bom: true })
+    const bytes = readFileSync(path("bom.tsv"))
+    expect([bytes[0], bytes[1], bytes[2]]).toEqual([0xef, 0xbb, 0xbf])
+    expect(new TextDecoder().decode(bytes)).toContain("a\tb")
+  })
+
   it("round-trips a tab-separated file without changing its separator", async () => {
     writeFileSync(path("in.tsv"), "a\tb\nc\td", "utf-8")
     await run(convertCommand, { input: path("in.tsv"), output: path("out.tsv") })

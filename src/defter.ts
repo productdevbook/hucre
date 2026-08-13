@@ -13,7 +13,12 @@ import type {
   ReadInput,
   TableDefinition,
   TableColumn,
+  CsvWriteOptions,
 } from "./_types"
+import type { JsonWriteOptions } from "./json/writer"
+import type { XmlWriteOptions } from "./xml/data-writer"
+import type { HtmlExportOptions } from "./export/html"
+import type { MarkdownExportOptions } from "./export/markdown"
 import { collectHeaders, rowsToObjects, selectSheet } from "./_objects"
 import { readXlsx } from "./xlsx/reader"
 import { readXlsb, looksLikeXlsb } from "./xlsx/xlsb/reader"
@@ -207,8 +212,25 @@ export type WriteFormat =
  * `hucre convert` documents. The return is always bytes, so a caller can
  * hand the result to `Response` or `writeFile` without branching.
  */
+export interface TextFormatOptions {
+  /** Options for `format: "csv"`. */
+  csv?: CsvWriteOptions
+  /** Options for `format: "tsv"`. The delimiter is the tab and not yours. */
+  tsv?: Omit<CsvWriteOptions, "delimiter">
+  /** Options for `format: "json"`. */
+  json?: JsonWriteOptions
+  /** Options for `format: "ndjson"`. */
+  ndjson?: Pick<JsonWriteOptions, "unflatten">
+  /** Options for `format: "xml"`. */
+  xml?: XmlWriteOptions
+  /** Options for `format: "html"`. */
+  html?: HtmlExportOptions
+  /** Options for `format: "markdown"`. */
+  markdown?: MarkdownExportOptions
+}
+
 export async function write(
-  options: WriteOptions & { format?: WriteFormat },
+  options: WriteOptions & { format?: WriteFormat } & TextFormatOptions,
 ): Promise<WriteOutput> {
   const format = options.format ?? "xlsx"
   if (format === "xlsx") return writeXlsx(options)
@@ -223,22 +245,29 @@ export async function write(
   // the two spreadsheet writers do. See #433.
   const rows = toCellValues(sheet.rows ?? [])
 
+  // Each text writer already takes an options bag; this function used to
+  // call every one of them with none, so `write` — the entry #469 added
+  // precisely so one call could reach all nine formats — was the only way
+  // to reach seven of them that could not configure any. `bom: true` was
+  // the one that mattered: it is what makes Excel open a UTF-8 CSV on a
+  // non-UTF-8 locale, and #475 documents it as the answer while `write`
+  // gave no way to ask for it.
   const encoder = new TextEncoder()
   switch (format) {
     case "csv":
-      return encoder.encode(writeCsv(rows))
+      return encoder.encode(writeCsv(rows, options.csv))
     case "tsv":
-      return encoder.encode(writeTsv(rows))
+      return encoder.encode(writeTsv(rows, options.tsv))
     case "json":
-      return encoder.encode(writeJson(rowsToRecords(rows)))
+      return encoder.encode(writeJson(rowsToRecords(rows), options.json))
     case "ndjson":
-      return encoder.encode(writeNdjson(rowsToRecords(rows)))
+      return encoder.encode(writeNdjson(rowsToRecords(rows), options.ndjson))
     case "xml":
-      return encoder.encode(writeXml(rowsToRecords(rows)))
+      return encoder.encode(writeXml(rowsToRecords(rows), options.xml))
     case "html":
-      return encoder.encode(toHtml({ name: sheet.name, rows }))
+      return encoder.encode(toHtml({ name: sheet.name, rows }, options.html))
     case "markdown":
-      return encoder.encode(toMarkdown({ name: sheet.name, rows }))
+      return encoder.encode(toMarkdown({ name: sheet.name, rows }, options.markdown))
   }
 }
 

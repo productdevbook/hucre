@@ -17,7 +17,6 @@ import { readXlsb } from "../xlsx/xlsb/reader"
 import { readXls } from "../xls/reader"
 import { readOds } from "../ods/reader"
 import { parseCsv } from "../csv/reader"
-import { writeCsv } from "../csv/writer"
 import { validateWithSchema } from "../_schema"
 import { read, write } from "../defter"
 import type { Workbook, CellValue, WriteOptions, SchemaDefinition } from "../_types"
@@ -238,6 +237,13 @@ export const convertCommand = defineCommand({
         "Output format when writing to stdout (`-`), which has no " +
         "extension to read. E.g. `--to csv`.",
     },
+    bom: {
+      type: "boolean",
+      description:
+        "Start CSV/TSV output with a UTF-8 byte-order mark. Excel needs " +
+        "it to read a UTF-8 CSV as UTF-8 on a non-UTF-8 locale; without " +
+        "it the accented characters arrive as mojibake.",
+    },
   },
   async run({ args }) {
     const inputPath = args.input as string
@@ -262,7 +268,7 @@ export const convertCommand = defineCommand({
 
     say(consola.start, `Writing ${outputPath}...`)
 
-    const output = await renderWorkbook(workbook, outputFormat, outputPath)
+    const output = await renderWorkbook(workbook, outputFormat, outputPath, args.bom === true)
     if (toStdout) writeFileSync(1, output)
     else writeFileSync(outputPath, output)
 
@@ -303,25 +309,27 @@ async function renderWorkbook(
   workbook: Workbook,
   format: WritableFormat,
   outputPath: string,
+  bom: boolean,
 ): Promise<Uint8Array> {
-  const encoder = new TextEncoder()
-
-  if (format === "csv") {
-    const sheet = workbook.sheets[0]
-    if (!sheet) throw new CliError("No sheets found in input file")
-    // Every row goes through writeCsv, including the first. It used to
-    // be pulled out as `headers` and stringified separately, so a Date
-    // in row 0 came out ISO while the same Date in row 1 came out in
-    // writeCsv's format — one column, two formats, decided by which
-    // row the value happened to land in.
-    return encoder.encode(writeCsv(sheet.rows, { delimiter: delimiterForExtension(outputPath) }))
+  if (format === "csv" && !workbook.sheets[0]) {
+    throw new CliError("No sheets found in input file")
   }
 
   const writeOptions: WriteOptions = {
     sheets: workbook.sheets.map((sheet) => ({ name: sheet.name, rows: sheet.rows })),
     properties: workbook.properties,
   }
-  return write({ ...writeOptions, format })
+
+  // Every row goes through writeCsv, including the first. It used to be
+  // pulled out as `headers` and stringified separately, so a Date in row 0
+  // came out ISO while the same Date in row 1 came out in writeCsv's
+  // format — one column, two formats, decided by which row the value
+  // happened to land in.
+  return write({
+    ...writeOptions,
+    format,
+    csv: { delimiter: delimiterForExtension(outputPath), bom },
+  })
 }
 
 // ── Inspect Command ─────────────────────────────────────────────────

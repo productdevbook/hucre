@@ -211,3 +211,114 @@ describe("the header-row convention is the same in both directions", () => {
     expect(dec(await write({ sheets, format: "json" }))).toContain("column2")
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════
+// Every text writer takes an options bag; `write` called all seven with
+// none. So the entry #469 added precisely so one call could reach all
+// nine formats was the only way to reach seven of them that could not
+// configure any of them — including `bom: true`, which #475 documents as
+// the answer to Excel opening a UTF-8 CSV as its system code page.
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("text-format options reach their writer", () => {
+  const sheet = {
+    name: "S",
+    rows: [
+      ["Şehir", "Ürün"],
+      ["İzmir", 3],
+    ],
+  }
+
+  it("csv: delimiter and bom", async () => {
+    const bytes = (await write({
+      sheets: [sheet],
+      format: "csv",
+      csv: { delimiter: ";", bom: true },
+    })) as Uint8Array
+
+    expect([bytes[0], bytes[1], bytes[2]]).toEqual([0xef, 0xbb, 0xbf])
+    expect(dec(bytes)).toContain("Şehir;Ürün")
+  })
+
+  it("csv: escapeFormulae", async () => {
+    const out = dec(
+      (await write({
+        sheets: [{ name: "S", rows: [["=1+1"]] }],
+        format: "csv",
+        csv: { escapeFormulae: true },
+      })) as Uint8Array,
+    )
+    expect(out).toContain("'=1+1")
+  })
+
+  it("tsv: bom, with the tab still the delimiter", async () => {
+    const bytes = (await write({
+      sheets: [sheet],
+      format: "tsv",
+      tsv: { bom: true },
+    })) as Uint8Array
+    expect([bytes[0], bytes[1], bytes[2]]).toEqual([0xef, 0xbb, 0xbf])
+    expect(dec(bytes)).toContain("Şehir\tÜrün")
+  })
+
+  it("json: pretty and indent", async () => {
+    const out = dec(
+      (await write({
+        sheets: [sheet],
+        format: "json",
+        json: { pretty: true, indent: "    " },
+      })) as Uint8Array,
+    )
+    expect(out).toContain("\n    ")
+  })
+
+  it("xml: rootTag and rowTag", async () => {
+    // ASCII headers: `writeXml` rejects a non-ASCII element name, which
+    // XML 1.0 §2.3 allows. Tracked separately.
+    const out = dec(
+      (await write({
+        sheets: [
+          {
+            name: "S",
+            rows: [
+              ["city", "qty"],
+              ["Izmir", 3],
+            ],
+          },
+        ],
+        format: "xml",
+        xml: { rootTag: "cities", rowTag: "city_row" },
+      })) as Uint8Array,
+    )
+    expect(out).toContain("<cities>")
+    expect(out).toContain("<city_row>")
+  })
+
+  it("html: caption and header row", async () => {
+    const out = dec(
+      (await write({
+        sheets: [sheet],
+        format: "html",
+        html: { caption: "Şehirler", hasHeaderRow: true },
+      })) as Uint8Array,
+    )
+    expect(out).toContain("<caption>Şehirler</caption>")
+    expect(out).toContain("<thead>")
+  })
+
+  it("markdown: alignment", async () => {
+    const out = dec(
+      (await write({
+        sheets: [sheet],
+        format: "markdown",
+        markdown: { alignment: ["right", "right"] },
+      })) as Uint8Array,
+    )
+    expect(out).toContain("--:")
+  })
+
+  it("leaves the defaults alone when no bag is passed", async () => {
+    const out = dec((await write({ sheets: [sheet], format: "csv" })) as Uint8Array)
+    expect(out.startsWith("Şehir,Ürün")).toBe(true)
+  })
+})
