@@ -67,6 +67,25 @@ describe("decodePart", () => {
     expect(() => decodePart(notBytes, "x.xml")).not.toThrow(ParseError)
   })
 
+  it("turns a part past the ceiling into a ParseError — #516", () => {
+    // The first fix for #503 was never exercised against the condition
+    // itself, on the grounds that reproducing it needs a part larger
+    // than this repository. It needs a large *buffer*, not a large
+    // *file*: an ArrayBuffer of this size lives outside the JS heap and
+    // costs about a second, so the branch is reachable after all.
+    //
+    // It mattered. The guard was `error instanceof RangeError`, and on
+    // Node `TextDecoder.decode` throws a plain `Error` carrying
+    // `code: "ERR_STRING_TOO_LONG"` — so the conversion never happened
+    // and every one of the files in #503 still got the raw V8 error.
+    // Zero bytes decode one-to-one, so this lands exactly one character
+    // past the ceiling.
+    const past = new Uint8Array(MAX_STRING_LENGTH + 1)
+
+    expect(() => decodePart(past, "xl/worksheets/sheet1.xml")).toThrow(ParseError)
+    expect(() => decodePart(past, "xl/worksheets/sheet1.xml")).toThrow(/streamXlsxRows/)
+  })
+
   it("reports the ceiling as the number V8 actually uses", () => {
     // 0x1fffffe8. Hard-coded here so a change to the constant is a
     // decision rather than a typo.

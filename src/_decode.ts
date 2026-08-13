@@ -58,9 +58,25 @@ export function decodePart(data: Uint8Array, path: string): string {
   try {
     return new TextDecoder("utf-8").decode(data)
   } catch (error) {
-    // A RangeError here is the string-length ceiling. Anything else is
-    // not ours to reinterpret.
-    if (error instanceof RangeError) throw tooLargeToDecode(path, data.length)
+    // The ceiling does not announce itself the same way twice. V8 raises
+    // `RangeError` for a plain string operation, but Node's TextDecoder
+    // goes through its own encoding layer and throws a *plain* `Error`
+    // carrying `code: "ERR_STRING_TOO_LONG"` — so guarding on RangeError
+    // alone converted nothing on the one runtime this was reported
+    // against, and every file in #503 kept getting the raw V8 error. See
+    // #516.
+    //
+    // The length test is the backstop for whatever the next engine does.
+    // It is only consulted once the decode has already failed, so it
+    // cannot refuse a part a roomier engine would have decoded — it just
+    // stops the classification depending on which wrapper a runtime
+    // happened to choose. A short part that fails is still a genuine
+    // decode error and is passed through untouched.
+    const isCeiling =
+      error instanceof RangeError ||
+      (error as { code?: string } | null)?.code === "ERR_STRING_TOO_LONG" ||
+      data.length > MAX_STRING_LENGTH
+    if (isCeiling) throw tooLargeToDecode(path, data.length)
     throw error
   }
 }
