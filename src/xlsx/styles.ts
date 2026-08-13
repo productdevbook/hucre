@@ -16,6 +16,7 @@ import type {
 } from "../_types"
 import { parseXml } from "../xml/parser"
 import { isBuiltinDateFormatId, isDateFormat } from "../_date"
+import { DEFAULT_INDEXED_PALETTE } from "./indexed-palette"
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -134,7 +135,75 @@ export function parseStyles(xml: string): ParsedStyles {
     }
   }
 
+  // `<colors>` comes *after* the fonts and fills that reference it — the
+  // schema puts it near the end of CT_Stylesheet — so the palette cannot
+  // be applied as those are parsed. Resolving afterwards is what makes
+  // the order irrelevant.
+  const palette = readIndexedPalette(doc)
+  for (const group of [fonts, fills, borders, dxfs]) resolveIndexed(group, palette)
+
   return { numFmts, fonts, fills, borders, cellXfs, dxfs }
+}
+
+// ── Indexed colours ──────────────────────────────────────────────────
+
+/**
+ * The palette this stylesheet uses: its own if it overrides one.
+ *
+ * §18.8.27: "When using the default indexed color palette, the values are
+ * not written out, but instead are implied. When the color palette has
+ * been modified from default, then the entire color palette is written
+ * out." So an absent `<indexedColors>` means the defaults, not none.
+ */
+function readIndexedPalette(doc: XmlElement): readonly string[] {
+  for (const child of doc.children) {
+    if (typeof child === "string") continue
+    if ((child.local || child.tag) !== "colors") continue
+
+    for (const sub of child.children) {
+      if (typeof sub === "string") continue
+      if ((sub.local || sub.tag) !== "indexedColors") continue
+
+      const entries: string[] = []
+      for (const entry of sub.children) {
+        if (typeof entry === "string") continue
+        if ((entry.local || entry.tag) !== "rgbColor") continue
+        const rgb = entry.attrs["rgb"]
+        if (rgb) entries.push(rgb.length === 8 ? rgb.slice(2) : rgb)
+      }
+      if (entries.length > 0) return entries
+    }
+  }
+  return DEFAULT_INDEXED_PALETTE
+}
+
+/**
+ * Give every colour that named an index the RGB it stands for.
+ *
+ * Walks the parsed structures rather than threading a palette through
+ * `parseColor`, because the palette is not known until the whole
+ * stylesheet has been read. `indexed` is a field only `Color` has in this
+ * model, so matching on it is safe; an existing `rgb` always wins,
+ * because the file said the colour outright and the index is only the
+ * legacy spelling of one.
+ */
+function resolveIndexed(value: unknown, palette: readonly string[]): void {
+  if (value === null || typeof value !== "object") return
+  if (Array.isArray(value)) {
+    for (const item of value) resolveIndexed(item, palette)
+    return
+  }
+
+  const record = value as Record<string, unknown>
+  if (typeof record["indexed"] === "number" && typeof record["rgb"] !== "string") {
+    const rgb = palette[record["indexed"] as number]
+    // Indices past the palette — 64 and 65 are the system foreground and
+    // background — have no colour, and inventing one would be worse than
+    // leaving the caller the index it can interpret itself.
+    if (rgb) record["rgb"] = rgb
+  }
+
+  for (const nested of Object.values(record)) resolveIndexed(nested, palette)
 }
 
 // ── Number Formats ───────────────────────────────────────────────────

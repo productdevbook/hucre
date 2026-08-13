@@ -10,7 +10,7 @@ Corpus: 35 workbooks under `test/fixtures`, 280 distinct element names, 169 dist
 
 ## SpreadsheetML (ECMA-376 Part 1)
 
-360 complex types. **33** names appear in the corpus and are _nowhere_ in `src/`; 5 appear in the corpus and occur in `src/` only inside a longer string, which usually means a writer emits them in a template; 625 the source switches on directly; 510 it knows but the corpus does not use; 919 are in neither.
+360 complex types. **31** names appear in the corpus and are _nowhere_ in `src/`; 5 appear in the corpus and occur in `src/` only inside a longer string, which usually means a writer emits them in a template; 627 the source switches on directly; 510 it knows but the corpus does not use; 919 are in neither.
 
 ### Not yet looked at
 
@@ -20,36 +20,34 @@ signal this report exists for.
 
 ### Looked at, and left
 
-| name                     | kind      | why                                                                                                                                                                                               |
-| ------------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `autoFilterDateGrouping` | attribute | view state — not modelled                                                                                                                                                                         |
-| `firstSheet`             | attribute | view state — not modelled                                                                                                                                                                         |
-| `minimized`              | attribute | window geometry — not modelled                                                                                                                                                                    |
-| `showHorizontalScroll`   | attribute | window geometry — not modelled                                                                                                                                                                    |
-| `showSheetTabs`          | attribute | window geometry — not modelled                                                                                                                                                                    |
-| `showVerticalScroll`     | attribute | window geometry — not modelled                                                                                                                                                                    |
-| `tabRatio`               | attribute | window geometry — not modelled                                                                                                                                                                    |
-| `visibility`             | attribute | window visibility — not modelled                                                                                                                                                                  |
-| `tabSelected`            | attribute | view state — not modelled                                                                                                                                                                         |
-| `zoomToFit`              | attribute | view state — not modelled                                                                                                                                                                         |
-| `indexedColors`          | element   | **open** — the legacy palette. `ColorSpec.indexed` carries the _index_ and hucre has no palette to resolve it against, so a file that overrides the palette is dropped silently. Not in PARITY.md |
-| `shapeId`                | attribute | the VML shape a comment or control is drawn as. hucre generates its own on write and does not need the file's on read                                                                             |
-| `appName`                | attribute | writer provenance — not modelled                                                                                                                                                                  |
-| `lastEdited`             | attribute | writer provenance — not modelled                                                                                                                                                                  |
-| `lowestEdited`           | attribute | writer provenance — not modelled                                                                                                                                                                  |
-| `rupBuild`               | attribute | writer provenance — not modelled                                                                                                                                                                  |
-| `rgbColor`               | element   | **open** — an entry of the `indexedColors` palette above                                                                                                                                          |
-| `quotePrefix`            | attribute | **open** — marks a cell forced to text by a leading apostrophe. The value is already a string in the file, so nothing is lost from `rows`; the flag itself is not carried                         |
-| `customFormat`           | attribute | restates that the row has a style, which the style says                                                                                                                                           |
-| `spans`                  | attribute | a hint at which columns a row uses. hucre derives that from the cells themselves, which is the authority — Excel treats a wrong `spans` as advisory too                                           |
-| `activeCell`             | attribute | view state — not modelled                                                                                                                                                                         |
-| `baseColWidth`           | attribute | **open** — the base width column widths are relative to. hucre assumes the 8.43 default; a file that sets another makes every width wrong                                                         |
-| `outlineLevelCol`        | attribute | summary of the per-column outline levels hucre reads                                                                                                                                              |
-| `outlineLevelRow`        | attribute | summary of the per-row outline levels hucre reads                                                                                                                                                 |
-| `fileVersion`            | element   | writer provenance — not modelled                                                                                                                                                                  |
-| `defaultThemeVersion`    | attribute | writer provenance — not modelled                                                                                                                                                                  |
-| `filterPrivacy`          | attribute | privacy flag, no data — not modelled                                                                                                                                                              |
-| `pivotButton`            | attribute | pivot UI affordance — pivots are round-trip only                                                                                                                                                  |
+| name                     | kind      | why                                                                                                                                                                       |
+| ------------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `autoFilterDateGrouping` | attribute | view state — not modelled                                                                                                                                                 |
+| `firstSheet`             | attribute | view state — not modelled                                                                                                                                                 |
+| `minimized`              | attribute | window geometry — not modelled                                                                                                                                            |
+| `showHorizontalScroll`   | attribute | window geometry — not modelled                                                                                                                                            |
+| `showSheetTabs`          | attribute | window geometry — not modelled                                                                                                                                            |
+| `showVerticalScroll`     | attribute | window geometry — not modelled                                                                                                                                            |
+| `tabRatio`               | attribute | window geometry — not modelled                                                                                                                                            |
+| `visibility`             | attribute | window visibility — not modelled                                                                                                                                          |
+| `tabSelected`            | attribute | view state — not modelled                                                                                                                                                 |
+| `zoomToFit`              | attribute | view state — not modelled                                                                                                                                                 |
+| `shapeId`                | attribute | the VML shape a comment or control is drawn as. hucre generates its own on write and does not need the file's on read                                                     |
+| `appName`                | attribute | writer provenance — not modelled                                                                                                                                          |
+| `lastEdited`             | attribute | writer provenance — not modelled                                                                                                                                          |
+| `lowestEdited`           | attribute | writer provenance — not modelled                                                                                                                                          |
+| `rupBuild`               | attribute | writer provenance — not modelled                                                                                                                                          |
+| `quotePrefix`            | attribute | **open** — marks a cell forced to text by a leading apostrophe. The value is already a string in the file, so nothing is lost from `rows`; the flag itself is not carried |
+| `customFormat`           | attribute | restates that the row has a style, which the style says                                                                                                                   |
+| `spans`                  | attribute | a hint at which columns a row uses. hucre derives that from the cells themselves, which is the authority — Excel treats a wrong `spans` as advisory too                   |
+| `activeCell`             | attribute | view state — not modelled                                                                                                                                                 |
+| `baseColWidth`           | attribute | **open** — the base width column widths are relative to. hucre assumes the 8.43 default; a file that sets another makes every width wrong                                 |
+| `outlineLevelCol`        | attribute | summary of the per-column outline levels hucre reads                                                                                                                      |
+| `outlineLevelRow`        | attribute | summary of the per-row outline levels hucre reads                                                                                                                         |
+| `fileVersion`            | element   | writer provenance — not modelled                                                                                                                                          |
+| `defaultThemeVersion`    | attribute | writer provenance — not modelled                                                                                                                                          |
+| `filterPrivacy`          | attribute | privacy flag, no data — not modelled                                                                                                                                      |
+| `pivotButton`            | attribute | pivot UI affordance — pivots are round-trip only                                                                                                                          |
 
 ## OpenDocument (OASIS ODF 1.3)
 

@@ -207,10 +207,14 @@ describe("parseStyles — colors", () => {
   })
 
   it("reads theme 0 and tint 0 rather than treating them as absent", () => {
+    // The point is the zeros: none of them may be dropped as falsy.
+    // `rgb` joins them because index 0 is black in the palette — see
+    // test/indexed-color-palette.test.ts. The index itself still stands.
     expect(font('<color theme="0" tint="0" indexed="0"/>').color).toEqual({
       theme: 0,
       tint: 0,
       indexed: 0,
+      rgb: "000000",
     })
   })
 

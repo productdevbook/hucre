@@ -452,6 +452,19 @@ the workbook-level caches, and has no write counterpart because
 
 Three cases where a field is carried but a particular _value_ is not.
 
+**An indexed colour outside the palette keeps its index and no RGB.**
+A colour may name a palette index rather than an RGB. hucre resolves those
+against the file's `<indexedColors>` when it overrides the palette and
+against the ECMA-376 §18.8.27 defaults otherwise, so `ColorSpec` carries
+both the `indexed` it was given and the `rgb` it stands for.
+
+Two indices are not colours: 64 is the system foreground and 65 the system
+background, and the specification gives neither an ARGB. Those keep the
+index and get no `rgb`, because the colour depends on the reader's own
+theme and inventing one would be answering a question the file did not
+ask. The same is true of any index past the end of the palette — Excel
+writes 81 for tooltip text.
+
 **A cell whose text is literally `_x0041_` reads back as `A` — in XLSX.**
 OOXML uses `_xHHHH_` to encode characters XML cannot hold, and hucre
 decodes it on read. Excel disambiguates by escaping a leading underscore

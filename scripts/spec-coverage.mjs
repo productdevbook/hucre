@@ -283,8 +283,8 @@ const REVIEWED = new Map(
     baseColWidth:
       "**open** — the base width column widths are relative to. hucre assumes the 8.43 default; a file that sets another makes every width wrong",
     indexedColors:
-      "**open** — the legacy palette. `ColorSpec.indexed` carries the *index* and hucre has no palette to resolve it against, so a file that overrides the palette is dropped silently. Not in PARITY.md",
-    rgbColor: "**open** — an entry of the `indexedColors` palette above",
+      "read since #546 — the palette a file overrides, applied to every colour that names an index. Indices 64 and 65 stay unresolved: they are the system foreground and background and have no ARGB",
+    rgbColor: "read since #546 — an entry of the `indexedColors` palette above",
   }),
 )
 

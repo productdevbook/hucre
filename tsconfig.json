@@ -48,6 +48,7 @@
     "test/worksheet-stream-chunks.test.ts",
     "test/xlsb-short-records.test.ts",
     "test/xlsx-stream-parity.test.ts",
+    "test/indexed-color-palette.test.ts",
     "test/builder-coverage.test.ts"
   ]
 }
