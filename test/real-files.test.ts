@@ -13,7 +13,7 @@ import type { Cell, CellStyle, ReadOptions, Sheet, Workbook } from "../src/_type
 // the sharp end — they exist only to consume other tools' output, and
 // until this file they had never seen any.
 //
-// So: test/fixtures/ holds eleven workbooks written by Microsoft Excel
+// So: test/fixtures/ holds twelve workbooks written by Microsoft Excel
 // 16.0. The content is synthetic and authored for this purpose by
 // scripts/fixtures/make-fixtures.vbs; see test/fixtures/PROVENANCE.md.
 //
@@ -336,10 +336,32 @@ describe("workbooks written by Excel, not by this test suite", () => {
     })
   })
 
+  // A chart sheet — a chart on its own tab — is not a worksheet, and
+  // xl/workbook.xml's <sheets> lists it anyway; the relationship type is
+  // what separates the kinds. It gets its own block rather than a golden
+  // model because today the read throws, so there is no model to compare.
+  //
+  // This one is not hypothetical: it is the single largest failure in a
+  // corpus of real instrument-exported workbooks, 52 files out of 538.
+  describe("excel-chartsheet.xlsx", () => {
+    it.fails("#499 — a workbook containing a chart sheet can be read at all", async () => {
+      const wb = await readXlsx(bytes("excel-chartsheet.xlsx"))
+      // The chart sheet carries no cells, so whatever it is represented
+      // as, the ordinary worksheet next to it has to survive.
+      expect(wb.sheets.some((s) => s.rows.length > 0)).toBe(true)
+    })
+
+    it("fails the way #499 describes, and not some other way", async () => {
+      await expect(readXlsx(bytes("excel-chartsheet.xlsx"))).rejects.toThrow(
+        /missing worksheet file for sheet/,
+      )
+    })
+  })
+
   // A test that reads no bytes would pass just as green. This one fails
   // loudly if test/fixtures/ ever stops being on disk.
   it("is actually reading the files", () => {
-    for (const { file } of FIXTURES) {
+    for (const { file } of [...FIXTURES, { file: "excel-chartsheet.xlsx" }]) {
       expect(bytes(file).byteLength).toBeGreaterThan(1000)
     }
   })

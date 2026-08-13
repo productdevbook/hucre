@@ -36,12 +36,18 @@ Const xlOpenXMLWorkbook = 51
 Const xlExcel8 = 56
 Const xlExcel12 = 50
 
-Dim outDir
+Dim outDir, onlyOne
 If WScript.Arguments.Count < 1 Then
-  WScript.Echo "usage: cscript //Nologo make-fixtures.vbs <output-directory>"
+  WScript.Echo "usage: cscript //Nologo make-fixtures.vbs <output-directory> [one-file-name]"
   WScript.Quit 2
 End If
 outDir = WScript.Arguments(0)
+
+' Optional: regenerate a single fixture. Excel stamps a fresh timestamp
+' and revision id on every save, so regenerating the whole set to add one
+' file rewrites all eleven and buries the new one in the diff.
+onlyOne = ""
+If WScript.Arguments.Count > 1 Then onlyOne = LCase(WScript.Arguments(1))
 
 Dim fso
 Set fso = CreateObject("Scripting.FileSystemObject")
@@ -83,17 +89,18 @@ problems = ""
 
 On Error Resume Next
 
-MakeBasic outDir & "\excel-basic.xlsx", xlOpenXMLWorkbook
-MakeBasic outDir & "\excel-basic.xls", xlExcel8
-MakeBasic outDir & "\excel-basic.xlsb", xlExcel12
-MakeStrings outDir & "\excel-strings.xlsx", xlOpenXMLWorkbook
-MakeStrings outDir & "\excel-strings.xlsb", xlExcel12
-MakeStyled outDir & "\excel-styled.xlsx", xlOpenXMLWorkbook
-MakeLayout outDir & "\excel-layout.xlsx", xlOpenXMLWorkbook
-MakePageSetup outDir & "\excel-pagesetup.xlsx", xlOpenXMLWorkbook
-MakeStyleOnly outDir & "\excel-styleonly.xlsx", xlOpenXMLWorkbook
-MakeDates outDir & "\excel-dates.xls", xlExcel8
-MakeEmpty outDir & "\excel-empty.xlsx", xlOpenXMLWorkbook
+If Want("excel-basic.xlsx") Then MakeBasic outDir & "\excel-basic.xlsx", xlOpenXMLWorkbook
+If Want("excel-basic.xls") Then MakeBasic outDir & "\excel-basic.xls", xlExcel8
+If Want("excel-basic.xlsb") Then MakeBasic outDir & "\excel-basic.xlsb", xlExcel12
+If Want("excel-strings.xlsx") Then MakeStrings outDir & "\excel-strings.xlsx", xlOpenXMLWorkbook
+If Want("excel-strings.xlsb") Then MakeStrings outDir & "\excel-strings.xlsb", xlExcel12
+If Want("excel-styled.xlsx") Then MakeStyled outDir & "\excel-styled.xlsx", xlOpenXMLWorkbook
+If Want("excel-layout.xlsx") Then MakeLayout outDir & "\excel-layout.xlsx", xlOpenXMLWorkbook
+If Want("excel-pagesetup.xlsx") Then MakePageSetup outDir & "\excel-pagesetup.xlsx", xlOpenXMLWorkbook
+If Want("excel-styleonly.xlsx") Then MakeStyleOnly outDir & "\excel-styleonly.xlsx", xlOpenXMLWorkbook
+If Want("excel-dates.xls") Then MakeDates outDir & "\excel-dates.xls", xlExcel8
+If Want("excel-empty.xlsx") Then MakeEmpty outDir & "\excel-empty.xlsx", xlOpenXMLWorkbook
+If Want("excel-chartsheet.xlsx") Then MakeChartsheet outDir & "\excel-chartsheet.xlsx", xlOpenXMLWorkbook
 
 On Error Goto 0
 
@@ -107,9 +114,17 @@ If problems <> "" Then
   WScript.Echo "PROBLEMS:" & problems
   WScript.Quit 1
 End If
-WScript.Echo "OK - wrote 11 fixtures to " & outDir
+If onlyOne = "" Then
+  WScript.Echo "OK - wrote the full fixture set to " & outDir
+Else
+  WScript.Echo "OK - wrote " & onlyOne & " to " & outDir
+End If
 
 ' ── helpers ─────────────────────────────────────────────────────────
+
+Function Want(name)
+  Want = (onlyOne = "") Or (onlyOne = LCase(name))
+End Function
 
 Sub Note(where)
   If Err.Number <> 0 Then
@@ -443,5 +458,50 @@ Sub MakeEmpty(path, fmt)
   Dim wb
   Set wb = NewBook("Empty")
   Note "MakeEmpty " & path
+  Finish wb, path, fmt
+End Sub
+
+' #499 — a chart on its own tab, not a ChartObject floating on a sheet.
+'
+' xl/workbook.xml's <sheets> lists every sheet whatever its kind; the
+' relationship type is what says which is which, and a chart sheet's is
+' .../chartsheet pointing at xl/chartsheets/. A reader that builds its
+' sheet map from `worksheet` relationships alone finds no part for that
+' rId. hucre threw `Invalid XLSX: missing worksheet file for sheet` and
+' refused the entire workbook, ordinary worksheets included.
+'
+' Found by running hucre over a corpus of real instrument-exported
+' workbooks: 52 of 538 failed on exactly this, which is why a chart
+' sheet is worth a fixture of its own.
+Sub MakeChartsheet(path, fmt)
+  On Error Resume Next
+  Dim wb, ws, ch
+  Set wb = NewBook("Data")
+  Set ws = wb.Worksheets(1)
+
+  ws.Range("A1").Value = "x"
+  ws.Range("B1").Value = "y"
+  ws.Range("A2").Value = 1
+  ws.Range("B2").Value = 10
+  ws.Range("A3").Value = 2
+  ws.Range("B3").Value = 20
+  ws.Range("A4").Value = 3
+  ws.Range("B4").Value = 15
+
+  ' Charts.Add makes a chart SHEET. ChartObjects.Add would make an
+  ' embedded chart, which is a different thing and already covered.
+  Set ch = wb.Charts.Add
+  ch.Name = "Diagram"
+  ch.ChartType = 4          ' xlLine
+  ch.SetSourceData ws.Range("A1:B4")
+  Note "MakeChartsheet chart sheet"
+
+  ' The sheet order matters: the chart sheet sits before the worksheet,
+  ' so a reader that gives up on the first unresolvable sheet never
+  ' reaches the data.
+  ch.Move wb.Worksheets(1)
+  Note "MakeChartsheet order"
+
+  Note "MakeChartsheet " & path
   Finish wb, path, fmt
 End Sub
