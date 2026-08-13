@@ -122,6 +122,25 @@ would otherwise show `1E-07` — but only when that form is the same
 number, which it was not for the smallest values (`Number.MIN_VALUE` used
 to come out as `0.0`).
 
+### A style-only cell does not widen the sheet
+
+Excel writes a self-closing `<c r="WVF45" s="3"/>` for every position
+formatting was ever applied to. A real packing-list workbook had 145,315
+of them against 197 values, so `rows` came back 45 x 16,126 and
+`writeCsv` of that was 727 KB — 99.75% bare commas — from 1.8 KB of data.
+
+Under the default `readStyles: false` those cells contribute nothing:
+their styles are not read, so their only effect was null padding a caller
+cannot tell from never-written cells. They no longer extend the sheet, and
+the row they sit in is not allocated either. Fixed in #492.
+
+With `readStyles: true` nothing changes — there the styles _are_ the
+information, and the full box is what the caller asked for.
+
+Only the **trailing** box shrinks. Interior positions are untouched: a
+value at D1 still sits at index 3 behind three nulls, and an empty row
+between two populated ones is still there.
+
 ### `Sheet.rows` is a dense rectangle
 
 Every row is an array, every row is the same length, and no element is

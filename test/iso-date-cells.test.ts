@@ -117,8 +117,15 @@ describe("what stays text, and why", () => {
     }
   })
 
-  it('an empty t="d" cell is empty, not Invalid Date', async () => {
-    expect(await valueOf('<c r="A1" t="d"><v></v></c>')).toBeNull()
+  it('an empty t="d" cell yields no value, not an Invalid Date', async () => {
+    // Since #492 a cell carrying nothing does not extend the sheet, so a
+    // sheet whose only cell is an empty `<v>` has no rows at all. Either
+    // way the assertion that matters is that no `Invalid Date` escapes.
+    const wb = await readXlsx(await withCell('<c r="A1" t="d"><v></v></c>'))
+    const value = wb.sheets[0]!.rows[0]?.[0]
+
+    expect(value == null || !(value instanceof Date)).toBe(true)
+    expect(wb.sheets[0]!.rows.flat().some((v) => v instanceof Date)).toBe(false)
   })
 })
 

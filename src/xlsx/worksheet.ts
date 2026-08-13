@@ -913,7 +913,29 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
               }
             }
 
-            if (!skipCell) {
+            // A cell that will contribute nothing to the model must not
+            // extend the sheet — nor allocate the row it sits in.
+            //
+            // Excel writes a self-closing `<c r="WVF45" s="3"/>` for every
+            // position formatting was ever applied to, and a real
+            // packing-list workbook had 145,315 of them against 197
+            // values: `rows` came back 45 x 16,126 and `writeCsv` of it
+            // was 727 KB, 99.75% bare commas, from 1.8 KB of data.
+            //
+            // Under `readStyles: true` those cells do carry information
+            // and still count. See #492.
+            const carriesData =
+              cellValueText !== "" ||
+              inlineText !== "" ||
+              inlineRichText.length > 0 ||
+              cellFormulaText !== "" ||
+              cellType === "e" ||
+              (ctx.readStyles && cellStyleIndex >= 0) ||
+              (ctx.styles && cellStyleIndex >= 0
+                ? (ctx.styles.cellXfs[cellStyleIndex]?.hasCheckboxFeature ?? false)
+                : false)
+
+            if (!skipCell && carriesData) {
               processCell(
                 cellRef,
                 cellType,
