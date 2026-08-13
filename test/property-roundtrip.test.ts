@@ -14,7 +14,10 @@ import {
 import { MAX_COL_INDEX, MAX_ROW_INDEX } from "../src/limits"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
+import { writeXlsxStream, XlsxStreamWriter } from "../src/xlsx/stream-writer"
 import { writeOds } from "../src/ods/writer"
+import { writeOdsStream } from "../src/ods/stream-writer"
+import { OdsStreamWriter } from "../src/ods/incremental-writer"
 import { readOds } from "../src/ods/reader"
 import { seeded } from "./_fuzz"
 import type { CellValue } from "../src/_types"
@@ -338,5 +341,70 @@ describe("the one value the generator above deliberately leaves out", () => {
     const bytes = await writeOds({ sheets: [{ name: "S", rows: [[LITERAL]] }] })
 
     expect((await readOds(bytes)).sheets[0]!.rows[0]![0]).toBe(LITERAL)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+// Each format has more than one writer, and they are supposed to differ
+// only in how much they hold in memory. Pointing the same random grids
+// at all of them found that they did not: `writeXlsxStream` defaults to
+// inline strings, and an empty inline string read back as `null` where
+// the buffered writer's shared string read back as `""`.
+//
+// The reduced case lives in test/empty-inline-string.test.ts. This is
+// the comparison that noticed.
+// ═══════════════════════════════════════════════════════════════════════
+
+async function drainStream(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
+  const chunks: Uint8Array[] = []
+  const reader = stream.getReader()
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+  }
+  const out = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0))
+  let at = 0
+  for (const c of chunks) {
+    out.set(c, at)
+    at += c.length
+  }
+  return out
+}
+
+describe("every writer of a format agrees with every other", () => {
+  it("on the same random grids", async () => {
+    const rnd = seeded(SEED)
+
+    for (let run = 0; run < 25; run++) {
+      const rows: CellValue[][] = Array.from({ length: 1 + Math.floor(rnd() * 4) }, () =>
+        Array.from({ length: 1 + Math.floor(rnd() * 4) }, () => randomBinaryCell(rnd)),
+      )
+
+      const xlsxIncremental = new XlsxStreamWriter({ name: "S" })
+      const odsIncremental = new OdsStreamWriter({ name: "S" })
+      for (const row of rows) {
+        xlsxIncremental.addRow(row)
+        odsIncremental.addRow(row)
+      }
+
+      const variants: Array<[string, Uint8Array, typeof readXlsx]> = [
+        ["xlsx buffered", await writeXlsx({ sheets: [{ name: "S", rows }] }), readXlsx],
+        ["xlsx stream", await drainStream(writeXlsxStream(rows, { name: "S" })), readXlsx],
+        ["xlsx incremental", await xlsxIncremental.finish(), readXlsx],
+        ["ods buffered", await writeOds({ sheets: [{ name: "S", rows }] }), readOds],
+        ["ods stream", await drainStream(writeOdsStream(rows, { name: "S" })), readOds],
+        ["ods incremental", await odsIncremental.finish(), readOds],
+      ]
+
+      for (const [label, bytes, read] of variants) {
+        const back = (await read(bytes)).sheets[0]!.rows
+        for (let i = 0; i < rows.length; i++) {
+          expect(trimTrailing(back[i] ?? []), `${label}, run ${run}, row ${i}`).toEqual(
+            trimTrailing(rows[i]!),
+          )
+        }
+      }
+    }
   })
 })

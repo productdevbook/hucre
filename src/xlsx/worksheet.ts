@@ -934,6 +934,17 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
               inlineRichText.length > 0 ||
               cellFormulaText !== "" ||
               cellType === "e" ||
+              // An empty *inline* string is still a string. The producer
+              // wrote `t="inlineStr"` and an `<is>` to say so, which is
+              // not the contentless `<c r="WVF45" s="3"/>` this guard is
+              // for. Deciding from the collected text alone made the two
+              // spellings of one value disagree: a shared string carries
+              // its index here, non-empty even when the string is empty,
+              // so `""` survived that way and vanished the other.
+              //
+              // It reached hucre's own writers, because
+              // `writeXlsxStream` defaults to inline strings.
+              cellType === "inlineStr" ||
               (ctx.readStyles && cellStyleIndex >= 0) ||
               (ctx.styles && cellStyleIndex >= 0
                 ? (ctx.styles.cellXfs[cellStyleIndex]?.hasCheckboxFeature ?? false)
