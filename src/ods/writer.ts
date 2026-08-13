@@ -218,9 +218,17 @@ function hasGrouping(code: string): boolean {
  * Quoted literals are stripped first: `"EUR "#,##0.00` has an `E` in it
  * and is not scientific.
  */
-function parseScientificFormat(
-  code: string,
-): { decimals: number; integerDigits: number; exponentDigits: number } | undefined {
+function parseScientificFormat(code: string):
+  | {
+      decimals: number
+      integerDigits: number
+      exponentDigits: number
+      /** `E+` forces a sign on a positive exponent; `E-` does not. */
+      forcedSign: boolean
+      /** 3 for engineering notation (`##0.0E+0`), 1 otherwise. */
+      interval: number
+    }
+  | undefined {
   const unquoted = code.replace(/"[^"]*"/g, "").replace(/\\./g, "")
   const match = unquoted.match(/^([#0]*)(?:\.([0#]+))?[Ee]([+-])([0#]+)$/)
   if (!match) return undefined
@@ -229,11 +237,18 @@ function parseScientificFormat(
   // asks for engineering notation, where the integer part steps in threes;
   // ODF expresses that with `number:exponent-interval`, which this does not
   // write, so such a code comes back as `0.0E+0`.
-  const integerDigits = (match[1]?.match(/0/g) ?? []).length
+  const integerRun = match[1] ?? ""
+  const integerDigits = (integerRun.match(/0/g) ?? []).length
   return {
     integerDigits: Math.max(integerDigits, 1),
     decimals: match[2]?.length ?? 0,
     exponentDigits: match[4]!.length,
+    forcedSign: match[3] === "+",
+    // `##0` asks for the integer part to stay between 1 and 999, which
+    // is engineering notation: the exponent steps in threes. ODF says
+    // that with `number:exponent-interval`, and the run's length is the
+    // step. Anything else is a step of one.
+    interval: integerRun.length > 1 ? integerRun.length : 1,
   }
 }
 
@@ -518,6 +533,10 @@ function translateNumFmt(code: string): OdsNumFmtDef | undefined {
           "number:decimal-places": String(scientific.decimals),
           "number:min-integer-digits": String(scientific.integerDigits),
           "number:min-exponent-digits": String(scientific.exponentDigits),
+          ...(scientific.forcedSign ? { "number:forced-exponent-sign": "true" } : {}),
+          ...(scientific.interval > 1
+            ? { "number:exponent-interval": String(scientific.interval) }
+            : {}),
         }),
       ],
     }

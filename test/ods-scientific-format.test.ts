@@ -165,10 +165,12 @@ describe("the number-format codes ODS still cannot carry", () => {
     expect((await styleOf("General"))?.numFmt).toBeUndefined()
   })
 
-  it("flattens engineering notation to plain scientific", async () => {
-    // `##0.0E+0` steps the integer part in threes. ODF spells that with
-    // `number:exponent-interval`, which the writer does not emit, so the
-    // exponent survives and the stepping does not.
-    expect((await styleOf("##0.0E+0"))?.numFmt).toBe("0.0E+0")
+  it("keeps engineering notation, which it used not to", async () => {
+    // `##0.0E+0` steps the integer part in threes. This test used to
+    // assert that the stepping was lost, and named `number:exponent-
+    // interval` as the ODF spelling in the same breath — the attribute
+    // existed all along and the writer simply did not emit it. It does
+    // now; see test/ods-exponent-detail.test.ts.
+    expect((await styleOf("##0.0E+0"))?.numFmt).toBe("##0.0E+0")
   })
 })

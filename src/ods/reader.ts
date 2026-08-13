@@ -276,10 +276,23 @@ function serializeDataStyleChildren(
         parseInt(child.attrs["number:min-exponent-digits"] ?? "2", 10) || 2,
         MAX_REPEAT_COUNT,
       )
+      // `##0` is engineering notation — the exponent steps in threes so
+      // the integer part stays between 1 and 999. The interval is the
+      // width of the run; the mandatory digits sit at its right.
+      const interval = Math.min(
+        Math.max(parseInt(child.attrs["number:exponent-interval"] ?? "1", 10) || 1, 1),
+        MAX_REPEAT_COUNT,
+      )
+      const optional = Math.max(interval - integerDigits, 0)
+      // `E+` forces a sign on a positive exponent, `E-` shows one only
+      // when the exponent is negative. Absent means not forced.
+      const sign = child.attrs["number:forced-exponent-sign"] === "true" ? "+" : "-"
+
       out +=
+        "#".repeat(optional) +
         "0".repeat(integerDigits) +
         (decimals > 0 ? `.${"0".repeat(decimals)}` : "") +
-        `E+${"0".repeat(exponentDigits)}`
+        `E${sign}${"0".repeat(exponentDigits)}`
     } else if (local === "text-content") {
       // The placeholder for the cell's own text — Excel's `@`.
       out += "@"

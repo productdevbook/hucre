@@ -516,19 +516,23 @@ Number format is carried, but not every Excel code has an ODF spelling.
 These do not survive intact. Every row was measured through the round
 trip rather than reasoned about:
 
-| code              | comes back as | why                                                                                              |
-| ----------------- | ------------- | ------------------------------------------------------------------------------------------------ |
-| `0.00_);(0.00)`   | `0.00;(0.00)` | `_)` reserves the width of a character. ODF has no equivalent, so the padding is dropped         |
-| `##0.0E+0`        | `0.0E+0`      | engineering notation steps the integer part in threes, which ODF spells with `exponent-interval` |
-| `[mm]:ss`, `[ss]` | `mm:ss`, `ss` | the elapsed marker survives on hours (`[hh]:mm`) but not on minutes or seconds alone             |
-| `0.00;[Red]-0.00` | `0.00;-0.00`  | colour tags are dropped on purpose — it is what stops `[White]0.00` being read as a time format  |
-| `0.00;;`          | `0.00`        | empty trailing sections have nothing to write                                                    |
+| code              | comes back as | why                                                                                             |
+| ----------------- | ------------- | ----------------------------------------------------------------------------------------------- |
+| `0.00_);(0.00)`   | `0.00;(0.00)` | `_)` reserves the width of a character. ODF has no equivalent, so the padding is dropped        |
+| `[mm]:ss`, `[ss]` | `mm:ss`, `ss` | the elapsed marker survives on hours (`[hh]:mm`) but not on minutes or seconds alone            |
+| `0.00;[Red]-0.00` | `0.00;-0.00`  | colour tags are dropped on purpose — it is what stops `[White]0.00` being read as a time format |
+| `0.00;;`          | `0.00`        | empty trailing sections have nothing to write                                                   |
 
 `General` returning no `numFmt` is not in that list: General _is_ the
 absence of a data style, so there is nothing lost.
 
-Two rows have left that list since it was written, both for the same
-reason and both found the same way. `#` versus `0` — an optional digit
+Three rows have left that list since it was written, all for the same
+reason and all found the same way. Engineering notation — `##0.0E+0`,
+where the exponent steps in threes — was listed here as lost, with
+`number:exponent-interval` named as its ODF spelling _in the same
+sentence_: the attribute existed all along and the writer simply did not
+emit it. It does now, along with `number:forced-exponent-sign`, which is
+what keeps `0.00E-00` from becoming `0.00E+00`. `#` versus `0` — an optional digit
 against a mandatory one — was described here as a distinction ODF could
 not express; it expresses it with `number:min-decimal-places` and
 `number:min-integer-digits`, which LibreOffice writes on every number
