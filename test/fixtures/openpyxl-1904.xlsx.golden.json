@@ -23,10 +23,15 @@
       "formulas": {},
       "pageSetup": {
         "leftMargin": 0.75
-      }
+      },
+      "autoFilter": null,
+      "validations": [],
+      "protection": [],
+      "comments": []
     }
   ],
   "dateSystem": "1904",
+  "namedRanges": [],
   "hasAuthor": false,
   "warnings": []
 }

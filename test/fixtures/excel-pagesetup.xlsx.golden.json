@@ -23,10 +23,15 @@
         "printTitlesColumn": "$A:$A",
         "leftMargin": 0.5
       },
-      "formulas": {}
+      "formulas": {},
+      "autoFilter": null,
+      "validations": [],
+      "protection": [],
+      "comments": []
     }
   ],
   "dateSystem": "1900",
+  "namedRanges": [],
   "hasAuthor": false,
   "warnings": []
 }

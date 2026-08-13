@@ -5,7 +5,10 @@
       "rows": [
         ["  leading", "trailing  "],
         [" both ", "plain"],
-        ["a & b < c > d", "naïve 日本語 Ωμέγα 😀"],
+        [
+          "a & b < c > d",
+          "na\u00efve \u65e5\u672c\u8a9e \u03a9\u03bc\u03ad\u03b3\u03b1 \ud83d\ude00"
+        ],
         ["line one\nline two", "tab\tsep"],
         ["  ", 42]
       ],
@@ -19,10 +22,15 @@
       "formulas": {},
       "pageSetup": {
         "leftMargin": 0.75
-      }
+      },
+      "autoFilter": null,
+      "validations": [],
+      "protection": [],
+      "comments": []
     }
   ],
   "dateSystem": "1900",
+  "namedRanges": [],
   "hasAuthor": false,
   "warnings": []
 }

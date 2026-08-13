@@ -102,6 +102,7 @@ If Want("excel-dates.xls") Then MakeDates outDir & "\excel-dates.xls", xlExcel8
 If Want("excel-empty.xlsx") Then MakeEmpty outDir & "\excel-empty.xlsx", xlOpenXMLWorkbook
 If Want("excel-chartsheet.xlsx") Then MakeChartsheet outDir & "\excel-chartsheet.xlsx", xlOpenXMLWorkbook
 If Want("excel-sparse.xlsx") Then MakeSparse outDir & "\excel-sparse.xlsx", xlOpenXMLWorkbook
+If Want("excel-features.xlsx") Then MakeFeatures outDir & "\excel-features.xlsx", xlOpenXMLWorkbook
 
 On Error Goto 0
 
@@ -543,5 +544,69 @@ Sub MakeSparse(path, fmt)
   ws.Cells(2000, 15312).Value = "bottom right"
 
   Note "MakeSparse " & path
+  Finish wb, path, fmt
+End Sub
+
+' The features real workbooks actually use.
+'
+' Reading 270 real business workbooks (invoices, offers, planning
+' sheets) against this corpus turned up no reader defects, but it did
+' show the corpus is aimed somewhere else than the wild. By frequency,
+' those files use: named ranges 43%, autofilter 30%, images 28%, data
+' validation 16%, sheet protection 14%, cell comments 18%. Not one of
+' those had an Excel-written fixture here — hucre reads them all, so a
+' regression in any of them would be caught only by files hucre wrote
+' itself, which is the exact gap #464 is about.
+'
+' Images are left out on purpose: an embedded picture costs more bytes
+' than the rest of the corpus put together, and the drawing part is
+' already exercised by the chart sheet fixture.
+Sub MakeFeatures(path, fmt)
+  On Error Resume Next
+  Dim wb, ws
+  Set wb = NewBook("Features")
+  Set ws = wb.Worksheets(1)
+
+  ws.Range("A1").Value = "Region"
+  ws.Range("B1").Value = "Amount"
+  ws.Range("C1").Value = "Approved"
+  ws.Range("A2").Value = "North"
+  ws.Range("B2").Value = 1000
+  ws.Range("C2").Value = "yes"
+  ws.Range("A3").Value = "South"
+  ws.Range("B3").Value = 2500
+  ws.Range("C3").Value = "no"
+  ws.Range("A4").Value = "East"
+  ws.Range("B4").Value = 1750
+  ws.Range("C4").Value = "yes"
+
+  ' A workbook-scoped name and a sheet-scoped one. Both land in
+  ' xl/workbook.xml <definedNames>, the sheet-scoped one carrying a
+  ' localSheetId.
+  wb.Names.Add "TaxRate", "=0.19"
+  Note "MakeFeatures workbook name"
+  wb.Names.Add "Amounts", "=Features!$B$2:$B$4"
+  Note "MakeFeatures range name"
+
+  ws.Range("A1:C4").AutoFilter
+  Note "MakeFeatures autofilter"
+
+  ' A list validation on the column that has yes/no in it.
+  ws.Range("C2:C4").Validation.Add 3, 1, 1, "yes,no"   ' xlValidateList, xlValidAlertStop, xlBetween
+  Note "MakeFeatures validation"
+
+  ' A classic (non-threaded) cell comment. RemovePersonalInformation
+  ' blanks its author on save, which is the point — a comment is one of
+  ' the places a real name otherwise leaks into a fixture.
+  ws.Range("A2").AddComment "checked"
+  Note "MakeFeatures comment"
+
+  ' Protection last: the sheet cannot be modified once it is on. B2:B4
+  ' stays unlocked so the fixture has both states.
+  ws.Range("B2:B4").Locked = False
+  ws.Protect
+  Note "MakeFeatures protection"
+
+  Note "MakeFeatures " & path
   Finish wb, path, fmt
 End Sub

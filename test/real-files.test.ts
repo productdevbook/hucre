@@ -59,6 +59,14 @@ interface SheetModel {
   columnStyles: Record<string, string>
   /** One line per conditional-formatting rule. */
   conditional: string[]
+  /** The autofilter range in A1 notation, or `null`. */
+  autoFilter: string | null
+  /** One line per data-validation rule. */
+  validations: string[]
+  /** Which protection flags are on, sorted; empty when unprotected. */
+  protection: string[]
+  /** `A1: text` per cell comment, sorted. */
+  comments: string[]
   /**
    * A1 → `<formula text> => <cached result>`, for cells carrying a
    * formula. The cached result is the interesting half: Excel always
@@ -97,6 +105,9 @@ interface WorkbookModel {
    * the licence-and-privacy guarantee of the corpus, checked by the same
    * suite that reads it rather than only by a note in a markdown file.
    */
+  /** `name=range` per defined name, sorted. Excel's built-in print
+   * names are excluded — they are page setup, asserted separately. */
+  namedRanges: string[]
   hasAuthor: boolean
   warnings: string[]
   knownDefects?: KnownDefect[]
@@ -215,6 +226,27 @@ const projectSheet = (sheet: Sheet): SheetModel => {
     hiddenColumns: hiddenColumns.sort(),
     styles,
     columnStyles,
+    autoFilter: sheet.autoFilter?.range ?? null,
+    validations: (sheet.dataValidations ?? [])
+      .map(
+        (v) =>
+          `${v.range} ${v.type}` +
+          `${v.operator ? ` ${v.operator}` : ""}` +
+          `${v.values ? ` [${v.values.join("|")}]` : ""}` +
+          `${v.formula1 ? ` f1=${v.formula1}` : ""}`,
+      )
+      .sort(),
+    protection: Object.entries(sheet.protection ?? {})
+      .filter(([k, v]) => v === true && k !== "password")
+      .map(([k]) => k)
+      .sort(),
+    comments: [...(sheet.cells ?? new Map<string, Cell>())]
+      .filter(([, c]) => c.comment)
+      .map(([key, c]) => {
+        const [r, cc] = key.split(",").map(Number)
+        return `${colName(cc as number)}${(r as number) + 1}: ${c.comment?.text ?? ""}`
+      })
+      .sort(),
     conditional: (sheet.conditionalRules ?? [])
       .map(
         (r) =>
@@ -231,6 +263,10 @@ const projectSheet = (sheet: Sheet): SheetModel => {
 const project = (wb: Workbook, warnings: string[]): WorkbookModel => ({
   sheets: wb.sheets.map(projectSheet),
   dateSystem: wb.dateSystem ?? null,
+  namedRanges: (wb.namedRanges ?? [])
+    .filter((n) => !n.name.startsWith("_xlnm."))
+    .map((n) => `${n.name}=${n.range}${n.scope ? ` @${n.scope}` : ""}`)
+    .sort(),
   hasAuthor: Boolean(wb.properties?.creator || wb.properties?.lastModifiedBy),
   warnings,
 })
@@ -284,6 +320,7 @@ const FIXTURES: Array<{ file: string; reader: typeof readXlsx }> = [
   { file: "excel-styleonly.xlsx", reader: readXlsx },
   { file: "excel-dates.xls", reader: readXls },
   { file: "excel-empty.xlsx", reader: readXlsx },
+  { file: "excel-features.xlsx", reader: readXlsx },
   // A second producer. openpyxl is not Excel-with-a-different-icon: it
   // emits formulas with no cached result, ISO-8601 `t="d"` date cells,
   // `date1904`, and inline strings with no shared string table — four

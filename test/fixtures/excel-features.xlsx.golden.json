@@ -1,0 +1,30 @@
+{
+  "sheets": [
+    {
+      "name": "Features",
+      "rows": [
+        ["Region", "Amount", "Approved"],
+        ["North", 1000, "yes"],
+        ["South", 2500, "no"],
+        ["East", 1750, "yes"]
+      ],
+      "merges": [],
+      "freeze": null,
+      "hiddenRows": [],
+      "hiddenColumns": [],
+      "styles": {},
+      "columnStyles": {},
+      "formulas": {},
+      "autoFilter": "A1:C4",
+      "validations": ["C2:C4 list [yes|no]"],
+      "protection": ["objects", "scenarios", "sheet"],
+      "comments": ["A2: checked"],
+      "conditional": [],
+      "pageSetup": null
+    }
+  ],
+  "dateSystem": "1900",
+  "namedRanges": ["Amounts=Features!$B$2:$B$4", "TaxRate=0.19"],
+  "hasAuthor": false,
+  "warnings": []
+}

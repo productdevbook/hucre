@@ -1,6 +1,6 @@
 # test/fixtures — workbooks hucre did not write
 
-These nineteen binaries exist because of [#464][]. Every other binary input
+These twenty binaries exist because of [#464][]. Every other binary input
 under `test/` is assembled byte-by-byte by the test that reads it, which
 is a closed loop: a reader that misunderstands a record is checked
 against a hand-built record that misunderstands it identically, and the
@@ -131,6 +131,7 @@ manual step. Run it.
 | `excel-empty.xlsx`      | one sheet, nothing in it                                                                                                                                                                                                  |
 | `excel-chartsheet.xlsx` | a chart on its own tab, listed in `<sheets>` _before_ the worksheet — a sheet whose relationship type is not `worksheet` (#499)                                                                                           |
 | `excel-sparse.xlsx`     | ~30 values placed out to column 15,312 — a 30.6M-slot bounding box from a 9 KB file (#501)                                                                                                                                |
+| `excel-features.xlsx`   | named ranges (workbook- and sheet-scoped), an autofilter, a list validation, sheet protection and a cell comment — the features real workbooks use most                                                                   |
 
 And from openpyxl, the second producer:
 
@@ -143,11 +144,36 @@ And from openpyxl, the second producer:
 | `openpyxl-inline-strings.xlsx` | `t="inlineStr"` with `<is><t>` and **no `sharedStrings.xml` at all** — the #441 whitespace case from a producer that actually emits inline strings |
 | `openpyxl-styled.xlsx`         | the same style facets as `excel-styled.xlsx`, through openpyxl's different `styles.xml` ordering and defaults                                      |
 
-181 KB of binaries, 285 KB for the whole directory including the golden
+192 KB of binaries, 303 KB for the whole directory including the golden
 models and this file. Small on purpose: the point is coverage of shapes,
 not of size. The two `.xls` files are 26 KB each and account for most of
 it — BIFF8 has a floor no amount of trimming gets under; the six openpyxl
 files are about 5 KB each.
+
+### A second real corpus, and what it did not find
+
+After the first triage, the same treatment was applied to 270 real
+_business_ workbooks — invoices, offers, planning sheets — a completely
+different population from the instrument data. Structure-only reporting
+again: no cell values, no sheet names, nothing committed.
+
+**All 270 read successfully. No new defects.** The only anomaly in the
+whole set was six more `.xls` files with #494's `undefined` rows, two of
+them with 79 holes each — evidence that went onto that issue and has
+since been fixed by #509, which also settled the ragged-rows half.
+
+What that corpus did surface is a different kind of gap. By frequency it
+uses named ranges (43% of files), autofilter (30%), images (28%), cell
+comments (18%), data validation (16%) and sheet protection (14%) — and
+until `excel-features.xlsx` **not one of those had an Excel-written
+fixture here.** hucre reads them all correctly; the point is that a
+regression in any of them would have been caught only by files hucre
+wrote itself, which is the exact hole #464 exists to close. Aiming a
+corpus at the defects you already know about is a different thing from
+aiming it at what people's files actually contain.
+
+That is also why `excel-features.xlsx` is not tied to an open issue. It
+is the only fixture here that documents something working.
 
 ### What it found
 
