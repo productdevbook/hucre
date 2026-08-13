@@ -395,6 +395,21 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
     const drawing = drawingResults[i]
     const comments = commentsResults[i]
 
+    // `result.xml` is one large string — for 100,000 x 12 it is ~42 MB
+    // joined from ~1.3M pieces — and this is the single encode of it.
+    // Building the bytes incrementally instead, so that string never
+    // exists, was proposed in #472 and measured. Every implementable
+    // form of it lost, on identical output bytes:
+    //
+    //   join + one encode (this line)              153-190 ms
+    //   chunked join+encode at ~1 MB                   199 ms
+    //   encodeInto a buffer, one view per piece        439 ms
+    //   encodeInto, five fragments per cell            358 ms
+    //   manual ASCII byte loop, encodeInto fallback    308 ms
+    //
+    // `join` and `TextEncoder.encode` are bulk paths; 1.3M small
+    // JS-level writes do not beat one big one however they are arranged.
+    // The whole step is ~7% of the write, so that is the ceiling anyway.
     zip.add(`xl/worksheets/sheet${i + 1}.xml`, encoder.encode(result.xml))
 
     // Generate worksheet .rels if there are hyperlinks, a drawing, comments, tables, picture, or pivots
