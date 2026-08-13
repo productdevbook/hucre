@@ -1748,6 +1748,37 @@ function processCell(
       cellType = "error"
       break
     }
+    case "d": {
+      // ISO 8601 date (ECMA-376 Part 1, §18.18.11 ST_CellType). Every
+      // other member of that enumeration had a case; this one fell
+      // through to `n`, where `Number("2024-03-17")` is NaN and the
+      // value landed in the "shouldn't happen, but be safe" arm as a
+      // *string*. It does happen: openpyxl writes it whenever
+      // `iso_dates=True`. See #496.
+      //
+      // The value is an instant, not an offset from an epoch, so
+      // `date1904` must NOT be applied — unlike the serial path below,
+      // where the same day is 1,462 days apart between the two systems.
+      const parsed = parseIsoCellDate(valueText)
+      if (parsed) {
+        value = parsed
+        cellType = "date"
+      } else if (valueText !== "") {
+        // A bare time (`13:45:30`, which openpyxl emits for a
+        // `datetime.time`) is not an ISO 8601 date-time and has no day
+        // to anchor it. Left as text rather than guessed onto an epoch.
+        value = valueText
+        cellType = "string"
+      } else {
+        value = null
+        cellType = "empty"
+      }
+      if (formula) {
+        formulaResult = value
+        cellType = "formula"
+      }
+      break
+    }
     case "n":
     default: {
       // Number (explicit or implied)
@@ -2083,4 +2114,32 @@ function parseColorAttrs(attrs: Record<string, string>): Color {
     color.indexed = Number(attrs["indexed"])
   }
   return color
+}
+
+/**
+ * Parse the value of a `t="d"` cell — an ISO 8601 date or date-time.
+ *
+ * Deliberately strict. `new Date(text)` accepts a great deal that is not
+ * ISO 8601 and answers `Invalid Date` for the rest, so a loose parse here
+ * would turn arbitrary cell text into dates. The shapes accepted are the
+ * ones ECMA-376 §18.18.11 describes and that producers actually write:
+ * `YYYY-MM-DD`, optionally with a time, optionally with a zone.
+ *
+ * An unqualified time is read as UTC, for the same reason the ODS and
+ * docProps readers do it: every format hucre reads records an absolute
+ * moment, and local time would make the same file mean different things
+ * on different machines. See #415, #474.
+ */
+function parseIsoCellDate(text: string): Date | undefined {
+  const trimmed = text.trim()
+  if (
+    !/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/.test(trimmed)
+  ) {
+    return undefined
+  }
+  const zoned = /(?:Z|[+-]\d{2}:?\d{2})$/.test(trimmed)
+  const hasTime = /[T ]\d{2}:/.test(trimmed)
+  const normalized = trimmed.replace(" ", "T")
+  const date = new Date(hasTime && !zoned ? `${normalized}Z` : normalized)
+  return Number.isNaN(date.getTime()) ? undefined : date
 }

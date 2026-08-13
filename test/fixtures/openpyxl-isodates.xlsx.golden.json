@@ -28,21 +28,5 @@
   ],
   "dateSystem": "1900",
   "hasAuthor": false,
-  "warnings": [],
-  "knownDefects": [
-    {
-      "issue": "#496",
-      "path": "sheets.0.rows.0.1",
-      "expected": "D:2024-03-17T00:00:00.000Z",
-      "actual": "2024-03-17",
-      "why": "an ISO-8601 date cell (t=\"d\") comes back as a string, while B4 — the same day as a serial under the same number format — comes back as a Date"
-    },
-    {
-      "issue": "#496",
-      "path": "sheets.0.rows.1.1",
-      "expected": "D:2024-03-17T13:45:30.000Z",
-      "actual": "2024-03-17T13:45:30",
-      "why": "an ISO-8601 date-time cell (t=\"d\") comes back as a string"
-    }
-  ]
+  "warnings": []
 }

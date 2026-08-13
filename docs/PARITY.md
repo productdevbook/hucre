@@ -122,6 +122,22 @@ would otherwise show `1E-07` — but only when that form is the same
 number, which it was not for the smallest values (`Number.MIN_VALUE` used
 to come out as `0.0`).
 
+### ISO-8601 date cells
+
+`ST_CellType` (§18.18.11) has seven members and the reader's switch had
+six: `d`, "cell containing a date in the ISO 8601 format", fell through
+to the numeric branch and came back as a **string**. openpyxl writes it
+whenever `iso_dates=True`, so the same day under the same number format
+read as a `Date` when stored as a serial and as text when stored as ISO.
+Fixed in #496.
+
+The parse is deliberately strict — `new Date(text)` accepts a great deal
+that is not ISO 8601 — and two cases stay text on purpose: a bare time
+(`13:45:30`, which openpyxl writes for a `datetime.time`) has no day to
+anchor it, and anything that is not an ISO date is left as the file wrote
+it. An unqualified time is read as UTC, and `date1904` is **not** applied:
+the value is an instant, not an offset from an epoch.
+
 ### Not every tab is a worksheet
 
 `xl/workbook.xml`'s `<sheets>` lists every tab whatever its kind — chart
