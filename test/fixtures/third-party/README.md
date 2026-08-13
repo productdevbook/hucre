@@ -9,11 +9,11 @@ that shape. See #464.
 
 Two producers, two formats:
 
-|            | `*.xlsx`                                        | `sheetjs-*.ods`                                        |
-| ---------- | ----------------------------------------------- | ------------------------------------------------------ |
-| Written by | ExcelJS (MIT)                                   | SheetJS Community Edition, the `xlsx` package (Apache-2.0) |
-| Generator  | `scripts/fixtures/make-exceljs-fixtures.mjs`    | `scripts/fixtures/make-sheetjs-ods-fixtures.mjs`       |
-| Read by    | `test/third-party-fixtures.test.ts`             | `test/ods-third-party.test.ts`                         |
+|            | `*.xlsx`                                     | `sheetjs-*.ods`                                            |
+| ---------- | -------------------------------------------- | ---------------------------------------------------------- |
+| Written by | ExcelJS (MIT)                                | SheetJS Community Edition, the `xlsx` package (Apache-2.0) |
+| Generator  | `scripts/fixtures/make-exceljs-fixtures.mjs` | `scripts/fixtures/make-sheetjs-ods-fixtures.mjs`           |
+| Read by    | `test/third-party-fixtures.test.ts`          | `test/ods-third-party.test.ts`                             |
 
 The XLSX corpus came first, and left the ODS reader as the one that had
 still never parsed a byte it did not write. The SheetJS half closed that.
