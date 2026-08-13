@@ -1,0 +1,42 @@
+{
+  "sheets": [
+    {
+      "name": "Strings",
+      "rows": [
+        ["  leading", "halfbold"],
+        ["trailing  ", null],
+        [" both ", null],
+        ["  leading", null],
+        ["plain", null],
+        ["naïve ünïcode 日本語 Ωμέγα 😀", null],
+        ["a & b < c > d \"quoted\" 'apos'", null],
+        ["line one\nline two", null],
+        ["tab\tsep nbsp", null],
+        ["  ", null]
+      ],
+      "merges": [],
+      "freeze": null,
+      "hiddenRows": [],
+      "hiddenColumns": [],
+      "styles": {
+        "B1": "font(bold)",
+        "A8": "align(wrap)"
+      },
+      "columnStyles": {},
+      "conditional": [],
+      "pageSetup": null
+    }
+  ],
+  "dateSystem": "1900",
+  "hasAuthor": false,
+  "warnings": [],
+  "knownDefects": [
+    {
+      "issue": "#493",
+      "path": "sheets.0.rows.7.0",
+      "expected": "line one\nline two",
+      "actual": "line one\r\nline two",
+      "why": "an embedded newline comes back as CRLF from xlsx and LF from xlsb, for the same authored cell"
+    }
+  ]
+}

@@ -36,6 +36,7 @@
     "test/threaded-comments-write.test.ts",
     "test/ods-fidelity.test.ts",
     "test/parity-statement.test.ts",
+    "test/real-files.test.ts",
     "test/write-model.test.ts",
     // Reads src/_types.ts off disk, so it needs `node:fs` — the same
     // reason the file-reading tests above are here. See #474.

@@ -1,0 +1,31 @@
+{
+  "sheets": [
+    {
+      "name": "Printed",
+      "rows": [
+        ["Header row", "Second"],
+        ["body", 42]
+      ],
+      "merges": [],
+      "freeze": null,
+      "hiddenRows": [],
+      "hiddenColumns": [],
+      "styles": {},
+      "columnStyles": {},
+      "conditional": [],
+      "pageSetup": {
+        "paperSize": "a3",
+        "orientation": "landscape",
+        "fitToPage": true,
+        "fitToHeight": 2,
+        "printArea": "$A$1:$B$2",
+        "printTitlesRow": "$1:$1",
+        "printTitlesColumn": "$A:$A",
+        "leftMargin": 0.5
+      }
+    }
+  ],
+  "dateSystem": "1900",
+  "hasAuthor": false,
+  "warnings": []
+}

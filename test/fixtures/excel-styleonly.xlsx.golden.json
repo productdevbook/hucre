@@ -1,0 +1,29 @@
+{
+  "sheets": [
+    {
+      "name": "StyleOnly",
+      "rows": [
+        ["a", "b", "c"],
+        [1, 2, 3]
+      ],
+      "merges": [],
+      "freeze": null,
+      "hiddenRows": [],
+      "hiddenColumns": [],
+      "styles": {
+        "A1": "font(bold)",
+        "B1": "font(bold)",
+        "C1": "font(bold)",
+        "A2": "fill(solid,DDEBF7) numFmt(0.00)",
+        "B2": "fill(solid,DDEBF7) numFmt(0.00)",
+        "C2": "fill(solid,DDEBF7) numFmt(0.00)"
+      },
+      "columnStyles": {},
+      "conditional": [],
+      "pageSetup": null
+    }
+  ],
+  "dateSystem": "1900",
+  "hasAuthor": false,
+  "warnings": []
+}

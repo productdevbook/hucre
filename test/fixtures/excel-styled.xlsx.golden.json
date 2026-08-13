@@ -1,0 +1,38 @@
+{
+  "sheets": [
+    {
+      "name": "Styled",
+      "rows": [
+        ["bold", "italic", "underline", "courier 14", "red"],
+        ["yellow fill", "bordered", 0.125, 1234.5, "D:2024-03-17T00:00:00.000Z"],
+        ["centred", "wrapped text that is long enough to wrap", null, null, null]
+      ],
+      "merges": [],
+      "freeze": null,
+      "hiddenRows": [],
+      "hiddenColumns": [],
+      "styles": {
+        "A1": "font(bold)",
+        "B1": "font(italic)",
+        "C1": "font(underline)",
+        "D1": "font(size=14,name=Courier New)",
+        "E1": "font(color=FF0000)",
+        "A2": "fill(solid,FFFF00)",
+        "B2": "border(left=thin,right=thin,top=thin,bottom=thin)",
+        "C2": "numFmt(0.00%)",
+        "D2": "numFmt(#,##0.00)",
+        "E2": "numFmt(yyyy\\-mm\\-dd)",
+        "A3": "align(h=center,v=center)",
+        "B3": "align(wrap)"
+      },
+      "columnStyles": {
+        "G": "numFmt(0.000)"
+      },
+      "conditional": [],
+      "pageSetup": null
+    }
+  ],
+  "dateSystem": "1900",
+  "hasAuthor": false,
+  "warnings": []
+}

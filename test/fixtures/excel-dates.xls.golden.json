@@ -1,0 +1,31 @@
+{
+  "sheets": [
+    {
+      "name": "Dates",
+      "rows": [
+        ["iso", "D:2024-03-17T00:00:00.000Z"],
+        ["builtin 14", "D:2024-03-17T00:00:00.000Z"],
+        ["builtin 15", "D:2024-03-17T00:00:00.000Z"],
+        ["japanese", "D:2024-03-17T00:00:00.000Z"],
+        ["japanese era", "D:2024-03-17T00:00:00.000Z"],
+        ["korean", "D:2024-03-17T00:00:00.000Z"],
+        ["time", "D:1899-12-31T13:45:30.000Z"],
+        ["datetime", "D:2024-03-17T13:45:30.000Z"],
+        ["thousands", 1234567.891],
+        ["percent", 0.125],
+        ["text format", "0042"]
+      ],
+      "merges": [],
+      "freeze": null,
+      "hiddenRows": [],
+      "hiddenColumns": [],
+      "styles": {},
+      "columnStyles": {},
+      "conditional": [],
+      "pageSetup": null
+    }
+  ],
+  "dateSystem": null,
+  "hasAuthor": false,
+  "warnings": []
+}

@@ -1,0 +1,25 @@
+{
+  "sheets": [
+    {
+      "name": "Data",
+      "rows": [
+        ["Name", "Qty", "Date", "Active", "Total"],
+        ["Widget", 12, "D:2024-03-17T00:00:00.000Z", true, 24],
+        ["Gadget", -3.5, "D:1999-12-31T00:00:00.000Z", false, -7],
+        ["Doohickey", 0, "D:2024-02-29T00:00:00.000Z", true, 8.5],
+        ["Broken", "#DIV/0!", "xy"]
+      ],
+      "merges": [],
+      "freeze": null,
+      "hiddenRows": [],
+      "hiddenColumns": [],
+      "styles": {},
+      "columnStyles": {},
+      "conditional": [],
+      "pageSetup": null
+    }
+  ],
+  "dateSystem": null,
+  "hasAuthor": false,
+  "warnings": []
+}

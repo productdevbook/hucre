@@ -1,0 +1,25 @@
+{
+  "sheets": [
+    {
+      "name": "Layout",
+      "rows": [
+        ["merged across", null, null, "merged down"],
+        ["Item", "Value", null, null],
+        ["one", 5, null, null],
+        ["two", 15, null, null],
+        ["three", 25, null, null]
+      ],
+      "merges": ["A1:C1", "D1:D3"],
+      "freeze": "2x1",
+      "hiddenRows": [6],
+      "hiddenColumns": ["F"],
+      "styles": {},
+      "columnStyles": {},
+      "conditional": ["B3:B5 cellIs greaterThan 10 stopIfTrue fill=FFC7CE"],
+      "pageSetup": null
+    }
+  ],
+  "dateSystem": "1900",
+  "hasAuthor": false,
+  "warnings": []
+}

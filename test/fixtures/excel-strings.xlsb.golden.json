@@ -1,0 +1,30 @@
+{
+  "sheets": [
+    {
+      "name": "Strings",
+      "rows": [
+        ["  leading", "halfbold"],
+        ["trailing  "],
+        [" both "],
+        ["  leading"],
+        ["plain"],
+        ["naïve ünïcode 日本語 Ωμέγα 😀"],
+        ["a & b < c > d \"quoted\" 'apos'"],
+        ["line one\nline two"],
+        ["tab\tsep nbsp"],
+        ["  "]
+      ],
+      "merges": [],
+      "freeze": null,
+      "hiddenRows": [],
+      "hiddenColumns": [],
+      "styles": {},
+      "columnStyles": {},
+      "conditional": [],
+      "pageSetup": null
+    }
+  ],
+  "dateSystem": null,
+  "hasAuthor": false,
+  "warnings": []
+}
