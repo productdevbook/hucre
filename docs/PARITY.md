@@ -122,24 +122,56 @@ would otherwise show `1E-07` — but only when that form is the same
 number, which it was not for the smallest values (`Number.MIN_VALUE` used
 to come out as `0.0`).
 
-### The buffered readers have a size ceiling
+### The string ceiling, and where it still is
 
 One JavaScript string cannot hold an arbitrarily large part. V8's limit
-is 536,870,888 characters — about 512 MB — so a worksheet above it cannot
-be turned into a string at all, and `readXlsx`, `readXlsb` and `readOds`
-fail before any parsing begins. Instrument logs at Excel's row limit
-reach it: three files in a corpus of ~600 were 56–99 MB compressed and
-607 MB expanded. See #503.
+is 536,870,888 characters — about 512 MB — so a part above it cannot be
+turned into a string at all, however much memory the machine has.
+Instrument logs at Excel's row limit reach it: in a corpus of ~600, 14
+workbooks had a worksheet part between 588 MB and 1.13 GB. See #503.
 
-That used to surface as a raw `Error: Cannot create a string longer than
-0x1fffffe8 characters` — not a `ParseError`, naming no part, saying
-nothing about spreadsheets. It is now a `ParseError` that names the part,
-the size, the bound, and `streamXlsxRows`; and it says the workbook is
-not damaged, because everything else a reader throws means the file is
-wrong and this one means it is large.
+**`readXlsx` reads a worksheet part of any size.** When the part is over
+the ceiling it is parsed from the ZIP entry's stream instead of from a
+string, by the same SAX handlers the buffered parse uses — so the `Sheet`
+is the same `Sheet`, and no option selects between them. Which path runs
+is decided from the size the ZIP declares, before anything is
+decompressed; when the ZIP declares no size, the buffered read runs and
+the ceiling error it raises is the signal to retry as a stream.
 
-**`streamXlsxRows` has no such ceiling** — it reads those same files in
-about 30 seconds at a flat 944 MB, because it never holds the part whole.
+Two things this does not do:
+
+- **The other buffered readers still have the ceiling.** `readXlsb` and
+  `readOds` are unchanged, as is every non-worksheet part of an
+  XLSX — `sharedStrings.xml`, `styles.xml`, a drawing. Those still fail
+  with the `ParseError` from #514: it names the part, the size, the
+  bound, and `streamXlsxRows`, and it says the workbook is not damaged,
+  because everything else a reader throws means the file is wrong and
+  this one means it is large. (None of the ~600 has a non-worksheet part
+  anywhere near the ceiling; a workbook with a 512 MB shared-string
+  table would still fail.)
+- **It does not lift the cell bound.** A part over the ceiling is
+  usually also a sheet with a very large bounding box, so clearing the
+  ceiling often lands on `maxTotalCells` instead — of the 14, ten read
+  and four hit that limit. See the next section.
+
+Two trades worth knowing:
+
+- The streaming ZIP path has no whole entry to check, so a worksheet read
+  this way is **not CRC-32 verified**. That is the same trade
+  `streamXlsxRows` has always made. It is bounded on the way in — a
+  declared size the compressed body could not have produced (DEFLATE tops
+  out at 1032:1) is not believed, so a small entry cannot claim to be
+  enormous and skip the checksum that way.
+- A truncated part is still an error. The row streamers have no error
+  contract for one — they drop the unfinished construct and let the
+  caller notice the missing rows — but the worksheet reader asks the
+  streaming parser for `strict`, so a part that ends mid-tag throws the
+  `XmlError` the buffered parser throws rather than returning a short
+  `Sheet`.
+
+**`streamXlsxRows` still has no ceiling either** and remains the lower-cost
+answer when you only need to walk the rows: it never builds a `Workbook`,
+so it is bounded by the row you are on rather than by the sheet.
 
 ### A sparse sheet has a way out
 

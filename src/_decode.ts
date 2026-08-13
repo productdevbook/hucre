@@ -30,6 +30,29 @@ import { ParseError } from "./errors"
 export const MAX_STRING_LENGTH = 0x1fffffe8
 
 /**
+ * The error a part over the string ceiling produces.
+ *
+ * A caller that can do something about the ceiling — the worksheet
+ * reader, which parses the part as a stream instead (#503) — has to
+ * recognise this one error among all the `ParseError`s a decode can
+ * raise. Matching its message would be the same mistake #516 was: the
+ * text is for people, and a reworded sentence would silently turn the
+ * recovery off. A class cannot be reworded, and it is how every other
+ * distinguishable condition in this library is told apart — see
+ * `errors.ts`.
+ *
+ * Unexported, and a `ParseError` first: nothing outside needs to name it
+ * yet, and every existing `catch (e) { e instanceof ParseError }` keeps
+ * working.
+ */
+class PartTooLargeError extends ParseError {}
+
+/** Whether `error` is the "part is over the string ceiling" `ParseError`. */
+export function isPartTooLargeToDecode(error: unknown): boolean {
+  return error instanceof PartTooLargeError
+}
+
+/**
  * The message for a part too large to become a string.
  *
  * Separated from the decode so it can be tested: reproducing the
@@ -39,7 +62,7 @@ export const MAX_STRING_LENGTH = 0x1fffffe8
  * measurement, and the way out.
  */
 export function tooLargeToDecode(path: string, byteLength: number): ParseError {
-  return new ParseError(
+  return new PartTooLargeError(
     `Part "${path}" is ${byteLength.toLocaleString("en-US")} bytes, over the ` +
       `${MAX_STRING_LENGTH.toLocaleString("en-US")}-character maximum string length ` +
       `this runtime supports, so it cannot be read into memory whole.\n` +

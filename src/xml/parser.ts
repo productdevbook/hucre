@@ -298,7 +298,9 @@ export function parseSax(xml: string, handlers: SaxHandlers): void {
 export async function parseSaxStream(
   stream: ReadableStream<Uint8Array>,
   handlers: SaxHandlers,
+  options?: { strict?: boolean },
 ): Promise<void> {
+  const strict = options?.strict ?? false
   const reader = stream.getReader()
   const decoder = new TextDecoder("utf-8")
   let buf = ""
@@ -319,13 +321,13 @@ export async function parseSaxStream(
         bomStripped = true
       }
 
-      buf = processSaxBuffer(buf, handlers, false)
+      buf = processSaxBuffer(buf, handlers, false, strict)
     }
 
     // Flush remaining decoder state
     buf += decoder.decode()
     if (buf.length > 0) {
-      processSaxBuffer(buf, handlers, true)
+      processSaxBuffer(buf, handlers, true, strict)
     }
   } finally {
     try {
@@ -376,8 +378,39 @@ function safeTextSplit(buf: string, from: number, to: number): number {
     cut = amp
   }
   const last = cut > from ? buf.charCodeAt(cut - 1) : 0
-  if (last >= 0xd800 && last <= 0xdbff) cut-- // don't orphan a high surrogate
+  if (last >= 0xd800 && last <= 0xdbff)
+    cut-- // don't orphan a high surrogate
+  // A CRLF must not be cut in half either. `normalizeEol` runs per piece
+  // and rewrites a lone CR to LF, so a cut between the CR and its LF
+  // turns one line ending into two — a spurious blank line in a cell,
+  // on the streaming driver only, and only in a text run long enough to
+  // be flushed. Holding the CR back costs one character.
+  else if (last === 13 /* \r */) cut--
   return cut > from ? cut : from
+}
+
+/**
+ * What to do with a construct the buffer ends in the middle of.
+ *
+ * Mid-stream it is simply incomplete: hand it back and wait for the next
+ * chunk. At the end of the input there is no next chunk, so it is the
+ * same malformed document `parseSax` refuses — but only a caller that
+ * asked for `strict` is told so.
+ *
+ * The split exists because the two callers want different things. The
+ * row streamers have never had an error contract for a truncated
+ * document; they drop the unfinished construct and let the caller notice
+ * the missing rows, and changing that would change what
+ * `streamXlsxRows` does for everyone. The worksheet reader cannot afford
+ * it: since #503 it parses a part over the string ceiling with the same
+ * handlers as the buffered parse, so if it stayed lenient a truncated
+ * 589 MB worksheet would return a short `Sheet` with no error while the
+ * identical part under the ceiling threw. Two drivers over one handler
+ * set have to agree about failure as well as about success.
+ */
+function endOfInput(reject: boolean, buf: string, i: number, message: string): string {
+  if (reject) throw new XmlError(message)
+  return buf.slice(i)
 }
 
 /**
@@ -385,7 +418,12 @@ function safeTextSplit(buf: string, from: number, to: number): number {
  * Returns the unprocessed remainder (incomplete tag/text at chunk boundary).
  * When `final` is true, all remaining content must be processable.
  */
-function processSaxBuffer(buf: string, handlers: SaxHandlers, final: boolean): string {
+function processSaxBuffer(
+  buf: string,
+  handlers: SaxHandlers,
+  final: boolean,
+  strict: boolean,
+): string {
   let i = 0
   const len = buf.length
 
@@ -403,7 +441,7 @@ function processSaxBuffer(buf: string, handlers: SaxHandlers, final: boolean): s
         if (buf.slice(i, i + 4) === "<!--") {
           const end = buf.indexOf("-->", i + 4)
           if (end === -1) {
-            return final ? "" : buf.slice(i)
+            return endOfInput(final && strict, buf, i, "Unterminated comment")
           }
           i = end + 3
           continue
@@ -411,7 +449,7 @@ function processSaxBuffer(buf: string, handlers: SaxHandlers, final: boolean): s
         if (buf.slice(i, i + 9) === "<![CDATA[") {
           const end = buf.indexOf("]]>", i + 9)
           if (end === -1) {
-            return final ? "" : buf.slice(i)
+            return endOfInput(final && strict, buf, i, "Unterminated CDATA section")
           }
           const text = buf.slice(i + 9, end)
           handlers.onCData?.(text)
@@ -426,7 +464,7 @@ function processSaxBuffer(buf: string, handlers: SaxHandlers, final: boolean): s
         // DOCTYPE or other declaration — skip
         const end = buf.indexOf(">", i + 2)
         if (end === -1) {
-          return final ? "" : buf.slice(i)
+          return endOfInput(final && strict, buf, i, "Unterminated declaration")
         }
         i = end + 1
         continue
@@ -436,7 +474,7 @@ function processSaxBuffer(buf: string, handlers: SaxHandlers, final: boolean): s
         // Processing instruction: <?...?>
         const end = buf.indexOf("?>", i + 2)
         if (end === -1) {
-          return final ? "" : buf.slice(i)
+          return endOfInput(final && strict, buf, i, "Unterminated processing instruction")
         }
         i = end + 2
         continue
@@ -446,7 +484,7 @@ function processSaxBuffer(buf: string, handlers: SaxHandlers, final: boolean): s
         // Closing tag: </tagName>
         const end = buf.indexOf(">", i + 2)
         if (end === -1) {
-          return final ? "" : buf.slice(i)
+          return endOfInput(final && strict, buf, i, "Unterminated closing tag")
         }
         const tag = buf.slice(i + 2, end).trim()
         handlers.onCloseTag?.(tag)
@@ -470,7 +508,7 @@ function processSaxBuffer(buf: string, handlers: SaxHandlers, final: boolean): s
       }
       if (j >= len) {
         // Tag not complete in this chunk
-        return final ? "" : buf.slice(i)
+        return endOfInput(final && strict, buf, i, "Unterminated opening tag")
       }
 
       const selfClosing = buf.charCodeAt(j - 1) === 47 /* / */

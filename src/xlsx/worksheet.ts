@@ -34,7 +34,7 @@ import { resolveStyle, isDateStyle } from "./styles"
 import { cloneCellStyle } from "../_style"
 import { PAPER_SIZE_REVERSE } from "./worksheet-writer"
 import { serialToDate } from "../_date"
-import { parseSax, decodeOoxmlEscapes } from "../xml/parser"
+import { parseSax, parseSaxStream, decodeOoxmlEscapes, type SaxHandlers } from "../xml/parser"
 import { MAX_CELL_MAP_ENTRIES, MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
 import { ParseError } from "../errors"
 
@@ -223,10 +223,22 @@ function parseRangeRef(ref: string): MergeRange {
 // ── SAX-based Worksheet Parser ───────────────────────────────────────
 
 /**
- * Parse a worksheet XML into a Sheet using SAX parsing for performance.
- * This avoids building a full DOM tree for large worksheets.
+ * The SAX handlers for one worksheet, and the finalisation that turns
+ * what they collected into a {@link Sheet}.
+ *
+ * Split out so the buffered and the streaming reader drive the *same*
+ * handler set rather than two copies of it. A worksheet part over the
+ * string ceiling has to be parsed a chunk at a time (#503), and a second
+ * implementation of these 850 lines would be a second set of answers for
+ * every field of the model — the two would drift on the first field
+ * added to one and forgotten in the other, which is the failure mode
+ * `CONTRIBUTING.md` calls the registers. There is exactly one
+ * implementation; only the driver differs.
  */
-export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext): Sheet {
+function worksheetParser(
+  name: string,
+  ctx: WorksheetContext,
+): { handlers: SaxHandlers; finish: () => Sheet } {
   const rows: CellValue[][] = []
   const cells = new Map<string, Cell>()
   const merges: MergeRange[] = []
@@ -392,7 +404,7 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   let currentRunFont: FontStyle | undefined
   let _fontPropTag = ""
 
-  parseSax(xml, {
+  const handlers: SaxHandlers = {
     onOpenTag(tag, attrs) {
       const local = tag.includes(":") ? tag.slice(tag.indexOf(":") + 1) : tag
 
@@ -1249,186 +1261,227 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
           break
       }
     },
-  })
+  }
 
-  // Ensure all rows have consistent length. Not in sparse mode: there is
-  // no grid, which is the whole point, and the bounding-box limit below
-  // has nothing to guard.
-  if (hasCells && !ctx.sparse) {
-    const colCount = maxCol + 1
-    // The cost of a sheet is its bounding box, not its cell count — the
-    // loop below fills every slot in it. Two in-bounds cells at opposite
-    // corners describe 1.7e10 slots, which V8 answers with an OOM the
-    // caller cannot catch, so the product is checked before allocating.
-    const totalCells = (maxRow + 1) * colCount
-    const cellLimit = ctx.maxTotalCells ?? MAX_TOTAL_CELLS
-    if (totalCells > cellLimit) {
-      // The options this used to name were the wrong three for the case
-      // that actually hits it. A *sparse* sheet — 82k values scattered
-      // over a 305M-slot box, 0.03% fill — is not large, so raising
-      // `maxTotalCells` trades a clean error for a multi-gigabyte
-      // allocation; `range` needs the caller to already know where the
-      // data is; and `maxRows` bounds rows when the problem is columns.
-      //
-      // `streamXlsxRows` reads exactly this file today, one row at a
-      // time, and the message never mentioned it. See #501.
-      throw new ParseError(
-        oversizeSheetMessage(name, maxRow + 1, colCount, totalCells, cellCount, cellLimit),
-      )
-    }
-    for (let r = 0; r <= maxRow; r++) {
-      if (!rows[r]) {
-        rows[r] = Array.from({ length: colCount }, () => null) as CellValue[]
-      } else {
-        while (rows[r].length < colCount) {
-          rows[r].push(null)
+  function finish(): Sheet {
+    // Ensure all rows have consistent length. Not in sparse mode: there is
+    // no grid, which is the whole point, and the bounding-box limit below
+    // has nothing to guard.
+    if (hasCells && !ctx.sparse) {
+      const colCount = maxCol + 1
+      // The cost of a sheet is its bounding box, not its cell count — the
+      // loop below fills every slot in it. Two in-bounds cells at opposite
+      // corners describe 1.7e10 slots, which V8 answers with an OOM the
+      // caller cannot catch, so the product is checked before allocating.
+      const totalCells = (maxRow + 1) * colCount
+      const cellLimit = ctx.maxTotalCells ?? MAX_TOTAL_CELLS
+      if (totalCells > cellLimit) {
+        // The options this used to name were the wrong three for the case
+        // that actually hits it. A *sparse* sheet — 82k values scattered
+        // over a 305M-slot box, 0.03% fill — is not large, so raising
+        // `maxTotalCells` trades a clean error for a multi-gigabyte
+        // allocation; `range` needs the caller to already know where the
+        // data is; and `maxRows` bounds rows when the problem is columns.
+        //
+        // `streamXlsxRows` reads exactly this file today, one row at a
+        // time, and the message never mentioned it. See #501.
+        throw new ParseError(
+          oversizeSheetMessage(name, maxRow + 1, colCount, totalCells, cellCount, cellLimit),
+        )
+      }
+      for (let r = 0; r <= maxRow; r++) {
+        if (!rows[r]) {
+          rows[r] = Array.from({ length: colCount }, () => null) as CellValue[]
+        } else {
+          while (rows[r].length < colCount) {
+            rows[r].push(null)
+          }
         }
       }
     }
-  }
 
-  // ── Resolve hyperlinks ──
-  // Build a map of rId → target URL from worksheet relationships
-  const relMap = new Map<string, string>()
-  if (ctx.worksheetRels) {
-    for (const rel of ctx.worksheetRels) {
-      relMap.set(rel.id, rel.target)
-    }
-  }
-
-  for (const hl of rawHyperlinks) {
-    const pos = parseCellRef(hl.ref)
-    const key = `${pos.row},${pos.col}`
-
-    // Get or create cell in the cells map
-    let cell = cells.get(key)
-    if (!cell) {
-      cell = {
-        value: (rows[pos.row] && rows[pos.row][pos.col]) ?? null,
-        type: "string",
-      }
-      // Far fewer hyperlinks than cells in any real file, but this is
-      // the other place `cells` grows and the check is one comparison.
-      assertCellMapCapacity(cells, key, name)
-      cells.set(key, cell)
-    }
-
-    const hyperlink: Hyperlink = { target: "" }
-
-    if (hl.location) {
-      // Internal hyperlink
-      hyperlink.location = hl.location
-      hyperlink.target = hl.location
-    } else if (hl.rId) {
-      // External hyperlink — resolve from relationships
-      const target = relMap.get(hl.rId)
-      if (target) {
-        hyperlink.target = target
-      } else {
-        // The cell keeps a hyperlink with an empty target, which reads as
-        // a link that goes nowhere rather than as a missing relationship.
-        // See #474.
-        ctx.onWarning?.({
-          code: "unresolved-hyperlink",
-          message:
-            `Cell ${hl.ref} links through ${hl.rId}, which the sheet's ` +
-            "relationships do not define. Read with an empty target.",
-          sheet: ctx.sheetName,
-          row: pos.row,
-          col: pos.col,
-        })
+    // ── Resolve hyperlinks ──
+    // Build a map of rId → target URL from worksheet relationships
+    const relMap = new Map<string, string>()
+    if (ctx.worksheetRels) {
+      for (const rel of ctx.worksheetRels) {
+        relMap.set(rel.id, rel.target)
       }
     }
 
-    if (hl.tooltip) hyperlink.tooltip = hl.tooltip
-    if (hl.display) hyperlink.display = hl.display
+    for (const hl of rawHyperlinks) {
+      const pos = parseCellRef(hl.ref)
+      const key = `${pos.row},${pos.col}`
 
-    cell.hyperlink = hyperlink
-  }
+      // Get or create cell in the cells map
+      let cell = cells.get(key)
+      if (!cell) {
+        cell = {
+          value: (rows[pos.row] && rows[pos.row][pos.col]) ?? null,
+          type: "string",
+        }
+        // Far fewer hyperlinks than cells in any real file, but this is
+        // the other place `cells` grows and the check is one comparison.
+        assertCellMapCapacity(cells, key, name)
+        cells.set(key, cell)
+      }
 
-  const sheet: Sheet = {
-    name,
-    rows,
-  }
+      const hyperlink: Hyperlink = { target: "" }
 
-  if (cells.size > 0) {
-    sheet.cells = cells
-  }
-  // Attach column definitions (width, hidden, outlineLevel, collapsed)
-  if (defaultRowHeight !== undefined) sheet.defaultRowHeight = defaultRowHeight
-  if (defaultColWidth !== undefined) sheet.defaultColWidth = defaultColWidth
+      if (hl.location) {
+        // Internal hyperlink
+        hyperlink.location = hl.location
+        hyperlink.target = hl.location
+      } else if (hl.rId) {
+        // External hyperlink — resolve from relationships
+        const target = relMap.get(hl.rId)
+        if (target) {
+          hyperlink.target = target
+        } else {
+          // The cell keeps a hyperlink with an empty target, which reads as
+          // a link that goes nowhere rather than as a missing relationship.
+          // See #474.
+          ctx.onWarning?.({
+            code: "unresolved-hyperlink",
+            message:
+              `Cell ${hl.ref} links through ${hl.rId}, which the sheet's ` +
+              "relationships do not define. Read with an empty target.",
+            sheet: ctx.sheetName,
+            row: pos.row,
+            col: pos.col,
+          })
+        }
+      }
 
-  if (columnDefs.some((c) => Object.keys(c).length > 0)) {
-    sheet.columns = columnDefs
-  }
-  if (merges.length > 0) {
-    sheet.merges = merges
-  }
-  if (dataValidations.length > 0) {
-    sheet.dataValidations = dataValidations
-  }
-  if (conditionalRules.length > 0) {
-    sheet.conditionalRules = conditionalRules
-  }
-  if (autoFilter) {
-    sheet.autoFilter = autoFilter
-  }
-  if (freezePane) {
-    sheet.freezePane = freezePane
-  }
-  if (splitPane) {
-    sheet.splitPane = splitPane
-  }
-  if (sheetProtection) {
-    sheet.protection = sheetProtection
-  }
+      if (hl.tooltip) hyperlink.tooltip = hl.tooltip
+      if (hl.display) hyperlink.display = hl.display
 
-  // Attach sheet view settings
-  if (sheetView && Object.keys(sheetView).length > 0) {
-    sheet.view = sheetView
-  }
-
-  // Attach page setup (merge margins into pageSetup if present)
-  if (pageSetup || pageMargins || fitToPageFlag) {
-    const ps: PageSetup = pageSetup ?? {}
-    if (pageMargins) {
-      ps.margins = pageMargins
+      cell.hyperlink = hyperlink
     }
-    if (fitToPageFlag) {
-      ps.fitToPage = true
+
+    const sheet: Sheet = {
+      name,
+      rows,
     }
-    sheet.pageSetup = ps
+
+    if (cells.size > 0) {
+      sheet.cells = cells
+    }
+    // Attach column definitions (width, hidden, outlineLevel, collapsed)
+    if (defaultRowHeight !== undefined) sheet.defaultRowHeight = defaultRowHeight
+    if (defaultColWidth !== undefined) sheet.defaultColWidth = defaultColWidth
+
+    if (columnDefs.some((c) => Object.keys(c).length > 0)) {
+      sheet.columns = columnDefs
+    }
+    if (merges.length > 0) {
+      sheet.merges = merges
+    }
+    if (dataValidations.length > 0) {
+      sheet.dataValidations = dataValidations
+    }
+    if (conditionalRules.length > 0) {
+      sheet.conditionalRules = conditionalRules
+    }
+    if (autoFilter) {
+      sheet.autoFilter = autoFilter
+    }
+    if (freezePane) {
+      sheet.freezePane = freezePane
+    }
+    if (splitPane) {
+      sheet.splitPane = splitPane
+    }
+    if (sheetProtection) {
+      sheet.protection = sheetProtection
+    }
+
+    // Attach sheet view settings
+    if (sheetView && Object.keys(sheetView).length > 0) {
+      sheet.view = sheetView
+    }
+
+    // Attach page setup (merge margins into pageSetup if present)
+    if (pageSetup || pageMargins || fitToPageFlag) {
+      const ps: PageSetup = pageSetup ?? {}
+      if (pageMargins) {
+        ps.margins = pageMargins
+      }
+      if (fitToPageFlag) {
+        ps.fitToPage = true
+      }
+      sheet.pageSetup = ps
+    }
+
+    // Attach header/footer
+    if (headerFooter && Object.keys(headerFooter).length > 0) {
+      sheet.headerFooter = headerFooter
+    }
+
+    // Attach page breaks
+    if (rowBreaks.length > 0) {
+      sheet.rowBreaks = rowBreaks.sort((a, b) => a - b)
+    }
+    if (colBreaks.length > 0) {
+      sheet.colBreaks = colBreaks.sort((a, b) => a - b)
+    }
+
+    // Attach row definitions (height, hidden, outlineLevel)
+    if (rowDefs.size > 0) {
+      sheet.rowDefs = rowDefs
+    }
+
+    // Attach sparklines
+    if (sparklines.length > 0) {
+      sheet.sparklines = sparklines
+    }
+
+    // Attach outline properties
+    if (outlineProperties) {
+      sheet.outlineProperties = outlineProperties
+    }
+
+    return sheet
   }
 
-  // Attach header/footer
-  if (headerFooter && Object.keys(headerFooter).length > 0) {
-    sheet.headerFooter = headerFooter
-  }
+  return { handlers, finish }
+}
 
-  // Attach page breaks
-  if (rowBreaks.length > 0) {
-    sheet.rowBreaks = rowBreaks.sort((a, b) => a - b)
-  }
-  if (colBreaks.length > 0) {
-    sheet.colBreaks = colBreaks.sort((a, b) => a - b)
-  }
+/**
+ * Parse a worksheet XML into a Sheet using SAX parsing for performance.
+ * This avoids building a full DOM tree for large worksheets.
+ */
+export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext): Sheet {
+  const { handlers, finish } = worksheetParser(name, ctx)
+  parseSax(xml, handlers)
+  return finish()
+}
 
-  // Attach row definitions (height, hidden, outlineLevel)
-  if (rowDefs.size > 0) {
-    sheet.rowDefs = rowDefs
-  }
-
-  // Attach sparklines
-  if (sparklines.length > 0) {
-    sheet.sparklines = sparklines
-  }
-
-  // Attach outline properties
-  if (outlineProperties) {
-    sheet.outlineProperties = outlineProperties
-  }
-
-  return sheet
+/**
+ * Parse a worksheet from a stream of its bytes, for a part that cannot
+ * become a string at all.
+ *
+ * V8 stops at 0x1fffffe8 characters, so `xl/worksheets/sheet2.xml` at
+ * 589 MB is unrepresentable however much memory the machine has — the
+ * buffered reader could decompress it and still not parse it. See #503.
+ *
+ * The result is the same `Sheet` {@link parseWorksheet} builds, because
+ * it is the same handlers and the same finalisation; only the driver
+ * differs. `parseSaxStream` holds back a tag or an entity split across a
+ * chunk boundary, and every text handler accumulates with `+=`, so a run
+ * arriving in pieces is assembled exactly as one arriving whole.
+ */
+export async function parseWorksheetStream(
+  stream: ReadableStream<Uint8Array>,
+  name: string,
+  ctx: WorksheetContext,
+): Promise<Sheet> {
+  const { handlers, finish } = worksheetParser(name, ctx)
+  // `strict` so a truncated part is an error here, as it is for the
+  // buffered driver. See `endOfInput` in the parser for why it is not
+  // the default.
+  await parseSaxStream(stream, handlers, { strict: true })
+  return finish()
 }
 
 // ── Sheet Protection Parser ─────────────────────────────────────────

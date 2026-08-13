@@ -4,7 +4,7 @@
 
 import { ZipError } from "../errors"
 import { MAX_DECOMPRESSED_BYTES } from "../limits"
-import { byteLimitStream } from "./byte-limit"
+import { byteLimitStream, chunkedStream } from "./byte-limit"
 import { crc32, inflate } from "./deflate"
 import { canInflateRaw } from "./capability"
 
@@ -21,6 +21,14 @@ const SIG_ZIP64_EOCD_LOCATOR = 0x07064b50
 const ZIP64_SENTINEL = 0xffffffff
 /** 0xFFFF marker for the 16-bit entry-count fields. */
 const ZIP64_SENTINEL_16 = 0xffff
+/**
+ * The most DEFLATE can expand a byte by — 1032:1, the format's ceiling
+ * for a maximum-length match emitted from a minimum-length code. Used to
+ * tell a declared uncompressed size that the compressed body could have
+ * produced from one it could not.
+ */
+const MAX_DEFLATE_RATIO = 1032
+
 /** Header id of the ZIP64 extended information extra field. */
 const ZIP64_EXTRA_ID = 0x0001
 
@@ -133,6 +141,44 @@ export class ZipReader {
   /** Check if an entry exists */
   has(path: string): boolean {
     return this.entryMap.has(path)
+  }
+
+  /**
+   * What the central directory says an entry expands to, or `undefined`
+   * when it does not say.
+   *
+   * Lets a reader choose how to parse a part *before* paying to
+   * decompress it — a worksheet past the string ceiling has to be parsed
+   * as a stream, and finding that out by buffering it first costs the
+   * decompression twice and the peak memory of a buffer that gets thrown
+   * away. See #503.
+   *
+   * Zero means "not declared": it is what a producer writing a data
+   * descriptor leaves behind, and it is not a small entry, so it may not
+   * be reported as one — the caller is told nothing and falls back to
+   * finding out the slow way. A ZIP64 size needs no handling here;
+   * `readCentralDir` has already resolved the sentinel from the extra
+   * field, or thrown.
+   *
+   * A size the compressed body could not possibly produce is also not
+   * declared. Nothing verifies this field, and the answer decides whether
+   * a part is read whole — CRC-32 checked — or as a stream, which has no
+   * whole entry to check. Without the plausibility test a 40 KB worksheet
+   * whose central directory claims 600 MB would take the streaming route
+   * and skip the checksum, so a corrupt entry could buy its way out of
+   * verification by lying about its size. DEFLATE cannot exceed 1032:1,
+   * and a stored entry expands not at all, so a claim past that is the
+   * archive contradicting itself and is not trusted.
+   */
+  declaredSize(path: string): number | undefined {
+    const entry = this.entryMap.get(path)
+    if (!entry?.uncompressedSize) return undefined
+    const most =
+      entry.compressionMethod === 0
+        ? entry.compressedSize
+        : entry.compressedSize * MAX_DEFLATE_RATIO
+    if (entry.compressedSize > 0 && entry.uncompressedSize > most) return undefined
+    return entry.uncompressedSize
   }
 
   /** Extract a single file by path */
@@ -507,13 +553,8 @@ export class ZipReader {
     const compressedData = this.data.subarray(dataStart, dataStart + compressedSize)
 
     if (entry.compressionMethod === 0) {
-      // STORE — return raw data as a stream
-      return new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(compressedData)
-          controller.close()
-        },
-      })
+      // STORE — no decompression, but still emitted in pieces
+      return chunkedStream(compressedData)
     }
 
     if (entry.compressionMethod === 8) {
@@ -550,13 +591,7 @@ export class ZipReader {
       }
 
       // Fallback: inflate synchronously and emit as stream
-      const inflated = inflate(compressedData, declaredCap)
-      return new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(inflated)
-          controller.close()
-        },
-      })
+      return chunkedStream(inflate(compressedData, declaredCap))
     }
 
     throw new ZipError(

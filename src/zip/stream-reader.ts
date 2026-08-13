@@ -16,7 +16,7 @@
 // recover the bytes consumed so far via {@link ZipStreamReader.drainToBuffer}
 // and fall back to the random-access {@link ZipReader}.
 
-import { byteLimitStream } from "./byte-limit"
+import { byteLimitStream, STREAM_CHUNK_BYTES } from "./byte-limit"
 import { inflate } from "./deflate"
 import { ParseError, ZipError } from "../errors"
 import { MAX_DECOMPRESSED_BYTES, MAX_INPUT_BYTES } from "../limits"
@@ -227,6 +227,12 @@ export class ZipStreamReader {
       ).pipeThrough(byteLimitStream(cap))
     }
     // No DecompressionStream — buffer the compressed body and inflate once.
+    // The result is handed on in pieces rather than as one enqueue: a
+    // consumer that accumulates what it is given (`parseSaxStream` does
+    // `buf += decoder.decode(chunk)`) would otherwise rebuild the very
+    // string the streaming path exists to avoid, and this is the branch
+    // the Deno/browser/Workers claims rest on. Same reason as the twin
+    // paths in `reader.ts`. See #503.
     return new ReadableStream<Uint8Array>({
       async start(controller) {
         const chunks: Uint8Array[] = []
@@ -236,7 +242,12 @@ export class ZipStreamReader {
           if (done) break
           if (value) chunks.push(value)
         }
-        controller.enqueue(inflate(concat(chunks), cap))
+        const inflated = inflate(concat(chunks), cap)
+        for (let at = 0; at < inflated.length; at += STREAM_CHUNK_BYTES) {
+          controller.enqueue(
+            inflated.subarray(at, Math.min(at + STREAM_CHUNK_BYTES, inflated.length)),
+          )
+        }
         controller.close()
       },
     })

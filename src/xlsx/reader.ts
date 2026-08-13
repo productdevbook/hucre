@@ -21,7 +21,7 @@ import type {
   TimelineCache,
   ChartAnchor,
 } from "../_types"
-import { decodePart } from "../_decode"
+import { decodePart, isPartTooLargeToDecode, MAX_STRING_LENGTH } from "../_decode"
 import { parsePersons, parseThreadedComments } from "./threaded-comments-reader"
 import { parseExternalLink } from "./external-link-reader"
 import { assembleCellImages, parseCellImages, REL_CELL_IMAGES } from "./cell-images-reader"
@@ -37,7 +37,8 @@ import { parseContentTypes } from "./content-types"
 import { parseRelationships } from "./relationships"
 import { parseSharedStrings } from "./shared-strings"
 import { parseStyles } from "./styles"
-import { parseWorksheet } from "./worksheet"
+import { parseWorksheet, parseWorksheetStream } from "./worksheet"
+import type { WorksheetContext } from "./worksheet"
 import { parseDynamicArrayCellMetadata } from "./metadata"
 import type { ParsedStyles } from "./styles"
 import type { SharedString } from "./shared-strings"
@@ -70,6 +71,60 @@ export function matchesRelType(rel: string, type: string): boolean {
 
 function decodeUtf8(data: Uint8Array, path = "(unknown)"): string {
   return decodePart(data, path)
+}
+
+/**
+ * Read one worksheet part into a `Sheet`, whatever size it is.
+ *
+ * A worksheet over V8's 0x1fffffe8-character ceiling cannot be turned
+ * into a string at all, so buffering it and parsing the string — what
+ * this did until #503 — could not work however much memory the machine
+ * had. `readXlsx` threw on eleven of the twelve workbooks over 100 MB in
+ * a corpus of ~600 instrument exports; the largest worksheet part in it
+ * is 589 MB.
+ *
+ * The part is parsed from the ZIP entry's stream instead, by the same
+ * handlers the buffered parse uses (`parseWorksheetStream`), so there is
+ * no second model-building path to keep in step.
+ *
+ * Which path is taken is not the caller's business — the ceiling is an
+ * implementation limit of a decoder, not a property of the workbook, and
+ * an option to work around it would only make every caller who meets one
+ * of these files handle it themselves. So it is decided here:
+ *
+ *  - The declared size settles it before anything is decompressed. It is
+ *    a *byte* count against a *character* ceiling, so a multibyte part
+ *    can be sent to the streaming path that the buffered one would have
+ *    managed. That costs nothing: same handlers, same `Sheet`.
+ *  - When the ZIP declares no size, the buffered path runs and the
+ *    ceiling error it raises is the signal to retry as a stream. That
+ *    pays for the decompression twice, which is why it is the fallback
+ *    and not the rule.
+ *
+ * One difference is worth knowing about: the streaming ZIP path does not
+ * verify CRC-32 (it has no whole entry to check), so a part read this way
+ * is not checked for corruption the way a buffered one is. That is the
+ * same trade `streamXlsxRows` has always made.
+ */
+async function readWorksheet(
+  zip: ZipReader,
+  wsPath: string,
+  name: string,
+  ctx: WorksheetContext,
+): Promise<Sheet> {
+  const declared = zip.declaredSize(wsPath)
+  if (declared === undefined || declared <= MAX_STRING_LENGTH) {
+    try {
+      return parseWorksheet(decodeUtf8(await zip.extract(wsPath), wsPath), name, ctx)
+    } catch (error) {
+      // Only `tooLargeToDecode` produces this one, so a `ParseError` the
+      // handlers raised — a malformed ref, the cell bound — is rethrown
+      // rather than retried. Retrying it would parse the part twice to
+      // arrive at the same error.
+      if (!isPartTooLargeToDecode(error)) throw error
+    }
+  }
+  return parseWorksheetStream(zip.extractStream(wsPath), name, ctx)
 }
 
 /**
@@ -438,8 +493,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
       onWarning: options?.onWarning,
     }
 
-    const wsXml = decodeUtf8(await zip.extract(wsPath), wsPath)
-    const sheet = parseWorksheet(wsXml, info.name, worksheetCtx)
+    const sheet = await readWorksheet(zip, wsPath, info.name, worksheetCtx)
     if (info.state === "hidden") sheet.hidden = true
     if (info.state === "veryHidden") sheet.veryHidden = true
 

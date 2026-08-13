@@ -33,3 +33,38 @@ export function byteLimitStream(maxBytes: number): TransformStream<Uint8Array, U
     },
   })
 }
+
+/**
+ * How much of an already-in-memory entry one chunk of its stream holds.
+ *
+ * `DecompressionStream` hands back pieces of its own accord, but the two
+ * paths that do not decompress — a STORE entry, and the fallback inflate
+ * that returns a whole buffer — had nothing to divide and enqueued the
+ * entry in one go. A consumer that accumulates what it is given then
+ * gets the entire entry as one chunk: `parseSaxStream` does
+ * `buf += decoder.decode(chunk)`, so a 589 MB stored worksheet rebuilt
+ * the 512 MB string the streaming path exists to avoid, and the reader
+ * for the files in #503 would have failed on exactly the ones it was
+ * added for. Nothing here is copied — each chunk is a `subarray` view.
+ *
+ * 1 MiB is small enough to keep any one string far from the ceiling and
+ * large enough that the per-chunk overhead does not show up in a
+ * measurement.
+ */
+export const STREAM_CHUNK_BYTES: number = 1024 * 1024
+
+/** Emit an in-memory buffer as a stream of {@link STREAM_CHUNK_BYTES} pieces. */
+export function chunkedStream(data: Uint8Array): ReadableStream<Uint8Array> {
+  let offset = 0
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (offset >= data.length) {
+        controller.close()
+        return
+      }
+      const end = Math.min(offset + STREAM_CHUNK_BYTES, data.length)
+      controller.enqueue(data.subarray(offset, end))
+      offset = end
+    },
+  })
+}
