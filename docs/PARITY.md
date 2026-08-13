@@ -122,6 +122,36 @@ would otherwise show `1E-07` — but only when that form is the same
 number, which it was not for the smallest values (`Number.MIN_VALUE` used
 to come out as `0.0`).
 
+### A sparse sheet has a way out
+
+`Sheet.rows` being a dense rectangle means a read costs the bounding box
+rather than the cell count. That is right for almost every sheet and
+wrong for a sparse one: a real workbook with 82,000 values scattered over
+a 305,612,208-slot box — 0.03% filled — could not be read at all, and
+none of the three options the error named would have helped. Raising
+`maxTotalCells` trades a clean error for a multi-gigabyte allocation,
+`range` needs you to already know where the data is, and `maxRows` bounds
+rows when the problem is columns. See #501.
+
+Two answers, and the error now names both:
+
+- **`streamXlsxRows`** already read that file, a row at a time, and the
+  message never said so. It is the better answer when you only need to
+  walk the rows once.
+- **`readXlsx(input, { sparse: true })`** returns `cells` keyed
+  `"row,col"` and leaves `rows` empty. Memory tracks the values rather
+  than the box, the bounding-box limit does not apply because nothing
+  dense is built, and you get a `Workbook` — which is what streaming
+  cannot give you.
+
+The error also reports how full the box actually is, which is what turns
+"your sheet is too large" into "your sheet is mostly nothing" — a
+different problem with a different answer.
+
+`sparse` is XLSX-only and off by default. With it on, anything that reads
+`Sheet.rows` — `sheetToObjects`, `readObjects`, the writers — sees an
+empty sheet; `cells` is the whole answer.
+
 ### A style-only cell does not widen the sheet
 
 Excel writes a self-closing `<c r="WVF45" s="3"/>` for every position

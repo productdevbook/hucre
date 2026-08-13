@@ -1565,6 +1565,30 @@ export interface ReadOptions {
    */
   maxInputBytes?: number
   /**
+   * Return cells without materializing the grid. Default: false.
+   *
+   * `Sheet.rows` is a dense rectangle, so the cost of a read is the
+   * bounding box rather than the cell count — which is right for almost
+   * every sheet and wrong for a sparse one. A real workbook with 82,000
+   * values scattered over a 305,612,208-slot box (0.03% filled) could
+   * not be read at all: raising {@link maxTotalCells} trades a clean
+   * error for a multi-gigabyte allocation, `range` needs you to already
+   * know where the data is, and `maxRows` bounds rows when the problem
+   * is columns. See #501.
+   *
+   * With this set, `rows` comes back empty and every cell that carries
+   * something is in {@link Sheet.cells}, keyed `"row,col"`. Memory then
+   * tracks the values rather than the box, and the bounding-box limit
+   * does not apply because nothing dense is built.
+   *
+   * `streamXlsxRows` is the other answer and the better one when you
+   * only need to walk the rows once; this is for random access, or for
+   * when you want a `Workbook`.
+   *
+   * XLSX only.
+   */
+  sparse?: boolean
+  /**
    * Maximum number of cells a single sheet may be normalized into —
    * `rows` is a dense rectangle, so this bounds the bounding box rather
    * than the cell count. Default: 20,000,000 ({@link MAX_TOTAL_CELLS}).

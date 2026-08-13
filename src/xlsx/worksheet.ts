@@ -53,6 +53,8 @@ export interface WorksheetContext {
   range?: string
   /** Bounding-box ceiling; see ReadOptions.maxTotalCells. Default {@link MAX_TOTAL_CELLS}. */
   maxTotalCells?: number
+  /** Skip the dense grid and return cells only; see ReadOptions.sparse. */
+  sparse?: boolean
   /** Name of the sheet being parsed, so a warning can say where it was. */
   sheetName?: string
   /** Where a dropped reference is reported; see ReadOptions.onWarning. */
@@ -164,6 +166,8 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
   const merges: MergeRange[] = []
   let maxCol = -1
   let maxRow = -1
+  /** Cells that carried something — the numerator of the fill factor. */
+  let cellCount = 0
   let hasCells = false
 
   // Range filter — parse once, use in cell processing
@@ -959,6 +963,7 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
                 if (effCol > maxCol) maxCol = effCol
                 if (effRow > maxRow) maxRow = effRow
                 hasCells = true
+                cellCount++
               }
             }
             inCell = false
@@ -1169,8 +1174,10 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
     },
   })
 
-  // Ensure all rows have consistent length
-  if (hasCells) {
+  // Ensure all rows have consistent length. Not in sparse mode: there is
+  // no grid, which is the whole point, and the bounding-box limit below
+  // has nothing to guard.
+  if (hasCells && !ctx.sparse) {
     const colCount = maxCol + 1
     // The cost of a sheet is its bounding box, not its cell count — the
     // loop below fills every slot in it. Two in-bounds cells at opposite
@@ -1179,11 +1186,24 @@ export function parseWorksheet(xml: string, name: string, ctx: WorksheetContext)
     const totalCells = (maxRow + 1) * colCount
     const cellLimit = ctx.maxTotalCells ?? MAX_TOTAL_CELLS
     if (totalCells > cellLimit) {
+      // The options this used to name were the wrong three for the case
+      // that actually hits it. A *sparse* sheet — 82k values scattered
+      // over a 305M-slot box, 0.03% fill — is not large, so raising
+      // `maxTotalCells` trades a clean error for a multi-gigabyte
+      // allocation; `range` needs the caller to already know where the
+      // data is; and `maxRows` bounds rows when the problem is columns.
+      //
+      // `streamXlsxRows` reads exactly this file today, one row at a
+      // time, and the message never mentioned it. See #501.
+      const density = totalCells > 0 ? (100 * cellCount) / totalCells : 100
       throw new ParseError(
         `Sheet "${name}" spans ${maxRow + 1} rows x ${colCount} columns ` +
-          `(${totalCells} cells), over the ${cellLimit} limit. ` +
-          `Use the \`range\` or \`maxRows\` read option to bound the area read, ` +
-          `or raise \`maxTotalCells\` if the sheet really is this large.`,
+          `(${totalCells} cells, ${density.toFixed(2)}% of them filled), ` +
+          `over the ${cellLimit} limit.\n` +
+          `  - streamXlsxRows(input) reads it a row at a time, whatever the box.\n` +
+          `  - readXlsx(input, { sparse: true }) returns the cells and no grid.\n` +
+          `  - \`range\` or \`maxRows\` bound the area, if you know where the data is.\n` +
+          `  - \`maxTotalCells\` raises the bound, if the sheet really is this large.`,
       )
     }
     for (let r = 0; r <= maxRow; r++) {
@@ -1686,12 +1706,16 @@ function processCell(
     return
   }
 
-  // Ensure row array exists
-  while (rows.length <= row) {
-    rows.push([])
-  }
-  while (rows[row].length <= col) {
-    rows[row].push(null)
+  // Ensure row array exists. Skipped in sparse mode — allocating the row
+  // out to the cell's column is the cost being avoided, and it is paid
+  // here rather than in the densify pass at the end. See #501.
+  if (!ctx.sparse) {
+    while (rows.length <= row) {
+      rows.push([])
+    }
+    while (rows[row].length <= col) {
+      rows[row].push(null)
+    }
   }
 
   let value: CellValue = null
@@ -1850,8 +1874,10 @@ function processCell(
     }
   }
 
-  // Set the value in the rows array
-  rows[row][col] = value
+  // Set the value in the rows array. In sparse mode there is no grid to
+  // set it in: the whole point is that the bounding box is not paid for.
+  // See #501.
+  if (!ctx.sparse) rows[row][col] = value
 
   // Detect Excel 2024 checkbox feature on this cell's xf — independent of
   // readStyles so the flag round-trips even without full style hydration.
@@ -1860,8 +1886,10 @@ function processCell(
       ? (ctx.styles.cellXfs[styleIndex]?.hasCheckboxFeature ?? false)
       : false
 
-  // Build Cell object if there's detail beyond the raw value
+  // Build Cell object if there's detail beyond the raw value — or always,
+  // in sparse mode, where `cells` is the only place a value can live.
   const hasDetails =
+    ctx.sparse ||
     formula !== undefined ||
     richText !== undefined ||
     (ctx.readStyles && ctx.styles && styleIndex >= 0) ||

@@ -426,6 +426,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
       maxRows: options?.maxRows,
       range: options?.range,
       maxTotalCells: options?.maxTotalCells,
+      sparse: options?.sparse,
       dynamicArrayCm,
       sheetName: info.name,
       onWarning: options?.onWarning,
