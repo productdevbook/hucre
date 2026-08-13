@@ -19,7 +19,7 @@ import { parseContentTypes } from "./content-types"
 import { parseRelationships } from "./relationships"
 import { parseSharedStrings } from "./shared-strings"
 import { parseStyles, isDateStyle } from "./styles"
-import { parseCellRef } from "./worksheet"
+import { parseCellRef, parseIsoCellDate } from "./worksheet"
 import { serialToDate } from "../_date"
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -581,6 +581,22 @@ function resolveStreamCellValue(
     case "e": {
       // Error
       return valueText
+    }
+    case "d": {
+      // ISO 8601 date (ECMA-376 §18.18.11 ST_CellType), which openpyxl
+      // writes whenever `iso_dates=True`. Without this it fell to the
+      // `n` arm, where `Number("2024-03-17")` is NaN and the text came
+      // back as a string — while `readXlsx` returned a `Date` for the
+      // same cell. See #496.
+      //
+      // The value is an instant, not an offset from an epoch, so the
+      // 1904 system does not apply to it.
+      const parsed = parseIsoCellDate(valueText)
+      if (parsed) return parsed
+      // A bare time (`13:45:30`, openpyxl's `datetime.time`) has no day
+      // to anchor it; left as text rather than guessed onto an epoch,
+      // which is what the buffered reader does too.
+      return valueText === "" ? null : valueText
     }
     case "n":
     default: {

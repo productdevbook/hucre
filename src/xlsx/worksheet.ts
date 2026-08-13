@@ -2322,8 +2322,14 @@ function parseColorAttrs(attrs: Record<string, string>): Color {
  * docProps readers do it: every format hucre reads records an absolute
  * moment, and local time would make the same file mean different things
  * on different machines. See #415, #474.
+ *
+ * Exported for `stream-reader.ts`, which needs the same answer. #496
+ * added the `t="d"` case here and not there, so the streaming reader
+ * returned the raw text where this returned a `Date` — one fix, two
+ * implementations, and only one of them got it. Sharing the parser is
+ * what stops the two drifting on the next shape someone accepts.
  */
-function parseIsoCellDate(text: string): Date | undefined {
+export function parseIsoCellDate(text: string): Date | undefined {
   const trimmed = text.trim()
   if (
     !/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/.test(trimmed)

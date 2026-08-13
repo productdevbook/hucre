@@ -47,6 +47,7 @@
     "test/ods-third-party.test.ts",
     "test/worksheet-stream-chunks.test.ts",
     "test/xlsb-short-records.test.ts",
+    "test/xlsx-stream-parity.test.ts",
     "test/builder-coverage.test.ts"
   ]
 }

@@ -539,6 +539,13 @@ The streaming readers _do_ agree: `streamXlsxRows` and `streamOdsRows`
 both skip an entirely empty row and keep the true index on `StreamRow`,
 so a gap in the indexes is the signal.
 
+They do **not** agree on how many sheets they walk. `streamXlsxRows`
+yields one sheet — the first, unless `sheet` names another —
+while `streamOdsRows` walks every sheet in the document and tags each row
+with `sheetIndex`. So the same loop over a three-sheet workbook gives you
+one sheet of it as `.xlsx` and all three as `.ods`, silently. Pass
+`sheet` when you mean one, and read `row.sheetIndex` when you mean all.
+
 ### `streamXmlRows` gives you a row's own keys, not a rectangle
 
 XML rows are objects rather than arrays, and the two XML readers differ
