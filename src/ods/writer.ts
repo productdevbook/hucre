@@ -649,12 +649,19 @@ function generateStyleElement(name: string, style: CellStyle, dataStyleName?: st
     cellProps["fo:background-color"] = `#${style.fill.fgColor.rgb}`
   }
 
+  // The order is the grammar's, not a preference. `<style:style>` with
+  // `style:family="table-cell"` is a sequence — table-cell-properties,
+  // then paragraph-properties, then text-properties — and writing the
+  // text first produced a document the OASIS schema rejects for every
+  // cell that had both a font and a fill. Nothing here noticed, because
+  // every test reads the file back with hucre and LibreOffice opens it
+  // regardless; `jing` against the published RELAX NG is what found it.
   const children: string[] = []
-  if (Object.keys(textProps).length > 0) {
-    children.push(xmlSelfClose("style:text-properties", textProps))
-  }
   if (Object.keys(cellProps).length > 0) {
     children.push(xmlSelfClose("style:table-cell-properties", cellProps))
+  }
+  if (Object.keys(textProps).length > 0) {
+    children.push(xmlSelfClose("style:text-properties", textProps))
   }
 
   const attrs: Record<string, string> = { "style:name": name, "style:family": "table-cell" }
@@ -1304,7 +1311,7 @@ function writeContentXml(options: WriteOptions): string {
       "xmlns:svg": NS_SVG,
       "xmlns:xlink": NS_XLINK,
       "xmlns:of": NS_OF,
-      "office:version": "1.2",
+      "office:version": "1.3",
     },
     contentParts,
   )
@@ -1347,7 +1354,7 @@ export function writeMetaXml(props?: WorkbookProperties): string {
       "xmlns:office": NS_OFFICE,
       "xmlns:meta": NS_META,
       "xmlns:dc": NS_DC,
-      "office:version": "1.2",
+      "office:version": "1.3",
     },
     metaContent,
   )
@@ -1374,7 +1381,7 @@ export function writeStylesXml(): string {
       "xmlns:fo": NS_FO,
       "xmlns:number": NS_NUMBER,
       "xmlns:svg": NS_SVG,
-      "office:version": "1.2",
+      "office:version": "1.3",
     },
     children,
   )
@@ -1390,9 +1397,14 @@ export function writeSettingsXml(): string {
     {
       "xmlns:office": NS_OFFICE,
       "xmlns:config": NS_CONFIG,
-      "office:version": "1.2",
+      "office:version": "1.3",
     },
-    xmlElement("office:settings", undefined, ""),
+    // No `<office:settings/>`. The element is optional, but the grammar
+    // requires *one or more* `config:config-item-set` inside it, so an
+    // empty one is invalid — and hucre has no view state, cursor
+    // position or window geometry to record. The part itself stays,
+    // because the manifest lists it and a reader may look for it.
+    "",
   )
 }
 
@@ -1405,7 +1417,7 @@ export function writeManifestXml(): string {
   entries.push(
     xmlSelfClose("manifest:file-entry", {
       "manifest:full-path": "/",
-      "manifest:version": "1.2",
+      "manifest:version": "1.3",
       "manifest:media-type": MIMETYPE,
     }),
   )
@@ -1438,7 +1450,7 @@ export function writeManifestXml(): string {
     "manifest:manifest",
     {
       "xmlns:manifest": NS_MANIFEST,
-      "manifest:version": "1.2",
+      "manifest:version": "1.3",
     },
     entries,
   )

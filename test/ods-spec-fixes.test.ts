@@ -60,12 +60,15 @@ describe("ODS spec — #111: settings.xml", () => {
     // Root element should be office:document-settings
     expect(settingsDoc.tag).toContain("document-settings")
 
-    // Should have office:version="1.2"
-    expect(settingsDoc.attrs["office:version"]).toBe("1.2")
+    // 1.3 since #552: hucre writes `number:min-decimal-places`, which
+    // ODF added in 1.3, so declaring 1.2 made the document invalid.
+    expect(settingsDoc.attrs["office:version"]).toBe("1.3")
 
-    // Should contain office:settings child element
-    const settings = findChild(settingsDoc, "settings")
-    expect(settings).toBeDefined()
+    // No `<office:settings>` child. The element is optional and, when
+    // present, the grammar requires one or more `config:config-item-set`
+    // inside it — so the empty one hucre used to write was invalid ODF,
+    // which `jing` against the published schema found. See #552.
+    expect(findChild(settingsDoc, "settings")).toBeUndefined()
   })
 
   it("settings.xml has required namespace declarations", async () => {
@@ -107,7 +110,7 @@ describe("ODS spec — #111: settings.xml", () => {
 // ── #112: manifest.xml version attribute ────────────────────────────
 
 describe("ODS spec — #112: manifest.xml version", () => {
-  it('root entry "/" has manifest:version="1.2"', async () => {
+  it('root entry "/" has manifest:version="1.3"', async () => {
     const data = await writeOds({
       sheets: [{ name: "Sheet1", rows: [["test"]] }],
     })
@@ -117,7 +120,7 @@ describe("ODS spec — #112: manifest.xml version", () => {
     const rootEntry = entries.find((e: any) => e.attrs["manifest:full-path"] === "/")
 
     expect(rootEntry).toBeDefined()
-    expect(rootEntry.attrs["manifest:version"]).toBe("1.2")
+    expect(rootEntry.attrs["manifest:version"]).toBe("1.3")
   })
 
   it("manifest root element has manifest:version attribute", async () => {
@@ -126,7 +129,7 @@ describe("ODS spec — #112: manifest.xml version", () => {
     })
 
     const manifest = await parseXmlFromZip(data, "META-INF/manifest.xml")
-    expect(manifest.attrs["manifest:version"]).toBe("1.2")
+    expect(manifest.attrs["manifest:version"]).toBe("1.3")
   })
 
   it("manifest contains all required file entries including settings.xml", async () => {

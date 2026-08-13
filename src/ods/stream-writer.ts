@@ -107,7 +107,7 @@ const CONTENT_HEAD =
   ' xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"' +
   ' xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"' +
   ' xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2"' +
-  ' office:version="1.2">'
+  ' office:version="1.3">'
 
 /** Serialize content.xml into ~64 KB encoded chunks, pulling lazily. */
 async function* contentChunks(

@@ -257,7 +257,7 @@ function xmlDocumentContent(children: string[]): string {
     ' xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"' +
     ' xmlns:xlink="http://www.w3.org/1999/xlink"' +
     ' xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2"' +
-    ' office:version="1.2">' +
+    ' office:version="1.3">' +
     children.join("") +
     "</office:document-content>"
   )

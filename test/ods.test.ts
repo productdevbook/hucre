@@ -132,7 +132,7 @@ describe("ODS Writer", () => {
     const manifest = await parseXmlFromZip(data, "META-INF/manifest.xml")
     const entries = findChildren(manifest, "file-entry")
     const rootEntry = entries.find((e: any) => e.attrs["manifest:full-path"] === "/")
-    expect(rootEntry.attrs["manifest:version"]).toBe("1.2")
+    expect(rootEntry.attrs["manifest:version"]).toBe("1.3")
   })
 
   it("writes string cells correctly", async () => {
@@ -339,7 +339,7 @@ describe("ODS Writer", () => {
     })
 
     const contentDoc = await parseXmlFromZip(data, "content.xml")
-    expect(contentDoc.attrs["office:version"]).toBe("1.2")
+    expect(contentDoc.attrs["office:version"]).toBe("1.3")
   })
 
   it("content.xml has required namespace declarations", async () => {
@@ -470,7 +470,7 @@ describe("ODS Writer", () => {
     })
 
     const stylesDoc = await parseXmlFromZip(data, "styles.xml")
-    expect(stylesDoc.attrs["office:version"]).toBe("1.2")
+    expect(stylesDoc.attrs["office:version"]).toBe("1.3")
   })
 
   it("styles.xml has required namespace declarations", async () => {
