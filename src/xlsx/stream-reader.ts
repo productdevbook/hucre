@@ -68,7 +68,21 @@ const REL_STYLES = "styles"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function decodeUtf8(data: Uint8Array): string {
+/**
+ * Decode a package part with no string-length ceiling.
+ *
+ * The buffered readers route the same job through `_decode.decodePart`,
+ * which catches V8's `MAX_STRING_LENGTH` and reports it as the #514
+ * `ParseError` naming the part. This path does not, and that is what
+ * `docs/PARITY.md` records — `streamXlsxRows` is the answer *to* the
+ * ceiling for worksheets, since it never builds one string for them.
+ *
+ * The parts decoded here are the small ones (content types, rels, the
+ * workbook, styles); a `sharedStrings.xml` over the ceiling would still
+ * throw V8's raw error. The name is `Unchecked` so a line moved between
+ * the two readers cannot quietly drop the check.
+ */
+function decodeUtf8Unchecked(data: Uint8Array): string {
   return new TextDecoder("utf-8").decode(data)
 }
 
@@ -645,9 +659,9 @@ function resolveFromParts(
   const ct = parts.get("[Content_Types].xml")
   const rootRelsBytes = parts.get("_rels/.rels")
   if (!ct || !rootRelsBytes) return null
-  parseContentTypes(decodeUtf8(ct))
+  parseContentTypes(decodeUtf8Unchecked(ct))
 
-  const rootRels = parseRelationships(decodeUtf8(rootRelsBytes))
+  const rootRels = parseRelationships(decodeUtf8Unchecked(rootRelsBytes))
   const workbookRel = rootRels.find((r) => matchesRelType(r.type, REL_WORKBOOK))
   if (!workbookRel) return null
   const workbookPath = workbookRel.target.startsWith("/")
@@ -662,9 +676,9 @@ function resolveFromParts(
     ? `${workbookDir}/_rels/${workbookPath.slice(workbookDir.length + 1)}.rels`
     : `_rels/${workbookPath}.rels`
   const wbRelsBytes = parts.get(workbookRelsPath)
-  const workbookRels = wbRelsBytes ? parseRelationships(decodeUtf8(wbRelsBytes)) : []
+  const workbookRels = wbRelsBytes ? parseRelationships(decodeUtf8Unchecked(wbRelsBytes)) : []
 
-  const { sheets: sheetInfos, dateSystem } = parseWorkbookXml(decodeUtf8(wbBytes), options)
+  const { sheets: sheetInfos, dateSystem } = parseWorkbookXml(decodeUtf8Unchecked(wbBytes), options)
   const targetSheet = resolveTargetSheet(sheetInfos, options?.sheet)
   if (!targetSheet) return null
 
@@ -692,7 +706,7 @@ function resolveFromParts(
     const ssPath = resolvePath(workbookDir, ssRel.target)
     const ssBytes = parts.get(ssPath)
     if (!ssBytes) return null
-    sharedStrings = parseSharedStrings(decodeUtf8(ssBytes))
+    sharedStrings = parseSharedStrings(decodeUtf8Unchecked(ssBytes))
   }
 
   let parsedStyles: ParsedStyles | null = null
@@ -701,7 +715,7 @@ function resolveFromParts(
     const stylesPath = resolvePath(workbookDir, stylesRel.target)
     const stylesBytes = parts.get(stylesPath)
     if (!stylesBytes) return null
-    parsedStyles = parseStyles(decodeUtf8(stylesBytes))
+    parsedStyles = parseStyles(decodeUtf8Unchecked(stylesBytes))
   }
 
   return { wsPath, sharedStrings, parsedStyles, dateSystem }
@@ -829,14 +843,14 @@ export async function* streamXlsxRows(
   if (!zip.has("[Content_Types].xml")) {
     throw new ParseError("Invalid XLSX: missing [Content_Types].xml")
   }
-  const contentTypesXml = decodeUtf8(await zip.extract("[Content_Types].xml"))
+  const contentTypesXml = decodeUtf8Unchecked(await zip.extract("[Content_Types].xml"))
   parseContentTypes(contentTypesXml)
 
   // 3. Parse _rels/.rels to find the workbook path
   if (!zip.has("_rels/.rels")) {
     throw new ParseError("Invalid XLSX: missing _rels/.rels")
   }
-  const rootRelsXml = decodeUtf8(await zip.extract("_rels/.rels"))
+  const rootRelsXml = decodeUtf8Unchecked(await zip.extract("_rels/.rels"))
   const rootRels = parseRelationships(rootRelsXml)
   const workbookRel = rootRels.find((r) => matchesRelType(r.type, REL_WORKBOOK))
   if (!workbookRel) {
@@ -855,7 +869,7 @@ export async function* streamXlsxRows(
 
   let workbookRels: Relationship[] = []
   if (zip.has(workbookRelsPath)) {
-    const wbRelsXml = decodeUtf8(await zip.extract(workbookRelsPath))
+    const wbRelsXml = decodeUtf8Unchecked(await zip.extract(workbookRelsPath))
     workbookRels = parseRelationships(wbRelsXml)
   }
 
@@ -863,7 +877,7 @@ export async function* streamXlsxRows(
   if (!zip.has(workbookPath)) {
     throw new ParseError(`Invalid XLSX: missing workbook at ${workbookPath}`)
   }
-  const workbookXml = decodeUtf8(await zip.extract(workbookPath))
+  const workbookXml = decodeUtf8Unchecked(await zip.extract(workbookPath))
   const { sheets: sheetInfos, dateSystem } = parseWorkbookXml(workbookXml, options)
 
   // 6. Parse shared strings (small, needed for cell resolution)
@@ -872,7 +886,7 @@ export async function* streamXlsxRows(
   if (ssRel) {
     const ssPath = resolvePath(workbookDir, ssRel.target)
     if (zip.has(ssPath)) {
-      const ssXml = decodeUtf8(await zip.extract(ssPath))
+      const ssXml = decodeUtf8Unchecked(await zip.extract(ssPath))
       sharedStrings = parseSharedStrings(ssXml)
     }
   }
@@ -883,7 +897,7 @@ export async function* streamXlsxRows(
   if (stylesRel) {
     const stylesPath = resolvePath(workbookDir, stylesRel.target)
     if (zip.has(stylesPath)) {
-      const stylesXml = decodeUtf8(await zip.extract(stylesPath))
+      const stylesXml = decodeUtf8Unchecked(await zip.extract(stylesPath))
       parsedStyles = parseStyles(stylesXml)
     }
   }

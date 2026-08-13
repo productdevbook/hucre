@@ -623,7 +623,7 @@ function computeLocation(
   colFieldCount: number,
   meta: PivotFieldsMeta,
 ): Record<string, string | number> {
-  const { col, row } = parseCellRef(targetCell)
+  const { col, row } = parseCellRefStrict(targetCell)
 
   // Header rows: 1 (page filters) + 1 (column field header per col field) + 1 (data field header)
   const firstHeaderRow = 0
@@ -644,8 +644,17 @@ function computeLocation(
   }
 }
 
-/** Parse `"B3"` → `{col: 1, row: 2}` (0-based). */
-function parseCellRef(cell: string): { col: number; row: number } {
+/**
+ * Parse `"B3"` → `{col: 1, row: 2}` (0-based), rejecting anything else.
+ *
+ * Deliberately not `xlsx/worksheet.ts`'s `parseCellRef`, which is lenient
+ * because a cell that mis-parses in a worksheet should cost one cell, not
+ * the read. This one takes a `targetCell` the caller wrote by hand, where
+ * a typo has no salvageable reading and silently pivoting at A1 would be
+ * worse than the throw. The name says `Strict` so the two are not
+ * mistaken for each other.
+ */
+function parseCellRefStrict(cell: string): { col: number; row: number } {
   const m = /^([A-Z]+)(\d+)$/i.exec(cell.trim())
   if (!m) {
     throw new Error(`Invalid pivot targetCell "${cell}" — expected an A1-style reference`)

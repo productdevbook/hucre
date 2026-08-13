@@ -11,7 +11,19 @@ import { MAX_COL_INDEX, MAX_REPEAT_COUNT, MAX_ROW_INDEX } from "../limits"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function decodeUtf8(data: Uint8Array): string {
+/**
+ * Decode a part with no string-length ceiling — see the fuller note on
+ * the same function in `xlsx/stream-reader.ts`. `ods/reader.ts` has a
+ * `decodeUtf8` that does check and raises the #514 `ParseError`; this
+ * one does not, and the name says so rather than leaving two functions
+ * with one name and two contracts.
+ *
+ * `streamOdsRows` streams the *rows* out of `content.xml` but still
+ * builds the whole part as a string to do it, so an ODS over the ceiling
+ * fails here with V8's raw error — unlike `streamXlsxRows`, which SAX-parses
+ * the worksheet off the decompression stream and never builds one.
+ */
+function decodeUtf8Unchecked(data: Uint8Array): string {
   return new TextDecoder("utf-8").decode(data)
 }
 
@@ -331,7 +343,7 @@ export async function* streamOdsRows(
   if (!zip.has("content.xml")) {
     throw new ParseError("Invalid ODS: missing content.xml")
   }
-  const contentXml = decodeUtf8(await zip.extract("content.xml"))
+  const contentXml = decodeUtf8Unchecked(await zip.extract("content.xml"))
 
   // 4. Yield rows via SAX
   // 4. Yield rows via SAX, applying the filters
