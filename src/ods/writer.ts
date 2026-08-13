@@ -467,10 +467,22 @@ function translateNumFmt(code: string): OdsNumFmtDef | undefined {
     return { kind: "currency", children, attrs: { "number:automatic-order": "true" } }
   }
 
-  const time = isTimeFormat(section)
-  const date = isDateFormat(section)
+  // Quoted literals are text, not tokens. In `#,##0" days"` the `d` and
+  // `y` are letters in a word; in `"Sales"#,##0` the `s` is. Read as
+  // tokens they made the whole code a date or time format, and
+  // `buildDateChildren` then emitted every `#` and `0` as
+  // `<number:text>` — so `"Sales"#,##0` came back as
+  // `"Sales""#","#""#""0"`, a format with no placeholder left in it.
+  //
+  // `isPercentageFormat` above already strips them, and the colour tags
+  // stripped further up are the same problem found earlier: `[White]`
+  // was being read as a time format for the `h` in "White".
+  const tokens = section.replace(/"[^"]*"/g, "").replace(/\\./g, "")
+
+  const time = isTimeFormat(tokens)
+  const date = isDateFormat(tokens)
   // Bracketed-hour durations like `[HH]:MM` are pure time; check time first.
-  const isElapsed = /\[[hHmMsS]+\]/.test(section)
+  const isElapsed = /\[[hHmMsS]+\]/.test(tokens)
   if (isElapsed || (time && !date)) {
     const def: OdsNumFmtDef = {
       kind: "time",
