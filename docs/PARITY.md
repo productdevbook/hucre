@@ -122,6 +122,25 @@ would otherwise show `1E-07` — but only when that form is the same
 number, which it was not for the smallest values (`Number.MIN_VALUE` used
 to come out as `0.0`).
 
+### The buffered readers have a size ceiling
+
+One JavaScript string cannot hold an arbitrarily large part. V8's limit
+is 536,870,888 characters — about 512 MB — so a worksheet above it cannot
+be turned into a string at all, and `readXlsx`, `readXlsb` and `readOds`
+fail before any parsing begins. Instrument logs at Excel's row limit
+reach it: three files in a corpus of ~600 were 56–99 MB compressed and
+607 MB expanded. See #503.
+
+That used to surface as a raw `Error: Cannot create a string longer than
+0x1fffffe8 characters` — not a `ParseError`, naming no part, saying
+nothing about spreadsheets. It is now a `ParseError` that names the part,
+the size, the bound, and `streamXlsxRows`; and it says the workbook is
+not damaged, because everything else a reader throws means the file is
+wrong and this one means it is large.
+
+**`streamXlsxRows` has no such ceiling** — it reads those same files in
+about 30 seconds at a flat 944 MB, because it never holds the part whole.
+
 ### A sparse sheet has a way out
 
 `Sheet.rows` being a dense rectangle means a read costs the bounding box

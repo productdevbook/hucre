@@ -21,6 +21,7 @@ import type {
   TimelineCache,
   ChartAnchor,
 } from "../_types"
+import { decodePart } from "../_decode"
 import { parsePersons, parseThreadedComments } from "./threaded-comments-reader"
 import { parseExternalLink } from "./external-link-reader"
 import { assembleCellImages, parseCellImages, REL_CELL_IMAGES } from "./cell-images-reader"
@@ -67,8 +68,8 @@ export function matchesRelType(rel: string, type: string): boolean {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function decodeUtf8(data: Uint8Array): string {
-  return new TextDecoder("utf-8").decode(data)
+function decodeUtf8(data: Uint8Array, path = "(unknown)"): string {
+  return decodePart(data, path)
 }
 
 /**
@@ -142,14 +143,17 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
   if (!zip.has("[Content_Types].xml")) {
     throw new ParseError("Invalid XLSX: missing [Content_Types].xml")
   }
-  const contentTypesXml = decodeUtf8(await zip.extract("[Content_Types].xml"))
+  const contentTypesXml = decodeUtf8(
+    await zip.extract("[Content_Types].xml"),
+    "[Content_Types].xml",
+  )
   parseContentTypes(contentTypesXml) // Validate, not strictly needed for reading
 
   // 3. Parse _rels/.rels to find the workbook path
   if (!zip.has("_rels/.rels")) {
     throw new ParseError("Invalid XLSX: missing _rels/.rels")
   }
-  const rootRelsXml = decodeUtf8(await zip.extract("_rels/.rels"))
+  const rootRelsXml = decodeUtf8(await zip.extract("_rels/.rels"), "_rels/.rels")
   const rootRels = parseRelationships(rootRelsXml)
   const workbookRel = rootRels.find((r) => matchesRelType(r.type, "officeDocument"))
   if (!workbookRel) {
@@ -168,7 +172,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
 
   let workbookRels: Relationship[] = []
   if (zip.has(workbookRelsPath)) {
-    const wbRelsXml = decodeUtf8(await zip.extract(workbookRelsPath))
+    const wbRelsXml = decodeUtf8(await zip.extract(workbookRelsPath), workbookRelsPath)
     workbookRels = parseRelationships(wbRelsXml)
   }
 
@@ -176,7 +180,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
   if (!zip.has(workbookPath)) {
     throw new ParseError(`Invalid XLSX: missing workbook at ${workbookPath}`)
   }
-  const workbookXml = decodeUtf8(await zip.extract(workbookPath))
+  const workbookXml = decodeUtf8(await zip.extract(workbookPath), workbookPath)
   const {
     sheets: sheetInfos,
     dateSystem,
@@ -192,7 +196,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
   if (ssRel) {
     const ssPath = resolvePath(workbookDir, ssRel.target)
     if (zip.has(ssPath)) {
-      const ssXml = decodeUtf8(await zip.extract(ssPath))
+      const ssXml = decodeUtf8(await zip.extract(ssPath), ssPath)
       sharedStrings = parseSharedStrings(ssXml)
     }
   }
@@ -203,7 +207,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
   if (stylesRel) {
     const stylesPath = resolvePath(workbookDir, stylesRel.target)
     if (zip.has(stylesPath)) {
-      const stylesXml = decodeUtf8(await zip.extract(stylesPath))
+      const stylesXml = decodeUtf8(await zip.extract(stylesPath), stylesPath)
       parsedStyles = parseStyles(stylesXml)
     }
   }
@@ -212,7 +216,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
   let themeColors: string[] | undefined
   const themePath = workbookDir ? `${workbookDir}/theme/theme1.xml` : "theme/theme1.xml"
   if (zip.has(themePath)) {
-    const themeXml = decodeUtf8(await zip.extract(themePath))
+    const themeXml = decodeUtf8(await zip.extract(themePath), themePath)
     themeColors = parseThemeColors(themeXml)
   }
 
@@ -223,7 +227,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
   if (personsRel) {
     const personsPath = resolvePath(workbookDir, personsRel.target)
     if (zip.has(personsPath)) {
-      const personsXml = decodeUtf8(await zip.extract(personsPath))
+      const personsXml = decodeUtf8(await zip.extract(personsPath), personsPath)
       persons = parsePersons(personsXml)
     }
   }
@@ -239,10 +243,10 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
   for (const rel of externalLinkRels) {
     const linkPath = resolvePath(workbookDir, rel.target)
     if (!zip.has(linkPath)) continue
-    const linkXml = decodeUtf8(await zip.extract(linkPath))
+    const linkXml = decodeUtf8(await zip.extract(linkPath), linkPath)
     const linkRelsPath = relsPathFor(linkPath)
     const linkRelsXml = zip.has(linkRelsPath)
-      ? decodeUtf8(await zip.extract(linkRelsPath))
+      ? decodeUtf8(await zip.extract(linkRelsPath), linkRelsPath)
       : undefined
     externalLinks.push(parseExternalLink(linkXml, linkRelsXml))
   }
@@ -257,7 +261,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
   if (cellImagesRel) {
     const cellImagesPath = resolvePath(workbookDir, cellImagesRel.target)
     if (zip.has(cellImagesPath)) {
-      const ciXml = decodeUtf8(await zip.extract(cellImagesPath))
+      const ciXml = decodeUtf8(await zip.extract(cellImagesPath), cellImagesPath)
       const refs = parseCellImages(ciXml)
 
       // Resolve each embed rId against the sibling _rels file and
@@ -266,7 +270,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
       const ciDir = dirname(cellImagesPath)
       const media = new Map<string, { data: Uint8Array; type: SheetImage["type"] }>()
       if (zip.has(ciRelsPath)) {
-        const ciRelsXml = decodeUtf8(await zip.extract(ciRelsPath))
+        const ciRelsXml = decodeUtf8(await zip.extract(ciRelsPath), ciRelsPath)
         for (const rel of parseRelationships(ciRelsXml)) {
           if (!matchesRelType(rel.type, "image")) continue
           const mediaPath = resolvePath(ciDir, rel.target)
@@ -295,14 +299,14 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
     if (!rel) continue
     const cachePath = resolvePath(workbookDir, rel.target)
     if (!zip.has(cachePath)) continue
-    const cacheXml = decodeUtf8(await zip.extract(cachePath))
+    const cacheXml = decodeUtf8(await zip.extract(cachePath), cachePath)
     const cache = parsePivotCacheDefinition(cacheXml)
     if (!cache) continue
     cache.cacheId = ref.cacheId
     // Detect a sibling pivotCacheRecords part via the cache's _rels.
     const cacheRelsPath = relsPathFor(cachePath)
     if (zip.has(cacheRelsPath)) {
-      const cacheRelsXml = decodeUtf8(await zip.extract(cacheRelsPath))
+      const cacheRelsXml = decodeUtf8(await zip.extract(cacheRelsPath), cacheRelsPath)
       const cacheRels = parseRelationships(cacheRelsXml)
       if (cacheRels.some((r) => matchesRelType(r.type, "pivotCacheRecords"))) {
         cache.hasRecords = true
@@ -328,7 +332,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
   for (const rel of slicerCacheRels) {
     const cachePath = resolvePath(workbookDir, rel.target)
     if (!zip.has(cachePath)) continue
-    const cacheXml = decodeUtf8(await zip.extract(cachePath))
+    const cacheXml = decodeUtf8(await zip.extract(cachePath), cachePath)
     const cache = parseSlicerCache(cacheXml)
     if (cache) slicerCaches.push(cache)
   }
@@ -342,7 +346,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
   for (const rel of timelineCacheRels) {
     const cachePath = resolvePath(workbookDir, rel.target)
     if (!zip.has(cachePath)) continue
-    const cacheXml = decodeUtf8(await zip.extract(cachePath))
+    const cacheXml = decodeUtf8(await zip.extract(cachePath), cachePath)
     const cache = parseTimelineCache(cacheXml)
     if (cache) timelineCaches.push(cache)
   }
@@ -356,7 +360,9 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
   if (metadataRel) {
     const metadataPath = resolvePath(workbookDir, metadataRel.target)
     if (zip.has(metadataPath)) {
-      dynamicArrayCm = parseDynamicArrayCellMetadata(decodeUtf8(await zip.extract(metadataPath)))
+      dynamicArrayCm = parseDynamicArrayCellMetadata(
+        decodeUtf8(await zip.extract(metadataPath), metadataPath),
+      )
     }
   }
 
@@ -413,7 +419,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
     const wsRelsPath = relsPathFor(wsPath)
     let worksheetRels: Relationship[] | undefined
     if (zip.has(wsRelsPath)) {
-      const wsRelsXml = decodeUtf8(await zip.extract(wsRelsPath))
+      const wsRelsXml = decodeUtf8(await zip.extract(wsRelsPath), wsRelsPath)
       worksheetRels = parseRelationships(wsRelsXml)
     }
 
@@ -432,7 +438,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
       onWarning: options?.onWarning,
     }
 
-    const wsXml = decodeUtf8(await zip.extract(wsPath))
+    const wsXml = decodeUtf8(await zip.extract(wsPath), wsPath)
     const sheet = parseWorksheet(wsXml, info.name, worksheetCtx)
     if (info.state === "hidden") sheet.hidden = true
     if (info.state === "veryHidden") sheet.veryHidden = true
@@ -458,7 +464,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
           const charts: import("../_types").Chart[] = []
           for (const chartRef of drawing.chartRefs) {
             if (!zip.has(chartRef.path)) continue
-            const chartXml = decodeUtf8(await zip.extract(chartRef.path))
+            const chartXml = decodeUtf8(await zip.extract(chartRef.path), chartRef.path)
             const chart = parseChart(chartXml)
             if (!chart) continue
             if (chartRef.anchor) chart.anchor = chartRef.anchor
@@ -477,7 +483,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
       if (commentsRel) {
         const commentsPath = resolvePath(wsDir, commentsRel.target)
         if (zip.has(commentsPath)) {
-          const commentsXml = decodeUtf8(await zip.extract(commentsPath))
+          const commentsXml = decodeUtf8(await zip.extract(commentsPath), commentsPath)
           const commentsMap = parseComments(commentsXml)
 
           // Attach comments to cell objects
@@ -510,7 +516,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
       if (threadedRel) {
         const tcPath = resolvePath(wsDir, threadedRel.target)
         if (zip.has(tcPath)) {
-          const tcXml = decodeUtf8(await zip.extract(tcPath))
+          const tcXml = decodeUtf8(await zip.extract(tcPath), tcPath)
           const threaded = parseThreadedComments(tcXml)
           if (threaded.length > 0) sheet.threadedComments = threaded
         }
@@ -525,7 +531,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
         for (const tableRel of tableRels) {
           const tablePath = resolvePath(wsDir, tableRel.target)
           if (zip.has(tablePath)) {
-            const tableXml = decodeUtf8(await zip.extract(tablePath))
+            const tableXml = decodeUtf8(await zip.extract(tablePath), tablePath)
             const tableDef = parseTableXml(tableXml)
             if (tableDef) {
               tables.push(tableDef)
@@ -560,7 +566,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
         for (const ptRel of pivotTableRels) {
           const ptPath = resolvePath(wsDir, ptRel.target)
           if (!zip.has(ptPath)) continue
-          const ptXml = decodeUtf8(await zip.extract(ptPath))
+          const ptXml = decodeUtf8(await zip.extract(ptPath), ptPath)
           const pivot = parsePivotTable(ptXml)
           if (!pivot) continue
           // Resolve the pivot's owning cache via its sibling _rels —
@@ -569,7 +575,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
           // stay tolerant of caches living anywhere under xl/.
           const ptRelsPath = relsPathFor(ptPath)
           if (zip.has(ptRelsPath)) {
-            const ptRelsXml = decodeUtf8(await zip.extract(ptRelsPath))
+            const ptRelsXml = decodeUtf8(await zip.extract(ptRelsPath), ptRelsPath)
             const ptInternalRels = parseRelationships(ptRelsXml)
             const cacheRel = ptInternalRels.find((r) =>
               matchesRelType(r.type, "pivotCacheDefinition"),
@@ -605,7 +611,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
         for (const rel of slicerRels) {
           const path = resolvePath(wsDir, rel.target)
           if (!zip.has(path)) continue
-          const slicerXml = decodeUtf8(await zip.extract(path))
+          const slicerXml = decodeUtf8(await zip.extract(path), path)
           for (const s of parseSlicers(slicerXml)) slicers.push(s)
         }
         if (slicers.length > 0) sheet.slicers = slicers
@@ -618,7 +624,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
         for (const rel of timelineRels) {
           const path = resolvePath(wsDir, rel.target)
           if (!zip.has(path)) continue
-          const tlXml = decodeUtf8(await zip.extract(path))
+          const tlXml = decodeUtf8(await zip.extract(path), path)
           for (const t of parseTimelines(tlXml)) timelines.push(t)
         }
         if (timelines.length > 0) sheet.timelines = timelines
@@ -632,7 +638,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
   let properties: import("../_types").WorkbookProperties | undefined
 
   if (zip.has("docProps/core.xml")) {
-    const coreXml = decodeUtf8(await zip.extract("docProps/core.xml"))
+    const coreXml = decodeUtf8(await zip.extract("docProps/core.xml"), "docProps/core.xml")
     const coreProps = parseCoreProperties(coreXml)
     if (Object.keys(coreProps).length > 0) {
       properties = { ...coreProps }
@@ -640,7 +646,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
   }
 
   if (zip.has("docProps/app.xml")) {
-    const appXml = decodeUtf8(await zip.extract("docProps/app.xml"))
+    const appXml = decodeUtf8(await zip.extract("docProps/app.xml"), "docProps/app.xml")
     const appProps = parseAppProperties(appXml)
     if (Object.keys(appProps).length > 0) {
       properties = { ...properties, ...appProps }
@@ -648,7 +654,7 @@ export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise
   }
 
   if (zip.has("docProps/custom.xml")) {
-    const customXml = decodeUtf8(await zip.extract("docProps/custom.xml"))
+    const customXml = decodeUtf8(await zip.extract("docProps/custom.xml"), "docProps/custom.xml")
     const customProps = parseCustomProperties(customXml)
     if (Object.keys(customProps).length > 0) {
       if (!properties) properties = {}
@@ -807,7 +813,7 @@ async function extractSheetDrawing(
 ): Promise<DrawingExtraction> {
   if (!zip.has(drawingPath)) return { images: [], textBoxes: [], chartRefs: [] }
 
-  const drawingXml = decodeUtf8(await zip.extract(drawingPath))
+  const drawingXml = decodeUtf8(await zip.extract(drawingPath), drawingPath)
 
   // Parse drawing relationships. Same fix as the worksheet path — the
   // hand-rolled slice dropped the first character for a root-level
@@ -821,7 +827,7 @@ async function extractSheetDrawing(
   // graphicFrame walk below can map each chart reference to a file.
   const chartRelMap = new Map<string, string>()
   if (zip.has(drawRelsPath)) {
-    const drawRelsXml = decodeUtf8(await zip.extract(drawRelsPath))
+    const drawRelsXml = decodeUtf8(await zip.extract(drawRelsPath), drawRelsPath)
     const drawRels = parseRelationships(drawRelsXml)
     for (const rel of drawRels) {
       if (matchesRelType(rel.type, "image")) {

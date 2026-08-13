@@ -10,6 +10,7 @@ import { EncryptedFileError, ParseError, ZipError } from "../../errors"
 import { isOle2Container, readInputToUint8Array } from "../../_input"
 import { decryptAgile } from "../crypto/agile"
 import { ZipReader } from "../../zip/reader"
+import { decodePart } from "../../_decode"
 import { parseRelationships } from "../relationships"
 import { matchesRelType } from "../reader"
 import { densify } from "../../xls/reader"
@@ -59,8 +60,8 @@ const ERROR_TEXT: Record<number, string> = {
 
 const decoder = new TextDecoder("utf-8")
 
-function decodeUtf8(d: Uint8Array): string {
-  return decoder.decode(d)
+function decodeUtf8(d: Uint8Array, path = "(unknown)"): string {
+  return decodePart(d, path)
 }
 
 function dirname(path: string): string {
@@ -109,7 +110,7 @@ export async function readXlsb(
   // conventional path).
   let workbookPath = "xl/workbook.bin"
   if (zip.has("_rels/.rels")) {
-    const rootRels = parseRelationships(decodeUtf8(await zip.extract("_rels/.rels")))
+    const rootRels = parseRelationships(decodeUtf8(await zip.extract("_rels/.rels"), "_rels/.rels"))
     const wbRel = rootRels.find((r) => matchesRelType(r.type, REL_WORKBOOK))
     if (wbRel) workbookPath = wbRel.target.startsWith("/") ? wbRel.target.slice(1) : wbRel.target
   }
@@ -155,7 +156,7 @@ async function parseXlsbParts(
   let sharedStringsPath: string | undefined
   let stylesPath: string | undefined
   if (zip.has(wbRelsPath)) {
-    for (const rel of parseRelationships(decodeUtf8(await zip.extract(wbRelsPath)))) {
+    for (const rel of parseRelationships(decodeUtf8(await zip.extract(wbRelsPath), wbRelsPath))) {
       const target = resolvePath(workbookDir, rel.target)
       if (matchesRelType(rel.type, REL_WORKSHEET)) relMap.set(rel.id, target)
       else if (matchesRelType(rel.type, REL_SHARED_STRINGS)) sharedStringsPath = target

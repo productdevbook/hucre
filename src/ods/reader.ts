@@ -16,6 +16,7 @@ import type {
 import { ParseError, ZipError } from "../errors"
 import { assertNotEncrypted, readInputToUint8Array } from "../_input"
 import { ZipReader } from "../zip/reader"
+import { decodePart } from "../_decode"
 import { parseXml } from "../xml/parser"
 import { parseRange } from "../cell-utils"
 import { parseUtcDefaultDateTime } from "../_date"
@@ -35,8 +36,8 @@ import type { XmlElement } from "../xml/parser"
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-function decodeUtf8(data: Uint8Array): string {
-  return new TextDecoder("utf-8").decode(data)
+function decodeUtf8(data: Uint8Array, path = "(unknown)"): string {
+  return decodePart(data, path)
 }
 
 function findChild(el: XmlElement, localName: string): XmlElement | undefined {
@@ -919,13 +920,13 @@ export async function readOds(input: ReadInput, options?: ReadOptions): Promise<
   if (!zip.has("content.xml")) {
     throw new ParseError("Invalid ODS: missing content.xml")
   }
-  const contentXml = decodeUtf8(await zip.extract("content.xml"))
+  const contentXml = decodeUtf8(await zip.extract("content.xml"), "content.xml")
   const sheets = parseContentXml(contentXml, options)
 
   // 4. Parse meta.xml (optional)
   let properties: WorkbookProperties | undefined
   if (zip.has("meta.xml")) {
-    const metaXml = decodeUtf8(await zip.extract("meta.xml"))
+    const metaXml = decodeUtf8(await zip.extract("meta.xml"), "meta.xml")
     const metaProps = parseMetaXml(metaXml)
     if (Object.keys(metaProps).length > 0) {
       properties = { ...metaProps }
