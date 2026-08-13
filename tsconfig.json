@@ -46,6 +46,7 @@
     "test/third-party-fixtures.test.ts",
     "test/ods-third-party.test.ts",
     "test/worksheet-stream-chunks.test.ts",
+    "test/xlsb-short-records.test.ts",
     "test/builder-coverage.test.ts"
   ]
 }

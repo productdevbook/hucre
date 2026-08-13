@@ -8,6 +8,13 @@ suite stays green. The XLS and XLSB readers are the sharp end — they
 exist only to consume other tools' output and, until this directory, had
 never seen any.
 
+That stayed half-true for longer than it should have. The files in _this_
+directory are Excel's, and openpyxl — the second producer, the one that
+keeps Excel honest — writes `.xlsx` only, so the binary readers still had
+exactly one source. [`third-party/sheetjs-*.{xlsb,xls}`](third-party/) are
+the second, and the XLSB reader was dropping every cell after the first
+in each row when they arrived.
+
 They are read by [`test/real-files.test.ts`](../real-files.test.ts).
 
 [#464]: https://github.com/productdevbook/hucre/issues/464

@@ -9,14 +9,19 @@ that shape. See #464.
 
 Two producers, two formats:
 
-|            | `*.xlsx`                                     | `sheetjs-*.ods`                                            |
-| ---------- | -------------------------------------------- | ---------------------------------------------------------- |
-| Written by | ExcelJS (MIT)                                | SheetJS Community Edition, the `xlsx` package (Apache-2.0) |
-| Generator  | `scripts/fixtures/make-exceljs-fixtures.mjs` | `scripts/fixtures/make-sheetjs-ods-fixtures.mjs`           |
-| Read by    | `test/third-party-fixtures.test.ts`          | `test/ods-third-party.test.ts`                             |
+|            | `*.xlsx`                       | `sheetjs-*.ods`                                            | `sheetjs-*.{xlsb,xls}`             |
+| ---------- | ------------------------------ | ---------------------------------------------------------- | ---------------------------------- |
+| Written by | ExcelJS (MIT)                  | SheetJS Community Edition, the `xlsx` package (Apache-2.0) | SheetJS                            |
+| Generator  | `make-exceljs-fixtures.mjs`    | `make-sheetjs-ods-fixtures.mjs`                            | `make-sheetjs-binary-fixtures.mjs` |
+| Read by    | `third-party-fixtures.test.ts` | `ods-third-party.test.ts`                                  | `xlsb-short-records.test.ts`       |
+
+(Generators live in `scripts/fixtures/`, tests in `test/`.)
 
 The XLSX corpus came first, and left the ODS reader as the one that had
-still never parsed a byte it did not write. The SheetJS half closed that.
+still never parsed a byte it did not write. The SheetJS ODS half closed
+that, and the binary half closed the last of it — `PROVENANCE.md` had
+named the XLS and XLSB readers "the sharp end", and openpyxl writes
+`.xlsx` only, so they had exactly one source until these.
 
 ## What they are, and what they are not
 
@@ -37,7 +42,7 @@ LibreOffice corpus still would:
 
 So the ODS half narrows the gap rather than closing it.
 
-### It found one
+### It found two
 
 The ODS corpus earned itself on the first run. A multi-line cell has two
 spellings in ODF: `<text:line-break/>` inside one paragraph, which is
@@ -47,6 +52,20 @@ together — `"linebreak"` for a cell `readOds` read as `"line\nbreak"`.
 
 A suite that only ever parsed hucre's own output could not see it,
 because hucre never writes the spelling that breaks.
+
+The binary half earned itself on its first file too, and more sharply.
+The XLSB reader handled the full-form cell records and none of the
+`BrtShort*` forms — the same records with the column omitted, which is
+the previous cell's plus one. Excel writes the full form every time;
+SheetJS writes the short form for every cell after the first in a row.
+A twelve-column sheet read back **one column wide**, with no error. See
+`test/xlsb-short-records.test.ts`.
+
+Regenerating the binary fixtures: SheetJS converts a `Date` to a serial
+through _local_ time, so `sheetjs-dates.*` carries the offset of the
+machine that wrote it. The tests compare the two readers against each
+other rather than against an absolute instant, so regenerating elsewhere
+changes the bytes without breaking anything.
 
 ## Licensing
 
@@ -64,6 +83,7 @@ neither CI nor a contributor needs them installed:
 mkdir -p /tmp/gen && cd /tmp/gen && npm init -y && npm i exceljs xlsx
 node /path/to/hucre/scripts/fixtures/make-exceljs-fixtures.mjs /tmp/gen/node_modules
 node /path/to/hucre/scripts/fixtures/make-sheetjs-ods-fixtures.mjs /tmp/gen/node_modules
+node /path/to/hucre/scripts/fixtures/make-sheetjs-binary-fixtures.mjs /tmp/gen/node_modules
 ```
 
 Regenerating changes the bytes (timestamps, producer version). The tests

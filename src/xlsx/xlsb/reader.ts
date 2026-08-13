@@ -31,6 +31,19 @@ const BrtFmlaString = 8
 const BrtFmlaNum = 9
 const BrtFmlaBool = 10
 const BrtFmlaError = 11
+// The `BrtShort*` forms are the records above without the 4-byte style
+// field — a writer picks one when the cell carries the default style.
+// Excel writes the full form every time, so a corpus of Excel output
+// never shows them; SheetJS writes the short form for any unstyled cell,
+// which is most cells in most files. Handling only the full forms read a
+// twelve-column sheet back one column wide, with no error. See #464.
+const BrtShortBlank = 12
+const BrtShortRk = 13
+const BrtShortError = 14
+const BrtShortBool = 15
+const BrtShortReal = 16
+const BrtShortSt = 17
+const BrtShortIsst = 18
 const BrtSSTItem = 19
 const BrtFmt = 44
 const BrtXF = 47
@@ -287,6 +300,29 @@ function parseWorksheetBin(
     while (r.length < col) r.push(null)
     r[col] = value
   }
+  /**
+   * The column and style a cell record starts with.
+   *
+   * [MS-XLSB] §2.5.9 `Cell` is a 4-byte column index then a 4-byte field
+   * holding a 24-bit style reference. §2.5.10 `ShortCell` is that same
+   * style field **without the column**, which is instead the previous
+   * cell's plus one — so the payload is four bytes shorter and the reader
+   * has to count.
+   *
+   * Worth stating because the byte lengths alone do not settle it: a
+   * `BrtShortSt` for "col2" is 16 bytes and a `BrtCellSt` for "col1" is
+   * 20, which fits "the column is missing" and "the style is missing"
+   * equally well. It is the column. Reading it the other way put every
+   * cell of a row at column 0.
+   */
+  let lastCol = -1
+  const cellHeader = (c: Cursor, isShort: boolean): { col: number; styleRef: number } => {
+    const col = isShort ? lastCol + 1 : c.u32()
+    const styleRef = c.u32() & 0xffffff
+    lastCol = col
+    return { col, styleRef }
+  }
+
   const numericCell = (col: number, styleRef: number, num: number): void => {
     setCell(col, dateXf[styleRef] ? serialToDate(num, date1904) : num)
   }
@@ -295,6 +331,7 @@ function parseWorksheetBin(
     switch (rec.id) {
       case BrtRowHdr: {
         row = new Cursor(rec.data).u32()
+        lastCol = -1
         if (row < 0 || row > MAX_ROW_INDEX) {
           throw new ParseError(
             `Cell row ${row} is outside the supported sheet bounds (max ${MAX_ROW_INDEX + 1})`,
@@ -302,54 +339,56 @@ function parseWorksheetBin(
         }
         break
       }
-      case BrtCellBlank: {
-        const c = new Cursor(rec.data)
-        c.u32() // col — record present but no value
+      case BrtCellBlank:
+      case BrtShortBlank: {
+        // No value, but it still occupies a column — and the short forms
+        // after it count from there.
+        cellHeader(new Cursor(rec.data), rec.id === BrtShortBlank)
         break
       }
-      case BrtCellRk: {
+      case BrtCellRk:
+      case BrtShortRk: {
         const c = new Cursor(rec.data)
-        const col = c.u32()
-        const styleRef = c.u32() & 0xffffff
+        const { col, styleRef } = cellHeader(c, rec.id === BrtShortRk)
         numericCell(col, styleRef, decodeRk(c.u32()))
         break
       }
       case BrtCellReal:
+      case BrtShortReal:
       case BrtFmlaNum: {
         const c = new Cursor(rec.data)
-        const col = c.u32()
-        const styleRef = c.u32() & 0xffffff
+        const { col, styleRef } = cellHeader(c, rec.id === BrtShortReal)
         numericCell(col, styleRef, c.f64())
         break
       }
       case BrtCellBool:
+      case BrtShortBool:
       case BrtFmlaBool: {
         const c = new Cursor(rec.data)
-        const col = c.u32()
-        c.u32() // styleRef
+        const { col } = cellHeader(c, rec.id === BrtShortBool)
         setCell(col, c.u8() !== 0)
         break
       }
       case BrtCellError:
+      case BrtShortError:
       case BrtFmlaError: {
         const c = new Cursor(rec.data)
-        const col = c.u32()
-        c.u32() // styleRef
+        const { col } = cellHeader(c, rec.id === BrtShortError)
         setCell(col, ERROR_TEXT[c.u8()] ?? "#ERR!")
         break
       }
       case BrtCellSt:
+      case BrtShortSt:
       case BrtFmlaString: {
         const c = new Cursor(rec.data)
-        const col = c.u32()
-        c.u32() // styleRef
+        const { col } = cellHeader(c, rec.id === BrtShortSt)
         setCell(col, c.wideString())
         break
       }
-      case BrtCellIsst: {
+      case BrtCellIsst:
+      case BrtShortIsst: {
         const c = new Cursor(rec.data)
-        const col = c.u32()
-        c.u32() // styleRef
+        const { col } = cellHeader(c, rec.id === BrtShortIsst)
         const idx = c.u32()
         setCell(col, sst[idx] ?? "")
         break

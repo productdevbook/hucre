@@ -26,6 +26,7 @@
     "test/real-files.test.ts",
     "test/ods-third-party.test.ts",
     "test/worksheet-stream-chunks.test.ts",
+    "test/xlsb-short-records.test.ts",
     "test/write-model.test.ts",
     "test/builder-coverage.test.ts"
   ],
