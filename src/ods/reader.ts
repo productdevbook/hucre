@@ -208,6 +208,21 @@ function parseDataStyles(autoStyles: XmlElement): Map<string, string> {
   return out
 }
 
+/**
+ * The integer half of a number format, from the digit counts ODF gives.
+ *
+ * `min-integer-digits="0"` means no digit is mandatory — `#` — and one
+ * or more means that many `0`s. Grouping needs three positions before
+ * the separator, so a single mandatory digit is `#,##0` and two is
+ * `#,#00`.
+ */
+function integerPattern(minInteger: number, grouping: boolean): string {
+  if (!grouping) return minInteger <= 0 ? "#" : "0".repeat(minInteger)
+  if (minInteger <= 0) return "#,###"
+  const mandatory = "0".repeat(minInteger)
+  return minInteger >= 3 ? `#,${mandatory}` : `#,${"#".repeat(3 - minInteger)}${mandatory}`
+}
+
 function serializeDataStyleChildren(
   el: XmlElement,
   kind: "number" | "percentage" | "currency" | "date" | "time" | "text",
@@ -219,13 +234,30 @@ function serializeDataStyleChildren(
     const local = child.local || child.tag
     if (local === "number") {
       // Reached while parsing styles.xml, before any cell data.
-      const decimals = Math.min(
-        parseInt(child.attrs["number:decimal-places"] ?? "0", 10) || 0,
-        MAX_REPEAT_COUNT,
+      const clamp = (raw: string | undefined, fallback: number): number => {
+        if (raw === undefined) return fallback
+        const n = parseInt(raw, 10)
+        return Number.isFinite(n) ? Math.min(Math.max(n, 0), MAX_REPEAT_COUNT) : fallback
+      }
+
+      const maxDecimals = clamp(child.attrs["number:decimal-places"], 0)
+      // Absent means every decimal is shown, which is what this reader
+      // assumed before it read the attribute at all — so a file written
+      // by a tool that omits it reads exactly as it used to.
+      const minDecimals = Math.min(
+        clamp(child.attrs["number:min-decimal-places"], maxDecimals),
+        maxDecimals,
       )
+      const minInteger = clamp(child.attrs["number:min-integer-digits"], 1)
       const grouping = child.attrs["number:grouping"] === "true"
-      const integerPart = grouping ? "#,##0" : "0"
-      out += decimals > 0 ? `${integerPart}.${"0".repeat(decimals)}` : integerPart
+
+      // `0` is a digit always shown and `#` one shown only when there is
+      // something to show, so the two counts are the difference between
+      // `0.00` and `#.##`. See #535, which recorded this as a loss.
+      out += integerPattern(minInteger, grouping)
+      if (maxDecimals > 0) {
+        out += `.${"0".repeat(minDecimals)}${"#".repeat(maxDecimals - minDecimals)}`
+      }
     } else if (local === "scientific-number") {
       // `<number:scientific-number number:decimal-places="2"
       //  number:min-integer-digits="1" number:min-exponent-digits="2"/>`

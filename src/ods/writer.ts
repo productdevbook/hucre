@@ -162,8 +162,47 @@ function decimalsFromCode(code: string): number {
   return m ? m[1].length : 0
 }
 
+/**
+ * How many digits a number format always shows, and how many at most.
+ *
+ * `0` is a digit that is always shown, `#` one shown only if there is
+ * something to show — so `#.##` displays 1234.5 as "1234.5" and `0.00`
+ * as "1234.50". ODF carries both counts: `number:decimal-places` is the
+ * maximum and `number:min-decimal-places` the minimum, with
+ * `number:min-integer-digits` doing the same job left of the point.
+ *
+ * #535 recorded the distinction as one ODS could not carry. It can; the
+ * writer was simply emitting one count and a hardcoded `1`.
+ */
+function digitCounts(code: string): {
+  minInteger: number
+  minDecimals: number
+  maxDecimals: number
+} {
+  // Only the first section — Excel's `positive;negative;zero` are
+  // separate styles, and the caller has already split them.
+  const section = code.split(";")[0] ?? ""
+  const digits = section.match(/[0#?]+(?:,[0#?]+)*(?:\.[0#?]+)?/)?.[0] ?? ""
+  const [integerPart = "", decimalPart = ""] = digits.split(".")
+
+  return {
+    // `?` is a digit-or-space placeholder; it holds a position, so it
+    // counts as shown for this purpose.
+    minInteger: (integerPart.match(/[0?]/g) ?? []).length,
+    minDecimals: (decimalPart.match(/[0?]/g) ?? []).length,
+    maxDecimals: decimalPart.length,
+  }
+}
+
 function hasGrouping(code: string): boolean {
-  return /#,##0|0,000/.test(code)
+  // A comma between digit placeholders with three after it is the
+  // thousands separator. Matching only `#,##0` and `0,000` missed
+  // `#,###` — a wholly optional grouped integer — which then lost its
+  // separator entirely and came back as `0`.
+  //
+  // The three placeholders matter: a trailing `0,,` is Excel's
+  // scale-by-millions, not grouping, and has nothing after the commas.
+  return /[0#?],[0#?]{3}/.test(code)
 }
 
 /**
@@ -199,10 +238,12 @@ function parseScientificFormat(
 }
 
 /** Build a `<number:number>` child for numeric / percentage / currency styles */
-function buildNumberChild(decimals: number, grouping: boolean): string {
+function buildNumberChild(code: string, grouping: boolean): string {
+  const { minInteger, minDecimals, maxDecimals } = digitCounts(code)
   const attrs: Record<string, string> = {
-    "number:decimal-places": String(decimals),
-    "number:min-integer-digits": "1",
+    "number:decimal-places": String(maxDecimals),
+    "number:min-decimal-places": String(minDecimals),
+    "number:min-integer-digits": String(minInteger),
   }
   if (grouping) attrs["number:grouping"] = "true"
   return xmlSelfClose("number:number", attrs)
@@ -486,7 +527,7 @@ function translateNumFmt(code: string): OdsNumFmtDef | undefined {
     const decimals = decimalsFromCode(section)
     const grouping = hasGrouping(section)
     const children = [
-      buildNumberChild(decimals, grouping),
+      buildNumberChild(section, grouping),
       xmlElement("number:text", undefined, "%"),
     ]
     return { kind: "percentage", children }
@@ -497,7 +538,7 @@ function translateNumFmt(code: string): OdsNumFmtDef | undefined {
     const decimals = decimalsFromCode(section)
     const grouping = hasGrouping(section)
     const symbol = xmlElement("number:currency-symbol", undefined, odsEscape(currency))
-    const number = buildNumberChild(decimals, grouping)
+    const number = buildNumberChild(section, grouping)
     // Detect symbol position: leading vs trailing
     const beforeNum = /^[^0#]*(\$|\[\$|"[$€£¥₺₽₹])/.test(section)
     const children = beforeNum ? [symbol, number] : [number, symbol]
@@ -541,7 +582,7 @@ function translateNumFmt(code: string): OdsNumFmtDef | undefined {
   // A section with no `#`/`0` at all is pure literal text — Excel's third
   // section is often `"-"` for zero — and gets no <number:number> child.
   if (/[#0?]/.test(section)) {
-    children.push(buildNumberChild(decimalsFromCode(section), hasGrouping(section)))
+    children.push(buildNumberChild(section, hasGrouping(section)))
   } else if (children.length === 0) {
     return undefined
   }

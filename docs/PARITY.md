@@ -520,13 +520,21 @@ trip rather than reasoned about:
 | ----------------- | ------------- | ------------------------------------------------------------------------------------------------ |
 | `0.00_);(0.00)`   | `0.00;(0.00)` | `_)` reserves the width of a character. ODF has no equivalent, so the padding is dropped         |
 | `##0.0E+0`        | `0.0E+0`      | engineering notation steps the integer part in threes, which ODF spells with `exponent-interval` |
-| `#`, `#.##`       | `0`, `0.00`   | `#` is an optional digit and `0` a mandatory one. ODF counts digits, so the distinction goes     |
 | `[mm]:ss`, `[ss]` | `mm:ss`, `ss` | the elapsed marker survives on hours (`[hh]:mm`) but not on minutes or seconds alone             |
 | `0.00;[Red]-0.00` | `0.00;-0.00`  | colour tags are dropped on purpose — it is what stops `[White]0.00` being read as a time format  |
 | `0.00;;`          | `0.00`        | empty trailing sections have nothing to write                                                    |
 
 `General` returning no `numFmt` is not in that list: General _is_ the
 absence of a data style, so there is nothing lost.
+
+Two rows have left that list since it was written, both for the same
+reason and both found the same way. `#` versus `0` — an optional digit
+against a mandatory one — was described here as a distinction ODF could
+not express; it expresses it with `number:min-decimal-places` and
+`number:min-integer-digits`, which LibreOffice writes on every number
+style. `#,###` was worse than documented: it lost its thousands separator
+as well, because the writer's grouping test only recognised `#,##0` and
+`0,000` literally.
 
 `@` — the text format — used to be on that list, described here as having
 "no data style to write". That was wrong. ODF spells it

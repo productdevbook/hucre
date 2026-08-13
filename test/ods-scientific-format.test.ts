@@ -136,12 +136,15 @@ describe("the number-format codes ODS still cannot carry", () => {
     expect((await styleOf("@"))?.numFmt).toBe("@")
   })
 
-  it("makes an optional digit a mandatory one", async () => {
-    // `#` means "a digit if there is one" and `0` means "always a digit".
-    // ODF counts digits, so `#.##` displays 1234.50 where Excel showed
-    // 1234.5.
-    expect((await styleOf("#"))?.numFmt).toBe("0")
-    expect((await styleOf("#.##"))?.numFmt).toBe("0.00")
+  it("keeps an optional digit optional after all", async () => {
+    // This test used to assert the opposite, on the same mistaken reading
+    // as the `@` case above: ODF carries *both* counts —
+    // `number:decimal-places` is the maximum and `min-decimal-places` the
+    // minimum, with `min-integer-digits` doing the job on the other side
+    // of the point. Kept here pointing the right way; the real coverage
+    // is in test/ods-optional-digits.test.ts.
+    expect((await styleOf("#"))?.numFmt).toBe("#")
+    expect((await styleOf("#.##"))?.numFmt).toBe("#.##")
   })
 
   it("keeps the elapsed marker on hours but not on minutes or seconds", async () => {
