@@ -49,6 +49,31 @@ export function tooLargeToDecode(path: string, byteLength: number): ParseError {
 }
 
 /**
+ * Is this the string-length ceiling, and not some other failure?
+ *
+ * Three signals, because no one of them holds everywhere:
+ *
+ * - **Node throws a plain `Error`** carrying `code: "ERR_STRING_TOO_LONG"`.
+ *   `TextDecoder.decode` goes through Node's internal encoding layer,
+ *   which wraps V8's failure rather than passing it through. The first
+ *   version of this checked `instanceof RangeError` — which is what a
+ *   plain string concatenation throws — so on Node the guard never fired
+ *   and the raw error reached the caller exactly as before. See #516.
+ * - **Other engines throw a `RangeError`**, so that stays.
+ * - **The byte length is a necessary condition either way.** A string
+ *   cannot exceed {@link MAX_STRING_LENGTH} characters unless the buffer
+ *   exceeds it in bytes, since UTF-8 uses at least one byte per
+ *   character. So a failure on a buffer that large is this failure,
+ *   whatever the engine chose to call it — which is the backstop that
+ *   does not depend on guessing at engine internals.
+ */
+function isStringLengthCeiling(error: unknown, byteLength: number): boolean {
+  if (error instanceof RangeError) return true
+  if ((error as { code?: unknown } | null)?.code === "ERR_STRING_TOO_LONG") return true
+  return byteLength > MAX_STRING_LENGTH
+}
+
+/**
  * Decode a package part as UTF-8, or say why it cannot be.
  *
  * `path` is only used for the message, so a caller that has not resolved
@@ -58,9 +83,8 @@ export function decodePart(data: Uint8Array, path: string): string {
   try {
     return new TextDecoder("utf-8").decode(data)
   } catch (error) {
-    // A RangeError here is the string-length ceiling. Anything else is
-    // not ours to reinterpret.
-    if (error instanceof RangeError) throw tooLargeToDecode(path, data.length)
+    // Anything that is not the ceiling is not ours to reinterpret.
+    if (isStringLengthCeiling(error, data.length)) throw tooLargeToDecode(path, data.length)
     throw error
   }
 }

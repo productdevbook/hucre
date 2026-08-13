@@ -17,11 +17,18 @@ import { ParseError, HucreError } from "../src/errors"
 // those files, in ~30s at a flat 944 MB. The buffered reader had a hard
 // ceiling it did not know about.
 //
-// The trigger is not reproducible here and that is worth stating rather
-// than working around: it needs a part larger than this repository.
-// Faking the decode failure would test the wrapper rather than the
-// condition, so what is tested is what has logic in it — the decision
-// and the message.
+// The first version of this file said the trigger was not reproducible —
+// that it needed a part larger than the repository — and tested only the
+// message factory. That was wrong, and the gap it left was a real bug:
+// the guard tested `instanceof RangeError`, Node throws a plain `Error`
+// with `code: "ERR_STRING_TOO_LONG"`, so on Node the conversion never
+// happened and the raw error reached the caller exactly as before (#516).
+//
+// The condition needs a large *buffer*, not a large *file*. One
+// allocation of MAX_STRING_LENGTH + 1 bytes reproduces it in about a
+// second, and that test is below. A test that could not fail for the
+// right reason is worth less than the paragraph explaining why it does
+// not exist.
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("the error a part over the ceiling produces", () => {
@@ -66,6 +73,23 @@ describe("decodePart", () => {
     expect(() => decodePart(notBytes, "x.xml")).toThrow()
     expect(() => decodePart(notBytes, "x.xml")).not.toThrow(ParseError)
   })
+
+  it("turns the real ceiling into a ParseError", () => {
+    // The test that was missing. ~537 MB, outside the JS heap, about a
+    // second — and it is the only thing here that exercises the `catch`
+    // rather than the message it builds.
+    const tooBig = new Uint8Array(MAX_STRING_LENGTH + 1)
+
+    expect(() => decodePart(tooBig, "xl/worksheets/sheet1.xml")).toThrow(ParseError)
+    expect(() => decodePart(tooBig, "xl/worksheets/sheet1.xml")).toThrow(/streamXlsxRows/)
+  }, 60_000)
+
+  it("recognises it whatever the engine calls the error", () => {
+    // Node throws `Error` + `code: "ERR_STRING_TOO_LONG"`; other engines
+    // throw `RangeError`. The byte length is the backstop that does not
+    // depend on guessing which.
+    expect(() => decodePart(new Uint8Array(MAX_STRING_LENGTH + 1), "p.xml")).toThrow(ParseError)
+  }, 60_000)
 
   it("reports the ceiling as the number V8 actually uses", () => {
     // 0x1fffffe8. Hard-coded here so a change to the constant is a
