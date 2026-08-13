@@ -11,6 +11,7 @@ import type {
   CellStyle,
   FontStyle,
   MergeRange,
+  NamedRange,
   RichTextRun,
 } from "../_types"
 import { ZipWriter } from "../zip/writer"
@@ -607,6 +608,58 @@ function translateNumFmt(code: string): OdsNumFmtDef | undefined {
   }
   if (suffix) children.push(xmlElement("number:text", undefined, odsEscape(suffix)))
   return { kind: "number", children }
+}
+
+/**
+ * `<table:named-expressions>`, or nothing when there is nothing to name.
+ *
+ * ODF spells a range `$Sheet1.$A$1:$Sheet1.$B$5` where Excel writes
+ * `Sheet1!$A$1:$B$5`: the sheet is prefixed with `$` and joined by a dot,
+ * and *both* halves carry it. A name whose range this cannot parse is
+ * dropped rather than written malformed — `table:cell-range-address` is
+ * required by the grammar, so a half-built one would invalidate the
+ * document for the sake of a name nobody can resolve.
+ *
+ * Only workbook-level names. ODF scopes a name to a sheet by putting the
+ * block inside that `<table:table>` instead, which `NamedRange.scope`
+ * could drive; PARITY records that it does not yet.
+ */
+function buildNamedExpressions(ranges: NamedRange[] | undefined): string | undefined {
+  if (!ranges || ranges.length === 0) return undefined
+
+  const children: string[] = []
+  for (const named of ranges) {
+    const address = excelRangeToOdsAddress(named.range)
+    if (!address) continue
+    children.push(
+      xmlSelfClose("table:named-range", {
+        "table:name": named.name,
+        "table:cell-range-address": address,
+      }),
+    )
+  }
+
+  if (children.length === 0) return undefined
+  return xmlElement("table:named-expressions", undefined, children)
+}
+
+/** `Sheet1!$A$1:$B$2` -> `$Sheet1.$A$1:$Sheet1.$B$2`, or undefined. */
+function excelRangeToOdsAddress(range: string): string | undefined {
+  const match =
+    /^(?:'([^']*(?:''[^']*)*)'|([A-Za-z_][\w.]*))!(\$?[A-Z]{1,3}\$?\d+)(?::(\$?[A-Z]{1,3}\$?\d+))?$/.exec(
+      range.trim(),
+    )
+  if (!match) return undefined
+
+  const sheet = match[1] !== undefined ? match[1].replace(/''/g, "'") : match[2]!
+  // The grammar's own regular expression for `cell-range-address` allows
+  // a sheet name to be either a run with no dot, space or apostrophe in
+  // it, or a quoted string. `$My Sheet.$A$1` is neither, and jing said so
+  // — the round trip did not, because this reader is lenient about it.
+  const quoted = /^[^.' ]+$/.test(sheet) ? sheet : `'${sheet.replace(/'/g, "''")}'`
+  const locator = odsSheetLocator(quoted)
+  const start = `${locator}.${match[3]}`
+  return match[4] ? `${start}:${locator}.${match[4]}` : start
 }
 
 // ── Style Generation ────────────────────────────────────────────────
@@ -1275,7 +1328,14 @@ function writeContentXml(options: WriteOptions): string {
     )
   }
 
-  const spreadsheetBody = xmlElement("office:spreadsheet", undefined, tableElements)
+  // `<table:named-expressions>` lives in the epilogue of
+  // `<office:spreadsheet>` — after every `<table:table>`. The grammar is
+  // a sequence, so anywhere else is invalid ODF.
+  const namedExpressions = buildNamedExpressions(options.namedRanges)
+  const spreadsheetBody = xmlElement("office:spreadsheet", undefined, [
+    ...tableElements,
+    ...(namedExpressions ? [namedExpressions] : []),
+  ])
   const body = xmlElement("office:body", undefined, spreadsheetBody)
 
   // Build automatic styles from collected styles. Per ODS spec the data

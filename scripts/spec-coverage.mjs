@@ -327,7 +327,7 @@ const REVIEWED_ODF = new Map(
 
     // Worth attention, and open.
     "table:named-expressions":
-      "**open** — named ranges. hucre models them for XLSX and `PARITY.md` lists them among the things ODS does not carry in either direction. The gap is real and is a feature rather than a fix",
+      "read and written since #557, workbook-level. ODF scopes a name to a sheet by putting the block inside that `<table:table>`, which is not done yet; `<table:named-expression>` — a formula rather than a range — has no field to land in",
     "table:default-cell-style-name":
       "**open** — a column's default cell style. hucre reads direct formatting only, and `PARITY.md` records that the ODS reader does not open `styles.xml`; this is the `content.xml` half of the same gap",
   }),

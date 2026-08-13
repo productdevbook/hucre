@@ -136,6 +136,13 @@ async function documents() {
         { name: "Second", rows: [["a", "b"]] },
       ],
       properties: { title: "T", creator: "C", description: "D" },
+      // Named ranges live in the epilogue and spell a sheet name with a
+      // space as `$'My Sheet'.$A$1`. The round trip could not tell the
+      // quoted form from the bare one; this could.
+      namedRanges: [
+        { name: "Region", range: "Data!$A$1:$B$2" },
+        { name: "Quoted", range: "'Second'!$A$1:$A$1" },
+      ],
     }),
   ])
 

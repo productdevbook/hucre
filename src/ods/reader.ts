@@ -12,6 +12,7 @@ import type {
   CellStyle,
   MergeRange,
   Hyperlink,
+  NamedRange,
 } from "../_types"
 import { ParseError, ZipError } from "../errors"
 import { assertNotEncrypted, readInputToUint8Array } from "../_input"
@@ -590,7 +591,53 @@ function parseCellValue(cell: XmlElement): CellValue {
 
 // ── Content XML Parsing ─────────────────────────────────────────────
 
-function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
+/**
+ * `<table:named-expressions>` back into {@link NamedRange}s.
+ *
+ * ODF writes a range `$Sheet1.$A$1:$Sheet1.$B$5`, both halves carrying
+ * the sheet; Excel writes `Sheet1!$A$1:$B$5` with one. A name whose
+ * address does not parse is skipped rather than surfaced half-read.
+ *
+ * `<table:named-expression>` — a formula rather than a range — has no
+ * `NamedRange` to land in and is left alone.
+ */
+function parseNamedExpressions(spreadsheet: XmlElement): NamedRange[] | undefined {
+  const block = findChild(spreadsheet, "named-expressions")
+  if (!block) return undefined
+
+  const out: NamedRange[] = []
+  for (const child of findChildren(block, "named-range")) {
+    const name = child.attrs["table:name"]
+    const address = child.attrs["table:cell-range-address"]
+    if (!name || !address) continue
+
+    const range = odsAddressToExcelRange(address)
+    if (range) out.push({ name, range })
+  }
+  return out.length > 0 ? out : undefined
+}
+
+/** `$Sheet1.$A$1:$Sheet1.$B$2` -> `Sheet1!$A$1:$B$2`, or undefined. */
+function odsAddressToExcelRange(address: string): string | undefined {
+  const half = /^\$?(?:'([^']*(?:''[^']*)*)'|([^.']+))\.(\$?[A-Z]{1,3}\$?\d+)$/
+  const [start, end] = address.split(":")
+  const a = half.exec(start ?? "")
+  if (!a) return undefined
+
+  const sheet = a[1] !== undefined ? a[1].replace(/''/g, "'") : a[2]!
+  // Quote the sheet the way Excel does when it is not a bare identifier.
+  const qualifier = /^[A-Za-z_][\w.]*$/.test(sheet) ? sheet : `'${sheet.replace(/'/g, "''")}'`
+
+  if (end === undefined) return `${qualifier}!${a[3]}`
+  const b = half.exec(end)
+  if (!b) return undefined
+  return `${qualifier}!${a[3]}:${b[3]}`
+}
+
+function parseContentXml(
+  xml: string,
+  options?: ReadOptions,
+): { sheets: Sheet[]; namedRanges?: NamedRange[] } {
   const doc = parseXml(xml)
   const sheets: Sheet[] = []
 
@@ -602,10 +649,10 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
 
   // Navigate: document-content > body > spreadsheet > table
   const body = findChild(doc, "body")
-  if (!body) return sheets
+  if (!body) return { sheets }
 
   const spreadsheet = findChild(body, "spreadsheet")
-  if (!spreadsheet) return sheets
+  if (!spreadsheet) return { sheets }
 
   const tables = findChildren(spreadsheet, "table")
 
@@ -888,7 +935,7 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
   // If filter was applied, remove placeholder sheets with empty rows
   if (options?.sheets !== undefined) {
     const filter = options.sheets
-    return sheets.filter((s, idx) => {
+    const kept = sheets.filter((s, idx) => {
       if (s.rows.length > 0 || s.merges !== undefined || s.cells !== undefined) {
         return true
       }
@@ -902,9 +949,14 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
         return false
       })
     })
+    // The filter drops sheets, not names: a range naming a sheet the
+    // caller did not ask for still describes the document.
+    const filteredNames = parseNamedExpressions(spreadsheet)
+    return filteredNames ? { sheets: kept, namedRanges: filteredNames } : { sheets: kept }
   }
 
-  return sheets
+  const namedRanges = parseNamedExpressions(spreadsheet)
+  return namedRanges ? { sheets, namedRanges } : { sheets }
 }
 
 // ── Meta XML Parsing ────────────────────────────────────────────────
@@ -1006,7 +1058,7 @@ export async function readOds(input: ReadInput, options?: ReadOptions): Promise<
     throw new ParseError("Invalid ODS: missing content.xml")
   }
   const contentXml = decodeUtf8(await zip.extract("content.xml"), "content.xml")
-  const sheets = parseContentXml(contentXml, options)
+  const { sheets, namedRanges } = parseContentXml(contentXml, options)
 
   // 4. Parse meta.xml (optional)
   let properties: WorkbookProperties | undefined
@@ -1021,6 +1073,10 @@ export async function readOds(input: ReadInput, options?: ReadOptions): Promise<
   // 5. Build workbook
   const workbook: Workbook = {
     sheets,
+  }
+
+  if (namedRanges) {
+    workbook.namedRanges = namedRanges
   }
 
   if (properties) {

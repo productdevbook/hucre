@@ -508,9 +508,17 @@ font size, font colour, background colour, number format.
 Not modelled in **either** direction: borders, alignment, font name,
 underline, strikethrough, column widths, row heights, hidden rows and
 columns, freeze and split panes, data validation, conditional formatting,
-auto-filter, named ranges, tables, images, page setup, sheet protection,
-tab colour, hidden sheets, and `time` cells (which read back as the raw
-ISO duration string).
+auto-filter, tables, images, page setup, sheet protection, tab colour,
+hidden sheets, and `time` cells (which read back as the raw ISO duration
+string).
+
+Named ranges left that list: `<table:named-expressions>` carries them
+both ways. Only workbook-level ones — ODF scopes a name to a sheet by
+putting the block inside that `<table:table>`, which `NamedRange.scope`
+could drive and does not yet, so a scoped name is written as a workbook
+one. A `<table:named-expression>` — a formula rather than a range — has
+no field in `NamedRange` to land in and is skipped rather than
+half-read.
 
 Number format is carried, but not every Excel code has an ODF spelling.
 These do not survive intact. Every row was measured through the round

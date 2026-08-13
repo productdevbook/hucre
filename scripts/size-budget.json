@@ -12,15 +12,15 @@
     "gzip": 75215
   },
   "everything (hucre)": {
-    "min": 500939,
-    "gzip": 142754
+    "min": 505600,
+    "gzip": 144358
   },
   "writeXlsx (hucre)": {
     "min": 137825,
     "gzip": 39445
   },
   "readOds (hucre/ods)": {
-    "min": 28240,
-    "gzip": 9953
+    "min": 29733,
+    "gzip": 10454
   }
 }
