@@ -1396,7 +1396,10 @@ export function writeMetaXml(props?: WorkbookProperties): string {
   const modified = props?.modified ?? new Date()
   children.push(xmlElement("dc:date", undefined, formatOdsDate(modified)))
 
-  children.push(xmlElement("meta:generator", undefined, "defter"))
+  // The producing application, per ODF §4.3.2.1. The same name the XLSX
+  // writer puts in `<Application>` — this said `defter`, the project's
+  // former name, for as long as the ODS writer has existed.
+  children.push(xmlElement("meta:generator", undefined, "hucre"))
 
   const metaContent = xmlElement("office:meta", undefined, children)
 

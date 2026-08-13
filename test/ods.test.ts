@@ -272,7 +272,7 @@ describe("ODS Writer", () => {
     expect(cells[1].attrs["office:value-type"]).toBeUndefined()
   })
 
-  it("writes Application: defter in meta.xml", async () => {
+  it("names itself as the generator in meta.xml", async () => {
     const data = await writeOds({
       sheets: [{ name: "Sheet1", rows: [["test"]] }],
     })
@@ -280,7 +280,7 @@ describe("ODS Writer", () => {
     const metaDoc = await parseXmlFromZip(data, "meta.xml")
     const metaEl = findChild(metaDoc, "meta")
     const generator = findChild(metaEl, "generator")
-    expect(getElementText(generator)).toBe("defter")
+    expect(getElementText(generator)).toBe("hucre")
   })
 
   it("writes document properties in meta.xml", async () => {
