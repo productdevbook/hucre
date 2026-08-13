@@ -1965,12 +1965,12 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 
 ### High-level
 
-| Function                       | Description                                                    |
-| ------------------------------ | -------------------------------------------------------------- |
-| `read(input, options?)`        | Auto-detect format (XLSX/ODS), returns `Workbook`              |
-| `write(options)`               | Write XLSX or ODS (via `format` option)                        |
-| `readObjects(input, options?)` | File → `{ data, headers }` (format-agnostic `*Objects` reader) |
-| `writeObjects(data, options?)` | Objects → XLSX/ODS                                             |
+| Function                       | Description                                                                                                                    |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `read(input, options?)`        | Auto-detect format, returns `Workbook`. XLSX, ODS, XLS and XLSB by container shape; CSV, JSON, NDJSON, XML and HTML by content |
+| `write(options)`               | Write XLSX or ODS (via `format` option)                                                                                        |
+| `readObjects(input, options?)` | File → `{ data, headers }` (format-agnostic `*Objects` reader)                                                                 |
+| `writeObjects(data, options?)` | Objects → XLSX/ODS                                                                                                             |
 
 ### XLSX
 
