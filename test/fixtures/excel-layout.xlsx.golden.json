@@ -17,10 +17,15 @@
       "columnStyles": {},
       "conditional": ["B3:B5 cellIs greaterThan 10 stopIfTrue fill=FFC7CE"],
       "pageSetup": null,
-      "formulas": {}
+      "formulas": {},
+      "autoFilter": null,
+      "validations": [],
+      "protection": [],
+      "comments": []
     }
   ],
   "dateSystem": "1900",
+  "namedRanges": [],
   "hasAuthor": false,
   "warnings": []
 }

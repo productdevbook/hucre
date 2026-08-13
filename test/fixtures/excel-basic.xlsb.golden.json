@@ -17,10 +17,15 @@
       "columnStyles": {},
       "conditional": [],
       "pageSetup": null,
-      "formulas": {}
+      "formulas": {},
+      "autoFilter": null,
+      "validations": [],
+      "protection": [],
+      "comments": []
     }
   ],
   "dateSystem": null,
+  "namedRanges": [],
   "hasAuthor": false,
   "warnings": []
 }

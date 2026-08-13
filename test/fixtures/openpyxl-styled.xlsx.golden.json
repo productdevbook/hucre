@@ -27,10 +27,15 @@
       "formulas": {},
       "pageSetup": {
         "leftMargin": 0.75
-      }
+      },
+      "autoFilter": null,
+      "validations": [],
+      "protection": [],
+      "comments": []
     }
   ],
   "dateSystem": "1900",
+  "namedRanges": [],
   "hasAuthor": false,
   "warnings": []
 }

@@ -21,10 +21,15 @@
       "columnStyles": {},
       "conditional": [],
       "pageSetup": null,
-      "formulas": {}
+      "formulas": {},
+      "autoFilter": null,
+      "validations": [],
+      "protection": [],
+      "comments": []
     }
   ],
   "dateSystem": "1900",
+  "namedRanges": [],
   "hasAuthor": false,
   "warnings": []
 }

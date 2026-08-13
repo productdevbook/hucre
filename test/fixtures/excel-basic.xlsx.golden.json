@@ -27,10 +27,15 @@
         "E4": "SUM(B2:B4) => 8.5",
         "B5": "1/0 => \"#DIV/0!\"",
         "C5": "\"x\" & \"y\" => \"xy\""
-      }
+      },
+      "autoFilter": null,
+      "validations": [],
+      "protection": [],
+      "comments": []
     }
   ],
   "dateSystem": "1900",
+  "namedRanges": [],
   "hasAuthor": false,
   "warnings": []
 }

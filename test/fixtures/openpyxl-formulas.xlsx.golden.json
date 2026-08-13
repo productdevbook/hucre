@@ -23,10 +23,15 @@
         "B2": "SUM(A1:A2) => null",
         "B3": "CONCATENATE(\"x\",\"y\") => null",
         "B4": "1/0 => null"
-      }
+      },
+      "autoFilter": null,
+      "validations": [],
+      "protection": [],
+      "comments": []
     }
   ],
   "dateSystem": "1900",
+  "namedRanges": [],
   "hasAuthor": false,
   "warnings": []
 }
