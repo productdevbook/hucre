@@ -156,7 +156,7 @@ async function zipEntries(bytes) {
 }
 
 /** Element and attribute local names present in the fixture corpus. */
-async function corpusNames(dir) {
+async function corpusNames(dir, match) {
   const elements = new Set()
   const attributes = new Set()
 
@@ -165,19 +165,28 @@ async function corpusNames(dir) {
     for (const entry of readdirSync(d)) {
       const p = join(d, entry)
       if (statSync(p).isDirectory()) walk(p)
-      else if (p.endsWith(".xlsx") || p.endsWith(".xlsb")) files.push(p)
+      else if (/\.(xlsx|xlsb|ods)$/.test(p)) files.push(p)
     }
   }
   walk(dir)
 
-  for (const file of files) {
+  const wanted = files.filter(match)
+  for (const file of wanted) {
     for (const xml of await zipEntries(new Uint8Array(readFileSync(file)))) {
-      for (const m of xml.matchAll(/<\/?([A-Za-z_][\w.-]*:)?([A-Za-z_][\w.-]*)/g))
-        elements.add(m[2])
-      for (const m of xml.matchAll(/[\s]([A-Za-z_][\w.-]*)=["']/g)) attributes.add(m[1])
+      // ODF names its elements with the prefix — `table:table-row` — and
+      // SpreadsheetML does not, so both forms are collected and each
+      // schema looks up whichever it uses.
+      for (const m of xml.matchAll(/<\/?(([A-Za-z_][\w.-]*):)?([A-Za-z_][\w.-]*)/g)) {
+        elements.add(m[3])
+        if (m[2]) elements.add(`${m[2]}:${m[3]}`)
+      }
+      for (const m of xml.matchAll(/[\s](([A-Za-z_][\w.-]*):)?([A-Za-z_][\w.-]*)=["']/g)) {
+        attributes.add(m[3])
+        if (m[2]) attributes.add(`${m[2]}:${m[3]}`)
+      }
     }
   }
-  return { elements, attributes, fileCount: files.length }
+  return { elements, attributes, fileCount: wanted.length }
 }
 
 // ── SpreadsheetML, from the XSD ──────────────────────────────────────
@@ -279,9 +288,9 @@ const REVIEWED = new Map(
     // Genuinely worth attention — kept here with the reason, so the
     // report shows them as judged rather than unseen.
     quotePrefix:
-      "**open** — marks a cell forced to text by a leading apostrophe. The value is already a string in the file, so nothing is lost from `rows`; the flag itself is not carried",
+      'measured, inert — marks a cell forced to text by a leading apostrophe. The value is already a string in the file, so `rows` is unaffected. Every occurrence in the corpus is `"0"`: openpyxl writes it explicitly false, Excel omits it. Nothing observed to carry',
     baseColWidth:
-      "**open** — the base width column widths are relative to. hucre assumes the 8.43 default; a file that sets another makes every width wrong",
+      "measured, inert — the base every column width is relative to. Deriving `defaultColWidth` from it needs the normal font's maximum digit width, which hucre cannot measure. Every occurrence in the corpus is `8`, the schema default, and Excel omits it entirely — so nothing real is lost today",
     indexedColors:
       "read since #546 — the palette a file overrides, applied to every colour that names an index. Indices 64 and 65 stay unresolved: they are the system foreground and background and have no ARGB",
     rgbColor: "read since #546 — an entry of the `indexedColors` palette above",
@@ -302,7 +311,8 @@ function classify(name, literals, corpus) {
 }
 
 const literals = sourceLiterals(srcDir)
-const corpus = await corpusNames(fixturesDir)
+const corpus = await corpusNames(fixturesDir, (f) => /\.(xlsx|xlsb)$/.test(f))
+const odsCorpus = await corpusNames(fixturesDir, (f) => f.endsWith(".ods"))
 
 const lines = []
 lines.push("# Spec coverage")
@@ -316,9 +326,10 @@ lines.push(
   "",
 )
 lines.push(
-  `Corpus: ${corpus.fileCount} workbooks under \`${fixturesDir}\`, ` +
-    `${corpus.elements.size} distinct element names, ` +
-    `${corpus.attributes.size} distinct attribute names.`,
+  `Corpus under \`${fixturesDir}\`: ${corpus.fileCount} OOXML workbooks ` +
+    `(${corpus.elements.size} element names, ${corpus.attributes.size} attribute names) ` +
+    `and ${odsCorpus.fileCount} ODF documents ` +
+    `(${odsCorpus.elements.size} element names, ${odsCorpus.attributes.size} attribute names).`,
   "",
 )
 
@@ -393,18 +404,32 @@ if (smlPath) {
 if (odfPath) {
   const { elements, attributes } = parseOdf(odfPath)
   const missing = { element: [], attribute: [] }
+  const inCorpusGap = { element: [], attribute: [] }
   let known = 0
 
   for (const [kind, names] of [
     ["element", elements],
     ["attribute", attributes],
   ]) {
+    const bucket = kind === "element" ? odsCorpus.elements : odsCorpus.attributes
     for (const name of names) {
       const local = name.includes(":") ? name.split(":")[1] : name
       // Prefixed or bare: the ODS reader switches on the local name, the
       // writer emits the prefixed one.
-      if (literals.exact.has(name) || literals.exact.has(local)) known++
-      else missing[kind].push(name)
+      if (literals.exact.has(name) || literals.exact.has(local)) {
+        known++
+        continue
+      }
+      missing[kind].push(name)
+      // The same three-way cross the OOXML half gets, now that there is
+      // a LibreOffice document in the corpus to cross against. A name a
+      // real document uses and the source has never heard of is a
+      // different thing from one no document here contains.
+      // Prefixed only. The local-name fallback above is right for the
+      // *source*, which switches on local names, and wrong here: it
+      // matched the schema's `table:value-type` against the corpus's
+      // `office:value-type` and reported a name no document contains.
+      if (bucket.has(name)) inCorpusGap[kind].push(name)
     }
   }
 
@@ -415,10 +440,22 @@ if (odfPath) {
       `${known} are named somewhere in \`src/\`; ` +
       `${missing.element.length + missing.attribute.length} are not.`,
     "",
-    "ODF is not crossed with the corpus: there are no third-party `.ods`",
-    "fixtures beyond the SheetJS ones, and SheetJS writes a narrow subset.",
     "",
   )
+
+  const freshOds = [...inCorpusGap.element, ...inCorpusGap.attribute]
+  lines.push("### In an ODF document here, unknown to the source", "")
+  if (freshOds.length === 0) {
+    lines.push(
+      `Nothing. The ${odsCorpus.fileCount} \`.ods\` files in the corpus — SheetJS's`,
+      "and LibreOffice's — use no name the source has not heard of.",
+      "",
+    )
+  } else {
+    lines.push("```")
+    lines.push(...freshOds)
+    lines.push("```", "")
+  }
   lines.push("### Not named in the source", "")
   lines.push(
     "`table:`, `office:` and `number:` only — the spreadsheet's own",
