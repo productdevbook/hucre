@@ -122,6 +122,22 @@ would otherwise show `1E-07` — but only when that form is the same
 number, which it was not for the smallest values (`Number.MIN_VALUE` used
 to come out as `0.0`).
 
+### Line endings are normalized on the way in
+
+XML 1.0 §2.11 requires a processor to turn a literal CRLF, and a literal
+lone CR, into a single LF before the application sees the content.
+hucre's writer knew this — it escapes a deliberate CR as `&#13;` — and
+the parser did not, so the two disagreed.
+
+Excel writes a multi-line cell with a literal CRLF inside `<t>`, so the
+same authored workbook read as `.xlsx` gave `"line one\r\nline two"` and
+as `.xlsb` — which stores a bare LF — gave `"line one\nline two"`. Fixed
+in #493.
+
+A character reference is not a literal line ending: `&#13;` still comes
+through as CR, which is what makes a deliberate one distinguishable from
+a line break and what keeps hucre's own round trip exact.
+
 ### Cached formula results, whatever their type
 
 `Cell.formulaResult` was assigned in one place — the numeric arm of the

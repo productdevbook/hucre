@@ -40,6 +40,32 @@ const ENTITY_MAP: Record<string, string> = {
   apos: "'",
 }
 
+// ── End-of-line normalization ─────────────────────────────────────
+
+/**
+ * Normalize literal line endings, as XML 1.0 §2.11 requires.
+ *
+ * A processor must turn a literal CRLF, and a literal lone CR, into a
+ * single LF *before* the application sees the content. hucre's writer has
+ * always known this — it escapes CR as `&#13;` precisely so a deliberate
+ * one survives — and the parser did not, so the two disagreed.
+ *
+ * Excel writes a multi-line cell with a literal CRLF inside `<t>`, so
+ * `readXlsx` returned `"line one\r\nline two"` where the same authored
+ * workbook saved as XLSB (which stores a bare LF) gave
+ * `"line one\nline two"`. One cell, two containers, two strings. See
+ * #493.
+ *
+ * This runs on the raw source text, before entity decoding, which is the
+ * order the spec gives and the reason it is a separate pass: `&#13;` is a
+ * *character reference*, not a literal line ending, and must come through
+ * as CR untouched.
+ */
+function normalizeEol(text: string): string {
+  if (text.indexOf("\r") === -1) return text
+  return text.replace(/\r\n?/g, "\n")
+}
+
 // ── Entity Decoding ───────────────────────────────────────────────
 
 function decodeEntities(text: string): string {
@@ -111,13 +137,13 @@ function parseAttrs(raw: string): Record<string, string> {
       i++ // skip opening quote
       const valStart = i
       while (i < len && raw.charCodeAt(i) !== quote) i++
-      attrs[name] = decodeEntities(raw.slice(valStart, i))
+      attrs[name] = decodeEntities(normalizeEol(raw.slice(valStart, i)))
       i++ // skip closing quote
     } else {
       // Unquoted value (technically not valid XML, but handle gracefully)
       const valStart = i
       while (i < len && !isWhitespace(raw.charCodeAt(i))) i++
-      attrs[name] = decodeEntities(raw.slice(valStart, i))
+      attrs[name] = decodeEntities(normalizeEol(raw.slice(valStart, i)))
     }
   }
 
@@ -256,7 +282,7 @@ export function parseSax(xml: string, handlers: SaxHandlers): void {
     while (i < len && input.charCodeAt(i) !== 60 /* < */) i++
     const rawText = input.slice(textStart, i)
     if (rawText) {
-      const decoded = decodeEntities(rawText)
+      const decoded = decodeEntities(normalizeEol(rawText))
       handlers.onText?.(decoded)
     }
   }
@@ -477,7 +503,7 @@ function processSaxBuffer(buf: string, handlers: SaxHandlers, final: boolean): s
       if (len - textStart > SAX_TEXT_FLUSH_CHARS) {
         const cut = safeTextSplit(buf, textStart, len)
         if (cut > textStart) {
-          handlers.onText?.(decodeEntities(buf.slice(textStart, cut)))
+          handlers.onText?.(decodeEntities(normalizeEol(buf.slice(textStart, cut))))
           return buf.slice(cut)
         }
       }
@@ -486,7 +512,7 @@ function processSaxBuffer(buf: string, handlers: SaxHandlers, final: boolean): s
 
     const rawText = buf.slice(textStart, i)
     if (rawText) {
-      const decoded = decodeEntities(rawText)
+      const decoded = decodeEntities(normalizeEol(rawText))
       handlers.onText?.(decoded)
     }
   }
