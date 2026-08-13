@@ -111,6 +111,29 @@ describe("a cell written with the short record form is still a cell", () => {
   })
 })
 
+describe("strings that live in the shared table", () => {
+  // Every other fixture here has SheetJS's default: strings written
+  // inline, so `BrtCellIsst` and `BrtShortIsst` — the records that carry
+  // an *index* into `sharedStrings.bin` rather than the text — were the
+  // pair no real file exercised. This one is generated with `bookSST`,
+  // and its sheet uses record ids 7 and 18 for the strings and 3 and 14
+  // for the errors: the four the short-record fix touched that nothing
+  // else reaches.
+  it("resolve through the shared table, short form included", async () => {
+    const rows = (await readXlsb(load("sheetjs-shared-strings.xlsb"))).sheets[0]!.rows
+
+    expect(rows[0]).toEqual(["alpha", "beta", "gamma"])
+    expect(rows[1]).toEqual(["alpha", "delta", "beta"])
+    expect(rows[2]).toEqual(["gamma", "alpha", "delta"])
+  })
+
+  it("and an error cell keeps its code", async () => {
+    const rows = (await readXlsb(load("sheetjs-shared-strings.xlsb"))).sheets[0]!.rows
+
+    expect(rows[3]).toEqual(["#DIV/0!", "#N/A", "#REF!"])
+  })
+})
+
 describe("what already worked still does", () => {
   it("unicode, including astral characters", async () => {
     const rows = (await readXlsb(load("sheetjs-unicode.xlsb"))).sheets[0]!.rows

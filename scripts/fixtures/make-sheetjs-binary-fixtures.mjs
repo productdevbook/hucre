@@ -51,8 +51,8 @@ mkdirSync(outDir, { recursive: true })
 /** Written to disk and asserted against in test/xlsb-short-records.test.ts. */
 const FIXTURES = []
 
-function fixture(stem, build) {
-  FIXTURES.push({ stem, build })
+function fixture(stem, build, options) {
+  FIXTURES.push({ stem, build, options })
 }
 
 function sheet(wb, name, rows) {
@@ -107,6 +107,31 @@ fixture("sheetjs-dates", (wb) => {
   ])
 })
 
+// `bookSST` makes SheetJS put strings in a shared table, so the cells
+// reference them by index — `BrtCellIsst` and `BrtShortIsst`, the pair
+// every other fixture here misses because SheetJS writes strings inline
+// by default. The repeated values are what make a shared table worth
+// writing.
+//
+// The error cells are set directly, because `aoa_to_sheet` has no way to
+// express one: `t: "e"` with the BIFF error code.
+fixture(
+  "sheetjs-shared-strings",
+  (wb) => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["alpha", "beta", "gamma"],
+      ["alpha", "delta", "beta"],
+      ["gamma", "alpha", "delta"],
+    ])
+    ws["A4"] = { t: "e", v: 0x07 } // #DIV/0!
+    ws["B4"] = { t: "e", v: 0x2a } // #N/A
+    ws["C4"] = { t: "e", v: 0x17 } // #REF!
+    ws["!ref"] = "A1:C4"
+    XLSX.utils.book_append_sheet(wb, ws, "Shared")
+  },
+  { bookSST: true },
+)
+
 fixture("sheetjs-sparse", (wb) => {
   const ws = XLSX.utils.aoa_to_sheet([
     ["a", null, null, null, "far"],
@@ -120,13 +145,13 @@ fixture("sheetjs-sparse", (wb) => {
 
 // ── Write them, in both binary formats ───────────────────────────────
 
-for (const { stem, build } of FIXTURES) {
+for (const { stem, build, options } of FIXTURES) {
   for (const bookType of ["xlsb", "xls"]) {
     const wb = XLSX.utils.book_new()
     build(wb)
     // `type: "buffer"` rather than `writeFile`: the ESM build of SheetJS
     // has no `fs` bound and throws "cannot save file" if asked to write.
-    const bytes = XLSX.write(wb, { bookType, type: "buffer" })
+    const bytes = XLSX.write(wb, { bookType, type: "buffer", ...options })
     const name = `${stem}.${bookType}`
     writeFileSync(join(outDir, name), bytes)
     console.log(`${name}  ${bytes.length} bytes`)
