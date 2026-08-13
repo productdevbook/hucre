@@ -11,9 +11,14 @@
 // `writeXlsxStream`, `XlsxStreamWriter` — produce parts that validate
 // against the ECMA-376 Transitional schema, including with tables,
 // sparklines, comments, data validations, conditional formatting,
-// auto-filters, freeze panes, page setup and named ranges. Worth
-// recording as a checked fact rather than an assumption, and worth
+// auto-filters, freeze panes, page setup and named ranges. So do the
+// charts and their drawings, in all seven types the writer supports.
+// Worth recording as a checked fact rather than an assumption, and worth
 // having the tool for the next feature.
+//
+// A chart is DrawingML, not SpreadsheetML — `sml.xsd` has never heard of
+// `c:chartSpace` — so each part is checked against the schema that
+// describes it rather than all of them against one.
 //
 // Two things to know before reading its output.
 //
@@ -188,24 +193,72 @@ async function documents() {
     }),
   ])
 
+  // Charts are DrawingML rather than SpreadsheetML and are the most
+  // structured thing hucre writes, so each supported type gets a
+  // document. `radar`, `bubble` and `stock` are refused by the writer
+  // with a typed error, which is its own correct answer.
+  for (const type of ["bar", "column", "line", "pie", "doughnut", "area", "scatter"]) {
+    out.push([
+      `writeXlsx (${type} chart, axes, legend, data labels)`,
+      await hucre.writeXlsx({
+        sheets: [
+          {
+            name: "Data",
+            rows: [
+              ["M", "S"],
+              ["a", 1],
+              ["b", 2],
+              ["c", 3],
+            ],
+            charts: [
+              {
+                type,
+                title: type,
+                anchor: { type: "twoCell", from: { row: 0, col: 4 }, to: { row: 12, col: 10 } },
+                series: [{ name: "S", categories: "Data!$A$2:$A$4", values: "Data!$B$2:$B$4" }],
+                legend: { position: "right" },
+                dataLabels: { showValue: true },
+                axes: { x: { title: "X", gridlines: true }, y: { title: "Y", min: 0, max: 10 } },
+              },
+            ],
+          },
+        ],
+      }),
+    ])
+  }
+
   return out
 }
 
 // ── Validation ───────────────────────────────────────────────────────
 
-/** Every SpreadsheetML part in the package, by path. */
-function smlParts(dir) {
-  const out = execFileSync("unzip", ["-Z1", dir], { encoding: "utf8" })
+/**
+ * Each part in the package, paired with the schema that describes it.
+ *
+ * A chart is not SpreadsheetML: `xl/charts/chart1.xml` is DrawingML and
+ * `sml.xsd` has never heard of it. Validating everything against one
+ * schema would report the most complex thing hucre writes as an unknown
+ * element and call it a day.
+ */
+function partsToCheck(pkg, schemaDir) {
+  const all = execFileSync("unzip", ["-Z1", pkg], { encoding: "utf8" })
     .split("\n")
     .map((s) => s.trim())
     .filter(Boolean)
-  // The parts sml.xsd describes. Drawings, charts and the relationship
-  // files have their own schemas and are not this script's business.
-  return out.filter(
-    (p) =>
-      /^xl\/(workbook|styles|sharedStrings)\.xml$/.test(p) ||
-      /^xl\/(worksheets|tables)\/[^/]+\.xml$/.test(p),
-  )
+
+  const out = []
+  for (const part of all) {
+    if (/^xl\/(workbook|styles|sharedStrings)\.xml$/.test(part)) out.push([part, schema])
+    else if (/^xl\/(worksheets|tables)\/[^/]+\.xml$/.test(part)) out.push([part, schema])
+    else if (/^xl\/charts\/chart\d+\.xml$/.test(part)) {
+      out.push([part, join(schemaDir, "dml-chart.xsd")])
+    } else if (/^xl\/drawings\/drawing\d+\.xml$/.test(part)) {
+      out.push([part, join(schemaDir, "dml-spreadsheetDrawing.xsd")])
+    }
+    // Relationship parts, content types, docProps and VML have their own
+    // schemas elsewhere in the package and are not this script's business.
+  }
+  return out
 }
 
 let failures = 0
@@ -219,11 +272,11 @@ for (const [label, bytes] of await documents()) {
   mkdirSync(extracted, { recursive: true })
   execFileSync("unzip", ["-o", "-q", pkg, "-d", extracted])
 
-  for (const part of smlParts(pkg)) {
+  for (const [part, partSchema] of partsToCheck(pkg, dirname(schema))) {
     const file = join(extracted, part)
     let output
     try {
-      output = execFileSync("java", ["-cp", work, "XsdValidate", schema, file], {
+      output = execFileSync("java", ["-cp", work, "XsdValidate", partSchema, file], {
         encoding: "utf8",
         stdio: "pipe",
       })
