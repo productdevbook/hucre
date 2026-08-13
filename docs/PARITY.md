@@ -10,6 +10,13 @@ parity or listed here as an exception.
 If you hit a loss that is **not** on this page, that is a bug — please
 open an issue. That is the whole point of writing it down.
 
+This page is written by hand and says what hucre _does_.
+[`SPEC-COVERAGE.md`](SPEC-COVERAGE.md) is generated and says what the
+**formats** define that hucre does not — derived from the ECMA-376 and
+OASIS schemas rather than from anyone's memory, and crossed with the
+fixture corpus so that a gap real files actually contain is separated
+from one that is merely theoretical.
+
 ## The one thing to read first
 
 XLSX has **two** write paths, and they have different fidelity. Most
