@@ -1719,9 +1719,14 @@ function processCell(
       break
     }
     case "str": {
-      // Inline formula string result
+      // Inline formula string result. `formulaResult` used to be set in
+      // the numeric arm alone, so a cached result survived only when it
+      // happened to be a number — and `readXlsx` → `writeXlsx` dropped
+      // the rest, emitting `<f>` with no `<v>`. The writer has always
+      // been able to write them back. See #497.
       value = decodeOoxmlEscapes(valueText)
       cellType = formula ? "formula" : "string"
+      if (formula) formulaResult = value
       break
     }
     case "inlineStr": {
@@ -1739,13 +1744,23 @@ function processCell(
     case "b": {
       // Boolean
       value = valueText === "1" || valueText.toLowerCase() === "true"
-      cellType = "boolean"
+      cellType = formula ? "formula" : "boolean"
+      if (formula) formulaResult = value
       break
     }
     case "e": {
-      // Error
+      // Error.
+      //
+      // A cell carrying a formula reports `type: "formula"` here, as the
+      // numeric and string arms do. It used to report `"error"` on the
+      // way in and `"formula"` on the way back out, which cannot both be
+      // right — and the round trip is the side with a second opinion.
+      // `value` still holds the error token either way, so spotting an
+      // error by its value is unaffected; a *hard-coded* error cell,
+      // which carries no formula, still reports `"error"`. See #497.
       value = valueText
-      cellType = "error"
+      cellType = formula ? "formula" : "error"
+      if (formula) formulaResult = value
       break
     }
     case "d": {

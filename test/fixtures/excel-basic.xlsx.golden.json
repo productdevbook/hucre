@@ -32,21 +32,5 @@
   ],
   "dateSystem": "1900",
   "hasAuthor": false,
-  "warnings": [],
-  "knownDefects": [
-    {
-      "issue": "#497",
-      "path": "sheets.0.formulas.B5",
-      "expected": "1/0 => \"#DIV/0!\"",
-      "actual": "1/0 => null",
-      "why": "a formula whose cached result is an error loses that result; only numeric results survive"
-    },
-    {
-      "issue": "#497",
-      "path": "sheets.0.formulas.C5",
-      "expected": "\"x\" & \"y\" => \"xy\"",
-      "actual": "\"x\" & \"y\" => null",
-      "why": "a formula whose cached result is a string loses that result, and writeXlsx then emits <f> with no <v>"
-    }
-  ]
+  "warnings": []
 }

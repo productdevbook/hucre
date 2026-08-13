@@ -122,6 +122,26 @@ would otherwise show `1E-07` — but only when that form is the same
 number, which it was not for the smallest values (`Number.MIN_VALUE` used
 to come out as `0.0`).
 
+### Cached formula results, whatever their type
+
+`Cell.formulaResult` was assigned in one place — the numeric arm of the
+cell-type switch — so a cached result survived only when it happened to
+be a number. A formula whose result is a string, an error or a boolean
+lost it.
+
+That was a round-trip loss rather than a missing field: the _writer_ has
+always been able to write those back, so `readXlsx` → `writeXlsx` emitted
+`<f>` with no `<v>`, and anything opening the result without
+recalculating saw an empty cell where Excel showed `#DIV/0!`. Fixed in
+#497.
+
+One behaviour changed with it. A formula cell now reports
+`type: "formula"` whatever its cached result is; it used to report
+`"error"` on the way in and `"formula"` on the way back out, and both
+cannot be right. `value` still holds the error token, so spotting an
+error by its value is unaffected, and a _hard-coded_ error cell — one
+with no formula — still reports `"error"`.
+
 ### ISO-8601 date cells
 
 `ST_CellType` (§18.18.11) has seven members and the reader's switch had
