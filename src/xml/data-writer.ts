@@ -24,7 +24,31 @@ export interface XmlWriteOptions {
   indent?: string
 }
 
-const VALID_NAME_RE = /^[A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?$/
+// ── What may be an element or attribute name ────────────────────────
+//
+// XML 1.0 §2.3, the `NameStartChar` and `NameChar` productions, minus
+// the colon — which is spelled separately below so a name may carry one
+// prefix and not a colon anywhere it likes. That is `QName` from
+// Namespaces in XML §4, and it is what an XML consumer will accept.
+//
+// This used to be `/^[A-Za-z_][\w.-]*…/` — ASCII only. `NameStartChar`
+// runs from #xC0, so **every** accented or non-Latin heading was
+// refused: `Şehir`, `Größe`, `café`, `名前`. A spreadsheet whose column
+// names are not English could not be written to XML at all; it threw.
+// The rejected names were valid XML, and the ones the production really
+// does forbid — a leading digit, a space, `<` — are still rejected.
+//
+// The `u` flag is required: #x10000–#xEFFFF is above the BMP, and
+// without it the surrogate halves are matched separately and a name made
+// of astral characters slips through as two non-matching units.
+const NAME_START = "A-Z_a-z\\u00C0-\\u00D6\\u00D8-\\u00F6\\u00F8-\\u02FF"
+const NAME_START_2 = "\\u0370-\\u037D\\u037F-\\u1FFF\\u200C-\\u200D\\u2070-\\u218F\\u2C00-\\u2FEF"
+const NAME_START_3 = "\\u3001-\\uD7FF\\uF900-\\uFDCF\\uFDF0-\\uFFFD\\u{10000}-\\u{EFFFF}"
+const START = `[${NAME_START}${NAME_START_2}${NAME_START_3}]`
+const REST = `[${NAME_START}${NAME_START_2}${NAME_START_3}\\-.0-9\\u00B7\\u0300-\\u036F\\u203F-\\u2040]`
+
+/** One `NCName`, optionally prefixed by another — i.e. a `QName`. */
+const VALID_NAME_RE = new RegExp(`^${START}${REST}*(?::${START}${REST}*)?$`, "u")
 
 function escapeText(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
