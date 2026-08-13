@@ -238,6 +238,28 @@ function toHyperlink(hv: HyperlinkValue): Hyperlink {
 const DEFAULT_DATE_FORMAT = "yyyy-mm-dd"
 
 /**
+ * The style a bare `Date` gets, as one object rather than one per cell.
+ *
+ * `serializeCell` used to build `{ ...style, numFmt: DEFAULT_DATE_FORMAT }`
+ * fresh for every date cell, which defeated the xf identity cache #435
+ * added: measured on the 100,000 x 12 benchmark, `registerXf` was called
+ * 400,000 times — exactly the date-cell count — with **zero** identity
+ * hits, to produce one xf. Every one of those paid for an object, a
+ * seven-element key array, a join and a Map lookup.
+ *
+ * Sharing one frozen object makes the cache hit on the second date cell
+ * and every one after it. See #472.
+ */
+const BARE_DATE_STYLE: CellStyle = Object.freeze({ numFmt: DEFAULT_DATE_FORMAT })
+
+/**
+ * Derived date styles for cells that *do* carry a style, keyed by that
+ * style's identity — same reasoning, one step further out. A `WeakMap`
+ * so a style object the caller drops does not keep an entry alive.
+ */
+const DATE_STYLE_CACHE = /* @__PURE__ */ new WeakMap<CellStyle, CellStyle>()
+
+/**
  * Known Excel error value strings.
  *
  * The first eight are the ST_CellType `e` values ECMA-376 enumerates.
@@ -912,11 +934,22 @@ export function serializeCell(
   let styleIdx = 0
   let effectiveStyle = style
 
-  // If value is Date and no numFmt specified, add default date format
+  // If value is Date and no numFmt specified, add default date format.
+  // Both branches reuse one object per distinct input so the xf identity
+  // cache can hit; building a fresh one per cell is what made this the
+  // hottest thing in the writer. See #472.
   if (value instanceof Date && (!effectiveStyle || !effectiveStyle.numFmt)) {
-    effectiveStyle = {
-      ...effectiveStyle,
-      numFmt: DEFAULT_DATE_FORMAT,
+    if (!effectiveStyle) {
+      effectiveStyle = BARE_DATE_STYLE
+    } else {
+      const cached = DATE_STYLE_CACHE.get(effectiveStyle)
+      if (cached) {
+        effectiveStyle = cached
+      } else {
+        const derived: CellStyle = { ...effectiveStyle, numFmt: DEFAULT_DATE_FORMAT }
+        DATE_STYLE_CACHE.set(effectiveStyle, derived)
+        effectiveStyle = derived
+      }
     }
   }
 
