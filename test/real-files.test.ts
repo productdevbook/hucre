@@ -59,6 +59,14 @@ interface SheetModel {
   columnStyles: Record<string, string>
   /** One line per conditional-formatting rule. */
   conditional: string[]
+  /**
+   * A1 → `<formula text> => <cached result>`, for cells carrying a
+   * formula. The cached result is the interesting half: Excel always
+   * writes one, openpyxl never does, and `openpyxl-formulas.xlsx` is in
+   * the corpus precisely because a formula with no cached value is a
+   * shape Excel cannot produce.
+   */
+  formulas: Record<string, string>
   /** Page setup, minus the margins every sheet gets by default. */
   pageSetup: Record<string, unknown> | null
 }
@@ -162,11 +170,15 @@ const styleLine = (s: CellStyle | undefined): string => {
 
 const projectSheet = (sheet: Sheet): SheetModel => {
   const styles: Record<string, string> = {}
+  const formulas: Record<string, string> = {}
   for (const [key, cell] of sheet.cells ?? new Map<string, Cell>()) {
-    const line = styleLine(cell.style)
-    if (line === "") continue
     const [r, c] = key.split(",").map(Number)
-    styles[`${colName(c as number)}${(r as number) + 1}`] = line
+    const a1 = `${colName(c as number)}${(r as number) + 1}`
+    const line = styleLine(cell.style)
+    if (line !== "") styles[a1] = line
+    if (cell.formula !== undefined) {
+      formulas[a1] = `${cell.formula} => ${JSON.stringify(flat(cell.formulaResult))}`
+    }
   }
 
   const columnStyles: Record<string, string> = {}
@@ -211,6 +223,7 @@ const projectSheet = (sheet: Sheet): SheetModel => {
           ` fill=${colorOf(r.style?.fill?.type === "pattern" ? r.style.fill.bgColor : undefined)}`,
       )
       .sort(),
+    formulas,
     pageSetup: Object.keys(pageSetup).length > 0 ? pageSetup : null,
   }
 }
@@ -271,6 +284,17 @@ const FIXTURES: Array<{ file: string; reader: typeof readXlsx }> = [
   { file: "excel-styleonly.xlsx", reader: readXlsx },
   { file: "excel-dates.xls", reader: readXls },
   { file: "excel-empty.xlsx", reader: readXlsx },
+  // A second producer. openpyxl is not Excel-with-a-different-icon: it
+  // emits formulas with no cached result, ISO-8601 `t="d"` date cells,
+  // `date1904`, and inline strings with no shared string table — four
+  // shapes Excel never writes, so a corpus of Excel output alone cannot
+  // reach them. It writes .xlsx only, hence no .xls/.xlsb siblings.
+  { file: "openpyxl-basic.xlsx", reader: readXlsx },
+  { file: "openpyxl-formulas.xlsx", reader: readXlsx },
+  { file: "openpyxl-isodates.xlsx", reader: readXlsx },
+  { file: "openpyxl-1904.xlsx", reader: readXlsx },
+  { file: "openpyxl-inline-strings.xlsx", reader: readXlsx },
+  { file: "openpyxl-styled.xlsx", reader: readXlsx },
 ]
 
 /**
@@ -334,6 +358,27 @@ describe("workbooks written by Excel, not by this test suite", () => {
         })
       }
     })
+  })
+
+  // Two producers, one authored sheet. This is what a second producer
+  // buys that a bigger Excel corpus cannot: if hucre and Excel happened
+  // to share a misunderstanding, a corpus made only of Excel output
+  // would agree with itself about it. openpyxl read the same spec
+  // independently, so where the two files disagree, one of them is
+  // wrong and neither gets a free pass.
+  //
+  // Column E is compared as values: Excel cached its formula results,
+  // openpyxl cannot evaluate, so the Python writes the same numbers as
+  // literals. The formula-with-no-cached-result case is
+  // openpyxl-formulas.xlsx, where it is the subject rather than noise.
+  it("agrees between Excel and openpyxl on the same authored sheet", async () => {
+    const excel = await modelOf("excel-basic.xlsx", readXlsx)
+    const python = await modelOf("openpyxl-basic.xlsx", readXlsx)
+    // excel-basic has a fifth row of formula results openpyxl has no
+    // way to produce; compare the four rows both files author.
+    expect(python.sheets[0]?.rows).toEqual(excel.sheets[0]?.rows.slice(0, 4))
+    expect(python.sheets[0]?.name).toBe(excel.sheets[0]?.name)
+    expect(python.dateSystem).toBe(excel.dateSystem)
   })
 
   // A chart sheet — a chart on its own tab — is not a worksheet, and

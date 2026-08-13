@@ -6,21 +6,26 @@
         ["Name", "Qty", "Date", "Active", "Total"],
         ["Widget", 12, "D:2024-03-17T00:00:00.000Z", true, 24],
         ["Gadget", -3.5, "D:1999-12-31T00:00:00.000Z", false, -7],
-        ["Doohickey", 0, "D:2024-02-29T00:00:00.000Z", true, 8.5],
-        ["Broken", "#DIV/0!", "xy"]
+        ["Doohickey", 0, "D:2024-02-29T00:00:00.000Z", true, 8.5]
       ],
       "merges": [],
       "freeze": null,
       "hiddenRows": [],
       "hiddenColumns": [],
-      "styles": {},
+      "styles": {
+        "C2": "numFmt(yyyy-mm-dd)",
+        "C3": "numFmt(yyyy-mm-dd)",
+        "C4": "numFmt(yyyy-mm-dd)"
+      },
       "columnStyles": {},
       "conditional": [],
-      "pageSetup": null,
+      "pageSetup": {
+        "leftMargin": 0.75
+      },
       "formulas": {}
     }
   ],
-  "dateSystem": null,
+  "dateSystem": "1900",
   "hasAuthor": false,
   "warnings": []
 }

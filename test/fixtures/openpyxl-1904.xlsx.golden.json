@@ -1,0 +1,32 @@
+{
+  "sheets": [
+    {
+      "name": "Epoch1904",
+      "rows": [
+        ["epoch", "D:1904-01-01T00:00:00.000Z"],
+        ["date", "D:2024-03-17T00:00:00.000Z"],
+        ["datetime", "D:2024-03-17T13:45:30.000Z"],
+        ["leap day", "D:2024-02-29T00:00:00.000Z"]
+      ],
+      "merges": [],
+      "freeze": null,
+      "hiddenRows": [],
+      "hiddenColumns": [],
+      "styles": {
+        "B1": "numFmt(yyyy-mm-dd hh:mm:ss)",
+        "B2": "numFmt(yyyy-mm-dd hh:mm:ss)",
+        "B3": "numFmt(yyyy-mm-dd hh:mm:ss)",
+        "B4": "numFmt(yyyy-mm-dd hh:mm:ss)"
+      },
+      "columnStyles": {},
+      "conditional": [],
+      "formulas": {},
+      "pageSetup": {
+        "leftMargin": 0.75
+      }
+    }
+  ],
+  "dateSystem": "1904",
+  "hasAuthor": false,
+  "warnings": []
+}

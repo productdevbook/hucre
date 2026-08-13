@@ -22,7 +22,8 @@
         "printTitlesRow": "$1:$1",
         "printTitlesColumn": "$A:$A",
         "leftMargin": 0.5
-      }
+      },
+      "formulas": {}
     }
   ],
   "dateSystem": "1900",

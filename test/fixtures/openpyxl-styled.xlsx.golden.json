@@ -1,0 +1,36 @@
+{
+  "sheets": [
+    {
+      "name": "Styled",
+      "rows": [
+        ["bold", "italic 14", "red courier"],
+        ["filled", "bordered", 0.125],
+        ["centred", "wrapped", null],
+        ["merged", null, null]
+      ],
+      "merges": ["A4:C4"],
+      "freeze": "2x1",
+      "hiddenRows": [],
+      "hiddenColumns": [],
+      "styles": {
+        "A1": "font(bold)",
+        "B1": "font(italic,size=14)",
+        "C1": "font(name=Courier New,color=FF0000)",
+        "A2": "fill(solid,FFFF00)",
+        "B2": "border(left=thin,right=thin,top=thin,bottom=thin)",
+        "C2": "numFmt(0.00%)",
+        "A3": "align(h=center,v=center)",
+        "B3": "align(wrap)"
+      },
+      "columnStyles": {},
+      "conditional": [],
+      "formulas": {},
+      "pageSetup": {
+        "leftMargin": 0.75
+      }
+    }
+  ],
+  "dateSystem": "1900",
+  "hasAuthor": false,
+  "warnings": []
+}

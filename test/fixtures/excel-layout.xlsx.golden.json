@@ -16,7 +16,8 @@
       "styles": {},
       "columnStyles": {},
       "conditional": ["B3:B5 cellIs greaterThan 10 stopIfTrue fill=FFC7CE"],
-      "pageSetup": null
+      "pageSetup": null,
+      "formulas": {}
     }
   ],
   "dateSystem": "1900",

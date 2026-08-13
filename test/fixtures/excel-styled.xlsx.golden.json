@@ -29,7 +29,8 @@
         "G": "numFmt(0.000)"
       },
       "conditional": [],
-      "pageSetup": null
+      "pageSetup": null,
+      "formulas": {}
     }
   ],
   "dateSystem": "1900",

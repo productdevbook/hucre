@@ -16,7 +16,8 @@
       "styles": {},
       "columnStyles": {},
       "conditional": [],
-      "pageSetup": null
+      "pageSetup": null,
+      "formulas": {}
     }
   ],
   "dateSystem": null,

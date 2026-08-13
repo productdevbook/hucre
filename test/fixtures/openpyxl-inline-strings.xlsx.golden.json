@@ -1,0 +1,28 @@
+{
+  "sheets": [
+    {
+      "name": "Inline",
+      "rows": [
+        ["  leading", "trailing  "],
+        [" both ", "plain"],
+        ["a & b < c > d", "naïve 日本語 Ωμέγα 😀"],
+        ["line one\nline two", "tab\tsep"],
+        ["  ", 42]
+      ],
+      "merges": [],
+      "freeze": null,
+      "hiddenRows": [],
+      "hiddenColumns": [],
+      "styles": {},
+      "columnStyles": {},
+      "conditional": [],
+      "formulas": {},
+      "pageSetup": {
+        "leftMargin": 0.75
+      }
+    }
+  ],
+  "dateSystem": "1900",
+  "hasAuthor": false,
+  "warnings": []
+}

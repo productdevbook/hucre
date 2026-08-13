@@ -1,0 +1,32 @@
+{
+  "sheets": [
+    {
+      "name": "Formulas",
+      "rows": [
+        [2, null, "after"],
+        [3, null, null],
+        [null, null, null],
+        [null, null, null]
+      ],
+      "merges": [],
+      "freeze": null,
+      "hiddenRows": [],
+      "hiddenColumns": [],
+      "styles": {},
+      "columnStyles": {},
+      "conditional": [],
+      "pageSetup": {
+        "leftMargin": 0.75
+      },
+      "formulas": {
+        "B1": "A1*3 => null",
+        "B2": "SUM(A1:A2) => null",
+        "B3": "CONCATENATE(\"x\",\"y\") => null",
+        "B4": "1/0 => null"
+      }
+    }
+  ],
+  "dateSystem": "1900",
+  "hasAuthor": false,
+  "warnings": []
+}
