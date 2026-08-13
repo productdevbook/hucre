@@ -110,7 +110,18 @@ function isDateFormat(code: string): boolean {
   // Strip locale / colour tags / bracketed duration tokens so they don't
   // interfere — `[HH]`, `[red]`, `[$$-409]` are not date markers.
   const stripped = code.replace(/\[[^\]]*\]/g, "")
-  return /[yY]/.test(stripped) || /[dD]/.test(stripped)
+  if (/[yY]/.test(stripped) || /[dD]/.test(stripped)) return true
+
+  // `mmm` and `mmmm` are the month-name formats and are always dates —
+  // the same rule `isDateFormat` in `src/_date.ts` ends with, which every
+  // reader uses to tell a date cell from a number. This copy did not have
+  // it, so `mmm` reached the plain-number branch, found no `#` or `0` to
+  // work with, and became literal text: a cell formatted `mmm` displayed
+  // the letters "mmm" rather than "Mar".
+  //
+  // A lone `m` or `mm` stays out, in both. After an `h` it is minutes,
+  // and there is nothing in the code itself to settle it.
+  return /m{3,}/i.test(stripped)
 }
 
 function isTimeFormat(code: string): boolean {
