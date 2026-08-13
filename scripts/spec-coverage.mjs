@@ -329,7 +329,7 @@ const REVIEWED_ODF = new Map(
     "table:named-expressions":
       "read and written since #557, workbook-level. ODF scopes a name to a sheet by putting the block inside that `<table:table>`, which is not done yet; `<table:named-expression>` — a formula rather than a range — has no field to land in",
     "table:default-cell-style-name":
-      "**open** — a column's default cell style. hucre reads direct formatting only, and `PARITY.md` records that the ODS reader does not open `styles.xml`; this is the `content.xml` half of the same gap",
+      "read since #558 — a column's default fills in for cells that name no style of their own, which is where LibreOffice puts a column's number format. A column naming a style from `styles.xml` still resolves to nothing, and `PARITY.md` says so",
   }),
 )
 

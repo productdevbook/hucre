@@ -601,6 +601,30 @@ function parseCellValue(cell: XmlElement): CellValue {
  * `<table:named-expression>` — a formula rather than a range — has no
  * `NamedRange` to land in and is left alone.
  */
+/**
+ * The default cell style of each column, expanded by its repeat count.
+ *
+ * `table:default-cell-style-name` names an automatic style in
+ * `content.xml`, which this reader parses — so the format it points at is
+ * reachable. A column naming a style from `styles.xml` instead
+ * (LibreOffice writes `"Default"` on the columns it did not format)
+ * resolves to nothing, which is the right answer: that style *is* the
+ * absence of formatting, and `PARITY.md` records that `styles.xml` is not
+ * opened.
+ */
+function readColumnDefaultStyles(table: XmlElement): Array<string | undefined> {
+  const out: Array<string | undefined> = []
+  for (const column of findChildren(table, "table-column")) {
+    const style = column.attrs["table:default-cell-style-name"]
+    const repeat = Math.min(
+      Math.max(Number(column.attrs["table:number-columns-repeated"] ?? "1") || 1, 1),
+      MAX_COL_INDEX + 1,
+    )
+    for (let i = 0; i < repeat && out.length <= MAX_COL_INDEX; i++) out.push(style)
+  }
+  return out
+}
+
 function parseNamedExpressions(spreadsheet: XmlElement): NamedRange[] | undefined {
   const block = findChild(spreadsheet, "named-expressions")
   if (!block) return undefined
@@ -687,6 +711,13 @@ function parseContentXml(
     const cells = new Map<string, Cell>()
     const tableRows = findChildren(table, "table-row")
 
+    // LibreOffice puts a column's format on the column rather than on its
+    // cells: `<table:table-column table:default-cell-style-name="ce1"/>`,
+    // where `ce1` names the data style. A date column's `yyyy-mm-dd` lives
+    // there and nowhere else, so a document read without this came back
+    // with its values and none of its formats. See #464.
+    const columnDefaultStyles = readColumnDefaultStyles(table)
+
     let currentRow = 0
     let pendingEmptyRows = 0
 
@@ -715,6 +746,10 @@ function parseContentXml(
         hyperlink?: Hyperlink
       }> = []
 
+      // Which column the next entry starts at, so a cell that names no
+      // style can be given its column's default.
+      let colIndex = 0
+
       for (const child of tableRow.children) {
         if (typeof child === "string") continue
         const local = child.local || child.tag
@@ -724,7 +759,9 @@ function parseContentXml(
           const colSpan = Number(child.attrs["table:number-columns-spanned"] ?? "1")
           const rowSpan = Number(child.attrs["table:number-rows-spanned"] ?? "1")
           const value = parseCellValue(child)
-          const styleName = child.attrs["table:style-name"]
+          // A cell's own style wins; the column's default only fills in
+          // for cells that named none.
+          const styleName = child.attrs["table:style-name"] ?? columnDefaultStyles[colIndex]
           const formulaAttr = child.attrs["table:formula"]
           const formula = formulaAttr ? odsFormulaToExcel(formulaAttr) : undefined
           const { hyperlink } = extractTextAndHyperlink(child)
@@ -738,6 +775,7 @@ function parseContentXml(
             formula,
             hyperlink,
           })
+          colIndex += Number.isFinite(colRepeat) && colRepeat > 0 ? colRepeat : 1
         } else if (local === "covered-table-cell") {
           const colRepeat = Number(child.attrs["table:number-columns-repeated"] ?? "1")
           cellEntries.push({
@@ -747,6 +785,10 @@ function parseContentXml(
             rowSpan: 1,
             isCovered: true,
           })
+          // A covered cell still occupies its columns, so the count has
+          // to advance or every default after a merge lands one column
+          // to the left.
+          colIndex += Number.isFinite(colRepeat) && colRepeat > 0 ? colRepeat : 1
         }
       }
 

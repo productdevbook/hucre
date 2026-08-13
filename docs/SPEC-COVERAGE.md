@@ -51,7 +51,7 @@ Corpus under `test/fixtures`: 35 OOXML workbooks (455 element names, 245 attribu
 
 ## OpenDocument (OASIS ODF 1.3)
 
-153 elements and 224 attributes in the spreadsheet-relevant namespaces. 116 are named somewhere in `src/`; 261 are not.
+153 elements and 224 attributes in the spreadsheet-relevant namespaces. 117 are named somewhere in `src/`; 260 are not.
 
 ### In an ODF document here, not yet looked at
 
@@ -61,19 +61,18 @@ office:settings
 
 ### In an ODF document here, looked at and left
 
-| name                            | why                                                                                                                                                                                                  |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `number:boolean-style`          | a data style for booleans. Excel has no format code for one — it shows TRUE/FALSE — so there is nothing to map it to                                                                                 |
-| `number:fill-character`         | the character Excel's `*` repeats to pad a cell. `*` is not in hucre's format model at either end                                                                                                    |
-| `table:automatic-find-labels`   | formula label lookup — no formula engine                                                                                                                                                             |
-| `table:calculation-settings`    | calculation preferences — hucre has no formula engine                                                                                                                                                |
-| `table:case-sensitive`          | formula comparison rule — no formula engine                                                                                                                                                          |
-| `table:default-cell-style-name` | **open** — a column's default cell style. hucre reads direct formatting only, and `PARITY.md` records that the ODS reader does not open `styles.xml`; this is the `content.xml` half of the same gap |
-| `table:iteration`               | iterative calculation settings — no formula engine                                                                                                                                                   |
-| `table:maximum-difference`      | iteration convergence bound — no formula engine                                                                                                                                                      |
-| `table:null-year`               | the century a two-digit year resolves into, for the formula parser                                                                                                                                   |
-| `table:use-regular-expressions` | formula matching rule — no formula engine                                                                                                                                                            |
-| `table:use-wildcards`           | formula matching rule — no formula engine                                                                                                                                                            |
+| name                            | why                                                                                                                  |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `number:boolean-style`          | a data style for booleans. Excel has no format code for one — it shows TRUE/FALSE — so there is nothing to map it to |
+| `number:fill-character`         | the character Excel's `*` repeats to pad a cell. `*` is not in hucre's format model at either end                    |
+| `table:automatic-find-labels`   | formula label lookup — no formula engine                                                                             |
+| `table:calculation-settings`    | calculation preferences — hucre has no formula engine                                                                |
+| `table:case-sensitive`          | formula comparison rule — no formula engine                                                                          |
+| `table:iteration`               | iterative calculation settings — no formula engine                                                                   |
+| `table:maximum-difference`      | iteration convergence bound — no formula engine                                                                      |
+| `table:null-year`               | the century a two-digit year resolves into, for the formula parser                                                   |
+| `table:use-regular-expressions` | formula matching rule — no formula engine                                                                            |
+| `table:use-wildcards`           | formula matching rule — no formula engine                                                                            |
 
 ### Not named in the source
 
@@ -187,7 +186,7 @@ table:tracked-changes
 
 </details>
 
-<details><summary>164 attributes</summary>
+<details><summary>163 attributes</summary>
 
 ```
 number:calendar
@@ -246,7 +245,6 @@ table:database-table-name
 table:date-end
 table:date-start
 table:date-value
-table:default-cell-style-name
 table:display-border
 table:display-duplicates
 table:display-filter-buttons

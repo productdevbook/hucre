@@ -567,6 +567,14 @@ The reader opens `content.xml` and `meta.xml`. It does not open
 default cell styles and all page setup — so a LibreOffice-authored file
 reads back with its direct formatting only.
 
+A column's `table:default-cell-style-name` _is_ read, and fills in for
+cells that name no style of their own. That matters because LibreOffice
+puts a column's number format there rather than on the cells: without it
+a LibreOffice document came back with its values and none of its formats.
+A column pointing at a named style — `"Default"`, which it writes on the
+columns it did not format — still resolves to nothing, for the reason
+above.
+
 See [What ODS carries](../README.md#what-ods-carries) for the consequences
 worth knowing before relying on it.
 
