@@ -101,18 +101,37 @@ export function shiftFormula(formula: string, shift: RefShift): string {
   return replaceA1Ranges(formula, (match) => shiftMatch(match, shift))
 }
 
+/**
+ * The qualifier, exactly as the formula spelled it.
+ *
+ * `replaceA1Ranges` strips the `!` and a leading `$` and hands back the
+ * rest verbatim — so a name needing quotes still carries them, which is
+ * what makes it a legal qualifier. This used to re-quote it, escaping the
+ * quotes already there, and turned a reference to `My Sheet` into one
+ * Excel rejects.
+ */
 function qualifierOf(match: A1RangeMatch): string {
-  return match.sheet1 === undefined ? "" : `${quoteSheet(match.sheet1)}!`
+  return match.sheet1 === undefined ? "" : `${match.sheet1}!`
 }
 
-function quoteSheet(name: string): string {
-  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? name : `'${name.replace(/'/g, "''")}'`
+/**
+ * The sheet *name* a qualifier denotes, with Excel's quoting removed.
+ *
+ * Only for comparing against {@link RefShift.sheetName}, which is a name
+ * rather than a qualifier. A quoted qualifier never equalled the bare
+ * name, so a formula pointing at its own sheet that way was taken for a
+ * foreign one and left unshifted while the rows moved under it.
+ */
+function unquoteSheet(name: string): string {
+  return name.length >= 2 && name.startsWith("'") && name.endsWith("'")
+    ? name.slice(1, -1).replace(/''/g, "'")
+    : name
 }
 
 function shiftMatch(match: A1RangeMatch, shift: RefShift): string {
   // A reference into another sheet is not affected by this sheet's rows
   // moving. An unqualified one is local by definition.
-  if (match.sheet1 !== undefined && match.sheet1 !== shift.sheetName) {
+  if (match.sheet1 !== undefined && unquoteSheet(match.sheet1) !== shift.sheetName) {
     return rebuild(match)
   }
 
@@ -156,7 +175,7 @@ function shiftMatch(match: A1RangeMatch, shift: RefShift): string {
 function rebuild(match: A1RangeMatch): string {
   const head = `${qualifierOf(match)}${match.ref1}`
   if (match.ref2 === undefined) return head
-  const tail = match.sheet2 === undefined ? match.ref2 : `${quoteSheet(match.sheet2)}!${match.ref2}`
+  const tail = match.sheet2 === undefined ? match.ref2 : `${match.sheet2}!${match.ref2}`
   return `${head}:${tail}`
 }
 
