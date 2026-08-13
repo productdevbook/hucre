@@ -543,6 +543,12 @@ export function writeWorksheetXml(
     }
 
     if (hasAnyCells || hasRowDef) {
+      // Emitting `<row r="N">` directly for the common no-rowDef case was
+      // tried and measured: over ten alternating benchmark pairs it won
+      // six and moved the mean 1.8%, which is inside this machine's noise
+      // floor. The cell fast path below it pays because there are 1.2M
+      // cells to a sheet's 100k rows — a twelfth of the allocations is a
+      // twelfth of the prize. See #472.
       const rowAttrs = rowAttributes(r, rowDef)
       if (hasAnyCells) {
         rowElements.push(xmlElement("row", rowAttrs, cellElements))
