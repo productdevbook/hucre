@@ -3,6 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────
 
 import type { CellValue } from "../_types"
+import { measureLineWidth } from "./auto-width"
 
 export { calculateColumnWidth, measureValueWidth } from "./auto-width"
 
@@ -20,40 +21,6 @@ const DEFAULT_COLUMN_WIDTH = 8.43
 // ── Row Height Calculation ──────────────────────────────────────────
 
 /**
- * Count the number of visible characters in a string, treating CJK as 2 units.
- */
-function measureTextWidth(text: string): number {
-  let width = 0
-  for (const char of text) {
-    const cp = char.codePointAt(0)
-    if (cp !== undefined && isCjk(cp)) {
-      width += 2
-    } else {
-      width += 1
-    }
-  }
-  return width
-}
-
-/**
- * Check if a code point is CJK (double-width).
- */
-function isCjk(codePoint: number): boolean {
-  return (
-    (codePoint >= 0x4e00 && codePoint <= 0x9fff) ||
-    (codePoint >= 0x3400 && codePoint <= 0x4dbf) ||
-    (codePoint >= 0x20000 && codePoint <= 0x2a6df) ||
-    (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
-    (codePoint >= 0xac00 && codePoint <= 0xd7af) ||
-    (codePoint >= 0x30a0 && codePoint <= 0x30ff) ||
-    (codePoint >= 0x3040 && codePoint <= 0x309f) ||
-    (codePoint >= 0x3000 && codePoint <= 0x303f) ||
-    (codePoint >= 0xff00 && codePoint <= 0xff60) ||
-    (codePoint >= 0xffe0 && codePoint <= 0xffe6)
-  )
-}
-
-/**
  * Calculate the number of wrapped lines a text cell would occupy
  * given a column width in character units.
  */
@@ -69,7 +36,7 @@ function countWrappedLines(text: string, columnWidth: number): number {
       totalLines += 1
       continue
     }
-    const textWidth = measureTextWidth(paragraph)
+    const textWidth = measureLineWidth(paragraph)
     // Each paragraph wraps based on column width
     const wrappedLines = Math.ceil(textWidth / Math.max(columnWidth, 1))
     totalLines += Math.max(wrappedLines, 1)

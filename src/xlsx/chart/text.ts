@@ -30,14 +30,7 @@
 // remain meaningful at the call site.
 
 import type { XmlElement } from "../../xml/parser"
-
-/** See `chart/shape.ts` for the equivalent helper. */
-function findChild(el: XmlElement, localName: string): XmlElement | undefined {
-  for (const c of el.children) {
-    if (typeof c !== "string" && c.local === localName) return c
-  }
-  return undefined
-}
+import { findChild } from "./util"
 
 // ── The walk ──────────────────────────────────────────────────────
 //
@@ -218,23 +211,6 @@ export function normalizeFontFamily(value: string | undefined): string | undefin
 }
 
 // ── Bold / italic ─────────────────────────────────────────────────
-
-/**
- * Read a boolean-style OOXML attribute (`"1"` / `"0"` / `"true"` /
- * `"false"`). Returns `true` for the truthy tokens, `false` for
- * `"0"` / `"false"`, and `undefined` for any other string and for
- * missing / non-string values.
- *
- * Used to parse the `b` / `i` flags on `<a:defRPr>` and the canonical
- * `val` attribute on numeric / scale child elements (`<c:smooth>`,
- * `<c:overlay>`, `<c:auto>`, etc.).
- */
-export function readBoolAttrValue(raw: string | undefined): boolean | undefined {
-  if (raw === undefined) return undefined
-  if (raw === "1" || raw === "true") return true
-  if (raw === "0" || raw === "false") return false
-  return undefined
-}
 
 /**
  * Normalize a literal boolean for a writer's flag attribute. Returns

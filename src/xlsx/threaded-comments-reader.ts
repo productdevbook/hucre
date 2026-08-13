@@ -9,7 +9,7 @@
 
 import type { ThreadedComment, ThreadedCommentMention, ThreadedCommentPerson } from "../_types"
 import { parseXml } from "../xml/parser"
-import type { XmlElement, XmlNode } from "../xml/parser"
+import { childElements, findChild, parseIntSafe, readChildText } from "../xml/tree"
 
 /** Parse `xl/persons/person.xml` into a list of persons. */
 export function parsePersons(xml: string): ThreadedCommentPerson[] {
@@ -69,37 +69,4 @@ export function parseThreadedComments(xml: string): ThreadedComment[] {
     comments.push(entry)
   }
   return comments
-}
-
-// ── Internals ─────────────────────────────────────────────────────
-
-function childElements(el: XmlElement): XmlElement[] {
-  const out: XmlElement[] = []
-  for (const c of el.children) {
-    if (typeof c !== "string") out.push(c)
-  }
-  return out
-}
-
-function findChild(el: XmlElement, localName: string): XmlElement | undefined {
-  for (const c of el.children) {
-    if (typeof c !== "string" && c.local === localName) return c
-  }
-  return undefined
-}
-
-function readChildText(el: XmlElement, localName: string): string {
-  const child = findChild(el, localName)
-  if (!child) return ""
-  let text = ""
-  for (const c of child.children as XmlNode[]) {
-    if (typeof c === "string") text += c
-  }
-  return text
-}
-
-function parseIntSafe(s: string | undefined, fallback: number): number {
-  if (s === undefined) return fallback
-  const n = parseInt(s, 10)
-  return Number.isNaN(n) ? fallback : n
 }

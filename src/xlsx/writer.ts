@@ -3,7 +3,6 @@
 
 import type {
   CellValue,
-  NamedRange,
   WorkbookProperties,
   WriteOptions,
   WriteOutput,
@@ -11,7 +10,7 @@ import type {
 } from "../_types"
 import { ZipWriter } from "../zip/writer"
 import { writeContentTypes } from "./content-types-writer"
-import { writeFeaturePropertyBagXml } from "./feature-property-bag"
+import { FPB_PART_PATH, writeFeaturePropertyBagXml } from "./feature-property-bag"
 import { METADATA_PART_PATH, writeMetadataXml } from "./metadata"
 import type { ContentTypesOptions } from "./content-types-writer"
 import { writeRootRels, writeWorkbookXml, writeWorkbookRels } from "./workbook-writer"
@@ -28,7 +27,7 @@ import { encryptAgile } from "./crypto/agile"
 import { writeComments } from "./comments-writer"
 import type { CommentsResult } from "./comments-writer"
 import { writeTable } from "./table-writer"
-import { colToLetter } from "./worksheet-writer"
+import { buildNamedRanges, computeTableRange } from "./derived-ranges"
 import { writePivotTable as writePivotTableParts, resolvePivotSource } from "./pivot-writer"
 import type { PivotWriteResult } from "./pivot-writer"
 import { xmlDocument, xmlSelfClose } from "../xml/writer"
@@ -377,14 +376,12 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
     zip.add(METADATA_PART_PATH, encoder.encode(writeMetadataXml()))
   }
 
-  // xl/vbaProject.bin (if macros provided)
+  // xl/featurePropertyBag/featurePropertyBag.xml (Excel 2024 checkboxes)
   if (hasFeaturePropertyBag) {
-    zip.add(
-      "xl/featurePropertyBag/featurePropertyBag.xml",
-      encoder.encode(writeFeaturePropertyBagXml()),
-    )
+    zip.add(FPB_PART_PATH, encoder.encode(writeFeaturePropertyBagXml()))
   }
 
+  // xl/vbaProject.bin (if macros provided)
   if (hasMacros) {
     zip.add("xl/vbaProject.bin", options.vbaProject!)
   }
@@ -615,80 +612,4 @@ function collectSourceRows(sheet: WriteSheet): CellValue[][] {
     return out
   }
   return []
-}
-
-// ── Named Range Builder ────────────────────────────────────────────────
-
-/**
- * Build the full list of named ranges, merging user-defined ranges with
- * auto-generated _xlnm.Print_Area and _xlnm.Print_Titles from sheet pageSetup.
- */
-function buildNamedRanges(sheets: WriteOptions["sheets"], userRanges?: NamedRange[]): NamedRange[] {
-  const result: NamedRange[] = userRanges ? [...userRanges] : []
-
-  for (const sheet of sheets) {
-    const ps = sheet.pageSetup
-    if (!ps) continue
-
-    // Print area → _xlnm.Print_Area
-    if (ps.printArea) {
-      result.push({
-        name: "_xlnm.Print_Area",
-        range: `${sheet.name}!${ps.printArea}`,
-        scope: sheet.name,
-      })
-    }
-
-    // Print titles (repeat rows and/or columns)
-    const titleParts: string[] = []
-    if (ps.printTitlesRow) {
-      titleParts.push(`${sheet.name}!${ps.printTitlesRow}`)
-    }
-    if (ps.printTitlesColumn) {
-      titleParts.push(`${sheet.name}!${ps.printTitlesColumn}`)
-    }
-    if (titleParts.length > 0) {
-      result.push({
-        name: "_xlnm.Print_Titles",
-        range: titleParts.join(","),
-        scope: sheet.name,
-      })
-    }
-  }
-
-  return result
-}
-
-// ── Table Range Computation ──────────────────────────────────────────
-
-/**
- * Auto-calculate table range from sheet data and table column count.
- * Assumes header row is row 1 and data fills remaining rows.
- */
-function computeTableRange(
-  table: import("../_types").TableDefinition,
-  sheet: import("../_types").WriteSheet,
-): string {
-  const colCount = table.columns.length
-  let rowCount = 0
-
-  if (sheet.rows) {
-    rowCount = sheet.rows.length
-  } else if (sheet.data) {
-    // Object data: data rows + 1 header row (if columns have headers)
-    const hasHeaders = sheet.columns?.some((c) => c.header)
-    rowCount = sheet.data.length + (hasHeaders ? 1 : 0)
-  }
-
-  // Add total row if requested
-  if (table.showTotalRow) {
-    rowCount += 1
-  }
-
-  // Minimum: 1 header row + 0 data rows = 1 row
-  if (rowCount < 1) rowCount = 1
-
-  const startCol = colToLetter(0)
-  const endCol = colToLetter(colCount - 1)
-  return `${startCol}1:${endCol}${rowCount}`
 }

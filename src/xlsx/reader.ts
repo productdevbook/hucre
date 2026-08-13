@@ -34,7 +34,7 @@ import { decryptAgile } from "./crypto/agile"
 import { ZipReader } from "../zip/reader"
 import { parseXml } from "../xml/parser"
 import { parseContentTypes } from "./content-types"
-import { parseRelationships } from "./relationships"
+import { dirname, findRIdAttr, parseRelationships, resolvePath } from "./relationships"
 import { parseSharedStrings } from "./shared-strings"
 import { parseStyles } from "./styles"
 import { parseWorksheet, parseWorksheetStream } from "./worksheet"
@@ -125,37 +125,6 @@ async function readWorksheet(
     }
   }
   return parseWorksheetStream(zip.extractStream(wsPath), name, ctx)
-}
-
-/**
- * Resolve a relative target path against a base directory.
- * E.g. resolve("xl/_rels", "../worksheets/sheet1.xml") → "xl/worksheets/sheet1.xml"
- */
-function resolvePath(base: string, target: string): string {
-  // If target starts with /, it's absolute from the package root
-  if (target.startsWith("/")) return target.slice(1)
-
-  const baseParts = base.split("/").filter(Boolean)
-  const targetParts = target.split("/").filter(Boolean)
-
-  for (const part of targetParts) {
-    if (part === "..") {
-      baseParts.pop()
-    } else if (part !== ".") {
-      baseParts.push(part)
-    }
-  }
-
-  return baseParts.join("/")
-}
-
-/**
- * Get the directory portion of a path.
- * E.g. "xl/workbook.xml" → "xl"
- */
-function dirname(path: string): string {
-  const idx = path.lastIndexOf("/")
-  return idx === -1 ? "" : path.slice(0, idx)
 }
 
 // ── Main Reader ──────────────────────────────────────────────────────
@@ -1763,17 +1732,6 @@ function parseWorkbookXml(
     activeSheet,
     pivotCacheRefs,
   }
-}
-
-/** Find an r:id attribute regardless of namespace prefix */
-function findRIdAttr(attrs: Record<string, string>): string | undefined {
-  for (const key of Object.keys(attrs)) {
-    // Match any prefix:id where the value looks like an rId
-    if (key.endsWith(":id") && attrs[key].startsWith("rId")) {
-      return attrs[key]
-    }
-  }
-  return undefined
 }
 
 /** Filter sheet infos based on user-specified sheets option */

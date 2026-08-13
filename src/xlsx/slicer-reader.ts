@@ -19,6 +19,7 @@ import type {
 } from "../_types"
 import { parseXml } from "../xml/parser"
 import type { XmlElement } from "../xml/parser"
+import { childElements, findChild, parseIntSafe } from "../xml/tree"
 
 // ── Slicers (per-sheet) ────────────────────────────────────────────
 
@@ -173,27 +174,6 @@ function parseTableSlicerCache(def: XmlElement): SlicerCacheTableSource | undefi
     return src
   }
   return undefined
-}
-
-function findChild(el: XmlElement, localName: string): XmlElement | undefined {
-  for (const c of el.children) {
-    if (typeof c !== "string" && c.local === localName) return c
-  }
-  return undefined
-}
-
-function childElements(el: XmlElement): XmlElement[] {
-  const out: XmlElement[] = []
-  for (const c of el.children) {
-    if (typeof c !== "string") out.push(c)
-  }
-  return out
-}
-
-function parseIntSafe(s: string | undefined, fallback: number): number {
-  if (s === undefined) return fallback
-  const n = parseInt(s, 10)
-  return Number.isNaN(n) ? fallback : n
 }
 
 function parseBool(s: string): boolean {

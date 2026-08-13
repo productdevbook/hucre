@@ -1,17 +1,24 @@
 // ── Cell style copying ───────────────────────────────────────────────
 //
-// One deep copy of the cell-style tree, for the three places that need
-// one. There used to be three:
+// One deep copy of the cell-style tree, for the places that need one:
 //
 // • `styles-writer` snapshots on registration, so a caller mutating a
 //   style after use cannot retroactively restyle earlier cells (#437).
 // • `sheet-ops.cloneSheet` copies so a cloned sheet is independent.
-// • `styles.resolveStyle` did not copy at all, so every cell sharing a
-//   font record got the *same* `FontStyle` object and editing one cell's
-//   font silently restyled the rest (#439 §P).
+// • `xlsx/worksheet` hands a column-level style to a cell as its own
+//   object rather than as the column's.
+// • `cloneCellStyle` is public, for a caller about to edit one cell.
 //
-// Three walks over the same tree drift the way two cell serializers do.
-// This is the one walk.
+// `styles.resolveStyle` is deliberately **not** one of them. It hands
+// back the parsed font / fill / border records themselves, shared by
+// every cell whose xf indexes them, so editing one cell's font through a
+// resolved style restyles the rest (#439 §P). Copying per cell nearly
+// doubles peak memory on a styled read — 407 MB against 787 MB over
+// 720,000 styled cells — so the sharing stayed and `cloneCellStyle` is
+// the answer instead. `docs/PARITY.md` states it as a contract.
+//
+// Several walks over the same tree drift the way two cell serializers
+// do. This is the one walk.
 
 import type {
   BorderSide,

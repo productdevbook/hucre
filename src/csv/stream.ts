@@ -12,7 +12,7 @@
 //   so peak memory is independent of the row count.
 
 import type { CellValue, CsvReadOptions, CsvWriteOptions, SpreadsheetStreamWriter } from "../_types"
-import { stripBom, detectDelimiter } from "./reader"
+import { stripBom, detectDelimiter, startsWith } from "./reader"
 import { escapeFormula, unescapeFormula } from "./formula"
 import { inferType } from "../_infer"
 import { decodeCsvInput, type CsvInput } from "./encoding"
@@ -22,16 +22,6 @@ const TEXT_ENCODER = /* @__PURE__ */ new TextEncoder()
 
 /** Flush the line accumulator once it crosses this many characters. */
 const CHUNK_THRESHOLD = 64 * 1024
-
-// ── Helpers ──────────────────────────────────────────────────────────
-
-function startsWith(str: string, prefix: string, offset: number): boolean {
-  if (offset + prefix.length > str.length) return false
-  for (let i = 0; i < prefix.length; i++) {
-    if (str[offset + i] !== prefix[i]) return false
-  }
-  return true
-}
 
 // ── Streaming CSV Reader ─────────────────────────────────────────────
 

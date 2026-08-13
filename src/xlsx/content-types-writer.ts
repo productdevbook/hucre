@@ -3,6 +3,7 @@
 
 import { xmlDocument, xmlSelfClose } from "../xml/writer"
 import { METADATA_CONTENT_TYPE, METADATA_PART_PATH } from "./metadata"
+import { FPB_CONTENT_TYPE, FPB_PART_PATH } from "./feature-property-bag"
 
 const NS_CONTENT_TYPES = "http://schemas.openxmlformats.org/package/2006/content-types"
 
@@ -442,8 +443,8 @@ export function writeContentTypes(
   if (opts.hasFeaturePropertyBag) {
     children.push(
       xmlSelfClose("Override", {
-        PartName: "/xl/featurePropertyBag/featurePropertyBag.xml",
-        ContentType: "application/vnd.ms-excel.featurepropertybag+xml",
+        PartName: `/${FPB_PART_PATH}`,
+        ContentType: FPB_CONTENT_TYPE,
       }),
     )
   }

@@ -30,6 +30,7 @@
 
 import { parseXml } from "../xml/parser"
 import type { XmlElement } from "../xml/parser"
+import { childElements, findChild, parseIntSafe } from "../xml/tree"
 import { xmlDocument, xmlElement, xmlSelfClose } from "../xml/writer"
 
 const NS_SPREADSHEET = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -152,9 +153,9 @@ export function parseDynamicArrayCellMetadata(xml: string): Set<number> {
     index++ // one-based
     for (const rc of childElements(bk)) {
       if (rc.local !== "rc") continue
-      if (typeNames[parseIntOr(rc.attrs["t"], 0) - 1] !== XLDAPR) continue
+      if (typeNames[parseIntSafe(rc.attrs["t"], 0) - 1] !== XLDAPR) continue
       const blocks = blocksByType.get(XLDAPR)
-      const v = parseIntOr(rc.attrs["v"], -1)
+      const v = parseIntSafe(rc.attrs["v"], -1)
       // With no futureMetadata block to consult, the type name is all we
       // have — and XLDAPR exists for exactly one purpose.
       if (!blocks || v < 0 || v >= blocks.length || blocks[v]) dynamic.add(index)
@@ -182,25 +183,4 @@ function blockIsDynamicArray(bk: XmlElement): boolean {
   }
   // No extension at all: the block asserts nothing, so defer to the type.
   return true
-}
-
-function childElements(el: XmlElement): XmlElement[] {
-  const out: XmlElement[] = []
-  for (const child of el.children) {
-    if (typeof child !== "string") out.push(child)
-  }
-  return out
-}
-
-function findChild(el: XmlElement, localName: string): XmlElement | undefined {
-  for (const child of el.children) {
-    if (typeof child !== "string" && child.local === localName) return child
-  }
-  return undefined
-}
-
-function parseIntOr(raw: string | undefined, fallback: number): number {
-  if (raw === undefined) return fallback
-  const n = parseInt(raw, 10)
-  return Number.isNaN(n) ? fallback : n
 }

@@ -17,6 +17,7 @@ import type {
 import { parseXml } from "../xml/parser"
 import { isBuiltinDateFormatId, isDateFormat } from "../_date"
 import { DEFAULT_INDEXED_PALETTE } from "./indexed-palette"
+import { FPB_XF_EXT_URI } from "./feature-property-bag"
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -556,8 +557,6 @@ function parseDxf(el: XmlElement): CellStyle {
 
   return style
 }
-
-const FPB_XF_EXT_URI = "{C7286773-470A-42A8-94C5-96B5CB345126}"
 
 function extListHasCheckboxFeature(el: XmlElement): boolean {
   for (const child of el.children) {

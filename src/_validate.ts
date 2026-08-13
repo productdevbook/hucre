@@ -29,7 +29,11 @@ export const MAX_SHEET_NAME_LENGTH = 31
  * Sheet names are different, and are enforced: an illegal one makes the
  * whole workbook unreadable rather than one cell lossy. See #364.
  *
- * Exported so a caller targeting Excel specifically can check.
+ * `MAX_CELL_TEXT_LENGTH` is exported for the test that pins the number;
+ * `MAX_FORMULA_LENGTH` has no reader at all and stands here as the
+ * documented figure beside it. Neither is re-exported from an entry
+ * point, so — unlike the bounds in `src/limits.ts` — a caller targeting
+ * Excel cannot reach them and has to carry its own copy.
  */
 export const MAX_CELL_TEXT_LENGTH = 32_767
 export const MAX_FORMULA_LENGTH = 8_192

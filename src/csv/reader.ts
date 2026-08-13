@@ -460,7 +460,12 @@ function countUnquoted(line: string, delimiter: string): number {
   return count
 }
 
-function startsWith(str: string, prefix: string, offset: number): boolean {
+/**
+ * `str.startsWith(prefix, offset)` without allocating — the parsers call
+ * it once per character. Exported for `csv/stream.ts`, which scans the
+ * same delimiters and quotes a character at a time.
+ */
+export function startsWith(str: string, prefix: string, offset: number): boolean {
   if (offset + prefix.length > str.length) return false
   for (let i = 0; i < prefix.length; i++) {
     if (str[offset + i] !== prefix[i]) return false

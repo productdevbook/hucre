@@ -1,17 +1,9 @@
 // ── XLSX Round-Trip Preservation ─────────────────────────────────────
 // Read an XLSX file, modify cells, write it back without losing charts,
-// images, macros, shapes, or other features that defter doesn't natively
+// images, macros, shapes, or other features that hucre doesn't natively
 // understand.
 
-import type {
-  Sheet,
-  Workbook,
-  ReadOptions,
-  WriteSheet,
-  NamedRange,
-  Chart,
-  SheetChart,
-} from "../_types"
+import type { Sheet, Workbook, ReadOptions, WriteSheet, Chart, SheetChart } from "../_types"
 import { readXlsx } from "./reader"
 import { ZipReader } from "../zip/reader"
 import { ZipWriter } from "../zip/writer"
@@ -27,7 +19,11 @@ import {
 import { parseRelationships } from "./relationships"
 import { createStylesCollector } from "./styles-writer"
 import { createSharedStrings, writeSharedStringsXml, writeWorksheetXml } from "./worksheet-writer"
-import { FEATURE_PROPERTY_BAG_PART_PATH, writeFeaturePropertyBagXml } from "./feature-property-bag"
+import {
+  FEATURE_PROPERTY_BAG_PART_PATH,
+  FPB_PART_PATH,
+  writeFeaturePropertyBagXml,
+} from "./feature-property-bag"
 import { METADATA_PART_PATH, writeMetadataXml } from "./metadata"
 import type { WorksheetResult } from "./worksheet-writer"
 import { writeDrawing } from "./drawing-writer"
@@ -41,7 +37,7 @@ import { assignBackgroundImagePaths } from "./background-image"
 import { writeComments } from "./comments-writer"
 import type { CommentsResult } from "./comments-writer"
 import { writeTable } from "./table-writer"
-import { colToLetter } from "./worksheet-writer"
+import { buildNamedRanges, computeTableRange } from "./derived-ranges"
 import { xmlDocument, xmlSelfClose } from "../xml/writer"
 import { writeCoreProperties, writeAppProperties } from "./doc-props-writer"
 
@@ -130,7 +126,7 @@ const REL_PIVOT_TABLE =
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable"
 
 /**
- * Parts that defter regenerates from parsed data.
+ * Parts that hucre regenerates from parsed data.
  * Matched case-insensitively with normalized paths.
  */
 const REGENERATED_PREFIXES = [
@@ -956,10 +952,7 @@ export async function saveXlsx(
   // xl/featurePropertyBag/featurePropertyBag.xml — declared above, so
   // the part has to exist.
   if (hasFeaturePropertyBag) {
-    zip.add(
-      "xl/featurePropertyBag/featurePropertyBag.xml",
-      encoder.encode(writeFeaturePropertyBagXml()),
-    )
+    zip.add(FPB_PART_PATH, encoder.encode(writeFeaturePropertyBagXml()))
   }
 
   // xl/sharedStrings.xml
@@ -1499,67 +1492,4 @@ function computeExternalLinkRelStart(
   if (hasFeaturePropertyBag) next++
   if (hasPersons) next++
   return next
-}
-
-/**
- * Build the full list of named ranges, merging user-defined ranges with
- * auto-generated _xlnm.Print_Area and _xlnm.Print_Titles from sheet pageSetup.
- */
-function buildNamedRanges(sheets: WriteSheet[], userRanges?: NamedRange[]): NamedRange[] {
-  const result: NamedRange[] = userRanges ? [...userRanges] : []
-
-  for (const sheet of sheets) {
-    const ps = sheet.pageSetup
-    if (!ps) continue
-
-    if (ps.printArea) {
-      result.push({
-        name: "_xlnm.Print_Area",
-        range: `${sheet.name}!${ps.printArea}`,
-        scope: sheet.name,
-      })
-    }
-
-    const titleParts: string[] = []
-    if (ps.printTitlesRow) {
-      titleParts.push(`${sheet.name}!${ps.printTitlesRow}`)
-    }
-    if (ps.printTitlesColumn) {
-      titleParts.push(`${sheet.name}!${ps.printTitlesColumn}`)
-    }
-    if (titleParts.length > 0) {
-      result.push({
-        name: "_xlnm.Print_Titles",
-        range: titleParts.join(","),
-        scope: sheet.name,
-      })
-    }
-  }
-
-  return result
-}
-
-/**
- * Auto-calculate table range from sheet data and table column count.
- */
-function computeTableRange(table: import("../_types").TableDefinition, sheet: WriteSheet): string {
-  const colCount = table.columns.length
-  let rowCount = 0
-
-  if (sheet.rows) {
-    rowCount = sheet.rows.length
-  } else if (sheet.data) {
-    const hasHeaders = sheet.columns?.some((c) => c.header)
-    rowCount = sheet.data.length + (hasHeaders ? 1 : 0)
-  }
-
-  if (table.showTotalRow) {
-    rowCount += 1
-  }
-
-  if (rowCount < 1) rowCount = 1
-
-  const startCol = colToLetter(0)
-  const endCol = colToLetter(colCount - 1)
-  return `${startCol}1:${endCol}${rowCount}`
 }

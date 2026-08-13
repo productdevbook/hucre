@@ -13,6 +13,7 @@ import type {
 } from "../_types"
 import { xmlDocument, xmlElement, xmlSelfClose } from "../xml/writer"
 import { cloneBorder, cloneFill, cloneFont } from "../_style"
+import { FPB_NS, FPB_XF_EXT_URI } from "./feature-property-bag"
 
 const NS_SPREADSHEET = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 
@@ -273,17 +274,6 @@ export interface StylesCollectorOptions {
   reuseStyleIdentity?: boolean
 }
 
-/**
- * The collector keeps the style objects it is handed until `toXml()` runs, so
- * a caller that mutates one after use would retroactively change formatting
- * already assigned to earlier cells — and leave the stored dedup key
- * disagreeing with the value serialised under it. Snapshot on the way in,
- * with the same walk the reader and `cloneSheet` use (src/_style.ts).
- *
- * Only reached when a format is registered for the first time, so this costs
- * one shallow copy per distinct format, not per cell.
- */
-
 export function createStylesCollector(
   defaultFont?: FontStyle,
   options?: StylesCollectorOptions,
@@ -333,6 +323,17 @@ export function createStylesCollector(
     },
   ]
   const xfMap = new Map<string, number>([[defaultXfKey, 0]])
+
+  // The three `add*` registers below snapshot what they are handed.
+  //
+  // The collector keeps those objects until `toXml()` runs, so a caller that
+  // mutates one after use would retroactively change formatting already
+  // assigned to earlier cells — and leave the stored dedup key disagreeing
+  // with the value serialised under it (#437). The copy is the same walk
+  // `cloneSheet` and `cloneCellStyle` use (src/_style.ts).
+  //
+  // Only reached when a format is registered for the first time, so this
+  // costs one copy per distinct format, not per cell.
 
   function addFont(font: FontStyle): number {
     const key = fontKey(font)
@@ -584,9 +585,8 @@ export function createStylesCollector(
               xmlElement(
                 "ext",
                 {
-                  uri: "{C7286773-470A-42A8-94C5-96B5CB345126}",
-                  "xmlns:xfpb":
-                    "http://schemas.microsoft.com/office/spreadsheetml/2022/featurepropertybag",
+                  uri: FPB_XF_EXT_URI,
+                  "xmlns:xfpb": FPB_NS,
                 },
                 xmlSelfClose("xfpb:xfComplement", { i: "0" }),
               ),

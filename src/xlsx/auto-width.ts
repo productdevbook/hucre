@@ -191,8 +191,12 @@ function countFormatLiterals(numFmt: string): number {
 /**
  * Measure the display width (in character units) of a single line of text.
  * CJK characters count as 2 units, all others as 1.
+ *
+ * Exported for `auto-size.ts`, which measures the same width to decide how
+ * many lines a wrapped cell takes: one answer to "how wide is this text",
+ * so a column width and the row height computed against it agree.
  */
-function measureLineWidth(text: string): number {
+export function measureLineWidth(text: string): number {
   let width = 0
   for (const char of text) {
     const codePoint = char.codePointAt(0)

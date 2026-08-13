@@ -27,20 +27,7 @@ import type {
 } from "./types"
 import type { XmlElement } from "../../xml/parser"
 import { xmlElement, xmlSelfClose } from "../../xml/writer"
-
-/**
- * Local copy of `findChild`. The xml/parser module does not export the
- * helper, and the chart-reader / chart-clone files each carry their
- * own copy. Keeping a local definition here avoids a cross-module
- * refactor of the parser surface while still letting these primitives
- * walk a chart subtree.
- */
-function findChild(el: XmlElement, localName: string): XmlElement | undefined {
-  for (const c of el.children) {
-    if (typeof c !== "string" && c.local === localName) return c
-  }
-  return undefined
-}
+import { findChild } from "./util"
 
 // ── Stroke width ──────────────────────────────────────────────────
 //

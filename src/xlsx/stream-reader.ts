@@ -16,7 +16,7 @@ import { ZipStreamReader } from "../zip/stream-reader"
 import { matchesRelType } from "./reader"
 import { parseXml, parseSaxStream, decodeOoxmlEscapes } from "../xml/parser"
 import { parseContentTypes } from "./content-types"
-import { parseRelationships } from "./relationships"
+import { dirname, findRIdAttr, parseRelationships, resolvePath } from "./relationships"
 import { parseSharedStrings } from "./shared-strings"
 import { parseStyles, isDateStyle } from "./styles"
 import { parseCellRef, parseIsoCellDate } from "./worksheet"
@@ -70,28 +70,6 @@ const REL_STYLES = "styles"
 
 function decodeUtf8(data: Uint8Array): string {
   return new TextDecoder("utf-8").decode(data)
-}
-
-function resolvePath(base: string, target: string): string {
-  if (target.startsWith("/")) return target.slice(1)
-
-  const baseParts = base.split("/").filter(Boolean)
-  const targetParts = target.split("/").filter(Boolean)
-
-  for (const part of targetParts) {
-    if (part === "..") {
-      baseParts.pop()
-    } else if (part !== ".") {
-      baseParts.push(part)
-    }
-  }
-
-  return baseParts.join("/")
-}
-
-function dirname(path: string): string {
-  const idx = path.lastIndexOf("/")
-  return idx === -1 ? "" : path.slice(0, idx)
 }
 
 // ── Workbook XML Parsing (minimal — just sheet info + date system) ───
@@ -150,15 +128,6 @@ function parseWorkbookXml(
   }
 
   return { sheets, dateSystem }
-}
-
-function findRIdAttr(attrs: Record<string, string>): string | undefined {
-  for (const key of Object.keys(attrs)) {
-    if (key.endsWith(":id") && attrs[key].startsWith("rId")) {
-      return attrs[key]
-    }
-  }
-  return undefined
 }
 
 // ── Resolve target sheet ────────────────────────────────────────────

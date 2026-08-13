@@ -157,12 +157,6 @@ function detectCurrencySymbol(code: string): string | undefined {
   return undefined
 }
 
-function decimalsFromCode(code: string): number {
-  // Find the first decimal section like "0.00" / "#.##" / "#,##0.000"
-  const m = code.match(/[0#]\.([0#]+)/)
-  return m ? m[1].length : 0
-}
-
 /**
  * How many digits a number format always shows, and how many at most.
  *
@@ -544,7 +538,6 @@ function translateNumFmt(code: string): OdsNumFmtDef | undefined {
   }
 
   if (isPercentageFormat(section)) {
-    const decimals = decimalsFromCode(section)
     const grouping = hasGrouping(section)
     const children = [
       buildNumberChild(section, grouping),
@@ -555,7 +548,6 @@ function translateNumFmt(code: string): OdsNumFmtDef | undefined {
 
   const currency = detectCurrencySymbol(section)
   if (currency) {
-    const decimals = decimalsFromCode(section)
     const grouping = hasGrouping(section)
     const symbol = xmlElement("number:currency-symbol", undefined, odsEscape(currency))
     const number = buildNumberChild(section, grouping)

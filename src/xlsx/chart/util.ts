@@ -1,37 +1,13 @@
 // ── Chart Util ─────────────────────────────────────────────────────
-// Tiny XML walk + bool-attr helpers shared by every per-host parser
-// module. The chart-reader, chart/text and chart/shape modules used to
-// each carry their own private copies of `findChild` because the
-// underlying `XmlElement` walker did not expose one — the helpers here
-// give the per-host modules a single source of truth without disturbing
-// the parser surface.
+// Bool-attr and chart-shaped helpers shared by every per-host parser
+// module. The tree walk itself lives in `src/xml/tree.ts` — every part
+// reader in the library needs it, not just the chart ones — and is
+// re-exported here so the chart modules keep one import to reach for.
 
 import type { XmlElement } from "../../xml/parser"
+import { findChild } from "../../xml/tree"
 
-export function findChild(el: XmlElement, localName: string): XmlElement | undefined {
-  for (const c of el.children) {
-    if (typeof c !== "string" && c.local === localName) return c
-  }
-  return undefined
-}
-
-export function findDescendant(el: XmlElement, localName: string): XmlElement | undefined {
-  if (el.local === localName) return el
-  for (const c of el.children) {
-    if (typeof c === "string") continue
-    const hit = findDescendant(c, localName)
-    if (hit) return hit
-  }
-  return undefined
-}
-
-export function childElements(el: XmlElement): XmlElement[] {
-  const out: XmlElement[] = []
-  for (const c of el.children) {
-    if (typeof c !== "string") out.push(c)
-  }
-  return out
-}
+export { childElements, findChild, findDescendant } from "../../xml/tree"
 
 export function collectTextRuns(el: XmlElement, out: string[]): void {
   for (const child of el.children) {
@@ -68,6 +44,17 @@ export function readBoolAttr(el: XmlElement): boolean | undefined {
   return v === "1" || v.toLowerCase() === "true"
 }
 
+/**
+ * Read a boolean-style OOXML attribute value (`"1"` / `"0"` / `"true"` /
+ * `"false"`). Returns `true` for the truthy tokens, `false` for
+ * `"0"` / `"false"`, and `undefined` for any other string and for a
+ * missing value.
+ *
+ * Parses the `b` / `i` flags on `<a:defRPr>` and the canonical `val`
+ * attribute on numeric / scale child elements (`<c:smooth>`,
+ * `<c:overlay>`, `<c:auto>`, etc.). `chart/text.ts` carried an identical
+ * `readBoolAttrValue` that nothing called; this is the one.
+ */
 export function readBoolVal(raw: string | undefined): boolean | undefined {
   if (raw === undefined) return undefined
   if (raw === "1" || raw === "true") return true

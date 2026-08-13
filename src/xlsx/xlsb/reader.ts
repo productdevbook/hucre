@@ -11,7 +11,7 @@ import { isOle2Container, readInputToUint8Array } from "../../_input"
 import { decryptAgile } from "../crypto/agile"
 import { ZipReader } from "../../zip/reader"
 import { decodePart } from "../../_decode"
-import { parseRelationships } from "../relationships"
+import { dirname, parseRelationships, resolvePath } from "../relationships"
 import { matchesRelType } from "../reader"
 import { densify } from "../../xls/reader"
 import { isBuiltinDateFormatId, isDateFormat, serialToDate } from "../../_date"
@@ -73,21 +73,6 @@ const ERROR_TEXT: Record<number, string> = {
 
 function decodeUtf8(d: Uint8Array, path = "(unknown)"): string {
   return decodePart(d, path)
-}
-
-function dirname(path: string): string {
-  const i = path.lastIndexOf("/")
-  return i === -1 ? "" : path.slice(0, i)
-}
-
-function resolvePath(base: string, target: string): string {
-  if (target.startsWith("/")) return target.slice(1)
-  const parts = base.split("/").filter(Boolean)
-  for (const seg of target.split("/").filter(Boolean)) {
-    if (seg === "..") parts.pop()
-    else if (seg !== ".") parts.push(seg)
-  }
-  return parts.join("/")
 }
 
 /** Whether an .xlsb-shaped ZIP is present (used for format auto-detection). */

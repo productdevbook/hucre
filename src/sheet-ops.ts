@@ -3,28 +3,13 @@
 
 import type { Sheet, MergeRange, RowDef, Workbook, Cell, CellValue } from "./_types"
 import { parseCellRef } from "./xlsx/worksheet"
-import { toRange, type RangeLike } from "./cell-utils"
+import { parseRange, toRange, type RangeLike } from "./cell-utils"
 import { rangeRef } from "./xlsx/worksheet-writer"
 import { cloneCellStyle } from "./_style"
 import { InvalidArgumentError } from "./errors"
 import { shiftFormula, shiftRangeRef, type RefShift } from "./_refs"
 
 // ── Range Helpers ────────────────────────────────────────────────────
-
-/**
- * Parse a range string like "A1:D10" into 0-based coordinates.
- */
-function parseRange(range: string): MergeRange {
-  const parts = range.split(":")
-  const start = parseCellRef(parts[0])
-  const end = parts.length > 1 ? parseCellRef(parts[1]) : start
-  return {
-    startRow: start.row,
-    startCol: start.col,
-    endRow: end.row,
-    endCol: end.col,
-  }
-}
 
 /**
  * Build a range string from 0-based coordinates.

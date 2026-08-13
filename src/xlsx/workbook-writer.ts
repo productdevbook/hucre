@@ -5,6 +5,7 @@ import type { WriteSheet, NamedRange } from "../_types"
 import { xmlDocument, xmlElement, xmlSelfClose, xmlEscape } from "../xml/writer"
 import { hashSheetPassword } from "./password"
 import { METADATA_REL_TYPE } from "./metadata"
+import { FPB_REL_TYPE } from "./feature-property-bag"
 
 const NS_SPREADSHEET = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 const NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -205,9 +206,6 @@ export function writeWorkbookXml(
 }
 
 const REL_VBA_PROJECT = "http://schemas.microsoft.com/office/2006/relationships/vbaProject"
-const REL_FEATURE_PROPERTY_BAG =
-  "http://schemas.microsoft.com/office/2022/11/relationships/FeaturePropertyBag"
-
 const REL_PERSON = "http://schemas.microsoft.com/office/2017/10/relationships/person"
 const REL_EXTERNAL_LINK =
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink"
@@ -334,7 +332,7 @@ export function writeWorkbookRels(
     children.push(
       xmlSelfClose("Relationship", {
         Id: `rId${nextRid}`,
-        Type: REL_FEATURE_PROPERTY_BAG,
+        Type: FPB_REL_TYPE,
         Target: "featurePropertyBag/featurePropertyBag.xml",
       }),
     )

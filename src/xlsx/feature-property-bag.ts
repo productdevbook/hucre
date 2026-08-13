@@ -4,8 +4,12 @@
 // fixtures; see `test/xlsx-checkbox.test.ts` for round-trip coverage.
 //
 // Spec status: this is a Microsoft-only extension that post-dates ECMA-376
-// and is not (yet) part of the published OOXML spec. Apart from this writer
-// hucre does not otherwise model the property bag.
+// and is not (yet) part of the published OOXML spec.
+//
+// This module owns the part itself and the strings that name it. The two
+// halves that reference those strings live elsewhere: `styles.ts` reads
+// the per-xf complement and `styles-writer.ts` writes it, both through
+// the constants below rather than through their own copy of the GUID.
 
 import { xmlDocument, xmlElement, xmlSelfClose } from "../xml/writer"
 
@@ -26,11 +30,15 @@ export const FPB_REL_TYPE =
 /** Content-type for the part. */
 export const FPB_CONTENT_TYPE = "application/vnd.ms-excel.featurepropertybag+xml"
 
-/** Where the part lives in the package, lower-cased for path comparison. */
-export const FEATURE_PROPERTY_BAG_PART_PATH = "xl/featurepropertybag/featurepropertybag.xml"
-
-/** Path inside the XLSX archive. */
+/** Path inside the XLSX archive, spelled the way the part is written. */
 export const FPB_PART_PATH = "xl/featurePropertyBag/featurePropertyBag.xml"
+
+/**
+ * The same path lower-cased, for comparing against an archive entry
+ * whose case hucre did not choose. Derived rather than written out
+ * twice, so the two cannot disagree.
+ */
+export const FEATURE_PROPERTY_BAG_PART_PATH: string = FPB_PART_PATH.toLowerCase()
 
 /**
  * Emit the fixed property-bag chain that Excel 2024 expects when at least

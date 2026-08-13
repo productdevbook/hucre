@@ -19,6 +19,7 @@
 import type { CellImage, SheetImage } from "../_types"
 import { parseXml } from "../xml/parser"
 import type { XmlElement } from "../xml/parser"
+import { childElements, findChild } from "../xml/tree"
 
 /** Relationship type that points from `workbook.xml.rels` at `cellimages.xml`. */
 export const REL_CELL_IMAGES = "http://www.wps.cn/officeDocument/2017/relationships/cellimage"
@@ -99,19 +100,4 @@ function parseCellImageEntry(el: XmlElement): ParsedCellImageRef | undefined {
   const description = cNvPr?.attrs.descr
   if (description) ref.description = description
   return ref
-}
-
-function findChild(el: XmlElement, localName: string): XmlElement | undefined {
-  for (const c of el.children) {
-    if (typeof c !== "string" && c.local === localName) return c
-  }
-  return undefined
-}
-
-function childElements(el: XmlElement): XmlElement[] {
-  const out: XmlElement[] = []
-  for (const c of el.children) {
-    if (typeof c !== "string") out.push(c)
-  }
-  return out
 }

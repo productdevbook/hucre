@@ -13,10 +13,10 @@ import {
   normalizeFontSizePt,
   parseFontFamilyFromDefRPr,
   parseFontSizeFromDefRPr,
-  readBoolAttrValue,
   readStrikeToken,
   readUnderlineToken,
 } from "../src/xlsx/chart/text"
+import { readBoolVal } from "../src/xlsx/chart/util"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -226,22 +226,22 @@ describe("normalizeFontFamily", () => {
 // Boolean-style attributes
 // ═══════════════════════════════════════════════════════════════════════
 
-describe("readBoolAttrValue", () => {
+describe("readBoolVal", () => {
   it("accepts both OOXML spellings", () => {
-    expect(readBoolAttrValue("1")).toBe(true)
-    expect(readBoolAttrValue("true")).toBe(true)
-    expect(readBoolAttrValue("0")).toBe(false)
-    expect(readBoolAttrValue("false")).toBe(false)
+    expect(readBoolVal("1")).toBe(true)
+    expect(readBoolVal("true")).toBe(true)
+    expect(readBoolVal("0")).toBe(false)
+    expect(readBoolVal("false")).toBe(false)
   })
 
   it("returns undefined for anything else", () => {
-    expect(readBoolAttrValue(undefined)).toBeUndefined()
-    expect(readBoolAttrValue("")).toBeUndefined()
-    expect(readBoolAttrValue("TRUE")).toBeUndefined()
-    expect(readBoolAttrValue("False")).toBeUndefined()
-    expect(readBoolAttrValue(" 1 ")).toBeUndefined()
-    expect(readBoolAttrValue("yes")).toBeUndefined()
-    expect(readBoolAttrValue("2")).toBeUndefined()
+    expect(readBoolVal(undefined)).toBeUndefined()
+    expect(readBoolVal("")).toBeUndefined()
+    expect(readBoolVal("TRUE")).toBeUndefined()
+    expect(readBoolVal("False")).toBeUndefined()
+    expect(readBoolVal(" 1 ")).toBeUndefined()
+    expect(readBoolVal("yes")).toBeUndefined()
+    expect(readBoolVal("2")).toBeUndefined()
   })
 })
 

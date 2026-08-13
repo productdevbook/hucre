@@ -36,7 +36,7 @@
 // under its ID/IDREF checking, which is a property of the schema rather
 // than of any document.
 
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from "node:fs"
+import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import { join, dirname } from "node:path"

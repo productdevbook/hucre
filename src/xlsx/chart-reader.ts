@@ -102,6 +102,7 @@ import {
   parseUpDownBarsGapWidth,
   parseVaryColors,
 } from "./chart/plotArea"
+import { childElements, findChild, findDescendant } from "./chart/util"
 
 /** All chart-type element local names recognized by Excel. */
 const CHART_KIND_TAGS: ReadonlyMap<string, ChartKind> = new Map([
@@ -1310,49 +1311,4 @@ function parseProtectionFlag(protection: XmlElement, local: string): boolean | u
     default:
       return undefined
   }
-}
-
-// ── 3-D View ──────────────────────────────────────────────────────
-
-// ── Floor Thickness ───────────────────────────────────────────────
-
-// ── Side Wall Thickness ───────────────────────────────────────────
-
-// ── Back Wall Thickness ───────────────────────────────────────────
-
-// ── Vary Colors ────────────────────────────────────────────────────
-
-// ── Bar Grouping ──────────────────────────────────────────────────
-
-// ── Doughnut Hole ─────────────────────────────────────────────────
-
-// ── Bar / Column gap width & overlap ──────────────────────────────
-
-// ── First Slice Angle ─────────────────────────────────────────────
-
-// ── Internals ─────────────────────────────────────────────────────
-
-function findChild(el: XmlElement, localName: string): XmlElement | undefined {
-  for (const c of el.children) {
-    if (typeof c !== "string" && c.local === localName) return c
-  }
-  return undefined
-}
-
-function findDescendant(el: XmlElement, localName: string): XmlElement | undefined {
-  if (el.local === localName) return el
-  for (const c of el.children) {
-    if (typeof c === "string") continue
-    const hit = findDescendant(c, localName)
-    if (hit) return hit
-  }
-  return undefined
-}
-
-function childElements(el: XmlElement): XmlElement[] {
-  const out: XmlElement[] = []
-  for (const c of el.children) {
-    if (typeof c !== "string") out.push(c)
-  }
-  return out
 }

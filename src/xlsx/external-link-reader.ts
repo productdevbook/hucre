@@ -13,15 +13,11 @@ import type {
   ExternalSheetData,
 } from "../_types"
 import { parseXml } from "../xml/parser"
-import type { XmlElement, XmlNode } from "../xml/parser"
+import type { XmlElement } from "../xml/parser"
+import { childElements, findChild, parseIntSafe, readChildText } from "../xml/tree"
 import { parseRelationships } from "./relationships"
 
 const VALID_TYPES: ReadonlySet<ExternalCellType> = new Set(["n", "s", "b", "e", "str"])
-
-const REL_EXTERNAL_LINK_PATH =
-  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath"
-const REL_EXTERNAL_LINK_PATH_STRICT =
-  "http://purl.oclc.org/ooxml/officeDocument/relationships/externalLinkPath"
 
 /**
  * Parse a single external link.
@@ -30,6 +26,10 @@ const REL_EXTERNAL_LINK_PATH_STRICT =
  * @param relsXml  Optional XML of `xl/externalLinks/_rels/externalLinkN.xml.rels`,
  *                 used to resolve the external workbook's target path. When
  *                 omitted the returned `target` is the empty string.
+ *
+ * The target is found by the `r:id` on `<externalBook>` rather than by
+ * scanning for the `externalLinkPath` relationship type, so the transitional
+ * and ISO-strict spellings of that type need no special handling.
  */
 export function parseExternalLink(xml: string, relsXml?: string): ExternalLink {
   const root = parseXml(xml)
@@ -131,41 +131,3 @@ function coerceValue(type: ExternalCellType, text: string): string | number | bo
       return text
   }
 }
-
-function findChild(el: XmlElement, localName: string): XmlElement | undefined {
-  for (const c of el.children) {
-    if (typeof c !== "string" && c.local === localName) return c
-  }
-  return undefined
-}
-
-function childElements(el: XmlElement): XmlElement[] {
-  const out: XmlElement[] = []
-  for (const c of el.children) {
-    if (typeof c !== "string") out.push(c)
-  }
-  return out
-}
-
-function readChildText(el: XmlElement, localName: string): string {
-  const child = findChild(el, localName)
-  if (!child) return ""
-  let text = ""
-  for (const c of child.children as XmlNode[]) {
-    if (typeof c === "string") text += c
-  }
-  return text
-}
-
-function parseIntSafe(s: string | undefined, fallback: number): number {
-  if (s === undefined) return fallback
-  const n = parseInt(s, 10)
-  return Number.isNaN(n) ? fallback : n
-}
-
-// Deliberately exported but not used internally — exposed for callers
-// that already extracted the relationship list and just want the body.
-export const REL_EXTERNAL_LINK_PATH_TYPES: readonly [string, string] = [
-  REL_EXTERNAL_LINK_PATH,
-  REL_EXTERNAL_LINK_PATH_STRICT,
-]
