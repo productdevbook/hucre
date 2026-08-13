@@ -416,7 +416,7 @@ const buffer = await writer.finish()
 ```ts
 import { writeOdsStream } from "hucre/ods"
 import { writeNdjsonStream } from "hucre/json"
-import { writeXmlStream } from "hucre/xml"
+import { streamXmlRows, writeXmlStream } from "hucre/xml"
 
 return new Response(writeOdsStream(rowCursor, { name: "Export" }), {
   headers: { "content-type": "application/vnd.oasis.opendocument.spreadsheet" },
@@ -429,6 +429,11 @@ return new Response(writeNdjsonStream(rowCursor), {
 return new Response(writeXmlStream(rowCursor, { rowTag: "record" }), {
   headers: { "content-type": "application/xml; charset=utf-8" },
 })
+
+// Reading one back, a row at a time.
+for await (const row of streamXmlRows(bytes, { rowTag: "record" })) {
+  console.log(row.index, row.values)
+}
 ```
 
 |        | whole read | whole write | stream read | stream write | incremental writer |
@@ -437,7 +442,7 @@ return new Response(writeXmlStream(rowCursor, { rowTag: "record" }), {
 | CSV    |     ✔      |      ✔      |      ✔      |      ✔       |         ✔          |
 | NDJSON |     ✔      |      ✔      |      ✔      |      ✔       |         ✔          |
 | ODS    |     ✔      |      ✔      |      ✔      |      ✔       |         —          |
-| XML    |     ✔      |      ✔      |      —      |      ✔       |         —          |
+| XML    |     ✔      |      ✔      |      ✔      |      ✔       |         —          |
 
 `writeOdsStream` carries **values, not formatting**, and that follows from
 the format: ODF puts `<office:automatic-styles>` before the body, so a
@@ -447,10 +452,18 @@ with inline strings and ODF has no equivalent for. Column widths and a
 header row are carried, because `columns` is known before the first row.
 `writeOds` remains the path for a document that needs styling.
 
-XML's **reader** is the remaining gap. `src/xml/parser.ts` is push-based,
-so a streaming reader needs a pull-based row scanner rather than a
-wrapper around what is there — that is its own change, not an oversight
-in this table.
+`streamXmlRows` differs from `readXml` in one way that follows from
+streaming rather than from a choice: **it yields the keys each row
+actually has.** `readXml` pads every row to the union of all headers,
+which needs the whole document — a streaming reader cannot know a key
+that appears only in a later row. For the same reason it takes `rowTag`
+from the first child of the root rather than from the most frequent one.
+
+The only cell left is an incremental ODS writer. `writeOdsStream` covers
+the streaming case; a buffering class could carry the styles it cannot,
+which would leave two ODS writers with different capabilities and no
+obvious rule for choosing — so it is an open question rather than an
+oversight.
 
 #### Which writer to use
 

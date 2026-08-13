@@ -118,6 +118,7 @@ exports[`export surface snapshot > hucre/xlsx 1`] = `
 exports[`export surface snapshot > hucre/xml 1`] = `
 [
   "readXml",
+  "streamXmlRows",
   "writeXml",
   "writeXmlStream",
 ]
@@ -244,6 +245,7 @@ exports[`export surface snapshot > root 1`] = `
   "streamNdjsonRows",
   "streamOdsRows",
   "streamXlsxRows",
+  "streamXmlRows",
   "stripBom",
   "timeToSerial",
   "toHtml",
