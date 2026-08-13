@@ -7,13 +7,13 @@ but hucre's own output, so a writer bug the reader mirrored was
 invisible — and three of the defects fixed in the #439 round were exactly
 that shape. See #464.
 
-Two producers, two formats:
+Three producers, two formats:
 
-|            | `*.xlsx`                       | `sheetjs-*.ods`                                            | `sheetjs-*.{xlsb,xls}`             |
-| ---------- | ------------------------------ | ---------------------------------------------------------- | ---------------------------------- |
-| Written by | ExcelJS (MIT)                  | SheetJS Community Edition, the `xlsx` package (Apache-2.0) | SheetJS                            |
-| Generator  | `make-exceljs-fixtures.mjs`    | `make-sheetjs-ods-fixtures.mjs`                            | `make-sheetjs-binary-fixtures.mjs` |
-| Read by    | `third-party-fixtures.test.ts` | `ods-third-party.test.ts`                                  | `xlsb-short-records.test.ts`       |
+|            | `*.xlsx`                       | `sheetjs-*.ods`                                            | `libreoffice-basic.ods`   | `sheetjs-*.{xlsb,xls}`             |
+| ---------- | ------------------------------ | ---------------------------------------------------------- | ------------------------- | ---------------------------------- |
+| Written by | ExcelJS (MIT)                  | SheetJS Community Edition, the `xlsx` package (Apache-2.0) | LibreOfficeDev 26.8       | SheetJS                            |
+| Generator  | `make-exceljs-fixtures.mjs`    | `make-sheetjs-ods-fixtures.mjs`                            | LibreOffice CLI           | `make-sheetjs-binary-fixtures.mjs` |
+| Read by    | `third-party-fixtures.test.ts` | `ods-third-party.test.ts`                                  | `ods-third-party.test.ts` | `xlsb-short-records.test.ts`       |
 
 (Generators live in `scripts/fixtures/`, tests in `test/`.)
 
@@ -32,15 +32,18 @@ asks for those too. What these give is the class of divergence a
 golden-model test needs — bytes hucre did not write — from producers that
 run anywhere and whose output is reproducible.
 
-Two things SheetJS specifically will **not** emit, both of which a
-LibreOffice corpus still would:
+Two things SheetJS specifically will **not** emit, both now covered by
+the LibreOffice fixture:
 
 - `table:number-columns-repeated`, which LibreOffice uses for every run
   of like cells and is the sharpest trap in the format.
 - error cells. SheetJS writes an error as an empty
   `<table:table-cell/>`, so there is no error in the file to read.
 
-So the ODS half narrows the gap rather than closing it.
+`libreoffice-basic.ods` is LibreOffice's conversion of the project-owned
+`../excel-basic.xlsx`. It found that a default-styled empty cell repeated
+to the edge of every row made `readOds` return 16,384 columns from five
+values. It also carries LibreOffice's error-cell spelling.
 
 ### It found two
 
@@ -76,14 +79,17 @@ redistributed.
 
 ## Regenerating
 
-Neither producer is a devDependency — these are committed bytes, so
-neither CI nor a contributor needs them installed:
+None of the producers is a devDependency — these are committed bytes, so
+CI does not need them installed:
 
 ```bash
 mkdir -p /tmp/gen && cd /tmp/gen && npm init -y && npm i exceljs xlsx
 node /path/to/hucre/scripts/fixtures/make-exceljs-fixtures.mjs /tmp/gen/node_modules
 node /path/to/hucre/scripts/fixtures/make-sheetjs-ods-fixtures.mjs /tmp/gen/node_modules
 node /path/to/hucre/scripts/fixtures/make-sheetjs-binary-fixtures.mjs /tmp/gen/node_modules
+
+soffice --headless --convert-to ods --outdir test/fixtures/third-party test/fixtures/excel-basic.xlsx
+mv test/fixtures/third-party/excel-basic.ods test/fixtures/third-party/libreoffice-basic.ods
 ```
 
 Regenerating changes the bytes (timestamps, producer version). The tests

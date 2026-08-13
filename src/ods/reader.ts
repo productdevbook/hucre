@@ -653,16 +653,23 @@ function parseContentXml(xml: string, options?: ReadOptions): Sheet[] {
         }
       }
 
-      // Trim trailing null/empty entries (avoids expanding huge repeat counts like 16384)
-      while (
-        cellEntries.length > 0 &&
-        cellEntries[cellEntries.length - 1].value === null &&
-        cellEntries[cellEntries.length - 1].colSpan === 1 &&
-        cellEntries[cellEntries.length - 1].rowSpan === 1 &&
-        !cellEntries[cellEntries.length - 1].styleName &&
-        !cellEntries[cellEntries.length - 1].formula &&
-        !cellEntries[cellEntries.length - 1].hyperlink
-      ) {
+      // A style name carries data only when the caller asked for styles
+      // and this reader can resolve it. LibreOffice ends every row with
+      // a default-styled cell repeated to column 16,384; keeping that
+      // unknown style turns five values into 16,384 cells. See #464.
+      while (cellEntries.length > 0) {
+        const last = cellEntries[cellEntries.length - 1]!
+        const hasStyle = readStyles && last.styleName && styleDefs.has(last.styleName)
+        if (
+          last.value !== null ||
+          last.colSpan !== 1 ||
+          last.rowSpan !== 1 ||
+          hasStyle ||
+          last.formula ||
+          last.hyperlink
+        ) {
+          break
+        }
         cellEntries.pop()
       }
 

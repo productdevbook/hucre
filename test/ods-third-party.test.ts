@@ -12,19 +12,20 @@ import type { CellValue } from "../src/_types"
 // `office:value-type` checked against a writer that misreads it the same
 // way, green forever.
 //
-// These are written by **SheetJS** (`xlsx`, Apache-2.0) — an independent
-// implementation with its own element order, its own style names, and
-// its own idea of what a minimal ODF document contains.
-//
-// It is not LibreOffice, and #464 still wants LibreOffice. Two things
-// SheetJS will not emit, both of which matter:
+// Most are written by **SheetJS** (`xlsx`, Apache-2.0), an independent
+// implementation with its own element order, style names, and idea of a
+// minimal ODF document. The remaining fixture is LibreOffice's conversion
+// of the Excel-authored basic workbook. It covers the two shapes SheetJS
+// will not emit:
 //
 //   * `table:number-columns-repeated`, which LibreOffice uses for every
 //     run of like cells and is the sharpest trap in the format.
 //   * error cells — SheetJS writes an error as an empty
 //     `<table:table-cell/>`, so there is no error in the file to read.
 //
-// So this narrows the gap rather than closing it.
+// The repeated tail found a real defect: five populated cells became
+// 16,384 because the batch reader treated an unresolved style name as
+// data even when styles were not requested.
 //
 // See test/fixtures/third-party/README.md for provenance and licensing.
 // ═══════════════════════════════════════════════════════════════════════
@@ -47,6 +48,7 @@ async function rowsOf(name: string, sheet = 0): Promise<CellValue[][]> {
 describe("the corpus is there and is not ours", () => {
   it("has every fixture the generator writes", () => {
     expect(NAMES).toEqual([
+      "libreoffice-basic.ods",
       "sheetjs-basic.ods",
       "sheetjs-dates.ods",
       "sheetjs-empty.ods",
@@ -91,6 +93,30 @@ describe("the corpus is there and is not ours", () => {
 
     expect(names).toContain("manifest.rdf")
   })
+})
+
+describe("LibreOffice", () => {
+  it("is the producer, and writes the repeated default-style tail", async () => {
+    const zip = new ZipReader(load("libreoffice-basic.ods"))
+    const meta = new TextDecoder().decode(await zip.extract("meta.xml"))
+    const content = new TextDecoder().decode(await zip.extract("content.xml"))
+
+    expect(meta).toContain("<meta:generator>LibreOffice")
+    expect(meta).not.toContain("hucre")
+    expect(content).toContain(
+      '<table:table-cell table:style-name="Default" table:number-columns-repeated="16379"/>',
+    )
+  })
+
+  it.each([false, true])(
+    "does not turn five cells into 16,384 when readStyles is %s",
+    async (readStyles) => {
+      const rows = (await readOds(load("libreoffice-basic.ods"), { readStyles })).sheets[0]!.rows
+
+      expect(rows.map((row) => row.length)).toEqual([5, 5, 5, 5, 3])
+      expect(rows[4]!.slice(0, 3)).toEqual(["Broken", "#DIV/0!", "xy"])
+    },
+  )
 })
 
 describe("the four ODF value types", () => {
