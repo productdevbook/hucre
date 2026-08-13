@@ -101,6 +101,7 @@ If Want("excel-styleonly.xlsx") Then MakeStyleOnly outDir & "\excel-styleonly.xl
 If Want("excel-dates.xls") Then MakeDates outDir & "\excel-dates.xls", xlExcel8
 If Want("excel-empty.xlsx") Then MakeEmpty outDir & "\excel-empty.xlsx", xlOpenXMLWorkbook
 If Want("excel-chartsheet.xlsx") Then MakeChartsheet outDir & "\excel-chartsheet.xlsx", xlOpenXMLWorkbook
+If Want("excel-sparse.xlsx") Then MakeSparse outDir & "\excel-sparse.xlsx", xlOpenXMLWorkbook
 
 On Error Goto 0
 
@@ -503,5 +504,44 @@ Sub MakeChartsheet(path, fmt)
   Note "MakeChartsheet order"
 
   Note "MakeChartsheet " & path
+  Finish wb, path, fmt
+End Sub
+
+' #501 — a sheet that is sparse rather than large.
+'
+' `Sheet.rows` is a dense rectangle, so what a reader must allocate is
+' the bounding box, not the cell count. A handful of values placed far
+' to the right makes that box enormous while the file stays tiny: here
+' about thirty values describe a 2,000 x 15,312 box, 30.6 million slots,
+' past the 20,000,000 MAX_TOTAL_CELLS bound. The workbook is refused.
+'
+' The real file this came from was worse and less contrived: 76,277
+' values across 507 distinct columns reaching column 15,311 on a
+' 19,959-row sheet — 305,612,208 slots at a fill factor of 0.03%. Excel
+' opens it without complaint. Neither `range`, `maxRows` nor raising
+' `maxTotalCells` gives a usable way to read it.
+Sub MakeSparse(path, fmt)
+  On Error Resume Next
+  Dim wb, ws, i
+  Set wb = NewBook("Sparse")
+  Set ws = wb.Worksheets(1)
+
+  ws.Range("A1").Value = "left edge"
+  ws.Range("B1").Value = 1
+  ws.Range("C1").Value = 2
+
+  ' A few islands of data far to the right. Column 15312 is VPX, which
+  ' is well inside Excel's 16,384 — nothing here is out of spec.
+  For i = 1 To 8
+    ws.Cells(i, 5000).Value = "island A " & i
+    ws.Cells(i, 10000).Value = i * 10
+    ws.Cells(i, 15312).Value = "right edge " & i
+  Next
+
+  ' Push the used range down so rows x cols crosses the bound. One cell
+  ' does it; the file stays a few KB because only real cells are stored.
+  ws.Cells(2000, 15312).Value = "bottom right"
+
+  Note "MakeSparse " & path
   Finish wb, path, fmt
 End Sub

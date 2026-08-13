@@ -1,6 +1,6 @@
 # test/fixtures — workbooks hucre did not write
 
-These twelve binaries exist because of [#464][]. Every other binary input
+These thirteen binaries exist because of [#464][]. Every other binary input
 under `test/` is assembled byte-by-byte by the test that reads it, which
 is a closed loop: a reader that misunderstands a record is checked
 against a hand-built record that misunderstands it identically, and the
@@ -101,8 +101,9 @@ manual step. Run it.
 | `excel-dates.xls`       | BIFF number formats: built-ins, a time, a date-time, thousands, percent, text-formatted digits, and CJK date codes                                                                                                        |
 | `excel-empty.xlsx`      | one sheet, nothing in it                                                                                                                                                                                                  |
 | `excel-chartsheet.xlsx` | a chart on its own tab, listed in `<sheets>` _before_ the worksheet — a sheet whose relationship type is not `worksheet` (#499)                                                                                           |
+| `excel-sparse.xlsx`     | ~30 values placed out to column 15,312 — a 30.6M-slot bounding box from a 9 KB file (#501)                                                                                                                                |
 
-147 KB of binaries; 162 KB for the whole directory, golden models and
+156 KB of binaries; 171 KB for the whole directory, golden models and
 this file included. Small on purpose: the point is coverage of shapes,
 not of size. The two `.xls` files are 26 KB each and account for most of
 it — BIFF8 has a floor no amount of trimming gets under.
@@ -130,7 +131,9 @@ from battery-test equipment, private, never committed and never leaving
 the machine they were read on. 61 of them failed to read, and 52 of those
 61 were this one bug. The other nine were legitimately unreadable: six
 password-protected, three with damaged ZIP central directories that
-Info-ZIP and Python's `zipfile` reject as well.
+Info-ZIP and Python's `zipfile` reject as well. #501 came from the same
+corpus, from a sheet Excel declares as `A1:VPX19959` holding 76,277
+values across 507 scattered columns.
 
 That corpus also confirmed #494's `undefined` holes are not a synthetic
 edge case — 19 real `.xls` files from three different instrument vendors
@@ -147,6 +150,7 @@ eleven.
 [#493]: https://github.com/productdevbook/hucre/issues/493
 [#494]: https://github.com/productdevbook/hucre/issues/494
 [#499]: https://github.com/productdevbook/hucre/issues/499
+[#501]: https://github.com/productdevbook/hucre/issues/501
 
 ### What this corpus still does not cover
 
