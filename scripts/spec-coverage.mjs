@@ -297,6 +297,42 @@ const REVIEWED = new Map(
   }),
 )
 
+/**
+ * The ODF half of the same ratchet.
+ *
+ * Keyed by the prefixed name, because that is what the grammar and the
+ * documents both use — the local-name shortcut that reads `src/` is
+ * wrong here, and reported `table:value-type` as missing by matching it
+ * against `office:value-type`.
+ */
+const REVIEWED_ODF = new Map(
+  Object.entries({
+    // The calculation block. hucre has no formula engine, so how another
+    // application iterates, matches case, or resolves a two-digit year
+    // is not something it can act on or usefully carry.
+    "table:calculation-settings": "calculation preferences — hucre has no formula engine",
+    "table:iteration": "iterative calculation settings — no formula engine",
+    "table:case-sensitive": "formula comparison rule — no formula engine",
+    "table:automatic-find-labels": "formula label lookup — no formula engine",
+    "table:use-regular-expressions": "formula matching rule — no formula engine",
+    "table:use-wildcards": "formula matching rule — no formula engine",
+    "table:maximum-difference": "iteration convergence bound — no formula engine",
+    "table:null-year": "the century a two-digit year resolves into, for the formula parser",
+
+    // Presentation details of a number format with no Excel spelling.
+    "number:boolean-style":
+      "a data style for booleans. Excel has no format code for one — it shows TRUE/FALSE — so there is nothing to map it to",
+    "number:fill-character":
+      "the character Excel's `*` repeats to pad a cell. `*` is not in hucre's format model at either end",
+
+    // Worth attention, and open.
+    "table:named-expressions":
+      "**open** — named ranges. hucre models them for XLSX and `PARITY.md` lists them among the things ODS does not carry in either direction. The gap is real and is a feature rather than a fix",
+    "table:default-cell-style-name":
+      "**open** — a column's default cell style. hucre reads direct formatting only, and `PARITY.md` records that the ODS reader does not open `styles.xml`; this is the `content.xml` half of the same gap",
+  }),
+)
+
 // ── Report ───────────────────────────────────────────────────────────
 
 function classify(name, literals, corpus) {
@@ -443,18 +479,31 @@ if (odfPath) {
     "",
   )
 
-  const freshOds = [...inCorpusGap.element, ...inCorpusGap.attribute]
-  lines.push("### In an ODF document here, unknown to the source", "")
+  const allOds = [...inCorpusGap.element, ...inCorpusGap.attribute]
+  const freshOds = allOds.filter((n) => !REVIEWED_ODF.has(n))
+  const judgedOds = allOds.filter((n) => REVIEWED_ODF.has(n))
+
+  lines.push("### In an ODF document here, not yet looked at", "")
   if (freshOds.length === 0) {
     lines.push(
       `Nothing. The ${odsCorpus.fileCount} \`.ods\` files in the corpus — SheetJS's`,
-      "and LibreOffice's — use no name the source has not heard of.",
+      "and LibreOffice's — use no name that has not been judged. A new one",
+      "appearing here is the signal this half of the report exists for.",
       "",
     )
   } else {
     lines.push("```")
     lines.push(...freshOds)
     lines.push("```", "")
+  }
+
+  if (judgedOds.length > 0) {
+    lines.push("### In an ODF document here, looked at and left", "")
+    lines.push("| name | why |", "| --- | --- |")
+    for (const name of judgedOds.sort()) {
+      lines.push(`| \`${name}\` | ${REVIEWED_ODF.get(name)} |`)
+    }
+    lines.push("")
   }
   lines.push("### Not named in the source", "")
   lines.push(

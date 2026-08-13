@@ -10,7 +10,7 @@ Corpus under `test/fixtures`: 35 OOXML workbooks (455 element names, 245 attribu
 
 ## SpreadsheetML (ECMA-376 Part 1)
 
-360 complex types. **31** names appear in the corpus and are _nowhere_ in `src/`; 6 appear in the corpus and occur in `src/` only inside a longer string, which usually means a writer emits them in a template; 644 the source switches on directly; 493 it knows but the corpus does not use; 918 are in neither.
+360 complex types. **31** names appear in the corpus and are _nowhere_ in `src/`; 6 appear in the corpus and occur in `src/` only inside a longer string, which usually means a writer emits them in a template; 644 the source switches on directly; 494 it knows but the corpus does not use; 917 are in neither.
 
 ### Not yet looked at
 
@@ -51,28 +51,30 @@ Corpus under `test/fixtures`: 35 OOXML workbooks (455 element names, 245 attribu
 
 ## OpenDocument (OASIS ODF 1.3)
 
-153 elements and 224 attributes in the spreadsheet-relevant namespaces. 110 are named somewhere in `src/`; 267 are not.
+153 elements and 224 attributes in the spreadsheet-relevant namespaces. 114 are named somewhere in `src/`; 263 are not.
 
-### In an ODF document here, unknown to the source
+### In an ODF document here, not yet looked at
 
-```
-number:boolean-style
-number:fill-character
-number:text-content
-number:text-style
-table:calculation-settings
-table:iteration
-table:named-expressions
-number:forced-exponent-sign
-number:min-decimal-places
-table:automatic-find-labels
-table:case-sensitive
-table:default-cell-style-name
-table:maximum-difference
-table:null-year
-table:use-regular-expressions
-table:use-wildcards
-```
+Nothing. The 10 `.ods` files in the corpus — SheetJS's
+and LibreOffice's — use no name that has not been judged. A new one
+appearing here is the signal this half of the report exists for.
+
+### In an ODF document here, looked at and left
+
+| name                            | why                                                                                                                                                                                                  |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `number:boolean-style`          | a data style for booleans. Excel has no format code for one — it shows TRUE/FALSE — so there is nothing to map it to                                                                                 |
+| `number:fill-character`         | the character Excel's `*` repeats to pad a cell. `*` is not in hucre's format model at either end                                                                                                    |
+| `table:automatic-find-labels`   | formula label lookup — no formula engine                                                                                                                                                             |
+| `table:calculation-settings`    | calculation preferences — hucre has no formula engine                                                                                                                                                |
+| `table:case-sensitive`          | formula comparison rule — no formula engine                                                                                                                                                          |
+| `table:default-cell-style-name` | **open** — a column's default cell style. hucre reads direct formatting only, and `PARITY.md` records that the ODS reader does not open `styles.xml`; this is the `content.xml` half of the same gap |
+| `table:iteration`               | iterative calculation settings — no formula engine                                                                                                                                                   |
+| `table:maximum-difference`      | iteration convergence bound — no formula engine                                                                                                                                                      |
+| `table:named-expressions`       | **open** — named ranges. hucre models them for XLSX and `PARITY.md` lists them among the things ODS does not carry in either direction. The gap is real and is a feature rather than a fix           |
+| `table:null-year`               | the century a two-digit year resolves into, for the formula parser                                                                                                                                   |
+| `table:use-regular-expressions` | formula matching rule — no formula engine                                                                                                                                                            |
+| `table:use-wildcards`           | formula matching rule — no formula engine                                                                                                                                                            |
 
 ### Not named in the source
 
@@ -82,7 +84,7 @@ are shared with the rest of ODF; most of a text document's grammar is
 reachable from a cell, and listing it would bury this in a thousand
 lines that are not about spreadsheets.
 
-<details><summary>100 elements</summary>
+<details><summary>98 elements</summary>
 
 ```
 number:boolean-style
@@ -91,8 +93,6 @@ number:era
 number:fill-character
 number:fraction
 number:quarter
-number:text-content
-number:text-style
 number:week-of-year
 office:annotation-end
 office:binary-data
@@ -189,7 +189,7 @@ table:tracked-changes
 
 </details>
 
-<details><summary>167 attributes</summary>
+<details><summary>165 attributes</summary>
 
 ```
 number:calendar
@@ -197,11 +197,9 @@ number:country
 number:decimal-replacement
 number:denominator-value
 number:display-factor
-number:forced-exponent-sign
 number:format-source
 number:language
 number:max-denominator-value
-number:min-decimal-places
 number:min-denominator-digits
 number:min-numerator-digits
 number:possessive-form
