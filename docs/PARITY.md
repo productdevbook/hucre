@@ -439,6 +439,20 @@ auto-filter, named ranges, tables, images, page setup, sheet protection,
 tab colour, hidden sheets, and `time` cells (which read back as the raw
 ISO duration string).
 
+Number format is carried, but not every Excel code has an ODF spelling.
+Three that do not survive intact, measured rather than assumed:
+
+| code            | comes back as | why                                                                                              |
+| --------------- | ------------- | ------------------------------------------------------------------------------------------------ |
+| `0.00_);(0.00)` | `0.00;(0.00)` | `_)` reserves the width of a character. ODF has no equivalent, so the padding is dropped         |
+| `@`             | _(General)_   | the text format has no data style to write; a cell already carrying a string is unaffected       |
+| `##0.0E+0`      | `0.0E+0`      | engineering notation steps the integer part in threes, which ODF spells with `exponent-interval` |
+
+Ordinary scientific formats — `0.00E+00` and its widths — do round-trip,
+through `<number:scientific-number>`. They did not until it was written:
+the code fell through to the plain-number branch, so `0.00E+00` became
+`0.00` and the file displayed a plain decimal in LibreOffice too.
+
 The reader opens `content.xml` and `meta.xml`. It does not open
 `styles.xml` or `settings.xml`, which is where LibreOffice keeps named and
 default cell styles and all page setup — so a LibreOffice-authored file

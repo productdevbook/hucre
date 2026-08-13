@@ -224,6 +224,28 @@ function serializeDataStyleChildren(
       const grouping = child.attrs["number:grouping"] === "true"
       const integerPart = grouping ? "#,##0" : "0"
       out += decimals > 0 ? `${integerPart}.${"0".repeat(decimals)}` : integerPart
+    } else if (local === "scientific-number") {
+      // `<number:scientific-number number:decimal-places="2"
+      //  number:min-integer-digits="1" number:min-exponent-digits="2"/>`
+      // is Excel's `0.00E+00`. The sign is always written: ODF has no
+      // attribute for a bare `E00`, and Excel's own scientific formats
+      // all carry one.
+      const decimals = Math.min(
+        parseInt(child.attrs["number:decimal-places"] ?? "0", 10) || 0,
+        MAX_REPEAT_COUNT,
+      )
+      const integerDigits = Math.min(
+        parseInt(child.attrs["number:min-integer-digits"] ?? "1", 10) || 1,
+        MAX_REPEAT_COUNT,
+      )
+      const exponentDigits = Math.min(
+        parseInt(child.attrs["number:min-exponent-digits"] ?? "2", 10) || 2,
+        MAX_REPEAT_COUNT,
+      )
+      out +=
+        "0".repeat(integerDigits) +
+        (decimals > 0 ? `.${"0".repeat(decimals)}` : "") +
+        `E+${"0".repeat(exponentDigits)}`
     } else if (local === "currency-symbol") {
       const text = child.children.filter((c: unknown) => typeof c === "string").join("")
       out += `"${text}"`

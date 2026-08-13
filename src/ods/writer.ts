@@ -155,6 +155,38 @@ function hasGrouping(code: string): boolean {
   return /#,##0|0,000/.test(code)
 }
 
+/**
+ * A scientific format, and the widths ODF needs to describe it.
+ *
+ * Excel spells it `0.00E+00`: digits, then `E` with a sign, then the
+ * exponent's own digits. ODF has `<number:scientific-number>` for this,
+ * and without it the exponent is simply lost — the code fell through to
+ * the plain-number branch, which reads the decimals and nothing else, so
+ * `0.00E+00` became `0.00` and the file displayed a plain decimal in
+ * LibreOffice as well.
+ *
+ * Quoted literals are stripped first: `"EUR "#,##0.00` has an `E` in it
+ * and is not scientific.
+ */
+function parseScientificFormat(
+  code: string,
+): { decimals: number; integerDigits: number; exponentDigits: number } | undefined {
+  const unquoted = code.replace(/"[^"]*"/g, "").replace(/\\./g, "")
+  const match = unquoted.match(/^([#0]*)(?:\.([0#]+))?[Ee]([+-])([0#]+)$/)
+  if (!match) return undefined
+
+  // `min-integer-digits` counts the mandatory digits — the `0`s. `##0.0E+0`
+  // asks for engineering notation, where the integer part steps in threes;
+  // ODF expresses that with `number:exponent-interval`, which this does not
+  // write, so such a code comes back as `0.0E+0`.
+  const integerDigits = (match[1]?.match(/0/g) ?? []).length
+  return {
+    integerDigits: Math.max(integerDigits, 1),
+    decimals: match[2]?.length ?? 0,
+    exponentDigits: match[4]!.length,
+  }
+}
+
 /** Build a `<number:number>` child for numeric / percentage / currency styles */
 function buildNumberChild(decimals: number, grouping: boolean): string {
   const attrs: Record<string, string> = {
@@ -396,6 +428,22 @@ function translateNumFmt(code: string): OdsNumFmtDef | undefined {
   const section = trimmed
     .replace(/\[\$-[^\]]*\]/g, "")
     .replace(/\[(?:black|blue|cyan|green|magenta|red|white|yellow|color\s*\d+)\]/gi, "")
+
+  // Before the currency and date checks: an exponent's `E` is neither,
+  // but the plain-number branch at the bottom would swallow it silently.
+  const scientific = parseScientificFormat(section)
+  if (scientific) {
+    return {
+      kind: "number",
+      children: [
+        xmlSelfClose("number:scientific-number", {
+          "number:decimal-places": String(scientific.decimals),
+          "number:min-integer-digits": String(scientific.integerDigits),
+          "number:min-exponent-digits": String(scientific.exponentDigits),
+        }),
+      ],
+    }
+  }
 
   if (isPercentageFormat(section)) {
     const decimals = decimalsFromCode(section)
