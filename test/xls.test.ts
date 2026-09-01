@@ -40,6 +40,7 @@ const SID = {
   FORMULA: 0x0006,
   EOF: 0x000a,
   DATEMODE: 0x0022,
+  FORMAT: 0x041e,
   NUMBER: 0x0203,
   LABEL: 0x0204,
   BOOLERR: 0x0205,
@@ -63,7 +64,9 @@ function sstRecord(strings: string[]): number[] {
   return record(SID.SST, body)
 }
 
-function buildXls(opts: { dateFmtId?: number } = {}): Uint8Array {
+function buildXls(
+  opts: { dateFmtId?: number; fmtCodes?: Array<[number, string]>; value?: number } = {},
+): Uint8Array {
   const strings = ["Name", "Score", "Ada"]
 
   const sheet = concat([
@@ -73,7 +76,7 @@ function buildXls(opts: { dateFmtId?: number } = {}): Uint8Array {
     record(SID.LABELSST, [...u16(1), ...u16(0), ...u16(0), ...u32(2)]),
     record(SID.RK, [...u16(1), ...u16(1), ...u16(0), ...rkInt(95)]),
     record(SID.NUMBER, [...u16(1), ...u16(2), ...u16(0), ...f64(3.14)]),
-    record(SID.NUMBER, [...u16(1), ...u16(3), ...u16(1), ...f64(45000)]), // date xf
+    record(SID.NUMBER, [...u16(1), ...u16(3), ...u16(1), ...f64(opts.value ?? 45000)]), // date xf
     record(SID.LABEL, [...u16(2), ...u16(0), ...u16(0), ...xlStr("Hi")]),
     record(SID.BOOLERR, [...u16(2), ...u16(1), ...u16(0), 1, 0]), // true
     record(SID.BOOLERR, [...u16(2), ...u16(2), ...u16(0), 0x07, 1]), // #DIV/0!
@@ -95,6 +98,11 @@ function buildXls(opts: { dateFmtId?: number } = {}): Uint8Array {
     concat([
       bof(0x0005),
       record(SID.DATEMODE, u16(0)),
+      // FORMAT records — the workbook's own number-format definitions,
+      // which may redefine a built-in id. See #568.
+      ...(opts.fmtCodes ?? []).map(([id, code]) =>
+        record(SID.FORMAT, [...u16(id), ...xlStr(code)]),
+      ),
       record(SID.XF, [...u16(0), ...u16(0), ...Array.from({ length: 16 }, () => 0)]), // general
       // The date xf's built-in format id is a parameter: the built-in date
       // set is wider than the familiar 14-22 block. See the CJK case below.
@@ -159,6 +167,46 @@ describe("XLS (BIFF8) reader", () => {
       const wb = await readXls(buildXls({ dateFmtId: 3 }))
 
       expect(wb.sheets[0].rows[1][3]).toBe(45000)
+    })
+  })
+
+  // ── #568: a FORMAT record redefining a built-in id ──────────────────
+  // The built-in table was consulted first, so a workbook's own FORMAT
+  // record for that id was never read. readXlsx has always resolved it
+  // the other way round; these are the cases where the three disagreed.
+  describe("a FORMAT record redefines a built-in id", () => {
+    it("reads a number when the file redefines a built-in date id numerically", async () => {
+      // 1C allocates its custom formats from id 50 — inside the
+      // Thai/Chinese/Korean date block — and '000000000000' is its mask
+      // for a leading-zero barcode. Read as a date serial this value is
+      // out of range, so the cell came back Invalid Date and the barcode
+      // was unrecoverable through the API.
+      const wb = await readXls(
+        buildXls({ dateFmtId: 50, fmtCodes: [[50, "000000000000"]], value: 81227827687 }),
+      )
+
+      expect(wb.sheets[0].rows[1][3]).toBe(81227827687)
+    })
+
+    it("reads a number when the file redefines id 14 as '#,##0'", async () => {
+      // The xlsx reader's own note names this case: redefining 14 made it
+      // resolve to a numeric format *and* report as a date, so the serial
+      // was converted and then formatted numerically.
+      const wb = await readXls(buildXls({ dateFmtId: 14, fmtCodes: [[14, "#,##0"]] }))
+
+      expect(wb.sheets[0].rows[1][3]).toBe(45000)
+    })
+
+    it("reads a Date when the file redefines a numeric built-in id as a date", async () => {
+      const wb = await readXls(buildXls({ dateFmtId: 3, fmtCodes: [[3, "yyyy-mm-dd"]] }))
+
+      expect(wb.sheets[0].rows[1][3]).toBeInstanceOf(Date)
+    })
+
+    it("keeps the built-in meaning when the file redefines some other id", async () => {
+      const wb = await readXls(buildXls({ dateFmtId: 50, fmtCodes: [[164, "000000000000"]] }))
+
+      expect(wb.sheets[0].rows[1][3]).toBeInstanceOf(Date)
     })
   })
 

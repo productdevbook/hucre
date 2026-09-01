@@ -143,10 +143,18 @@ function parseWorkbookRecords(stream: Uint8Array, options?: ReadOptions): Workbo
     }
   }
 
+  // The workbook's own FORMAT records win over the built-in id table: a
+  // file may redefine a built-in id (ECMA-376 §18.8.30), and 1C allocates
+  // its custom formats from id 50 rather than 164 — landing on the
+  // Thai/Chinese/Korean date block. Asking the built-in table first meant
+  // the FORMAT record was never consulted, so `'000000000000'`, the mask
+  // for a leading-zero barcode, read back as `Invalid Date` and the number
+  // was gone. `isDateStyle` in xlsx/styles.ts has always had this order;
+  // the two BIFF readers disagreed with it. See #568.
   const dateXf = xfFmtIds.map((id) => {
-    if (isBuiltinDateFormatId(id)) return true
     const code = fmtCodes.get(id)
-    return code ? isDateFormat(code) : false
+    if (code !== undefined) return isDateFormat(code)
+    return isBuiltinDateFormatId(id)
   })
 
   const isDate = (ixfe: number): boolean => dateXf[ixfe] === true

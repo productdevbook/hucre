@@ -251,10 +251,15 @@ function parseStylesBin(bin: Uint8Array): boolean[] {
       cellXfFmtIds.push(c.u16()) // iFmt
     }
   }
+  // A BrtFmt record wins over the built-in id table — same precedence as
+  // `isDateStyle` in xlsx/styles.ts, and for the same reason: a file may
+  // redefine a built-in id, and a numeric mask parked on a built-in *date*
+  // id then read back as `Invalid Date`. See #568 and the note in
+  // xls/reader.ts.
   return cellXfFmtIds.map((id) => {
-    if (isBuiltinDateFormatId(id)) return true
     const code = numFmtCodes.get(id)
-    return code ? isDateFormat(code) : false
+    if (code !== undefined) return isDateFormat(code)
+    return isBuiltinDateFormatId(id)
   })
 }
 

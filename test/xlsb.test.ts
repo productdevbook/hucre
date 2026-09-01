@@ -71,6 +71,7 @@ const BrtRowHdr = 0,
   BrtCellSt = 6,
   BrtCellIsst = 7,
   BrtSSTItem = 19,
+  BrtFmt = 44,
   BrtXF = 47,
   BrtWbProp = 153,
   BrtBundleSh = 156,
@@ -89,7 +90,12 @@ const wbProp = (date1904: boolean): Uint8Array =>
   rec(BrtWbProp, concat([u32(date1904 ? 1 : 0), u32(0), nwstr(null)]))
 
 async function buildXlsb(
-  opts: { date1904?: boolean; dateFmtId?: number } = {},
+  opts: {
+    date1904?: boolean
+    dateFmtId?: number
+    fmtCodes?: Array<[number, string]>
+    value?: number
+  } = {},
 ): Promise<Uint8Array> {
   // Shared strings: 0:"Name" 1:"Score" 2:"Ada"
   const sst = concat([
@@ -102,6 +108,9 @@ async function buildXlsb(
   // familiar 14-22 block — see the CJK case below.
   const dateFmtId = opts.dateFmtId ?? 14
   const styles = concat([
+    // BrtFmt — the workbook's own number-format definitions, which may
+    // redefine a built-in id. See #568.
+    ...(opts.fmtCodes ?? []).map(([id, code]) => rec(BrtFmt, concat([u16(id), wstr(code)]))),
     rec(BrtBeginCellXFs, u32(2)),
     rec(BrtXF, concat([u16(0), u16(0), u16(0), u16(0), u16(0), [0, 0]])),
     rec(BrtXF, concat([u16(0), u16(dateFmtId), u16(0), u16(0), u16(0), [0, 0]])),
@@ -116,7 +125,7 @@ async function buildXlsb(
     rec(BrtCellIsst, concat([cellPrefix(0, 0), u32(2)])),
     rec(BrtCellRk, concat([cellPrefix(1, 0), rkInt(95)])),
     rec(BrtCellReal, concat([cellPrefix(2, 0), f64(3.14)])),
-    rec(BrtCellReal, concat([cellPrefix(3, 1), f64(45000)])), // date serial via date xf
+    rec(BrtCellReal, concat([cellPrefix(3, 1), f64(opts.value ?? 45000)])), // date serial via date xf
     rec(BrtRowHdr, u32(2)),
     rec(BrtCellSt, concat([cellPrefix(0, 0), wstr("Hi")])),
     rec(BrtCellBool, concat([cellPrefix(1, 0), [1]])),
@@ -280,6 +289,40 @@ describe("XLSB reader", () => {
       const wb = await readXlsb(await buildXlsb({ dateFmtId: 3 }))
 
       expect(wb.sheets[0].rows[1][3]).toBe(45000)
+    })
+  })
+
+  // ── #568: a BrtFmt record redefining a built-in id ──────────────────
+  // The built-in table was consulted first, so the file's own BrtFmt for
+  // that id was never read — the same disagreement with readXlsx that
+  // xls/reader.ts had.
+  describe("a BrtFmt record redefines a built-in id", () => {
+    it("reads a number when the file redefines a built-in date id numerically", async () => {
+      const wb = await readXlsb(
+        await buildXlsb({ dateFmtId: 50, fmtCodes: [[50, "000000000000"]], value: 81227827687 }),
+      )
+
+      expect(wb.sheets[0].rows[1][3]).toBe(81227827687)
+    })
+
+    it("reads a number when the file redefines id 14 as '#,##0'", async () => {
+      const wb = await readXlsb(await buildXlsb({ dateFmtId: 14, fmtCodes: [[14, "#,##0"]] }))
+
+      expect(wb.sheets[0].rows[1][3]).toBe(45000)
+    })
+
+    it("reads a Date when the file redefines a numeric built-in id as a date", async () => {
+      const wb = await readXlsb(await buildXlsb({ dateFmtId: 3, fmtCodes: [[3, "yyyy-mm-dd"]] }))
+
+      expect(wb.sheets[0].rows[1][3]).toBeInstanceOf(Date)
+    })
+
+    it("keeps the built-in meaning when the file redefines some other id", async () => {
+      const wb = await readXlsb(
+        await buildXlsb({ dateFmtId: 50, fmtCodes: [[164, "000000000000"]] }),
+      )
+
+      expect(wb.sheets[0].rows[1][3]).toBeInstanceOf(Date)
     })
   })
 
