@@ -65,7 +65,7 @@ describe("no column is lost to a repeated header", () => {
 
   it("keeps all four in parseCsvObjects", () => {
     const { data, headers } = parseCsvObjects("a,a,,\n1,2,3,4", {
-      header: true,
+      hasHeaderRow: true,
       typeInference: true,
     })
 
@@ -93,7 +93,7 @@ describe("no column is lost to a repeated header", () => {
   it("runs transformHeader first, so a transform can prevent the collision", () => {
     // `sheetToObjects` takes no transform hooks by design; the readers do.
     const { headers } = parseCsvObjects("a,a\n1,2", {
-      header: true,
+      hasHeaderRow: true,
       transformHeader: (h, i) => `${h}${i}`,
     })
 

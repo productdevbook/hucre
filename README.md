@@ -582,7 +582,7 @@ Streaming trade-offs worth knowing:
 
 - Strings are written inline (`t="inlineStr"`) by default. A shared
   string table has to live in memory until the workbook closes, which
-  would undo the constant-memory guarantee — pass `inlineStrings: false`
+  would undo the constant-memory guarantee — pass `stringMode: "shared"`
   when the data is repetitive and file size matters more.
 - Part sizes aren't known when their ZIP headers go out, so entries carry
   trailing ZIP data descriptors and `[Content_Types].xml` is written last.
@@ -1784,7 +1784,7 @@ const rows = parseCsv(csvString, { typeInference: true })
 const fromDisk = parseCsv(await readFile("data.csv"), { typeInference: true })
 
 // Parse with headers — returns typed objects
-const { data, headers } = parseCsvObjects(csvString, { header: true })
+const { data, headers } = parseCsvObjects(csvString)
 
 // Write
 const csv = writeCsv(rows, { delimiter: ";", bom: true })
@@ -2127,8 +2127,8 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | -------------------------------------------- | ---------------------------------------- |
 | `formatValue(value, numFmt, options?)`       | Apply Excel number format (locale-aware) |
 | `validateWithSchema(rows, schema, options?)` | Validate & coerce data with schema       |
-| `serialToDate(serial, is1904?)`              | Excel serial → Date (UTC)                |
-| `dateToSerial(date, is1904?)`                | Date → Excel serial                      |
+| `serialToDate(serial, dateSystem?)`          | Excel serial → Date (UTC)                |
+| `dateToSerial(date, dateSystem?)`            | Date → Excel serial                      |
 | `isDateFormat(numFmt)`                       | Check if format string is date           |
 | `formatDate(date, format)`                   | Format Date with Excel format string     |
 | `parseCellRef(ref)`                          | "AA15" → `{ row: 14, col: 26 }`          |

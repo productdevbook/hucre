@@ -1977,7 +1977,7 @@ function processCell(
       if (!Number.isNaN(num) && valueText !== "") {
         // Check if this is a date via style
         if (ctx.styles && styleIndex >= 0 && isDateStyle(ctx.styles, styleIndex)) {
-          value = serialToDate(num, ctx.dateSystem === "1904")
+          value = serialToDate(num, ctx.dateSystem)
           cellType = "date"
         } else {
           value = num

@@ -261,7 +261,7 @@ describe("Date serial precision", () => {
   })
 
   it("1904 system: serial 0 = Jan 1, 1904", () => {
-    const d = serialToDate(0, true)
+    const d = serialToDate(0, "1904")
     expect(d.getUTCFullYear()).toBe(1904)
     expect(d.getUTCMonth()).toBe(0)
     expect(d.getUTCDate()).toBe(1)

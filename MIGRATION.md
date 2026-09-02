@@ -176,6 +176,37 @@ Every writer takes `CellInput` — `CellValue | Partial<Cell>` — where a cell 
 
 `OdsStreamWriter` now declares `implements SpreadsheetStreamWriter`; it satisfied the interface in v1 without saying so.
 
+## One name per option
+
+The same question was asked under different names in different option bags. Each now has one:
+
+| Was                                                  | Is                                 | Where                                                                                                                                                                                             |
+| ---------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `header: true` (CSV read: the first row is a header) | `hasHeaderRow: true`               | `parseCsv`, `streamCsvRows` — the name `toHtml` / `toMarkdown` already used                                                                                                                       |
+| `headers: false` (CSV write: no header line)         | `writeHeader: false`               | `writeCsv`, `writeCsvObjects`, `CsvStreamWriter`, `writeCsvStream`                                                                                                                                |
+| `headers: true`                                      | the default — omit it              | same                                                                                                                                                                                              |
+| `writeHeaders`                                       | `writeHeader`                      | `writeXlsxObjects`, `writeOdsObjects`                                                                                                                                                             |
+| `inlineStrings: boolean`                             | `stringMode: "shared" \| "inline"` | `writeXlsxStream`, `writeXlsxStreamSheets` — the name `writeXlsx` already used. The streaming default is still `"inline"`; the buffered default is still `"shared"`, and each says why in its doc |
+| `is1904: boolean`                                    | `dateSystem: "1900" \| "1904"`     | `serialToDate`, `dateToSerial`, `formatValue`'s options — the spelling every reader and writer already used                                                                                       |
+
+`headers` itself stays, as `string[]` only: the names to write. `parseCsvObjects` no longer takes `header: true` — it always has a header; that is what it is for.
+
+```diff
+- parseCsv(text, { header: true, skipHeaderRow: true })
++ parseCsv(text, { hasHeaderRow: true, skipHeaderRow: true })
+- writeCsvObjects(rows, { headers: false })
++ writeCsvObjects(rows, { writeHeader: false })
+- writeXlsxStream(rows, { name: "S", inlineStrings: false })
++ writeXlsxStream(rows, { name: "S", stringMode: "shared" })
+- serialToDate(45000, true)
++ serialToDate(45000, "1904")
+```
+
+Two smaller alignments in the same family:
+
+- **`sheetToObjects` skips blank rows by default**, as `readObjects`, `readXlsxObjects` and `readOdsObjects` do. It used to hard-code the opposite with no way to change it; it now takes `skipEmptyRows`, and `skipEmptyRows: false` restores the old projection. **Behaviour.**
+- **`JsonReadOptions.transformValue` receives `(value, header, rowIndex, colIndex)`**, four arguments like every other `transformValue` in the library. It received three.
+
 ---
 
 # Migrating to v1

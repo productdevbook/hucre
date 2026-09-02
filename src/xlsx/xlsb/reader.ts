@@ -334,7 +334,7 @@ function parseWorksheetBin(
   }
 
   const numericCell = (col: number, styleRef: number, num: number): void => {
-    setCell(col, dateXf[styleRef] ? serialToDate(num, date1904) : num)
+    setCell(col, dateXf[styleRef] ? serialToDate(num, date1904 ? "1904" : "1900") : num)
   }
 
   for (const rec of iterateRecords(bin)) {

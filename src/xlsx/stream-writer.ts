@@ -102,7 +102,7 @@ export interface XlsxWriteStreamOptions extends XlsxStreamWriterOptions {
    * undoes the constant-memory guarantee. Set to `false` when the data is
    * highly repetitive and a smaller file matters more than peak memory.
    */
-  inlineStrings?: boolean
+  stringMode?: "shared" | "inline"
   /** DEFLATE the parts. Default `true`. */
   compress?: boolean
   /**
@@ -190,8 +190,8 @@ export interface XlsxWriteStreamWorkbookOptions {
   maxRowsPerSheet?: number
   /** Default header repetition; see {@link XlsxWriteStreamOptions.repeatHeaders}. */
   repeatHeaders?: boolean
-  /** See {@link XlsxWriteStreamOptions.inlineStrings}. */
-  inlineStrings?: boolean
+  /** See {@link XlsxWriteStreamOptions.stringMode}. */
+  stringMode?: "shared" | "inline"
   /** DEFLATE the parts. Default `true`. */
   compress?: boolean
   /** See {@link XlsxWriteStreamOptions.zip64}. */
@@ -675,7 +675,7 @@ export class XlsxStreamWriter implements SpreadsheetStreamWriter {
  * ```
  *
  * Notes:
- * - Strings are written inline by default; see {@link XlsxWriteStreamOptions.inlineStrings}.
+ * - Strings are written inline by default; see {@link XlsxWriteStreamOptions.stringMode}.
  * - Part sizes are unknown up front, so entries carry ZIP data
  *   descriptors. By default no ZIP64 records are emitted, which caps any
  *   single part — and the archive — at 4 GiB; see
@@ -752,7 +752,7 @@ async function* xlsxStreamEntries(
   options: XlsxWriteStreamWorkbookOptions,
 ): AsyncGenerator<ZipStreamEntry> {
   const dateSystem = options.dateSystem ?? "1900"
-  const inlineStrings = options.inlineStrings ?? true
+  const inlineStrings = options.stringMode !== "shared"
   const compress = options.compress ?? true
 
   // Workbook-wide parts: every sheet writes into the same two tables.

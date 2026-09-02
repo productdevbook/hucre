@@ -62,7 +62,7 @@ export async function* streamCsvRows(
   const doTypeInference = options?.typeInference ?? false
   const skipEmptyRows = options?.skipEmptyRows ?? false
   const commentChar = options?.comment
-  const isHeaderMode = options?.header ?? false
+  const isHeaderMode = options?.hasHeaderRow ?? false
   const skipHeaderRow = options?.skipHeaderRow ?? false
   const unescapeFormulae = options?.unescapeFormulae ?? false
   // Align inferType default with parseCsv (defaults to true).
@@ -387,7 +387,8 @@ export class CsvStreamWriter implements SpreadsheetStreamWriter {
   private bom: boolean
   private lines: string[] = []
   private headerWritten = false
-  private headers: string[] | boolean | undefined
+  private headers: string[] | undefined
+  private writeHeader: boolean
   /** Column order for object rows, resolved on the first one seen. */
   private columns: string[] | undefined
 
@@ -396,10 +397,11 @@ export class CsvStreamWriter implements SpreadsheetStreamWriter {
     this.lineSeparator = this.formatter.lineSeparator
     this.bom = this.formatter.bom
     this.headers = options?.headers
-    this.columns = options?.columns ?? (Array.isArray(this.headers) ? this.headers : undefined)
+    this.writeHeader = options?.writeHeader !== false
+    this.columns = options?.columns ?? this.headers
 
-    // Write header row immediately if string array provided
-    if (Array.isArray(this.headers) && !this.headerWritten) {
+    // Write header row immediately if the names are known
+    if (this.headers && this.writeHeader && !this.headerWritten) {
       this.lines.push(this.formatter.formatHeader(this.headers))
       this.headerWritten = true
     }
@@ -416,13 +418,13 @@ export class CsvStreamWriter implements SpreadsheetStreamWriter {
    * else an explicit `headers` array, else the keys of the first object.
    *
    * A header line is emitted before the first object row unless one was
-   * already written or `headers: false` was passed.
+   * already written or `writeHeader: false` was passed.
    */
   addObject(item: Record<string, CellInput>): void {
     if (!this.columns) {
       this.columns = Object.keys(item)
     }
-    if (!this.headerWritten && this.headers !== false) {
+    if (!this.headerWritten && this.writeHeader) {
       this.lines.push(this.formatter.formatHeader(this.columns))
       this.headerWritten = true
     }
@@ -469,7 +471,7 @@ export type CsvStreamRow = CellValue[] | Record<string, CellValue>
  * Object rows are projected through a column order resolved the same way
  * {@link writeCsvObjects} resolves it: `columns` if given, else an
  * explicit `headers` array, else the keys of the first row. A header line
- * is emitted unless `headers: false`.
+ * is emitted unless `writeHeader: false`.
  */
 export function writeCsvStream(
   rows: AsyncIterable<CsvStreamRow> | Iterable<CsvStreamRow>,
@@ -527,14 +529,12 @@ async function* csvStreamChunks(
 
   // Column order for object rows, resolved on the first one seen.
   const explicitColumns = options?.columns
-  const headerOption = options?.headers
-  let columns: string[] | undefined =
-    explicitColumns ?? (Array.isArray(headerOption) ? headerOption : undefined)
+  let columns: string[] | undefined = explicitColumns ?? options?.headers
   let headerEmitted = false
 
   const emitHeader = (names: string[]): Uint8Array | undefined => {
     headerEmitted = true
-    if (headerOption === false) return undefined
+    if (options?.writeHeader === false) return undefined
     return push(formatter.formatHeader(names))
   }
 

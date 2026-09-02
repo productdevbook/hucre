@@ -96,7 +96,7 @@ describe("the four writers satisfy one interface", () => {
 
   it("a cell object is accepted by every writer, and reduces to its value where styles cannot go", async () => {
     const styled = { value: "Widget", style: { font: { bold: true } } }
-    const csv = new CsvStreamWriter({ headers: false })
+    const csv = new CsvStreamWriter({ writeHeader: false })
     csv.addRow([styled, 3])
     expect(csv.finishText()).toBe("Widget,3")
 

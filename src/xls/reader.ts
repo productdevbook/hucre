@@ -227,7 +227,7 @@ function parseSheet(
     r[col] = value
   }
   const numeric = (row: number, col: number, ixfe: number, n: number): void => {
-    setCell(row, col, isDate(ixfe) ? serialToDate(n, date1904) : n)
+    setCell(row, col, isDate(ixfe) ? serialToDate(n, date1904 ? "1904" : "1900") : n)
   }
 
   for (let i = startIdx + 1; i < records.length; i++) {

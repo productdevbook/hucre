@@ -113,8 +113,8 @@ describe("CsvStreamWriter.addObject", () => {
     expect(writer.finishText()).toBe("age,name\n30,Alice")
   })
 
-  it("emits no header line when headers: false", () => {
-    const writer = new CsvStreamWriter({ lineSeparator: "\n", headers: false })
+  it("emits no header line when writeHeader: false", () => {
+    const writer = new CsvStreamWriter({ lineSeparator: "\n", writeHeader: false })
     writer.addObject({ name: "Alice", age: 30 })
     expect(writer.finishText()).toBe("Alice,30")
   })

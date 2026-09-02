@@ -78,7 +78,7 @@ export interface OdsObjectsWriteOptions {
    */
   headers?: string[]
   /** Write a header row as the first row. Default: true. */
-  writeHeaders?: boolean
+  writeHeader?: boolean
 }
 
 /**
@@ -89,12 +89,12 @@ export async function writeOdsObjects(
   options?: OdsObjectsWriteOptions,
 ): Promise<WriteOutput> {
   const sheetName = options?.sheetName ?? "Sheet1"
-  const writeHeaders = options?.writeHeaders ?? true
+  const writeHeader = options?.writeHeader ?? true
 
   const headers = options?.headers ?? collectHeaders(data)
 
   const rows: CellValue[][] = []
-  if (writeHeaders) {
+  if (writeHeader) {
     rows.push(headers.slice())
   }
   for (const obj of data) {

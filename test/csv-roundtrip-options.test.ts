@@ -29,24 +29,24 @@ describe("parseCsv — skipHeaderRow", () => {
   const SIMPLE = "name,qty\r\nfoo,1\r\nbar,2\r\n"
 
   it("consumes the header row when asked", () => {
-    expect(parseCsv(SIMPLE, { header: true, skipHeaderRow: true })).toEqual([
+    expect(parseCsv(SIMPLE, { hasHeaderRow: true, skipHeaderRow: true })).toEqual([
       ["foo", "1"],
       ["bar", "2"],
     ])
   })
 
   it("keeps the header row by default", () => {
-    expect(parseCsv(SIMPLE, { header: true })[0]).toEqual(["name", "qty"])
+    expect(parseCsv(SIMPLE, { hasHeaderRow: true })[0]).toEqual(["name", "qty"])
   })
 
-  it("is inert without header: true", () => {
+  it("is inert without hasHeaderRow: true", () => {
     expect(parseCsv(SIMPLE, { skipHeaderRow: true })).toEqual(parseCsv(SIMPLE))
   })
 
   it("still names transformValue columns from the consumed header", () => {
     const seen: string[] = []
     parseCsv(SIMPLE, {
-      header: true,
+      hasHeaderRow: true,
       skipHeaderRow: true,
       transformValue: (v, header) => {
         seen.push(header)
@@ -57,13 +57,13 @@ describe("parseCsv — skipHeaderRow", () => {
   })
 
   it("counts maxRows against emitted rows only", () => {
-    expect(parseCsv(SIMPLE, { header: true, skipHeaderRow: true, maxRows: 1 })).toEqual([
+    expect(parseCsv(SIMPLE, { hasHeaderRow: true, skipHeaderRow: true, maxRows: 1 })).toEqual([
       ["foo", "1"],
     ])
   })
 
   it("agrees with streamCsvRows", async () => {
-    const options = { header: true, skipHeaderRow: true }
+    const options = { hasHeaderRow: true, skipHeaderRow: true }
     expect(parseCsv(SIMPLE, options)).toEqual(await valuesOf(streamCsvRows(SIMPLE, options)))
   })
 })
@@ -101,7 +101,7 @@ describe("escapeFormulae round trip", () => {
     const written = writeCsv([["-h"], ["v"]], { escapeFormulae: true })
     const seen: string[] = []
     parseCsv(written, {
-      header: true,
+      hasHeaderRow: true,
       unescapeFormulae: true,
       transformValue: (v, header) => {
         seen.push(header)

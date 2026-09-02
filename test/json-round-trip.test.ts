@@ -207,7 +207,7 @@ describe("typeInference revives dates", () => {
     // the same question.
     const cases = ["2024-01-15", "2024-01-15T10:30:00Z", "2024-13-45", "3/4/2021", "2024", "hello"]
     for (const raw of cases) {
-      const viaCsv = parseCsv(`v\n"${raw}"`, { typeInference: true, header: true })[1]![0]
+      const viaCsv = parseCsv(`v\n"${raw}"`, { typeInference: true, hasHeaderRow: true })[1]![0]
       const viaJson = parseJson(`[{"v":${JSON.stringify(raw)}}]`, { typeInference: true }).data[0]!
         .v
       expect([raw, viaJson instanceof Date]).toEqual([raw, viaCsv instanceof Date])
@@ -249,10 +249,10 @@ describe("typeInference revives dates", () => {
 
 describe("the shared ISO rule did not change CSV", () => {
   it("still infers dates in parseCsv and streamCsvRows alike", async () => {
-    const rows = parseCsv("when\n2024-01-15", { typeInference: true, header: true })
+    const rows = parseCsv("when\n2024-01-15", { typeInference: true, hasHeaderRow: true })
     expect(rows[1]![0]).toBeInstanceOf(Date)
     const streamed = await valuesOf(
-      streamCsvRows("when\n2024-01-15", { typeInference: true, header: true }),
+      streamCsvRows("when\n2024-01-15", { typeInference: true, hasHeaderRow: true }),
     )
     expect(streamed[1]![0]).toBeInstanceOf(Date)
   })

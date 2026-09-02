@@ -1020,7 +1020,9 @@ export function serializeCell(
           children.push(xmlElement("v", undefined, String(formulaResult)))
         }
       } else if (formulaResult instanceof Date) {
-        children.push(xmlElement("v", undefined, String(dateToSerial(formulaResult, is1904))))
+        children.push(
+          xmlElement("v", undefined, String(dateToSerial(formulaResult, is1904 ? "1904" : "1900"))),
+        )
       }
     }
 
@@ -1073,7 +1075,7 @@ export function serializeCell(
 
   // Date value
   if (value instanceof Date) {
-    return simpleCell(ref, styleIdx, "", String(dateToSerial(value, is1904)))
+    return simpleCell(ref, styleIdx, "", String(dateToSerial(value, is1904 ? "1904" : "1900")))
   }
 
   return null

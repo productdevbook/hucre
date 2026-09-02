@@ -138,7 +138,7 @@ describe("parseCsv takes bytes", () => {
 describe("the other readers take bytes too", () => {
   it("parseCsvObjects", () => {
     const { data, headers } = parseCsvObjects(WINDOWS_1254, {
-      header: true,
+      hasHeaderRow: true,
       encoding: "windows-1254",
     })
 

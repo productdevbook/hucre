@@ -137,7 +137,7 @@ describe("writeXlsxStreamSheets", () => {
           { name: "One", rows: [["repeated"]] },
           { name: "Two", rows: [["repeated"]] },
         ],
-        { inlineStrings: false },
+        { stringMode: "shared" },
       ),
     )
     const wb = await readXlsx(bytes)

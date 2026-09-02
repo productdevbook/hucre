@@ -596,7 +596,7 @@ function resolveStreamCellValue(
       if (!Number.isNaN(num)) {
         // Check if this is a date via style
         if (styles && styleIndex >= 0 && isDateStyle(styles, styleIndex)) {
-          return serialToDate(num, dateSystem === "1904")
+          return serialToDate(num, dateSystem)
         }
         return num
       }

@@ -10,6 +10,12 @@ import { rowsToObjects } from "./_objects"
 export interface SheetToObjectsOptions {
   /** 0-based row index to use as headers. Default: 0. */
   headerRow?: number
+  /**
+   * Skip rows where every cell is null/empty. Default: true — the same
+   * default as `readObjects`, `readXlsxObjects` and `readOdsObjects`,
+   * which this used to disagree with by hard-coding `false`.
+   */
+  skipEmptyRows?: boolean
 }
 
 /**
@@ -27,10 +33,9 @@ export interface SheetObjectsResult<
  * Convert sheet rows to objects keyed by a header row, plus the detected
  * headers.
  *
- * Every row after the header row is returned as-is: this is a pure
- * in-memory projection with no filtering or transform hooks. For
- * `skipEmptyRows` / `transformHeader` / `transformValue` / `maxRows`, read
- * through `readXlsxObjects`, `readOdsObjects`, or `readObjects` instead.
+ * A pure in-memory projection with no transform hooks. For
+ * `transformHeader` / `transformValue` / `maxRows`, read through
+ * `readXlsxObjects`, `readOdsObjects`, or `readObjects` instead.
  *
  * @param sheet - The sheet to convert
  * @returns `{ data, headers }` — the same shape every `*Objects` reader returns
@@ -41,7 +46,7 @@ export function sheetToObjects<T extends Record<string, CellValue> = Record<stri
 ): SheetObjectsResult<T> {
   return rowsToObjects<T>(sheet.rows, {
     headerRow: options?.headerRow ?? 0,
-    skipEmptyRows: false,
+    skipEmptyRows: options?.skipEmptyRows ?? true,
   })
 }
 

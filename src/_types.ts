@@ -1907,8 +1907,13 @@ export interface CsvReadOptions {
    * `escape` on the write side would corrupt a value ending in one.
    */
   escape?: string
-  /** Whether first row is header. Default: false */
-  header?: boolean
+  /**
+   * Whether the first row is a header. Default: false. The row is still
+   * returned; it names columns for `transformValue`, and `skipHeaderRow`
+   * is what consumes it. The same name `toHtml` and `toMarkdown` use for
+   * the same question.
+   */
+  hasHeaderRow?: boolean
   /** Skip BOM if present. Default: true */
   skipBom?: boolean
   /** Type inference for numbers, booleans, dates. Default: false */
@@ -1963,8 +1968,17 @@ export interface CsvWriteOptions {
   quote?: string
   /** Quote style. Default: "required" */
   quoteStyle?: "all" | "required" | "none"
-  /** Headers row from column names */
-  headers?: string[] | boolean
+  /**
+   * Header names to write, when the rows carry none of their own. For
+   * `writeCsvObjects` and the streaming writers this is also the column
+   * order; `columns` wins where both are given.
+   */
+  headers?: string[]
+  /**
+   * Whether to write a header line at all. Default: true wherever one is
+   * known — explicit `headers`, or object rows whose keys name the columns.
+   */
+  writeHeader?: boolean
   /** Prepend UTF-8 BOM (for Excel compatibility). Default: false */
   bom?: boolean
   /**

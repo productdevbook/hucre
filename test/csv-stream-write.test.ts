@@ -137,7 +137,7 @@ describe("writeCsvStream", () => {
     })
 
     it("skips the header line when headers is false", async () => {
-      const out = await collect(writeCsvStream(data, { headers: false }))
+      const out = await collect(writeCsvStream(data, { writeHeader: false }))
       expect(out).toBe("1,Alice\r\n2,Bob")
     })
 

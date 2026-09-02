@@ -82,21 +82,23 @@ describe("transformHeader means the same thing in all three CSV readers", () => 
   const upper = (h: string) => h.toUpperCase()
 
   it("rewrites the header row in parseCsv", () => {
-    expect(parseCsv(CSV, { header: true, transformHeader: upper })).toEqual([
+    expect(parseCsv(CSV, { hasHeaderRow: true, transformHeader: upper })).toEqual([
       ["NAME", "AGE"],
       ["Ada", "36"],
     ])
   })
 
   it("rewrites the header row in streamCsvRows", async () => {
-    expect(await valuesOf(streamCsvRows(CSV, { header: true, transformHeader: upper }))).toEqual([
+    expect(
+      await valuesOf(streamCsvRows(CSV, { hasHeaderRow: true, transformHeader: upper })),
+    ).toEqual([
       ["NAME", "AGE"],
       ["Ada", "36"],
     ])
   })
 
   it("still renames the object keys in parseCsvObjects", () => {
-    const { data, headers } = parseCsvObjects(CSV, { header: true, transformHeader: upper })
+    const { data, headers } = parseCsvObjects(CSV, { hasHeaderRow: true, transformHeader: upper })
 
     expect(headers).toEqual(["NAME", "AGE"])
     expect(data).toEqual([{ NAME: "Ada", AGE: "36" }])
@@ -105,7 +107,7 @@ describe("transformHeader means the same thing in all three CSV readers", () => 
   it("names transformValue's columns by the transformed header", () => {
     const seen: string[] = []
     parseCsv(CSV, {
-      header: true,
+      hasHeaderRow: true,
       transformHeader: upper,
       transformValue: (value, header) => {
         seen.push(header)
@@ -120,7 +122,7 @@ describe("transformHeader means the same thing in all three CSV readers", () => 
   it("gets the same header names in the streaming reader", async () => {
     const seen: string[] = []
     for await (const _row of streamCsvRows(CSV, {
-      header: true,
+      hasHeaderRow: true,
       transformHeader: upper,
       transformValue: (value, header) => {
         seen.push(header)
@@ -133,7 +135,7 @@ describe("transformHeader means the same thing in all three CSV readers", () => 
     expect(seen).toContain("NAME")
   })
 
-  it("does nothing without header: true", () => {
+  it("does nothing without hasHeaderRow: true", () => {
     expect(parseCsv(CSV, { transformHeader: upper })).toEqual([
       ["name", "age"],
       ["Ada", "36"],
@@ -141,8 +143,8 @@ describe("transformHeader means the same thing in all three CSV readers", () => 
   })
 
   it("still drops the header row when skipHeaderRow asks", () => {
-    expect(parseCsv(CSV, { header: true, skipHeaderRow: true, transformHeader: upper })).toEqual([
-      ["Ada", "36"],
-    ])
+    expect(
+      parseCsv(CSV, { hasHeaderRow: true, skipHeaderRow: true, transformHeader: upper }),
+    ).toEqual([["Ada", "36"]])
   })
 })

@@ -39,9 +39,9 @@ describe("streamCsvRows / parseCsv parity", () => {
 
   const optionCases: Array<[string, CsvReadOptions]> = [
     ["defaults", {}],
-    ["header", { header: true }],
+    ["header", { hasHeaderRow: true }],
     ["typeInference", { typeInference: true }],
-    ["typeInference + header", { typeInference: true, header: true }],
+    ["typeInference + header", { typeInference: true, hasHeaderRow: true }],
     ["preserveLeadingZeros off", { typeInference: true, preserveLeadingZeros: false }],
     ["fastMode", { fastMode: true }],
     ["fastMode + typeInference", { fastMode: true, typeInference: true }],
@@ -55,8 +55,8 @@ describe("streamCsvRows / parseCsv parity", () => {
     // Both were on CsvReadOptions but implemented in one reader only —
     // skipHeaderRow in streamCsvRows, and neither honoured unescapeFormulae
     // before it existed (#408).
-    ["header + skipHeaderRow", { header: true, skipHeaderRow: true }],
-    ["header + skipHeaderRow + maxRows 1", { header: true, skipHeaderRow: true, maxRows: 1 }],
+    ["header + skipHeaderRow", { hasHeaderRow: true, skipHeaderRow: true }],
+    ["header + skipHeaderRow + maxRows 1", { hasHeaderRow: true, skipHeaderRow: true, maxRows: 1 }],
     ["unescapeFormulae", { unescapeFormulae: true }],
     ["unescapeFormulae + typeInference", { unescapeFormulae: true, typeInference: true }],
   ]
@@ -93,7 +93,7 @@ describe("streamCsvRows — transformValue", () => {
   it("names columns from the header row when header is set", async () => {
     const seen: string[] = []
     await stream(SIMPLE, {
-      header: true,
+      hasHeaderRow: true,
       transformValue: (v, header) => {
         seen.push(header)
         return v
@@ -175,31 +175,33 @@ describe("streamCsvRows — skipHeaderRow", () => {
   it("drops the header row in parseCsv too", async () => {
     // It was honoured here and ignored there — one option, two behaviours,
     // which is the divergence this whole file exists to prevent (#408).
-    expect(parseCsv(SIMPLE, { header: true, skipHeaderRow: true })).toEqual(
-      await stream(SIMPLE, { header: true, skipHeaderRow: true }),
+    expect(parseCsv(SIMPLE, { hasHeaderRow: true, skipHeaderRow: true })).toEqual(
+      await stream(SIMPLE, { hasHeaderRow: true, skipHeaderRow: true }),
     )
   })
 
   it("drops the header row when asked", async () => {
-    expect(await stream(SIMPLE, { header: true, skipHeaderRow: true })).toEqual([
+    expect(await stream(SIMPLE, { hasHeaderRow: true, skipHeaderRow: true })).toEqual([
       ["foo", "1"],
       ["bar", "2"],
     ])
   })
 
   it("keeps the header row by default, matching parseCsv", async () => {
-    expect(await stream(SIMPLE, { header: true })).toEqual(parseCsv(SIMPLE, { header: true }))
-    expect((await stream(SIMPLE, { header: true }))[0]).toEqual(["name", "qty"])
+    expect(await stream(SIMPLE, { hasHeaderRow: true })).toEqual(
+      parseCsv(SIMPLE, { hasHeaderRow: true }),
+    )
+    expect((await stream(SIMPLE, { hasHeaderRow: true }))[0]).toEqual(["name", "qty"])
   })
 
-  it("is inert without header: true", async () => {
+  it("is inert without hasHeaderRow: true", async () => {
     expect(await stream(SIMPLE, { skipHeaderRow: true })).toEqual(await stream(SIMPLE))
   })
 
   it("still names transformValue columns from the consumed header", async () => {
     const seen: string[] = []
     await stream(SIMPLE, {
-      header: true,
+      hasHeaderRow: true,
       skipHeaderRow: true,
       transformValue: (v, header) => {
         seen.push(header)
@@ -210,7 +212,7 @@ describe("streamCsvRows — skipHeaderRow", () => {
   })
 
   it("counts maxRows against emitted rows only", async () => {
-    expect(await stream(SIMPLE, { header: true, skipHeaderRow: true, maxRows: 1 })).toEqual([
+    expect(await stream(SIMPLE, { hasHeaderRow: true, skipHeaderRow: true, maxRows: 1 })).toEqual([
       ["foo", "1"],
     ])
   })

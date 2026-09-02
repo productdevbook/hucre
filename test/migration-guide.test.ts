@@ -118,29 +118,29 @@ describe("hasHeaderRow on toHtml and toMarkdown", () => {
 describe("streamCsvRows matches parseCsv", () => {
   const source = "a,b\n1,2"
 
-  it("yields the header row under header: true, as parseCsv does", async () => {
-    expect(await valuesOf(streamCsvRows(source, { header: true }))).toEqual([
+  it("yields the header row under hasHeaderRow: true, as parseCsv does", async () => {
+    expect(await valuesOf(streamCsvRows(source, { hasHeaderRow: true }))).toEqual([
       ["a", "b"],
       ["1", "2"],
     ])
-    expect(parseCsv(source, { header: true })).toEqual([
+    expect(parseCsv(source, { hasHeaderRow: true })).toEqual([
       ["a", "b"],
       ["1", "2"],
     ])
   })
 
   it("drops it only when asked, via skipHeaderRow — in both readers", async () => {
-    expect(await valuesOf(streamCsvRows(source, { header: true, skipHeaderRow: true }))).toEqual([
-      ["1", "2"],
-    ])
-    expect(parseCsv(source, { header: true, skipHeaderRow: true })).toEqual([["1", "2"]])
+    expect(
+      await valuesOf(streamCsvRows(source, { hasHeaderRow: true, skipHeaderRow: true })),
+    ).toEqual([["1", "2"]])
+    expect(parseCsv(source, { hasHeaderRow: true, skipHeaderRow: true })).toEqual([["1", "2"]])
   })
 
   it("actually runs onRow and transformValue, which used to be ignored", async () => {
     const seen: unknown[][] = []
     const rows = await valuesOf(
       streamCsvRows(source, {
-        header: true,
+        hasHeaderRow: true,
         skipHeaderRow: true,
         onRow: (row) => seen.push(row),
         transformValue: (value) => (typeof value === "string" ? value.toUpperCase() : value),
@@ -369,7 +369,9 @@ describe("dates come back from JSON", () => {
 
   it("is off by default in both readers", () => {
     expect(parseJson(writeJson([{ at }])).data[0]!.at).toBe(at.toISOString())
-    expect(parseCsv(`at\n${at.toISOString()}`, { header: true })[1]![0]).toBe(at.toISOString())
+    expect(parseCsv(`at\n${at.toISOString()}`, { hasHeaderRow: true })[1]![0]).toBe(
+      at.toISOString(),
+    )
   })
 
   it("revives the Date under typeInference: true", () => {
@@ -378,9 +380,9 @@ describe("dates come back from JSON", () => {
 
   it("accepts the same instants everywhere the option exists", async () => {
     for (const raw of ["2024-01-15", "2024-01-15T10:30:00Z", "2024-13-45", "3/4/2021", "2024"]) {
-      const viaCsv = parseCsv(`v\n"${raw}"`, { typeInference: true, header: true })[1]![0]
+      const viaCsv = parseCsv(`v\n"${raw}"`, { typeInference: true, hasHeaderRow: true })[1]![0]
       const viaStream = (
-        await valuesOf(streamCsvRows(`v\n"${raw}"`, { typeInference: true, header: true }))
+        await valuesOf(streamCsvRows(`v\n"${raw}"`, { typeInference: true, hasHeaderRow: true }))
       )[1]![0]
       const viaJson = parseJson(`[{"v":${JSON.stringify(raw)}}]`, { typeInference: true }).data[0]!
         .v
@@ -434,7 +436,7 @@ describe("removed API that never did anything", () => {
     // would itself be the error. The row of data proves what the option
     // never did — parseCsv returned it unvalidated.
     const options: CsvReadOptions = {
-      header: true,
+      hasHeaderRow: true,
       // @ts-expect-error — removed in v1; no CSV reader ever validated with it
       schema: { a: { type: "number", required: true } },
     }

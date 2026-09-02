@@ -1376,8 +1376,8 @@ describe("ODS writer — columns + data", () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("readOdsObjects / writeOdsObjects", () => {
-  it("writes only the data rows when writeHeaders is false", async () => {
-    const data = await writeOdsObjects([{ a: 1, b: 2 }], { writeHeaders: false })
+  it("writes only the data rows when writeHeader is false", async () => {
+    const data = await writeOdsObjects([{ a: 1, b: 2 }], { writeHeader: false })
     const wb = await readOds(data as Uint8Array)
     expect(wb.sheets[0]!.rows).toEqual([[1, 2]])
   })

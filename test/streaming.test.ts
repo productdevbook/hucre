@@ -940,9 +940,9 @@ describe("streamCsvRows", () => {
 
   it("header row handling", async () => {
     const csv = "name,age\nAlice,30\nBob,25"
-    const rows = await collectCsvRows(streamCsvRows(csv, { header: true }))
+    const rows = await collectCsvRows(streamCsvRows(csv, { hasHeaderRow: true }))
 
-    // `header: true` marks the header row without consuming it, matching
+    // `hasHeaderRow: true` marks the header row without consuming it, matching
     // parseCsv — see #353. Use skipHeaderRow to drop it.
     expect(rows).toHaveLength(3)
     expect(rows[0]).toEqual(["name", "age"])
@@ -952,7 +952,9 @@ describe("streamCsvRows", () => {
 
   it("skipHeaderRow consumes the header row", async () => {
     const csv = "name,age\nAlice,30\nBob,25"
-    const rows = await collectCsvRows(streamCsvRows(csv, { header: true, skipHeaderRow: true }))
+    const rows = await collectCsvRows(
+      streamCsvRows(csv, { hasHeaderRow: true, skipHeaderRow: true }),
+    )
 
     expect(rows).toHaveLength(2)
     expect(rows[0]).toEqual(["Alice", "30"])
