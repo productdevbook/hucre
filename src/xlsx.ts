@@ -78,6 +78,8 @@ export type {
   MergeRange,
   ReadInput,
   ReadOptions,
+  XlsxReadOptions,
+  XlsbReadOptions,
   ReadWarning,
   Sheet,
   SheetChart,

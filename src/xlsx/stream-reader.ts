@@ -3,7 +3,7 @@
 // Parses shared strings and styles upfront (small), then streams
 // worksheet rows without buffering the entire sheet in memory.
 
-import type { CellValue, ReadOptions, StreamRow } from "../_types"
+import type { CellValue, XlsxReadOptions, StreamRow } from "../_types"
 import type { SharedString } from "./shared-strings"
 import type { ParsedStyles } from "./styles"
 import type { Relationship } from "./relationships"
@@ -96,7 +96,7 @@ interface SheetInfo {
 
 function parseWorkbookXml(
   xml: string,
-  options?: ReadOptions,
+  options?: XlsxReadOptions,
 ): { sheets: SheetInfo[]; dateSystem: "1900" | "1904" } {
   const doc = parseXml(xml)
   const sheets: SheetInfo[] = []
@@ -613,7 +613,7 @@ function resolveStreamCellValue(
  * central directory, then the worksheet entry is stream-decompressed
  * and piped through the SAX parser in chunks.
  *
- * Honored {@link ReadOptions} fields:
+ * Honored {@link XlsxReadOptions} fields:
  * - `sheet` — target sheet (number index or name). Default: first sheet.
  * - `dateSystem` — `"1900"` / `"1904"` / `"auto"`. Default: auto-detect.
  * - `range` — A1-style range filter (e.g. `"B2:D10"`). Rows outside the
@@ -654,7 +654,7 @@ function shouldCollectEntry(name: string): boolean {
  */
 function resolveFromParts(
   parts: Map<string, Uint8Array>,
-  options?: ReadOptions & { sheet?: number | string },
+  options?: XlsxReadOptions & { sheet?: number | string },
 ): ResolvedMeta | null {
   const ct = parts.get("[Content_Types].xml")
   const rootRelsBytes = parts.get("_rels/.rels")
@@ -733,7 +733,7 @@ type PrepareResult =
  */
 async function prepareStreaming(
   input: ReadableStream<Uint8Array>,
-  options?: ReadOptions & { sheet?: number | string },
+  options?: XlsxReadOptions & { sheet?: number | string },
 ): Promise<PrepareResult> {
   const zr = new ZipStreamReader(input)
   const parts = new Map<string, Uint8Array>()
@@ -780,7 +780,7 @@ async function prepareStreaming(
 
 export async function* streamXlsxRows(
   input: Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>,
-  options?: ReadOptions & { sheet?: number | string },
+  options?: XlsxReadOptions & { sheet?: number | string },
 ): AsyncGenerator<StreamRow, void, undefined> {
   // Normalize input to Uint8Array for ZIP central directory parsing.
   let data: Uint8Array
@@ -929,7 +929,7 @@ export async function* streamXlsxRows(
     throw new ParseError(`Invalid XLSX: missing worksheet file for sheet "${targetSheet.name}"`)
   }
 
-  // 10. Build optional row/cell filters from ReadOptions.
+  // 10. Build optional row/cell filters from XlsxReadOptions.
   // `range` and `maxRows` mirror the batch-reader semantics: range filters
   // both rows (skip outside) and cells (mask outside columns), maxRows
   // caps the number of yielded rows. Both stop pulling from the worksheet

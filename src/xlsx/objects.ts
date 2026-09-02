@@ -1,7 +1,7 @@
 // ── XLSX Object Shorthand ──────────────────────────────────────────────
 // Header-row-based read/write helpers that mirror parseCsvObjects ergonomics.
 
-import type { CellValue, ReadInput, ReadOptions, WriteOutput } from "../_types"
+import type { CellValue, ReadInput, XlsxReadOptions, WriteOutput } from "../_types"
 import { collectHeaders, rowsToObjects, selectSheet } from "../_objects"
 import { readXlsx } from "./reader"
 import { writeXlsx } from "./writer"
@@ -9,7 +9,7 @@ import { writeXlsx } from "./writer"
 /**
  * Options for {@link readXlsxObjects}.
  */
-export interface XlsxObjectsReadOptions extends Omit<ReadOptions, "sheets"> {
+export interface XlsxObjectsReadOptions extends Omit<XlsxReadOptions, "sheets"> {
   /** Sheet to read from. Index (0-based) or sheet name. Default: 0. */
   sheet?: number | string
   /** 0-based row index to use as headers. Default: 0. */

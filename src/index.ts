@@ -364,6 +364,13 @@ export type {
   WorkbookProperties,
   // Read
   ReadOptions,
+  ReadOptionsBase,
+  ZipReadOptions,
+  EncryptedReadOptions,
+  XlsxReadOptions,
+  OdsReadOptions,
+  XlsbReadOptions,
+  XlsReadOptions,
   ReadInput,
   SheetFilter,
   SheetFilterInfo,

@@ -39,7 +39,7 @@ describe("reading an interface's own fields", () => {
   it("does not collect a commented-out field", () => {
     // Comments are stripped before matching, so a field someone parked
     // behind `//` is not counted as shipped.
-    expect(ownFieldsOf("ReadOptions")).not.toContain("headerRow")
+    expect(ownFieldsOf("WriteSheet")).not.toContain("threadedComments")
   })
 })
 

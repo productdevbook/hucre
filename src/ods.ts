@@ -28,7 +28,7 @@ export type {
   ColumnDef,
   MergeRange,
   ReadInput,
-  ReadOptions,
+  OdsReadOptions,
   Sheet,
   Workbook,
   WorkbookProperties,

@@ -175,6 +175,15 @@ describe("XLSB reader", () => {
     expect(rows[2][2]).toBe("#DIV/0!")
   })
 
+  it("honours maxTotalCells — the one reader that used to have no ceiling", async () => {
+    // 3 rows × 4 columns is 12 slots; a cap under that is refused before
+    // the grid is allocated, as readXlsx / readOds / readXls already did.
+    await expect(readXlsb(await buildXlsb(), { maxTotalCells: 4 })).rejects.toThrow(ParseError)
+    await expect(readXlsb(await buildXlsb(), { maxTotalCells: 4 })).rejects.toThrow(/maxTotalCells/)
+    const wb = await readXlsb(await buildXlsb(), { maxTotalCells: 12 })
+    expect(wb.sheets[0].rows).toHaveLength(3)
+  })
+
   it("reads merged ranges from BrtMergeCell", async () => {
     // XLS has read merges since it landed; XLSB ignored record 176
     // entirely, so a converted workbook lost its merge layout. See #411.

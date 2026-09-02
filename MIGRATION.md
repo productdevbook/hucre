@@ -33,6 +33,21 @@ The raw-XML part parsers moved to `hucre/ooxml` in v1 and were kept on the root 
 + import { parseChart } from "hucre/ooxml"
 ```
 
+## Read options are per reader
+
+`ReadOptions` was one interface for four readers, with a table in its doc comment saying which reader ignored what. `readXls(bytes, { password })` compiled and did nothing.
+
+Each reader now has its own type — `XlsxReadOptions`, `OdsReadOptions`, `XlsbReadOptions`, `XlsReadOptions`, all extending `ReadOptionsBase` — carrying only the fields it reads. An option the reader does not honour is a compile error:
+
+```diff
+- await readXls(bytes, { password: "x" })     // compiled, did nothing
++ await readXls(bytes)                        // .xls has no Agile encryption
+```
+
+`ReadOptions` still exists as the type `read()` takes — it cannot know the format before looking at the bytes — and is an alias of `XlsxReadOptions`, the widest. Code annotating a bag as `ReadOptions` and passing it to `readXlsx` or `read()` is unaffected. `ReadObjectsOptions` extends it as before.
+
+**Behaviour:** `readXlsb` now honours `maxTotalCells`. It was the one reader with no bounding-box ceiling; a hostile `.xlsb` could allocate a dense grid the size of its two furthest cells.
+
 ---
 
 # Migrating to v1

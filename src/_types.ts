@@ -1504,27 +1504,72 @@ export interface SheetFilterInfo {
 export type SheetFilter = (info: SheetFilterInfo, index: number) => boolean
 
 /**
- * Options accepted by every reader.
+ * The options every reader honours.
  *
- * Support is not uniform, and the type cannot express that — so it is
- * stated here rather than left for a caller to discover:
- *
- * | option       | xlsx | ods | xlsb | xls |
- * | ------------ | ---- | --- | ---- | --- |
- * | `sheets`     | yes  | yes | no   | no  |
- * | `dateSystem` | yes  | no  | yes  | yes |
- * | `readStyles` | yes  | yes | no   | no  |
- * | `password`   | yes  | no  | yes  | no  |
- * | `maxRows`    | yes  | no  | no   | no  |
- * | `range`      | yes  | no  | no   | no  |
- *
- * `maxInputBytes` applies wherever the input is a `ReadableStream`.
- *
- * `headerRow` and `schema` used to live here and were honoured by no
- * reader at all; they were removed before v1 rather than frozen. Header
- * selection belongs on the `*Objects` readers, which do implement it.
+ * Each reader takes its own extension of this — {@link XlsxReadOptions},
+ * {@link OdsReadOptions}, {@link XlsbReadOptions}, {@link XlsReadOptions}
+ * — carrying exactly the fields it reads. v1 had one `ReadOptions` for
+ * all four and a table in its doc comment saying which reader ignored
+ * what; `readXls(bytes, { password })` compiled and did nothing. The type
+ * is the table now.
  */
-export interface ReadOptions {
+export interface ReadOptionsBase {
+  /**
+   * Maximum number of bytes buffered from a `ReadableStream` input.
+   * Default: 1 GiB ({@link MAX_INPUT_BYTES}). A stream that exceeds it
+   * fails with a `ParseError` instead of growing until the process runs
+   * out of memory. Ignored for `Uint8Array` / `ArrayBuffer` input, which
+   * the caller has already allocated.
+   */
+  maxInputBytes?: number
+  /**
+   * Maximum number of cells a single sheet may be normalized into —
+   * `rows` is a dense rectangle, so this bounds the bounding box rather
+   * than the cell count. Default: 20,000,000 ({@link MAX_TOTAL_CELLS}).
+   *
+   * The default refuses two legal cells at `A1` and `XFD1048576`, which
+   * describe 1.7e10 slots from a few hundred bytes of XML. It also
+   * refuses a legitimate 25-million-cell sheet, which is why this is a
+   * number rather than a ceiling: raise it when you know the file, and
+   * budget roughly 8 bytes per slot for the array alone.
+   *
+   */
+  maxTotalCells?: number
+}
+
+/** Options of readers whose container is a ZIP archive. */
+export interface ZipReadOptions {
+  /**
+   * Maximum number of bytes any single ZIP entry may decompress to.
+   * Default: 2 GiB ({@link MAX_DECOMPRESSED_BYTES}).
+   *
+   * This is the zip-bomb bound — an entry that claims a small compressed
+   * size and expands past it fails with a `ZipError` rather than being
+   * allowed to allocate. Raising it is the one on this list where a
+   * caller should be sure the input is trusted.
+   *
+   * Honoured wherever the container is a ZIP: `readXlsx`, `readOds`.
+   */
+  maxDecompressedBytes?: number
+}
+
+/** Options of readers that can open an ECMA-376 Agile-encrypted package. */
+export interface EncryptedReadOptions {
+  /** Password for encrypted files */
+  password?: string
+  /**
+   * Maximum password-derivation spin count accepted from an encrypted
+   * workbook. Default: 10,000,000 ({@link MAX_SPIN_COUNT}).
+   *
+   * Office writes 100,000. The bound exists so a hostile file cannot
+   * name a count that pins a CPU for minutes; raising it means agreeing
+   * to spend that time.
+   */
+  maxSpinCount?: number
+}
+
+/** Options `readXlsx` (and `openXlsx`) honour. */
+export interface XlsxReadOptions extends ReadOptionsBase, ZipReadOptions, EncryptedReadOptions {
   /**
    * Which sheets to read.
    * - `Array<number | string>` — explicit indexes and/or names.
@@ -1536,7 +1581,10 @@ export interface ReadOptions {
    * Default: all sheets.
    */
   sheets?: Array<number | string> | SheetFilter
-  /** Date system override. Default: auto-detect from file */
+  /**
+   * Date system override. Default: `"auto"`, which takes the file's own
+   * `date1904` flag.
+   */
   dateSystem?: "1900" | "1904" | "auto"
   /**
    * Whether to read styles. Default: false (faster without).
@@ -1550,20 +1598,10 @@ export interface ReadOptions {
    * both. Use `cloneCellStyle` before editing a single cell's format.
    */
   readStyles?: boolean
-  /** Password for encrypted files */
-  password?: string
   /** Maximum number of data rows to read per sheet. Default: unlimited */
   maxRows?: number
   /** Cell range to read (e.g. "A1:D10"). Only cells within this range are returned. */
   range?: string
-  /**
-   * Maximum number of bytes buffered from a `ReadableStream` input.
-   * Default: 1 GiB ({@link MAX_INPUT_BYTES}). A stream that exceeds it
-   * fails with a `ParseError` instead of growing until the process runs
-   * out of memory. Ignored for `Uint8Array` / `ArrayBuffer` input, which
-   * the caller has already allocated.
-   */
-  maxInputBytes?: number
   /**
    * Return cells without materializing the grid. Default: false.
    *
@@ -1589,41 +1627,6 @@ export interface ReadOptions {
    */
   sparse?: boolean
   /**
-   * Maximum number of cells a single sheet may be normalized into —
-   * `rows` is a dense rectangle, so this bounds the bounding box rather
-   * than the cell count. Default: 20,000,000 ({@link MAX_TOTAL_CELLS}).
-   *
-   * The default refuses two legal cells at `A1` and `XFD1048576`, which
-   * describe 1.7e10 slots from a few hundred bytes of XML. It also
-   * refuses a legitimate 25-million-cell sheet, which is why this is a
-   * number rather than a ceiling: raise it when you know the file, and
-   * budget roughly 8 bytes per slot for the array alone.
-   *
-   * Honoured by `readXlsx`, `readOds` and `readXls`.
-   */
-  maxTotalCells?: number
-  /**
-   * Maximum number of bytes any single ZIP entry may decompress to.
-   * Default: 2 GiB ({@link MAX_DECOMPRESSED_BYTES}).
-   *
-   * This is the zip-bomb bound — an entry that claims a small compressed
-   * size and expands past it fails with a `ZipError` rather than being
-   * allowed to allocate. Raising it is the one on this list where a
-   * caller should be sure the input is trusted.
-   *
-   * Honoured wherever the container is a ZIP: `readXlsx`, `readOds`.
-   */
-  maxDecompressedBytes?: number
-  /**
-   * Maximum password-derivation spin count accepted from an encrypted
-   * workbook. Default: 10,000,000 ({@link MAX_SPIN_COUNT}).
-   *
-   * Office writes 100,000. The bound exists so a hostile file cannot
-   * name a count that pins a CPU for minutes; raising it means agreeing
-   * to spend that time.
-   */
-  maxSpinCount?: number
-  /**
    * Called for each thing a reader had to drop.
    *
    * The readers are lenient on purpose — a corrupt reference yields
@@ -1645,6 +1648,69 @@ export interface ReadOptions {
    */
   onWarning?: (warning: ReadWarning) => void
 }
+
+/**
+ * Options `readOds` honours. ODS stores ISO date strings, so there is no
+ * 1900/1904 system to pick; ODS encryption is not implemented (#156).
+ */
+export interface OdsReadOptions extends ReadOptionsBase, ZipReadOptions {
+  /**
+   * Which sheets to read.
+   * - `Array<number | string>` — explicit indexes and/or names.
+   * - `(info, index) => boolean` — predicate evaluated against
+   *   {@link SheetFilterInfo} before each worksheet body is parsed.
+   *   Useful for selecting by visibility, e.g.
+   *   `sheets: (info) => !info.hidden && !info.veryHidden`.
+   *
+   * Default: all sheets.
+   */
+  sheets?: Array<number | string> | SheetFilter
+  /**
+   * Whether to read styles. Default: false (faster without).
+   *
+   * **A resolved style's parts are shared, not copied.** `xl/styles.xml`
+   * holds one font, fill and border record per distinct format, and every
+   * cell that indexes it gets that same object — copying per cell nearly
+   * doubles peak memory on a styled read for a guarantee most callers
+   * never need. So `cells.get(a).style.font === cells.get(b).style.font`
+   * whenever `a` and `b` share a format, and writing through one changes
+   * both. Use `cloneCellStyle` before editing a single cell's format.
+   */
+  readStyles?: boolean
+  /** Maximum number of data rows to read per sheet. Default: unlimited */
+  maxRows?: number
+  /** Cell range to read (e.g. "A1:D10"). Only cells within this range are returned. */
+  range?: string
+}
+
+/**
+ * Options `readXlsb` honours. The binary reader surfaces values, sheet
+ * names and merges only, so there are no styles to ask for and no
+ * per-sheet selection.
+ */
+export interface XlsbReadOptions extends ReadOptionsBase, ZipReadOptions, EncryptedReadOptions {
+  /**
+   * Date system override. Default: `"auto"`, which takes the file's own
+   * `date1904` flag.
+   */
+  dateSystem?: "1900" | "1904" | "auto"
+}
+
+/** Options `readXls` honours. A `.xls` is a CFB container, not a ZIP. */
+export interface XlsReadOptions extends ReadOptionsBase {
+  /**
+   * Date system override. Default: `"auto"`, which takes the file's own
+   * `date1904` flag.
+   */
+  dateSystem?: "1900" | "1904" | "auto"
+}
+
+/**
+ * What `read()` accepts: it does not know the format before it looks at
+ * the bytes, so it takes the widest reader's options and hands the
+ * detected reader the fields it understands.
+ */
+export type ReadOptions = XlsxReadOptions
 
 // ── Write Options ──────────────────────────────────────────────────
 

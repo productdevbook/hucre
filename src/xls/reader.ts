@@ -4,7 +4,7 @@
 // (shared with encryption) and decodes the records into the standard
 // Workbook model. Read-only (MS-XLS).
 
-import type { CellValue, MergeRange, ReadOptions, Sheet, Workbook } from "../_types"
+import type { CellValue, MergeRange, XlsReadOptions, Sheet, Workbook } from "../_types"
 import { ParseError } from "../errors"
 import { MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
 import { readInputToUint8Array } from "../_input"
@@ -30,7 +30,7 @@ export function looksLikeXls(streams: Map<string, Uint8Array>): boolean {
 /** Read a BIFF8 .xls workbook into the standard {@link Workbook} model. */
 export async function readXls(
   input: Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>,
-  options?: ReadOptions,
+  options?: XlsReadOptions,
 ): Promise<Workbook> {
   const data = await readInputToUint8Array(input, options?.maxInputBytes)
   let streams: Map<string, Uint8Array>
@@ -57,7 +57,7 @@ export async function readXls(
   }
 }
 
-function parseWorkbookRecords(stream: Uint8Array, options?: ReadOptions): Workbook {
+function parseWorkbookRecords(stream: Uint8Array, options?: XlsReadOptions): Workbook {
   const records = parseRecords(stream)
 
   // ── BIFF version gate ──

@@ -31,7 +31,9 @@
     "test/indexed-color-palette.test.ts",
     "test/ods-column-default-style.test.ts",
     "test/write-model.test.ts",
-    "test/builder-coverage.test.ts"
+    "test/builder-coverage.test.ts",
+    "test/read-options-per-reader.test.ts",
+    "test/reflect.test.ts"
   ],
   "exclude": []
 }

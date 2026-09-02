@@ -3,7 +3,7 @@
 // images, macros, shapes, or other features that hucre doesn't natively
 // understand.
 
-import type { Sheet, Workbook, ReadOptions, WriteSheet, Chart, SheetChart } from "../_types"
+import type { Sheet, Workbook, XlsxReadOptions, WriteSheet, Chart, SheetChart } from "../_types"
 import { readXlsx } from "./reader"
 import { ZipReader } from "../zip/reader"
 import { ZipWriter } from "../zip/writer"
@@ -163,7 +163,7 @@ const REGENERATED_SHEET_PREFIXES = [
  */
 export async function openXlsx(
   input: Uint8Array | ArrayBuffer,
-  options?: ReadOptions,
+  options?: XlsxReadOptions,
 ): Promise<RoundtripWorkbook> {
   let data = input instanceof Uint8Array ? input : new Uint8Array(input)
 

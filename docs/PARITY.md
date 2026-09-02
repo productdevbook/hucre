@@ -665,33 +665,29 @@ _wrong_.
 
 ## Read options, per reader
 
-`ReadOptions` is one interface for `readXlsx`, `readOds`, `readXlsb`,
-`readXls` and `read`. Not every option means something to every format:
+Each reader has its own options type, and the type is the statement of
+what it honours: `XlsxReadOptions`, `OdsReadOptions`, `XlsbReadOptions`,
+`XlsReadOptions`, all extending `ReadOptionsBase` (`maxInputBytes`,
+`maxTotalCells`). `read()` takes `ReadOptions`, the widest of them, because
+it does not know the format until it has looked at the bytes.
 
-| option                 | `readXlsx` | `readOds` | `readXlsb` | `readXls` |
-| ---------------------- | :--------: | :-------: | :--------: | :-------: |
-| `maxInputBytes`        |    yes     |    yes    |    yes     |    yes    |
-| `maxTotalCells`        |    yes     |    yes    |     —      |    yes    |
-| `maxDecompressedBytes` |    yes     |    yes    |    yes     |    n/a    |
-| `maxSpinCount`         |    yes     |    n/a    |    yes     |    n/a    |
-| `sheets`               |    yes     |    yes    |     —      |     —     |
-| `readStyles`           |    yes     |    yes    |    n/a     |    n/a    |
-| `dateSystem`           |    yes     |    n/a    |    yes     |    yes    |
-| `password`             |    yes     |     —     |    yes     |     —     |
-| `maxRows`              |    yes     |    yes    |     —      |     —     |
-| `range`                |    yes     |    yes    |     —      |     —     |
+Passing a reader an option it does not honour is a compile error rather
+than a silent no-op — `readXls(bytes, { password })` used to type-check
+and do nothing. `test/read-options-per-reader.test.ts` reads each
+reader's source and fails if a declared field is never looked at, so the
+type cannot drift from the behaviour.
 
-`n/a` means the option cannot apply: ODS stores ISO date strings, so
-there is no 1900/1904 system to pick, neither legacy reader surfaces
-styles at all, `.xls` is a CFB container rather than a ZIP, and ODS
-encryption is not implemented (#156). A `—` is a gap, not a decision.
+What is absent is absent for a reason: ODS stores ISO date strings, so
+there is no 1900/1904 system to pick; neither legacy reader surfaces
+styles at all; `.xls` is a CFB container rather than a ZIP; ODS encryption
+is not implemented (#156); and the two binary readers read every sheet,
+so there is no `sheets`, `maxRows` or `range`.
 
 ### Resource limits
 
 The bounds in `src/limits.ts` are exported from the root, so a caller can
 quote `MAX_TOTAL_CELLS` in their own message instead of hard-coding
-20,000,000. Three of them are also `ReadOptions` fields, per the table
-above; the defaults do not change.
+20,000,000. Three of them are also read-option fields; the defaults do not change.
 
 Two are still constants only, because both clamp rather than throw — a
 file over the bound is read with the excess trimmed, not rejected, so
