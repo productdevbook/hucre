@@ -9,6 +9,7 @@
 // slightly wider (~1.05x). CJK characters count as 2 units.
 // ─────────────────────────────────────────────────────────────────────
 
+import { isCellError } from "../cell-error"
 import type { CellValue, FontStyle } from "../_types"
 import { formatDate } from "../_date"
 
@@ -255,6 +256,8 @@ export function measureValueWidth(value: CellValue, numFmt?: string): number {
     const str = String(value)
     return measureLineWidth(str)
   }
+
+  if (isCellError(value)) return measureLineWidth(value.error)
 
   if (value instanceof Date) {
     if (numFmt) {

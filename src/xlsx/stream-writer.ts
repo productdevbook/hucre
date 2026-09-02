@@ -11,6 +11,8 @@
 //   source on demand and the ZIP is emitted chunk by chunk, so peak
 //   memory is O(distinct styles), independent of row count.
 
+import { isInlineCell } from "../_inline-cells"
+import { isCellError } from "../cell-error"
 import type {
   CellValue,
   CellStyle,
@@ -19,6 +21,8 @@ import type {
   MergeRange,
   RowDef,
   SpreadsheetStreamWriter,
+  CellInput,
+  Cell,
 } from "../_types"
 import { toRanges } from "../cell-utils"
 import { ZipWriter } from "../zip/writer"
@@ -47,7 +51,7 @@ const NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationship
 
 // ── Types ────────────────────────────────────────────────────────────
 
-export interface StreamWriterOptions {
+export interface XlsxStreamWriterOptions {
   /** Sheet name */
   name: string
   /** Column definitions */
@@ -88,16 +92,7 @@ export interface StreamWriterOptions {
   merges?: Array<MergeRange | string>
 }
 
-/**
- * Constructor options for {@link XlsxStreamWriter}.
- *
- * Alias of {@link StreamWriterOptions}, which occupies a generic name for
- * an XLSX-only type (#365 item 8). Prefer this one — every stream writer
- * in the library names its options `<Writer>Options`.
- */
-export type XlsxStreamWriterOptions = StreamWriterOptions
-
-export interface XlsxWriteStreamOptions extends StreamWriterOptions {
+export interface XlsxWriteStreamOptions extends XlsxStreamWriterOptions {
   /**
    * Write strings as inline `<is><t>` cells instead of routing them
    * through `xl/sharedStrings.xml`. Default `true`.
@@ -107,7 +102,7 @@ export interface XlsxWriteStreamOptions extends StreamWriterOptions {
    * undoes the constant-memory guarantee. Set to `false` when the data is
    * highly repetitive and a smaller file matters more than peak memory.
    */
-  inlineStrings?: boolean
+  stringMode?: "shared" | "inline"
   /** DEFLATE the parts. Default `true`. */
   compress?: boolean
   /**
@@ -122,21 +117,8 @@ export interface XlsxWriteStreamOptions extends StreamWriterOptions {
   zip64?: boolean
 }
 
-/**
- * A cell that carries its own formatting inside a streamed row.
- *
- * Without it a streamed sheet can only be styled a whole column at a time,
- * which cannot express a title, a subtotal or a header band — the parts of a
- * report that differ from the data rows below them.
- */
-export interface StreamStyledCell {
-  value?: CellValue
-  style?: CellStyle
-  formula?: string
-}
-
 /** A streamed row: positional values, or an object read through `columns[].key`. */
-export type XlsxStreamRow = Array<CellValue | StreamStyledCell> | Record<string, unknown>
+export type XlsxStreamRow = CellInput[] | Record<string, unknown>
 
 function serializeMergeCells(input: Array<MergeRange | string>): string {
   // A merge may be given as an A1 string; the file only knows coordinates.
@@ -157,19 +139,8 @@ function serializeMergeCells(input: Array<MergeRange | string>): string {
  * cell, so a caller reusing one wrapper for later rows would see the header
  * repeated on rolled-over sheets carrying the mutated value.
  */
-function snapshotRow(
-  values: Array<CellValue | StreamStyledCell>,
-): Array<CellValue | StreamStyledCell> {
-  return values.map((value) => (isStreamStyledCell(value) ? { ...value } : value))
-}
-
-function isStreamStyledCell(value: CellValue | StreamStyledCell): value is StreamStyledCell {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    !(value instanceof Date) &&
-    ("value" in value || "style" in value || "formula" in value)
-  )
+function snapshotRow(values: CellInput[]): CellInput[] {
+  return values.map((value) => (isInlineCell(value) ? { ...value } : value))
 }
 
 /**
@@ -191,9 +162,9 @@ export interface XlsxStreamSheet {
   columns?: ColumnDef[]
   /** Freeze pane for this sheet. */
   freezePane?: FreezePane
-  /** Row-level properties for this sheet; see {@link StreamWriterOptions.rowDefs}. */
+  /** Row-level properties for this sheet; see {@link XlsxStreamWriterOptions.rowDefs}. */
   rowDefs?: Map<number, RowDef>
-  /** Merged ranges for this sheet; see {@link StreamWriterOptions.merges}. */
+  /** Merged ranges for this sheet; see {@link XlsxStreamWriterOptions.merges}. */
   merges?: Array<MergeRange | string>
   /** Overrides the workbook-level rollover cap for this sheet alone. */
   maxRowsPerSheet?: number
@@ -219,8 +190,8 @@ export interface XlsxWriteStreamWorkbookOptions {
   maxRowsPerSheet?: number
   /** Default header repetition; see {@link XlsxWriteStreamOptions.repeatHeaders}. */
   repeatHeaders?: boolean
-  /** See {@link XlsxWriteStreamOptions.inlineStrings}. */
-  inlineStrings?: boolean
+  /** See {@link XlsxWriteStreamOptions.stringMode}. */
+  stringMode?: "shared" | "inline"
   /** DEFLATE the parts. Default `true`. */
   compress?: boolean
   /** See {@link XlsxWriteStreamOptions.zip64}. */
@@ -271,17 +242,13 @@ class RowSerializer {
   }
 
   /** Serialize one row. Returns `null` when every cell was empty. */
-  serializeRow(
-    rowIndex: number,
-    values: Array<CellValue | StreamStyledCell>,
-    rowDef?: RowDef,
-  ): string | null {
+  serializeRow(rowIndex: number, values: CellInput[], rowDef?: RowDef): string | null {
     const cellElements: string[] = []
 
     for (let c = 0; c < values.length; c++) {
       const colDef = this.columns?.[c]
       const raw = values[c]
-      const styled = isStreamStyledCell(raw)
+      const styled = isInlineCell(raw)
       const value = styled ? (raw.value ?? null) : (raw as CellValue)
       let style: CellStyle | undefined = (styled && raw.style) || colDef?.style
 
@@ -523,7 +490,7 @@ export class XlsxStreamWriter implements SpreadsheetStreamWriter {
   private rowCount = 0
   private maxCols = 0
   /** Captured for `repeatHeaders`. Set when the first row is written. */
-  private headerRowValues: Array<CellValue | StreamStyledCell> | null = null
+  private headerRowValues: CellInput[] | null = null
 
   constructor(options: XlsxStreamWriterOptions) {
     this.sheetName = options.name
@@ -554,7 +521,7 @@ export class XlsxStreamWriter implements SpreadsheetStreamWriter {
   }
 
   /** Add a row of values, each optionally carrying its own style or formula. */
-  addRow(values: Array<CellValue | StreamStyledCell>): void {
+  addRow(values: CellInput[]): void {
     // Capture the very first row as a fallback header for repeatHeaders, in
     // case the caller didn't supply column definitions but does want their
     // first row repeated when sheets roll over.
@@ -601,11 +568,7 @@ export class XlsxStreamWriter implements SpreadsheetStreamWriter {
     }
   }
 
-  private emit(
-    rowIndex: number,
-    values: Array<CellValue | StreamStyledCell>,
-    globalRow: number,
-  ): void {
+  private emit(rowIndex: number, values: CellInput[], globalRow: number): void {
     const xml = this.serializer.serializeRow(rowIndex, values, this.rowDefs?.get(globalRow))
     if (xml) {
       this.sheetFragments[this.sheetFragments.length - 1]!.push(xml)
@@ -615,7 +578,8 @@ export class XlsxStreamWriter implements SpreadsheetStreamWriter {
   /** Add a row from an object, using column definitions for value extraction.
    *  Requires columns with key accessors. */
   addObject(item: Record<string, unknown>): void {
-    if (!this.columns) throw new Error("addObject requires columns with key accessors")
+    if (!this.columns)
+      throw new InvalidArgumentError("addObject requires columns with key accessors")
     this.addRow(objectToValues(item, this.columns))
   }
 
@@ -689,34 +653,6 @@ export class XlsxStreamWriter implements SpreadsheetStreamWriter {
 
     return zip.build()
   }
-
-  /**
-   * Emit the finished workbook as a `ReadableStream<Uint8Array>`.
-   *
-   * **This is not a constant-memory stream.** Every serialized row is
-   * still buffered; {@link finish} runs first and the whole archive is
-   * enqueued as one chunk. It exists so a writer can be handed to a
-   * `Response` body or a file sink without a manual buffer step — not to
-   * bound memory. For output whose peak memory is independent of the row
-   * count, use {@link writeXlsxStream}, which pulls rows from an iterable
-   * and emits the ZIP chunk by chunk.
-   *
-   * `finish()` runs when the stream is first read, so rows added between
-   * `toStream()` and the first pull are still included, and the stream
-   * closes right after — no separate `finish()` call is needed (though
-   * one is harmless: `finish()` is idempotent here).
-   */
-  toStream(): ReadableStream<Uint8Array> {
-    const finish = (): Promise<Uint8Array> => this.finish()
-    return new ReadableStream<Uint8Array>({
-      async pull(controller) {
-        // A rejected `pull` errors the stream, so a failing `finish()`
-        // surfaces to the consumer rather than hanging it.
-        controller.enqueue(await finish())
-        controller.close()
-      },
-    })
-  }
 }
 
 // ── True Streaming Writer ───────────────────────────────────────────
@@ -740,7 +676,7 @@ export class XlsxStreamWriter implements SpreadsheetStreamWriter {
  * ```
  *
  * Notes:
- * - Strings are written inline by default; see {@link XlsxWriteStreamOptions.inlineStrings}.
+ * - Strings are written inline by default; see {@link XlsxWriteStreamOptions.stringMode}.
  * - Part sizes are unknown up front, so entries carry ZIP data
  *   descriptors. By default no ZIP64 records are emitted, which caps any
  *   single part — and the archive — at 4 GiB; see
@@ -817,7 +753,7 @@ async function* xlsxStreamEntries(
   options: XlsxWriteStreamWorkbookOptions,
 ): AsyncGenerator<ZipStreamEntry> {
   const dateSystem = options.dateSystem ?? "1900"
-  const inlineStrings = options.inlineStrings ?? true
+  const inlineStrings = options.stringMode !== "shared"
   const compress = options.compress ?? true
 
   // Workbook-wide parts: every sheet writes into the same two tables.
@@ -842,7 +778,7 @@ async function* xlsxStreamEntries(
     const prelude = buildSheetPrelude(sheet.columns, sheet.freezePane).join("")
     const cursor = createRowCursor(sheet.rows)
 
-    let headerRow: Array<CellValue | StreamStyledCell> | null = headerFromColumns(sheet.columns)
+    let headerRow: CellInput[] | null = headerFromColumns(sheet.columns)
     let sheetRowCount = 0
 
     /** Stream one worksheet, stopping at the row cap or when rows run out. */
@@ -1056,7 +992,7 @@ function createRowCursor(
 // ── Helpers ─────────────────────────────────────────────────────────
 
 function requireColumns(columns: ColumnDef[] | undefined): ColumnDef[] {
-  if (!columns) throw new Error("Object rows require columns with key accessors")
+  if (!columns) throw new InvalidArgumentError("Object rows require columns with key accessors")
   return columns
 }
 

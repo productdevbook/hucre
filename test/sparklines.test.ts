@@ -111,7 +111,7 @@ describe("Sparklines", () => {
         {
           location: "A1",
           dataRange: "Sheet1!B1:D1",
-          color: "FF0000",
+          color: { rgb: "FF0000" },
         },
       ],
     }
@@ -152,7 +152,7 @@ describe("Sparklines", () => {
       sparklines: [
         { location: "A1", dataRange: "Sheet1!B1:D1" },
         { location: "A2", dataRange: "Sheet1!B2:D2", type: "column" },
-        { location: "A3", dataRange: "Sheet1!B3:D3", color: "00FF00" },
+        { location: "A3", dataRange: "Sheet1!B3:D3", color: { rgb: "00FF00" } },
       ],
     }
 
@@ -173,7 +173,7 @@ describe("Sparklines", () => {
   it("should round-trip sparklines (write then read)", async () => {
     const sparklines: Sparkline[] = [
       { location: "A1", dataRange: "Sheet1!B1:D1" },
-      { location: "A2", dataRange: "Sheet1!B2:D2", type: "column", color: "FF0000" },
+      { location: "A2", dataRange: "Sheet1!B2:D2", type: "column", color: { rgb: "FF0000" } },
       { location: "A3", dataRange: "Sheet1!B3:D3", type: "stacked", markers: true },
     ]
 
@@ -205,7 +205,7 @@ describe("Sparklines", () => {
     expect(sp2.location).toBe("A2")
     expect(sp2.dataRange).toBe("Sheet1!B2:D2")
     expect(sp2.type).toBe("column")
-    expect(sp2.color).toBe("FF0000")
+    expect(sp2.color).toEqual({ rgb: "FF0000" })
 
     // Check third sparkline (stacked, markers)
     const sp3 = readSheet.sparklines![2]

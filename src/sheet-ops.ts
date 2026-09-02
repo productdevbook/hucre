@@ -1,6 +1,7 @@
 // ── Sheet Operations ────────────────────────────────────────────────
 // In-memory row/column manipulation utilities for Sheet objects.
 
+import { isCellError } from "./cell-error"
 import type { Sheet, MergeRange, RowDef, Workbook, Cell, CellValue } from "./_types"
 import { parseCellRef } from "./xlsx/worksheet"
 import { parseRange, toRange, type RangeLike } from "./cell-utils"
@@ -982,13 +983,13 @@ export function cloneSheet(sheet: Sheet, newName: string): Sheet {
       if (rule.colorScale) {
         clonedRule.colorScale = {
           cfvo: rule.colorScale.cfvo.map((c) => ({ ...c })),
-          colors: [...rule.colorScale.colors],
+          colors: rule.colorScale.colors.map((c) => ({ ...c })),
         }
       }
       if (rule.dataBar) {
         clonedRule.dataBar = {
           cfvo: rule.dataBar.cfvo.map((c) => ({ ...c })),
-          color: rule.dataBar.color,
+          color: { ...rule.dataBar.color },
         }
       }
       if (rule.iconSet) {
@@ -1233,9 +1234,20 @@ export function copyRange(
  * Reorder sheets in a workbook.
  */
 export function moveSheet(workbook: Workbook, fromIndex: number, toIndex: number): void {
+  // Out of range used to splice `undefined` into `sheets` without a word.
+  assertSheetIndex(workbook, fromIndex, "moveSheet")
+  assertSheetIndex(workbook, toIndex, "moveSheet")
   if (fromIndex === toIndex) return
   const [sheet] = workbook.sheets.splice(fromIndex, 1)
-  workbook.sheets.splice(toIndex, 0, sheet)
+  workbook.sheets.splice(toIndex, 0, sheet!)
+}
+
+function assertSheetIndex(workbook: Workbook, index: number, fn: string): void {
+  if (!Number.isInteger(index) || index < 0 || index >= workbook.sheets.length) {
+    throw new InvalidArgumentError(
+      `${fn}: sheet index ${index} is out of range (workbook has ${workbook.sheets.length} sheet(s))`,
+    )
+  }
 }
 
 // ── Remove Sheet ────────────────────────────────────────────────────
@@ -1244,6 +1256,7 @@ export function moveSheet(workbook: Workbook, fromIndex: number, toIndex: number
  * Remove a sheet from a workbook.
  */
 export function removeSheet(workbook: Workbook, index: number): void {
+  assertSheetIndex(workbook, index, "removeSheet")
   workbook.sheets.splice(index, 1)
   // Adjust activeSheet if needed
   if (workbook.activeSheet !== undefined) {
@@ -1291,7 +1304,7 @@ export function findCells(
         predicate.lastIndex = 0
         match = typeof value === "string" && predicate.test(value)
       } else {
-        match = value === predicate
+        match = valueEquals(value, predicate)
       }
       if (match) {
         results.push({ row: r, col: c, value })
@@ -1336,7 +1349,7 @@ export function replaceCells(sheet: Sheet, find: CellValue | RegExp, replace: Ce
         }
       } else {
         // Exact value matching
-        if (value === find) {
+        if (valueEquals(value, find)) {
           row[c] = replace
           syncCellOverride(sheet, r, c, replace)
           count++
@@ -1463,14 +1476,25 @@ function compareNonNull(a: CellValue, b: CellValue): number {
   if (typeof a === "string" && typeof b === "string") return a.localeCompare(b)
   if (typeof a === "boolean" && typeof b === "boolean") return (a ? 1 : 0) - (b ? 1 : 0)
   if (a instanceof Date && b instanceof Date) return a.getTime() - b.getTime()
+  if (isCellError(a) && isCellError(b)) return a.error.localeCompare(b.error)
   return 0
 }
 
+/** Excel's sort order: numbers, dates, text, booleans, errors, blanks. */
 function typeRank(v: CellValue): number {
-  if (v === null) return 4
+  if (v === null) return 5
   if (typeof v === "number") return 0
   if (v instanceof Date) return 1
   if (typeof v === "string") return 2
   if (typeof v === "boolean") return 3
   return 4
+}
+
+/**
+ * `===` with one exception: two errors are equal when their tokens are,
+ * so `findCells(sheet, cellError("#N/A"))` finds them.
+ */
+function valueEquals(a: CellValue, b: CellValue): boolean {
+  if (isCellError(a) && isCellError(b)) return a.error === b.error
+  return a === b
 }

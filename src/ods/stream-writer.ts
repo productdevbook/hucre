@@ -15,9 +15,10 @@
 // exception and are carried, because `columns` is known before the first
 // row. Everything else is values, which is what a million-row export is.
 
-import type { CellValue, WorkbookProperties } from "../_types"
+import { isCellError } from "../cell-error"
+import type { CellValue, WorkbookProperties, CellInput } from "../_types"
 import { zipStream, type ZipStreamEntry } from "../zip/stream-writer"
-import { xmlEscapeAttr } from "../xml/writer"
+import { xmlEscape, xmlEscapeAttr } from "../xml/writer"
 import { validateSheetNames } from "../_validate"
 
 import {
@@ -35,8 +36,6 @@ import {
 const encoder = /* @__PURE__ */ new TextEncoder()
 
 /** A streamed row: positional values, each optionally carrying a formula. */
-export type OdsWriteCell = CellValue | { value?: CellValue; formula?: string }
-export type OdsWriteRow = OdsWriteCell[]
 
 export interface OdsStreamWriteOptions {
   /** Sheet name. Excel's limits apply — LibreOffice enforces them too. */
@@ -78,7 +77,7 @@ export interface OdsStreamWriteOptions {
  * path for a document that needs them. See #467.
  */
 export function writeOdsStream(
-  rows: AsyncIterable<OdsWriteRow> | Iterable<OdsWriteRow>,
+  rows: AsyncIterable<CellInput[]> | Iterable<CellInput[]>,
   options?: OdsStreamWriteOptions,
 ): ReadableStream<Uint8Array> {
   const name = options?.name ?? "Sheet1"
@@ -107,11 +106,12 @@ const CONTENT_HEAD =
   ' xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"' +
   ' xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"' +
   ' xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2"' +
+  ' xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0"' +
   ' office:version="1.3">'
 
 /** Serialize content.xml into ~64 KB encoded chunks, pulling lazily. */
 async function* contentChunks(
-  rows: AsyncIterable<OdsWriteRow> | Iterable<OdsWriteRow>,
+  rows: AsyncIterable<CellInput[]> | Iterable<CellInput[]>,
   name: string,
   columns?: Array<{ header?: string; width?: number }>,
 ): AsyncGenerator<Uint8Array> {
@@ -180,11 +180,15 @@ function automaticStyles(columns?: Array<{ header?: string; width?: number }>): 
 }
 
 /** One `<table:table-row>`, values only. */
-function serializeRow(row: OdsWriteRow): string {
+function serializeRow(row: CellInput[]): string {
   const cells: string[] = []
   for (const cell of row) {
     cells.push(
-      cell !== null && typeof cell === "object" && !(cell instanceof Date) && !Array.isArray(cell)
+      cell !== null &&
+        typeof cell === "object" &&
+        !(cell instanceof Date) &&
+        !isCellError(cell) &&
+        !Array.isArray(cell)
         ? serializeCell(
             (cell as { value?: CellValue }).value ?? null,
             (cell as { formula?: string }).formula,
@@ -230,6 +234,13 @@ function serializeCell(value: CellValue, formula?: string): string {
       `<table:table-cell${attrs} office:value-type="boolean" ` +
       `office:boolean-value="${value ? "true" : "false"}">` +
       `<text:p>${value ? "TRUE" : "FALSE"}</text:p></table:table-cell>`
+    )
+  }
+
+  if (isCellError(value)) {
+    return (
+      `<table:table-cell${attrs} office:value-type="string" calcext:value-type="error">` +
+      `<text:p>${xmlEscape(value.error)}</text:p></table:table-cell>`
     )
   }
 

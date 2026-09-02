@@ -56,6 +56,9 @@ import { parseCsv, writeCsv } from "hucre/csv" // CSV only (~2 KB gzipped)
 import { readOds, writeOds } from "hucre/ods" // ODS only
 import { parseJson, writeNdjson } from "hucre/json" // JSON / NDJSON
 import { readXml, writeXml } from "hucre/xml" // Tabular XML
+import { parseCellRef, colToLetter } from "hucre/cell" // A1 / R1C1 reference helpers
+import { serialToDate, formatValue } from "hucre/format" // dates, serials, number formats
+import { audit } from "hucre/a11y" // accessibility audit
 ```
 
 ## Why hucre?
@@ -159,6 +162,10 @@ const wb = await readXlsx(buf, {
 ```
 
 Supported cell types: strings, numbers, booleans, dates, formulas, rich text, errors, inline strings.
+
+An error cell — `#N/A`, `#DIV/0!` and the rest — is a `CellError`,
+`{ error: "#N/A" }`, not a string: `isCellError(value)` tells it from text
+that happens to read the same, and `cellError("#N/A")` writes one.
 
 ### Writing
 
@@ -542,52 +549,43 @@ Run `pnpm bench` to see both on your own machine.
 `OdsStreamWriter` all implement `SpreadsheetStreamWriter`, so a
 format-agnostic export helper can be written once:
 
-| Method            | Behaviour                                                         |
-| ----------------- | ----------------------------------------------------------------- |
-| `addRow(values)`  | Append positional values                                          |
-| `addObject(item)` | Append an object, projected through the writer's column order     |
-| `finish()`        | Close the writer and return its output (`string` or `Uint8Array`) |
-| `toStream()`      | Output as a `ReadableStream<Uint8Array>`                          |
+| Method            | Behaviour                                                       |
+| ----------------- | --------------------------------------------------------------- |
+| `addRow(cells)`   | Append positional values, or cell objects (`{ value, style }`)  |
+| `addObject(item)` | Append an object, projected through the writer's column order   |
+| `finish()`        | Close the writer and return its output as `Promise<Uint8Array>` |
 
 ```ts
 import type { SpreadsheetStreamWriter } from "hucre"
 
 async function exportAll(writer: SpreadsheetStreamWriter, rows: Array<Record<string, CellValue>>) {
   for (const row of rows) writer.addObject(row)
-  return await writer.finish() // string | Uint8Array — narrow at the call site
+  return await writer.finish() // Uint8Array from every writer
 }
 ```
 
-This was a convention until v1.0.1 and nothing enforced it: there was no
-shared interface, so when `XlsxStreamWriter.addRow` widened to accept
-styled cells, nothing failed and the drift was left for a reader to
-find. The `implements` is what makes the next divergence a compile error
-(#468).
+Three things worth stating plainly:
 
-Four caveats worth stating plainly:
-
-- **`finish()` is not one type.** The text writers return `string`, XLSX
-  returns `Promise<Uint8Array>`, and the interface says so rather than
-  pretending otherwise. `await` covers both; narrow before use.
+- **The text writers also give a string.** `CsvStreamWriter.finishText()`
+  and `NdjsonStreamWriter.finishText()` return the same output `finish()`
+  encodes. The interface promises bytes, because that is the one thing all
+  four can return.
 - **Construction is not shared.** `XlsxStreamWriter` takes a sheet `name`
   and `ColumnDef[]`; the two text writers take a plain key list. The
   helper is written once — building the writer is still per-format.
-- `toStream()` on `XlsxStreamWriter` and `CsvStreamWriter` **does not bound
-  memory**. Both buffer everything until `finish()`; the stream just hands
-  you the finished bytes. `writeXlsxStream` / `writeCsvStream` are the
-  constant-memory paths. `NdjsonStreamWriter.toStream()` is the only live
-  drain — it releases rows as they are enqueued and stays open until
-  `finish()`.
+- **Only `NdjsonStreamWriter` has `toStream()`**, because it is the only
+  one that can release rows as they are written. The others buffer until
+  `finish()`; the constant-memory paths are `writeXlsxStream`,
+  `writeCsvStream`, `writeOdsStream` and `writeNdjsonStream`.
 - `NdjsonStreamWriter.addRow` needs `columns` (`new NdjsonStreamWriter({
 columns: [...] })`), because NDJSON rows are objects and positional
   values have no key names otherwise. It throws rather than guessing.
-  Its old `write()` / `end()` are kept as `@deprecated` aliases.
 
 Streaming trade-offs worth knowing:
 
 - Strings are written inline (`t="inlineStr"`) by default. A shared
   string table has to live in memory until the workbook closes, which
-  would undo the constant-memory guarantee — pass `inlineStrings: false`
+  would undo the constant-memory guarantee — pass `stringMode: "shared"`
   when the data is repetitive and file size matters more.
 - Part sizes aren't known when their ZIP headers go out, so entries carry
   trailing ZIP data descriptors and `[Content_Types].xml` is written last.
@@ -840,7 +838,8 @@ disappear from `xl/workbook.xml.rels`, leaving Excel with orphan
 `externalLinkN.xml` parts that it ignores.
 
 ```ts
-import { readXlsx, parseExternalLink } from "hucre"
+import { readXlsx } from "hucre"
+import { parseExternalLink } from "hucre/ooxml"
 
 const wb = await readXlsx(buf)
 for (const link of wb.externalLinks ?? []) {
@@ -881,7 +880,7 @@ for (const img of wb.cellImages ?? []) {
 }
 
 // Standalone parsers when you already have the XML strings.
-import { parseCellImages, assembleCellImages, REL_CELL_IMAGES } from "hucre"
+import { parseCellImages, assembleCellImages, REL_CELL_IMAGES } from "hucre/ooxml"
 const refs = parseCellImages(cellImagesXml)
 const images = assembleCellImages(refs, mediaMap)
 ```
@@ -916,7 +915,7 @@ for (const sheet of wb.sheets) {
 }
 
 // Standalone parsers when you already have the XML strings.
-import { parseSlicers, parseSlicerCache, parseTimelines, parseTimelineCache } from "hucre"
+import { parseSlicers, parseSlicerCache, parseTimelines, parseTimelineCache } from "hucre/ooxml"
 ```
 
 The worksheet body's `<x14:slicerList>` / `<x15:timelines>` extension
@@ -957,7 +956,7 @@ for (const sheet of wb.sheets) {
 }
 
 // Standalone parsers when you already have the XML strings.
-import { parsePivotTable, parsePivotCacheDefinition, attachPivotCacheFields } from "hucre"
+import { parsePivotTable, parsePivotCacheDefinition, attachPivotCacheFields } from "hucre/ooxml"
 ```
 
 `PivotTable.cacheId` matches the workbook-level `cacheId` rather than a
@@ -1078,7 +1077,8 @@ to a writable kind.
 #### Read side — `parseChart` / `getCharts`
 
 ```ts
-import { getCharts, openXlsx, parseChart } from "hucre"
+import { getCharts, openXlsx } from "hucre"
+import { parseChart } from "hucre/ooxml"
 
 const wb = await openXlsx(buf)
 
@@ -1176,7 +1176,8 @@ Per-series overrides are supplied as a positional `series` array;
 each entry merges with the source series at the matching index.
 
 ```ts
-import { cloneChart, openXlsx, parseChart, writeXlsx } from "hucre"
+import { cloneChart, openXlsx, writeXlsx } from "hucre"
+import { parseChart } from "hucre/ooxml"
 
 const wb = await openXlsx(templateBytes)
 const sourceChart = wb.sheets[0].charts?.[0]
@@ -1704,7 +1705,7 @@ parseJson(workbookToJson(wb), { rowsAt: "Sheet2" })
 // Streaming write — works in Cloudflare Workers / Deno / Node 18+
 const writer = new NdjsonStreamWriter()
 for await (const row of source) writer.addObject(row)
-writer.finish() // `write()` / `end()` still work as deprecated aliases
+writer.finish()
 return new Response(writer.toStream(), {
   headers: { "content-type": "application/x-ndjson" },
 })
@@ -1786,7 +1787,7 @@ const rows = parseCsv(csvString, { typeInference: true })
 const fromDisk = parseCsv(await readFile("data.csv"), { typeInference: true })
 
 // Parse with headers — returns typed objects
-const { data, headers } = parseCsvObjects(csvString, { header: true })
+const { data, headers } = parseCsvObjects(csvString)
 
 // Write
 const csv = writeCsv(rows, { delimiter: ";", bom: true })
@@ -1990,7 +1991,6 @@ hucre (~114 KB gzipped for the whole barrel; 2–64 KB for the common
 ├── sheet-ops       Insert/delete/move/sort/find/replace, clone, copy
 ├── cell-utils      parseCellRef, colToLetter, parseRange, isInRange
 ├── image           imageFromBase64 utility
-├── worker          Web Worker serialization helpers
 ├── _date           UTC serial ↔ Date, Lotus bug, 1900/1904
 ├── _format         Number format renderer (locale-aware)
 ├── _schema         Schema validation, type coercion, error collection
@@ -2049,22 +2049,22 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `writeOds(options)`               | Generate ODS                                                          |
 | `readOdsObjects(input, options?)` | Read sheet as `{ data, headers }`                                     |
 | `writeOdsObjects(data, options?)` | Write objects to ODS                                                  |
-| `streamOdsRows(input)`            | AsyncGenerator yielding ODS rows                                      |
+| `streamOdsRows(input, options?)`  | AsyncGenerator of `StreamRow`s; `sheet` picks one or `"all"`          |
 
 ### CSV
 
-| Function                           | Description                                                              |
-| ---------------------------------- | ------------------------------------------------------------------------ |
-| `parseCsv(input, options?)`        | Parse CSV string → `CellValue[][]`                                       |
-| `parseCsvObjects(input, options?)` | Parse CSV with headers → `CsvObjectsResult` (`{ data, headers }`)        |
-| `writeCsv(rows, options?)`         | Write `CellValue[][]` → CSV string                                       |
-| `writeCsvObjects(data, options?)`  | Write objects → CSV string                                               |
-| `detectDelimiter(input)`           | Auto-detect delimiter character                                          |
-| `streamCsvRows(input, options?)`   | Generator yielding CSV rows; same options as `parseCsv`                  |
-| `writeCsvStream(rows, options?)`   | Constant-memory CSV writing → `ReadableStream`                           |
-| `CsvStreamWriter`                  | Incremental CSV writing (`addRow`/`addObject`); buffers until `finish()` |
-| `writeTsv(rows, options?)`         | Write TSV (tab-separated)                                                |
-| `fetchCsv(url, options?)`          | Fetch and parse CSV from URL                                             |
+| Function                           | Description                                                                             |
+| ---------------------------------- | --------------------------------------------------------------------------------------- |
+| `parseCsv(input, options?)`        | Parse CSV string → `CellValue[][]`                                                      |
+| `parseCsvObjects(input, options?)` | Parse CSV with headers → `CsvObjectsResult` (`{ data, headers }`)                       |
+| `writeCsv(rows, options?)`         | Write `CellValue[][]` → CSV string                                                      |
+| `writeCsvObjects(data, options?)`  | Write objects → CSV string                                                              |
+| `detectDelimiter(input)`           | Auto-detect delimiter character                                                         |
+| `streamCsvRows(input, options?)`   | AsyncGenerator of `StreamRow`s; same options as `parseCsv`                              |
+| `writeCsvStream(rows, options?)`   | Constant-memory CSV writing → `ReadableStream`                                          |
+| `CsvStreamWriter`                  | Incremental CSV writing (`addRow`/`addObject`); `finish()` bytes, `finishText()` string |
+| `writeTsv(rows, options?)`         | Write TSV (tab-separated)                                                               |
+| `fetchCsv(url, options?)`          | Fetch and parse CSV from URL                                                            |
 
 ### JSON
 
@@ -2079,7 +2079,7 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `jsonToWorkbook(input, options?)` | Read either `workbookToJson` shape back into a `Workbook`                              |
 | `flattenValue(value, options?)`   | Flatten one value into dot-path keyed cells                                            |
 | `unflattenRow(row)`               | Rebuild a dot-path keyed row into nested objects — the inverse                         |
-| `streamNdjsonRows(stream, opts?)` | Async generator over a `ReadableStream<Uint8Array>`                                    |
+| `streamNdjsonRows(input, opts?)`  | AsyncGenerator of `StreamRow<Record>`s from bytes, text or a stream                    |
 | `NdjsonStreamWriter`              | Incremental writer (`addRow`/`addObject`); `toStream()` releases rows as they are sent |
 
 ### XML
@@ -2130,8 +2130,8 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | -------------------------------------------- | ---------------------------------------- |
 | `formatValue(value, numFmt, options?)`       | Apply Excel number format (locale-aware) |
 | `validateWithSchema(rows, schema, options?)` | Validate & coerce data with schema       |
-| `serialToDate(serial, is1904?)`              | Excel serial → Date (UTC)                |
-| `dateToSerial(date, is1904?)`                | Date → Excel serial                      |
+| `serialToDate(serial, dateSystem?)`          | Excel serial → Date (UTC)                |
+| `dateToSerial(date, dateSystem?)`            | Date → Excel serial                      |
 | `isDateFormat(numFmt)`                       | Check if format string is date           |
 | `formatDate(date, format)`                   | Format Date with Excel format string     |
 | `parseCellRef(ref)`                          | "AA15" → `{ row: 14, col: 26 }`          |
@@ -2148,15 +2148,13 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `a11y.relativeLuminance(hex)` | WCAG relative luminance (0–1) for a hex color              |
 | `a11y.applyA11ySummary(wb)`   | Promote first sheet `a11y.summary` to workbook description |
 
-### Web Worker Helpers
+### Web Workers
 
-| Function                    | Description                                                          |
-| --------------------------- | -------------------------------------------------------------------- |
-| `serializeWorkbook(wb)`     | Convert Workbook for `postMessage` (Maps → objects, Dates → strings) |
-| `deserializeWorkbook(data)` | Restore Workbook from serialized form                                |
-
-Every export in this library is worker-safe: there are no DOM or Node-only
-dependencies, so anything can be called from inside a Web Worker.
+A `Workbook` is plain data — objects, arrays, `Map`, `Date`, `Uint8Array` —
+so `postMessage(workbook)` carries it as-is; structured clone handles every
+type in the model. For a channel that only carries JSON, use
+`workbookToJson` / `jsonToWorkbook`. Every export in this library is
+worker-safe: there are no DOM or Node-only dependencies.
 
 ## Development
 
@@ -2187,8 +2185,8 @@ a major bump. Everything else (`hucre`, `hucre/xlsx`, `hucre/csv`,
 `hucre/ods`, `hucre/json`, `hucre/xml`) is stable.
 
 If you only read and write spreadsheets, you do not need anything here.
-These names are still exported from the root for backward compatibility,
-marked deprecated.
+These names are exported from `hucre/ooxml` only; the model-level chart
+helpers (`cloneChart`, `addChart`, `getCharts`) stay at the root.
 
 ## Read/write parity
 

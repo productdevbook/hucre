@@ -674,7 +674,7 @@ describe("ODS reader — repeated cells, covered cells and merges", () => {
     )
     const sheet = wb.sheets[0]!
     expect(sheet.rows.length).toBe(7)
-    expect(sheet.rows.slice(1, 6)).toEqual([[], [], [], [], []])
+    expect(sheet.rows.slice(1, 6)).toEqual([[null], [null], [null], [null], [null]])
     expect(sheet.rows[6]).toEqual([1])
     expect([...sheet.cells!.keys()]).toEqual(["6,0"])
   })
@@ -702,7 +702,7 @@ describe("ODS reader — repeated cells, covered cells and merges", () => {
         `<table:table-row><table:table-cell office:value-type="string"><text:p>b</text:p></table:table-cell></table:table-row>`,
     )
     const wb = await readBody(body)
-    expect(wb.sheets[0]!.rows).toEqual([["a"], [], ["b"]])
+    expect(wb.sheets[0]!.rows).toEqual([["a"], [null], ["b"]])
 
     // The streaming reader never emitted the empty row, but it carries the
     // row number on each `StreamRow` rather than in the array position, so
@@ -729,7 +729,7 @@ describe("ODS reader — repeated cells, covered cells and merges", () => {
     const sheet = wb.sheets[0]!
     // The covered cell is a trailing null, so it trims off the row itself;
     // the merge it belongs to is what has to keep the row number.
-    expect(sheet.rows).toEqual([["title"], [], ["wide"]])
+    expect(sheet.rows).toEqual([["title"], [null], ["wide"]])
     expect(sheet.merges).toEqual([{ startRow: 2, startCol: 0, endRow: 2, endCol: 1 }])
   })
 })
@@ -1063,19 +1063,18 @@ describe("streamOdsRows — options and failure modes", () => {
       ),
   )
 
-  it("streams every sheet when the filter names sheets it cannot resolve", async () => {
-    // The SAX pass never sees table names, so a name-only filter degrades to
-    // "stream everything" rather than silently yielding nothing.
+  it("selects a sheet by name", async () => {
     const data = await odsFile({ content: twoSheets })
     const rows: StreamRow[] = []
-    for await (const row of streamOdsRows(data, { sheets: ["Beta"] })) rows.push(row)
-    expect(rows.length).toBe(3)
+    for await (const row of streamOdsRows(data, { sheet: "Beta" })) rows.push(row)
+    expect(rows.map((r) => r.values[0])).toEqual(["b1"])
+    expect(rows.every((r) => r.sheet === 1)).toBe(true)
   })
 
   it("restricts streaming to the requested sheet index", async () => {
     const data = await odsFile({ content: twoSheets })
     const rows: StreamRow[] = []
-    for await (const row of streamOdsRows(data, { sheets: [1] })) rows.push(row)
+    for await (const row of streamOdsRows(data, { sheet: 1 })) rows.push(row)
     expect(rows.map((r) => r.values[0])).toEqual(["b1"])
   })
 
@@ -1301,7 +1300,7 @@ describe("ODS writer — columns + data", () => {
       data: [{ a: 1 }],
     }
     const wb = await readOds(await writeOds({ sheets: [sheet] }))
-    expect(wb.sheets[0]!.rows[1]).toEqual([1])
+    expect(wb.sheets[0]!.rows[1]).toEqual([1, null])
   })
 
   it("falls back to an empty header for a column with neither key nor header", async () => {
@@ -1314,7 +1313,7 @@ describe("ODS writer — columns + data", () => {
     const wb = await readOds(await writeOds({ sheets: [sheet] }))
     expect(wb.sheets[0]!.rows).toEqual([
       ["A", "b", ""],
-      [1, 2],
+      [1, 2, null],
     ])
   })
 
@@ -1345,7 +1344,11 @@ describe("ODS writer — columns + data", () => {
     // between them and "z" read back at index 1. See #394.
     const wb = await readOds(data)
     expect(wb.sheets[0]!.cells?.get("0,2")?.formula).toBe("NOW()")
-    expect(wb.sheets[0]!.rows).toEqual([[1, null, null], [], ["z"]])
+    expect(wb.sheets[0]!.rows).toEqual([
+      [1, null, null],
+      [null, null, null],
+      ["z", null, null],
+    ])
   })
 
   it("writes a self-closing cell for a null override with nothing else on it", async () => {
@@ -1373,8 +1376,8 @@ describe("ODS writer — columns + data", () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("readOdsObjects / writeOdsObjects", () => {
-  it("writes only the data rows when writeHeaders is false", async () => {
-    const data = await writeOdsObjects([{ a: 1, b: 2 }], { writeHeaders: false })
+  it("writes only the data rows when writeHeader is false", async () => {
+    const data = await writeOdsObjects([{ a: 1, b: 2 }], { writeHeader: false })
     const wb = await readOds(data as Uint8Array)
     expect(wb.sheets[0]!.rows).toEqual([[1, 2]])
   })

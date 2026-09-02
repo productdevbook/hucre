@@ -1,3 +1,4 @@
+import { isCellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { readFileSync } from "node:fs"
 import { read, readXls, readXlsb, readXlsx, streamXlsxRows } from "../src/index"
@@ -43,7 +44,7 @@ type Flat = string | number | boolean | null
 
 interface SheetModel {
   name: string
-  /** Dense rows. Dates become `D:<iso>` so they cannot pass as strings. */
+  /** Dense rows. Dates become `D:<iso>` and errors `E:<token>` so neither can pass as a string. */
   rows: Flat[][]
   /** Merged ranges in A1 notation, sorted. */
   merges: string[]
@@ -126,6 +127,7 @@ const colName = (index: number): string => {
 
 const flat = (v: unknown): Flat => {
   if (v instanceof Date) return `D:${v.toISOString()}`
+  if (isCellError(v)) return `E:${v.error}`
   if (v === undefined || v === null) return null
   if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return v
   return `?:${String(v)}`

@@ -7,6 +7,8 @@
 // is why it was the only module in the tree at 0% coverage. See #399.
 // ─────────────────────────────────────────────────────────────────────
 
+import { toWriteOptions } from "../write-model"
+import { isCellError } from "../cell-error"
 import { defineCommand } from "citty"
 import { consola } from "consola"
 import { readFileSync, writeFileSync } from "node:fs"
@@ -202,6 +204,7 @@ export async function readFile(filePath: string, encoding?: string): Promise<Wor
 export function formatCellValue(value: CellValue): string {
   if (value === null || value === undefined) return ""
   if (value instanceof Date) return value.toISOString()
+  if (isCellError(value)) return value.error
   return String(value)
 }
 
@@ -211,8 +214,9 @@ export const convertCommand = defineCommand({
   meta: {
     name: "convert",
     description:
-      "Convert between spreadsheet formats (cell values only — styles, " +
-      "merges, formulas, charts and images are not carried over)",
+      "Convert between spreadsheet formats. Everything the authoring model " +
+      "carries — styles, merges, formulas, validations — goes with it; " +
+      "text formats take values only.",
   },
   args: {
     input: {
@@ -315,10 +319,9 @@ async function renderWorkbook(
     throw new CliError("No sheets found in input file")
   }
 
-  const writeOptions: WriteOptions = {
-    sheets: workbook.sheets.map((sheet) => ({ name: sheet.name, rows: sheet.rows })),
-    properties: workbook.properties,
-  }
+  // The whole authoring model, not `{ name, rows }`: an xlsx → xlsx
+  // conversion used to drop every style, merge and formula on the floor.
+  const writeOptions: WriteOptions = toWriteOptions(workbook)
 
   // Every row goes through writeCsv, including the first. It used to be
   // pulled out as `headers` and stringified separately, so a Date in row 0
@@ -379,6 +382,7 @@ export const inspectCommand = defineCommand({
           else if (typeof cell === "number") type = "number"
           else if (typeof cell === "boolean") type = "boolean"
           else if (cell instanceof Date) type = "date"
+          else if (isCellError(cell)) type = "error"
           else type = "unknown"
 
           typeCounts[type] = (typeCounts[type] ?? 0) + 1
@@ -465,14 +469,29 @@ export const validateCommand = defineCommand({
       description: "Sheet index to validate (0-based, default: 0)",
       default: "0",
     },
+    headerRow: {
+      type: "string",
+      description: "0-based index of the header row; -1 for no header row (default: 0)",
+      default: "0",
+    },
+    encoding: {
+      type: "string",
+      description:
+        "Character encoding of a CSV/TSV input (e.g. windows-1254). " +
+        "Default: the file's byte-order mark, or utf-8.",
+    },
   },
   async run({ args }) {
     const filePath = args.file as string
     const schemaPath = args.schema as string
     const sheetIdx = Number(args.sheet ?? "0")
+    const headerRow = Number(args.headerRow ?? "0")
 
     if (!Number.isInteger(sheetIdx)) {
       throw new CliError(`Invalid sheet index: ${args.sheet}`)
+    }
+    if (!Number.isInteger(headerRow) || headerRow < -1) {
+      throw new CliError(`Invalid header row: ${args.headerRow}`)
     }
 
     consola.start(`Validating ${filePath} with schema ${schemaPath}...`)
@@ -496,8 +515,7 @@ export const validateCommand = defineCommand({
     }
 
     const sheet = workbook.sheets[sheetIdx]!
-    // headerRow is 0-based since v1 — the first row (#365).
-    const result = validateWithSchema(sheet.rows, schema, { headerRow: 0 })
+    const result = validateWithSchema(sheet.rows, schema, { headerRow })
 
     if (result.errors.length === 0) {
       consola.success(`Valid! ${result.data.length} row(s) passed validation.`)

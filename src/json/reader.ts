@@ -20,7 +20,12 @@ export interface JsonReadOptions extends FlattenOptions {
   /** Transform header values. */
   transformHeader?: (header: string, index: number) => string
   /** Transform each cell value. */
-  transformValue?: (value: CellValue, header: string, rowIndex: number) => CellValue
+  transformValue?: (
+    value: CellValue,
+    header: string,
+    rowIndex: number,
+    colIndex: number,
+  ) => CellValue
   /** Maximum number of rows to return. */
   maxRows?: number
 }
@@ -199,11 +204,12 @@ function rowsToResult<T extends Record<string, CellValue>>(
   for (let r = 0; r < flat.length; r++) {
     const src = flat[r]!
     const obj: Record<string, CellValue> = {}
-    for (const origKey of originalHeaders) {
+    for (let c = 0; c < originalHeaders.length; c++) {
+      const origKey = originalHeaders[c]!
       const outKey = headerMap ? headerMap.get(origKey)! : origKey
       let val = src[origKey] ?? null
       if (options?.transformValue) {
-        val = options.transformValue(val, outKey, r)
+        val = options.transformValue(val, outKey, r, c)
       }
       obj[outKey] = val
     }

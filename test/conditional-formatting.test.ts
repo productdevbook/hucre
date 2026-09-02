@@ -163,7 +163,7 @@ describe("conditional formatting — writing", () => {
           range: "A1:A100",
           colorScale: {
             cfvo: [{ type: "min" }, { type: "max" }],
-            colors: ["FF63BE7B", "FFF8696B"],
+            colors: [{ rgb: "63BE7B" }, { rgb: "F8696B" }],
           },
         },
       ],
@@ -201,7 +201,7 @@ describe("conditional formatting — writing", () => {
           range: "B1:B100",
           colorScale: {
             cfvo: [{ type: "min" }, { type: "percentile", value: "50" }, { type: "max" }],
-            colors: ["FFF8696B", "FFFFEB84", "FF63BE7B"],
+            colors: [{ rgb: "F8696B" }, { rgb: "FFEB84" }, { rgb: "63BE7B" }],
           },
         },
       ],
@@ -234,7 +234,7 @@ describe("conditional formatting — writing", () => {
           range: "C1:C100",
           dataBar: {
             cfvo: [{ type: "min" }, { type: "max" }],
-            color: "FF638EC6",
+            color: { rgb: "638EC6" },
           },
         },
       ],
@@ -513,7 +513,7 @@ describe("conditional formatting — writing", () => {
           range: "B1:B100",
           colorScale: {
             cfvo: [{ type: "min" }, { type: "max" }],
-            colors: ["FF63BE7B", "FFF8696B"],
+            colors: [{ rgb: "63BE7B" }, { rgb: "F8696B" }],
           },
         },
       ],
@@ -695,7 +695,7 @@ describe("conditional formatting — reading (round-trip)", () => {
               range: "A1:A100",
               colorScale: {
                 cfvo: [{ type: "min" }, { type: "max" }],
-                colors: ["FF63BE7B", "FFF8696B"],
+                colors: [{ rgb: "63BE7B" }, { rgb: "F8696B" }],
               },
             },
           ],
@@ -711,8 +711,8 @@ describe("conditional formatting — reading (round-trip)", () => {
     expect(rule.colorScale!.cfvo[0].type).toBe("min")
     expect(rule.colorScale!.cfvo[1].type).toBe("max")
     expect(rule.colorScale!.colors.length).toBe(2)
-    expect(rule.colorScale!.colors[0]).toBe("FF63BE7B")
-    expect(rule.colorScale!.colors[1]).toBe("FFF8696B")
+    expect(rule.colorScale!.colors[0]).toEqual({ rgb: "63BE7B" })
+    expect(rule.colorScale!.colors[1]).toEqual({ rgb: "F8696B" })
   })
 
   it("round-trips colorScale (3-color)", async () => {
@@ -728,7 +728,7 @@ describe("conditional formatting — reading (round-trip)", () => {
               range: "A1:A100",
               colorScale: {
                 cfvo: [{ type: "min" }, { type: "percentile", value: "50" }, { type: "max" }],
-                colors: ["FFF8696B", "FFFFEB84", "FF63BE7B"],
+                colors: [{ rgb: "F8696B" }, { rgb: "FFEB84" }, { rgb: "63BE7B" }],
               },
             },
           ],
@@ -757,7 +757,7 @@ describe("conditional formatting — reading (round-trip)", () => {
               range: "A1:A100",
               dataBar: {
                 cfvo: [{ type: "min" }, { type: "max" }],
-                color: "FF638EC6",
+                color: { rgb: "638EC6" },
               },
             },
           ],
@@ -770,7 +770,7 @@ describe("conditional formatting — reading (round-trip)", () => {
     expect(rule.type).toBe("dataBar")
     expect(rule.dataBar).toBeDefined()
     expect(rule.dataBar!.cfvo.length).toBe(2)
-    expect(rule.dataBar!.color).toBe("FF638EC6")
+    expect(rule.dataBar!.color).toEqual({ rgb: "638EC6" })
   })
 
   it("round-trips iconSet", async () => {
@@ -935,7 +935,7 @@ describe("conditional formatting — reading (round-trip)", () => {
               range: "B1:B100",
               colorScale: {
                 cfvo: [{ type: "min" }, { type: "max" }],
-                colors: ["FF63BE7B", "FFF8696B"],
+                colors: [{ rgb: "63BE7B" }, { rgb: "F8696B" }],
               },
             },
           ],
@@ -984,7 +984,7 @@ describe("conditional formatting — integration (ZIP verification)", () => {
               range: "B2:B100",
               colorScale: {
                 cfvo: [{ type: "min" }, { type: "max" }],
-                colors: ["FF63BE7B", "FFF8696B"],
+                colors: [{ rgb: "63BE7B" }, { rgb: "F8696B" }],
               },
             },
           ],

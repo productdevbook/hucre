@@ -147,11 +147,11 @@ describe("the shared vocabulary", () => {
     expect(() => w.addObject({ a: 1 })).toThrow(/columns/)
   })
 
-  it("toStream hands back the finished document", async () => {
+  it("finish hands back the finished document", async () => {
     const w = new OdsStreamWriter({ name: "S" })
     w.addRow(["a", 1])
 
-    const wb = await readOds(await drain(w.toStream()))
+    const wb = await readOds(await w.finish())
     expect(wb.sheets[0]!.rows[0]).toEqual(["a", 1])
   })
 

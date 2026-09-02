@@ -261,7 +261,7 @@ describe("Date serial precision", () => {
   })
 
   it("1904 system: serial 0 = Jan 1, 1904", () => {
-    const d = serialToDate(0, true)
+    const d = serialToDate(0, "1904")
     expect(d.getUTCFullYear()).toBe(1904)
     expect(d.getUTCMonth()).toBe(0)
     expect(d.getUTCDate()).toBe(1)
@@ -551,7 +551,7 @@ describe("XLSX: conditional formatting edge cases", () => {
               range: "A1:A5",
               colorScale: {
                 cfvo: [{ type: "min" }, { type: "percentile", value: "50" }, { type: "max" }],
-                colors: ["FFF8696B", "FFFFEB84", "FF63BE7B"],
+                colors: [{ rgb: "F8696B" }, { rgb: "FFEB84" }, { rgb: "63BE7B" }],
               },
             },
           ],

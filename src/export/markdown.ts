@@ -1,3 +1,4 @@
+import { isCellError } from "../cell-error"
 import type { Sheet, CellValue } from "../_types"
 
 export interface MarkdownExportOptions {
@@ -8,8 +9,6 @@ export interface MarkdownExportOptions {
    * row *index*. See #365.
    */
   hasHeaderRow?: boolean
-  /** @deprecated Renamed to {@link MarkdownExportOptions.hasHeaderRow}. */
-  headerRow?: boolean
   /** Alignment per column. Default: left for strings, right for numbers */
   alignment?: Array<"left" | "center" | "right">
   /** Max column width (truncate with ...). Default: 50 */
@@ -62,6 +61,7 @@ function formatCellValue(value: CellValue, escapeInline: boolean): string {
   }
   if (typeof value === "boolean") return String(value)
   if (typeof value === "number") return String(value)
+  if (isCellError(value)) return value.error
   return escapeCell(String(value), escapeInline)
 }
 
@@ -119,11 +119,8 @@ function padCell(value: string, width: number, align: "left" | "center" | "right
  * Export a sheet as a Markdown table string.
  */
 export function toMarkdown(sheet: Sheet, options?: MarkdownExportOptions): string {
-  // `headerRow` is omitted: deprecated spelling of `hasHeaderRow`,
-  // folded into it below.
-  const opts: Required<Omit<MarkdownExportOptions, "headerRow">> = {
-    // Accept the deprecated name for one major. See #365.
-    hasHeaderRow: options?.hasHeaderRow ?? options?.headerRow ?? true,
+  const opts: Required<MarkdownExportOptions> = {
+    hasHeaderRow: options?.hasHeaderRow ?? true,
     alignment: options?.alignment ?? [],
     maxWidth: options?.maxWidth ?? 50,
     escapeInline: options?.escapeInline ?? true,

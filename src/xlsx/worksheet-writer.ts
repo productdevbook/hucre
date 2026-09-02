@@ -1,6 +1,7 @@
 // ── Worksheet XML Writer ─────────────────────────────────────────────
 // Generates xl/worksheets/sheetN.xml for an XLSX package.
 
+import { isCellError } from "../cell-error"
 import { toRanges } from "../cell-utils"
 import type {
   RowDef,
@@ -259,29 +260,6 @@ const BARE_DATE_STYLE: CellStyle = Object.freeze({ numFmt: DEFAULT_DATE_FORMAT }
  * so a style object the caller drops does not keep an entry alive.
  */
 const DATE_STYLE_CACHE = /* @__PURE__ */ new WeakMap<CellStyle, CellStyle>()
-
-/**
- * Known Excel error value strings.
- *
- * The first eight are the ST_CellType `e` values ECMA-376 enumerates.
- * `#SPILL!` and `#CALC!` are the two errors dynamic arrays introduced —
- * they are not in the standard's list, but Excel stores them the same
- * way (`t="e"` with the literal text in `<v>`), and without them a
- * `#SPILL!` read out of a real workbook came back as a *shared string*
- * on the way in again, losing its error type entirely (#423).
- */
-const EXCEL_ERRORS = new Set([
-  "#VALUE!",
-  "#REF!",
-  "#N/A",
-  "#NAME?",
-  "#NULL!",
-  "#DIV/0!",
-  "#NUM!",
-  "#GETTING_DATA",
-  "#SPILL!",
-  "#CALC!",
-])
 
 // ── Worksheet Writer ───────────────────────────────────────────────
 
@@ -1026,6 +1004,9 @@ export function serializeCell(
       if (typeof formulaResult === "string") {
         cellAttrs["t"] = "str"
         children.push(xmlElement("v", undefined, xmlEscape(formulaResult)))
+      } else if (isCellError(formulaResult)) {
+        cellAttrs["t"] = "e"
+        children.push(xmlElement("v", undefined, xmlEscape(formulaResult.error)))
       } else if (typeof formulaResult === "boolean") {
         cellAttrs["t"] = "b"
         children.push(xmlElement("v", undefined, formulaResult ? "1" : "0"))
@@ -1039,7 +1020,9 @@ export function serializeCell(
           children.push(xmlElement("v", undefined, String(formulaResult)))
         }
       } else if (formulaResult instanceof Date) {
-        children.push(xmlElement("v", undefined, String(dateToSerial(formulaResult, is1904))))
+        children.push(
+          xmlElement("v", undefined, String(dateToSerial(formulaResult, is1904 ? "1904" : "1900"))),
+        )
       }
     }
 
@@ -1054,9 +1037,8 @@ export function serializeCell(
     return null
   }
 
-  // Error value (e.g. #VALUE!, #REF!, #N/A, #NAME?, #NULL!, #DIV/0!, #NUM!)
-  if (typeof value === "string" && EXCEL_ERRORS.has(value)) {
-    return simpleCell(ref, styleIdx, "e", value)
+  if (isCellError(value)) {
+    return simpleCell(ref, styleIdx, "e", value.error)
   }
 
   // String value
@@ -1093,7 +1075,7 @@ export function serializeCell(
 
   // Date value
   if (value instanceof Date) {
-    return simpleCell(ref, styleIdx, "", String(dateToSerial(value, is1904)))
+    return simpleCell(ref, styleIdx, "", String(dateToSerial(value, is1904 ? "1904" : "1900")))
   }
 
   return null
@@ -1690,7 +1672,7 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
       csChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
     }
     for (const color of rule.colorScale.colors) {
-      csChildren.push(xmlSelfClose("color", { rgb: color }))
+      csChildren.push(xmlSelfClose("color", serializeColorAttrs(color)))
     }
     children.push(xmlElement("colorScale", undefined, csChildren))
   }
@@ -1703,7 +1685,7 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
       if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value
       dbChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
     }
-    dbChildren.push(xmlSelfClose("color", { rgb: rule.dataBar.color }))
+    dbChildren.push(xmlSelfClose("color", serializeColorAttrs(rule.dataBar.color)))
     children.push(xmlElement("dataBar", undefined, dbChildren))
   }
 
@@ -1767,10 +1749,9 @@ function serializeSparklines(sparklines: Sparkline[]): string {
 
     const groupChildren: string[] = []
 
-    // Color series
-    const color = sp.color ?? "376092"
-    const colorRgb = color.length === 6 ? `FF${color}` : color
-    groupChildren.push(xmlSelfClose("x14:colorSeries", { rgb: colorRgb }))
+    groupChildren.push(
+      xmlSelfClose("x14:colorSeries", serializeColorAttrs(sp.color ?? { rgb: "376092" })),
+    )
 
     // Sparkline element
     const sparklineEl = xmlElement("x14:sparkline", undefined, [

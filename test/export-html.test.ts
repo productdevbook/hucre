@@ -37,7 +37,7 @@ describe("toHtml", () => {
       ["Name", "Value"],
       ["foo", 42],
     ])
-    const html = toHtml(sheet, { headerRow: true, classes: false })
+    const html = toHtml(sheet, { hasHeaderRow: true, classes: false })
     expect(html).toContain("<thead>")
     expect(html).toContain("</thead>")
     expect(html).toContain('<th scope="col">Name</th>')
@@ -241,7 +241,7 @@ describe("toHtml", () => {
       ["Name", "Price"],
       ["Widget", 9.99],
     ])
-    const html = toHtml(sheet, { includeStyleTag: true, headerRow: true })
+    const html = toHtml(sheet, { includeStyleTag: true, hasHeaderRow: true })
     // Light mode styles
     expect(html).toContain("color:#1a1a1a")
     expect(html).toContain("background:#fff")
@@ -339,7 +339,7 @@ describe("toHtml", () => {
       ],
       { cells },
     )
-    const html = toHtml(sheet, { headerRow: true, styles: true, classes: true })
+    const html = toHtml(sheet, { hasHeaderRow: true, styles: true, classes: true })
     expect(html).toContain("<th")
     expect(html).toContain("font-weight:bold")
     expect(html).toContain('class="hucre-num"')

@@ -1,13 +1,40 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`export surface snapshot > hucre/a11y 1`] = `
+[
+  "applyA11ySummary",
+  "audit",
+  "contrastRatio",
+  "relativeLuminance",
+]
+`;
+
+exports[`export surface snapshot > hucre/cell 1`] = `
+[
+  "a1ToR1C1",
+  "cellRef",
+  "colToLetter",
+  "isInRange",
+  "letterToCol",
+  "parseCellRef",
+  "parseRange",
+  "r1c1ToA1",
+  "rangeRef",
+  "toRange",
+  "toRanges",
+]
+`;
+
 exports[`export surface snapshot > hucre/csv 1`] = `
 [
   "CsvStreamWriter",
+  "cellError",
   "decodeCsvInput",
   "detectBom",
   "detectDelimiter",
   "fetchCsv",
   "formatCsvValue",
+  "isCellError",
   "parseCsv",
   "parseCsvObjects",
   "streamCsvRows",
@@ -18,16 +45,31 @@ exports[`export surface snapshot > hucre/csv 1`] = `
 ]
 `;
 
+exports[`export surface snapshot > hucre/format 1`] = `
+[
+  "cloneCellStyle",
+  "dateToSerial",
+  "formatDate",
+  "formatValue",
+  "isDateFormat",
+  "parseDate",
+  "serialToDate",
+  "serialToTime",
+  "timeToSerial",
+]
+`;
+
 exports[`export surface snapshot > hucre/json 1`] = `
 [
   "NdjsonStreamWriter",
+  "cellError",
   "collectHeaders",
   "flattenValue",
+  "isCellError",
   "jsonToWorkbook",
   "parseJson",
   "parseNdjson",
   "parseValue",
-  "readNdjsonStream",
   "streamNdjsonRows",
   "unflattenRow",
   "unflattenRows",
@@ -41,6 +83,8 @@ exports[`export surface snapshot > hucre/json 1`] = `
 exports[`export surface snapshot > hucre/ods 1`] = `
 [
   "OdsStreamWriter",
+  "cellError",
+  "isCellError",
   "readOds",
   "readOdsObjects",
   "streamOdsRows",
@@ -84,10 +128,12 @@ exports[`export surface snapshot > hucre/xlsx 1`] = `
   "a1ToR1C1",
   "calculateColumnWidth",
   "calculateRowHeight",
+  "cellError",
   "cellRef",
   "cloneCellStyle",
   "colToLetter",
   "hashSheetPassword",
+  "isCellError",
   "isInRange",
   "letterToCol",
   "link",
@@ -95,14 +141,12 @@ exports[`export surface snapshot > hucre/xlsx 1`] = `
   "openXlsx",
   "parseCellRef",
   "parseRange",
-  "parseThemeColors",
   "r1c1ToA1",
   "rangeRef",
   "readXls",
   "readXlsb",
   "readXlsx",
   "readXlsxObjects",
-  "resolveThemeColor",
   "saveXlsx",
   "streamXlsxRows",
   "toRange",
@@ -118,6 +162,8 @@ exports[`export surface snapshot > hucre/xlsx 1`] = `
 
 exports[`export surface snapshot > hucre/xml 1`] = `
 [
+  "cellError",
+  "isCellError",
   "readXml",
   "streamXmlRows",
   "writeXml",
@@ -129,7 +175,6 @@ exports[`export surface snapshot > root 1`] = `
 [
   "CsvStreamWriter",
   "DecryptionError",
-  "DefterError",
   "EncryptedFileError",
   "HucreError",
   "InvalidArgumentError",
@@ -144,7 +189,6 @@ exports[`export surface snapshot > root 1`] = `
   "NdjsonStreamWriter",
   "OdsStreamWriter",
   "ParseError",
-  "REL_CELL_IMAGES",
   "SheetBuilder",
   "UnsupportedFormatError",
   "ValidationError",
@@ -156,10 +200,9 @@ exports[`export surface snapshot > root 1`] = `
   "a11y",
   "a1ToR1C1",
   "addChart",
-  "assembleCellImages",
-  "attachPivotCacheFields",
   "calculateColumnWidth",
   "calculateRowHeight",
+  "cellError",
   "cellRef",
   "chartKindToWriteKind",
   "cloneCellStyle",
@@ -173,7 +216,6 @@ exports[`export surface snapshot > root 1`] = `
   "decodeCsvInput",
   "deleteColumns",
   "deleteRows",
-  "deserializeWorkbook",
   "detectBom",
   "detectDelimiter",
   "fetchCsv",
@@ -192,6 +234,7 @@ exports[`export surface snapshot > root 1`] = `
   "imageFromBase64",
   "insertColumns",
   "insertRows",
+  "isCellError",
   "isDateFormat",
   "isInRange",
   "jsonToWorkbook",
@@ -201,30 +244,17 @@ exports[`export surface snapshot > root 1`] = `
   "moveRows",
   "moveSheet",
   "openXlsx",
-  "parseCellImages",
   "parseCellRef",
-  "parseChart",
   "parseCsv",
   "parseCsvObjects",
   "parseDate",
-  "parseExternalLink",
   "parseJson",
   "parseNdjson",
-  "parsePersons",
-  "parsePivotCacheDefinition",
-  "parsePivotTable",
   "parseRange",
-  "parseSlicerCache",
-  "parseSlicers",
-  "parseThemeColors",
-  "parseThreadedComments",
-  "parseTimelineCache",
-  "parseTimelines",
   "parseValue",
   "r1c1ToA1",
   "rangeRef",
   "read",
-  "readNdjsonStream",
   "readObjects",
   "readOds",
   "readOdsObjects",
@@ -235,11 +265,9 @@ exports[`export surface snapshot > root 1`] = `
   "readXml",
   "removeSheet",
   "replaceCells",
-  "resolveThemeColor",
   "saveXlsx",
   "serialToDate",
   "serialToTime",
-  "serializeWorkbook",
   "sheetToArrays",
   "sheetToObjects",
   "sortRows",

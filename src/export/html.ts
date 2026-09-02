@@ -1,3 +1,4 @@
+import { isCellError } from "../cell-error"
 import type { Sheet, CellValue, CellStyle, Color, MergeRange } from "../_types"
 
 export interface HtmlExportOptions {
@@ -13,8 +14,6 @@ export interface HtmlExportOptions {
    * was the sharpest edge in the option set. See #365.
    */
   hasHeaderRow?: boolean
-  /** @deprecated Renamed to {@link HtmlExportOptions.hasHeaderRow}. */
-  headerRow?: boolean
   /** Custom CSS class prefix. Default: "hucre" */
   classPrefix?: string
   /** Include a minimal <style> block. Default: false */
@@ -130,7 +129,7 @@ function formatCellValue(value: CellValue): string {
   }
   if (typeof value === "boolean") return String(value)
   if (typeof value === "number") return String(value)
-  return escapeHtml(String(value))
+  return escapeHtml(isCellError(value) ? value.error : value)
 }
 
 /** Get the CSS class for a cell value type */
@@ -139,6 +138,7 @@ function getCellClass(value: CellValue, prefix: string): string | null {
   if (value instanceof Date) return `${prefix}-date`
   if (typeof value === "number") return `${prefix}-num`
   if (typeof value === "boolean") return `${prefix}-bool`
+  if (isCellError(value)) return `${prefix}-error`
   return null // strings get no special class
 }
 
@@ -179,23 +179,15 @@ function buildMergeMap(
 /**
  * Export a sheet as an HTML <table> string.
  */
-/**
- * Options after defaults are applied. `headerRow` is absent: it is the
- * deprecated spelling of `hasHeaderRow` and is folded into it, so the
- * resolved shape carries one field rather than two that can disagree.
- */
-type ResolvedHtmlOptions = Required<
-  Omit<HtmlExportOptions, "caption" | "ariaLabel" | "headerRow">
-> &
+/** Options after defaults are applied. */
+type ResolvedHtmlOptions = Required<Omit<HtmlExportOptions, "caption" | "ariaLabel">> &
   Pick<HtmlExportOptions, "caption" | "ariaLabel">
 
 export function toHtml(sheet: Sheet, options?: HtmlExportOptions): string {
   const opts: ResolvedHtmlOptions = {
     styles: options?.styles ?? false,
     classes: options?.classes ?? true,
-    // Accept the deprecated name for one major so existing calls keep
-    // working. See #365.
-    hasHeaderRow: options?.hasHeaderRow ?? options?.headerRow ?? false,
+    hasHeaderRow: options?.hasHeaderRow ?? false,
     classPrefix: options?.classPrefix ?? "hucre",
     includeStyleTag: options?.includeStyleTag ?? false,
     caption: options?.caption,

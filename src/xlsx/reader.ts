@@ -5,7 +5,7 @@ import type {
   Sheet,
   SheetKind,
   Workbook,
-  ReadOptions,
+  XlsxReadOptions,
   ReadInput,
   SheetImage,
   SheetTextBox,
@@ -138,7 +138,7 @@ async function readWorksheet(
  * true streaming requires random access. Use {@link streamXlsxRows} when
  * you need row-level streaming with low per-row memory.
  */
-export async function readXlsx(input: ReadInput, options?: ReadOptions): Promise<Workbook> {
+export async function readXlsx(input: ReadInput, options?: XlsxReadOptions): Promise<Workbook> {
   let data = await readInputToUint8Array(input, options?.maxInputBytes)
 
   // Password-protected workbooks arrive as an OLE2/CFB envelope. With a
@@ -1569,7 +1569,7 @@ interface SheetInfo {
 
 function parseWorkbookXml(
   xml: string,
-  options?: ReadOptions,
+  options?: XlsxReadOptions,
 ): {
   sheets: SheetInfo[]
   dateSystem: "1900" | "1904"
@@ -1735,7 +1735,7 @@ function parseWorkbookXml(
 }
 
 /** Filter sheet infos based on user-specified sheets option */
-function filterSheets(allSheets: SheetInfo[], filter?: ReadOptions["sheets"]): SheetInfo[] {
+function filterSheets(allSheets: SheetInfo[], filter?: XlsxReadOptions["sheets"]): SheetInfo[] {
   if (filter === undefined) return allSheets
 
   if (typeof filter === "function") {

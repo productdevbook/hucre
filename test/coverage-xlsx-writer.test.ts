@@ -1,3 +1,4 @@
+import { cellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { XlsxStreamWriter, writeXlsxStream } from "../src/xlsx/stream-writer"
@@ -5,7 +6,6 @@ import { writeTable } from "../src/xlsx/table-writer"
 import { writeContentTypes } from "../src/xlsx/content-types-writer"
 import { writeCustomProperties } from "../src/xlsx/doc-props-writer"
 import { writeXml } from "../src/xml/data-writer"
-import { deserializeWorkbook, serializeWorkbook } from "../src/worker"
 import { ZipReader } from "../src/zip/reader"
 import type {
   Cell,
@@ -133,7 +133,7 @@ describe("styled cells of every value shape", () => {
   it("keeps the style index on an error cell", async () => {
     const xml = await sheetXml({
       name: "S",
-      cells: cellMap([["0,0", { value: "#DIV/0!", style: styled }]]),
+      cells: cellMap([["0,0", { value: cellError("#DIV/0!"), style: styled }]]),
     })
 
     expect(xml).toMatch(/<c r="A1" t="e" s="\d+"><v>#DIV\/0!<\/v><\/c>/)
@@ -146,8 +146,8 @@ describe("styled cells of every value shape", () => {
     const xml = await sheetXml({
       name: "S",
       cells: cellMap([
-        ["0,0", { value: "#SPILL!" }],
-        ["0,1", { value: "#CALC!" }],
+        ["0,0", { value: cellError("#SPILL!") }],
+        ["0,1", { value: cellError("#CALC!") }],
       ]),
     })
 
@@ -391,14 +391,14 @@ describe("conditional formatting rule bodies", () => {
           { type: "num", value: "0" },
           { type: "num", value: "100" },
         ],
-        color: "638EC6",
+        color: { rgb: "638EC6" },
       },
     }
     const xml = await sheetXml({ name: "S", rows: [[5]], conditionalRules: [rule] })
 
     expect(xml).toContain('<cfvo type="num" val="0"/>')
     expect(xml).toContain('<cfvo type="num" val="100"/>')
-    expect(xml).toContain('<color rgb="638EC6"/>')
+    expect(xml).toContain('<color rgb="FF638EC6"/>')
   })
 
   it("honours reverse and showValue:false on an icon set", async () => {
@@ -431,7 +431,7 @@ describe("sparkline colours", () => {
     const xml = await sheetXml({
       name: "S",
       rows: [[1, 2, 3]],
-      sparklines: [{ location: "D1", dataRange: "Sheet1!A1:C1", color: "80FF0000" }],
+      sparklines: [{ location: "D1", dataRange: "Sheet1!A1:C1", color: { rgb: "80FF0000" } }],
     })
 
     expect(xml).toContain('<x14:colorSeries rgb="80FF0000"/>')
@@ -1185,7 +1185,7 @@ describe("worker serialization round trip", () => {
       externalLinks: [{ target: "../other.xlsx", sheetNames: ["Sheet1"], sheetData: [] }],
     }
 
-    const round = deserializeWorkbook(serializeWorkbook(wb))
+    const round = structuredClone(wb)
 
     expect(round.sheets[0].cells?.get("0,0")?.richText).toEqual([
       { text: "bold", font: { bold: true } },

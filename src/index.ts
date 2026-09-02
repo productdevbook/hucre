@@ -1,6 +1,12 @@
 // ── High-Level API ──────────────────────────────────────────────────
 export { read, write, readObjects, writeObjects } from "./defter"
-export type { ReadObjectsOptions, ReadObjectsResult, WriteObjectsTableOption } from "./defter"
+export type {
+  ReadObjectsOptions,
+  ReadObjectsResult,
+  WriteObjectsTableOption,
+  WriteFormat,
+  TextFormatOptions,
+} from "./defter"
 
 // ── XLSX ────────────────────────────────────────────────────────────
 export { readXlsx } from "./xlsx/reader"
@@ -12,17 +18,8 @@ export { openXlsx, saveXlsx } from "./xlsx/roundtrip"
 export type { RoundtripWorkbook } from "./xlsx/roundtrip"
 export { hashSheetPassword } from "./xlsx/password"
 export { calculateColumnWidth, measureValueWidth, calculateRowHeight } from "./xlsx/auto-size"
-// ── Low-level OOXML part parsers ───────────────────────────────────
-//
-// These take a raw XML string from inside an .xlsx package and return
-// hucre's internal model of it. They now live at `hucre/ooxml`, which is
-// explicitly outside the v1 stability commitment — their shapes mirror
-// the parse pipeline and move when it does.
-//
-// Kept here for backward compatibility. Prefer `hucre/ooxml`.
-//
-// @deprecated Import from `hucre/ooxml` instead.
-export { parseThemeColors, resolveThemeColor } from "./xlsx/theme"
+// The raw-XML part parsers (`parseChart`, `parsePivotTable`, …) live at
+// `hucre/ooxml`, outside the stability commitment, and only there.
 export { streamXlsxRows } from "./xlsx/stream-reader"
 export type { StreamRow } from "./xlsx/stream-reader"
 export {
@@ -32,13 +29,11 @@ export {
   XLSX_MAX_ROWS_PER_SHEET,
 } from "./xlsx/stream-writer"
 export type {
-  StreamWriterOptions,
   XlsxStreamWriterOptions,
   XlsxWriteStreamOptions,
   XlsxWriteStreamWorkbookOptions,
   XlsxStreamRow,
   XlsxStreamSheet,
-  StreamStyledCell,
 } from "./xlsx/stream-writer"
 export { readXlsxObjects, writeXlsxObjects } from "./xlsx/objects"
 export type {
@@ -52,13 +47,10 @@ export { readOds } from "./ods/reader"
 export { writeOds } from "./ods/writer"
 export { writeOdsStream } from "./ods/stream-writer"
 export { OdsStreamWriter } from "./ods/incremental-writer"
-export type {
-  OdsStreamWriterOptions,
-  OdsStyledCell,
-  OdsIncrementalCell,
-} from "./ods/incremental-writer"
-export type { OdsWriteRow, OdsWriteCell, OdsStreamWriteOptions } from "./ods/stream-writer"
+export type { OdsStreamWriterOptions } from "./ods/incremental-writer"
+export type { OdsStreamWriteOptions } from "./ods/stream-writer"
 export { streamOdsRows } from "./ods/stream"
+export type { OdsStreamReadOptions } from "./ods/stream"
 export { readOdsObjects, writeOdsObjects } from "./ods/objects"
 export type { OdsObjectsReadOptions, OdsObjectsResult, OdsObjectsWriteOptions } from "./ods/objects"
 
@@ -90,7 +82,6 @@ export {
   jsonToWorkbook,
   NdjsonStreamWriter,
   streamNdjsonRows,
-  readNdjsonStream,
   writeNdjsonStream,
   // Exported from hucre/json but not from the root, so the two surfaces
   // disagreed about what the JSON API is.
@@ -115,27 +106,21 @@ export type {
 
 // ── XML ────────────────────────────────────────────────────────────
 export { readXml, writeXml, writeXmlStream, streamXmlRows } from "./xml"
-export type {
-  XmlReadOptions,
-  XmlReadResult,
-  XmlWriteOptions,
-  XmlStreamRow,
-  XmlStreamReadOptions,
-} from "./xml"
+export type { XmlReadOptions, XmlReadResult, XmlWriteOptions, XmlStreamReadOptions } from "./xml"
 
 // ── Schema Validation ──────────────────────────────────────────────
 export { validateWithSchema } from "./_schema"
+export type { SchemaValidateOptions } from "./_schema"
 
 // ── Threaded Comments (Excel 365+) ─────────────────────────────────
-export { parsePersons, parseThreadedComments } from "./xlsx/threaded-comments-reader"
 export type { ThreadedComment, ThreadedCommentMention, ThreadedCommentPerson } from "./_types"
 
 // ── Accessibility ──────────────────────────────────────────────────
 export * as a11y from "./a11y"
+export type { AuditOptions } from "./a11y"
 export type { A11yIssue, A11ySeverity, A11yCode, A11yLocation, SheetA11y } from "./_types"
 
 // ── External Workbook Links ────────────────────────────────────────
-export { parseExternalLink } from "./xlsx/external-link-reader"
 export type {
   ExternalLink,
   ExternalCellType,
@@ -145,16 +130,9 @@ export type {
 } from "./_types"
 
 // ── Cell-Embedded Images (WPS DISPIMG) ────────────────────────────
-export { parseCellImages, assembleCellImages, REL_CELL_IMAGES } from "./xlsx/cell-images-reader"
-export type { ParsedCellImageRef } from "./xlsx/cell-images-reader"
 export type { CellImage } from "./_types"
 
 // ── Pivot Tables ───────────────────────────────────────────────────
-export {
-  parsePivotTable,
-  parsePivotCacheDefinition,
-  attachPivotCacheFields,
-} from "./xlsx/pivot-reader"
 export type {
   PivotTable,
   PivotCache,
@@ -166,12 +144,6 @@ export type {
 } from "./_types"
 
 // ── Slicers & Timelines ────────────────────────────────────────────
-export {
-  parseSlicers,
-  parseSlicerCache,
-  parseTimelines,
-  parseTimelineCache,
-} from "./xlsx/slicer-reader"
 export type {
   Slicer,
   SlicerCache,
@@ -182,7 +154,6 @@ export type {
 } from "./_types"
 
 // ── Charts ─────────────────────────────────────────────────────────
-export { parseChart } from "./xlsx/chart-reader"
 export { cloneChart, chartKindToWriteKind } from "./xlsx/chart-clone"
 export type { CloneChartOptions, CloneChartSeriesOverride } from "./xlsx/chart-clone"
 export { addChart, getCharts } from "./xlsx/chart-helpers"
@@ -262,17 +233,6 @@ export {
   sortRows,
 } from "./sheet-ops"
 
-// ── Web Worker Helpers ───────────────────────────────────────────
-export { serializeWorkbook, deserializeWorkbook } from "./worker"
-export type {
-  SerializedWorkbook,
-  SerializedSheet,
-  SerializedCell,
-  SerializedCellValue,
-  SerializedSheetImage,
-  SerializedWorkbookProperties,
-} from "./worker"
-
 // ── Cell Utilities ─────────────────────────────────────────────────
 export {
   parseCellRef,
@@ -307,11 +267,13 @@ export { writeTsv, writeTsvObjects } from "./export/tsv"
 // ── Image Utilities ──────────────────────────────────────────────
 export { imageFromBase64 } from "./image"
 
+// ── Cell error values ──────────────────────────────────────────────
+export { cellError, isCellError } from "./cell-error"
+export type { CellError, CellErrorCode } from "./cell-error"
+
 // ── Errors ─────────────────────────────────────────────────────────
 export {
   HucreError,
-  /** @deprecated Use {@link HucreError}. Same class object — `instanceof` is unaffected. */
-  DefterError,
   ParseError,
   ZipError,
   XmlError,
@@ -349,6 +311,7 @@ export type {
   SpreadsheetStreamWriter,
   // Cell
   CellValue,
+  CellInput,
   CellType,
   Cell,
   RichTextRun,
@@ -393,6 +356,13 @@ export type {
   WorkbookProperties,
   // Read
   ReadOptions,
+  ReadOptionsBase,
+  ZipReadOptions,
+  EncryptedReadOptions,
+  XlsxReadOptions,
+  OdsReadOptions,
+  XlsbReadOptions,
+  XlsReadOptions,
   ReadInput,
   SheetFilter,
   SheetFilterInfo,

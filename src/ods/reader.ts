@@ -1,9 +1,11 @@
 // ── ODS Reader ──────────────────────────────────────────────────────
 // Reads OpenDocument Spreadsheet (.ods) files.
 
+import { padToRectangle } from "../_grid"
+import { cellError } from "../cell-error"
 import type {
   Workbook,
-  ReadOptions,
+  OdsReadOptions,
   ReadInput,
   Sheet,
   CellValue,
@@ -537,6 +539,11 @@ export function parseOdsDateTime(text: string): Date | undefined {
 // ── Cell Value Parsing ──────────────────────────────────────────────
 
 function parseCellValue(cell: XmlElement): CellValue {
+  // LibreOffice stores an error as a string cell and says so in
+  // `calcext:value-type`; the token is the cell's text.
+  if (cell.attrs["calcext:value-type"] === "error") {
+    return cellError(extractTextAndHyperlink(cell).text || "#N/A")
+  }
   const valueType = cell.attrs["office:value-type"] ?? cell.attrs["calcext:value-type"] ?? ""
 
   switch (valueType) {
@@ -660,7 +667,7 @@ function odsAddressToExcelRange(address: string): string | undefined {
 
 function parseContentXml(
   xml: string,
-  options?: ReadOptions,
+  options?: OdsReadOptions,
 ): { sheets: Sheet[]; namedRanges?: NamedRange[] } {
   const doc = parseXml(xml)
   const sheets: Sheet[] = []
@@ -721,11 +728,8 @@ function parseContentXml(
     let currentRow = 0
     let pendingEmptyRows = 0
 
-    // `maxRows` and `range` are on the shared `ReadOptions`, whose doc makes
-    // no format-specific claim — but this reader used to read neither, so a
-    // caller bounding a large ODS file got the whole thing and no warning.
-    // See #439 §U. `maxRows` stops the walk; `range` masks afterwards,
-    // matching what readXlsx returns for the same option.
+    // `maxRows` stops the walk; `range` masks afterwards, matching what
+    // readXlsx returns for the same option. See #439 §U.
     const maxRowsLimit = options?.maxRows ?? 0 // 0 = unlimited
     const rangeFilter = options?.range ? parseRange(options.range) : undefined
 
@@ -961,6 +965,7 @@ function parseContentXml(
       }
     }
 
+    padToRectangle(rows)
     const sheet: Sheet = { name, rows }
 
     if (merges.length > 0) {
@@ -1061,7 +1066,7 @@ function parseMetaXml(xml: string): Partial<WorkbookProperties> {
  * For ReadableStream input, the stream is fully buffered before parsing
  * because the ZIP central directory lives at the end of the archive.
  */
-export async function readOds(input: ReadInput, options?: ReadOptions): Promise<Workbook> {
+export async function readOds(input: ReadInput, options?: OdsReadOptions): Promise<Workbook> {
   const data = await readInputToUint8Array(input, options?.maxInputBytes)
 
   // ODF supports password-encrypted documents via the same OLE2 / CFB

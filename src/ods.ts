@@ -5,14 +5,9 @@ export { readOds } from "./ods/reader"
 export { writeOds } from "./ods/writer"
 export { writeOdsStream } from "./ods/stream-writer"
 export { OdsStreamWriter } from "./ods/incremental-writer"
-export type {
-  OdsStreamWriterOptions,
-  OdsStyledCell,
-  OdsIncrementalCell,
-} from "./ods/incremental-writer"
-export type { OdsWriteRow, OdsWriteCell, OdsStreamWriteOptions } from "./ods/stream-writer"
+export type { OdsStreamWriterOptions } from "./ods/incremental-writer"
+export type { OdsStreamWriteOptions } from "./ods/stream-writer"
 export { streamOdsRows } from "./ods/stream"
-export type { OdsStreamRow } from "./ods/stream"
 export { readOdsObjects, writeOdsObjects } from "./ods/objects"
 export { toWriteOptions, toWriteSheet } from "./write-model"
 export type { WriteModelDrop, ToWriteOptionsOptions } from "./write-model"
@@ -29,10 +24,21 @@ export type {
   ColumnDef,
   MergeRange,
   ReadInput,
-  ReadOptions,
+  OdsReadOptions,
   Sheet,
   Workbook,
   WorkbookProperties,
   WriteOptions,
   WriteSheet,
 } from "./_types"
+
+// A cell may hold an error value; every writer takes one, and the spreadsheet readers produce them.
+export { cellError, isCellError } from "./cell-error"
+export type { CellError, CellErrorCode } from "./cell-error"
+
+// Every stream*Rows reader yields this one shape.
+export type { StreamRow } from "./_types"
+
+// What a writer takes where a cell goes: a value, or a cell object.
+export type { CellInput } from "./_types"
+export type { OdsStreamReadOptions } from "./ods/stream"

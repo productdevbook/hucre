@@ -95,8 +95,8 @@ describe("streamOdsRows — sheet index", () => {
       ],
     })
     const rows = []
-    for await (const row of streamOdsRows(buf)) rows.push(row)
-    expect(rows.map((r) => [r.sheetIndex, r.index, r.values[0]])).toEqual([
+    for await (const row of streamOdsRows(buf, { sheet: "all" })) rows.push(row)
+    expect(rows.map((r) => [r.sheet, r.index, r.values[0]])).toEqual([
       [0, 0, "a"],
       [1, 0, "b"],
       [1, 1, "c"],

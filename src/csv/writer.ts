@@ -1,3 +1,4 @@
+import { isCellError } from "../cell-error"
 import type { CellValue, CsvWriteOptions } from "../_types"
 import { escapeFormula } from "./formula"
 import { formatDate as formatExcelDate } from "../_date"
@@ -35,8 +36,8 @@ export function formatCsvValue(value: CellValue, options?: CsvWriteOptions): str
     return formatDate(value, opts.dateFormat)
   }
 
-  // String — apply formula escaping if enabled, then quoting
-  let str = String(value)
+  // String, or an error's token — apply formula escaping if enabled, then quoting
+  let str = isCellError(value) ? value.error : value
   if (opts.escapeFormulae) {
     str = escapeFormula(str)
   }
@@ -56,12 +57,10 @@ export function writeCsv(rows: CellValue[][], options?: CsvWriteOptions): string
   }
 
   // Headers row
-  if (opts.headers) {
-    if (Array.isArray(opts.headers)) {
-      parts.push(opts.headers.map((h) => quoteField(h, opts)).join(opts.delimiter))
-      if (rows.length > 0) {
-        parts.push(opts.lineSeparator)
-      }
+  if (opts.headers && opts.writeHeader) {
+    parts.push(opts.headers.map((h) => quoteField(h, opts)).join(opts.delimiter))
+    if (rows.length > 0) {
+      parts.push(opts.lineSeparator)
     }
   }
 
@@ -94,16 +93,16 @@ export function writeCsvObjects(
   let headers: string[]
   if (explicitColumns) {
     headers = explicitColumns
-  } else if (Array.isArray(opts.headers)) {
+  } else if (opts.headers) {
     headers = opts.headers
-  } else if (opts.headers === true || opts.headers === undefined) {
+  } else if (opts.writeHeader) {
     // Auto-detect from first object's keys
     if (data.length === 0) {
       return opts.bom ? UTF8_BOM : ""
     }
     headers = collectHeaders(data)
   } else {
-    // headers === false — no header row, but we still need column order
+    // writeHeader: false — no header row, but we still need column order
     if (data.length === 0) {
       return opts.bom ? UTF8_BOM : ""
     }
@@ -115,7 +114,7 @@ export function writeCsvObjects(
         return val === undefined ? null : val
       }),
     )
-    return writeCsv(rows, { ...options, headers: undefined })
+    return writeCsv(rows, { ...options, headers: undefined, writeHeader: false })
   }
 
   // Convert objects to rows
@@ -136,7 +135,8 @@ interface NormalizedWriteOptions {
   lineSeparator: string
   quote: string
   quoteStyle: "all" | "required" | "none"
-  headers: string[] | boolean | undefined
+  headers: string[] | undefined
+  writeHeader: boolean
   bom: boolean
   dateFormat: string | undefined
   nullValue: string
@@ -151,6 +151,7 @@ function normalizeWriteOptions(options?: CsvWriteOptions): NormalizedWriteOption
     quote: options?.quote ?? '"',
     quoteStyle: options?.quoteStyle ?? "required",
     headers: options?.headers,
+    writeHeader: options?.writeHeader !== false,
     bom: options?.bom ?? false,
     dateFormat: options?.dateFormat,
     nullValue: options?.nullValue ?? "",
@@ -184,7 +185,7 @@ function formatAndQuote(value: CellValue, opts: NormalizedWriteOptions): string 
     return quoteField(raw, opts)
   }
 
-  let str = String(value)
+  let str = isCellError(value) ? value.error : value
   if (opts.escapeFormulae) {
     str = escapeFormula(str)
   }

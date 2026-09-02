@@ -37,12 +37,12 @@ describe("formatValue: elapsed time", () => {
 
 describe("formatValue: 1904 date system", () => {
   it("formats serial 0 as 1904-01-01 under the 1904 system", () => {
-    expect(formatValue(0, "yyyy-mm-dd", { is1904: true })).toBe("1904-01-01")
+    expect(formatValue(0, "yyyy-mm-dd", { dateSystem: "1904" })).toBe("1904-01-01")
   })
 
   it("differs from the 1900 system for the same serial", () => {
     const s1900 = formatValue(1, "yyyy-mm-dd")
-    const s1904 = formatValue(1, "yyyy-mm-dd", { is1904: true })
+    const s1904 = formatValue(1, "yyyy-mm-dd", { dateSystem: "1904" })
     expect(s1900).not.toBe(s1904)
   })
 })

@@ -13,6 +13,9 @@ import * as ods from "../src/ods"
 import * as json from "../src/json"
 import * as xml from "../src/xml"
 import * as ooxml from "../src/ooxml"
+import * as cell from "../src/cell"
+import * as format from "../src/format"
+import * as a11y from "../src/a11y"
 
 // ── Type-level surface ───────────────────────────────────────────────
 // Values can be asserted at runtime; types cannot. Importing them here
@@ -53,7 +56,7 @@ import type {
   CsvStreamWriterOptions,
   CsvWriteOptions,
 } from "../src/csv"
-import type { OdsObjectsResult, OdsStreamRow } from "../src/ods"
+import type { OdsObjectsResult } from "../src/ods"
 import type { JsonReadResult, NdjsonStreamWriterOptions } from "../src/json"
 import type {
   XlsxObjectsResult,
@@ -85,7 +88,6 @@ type _SurfaceCheck = [
   MergeRange,
   NdjsonStreamWriterOptions,
   OdsObjectsResult,
-  OdsStreamRow,
   PaperSize,
   ReadObjectsOptions,
   ReadObjectsResult,
@@ -173,8 +175,6 @@ describe("hucre/xlsx", () => {
         "calculateColumnWidth",
         "measureValueWidth",
         "calculateRowHeight",
-        "parseThemeColors",
-        "resolveThemeColor",
         "parseCellRef",
         "colToLetter",
         "cellRef",
@@ -235,7 +235,6 @@ describe("hucre/json", () => {
         "jsonToWorkbook",
         "NdjsonStreamWriter",
         "streamNdjsonRows",
-        "readNdjsonStream",
         "flattenValue",
         "collectHeaders",
         "unflattenRow",
@@ -275,11 +274,17 @@ describe("hucre/ooxml", () => {
     )
   })
 
-  it("is still reachable from the root, for now", () => {
-    // Moved rather than removed: the root re-exports stay, marked
-    // deprecated, so nothing breaks at v1. See #365.
+  it("keeps the raw-XML parsers off the root", () => {
+    // v1 re-exported them from the root, deprecated; v2 removes that.
+    // The model-level chart helpers stay at the root — they take a
+    // `Chart`, not an XML string.
+    const modelLevel = new Set(["cloneChart", "chartKindToWriteKind", "addChart", "getCharts"])
     for (const name of names(ooxml)) {
-      expect(names(root), `root no longer exports ${name}`).toContain(name)
+      if (modelLevel.has(name)) {
+        expect(names(root), `root lost ${name}`).toContain(name)
+      } else {
+        expect(names(root), `root still exports ${name}`).not.toContain(name)
+      }
     }
   })
 })
@@ -316,9 +321,6 @@ describe("hucre (root)", () => {
       root,
       [
         "HucreError",
-        // Deprecated alias for HucreError, kept so v0 error handlers do
-        // not break. Still has to be exported.
-        "DefterError",
         "ParseError",
         "ZipError",
         "XmlError",
@@ -388,5 +390,26 @@ describe("export surface snapshot", () => {
 
   it("hucre/ooxml", () => {
     expect(names(ooxml)).toMatchSnapshot()
+  })
+
+  it("hucre/cell", () => {
+    expect(names(cell)).toMatchSnapshot()
+  })
+
+  it("hucre/format", () => {
+    expect(names(format)).toMatchSnapshot()
+  })
+
+  it("hucre/a11y", () => {
+    expect(names(a11y)).toMatchSnapshot()
+  })
+})
+
+describe("hucre/cell and hucre/format", () => {
+  it("carry every helper the root does, so no second entry point is needed for a string helper (#474)", () => {
+    for (const name of names(cell)) expect(names(root), name).toContain(name)
+    for (const name of names(format)) expect(names(root), name).toContain(name)
+    expect(names(cell)).toContain("letterToCol")
+    expect(names(xlsx)).toContain("letterToCol")
   })
 })

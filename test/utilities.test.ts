@@ -183,7 +183,7 @@ describe("sheetToObjects", () => {
     expect(data).toEqual([{ A: "x", B: null, C: null }])
   })
 
-  it("should keep empty rows — it is a pure projection with no filtering", () => {
+  it("skips empty rows by default, like every other *Objects reader, and keeps them on request", () => {
     const sheet = makeSheet({
       rows: [
         ["A", "B"],
@@ -191,7 +191,8 @@ describe("sheetToObjects", () => {
         ["x", "y"],
       ],
     })
-    const { data } = sheetToObjects(sheet)
+    expect(sheetToObjects(sheet).data).toEqual([{ A: "x", B: "y" }])
+    const { data } = sheetToObjects(sheet, { skipEmptyRows: false })
     expect(data).toEqual([
       { A: null, B: null },
       { A: "x", B: "y" },

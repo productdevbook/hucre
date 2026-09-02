@@ -1,6 +1,7 @@
 // ── Worksheet Parser ─────────────────────────────────────────────────
 // Parses xl/worksheets/sheetN.xml into a Sheet object.
 
+import { cellError } from "../cell-error"
 import type {
   ReadWarning,
   Sheet,
@@ -308,7 +309,7 @@ function worksheetParser(
   let inSparklineF = false
   let inSparklineSqref = false
   let sparklineGroupType = ""
-  let sparklineGroupColor = ""
+  let sparklineGroupColor: Color | undefined
   let sparklineGroupMarkers = false
   let sparklineF = ""
   let sparklineSqref = ""
@@ -367,11 +368,11 @@ function worksheetParser(
   // colorScale state
   let inColorScale = false
   let csCfvos: Array<{ type: string; value?: string }> = []
-  let csColors: string[] = []
+  let csColors: Color[] = []
   // dataBar state
   let inDataBar = false
   let dbCfvos: Array<{ type: string; value?: string }> = []
-  let dbColor = ""
+  let dbColor: Color | undefined
   // iconSet state
   let inIconSet = false
   let isAttrs: Record<string, string> = {}
@@ -737,7 +738,7 @@ function worksheetParser(
             csCfvos = []
             csColors = []
             dbCfvos = []
-            dbColor = ""
+            dbColor = undefined
             isCfvos = []
             isAttrs = {}
           }
@@ -762,7 +763,7 @@ function worksheetParser(
           if (inCfRule) {
             inDataBar = true
             dbCfvos = []
-            dbColor = ""
+            dbColor = undefined
           }
           break
         case "iconSet":
@@ -872,9 +873,9 @@ function worksheetParser(
           break
         case "color":
           if (inColorScale) {
-            csColors.push(attrs["rgb"] ?? "")
+            csColors.push(parseColorAttrs(attrs))
           } else if (inDataBar) {
-            dbColor = attrs["rgb"] ?? ""
+            dbColor = parseColorAttrs(attrs)
           } else if (inInlineRPr && currentRunFont) {
             applyFontProp(currentRunFont, local, attrs)
           }
@@ -892,16 +893,12 @@ function worksheetParser(
           if (inSparklineGroups) {
             inSparklineGroup = true
             sparklineGroupType = attrs["type"] ?? "line"
-            sparklineGroupColor = ""
+            sparklineGroupColor = undefined
             sparklineGroupMarkers = attrs["markers"] === "1" || attrs["markers"] === "true"
           }
           break
         case "colorSeries":
-          if (inSparklineGroup) {
-            const rgb = attrs["rgb"] ?? ""
-            // Strip ARGB alpha prefix if present (8 chars → 6 chars)
-            sparklineGroupColor = rgb.length === 8 ? rgb.slice(2) : rgb
-          }
+          if (inSparklineGroup) sparklineGroupColor = parseColorAttrs(attrs)
           break
         case "sparkline":
           if (inSparklineGroup) {
@@ -1660,9 +1657,9 @@ function buildConditionalRule(
   sqref: string,
   formulas: string[],
   csCfvos: Array<{ type: string; value?: string }>,
-  csColors: string[],
+  csColors: Color[],
   dbCfvos: Array<{ type: string; value?: string }>,
-  dbColor: string,
+  dbColor: Color | undefined,
   isCfvos: Array<{ type: string; value?: string }>,
   isAttrsObj: Record<string, string>,
   dxfs: CellStyle[] | undefined,
@@ -1746,7 +1743,7 @@ function buildConditionalRule(
         type: c.type as "min" | "max" | "num" | "percent" | "percentile",
         value: c.value,
       })),
-      color: dbColor,
+      color: dbColor ?? {},
     }
   }
 
@@ -1930,7 +1927,7 @@ function processCell(
       // `value` still holds the error token either way, so spotting an
       // error by its value is unaffected; a *hard-coded* error cell,
       // which carries no formula, still reports `"error"`. See #497.
-      value = valueText
+      value = cellError(valueText)
       cellType = formula ? "formula" : "error"
       if (formula) formulaResult = value
       break
@@ -1980,7 +1977,7 @@ function processCell(
       if (!Number.isNaN(num) && valueText !== "") {
         // Check if this is a date via style
         if (ctx.styles && styleIndex >= 0 && isDateStyle(ctx.styles, styleIndex)) {
-          value = serialToDate(num, ctx.dateSystem === "1904")
+          value = serialToDate(num, ctx.dateSystem)
           cellType = "date"
         } else {
           value = num
@@ -2112,14 +2109,7 @@ function applyFontProp(font: FontStyle, tag: string, attrs: Record<string, strin
       if (attrs["val"]) font.name = attrs["val"]
       break
     case "color":
-      font.color = {}
-      if (attrs["rgb"]) {
-        const rgb = attrs["rgb"]
-        font.color.rgb = rgb.length === 8 ? rgb.slice(2) : rgb
-      }
-      if (attrs["theme"]) font.color.theme = Number(attrs["theme"])
-      if (attrs["tint"]) font.color.tint = Number(attrs["tint"])
-      if (attrs["indexed"]) font.color.indexed = Number(attrs["indexed"])
+      font.color = parseColorAttrs(attrs)
       break
     case "vertAlign":
       if (attrs["val"] === "superscript" || attrs["val"] === "subscript") {
@@ -2289,7 +2279,12 @@ function intAttr(value: string | undefined): number | undefined {
 
 // ── Color Attribute Parser ──────────────────────────────────────────────
 
-/** Parse color attributes from an XML element (e.g. <tabColor>, <color>) */
+/**
+ * Parse a colour element's attributes — `<tabColor>`, a font or fill
+ * `<color>`, a conditional-format scale stop, a sparkline series. One
+ * reader for all of them: the CF and sparkline sites used to read `rgb`
+ * alone and lose theme colours.
+ */
 function parseColorAttrs(attrs: Record<string, string>): Color {
   const color: Color = {}
   if (attrs["rgb"]) {

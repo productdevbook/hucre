@@ -573,7 +573,7 @@ describe("cloneSheet", () => {
           type: "dataBar",
           priority: 1,
           range: "A1:A5",
-          dataBar: { cfvo: [{ type: "min" }, { type: "max" }], color: "FF638EC6" },
+          dataBar: { cfvo: [{ type: "min" }, { type: "max" }], color: { rgb: "638EC6" } },
         },
         {
           type: "iconSet",

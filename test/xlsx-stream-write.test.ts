@@ -178,7 +178,7 @@ describe("writeXlsxStream", () => {
 
   it("uses the shared string table when asked", async () => {
     const bytes = await collect(
-      writeXlsxStream([["hello"], ["hello"]], { name: "S", inlineStrings: false }),
+      writeXlsxStream([["hello"], ["hello"]], { name: "S", stringMode: "shared" }),
     )
     const zip = new ZipReader(bytes)
     expect(zip.has("xl/sharedStrings.xml")).toBe(true)

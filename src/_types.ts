@@ -1,6 +1,8 @@
 // ── Cell Value Types ────────────────────────────────────────────────
 
-export type CellValue = string | number | boolean | Date | null
+import type { CellError } from "./cell-error"
+
+export type CellValue = string | number | boolean | Date | CellError | null
 
 export type CellType =
   | "string"
@@ -234,6 +236,14 @@ export interface Cell {
   comment?: CellComment
 }
 
+/**
+ * What a writer accepts where a cell goes: a bare value, or a cell
+ * object — `{ value, style }`, `{ formula }`, anything a {@link Cell}
+ * carries. One type for every writer; v1 had four spellings of it
+ * (`Partial<Cell>`, `StreamStyledCell`, `OdsStyledCell`, `OdsWriteCell`).
+ */
+export type CellInput = CellValue | Partial<Cell>
+
 // ── Column Definition ──────────────────────────────────────────────
 
 export interface ColumnDef {
@@ -341,13 +351,18 @@ export interface ConditionalRule {
   style?: CellStyle
   stopIfTrue?: boolean
   range: string
-  /** Color scale configuration */
+  /**
+   * Color scale configuration. Colours are {@link Color}, the same shape
+   * fonts and fills use — a scale built from theme colours used to read
+   * back as `""` and be written back as `rgb=""`, because the field could
+   * only hold an RGB string.
+   */
   colorScale?: {
     cfvo: Array<{
       type: "min" | "max" | "num" | "percent" | "percentile"
       value?: string
     }>
-    colors: string[] // hex ARGB colors like "FF63BE7B"
+    colors: Color[]
   }
   /** Data bar configuration */
   dataBar?: {
@@ -355,7 +370,7 @@ export interface ConditionalRule {
       type: "min" | "max" | "num" | "percent" | "percentile"
       value?: string
     }>
-    color: string
+    color: Color
   }
   /** Icon set configuration */
   iconSet?: {
@@ -574,8 +589,8 @@ export interface Sparkline {
   dataRange: string
   /** Type: line, column, or win/loss (stacked) */
   type?: "line" | "column" | "stacked"
-  /** Color (hex RGB without '#', e.g. "376092") */
-  color?: string
+  /** Series colour. Default: Excel's `376092`. */
+  color?: Color
   /** Show markers */
   markers?: boolean
 }
@@ -723,7 +738,7 @@ export type {
 
 /**
  * Per-sheet accessibility metadata. Hints to screen readers and
- * input to {@link audit} from the `hucre/a11y` entry point.
+ * input to `audit` from the `hucre/a11y` entry point.
  */
 export interface SheetA11y {
   /**
@@ -1504,27 +1519,72 @@ export interface SheetFilterInfo {
 export type SheetFilter = (info: SheetFilterInfo, index: number) => boolean
 
 /**
- * Options accepted by every reader.
+ * The options every reader honours.
  *
- * Support is not uniform, and the type cannot express that — so it is
- * stated here rather than left for a caller to discover:
- *
- * | option       | xlsx | ods | xlsb | xls |
- * | ------------ | ---- | --- | ---- | --- |
- * | `sheets`     | yes  | yes | no   | no  |
- * | `dateSystem` | yes  | no  | yes  | yes |
- * | `readStyles` | yes  | yes | no   | no  |
- * | `password`   | yes  | no  | yes  | no  |
- * | `maxRows`    | yes  | no  | no   | no  |
- * | `range`      | yes  | no  | no   | no  |
- *
- * `maxInputBytes` applies wherever the input is a `ReadableStream`.
- *
- * `headerRow` and `schema` used to live here and were honoured by no
- * reader at all; they were removed before v1 rather than frozen. Header
- * selection belongs on the `*Objects` readers, which do implement it.
+ * Each reader takes its own extension of this — {@link XlsxReadOptions},
+ * {@link OdsReadOptions}, {@link XlsbReadOptions}, {@link XlsReadOptions}
+ * — carrying exactly the fields it reads. v1 had one `ReadOptions` for
+ * all four and a table in its doc comment saying which reader ignored
+ * what; `readXls(bytes, { password })` compiled and did nothing. The type
+ * is the table now.
  */
-export interface ReadOptions {
+export interface ReadOptionsBase {
+  /**
+   * Maximum number of bytes buffered from a `ReadableStream` input.
+   * Default: 1 GiB ({@link MAX_INPUT_BYTES}). A stream that exceeds it
+   * fails with a `ParseError` instead of growing until the process runs
+   * out of memory. Ignored for `Uint8Array` / `ArrayBuffer` input, which
+   * the caller has already allocated.
+   */
+  maxInputBytes?: number
+  /**
+   * Maximum number of cells a single sheet may be normalized into —
+   * `rows` is a dense rectangle, so this bounds the bounding box rather
+   * than the cell count. Default: 20,000,000 ({@link MAX_TOTAL_CELLS}).
+   *
+   * The default refuses two legal cells at `A1` and `XFD1048576`, which
+   * describe 1.7e10 slots from a few hundred bytes of XML. It also
+   * refuses a legitimate 25-million-cell sheet, which is why this is a
+   * number rather than a ceiling: raise it when you know the file, and
+   * budget roughly 8 bytes per slot for the array alone.
+   *
+   */
+  maxTotalCells?: number
+}
+
+/** Options of readers whose container is a ZIP archive. */
+export interface ZipReadOptions {
+  /**
+   * Maximum number of bytes any single ZIP entry may decompress to.
+   * Default: 2 GiB ({@link MAX_DECOMPRESSED_BYTES}).
+   *
+   * This is the zip-bomb bound — an entry that claims a small compressed
+   * size and expands past it fails with a `ZipError` rather than being
+   * allowed to allocate. Raising it is the one on this list where a
+   * caller should be sure the input is trusted.
+   *
+   * Honoured wherever the container is a ZIP: `readXlsx`, `readOds`.
+   */
+  maxDecompressedBytes?: number
+}
+
+/** Options of readers that can open an ECMA-376 Agile-encrypted package. */
+export interface EncryptedReadOptions {
+  /** Password for encrypted files */
+  password?: string
+  /**
+   * Maximum password-derivation spin count accepted from an encrypted
+   * workbook. Default: 10,000,000 ({@link MAX_SPIN_COUNT}).
+   *
+   * Office writes 100,000. The bound exists so a hostile file cannot
+   * name a count that pins a CPU for minutes; raising it means agreeing
+   * to spend that time.
+   */
+  maxSpinCount?: number
+}
+
+/** Options `readXlsx` (and `openXlsx`) honour. */
+export interface XlsxReadOptions extends ReadOptionsBase, ZipReadOptions, EncryptedReadOptions {
   /**
    * Which sheets to read.
    * - `Array<number | string>` — explicit indexes and/or names.
@@ -1536,7 +1596,10 @@ export interface ReadOptions {
    * Default: all sheets.
    */
   sheets?: Array<number | string> | SheetFilter
-  /** Date system override. Default: auto-detect from file */
+  /**
+   * Date system override. Default: `"auto"`, which takes the file's own
+   * `date1904` flag.
+   */
   dateSystem?: "1900" | "1904" | "auto"
   /**
    * Whether to read styles. Default: false (faster without).
@@ -1550,20 +1613,10 @@ export interface ReadOptions {
    * both. Use `cloneCellStyle` before editing a single cell's format.
    */
   readStyles?: boolean
-  /** Password for encrypted files */
-  password?: string
   /** Maximum number of data rows to read per sheet. Default: unlimited */
   maxRows?: number
   /** Cell range to read (e.g. "A1:D10"). Only cells within this range are returned. */
   range?: string
-  /**
-   * Maximum number of bytes buffered from a `ReadableStream` input.
-   * Default: 1 GiB ({@link MAX_INPUT_BYTES}). A stream that exceeds it
-   * fails with a `ParseError` instead of growing until the process runs
-   * out of memory. Ignored for `Uint8Array` / `ArrayBuffer` input, which
-   * the caller has already allocated.
-   */
-  maxInputBytes?: number
   /**
    * Return cells without materializing the grid. Default: false.
    *
@@ -1589,41 +1642,6 @@ export interface ReadOptions {
    */
   sparse?: boolean
   /**
-   * Maximum number of cells a single sheet may be normalized into —
-   * `rows` is a dense rectangle, so this bounds the bounding box rather
-   * than the cell count. Default: 20,000,000 ({@link MAX_TOTAL_CELLS}).
-   *
-   * The default refuses two legal cells at `A1` and `XFD1048576`, which
-   * describe 1.7e10 slots from a few hundred bytes of XML. It also
-   * refuses a legitimate 25-million-cell sheet, which is why this is a
-   * number rather than a ceiling: raise it when you know the file, and
-   * budget roughly 8 bytes per slot for the array alone.
-   *
-   * Honoured by `readXlsx`, `readOds` and `readXls`.
-   */
-  maxTotalCells?: number
-  /**
-   * Maximum number of bytes any single ZIP entry may decompress to.
-   * Default: 2 GiB ({@link MAX_DECOMPRESSED_BYTES}).
-   *
-   * This is the zip-bomb bound — an entry that claims a small compressed
-   * size and expands past it fails with a `ZipError` rather than being
-   * allowed to allocate. Raising it is the one on this list where a
-   * caller should be sure the input is trusted.
-   *
-   * Honoured wherever the container is a ZIP: `readXlsx`, `readOds`.
-   */
-  maxDecompressedBytes?: number
-  /**
-   * Maximum password-derivation spin count accepted from an encrypted
-   * workbook. Default: 10,000,000 ({@link MAX_SPIN_COUNT}).
-   *
-   * Office writes 100,000. The bound exists so a hostile file cannot
-   * name a count that pins a CPU for minutes; raising it means agreeing
-   * to spend that time.
-   */
-  maxSpinCount?: number
-  /**
    * Called for each thing a reader had to drop.
    *
    * The readers are lenient on purpose — a corrupt reference yields
@@ -1645,6 +1663,69 @@ export interface ReadOptions {
    */
   onWarning?: (warning: ReadWarning) => void
 }
+
+/**
+ * Options `readOds` honours. ODS stores ISO date strings, so there is no
+ * 1900/1904 system to pick; ODS encryption is not implemented (#156).
+ */
+export interface OdsReadOptions extends ReadOptionsBase, ZipReadOptions {
+  /**
+   * Which sheets to read.
+   * - `Array<number | string>` — explicit indexes and/or names.
+   * - `(info, index) => boolean` — predicate evaluated against
+   *   {@link SheetFilterInfo} before each worksheet body is parsed.
+   *   Useful for selecting by visibility, e.g.
+   *   `sheets: (info) => !info.hidden && !info.veryHidden`.
+   *
+   * Default: all sheets.
+   */
+  sheets?: Array<number | string> | SheetFilter
+  /**
+   * Whether to read styles. Default: false (faster without).
+   *
+   * **A resolved style's parts are shared, not copied.** `xl/styles.xml`
+   * holds one font, fill and border record per distinct format, and every
+   * cell that indexes it gets that same object — copying per cell nearly
+   * doubles peak memory on a styled read for a guarantee most callers
+   * never need. So `cells.get(a).style.font === cells.get(b).style.font`
+   * whenever `a` and `b` share a format, and writing through one changes
+   * both. Use `cloneCellStyle` before editing a single cell's format.
+   */
+  readStyles?: boolean
+  /** Maximum number of data rows to read per sheet. Default: unlimited */
+  maxRows?: number
+  /** Cell range to read (e.g. "A1:D10"). Only cells within this range are returned. */
+  range?: string
+}
+
+/**
+ * Options `readXlsb` honours. The binary reader surfaces values, sheet
+ * names and merges only, so there are no styles to ask for and no
+ * per-sheet selection.
+ */
+export interface XlsbReadOptions extends ReadOptionsBase, ZipReadOptions, EncryptedReadOptions {
+  /**
+   * Date system override. Default: `"auto"`, which takes the file's own
+   * `date1904` flag.
+   */
+  dateSystem?: "1900" | "1904" | "auto"
+}
+
+/** Options `readXls` honours. A `.xls` is a CFB container, not a ZIP. */
+export interface XlsReadOptions extends ReadOptionsBase {
+  /**
+   * Date system override. Default: `"auto"`, which takes the file's own
+   * `date1904` flag.
+   */
+  dateSystem?: "1900" | "1904" | "auto"
+}
+
+/**
+ * What `read()` accepts: it does not know the format before it looks at
+ * the bytes, so it takes the widest reader's options and hands the
+ * detected reader the fields it understands.
+ */
+export type ReadOptions = XlsxReadOptions
 
 // ── Write Options ──────────────────────────────────────────────────
 
@@ -1826,8 +1907,13 @@ export interface CsvReadOptions {
    * `escape` on the write side would corrupt a value ending in one.
    */
   escape?: string
-  /** Whether first row is header. Default: false */
-  header?: boolean
+  /**
+   * Whether the first row is a header. Default: false. The row is still
+   * returned; it names columns for `transformValue`, and `skipHeaderRow`
+   * is what consumes it. The same name `toHtml` and `toMarkdown` use for
+   * the same question.
+   */
+  hasHeaderRow?: boolean
   /** Skip BOM if present. Default: true */
   skipBom?: boolean
   /** Type inference for numbers, booleans, dates. Default: false */
@@ -1882,8 +1968,17 @@ export interface CsvWriteOptions {
   quote?: string
   /** Quote style. Default: "required" */
   quoteStyle?: "all" | "required" | "none"
-  /** Headers row from column names */
-  headers?: string[] | boolean
+  /**
+   * Header names to write, when the rows carry none of their own. For
+   * `writeCsvObjects` and the streaming writers this is also the column
+   * order; `columns` wins where both are given.
+   */
+  headers?: string[]
+  /**
+   * Whether to write a header line at all. Default: true wherever one is
+   * known — explicit `headers`, or object rows whose keys name the columns.
+   */
+  writeHeader?: boolean
   /** Prepend UTF-8 BOM (for Excel compatibility). Default: false */
   bom?: boolean
   /**
@@ -1998,16 +2093,21 @@ export interface SchemaValidationIssue {
  * rows are dense and positional, so an index would be pure ceremony, and
  * the bare array is what keeps it the streaming mirror of `parseCsv`.
  */
-export interface StreamRow {
-  /** 0-based row index within its sheet */
+/**
+ * One row from a streaming reader — the same shape from every one of
+ * them. v1 had four: `StreamRow` from XLSX and ODS, a bare array from
+ * CSV, a bare object from NDJSON, and `XmlStreamRow` from XML.
+ *
+ * `T` is what a row holds: positional `CellValue[]` from the grid
+ * formats, a record from NDJSON and XML.
+ */
+export interface StreamRow<T = CellValue[]> {
+  /** 0-based row index within its sheet — the source position, so a gap means a skipped empty row. */
   index: number
-  /**
-   * 0-based index of the sheet this row came from. Present only for
-   * readers that stream more than one sheet.
-   */
-  sheetIndex?: number
-  /** Cell values for this row */
-  values: CellValue[]
+  /** 0-based index of the sheet this row came from. `0` for single-sheet formats. */
+  sheet: number
+  /** The row. */
+  values: T
 }
 
 // ── Input/Output Types ─────────────────────────────────────────────
@@ -2018,36 +2118,24 @@ export type WriteOutput = Uint8Array
 // ── Incremental writers ────────────────────────────────────────────
 
 /**
- * The vocabulary `XlsxStreamWriter`, `CsvStreamWriter` and
- * `NdjsonStreamWriter` share, so a format-agnostic export helper can be
- * written once.
+ * The vocabulary the four incremental writers share — `XlsxStreamWriter`,
+ * `CsvStreamWriter`, `NdjsonStreamWriter`, `OdsStreamWriter` — so a
+ * format-agnostic export helper can be written once.
  *
- * The README has claimed this since before v1 and nothing enforced it:
- * there was no `implements` anywhere in `src/`, so when #436 widened
- * `XlsxStreamWriter.addRow` to accept `StreamStyledCell`, nothing failed
- * and the drift was left for a reader to discover. Declaring the type is
- * what turns the next divergence into a compile error. See #468.
- *
- * Two of the members are deliberately loose, because the three writers
- * genuinely differ and pretending otherwise would be worse than saying so:
- *
- * - **`finish()`** returns `string` from the text writers and
- *   `Promise<Uint8Array>` from XLSX. A helper written against this
- *   interface has to `await` it — which is harmless on a `string` — and
- *   narrow the result before using it. Converging the two is a real API
- *   decision and a breaking one; the interface is worth having either way.
- * - **`addRow` / `addObject`** promise only the narrow parameter here.
- *   `XlsxStreamWriter` accepts more (`StreamStyledCell`, `unknown`
- *   values), which is contravariant and therefore fine — a writer may
- *   take more than the interface promises, never less.
+ * v1's version said `finish(): string | Promise<Uint8Array>` and carried a
+ * `toStream()` that, on three of the four, buffered everything and then
+ * handed over one chunk. Both are gone: `finish()` is bytes everywhere,
+ * and a writer that streams says so by having `toStream()` itself
+ * (`NdjsonStreamWriter` does) rather than the interface promising it.
  */
 export interface SpreadsheetStreamWriter {
-  /** Append a row of positional values. */
-  addRow(values: CellValue[]): void
+  /** Append a row of positional values, or cells. */
+  addRow(values: CellInput[]): void
   /** Append a row from an object, projected through the writer's columns. */
-  addObject(item: Record<string, CellValue>): void
-  /** Close the writer and return its output. */
-  finish(): string | Promise<Uint8Array>
-  /** Output as a `ReadableStream<Uint8Array>`. */
-  toStream(): ReadableStream<Uint8Array>
+  addObject(item: Record<string, CellInput>): void
+  /**
+   * Close the writer and return its output as bytes. The text writers
+   * also have `finishText()`, which returns the same output as a string.
+   */
+  finish(): Promise<Uint8Array>
 }

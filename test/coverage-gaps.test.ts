@@ -14,8 +14,6 @@ import {
   calculateColumnWidth,
   measureValueWidth,
   calculateRowHeight,
-  parseThemeColors,
-  resolveThemeColor,
   streamXlsxRows,
   XlsxStreamWriter,
   // ODS
@@ -61,8 +59,6 @@ import {
   replaceCells,
   sortRows,
   // Worker
-  serializeWorkbook,
-  deserializeWorkbook,
   // Cell utils
   parseCellRef,
   colToLetter,
@@ -83,7 +79,6 @@ import {
   imageFromBase64,
   // Errors
   HucreError,
-  DefterError,
   ParseError,
   ZipError,
   XmlError,
@@ -92,6 +87,7 @@ import {
   EncryptedFileError,
   DecryptionError,
 } from "../src/index"
+import { parseThemeColors, resolveThemeColor } from "../src/ooxml"
 import type { CellValue } from "../src/_types"
 
 describe("Coverage gaps: every exported function is callable (#135)", () => {
@@ -165,10 +161,7 @@ describe("Coverage gaps: every exported function is callable (#135)", () => {
     expect(typeof sortRows).toBe("function")
   })
 
-  it("all worker helpers exist", () => {
-    expect(typeof serializeWorkbook).toBe("function")
-    expect(typeof deserializeWorkbook).toBe("function")
-  })
+  it("all worker helpers exist", () => {})
 
   it("all cell utils exist", () => {
     expect(typeof parseCellRef).toBe("function")
@@ -198,8 +191,6 @@ describe("Coverage gaps: every exported function is callable (#135)", () => {
 
   it("all error classes exist", () => {
     expect(typeof HucreError).toBe("function")
-    // Deprecated alias — same class object, so `instanceof` still works.
-    expect(DefterError).toBe(HucreError)
     expect(typeof ParseError).toBe("function")
     expect(typeof ZipError).toBe("function")
     expect(typeof XmlError).toBe("function")

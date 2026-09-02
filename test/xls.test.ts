@@ -1,3 +1,4 @@
+import { cellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { writeCfb } from "../src/xlsx/crypto/cfb"
 import { readXls } from "../src/xls/reader"
@@ -139,7 +140,7 @@ describe("XLS (BIFF8) reader", () => {
     expect(rows[1][3]).toBeInstanceOf(Date)
     expect(rows[2][0]).toBe("Hi")
     expect(rows[2][1]).toBe(true)
-    expect(rows[2][2]).toBe("#DIV/0!")
+    expect(rows[2][2]).toEqual(cellError("#DIV/0!"))
     expect(rows[3][0]).toBe(10)
     expect(rows[3][1]).toBe(20)
     expect(wb.sheets[0].merges).toEqual([{ startRow: 0, endRow: 0, startCol: 0, endCol: 1 }])

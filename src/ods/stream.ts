@@ -1,6 +1,7 @@
 // ── Streaming ODS Reader ─────────────────────────────────────────────
 // Yields rows one at a time from an ODS file via SAX parsing.
 
+import { cellError } from "../cell-error"
 import type { CellValue, ReadInput, StreamRow } from "../_types"
 import { ParseError, ZipError } from "../errors"
 import { assertNotEncrypted, readInputToUint8Array } from "../_input"
@@ -27,52 +28,30 @@ function decodeUtf8Unchecked(data: Uint8Array): string {
   return new TextDecoder("utf-8").decode(data)
 }
 
-/**
- * Options for {@link streamOdsRows}.
- *
- * It previously took none at all, so `maxRows` on a huge file meant
- * draining the whole thing and counting yourself.
- */
+/** Options for {@link streamOdsRows}. */
 export interface OdsStreamReadOptions {
   /**
-   * Restrict streaming to these sheets, by 0-based index or by name.
-   * Rows from other sheets are skipped.
+   * Which sheet to stream, by 0-based index or by name — or `"all"` for
+   * every sheet in the document, each row tagged with its `sheet`.
+   * Default: the first sheet, as `streamXlsxRows` does.
    */
-  sheets?: Array<number | string>
-  /** Stop after this many rows across all streamed sheets. */
+  sheet?: number | string | "all"
+  /** Stop after this many rows. */
   maxRows?: number
   /**
-   * Zip-bomb ceiling for any one entry; see `ReadOptions.maxDecompressedBytes`.
+   * Zip-bomb ceiling for any one entry; see `OdsReadOptions.maxDecompressedBytes`.
    * Default: 2 GiB ({@link MAX_DECOMPRESSED_BYTES}).
    */
   maxDecompressedBytes?: number
 }
 
-/**
- * Resolve the sheet filter to a set of indices, or `undefined` for "all".
- *
- * Names cannot be resolved from the row stream alone — the SAX pass does
- * not surface table names — so only numeric entries are honoured for now
- * and a name-only filter falls back to streaming everything rather than
- * silently yielding nothing.
- */
-function normalizeSheetFilter(sheets: Array<number | string> | undefined): Set<number> | undefined {
-  if (!sheets || sheets.length === 0) return undefined
-  const indices = sheets.filter((s): s is number => typeof s === "number")
-  return indices.length > 0 ? new Set(indices) : undefined
-}
-
 // ── Row parser via SAX ──────────────────────────────────────────────
 
-/**
- * @deprecated Use {@link StreamRow}. Kept as an alias because it was the
- * element type of a public async generator; the two shapes were
- * identical apart from `sheetIndex` now being optional.
- */
-export type OdsStreamRow = StreamRow
+/** A row plus the name of the table it came from, for the `sheet` filter. */
+type OdsRow = StreamRow & { tableName: string }
 
-function* parseContentRows(xml: string): Generator<StreamRow, void, undefined> {
-  const completedRows: StreamRow[] = []
+function* parseContentRows(xml: string): Generator<OdsRow, void, undefined> {
+  const completedRows: OdsRow[] = []
 
   let inBody = false
   let inSpreadsheet = false
@@ -83,6 +62,7 @@ function* parseContentRows(xml: string): Generator<StreamRow, void, undefined> {
   let inAnnotation = false
 
   let sheetIndex = -1
+  let tableName = ""
   let currentRowIndex = -1
   let cellRepeat = 1
   let rowRepeat = 1
@@ -120,6 +100,7 @@ function* parseContentRows(xml: string): Generator<StreamRow, void, undefined> {
           if (inSpreadsheet) {
             inTable = true
             sheetIndex++
+            tableName = attrs["table:name"] ?? ""
             currentRowIndex = -1
           }
           break
@@ -143,7 +124,12 @@ function* parseContentRows(xml: string): Generator<StreamRow, void, undefined> {
             )
             cellText = ""
             cellParagraphs = 0
-            cellValueType = attrs["office:value-type"] ?? attrs["calcext:value-type"] ?? ""
+            // LibreOffice marks an error as a string cell with
+            // `calcext:value-type="error"`; the token is the cell's text.
+            cellValueType =
+              attrs["calcext:value-type"] === "error"
+                ? "error"
+                : (attrs["office:value-type"] ?? attrs["calcext:value-type"] ?? "")
             cellValue = attrs["office:value"] ?? ""
             cellBoolValue = attrs["office:boolean-value"] ?? ""
             cellDateValue = attrs["office:date-value"] ?? ""
@@ -247,7 +233,8 @@ function* parseContentRows(xml: string): Generator<StreamRow, void, undefined> {
                 currentRowIndex++
                 completedRows.push({
                   index: currentRowIndex,
-                  sheetIndex,
+                  sheet: sheetIndex,
+                  tableName,
                   values: r === 0 ? currentCells : [...currentCells],
                 })
               }
@@ -283,6 +270,8 @@ function resolveCellValue(
   text: string,
 ): CellValue {
   switch (valueType) {
+    case "error":
+      return cellError(text || "#N/A")
     case "float":
     case "currency":
     case "percentage":
@@ -345,14 +334,15 @@ export async function* streamOdsRows(
   }
   const contentXml = decodeUtf8Unchecked(await zip.extract("content.xml"))
 
-  // 4. Yield rows via SAX
   // 4. Yield rows via SAX, applying the filters
-  const wanted = normalizeSheetFilter(options?.sheets)
+  const wanted = options?.sheet ?? 0
   const maxRows = options?.maxRows ?? 0
   let emitted = 0
 
-  for (const row of parseContentRows(contentXml)) {
-    if (wanted !== undefined && !wanted.has(row.sheetIndex ?? 0)) continue
+  for (const { tableName, ...row } of parseContentRows(contentXml)) {
+    if (wanted !== "all") {
+      if (typeof wanted === "number" ? row.sheet !== wanted : tableName !== wanted) continue
+    }
     if (maxRows > 0 && emitted >= maxRows) return
     emitted++
     yield row

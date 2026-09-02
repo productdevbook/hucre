@@ -1,5 +1,6 @@
+import type { CellInput } from "../src/_types"
 import { describe, expect, it } from "vitest"
-import { writeXlsxStream, XlsxStreamWriter, type StreamStyledCell } from "../src/xlsx/stream-writer"
+import { writeXlsxStream, XlsxStreamWriter } from "../src/xlsx/stream-writer"
 import { readXlsx } from "../src/xlsx/reader"
 import type { CellStyle } from "../src/_types"
 
@@ -244,7 +245,7 @@ describe("XlsxStreamWriter — the same options the generator takes", () => {
   })
 
   it("repeats the header as first emitted, even if the caller reuses the cell object", async () => {
-    const cell: StreamStyledCell = { value: "H", style: title }
+    const cell: CellInput = { value: "H", style: title }
     const writer = new XlsxStreamWriter({
       name: "S",
       maxRowsPerSheet: 2,

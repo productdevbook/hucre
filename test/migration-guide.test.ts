@@ -1,7 +1,7 @@
+import { valuesOf } from "./_stream"
 import { describe, expect, it } from "vitest"
 import * as root from "../src/index"
 import {
-  DefterError,
   fromHtml,
   HucreError,
   InvalidArgumentError,
@@ -10,12 +10,10 @@ import {
   openXlsx,
   parseJson,
   parseNdjson,
-  readNdjsonStream,
   readObjects,
   saveXlsx,
   sheetToObjects,
   streamCsvRows,
-  streamNdjsonRows,
   toHtml,
   toMarkdown,
   unflattenRow,
@@ -113,11 +111,6 @@ describe("hasHeaderRow on toHtml and toMarkdown", () => {
     expect(toHtml(sheet, { hasHeaderRow: true })).toContain("<th")
     expect(toMarkdown(sheet, { hasHeaderRow: true })).toMatch(/^\| h\s*\|/)
   })
-
-  it("still honours the deprecated boolean headerRow for one major", () => {
-    expect(toHtml(sheet, { headerRow: true })).toContain("<th")
-    expect(toMarkdown(sheet, { headerRow: true })).toMatch(/^\| h\s*\|/)
-  })
 })
 
 // ── "streamCsvRows matches parseCsv" ────────────────────────────────
@@ -125,32 +118,34 @@ describe("hasHeaderRow on toHtml and toMarkdown", () => {
 describe("streamCsvRows matches parseCsv", () => {
   const source = "a,b\n1,2"
 
-  it("yields the header row under header: true, as parseCsv does", () => {
-    expect([...streamCsvRows(source, { header: true })]).toEqual([
+  it("yields the header row under hasHeaderRow: true, as parseCsv does", async () => {
+    expect(await valuesOf(streamCsvRows(source, { hasHeaderRow: true }))).toEqual([
       ["a", "b"],
       ["1", "2"],
     ])
-    expect(parseCsv(source, { header: true })).toEqual([
+    expect(parseCsv(source, { hasHeaderRow: true })).toEqual([
       ["a", "b"],
       ["1", "2"],
     ])
   })
 
-  it("drops it only when asked, via skipHeaderRow — in both readers", () => {
-    expect([...streamCsvRows(source, { header: true, skipHeaderRow: true })]).toEqual([["1", "2"]])
-    expect(parseCsv(source, { header: true, skipHeaderRow: true })).toEqual([["1", "2"]])
+  it("drops it only when asked, via skipHeaderRow — in both readers", async () => {
+    expect(
+      await valuesOf(streamCsvRows(source, { hasHeaderRow: true, skipHeaderRow: true })),
+    ).toEqual([["1", "2"]])
+    expect(parseCsv(source, { hasHeaderRow: true, skipHeaderRow: true })).toEqual([["1", "2"]])
   })
 
-  it("actually runs onRow and transformValue, which used to be ignored", () => {
+  it("actually runs onRow and transformValue, which used to be ignored", async () => {
     const seen: unknown[][] = []
-    const rows = [
-      ...streamCsvRows(source, {
-        header: true,
+    const rows = await valuesOf(
+      streamCsvRows(source, {
+        hasHeaderRow: true,
         skipHeaderRow: true,
         onRow: (row) => seen.push(row),
         transformValue: (value) => (typeof value === "string" ? value.toUpperCase() : value),
       }),
-    ]
+    )
     expect(seen.length).toBeGreaterThan(0)
     expect(rows[0]).toEqual(["1", "2"])
   })
@@ -238,27 +233,15 @@ describe("fromHtml reads cell text the way parseCsv does", () => {
 // ── "DefterError is now HucreError" ─────────────────────────────────
 
 describe("DefterError is now HucreError", () => {
-  it("is the same class object, so instanceof behaves identically", () => {
-    expect(DefterError).toBe(HucreError)
-  })
-
-  it("reports name 'HucreError' — the one visible difference", () => {
+  it("reports name 'HucreError'", () => {
     expect(new InvalidArgumentError("x").name).not.toBe("DefterError")
     expect(new HucreError("x").name).toBe("HucreError")
   })
 
   it("still catches everything the library throws", async () => {
     await expect(writeXlsx({ sheets: [{ name: "a:b", rows: [] }] })).rejects.toBeInstanceOf(
-      DefterError,
+      HucreError,
     )
-  })
-})
-
-// ── "readNdjsonStream is now streamNdjsonRows" ──────────────────────
-
-describe("readNdjsonStream is now streamNdjsonRows", () => {
-  it("is a deprecated alias of the same function", () => {
-    expect(readNdjsonStream).toBe(streamNdjsonRows)
   })
 })
 
@@ -367,7 +350,7 @@ describe("nested JSON can be rebuilt", () => {
     )
     const w = new NdjsonStreamWriter({ unflatten: true })
     w.addObject({ "user.name": "Ada" })
-    expect(w.finish()).toBe('{"user":{"name":"Ada"}}\n')
+    expect(w.finishText()).toBe('{"user":{"name":"Ada"}}\n')
   })
 
   it("does not undo the two losses the guide says it cannot", () => {
@@ -386,19 +369,21 @@ describe("dates come back from JSON", () => {
 
   it("is off by default in both readers", () => {
     expect(parseJson(writeJson([{ at }])).data[0]!.at).toBe(at.toISOString())
-    expect(parseCsv(`at\n${at.toISOString()}`, { header: true })[1]![0]).toBe(at.toISOString())
+    expect(parseCsv(`at\n${at.toISOString()}`, { hasHeaderRow: true })[1]![0]).toBe(
+      at.toISOString(),
+    )
   })
 
   it("revives the Date under typeInference: true", () => {
     expect(parseJson(writeJson([{ at }]), { typeInference: true }).data[0]!.at).toEqual(at)
   })
 
-  it("accepts the same instants everywhere the option exists", () => {
+  it("accepts the same instants everywhere the option exists", async () => {
     for (const raw of ["2024-01-15", "2024-01-15T10:30:00Z", "2024-13-45", "3/4/2021", "2024"]) {
-      const viaCsv = parseCsv(`v\n"${raw}"`, { typeInference: true, header: true })[1]![0]
-      const viaStream = [
-        ...streamCsvRows(`v\n"${raw}"`, { typeInference: true, header: true }),
-      ][1]![0]
+      const viaCsv = parseCsv(`v\n"${raw}"`, { typeInference: true, hasHeaderRow: true })[1]![0]
+      const viaStream = (
+        await valuesOf(streamCsvRows(`v\n"${raw}"`, { typeInference: true, hasHeaderRow: true }))
+      )[1]![0]
       const viaJson = parseJson(`[{"v":${JSON.stringify(raw)}}]`, { typeInference: true }).data[0]!
         .v
       const viaNdjson = parseNdjson(`{"v":${JSON.stringify(raw)}}`, { typeInference: true })
@@ -451,7 +436,7 @@ describe("removed API that never did anything", () => {
     // would itself be the error. The row of data proves what the option
     // never did — parseCsv returned it unvalidated.
     const options: CsvReadOptions = {
-      header: true,
+      hasHeaderRow: true,
       // @ts-expect-error — removed in v1; no CSV reader ever validated with it
       schema: { a: { type: "number", required: true } },
     }
@@ -537,12 +522,11 @@ describe("also worth knowing", () => {
     expect(parseCsv(writeCsv([["#1", "a"]]), { comment: "#" })).toEqual([])
   })
 
-  it("has a hucre/ooxml entry point that still re-exports from the root", async () => {
+  it("has a hucre/ooxml entry point, and the raw-XML parsers live only there", async () => {
     const ooxml = await import("../src/ooxml")
     expect(Object.keys(ooxml).length).toBeGreaterThan(0)
-    for (const name of Object.keys(ooxml)) {
-      expect(Object.keys(root)).toContain(name)
-    }
+    expect(Object.keys(ooxml)).toContain("parseChart")
+    expect(Object.keys(root)).not.toContain("parseChart")
   })
 
   it("exports the documented names from hucre/xlsx and hucre/ods", async () => {

@@ -4,7 +4,8 @@
 // (shared with encryption) and decodes the records into the standard
 // Workbook model. Read-only (MS-XLS).
 
-import type { CellValue, MergeRange, ReadOptions, Sheet, Workbook } from "../_types"
+import { cellError } from "../cell-error"
+import type { CellValue, MergeRange, XlsReadOptions, Sheet, Workbook } from "../_types"
 import { ParseError } from "../errors"
 import { MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
 import { readInputToUint8Array } from "../_input"
@@ -30,7 +31,7 @@ export function looksLikeXls(streams: Map<string, Uint8Array>): boolean {
 /** Read a BIFF8 .xls workbook into the standard {@link Workbook} model. */
 export async function readXls(
   input: Uint8Array | ArrayBuffer | ReadableStream<Uint8Array>,
-  options?: ReadOptions,
+  options?: XlsReadOptions,
 ): Promise<Workbook> {
   const data = await readInputToUint8Array(input, options?.maxInputBytes)
   let streams: Map<string, Uint8Array>
@@ -57,7 +58,7 @@ export async function readXls(
   }
 }
 
-function parseWorkbookRecords(stream: Uint8Array, options?: ReadOptions): Workbook {
+function parseWorkbookRecords(stream: Uint8Array, options?: XlsReadOptions): Workbook {
   const records = parseRecords(stream)
 
   // ── BIFF version gate ──
@@ -226,7 +227,7 @@ function parseSheet(
     r[col] = value
   }
   const numeric = (row: number, col: number, ixfe: number, n: number): void => {
-    setCell(row, col, isDate(ixfe) ? serialToDate(n, date1904) : n)
+    setCell(row, col, isDate(ixfe) ? serialToDate(n, date1904 ? "1904" : "1900") : n)
   }
 
   for (let i = startIdx + 1; i < records.length; i++) {
@@ -271,7 +272,7 @@ function parseSheet(
         r.u16() // ixfe
         const val = r.u8()
         const isError = r.u8() === 1
-        setCell(row, col, isError ? (ERROR_TEXT[val] ?? "#ERR!") : val !== 0)
+        setCell(row, col, isError ? cellError(ERROR_TEXT[val] ?? "#ERR!") : val !== 0)
         break
       }
       case SID.LABEL: {
@@ -290,8 +291,7 @@ function parseSheet(
           const kind = b[0]
           if (kind === 1)
             setCell(row, col, b[2] !== 0) // boolean
-          else if (kind === 2)
-            setCell(row, col, ERROR_TEXT[b[2]] ?? "#ERR!") // error
+          else if (kind === 2) setCell(row, col, cellError(ERROR_TEXT[b[2]] ?? "#ERR!"))
           else if (kind === 0) {
             // string: value is in the following STRING record
             const next = records[i + 1]

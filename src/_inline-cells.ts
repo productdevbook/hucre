@@ -22,6 +22,7 @@
 // place per-cell detail lives, and an explicit `cells` entry still wins
 // over an inline one at the same position.
 
+import { isCellError } from "./cell-error"
 import type { Cell, CellValue, WriteSheet } from "./_types"
 import { isHyperlinkValue } from "./xlsx/hyperlink"
 
@@ -47,6 +48,7 @@ export function isInlineCell(v: unknown): v is InlineCell {
     v !== null &&
     !(v instanceof Date) &&
     !Array.isArray(v) &&
+    !isCellError(v) &&
     !isHyperlinkValue(v)
   )
 }

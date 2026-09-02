@@ -1,3 +1,4 @@
+import { cellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { ZipWriter } from "../src/zip/writer"
 import { readXlsx } from "../src/xlsx/reader"
@@ -983,9 +984,9 @@ describe("readXlsx", () => {
     })
 
     const wb = await readXlsx(xlsx)
-    expect(wb.sheets[0].rows[0][0]).toBe("#VALUE!")
-    expect(wb.sheets[0].rows[0][1]).toBe("#REF!")
-    expect(wb.sheets[0].rows[0][2]).toBe("#DIV/0!")
+    expect(wb.sheets[0].rows[0][0]).toEqual(cellError("#VALUE!"))
+    expect(wb.sheets[0].rows[0][1]).toEqual(cellError("#REF!"))
+    expect(wb.sheets[0].rows[0][2]).toEqual(cellError("#DIV/0!"))
   })
 
   it("reads str type cells (formula string results)", async () => {

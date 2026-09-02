@@ -11,7 +11,16 @@
 //   source on demand and encoded lines are flushed as they accumulate,
 //   so peak memory is independent of the row count.
 
-import type { CellValue, CsvReadOptions, CsvWriteOptions, SpreadsheetStreamWriter } from "../_types"
+import { toCellValue } from "../_inline-cells"
+import { isCellError } from "../cell-error"
+import type {
+  CellValue,
+  CsvReadOptions,
+  CsvWriteOptions,
+  SpreadsheetStreamWriter,
+  StreamRow,
+  CellInput,
+} from "../_types"
 import { stripBom, detectDelimiter, startsWith } from "./reader"
 import { escapeFormula, unescapeFormula } from "./formula"
 import { inferType } from "../_infer"
@@ -26,13 +35,18 @@ const CHUNK_THRESHOLD = 64 * 1024
 // ── Streaming CSV Reader ─────────────────────────────────────────────
 
 /**
- * Stream CSV rows as a synchronous generator.
- * Processes the string incrementally and yields one row at a time.
+ * Stream CSV rows one at a time, as `StreamRow`s like every other
+ * `stream*Rows` reader. `index` is the row's 0-based position in the
+ * file, so a row consumed by `skipHeaderRow` or `skipLines` leaves a gap.
+ *
+ * The parse itself is synchronous — the input is a whole string or byte
+ * buffer — and the generator is async so a caller can hold one loop
+ * shape across formats.
  */
-export function* streamCsvRows(
+export async function* streamCsvRows(
   input: CsvInput,
   options?: CsvReadOptions,
-): Generator<CellValue[], void, undefined> {
+): AsyncGenerator<StreamRow, void, undefined> {
   // Same decoding as parseCsv — see ./encoding.ts. This generator walks a
   // whole string either way, so taking bytes costs nothing and removes
   // the trap of the caller decoding chunks by hand.
@@ -48,7 +62,7 @@ export function* streamCsvRows(
   const doTypeInference = options?.typeInference ?? false
   const skipEmptyRows = options?.skipEmptyRows ?? false
   const commentChar = options?.comment
-  const isHeaderMode = options?.header ?? false
+  const isHeaderMode = options?.hasHeaderRow ?? false
   const skipHeaderRow = options?.skipHeaderRow ?? false
   const unescapeFormulae = options?.unescapeFormulae ?? false
   // Align inferType default with parseCsv (defaults to true).
@@ -233,7 +247,7 @@ export function* streamCsvRows(
 
     onRow?.(outRow, rowIndex)
 
-    yield outRow
+    yield { index: physicalLine - 1, sheet: 0, values: outRow }
   }
 }
 
@@ -302,7 +316,7 @@ class CsvRowFormatter {
       return this.quoteField(this.formatDate(value))
     }
 
-    const str = String(value)
+    const str = isCellError(value) ? value.error : value
     return this.quoteField(this.escapeFormulae ? escapeFormula(str) : str)
   }
 
@@ -373,7 +387,8 @@ export class CsvStreamWriter implements SpreadsheetStreamWriter {
   private bom: boolean
   private lines: string[] = []
   private headerWritten = false
-  private headers: string[] | boolean | undefined
+  private headers: string[] | undefined
+  private writeHeader: boolean
   /** Column order for object rows, resolved on the first one seen. */
   private columns: string[] | undefined
 
@@ -382,18 +397,19 @@ export class CsvStreamWriter implements SpreadsheetStreamWriter {
     this.lineSeparator = this.formatter.lineSeparator
     this.bom = this.formatter.bom
     this.headers = options?.headers
-    this.columns = options?.columns ?? (Array.isArray(this.headers) ? this.headers : undefined)
+    this.writeHeader = options?.writeHeader !== false
+    this.columns = options?.columns ?? this.headers
 
-    // Write header row immediately if string array provided
-    if (Array.isArray(this.headers) && !this.headerWritten) {
+    // Write header row immediately if the names are known
+    if (this.headers && this.writeHeader && !this.headerWritten) {
       this.lines.push(this.formatter.formatHeader(this.headers))
       this.headerWritten = true
     }
   }
 
-  /** Add a row of values */
-  addRow(values: CellValue[]): void {
-    this.lines.push(this.formatter.formatRow(values))
+  /** Add a row. A cell object contributes its value; CSV carries nothing else. */
+  addRow(values: CellInput[]): void {
+    this.lines.push(this.formatter.formatRow(values.map(toCellValue)))
   }
 
   /**
@@ -402,21 +418,26 @@ export class CsvStreamWriter implements SpreadsheetStreamWriter {
    * else an explicit `headers` array, else the keys of the first object.
    *
    * A header line is emitted before the first object row unless one was
-   * already written or `headers: false` was passed.
+   * already written or `writeHeader: false` was passed.
    */
-  addObject(item: Record<string, CellValue>): void {
+  addObject(item: Record<string, CellInput>): void {
     if (!this.columns) {
       this.columns = Object.keys(item)
     }
-    if (!this.headerWritten && this.headers !== false) {
+    if (!this.headerWritten && this.writeHeader) {
       this.lines.push(this.formatter.formatHeader(this.columns))
       this.headerWritten = true
     }
     this.addRow(this.columns.map((key) => item[key] ?? null))
   }
 
-  /** Finalize and return the CSV string */
-  finish(): string {
+  /** Finalize and return the CSV as bytes — the same output every writer's `finish()` gives. */
+  finish(): Promise<Uint8Array> {
+    return Promise.resolve(TEXT_ENCODER.encode(this.finishText()))
+  }
+
+  /** Finalize and return the CSV string. */
+  finishText(): string {
     const parts: string[] = []
 
     if (this.bom) {
@@ -426,32 +447,6 @@ export class CsvStreamWriter implements SpreadsheetStreamWriter {
     parts.push(this.lines.join(this.lineSeparator))
 
     return parts.join("")
-  }
-
-  /**
-   * Emit the finished CSV as a `ReadableStream<Uint8Array>`.
-   *
-   * **This is not a constant-memory stream.** Every row added so far is
-   * still buffered; {@link finish} runs first and the whole result is
-   * enqueued as one chunk. It exists so a writer can be handed to a
-   * `Response` body or a file sink without a manual encode step — not to
-   * bound memory. For output whose peak memory is independent of the row
-   * count, use {@link writeCsvStream}, which pulls rows from an iterable
-   * and flushes as it goes.
-   *
-   * `finish()` runs when the stream is first read, so rows added between
-   * `toStream()` and the first pull are still included, and the stream
-   * closes right after — no separate `finish()` call is needed (though
-   * one is harmless: `finish()` is idempotent here).
-   */
-  toStream(): ReadableStream<Uint8Array> {
-    const finish = (): Uint8Array => TEXT_ENCODER.encode(this.finish())
-    return new ReadableStream<Uint8Array>({
-      pull(controller) {
-        controller.enqueue(finish())
-        controller.close()
-      },
-    })
   }
 }
 
@@ -476,7 +471,7 @@ export type CsvStreamRow = CellValue[] | Record<string, CellValue>
  * Object rows are projected through a column order resolved the same way
  * {@link writeCsvObjects} resolves it: `columns` if given, else an
  * explicit `headers` array, else the keys of the first row. A header line
- * is emitted unless `headers: false`.
+ * is emitted unless `writeHeader: false`.
  */
 export function writeCsvStream(
   rows: AsyncIterable<CsvStreamRow> | Iterable<CsvStreamRow>,
@@ -534,14 +529,12 @@ async function* csvStreamChunks(
 
   // Column order for object rows, resolved on the first one seen.
   const explicitColumns = options?.columns
-  const headerOption = options?.headers
-  let columns: string[] | undefined =
-    explicitColumns ?? (Array.isArray(headerOption) ? headerOption : undefined)
+  let columns: string[] | undefined = explicitColumns ?? options?.headers
   let headerEmitted = false
 
   const emitHeader = (names: string[]): Uint8Array | undefined => {
     headerEmitted = true
-    if (headerOption === false) return undefined
+    if (options?.writeHeader === false) return undefined
     return push(formatter.formatHeader(names))
   }
 

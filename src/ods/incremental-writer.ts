@@ -11,7 +11,17 @@
 // is the same one XLSX already offers: `writeXlsxStream` for constant
 // memory, `XlsxStreamWriter` for a buffer you can style. See #467.
 
-import type { CellValue, CellStyle, WorkbookProperties } from "../_types"
+import { InvalidArgumentError } from "../errors"
+import { isInlineCell } from "../_inline-cells"
+import { isCellError } from "../cell-error"
+import type {
+  CellValue,
+  CellStyle,
+  WorkbookProperties,
+  CellInput,
+  Cell,
+  SpreadsheetStreamWriter,
+} from "../_types"
 import { validateSheetNames } from "../_validate"
 import { xmlElement, xmlSelfClose } from "../xml/writer"
 import { ZipWriter } from "../zip/writer"
@@ -30,8 +40,6 @@ import type { CellContext } from "./writer"
 const encoder = /* @__PURE__ */ new TextEncoder()
 
 /** A cell that brings its own formatting, or just a value. */
-export type OdsStyledCell = { value?: CellValue; style?: CellStyle; formula?: string }
-export type OdsIncrementalCell = CellValue | OdsStyledCell
 
 export interface OdsStreamWriterOptions {
   /** Sheet name. Excel's limits apply — LibreOffice enforces them too. */
@@ -68,7 +76,7 @@ export interface OdsStreamWriterOptions {
  * vocabulary as the other incremental writers, so a format-agnostic
  * helper written against `SpreadsheetStreamWriter` takes it unchanged.
  */
-export class OdsStreamWriter {
+export class OdsStreamWriter implements SpreadsheetStreamWriter {
   private sheetName: string
   private columns: OdsStreamWriterOptions["columns"]
   private properties: WorkbookProperties | undefined
@@ -92,16 +100,16 @@ export class OdsStreamWriter {
   }
 
   /** Append a row of positional values, each optionally styled. */
-  addRow(values: OdsIncrementalCell[]): void {
+  addRow(values: CellInput[]): void {
     if (this.done) {
-      throw new Error("Cannot write to OdsStreamWriter after finish()")
+      throw new InvalidArgumentError("Cannot write to OdsStreamWriter after finish()")
     }
     if (values.length > this.maxCols) this.maxCols = values.length
 
     const cells: string[] = []
     for (let i = 0; i < values.length; i++) {
       const raw = values[i]
-      const styled = isStyled(raw) ? raw : undefined
+      const styled = isInlineCell(raw) ? raw : undefined
       const value = styled ? (styled.value ?? null) : (raw as CellValue)
 
       // A cell's own style wins over its column's, which is the same
@@ -129,9 +137,9 @@ export class OdsStreamWriter {
    * `XlsxStreamWriter.addObject` does: an object's values have no
    * position without one.
    */
-  addObject(item: Record<string, CellValue>): void {
+  addObject(item: Record<string, CellInput>): void {
     if (!this.columns) {
-      throw new Error("addObject requires columns with key accessors")
+      throw new InvalidArgumentError("addObject requires columns with key accessors")
     }
     this.addRow(this.columns.map((c) => (c.key ? (item[c.key] ?? null) : null)))
   }
@@ -149,23 +157,6 @@ export class OdsStreamWriter {
     zip.add("styles.xml", encoder.encode(writeStylesXml()))
     zip.add("settings.xml", encoder.encode(writeSettingsXml()))
     return zip.build()
-  }
-
-  /**
-   * Emit the finished document as a `ReadableStream<Uint8Array>`.
-   *
-   * Like `XlsxStreamWriter.toStream()`, this does **not** bound memory —
-   * everything is buffered until `finish()` and the stream hands you the
-   * result. `writeOdsStream` is the constant-memory path.
-   */
-  toStream(): ReadableStream<Uint8Array> {
-    const finish = (): Promise<Uint8Array> => this.finish()
-    return new ReadableStream<Uint8Array>({
-      async pull(controller) {
-        controller.enqueue(await finish())
-        controller.close()
-      },
-    })
   }
 
   /**
@@ -234,16 +225,6 @@ export class OdsStreamWriter {
   }
 }
 
-function isStyled(value: OdsIncrementalCell): value is OdsStyledCell {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    !(value instanceof Date) &&
-    !Array.isArray(value) &&
-    ("value" in value || "style" in value || "formula" in value)
-  )
-}
-
 /** The `office:document-content` shell, with the namespaces ODF wants. */
 function xmlDocumentContent(children: string[]): string {
   return (
@@ -257,6 +238,7 @@ function xmlDocumentContent(children: string[]): string {
     ' xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"' +
     ' xmlns:xlink="http://www.w3.org/1999/xlink"' +
     ' xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2"' +
+    ' xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0"' +
     ' office:version="1.3">' +
     children.join("") +
     "</office:document-content>"

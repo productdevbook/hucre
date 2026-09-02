@@ -4,6 +4,7 @@
 // child element. Nested dot-paths (e.g. `Pricing.Cost`) are reconstructed
 // into a tree.
 
+import { isCellError } from "../cell-error"
 import type { CellValue } from "../_types"
 import { ParseError } from "../errors"
 
@@ -62,6 +63,7 @@ function valueToString(value: CellValue): string {
   if (value === null || value === undefined) return ""
   // See #364 — an unparseable Date threw a raw RangeError mid-write.
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? "" : value.toISOString()
+  if (isCellError(value)) return value.error
   return String(value)
 }
 

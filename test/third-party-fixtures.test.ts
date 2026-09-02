@@ -1,3 +1,4 @@
+import { cellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { readFileSync, readdirSync } from "node:fs"
 import { readXlsx } from "../src/xlsx/reader"
@@ -189,8 +190,8 @@ describe("errors-and-blanks", () => {
   it("reads error values as their token, and gaps as null", async () => {
     const rows = (await readXlsx(load("errors-and-blanks.xlsx"))).sheets[0]!.rows
 
-    expect(rows[1]![0]).toBe("#DIV/0!")
-    expect(rows[1]![2]).toBe("#N/A")
+    expect(rows[1]![0]).toEqual(cellError("#DIV/0!"))
+    expect(rows[1]![2]).toEqual(cellError("#N/A"))
     expect(rows[2]).toEqual([null, null, null])
     expect(rows[3]![0]).toBe("gap above")
   })

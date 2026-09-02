@@ -65,20 +65,20 @@ describe("HTML export accessibility", () => {
     ],
   }
 
-  it("adds scope='col' to <th> when headerRow: true", () => {
-    const html = toHtml(sheet, { headerRow: true })
+  it("adds scope='col' to <th> when hasHeaderRow: true", () => {
+    const html = toHtml(sheet, { hasHeaderRow: true })
     expect(html).toContain('<th scope="col"')
     expect(html).toContain("Name")
     expect(html).toContain("Value")
   })
 
-  it("adds role='table' when headerRow: true", () => {
-    const html = toHtml(sheet, { headerRow: true })
+  it("adds role='table' when hasHeaderRow: true", () => {
+    const html = toHtml(sheet, { hasHeaderRow: true })
     expect(html).toContain('role="table"')
   })
 
-  it("does not add role='table' when headerRow: false", () => {
-    const html = toHtml(sheet, { headerRow: false })
+  it("does not add role='table' when hasHeaderRow: false", () => {
+    const html = toHtml(sheet, { hasHeaderRow: false })
     expect(html).not.toContain('role="table"')
   })
 
@@ -99,7 +99,7 @@ describe("HTML export accessibility", () => {
 
   it("combines all accessibility options", () => {
     const html = toHtml(sheet, {
-      headerRow: true,
+      hasHeaderRow: true,
       caption: "Test Caption",
       ariaLabel: "Test Label",
     })

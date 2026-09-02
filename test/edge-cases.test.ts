@@ -584,7 +584,7 @@ describe("CSV Edge Cases", () => {
     ]
 
     const csv = writeCsvObjects(data)
-    const { data: parsed, headers } = parseCsvObjects(csv, { header: true })
+    const { data: parsed, headers } = parseCsvObjects(csv, { hasHeaderRow: true })
 
     expect(headers).toEqual(["name", "age"])
     expect(parsed).toHaveLength(2)
@@ -1589,8 +1589,8 @@ describe("Date Utilities Edge Cases", () => {
 
   it("dateToSerial/serialToDate 1904 system", () => {
     const d = new Date(Date.UTC(2024, 0, 1))
-    const serial = dateToSerial(d, true)
-    const recovered = serialToDate(serial, true)
+    const serial = dateToSerial(d, "1904")
+    const recovered = serialToDate(serial, "1904")
 
     expect(recovered.getUTCFullYear()).toBe(2024)
     expect(recovered.getUTCMonth()).toBe(0)

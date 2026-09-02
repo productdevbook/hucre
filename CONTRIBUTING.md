@@ -36,13 +36,13 @@ Several tests exist to fail when someone adds a field and forgets a place
 that has to carry it. If one of these breaks, it is doing its job — fix
 the thing it points at rather than the test:
 
-| test                                  | guards                                                                                                  |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `test/xlsx-write-read-parity.test.ts` | every `WriteSheet` / `WriteOptions` field either round-trips or is registered one-way **with a reason** |
-| `test/parity-statement.test.ts`       | `docs/PARITY.md` and the README still describe the types as they are                                    |
-| `test/clone-sheet-coverage.test.ts`   | `cloneSheet`, `cloneCell` and the worker serializer carry every field of `Sheet`, `Cell` and `Workbook` |
-| `test/write-model.test.ts`            | `toWriteOptions` names every read-model field that has no write counterpart                             |
-| `test/exports.test.ts`                | the public surface of each entry point                                                                  |
+| test                                  | guards                                                                                                                        |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `test/xlsx-write-read-parity.test.ts` | every `WriteSheet` / `WriteOptions` field either round-trips or is registered one-way **with a reason**                       |
+| `test/parity-statement.test.ts`       | `docs/PARITY.md` and the README still describe the types as they are                                                          |
+| `test/clone-sheet-coverage.test.ts`   | `cloneSheet` and `cloneCell` carry every field of `Sheet`, `Cell` and `Workbook`, and a `Workbook` survives `structuredClone` |
+| `test/write-model.test.ts`            | `toWriteOptions` names every read-model field that has no write counterpart                                                   |
+| `test/exports.test.ts`                | the public surface of each entry point                                                                                        |
 
 ## Read/write parity
 
