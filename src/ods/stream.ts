@@ -1,6 +1,7 @@
 // ── Streaming ODS Reader ─────────────────────────────────────────────
 // Yields rows one at a time from an ODS file via SAX parsing.
 
+import { cellError } from "../cell-error"
 import type { CellValue, ReadInput, StreamRow } from "../_types"
 import { ParseError, ZipError } from "../errors"
 import { assertNotEncrypted, readInputToUint8Array } from "../_input"
@@ -136,7 +137,12 @@ function* parseContentRows(xml: string): Generator<StreamRow, void, undefined> {
             )
             cellText = ""
             cellParagraphs = 0
-            cellValueType = attrs["office:value-type"] ?? attrs["calcext:value-type"] ?? ""
+            // LibreOffice marks an error as a string cell with
+            // `calcext:value-type="error"`; the token is the cell's text.
+            cellValueType =
+              attrs["calcext:value-type"] === "error"
+                ? "error"
+                : (attrs["office:value-type"] ?? attrs["calcext:value-type"] ?? "")
             cellValue = attrs["office:value"] ?? ""
             cellBoolValue = attrs["office:boolean-value"] ?? ""
             cellDateValue = attrs["office:date-value"] ?? ""
@@ -276,6 +282,8 @@ function resolveCellValue(
   text: string,
 ): CellValue {
   switch (valueType) {
+    case "error":
+      return cellError(text || "#N/A")
     case "float":
     case "currency":
     case "percentage":

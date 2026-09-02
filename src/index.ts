@@ -269,6 +269,10 @@ export { writeTsv, writeTsvObjects } from "./export/tsv"
 // ── Image Utilities ──────────────────────────────────────────────
 export { imageFromBase64 } from "./image"
 
+// ── Cell error values ──────────────────────────────────────────────
+export { cellError, isCellError } from "./cell-error"
+export type { CellError, CellErrorCode } from "./cell-error"
+
 // ── Errors ─────────────────────────────────────────────────────────
 export {
   HucreError,

@@ -11,6 +11,7 @@
 // is the same one XLSX already offers: `writeXlsxStream` for constant
 // memory, `XlsxStreamWriter` for a buffer you can style. See #467.
 
+import { isCellError } from "../cell-error"
 import type { CellValue, CellStyle, WorkbookProperties } from "../_types"
 import { validateSheetNames } from "../_validate"
 import { xmlElement, xmlSelfClose } from "../xml/writer"
@@ -239,6 +240,7 @@ function isStyled(value: OdsIncrementalCell): value is OdsStyledCell {
     value !== null &&
     typeof value === "object" &&
     !(value instanceof Date) &&
+    !isCellError(value) &&
     !Array.isArray(value) &&
     ("value" in value || "style" in value || "formula" in value)
   )
@@ -257,6 +259,7 @@ function xmlDocumentContent(children: string[]): string {
     ' xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"' +
     ' xmlns:xlink="http://www.w3.org/1999/xlink"' +
     ' xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2"' +
+    ' xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0"' +
     ' office:version="1.3">' +
     children.join("") +
     "</office:document-content>"

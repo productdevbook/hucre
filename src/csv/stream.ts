@@ -11,6 +11,7 @@
 //   source on demand and encoded lines are flushed as they accumulate,
 //   so peak memory is independent of the row count.
 
+import { isCellError } from "../cell-error"
 import type { CellValue, CsvReadOptions, CsvWriteOptions, SpreadsheetStreamWriter } from "../_types"
 import { stripBom, detectDelimiter, startsWith } from "./reader"
 import { escapeFormula, unescapeFormula } from "./formula"
@@ -302,7 +303,7 @@ class CsvRowFormatter {
       return this.quoteField(this.formatDate(value))
     }
 
-    const str = String(value)
+    const str = isCellError(value) ? value.error : value
     return this.quoteField(this.escapeFormulae ? escapeFormula(str) : str)
   }
 

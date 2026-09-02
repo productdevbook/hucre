@@ -1,6 +1,7 @@
 // ── ODS Writer ──────────────────────────────────────────────────────
 // Generates valid OpenDocument Spreadsheet (.ods) files.
 
+import { isCellError } from "../cell-error"
 import type {
   WriteOptions,
   WriteOutput,
@@ -52,6 +53,8 @@ const NS_META = "urn:oasis:names:tc:opendocument:xmlns:meta:1.0"
 const NS_DC = "http://purl.org/dc/elements/1.1/"
 const NS_XLINK = "http://www.w3.org/1999/xlink"
 const NS_OF = "urn:oasis:names:tc:opendocument:xmlns:of:1.2"
+// LibreOffice's extension namespace; the only way ODF says "this string cell is an error".
+const NS_CALCEXT = "urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0"
 
 export const MIMETYPE = "application/vnd.oasis.opendocument.spreadsheet"
 
@@ -1042,6 +1045,16 @@ export function cellToOds(
     return xmlElement("table:table-cell", attrs, children)
   }
 
+  if (isCellError(value)) {
+    // ODF has no error value type; LibreOffice writes the token as a
+    // string cell and marks it in its own namespace, which is what lets
+    // the reader tell it from the text "#N/A".
+    attrs["office:value-type"] = "string"
+    attrs["calcext:value-type"] = "error"
+    children.push(cellTextP(value.error, ctx, collector))
+    return xmlElement("table:table-cell", attrs, children)
+  }
+
   if (value instanceof Date) {
     // An unparseable Date produced office:date-value="NaN-NaN-NaNT..."
     // — a corrupt file rather than an error. Emit an empty cell, the same
@@ -1364,6 +1377,7 @@ function writeContentXml(options: WriteOptions): string {
       "xmlns:svg": NS_SVG,
       "xmlns:xlink": NS_XLINK,
       "xmlns:of": NS_OF,
+      "xmlns:calcext": NS_CALCEXT,
       "office:version": "1.3",
     },
     contentParts,

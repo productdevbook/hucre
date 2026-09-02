@@ -1,3 +1,4 @@
+import { cellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { readFileSync, readdirSync } from "node:fs"
 import { readOds } from "../src/ods/reader"
@@ -114,7 +115,7 @@ describe("LibreOffice", () => {
       const rows = (await readOds(load("libreoffice-basic.ods"), { readStyles })).sheets[0]!.rows
 
       expect(rows.map((row) => row.length)).toEqual([5, 5, 5, 5, 3])
-      expect(rows[4]!.slice(0, 3)).toEqual(["Broken", "#DIV/0!", "xy"])
+      expect(rows[4]!.slice(0, 3)).toEqual(["Broken", cellError("#DIV/0!"), "xy"])
     },
   )
 })

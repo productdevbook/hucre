@@ -7,7 +7,7 @@
         ["Widget", 12, "D:2024-03-17T00:00:00.000Z", true, 24],
         ["Gadget", -3.5, "D:1999-12-31T00:00:00.000Z", false, -7],
         ["Doohickey", 0, "D:2024-02-29T00:00:00.000Z", true, 8.5],
-        ["Broken", "#DIV/0!", "xy", null, null]
+        ["Broken", "E:#DIV/0!", "xy", null, null]
       ],
       "merges": [],
       "freeze": null,
@@ -25,7 +25,7 @@
         "E2": "B2*2 => 24",
         "E3": "B3*2 => -7",
         "E4": "SUM(B2:B4) => 8.5",
-        "B5": "1/0 => \"#DIV/0!\"",
+        "B5": "1/0 => \"E:#DIV/0!\"",
         "C5": "\"x\" & \"y\" => \"xy\""
       },
       "autoFilter": null,

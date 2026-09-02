@@ -1,5 +1,6 @@
 // ── JSON Writer ──────────────────────────────────────────────────────
 
+import { isCellError } from "../cell-error"
 import type { CellValue, Workbook } from "../_types"
 import { unflattenRow } from "./unflatten"
 
@@ -13,6 +14,11 @@ import { unflattenRow } from "./unflatten"
  * before v1 rather than frozen — and there is no honest alternative
  * behaviour to give it, since JSON cannot carry a Date at all.
  */
+/** JSON carries values; an error is written as its token, as CSV does. */
+function errorReplacer(_key: string, value: unknown): unknown {
+  return isCellError(value) ? value.error : value
+}
+
 export interface JsonWriteOptions {
   /** Pretty-print with 2-space indent. Default: false. */
   pretty?: boolean
@@ -53,7 +59,7 @@ function prepare(
 export function writeJson(data: Record<string, CellValue>[], options?: JsonWriteOptions): string {
   const pretty = options?.pretty ?? false
   const indent = options?.indent ?? "  "
-  return JSON.stringify(prepare(data, options), undefined, pretty ? indent : undefined)
+  return JSON.stringify(prepare(data, options), errorReplacer, pretty ? indent : undefined)
 }
 
 /**
@@ -67,7 +73,7 @@ export function writeNdjson(
   if (data.length === 0) return ""
   return (
     prepare(data, options)
-      .map((row) => JSON.stringify(row))
+      .map((row) => JSON.stringify(row, errorReplacer))
       .join("\n") + "\n"
   )
 }
@@ -131,7 +137,7 @@ export function workbookToJson(wb: Workbook, options?: WorkbookToJsonOptions): s
 
   const pretty = options?.pretty ?? false
   const indent = options?.indent ?? "  "
-  return JSON.stringify(all, undefined, pretty ? indent : undefined)
+  return JSON.stringify(all, errorReplacer, pretty ? indent : undefined)
 }
 
 function sheetToRowObjects(rows: CellValue[][], headerRowIdx: number): Record<string, CellValue>[] {

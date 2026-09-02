@@ -1,3 +1,4 @@
+import { cellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { ZipWriter } from "../src/zip/writer"
 import { readXlsb } from "../src/xlsx/xlsb/reader"
@@ -172,7 +173,7 @@ describe("XLSB reader", () => {
     expect(rows[1][3]).toBeInstanceOf(Date)
     expect(rows[2][0]).toBe("Hi")
     expect(rows[2][1]).toBe(true)
-    expect(rows[2][2]).toBe("#DIV/0!")
+    expect(rows[2][2]).toEqual(cellError("#DIV/0!"))
   })
 
   it("honours maxTotalCells — the one reader that used to have no ceiling", async () => {

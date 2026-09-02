@@ -1,6 +1,7 @@
 // ── Worksheet XML Writer ─────────────────────────────────────────────
 // Generates xl/worksheets/sheetN.xml for an XLSX package.
 
+import { isCellError } from "../cell-error"
 import { toRanges } from "../cell-utils"
 import type {
   RowDef,
@@ -259,29 +260,6 @@ const BARE_DATE_STYLE: CellStyle = Object.freeze({ numFmt: DEFAULT_DATE_FORMAT }
  * so a style object the caller drops does not keep an entry alive.
  */
 const DATE_STYLE_CACHE = /* @__PURE__ */ new WeakMap<CellStyle, CellStyle>()
-
-/**
- * Known Excel error value strings.
- *
- * The first eight are the ST_CellType `e` values ECMA-376 enumerates.
- * `#SPILL!` and `#CALC!` are the two errors dynamic arrays introduced —
- * they are not in the standard's list, but Excel stores them the same
- * way (`t="e"` with the literal text in `<v>`), and without them a
- * `#SPILL!` read out of a real workbook came back as a *shared string*
- * on the way in again, losing its error type entirely (#423).
- */
-const EXCEL_ERRORS = new Set([
-  "#VALUE!",
-  "#REF!",
-  "#N/A",
-  "#NAME?",
-  "#NULL!",
-  "#DIV/0!",
-  "#NUM!",
-  "#GETTING_DATA",
-  "#SPILL!",
-  "#CALC!",
-])
 
 // ── Worksheet Writer ───────────────────────────────────────────────
 
@@ -1026,6 +1004,9 @@ export function serializeCell(
       if (typeof formulaResult === "string") {
         cellAttrs["t"] = "str"
         children.push(xmlElement("v", undefined, xmlEscape(formulaResult)))
+      } else if (isCellError(formulaResult)) {
+        cellAttrs["t"] = "e"
+        children.push(xmlElement("v", undefined, xmlEscape(formulaResult.error)))
       } else if (typeof formulaResult === "boolean") {
         cellAttrs["t"] = "b"
         children.push(xmlElement("v", undefined, formulaResult ? "1" : "0"))
@@ -1054,9 +1035,8 @@ export function serializeCell(
     return null
   }
 
-  // Error value (e.g. #VALUE!, #REF!, #N/A, #NAME?, #NULL!, #DIV/0!, #NUM!)
-  if (typeof value === "string" && EXCEL_ERRORS.has(value)) {
-    return simpleCell(ref, styleIdx, "e", value)
+  if (isCellError(value)) {
+    return simpleCell(ref, styleIdx, "e", value.error)
   }
 
   // String value

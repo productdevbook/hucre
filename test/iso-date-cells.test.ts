@@ -1,3 +1,4 @@
+import { cellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
@@ -150,6 +151,6 @@ describe("the rest of ST_CellType still behaves", () => {
   })
 
   it("an error cell is still an error", async () => {
-    expect(await valueOf('<c r="A1" t="e"><v>#DIV/0!</v></c>')).toBe("#DIV/0!")
+    expect(await valueOf('<c r="A1" t="e"><v>#DIV/0!</v></c>')).toEqual(cellError("#DIV/0!"))
   })
 })

@@ -6,6 +6,7 @@
 // locale prefixes.
 // ─────────────────────────────────────────────────────────────────────
 
+import { isCellError } from "./cell-error"
 import { isDateFormat, formatDate, serialToDate, dateToSerial } from "./_date"
 import { InvalidArgumentError } from "./errors"
 
@@ -168,6 +169,11 @@ export function formatValue(value: unknown, numFmt: string, options?: FormatOpti
   // Boolean → "TRUE"/"FALSE"
   if (typeof value === "boolean") {
     return value ? "TRUE" : "FALSE"
+  }
+
+  // An error shows its token whatever the format says.
+  if (isCellError(value)) {
+    return value.error
   }
 
   // No format or "General"

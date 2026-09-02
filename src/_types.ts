@@ -1,6 +1,8 @@
 // ── Cell Value Types ────────────────────────────────────────────────
 
-export type CellValue = string | number | boolean | Date | null
+import type { CellError } from "./cell-error"
+
+export type CellValue = string | number | boolean | Date | CellError | null
 
 export type CellType =
   | "string"

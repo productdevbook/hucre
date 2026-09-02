@@ -1,3 +1,4 @@
+import { cellError } from "../src/cell-error"
 import { describe, it, expect } from "vitest"
 import { parseXml } from "../src/xml/parser"
 import { createStylesCollector } from "../src/xlsx/styles-writer"
@@ -222,7 +223,7 @@ describe("#92: error cell values", () => {
   it("writes #VALUE! as error cell with t='e'", () => {
     const sheet: WriteSheet = {
       name: "Test",
-      rows: [["#VALUE!"]],
+      rows: [[cellError("#VALUE!")]],
     }
 
     const xml = writeXml(sheet)
@@ -240,7 +241,7 @@ describe("#92: error cell values", () => {
   it("writes #N/A as error cell", () => {
     const sheet: WriteSheet = {
       name: "Test",
-      rows: [["#N/A"]],
+      rows: [[cellError("#N/A")]],
     }
 
     const xml = writeXml(sheet)
@@ -258,7 +259,7 @@ describe("#92: error cell values", () => {
   it("writes #DIV/0! as error cell", () => {
     const sheet: WriteSheet = {
       name: "Test",
-      rows: [["#DIV/0!"]],
+      rows: [[cellError("#DIV/0!")]],
     }
 
     const xml = writeXml(sheet)

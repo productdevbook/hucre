@@ -5,6 +5,7 @@
 // of XML. We reuse the ZIP layer + the XML rels parser, and decode the
 // `.bin` parts with the record reader. Read-only (MS-XLSB).
 
+import { cellError } from "../../cell-error"
 import type { CellValue, MergeRange, XlsbReadOptions, Sheet, Workbook } from "../../_types"
 import { EncryptedFileError, ParseError, ZipError } from "../../errors"
 import { isOle2Container, readInputToUint8Array } from "../../_input"
@@ -383,7 +384,7 @@ function parseWorksheetBin(
       case BrtFmlaError: {
         const c = new Cursor(rec.data)
         const { col } = cellHeader(c, rec.id === BrtShortError)
-        setCell(col, ERROR_TEXT[c.u8()] ?? "#ERR!")
+        setCell(col, cellError(ERROR_TEXT[c.u8()] ?? "#ERR!"))
         break
       }
       case BrtCellSt:

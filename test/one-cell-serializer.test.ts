@@ -1,3 +1,4 @@
+import { cellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { writeXlsxStream } from "../src/xlsx/stream-writer"
@@ -46,7 +47,9 @@ async function sheetXml(bytes: Uint8Array): Promise<string> {
 
 describe("a streamed error value is an error, not a string", () => {
   it('writes t="e"', async () => {
-    const bytes = await collect(writeXlsxStream([["#REF!", "#DIV/0!"]], { name: "S" }))
+    const bytes = await collect(
+      writeXlsxStream([[cellError("#REF!"), cellError("#DIV/0!")]], { name: "S" }),
+    )
 
     const xml = await sheetXml(bytes)
 
@@ -56,7 +59,12 @@ describe("a streamed error value is an error, not a string", () => {
 
   it("reads back as the error it was, not as text", async () => {
     const bytes = await collect(
-      writeXlsxStream([["#VALUE!", "#N/A", "#SPILL!", "ordinary"]], { name: "S" }),
+      writeXlsxStream(
+        [[cellError("#VALUE!"), cellError("#N/A"), cellError("#SPILL!"), "ordinary"]],
+        {
+          name: "S",
+        },
+      ),
     )
 
     const cells = (await readXlsx(bytes)).sheets[0]!.cells!
@@ -71,7 +79,7 @@ describe("a streamed error value is an error, not a string", () => {
   })
 
   it("agrees with the authoring writer, cell for cell", async () => {
-    const rows = [["#REF!", 1, "text", true, null]]
+    const rows = [[cellError("#REF!"), 1, "text", true, null]]
 
     const streamed = await readXlsx(await collect(writeXlsxStream(rows, { name: "S" })))
     const authored = await readXlsx(await writeXlsx({ sheets: [{ name: "S", rows }] }))

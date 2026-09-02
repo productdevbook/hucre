@@ -84,6 +84,25 @@ An eight-character ARGB string still works inside `rgb`; the reader returns six 
 
 A channel that carries only JSON — a message queue, a file — takes `workbookToJson` / `jsonToWorkbook`, which existed already. `test/clone-sheet-coverage.test.ts` now asserts that a full `Workbook` survives `structuredClone`, so the model cannot quietly grow a type that would break `postMessage`.
 
+## Error cells are `CellError`
+
+`CellValue` gains a member: `{ error: "#N/A" }`, built with `cellError()` and recognised with `isCellError()`. Every reader — XLSX, XLSB, XLS, the streaming readers, and now ODS, where LibreOffice marks them `calcext:value-type="error"` — produces it for an error cell, and the XLSX writers write `t="e"` for it and for nothing else.
+
+```diff
+- if (cell === "#N/A") …
++ if (isCellError(cell) && cell.error === "#N/A") …
+
+- rows: [["#DIV/0!"]]                 // written as an error cell
++ rows: [[cellError("#DIV/0!")]]      // written as an error cell
++ rows: [["#DIV/0!"]]                 // written as the text "#DIV/0!"
+```
+
+**Behaviour:** v1 could not tell the two apart. An error read from a file arrived in `rows` as the string `"#N/A"`, and any string that spelled an error token was written as `t="e"` — so a cell holding the _text_ `#N/A` came out of `writeXlsx` as an error, and a `#DIV/0!` read from one workbook was indistinguishable from the same text typed into another. `Cell.type` already said `"error"`; the value now does too.
+
+In the text formats — CSV, TSV, JSON, NDJSON, XML, HTML, Markdown — an error is written as its token, exactly as before. `formatValue` returns the token whatever the number format. An ODS file gets the token as a string cell, since ODF has no error value type; that loss is recorded in `docs/PARITY.md`.
+
+It is a plain object, not a class, so it survives `structuredClone` and `JSON.stringify` like the rest of the model. `sortRows` orders errors after booleans and before blanks, as Excel does; `findCells` and `replaceCells` match an error by its token.
+
 ---
 
 # Migrating to v1

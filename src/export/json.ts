@@ -1,3 +1,4 @@
+import { isCellError } from "../cell-error"
 import type { Sheet, CellValue } from "../_types"
 
 export interface JsonExportOptions {
@@ -25,6 +26,7 @@ function dateReplacer(_key: string, value: unknown): unknown {
   if (value instanceof Date) {
     return value.toISOString()
   }
+  if (isCellError(value)) return value.error
   return value
 }
 

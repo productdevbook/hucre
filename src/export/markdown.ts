@@ -1,3 +1,4 @@
+import { isCellError } from "../cell-error"
 import type { Sheet, CellValue } from "../_types"
 
 export interface MarkdownExportOptions {
@@ -60,6 +61,7 @@ function formatCellValue(value: CellValue, escapeInline: boolean): string {
   }
   if (typeof value === "boolean") return String(value)
   if (typeof value === "number") return String(value)
+  if (isCellError(value)) return value.error
   return escapeCell(String(value), escapeInline)
 }
 

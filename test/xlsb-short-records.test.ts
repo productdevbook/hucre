@@ -1,3 +1,4 @@
+import { cellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { readFileSync } from "node:fs"
 import { readXlsb } from "../src/xlsx/xlsb/reader"
@@ -130,7 +131,7 @@ describe("strings that live in the shared table", () => {
   it("and an error cell keeps its code", async () => {
     const rows = (await readXlsb(load("sheetjs-shared-strings.xlsb"))).sheets[0]!.rows
 
-    expect(rows[3]).toEqual(["#DIV/0!", "#N/A", "#REF!"])
+    expect(rows[3]).toEqual([cellError("#DIV/0!"), cellError("#N/A"), cellError("#REF!")])
   })
 })
 

@@ -3,6 +3,7 @@
 // Parses shared strings and styles upfront (small), then streams
 // worksheet rows without buffering the entire sheet in memory.
 
+import { cellError } from "../cell-error"
 import type { CellValue, XlsxReadOptions, StreamRow } from "../_types"
 import type { SharedString } from "./shared-strings"
 import type { ParsedStyles } from "./styles"
@@ -562,8 +563,7 @@ function resolveStreamCellValue(
       return valueText === "1" || valueText.toLowerCase() === "true"
     }
     case "e": {
-      // Error
-      return valueText
+      return cellError(valueText)
     }
     case "d": {
       // ISO 8601 date (ECMA-376 §18.18.11 ST_CellType), which openpyxl

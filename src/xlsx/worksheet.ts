@@ -1,6 +1,7 @@
 // ── Worksheet Parser ─────────────────────────────────────────────────
 // Parses xl/worksheets/sheetN.xml into a Sheet object.
 
+import { cellError } from "../cell-error"
 import type {
   ReadWarning,
   Sheet,
@@ -1926,7 +1927,7 @@ function processCell(
       // `value` still holds the error token either way, so spotting an
       // error by its value is unaffected; a *hard-coded* error cell,
       // which carries no formula, still reports `"error"`. See #497.
-      value = valueText
+      value = cellError(valueText)
       cellType = formula ? "formula" : "error"
       if (formula) formulaResult = value
       break

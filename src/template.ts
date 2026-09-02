@@ -2,6 +2,7 @@
 // Fill {{placeholder}} patterns in workbook cells with data values.
 // Works with round-trip: openXlsx -> fillTemplate -> saveXlsx.
 
+import { isCellError } from "./cell-error"
 import type { Workbook, CellValue } from "./_types"
 
 /** Regex matching `{{key}}` placeholders (non-greedy, trims inner whitespace). */
@@ -63,6 +64,7 @@ export function fillTemplate(workbook: Workbook, data: Record<string, CellValue>
             const replacement = data[key]
             if (replacement === null) return ""
             if (replacement instanceof Date) return replacement.toISOString()
+            if (isCellError(replacement)) return replacement.error
             return String(replacement)
           }
           return match // leave unmatched placeholders as-is
@@ -87,6 +89,7 @@ export function fillTemplate(workbook: Workbook, data: Record<string, CellValue>
             if (typeof cell.value === "number") cell.type = "number"
             else if (typeof cell.value === "boolean") cell.type = "boolean"
             else if (cell.value instanceof Date) cell.type = "date"
+            else if (isCellError(cell.value)) cell.type = "error"
             else cell.type = "string"
           }
           continue
@@ -97,6 +100,7 @@ export function fillTemplate(workbook: Workbook, data: Record<string, CellValue>
             const replacement = data[k]
             if (replacement === null) return ""
             if (replacement instanceof Date) return replacement.toISOString()
+            if (isCellError(replacement)) return replacement.error
             return String(replacement)
           }
           return match

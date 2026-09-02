@@ -7,6 +7,7 @@
 // is why it was the only module in the tree at 0% coverage. See #399.
 // ─────────────────────────────────────────────────────────────────────
 
+import { isCellError } from "../cell-error"
 import { defineCommand } from "citty"
 import { consola } from "consola"
 import { readFileSync, writeFileSync } from "node:fs"
@@ -202,6 +203,7 @@ export async function readFile(filePath: string, encoding?: string): Promise<Wor
 export function formatCellValue(value: CellValue): string {
   if (value === null || value === undefined) return ""
   if (value instanceof Date) return value.toISOString()
+  if (isCellError(value)) return value.error
   return String(value)
 }
 
@@ -379,6 +381,7 @@ export const inspectCommand = defineCommand({
           else if (typeof cell === "number") type = "number"
           else if (typeof cell === "boolean") type = "boolean"
           else if (cell instanceof Date) type = "date"
+          else if (isCellError(cell)) type = "error"
           else type = "unknown"
 
           typeCounts[type] = (typeCounts[type] ?? 0) + 1

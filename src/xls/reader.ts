@@ -4,6 +4,7 @@
 // (shared with encryption) and decodes the records into the standard
 // Workbook model. Read-only (MS-XLS).
 
+import { cellError } from "../cell-error"
 import type { CellValue, MergeRange, XlsReadOptions, Sheet, Workbook } from "../_types"
 import { ParseError } from "../errors"
 import { MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
@@ -271,7 +272,7 @@ function parseSheet(
         r.u16() // ixfe
         const val = r.u8()
         const isError = r.u8() === 1
-        setCell(row, col, isError ? (ERROR_TEXT[val] ?? "#ERR!") : val !== 0)
+        setCell(row, col, isError ? cellError(ERROR_TEXT[val] ?? "#ERR!") : val !== 0)
         break
       }
       case SID.LABEL: {
@@ -290,8 +291,7 @@ function parseSheet(
           const kind = b[0]
           if (kind === 1)
             setCell(row, col, b[2] !== 0) // boolean
-          else if (kind === 2)
-            setCell(row, col, ERROR_TEXT[b[2]] ?? "#ERR!") // error
+          else if (kind === 2) setCell(row, col, cellError(ERROR_TEXT[b[2]] ?? "#ERR!"))
           else if (kind === 0) {
             // string: value is in the following STRING record
             const next = records[i + 1]

@@ -27,3 +27,7 @@ export type { UnflattenedRow } from "./json/unflatten"
 
 // ── Shared types used by this entry point's signatures ──────────────
 export type { CellValue, Sheet, Workbook } from "./_types"
+
+// A cell may hold an error value; every writer takes one, and the spreadsheet readers produce them.
+export { cellError, isCellError } from "./cell-error"
+export type { CellError, CellErrorCode } from "./cell-error"

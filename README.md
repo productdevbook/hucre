@@ -160,6 +160,10 @@ const wb = await readXlsx(buf, {
 
 Supported cell types: strings, numbers, booleans, dates, formulas, rich text, errors, inline strings.
 
+An error cell — `#N/A`, `#DIV/0!` and the rest — is a `CellError`,
+`{ error: "#N/A" }`, not a string: `isCellError(value)` tells it from text
+that happens to read the same, and `cellError("#N/A")` writes one.
+
 ### Writing
 
 ```ts

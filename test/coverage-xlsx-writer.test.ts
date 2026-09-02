@@ -1,3 +1,4 @@
+import { cellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { XlsxStreamWriter, writeXlsxStream } from "../src/xlsx/stream-writer"
@@ -132,7 +133,7 @@ describe("styled cells of every value shape", () => {
   it("keeps the style index on an error cell", async () => {
     const xml = await sheetXml({
       name: "S",
-      cells: cellMap([["0,0", { value: "#DIV/0!", style: styled }]]),
+      cells: cellMap([["0,0", { value: cellError("#DIV/0!"), style: styled }]]),
     })
 
     expect(xml).toMatch(/<c r="A1" t="e" s="\d+"><v>#DIV\/0!<\/v><\/c>/)
@@ -145,8 +146,8 @@ describe("styled cells of every value shape", () => {
     const xml = await sheetXml({
       name: "S",
       cells: cellMap([
-        ["0,0", { value: "#SPILL!" }],
-        ["0,1", { value: "#CALC!" }],
+        ["0,0", { value: cellError("#SPILL!") }],
+        ["0,1", { value: cellError("#CALC!") }],
       ]),
     })
 

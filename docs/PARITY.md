@@ -505,6 +505,13 @@ hyperlinks on any cell type, rich text, multi-section number formats,
 document properties (six fields), and six style facets — bold, italic,
 font size, font colour, background colour, number format.
 
+An error cell has no value type of its own in ODF. hucre writes it the way
+LibreOffice does — a string cell carrying the token, marked
+`calcext:value-type="error"` — and reads that mark back into a `CellError`,
+so errors round-trip through ODS. A producer that writes the token as a
+plain string, without the mark, is read as text; there is nothing else in
+the file to go on.
+
 Not modelled in **either** direction: borders, alignment, font name,
 underline, strikethrough, column widths, row heights, hidden rows and
 columns, freeze and split panes, data validation, conditional formatting,

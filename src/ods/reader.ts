@@ -1,6 +1,7 @@
 // ── ODS Reader ──────────────────────────────────────────────────────
 // Reads OpenDocument Spreadsheet (.ods) files.
 
+import { cellError } from "../cell-error"
 import type {
   Workbook,
   OdsReadOptions,
@@ -537,6 +538,11 @@ export function parseOdsDateTime(text: string): Date | undefined {
 // ── Cell Value Parsing ──────────────────────────────────────────────
 
 function parseCellValue(cell: XmlElement): CellValue {
+  // LibreOffice stores an error as a string cell and says so in
+  // `calcext:value-type`; the token is the cell's text.
+  if (cell.attrs["calcext:value-type"] === "error") {
+    return cellError(extractTextAndHyperlink(cell).text || "#N/A")
+  }
   const valueType = cell.attrs["office:value-type"] ?? cell.attrs["calcext:value-type"] ?? ""
 
   switch (valueType) {

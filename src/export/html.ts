@@ -1,3 +1,4 @@
+import { isCellError } from "../cell-error"
 import type { Sheet, CellValue, CellStyle, Color, MergeRange } from "../_types"
 
 export interface HtmlExportOptions {
@@ -128,7 +129,7 @@ function formatCellValue(value: CellValue): string {
   }
   if (typeof value === "boolean") return String(value)
   if (typeof value === "number") return String(value)
-  return escapeHtml(String(value))
+  return escapeHtml(isCellError(value) ? value.error : value)
 }
 
 /** Get the CSS class for a cell value type */
@@ -137,6 +138,7 @@ function getCellClass(value: CellValue, prefix: string): string | null {
   if (value instanceof Date) return `${prefix}-date`
   if (typeof value === "number") return `${prefix}-num`
   if (typeof value === "boolean") return `${prefix}-bool`
+  if (isCellError(value)) return `${prefix}-error`
   return null // strings get no special class
 }
 

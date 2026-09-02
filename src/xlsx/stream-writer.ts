@@ -11,6 +11,7 @@
 //   source on demand and the ZIP is emitted chunk by chunk, so peak
 //   memory is O(distinct styles), independent of row count.
 
+import { isCellError } from "../cell-error"
 import type {
   CellValue,
   CellStyle,
@@ -159,6 +160,7 @@ function isStreamStyledCell(value: CellValue | StreamStyledCell): value is Strea
     value !== null &&
     typeof value === "object" &&
     !(value instanceof Date) &&
+    !isCellError(value) &&
     ("value" in value || "style" in value || "formula" in value)
   )
 }

@@ -1,3 +1,4 @@
+import { cellError } from "../src/cell-error"
 import { describe, expect, it, vi } from "vitest"
 
 import { readXls } from "../src/xls/reader"
@@ -230,7 +231,7 @@ describe("readXls — cell records", () => {
 
   it("falls back to #ERR! for an error code it does not know", async () => {
     const data = sheetWith(record(SID.BOOLERR, [...u16(0), ...u16(0), ...u16(0), 0x55, 1]))
-    expect((await readXls(data)).sheets[0].rows[0][0]).toBe("#ERR!")
+    expect((await readXls(data)).sheets[0].rows[0][0]).toEqual(cellError("#ERR!"))
   })
 
   it("decodes an RK number stored as a truncated double", async () => {
@@ -332,12 +333,12 @@ describe("readXls — FORMULA cached values", () => {
 
   it("decodes a cached error", async () => {
     const rows = await read(formula(0, 0, [2, 0, 0x17, 0, 0, 0, 0xff, 0xff]))
-    expect(rows[0][0]).toBe("#REF!")
+    expect(rows[0][0]).toEqual(cellError("#REF!"))
   })
 
   it("falls back to #ERR! for an unknown cached error code", async () => {
     const rows = await read(formula(0, 0, [2, 0, 0x55, 0, 0, 0, 0xff, 0xff]))
-    expect(rows[0][0]).toBe("#ERR!")
+    expect(rows[0][0]).toEqual(cellError("#ERR!"))
   })
 
   it("takes a cached string from the STRING record that follows", async () => {
@@ -639,7 +640,7 @@ describe("readXlsb — record decoding", () => {
     const wb = await sheetPackage(
       concat([rec(Brt.RowHdr, u32(0)), rec(Brt.CellError, concat([cellPrefix(0, 0), [0x55]]))]),
     )
-    expect(wb.sheets[0].rows[0][0]).toBe("#ERR!")
+    expect(wb.sheets[0].rows[0][0]).toEqual(cellError("#ERR!"))
   })
 
   it("falls back to an empty string for an out-of-range shared-string index", async () => {

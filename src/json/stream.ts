@@ -1,6 +1,7 @@
 // ── NDJSON Streaming ─────────────────────────────────────────────────
 // CF Workers / Deno / Node 18+ compatible: uses WHATWG ReadableStream only.
 
+import { isCellError } from "../cell-error"
 import type { CellValue, SpreadsheetStreamWriter } from "../_types"
 import { InvalidArgumentError, ParseError } from "../errors"
 import { flattenValue, reviveDates, type FlattenOptions } from "./flatten"
@@ -12,6 +13,11 @@ const TEXT_DECODER = new TextDecoder("utf-8")
 /**
  * Constructor options for {@link NdjsonStreamWriter}.
  */
+/** An error is written as its token, as the buffered JSON writers do. */
+function errorReplacer(_key: string, value: unknown): unknown {
+  return isCellError(value) ? value.error : value
+}
+
 export interface NdjsonStreamWriterOptions {
   // `Date` values always serialize as ISO strings. There used to be an
   // `isoDates` option and it never did anything: JSON.stringify calls
@@ -66,7 +72,7 @@ export class NdjsonStreamWriter implements SpreadsheetStreamWriter {
     if (this.done) {
       throw new Error("Cannot write to NdjsonStreamWriter after finish()/end()")
     }
-    this.buffer.push(JSON.stringify(this.unflatten ? unflattenRow(row) : row) + "\n")
+    this.buffer.push(JSON.stringify(this.unflatten ? unflattenRow(row) : row, errorReplacer) + "\n")
   }
 
   /**
@@ -320,7 +326,7 @@ async function* ndjsonStreamChunks(
       object = row
     }
 
-    const line = `${JSON.stringify(unflatten ? unflattenRow(object) : object)}\n`
+    const line = `${JSON.stringify(unflatten ? unflattenRow(object) : object, errorReplacer)}\n`
     pending.push(line)
     pendingBytes += line.length
 

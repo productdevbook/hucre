@@ -1,3 +1,4 @@
+import { cellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
@@ -60,7 +61,7 @@ describe("a cached formula result survives whatever its type", () => {
 
     expect(cells.get("0,0")?.formulaResult).toBe(24)
     expect(cells.get("0,1")?.formulaResult).toBe("xy")
-    expect(cells.get("0,2")?.formulaResult).toBe("#DIV/0!")
+    expect(cells.get("0,2")?.formulaResult).toEqual(cellError("#DIV/0!"))
     expect(cells.get("0,3")?.formulaResult).toBe(true)
   })
 
@@ -87,7 +88,7 @@ describe("the round trip that was losing them", () => {
 
     expect(second.get("0,0")?.formulaResult).toBe(24)
     expect(second.get("0,1")?.formulaResult).toBe("xy")
-    expect(second.get("0,2")?.formulaResult).toBe("#DIV/0!")
+    expect(second.get("0,2")?.formulaResult).toEqual(cellError("#DIV/0!"))
     expect(second.get("0,3")?.formulaResult).toBe(true)
   })
 
@@ -143,6 +144,6 @@ describe("the value stays where callers look for it", () => {
   it("rows carry the cached result, not the formula text", async () => {
     const wb = await readXlsx(await withCells(`${NUMBER}${TEXT}${ERROR}${BOOLEAN}`))
 
-    expect(wb.sheets[0]!.rows[0]).toEqual([24, "xy", "#DIV/0!", true])
+    expect(wb.sheets[0]!.rows[0]).toEqual([24, "xy", cellError("#DIV/0!"), true])
   })
 })

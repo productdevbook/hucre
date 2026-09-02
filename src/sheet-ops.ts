@@ -1,6 +1,7 @@
 // ── Sheet Operations ────────────────────────────────────────────────
 // In-memory row/column manipulation utilities for Sheet objects.
 
+import { isCellError } from "./cell-error"
 import type { Sheet, MergeRange, RowDef, Workbook, Cell, CellValue } from "./_types"
 import { parseCellRef } from "./xlsx/worksheet"
 import { parseRange, toRange, type RangeLike } from "./cell-utils"
@@ -1291,7 +1292,7 @@ export function findCells(
         predicate.lastIndex = 0
         match = typeof value === "string" && predicate.test(value)
       } else {
-        match = value === predicate
+        match = valueEquals(value, predicate)
       }
       if (match) {
         results.push({ row: r, col: c, value })
@@ -1336,7 +1337,7 @@ export function replaceCells(sheet: Sheet, find: CellValue | RegExp, replace: Ce
         }
       } else {
         // Exact value matching
-        if (value === find) {
+        if (valueEquals(value, find)) {
           row[c] = replace
           syncCellOverride(sheet, r, c, replace)
           count++
@@ -1463,14 +1464,25 @@ function compareNonNull(a: CellValue, b: CellValue): number {
   if (typeof a === "string" && typeof b === "string") return a.localeCompare(b)
   if (typeof a === "boolean" && typeof b === "boolean") return (a ? 1 : 0) - (b ? 1 : 0)
   if (a instanceof Date && b instanceof Date) return a.getTime() - b.getTime()
+  if (isCellError(a) && isCellError(b)) return a.error.localeCompare(b.error)
   return 0
 }
 
+/** Excel's sort order: numbers, dates, text, booleans, errors, blanks. */
 function typeRank(v: CellValue): number {
-  if (v === null) return 4
+  if (v === null) return 5
   if (typeof v === "number") return 0
   if (v instanceof Date) return 1
   if (typeof v === "string") return 2
   if (typeof v === "boolean") return 3
   return 4
+}
+
+/**
+ * `===` with one exception: two errors are equal when their tokens are,
+ * so `findCells(sheet, cellError("#N/A"))` finds them.
+ */
+function valueEquals(a: CellValue, b: CellValue): boolean {
+  if (isCellError(a) && isCellError(b)) return a.error === b.error
+  return a === b
 }

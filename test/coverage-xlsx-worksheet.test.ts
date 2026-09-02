@@ -1,3 +1,4 @@
+import { cellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { parseWorksheet } from "../src/xlsx/worksheet"
 import type { WorksheetContext } from "../src/xlsx/worksheet"
@@ -193,7 +194,7 @@ describe("cell types", () => {
 
   it('reads t="e" error values', () => {
     const s = data(`<row r="1"><c r="A1" t="e"><v>#DIV/0!</v></c></row>`)
-    expect(s.rows[0][0]).toBe("#DIV/0!")
+    expect(s.rows[0][0]).toEqual(cellError("#DIV/0!"))
     expect(s.cells!.get("0,0")!.type).toBe("error")
   })
 

@@ -1,3 +1,4 @@
+import { isCellError } from "../cell-error"
 import type { CellValue, CsvWriteOptions } from "../_types"
 import { escapeFormula } from "./formula"
 import { formatDate as formatExcelDate } from "../_date"
@@ -35,8 +36,8 @@ export function formatCsvValue(value: CellValue, options?: CsvWriteOptions): str
     return formatDate(value, opts.dateFormat)
   }
 
-  // String — apply formula escaping if enabled, then quoting
-  let str = String(value)
+  // String, or an error's token — apply formula escaping if enabled, then quoting
+  let str = isCellError(value) ? value.error : value
   if (opts.escapeFormulae) {
     str = escapeFormula(str)
   }
@@ -184,7 +185,7 @@ function formatAndQuote(value: CellValue, opts: NormalizedWriteOptions): string 
     return quoteField(raw, opts)
   }
 
-  let str = String(value)
+  let str = isCellError(value) ? value.error : value
   if (opts.escapeFormulae) {
     str = escapeFormula(str)
   }
