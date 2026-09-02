@@ -219,7 +219,7 @@ describe("writeCsvStream", () => {
 describe("NdjsonStreamWriter.toStream", () => {
   it("releases rows once they are enqueued", async () => {
     const writer = new NdjsonStreamWriter()
-    for (let i = 0; i < 50; i++) writer.write({ i })
+    for (let i = 0; i < 50; i++) writer.addObject({ i })
 
     const reader = writer.toStream().getReader()
     await reader.read()
@@ -231,11 +231,11 @@ describe("NdjsonStreamWriter.toStream", () => {
     await reader.cancel()
   })
 
-  it("still delivers everything written before end()", async () => {
+  it("still delivers everything written before finish()", async () => {
     const writer = new NdjsonStreamWriter()
-    writer.write({ a: 1 })
-    writer.write({ a: 2 })
-    writer.end()
+    writer.addObject({ a: 1 })
+    writer.addObject({ a: 2 })
+    writer.finish()
 
     const dec = new TextDecoder()
     const reader = writer.toStream().getReader()
@@ -253,15 +253,15 @@ describe("NdjsonStreamWriter.toStream", () => {
     const dec = new TextDecoder()
     const reader = writer.toStream().getReader()
 
-    writer.write({ a: 1 })
+    writer.addObject({ a: 1 })
     const first = await reader.read()
     expect(dec.decode(first.value)).toBe('{"a":1}\n')
 
-    writer.write({ a: 2 })
+    writer.addObject({ a: 2 })
     const second = await reader.read()
     expect(dec.decode(second.value)).toBe('{"a":2}\n')
 
-    writer.end()
+    writer.finish()
     await reader.cancel()
   })
 })

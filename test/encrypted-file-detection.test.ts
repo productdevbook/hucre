@@ -21,7 +21,7 @@ import { read, readObjects } from "../src/defter"
 import { readXlsxObjects } from "../src/xlsx/objects"
 import { readOdsObjects } from "../src/ods/objects"
 import { isOle2Container } from "../src/_input"
-import { EncryptedFileError, DefterError, ZipError, ParseError } from "../src/errors"
+import { EncryptedFileError, HucreError, ZipError, ParseError } from "../src/errors"
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -98,8 +98,8 @@ describe("readXlsx — encrypted XLSX detection", () => {
       expect(enc.message).toContain("password-protected")
       expect(enc.message).toContain("XLSX")
       // Must extend the project's base error so existing catch-all
-      // handlers `instanceof DefterError` keep working.
-      expect(err).toBeInstanceOf(DefterError)
+      // handlers `instanceof HucreError` keep working.
+      expect(err).toBeInstanceOf(HucreError)
       // EncryptedFileError is intentionally distinct from ZipError /
       // ParseError so callers can branch on it.
       expect(err).not.toBeInstanceOf(ZipError)

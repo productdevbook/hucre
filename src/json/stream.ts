@@ -103,25 +103,6 @@ export class NdjsonStreamWriter implements SpreadsheetStreamWriter {
     return this.toString()
   }
 
-  /**
-   * @deprecated Renamed to {@link addObject} so all three stream writers
-   * share `addRow` / `addObject` / `finish`. Same behaviour; this alias
-   * will be removed in a future major.
-   */
-  write(row: Record<string, CellValue>): void {
-    this.addObject(row)
-  }
-
-  /**
-   * Mark the writer finished. Subsequent writes throw.
-   *
-   * @deprecated Use {@link finish}, which does the same and returns the
-   * buffered output. This alias will be removed in a future major.
-   */
-  end(): void {
-    this.done = true
-  }
-
   /** Drain the buffered output as a single string. */
   toString(): string {
     return this.buffer.join("")
@@ -255,13 +236,6 @@ function tryParseLine(
     )
   }
 }
-
-/**
- * @deprecated Renamed to {@link streamNdjsonRows} so every streaming
- * reader in the library reads `stream*Rows`. This alias will be removed
- * in a future major.
- */
-export const readNdjsonStream: typeof streamNdjsonRows = streamNdjsonRows
 
 // ── True Streaming NDJSON Writer ─────────────────────────────────────
 

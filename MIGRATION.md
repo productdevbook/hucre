@@ -1,3 +1,40 @@
+# Migrating to v2
+
+v2 removes what v1 kept for compatibility and fixes the shapes v1 could not change without a major: two models where one will do, an options type that could not say which reader honours what, and a `Map` that capped a sheet at 2^24 cells.
+
+Every change that can affect existing code is listed. TypeScript flags most of them; the ones it cannot are marked **behaviour**.
+
+## At a glance
+
+| Change                                                | Affects you if…                                                                                                                       |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| [Deprecated names removed](#deprecated-names-removed) | you reference `DefterError`, `readNdjsonStream`, `headerRow: true`, `write()`/`end()`, or import a `parse*` part parser from the root |
+
+---
+
+## Deprecated names removed
+
+Everything v1 marked `@deprecated` is gone. Each has a one-line replacement that already worked in v1:
+
+| Removed                                                                                             | Use instead                                         |
+| --------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `DefterError` (class and type)                                                                      | `HucreError` — the same class object                |
+| `readNdjsonStream`                                                                                  | `streamNdjsonRows`                                  |
+| `NdjsonStreamWriter.write()` / `.end()`                                                             | `addObject()` / `finish()`                          |
+| `HtmlExportOptions.headerRow`, `MarkdownExportOptions.headerRow` (boolean)                          | `hasHeaderRow`                                      |
+| `OdsStreamRow`                                                                                      | `StreamRow`                                         |
+| `StreamWriterOptions`                                                                               | `XlsxStreamWriterOptions` — it was always XLSX-only |
+| `parseChart`, `parsePivotTable`, `parseSlicers`, `parseThemeColors`, … from `hucre` or `hucre/xlsx` | the same names from `hucre/ooxml`                   |
+
+The raw-XML part parsers moved to `hucre/ooxml` in v1 and were kept on the root marked deprecated. They are now on `hucre/ooxml` only — it is the entry point outside the stability commitment, and a name that lives on two entry points with two promises is the kind of thing v1 already had to fix once. The model-level chart helpers — `cloneChart`, `addChart`, `getCharts` — take a `Chart`, not an XML string, and stay on the root.
+
+```diff
+- import { parseChart } from "hucre"
++ import { parseChart } from "hucre/ooxml"
+```
+
+---
+
 # Migrating to v1
 
 v1 is where hucre's public API becomes a stability commitment. Getting there meant fixing things that were wrong, inconsistent, or documented-but-inert — several of which could not be fixed afterwards without a major bump.

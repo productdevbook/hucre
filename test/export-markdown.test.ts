@@ -142,7 +142,7 @@ describe("toMarkdown", () => {
       ["Alice", 30],
       ["Bob", 25],
     ])
-    const md = toMarkdown(sheet, { headerRow: false })
+    const md = toMarkdown(sheet, { hasHeaderRow: false })
     const lines = md.split("\n")
     // Should have: generated header + separator + 2 data rows
     expect(lines.length).toBe(4)

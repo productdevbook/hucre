@@ -64,13 +64,6 @@ function normalizeSheetFilter(sheets: Array<number | string> | undefined): Set<n
 
 // ── Row parser via SAX ──────────────────────────────────────────────
 
-/**
- * @deprecated Use {@link StreamRow}. Kept as an alias because it was the
- * element type of a public async generator; the two shapes were
- * identical apart from `sheetIndex` now being optional.
- */
-export type OdsStreamRow = StreamRow
-
 function* parseContentRows(xml: string): Generator<StreamRow, void, undefined> {
   const completedRows: StreamRow[] = []
 

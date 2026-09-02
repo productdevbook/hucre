@@ -47,7 +47,7 @@ const NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationship
 
 // ── Types ────────────────────────────────────────────────────────────
 
-export interface StreamWriterOptions {
+export interface XlsxStreamWriterOptions {
   /** Sheet name */
   name: string
   /** Column definitions */
@@ -88,16 +88,7 @@ export interface StreamWriterOptions {
   merges?: Array<MergeRange | string>
 }
 
-/**
- * Constructor options for {@link XlsxStreamWriter}.
- *
- * Alias of {@link StreamWriterOptions}, which occupies a generic name for
- * an XLSX-only type (#365 item 8). Prefer this one — every stream writer
- * in the library names its options `<Writer>Options`.
- */
-export type XlsxStreamWriterOptions = StreamWriterOptions
-
-export interface XlsxWriteStreamOptions extends StreamWriterOptions {
+export interface XlsxWriteStreamOptions extends XlsxStreamWriterOptions {
   /**
    * Write strings as inline `<is><t>` cells instead of routing them
    * through `xl/sharedStrings.xml`. Default `true`.
@@ -191,9 +182,9 @@ export interface XlsxStreamSheet {
   columns?: ColumnDef[]
   /** Freeze pane for this sheet. */
   freezePane?: FreezePane
-  /** Row-level properties for this sheet; see {@link StreamWriterOptions.rowDefs}. */
+  /** Row-level properties for this sheet; see {@link XlsxStreamWriterOptions.rowDefs}. */
   rowDefs?: Map<number, RowDef>
-  /** Merged ranges for this sheet; see {@link StreamWriterOptions.merges}. */
+  /** Merged ranges for this sheet; see {@link XlsxStreamWriterOptions.merges}. */
   merges?: Array<MergeRange | string>
   /** Overrides the workbook-level rollover cap for this sheet alone. */
   maxRowsPerSheet?: number

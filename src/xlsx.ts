@@ -25,7 +25,6 @@ export {
   XLSX_MAX_ROWS_PER_SHEET,
 } from "./xlsx/stream-writer"
 export type {
-  StreamWriterOptions,
   XlsxStreamWriterOptions,
   XlsxWriteStreamOptions,
   XlsxWriteStreamWorkbookOptions,
@@ -40,7 +39,6 @@ export { toWriteOptions, toWriteSheet } from "./write-model"
 export type { WriteModelDrop, ToWriteOptionsOptions } from "./write-model"
 export { calculateColumnWidth, measureValueWidth } from "./xlsx/auto-width"
 export { calculateRowHeight } from "./xlsx/auto-size"
-export { parseThemeColors, resolveThemeColor } from "./xlsx/theme"
 
 // ── Cell Utilities ─────────────────────────────────────────────────
 //

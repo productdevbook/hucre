@@ -581,7 +581,6 @@ Four caveats worth stating plainly:
 - `NdjsonStreamWriter.addRow` needs `columns` (`new NdjsonStreamWriter({
 columns: [...] })`), because NDJSON rows are objects and positional
   values have no key names otherwise. It throws rather than guessing.
-  Its old `write()` / `end()` are kept as `@deprecated` aliases.
 
 Streaming trade-offs worth knowing:
 
@@ -840,7 +839,8 @@ disappear from `xl/workbook.xml.rels`, leaving Excel with orphan
 `externalLinkN.xml` parts that it ignores.
 
 ```ts
-import { readXlsx, parseExternalLink } from "hucre"
+import { readXlsx } from "hucre"
+import { parseExternalLink } from "hucre/ooxml"
 
 const wb = await readXlsx(buf)
 for (const link of wb.externalLinks ?? []) {
@@ -881,7 +881,7 @@ for (const img of wb.cellImages ?? []) {
 }
 
 // Standalone parsers when you already have the XML strings.
-import { parseCellImages, assembleCellImages, REL_CELL_IMAGES } from "hucre"
+import { parseCellImages, assembleCellImages, REL_CELL_IMAGES } from "hucre/ooxml"
 const refs = parseCellImages(cellImagesXml)
 const images = assembleCellImages(refs, mediaMap)
 ```
@@ -916,7 +916,7 @@ for (const sheet of wb.sheets) {
 }
 
 // Standalone parsers when you already have the XML strings.
-import { parseSlicers, parseSlicerCache, parseTimelines, parseTimelineCache } from "hucre"
+import { parseSlicers, parseSlicerCache, parseTimelines, parseTimelineCache } from "hucre/ooxml"
 ```
 
 The worksheet body's `<x14:slicerList>` / `<x15:timelines>` extension
@@ -957,7 +957,7 @@ for (const sheet of wb.sheets) {
 }
 
 // Standalone parsers when you already have the XML strings.
-import { parsePivotTable, parsePivotCacheDefinition, attachPivotCacheFields } from "hucre"
+import { parsePivotTable, parsePivotCacheDefinition, attachPivotCacheFields } from "hucre/ooxml"
 ```
 
 `PivotTable.cacheId` matches the workbook-level `cacheId` rather than a
@@ -1078,7 +1078,8 @@ to a writable kind.
 #### Read side — `parseChart` / `getCharts`
 
 ```ts
-import { getCharts, openXlsx, parseChart } from "hucre"
+import { getCharts, openXlsx } from "hucre"
+import { parseChart } from "hucre/ooxml"
 
 const wb = await openXlsx(buf)
 
@@ -1176,7 +1177,8 @@ Per-series overrides are supplied as a positional `series` array;
 each entry merges with the source series at the matching index.
 
 ```ts
-import { cloneChart, openXlsx, parseChart, writeXlsx } from "hucre"
+import { cloneChart, openXlsx, writeXlsx } from "hucre"
+import { parseChart } from "hucre/ooxml"
 
 const wb = await openXlsx(templateBytes)
 const sourceChart = wb.sheets[0].charts?.[0]
@@ -1704,7 +1706,7 @@ parseJson(workbookToJson(wb), { rowsAt: "Sheet2" })
 // Streaming write — works in Cloudflare Workers / Deno / Node 18+
 const writer = new NdjsonStreamWriter()
 for await (const row of source) writer.addObject(row)
-writer.finish() // `write()` / `end()` still work as deprecated aliases
+writer.finish()
 return new Response(writer.toStream(), {
   headers: { "content-type": "application/x-ndjson" },
 })
@@ -2187,8 +2189,8 @@ a major bump. Everything else (`hucre`, `hucre/xlsx`, `hucre/csv`,
 `hucre/ods`, `hucre/json`, `hucre/xml`) is stable.
 
 If you only read and write spreadsheets, you do not need anything here.
-These names are still exported from the root for backward compatibility,
-marked deprecated.
+These names are exported from `hucre/ooxml` only; the model-level chart
+helpers (`cloneChart`, `addChart`, `getCharts`) stay at the root.
 
 ## Read/write parity
 

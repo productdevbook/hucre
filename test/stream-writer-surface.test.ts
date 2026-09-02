@@ -226,35 +226,4 @@ describe("NdjsonStreamWriter", () => {
     writer.finish()
     expect((await reader.read()).done).toBe(true)
   })
-
-  // ── deprecated aliases ─────────────────────────────────────────────
-
-  it("write() still appends, as a deprecated alias of addObject", () => {
-    const writer = new NdjsonStreamWriter()
-    writer.write({ a: 1 })
-    writer.addObject({ a: 2 })
-    expect(writer.toString()).toBe('{"a":1}\n{"a":2}\n')
-  })
-
-  it("end() still closes, as a deprecated alias of finish", () => {
-    const writer = new NdjsonStreamWriter()
-    writer.write({ a: 1 })
-    writer.end()
-    expect(writer.toString()).toBe('{"a":1}\n')
-    expect(() => writer.write({ a: 2 })).toThrow()
-    expect(() => writer.addObject({ a: 2 })).toThrow()
-  })
-
-  it("serializes Dates identically through addObject and the write() alias", () => {
-    const d = new Date("2025-04-25T00:00:00Z")
-
-    const viaAddObject = new NdjsonStreamWriter()
-    viaAddObject.addObject({ at: d })
-
-    const viaWrite = new NdjsonStreamWriter()
-    viaWrite.write({ at: d })
-
-    expect(viaAddObject.finish()).toBe(viaWrite.finish())
-    expect(viaAddObject.toString().trim()).toBe(`{"at":"${d.toISOString()}"}`)
-  })
 })

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest"
 import * as root from "../src/index"
 import {
-  DefterError,
   fromHtml,
   HucreError,
   InvalidArgumentError,
@@ -10,12 +9,10 @@ import {
   openXlsx,
   parseJson,
   parseNdjson,
-  readNdjsonStream,
   readObjects,
   saveXlsx,
   sheetToObjects,
   streamCsvRows,
-  streamNdjsonRows,
   toHtml,
   toMarkdown,
   unflattenRow,
@@ -112,11 +109,6 @@ describe("hasHeaderRow on toHtml and toMarkdown", () => {
   it("takes the new spelling", () => {
     expect(toHtml(sheet, { hasHeaderRow: true })).toContain("<th")
     expect(toMarkdown(sheet, { hasHeaderRow: true })).toMatch(/^\| h\s*\|/)
-  })
-
-  it("still honours the deprecated boolean headerRow for one major", () => {
-    expect(toHtml(sheet, { headerRow: true })).toContain("<th")
-    expect(toMarkdown(sheet, { headerRow: true })).toMatch(/^\| h\s*\|/)
   })
 })
 
@@ -238,27 +230,15 @@ describe("fromHtml reads cell text the way parseCsv does", () => {
 // ── "DefterError is now HucreError" ─────────────────────────────────
 
 describe("DefterError is now HucreError", () => {
-  it("is the same class object, so instanceof behaves identically", () => {
-    expect(DefterError).toBe(HucreError)
-  })
-
-  it("reports name 'HucreError' — the one visible difference", () => {
+  it("reports name 'HucreError'", () => {
     expect(new InvalidArgumentError("x").name).not.toBe("DefterError")
     expect(new HucreError("x").name).toBe("HucreError")
   })
 
   it("still catches everything the library throws", async () => {
     await expect(writeXlsx({ sheets: [{ name: "a:b", rows: [] }] })).rejects.toBeInstanceOf(
-      DefterError,
+      HucreError,
     )
-  })
-})
-
-// ── "readNdjsonStream is now streamNdjsonRows" ──────────────────────
-
-describe("readNdjsonStream is now streamNdjsonRows", () => {
-  it("is a deprecated alias of the same function", () => {
-    expect(readNdjsonStream).toBe(streamNdjsonRows)
   })
 })
 
@@ -537,12 +517,11 @@ describe("also worth knowing", () => {
     expect(parseCsv(writeCsv([["#1", "a"]]), { comment: "#" })).toEqual([])
   })
 
-  it("has a hucre/ooxml entry point that still re-exports from the root", async () => {
+  it("has a hucre/ooxml entry point, and the raw-XML parsers live only there", async () => {
     const ooxml = await import("../src/ooxml")
     expect(Object.keys(ooxml).length).toBeGreaterThan(0)
-    for (const name of Object.keys(ooxml)) {
-      expect(Object.keys(root)).toContain(name)
-    }
+    expect(Object.keys(ooxml)).toContain("parseChart")
+    expect(Object.keys(root)).not.toContain("parseChart")
   })
 
   it("exports the documented names from hucre/xlsx and hucre/ods", async () => {

@@ -12,12 +12,7 @@ export type {
 export { writeJson, writeNdjson, workbookToJson } from "./json/writer"
 export type { JsonWriteOptions, WorkbookToJsonOptions } from "./json/writer"
 
-export {
-  NdjsonStreamWriter,
-  streamNdjsonRows,
-  readNdjsonStream,
-  writeNdjsonStream,
-} from "./json/stream"
+export { NdjsonStreamWriter, streamNdjsonRows, writeNdjsonStream } from "./json/stream"
 export type {
   NdjsonStreamReadOptions,
   NdjsonStreamWriterOptions,

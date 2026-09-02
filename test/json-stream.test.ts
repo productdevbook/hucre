@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { NdjsonStreamWriter, streamNdjsonRows, readNdjsonStream } from "../src/json"
+import { NdjsonStreamWriter, streamNdjsonRows } from "../src/json"
 
 function streamFromString(s: string): ReadableStream<Uint8Array> {
   const enc = new TextEncoder()
@@ -29,22 +29,22 @@ function chunkedStream(parts: string[]): ReadableStream<Uint8Array> {
 describe("NdjsonStreamWriter", () => {
   it("buffers writes into NDJSON output", () => {
     const w = new NdjsonStreamWriter()
-    w.write({ a: 1 })
-    w.write({ a: 2 })
+    w.addObject({ a: 1 })
+    w.addObject({ a: 2 })
     expect(w.toString()).toBe('{"a":1}\n{"a":2}\n')
   })
 
-  it("throws when writing after end()", () => {
+  it("throws when writing after finish()", () => {
     const w = new NdjsonStreamWriter()
-    w.end()
-    expect(() => w.write({ a: 1 })).toThrow()
+    w.finish()
+    expect(() => w.addObject({ a: 1 })).toThrow()
   })
 
   it("emits a ReadableStream that can be drained", async () => {
     const w = new NdjsonStreamWriter()
-    w.write({ a: 1 })
-    w.write({ a: 2 })
-    w.end()
+    w.addObject({ a: 1 })
+    w.addObject({ a: 2 })
+    w.finish()
 
     const reader = w.toStream().getReader()
     const dec = new TextDecoder()
@@ -60,7 +60,7 @@ describe("NdjsonStreamWriter", () => {
   it("converts Date values to ISO strings", () => {
     const w = new NdjsonStreamWriter()
     const d = new Date("2025-04-25T00:00:00Z")
-    w.write({ at: d })
+    w.addObject({ at: d })
     expect(w.toString().trim()).toBe(`{"at":"${d.toISOString()}"}`)
   })
 })
@@ -118,13 +118,5 @@ describe("streamNdjsonRows", () => {
     }
     expect(rows).toEqual([{ a: 1 }, { a: 2 }])
     expect(errs).toEqual([2])
-  })
-})
-
-describe("readNdjsonStream (deprecated alias)", () => {
-  it("is the same function as streamNdjsonRows", () => {
-    // Renamed so every streaming reader in the library reads
-    // stream*Rows; the old name stays for one major. See #365.
-    expect(readNdjsonStream).toBe(streamNdjsonRows)
   })
 })

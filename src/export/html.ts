@@ -13,8 +13,6 @@ export interface HtmlExportOptions {
    * was the sharpest edge in the option set. See #365.
    */
   hasHeaderRow?: boolean
-  /** @deprecated Renamed to {@link HtmlExportOptions.hasHeaderRow}. */
-  headerRow?: boolean
   /** Custom CSS class prefix. Default: "hucre" */
   classPrefix?: string
   /** Include a minimal <style> block. Default: false */
@@ -179,23 +177,15 @@ function buildMergeMap(
 /**
  * Export a sheet as an HTML <table> string.
  */
-/**
- * Options after defaults are applied. `headerRow` is absent: it is the
- * deprecated spelling of `hasHeaderRow` and is folded into it, so the
- * resolved shape carries one field rather than two that can disagree.
- */
-type ResolvedHtmlOptions = Required<
-  Omit<HtmlExportOptions, "caption" | "ariaLabel" | "headerRow">
-> &
+/** Options after defaults are applied. */
+type ResolvedHtmlOptions = Required<Omit<HtmlExportOptions, "caption" | "ariaLabel">> &
   Pick<HtmlExportOptions, "caption" | "ariaLabel">
 
 export function toHtml(sheet: Sheet, options?: HtmlExportOptions): string {
   const opts: ResolvedHtmlOptions = {
     styles: options?.styles ?? false,
     classes: options?.classes ?? true,
-    // Accept the deprecated name for one major so existing calls keep
-    // working. See #365.
-    hasHeaderRow: options?.hasHeaderRow ?? options?.headerRow ?? false,
+    hasHeaderRow: options?.hasHeaderRow ?? false,
     classPrefix: options?.classPrefix ?? "hucre",
     includeStyleTag: options?.includeStyleTag ?? false,
     caption: options?.caption,
