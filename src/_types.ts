@@ -2071,16 +2071,21 @@ export interface SchemaValidationIssue {
  * rows are dense and positional, so an index would be pure ceremony, and
  * the bare array is what keeps it the streaming mirror of `parseCsv`.
  */
-export interface StreamRow {
-  /** 0-based row index within its sheet */
+/**
+ * One row from a streaming reader — the same shape from every one of
+ * them. v1 had four: `StreamRow` from XLSX and ODS, a bare array from
+ * CSV, a bare object from NDJSON, and `XmlStreamRow` from XML.
+ *
+ * `T` is what a row holds: positional `CellValue[]` from the grid
+ * formats, a record from NDJSON and XML.
+ */
+export interface StreamRow<T = CellValue[]> {
+  /** 0-based row index within its sheet — the source position, so a gap means a skipped empty row. */
   index: number
-  /**
-   * 0-based index of the sheet this row came from. Present only for
-   * readers that stream more than one sheet.
-   */
-  sheetIndex?: number
-  /** Cell values for this row */
-  values: CellValue[]
+  /** 0-based index of the sheet this row came from. `0` for single-sheet formats. */
+  sheet: number
+  /** The row. */
+  values: T
 }
 
 // ── Input/Output Types ─────────────────────────────────────────────

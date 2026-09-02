@@ -230,10 +230,15 @@ describe("parseNdjson", () => {
 // json/stream
 // ═══════════════════════════════════════════════════════════════════════
 
+/** The row values of an NDJSON stream, without the StreamRow envelope. */
+async function values<T>(iter: AsyncGenerator<{ values: T }, void, undefined>): Promise<T[]> {
+  return (await drain(iter)).map((row) => row.values)
+}
+
 describe("streamNdjsonRows", () => {
   it("skips blank lines between records", () => {
     // Producers that flush per-record often emit a stray newline.
-    return drain(streamNdjsonRows(streamOf(`{"a":1}\n`, `\n`, `  \n`, `{"a":2}\n`))).then(
+    return values(streamNdjsonRows(streamOf(`{"a":1}\n`, `\n`, `  \n`, `{"a":2}\n`))).then(
       (rows) => {
         expect(rows).toEqual([{ a: 1 }, { a: 2 }])
       },
@@ -243,7 +248,7 @@ describe("streamNdjsonRows", () => {
   it("flattens a trailing record that has no terminating newline", async () => {
     // The last line of a file frequently lacks its "\n"; it must take the
     // same flattening path as every other line.
-    const rows = await drain(
+    const rows = await values(
       streamNdjsonRows(
         streamOf(`{"id":1,"user":{"name":"Ada"}}\n`, `{"id":2,"user":{"name":"G"}}`),
         {
@@ -259,13 +264,13 @@ describe("streamNdjsonRows", () => {
 
   it("yields a trailing array record untouched even with flattenRows on", async () => {
     // Flattening only applies to objects; an array line is passed through.
-    const rows = await drain(streamNdjsonRows(streamOf(`[1,2]`), { flattenRows: true }))
+    const rows = await values(streamNdjsonRows(streamOf(`[1,2]`), { flattenRows: true }))
     expect(rows).toEqual([[1, 2]])
   })
 
   it("reports a malformed trailing line through onError", async () => {
     const seen: number[] = []
-    const rows = await drain(
+    const rows = await values(
       streamNdjsonRows(streamOf(`{"a":1}\n`, `{oops`), {
         onError: (_line, lineNumber) => seen.push(lineNumber),
       }),

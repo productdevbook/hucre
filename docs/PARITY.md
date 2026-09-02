@@ -602,12 +602,12 @@ The streaming readers skip an entirely empty row and keep the true index
 on `StreamRow`, so a gap in the indexes is the signal there; they do not
 pad, because the sheet's width is not known until the last row.
 
-They do **not** agree on how many sheets they walk. `streamXlsxRows`
-yields one sheet — the first, unless `sheet` names another —
-while `streamOdsRows` walks every sheet in the document and tags each row
-with `sheetIndex`. So the same loop over a three-sheet workbook gives you
-one sheet of it as `.xlsx` and all three as `.ods`, silently. Pass
-`sheet` when you mean one, and read `row.sheetIndex` when you mean all.
+Every `stream*Rows` reader yields the same `StreamRow<T>` —
+`{ index, sheet, values }` — and every one is async. `streamXlsxRows` and
+`streamOdsRows` both stream the first sheet unless `sheet` names another;
+`streamOdsRows` also takes `sheet: "all"`, since ODS holds every table in
+one `content.xml` and can walk them in a single pass, which a ZIP of
+worksheet parts cannot.
 
 ### `streamXmlRows` gives you a row's own keys, not a rectangle
 

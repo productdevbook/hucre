@@ -20,3 +20,6 @@ export type { CellValue, CsvReadOptions, CsvWriteOptions } from "./_types"
 // A cell may hold an error value; every writer takes one, and the spreadsheet readers produce them.
 export { cellError, isCellError } from "./cell-error"
 export type { CellError, CellErrorCode } from "./cell-error"
+
+// Every stream*Rows reader yields this one shape.
+export type { StreamRow } from "./_types"

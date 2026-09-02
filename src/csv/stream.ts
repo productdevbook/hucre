@@ -12,7 +12,13 @@
 //   so peak memory is independent of the row count.
 
 import { isCellError } from "../cell-error"
-import type { CellValue, CsvReadOptions, CsvWriteOptions, SpreadsheetStreamWriter } from "../_types"
+import type {
+  CellValue,
+  CsvReadOptions,
+  CsvWriteOptions,
+  SpreadsheetStreamWriter,
+  StreamRow,
+} from "../_types"
 import { stripBom, detectDelimiter, startsWith } from "./reader"
 import { escapeFormula, unescapeFormula } from "./formula"
 import { inferType } from "../_infer"
@@ -27,13 +33,18 @@ const CHUNK_THRESHOLD = 64 * 1024
 // ── Streaming CSV Reader ─────────────────────────────────────────────
 
 /**
- * Stream CSV rows as a synchronous generator.
- * Processes the string incrementally and yields one row at a time.
+ * Stream CSV rows one at a time, as `StreamRow`s like every other
+ * `stream*Rows` reader. `index` is the row's 0-based position in the
+ * file, so a row consumed by `skipHeaderRow` or `skipLines` leaves a gap.
+ *
+ * The parse itself is synchronous — the input is a whole string or byte
+ * buffer — and the generator is async so a caller can hold one loop
+ * shape across formats.
  */
-export function* streamCsvRows(
+export async function* streamCsvRows(
   input: CsvInput,
   options?: CsvReadOptions,
-): Generator<CellValue[], void, undefined> {
+): AsyncGenerator<StreamRow, void, undefined> {
   // Same decoding as parseCsv — see ./encoding.ts. This generator walks a
   // whole string either way, so taking bytes costs nothing and removes
   // the trap of the caller decoding chunks by hand.
@@ -234,7 +245,7 @@ export function* streamCsvRows(
 
     onRow?.(outRow, rowIndex)
 
-    yield outRow
+    yield { index: physicalLine - 1, sheet: 0, values: outRow }
   }
 }
 

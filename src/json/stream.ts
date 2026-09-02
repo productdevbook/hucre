@@ -2,7 +2,7 @@
 // CF Workers / Deno / Node 18+ compatible: uses WHATWG ReadableStream only.
 
 import { isCellError } from "../cell-error"
-import type { CellValue, SpreadsheetStreamWriter } from "../_types"
+import type { CellValue, SpreadsheetStreamWriter, ReadInput, StreamRow } from "../_types"
 import { InvalidArgumentError, ParseError } from "../errors"
 import { flattenValue, reviveDates, type FlattenOptions } from "./flatten"
 import { unflattenRow } from "./unflatten"
@@ -158,13 +158,31 @@ export interface NdjsonStreamReadOptions extends FlattenOptions {
   flattenRows?: boolean
 }
 
+function toByteStream(input: ReadInput | string): ReadableStream<Uint8Array> {
+  if (input instanceof ReadableStream) return input
+  const bytes =
+    typeof input === "string"
+      ? TEXT_ENCODER.encode(input)
+      : input instanceof Uint8Array
+        ? input
+        : new Uint8Array(input)
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes)
+      controller.close()
+    },
+  })
+}
+
 export async function* streamNdjsonRows<
   T extends Record<string, CellValue> = Record<string, CellValue>,
 >(
-  stream: ReadableStream<Uint8Array>,
+  input: ReadInput | string,
   options?: NdjsonStreamReadOptions,
-): AsyncGenerator<T, void, undefined> {
-  const reader = stream.getReader()
+): AsyncGenerator<StreamRow<T>, void, undefined> {
+  // A stream is consumed as it arrives; anything already in memory is
+  // wrapped so one code path reads both. `index` is the 0-based line.
+  const reader = toByteStream(input).getReader()
   let buffer = ""
   let lineNumber = 0
 
@@ -202,7 +220,7 @@ export async function* streamNdjsonRows<
         if (line.trim() === "") continue
         const parsed = tryParseLine(line, lineNumber, options?.onError)
         if (parsed === SKIP) continue
-        yield emit(parsed)
+        yield { index: lineNumber - 1, sheet: 0, values: emit(parsed) }
       }
       if (done) {
         // Flush trailing partial line (no newline)
@@ -211,7 +229,7 @@ export async function* streamNdjsonRows<
         if (trailing !== "") {
           lineNumber++
           const parsed = tryParseLine(trailing, lineNumber, options?.onError)
-          if (parsed !== SKIP) yield emit(parsed)
+          if (parsed !== SKIP) yield { index: lineNumber - 1, sheet: 0, values: emit(parsed) }
         }
         break
       }

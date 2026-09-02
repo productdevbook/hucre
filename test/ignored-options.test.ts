@@ -1,3 +1,4 @@
+import { valuesOf } from "./_stream"
 import { describe, expect, it } from "vitest"
 import { readOds } from "../src/ods/reader"
 import { writeOds } from "../src/ods/writer"
@@ -87,8 +88,8 @@ describe("transformHeader means the same thing in all three CSV readers", () => 
     ])
   })
 
-  it("rewrites the header row in streamCsvRows", () => {
-    expect([...streamCsvRows(CSV, { header: true, transformHeader: upper })]).toEqual([
+  it("rewrites the header row in streamCsvRows", async () => {
+    expect(await valuesOf(streamCsvRows(CSV, { header: true, transformHeader: upper }))).toEqual([
       ["NAME", "AGE"],
       ["Ada", "36"],
     ])
@@ -116,9 +117,9 @@ describe("transformHeader means the same thing in all three CSV readers", () => 
     expect(seen).not.toContain("name")
   })
 
-  it("gets the same header names in the streaming reader", () => {
+  it("gets the same header names in the streaming reader", async () => {
     const seen: string[] = []
-    for (const _row of streamCsvRows(CSV, {
+    for await (const _row of streamCsvRows(CSV, {
       header: true,
       transformHeader: upper,
       transformValue: (value, header) => {

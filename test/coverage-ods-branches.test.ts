@@ -1063,19 +1063,18 @@ describe("streamOdsRows — options and failure modes", () => {
       ),
   )
 
-  it("streams every sheet when the filter names sheets it cannot resolve", async () => {
-    // The SAX pass never sees table names, so a name-only filter degrades to
-    // "stream everything" rather than silently yielding nothing.
+  it("selects a sheet by name", async () => {
     const data = await odsFile({ content: twoSheets })
     const rows: StreamRow[] = []
-    for await (const row of streamOdsRows(data, { sheets: ["Beta"] })) rows.push(row)
-    expect(rows.length).toBe(3)
+    for await (const row of streamOdsRows(data, { sheet: "Beta" })) rows.push(row)
+    expect(rows.map((r) => r.values[0])).toEqual(["b1"])
+    expect(rows.every((r) => r.sheet === 1)).toBe(true)
   })
 
   it("restricts streaming to the requested sheet index", async () => {
     const data = await odsFile({ content: twoSheets })
     const rows: StreamRow[] = []
-    for await (const row of streamOdsRows(data, { sheets: [1] })) rows.push(row)
+    for await (const row of streamOdsRows(data, { sheet: 1 })) rows.push(row)
     expect(rows.map((r) => r.values[0])).toEqual(["b1"])
   })
 

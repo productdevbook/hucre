@@ -288,8 +288,8 @@ describe("the streaming reader sees the same thing", () => {
       const sheets = (await readOds(load(name))).sheets
       const seen = sheets.map(() => new Set<number>())
 
-      for await (const row of streamOdsRows(load(name))) {
-        const at = row.sheetIndex ?? 0
+      for await (const row of streamOdsRows(load(name), { sheet: "all" })) {
+        const at = row.sheet
         // The buffered reader pads every row to the sheet's width; the
         // streaming one cannot know the width yet, so compare up to the
         // last value.

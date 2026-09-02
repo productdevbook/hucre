@@ -115,6 +115,44 @@ It is a plain object, not a class, so it survives `structuredClone` and `JSON.st
 
 `parseCsv` is unchanged: it returns lines as the file had them, and is a grid function rather than a `Sheet` reader. The streaming readers are unchanged too — they skip an empty row and keep the true index on `StreamRow`.
 
+## One `StreamRow` from every streaming reader
+
+Five `stream*Rows` readers yielded four shapes: `{ index, values }` from XLSX and ODS (with an optional `sheetIndex` on ODS), a bare `CellValue[]` from CSV, a bare object from NDJSON, and `XmlStreamRow` from XML. Every one now yields
+
+```ts
+interface StreamRow<T = CellValue[]> {
+  index: number
+  sheet: number
+  values: T
+}
+```
+
+and every one is an `AsyncGenerator`, so one `for await` loop works across formats.
+
+```diff
+- for (const row of streamCsvRows(text)) use(row)
++ for await (const row of streamCsvRows(text)) use(row.values)
+
+- for await (const record of streamNdjsonRows(body)) use(record)
++ for await (const row of streamNdjsonRows(body)) use(row.values)
+
+- for await (const row of streamOdsRows(bytes)) use(row.sheetIndex, row.values)
++ for await (const row of streamOdsRows(bytes)) use(row.sheet, row.values)
+```
+
+`streamCsvRows` was the one synchronous generator; `[...streamCsvRows(text)]` becomes `await Array.fromAsync(streamCsvRows(text))`. Its `index` is the row's 0-based position in the file, so a row consumed by `skipHeaderRow` or `skipLines` leaves a gap — as a skipped empty row does in XLSX.
+
+`streamNdjsonRows` and `streamXmlRows` take any `ReadInput` or a string, not only a `ReadableStream`. `XmlStreamRow` is gone; `StreamRow<Record<string, CellValue>>` is the same shape.
+
+**Behaviour:** `streamOdsRows` used to walk every sheet while `streamXlsxRows` walked one, so the same loop over a three-sheet workbook gave one sheet as `.xlsx` and three as `.ods`. Both now take `sheet?: number | string`, default the first sheet, and `streamOdsRows` resolves a name (it used to fall back to streaming everything when given one). Pass `sheet: "all"` for the old behaviour.
+
+```diff
+- streamOdsRows(bytes)                       // every sheet
++ streamOdsRows(bytes, { sheet: "all" })     // every sheet
+- streamOdsRows(bytes, { sheets: [1] })
++ streamOdsRows(bytes, { sheet: 1 })
+```
+
 ---
 
 # Migrating to v1

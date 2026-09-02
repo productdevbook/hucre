@@ -1,3 +1,4 @@
+import { valuesOf } from "./_stream"
 import { describe, expect, it } from "vitest"
 import { parseCsv } from "../src/csv/reader"
 import { writeCsv } from "../src/csv/writer"
@@ -61,9 +62,9 @@ describe("parseCsv — skipHeaderRow", () => {
     ])
   })
 
-  it("agrees with streamCsvRows", () => {
+  it("agrees with streamCsvRows", async () => {
     const options = { header: true, skipHeaderRow: true }
-    expect(parseCsv(SIMPLE, options)).toEqual(Array.from(streamCsvRows(SIMPLE, options)))
+    expect(parseCsv(SIMPLE, options)).toEqual(await valuesOf(streamCsvRows(SIMPLE, options)))
   })
 })
 
@@ -110,10 +111,10 @@ describe("escapeFormulae round trip", () => {
     expect(seen).toEqual(["-h", "-h"])
   })
 
-  it("works the same in streamCsvRows", () => {
+  it("works the same in streamCsvRows", async () => {
     const written = writeCsv([TRIGGERS], { escapeFormulae: true })
     const options = { unescapeFormulae: true }
-    expect(Array.from(streamCsvRows(written, options))).toEqual(parseCsv(written, options))
+    expect(await valuesOf(streamCsvRows(written, options))).toEqual(parseCsv(written, options))
   })
 })
 

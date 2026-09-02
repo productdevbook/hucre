@@ -85,27 +85,27 @@ describe("StreamRow is one shape", () => {
     expect(rows[0]!.values).toEqual(["a1"])
   })
 
-  it("ODS rows carry the same fields plus sheetIndex", async () => {
+  it("ODS rows carry the same fields, and `sheet` tells the tables apart", async () => {
     const buf = await writeOds({ sheets: twoSheets })
-    const rows: StreamRow[] = await drain(streamOdsRows(buf))
+    const rows: StreamRow[] = await drain(streamOdsRows(buf, { sheet: "all" }))
 
     // Same property names as the XLSX reader — they used to be two
     // separate interfaces describing the same thing.
     for (const row of rows) {
       expect(row).toHaveProperty("index")
+      expect(row).toHaveProperty("sheet")
       expect(row).toHaveProperty("values")
     }
-    expect(new Set(rows.map((r) => r.sheetIndex))).toEqual(new Set([0, 1]))
+    expect(new Set(rows.map((r) => r.sheet))).toEqual(new Set([0, 1]))
   })
 
-  it("CSV still yields a bare array, on purpose", () => {
-    // CSV rows are dense and positional, so an index would be ceremony —
-    // and the bare array is what keeps streamCsvRows the streaming
-    // mirror of parseCsv.
-    const rows = Array.from(streamCsvRows("a,b\r\nc,d\r\n"))
+  it("CSV yields the same shape, with sheet 0", async () => {
+    // v1 yielded a bare array here "on purpose"; v2 has one row shape
+    // across every stream*Rows reader, and `index` is the source row.
+    const rows = await drain(streamCsvRows("a,b\r\nc,d\r\n"))
     expect(rows).toEqual([
-      ["a", "b"],
-      ["c", "d"],
+      { index: 0, sheet: 0, values: ["a", "b"] },
+      { index: 1, sheet: 0, values: ["c", "d"] },
     ])
   })
 })
@@ -127,32 +127,36 @@ describe("streamOdsRows input and options", () => {
     // It previously took no options at all, so bounding a huge file meant
     // draining it and counting yourself.
     const buf = await writeOds({ sheets: twoSheets })
-    const rows = await drain(streamOdsRows(buf, { maxRows: 3 }))
+    const rows = await drain(streamOdsRows(buf, { sheet: "all", maxRows: 3 }))
     expect(rows).toHaveLength(3)
   })
 
   it("honours a numeric sheet filter", async () => {
     const buf = await writeOds({ sheets: twoSheets })
-    const rows = await drain(streamOdsRows(buf, { sheets: [1] }))
+    const rows = await drain(streamOdsRows(buf, { sheet: 1 }))
 
-    expect(rows.every((r) => r.sheetIndex === 1)).toBe(true)
+    expect(rows.every((r) => r.sheet === 1)).toBe(true)
     expect(rows.map((r) => r.values[0])).toEqual(["b1", "b2", "b3"])
   })
 
-  it("streams everything when the filter names no resolvable sheet", async () => {
-    // The SAX pass does not surface table names, so a name-only filter
-    // cannot be resolved. Streaming everything is the safe fallback —
-    // yielding nothing would look like an empty file.
+  it("selects a sheet by name, as streamXlsxRows does", async () => {
     const buf = await writeOds({ sheets: twoSheets })
-    const rows = await drain(streamOdsRows(buf, { sheets: ["Second"] }))
-    expect(rows.length).toBe(5)
+    const rows = await drain(streamOdsRows(buf, { sheet: "Second" }))
+    expect(rows.map((r) => r.values[0])).toEqual(["b1", "b2", "b3"])
+  })
+
+  it("defaults to the first sheet, as streamXlsxRows does", async () => {
+    const buf = await writeOds({ sheets: twoSheets })
+    const rows = await drain(streamOdsRows(buf))
+    expect(rows.map((r) => r.values[0])).toEqual(["a1", "a2"])
+    expect(rows.every((r) => r.sheet === 0)).toBe(true)
   })
 
   it("combines the filters", async () => {
     const buf = await writeOds({ sheets: twoSheets })
-    const rows = await drain(streamOdsRows(buf, { sheets: [1], maxRows: 2 }))
+    const rows = await drain(streamOdsRows(buf, { sheet: 1, maxRows: 2 }))
     expect(rows).toHaveLength(2)
-    expect(rows.every((r) => r.sheetIndex === 1)).toBe(true)
+    expect(rows.every((r) => r.sheet === 1)).toBe(true)
   })
 })
 

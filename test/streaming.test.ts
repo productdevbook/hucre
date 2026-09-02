@@ -21,11 +21,11 @@ async function collectStreamRows(
   return rows
 }
 
-function collectSyncRows(gen: Generator<CellValue[], void, undefined>): CellValue[][] {
+async function collectCsvRows(
+  gen: AsyncGenerator<StreamRow, void, undefined>,
+): Promise<CellValue[][]> {
   const rows: CellValue[][] = []
-  for (const row of gen) {
-    rows.push(row)
-  }
+  for await (const row of gen) rows.push(row.values)
   return rows
 }
 
@@ -893,9 +893,9 @@ describe("XlsxStreamWriter", () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("streamCsvRows", () => {
-  it("streams rows from CSV string", () => {
+  it("streams rows from CSV string", async () => {
     const csv = "a,b,c\n1,2,3\n4,5,6"
-    const rows = collectSyncRows(streamCsvRows(csv))
+    const rows = await collectCsvRows(streamCsvRows(csv))
 
     expect(rows).toHaveLength(3)
     expect(rows[0]).toEqual(["a", "b", "c"])
@@ -903,18 +903,18 @@ describe("streamCsvRows", () => {
     expect(rows[2]).toEqual(["4", "5", "6"])
   })
 
-  it("values match non-streaming parse", () => {
+  it("values match non-streaming parse", async () => {
     const csv = 'name,age,city\n"Alice",30,"New York"\nBob,25,London'
 
-    const streamRows = collectSyncRows(streamCsvRows(csv))
+    const streamRows = await collectCsvRows(streamCsvRows(csv))
     const regularRows = parseCsv(csv)
 
     expect(streamRows).toEqual(regularRows)
   })
 
-  it("handles quoted fields", () => {
+  it("handles quoted fields", async () => {
     const csv = '"hello, world",simple,"with ""quotes"""\na,b,c'
-    const rows = collectSyncRows(streamCsvRows(csv))
+    const rows = await collectCsvRows(streamCsvRows(csv))
 
     expect(rows).toHaveLength(2)
     expect(rows[0][0]).toBe("hello, world")
@@ -922,9 +922,9 @@ describe("streamCsvRows", () => {
     expect(rows[0][2]).toBe('with "quotes"')
   })
 
-  it("type inference works per-row", () => {
+  it("type inference works per-row", async () => {
     const csv = "true,42,hello,2024-01-15\nfalse,3.14,world,not-a-date"
-    const rows = collectSyncRows(streamCsvRows(csv, { typeInference: true }))
+    const rows = await collectCsvRows(streamCsvRows(csv, { typeInference: true }))
 
     expect(rows).toHaveLength(2)
     expect(rows[0][0]).toBe(true)
@@ -938,9 +938,9 @@ describe("streamCsvRows", () => {
     expect(rows[1][3]).toBe("not-a-date")
   })
 
-  it("header row handling", () => {
+  it("header row handling", async () => {
     const csv = "name,age\nAlice,30\nBob,25"
-    const rows = collectSyncRows(streamCsvRows(csv, { header: true }))
+    const rows = await collectCsvRows(streamCsvRows(csv, { header: true }))
 
     // `header: true` marks the header row without consuming it, matching
     // parseCsv — see #353. Use skipHeaderRow to drop it.
@@ -950,23 +950,23 @@ describe("streamCsvRows", () => {
     expect(rows[2]).toEqual(["Bob", "25"])
   })
 
-  it("skipHeaderRow consumes the header row", () => {
+  it("skipHeaderRow consumes the header row", async () => {
     const csv = "name,age\nAlice,30\nBob,25"
-    const rows = collectSyncRows(streamCsvRows(csv, { header: true, skipHeaderRow: true }))
+    const rows = await collectCsvRows(streamCsvRows(csv, { header: true, skipHeaderRow: true }))
 
     expect(rows).toHaveLength(2)
     expect(rows[0]).toEqual(["Alice", "30"])
     expect(rows[1]).toEqual(["Bob", "25"])
   })
 
-  it("empty input yields no rows", () => {
-    const rows = collectSyncRows(streamCsvRows(""))
+  it("empty input yields no rows", async () => {
+    const rows = await collectCsvRows(streamCsvRows(""))
     expect(rows).toHaveLength(0)
   })
 
-  it("handles CRLF line endings", () => {
+  it("handles CRLF line endings", async () => {
     const csv = "a,b\r\n1,2\r\n3,4"
-    const rows = collectSyncRows(streamCsvRows(csv))
+    const rows = await collectCsvRows(streamCsvRows(csv))
 
     expect(rows).toHaveLength(3)
     expect(rows[0]).toEqual(["a", "b"])
@@ -974,35 +974,35 @@ describe("streamCsvRows", () => {
     expect(rows[2]).toEqual(["3", "4"])
   })
 
-  it("handles trailing newline without extra empty row", () => {
+  it("handles trailing newline without extra empty row", async () => {
     const csv = "a,b\n1,2\n"
-    const rows = collectSyncRows(streamCsvRows(csv))
+    const rows = await collectCsvRows(streamCsvRows(csv))
 
     expect(rows).toHaveLength(2)
     expect(rows[0]).toEqual(["a", "b"])
     expect(rows[1]).toEqual(["1", "2"])
   })
 
-  it("skips BOM by default", () => {
+  it("skips BOM by default", async () => {
     const csv = "\uFEFFa,b\n1,2"
-    const rows = collectSyncRows(streamCsvRows(csv))
+    const rows = await collectCsvRows(streamCsvRows(csv))
 
     expect(rows).toHaveLength(2)
     expect(rows[0][0]).toBe("a")
   })
 
-  it("skips comment rows", () => {
+  it("skips comment rows", async () => {
     const csv = "# comment\na,b\n# another\n1,2"
-    const rows = collectSyncRows(streamCsvRows(csv, { comment: "#" }))
+    const rows = await collectCsvRows(streamCsvRows(csv, { comment: "#" }))
 
     expect(rows).toHaveLength(2)
     expect(rows[0]).toEqual(["a", "b"])
     expect(rows[1]).toEqual(["1", "2"])
   })
 
-  it("skips empty rows when configured", () => {
+  it("skips empty rows when configured", async () => {
     const csv = "a,b\n\n1,2\n\n3,4"
-    const rows = collectSyncRows(streamCsvRows(csv, { skipEmptyRows: true }))
+    const rows = await collectCsvRows(streamCsvRows(csv, { skipEmptyRows: true }))
 
     expect(rows).toHaveLength(3)
     expect(rows[0]).toEqual(["a", "b"])
@@ -1010,18 +1010,18 @@ describe("streamCsvRows", () => {
     expect(rows[2]).toEqual(["3", "4"])
   })
 
-  it("handles custom delimiter", () => {
+  it("handles custom delimiter", async () => {
     const csv = "a;b;c\n1;2;3"
-    const rows = collectSyncRows(streamCsvRows(csv, { delimiter: ";" }))
+    const rows = await collectCsvRows(streamCsvRows(csv, { delimiter: ";" }))
 
     expect(rows).toHaveLength(2)
     expect(rows[0]).toEqual(["a", "b", "c"])
     expect(rows[1]).toEqual(["1", "2", "3"])
   })
 
-  it("handles quoted fields with newlines inside", () => {
+  it("handles quoted fields with newlines inside", async () => {
     const csv = '"line1\nline2",b\nc,d'
-    const rows = collectSyncRows(streamCsvRows(csv))
+    const rows = await collectCsvRows(streamCsvRows(csv))
 
     expect(rows).toHaveLength(2)
     expect(rows[0][0]).toBe("line1\nline2")

@@ -1,3 +1,4 @@
+import { valuesOf } from "./_stream"
 import { describe, expect, it } from "vitest"
 import { parseCsv, parseCsvObjects } from "../src/csv/reader"
 import { streamCsvRows } from "../src/csv/stream"
@@ -145,13 +146,15 @@ describe("the other readers take bytes too", () => {
     expect(data).toEqual([{ ad: "Özgür", şehir: "İstanbul" }])
   })
 
-  it("streamCsvRows", () => {
-    expect([...streamCsvRows(utf16(TEXT, true))]).toEqual(EXPECTED)
-    expect([...streamCsvRows(WINDOWS_1254, { encoding: "windows-1254" })]).toEqual(EXPECTED)
+  it("streamCsvRows", async () => {
+    expect(await valuesOf(streamCsvRows(utf16(TEXT, true)))).toEqual(EXPECTED)
+    expect(await valuesOf(streamCsvRows(WINDOWS_1254, { encoding: "windows-1254" }))).toEqual(
+      EXPECTED,
+    )
   })
 
-  it("streamCsvRows still takes a string", () => {
-    expect([...streamCsvRows(TEXT)]).toEqual(EXPECTED)
+  it("streamCsvRows still takes a string", async () => {
+    expect(await valuesOf(streamCsvRows(TEXT))).toEqual(EXPECTED)
   })
 })
 

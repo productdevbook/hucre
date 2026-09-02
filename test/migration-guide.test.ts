@@ -1,3 +1,4 @@
+import { valuesOf } from "./_stream"
 import { describe, expect, it } from "vitest"
 import * as root from "../src/index"
 import {
@@ -117,8 +118,8 @@ describe("hasHeaderRow on toHtml and toMarkdown", () => {
 describe("streamCsvRows matches parseCsv", () => {
   const source = "a,b\n1,2"
 
-  it("yields the header row under header: true, as parseCsv does", () => {
-    expect([...streamCsvRows(source, { header: true })]).toEqual([
+  it("yields the header row under header: true, as parseCsv does", async () => {
+    expect(await valuesOf(streamCsvRows(source, { header: true }))).toEqual([
       ["a", "b"],
       ["1", "2"],
     ])
@@ -128,21 +129,23 @@ describe("streamCsvRows matches parseCsv", () => {
     ])
   })
 
-  it("drops it only when asked, via skipHeaderRow — in both readers", () => {
-    expect([...streamCsvRows(source, { header: true, skipHeaderRow: true })]).toEqual([["1", "2"]])
+  it("drops it only when asked, via skipHeaderRow — in both readers", async () => {
+    expect(await valuesOf(streamCsvRows(source, { header: true, skipHeaderRow: true }))).toEqual([
+      ["1", "2"],
+    ])
     expect(parseCsv(source, { header: true, skipHeaderRow: true })).toEqual([["1", "2"]])
   })
 
-  it("actually runs onRow and transformValue, which used to be ignored", () => {
+  it("actually runs onRow and transformValue, which used to be ignored", async () => {
     const seen: unknown[][] = []
-    const rows = [
-      ...streamCsvRows(source, {
+    const rows = await valuesOf(
+      streamCsvRows(source, {
         header: true,
         skipHeaderRow: true,
         onRow: (row) => seen.push(row),
         transformValue: (value) => (typeof value === "string" ? value.toUpperCase() : value),
       }),
-    ]
+    )
     expect(seen.length).toBeGreaterThan(0)
     expect(rows[0]).toEqual(["1", "2"])
   })
@@ -373,12 +376,12 @@ describe("dates come back from JSON", () => {
     expect(parseJson(writeJson([{ at }]), { typeInference: true }).data[0]!.at).toEqual(at)
   })
 
-  it("accepts the same instants everywhere the option exists", () => {
+  it("accepts the same instants everywhere the option exists", async () => {
     for (const raw of ["2024-01-15", "2024-01-15T10:30:00Z", "2024-13-45", "3/4/2021", "2024"]) {
       const viaCsv = parseCsv(`v\n"${raw}"`, { typeInference: true, header: true })[1]![0]
-      const viaStream = [
-        ...streamCsvRows(`v\n"${raw}"`, { typeInference: true, header: true }),
-      ][1]![0]
+      const viaStream = (
+        await valuesOf(streamCsvRows(`v\n"${raw}"`, { typeInference: true, header: true }))
+      )[1]![0]
       const viaJson = parseJson(`[{"v":${JSON.stringify(raw)}}]`, { typeInference: true }).data[0]!
         .v
       const viaNdjson = parseNdjson(`{"v":${JSON.stringify(raw)}}`, { typeInference: true })

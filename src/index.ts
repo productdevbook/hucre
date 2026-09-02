@@ -104,13 +104,7 @@ export type {
 
 // ── XML ────────────────────────────────────────────────────────────
 export { readXml, writeXml, writeXmlStream, streamXmlRows } from "./xml"
-export type {
-  XmlReadOptions,
-  XmlReadResult,
-  XmlWriteOptions,
-  XmlStreamRow,
-  XmlStreamReadOptions,
-} from "./xml"
+export type { XmlReadOptions, XmlReadResult, XmlWriteOptions, XmlStreamReadOptions } from "./xml"
 
 // ── Schema Validation ──────────────────────────────────────────────
 export { validateWithSchema } from "./_schema"

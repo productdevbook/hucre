@@ -70,7 +70,7 @@ describe("streamNdjsonRows", () => {
     const stream = streamFromString('{"a":1}\n{"a":2}\n{"a":3}\n')
     const rows: unknown[] = []
     for await (const row of streamNdjsonRows(stream)) {
-      rows.push(row)
+      rows.push(row.values)
     }
     expect(rows).toEqual([{ a: 1 }, { a: 2 }, { a: 3 }])
   })
@@ -78,14 +78,14 @@ describe("streamNdjsonRows", () => {
   it("handles split-across-chunk lines", async () => {
     const stream = chunkedStream(['{"a":', '1}\n{"a"', ":2}\n"])
     const rows: unknown[] = []
-    for await (const row of streamNdjsonRows(stream)) rows.push(row)
+    for await (const row of streamNdjsonRows(stream)) rows.push(row.values)
     expect(rows).toEqual([{ a: 1 }, { a: 2 }])
   })
 
   it("handles trailing line without newline", async () => {
     const stream = streamFromString('{"a":1}\n{"a":2}')
     const rows: unknown[] = []
-    for await (const row of streamNdjsonRows(stream)) rows.push(row)
+    for await (const row of streamNdjsonRows(stream)) rows.push(row.values)
     expect(rows).toEqual([{ a: 1 }, { a: 2 }])
   })
 
@@ -93,7 +93,7 @@ describe("streamNdjsonRows", () => {
     const stream = streamFromString('{"a":{"b":1}}\n{"a":{"b":2}}\n')
     const rows: Record<string, unknown>[] = []
     for await (const row of streamNdjsonRows(stream, { flattenRows: true })) {
-      rows.push(row)
+      rows.push(row.values)
     }
     expect(rows).toEqual([{ "a.b": 1 }, { "a.b": 2 }])
   })
@@ -114,7 +114,7 @@ describe("streamNdjsonRows", () => {
     for await (const row of streamNdjsonRows(stream, {
       onError: (_l, ln) => errs.push(ln),
     })) {
-      rows.push(row)
+      rows.push(row.values)
     }
     expect(rows).toEqual([{ a: 1 }, { a: 2 }])
     expect(errs).toEqual([2])

@@ -2054,7 +2054,7 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `writeOds(options)`               | Generate ODS                                                          |
 | `readOdsObjects(input, options?)` | Read sheet as `{ data, headers }`                                     |
 | `writeOdsObjects(data, options?)` | Write objects to ODS                                                  |
-| `streamOdsRows(input)`            | AsyncGenerator yielding ODS rows                                      |
+| `streamOdsRows(input, options?)`  | AsyncGenerator of `StreamRow`s; `sheet` picks one or `"all"`          |
 
 ### CSV
 
@@ -2065,7 +2065,7 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `writeCsv(rows, options?)`         | Write `CellValue[][]` → CSV string                                       |
 | `writeCsvObjects(data, options?)`  | Write objects → CSV string                                               |
 | `detectDelimiter(input)`           | Auto-detect delimiter character                                          |
-| `streamCsvRows(input, options?)`   | Generator yielding CSV rows; same options as `parseCsv`                  |
+| `streamCsvRows(input, options?)`   | AsyncGenerator of `StreamRow`s; same options as `parseCsv`               |
 | `writeCsvStream(rows, options?)`   | Constant-memory CSV writing → `ReadableStream`                           |
 | `CsvStreamWriter`                  | Incremental CSV writing (`addRow`/`addObject`); buffers until `finish()` |
 | `writeTsv(rows, options?)`         | Write TSV (tab-separated)                                                |
@@ -2084,7 +2084,7 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `jsonToWorkbook(input, options?)` | Read either `workbookToJson` shape back into a `Workbook`                              |
 | `flattenValue(value, options?)`   | Flatten one value into dot-path keyed cells                                            |
 | `unflattenRow(row)`               | Rebuild a dot-path keyed row into nested objects — the inverse                         |
-| `streamNdjsonRows(stream, opts?)` | Async generator over a `ReadableStream<Uint8Array>`                                    |
+| `streamNdjsonRows(input, opts?)`  | AsyncGenerator of `StreamRow<Record>`s from bytes, text or a stream                    |
 | `NdjsonStreamWriter`              | Incremental writer (`addRow`/`addObject`); `toStream()` releases rows as they are sent |
 
 ### XML

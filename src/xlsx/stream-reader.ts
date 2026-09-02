@@ -30,6 +30,9 @@ import { serialToDate } from "../_date"
 // `import type { StreamRow } from "hucre/xlsx"` keeps working.
 export type { StreamRow } from "../_types"
 
+/** A row as the SAX layer builds it; the sheet index is added on the way out. */
+type RawRow = { index: number; values: CellValue[] }
+
 // ── Range filter ────────────────────────────────────────────────────
 
 interface RangeFilter {
@@ -298,7 +301,7 @@ function handleCloseTag(
   sharedStrings: SharedString[],
   styles: ParsedStyles | null,
   dateSystem: "1900" | "1904",
-): StreamRow | null {
+): RawRow | null {
   const local = tag.includes(":") ? tag.slice(tag.indexOf(":") + 1) : tag
 
   switch (local) {
@@ -308,7 +311,7 @@ function handleCloseTag(
     case "row":
       if (s.inRow) {
         const values = buildRowFromCells(s.currentRowCells)
-        const row: StreamRow = { index: s.currentRowIndex, values }
+        const row: RawRow = { index: s.currentRowIndex, values }
         s.inRow = false
         return row
       }
@@ -375,7 +378,7 @@ function handleCloseTag(
  * masked to `null` rather than removed, so callers can still address
  * `row.values[colIndex]` for columns inside the range.
  */
-function applyRangeFilter(row: StreamRow, range: RangeFilter): StreamRow | null {
+function applyRangeFilter(row: RawRow, range: RangeFilter): RawRow | null {
   if (row.index < range.startRow || row.index > range.endRow) return null
   const len = Math.max(row.values.length, range.endCol + 1)
   const out: CellValue[] = Array.from({ length: len }, () => null)
@@ -393,9 +396,10 @@ async function* parseWorksheetRowsStreaming(
   sharedStrings: SharedString[],
   styles: ParsedStyles | null,
   dateSystem: "1900" | "1904",
-  filters: { range?: RangeFilter; maxRows?: number } = {},
+  filters: { range?: RangeFilter; maxRows?: number; sheet?: number } = {},
 ): AsyncGenerator<StreamRow, void, undefined> {
   const s = createRowSaxState()
+  const sheet = filters.sheet ?? 0
   const pendingRows: StreamRow[] = []
   let resolve: (() => void) | null = null
   let done = false
@@ -462,7 +466,7 @@ async function* parseWorksheetRowsStreaming(
         }
         const filtered = range ? applyRangeFilter(row, range) : row
         if (filtered) {
-          pendingRows.push(filtered)
+          pendingRows.push({ index: filtered.index, sheet, values: filtered.values })
           emittedDataRows++
           if (resolve) {
             resolve()
@@ -629,6 +633,8 @@ function resolveStreamCellValue(
 
 interface ResolvedMeta {
   wsPath: string
+  /** 0-based position of the target sheet in the workbook. */
+  sheetIndex: number
   sharedStrings: SharedString[]
   parsedStyles: ParsedStyles | null
   dateSystem: "1900" | "1904"
@@ -718,7 +724,13 @@ function resolveFromParts(
     parsedStyles = parseStyles(decodeUtf8Unchecked(stylesBytes))
   }
 
-  return { wsPath, sharedStrings, parsedStyles, dateSystem }
+  return {
+    wsPath,
+    sheetIndex: sheetInfos.indexOf(targetSheet),
+    sharedStrings,
+    parsedStyles,
+    dateSystem,
+  }
 }
 
 type PrepareResult =
@@ -807,6 +819,7 @@ export async function* streamXlsxRows(
         {
           range: rangeFilter,
           maxRows: maxRowsLimit > 0 ? maxRowsLimit : undefined,
+          sheet: prep.meta.sheetIndex,
         },
       )
       return
@@ -948,5 +961,6 @@ export async function* streamXlsxRows(
   yield* parseWorksheetRowsStreaming(wsStream, sharedStrings, parsedStyles, dateSystem, {
     range: rangeFilter,
     maxRows: maxRowsLimit > 0 ? maxRowsLimit : undefined,
+    sheet: sheetInfos.indexOf(targetSheet),
   })
 }
