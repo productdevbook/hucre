@@ -11,6 +11,7 @@
 // is the same one XLSX already offers: `writeXlsxStream` for constant
 // memory, `XlsxStreamWriter` for a buffer you can style. See #467.
 
+import { InvalidArgumentError } from "../errors"
 import { isInlineCell } from "../_inline-cells"
 import { isCellError } from "../cell-error"
 import type {
@@ -101,7 +102,7 @@ export class OdsStreamWriter implements SpreadsheetStreamWriter {
   /** Append a row of positional values, each optionally styled. */
   addRow(values: CellInput[]): void {
     if (this.done) {
-      throw new Error("Cannot write to OdsStreamWriter after finish()")
+      throw new InvalidArgumentError("Cannot write to OdsStreamWriter after finish()")
     }
     if (values.length > this.maxCols) this.maxCols = values.length
 
@@ -138,7 +139,7 @@ export class OdsStreamWriter implements SpreadsheetStreamWriter {
    */
   addObject(item: Record<string, CellInput>): void {
     if (!this.columns) {
-      throw new Error("addObject requires columns with key accessors")
+      throw new InvalidArgumentError("addObject requires columns with key accessors")
     }
     this.addRow(this.columns.map((c) => (c.key ? (item[c.key] ?? null) : null)))
   }

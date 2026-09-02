@@ -9,6 +9,7 @@
 // These mirror the `getCharts(workbook)` / `addChart(sheet, ...)`
 // shorthand sketched in the dashboard composition issue (#136).
 
+import { InvalidArgumentError } from "../errors"
 import type { Chart, Sheet, SheetChart, WriteSheet, Workbook } from "../_types"
 
 // ── getCharts ────────────────────────────────────────────────────────
@@ -109,16 +110,16 @@ export function getCharts(workbook: Workbook): ChartLocation[] {
  */
 export function addChart(sheet: WriteSheet, chart: SheetChart): SheetChart {
   if (!chart || typeof chart !== "object") {
-    throw new TypeError("addChart: chart is required")
+    throw new InvalidArgumentError("addChart: chart is required")
   }
   if (!chart.type) {
-    throw new TypeError("addChart: chart.type is required")
+    throw new InvalidArgumentError("addChart: chart.type is required")
   }
   if (!Array.isArray(chart.series) || chart.series.length === 0) {
-    throw new TypeError("addChart: chart.series must contain at least one entry")
+    throw new InvalidArgumentError("addChart: chart.series must contain at least one entry")
   }
   if (!chart.anchor || !chart.anchor.from) {
-    throw new TypeError("addChart: chart.anchor.from is required")
+    throw new InvalidArgumentError("addChart: chart.anchor.from is required")
   }
   const list = sheet.charts ?? (sheet.charts = [])
   list.push(chart)

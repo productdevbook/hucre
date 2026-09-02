@@ -1,5 +1,30 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`export surface snapshot > hucre/a11y 1`] = `
+[
+  "applyA11ySummary",
+  "audit",
+  "contrastRatio",
+  "relativeLuminance",
+]
+`;
+
+exports[`export surface snapshot > hucre/cell 1`] = `
+[
+  "a1ToR1C1",
+  "cellRef",
+  "colToLetter",
+  "isInRange",
+  "letterToCol",
+  "parseCellRef",
+  "parseRange",
+  "r1c1ToA1",
+  "rangeRef",
+  "toRange",
+  "toRanges",
+]
+`;
+
 exports[`export surface snapshot > hucre/csv 1`] = `
 [
   "CsvStreamWriter",
@@ -17,6 +42,20 @@ exports[`export surface snapshot > hucre/csv 1`] = `
   "writeCsv",
   "writeCsvObjects",
   "writeCsvStream",
+]
+`;
+
+exports[`export surface snapshot > hucre/format 1`] = `
+[
+  "cloneCellStyle",
+  "dateToSerial",
+  "formatDate",
+  "formatValue",
+  "isDateFormat",
+  "parseDate",
+  "serialToDate",
+  "serialToTime",
+  "timeToSerial",
 ]
 `;
 

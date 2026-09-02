@@ -738,7 +738,7 @@ export type {
 
 /**
  * Per-sheet accessibility metadata. Hints to screen readers and
- * input to {@link audit} from the `hucre/a11y` entry point.
+ * input to `audit` from the `hucre/a11y` entry point.
  */
 export interface SheetA11y {
   /**

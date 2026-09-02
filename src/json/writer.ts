@@ -1,5 +1,6 @@
 // ── JSON Writer ──────────────────────────────────────────────────────
 
+import { ParseError } from "../errors"
 import { isCellError } from "../cell-error"
 import type { CellValue, Workbook } from "../_types"
 import { unflattenRow } from "./unflatten"
@@ -113,7 +114,7 @@ export function workbookToJson(wb: Workbook, options?: WorkbookToJsonOptions): s
         ? wb.sheets[options.sheet]
         : wb.sheets.find((s) => s.name === options.sheet)
     if (!sheet) {
-      throw new Error(
+      throw new ParseError(
         typeof options.sheet === "number"
           ? `Sheet index ${options.sheet} out of range`
           : `Sheet "${options.sheet}" not found`,

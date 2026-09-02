@@ -69,6 +69,18 @@
     "./ooxml": {
       "types": "./dist/ooxml.d.mts",
       "default": "./dist/ooxml.mjs"
+    },
+    "./cell": {
+      "types": "./dist/cell.d.mts",
+      "default": "./dist/cell.mjs"
+    },
+    "./format": {
+      "types": "./dist/format.d.mts",
+      "default": "./dist/format.mjs"
+    },
+    "./a11y": {
+      "types": "./dist/a11y.d.mts",
+      "default": "./dist/a11y.mjs"
     }
   },
   "scripts": {

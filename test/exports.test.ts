@@ -13,6 +13,9 @@ import * as ods from "../src/ods"
 import * as json from "../src/json"
 import * as xml from "../src/xml"
 import * as ooxml from "../src/ooxml"
+import * as cell from "../src/cell"
+import * as format from "../src/format"
+import * as a11y from "../src/a11y"
 
 // ── Type-level surface ───────────────────────────────────────────────
 // Values can be asserted at runtime; types cannot. Importing them here
@@ -387,5 +390,26 @@ describe("export surface snapshot", () => {
 
   it("hucre/ooxml", () => {
     expect(names(ooxml)).toMatchSnapshot()
+  })
+
+  it("hucre/cell", () => {
+    expect(names(cell)).toMatchSnapshot()
+  })
+
+  it("hucre/format", () => {
+    expect(names(format)).toMatchSnapshot()
+  })
+
+  it("hucre/a11y", () => {
+    expect(names(a11y)).toMatchSnapshot()
+  })
+})
+
+describe("hucre/cell and hucre/format", () => {
+  it("carry every helper the root does, so no second entry point is needed for a string helper (#474)", () => {
+    for (const name of names(cell)) expect(names(root), name).toContain(name)
+    for (const name of names(format)) expect(names(root), name).toContain(name)
+    expect(names(cell)).toContain("letterToCol")
+    expect(names(xlsx)).toContain("letterToCol")
   })
 })

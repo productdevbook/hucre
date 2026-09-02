@@ -3,7 +3,15 @@
 // images, macros, shapes, or other features that hucre doesn't natively
 // understand.
 
-import type { Sheet, Workbook, XlsxReadOptions, WriteSheet, Chart, SheetChart } from "../_types"
+import type {
+  Sheet,
+  Workbook,
+  XlsxReadOptions,
+  WriteSheet,
+  Chart,
+  SheetChart,
+  ReadInput,
+} from "../_types"
 import { readXlsx } from "./reader"
 import { ZipReader } from "../zip/reader"
 import { ZipWriter } from "../zip/writer"
@@ -30,7 +38,7 @@ import { writeDrawing } from "./drawing-writer"
 import type { DrawingResult } from "./drawing-writer"
 import { writeChart } from "./chart-writer"
 import { cloneChart } from "./chart-clone"
-import { isOle2Container } from "../_input"
+import { readInputToUint8Array, isOle2Container } from "../_input"
 import { EncryptedFileError, InvalidArgumentError } from "../errors"
 import { decryptAgile, encryptAgile } from "./crypto/agile"
 import { assignBackgroundImagePaths } from "./background-image"
@@ -162,10 +170,10 @@ const REGENERATED_SHEET_PREFIXES = [
  * for round-trip writing.
  */
 export async function openXlsx(
-  input: Uint8Array | ArrayBuffer,
+  input: ReadInput,
   options?: XlsxReadOptions,
 ): Promise<RoundtripWorkbook> {
-  let data = input instanceof Uint8Array ? input : new Uint8Array(input)
+  let data = await readInputToUint8Array(input, options?.maxInputBytes)
 
   // Decrypt password-protected workbooks up front so both the parse and
   // the raw-entry capture below see the plaintext OOXML ZIP.

@@ -1234,9 +1234,20 @@ export function copyRange(
  * Reorder sheets in a workbook.
  */
 export function moveSheet(workbook: Workbook, fromIndex: number, toIndex: number): void {
+  // Out of range used to splice `undefined` into `sheets` without a word.
+  assertSheetIndex(workbook, fromIndex, "moveSheet")
+  assertSheetIndex(workbook, toIndex, "moveSheet")
   if (fromIndex === toIndex) return
   const [sheet] = workbook.sheets.splice(fromIndex, 1)
-  workbook.sheets.splice(toIndex, 0, sheet)
+  workbook.sheets.splice(toIndex, 0, sheet!)
+}
+
+function assertSheetIndex(workbook: Workbook, index: number, fn: string): void {
+  if (!Number.isInteger(index) || index < 0 || index >= workbook.sheets.length) {
+    throw new InvalidArgumentError(
+      `${fn}: sheet index ${index} is out of range (workbook has ${workbook.sheets.length} sheet(s))`,
+    )
+  }
 }
 
 // ── Remove Sheet ────────────────────────────────────────────────────
@@ -1245,6 +1256,7 @@ export function moveSheet(workbook: Workbook, fromIndex: number, toIndex: number
  * Remove a sheet from a workbook.
  */
 export function removeSheet(workbook: Workbook, index: number): void {
+  assertSheetIndex(workbook, index, "removeSheet")
   workbook.sheets.splice(index, 1)
   // Adjust activeSheet if needed
   if (workbook.activeSheet !== undefined) {

@@ -41,3 +41,4 @@ export type { StreamRow } from "./_types"
 
 // What a writer takes where a cell goes: a value, or a cell object.
 export type { CellInput } from "./_types"
+export type { OdsStreamReadOptions } from "./ods/stream"

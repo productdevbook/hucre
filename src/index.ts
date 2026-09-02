@@ -1,6 +1,12 @@
 // ── High-Level API ──────────────────────────────────────────────────
 export { read, write, readObjects, writeObjects } from "./defter"
-export type { ReadObjectsOptions, ReadObjectsResult, WriteObjectsTableOption } from "./defter"
+export type {
+  ReadObjectsOptions,
+  ReadObjectsResult,
+  WriteObjectsTableOption,
+  WriteFormat,
+  TextFormatOptions,
+} from "./defter"
 
 // ── XLSX ────────────────────────────────────────────────────────────
 export { readXlsx } from "./xlsx/reader"
@@ -44,6 +50,7 @@ export { OdsStreamWriter } from "./ods/incremental-writer"
 export type { OdsStreamWriterOptions } from "./ods/incremental-writer"
 export type { OdsStreamWriteOptions } from "./ods/stream-writer"
 export { streamOdsRows } from "./ods/stream"
+export type { OdsStreamReadOptions } from "./ods/stream"
 export { readOdsObjects, writeOdsObjects } from "./ods/objects"
 export type { OdsObjectsReadOptions, OdsObjectsResult, OdsObjectsWriteOptions } from "./ods/objects"
 
@@ -103,12 +110,14 @@ export type { XmlReadOptions, XmlReadResult, XmlWriteOptions, XmlStreamReadOptio
 
 // ── Schema Validation ──────────────────────────────────────────────
 export { validateWithSchema } from "./_schema"
+export type { SchemaValidateOptions } from "./_schema"
 
 // ── Threaded Comments (Excel 365+) ─────────────────────────────────
 export type { ThreadedComment, ThreadedCommentMention, ThreadedCommentPerson } from "./_types"
 
 // ── Accessibility ──────────────────────────────────────────────────
 export * as a11y from "./a11y"
+export type { AuditOptions } from "./a11y"
 export type { A11yIssue, A11ySeverity, A11yCode, A11yLocation, SheetA11y } from "./_types"
 
 // ── External Workbook Links ────────────────────────────────────────

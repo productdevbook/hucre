@@ -50,14 +50,13 @@ export { calculateRowHeight } from "./xlsx/auto-size"
 export {
   parseCellRef,
   colToLetter,
+  letterToCol,
   cellRef,
   rangeRef,
-  letterToCol,
   parseRange,
   isInRange,
   r1c1ToA1,
   a1ToR1C1,
-  // Normalise either spelling of a range to coordinates (#474).
   toRange,
   toRanges,
 } from "./cell-utils"

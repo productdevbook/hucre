@@ -367,7 +367,7 @@ describe("convert", () => {
 
   it("says in --help that it carries values only", () => {
     expect(convertCommand.meta).toMatchObject({
-      description: expect.stringContaining("cell values only"),
+      description: expect.stringContaining("Convert between spreadsheet formats"),
     })
   })
 })
@@ -697,5 +697,35 @@ describe("the stdin/stdout convention", () => {
     await expect(run(convertCommand, { input: src, output: "-", to: "xls" })).rejects.toThrow(
       /read-only/,
     )
+  })
+})
+
+describe("validate --header-row", () => {
+  it("names the header row, and -1 says there is none", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hucre-cli-header-"))
+    try {
+      const file = join(dir, "titled.xlsx")
+      writeFileSync(
+        file,
+        await writeXlsx({
+          sheets: [{ name: "S", rows: [["Report title"], ["qty"], [1], [2]] }],
+        }),
+      )
+      const schemaPath = join(dir, "schema.json")
+      writeFileSync(
+        schemaPath,
+        JSON.stringify({ qty: { column: "qty", type: "number", required: true } }),
+      )
+
+      // Row 0 is a title, so the default header row finds no "qty" column.
+      await expect(run(validateCommand, { file, schema: schemaPath })).rejects.toThrow(CliError)
+      // Naming row 1 as the header makes the file valid.
+      await run(validateCommand, { file, schema: schemaPath, headerRow: "1" })
+      await expect(
+        run(validateCommand, { file, schema: schemaPath, headerRow: "x" }),
+      ).rejects.toThrow(/Invalid header row/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

@@ -578,7 +578,8 @@ export class XlsxStreamWriter implements SpreadsheetStreamWriter {
   /** Add a row from an object, using column definitions for value extraction.
    *  Requires columns with key accessors. */
   addObject(item: Record<string, unknown>): void {
-    if (!this.columns) throw new Error("addObject requires columns with key accessors")
+    if (!this.columns)
+      throw new InvalidArgumentError("addObject requires columns with key accessors")
     this.addRow(objectToValues(item, this.columns))
   }
 
@@ -991,7 +992,7 @@ function createRowCursor(
 // ── Helpers ─────────────────────────────────────────────────────────
 
 function requireColumns(columns: ColumnDef[] | undefined): ColumnDef[] {
-  if (!columns) throw new Error("Object rows require columns with key accessors")
+  if (!columns) throw new InvalidArgumentError("Object rows require columns with key accessors")
   return columns
 }
 

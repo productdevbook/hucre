@@ -1,6 +1,7 @@
 // ── XLSX Writer ──────────────────────────────────────────────────────
 // Generates valid Office Open XML spreadsheet files (XLSX).
 
+import { InvalidArgumentError } from "../errors"
 import type {
   CellValue,
   WorkbookProperties,
@@ -252,7 +253,7 @@ export async function writeXlsx(options: WriteOptions): Promise<WriteOutput> {
       const sourceSheetName = pivot.sourceSheet ?? sheet.name
       const sourceSheet = sheets.find((s) => s.name === sourceSheetName)
       if (!sourceSheet) {
-        throw new Error(
+        throw new InvalidArgumentError(
           `Pivot "${pivot.name}" sourceSheet "${sourceSheetName}" not found in workbook`,
         )
       }

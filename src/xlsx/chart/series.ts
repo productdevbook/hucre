@@ -15,6 +15,7 @@
 // helper. They delegate to the per-field resolvers / cloners exported
 // here.
 
+import { InvalidArgumentError } from "../../errors"
 import type {
   Chart,
   ChartColor,
@@ -1141,7 +1142,7 @@ export function mergeSeries(
   // Resolve `values` first — it's the only mandatory field.
   const values = ov?.values ?? src?.valuesRef
   if (!values) {
-    throw new Error(
+    throw new InvalidArgumentError(
       `cloneChart: series #${index} has no values reference; provide \`seriesOverrides[${index}].values\``,
     )
   }

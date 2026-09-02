@@ -207,6 +207,16 @@ Two smaller alignments in the same family:
 - **`sheetToObjects` skips blank rows by default**, as `readObjects`, `readXlsxObjects` and `readOdsObjects` do. It used to hard-code the opposite with no way to change it; it now takes `skipEmptyRows`, and `skipEmptyRows: false` restores the old projection. **Behaviour.**
 - **`JsonReadOptions.transformValue` receives `(value, header, rowIndex, colIndex)`**, four arguments like every other `transformValue` in the library. It received three.
 
+## Smaller changes
+
+- **Every error is a `HucreError`.** Eighteen throws were a plain `Error` or `TypeError` — argument misuse in `addChart`, `cloneChart`, the pivot writer, the incremental writers. They are `InvalidArgumentError` now, so `instanceof HucreError` is the catch-all it was documented to be. A `catch` that tested `instanceof TypeError` on `addChart` no longer matches. **Behaviour.**
+- **`moveSheet` and `removeSheet` refuse an index out of range** with `InvalidArgumentError`. `moveSheet(wb, 0, 5)` used to splice `undefined` into `sheets` without a word. **Behaviour.**
+- **`read()` names a ZIP that is not a spreadsheet.** It assumed any ZIP was XLSX and failed somewhere inside `readXlsx`; a `.docx` or a plain archive now throws `UnsupportedFormatError` up front. **Behaviour** — the error class changes.
+- **`openXlsx` takes `ReadInput`**, including a `ReadableStream`, like every other reader.
+- **New entry points.** `hucre/cell` (every A1 / R1C1 helper — v1 had four on `hucre/xlsx` and nine on the root, #474), `hucre/format` (dates, serials, `formatValue`) and `hucre/a11y`. `hucre/xlsx` now carries the whole cell-helper set too. Types that were reachable but unnameable are exported: `SchemaValidateOptions`, `AuditOptions`, `WriteFormat`, `TextFormatOptions`, `OdsStreamReadOptions`.
+- **The CLI carries the whole model.** `hucre convert a.xlsx b.xlsx` used to write `{ name, rows }` and drop every style, merge and formula; it goes through the same model `writeXlsx` takes. `hucre validate` takes `--header-row` (`-1` for none) and `--encoding`, which it read without declaring.
+- **`CHANGELOG.md` exists.**
+
 ---
 
 # Migrating to v1

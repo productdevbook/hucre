@@ -148,11 +148,24 @@ export async function read(input: ReadInput, options?: ReadOptions): Promise<Wor
     return readOds(data, options)
   }
   // XLSX and XLSB share the ZIP shape; tell them apart by the binary
-  // workbook part before dispatching.
+  // workbook part before dispatching. A ZIP that is neither — a .docx, a
+  // plain archive — used to be handed to readXlsx and fail with a
+  // ParseError from deep inside it; it is refused here by name instead.
+  let zip: ZipReader | null = null
   try {
-    if (looksLikeXlsb(new ZipReader(data))) return readXlsb(data, options)
+    zip = new ZipReader(data)
   } catch {
     // Not a readable ZIP here — fall through to readXlsx for a typed error.
+  }
+  if (zip) {
+    if (looksLikeXlsb(zip)) return readXlsb(data, options)
+    if (!zip.has("[Content_Types].xml")) {
+      throw new UnsupportedFormatError("zip (no [Content_Types].xml — not an Office package)")
+    }
+    const contentTypes = new TextDecoder("utf-8").decode(await zip.extract("[Content_Types].xml"))
+    if (!contentTypes.includes("spreadsheetml")) {
+      throw new UnsupportedFormatError("zip (an Office package, but not a spreadsheet)")
+    }
   }
   return readXlsx(data, options)
 }

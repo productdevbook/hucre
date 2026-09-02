@@ -56,6 +56,9 @@ import { parseCsv, writeCsv } from "hucre/csv" // CSV only (~2 KB gzipped)
 import { readOds, writeOds } from "hucre/ods" // ODS only
 import { parseJson, writeNdjson } from "hucre/json" // JSON / NDJSON
 import { readXml, writeXml } from "hucre/xml" // Tabular XML
+import { parseCellRef, colToLetter } from "hucre/cell" // A1 / R1C1 reference helpers
+import { serialToDate, formatValue } from "hucre/format" // dates, serials, number formats
+import { audit } from "hucre/a11y" // accessibility audit
 ```
 
 ## Why hucre?
