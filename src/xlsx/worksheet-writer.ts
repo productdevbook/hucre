@@ -1690,7 +1690,7 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
       csChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
     }
     for (const color of rule.colorScale.colors) {
-      csChildren.push(xmlSelfClose("color", { rgb: color }))
+      csChildren.push(xmlSelfClose("color", serializeColorAttrs(color)))
     }
     children.push(xmlElement("colorScale", undefined, csChildren))
   }
@@ -1703,7 +1703,7 @@ function serializeCfRule(rule: ConditionalRule, styles: StylesCollector): string
       if (cfvo.value !== undefined) cfvoAttrs["val"] = cfvo.value
       dbChildren.push(xmlSelfClose("cfvo", cfvoAttrs))
     }
-    dbChildren.push(xmlSelfClose("color", { rgb: rule.dataBar.color }))
+    dbChildren.push(xmlSelfClose("color", serializeColorAttrs(rule.dataBar.color)))
     children.push(xmlElement("dataBar", undefined, dbChildren))
   }
 
@@ -1767,10 +1767,9 @@ function serializeSparklines(sparklines: Sparkline[]): string {
 
     const groupChildren: string[] = []
 
-    // Color series
-    const color = sp.color ?? "376092"
-    const colorRgb = color.length === 6 ? `FF${color}` : color
-    groupChildren.push(xmlSelfClose("x14:colorSeries", { rgb: colorRgb }))
+    groupChildren.push(
+      xmlSelfClose("x14:colorSeries", serializeColorAttrs(sp.color ?? { rgb: "376092" })),
+    )
 
     // Sparkline element
     const sparklineEl = xmlElement("x14:sparkline", undefined, [

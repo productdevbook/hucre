@@ -982,13 +982,13 @@ export function cloneSheet(sheet: Sheet, newName: string): Sheet {
       if (rule.colorScale) {
         clonedRule.colorScale = {
           cfvo: rule.colorScale.cfvo.map((c) => ({ ...c })),
-          colors: [...rule.colorScale.colors],
+          colors: rule.colorScale.colors.map((c) => ({ ...c })),
         }
       }
       if (rule.dataBar) {
         clonedRule.dataBar = {
           cfvo: rule.dataBar.cfvo.map((c) => ({ ...c })),
-          color: rule.dataBar.color,
+          color: { ...rule.dataBar.color },
         }
       }
       if (rule.iconSet) {

@@ -306,7 +306,9 @@ const SHEET_FIELDS: { [K in keyof Required<WriteSheet>]: Entry<WriteSheet[K]> } 
   },
 
   sparklines: {
-    value: [{ location: "C2", dataRange: "sparklines!A2:B2", type: "column", color: "376092" }],
+    value: [
+      { location: "C2", dataRange: "sparklines!A2:B2", type: "column", color: { rgb: "376092" } },
+    ],
     read: (sheet) => sheet.sparklines,
   },
 

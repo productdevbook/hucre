@@ -129,7 +129,7 @@ describe("cloneSheet", () => {
           range: "B1:B10",
           colorScale: {
             cfvo: [{ type: "min" }, { type: "max" }],
-            colors: ["FF63BE7B", "FFF8696B"],
+            colors: [{ rgb: "63BE7B" }, { rgb: "F8696B" }],
           },
         },
       ],

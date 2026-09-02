@@ -98,7 +98,9 @@ describe("openXlsx → saveXlsx preserves sheet features", () => {
     const { workbook } = await cycle({
       sheets: [
         sheetWith({
-          sparklines: [{ type: "column", location: "D1", dataRange: "S!A1:C1", color: "FF0000" }],
+          sparklines: [
+            { type: "column", location: "D1", dataRange: "S!A1:C1", color: { rgb: "FF0000" } },
+          ],
         }),
       ],
     })
@@ -108,7 +110,7 @@ describe("openXlsx → saveXlsx preserves sheet features", () => {
       type: "column",
       location: "D1",
       dataRange: "S!A1:C1",
-      color: "FF0000",
+      color: { rgb: "FF0000" },
     })
   })
 

@@ -48,6 +48,26 @@ Each reader now has its own type — `XlsxReadOptions`, `OdsReadOptions`, `XlsbR
 
 **Behaviour:** `readXlsb` now honours `maxTotalCells`. It was the one reader with no bounding-box ceiling; a hostile `.xlsb` could allocate a dense grid the size of its two furthest cells.
 
+## Colours are `Color` everywhere
+
+Fonts, fills and borders have always taken `Color` — `{ rgb }`, `{ theme, tint }` or `{ indexed }`. Three places took a hex string instead: a colour scale's stops, a data bar's fill, and a sparkline's series colour. Those now take `Color` too.
+
+```diff
+  colorScale: {
+    cfvo: [{ type: "min" }, { type: "max" }],
+-   colors: ["FF63BE7B", "FFF8696B"],
++   colors: [{ rgb: "63BE7B" }, { rgb: "F8696B" }],
+  }
+- dataBar: { cfvo, color: "FF638EC6" }
++ dataBar: { cfvo, color: { rgb: "638EC6" } }
+- sparklines: [{ location: "D1", dataRange: "A1:C1", color: "376092" }]
++ sparklines: [{ location: "D1", dataRange: "A1:C1", color: { rgb: "376092" } }]
+```
+
+An eight-character ARGB string still works inside `rgb`; the reader returns six characters, as it always has for fonts.
+
+**Behaviour:** this was a loss, not only a spelling. A string field could hold an RGB value and nothing else, so a scale or sparkline built from a theme colour — what Excel writes when a colour is picked from the palette — read back as `""` and was written back as `rgb=""`. It now round-trips as `{ theme, tint }`.
+
 ---
 
 # Migrating to v1

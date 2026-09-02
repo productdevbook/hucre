@@ -341,13 +341,18 @@ export interface ConditionalRule {
   style?: CellStyle
   stopIfTrue?: boolean
   range: string
-  /** Color scale configuration */
+  /**
+   * Color scale configuration. Colours are {@link Color}, the same shape
+   * fonts and fills use — a scale built from theme colours used to read
+   * back as `""` and be written back as `rgb=""`, because the field could
+   * only hold an RGB string.
+   */
   colorScale?: {
     cfvo: Array<{
       type: "min" | "max" | "num" | "percent" | "percentile"
       value?: string
     }>
-    colors: string[] // hex ARGB colors like "FF63BE7B"
+    colors: Color[]
   }
   /** Data bar configuration */
   dataBar?: {
@@ -355,7 +360,7 @@ export interface ConditionalRule {
       type: "min" | "max" | "num" | "percent" | "percentile"
       value?: string
     }>
-    color: string
+    color: Color
   }
   /** Icon set configuration */
   iconSet?: {
@@ -574,8 +579,8 @@ export interface Sparkline {
   dataRange: string
   /** Type: line, column, or win/loss (stacked) */
   type?: "line" | "column" | "stacked"
-  /** Color (hex RGB without '#', e.g. "376092") */
-  color?: string
+  /** Series colour. Default: Excel's `376092`. */
+  color?: Color
   /** Show markers */
   markers?: boolean
 }

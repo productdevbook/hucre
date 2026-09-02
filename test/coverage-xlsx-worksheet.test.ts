@@ -638,7 +638,7 @@ describe("conditional formatting", () => {
     expect(s.conditionalRules![0].formula).toBe('NOT(ISERROR(SEARCH("err",A1)))')
   })
 
-  it("defaults a cfvo with no type to min and a colour with no rgb to empty", () => {
+  it("defaults a cfvo with no type to min, and keeps a theme colour on a scale stop", () => {
     const s = sheet(
       `<sheetData/><conditionalFormatting sqref="A1:A9">` +
         `<cfRule type="colorScale" priority="1"><colorScale>` +
@@ -650,7 +650,7 @@ describe("conditional formatting", () => {
         { type: "min", value: undefined },
         { type: "max", value: undefined },
       ],
-      colors: ["", ""],
+      colors: [{}, { theme: 4 }],
     })
   })
 
@@ -665,7 +665,7 @@ describe("conditional formatting", () => {
         { type: "min", value: undefined },
         { type: "max", value: undefined },
       ],
-      color: "",
+      color: {},
     })
   })
 
@@ -797,7 +797,13 @@ describe("sparklines", () => {
         `</x14:sparkline></x14:sparklines></x14:sparklineGroup></x14:sparklineGroups></ext></extLst>`,
     )
     expect(s.sparklines).toEqual([
-      { location: "A1", dataRange: "Sheet1!B1:E1", type: "column", color: "336699", markers: true },
+      {
+        location: "A1",
+        dataRange: "Sheet1!B1:E1",
+        type: "column",
+        color: { rgb: "336699" },
+        markers: true,
+      },
     ])
   })
 

@@ -551,7 +551,7 @@ describe("XLSX: conditional formatting edge cases", () => {
               range: "A1:A5",
               colorScale: {
                 cfvo: [{ type: "min" }, { type: "percentile", value: "50" }, { type: "max" }],
-                colors: ["FFF8696B", "FFFFEB84", "FF63BE7B"],
+                colors: [{ rgb: "F8696B" }, { rgb: "FFEB84" }, { rgb: "63BE7B" }],
               },
             },
           ],

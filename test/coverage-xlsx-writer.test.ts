@@ -391,14 +391,14 @@ describe("conditional formatting rule bodies", () => {
           { type: "num", value: "0" },
           { type: "num", value: "100" },
         ],
-        color: "638EC6",
+        color: { rgb: "638EC6" },
       },
     }
     const xml = await sheetXml({ name: "S", rows: [[5]], conditionalRules: [rule] })
 
     expect(xml).toContain('<cfvo type="num" val="0"/>')
     expect(xml).toContain('<cfvo type="num" val="100"/>')
-    expect(xml).toContain('<color rgb="638EC6"/>')
+    expect(xml).toContain('<color rgb="FF638EC6"/>')
   })
 
   it("honours reverse and showValue:false on an icon set", async () => {
@@ -431,7 +431,7 @@ describe("sparkline colours", () => {
     const xml = await sheetXml({
       name: "S",
       rows: [[1, 2, 3]],
-      sparklines: [{ location: "D1", dataRange: "Sheet1!A1:C1", color: "80FF0000" }],
+      sparklines: [{ location: "D1", dataRange: "Sheet1!A1:C1", color: { rgb: "80FF0000" } }],
     })
 
     expect(xml).toContain('<x14:colorSeries rgb="80FF0000"/>')
