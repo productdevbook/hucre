@@ -236,6 +236,14 @@ export interface Cell {
   comment?: CellComment
 }
 
+/**
+ * What a writer accepts where a cell goes: a bare value, or a cell
+ * object — `{ value, style }`, `{ formula }`, anything a {@link Cell}
+ * carries. One type for every writer; v1 had four spellings of it
+ * (`Partial<Cell>`, `StreamStyledCell`, `OdsStyledCell`, `OdsWriteCell`).
+ */
+export type CellInput = CellValue | Partial<Cell>
+
 // ── Column Definition ──────────────────────────────────────────────
 
 export interface ColumnDef {
@@ -2096,36 +2104,24 @@ export type WriteOutput = Uint8Array
 // ── Incremental writers ────────────────────────────────────────────
 
 /**
- * The vocabulary `XlsxStreamWriter`, `CsvStreamWriter` and
- * `NdjsonStreamWriter` share, so a format-agnostic export helper can be
- * written once.
+ * The vocabulary the four incremental writers share — `XlsxStreamWriter`,
+ * `CsvStreamWriter`, `NdjsonStreamWriter`, `OdsStreamWriter` — so a
+ * format-agnostic export helper can be written once.
  *
- * The README has claimed this since before v1 and nothing enforced it:
- * there was no `implements` anywhere in `src/`, so when #436 widened
- * `XlsxStreamWriter.addRow` to accept `StreamStyledCell`, nothing failed
- * and the drift was left for a reader to discover. Declaring the type is
- * what turns the next divergence into a compile error. See #468.
- *
- * Two of the members are deliberately loose, because the three writers
- * genuinely differ and pretending otherwise would be worse than saying so:
- *
- * - **`finish()`** returns `string` from the text writers and
- *   `Promise<Uint8Array>` from XLSX. A helper written against this
- *   interface has to `await` it — which is harmless on a `string` — and
- *   narrow the result before using it. Converging the two is a real API
- *   decision and a breaking one; the interface is worth having either way.
- * - **`addRow` / `addObject`** promise only the narrow parameter here.
- *   `XlsxStreamWriter` accepts more (`StreamStyledCell`, `unknown`
- *   values), which is contravariant and therefore fine — a writer may
- *   take more than the interface promises, never less.
+ * v1's version said `finish(): string | Promise<Uint8Array>` and carried a
+ * `toStream()` that, on three of the four, buffered everything and then
+ * handed over one chunk. Both are gone: `finish()` is bytes everywhere,
+ * and a writer that streams says so by having `toStream()` itself
+ * (`NdjsonStreamWriter` does) rather than the interface promising it.
  */
 export interface SpreadsheetStreamWriter {
-  /** Append a row of positional values. */
-  addRow(values: CellValue[]): void
+  /** Append a row of positional values, or cells. */
+  addRow(values: CellInput[]): void
   /** Append a row from an object, projected through the writer's columns. */
-  addObject(item: Record<string, CellValue>): void
-  /** Close the writer and return its output. */
-  finish(): string | Promise<Uint8Array>
-  /** Output as a `ReadableStream<Uint8Array>`. */
-  toStream(): ReadableStream<Uint8Array>
+  addObject(item: Record<string, CellInput>): void
+  /**
+   * Close the writer and return its output as bytes. The text writers
+   * also have `finishText()`, which returns the same output as a string.
+   */
+  finish(): Promise<Uint8Array>
 }

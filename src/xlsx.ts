@@ -30,7 +30,6 @@ export type {
   XlsxWriteStreamWorkbookOptions,
   XlsxStreamRow,
   XlsxStreamSheet,
-  StreamStyledCell,
 } from "./xlsx/stream-writer"
 
 // ── Sizing & theme helpers ─────────────────────────────────────────
@@ -95,3 +94,6 @@ export type {
 // A cell may hold an error value; every writer takes one, and the spreadsheet readers produce them.
 export { cellError, isCellError } from "./cell-error"
 export type { CellError, CellErrorCode } from "./cell-error"
+
+// What a writer takes where a cell goes: a value, or a cell object.
+export type { CellInput } from "./_types"

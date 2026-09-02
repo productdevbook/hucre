@@ -546,42 +546,34 @@ Run `pnpm bench` to see both on your own machine.
 `OdsStreamWriter` all implement `SpreadsheetStreamWriter`, so a
 format-agnostic export helper can be written once:
 
-| Method            | Behaviour                                                         |
-| ----------------- | ----------------------------------------------------------------- |
-| `addRow(values)`  | Append positional values                                          |
-| `addObject(item)` | Append an object, projected through the writer's column order     |
-| `finish()`        | Close the writer and return its output (`string` or `Uint8Array`) |
-| `toStream()`      | Output as a `ReadableStream<Uint8Array>`                          |
+| Method            | Behaviour                                                       |
+| ----------------- | --------------------------------------------------------------- |
+| `addRow(cells)`   | Append positional values, or cell objects (`{ value, style }`)  |
+| `addObject(item)` | Append an object, projected through the writer's column order   |
+| `finish()`        | Close the writer and return its output as `Promise<Uint8Array>` |
 
 ```ts
 import type { SpreadsheetStreamWriter } from "hucre"
 
 async function exportAll(writer: SpreadsheetStreamWriter, rows: Array<Record<string, CellValue>>) {
   for (const row of rows) writer.addObject(row)
-  return await writer.finish() // string | Uint8Array — narrow at the call site
+  return await writer.finish() // Uint8Array from every writer
 }
 ```
 
-This was a convention until v1.0.1 and nothing enforced it: there was no
-shared interface, so when `XlsxStreamWriter.addRow` widened to accept
-styled cells, nothing failed and the drift was left for a reader to
-find. The `implements` is what makes the next divergence a compile error
-(#468).
+Three things worth stating plainly:
 
-Four caveats worth stating plainly:
-
-- **`finish()` is not one type.** The text writers return `string`, XLSX
-  returns `Promise<Uint8Array>`, and the interface says so rather than
-  pretending otherwise. `await` covers both; narrow before use.
+- **The text writers also give a string.** `CsvStreamWriter.finishText()`
+  and `NdjsonStreamWriter.finishText()` return the same output `finish()`
+  encodes. The interface promises bytes, because that is the one thing all
+  four can return.
 - **Construction is not shared.** `XlsxStreamWriter` takes a sheet `name`
   and `ColumnDef[]`; the two text writers take a plain key list. The
   helper is written once — building the writer is still per-format.
-- `toStream()` on `XlsxStreamWriter` and `CsvStreamWriter` **does not bound
-  memory**. Both buffer everything until `finish()`; the stream just hands
-  you the finished bytes. `writeXlsxStream` / `writeCsvStream` are the
-  constant-memory paths. `NdjsonStreamWriter.toStream()` is the only live
-  drain — it releases rows as they are enqueued and stays open until
-  `finish()`.
+- **Only `NdjsonStreamWriter` has `toStream()`**, because it is the only
+  one that can release rows as they are written. The others buffer until
+  `finish()`; the constant-memory paths are `writeXlsxStream`,
+  `writeCsvStream`, `writeOdsStream` and `writeNdjsonStream`.
 - `NdjsonStreamWriter.addRow` needs `columns` (`new NdjsonStreamWriter({
 columns: [...] })`), because NDJSON rows are objects and positional
   values have no key names otherwise. It throws rather than guessing.
@@ -2058,18 +2050,18 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 
 ### CSV
 
-| Function                           | Description                                                              |
-| ---------------------------------- | ------------------------------------------------------------------------ |
-| `parseCsv(input, options?)`        | Parse CSV string → `CellValue[][]`                                       |
-| `parseCsvObjects(input, options?)` | Parse CSV with headers → `CsvObjectsResult` (`{ data, headers }`)        |
-| `writeCsv(rows, options?)`         | Write `CellValue[][]` → CSV string                                       |
-| `writeCsvObjects(data, options?)`  | Write objects → CSV string                                               |
-| `detectDelimiter(input)`           | Auto-detect delimiter character                                          |
-| `streamCsvRows(input, options?)`   | AsyncGenerator of `StreamRow`s; same options as `parseCsv`               |
-| `writeCsvStream(rows, options?)`   | Constant-memory CSV writing → `ReadableStream`                           |
-| `CsvStreamWriter`                  | Incremental CSV writing (`addRow`/`addObject`); buffers until `finish()` |
-| `writeTsv(rows, options?)`         | Write TSV (tab-separated)                                                |
-| `fetchCsv(url, options?)`          | Fetch and parse CSV from URL                                             |
+| Function                           | Description                                                                             |
+| ---------------------------------- | --------------------------------------------------------------------------------------- |
+| `parseCsv(input, options?)`        | Parse CSV string → `CellValue[][]`                                                      |
+| `parseCsvObjects(input, options?)` | Parse CSV with headers → `CsvObjectsResult` (`{ data, headers }`)                       |
+| `writeCsv(rows, options?)`         | Write `CellValue[][]` → CSV string                                                      |
+| `writeCsvObjects(data, options?)`  | Write objects → CSV string                                                              |
+| `detectDelimiter(input)`           | Auto-detect delimiter character                                                         |
+| `streamCsvRows(input, options?)`   | AsyncGenerator of `StreamRow`s; same options as `parseCsv`                              |
+| `writeCsvStream(rows, options?)`   | Constant-memory CSV writing → `ReadableStream`                                          |
+| `CsvStreamWriter`                  | Incremental CSV writing (`addRow`/`addObject`); `finish()` bytes, `finishText()` string |
+| `writeTsv(rows, options?)`         | Write TSV (tab-separated)                                                               |
+| `fetchCsv(url, options?)`          | Fetch and parse CSV from URL                                                            |
 
 ### JSON
 

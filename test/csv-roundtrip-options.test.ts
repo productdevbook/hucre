@@ -122,7 +122,7 @@ describe("escapeFormulae in the streaming writers", () => {
   it("CsvStreamWriter escapes like writeCsv", () => {
     const writer = new CsvStreamWriter({ escapeFormulae: true })
     writer.addRow(["=SUM(A1)", "-5"])
-    expect(writer.finish()).toBe(writeCsv([["=SUM(A1)", "-5"]], { escapeFormulae: true }))
+    expect(writer.finishText()).toBe(writeCsv([["=SUM(A1)", "-5"]], { escapeFormulae: true }))
   })
 
   it("writeCsvStream escapes like writeCsv", async () => {
@@ -161,7 +161,7 @@ describe("comment character on write", () => {
   it("is honoured by the streaming writers", async () => {
     const writer = new CsvStreamWriter({ comment: "#" })
     writer.addRow(["#1", "a"])
-    expect(writer.finish()).toBe('"#1",a')
+    expect(writer.finishText()).toBe('"#1",a')
     const out = await collect(writeCsvStream([["#1", "a"]], { comment: "#" }))
     expect(out).toBe('"#1",a')
   })

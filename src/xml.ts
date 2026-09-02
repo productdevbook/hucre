@@ -18,3 +18,6 @@ export type { CellError, CellErrorCode } from "./cell-error"
 
 // Every stream*Rows reader yields this one shape.
 export type { StreamRow } from "./_types"
+
+// What a writer takes where a cell goes: a value, or a cell object.
+export type { CellInput } from "./_types"

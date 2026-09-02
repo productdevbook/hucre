@@ -166,13 +166,13 @@ describe("NdjsonStreamWriter unflatten", () => {
   it("restores nesting on the streaming path too", () => {
     const w = new NdjsonStreamWriter({ unflatten: true })
     w.addObject({ "user.name": "Ada" })
-    expect(w.finish()).toBe('{"user":{"name":"Ada"}}\n')
+    expect(w.finishText()).toBe('{"user":{"name":"Ada"}}\n')
   })
 
   it("is off by default", () => {
     const w = new NdjsonStreamWriter()
     w.addObject({ "user.name": "Ada" })
-    expect(w.finish()).toBe('{"user.name":"Ada"}\n')
+    expect(w.finishText()).toBe('{"user.name":"Ada"}\n')
   })
 })
 

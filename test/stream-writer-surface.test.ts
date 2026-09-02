@@ -31,7 +31,7 @@ async function drain(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
 }
 
 describe("stream writer surface parity", () => {
-  it("every writer exposes addRow / addObject / finish / toStream", () => {
+  it("every writer exposes addRow / addObject / finish", () => {
     const writers = [
       new XlsxStreamWriter({ name: "S", columns: [{ key: "a", header: "A" }] }),
       new CsvStreamWriter(),
@@ -39,7 +39,7 @@ describe("stream writer surface parity", () => {
     ]
 
     for (const writer of writers) {
-      for (const method of ["addRow", "addObject", "finish", "toStream"] as const) {
+      for (const method of ["addRow", "addObject", "finish"] as const) {
         expect(typeof (writer as unknown as Record<string, unknown>)[method]).toBe("function")
       }
     }
@@ -49,20 +49,14 @@ describe("stream writer surface parity", () => {
     // The point of the whole convergence: one function, three formats.
     interface AnyStreamWriter {
       addObject(item: Record<string, CellValue>): void
-      finish(): string | Promise<Uint8Array>
-      toStream(): ReadableStream<Uint8Array>
+      finish(): Promise<Uint8Array>
     }
-
     async function exportAll(
       writer: AnyStreamWriter,
       rows: Record<string, CellValue>[],
     ): Promise<Uint8Array> {
       for (const row of rows) writer.addObject(row)
-      // `finish()` marks the writer done; `toStream()` then yields the
-      // bytes and closes. NdjsonStreamWriter's stream is a live drain, so
-      // without the finish() it would stay open waiting for more rows.
-      await writer.finish()
-      return drain(writer.toStream())
+      return writer.finish()
     }
 
     const rows = [
@@ -104,105 +98,46 @@ describe("CsvStreamWriter.addObject", () => {
     const writer = new CsvStreamWriter({ lineSeparator: "\n" })
     writer.addObject({ name: "Alice", age: 30 })
     writer.addObject({ name: "Bob", age: 25 })
-    expect(writer.finish()).toBe("name,age\nAlice,30\nBob,25")
+    expect(writer.finishText()).toBe("name,age\nAlice,30\nBob,25")
   })
 
   it("projects through an explicit `columns` order", () => {
     const writer = new CsvStreamWriter({ lineSeparator: "\n", columns: ["age", "name"] })
     writer.addObject({ name: "Alice", age: 30, extra: "dropped" })
-    expect(writer.finish()).toBe("age,name\n30,Alice")
+    expect(writer.finishText()).toBe("age,name\n30,Alice")
   })
 
   it("uses an explicit `headers` array as the column order without repeating it", () => {
     const writer = new CsvStreamWriter({ lineSeparator: "\n", headers: ["age", "name"] })
     writer.addObject({ name: "Alice", age: 30 })
-    expect(writer.finish()).toBe("age,name\n30,Alice")
+    expect(writer.finishText()).toBe("age,name\n30,Alice")
   })
 
   it("emits no header line when headers: false", () => {
     const writer = new CsvStreamWriter({ lineSeparator: "\n", headers: false })
     writer.addObject({ name: "Alice", age: 30 })
-    expect(writer.finish()).toBe("Alice,30")
+    expect(writer.finishText()).toBe("Alice,30")
   })
 
   it("fills missing keys with the null representation", () => {
     const writer = new CsvStreamWriter({ lineSeparator: "\n" })
     writer.addObject({ a: 1, b: 2 })
     writer.addObject({ a: 3 })
-    expect(writer.finish()).toBe("a,b\n1,2\n3,")
+    expect(writer.finishText()).toBe("a,b\n1,2\n3,")
   })
 })
-
-// ── toStream() on the buffering writers ──────────────────────────────
-
-describe("buffering writers' toStream()", () => {
-  it("CsvStreamWriter.toStream emits exactly what finish() returns", async () => {
-    const writer = new CsvStreamWriter({ lineSeparator: "\n" })
-    writer.addRow(["a", "b"])
-    writer.addRow([1, 2])
-
-    const streamed = new TextDecoder().decode(await drain(writer.toStream()))
-    expect(streamed).toBe(writer.finish())
-    expect(streamed).toBe("a,b\n1,2")
-  })
-
-  it("CsvStreamWriter.toStream keeps the BOM", async () => {
-    const writer = new CsvStreamWriter({ lineSeparator: "\n", bom: true })
-    writer.addRow(["a"])
-    const bytes = await drain(writer.toStream())
-    expect([bytes[0], bytes[1], bytes[2]]).toEqual([0xef, 0xbb, 0xbf])
-  })
-
-  it("XlsxStreamWriter.toStream emits a readable workbook", async () => {
-    const writer = new XlsxStreamWriter({ name: "Streamed" })
-    writer.addRow(["Name", "Score"])
-    writer.addRow(["Alice", 95])
-
-    const wb = await readXlsx(await drain(writer.toStream()))
-    expect(wb.sheets[0]!.name).toBe("Streamed")
-    expect(wb.sheets[0]!.rows).toEqual([
-      ["Name", "Score"],
-      ["Alice", 95],
-    ])
-  })
-
-  it("XlsxStreamWriter.toStream buffers — it is not a constant-memory stream", async () => {
-    // Documented explicitly because #347 was filed over a buffering writer
-    // described as streaming. The whole archive arrives in one chunk.
-    const writer = new XlsxStreamWriter({ name: "S" })
-    for (let i = 0; i < 500; i++) writer.addRow([i, `row ${i}`])
-
-    const reader = writer.toStream().getReader()
-    const first = await reader.read()
-    expect(first.done).toBe(false)
-    expect(first.value!.length).toBeGreaterThan(0)
-    expect((await reader.read()).done).toBe(true)
-  })
-
-  it("XlsxStreamWriter.toStream surfaces a failing finish() to the consumer", async () => {
-    const writer = new XlsxStreamWriter({ name: "S" })
-    writer.addRow([1])
-    const boom = new Error("finish exploded")
-    ;(writer as unknown as { finish: () => Promise<Uint8Array> }).finish = () =>
-      Promise.reject(boom)
-
-    await expect(drain(writer.toStream())).rejects.toThrow("finish exploded")
-  })
-})
-
-// ── NdjsonStreamWriter ───────────────────────────────────────────────
 
 describe("NdjsonStreamWriter", () => {
   it("addObject + finish returns the buffered NDJSON", () => {
     const writer = new NdjsonStreamWriter()
     writer.addObject({ a: 1 })
     writer.addObject({ a: 2 })
-    expect(writer.finish()).toBe('{"a":1}\n{"a":2}\n')
+    expect(writer.finishText()).toBe('{"a":1}\n{"a":2}\n')
   })
 
   it("finish() closes the writer", () => {
     const writer = new NdjsonStreamWriter()
-    writer.finish()
+    writer.finishText()
     expect(() => writer.addObject({ a: 1 })).toThrow()
   })
 
@@ -210,7 +145,7 @@ describe("NdjsonStreamWriter", () => {
     const writer = new NdjsonStreamWriter({ columns: ["id", "name"] })
     writer.addRow([1, "alpha"])
     writer.addRow([2])
-    expect(writer.finish()).toBe('{"id":1,"name":"alpha"}\n{"id":2,"name":null}\n')
+    expect(writer.finishText()).toBe('{"id":1,"name":"alpha"}\n{"id":2,"name":null}\n')
   })
 
   it("addRow throws without columns rather than guessing key names", () => {
@@ -223,7 +158,7 @@ describe("NdjsonStreamWriter", () => {
     const reader = writer.toStream().getReader()
     writer.addObject({ a: 1 })
     expect(new TextDecoder().decode((await reader.read()).value)).toBe('{"a":1}\n')
-    writer.finish()
+    writer.finishText()
     expect((await reader.read()).done).toBe(true)
   })
 })

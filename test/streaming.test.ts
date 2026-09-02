@@ -1040,7 +1040,7 @@ describe("CsvStreamWriter", () => {
     writer.addRow(["a", "b", "c"])
     writer.addRow(["1", "2", "3"])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe("a,b,c\r\n1,2,3")
   })
 
@@ -1059,7 +1059,7 @@ describe("CsvStreamWriter", () => {
     for (const row of rows) {
       writer.addRow(row)
     }
-    const result = writer.finish()
+    const result = writer.finishText()
 
     expect(result).toBe(expected)
   })
@@ -1071,7 +1071,7 @@ describe("CsvStreamWriter", () => {
     writer.addRow(["Alice", 30])
     writer.addRow(["Bob", 25])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe("Name,Age\r\nAlice,30\r\nBob,25")
   })
 
@@ -1079,7 +1079,7 @@ describe("CsvStreamWriter", () => {
     const writer = new CsvStreamWriter({ bom: true })
     writer.addRow(["a", "b"])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe("\uFEFFa,b")
   })
 
@@ -1087,7 +1087,7 @@ describe("CsvStreamWriter", () => {
     const writer = new CsvStreamWriter()
     writer.addRow(["text", 42, true, null, false])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe("text,42,true,,false")
   })
 
@@ -1095,7 +1095,7 @@ describe("CsvStreamWriter", () => {
     const writer = new CsvStreamWriter()
     writer.addRow(["hello, world", "simple"])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe('"hello, world",simple')
   })
 
@@ -1103,7 +1103,7 @@ describe("CsvStreamWriter", () => {
     const writer = new CsvStreamWriter()
     writer.addRow(["line1\nline2", "ok"])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe('"line1\nline2",ok')
   })
 
@@ -1111,7 +1111,7 @@ describe("CsvStreamWriter", () => {
     const writer = new CsvStreamWriter()
     writer.addRow(['say "hello"', "ok"])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe('"say ""hello""",ok')
   })
 
@@ -1119,7 +1119,7 @@ describe("CsvStreamWriter", () => {
     const writer = new CsvStreamWriter({ delimiter: ";" })
     writer.addRow(["a", "b", "c"])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe("a;b;c")
   })
 
@@ -1128,7 +1128,7 @@ describe("CsvStreamWriter", () => {
     writer.addRow(["a", "b"])
     writer.addRow(["1", "2"])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe("a,b\r\n1,2")
   })
 
@@ -1137,13 +1137,13 @@ describe("CsvStreamWriter", () => {
     const writer = new CsvStreamWriter()
     writer.addRow([date])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe("2024-07-04T00:00:00.000Z")
   })
 
   it("handles empty output", () => {
     const writer = new CsvStreamWriter()
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe("")
   })
 
@@ -1151,7 +1151,7 @@ describe("CsvStreamWriter", () => {
     const writer = new CsvStreamWriter({ quoteStyle: "all" })
     writer.addRow(["a", "b"])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe('"a","b"')
   })
 
@@ -1162,7 +1162,7 @@ describe("CsvStreamWriter", () => {
     })
     writer.addRow([1, 2])
 
-    const result = writer.finish()
+    const result = writer.finishText()
     expect(result).toBe("\uFEFFX,Y\r\n1,2")
   })
 })

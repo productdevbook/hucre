@@ -1,8 +1,9 @@
 // ── NDJSON Streaming ─────────────────────────────────────────────────
 // CF Workers / Deno / Node 18+ compatible: uses WHATWG ReadableStream only.
 
+import { toCellValue } from "../_inline-cells"
 import { isCellError } from "../cell-error"
-import type { CellValue, SpreadsheetStreamWriter, ReadInput, StreamRow } from "../_types"
+import type { CellValue, SpreadsheetStreamWriter, ReadInput, StreamRow, CellInput } from "../_types"
 import { InvalidArgumentError, ParseError } from "../errors"
 import { flattenValue, reviveDates, type FlattenOptions } from "./flatten"
 import { unflattenRow } from "./unflatten"
@@ -68,10 +69,12 @@ export class NdjsonStreamWriter implements SpreadsheetStreamWriter {
   /**
    * Append one row from an object — one NDJSON line per call.
    */
-  addObject(row: Record<string, CellValue>): void {
+  addObject(item: Record<string, CellInput>): void {
     if (this.done) {
-      throw new Error("Cannot write to NdjsonStreamWriter after finish()/end()")
+      throw new InvalidArgumentError("Cannot write to NdjsonStreamWriter after finish()")
     }
+    const row: Record<string, CellValue> = {}
+    for (const key of Object.keys(item)) row[key] = toCellValue(item[key]!)
     this.buffer.push(JSON.stringify(this.unflatten ? unflattenRow(row) : row, errorReplacer) + "\n")
   }
 
@@ -83,7 +86,7 @@ export class NdjsonStreamWriter implements SpreadsheetStreamWriter {
    * `XlsxStreamWriter.addObject`, which needs `columns[].key` to map the
    * other direction.
    */
-  addRow(values: CellValue[]): void {
+  addRow(values: CellInput[]): void {
     if (!this.columns) {
       throw new InvalidArgumentError(
         "addRow requires `columns` — NDJSON rows are objects, so positional values need key names. Pass `new NdjsonStreamWriter({ columns: [...] })` or use addObject().",
@@ -91,7 +94,7 @@ export class NdjsonStreamWriter implements SpreadsheetStreamWriter {
     }
     const row: Record<string, CellValue> = {}
     for (let i = 0; i < this.columns.length; i++) {
-      row[this.columns[i]!] = values[i] ?? null
+      row[this.columns[i]!] = toCellValue(values[i] ?? null)
     }
     this.addObject(row)
   }
@@ -104,7 +107,12 @@ export class NdjsonStreamWriter implements SpreadsheetStreamWriter {
    * already drained through `toStream()` has nothing left to return here
    * — pick one drain or the other.
    */
-  finish(): string {
+  finish(): Promise<Uint8Array> {
+    return Promise.resolve(TEXT_ENCODER.encode(this.finishText()))
+  }
+
+  /** {@link finish}, as a string. */
+  finishText(): string {
     this.done = true
     return this.toString()
   }

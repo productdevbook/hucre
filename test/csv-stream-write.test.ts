@@ -43,7 +43,7 @@ async function* asyncRows<T>(rows: T[]): AsyncGenerator<T> {
 function buffered(rows: CellValue[][], options?: CsvWriteOptions): string {
   const writer = new CsvStreamWriter(options)
   for (const row of rows) writer.addRow(row)
-  return writer.finish()
+  return writer.finishText()
 }
 
 // ═══════════════════════════════════════════════════════════════════════

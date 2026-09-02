@@ -350,7 +350,7 @@ describe("nested JSON can be rebuilt", () => {
     )
     const w = new NdjsonStreamWriter({ unflatten: true })
     w.addObject({ "user.name": "Ada" })
-    expect(w.finish()).toBe('{"user":{"name":"Ada"}}\n')
+    expect(w.finishText()).toBe('{"user":{"name":"Ada"}}\n')
   })
 
   it("does not undo the two losses the guide says it cannot", () => {

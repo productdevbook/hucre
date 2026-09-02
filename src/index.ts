@@ -28,7 +28,6 @@ export type {
   XlsxWriteStreamWorkbookOptions,
   XlsxStreamRow,
   XlsxStreamSheet,
-  StreamStyledCell,
 } from "./xlsx/stream-writer"
 export { readXlsxObjects, writeXlsxObjects } from "./xlsx/objects"
 export type {
@@ -42,12 +41,8 @@ export { readOds } from "./ods/reader"
 export { writeOds } from "./ods/writer"
 export { writeOdsStream } from "./ods/stream-writer"
 export { OdsStreamWriter } from "./ods/incremental-writer"
-export type {
-  OdsStreamWriterOptions,
-  OdsStyledCell,
-  OdsIncrementalCell,
-} from "./ods/incremental-writer"
-export type { OdsWriteRow, OdsWriteCell, OdsStreamWriteOptions } from "./ods/stream-writer"
+export type { OdsStreamWriterOptions } from "./ods/incremental-writer"
+export type { OdsStreamWriteOptions } from "./ods/stream-writer"
 export { streamOdsRows } from "./ods/stream"
 export { readOdsObjects, writeOdsObjects } from "./ods/objects"
 export type { OdsObjectsReadOptions, OdsObjectsResult, OdsObjectsWriteOptions } from "./ods/objects"
@@ -307,6 +302,7 @@ export type {
   SpreadsheetStreamWriter,
   // Cell
   CellValue,
+  CellInput,
   CellType,
   Cell,
   RichTextRun,

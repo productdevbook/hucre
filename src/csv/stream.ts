@@ -11,6 +11,7 @@
 //   source on demand and encoded lines are flushed as they accumulate,
 //   so peak memory is independent of the row count.
 
+import { toCellValue } from "../_inline-cells"
 import { isCellError } from "../cell-error"
 import type {
   CellValue,
@@ -18,6 +19,7 @@ import type {
   CsvWriteOptions,
   SpreadsheetStreamWriter,
   StreamRow,
+  CellInput,
 } from "../_types"
 import { stripBom, detectDelimiter, startsWith } from "./reader"
 import { escapeFormula, unescapeFormula } from "./formula"
@@ -403,9 +405,9 @@ export class CsvStreamWriter implements SpreadsheetStreamWriter {
     }
   }
 
-  /** Add a row of values */
-  addRow(values: CellValue[]): void {
-    this.lines.push(this.formatter.formatRow(values))
+  /** Add a row. A cell object contributes its value; CSV carries nothing else. */
+  addRow(values: CellInput[]): void {
+    this.lines.push(this.formatter.formatRow(values.map(toCellValue)))
   }
 
   /**
@@ -416,7 +418,7 @@ export class CsvStreamWriter implements SpreadsheetStreamWriter {
    * A header line is emitted before the first object row unless one was
    * already written or `headers: false` was passed.
    */
-  addObject(item: Record<string, CellValue>): void {
+  addObject(item: Record<string, CellInput>): void {
     if (!this.columns) {
       this.columns = Object.keys(item)
     }
@@ -427,8 +429,13 @@ export class CsvStreamWriter implements SpreadsheetStreamWriter {
     this.addRow(this.columns.map((key) => item[key] ?? null))
   }
 
-  /** Finalize and return the CSV string */
-  finish(): string {
+  /** Finalize and return the CSV as bytes — the same output every writer's `finish()` gives. */
+  finish(): Promise<Uint8Array> {
+    return Promise.resolve(TEXT_ENCODER.encode(this.finishText()))
+  }
+
+  /** Finalize and return the CSV string. */
+  finishText(): string {
     const parts: string[] = []
 
     if (this.bom) {
@@ -438,32 +445,6 @@ export class CsvStreamWriter implements SpreadsheetStreamWriter {
     parts.push(this.lines.join(this.lineSeparator))
 
     return parts.join("")
-  }
-
-  /**
-   * Emit the finished CSV as a `ReadableStream<Uint8Array>`.
-   *
-   * **This is not a constant-memory stream.** Every row added so far is
-   * still buffered; {@link finish} runs first and the whole result is
-   * enqueued as one chunk. It exists so a writer can be handed to a
-   * `Response` body or a file sink without a manual encode step — not to
-   * bound memory. For output whose peak memory is independent of the row
-   * count, use {@link writeCsvStream}, which pulls rows from an iterable
-   * and flushes as it goes.
-   *
-   * `finish()` runs when the stream is first read, so rows added between
-   * `toStream()` and the first pull are still included, and the stream
-   * closes right after — no separate `finish()` call is needed (though
-   * one is harmless: `finish()` is idempotent here).
-   */
-  toStream(): ReadableStream<Uint8Array> {
-    const finish = (): Uint8Array => TEXT_ENCODER.encode(this.finish())
-    return new ReadableStream<Uint8Array>({
-      pull(controller) {
-        controller.enqueue(finish())
-        controller.close()
-      },
-    })
   }
 }
 

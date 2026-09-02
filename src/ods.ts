@@ -5,12 +5,8 @@ export { readOds } from "./ods/reader"
 export { writeOds } from "./ods/writer"
 export { writeOdsStream } from "./ods/stream-writer"
 export { OdsStreamWriter } from "./ods/incremental-writer"
-export type {
-  OdsStreamWriterOptions,
-  OdsStyledCell,
-  OdsIncrementalCell,
-} from "./ods/incremental-writer"
-export type { OdsWriteRow, OdsWriteCell, OdsStreamWriteOptions } from "./ods/stream-writer"
+export type { OdsStreamWriterOptions } from "./ods/incremental-writer"
+export type { OdsStreamWriteOptions } from "./ods/stream-writer"
 export { streamOdsRows } from "./ods/stream"
 export { readOdsObjects, writeOdsObjects } from "./ods/objects"
 export { toWriteOptions, toWriteSheet } from "./write-model"
@@ -42,3 +38,6 @@ export type { CellError, CellErrorCode } from "./cell-error"
 
 // Every stream*Rows reader yields this one shape.
 export type { StreamRow } from "./_types"
+
+// What a writer takes where a cell goes: a value, or a cell object.
+export type { CellInput } from "./_types"

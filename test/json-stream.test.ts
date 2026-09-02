@@ -36,7 +36,7 @@ describe("NdjsonStreamWriter", () => {
 
   it("throws when writing after finish()", () => {
     const w = new NdjsonStreamWriter()
-    w.finish()
+    w.finishText()
     expect(() => w.addObject({ a: 1 })).toThrow()
   })
 
@@ -44,7 +44,7 @@ describe("NdjsonStreamWriter", () => {
     const w = new NdjsonStreamWriter()
     w.addObject({ a: 1 })
     w.addObject({ a: 2 })
-    w.finish()
+    w.finishText()
 
     const reader = w.toStream().getReader()
     const dec = new TextDecoder()

@@ -153,6 +153,29 @@ and every one is an `AsyncGenerator`, so one `for await` loop works across forma
 + streamOdsRows(bytes, { sheet: 1 })
 ```
 
+## One writer surface
+
+`SpreadsheetStreamWriter.finish()` was `string | Promise<Uint8Array>`; its own doc comment called converging the two "a real API decision and a breaking one". It is `Promise<Uint8Array>` on all four writers now. The text writers keep a string form under a new name:
+
+```diff
+  const w = new CsvStreamWriter()
+  w.addRow(["a", 1])
+- const csv = w.finish()          // string
++ const csv = w.finishText()      // string
++ const bytes = await w.finish()  // Uint8Array, like every other writer
+```
+
+`toStream()` is gone from `XlsxStreamWriter`, `CsvStreamWriter` and `OdsStreamWriter`. On all three it buffered everything and then handed over one chunk — a stream in name only, and the README had to carry a warning saying so. `NdjsonStreamWriter.toStream()` stays: it releases rows as they are written, which is what the name promises. For constant memory use `writeXlsxStream`, `writeCsvStream`, `writeOdsStream` or `writeNdjsonStream`.
+
+```diff
+- return new Response(writer.toStream())
++ return new Response(await writer.finish())
+```
+
+Every writer takes `CellInput` — `CellValue | Partial<Cell>` — where a cell goes. `StreamStyledCell`, `OdsStyledCell`, `OdsIncrementalCell`, `OdsWriteCell` and `OdsWriteRow` were five names for that one shape and are removed; a `{ value, style }` object is written where it always was. The CSV and NDJSON writers take it too and keep the value, since those formats carry nothing else.
+
+`OdsStreamWriter` now declares `implements SpreadsheetStreamWriter`; it satisfied the interface in v1 without saying so.
+
 ---
 
 # Migrating to v1

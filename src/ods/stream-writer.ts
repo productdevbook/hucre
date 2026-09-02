@@ -16,7 +16,7 @@
 // row. Everything else is values, which is what a million-row export is.
 
 import { isCellError } from "../cell-error"
-import type { CellValue, WorkbookProperties } from "../_types"
+import type { CellValue, WorkbookProperties, CellInput } from "../_types"
 import { zipStream, type ZipStreamEntry } from "../zip/stream-writer"
 import { xmlEscape, xmlEscapeAttr } from "../xml/writer"
 import { validateSheetNames } from "../_validate"
@@ -36,8 +36,6 @@ import {
 const encoder = /* @__PURE__ */ new TextEncoder()
 
 /** A streamed row: positional values, each optionally carrying a formula. */
-export type OdsWriteCell = CellValue | { value?: CellValue; formula?: string }
-export type OdsWriteRow = OdsWriteCell[]
 
 export interface OdsStreamWriteOptions {
   /** Sheet name. Excel's limits apply — LibreOffice enforces them too. */
@@ -79,7 +77,7 @@ export interface OdsStreamWriteOptions {
  * path for a document that needs them. See #467.
  */
 export function writeOdsStream(
-  rows: AsyncIterable<OdsWriteRow> | Iterable<OdsWriteRow>,
+  rows: AsyncIterable<CellInput[]> | Iterable<CellInput[]>,
   options?: OdsStreamWriteOptions,
 ): ReadableStream<Uint8Array> {
   const name = options?.name ?? "Sheet1"
@@ -113,7 +111,7 @@ const CONTENT_HEAD =
 
 /** Serialize content.xml into ~64 KB encoded chunks, pulling lazily. */
 async function* contentChunks(
-  rows: AsyncIterable<OdsWriteRow> | Iterable<OdsWriteRow>,
+  rows: AsyncIterable<CellInput[]> | Iterable<CellInput[]>,
   name: string,
   columns?: Array<{ header?: string; width?: number }>,
 ): AsyncGenerator<Uint8Array> {
@@ -182,7 +180,7 @@ function automaticStyles(columns?: Array<{ header?: string; width?: number }>): 
 }
 
 /** One `<table:table-row>`, values only. */
-function serializeRow(row: OdsWriteRow): string {
+function serializeRow(row: CellInput[]): string {
   const cells: string[] = []
   for (const cell of row) {
     cells.push(
