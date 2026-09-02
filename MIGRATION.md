@@ -103,6 +103,18 @@ In the text formats — CSV, TSV, JSON, NDJSON, XML, HTML, Markdown — an error
 
 It is a plain object, not a class, so it survives `structuredClone` and `JSON.stringify` like the rest of the model. `sortRows` orders errors after booleans and before blanks, as Excel does; `findCells` and `replaceCells` match an error by its token.
 
+## `Sheet.rows` is a rectangle from every reader
+
+**Behaviour.** `Sheet.rows` has been documented as a dense rectangle since v1, and `readXlsx` delivered one. `readOds`, `fromHtml` and the CSV path of `read()` did not: an empty row came back as `[]` and a short line stayed short, so `sheetToObjects`, `toHtml` and every other consumer had to read `row[i] ?? null`. They now pad to the sheet's width, like `readXlsx`.
+
+```diff
+  const wb = await readOds(bytes)   // sheet is 3 columns wide, row 2 empty
+- wb.sheets[0].rows[1]              // []
++ wb.sheets[0].rows[1]              // [null, null, null]
+```
+
+`parseCsv` is unchanged: it returns lines as the file had them, and is a grid function rather than a `Sheet` reader. The streaming readers are unchanged too — they skip an empty row and keep the true index on `StreamRow`.
+
 ---
 
 # Migrating to v1

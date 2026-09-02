@@ -4,6 +4,7 @@
 // to the correct writer based on the `format` option for writing.
 // ─────────────────────────────────────────────────────────────────────
 
+import { padToRectangle } from "./_grid"
 import type {
   Workbook,
   ReadOptions,
@@ -167,7 +168,8 @@ export async function read(input: ReadInput, options?: ReadOptions): Promise<Wor
 function readTextFormat(data: Uint8Array, format: TextFormat): Workbook {
   switch (format) {
     case "csv":
-      return { sheets: [{ name: "Sheet1", rows: parseCsv(data) }] }
+      // `parseCsv` keeps a short line short; a `Sheet` is a rectangle.
+      return { sheets: [{ name: "Sheet1", rows: padToRectangle(parseCsv(data)) }] }
     case "json":
       return jsonToWorkbook(data)
     case "ndjson": {

@@ -1,3 +1,4 @@
+import { padToRectangle } from "../_grid"
 import type { Sheet, CellValue, MergeRange, SheetA11y } from "../_types"
 import { parseSax } from "../xml/parser"
 import { XmlError, ParseError } from "../errors"
@@ -456,6 +457,7 @@ export function fromHtml(html: string, options?: HtmlImportOptions): Sheet {
   if (headerRow !== undefined) a11y.headerRow = headerRow
   const described = summary !== "" || headerRow !== undefined
 
+  padToRectangle(rows)
   return {
     name: options?.sheetName ?? "Sheet1",
     rows,

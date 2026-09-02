@@ -1,6 +1,7 @@
 // ── ODS Reader ──────────────────────────────────────────────────────
 // Reads OpenDocument Spreadsheet (.ods) files.
 
+import { padToRectangle } from "../_grid"
 import { cellError } from "../cell-error"
 import type {
   Workbook,
@@ -964,6 +965,7 @@ function parseContentXml(
       }
     }
 
+    padToRectangle(rows)
     const sheet: Sheet = { name, rows }
 
     if (merges.length > 0) {

@@ -46,6 +46,12 @@ async function rowsOf(name: string, sheet = 0): Promise<CellValue[][]> {
   return wb.sheets[sheet]!.rows
 }
 
+function trimTrailingNulls<T>(row: T[]): T[] {
+  let end = row.length
+  while (end > 0 && row[end - 1] === null) end--
+  return row.slice(0, end)
+}
+
 describe("the corpus is there and is not ours", () => {
   it("has every fixture the generator writes", () => {
     expect(NAMES).toEqual([
@@ -114,7 +120,7 @@ describe("LibreOffice", () => {
     async (readStyles) => {
       const rows = (await readOds(load("libreoffice-basic.ods"), { readStyles })).sheets[0]!.rows
 
-      expect(rows.map((row) => row.length)).toEqual([5, 5, 5, 5, 3])
+      expect(rows.map((row) => row.length)).toEqual([5, 5, 5, 5, 5])
       expect(rows[4]!.slice(0, 3)).toEqual(["Broken", cellError("#DIV/0!"), "xy"])
     },
   )
@@ -220,14 +226,16 @@ describe("holes", () => {
     expect(rows[0]![0]).toBe("a")
     expect(rows[0]![10]).toBe("far")
     expect(rows[0]!.slice(1, 10).every((v) => v === null)).toBe(true)
-    expect(rows[1]).toEqual([1, null, 2])
+    expect(rows[1]!.slice(0, 3)).toEqual([1, null, 2])
+    expect(rows[1]).toHaveLength(11)
     expect(rows[3]![3]).toBe("island")
   })
 
   it("keep an entirely empty row in place", async () => {
     const rows = await rowsOf("sheetjs-sparse.ods")
 
-    expect(rows[2]).toEqual([])
+    expect(rows[2]).toHaveLength(11)
+    expect(rows[2]!.every((v) => v === null)).toBe(true)
     expect(rows).toHaveLength(4)
   })
 })
@@ -282,8 +290,11 @@ describe("the streaming reader sees the same thing", () => {
 
       for await (const row of streamOdsRows(load(name))) {
         const at = row.sheetIndex ?? 0
+        // The buffered reader pads every row to the sheet's width; the
+        // streaming one cannot know the width yet, so compare up to the
+        // last value.
         expect(row.values, `${name} sheet ${at} row ${row.index}`).toEqual(
-          sheets[at]!.rows[row.index],
+          trimTrailingNulls(sheets[at]!.rows[row.index]!),
         )
         seen[at]!.add(row.index)
       }
@@ -292,7 +303,9 @@ describe("the streaming reader sees the same thing", () => {
       sheets.forEach((sheet, at) => {
         sheet.rows.forEach((values: CellValue[], index: number) => {
           if (seen[at]!.has(index)) return
-          expect(values, `${name} sheet ${at} row ${index} was skipped`).toEqual([])
+          expect(trimTrailingNulls(values), `${name} sheet ${at} row ${index} was skipped`).toEqual(
+            [],
+          )
         })
       })
     }

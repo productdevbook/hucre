@@ -585,22 +585,22 @@ above.
 See [What ODS carries](../README.md#what-ods-carries) for the consequences
 worth knowing before relying on it.
 
-## `Sheet.rows` is not guaranteed rectangular
+## `Sheet.rows` is a rectangle
 
-Every reader returns `rows: CellValue[][]`, and they do not agree on the
-shape of an empty row. `readXlsx` pads to the sheet's bounding box, so an
-all-empty row comes back as `[null, null, …]`; `readOds` returns `[]` for
-it, and `parseCsv` returns whatever the file had, so a short line stays
-short.
+Every reader that returns a `Sheet` pads `rows` to the sheet's bounding
+box: every row is an array of the same length, every slot is a
+`CellValue`, and `rows[r][c]` is safe without a guard on either index.
+`readXlsx` always did this; `readOds`, `fromHtml` and the CSV path of
+`read()` used to return `[]` for an empty row and leave a short line
+short, so one sheet read three ways had three shapes. They now agree.
 
-Code that walks a sheet generically — `sheetToObjects`, `toHtml`,
-`toMarkdown`, `a11y.audit`, the schema validator — has to read
-`row[i] ?? null` rather than assume a slot exists. That is what they all
-do; it is written down here because nothing said so.
+`parseCsv` is the exception, on purpose: it returns the file's lines as
+the file had them, and padding would change the data. It returns
+`CellValue[][]`, not a `Sheet`.
 
-The streaming readers _do_ agree: `streamXlsxRows` and `streamOdsRows`
-both skip an entirely empty row and keep the true index on `StreamRow`,
-so a gap in the indexes is the signal.
+The streaming readers skip an entirely empty row and keep the true index
+on `StreamRow`, so a gap in the indexes is the signal there; they do not
+pad, because the sheet's width is not known until the last row.
 
 They do **not** agree on how many sheets they walk. `streamXlsxRows`
 yields one sheet — the first, unless `sheet` names another —
