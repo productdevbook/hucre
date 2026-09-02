@@ -235,17 +235,6 @@ export {
   sortRows,
 } from "./sheet-ops"
 
-// ── Web Worker Helpers ───────────────────────────────────────────
-export { serializeWorkbook, deserializeWorkbook } from "./worker"
-export type {
-  SerializedWorkbook,
-  SerializedSheet,
-  SerializedCell,
-  SerializedCellValue,
-  SerializedSheetImage,
-  SerializedWorkbookProperties,
-} from "./worker"
-
 // ── Cell Utilities ─────────────────────────────────────────────────
 export {
   parseCellRef,

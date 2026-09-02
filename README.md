@@ -1992,7 +1992,6 @@ hucre (~114 KB gzipped for the whole barrel; 2–64 KB for the common
 ├── sheet-ops       Insert/delete/move/sort/find/replace, clone, copy
 ├── cell-utils      parseCellRef, colToLetter, parseRange, isInRange
 ├── image           imageFromBase64 utility
-├── worker          Web Worker serialization helpers
 ├── _date           UTC serial ↔ Date, Lotus bug, 1900/1904
 ├── _format         Number format renderer (locale-aware)
 ├── _schema         Schema validation, type coercion, error collection
@@ -2150,15 +2149,13 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | `a11y.relativeLuminance(hex)` | WCAG relative luminance (0–1) for a hex color              |
 | `a11y.applyA11ySummary(wb)`   | Promote first sheet `a11y.summary` to workbook description |
 
-### Web Worker Helpers
+### Web Workers
 
-| Function                    | Description                                                          |
-| --------------------------- | -------------------------------------------------------------------- |
-| `serializeWorkbook(wb)`     | Convert Workbook for `postMessage` (Maps → objects, Dates → strings) |
-| `deserializeWorkbook(data)` | Restore Workbook from serialized form                                |
-
-Every export in this library is worker-safe: there are no DOM or Node-only
-dependencies, so anything can be called from inside a Web Worker.
+A `Workbook` is plain data — objects, arrays, `Map`, `Date`, `Uint8Array` —
+so `postMessage(workbook)` carries it as-is; structured clone handles every
+type in the model. For a channel that only carries JSON, use
+`workbookToJson` / `jsonToWorkbook`. Every export in this library is
+worker-safe: there are no DOM or Node-only dependencies.
 
 ## Development
 

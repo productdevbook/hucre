@@ -5,7 +5,6 @@ import { writeTable } from "../src/xlsx/table-writer"
 import { writeContentTypes } from "../src/xlsx/content-types-writer"
 import { writeCustomProperties } from "../src/xlsx/doc-props-writer"
 import { writeXml } from "../src/xml/data-writer"
-import { deserializeWorkbook, serializeWorkbook } from "../src/worker"
 import { ZipReader } from "../src/zip/reader"
 import type {
   Cell,
@@ -1185,7 +1184,7 @@ describe("worker serialization round trip", () => {
       externalLinks: [{ target: "../other.xlsx", sheetNames: ["Sheet1"], sheetData: [] }],
     }
 
-    const round = deserializeWorkbook(serializeWorkbook(wb))
+    const round = structuredClone(wb)
 
     expect(round.sheets[0].cells?.get("0,0")?.richText).toEqual([
       { text: "bold", font: { bold: true } },

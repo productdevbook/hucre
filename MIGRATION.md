@@ -68,6 +68,22 @@ An eight-character ARGB string still works inside `rgb`; the reader returns six 
 
 **Behaviour:** this was a loss, not only a spelling. A string field could hold an RGB value and nothing else, so a scale or sparkline built from a theme colour — what Excel writes when a colour is picked from the palette — read back as `""` and was written back as `rgb=""`. It now round-trips as `{ theme, tint }`.
 
+## `serializeWorkbook` is gone
+
+`serializeWorkbook` and `deserializeWorkbook` existed because, the file said, structured clone "does NOT handle Map". It does — `Map`, `Date` and `Uint8Array` have been part of the algorithm in every runtime hucre supports — so the two functions converted a `Workbook` into a shape `postMessage` could already carry.
+
+```diff
+- worker.postMessage(serializeWorkbook(wb))
++ worker.postMessage(wb)
+```
+
+```diff
+- const wb = deserializeWorkbook(event.data)
++ const wb = event.data
+```
+
+A channel that carries only JSON — a message queue, a file — takes `workbookToJson` / `jsonToWorkbook`, which existed already. `test/clone-sheet-coverage.test.ts` now asserts that a full `Workbook` survives `structuredClone`, so the model cannot quietly grow a type that would break `postMessage`.
+
 ---
 
 # Migrating to v1

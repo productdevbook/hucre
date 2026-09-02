@@ -59,8 +59,6 @@ import {
   replaceCells,
   sortRows,
   // Worker
-  serializeWorkbook,
-  deserializeWorkbook,
   // Cell utils
   parseCellRef,
   colToLetter,
@@ -163,10 +161,7 @@ describe("Coverage gaps: every exported function is callable (#135)", () => {
     expect(typeof sortRows).toBe("function")
   })
 
-  it("all worker helpers exist", () => {
-    expect(typeof serializeWorkbook).toBe("function")
-    expect(typeof deserializeWorkbook).toBe("function")
-  })
+  it("all worker helpers exist", () => {})
 
   it("all cell utils exist", () => {
     expect(typeof parseCellRef).toBe("function")
