@@ -33,6 +33,7 @@ import {
   cellRef,
   hasRowAttributes,
   rowAttributes,
+  serializeAutoFilter,
   serializeCell,
   serializeConditionalFormatting,
   type ResolvedCell,
@@ -923,7 +924,7 @@ async function* xlsxStreamEntries(
       // writer (and ECMA-376): autoFilter → mergeCells → conditionalFormatting.
       let sheetTail = "</sheetData>"
       if (part === 0 && sheet.autoFilter) {
-        sheetTail += xmlSelfClose("autoFilter", { ref: sheet.autoFilter.range })
+        sheetTail += serializeAutoFilter(sheet.autoFilter)
       }
       if (part === 0 && sheet.merges?.length) {
         sheetTail += serializeMergeCells(sheet.merges)

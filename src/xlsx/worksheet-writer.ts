@@ -3,6 +3,7 @@
 
 import { toRanges } from "../cell-utils"
 import type {
+  AutoFilter,
   RowDef,
   WriteSheet,
   CellValue,
@@ -568,22 +569,7 @@ export function writeWorksheetXml(
 
   // ── Auto Filter (OOXML: after sheetProtection, before mergeCells) ──
   if (sheet.autoFilter) {
-    if (sheet.autoFilter.columns && sheet.autoFilter.columns.length > 0) {
-      const filterChildren: string[] = []
-      for (const col of sheet.autoFilter.columns) {
-        if (col.filters && col.filters.length > 0) {
-          const filterElements = col.filters.map((v) => xmlSelfClose("filter", { val: v }))
-          filterChildren.push(
-            xmlElement("filterColumn", { colId: col.colIndex }, [
-              xmlElement("filters", undefined, filterElements),
-            ]),
-          )
-        }
-      }
-      parts.push(xmlElement("autoFilter", { ref: sheet.autoFilter.range }, filterChildren))
-    } else {
-      parts.push(xmlSelfClose("autoFilter", { ref: sheet.autoFilter.range }))
-    }
+    parts.push(serializeAutoFilter(sheet.autoFilter))
   }
 
   // ── Merge Cells ──
@@ -1608,6 +1594,30 @@ function serializeFontProps(font: FontStyle): string[] {
   }
 
   return parts
+}
+
+// ── Auto Filter Serialization ────────────────────────────────────
+
+/**
+ * Serialize an `<autoFilter>` element, including optional `<filterColumn>` children
+ * when column criteria are configured.
+ */
+export function serializeAutoFilter(autoFilter: AutoFilter): string {
+  if (autoFilter.columns && autoFilter.columns.length > 0) {
+    const filterChildren: string[] = []
+    for (const col of autoFilter.columns) {
+      if (col.filters && col.filters.length > 0) {
+        const filterElements = col.filters.map((v) => xmlSelfClose("filter", { val: v }))
+        filterChildren.push(
+          xmlElement("filterColumn", { colId: col.colIndex }, [
+            xmlElement("filters", undefined, filterElements),
+          ]),
+        )
+      }
+    }
+    return xmlElement("autoFilter", { ref: autoFilter.range }, filterChildren)
+  }
+  return xmlSelfClose("autoFilter", { ref: autoFilter.range })
 }
 
 // ── Conditional Formatting Serialization ─────────────────────────

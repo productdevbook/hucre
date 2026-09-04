@@ -400,6 +400,43 @@ describe("writeXlsxStream", () => {
       range: "B2:B3",
     })
   })
+
+  it("emits autoFilter filterColumn children when columns are configured", async () => {
+    const bytes = await collect(
+      writeXlsxStream(
+        [
+          ["Status", "Name", "Value"],
+          ["Active", "Alice", 100],
+          ["Pending", "Bob", 200],
+          ["Active", "Charlie", 300],
+        ],
+        {
+          name: "Filtered",
+          autoFilter: {
+            range: "A1:C4",
+            columns: [{ colIndex: 0, filters: ["Active", "Pending"] }],
+          },
+        },
+      ),
+    )
+
+    const zip = new ZipReader(bytes)
+    const sheetXml = new TextDecoder().decode(await zip.extract("xl/worksheets/sheet1.xml"))
+
+    expect(sheetXml).toContain('<autoFilter ref="A1:C4">')
+    expect(sheetXml).toContain('<filterColumn colId="0">')
+    expect(sheetXml).toContain('<filter val="Active"/>')
+    expect(sheetXml).toContain('<filter val="Pending"/>')
+    expect(sheetXml).toContain("</filterColumn>")
+    expect(sheetXml).toContain("</autoFilter>")
+    expect(sheetXml).not.toContain('<autoFilter ref="A1:C4"/>')
+
+    const workbook = await readXlsx(bytes)
+    expect(workbook.sheets[0].autoFilter).toEqual({
+      range: "A1:C4",
+      columns: [{ colIndex: 0, filters: ["Active", "Pending"] }],
+    })
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════════════
