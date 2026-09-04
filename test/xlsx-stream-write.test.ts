@@ -355,6 +355,88 @@ describe("writeXlsxStream", () => {
 
     expect(streamedBook.sheets[0].rows).toEqual(bufferedBook.sheets[0].rows)
   })
+
+  it("emits autoFilter and conditionalFormatting in the worksheet XML", async () => {
+    const bytes = await collect(
+      writeXlsxStream(
+        [
+          ["Name", "Score"],
+          ["Alice", 95],
+          ["Bob", 60],
+        ],
+        {
+          name: "Data",
+          autoFilter: { range: "A1:B3" },
+          conditionalRules: [
+            {
+              type: "cellIs",
+              priority: 1,
+              operator: "greaterThan",
+              formula: "80",
+              range: "B2:B3",
+              style: { font: { bold: true } },
+            },
+          ],
+        },
+      ),
+    )
+
+    const zip = new ZipReader(bytes)
+    const sheetXml = new TextDecoder().decode(await zip.extract("xl/worksheets/sheet1.xml"))
+
+    expect(sheetXml).toContain('<autoFilter ref="A1:B3"/>')
+    expect(sheetXml).toContain("<conditionalFormatting")
+    expect(sheetXml).toContain('sqref="B2:B3"')
+    expect(sheetXml).toContain('type="cellIs"')
+    expect(sheetXml).toContain('operator="greaterThan"')
+
+    // Round-trip through the reader.
+    const workbook = await readXlsx(bytes)
+    expect(workbook.sheets[0].autoFilter).toEqual({ range: "A1:B3" })
+    expect(workbook.sheets[0].conditionalRules).toHaveLength(1)
+    expect(workbook.sheets[0].conditionalRules![0]).toMatchObject({
+      type: "cellIs",
+      operator: "greaterThan",
+      range: "B2:B3",
+    })
+  })
+
+  it("emits autoFilter filterColumn children when columns are configured", async () => {
+    const bytes = await collect(
+      writeXlsxStream(
+        [
+          ["Status", "Name", "Value"],
+          ["Active", "Alice", 100],
+          ["Pending", "Bob", 200],
+          ["Active", "Charlie", 300],
+        ],
+        {
+          name: "Filtered",
+          autoFilter: {
+            range: "A1:C4",
+            columns: [{ colIndex: 0, filters: ["Active", "Pending"] }],
+          },
+        },
+      ),
+    )
+
+    const zip = new ZipReader(bytes)
+    const sheetXml = new TextDecoder().decode(await zip.extract("xl/worksheets/sheet1.xml"))
+
+    expect(sheetXml).toContain('<autoFilter ref="A1:C4">')
+    expect(sheetXml).toContain('<filterColumn colId="0">')
+    expect(sheetXml).toContain('<filter val="Active"/>')
+    expect(sheetXml).toContain('<filter val="Pending"/>')
+    expect(sheetXml).toContain("</filterColumn>")
+    expect(sheetXml).toContain("</autoFilter>")
+    expect(sheetXml).not.toContain('<autoFilter ref="A1:C4"/>')
+
+    const workbook = await readXlsx(bytes)
+    expect(workbook.sheets[0].autoFilter).toEqual({
+      range: "A1:C4",
+      columns: [{ colIndex: 0, filters: ["Active", "Pending"] }],
+    })
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════════════

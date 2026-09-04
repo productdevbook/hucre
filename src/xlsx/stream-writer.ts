@@ -12,9 +12,11 @@
 //   memory is O(distinct styles), independent of row count.
 
 import type {
+  AutoFilter,
   CellValue,
   CellStyle,
   ColumnDef,
+  ConditionalRule,
   FreezePane,
   MergeRange,
   RowDef,
@@ -31,7 +33,9 @@ import {
   cellRef,
   hasRowAttributes,
   rowAttributes,
+  serializeAutoFilter,
   serializeCell,
+  serializeConditionalFormatting,
   type ResolvedCell,
 } from "./worksheet-writer"
 import type { SharedStringsCollector } from "./worksheet-writer"
@@ -86,6 +90,16 @@ export interface StreamWriterOptions {
    * do not have to be known before the rows are streamed.
    */
   merges?: Array<MergeRange | string>
+  /**
+   * Auto-filter range. Written after the sheet data of the first sheet
+   * (and before merges), matching the buffered writer.
+   */
+  autoFilter?: AutoFilter
+  /**
+   * Conditional formatting rules. Written after the sheet data of the first
+   * sheet, matching the buffered writer.
+   */
+  conditionalRules?: ConditionalRule[]
 }
 
 /**
@@ -195,6 +209,10 @@ export interface XlsxStreamSheet {
   rowDefs?: Map<number, RowDef>
   /** Merged ranges for this sheet; see {@link StreamWriterOptions.merges}. */
   merges?: Array<MergeRange | string>
+  /** Auto-filter for this sheet; see {@link StreamWriterOptions.autoFilter}. */
+  autoFilter?: AutoFilter
+  /** Conditional formatting for this sheet; see {@link StreamWriterOptions.conditionalRules}. */
+  conditionalRules?: ConditionalRule[]
   /** Overrides the workbook-level rollover cap for this sheet alone. */
   maxRowsPerSheet?: number
   /** Overrides the workbook-level header repetition for this sheet alone. */
@@ -205,7 +223,8 @@ export interface XlsxStreamSheet {
  * Workbook-wide options for {@link writeXlsxStreamSheets}.
  *
  * The per-sheet half of {@link XlsxWriteStreamOptions} — `name`,
- * `columns`, `freezePane`, `rowDefs`, `merges` — moves to
+ * `columns`, `freezePane`, `rowDefs`, `merges`, `autoFilter`,
+ * `conditionalRules` — moves to
  * {@link XlsxStreamSheet}, since a multi-sheet workbook has one of each
  * *per sheet*. What is left is what
  * a workbook has exactly one of: the date system, the string strategy,
@@ -752,9 +771,13 @@ export function writeXlsxStream(
   rows: AsyncIterable<XlsxStreamRow> | Iterable<XlsxStreamRow>,
   options: XlsxWriteStreamOptions,
 ): ReadableStream<Uint8Array> {
-  const { name, columns, freezePane, rowDefs, merges, ...workbook } = options
+  const { name, columns, freezePane, rowDefs, merges, autoFilter, conditionalRules, ...workbook } =
+    options
 
-  return writeXlsxStreamSheets([{ name, rows, columns, freezePane, rowDefs, merges }], workbook)
+  return writeXlsxStreamSheets(
+    [{ name, rows, columns, freezePane, rowDefs, merges, autoFilter, conditionalRules }],
+    workbook,
+  )
 }
 
 /**
@@ -895,12 +918,19 @@ async function* xlsxStreamEntries(
         }
       }
 
-      // Merges belong to the sheet's first part: a rollover splits one
+      // Tail elements belong to the sheet's first part: a rollover splits one
       // logical sheet into several, and a range copied onto the continuation
-      // would cover rows it was never meant to.
+      // would cover rows it was never meant to. Order matches the buffered
+      // writer (and ECMA-376): autoFilter → mergeCells → conditionalFormatting.
       let sheetTail = "</sheetData>"
+      if (part === 0 && sheet.autoFilter) {
+        sheetTail += serializeAutoFilter(sheet.autoFilter)
+      }
       if (part === 0 && sheet.merges?.length) {
         sheetTail += serializeMergeCells(sheet.merges)
+      }
+      if (part === 0 && sheet.conditionalRules?.length) {
+        sheetTail += serializeConditionalFormatting(sheet.conditionalRules, styles).join("")
       }
       sheetTail += "</worksheet>"
       const closeChunk = chunker.push(sheetTail)
