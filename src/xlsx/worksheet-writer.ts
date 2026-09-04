@@ -1616,7 +1616,7 @@ function serializeFontProps(font: FontStyle): string[] {
  * Serialize conditional formatting rules into `<conditionalFormatting>` XML blocks.
  * Rules are grouped by range (sqref) — multiple rules on the same range go into one element.
  */
-function serializeConditionalFormatting(
+export function serializeConditionalFormatting(
   rules: ConditionalRule[],
   styles: StylesCollector,
 ): string[] {

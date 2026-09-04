@@ -355,6 +355,51 @@ describe("writeXlsxStream", () => {
 
     expect(streamedBook.sheets[0].rows).toEqual(bufferedBook.sheets[0].rows)
   })
+
+  it("emits autoFilter and conditionalFormatting in the worksheet XML", async () => {
+    const bytes = await collect(
+      writeXlsxStream(
+        [
+          ["Name", "Score"],
+          ["Alice", 95],
+          ["Bob", 60],
+        ],
+        {
+          name: "Data",
+          autoFilter: { range: "A1:B3" },
+          conditionalRules: [
+            {
+              type: "cellIs",
+              priority: 1,
+              operator: "greaterThan",
+              formula: "80",
+              range: "B2:B3",
+              style: { font: { bold: true } },
+            },
+          ],
+        },
+      ),
+    )
+
+    const zip = new ZipReader(bytes)
+    const sheetXml = new TextDecoder().decode(await zip.extract("xl/worksheets/sheet1.xml"))
+
+    expect(sheetXml).toContain('<autoFilter ref="A1:B3"/>')
+    expect(sheetXml).toContain("<conditionalFormatting")
+    expect(sheetXml).toContain('sqref="B2:B3"')
+    expect(sheetXml).toContain('type="cellIs"')
+    expect(sheetXml).toContain('operator="greaterThan"')
+
+    // Round-trip through the reader.
+    const workbook = await readXlsx(bytes)
+    expect(workbook.sheets[0].autoFilter).toEqual({ range: "A1:B3" })
+    expect(workbook.sheets[0].conditionalRules).toHaveLength(1)
+    expect(workbook.sheets[0].conditionalRules![0]).toMatchObject({
+      type: "cellIs",
+      operator: "greaterThan",
+      range: "B2:B3",
+    })
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════════════
