@@ -216,18 +216,158 @@ describe("XLS (BIFF8) reader", () => {
     expect(wb.sheets[0].rows[1][1]).toBe(95)
   })
 
-  it("rejects BIFF5/7 (0x0500) workbooks with a clear error", async () => {
-    // A globals BOF declaring BIFF version 0x0500 (Excel 5/95), then EOF.
-    const biff5Bof = record(SID.BOF, [
-      ...u16(0x0500),
+  it("rejects a BIFF version it does not read with a clear error", async () => {
+    const bof3 = record(SID.BOF, [
+      ...u16(0x0300),
       ...u16(0x0005),
       ...u16(0),
       ...u16(0),
       ...u32(0),
       ...u32(0),
     ])
-    const stream = concat([biff5Bof, eof()])
+    const stream = concat([bof3, eof()])
     const data = writeCfb([{ name: "Workbook", data: stream }])
-    await expect(readXls(data)).rejects.toThrow(/BIFF/)
+    await expect(readXls(data)).rejects.toThrow(/BIFF 0x300/)
+  })
+})
+
+// ── Minimal BIFF5 .xls builder (test-only) ───────────────────────────
+// Excel 5.0/95: the same records, but every string is bytes in the
+// workbook's code page with no per-string flag, cell text is written
+// inline (LABEL / RSTRING — there is no SST), and the stream is "Book".
+
+/** Windows-1251 bytes for the Cyrillic and ASCII this file needs. */
+function cp1251(s: string): number[] {
+  const extras: Record<string, number> = {
+    Є: 0xaa,
+    І: 0xb2,
+    Ї: 0xaf,
+    є: 0xba,
+    і: 0xb3,
+    ї: 0xbf,
+  }
+  return [...s].map((ch) => {
+    const code = ch.charCodeAt(0)
+    if (code < 0x80) return code
+    if (code >= 0x410 && code <= 0x44f) return 0xc0 + (code - 0x410)
+    const extra = extras[ch]
+    if (extra === undefined) throw new Error(`no cp1251 byte for ${ch}`)
+    return extra
+  })
+}
+const bytesStr = (bytes: number[]): number[] => [...u16(bytes.length), ...bytes]
+const shortBytesStr = (bytes: number[]): number[] => [bytes.length, ...bytes]
+
+const SID5 = { CODEPAGE: 0x0042, RSTRING: 0x00d6, STRING: 0x0207 }
+
+const bof5 = (dt: number): number[] =>
+  record(SID.BOF, [...u16(0x0500), ...u16(dt), ...u16(0), ...u16(0)])
+
+function buildXls5(
+  opts: {
+    codepage?: number
+    text?: number[]
+    stream?: string
+  } = {},
+): Uint8Array {
+  const text = opts.text ?? cp1251("Видаткова накладна")
+  const sheet = concat([
+    bof5(0x0010),
+    record(SID.LABEL, [...u16(0), ...u16(0), ...u16(0), ...bytesStr(text)]),
+    // Rich text: the string, then one run (u8 first char, u8 font).
+    record(SID5.RSTRING, [...u16(0), ...u16(1), ...u16(0), ...bytesStr(cp1251("Ціна")), 1, 0, 0]),
+    record(SID.RK, [...u16(1), ...u16(0), ...u16(0), ...rkInt(95)]),
+    record(SID.NUMBER, [...u16(1), ...u16(1), ...u16(1), ...f64(45000)]), // date xf
+    record(SID.NUMBER, [...u16(1), ...u16(2), ...u16(2), ...f64(481227827687)]), // redefined id 50
+    // A string formula: the cached value rides the STRING record after it.
+    record(SID.FORMULA, [
+      ...u16(2),
+      ...u16(0),
+      ...u16(0),
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0xff,
+      0xff,
+      ...u16(0),
+      ...u32(0),
+      ...u16(0),
+    ]),
+    record(SID5.STRING, bytesStr(cp1251("Разом"))),
+    record(SID.BOOLERR, [...u16(2), ...u16(1), ...u16(0), 1, 0]),
+    record(SID.MULRK, [...u16(3), ...u16(0), ...u16(0), ...rkInt(10), ...u16(0), ...rkInt(20)]),
+    // Written by 1C into BIFF5 files although the record is BIFF8's.
+    record(SID.MERGECELLS, [...u16(1), ...u16(0), ...u16(0), ...u16(0), ...u16(1)]),
+    eof(),
+  ])
+
+  const makeGlobals = (sheetPos: number): Uint8Array =>
+    concat([
+      bof5(0x0005),
+      ...(opts.codepage === undefined ? [] : [record(SID5.CODEPAGE, u16(opts.codepage))]),
+      record(SID.DATEMODE, u16(0)),
+      // BIFF5 FORMAT: u16 id + u8-counted byte string — parsed as BIFF8's
+      // u16-counted Unicode string this would read as neither id nor code.
+      record(SID.FORMAT, [...u16(50), ...shortBytesStr(cp1251("000000000000"))]),
+      record(SID.XF, [...u16(0), ...u16(0), ...Array.from({ length: 12 }, () => 0)]),
+      record(SID.XF, [...u16(0), ...u16(14), ...Array.from({ length: 12 }, () => 0)]),
+      record(SID.XF, [...u16(0), ...u16(50), ...Array.from({ length: 12 }, () => 0)]),
+      record(SID.BOUNDSHEET, [...u32(sheetPos), 0, 0, ...shortBytesStr(cp1251("Лист1"))]),
+      eof(),
+    ])
+
+  const globalsLen = makeGlobals(0).length
+  const globals = makeGlobals(globalsLen)
+  return writeCfb([{ name: opts.stream ?? "Book", data: concat([globals, sheet]) }])
+}
+
+describe("XLS (BIFF5) reader", () => {
+  it("reads sheet names, cell text, format codes and values through the CODEPAGE record", async () => {
+    const wb = await readXls(buildXls5({ codepage: 1251 }))
+
+    expect(wb.sheets[0].name).toBe("Лист1")
+    const rows = wb.sheets[0].rows
+    expect(rows[0]).toEqual(["Видаткова накладна", "Ціна", null])
+    expect(rows[1][0]).toBe(95)
+    expect(rows[1][1]).toBeInstanceOf(Date)
+    // The BIFF5 FORMAT record was read, so id 50 is the barcode mask, not a date.
+    expect(rows[1][2]).toBe(481227827687)
+    expect(rows[2]).toEqual(["Разом", true, null])
+    expect(rows[3]).toEqual([10, 20, null])
+    expect(wb.sheets[0].merges).toEqual([{ startRow: 0, endRow: 0, startCol: 0, endCol: 1 }])
+  })
+
+  it("falls back to `codepage` when the workbook carries no CODEPAGE record", async () => {
+    // 1C exports write Cyrillic text and no CODEPAGE record at all.
+    const wb = await readXls(buildXls5(), { codepage: 1251 })
+
+    expect(wb.sheets[0].name).toBe("Лист1")
+    expect(wb.sheets[0].rows[0][0]).toBe("Видаткова накладна")
+  })
+
+  it("assumes Windows-1252 when neither the file nor the caller names a page", async () => {
+    const wb = await readXls(buildXls5({ text: [0x43, 0x61, 0x66, 0xe9] })) // Café
+
+    expect(wb.sheets[0].rows[0][0]).toBe("Café")
+  })
+
+  it("lets the file's CODEPAGE record win over the option", async () => {
+    const wb = await readXls(buildXls5({ codepage: 1251 }), { codepage: 1252 })
+
+    expect(wb.sheets[0].rows[0][0]).toBe("Видаткова накладна")
+  })
+
+  it("refuses a code page it cannot decode rather than guessing", async () => {
+    await expect(readXls(buildXls5(), { codepage: 437 })).rejects.toThrow(/codepage 437/)
+    await expect(readXls(buildXls5({ codepage: 437 }))).rejects.toThrow(/codepage 437/)
+  })
+
+  it("is auto-detected by read() through the Book stream", async () => {
+    const wb = await read(buildXls5({ codepage: 1251 }))
+
+    expect(wb.sheets[0].rows[0][0]).toBe("Видаткова накладна")
   })
 })

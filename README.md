@@ -699,16 +699,21 @@ the binary style table, honouring the workbook's own 1900/1904 date
 system). Read-only; password-protected `.xlsb` also decrypts with
 `{ password }`.
 
-### XLS (Legacy Excel 97-2003) — read
+### XLS (Legacy Excel 5.0–2003) — read
 
-Read legacy `.xls` (BIFF8) files — the OLE2/CFB binary format from Excel
-97-2003. `read()` auto-detects it, or call `readXls`:
+Read legacy `.xls` files — the OLE2/CFB binary format from Excel 97-2003
+(BIFF8) and Excel 5.0/95 (BIFF5/7, still what some 1C installs export).
+`read()` auto-detects it, or call `readXls`:
 
 ```ts
 import { read, readXls } from "hucre"
 
 const wb = await readXls(bytes)
 const same = await read(bytes) // auto-detected
+
+// A BIFF5 file stores text in one Windows code page. The file's own
+// CODEPAGE record wins; `codepage` covers a file that has none.
+const cyrillic = await readXls(bytes, { codepage: 1251 })
 ```
 
 Decodes the shared-string table (with CONTINUE spanning), RK / MULRK /

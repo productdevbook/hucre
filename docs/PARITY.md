@@ -711,20 +711,23 @@ No writer exists for either. What the readers surface is narrower than
 XLSX, which matters because converting to XLSX can only carry what was
 read:
 
-|                                                 | XLS (BIFF8) | XLSB |
-| ----------------------------------------------- | ----------- | ---- |
-| Sheet names, strings, numbers, booleans, errors | yes         | yes  |
-| Dates, honouring the file's 1900/1904 flag      | yes         | yes  |
-| Formula **values** (never the formula text)     | yes         | yes  |
-| Merges                                          | yes         | yes  |
-| Everything else on `Sheet` / `Workbook`         | no          | no   |
+|                                                 | XLS (BIFF5 / BIFF8) | XLSB |
+| ----------------------------------------------- | ------------------- | ---- |
+| Sheet names, strings, numbers, booleans, errors | yes                 | yes  |
+| Dates, honouring the file's 1900/1904 flag      | yes                 | yes  |
+| Formula **values** (never the formula text)     | yes                 | yes  |
+| Merges                                          | yes                 | yes  |
+| Everything else on `Sheet` / `Workbook`         | no                  | no   |
 
 So **XLS/XLSB → XLSX is a values-and-names conversion**. Every formula
 becomes a hard-coded value, styles and dimensions are dropped, hidden
 sheets become visible, and workbook properties and named ranges are lost.
 
-BIFF5 and BIFF7 are rejected outright rather than misread — only BIFF8
-(Excel 97-2003) is supported.
+BIFF5 and BIFF7 (Excel 5.0/95) read the same set. Their text is bytes in
+one Windows code page: the file's CODEPAGE record names it, `codepage`
+stands in for a file that carries none (1C exports do this), and
+Windows-1252 is the last resort. Anything older is rejected outright
+rather than misread.
 
 ## CSV / TSV
 

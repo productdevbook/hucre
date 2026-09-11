@@ -1552,6 +1552,19 @@ export interface ReadOptions {
   readStyles?: boolean
   /** Password for encrypted files */
   password?: string
+  /**
+   * The Windows code page a BIFF5/7 `.xls` (Excel 5.0/95) stores its text
+   * in, for a workbook that does not say. Default: 1252.
+   *
+   * Those workbooks hold every string as bytes in one code page, named by
+   * the globals' CODEPAGE record — which wins over this whenever it is
+   * present. Files that carry none are what this is for: some 1C exports
+   * write Cyrillic text without one, and read as Windows-1252 every
+   * letter comes back wrong with nothing to say so. A page the runtime's
+   * `TextDecoder` cannot decode is a `ParseError`. BIFF8 strings carry
+   * their own encoding flag and never consult it.
+   */
+  codepage?: number
   /** Maximum number of data rows to read per sheet. Default: unlimited */
   maxRows?: number
   /** Cell range to read (e.g. "A1:D10"). Only cells within this range are returned. */
