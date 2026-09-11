@@ -266,14 +266,24 @@ const bof5 = (dt: number): number[] =>
 function buildXls5(
   opts: {
     codepage?: number
+    /** Raw CODEPAGE payload, for a malformed record. */
+    codepageRecord?: number[]
     text?: number[]
+    /** The count the first LABEL claims, when it should lie about its bytes. */
+    textCount?: number
     stream?: string
   } = {},
 ): Uint8Array {
   const text = opts.text ?? cp1251("Видаткова накладна")
   const sheet = concat([
     bof5(0x0010),
-    record(SID.LABEL, [...u16(0), ...u16(0), ...u16(0), ...bytesStr(text)]),
+    record(SID.LABEL, [
+      ...u16(0),
+      ...u16(0),
+      ...u16(0),
+      ...u16(opts.textCount ?? text.length),
+      ...text,
+    ]),
     // Rich text: the string, then one run (u8 first char, u8 font).
     record(SID5.RSTRING, [...u16(0), ...u16(1), ...u16(0), ...bytesStr(cp1251("Ціна")), 1, 0, 0]),
     record(SID.RK, [...u16(1), ...u16(0), ...u16(0), ...rkInt(95)]),
@@ -298,7 +308,15 @@ function buildXls5(
     ]),
     record(SID5.STRING, bytesStr(cp1251("Разом"))),
     record(SID.BOOLERR, [...u16(2), ...u16(1), ...u16(0), 1, 0]),
-    record(SID.MULRK, [...u16(3), ...u16(0), ...u16(0), ...rkInt(10), ...u16(0), ...rkInt(20)]),
+    record(SID.MULRK, [
+      ...u16(3),
+      ...u16(0),
+      ...u16(0),
+      ...rkInt(10),
+      ...u16(0),
+      ...rkInt(20),
+      ...u16(1),
+    ]),
     // Written by 1C into BIFF5 files although the record is BIFF8's.
     record(SID.MERGECELLS, [...u16(1), ...u16(0), ...u16(0), ...u16(0), ...u16(1)]),
     eof(),
@@ -307,7 +325,11 @@ function buildXls5(
   const makeGlobals = (sheetPos: number): Uint8Array =>
     concat([
       bof5(0x0005),
-      ...(opts.codepage === undefined ? [] : [record(SID5.CODEPAGE, u16(opts.codepage))]),
+      ...(opts.codepageRecord
+        ? [record(SID5.CODEPAGE, opts.codepageRecord)]
+        : opts.codepage === undefined
+          ? []
+          : [record(SID5.CODEPAGE, u16(opts.codepage))]),
       record(SID.DATEMODE, u16(0)),
       // BIFF5 FORMAT: u16 id + u8-counted byte string — parsed as BIFF8's
       // u16-counted Unicode string this would read as neither id nor code.
@@ -349,9 +371,25 @@ describe("XLS (BIFF5) reader", () => {
   })
 
   it("assumes Windows-1252 when neither the file nor the caller names a page", async () => {
-    const wb = await readXls(buildXls5({ text: [0x43, 0x61, 0x66, 0xe9] })) // Café
+    // 0x80 is € in Windows-1252 and a control character in Latin-1, so a
+    // byte-for-code-point fallback cannot pass this by accident.
+    const wb = await readXls(buildXls5({ text: [0x80, 0x31, 0x32] }))
 
-    expect(wb.sheets[0].rows[0][0]).toBe("Café")
+    expect(wb.sheets[0].rows[0][0]).toBe("€12")
+  })
+
+  it("refuses a string that claims more bytes than its record holds", async () => {
+    // `subarray` clamps, so without the check this would read back as a
+    // silently shortened string rather than an error.
+    await expect(readXls(buildXls5({ codepage: 1251, textCount: 500 }))).rejects.toThrow(
+      /claims 500 bytes/,
+    )
+  })
+
+  it("refuses a CODEPAGE record too short to name a page", async () => {
+    await expect(readXls(buildXls5({ codepageRecord: [0xe3] }))).rejects.toThrow(
+      /CODEPAGE record is too short/,
+    )
   })
 
   it("lets the file's CODEPAGE record win over the option", async () => {

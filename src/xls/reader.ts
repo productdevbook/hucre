@@ -84,6 +84,13 @@ const BIFF8_STRINGS: BiffStrings = {
 
 function biff5Strings(decode: (bytes: Uint8Array) => string): BiffStrings {
   const bytes = (r: Reader, cch: number): string => {
+    // `subarray` clamps, so an over-long count would hand back a silently
+    // shortened string instead of the error a truncated record deserves.
+    if (cch > r.remaining()) {
+      throw new ParseError(
+        `Invalid XLS: string claims ${cch} bytes but its record has ${r.remaining()} left`,
+      )
+    }
     const s = decode(r.buf.subarray(r.pos, r.pos + cch))
     r.skip(cch)
     return s
@@ -102,7 +109,10 @@ function biff5Strings(decode: (bytes: Uint8Array) => string): BiffStrings {
 function findCodepage(records: BiffRecord[]): number | undefined {
   for (const rec of records) {
     if (rec.id === SID.EOF) return undefined
-    if (rec.id === SID.CODEPAGE && rec.data.length >= 2) return new Reader(rec.data).u16()
+    if (rec.id === SID.CODEPAGE) {
+      if (rec.data.length < 2) throw new ParseError("Invalid XLS: CODEPAGE record is too short")
+      return new Reader(rec.data).u16()
+    }
   }
   return undefined
 }
@@ -120,6 +130,7 @@ function parseWorkbookRecords(stream: Uint8Array, options?: ReadOptions): Workbo
   if (!bof || bof.id !== SID.BOF) {
     throw new ParseError("Invalid XLS: missing BOF record at start of Workbook stream")
   }
+  // A BOF too short to carry a version is read as BIFF8, as it always was.
   const biffVersion = bof.data.length >= 2 ? new Reader(bof.data).u16() : BIFF8
   if (biffVersion !== BIFF8 && biffVersion !== BIFF5) {
     throw new ParseError(
