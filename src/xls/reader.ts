@@ -356,7 +356,9 @@ function parseSheet(
         const row = r.u16(),
           col = r.u16()
         r.u16() // ixfe
-        setCell(row, col, strings.long(r))
+        const text = strings.long(r)
+        if (rec.id === SID.RSTRING) skipBiff5Runs(r)
+        setCell(row, col, text)
         break
       }
       case SID.FORMULA: {
@@ -411,6 +413,23 @@ function parseSheet(
   const sheet: Sheet = { name, rows }
   if (merges.length > 0) sheet.merges = merges
   return sheet
+}
+
+/**
+ * The BIFF5 RSTRING trailer: a u8 run count, then two bytes per run (first
+ * character, font). Narrower than BIFF8's FormatRun (u16 + u16), which is
+ * what the SST path skips. Read for the same reason readSstString skips
+ * its runs: a record that stops short of what it announces is malformed.
+ */
+function skipBiff5Runs(r: Reader): void {
+  if (r.remaining() < 1) throw new ParseError("Invalid XLS: RSTRING record has no run count")
+  const runs = r.u8()
+  if (r.remaining() < runs * 2) {
+    throw new ParseError(
+      `Invalid XLS: RSTRING claims ${runs} formatting runs but its record has ${r.remaining()} bytes left`,
+    )
+  }
+  r.skip(runs * 2)
 }
 
 // ── BIFF8 string helpers ─────────────────────────────────────────────

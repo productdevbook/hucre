@@ -271,10 +271,13 @@ function buildXls5(
     text?: number[]
     /** The count the first LABEL claims, when it should lie about its bytes. */
     textCount?: number
+    /** The RSTRING trailer: a u8 run count, then (first char, font) byte pairs. */
+    richRuns?: number[]
     stream?: string
   } = {},
 ): Uint8Array {
   const text = opts.text ?? cp1251("Видаткова накладна")
+  const richRuns = opts.richRuns ?? [1, 0, 0]
   const sheet = concat([
     bof5(0x0010),
     record(SID.LABEL, [
@@ -284,8 +287,14 @@ function buildXls5(
       ...u16(opts.textCount ?? text.length),
       ...text,
     ]),
-    // Rich text: the string, then one run (u8 first char, u8 font).
-    record(SID5.RSTRING, [...u16(0), ...u16(1), ...u16(0), ...bytesStr(cp1251("Ціна")), 1, 0, 0]),
+    // Rich text: the string, then the runs (u8 count, u8 first char + u8 font each).
+    record(SID5.RSTRING, [
+      ...u16(0),
+      ...u16(1),
+      ...u16(0),
+      ...bytesStr(cp1251("Ціна")),
+      ...richRuns,
+    ]),
     record(SID.RK, [...u16(1), ...u16(0), ...u16(0), ...rkInt(95)]),
     record(SID.NUMBER, [...u16(1), ...u16(1), ...u16(1), ...f64(45000)]), // date xf
     record(SID.NUMBER, [...u16(1), ...u16(2), ...u16(2), ...f64(481227827687)]), // redefined id 50
@@ -383,6 +392,15 @@ describe("XLS (BIFF5) reader", () => {
     // silently shortened string rather than an error.
     await expect(readXls(buildXls5({ codepage: 1251, textCount: 500 }))).rejects.toThrow(
       /claims 500 bytes/,
+    )
+  })
+
+  it("refuses an RSTRING whose formatting runs stop short of the count", async () => {
+    await expect(readXls(buildXls5({ codepage: 1251, richRuns: [3, 0, 0] }))).rejects.toThrow(
+      /claims 3 formatting runs/,
+    )
+    await expect(readXls(buildXls5({ codepage: 1251, richRuns: [] }))).rejects.toThrow(
+      /no run count/,
     )
   })
 
