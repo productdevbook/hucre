@@ -391,7 +391,7 @@ function worksheetParser(
   let cellType = ""
   let cellStyleIndex = -1
   let cellValueText = ""
-  let cellFormulaText = ""
+  let cellFormulaText: string | undefined
   let cellFormulaType = "" // "shared", "array", or ""
   let cellFormulaSi = -1 // shared formula index
   let cellFormulaRef = "" // formula ref range
@@ -542,7 +542,7 @@ function worksheetParser(
             cellType = attrs["t"] ?? ""
             cellStyleIndex = attrs["s"] ? Number(attrs["s"]) : -1
             cellValueText = ""
-            cellFormulaText = ""
+            cellFormulaText = undefined
             cellFormulaType = ""
             cellFormulaSi = -1
             cellFormulaRef = ""
@@ -565,6 +565,7 @@ function worksheetParser(
             sparklineF = ""
           } else if (inCell) {
             inFormula = true
+            cellFormulaText = ""
             cellFormulaType = attrs["t"] ?? ""
             if (attrs["si"] !== undefined) {
               cellFormulaSi = Number(attrs["si"])
@@ -1010,7 +1011,7 @@ function worksheetParser(
               cellValueText !== "" ||
               inlineText !== "" ||
               inlineRichText.length > 0 ||
-              cellFormulaText !== "" ||
+              cellFormulaText !== undefined ||
               cellType === "e" ||
               // An empty *inline* string is still a string. The producer
               // wrote `t="inlineStr"` and an `<is>` to say so, which is
@@ -1777,7 +1778,7 @@ function processCell(
   type: string,
   styleIndex: number,
   valueText: string,
-  formulaText: string,
+  formulaText: string | undefined,
   inlineText: string,
   inlineRichText: RichTextRun[] | undefined,
   ctx: WorksheetContext,
@@ -1850,13 +1851,8 @@ function processCell(
   let formulaResult: CellValue | undefined
   let richText: RichTextRun[] | undefined
 
-  // Handle formula (including shared formula slave cells with no text)
-  if (formulaText) {
-    formula = formulaText
-  } else if (formulaType === "shared" && formulaSi !== undefined && formulaSi >= 0) {
-    // Shared formula slave cell: no formula text, but has si attribute
-    formula = ""
-  }
+  // Presence matters: an empty <f/> still owns a cached formula result.
+  formula = formulaText
 
   // Determine cell value based on type
   switch (type) {

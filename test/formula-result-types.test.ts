@@ -159,7 +159,8 @@ describe("cached formula errors stay distinct from text", () => {
           '<c r="C1"><f>2-2</f><v>0</v></c>' +
           '<c r="D1" t="b"><f>1=2</f><v>0</v></c>' +
           '<c r="E1" t="str"><f>""</f><v></v></c>' +
-          '<c r="A2" t="e"><f t="shared" si="0"/><v>#DIV/0!</v></c>',
+          '<c r="A2" t="e"><f t="shared" si="0"/><v>#DIV/0!</v></c>' +
+          '<c r="B2" t="e"><f/><v>#DIV/0!</v></c>',
       ),
     )
     const transferred = deserializeWorkbook(serializeWorkbook(first))
@@ -176,12 +177,19 @@ describe("cached formula errors stay distinct from text", () => {
       formulaResult: "#DIV/0!",
       formulaResultType: "error",
     })
+    expect(copied.cells?.get("1,1")).toMatchObject({
+      type: "formula",
+      formula: "",
+      formulaResult: "#DIV/0!",
+      formulaResultType: "error",
+    })
     const output = await writeXlsx({ sheets: [toWriteSheet(copied)] })
     const xml = dec.decode(await new ZipReader(output).extract("xl/worksheets/sheet1.xml"))
     expect(xml).toMatch(/<c r="A1"[^>]*t="e"/)
     expect(xml).toMatch(/<c r="A2"[^>]*t="e"/)
     expect(xml).toMatch(/<c r="B1"[^>]*t="str"/)
     const second = (await readXlsx(output)).sheets[0]!
+    expect(second.cells?.get("1,1")).toMatchObject({ formula: "", formulaResultType: "error" })
     expect(second.rows).toEqual(copied.rows)
     expect(second.cells?.get("0,0")).toMatchObject({ formulaResultType: "error" })
     expect(second.cells?.get("1,0")).toMatchObject({ formulaResultType: "error" })
