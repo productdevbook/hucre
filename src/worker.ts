@@ -27,6 +27,7 @@ export interface SerializedCell {
   checkbox?: Cell["checkbox"]
   formula?: Cell["formula"]
   formulaResult?: SerializedCellValue
+  formulaResultType?: Cell["formulaResultType"]
   /**
    * The formula's shape, not just its text. Without these a shared-formula
    * slave cell — `{ formula: "", formulaType: "shared", si }` — arrives as
@@ -155,6 +156,7 @@ function serializeCell(cell: Cell): SerializedCell {
   if (cell.formulaResult !== undefined) {
     out.formulaResult = serializeCellValue(cell.formulaResult)
   }
+  if (cell.formulaResultType !== undefined) out.formulaResultType = cell.formulaResultType
   if (cell.formulaType !== undefined) out.formulaType = cell.formulaType
   if (cell.formulaSharedIndex !== undefined) out.formulaSharedIndex = cell.formulaSharedIndex
   if (cell.formulaRef !== undefined) out.formulaRef = cell.formulaRef
@@ -346,6 +348,7 @@ function deserializeCell(sc: SerializedCell): Cell {
   if (sc.formulaResult !== undefined) {
     cell.formulaResult = deserializeCellValue(sc.formulaResult)
   }
+  if (sc.formulaResultType !== undefined) cell.formulaResultType = sc.formulaResultType
   if (sc.formulaType !== undefined) cell.formulaType = sc.formulaType
   if (sc.formulaSharedIndex !== undefined) cell.formulaSharedIndex = sc.formulaSharedIndex
   if (sc.formulaRef !== undefined) cell.formulaRef = sc.formulaRef

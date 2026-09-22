@@ -890,6 +890,7 @@ function cloneCell(cell: Cell): Cell {
   if (cell.checkbox !== undefined) result.checkbox = cell.checkbox
   if (cell.formula !== undefined) result.formula = cell.formula
   if (cell.formulaResult !== undefined) result.formulaResult = cell.formulaResult
+  if (cell.formulaResultType !== undefined) result.formulaResultType = cell.formulaResultType
   // The formula's *shape*, not just its text. Dropping these turned a
   // shared-formula slave cell — `{ formula: "", formulaType: "shared",
   // formulaSharedIndex: 3 }` — into a plain `{ formula: "" }`, which the

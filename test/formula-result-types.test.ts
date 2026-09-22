@@ -3,6 +3,9 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { ZipReader } from "../src/zip/reader"
 import { ZipWriter } from "../src/zip/writer"
+import { cloneSheet } from "../src/sheet-ops"
+import { toWriteSheet } from "../src/write-model"
+import { serializeWorkbook, deserializeWorkbook } from "../src/worker"
 
 // ═══════════════════════════════════════════════════════════════════════
 // #497 — `Cell.formulaResult` was assigned in exactly one place: the
@@ -144,5 +147,43 @@ describe("the value stays where callers look for it", () => {
     const wb = await readXlsx(await withCells(`${NUMBER}${TEXT}${ERROR}${BOOLEAN}`))
 
     expect(wb.sheets[0]!.rows[0]).toEqual([24, "xy", "#DIV/0!", true])
+  })
+})
+
+describe("cached formula errors stay distinct from text", () => {
+  it("preserves the error tag through read, clone and write without changing v1 values", async () => {
+    const first = await readXlsx(
+      await withCells(
+        '<c r="A1" t="e"><f t="shared" si="0" ref="A1:A2">1/0</f><v>#DIV/0!</v></c>' +
+          '<c r="B1" t="str"><f>"#DIV/0!"</f><v>#DIV/0!</v></c>' +
+          '<c r="C1"><f>2-2</f><v>0</v></c>' +
+          '<c r="D1" t="b"><f>1=2</f><v>0</v></c>' +
+          '<c r="E1" t="str"><f>""</f><v></v></c>' +
+          '<c r="A2" t="e"><f t="shared" si="0"/><v>#DIV/0!</v></c>',
+      ),
+    )
+    const transferred = deserializeWorkbook(serializeWorkbook(first))
+    const copied = cloneSheet(transferred.sheets[0]!, "Copied")
+    expect(copied.rows[0]).toEqual(["#DIV/0!", "#DIV/0!", 0, false, ""])
+    expect(copied.cells?.get("0,0")).toMatchObject({
+      type: "formula",
+      formulaResult: "#DIV/0!",
+      formulaResultType: "error",
+    })
+    expect(copied.cells?.get("0,1")).not.toHaveProperty("formulaResultType")
+    expect(copied.cells?.get("1,0")).toMatchObject({
+      formula: "",
+      formulaResult: "#DIV/0!",
+      formulaResultType: "error",
+    })
+    const output = await writeXlsx({ sheets: [toWriteSheet(copied)] })
+    const xml = dec.decode(await new ZipReader(output).extract("xl/worksheets/sheet1.xml"))
+    expect(xml).toMatch(/<c r="A1"[^>]*t="e"/)
+    expect(xml).toMatch(/<c r="A2"[^>]*t="e"/)
+    expect(xml).toMatch(/<c r="B1"[^>]*t="str"/)
+    const second = (await readXlsx(output)).sheets[0]!
+    expect(second.rows).toEqual(copied.rows)
+    expect(second.cells?.get("0,0")).toMatchObject({ formulaResultType: "error" })
+    expect(second.cells?.get("1,0")).toMatchObject({ formulaResultType: "error" })
   })
 })

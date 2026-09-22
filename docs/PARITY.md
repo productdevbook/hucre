@@ -847,3 +847,13 @@ terminal output format, not an interchange one: it truncates any cell over
 
 Every gap on this page is either a deliberate scope decision or has an
 open issue. Anything else is a bug.
+
+### Cached XLSX error results in v1
+
+`readXlsx` keeps v1 cached results as strings, but marks an error cache with
+`Cell.formulaResultType: "error"`. An ordinary cached string with identical text
+has no error tag. `writeXlsx`, sheet cloning and the worker serialization helpers
+preserve the tag, including shared-formula slaves. Inspect `Sheet.cells` when
+this distinction matters: primitive-only `Sheet.rows` and streaming reads cannot
+carry it. This is a compatibility fix for the v1 value model; it does not adopt
+the broader `CellError` model proposed for v2 in #570.

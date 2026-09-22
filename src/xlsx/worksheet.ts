@@ -1931,8 +1931,8 @@ function processCell(
       // error by its value is unaffected; a *hard-coded* error cell,
       // which carries no formula, still reports `"error"`. See #497.
       value = valueText
-      cellType = formula ? "formula" : "error"
-      if (formula) formulaResult = value
+      cellType = formula !== undefined ? "formula" : "error"
+      if (formula !== undefined) formulaResult = value
       break
     }
     case "d": {
@@ -2036,6 +2036,7 @@ function processCell(
       cell.formula = formula
       if (formulaResult !== undefined) {
         cell.formulaResult = formulaResult
+        if (type === "e") cell.formulaResultType = "error"
       }
       // Store formula type metadata
       if (formulaType === "shared") {

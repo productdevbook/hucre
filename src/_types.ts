@@ -217,6 +217,13 @@ export interface Cell {
   checkbox?: boolean
   formula?: string
   formulaResult?: CellValue
+  /**
+   * A cached XLSX error result. Its value remains a string in v1, so this
+   * tag preserves `t="e"` without treating identical text as an error.
+   * Emitted by readXlsx and honoured by writeXlsx; value-only streams
+   * cannot carry this distinction.
+   */
+  formulaResultType?: "error"
   /** Formula type: "shared" | "array". Undefined means normal formula. */
   formulaType?: "shared" | "array"
   /** Shared formula index (si attribute) */
