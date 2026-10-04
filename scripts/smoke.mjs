@@ -23,6 +23,10 @@ import {
   hasCell,
   deleteCell,
   cellEntries,
+  insertRows,
+  deleteRows,
+  insertColumns,
+  deleteColumns,
 } from "../dist/index.mjs"
 
 let failures = 0
@@ -81,6 +85,34 @@ console.log("cell metadata")
     wb.sheets[0].rows.length === 0 &&
       getCell(wb.sheets[0].cells, 127, 1)?.value === 42 &&
       getCell(wb.sheets[0].cells, 128, 2)?.value === 7,
+  )
+}
+
+console.log("sheet editing")
+{
+  const sheet = {
+    name: "Edit",
+    rows: [
+      [1, 2],
+      [3, 4],
+    ],
+    cells: createCellStore([[1, 1, { value: 4, type: "formula", formula: "Edit!A2" }]]),
+  }
+  insertRows(sheet, 0, 1)
+  insertColumns(sheet, 0, 1)
+  check(
+    "values and own-sheet references move together",
+    sheet.rows.length === 3 &&
+      sheet.rows[2][2] === 4 &&
+      getCell(sheet.cells, 2, 2)?.formula === "Edit!B3",
+  )
+  deleteRows(sheet, 0, 1)
+  deleteColumns(sheet, 0, 1)
+  check(
+    "deletion uses the same coordinate rules",
+    sheet.rows.length === 2 &&
+      sheet.rows[1][1] === 4 &&
+      getCell(sheet.cells, 1, 1)?.formula === "Edit!A2",
   )
 }
 

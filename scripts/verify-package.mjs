@@ -136,7 +136,7 @@ try {
     writeFileSync(
       probe,
       [
-        `import { readXlsx, writeXlsx } from "hucre"`,
+        `import { readXlsx, writeXlsx, insertRows } from "hucre"`,
         `import { writeXlsx as x } from "hucre/xlsx"`,
         `import { parseCsv } from "hucre/csv"`,
         `import { readOds } from "hucre/ods"`,
@@ -158,6 +158,9 @@ try {
         `}`,
         `const wb = await readXlsx(await writeXlsx({ sheets: [{ name: "Metadata", rows: [[1]], cells }] }), { sparse: true })`,
         `if (getCell(wb.sheets[0].cells, 128, 3)?.value !== 42) throw new Error("installed metadata round trip failed")`,
+        `const sheet = { name: "Edit", rows: [[1], [2]], cells: createCellStore([[1, 0, { value: 2, type: "formula", formula: "Edit!A2" }]]) }`,
+        `insertRows(sheet, 0, 1)`,
+        `if (sheet.rows[2][0] !== 2 || getCell(sheet.cells, 2, 0)?.formula !== "Edit!A3") throw new Error("installed editing lost references")`,
         `console.log("entry points ok")`,
       ].join("\n"),
     )

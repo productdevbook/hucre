@@ -1380,6 +1380,13 @@ so a formula below an insertion still points at its own arguments. A
 reference into a deleted row becomes `#REF!`; a range the deletion clips
 shrinks; a reference qualified with another sheet is left alone.
 
+The four insert/delete operations share one editing path. References using
+this sheet's own name follow the edit, including quoted and mixed-case
+names. Multi-area validation and conditional-formatting ranges keep areas
+that survive a deletion. Invalid positions/counts and overflowing grid,
+cell or row-definition insertions fail before changing the sheet. Large
+row batches use the same path without a function argument ceiling.
+
 Two limits worth knowing:
 
 - **Workbook-level references are out of reach.** These functions take a

@@ -51,7 +51,7 @@ function grid(rows: number, cols: number): (string | null)[][] {
 // `sqref="B3"` (no colon). The rewriter has to treat that as a degenerate
 // range rather than dropping the end coordinate.
 describe("range rewriting with colon-less references", () => {
-  it("shifts a single-cell validation range and normalises it to start:end", () => {
+  it("shifts a single-cell validation while preserving its compact reference", () => {
     const s = sheet({
       rows: grid(4, 2),
       dataValidations: [{ type: "list", range: "B3", values: ["x"] }],
@@ -61,9 +61,9 @@ describe("range rewriting with colon-less references", () => {
 
     insertRows(s, 0, 2)
 
-    expect(s.dataValidations![0].range).toBe("B5:B5")
-    expect(s.conditionalRules![0].range).toBe("A4:A4")
-    expect(s.tables![0].range).toBe("A3:A3")
+    expect(s.dataValidations![0].range).toBe("B5")
+    expect(s.conditionalRules![0].range).toBe("A4")
+    expect(s.tables![0].range).toBe("A3")
   })
 
   it("shifts a single-cell reference on column insert too", () => {
@@ -76,9 +76,9 @@ describe("range rewriting with colon-less references", () => {
 
     insertColumns(s, 0, 1)
 
-    expect(s.dataValidations![0].range).toBe("D1:D1")
-    expect(s.conditionalRules![0].range).toBe("E2:E2")
-    expect(s.tables![0].range).toBe("D2:D2")
+    expect(s.dataValidations![0].range).toBe("D1")
+    expect(s.conditionalRules![0].range).toBe("E2")
+    expect(s.tables![0].range).toBe("D2")
   })
 })
 
