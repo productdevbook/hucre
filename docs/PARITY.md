@@ -518,6 +518,14 @@ hyperlinks on any cell type, rich text, multi-section number formats,
 document properties (six fields), and six style facets — bold, italic,
 font size, font colour, background colour, number format.
 
+ODF row repeats carry values and cell metadata together, including cached
+formula results and horizontal merges. The dense allocation bound counts
+the widest row and deferred interior blanks before expansion. `maxRows`
+limits repeated values and metadata together. Excess row/column repeats
+are clamped to the remaining Excel grid capacity; non-numeric and
+nonpositive counts occupy no coordinates. Trailing empty LibreOffice
+padding remains unallocated.
+
 An error cell has no value type of its own in ODF. hucre writes it the way
 LibreOffice does — a string cell carrying the token, marked
 `calcext:value-type="error"` — and reads that mark back into a `CellError`,
@@ -720,6 +728,13 @@ there is nothing for a caller to rescue:
 
 `MAX_SPAN_CELLS` also belongs to `fromHtml`, which takes its own options
 type rather than `ReadOptions`.
+
+`read()` forwards `maxTotalCells` for detected text formats as well. CSV
+padding and HTML growth count the dense bounding rectangle. `parseJson`,
+`parseNdjson` and `readXml` check data rows × union headers before filling
+missing fields; `jsonToWorkbook` also counts its header row. These text
+entry points and `fromHtml` accept `maxTotalCells` with the same 20,000,000
+default. Streaming rows do not build a document-wide rectangle.
 
 ## XLS and XLSB — read only
 

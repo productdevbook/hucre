@@ -98,3 +98,34 @@ peak RSS includes runtime and module loading. Results vary by engine,
 machine and data shape. These samples do not allocate 2^24 cells: the
 capacity regression scales the per-Map threshold down, and the numeric
 block bounds establish why no metadata Map reaches V8's real threshold.
+
+## ODS bounding-box enforcement
+
+```bash
+bun run build
+task_dir=$(mktemp -d)
+git archive 0c0fc04 src | tar -x -C "$task_dir"
+bunx rolldown "$task_dir/src/ods/reader.ts" --file "$task_dir/before.mjs" --format esm
+bunx rolldown src/ods/reader.ts --file "$task_dir/after.mjs" --format esm
+node bench/ods-bounds.mjs "$task_dir/before.mjs"
+node bench/ods-bounds.mjs "$task_dir/after.mjs"
+```
+
+Run each command in a fresh process for every sample. Both readers are
+bundled the same way; the input is raw ODF XML packaged with the ZIP
+writer, independent of the spreadsheet writer. `node bench/ods-bounds.mjs`
+without a module argument tests the built package.
+
+The 475-byte archive contains a 2,048-column first row followed by a
+one-column row repeated 10,000 times: 20,482,048 slots after padding.
+The default bound is 20,000,000. macOS arm64, Node 24.21.0, three fresh
+processes per reader:
+
+| Reader             | Result                               | Read/rejection time (ms) | Peak RSS (MB) |
+| ------------------ | ------------------------------------ | -----------------------: | ------------: |
+| V2 `0c0fc04`       | Incorrectly accepts 20,482,048 cells |              203.3–209.0 |   407.0–408.3 |
+| Bounding-box check | Rejects before row expansion         |                      1.4 |     49.5–49.8 |
+
+This measures one rejected amplification input, not general ODS throughput.
+Peak RSS includes runtime, module loading and ZIP preparation. Results
+vary with engine, machine and input shape.

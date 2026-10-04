@@ -12,13 +12,12 @@ import { describe, it, expect } from "vitest"
 import { writeOds } from "../src/ods/writer"
 import { readOds } from "../src/ods/reader"
 import { ZipReader } from "../src/zip/reader"
-import { ZipWriter } from "../src/zip/writer"
+import { odsFromContent } from "./support/ods"
 import { parseXml } from "../src/xml/parser"
 import type { Cell, SheetInput } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-const encoder = new TextEncoder()
 const decoder = new TextDecoder("utf-8")
 
 async function extractFile(data: Uint8Array, path: string): Promise<string> {
@@ -44,34 +43,14 @@ async function writeFormulaCell(formula: string): Promise<Record<string, string>
   return findChild(row, "table-cell").attrs
 }
 
-/** The namespaces a real content.xml declares, for the hand-written fixtures. */
-const NS = [
-  `xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"`,
-  `xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"`,
-  `xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"`,
-  `xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"`,
-  `xmlns:number="urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0"`,
-  `xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"`,
-  `xmlns:xlink="http://www.w3.org/1999/xlink"`,
-].join(" ")
-
-/** A minimal .ods holding one cell with the given `table:formula`. */
-async function odsWithFormula(formula: string): Promise<Uint8Array> {
-  const content =
-    `<?xml version="1.0" encoding="UTF-8"?>` +
-    `<office:document-content ${NS} office:version="1.3"><office:body><office:spreadsheet>` +
+/** Raw OpenFormula input independent of hucre's writer. */
+function odsWithFormula(formula: string): Promise<Uint8Array> {
+  return odsFromContent(
     `<table:table table:name="Sheet1"><table:table-row>` +
-    `<table:table-cell table:formula="${formula.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;")}" ` +
-    `office:value-type="float" office:value="3"><text:p>3</text:p></table:table-cell>` +
-    `</table:table-row></table:table>` +
-    `</office:spreadsheet></office:body></office:document-content>`
-
-  const zip = new ZipWriter()
-  zip.add("mimetype", encoder.encode("application/vnd.oasis.opendocument.spreadsheet"), {
-    compress: false,
-  })
-  zip.add("content.xml", encoder.encode(content))
-  return await zip.build()
+      `<table:table-cell table:formula="${formula.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;")}" ` +
+      `office:value-type="float" office:value="3"><text:p>3</text:p></table:table-cell>` +
+      `</table:table-row></table:table>`,
+  )
 }
 
 async function readFormula(odsFormula: string): Promise<string | undefined> {

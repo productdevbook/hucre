@@ -2,7 +2,7 @@ import { createCellStore, setCell, deleteCell } from "../cell-store"
 // ── ODS Reader ──────────────────────────────────────────────────────
 // Reads OpenDocument Spreadsheet (.ods) files.
 
-import { padToRectangle } from "../_grid"
+import { assertGridSize, padToRectangle } from "../_grid"
 import { cellError } from "../cell-error"
 import type {
   Workbook,
@@ -24,7 +24,7 @@ import { decodePart } from "../_decode"
 import { parseXml } from "../xml/parser"
 import { parseRange } from "../cell-utils"
 import { parseUtcDefaultDateTime } from "../_date"
-import { MAX_COL_INDEX, MAX_REPEAT_COUNT, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
+import { MAX_COL_INDEX, MAX_REPEAT_COUNT, MAX_ROW_INDEX } from "../limits"
 
 /**
  * Bound a repeat count taken from the file so it can drive
@@ -673,7 +673,7 @@ function parseContentXml(
   const doc = parseXml(xml)
   const sheets: Sheet[] = []
 
-  const cellLimit = options?.maxTotalCells ?? MAX_TOTAL_CELLS
+  const cellLimit = options?.maxTotalCells
 
   // Parse styles for use when readStyles is enabled
   const readStyles = options?.readStyles ?? false
@@ -727,16 +727,22 @@ function parseContentXml(
     const columnDefaultStyles = readColumnDefaultStyles(table)
 
     let currentRow = 0
-    let pendingEmptyRows = 0
+    let width = 0
 
     // `maxRows` stops the walk; `range` masks afterwards, matching what
     // readXlsx returns for the same option. See #439 §U.
     const maxRowsLimit = options?.maxRows ?? 0 // 0 = unlimited
+    const rowLimit =
+      maxRowsLimit > 0 ? Math.min(Math.floor(maxRowsLimit), MAX_ROW_INDEX + 1) : MAX_ROW_INDEX + 1
     const rangeFilter = options?.range ? parseRange(options.range) : undefined
 
     for (const tableRow of tableRows) {
-      if (maxRowsLimit > 0 && rows.length >= maxRowsLimit) break
-      const rowRepeat = Number(tableRow.attrs["table:number-rows-repeated"] ?? "1")
+      if (currentRow >= rowLimit) break
+      const rowRepeat = gridRepeat(
+        tableRow.attrs["table:number-rows-repeated"],
+        rowLimit - currentRow,
+      )
+      if (rowRepeat === 0) continue
 
       // Collect cell entries with their repeat counts first,
       // so we can trim trailing nulls before expanding
@@ -745,7 +751,6 @@ function parseContentXml(
         repeat: number
         colSpan: number
         rowSpan: number
-        isCovered: boolean
         styleName?: string
         formula?: string
         hyperlink?: Hyperlink
@@ -775,12 +780,14 @@ function parseContentXml(
             repeat: colRepeat,
             colSpan,
             rowSpan,
-            isCovered: false,
             styleName,
             formula,
             hyperlink,
           })
-          colIndex += Number.isFinite(colRepeat) && colRepeat > 0 ? colRepeat : 1
+          colIndex += gridRepeat(
+            child.attrs["table:number-columns-repeated"],
+            MAX_COL_INDEX + 1 - colIndex,
+          )
         } else if (local === "covered-table-cell") {
           const colRepeat = Number(child.attrs["table:number-columns-repeated"] ?? "1")
           cellEntries.push({
@@ -788,12 +795,14 @@ function parseContentXml(
             repeat: colRepeat,
             colSpan: 1,
             rowSpan: 1,
-            isCovered: true,
           })
           // A covered cell still occupies its columns, so the count has
           // to advance or every default after a merge lands one column
           // to the left.
-          colIndex += Number.isFinite(colRepeat) && colRepeat > 0 ? colRepeat : 1
+          colIndex += gridRepeat(
+            child.attrs["table:number-columns-repeated"],
+            MAX_COL_INDEX + 1 - colIndex,
+          )
         }
       }
 
@@ -817,138 +826,82 @@ function parseContentXml(
         cellEntries.pop()
       }
 
-      // Expand into row data and collect metadata
-      const rowData: CellValue[] = []
-      let col = 0
-
+      // Compute the whole next rectangle first. A previous wider row and
+      // deferred interior blanks both cost slots when the grid is padded.
+      const repeats: number[] = []
+      let rowWidth = 0
       for (const entry of cellEntries) {
-        // Clamp column repeats too: a non-trailing cell with a huge
-        // number-columns-repeated would otherwise allocate past Excel's
-        // column limit. (Trailing empty repeats are already trimmed above.)
-        const repeat = Math.min(entry.repeat, MAX_COL_INDEX + 1)
-        for (let r = 0; r < repeat; r++) {
-          rowData.push(entry.value)
+        const repeat = gridRepeat(String(entry.repeat), MAX_COL_INDEX + 1 - rowWidth)
+        repeats.push(repeat)
+        rowWidth += repeat
+      }
+      if (rowWidth === 0) {
+        // Trailing LibreOffice padding never becomes row arrays. Advancing
+        // a bounded coordinate also avoids NaN/overflow metadata positions.
+        currentRow += rowRepeat
+        continue
+      }
+      width = Math.max(width, rowWidth)
+      assertGridSize(currentRow + rowRepeat, width, cellLimit)
 
-          // Collect merge ranges
+      const rowData: CellValue[] = []
+      const rowCells: Array<[number, Cell]> = []
+      const rowMerges: MergeRange[] = []
+      let col = 0
+      for (let i = 0; i < cellEntries.length; i++) {
+        const entry = cellEntries[i]!
+        for (let c = 0; c < repeats[i]!; c++, col++) {
+          rowData.push(entry.value)
           if (entry.colSpan > 1 || entry.rowSpan > 1) {
-            merges.push({
-              startRow: currentRow,
+            rowMerges.push({
+              startRow: 0,
               startCol: col,
-              endRow: currentRow + entry.rowSpan - 1,
-              endCol: col + entry.colSpan - 1,
+              endRow: Math.min(entry.rowSpan - 1, rowLimit - currentRow - 1),
+              endCol: Math.min(col + entry.colSpan - 1, MAX_COL_INDEX),
             })
           }
-
-          // Collect cell metadata (formulas, hyperlinks, styles)
-          const hasMetadata =
-            entry.formula ||
-            entry.hyperlink ||
-            (readStyles && entry.styleName && styleDefs.has(entry.styleName))
-
-          if (hasMetadata) {
-            const cellData: Cell = {
+          const styleDef =
+            readStyles && entry.styleName ? styleDefs.get(entry.styleName) : undefined
+          if (entry.formula || entry.hyperlink || styleDef) {
+            const cell: Cell = {
               value: entry.value,
               type:
                 entry.value === null
                   ? "empty"
-                  : typeof entry.value === "string"
-                    ? "string"
-                    : typeof entry.value === "number"
-                      ? "number"
-                      : typeof entry.value === "boolean"
-                        ? "boolean"
-                        : entry.value instanceof Date
-                          ? "date"
-                          : "empty",
+                  : entry.value instanceof Date
+                    ? "date"
+                    : typeof entry.value === "object"
+                      ? "error"
+                      : (typeof entry.value as "string" | "number" | "boolean"),
             }
-
             if (entry.formula) {
-              cellData.formula = entry.formula
-              cellData.type = "formula"
+              cell.formula = entry.formula
+              cell.formulaResult = entry.value
+              cell.type = "formula"
             }
-            if (entry.hyperlink) {
-              cellData.hyperlink = entry.hyperlink
-            }
-            if (readStyles && entry.styleName) {
-              const styleDef = styleDefs.get(entry.styleName)
-              if (styleDef) {
-                cellData.style = odsStyleToCellStyle(styleDef)
-              }
-            }
-
-            setCell(cells, currentRow, col, cellData)
+            if (entry.hyperlink) cell.hyperlink = entry.hyperlink
+            if (styleDef) cell.style = odsStyleToCellStyle(styleDef)
+            rowCells.push([col, cell])
           }
-
-          col++
         }
       }
-
-      if (rowData.length === 0) {
-        // An empty row is held back rather than pushed. Whether it is data
-        // depends on what comes after it: an interior one carries position
-        // and has to survive, while the run LibreOffice pads the end of a
-        // sheet with — one row repeated a million times — is not. Deciding
-        // that here would need lookahead; deferring costs nothing and keeps
-        // the trailing run from ever being allocated. See #394.
-        // A malformed repeat parses to NaN, and the populated path drops
-        // such a row outright (Math.min(NaN, …) is NaN, so its loop never
-        // runs) — keep NaN out of the accumulator rather than letting it
-        // poison every later flush.
-        if (rowRepeat > 0) pendingEmptyRows += rowRepeat
-        // The row counter still advances: merges and `cells` are keyed off
-        // it, so it has to track the file's own row numbering either way.
-        currentRow += rowRepeat
-        continue
-      }
-
-      // A populated row makes every held-back empty row an interior one, so
-      // flush them at the positions the file gave them. They carry no cells,
-      // which puts them outside the MAX_TOTAL_CELLS guard below — bound them
-      // by the sheet's row limit instead, or a file of nothing but huge
-      // repeated empty rows would allocate without limit.
-      if (pendingEmptyRows > 0) {
-        const flush = Math.min(pendingEmptyRows, MAX_ROW_INDEX + 1 - rows.length)
-        for (let r = 0; r < flush; r++) {
-          rows.push([])
+      // Only a populated row makes preceding blanks interior. This flush
+      // and the repeat copies happen after the shared bounding-box check.
+      while (rows.length < currentRow) rows.push([])
+      for (let r = 0; r < rowRepeat; r++, currentRow++) {
+        rows.push(rowRepeat === 1 ? rowData : [...rowData])
+        // ODF 1.3 §19.681 repeats the same content and style (horizontal
+        // merges are allowed). Values alone lost formulas/links/styles.
+        for (const [c, cell] of rowCells) setCell(cells, currentRow, c, { ...cell })
+        for (const merge of rowMerges) {
+          merges.push({
+            ...merge,
+            startRow: currentRow,
+            endRow: Math.min(currentRow + merge.endRow, rowLimit - 1),
+          })
         }
-        pendingEmptyRows = 0
-      }
-
-      // A hostile file can set a huge number-rows-repeated on a one-cell row
-      // to force millions of allocations — clamp to Excel's row limit.
-      const effectiveRowRepeat = Math.min(rowRepeat, MAX_ROW_INDEX + 1)
-
-      // Each repeat attribute is capped on its own, but the aggregate is
-      // not: one row of 16,384 cells repeated 1,048,576 times is 1.7e10
-      // slots from a couple hundred bytes of content.xml. See #363.
-      const projected = (rows.length + effectiveRowRepeat) * rowData.length
-      if (projected > cellLimit) {
-        throw new ParseError(
-          `Sheet spans ${projected} cells, over the ${cellLimit} limit. ` +
-            "Raise `maxTotalCells` if the sheet really is this large.",
-        )
-      }
-
-      for (let r = 0; r < effectiveRowRepeat; r++) {
-        rows.push(effectiveRowRepeat === 1 && r === 0 ? rowData : [...rowData])
-        if (r > 0 && merges.length > 0) {
-          // For repeated rows with merges, we'd need to duplicate merge info
-          // but this is an edge case; repeated rows with merges are uncommon
-        }
-        currentRow++
       }
     }
-
-    // Trim trailing empty rows. The walk above no longer pushes any (a run
-    // of empty rows is only flushed once a populated row follows it), so
-    // this is a backstop rather than the mechanism.
-    while (rows.length > 0 && rows[rows.length - 1].length === 0) {
-      rows.pop()
-    }
-
-    // `maxRows` can overshoot by the tail of a repeated row, since a single
-    // <table-row table:number-rows-repeated="N"> expands after the check.
-    if (maxRowsLimit > 0 && rows.length > maxRowsLimit) rows.length = maxRowsLimit
 
     // `range` masks rather than drops, so column indexes stay stable and a
     // row outside the span is present and empty — the same shape readXlsx
@@ -966,7 +919,7 @@ function parseContentXml(
       }
     }
 
-    padToRectangle(rows)
+    padToRectangle(rows, cellLimit)
     const sheet: Sheet = { name, rows }
 
     if (merges.length > 0) {
@@ -1005,6 +958,13 @@ function parseContentXml(
 
   const namedRanges = parseNamedExpressions(spreadsheet)
   return namedRanges ? { sheets, namedRanges } : { sheets }
+}
+
+/** Repeat within remaining grid capacity; NaN and nonpositive counts occupy nothing. */
+function gridRepeat(raw: string | undefined, remaining: number): number {
+  const count = Number(raw ?? "1")
+  if (Number.isNaN(count) || count <= 0) return 0
+  return Math.min(Math.ceil(count), remaining)
 }
 
 // ── Meta XML Parsing ────────────────────────────────────────────────

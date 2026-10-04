@@ -1323,6 +1323,13 @@ CSV is. Bytes that are not text at all still get the same
 `UnsupportedFormatError` as before — a NUL in the first few KB is where
 that line is drawn.
 
+`read(bytes, { maxTotalCells })` bounds each dense sheet before repeat
+expansion or rectangular padding, including detected text formats.
+The default is 20,000,000 cells. `parseJson`, `parseNdjson`,
+`jsonToWorkbook`, `readXml` and `fromHtml` also accept this limit;
+tabular records count rows × the union of their fields, and a workbook
+counts the header row too.
+
 The text formats are single-sheet by nature: `write()` takes the first
 sheet for those, and carries values rather than formatting. The
 record-shaped ones (`json`, `ndjson`, `xml`) read row 0 as field names,

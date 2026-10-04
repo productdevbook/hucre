@@ -1,26 +1,8 @@
 import { describe, expect, it } from "vitest"
-import { ZipWriter } from "../src/zip/writer"
+import { odsFromContent } from "./support/ods"
 import { writeOds } from "../src/ods/writer"
 import { streamOdsRows } from "../src/ods/stream"
 import { readOds } from "../src/ods/reader"
-
-const enc = new TextEncoder()
-
-async function odsFromContent(bodyXml: string): Promise<Uint8Array> {
-  const content = `<?xml version="1.0" encoding="UTF-8"?>
-<office:document-content
-  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
-  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
-  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
-  <office:body><office:spreadsheet>${bodyXml}</office:spreadsheet></office:body>
-</office:document-content>`
-  const zip = new ZipWriter()
-  zip.add("mimetype", enc.encode("application/vnd.oasis.opendocument.spreadsheet"), {
-    compress: false,
-  })
-  zip.add("content.xml", enc.encode(content))
-  return zip.build()
-}
 
 describe("streamOdsRows — text element parity with batch reader", () => {
   it("expands text:s / line-break / tab like collectText", async () => {

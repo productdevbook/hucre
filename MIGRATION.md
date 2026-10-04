@@ -108,6 +108,20 @@ Each reader now has its own type — `XlsxReadOptions`, `OdsReadOptions`, `XlsbR
 
 **Behaviour:** `readXlsb` now honours `maxTotalCells`. It was the one reader with no bounding-box ceiling; a hostile `.xlsb` could allocate a dense grid the size of its two furthest cells.
 
+**Behaviour:** ODS and text normalization enforce `maxTotalCells` before
+expanding the dense rectangle. The widest earlier row counts when a later
+short row is repeated. ODS `maxRows` limits expansion and metadata together;
+repeat counts are bounded by remaining Excel coordinates. Repeated rows
+now retain formulas, cached results, styles, hyperlinks and horizontal
+merges. Malformed repeats no longer corrupt later cell coordinates.
+
+`read(bytes, { maxTotalCells })` also forwards the limit for CSV, JSON,
+NDJSON, XML and HTML. `parseJson`, `parseNdjson`, `jsonToWorkbook`, `readXml`
+and `fromHtml` accept `maxTotalCells`, defaulting to 20,000,000. A tabular
+JSON/XML result counts data rows × union headers; `jsonToWorkbook` also
+counts its header row. Inputs that previously exceeded the bound now throw
+`ParseError`; raise it only when the larger normalized table is intended.
+
 ## Colours are `Color` everywhere
 
 Fonts, fills and borders have always taken `Color` — `{ rgb }`, `{ theme, tint }` or `{ indexed }`. Three places took a hex string instead: a colour scale's stops, a data bar's fill, and a sparkline's series colour. Those now take `Color` too.

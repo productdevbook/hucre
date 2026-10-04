@@ -26,6 +26,10 @@ copying a ZIP rebuild loop. Independent producer files exercise complete
 imports and both save paths, so a reader and writer cannot validate the
 same mistaken interpretation against each other.
 
+Use `support/ods.ts` for ODF namespaces, content/meta wrappers and minimal
+ZIP packages. Keep cell/repeat/formula XML visible in the regression;
+the support code supplies the envelope, not the expected spreadsheet data.
+
 Expected values must be authored separately from hucre's output. Change
 goldens only after checking the source workbook or authored scenario.
 Adding an example requires a scenario and a checksum; unregistered files,

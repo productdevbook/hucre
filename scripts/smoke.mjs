@@ -11,6 +11,8 @@
 
 import {
   parseCsv,
+  read,
+  ParseError,
   readXlsx,
   writeCsv,
   writeXlsx,
@@ -121,6 +123,23 @@ console.log("csv")
   const csv = writeCsv(ROWS)
   const back = parseCsv(csv, { typeInference: true })
   check("round trip", back[1][0] === "Ada" && back[1][1] === 1234.5)
+}
+
+console.log("dense text bounds")
+{
+  const input = new TextEncoder().encode("a,b,c\nx\nx")
+  let bounded = false
+  try {
+    await read(input, { maxTotalCells: 8 })
+  } catch (error) {
+    bounded = error instanceof ParseError
+  }
+  check("read forwards the dense cell bound", bounded)
+  const sheet = (await read(input, { maxTotalCells: 9 })).sheets[0]
+  check(
+    "the exact boundary remains rectangular",
+    sheet.rows.length === 3 && sheet.rows[2].length === 3,
+  )
 }
 
 console.log("xlsx")
