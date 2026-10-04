@@ -35,6 +35,12 @@ single-Map filled-cell ceiling and coordinate strings, while preserving
 structured cloning. Readers, writers, builders and sheet operations share
 this storage; structural edits share one metadata remapping path.
 
+Row and column insertions/deletions share an editing engine and reference
+rewriter. Own-sheet qualified references move, multi-area metadata keeps
+surviving areas, and edits validate geometry before mutation. Large row
+insertions avoid the runtime function argument ceiling. Integration tests
+edit the independent invoice and verify both save paths.
+
 ## 1.1.0
 
 See the v1.1.0 tag.

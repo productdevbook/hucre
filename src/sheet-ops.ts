@@ -9,6 +9,7 @@ import { parseRange, toRange, type RangeLike } from "./cell-utils"
 import { rangeRef } from "./xlsx/worksheet-writer"
 import { cloneCellStyle } from "./_style"
 import { InvalidArgumentError } from "./errors"
+import { MAX_ROW_INDEX, MAX_COL_INDEX } from "./limits"
 import { shiftFormula, shiftRangeRef, type RefShift } from "./_refs"
 
 // ── Range Helpers ────────────────────────────────────────────────────
@@ -18,28 +19,6 @@ import { shiftFormula, shiftRangeRef, type RefShift } from "./_refs"
  */
 function buildRange(r: MergeRange): string {
   return rangeRef(r.startRow, r.startCol, r.endRow, r.endCol)
-}
-
-/**
- * Shift row references in a range string by a given delta.
- * Only rows >= threshold are shifted.
- */
-function shiftRangeRows(range: string, threshold: number, delta: number): string {
-  const r = parseRange(range)
-  if (r.startRow >= threshold) r.startRow += delta
-  if (r.endRow >= threshold) r.endRow += delta
-  return buildRange(r)
-}
-
-/**
- * Shift column references in a range string by a given delta.
- * Only columns >= threshold are shifted.
- */
-function shiftRangeCols(range: string, threshold: number, delta: number): string {
-  const r = parseRange(range)
-  if (r.startCol >= threshold) r.startCol += delta
-  if (r.endCol >= threshold) r.endCol += delta
-  return buildRange(r)
 }
 
 // ── Reference maintenance ────────────────────────────────────────────
@@ -162,510 +141,166 @@ function makeEmptyRow(width: number): null[] {
 function remapCells(
   sheet: Sheet,
   position: (row: number, col: number) => [number, number] | undefined,
-): void {
-  if (!sheet.cells?.size) return
+): Sheet["cells"] {
+  if (!sheet.cells?.size) return sheet.cells
   const cells = createCellStore<Cell>()
   for (const [row, col, cell] of cellEntries(sheet.cells)) {
     const next = position(row, col)
     if (next) setCell(cells, next[0], next[1], cell)
   }
-  sheet.cells = cells
+  return cells
 }
 
-// ── Insert Rows ──────────────────────────────────────────────────────
+// ── Structural edits ────────────────────────────────────────────────
 
-/**
- * Insert rows at the given position (0-based), shifting existing rows down.
- * Updates merge ranges, data validations, conditional rules, auto filter,
- * images, and cell metadata coordinates.
- */
+/** Insert rows at a zero-based position and move their metadata/references. */
 export function insertRows(sheet: Sheet, rowIndex: number, count: number): void {
-  if (count <= 0) return
-
-  remapCells(sheet, (row, col) => [row >= rowIndex ? row + count : row, col])
-
-  const width = getRowWidth(sheet)
-  const newRows: null[][] = []
-  for (let i = 0; i < count; i++) {
-    newRows.push(makeEmptyRow(width))
-  }
-
-  // Insert into rows array
-  sheet.rows.splice(rowIndex, 0, ...newRows)
-
-  // Update merge ranges
-  if (sheet.merges) {
-    for (const merge of sheet.merges) {
-      if (merge.startRow >= rowIndex) {
-        merge.startRow += count
-        merge.endRow += count
-      } else if (merge.endRow >= rowIndex) {
-        // Merge starts before insertion but ends at or after — expand it
-        merge.endRow += count
-      }
-    }
-  }
-
-  // Update data validations
-  if (sheet.dataValidations) {
-    for (const dv of sheet.dataValidations) {
-      dv.range = shiftRangeRows(dv.range, rowIndex, count)
-    }
-  }
-
-  // Update conditional rules
-  if (sheet.conditionalRules) {
-    for (const rule of sheet.conditionalRules) {
-      rule.range = shiftRangeRows(rule.range, rowIndex, count)
-    }
-  }
-
-  // Update auto filter
-  if (sheet.autoFilter) {
-    sheet.autoFilter.range = shiftRangeRows(sheet.autoFilter.range, rowIndex, count)
-  }
-
-  // Update image anchors
-  if (sheet.images) {
-    for (const img of sheet.images) {
-      if (img.anchor.from.row >= rowIndex) {
-        img.anchor.from.row += count
-      }
-      if (img.anchor.to && img.anchor.to.row >= rowIndex) {
-        img.anchor.to.row += count
-      }
-    }
-  }
-
-  // Update row defs
-  if (sheet.rowDefs && sheet.rowDefs.size > 0) {
-    const updated = new Map<number, RowDef>()
-    for (const [row, def] of sheet.rowDefs) {
-      if (row >= rowIndex) {
-        updated.set(row + count, def)
-      } else {
-        updated.set(row, def)
-      }
-    }
-    sheet.rowDefs = updated
-  }
-
-  // Update table ranges
-  if (sheet.tables) {
-    for (const table of sheet.tables) {
-      if (table.range) {
-        table.range = shiftRangeRows(table.range, rowIndex, count)
-      }
-    }
-  }
-
-  shiftReferences(sheet, { axis: "row", at: rowIndex, delta: count })
+  editAxis(sheet, "row", rowIndex, count, true)
 }
 
-// ── Delete Rows ──────────────────────────────────────────────────────
-
-/**
- * Delete rows starting at the given position (0-based), shifting remaining rows up.
- * Removes merges fully within deleted range. Adjusts merges that partially overlap.
- */
+/** Delete rows; clip overlapping ranges and remove ranges wholly deleted. */
 export function deleteRows(sheet: Sheet, rowIndex: number, count: number): void {
-  if (count <= 0) return
-
-  const deleteEnd = rowIndex + count // exclusive
-
-  // Remove rows from array
-  sheet.rows.splice(rowIndex, count)
-
-  remapCells(sheet, (row, col) =>
-    row >= rowIndex && row < deleteEnd ? undefined : [row >= deleteEnd ? row - count : row, col],
-  )
-
-  // Update merge ranges
-  if (sheet.merges) {
-    sheet.merges = sheet.merges.filter((merge) => {
-      // Fully within deleted range — remove
-      if (merge.startRow >= rowIndex && merge.endRow < deleteEnd) {
-        return false
-      }
-      return true
-    })
-
-    for (const merge of sheet.merges) {
-      if (merge.startRow >= deleteEnd) {
-        // Entirely below deleted range — shift up
-        merge.startRow -= count
-        merge.endRow -= count
-      } else if (merge.endRow >= deleteEnd) {
-        // Partially overlapping: starts before or at deletion, ends after
-        if (merge.startRow >= rowIndex) {
-          // Starts within deleted range — clamp start to rowIndex
-          merge.startRow = rowIndex
-          merge.endRow -= count
-        } else {
-          // Starts before deleted range — shrink end
-          merge.endRow -= count
-        }
-      } else if (merge.endRow >= rowIndex) {
-        // Ends within deleted range but starts before — clamp end
-        merge.endRow = rowIndex - 1
-      }
-    }
-
-    // Drop merges that no longer merge anything. `start > end` is
-    // incoherent; `start === end` on both axes is a one-cell merge, which
-    // is not what any spreadsheet means by the word — Excel writes
-    // `<mergeCell ref="B3:B3"/>` for nothing, and a shrunk range should
-    // disappear the way a fully-deleted one already does.
-    sheet.merges = sheet.merges.filter(
-      (m) =>
-        m.startRow <= m.endRow &&
-        m.startCol <= m.endCol &&
-        !(m.startRow === m.endRow && m.startCol === m.endCol),
-    )
-  }
-
-  // Update data validations
-  if (sheet.dataValidations) {
-    sheet.dataValidations = sheet.dataValidations.filter((dv) => {
-      const r = parseRange(dv.range)
-      // Remove if fully within deleted range
-      if (r.startRow >= rowIndex && r.endRow < deleteEnd) return false
-      return true
-    })
-    for (const dv of sheet.dataValidations) {
-      dv.range = shiftDeletedRangeRows(dv.range, rowIndex, count)
-    }
-  }
-
-  // Update conditional rules
-  if (sheet.conditionalRules) {
-    sheet.conditionalRules = sheet.conditionalRules.filter((rule) => {
-      const r = parseRange(rule.range)
-      if (r.startRow >= rowIndex && r.endRow < deleteEnd) return false
-      return true
-    })
-    for (const rule of sheet.conditionalRules) {
-      rule.range = shiftDeletedRangeRows(rule.range, rowIndex, count)
-    }
-  }
-
-  // Update auto filter
-  if (sheet.autoFilter) {
-    const r = parseRange(sheet.autoFilter.range)
-    if (r.startRow >= rowIndex && r.endRow < deleteEnd) {
-      sheet.autoFilter = undefined
-    } else {
-      sheet.autoFilter.range = shiftDeletedRangeRows(sheet.autoFilter.range, rowIndex, count)
-    }
-  }
-
-  // Update image anchors
-  if (sheet.images) {
-    sheet.images = sheet.images.filter((img) => {
-      // Remove images whose anchor starts in deleted range
-      return !(img.anchor.from.row >= rowIndex && img.anchor.from.row < deleteEnd)
-    })
-    for (const img of sheet.images) {
-      if (img.anchor.from.row >= deleteEnd) {
-        img.anchor.from.row -= count
-      }
-      if (img.anchor.to && img.anchor.to.row >= deleteEnd) {
-        img.anchor.to.row -= count
-      }
-    }
-  }
-
-  // Update row defs
-  if (sheet.rowDefs && sheet.rowDefs.size > 0) {
-    const updated = new Map<number, RowDef>()
-    for (const [row, def] of sheet.rowDefs) {
-      if (row >= rowIndex && row < deleteEnd) {
-        continue // deleted
-      } else if (row >= deleteEnd) {
-        updated.set(row - count, def)
-      } else {
-        updated.set(row, def)
-      }
-    }
-    sheet.rowDefs = updated
-  }
-
-  // Update table ranges
-  if (sheet.tables) {
-    sheet.tables = sheet.tables.filter((table) => {
-      if (!table.range) return true
-      const r = parseRange(table.range)
-      return !(r.startRow >= rowIndex && r.endRow < deleteEnd)
-    })
-    for (const table of sheet.tables) {
-      if (table.range) {
-        table.range = shiftDeletedRangeRows(table.range, rowIndex, count)
-      }
-    }
-  }
-
-  shiftReferences(sheet, { axis: "row", at: rowIndex, delta: -count })
+  editAxis(sheet, "row", rowIndex, count, false)
 }
 
-/**
- * Shift row references in a range string after deletion.
- * Rows >= deleteEnd shift up by count.
- * Rows within [rowIndex, deleteEnd) are clamped.
- */
-function shiftDeletedRangeRows(range: string, rowIndex: number, count: number): string {
-  const deleteEnd = rowIndex + count
-  const r = parseRange(range)
-
-  if (r.startRow >= deleteEnd) {
-    r.startRow -= count
-  } else if (r.startRow >= rowIndex) {
-    r.startRow = rowIndex
-  }
-
-  if (r.endRow >= deleteEnd) {
-    r.endRow -= count
-  } else if (r.endRow >= rowIndex) {
-    r.endRow = rowIndex > 0 ? rowIndex - 1 : 0
-  }
-
-  return buildRange(r)
-}
-
-// ── Insert Columns ───────────────────────────────────────────────────
-
-/**
- * Insert columns at the given position (0-based), shifting existing columns right.
- * Updates merge ranges, data validations, conditional rules, auto filter,
- * images, column defs, and cell metadata coordinates.
- */
+/** Insert columns at a zero-based position and move their metadata/references. */
 export function insertColumns(sheet: Sheet, colIndex: number, count: number): void {
-  if (count <= 0) return
-
-  remapCells(sheet, (row, col) => [row, col >= colIndex ? col + count : col])
-
-  const nulls: null[] = makeEmptyRow(count)
-
-  // Insert nulls into each row
-  for (const row of sheet.rows) {
-    // Extend row if it's shorter than colIndex
-    while (row.length < colIndex) row.push(null)
-    row.splice(colIndex, 0, ...nulls)
-  }
-
-  // Update column defs
-  if (sheet.columns) {
-    const newCols: import("./_types").ColumnDef[] = []
-    for (let i = 0; i < count; i++) newCols.push({})
-    // Ensure columns array is long enough
-    while (sheet.columns.length < colIndex) sheet.columns.push({})
-    sheet.columns.splice(colIndex, 0, ...newCols)
-  }
-
-  // Update merge ranges
-  if (sheet.merges) {
-    for (const merge of sheet.merges) {
-      if (merge.startCol >= colIndex) {
-        merge.startCol += count
-        merge.endCol += count
-      } else if (merge.endCol >= colIndex) {
-        merge.endCol += count
-      }
-    }
-  }
-
-  // Update data validations
-  if (sheet.dataValidations) {
-    for (const dv of sheet.dataValidations) {
-      dv.range = shiftRangeCols(dv.range, colIndex, count)
-    }
-  }
-
-  // Update conditional rules
-  if (sheet.conditionalRules) {
-    for (const rule of sheet.conditionalRules) {
-      rule.range = shiftRangeCols(rule.range, colIndex, count)
-    }
-  }
-
-  // Update auto filter
-  if (sheet.autoFilter) {
-    sheet.autoFilter.range = shiftRangeCols(sheet.autoFilter.range, colIndex, count)
-  }
-
-  // Update image anchors
-  if (sheet.images) {
-    for (const img of sheet.images) {
-      if (img.anchor.from.col >= colIndex) {
-        img.anchor.from.col += count
-      }
-      if (img.anchor.to && img.anchor.to.col >= colIndex) {
-        img.anchor.to.col += count
-      }
-    }
-  }
-
-  // Update table ranges
-  if (sheet.tables) {
-    for (const table of sheet.tables) {
-      if (table.range) {
-        table.range = shiftRangeCols(table.range, colIndex, count)
-      }
-    }
-  }
-
-  shiftReferences(sheet, { axis: "col", at: colIndex, delta: count })
+  editAxis(sheet, "col", colIndex, count, true)
 }
 
-// ── Delete Columns ───────────────────────────────────────────────────
-
-/**
- * Delete columns starting at the given position (0-based), shifting remaining columns left.
- * Removes merges fully within deleted range. Adjusts merges that partially overlap.
- */
+/** Delete columns; clip overlapping ranges and remove ranges wholly deleted. */
 export function deleteColumns(sheet: Sheet, colIndex: number, count: number): void {
-  if (count <= 0) return
-
-  const deleteEnd = colIndex + count // exclusive
-
-  // Remove columns from each row
-  for (const row of sheet.rows) {
-    if (colIndex < row.length) {
-      row.splice(colIndex, Math.min(count, row.length - colIndex))
-    }
-  }
-
-  // Update column defs
-  if (sheet.columns) {
-    if (colIndex < sheet.columns.length) {
-      sheet.columns.splice(colIndex, Math.min(count, sheet.columns.length - colIndex))
-    }
-  }
-
-  remapCells(sheet, (row, col) =>
-    col >= colIndex && col < deleteEnd ? undefined : [row, col >= deleteEnd ? col - count : col],
-  )
-
-  // Update merge ranges
-  if (sheet.merges) {
-    sheet.merges = sheet.merges.filter((merge) => {
-      if (merge.startCol >= colIndex && merge.endCol < deleteEnd) {
-        return false
-      }
-      return true
-    })
-
-    for (const merge of sheet.merges) {
-      if (merge.startCol >= deleteEnd) {
-        merge.startCol -= count
-        merge.endCol -= count
-      } else if (merge.endCol >= deleteEnd) {
-        if (merge.startCol >= colIndex) {
-          merge.startCol = colIndex
-          merge.endCol -= count
-        } else {
-          merge.endCol -= count
-        }
-      } else if (merge.endCol >= colIndex) {
-        merge.endCol = colIndex - 1
-      }
-    }
-
-    // Same rule as deleteRows: a range shrunk to one cell is no longer a
-    // merge.
-    sheet.merges = sheet.merges.filter(
-      (m) =>
-        m.startRow <= m.endRow &&
-        m.startCol <= m.endCol &&
-        !(m.startRow === m.endRow && m.startCol === m.endCol),
-    )
-  }
-
-  // Update data validations
-  if (sheet.dataValidations) {
-    sheet.dataValidations = sheet.dataValidations.filter((dv) => {
-      const r = parseRange(dv.range)
-      if (r.startCol >= colIndex && r.endCol < deleteEnd) return false
-      return true
-    })
-    for (const dv of sheet.dataValidations) {
-      dv.range = shiftDeletedRangeCols(dv.range, colIndex, count)
-    }
-  }
-
-  // Update conditional rules
-  if (sheet.conditionalRules) {
-    sheet.conditionalRules = sheet.conditionalRules.filter((rule) => {
-      const r = parseRange(rule.range)
-      if (r.startCol >= colIndex && r.endCol < deleteEnd) return false
-      return true
-    })
-    for (const rule of sheet.conditionalRules) {
-      rule.range = shiftDeletedRangeCols(rule.range, colIndex, count)
-    }
-  }
-
-  // Update auto filter
-  if (sheet.autoFilter) {
-    const r = parseRange(sheet.autoFilter.range)
-    if (r.startCol >= colIndex && r.endCol < deleteEnd) {
-      sheet.autoFilter = undefined
-    } else {
-      sheet.autoFilter.range = shiftDeletedRangeCols(sheet.autoFilter.range, colIndex, count)
-    }
-  }
-
-  // Update image anchors
-  if (sheet.images) {
-    sheet.images = sheet.images.filter((img) => {
-      return !(img.anchor.from.col >= colIndex && img.anchor.from.col < deleteEnd)
-    })
-    for (const img of sheet.images) {
-      if (img.anchor.from.col >= deleteEnd) {
-        img.anchor.from.col -= count
-      }
-      if (img.anchor.to && img.anchor.to.col >= deleteEnd) {
-        img.anchor.to.col -= count
-      }
-    }
-  }
-
-  // Update table ranges
-  if (sheet.tables) {
-    sheet.tables = sheet.tables.filter((table) => {
-      if (!table.range) return true
-      const r = parseRange(table.range)
-      return !(r.startCol >= colIndex && r.endCol < deleteEnd)
-    })
-    for (const table of sheet.tables) {
-      if (table.range) {
-        table.range = shiftDeletedRangeCols(table.range, colIndex, count)
-      }
-    }
-  }
-
-  shiftReferences(sheet, { axis: "col", at: colIndex, delta: -count })
+  editAxis(sheet, "col", colIndex, count, false)
 }
 
-/**
- * Shift column references in a range string after deletion.
- */
-function shiftDeletedRangeCols(range: string, colIndex: number, count: number): string {
-  const deleteEnd = colIndex + count
-  const r = parseRange(range)
+type Ranged = { range?: string }
 
-  if (r.startCol >= deleteEnd) {
-    r.startCol -= count
-  } else if (r.startCol >= colIndex) {
-    r.startCol = colIndex
+// Prepare range changes before touching the sheet. The same A1 rewriter
+// serves cell formulas and metadata: endpoints cannot disagree after an edit.
+function prepareRanges<T extends Ranged>(
+  items: T[] | undefined,
+  shift: RefShift,
+): Array<[T, string | undefined]> | undefined {
+  return items?.flatMap((item) => {
+    const range = item.range ? shiftRangeRef(item.range, shift) : undefined
+    return !item.range || range !== undefined ? [[item, range] as [T, string | undefined]] : []
+  })
+}
+
+function applyRanges<T extends Ranged>(prepared: Array<[T, string | undefined]>): T[] {
+  return prepared.map(([item, range]) => {
+    if (range !== undefined) item.range = range
+    return item
+  })
+}
+
+// Spreading inserted items into splice hits the runtime's argument limit
+// long before Excel's row limit. Move the tail once, then fill the gap.
+function insertItems<T>(items: T[], at: number, count: number, make: () => T): void {
+  const start = Math.min(at, items.length)
+  items.length += count
+  items.copyWithin(start + count, start)
+  for (let i = 0; i < count; i++) items[start + i] = make()
+}
+
+function editAxis(
+  sheet: Sheet,
+  axis: RefShift["axis"],
+  at: number,
+  count: number,
+  inserting: boolean,
+): void {
+  if (count <= 0) return
+  const max = axis === "row" ? MAX_ROW_INDEX : MAX_COL_INDEX
+  if (!Number.isInteger(at) || at < 0 || at > max || !Number.isInteger(count) || count > max + 1) {
+    throw new InvalidArgumentError("Edit position and count must be integers within Excel bounds.")
+  }
+  const shift: RefShift = { axis, at, delta: inserting ? count : -count, sheetName: sheet.name }
+  // Arrays also need preflight when they have no CellStore entries. A
+  // raw splice or fractional index otherwise moves rows and metadata
+  // differently, or throws only after part of the sheet has changed.
+  if (
+    inserting &&
+    (axis === "row" ? sheet.rows.length + count : Math.max(getRowWidth(sheet), at) + count) >
+      max + 1
+  ) {
+    throw new InvalidArgumentError("Insertion would move the grid outside Excel bounds.")
+  }
+  const cells = remapCells(sheet, (row, col) => {
+    const next = shiftIndex(axis === "row" ? row : col, shift)
+    return next === null ? undefined : axis === "row" ? [next, col] : [row, next]
+  })
+  let rowDefs = sheet.rowDefs
+  if (axis === "row" && rowDefs?.size) {
+    rowDefs = new Map()
+    for (const [row, def] of sheet.rowDefs!) {
+      const next = shiftIndex(row, shift)
+      if (next === null) continue
+      if (next > max)
+        throw new InvalidArgumentError("Row definitions would move outside Excel bounds.")
+      rowDefs.set(next, def)
+    }
   }
 
-  if (r.endCol >= deleteEnd) {
-    r.endCol -= count
-  } else if (r.endCol >= colIndex) {
-    r.endCol = colIndex > 0 ? colIndex - 1 : 0
+  const merges = sheet.merges?.flatMap((merge) => {
+    const moved = shiftRangeRef(buildRange(merge), shift)
+    if (!moved) return []
+    const range = parseRange(moved)
+    // A deletion shrinking a merge to one cell leaves nothing to merge.
+    if (!inserting && range.startRow === range.endRow && range.startCol === range.endCol) return []
+    return [[merge, range] as const]
+  })
+  const validations = prepareRanges(sheet.dataValidations, shift)
+  const rules = prepareRanges(sheet.conditionalRules, shift)
+  const tables = prepareRanges(sheet.tables, shift)
+  const autoFilterRange = sheet.autoFilter
+    ? shiftRangeRef(sheet.autoFilter.range, shift)
+    : undefined
+
+  if (axis === "row") {
+    if (inserting) {
+      const width = getRowWidth(sheet)
+      insertItems(sheet.rows, at, count, () => makeEmptyRow(width))
+    } else sheet.rows.splice(at, count)
+    if (sheet.rowDefs !== undefined) sheet.rowDefs = rowDefs
+  } else {
+    for (const row of sheet.rows) {
+      if (inserting) {
+        while (row.length < at) row.push(null)
+        insertItems(row, at, count, () => null)
+      } else if (at < row.length) row.splice(at, count)
+    }
+    if (sheet.columns) {
+      if (inserting) {
+        while (sheet.columns.length < at) sheet.columns.push({})
+        insertItems(sheet.columns, at, count, () => ({}))
+      } else if (at < sheet.columns.length) sheet.columns.splice(at, count)
+    }
+  }
+  if (sheet.cells !== undefined) sheet.cells = cells
+  if (merges) sheet.merges = merges.map(([merge, range]) => Object.assign(merge, range))
+  if (validations) sheet.dataValidations = applyRanges(validations)
+  if (rules) sheet.conditionalRules = applyRanges(rules)
+  if (tables) sheet.tables = applyRanges(tables)
+  if (sheet.autoFilter) {
+    if (autoFilterRange === undefined) sheet.autoFilter = undefined
+    else sheet.autoFilter.range = autoFilterRange
   }
 
-  return buildRange(r)
+  if (sheet.images) {
+    const key = axis === "row" ? "row" : "col"
+    sheet.images = sheet.images.filter((image) => {
+      const from = shiftIndex(image.anchor.from[key], shift)
+      if (from === null) return false
+      image.anchor.from[key] = from
+      if (image.anchor.to) {
+        const to = shiftIndex(image.anchor.to[key], shift)
+        if (to !== null) image.anchor.to[key] = to
+      }
+      return true
+    })
+  }
+  shiftReferences(sheet, shift)
 }
 
 // ── Move Rows ────────────────────────────────────────────────────────
@@ -701,7 +336,7 @@ export function moveRows(sheet: Sheet, fromIndex: number, count: number, toIndex
   // Re-insert rows at adjusted position
   sheet.rows.splice(adjustedTo, 0, ...extractedRows)
 
-  remapCells(sheet, (row, col) => {
+  sheet.cells = remapCells(sheet, (row, col) => {
     if (row >= fromIndex && row < fromIndex + count) {
       return [adjustedTo + row - fromIndex, col]
     }
@@ -1315,7 +950,7 @@ export function sortRows(sheet: Sheet, colIndex: number, order?: "asc" | "desc")
 
   sheet.rows = tagged.map((t) => t.row)
 
-  remapCells(sheet, (row, col) => [oldToNew.get(row) ?? row, col])
+  sheet.cells = remapCells(sheet, (row, col) => [oldToNew.get(row) ?? row, col])
 
   if (sheet.rowDefs && sheet.rowDefs.size > 0) {
     const remapped = new Map<number, RowDef>()

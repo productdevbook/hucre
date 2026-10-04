@@ -6,6 +6,7 @@ import { readFileSync, readdirSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { readXlsx, streamXlsxRows, writeXlsx, openXlsx, saveXlsx } from "../../src/xlsx"
 import { flat } from "../support/workbook-model"
+import { insertRows, insertColumns } from "../../src/sheet-ops"
 import { parseCellRef, toRange } from "../../src/cell-utils"
 
 interface ScenarioSheet {
@@ -117,3 +118,27 @@ describe("independently authored Excel examples", () => {
     })
   }
 })
+
+it.each(["authoring", "preserved"] as const)(
+  "edits the independent invoice and saves through the %s path",
+  async (mode) => {
+    const input = bytes("invoice.xlsx")
+    const opened = mode === "preserved" ? await openXlsx(input) : undefined
+    const workbook = opened ?? (await readXlsx(input, { readStyles: true }))
+    insertRows(workbook.sheets[0], 1, 1)
+    insertColumns(workbook.sheets[0], 1, 1)
+    const output = opened ? await saveXlsx(opened) : await writeXlsx(workbook)
+    const sheet = (await readXlsx(output, { readStyles: true })).sheets[0]
+    expect(sheet.rows).toEqual([
+      ["Item", null, "Quantity", "Unit price", "Amount"],
+      [null, null, null, null, null],
+      ["Keyboard", null, 2, 75, 150],
+      ["Mouse", null, 3, 20, 60],
+      ["Total", null, null, null, 210],
+    ])
+    expect(getCell(sheet.cells, 2, 4)?.formula).toBe("C3*D3")
+    expect(getCell(sheet.cells, 3, 4)?.formula).toBe("C4*D4")
+    expect(getCell(sheet.cells, 4, 4)?.formula).toBe("SUM(E3:E4)")
+    expect(getCell(sheet.cells, 2, 3)?.style?.numFmt).toBe("#,##0.00")
+  },
+)

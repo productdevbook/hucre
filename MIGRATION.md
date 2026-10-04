@@ -10,6 +10,7 @@ Every change that can affect existing code is listed. TypeScript flags most of t
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | [Deprecated names removed](#deprecated-names-removed)             | you reference `DefterError`, `readNdjsonStream`, `headerRow: true`, `write()`/`end()`, or import a `parse*` part parser from the root |
 | [One workbook model](#one-workbook-model-for-reading-and-writing) | you use `WriteSheet`, `WriteOptions`, `toWriteOptions` or encoding options inside the workbook                                        |
+| [Structural edits](#structural-edits-share-reference-handling)    | you insert or delete rows/columns, or inspect range spelling                                                                          |
 | [Numeric cell storage](#numeric-cell-storage)                     | you construct, inspect or mutate `Sheet.cells` using string keys                                                                      |
 
 ---
@@ -74,6 +75,23 @@ shortest way to author styles and formulas.
 Map and the coordinate strings retained by it. The store does not cap
 memory usage; streaming remains appropriate for large dense files. See
 `docs/PARITY.md` for the other bounds.
+
+## Structural edits share reference handling
+
+`insertRows`, `deleteRows`, `insertColumns` and `deleteColumns` now use
+one editing path and the same A1 rewriter for formulas and range metadata.
+References qualified with the edited sheet's name move too, including
+quoted names and different letter case; other sheets remain unchanged.
+Deleting one area of a multi-area validation or conditional rule keeps
+its surviving areas. Single-cell ranges keep compact spelling (`A2`)
+instead of being expanded to `A2:A2`.
+
+Edit positions and positive counts must be integers within Excel's bounds.
+Invalid geometry and insertions that would move the dense grid, cell
+metadata or row definitions outside those bounds throw
+`InvalidArgumentError` before changing the sheet. Non-positive counts
+remain no-ops. Valid large row batches no longer depend on a JavaScript
+engine's function argument limit.
 
 ## Read options are per reader
 
