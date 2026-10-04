@@ -4,7 +4,7 @@
 // to the correct writer based on the `format` option for writing.
 // ─────────────────────────────────────────────────────────────────────
 
-import { padToRectangle } from "./_grid"
+import { assertGridSize, padToRectangle } from "./_grid"
 import type {
   Workbook,
   ReadOptions,
@@ -140,7 +140,7 @@ export async function read(input: ReadInput, options?: ReadOptions): Promise<Wor
   // longer stops at the ZIP boundary. See #469.
   if (data.length < 4 || data[0] !== 0x50 || data[1] !== 0x4b) {
     const text = detectTextFormat(data)
-    if (text !== null) return readTextFormat(data, text)
+    if (text !== null) return readTextFormat(data, text, options)
   }
 
   const format = detectFormat(data)
@@ -179,28 +179,40 @@ export async function read(input: ReadInput, options?: ReadOptions): Promise<Wor
  * `{ data, headers }`, so the header row is put back at the top — a
  * workbook is a grid, and dropping the names would lose them.
  */
-function readTextFormat(data: Uint8Array, format: TextFormat): Workbook {
+function readTextFormat(data: Uint8Array, format: TextFormat, options?: ReadOptions): Workbook {
+  const limits = { maxTotalCells: options?.maxTotalCells }
   switch (format) {
     case "csv":
       // `parseCsv` keeps a short line short; a `Sheet` is a rectangle.
-      return { sheets: [{ name: "Sheet1", rows: padToRectangle(parseCsv(data)) }] }
+      return {
+        sheets: [{ name: "Sheet1", rows: padToRectangle(parseCsv(data), limits.maxTotalCells) }],
+      }
     case "json":
-      return jsonToWorkbook(data)
+      return jsonToWorkbook(data, limits)
     case "ndjson": {
-      const { data: rows, headers } = parseNdjson(data)
-      return { sheets: [{ name: "Sheet1", rows: withHeaderRow(rows, headers) }] }
+      const { data: rows, headers } = parseNdjson(data, limits)
+      return {
+        sheets: [{ name: "Sheet1", rows: withHeaderRow(rows, headers, limits.maxTotalCells) }],
+      }
     }
     case "xml": {
-      const { data: rows, headers } = readXml(data)
-      return { sheets: [{ name: "Sheet1", rows: withHeaderRow(rows, headers) }] }
+      const { data: rows, headers } = readXml(data, limits)
+      return {
+        sheets: [{ name: "Sheet1", rows: withHeaderRow(rows, headers, limits.maxTotalCells) }],
+      }
     }
     case "html":
-      return { sheets: [fromHtml(new TextDecoder("utf-8").decode(data))] }
+      return { sheets: [fromHtml(new TextDecoder("utf-8").decode(data), limits)] }
   }
 }
 
 /** Put the header names back at row 0, the way a grid holds them. */
-function withHeaderRow(rows: Array<Record<string, CellValue>>, headers: string[]): CellValue[][] {
+function withHeaderRow(
+  rows: Array<Record<string, CellValue>>,
+  headers: string[],
+  limit?: number,
+): CellValue[][] {
+  assertGridSize(rows.length + 1, headers.length, limit)
   return [headers, ...rows.map((row) => headers.map((h) => row[h] ?? null))]
 }
 

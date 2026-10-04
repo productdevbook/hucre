@@ -6,6 +6,12 @@ rather than as a list of commits.
 
 ## Unreleased — 2.0.0
 
+Dense ODS/text normalization checks the growing rectangle before repeat
+expansion or padding. ODS row repeats carry formulas, cached values,
+hyperlinks, styles and horizontal merges; `maxRows` bounds repeats before
+allocation. `read()` forwards `maxTotalCells` to text readers, and JSON,
+NDJSON, XML and HTML accept the same limit at their normalization boundary.
+
 Breaking. See [Migrating to v2](MIGRATION.md#migrating-to-v2): deprecated
 names removed, per-reader read options, `Color` on every colour field,
 `CellError` for error cells, rectangular `Sheet.rows` from every reader,

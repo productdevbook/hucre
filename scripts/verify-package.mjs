@@ -33,7 +33,9 @@ function check(label, fn) {
 }
 
 function run(command, args, options = {}) {
-  return execFileSync(command, args, {
+  // The harness may be launched with an explicit Node 24 binary while
+  // PATH points at another version; probes must use the requested engine.
+  return execFileSync(command === "node" ? process.execPath : command, args, {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     ...options,
@@ -136,7 +138,7 @@ try {
     writeFileSync(
       probe,
       [
-        `import { readXlsx, writeXlsx, insertRows } from "hucre"`,
+        `import { read, ParseError, readXlsx, writeXlsx, insertRows } from "hucre"`,
         `import { writeXlsx as x } from "hucre/xlsx"`,
         `import { parseCsv } from "hucre/csv"`,
         `import { readOds } from "hucre/ods"`,
@@ -161,6 +163,12 @@ try {
         `const sheet = { name: "Edit", rows: [[1], [2]], cells: createCellStore([[1, 0, { value: 2, type: "formula", formula: "Edit!A2" }]]) }`,
         `insertRows(sheet, 0, 1)`,
         `if (sheet.rows[2][0] !== 2 || getCell(sheet.cells, 2, 0)?.formula !== "Edit!A3") throw new Error("installed editing lost references")`,
+        `let bounded = false`,
+        `try { await read(new TextEncoder().encode("a,b,c\\nx\\nx"), { maxTotalCells: 8 }) } catch (error) { bounded = error instanceof ParseError }`,
+        `if (!bounded) throw new Error("installed read discarded maxTotalCells")`,
+        `bounded = false`,
+        `try { parseJson('[{"a":1,"b":2},{"a":3}]', { maxTotalCells: 3 }) } catch (error) { bounded = error instanceof ParseError }`,
+        `if (!bounded) throw new Error("installed JSON expansion ignored its bound")`,
         `console.log("entry points ok")`,
       ].join("\n"),
     )
