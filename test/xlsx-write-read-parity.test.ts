@@ -1,3 +1,4 @@
+import { getCell, createCellStore } from "../src/cell-store"
 // ── Write → read parity over the whole SheetInput / WorkbookInput surface ──
 //
 // The invariant: anything `writeXlsx` accepts, `readXlsx` gives back.
@@ -91,7 +92,7 @@ const SHEET_FIELDS: { [K in keyof Required<WritableSheet>]: Entry<WritableSheet[
     // `data[]` path only, silently doing nothing here.
     read: (sheet) => ({
       cols: sheet.columns?.map((c) => ({ width: c.width, outlineLevel: c.outlineLevel })),
-      bodyStyle: sheet.cells?.get("1,1")?.style,
+      bodyStyle: getCell(sheet.cells, 1, 1)?.style,
     }),
     // `header` is data, not column metadata: it is written into row 0 on
     // the `data[]` path and read back as a cell there. `<cols>` carries
@@ -125,14 +126,14 @@ const SHEET_FIELDS: { [K in keyof Required<WritableSheet>]: Entry<WritableSheet[
   },
 
   cells: {
-    value: new Map([
-      ["1,0", { value: "North", comment: { text: "a note", author: "hucre" } }],
-      ["1,1", { formula: "SUM(B2:B3)", formulaDynamic: true }],
+    value: createCellStore([
+      [1, 0, { value: "North", comment: { text: "a note", author: "hucre" } }],
+      [1, 1, { formula: "SUM(B2:B3)", formulaDynamic: true }],
     ]),
     read: (sheet) => ({
-      comment: sheet.cells?.get("1,0")?.comment?.text,
-      formula: sheet.cells?.get("1,1")?.formula,
-      dynamic: sheet.cells?.get("1,1")?.formulaDynamic,
+      comment: getCell(sheet.cells, 1, 0)?.comment?.text,
+      formula: getCell(sheet.cells, 1, 1)?.formula,
+      dynamic: getCell(sheet.cells, 1, 1)?.formulaDynamic,
     }),
     expected: { comment: "a note", formula: "SUM(B2:B3)", dynamic: true },
   },

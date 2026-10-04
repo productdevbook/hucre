@@ -1,3 +1,4 @@
+import { cellEntries } from "./cell-store"
 // ── Template Engine ──────────────────────────────────────────────────
 // Fill {{placeholder}} patterns in workbook cells with data values.
 // Works with round-trip: openXlsx -> fillTemplate -> saveXlsx.
@@ -74,9 +75,9 @@ export function fillTemplate(workbook: Workbook, data: Record<string, CellValue>
       }
     }
 
-    // Also process the cells Map if present (for rich cell data)
+    // Also process the cell metadata if present (for rich cell data)
     if (sheet.cells) {
-      for (const [_key, cell] of sheet.cells) {
+      for (const [, , cell] of cellEntries(sheet.cells)) {
         if (typeof cell.value !== "string") continue
         if (!cell.value.includes("{{")) continue
 

@@ -1,3 +1,4 @@
+import { createCellStore, setCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
@@ -662,9 +663,9 @@ describe("streamXlsxRows — ReadableStream input", () => {
   }, 30_000)
 
   it("formula cells return cached result from ReadableStream", async () => {
-    const cells = new Map<string, { formula: string; formulaResult: number }>()
-    cells.set("0,2", { formula: "A1+B1", formulaResult: 30 })
-    cells.set("1,2", { formula: "A2+B2", formulaResult: 70 })
+    const cells = createCellStore<{ formula: string; formulaResult: number }>()
+    setCell(cells, 0, 2, { formula: "A1+B1", formulaResult: 30 })
+    setCell(cells, 1, 2, { formula: "A2+B2", formulaResult: 70 })
 
     const xlsx = await writeXlsx({
       sheets: [

@@ -1,3 +1,4 @@
+import { createCellStore, setCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { a1ToR1C1 } from "../src/index"
 import { writeOds } from "../src/ods/writer"
@@ -26,8 +27,8 @@ describe("a1ToR1C1 — does not corrupt function names or string literals", () =
 
 describe("ODS formula conversion — function names and literals preserved", () => {
   async function odsContent(formula: string): Promise<string> {
-    const cells = new Map<string, { value: number; formula: string }>()
-    cells.set("0,0", { value: 0, formula })
+    const cells = createCellStore<{ value: number; formula: string }>()
+    setCell(cells, 0, 0, { value: 0, formula })
     const data = await writeOds({
       sheets: [{ name: "S", rows: [[0]], cells: cells as never }],
     })

@@ -1,3 +1,5 @@
+import { cellEntries } from "../src/cell-store"
+import { getCell, createCellStore, setCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { ZipWriter } from "../src/zip/writer"
 import { ZipReader } from "../src/zip/reader"
@@ -101,7 +103,7 @@ async function numFmtFor(dataStyleXml: string, dataStyleName: string): Promise<s
     `<table:table-row><table:table-cell table:style-name="ce1" office:value-type="float" office:value="1"><text:p>1</text:p></table:table-cell></table:table-row>`,
   )
   const wb = await readBody(body, styles)
-  return wb.sheets[0]!.cells?.get("0,0")?.style?.numFmt
+  return getCell(wb.sheets[0]!.cells, 0, 0)?.style?.numFmt
 }
 
 async function collectStream(data: Uint8Array): Promise<StreamRow[]> {
@@ -316,7 +318,7 @@ describe("ODS reader — date and time data styles", () => {
       ),
       styles,
     )
-    expect(wb.sheets[0]!.cells?.get("0,0")?.style?.numFmt).toBeUndefined()
+    expect(getCell(wb.sheets[0]!.cells, 0, 0)?.style?.numFmt).toBeUndefined()
   })
 
   it("tolerates whitespace between the automatic-style elements", async () => {
@@ -334,7 +336,7 @@ describe("ODS reader — date and time data styles", () => {
       ),
       styles,
     )
-    expect(wb.sheets[0]!.cells?.get("0,0")?.style?.numFmt).toBe("0.0")
+    expect(getCell(wb.sheets[0]!.cells, 0, 0)?.style?.numFmt).toBe("0.0")
   })
 })
 
@@ -368,7 +370,7 @@ describe("ODS reader — automatic cell styles", () => {
       `<style:table-cell-properties fo:background-color="00ff00"/>` +
       `</style:style>`
     const wb = await readBody(table(cellRow), styles)
-    const style = wb.sheets[0]!.cells?.get("0,0")?.style
+    const style = getCell(wb.sheets[0]!.cells, 0, 0)?.style
     expect(style?.font?.color?.rgb).toBe("FF0000")
     expect(style?.font?.size).toBe(10.5)
     expect((style!.fill as PatternFill).fgColor?.rgb).toBe("00FF00")
@@ -380,7 +382,7 @@ describe("ODS reader — automatic cell styles", () => {
       `<style:text-properties fo:font-size="medium" fo:font-weight="bold"/>` +
       `</style:style>`
     const wb = await readBody(table(cellRow), styles)
-    const font = wb.sheets[0]!.cells?.get("0,0")?.style?.font
+    const font = getCell(wb.sheets[0]!.cells, 0, 0)?.style?.font
     expect(font).toEqual({ bold: true })
   })
 
@@ -391,7 +393,7 @@ describe("ODS reader — automatic cell styles", () => {
       `<style:table-cell-properties fo:background-color="transparent"/>` +
       `</style:style>`
     const wb = await readBody(table(cellRow), styles)
-    const style = wb.sheets[0]!.cells?.get("0,0")?.style
+    const style = getCell(wb.sheets[0]!.cells, 0, 0)?.style
     expect(style?.font?.italic).toBe(true)
     expect(style?.fill).toBeUndefined()
   })
@@ -514,7 +516,7 @@ describe("ODS reader — hyperlinks", () => {
           `</table:table-cell></table:table-row>`,
       ),
     )
-    const cell = wb.sheets[0]!.cells?.get("0,0")
+    const cell = getCell(wb.sheets[0]!.cells, 0, 0)
     expect(cell?.hyperlink).toEqual({ target: "https://example.com/", display: "the docs" })
     expect(cell?.value).toBe("see the docs")
   })
@@ -528,7 +530,7 @@ describe("ODS reader — hyperlinks", () => {
           `</table:table-cell></table:table-row>`,
       ),
     )
-    expect(wb.sheets[0]!.cells?.get("0,0")?.hyperlink?.target).toBe("https://real.example/")
+    expect(getCell(wb.sheets[0]!.cells, 0, 0)?.hyperlink?.target).toBe("https://real.example/")
   })
 })
 
@@ -543,7 +545,7 @@ describe("ODS reader — formula namespace prefixes", () => {
         `<table:table-row><table:table-cell table:formula="${attr}" office:value-type="float" office:value="3"><text:p>3</text:p></table:table-cell></table:table-row>`,
       ),
     )
-    return wb.sheets[0]!.cells?.get("0,0")?.formula
+    return getCell(wb.sheets[0]!.cells, 0, 0)?.formula
   }
 
   it("strips the legacy oooc: prefix OpenOffice.org 1.x wrote", async () => {
@@ -568,7 +570,7 @@ describe("ODS reader — formula namespace prefixes", () => {
       ),
       `<style:style style:name="co1" style:family="table-column"/>`,
     )
-    const cell = wb.sheets[0]!.cells?.get("0,0")
+    const cell = getCell(wb.sheets[0]!.cells, 0, 0)
     expect(cell?.formula).toBe("1")
     expect(cell?.style).toBeUndefined()
   })
@@ -579,7 +581,7 @@ describe("ODS reader — formula namespace prefixes", () => {
         `<table:table-row><table:table-cell table:formula="of:=1+1" office:value-type="float" office:value="2"><text:p>2</text:p></table:table-cell></table:table-row>`,
       ),
     )
-    expect(wb.sheets[0]!.cells?.get("0,0")?.type).toBe("formula")
+    expect(getCell(wb.sheets[0]!.cells, 0, 0)?.type).toBe("formula")
   })
 })
 
@@ -676,7 +678,7 @@ describe("ODS reader — repeated cells, covered cells and merges", () => {
     expect(sheet.rows.length).toBe(7)
     expect(sheet.rows.slice(1, 6)).toEqual([[null], [null], [null], [null], [null]])
     expect(sheet.rows[6]).toEqual([1])
-    expect([...sheet.cells!.keys()]).toEqual(["6,0"])
+    expect([...cellEntries(sheet.cells)].map(([row, col]) => [row, col])).toEqual([[6, 0]])
   })
 
   it("drops a trailing run of empty repeated rows instead of materializing it", async () => {
@@ -739,7 +741,7 @@ describe("ODS reader — cell metadata types", () => {
 
   async function typeOf(cellXml: string): Promise<string | undefined> {
     const wb = await readBody(table(`<table:table-row>${cellXml}</table:table-row>`), styles)
-    return wb.sheets[0]!.cells?.get("0,0")?.type
+    return getCell(wb.sheets[0]!.cells, 0, 0)?.type
   }
 
   it("tags a styled boolean cell as boolean", async () => {
@@ -1133,13 +1135,13 @@ describe("streamOdsRows — options and failure modes", () => {
 
 describe("ODS writer — date format code round-trips", () => {
   async function roundTrip(numFmt: string): Promise<string | undefined> {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", { value: 1, style: { numFmt } })
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, { value: 1, style: { numFmt } })
     const data = await writeOds({
       sheets: [{ name: "S", rows: [[1]], cells }],
     })
     const wb = await readOds(data, { readStyles: true })
-    return wb.sheets[0]!.cells?.get("0,0")?.style?.numFmt
+    return getCell(wb.sheets[0]!.cells, 0, 0)?.style?.numFmt
   }
 
   it.each([
@@ -1179,17 +1181,17 @@ describe("ODS writer — date format code round-trips", () => {
     // The cell-style cache is keyed on the whole style, so bold+0.000 and
     // italic+0.000 are two <style:style> elements — but they must point at
     // the same <number:number-style>.
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", { value: 1, style: { numFmt: "0.000", font: { bold: true } } })
-    cells.set("0,1", { value: 2, style: { numFmt: "0.000", font: { italic: true } } })
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, { value: 1, style: { numFmt: "0.000", font: { bold: true } } })
+    setCell(cells, 0, 1, { value: 2, style: { numFmt: "0.000", font: { italic: true } } })
     const xml = await contentOf(await writeOds({ sheets: [{ name: "S", rows: [[1, 2]], cells }] }))
     expect(xml.match(/<number:number-style/g)!.length).toBe(1)
     expect(xml.match(/<style:style/g)!.length).toBe(2)
   })
 
   it("emits nothing for a style object with no properties at all", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", { value: 1, style: {} })
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, { value: 1, style: {} })
     const xml = await contentOf(await writeOds({ sheets: [{ name: "S", rows: [[1]], cells }] }))
     expect(xml).not.toContain("<style:style")
     expect(xml).not.toContain("table:style-name")
@@ -1197,12 +1199,12 @@ describe("ODS writer — date format code round-trips", () => {
 
   it("reads a bracketed currency symbol out of an Excel locale tag", async () => {
     // Excel writes `[$€-2]#,##0` for a Euro format.
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", { value: 1, style: { numFmt: "[$€-2]#,##0" } })
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, { value: 1, style: { numFmt: "[$€-2]#,##0" } })
     const data = await writeOds({ sheets: [{ name: "S", rows: [[1]], cells }] })
     expect(await contentOf(data)).toContain("<number:currency-symbol>€</number:currency-symbol>")
     const wb = await readOds(data, { readStyles: true })
-    expect(wb.sheets[0]!.cells?.get("0,0")?.style?.numFmt).toBe(`"€"#,##0`)
+    expect(getCell(wb.sheets[0]!.cells, 0, 0)?.style?.numFmt).toBe(`"€"#,##0`)
   })
 
   it("marks bracketed minute and second durations as non-truncating", async () => {
@@ -1210,8 +1212,8 @@ describe("ODS writer — date format code round-trips", () => {
     // number:truncate-on-overflow="false" on the time style; the bracket
     // itself has no ODF spelling, so this is checked on the written XML.
     const codes = ["[m]:ss", "[ss]", "[h]:mm", "[mm]:[s]"]
-    const cells = new Map<string, Partial<Cell>>()
-    codes.forEach((numFmt, i) => cells.set(`${i},0`, { value: i, style: { numFmt } }))
+    const cells = createCellStore<Partial<Cell>>()
+    codes.forEach((numFmt, i) => setCell(cells, i, 0, { value: i, style: { numFmt } }))
     const xml = await contentOf(
       await writeOds({ sheets: [{ name: "S", rows: codes.map((_, i) => [i]), cells }] }),
     )
@@ -1224,8 +1226,8 @@ describe("ODS writer — date format code round-trips", () => {
   })
 
   it("puts a trailing currency symbol after the number element", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", { value: 1, style: { numFmt: `#,##0.00 "€"` } })
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, { value: 1, style: { numFmt: `#,##0.00 "€"` } })
     const data = await writeOds({ sheets: [{ name: "S", rows: [[1]], cells }] })
     const doc = parseXml(await contentOf(data))
     const autoStyles = doc.children.find(
@@ -1254,11 +1256,11 @@ describe("ODS writer — date format code round-trips", () => {
     // Actual:   a <number:currency-style> round-tripping to `"$"0`
     // The guard at writer.ts:115 already recognises that `[$-409]` has an
     // empty symbol group; the fallback at :120 undoes that decision.
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", { value: 1, style: { numFmt: "[$-409]mmm-yy" } })
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, { value: 1, style: { numFmt: "[$-409]mmm-yy" } })
     const data = await writeOds({ sheets: [{ name: "S", rows: [[1]], cells }] })
     const wb = await readOds(data, { readStyles: true })
-    expect(wb.sheets[0]!.cells?.get("0,0")?.style?.numFmt).toBe("mmm-yy")
+    expect(getCell(wb.sheets[0]!.cells, 0, 0)?.style?.numFmt).toBe("mmm-yy")
   })
 })
 
@@ -1329,9 +1331,9 @@ describe("ODS writer — columns + data", () => {
     // override at or past a row's last non-null value was simply dropped —
     // and the XLSX writer grows the grid for exactly this case, so one
     // SheetInput produced two different documents per output format.
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,2", { value: null, formula: "NOW()" })
-    cells.set("2,0", { value: "z" })
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 2, { value: null, formula: "NOW()" })
+    setCell(cells, 2, 0, { value: "z" })
     const data = await writeOds({ sheets: [{ name: "S", rows: [[1, null, null]], cells }] })
 
     const xml = new TextDecoder().decode(await new ZipReader(data).extract("content.xml"))
@@ -1343,7 +1345,7 @@ describe("ODS writer — columns + data", () => {
     // emitted XML alone, because the reader collapsed the interior empty row
     // between them and "z" read back at index 1. See #394.
     const wb = await readOds(data)
-    expect(wb.sheets[0]!.cells?.get("0,2")?.formula).toBe("NOW()")
+    expect(getCell(wb.sheets[0]!.cells, 0, 2)?.formula).toBe("NOW()")
     expect(wb.sheets[0]!.rows).toEqual([
       [1, null, null],
       [null, null, null],
@@ -1352,8 +1354,8 @@ describe("ODS writer — columns + data", () => {
   })
 
   it("writes a self-closing cell for a null override with nothing else on it", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", { value: null })
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, { value: null })
     const data = await writeOds({ sheets: [{ name: "S", rows: [[null, "b"]], cells }] })
     expect(await contentOf(data)).toContain("<table:table-cell/>")
     expect((await readOds(data)).sheets[0]!.rows[0]).toEqual([null, "b"])
@@ -1361,13 +1363,13 @@ describe("ODS writer — columns + data", () => {
 
   it("keeps an empty cell that carries a formula", async () => {
     // The empty-run collapse must not swallow a cell that has an override.
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,1", { formula: "SUM(A1:A1)" })
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 1, { formula: "SUM(A1:A1)" })
     const data = await writeOds({ sheets: [{ name: "S", rows: [[1, null, 3]], cells }] })
     const xml = await contentOf(data)
     expect(xml).toContain(`table:formula="of:=SUM([.A1:.A1])"`)
     const wb = await readOds(data)
-    expect(wb.sheets[0]!.cells?.get("0,1")?.formula).toBe("SUM(A1:A1)")
+    expect(getCell(wb.sheets[0]!.cells, 0, 1)?.formula).toBe("SUM(A1:A1)")
   })
 })
 

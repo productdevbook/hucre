@@ -1,3 +1,4 @@
+import { createCellStore, getCell } from "../src/cell-store"
 // Regression tests for #405 — the ODS writer emitted cross-sheet formulas
 // ODF cannot parse, and dropped rich-text cells entirely.
 //
@@ -35,7 +36,7 @@ function findChildren(el: { children: Array<unknown> }, localName: string): any[
 
 /** Write one sheet whose A1 carries `formula`, and return A1's attributes. */
 async function writeFormulaCell(formula: string): Promise<Record<string, string>> {
-  const cells = new Map<string, Partial<Cell>>([["0,0", { value: 0, formula }]])
+  const cells = createCellStore<Partial<Cell>>([[0, 0, { value: 0, formula }]])
   const data = await writeOds({ sheets: [{ name: "Sheet1", rows: [[0]], cells }] })
   const doc = parseXml(await extractFile(data, "content.xml"))
   const table = findChild(findChild(findChild(doc, "body"), "spreadsheet"), "table")
@@ -75,7 +76,7 @@ async function odsWithFormula(formula: string): Promise<Uint8Array> {
 
 async function readFormula(odsFormula: string): Promise<string | undefined> {
   const wb = await readOds(await odsWithFormula(odsFormula))
-  return wb.sheets[0]!.cells?.get("0,0")?.formula
+  return getCell(wb.sheets[0]!.cells, 0, 0)?.formula
 }
 
 // ── #405.1: cross-sheet formula references ──────────────────────────
@@ -156,13 +157,13 @@ describe("ODS #405 — reading the cross-sheet forms LibreOffice writes", () => 
   })
 
   it("round-trips a cross-sheet formula through write → read", async () => {
-    const cells = new Map<string, Partial<Cell>>([["0,0", { value: 6, formula: "Sheet2!A1+1" }]])
+    const cells = createCellStore<Partial<Cell>>([[0, 0, { value: 6, formula: "Sheet2!A1+1" }]])
     const sheets: SheetInput[] = [
       { name: "Sheet1", rows: [[6]], cells },
       { name: "Sheet2", rows: [[5]] },
     ]
     const wb = await readOds(await writeOds({ sheets }))
-    expect(wb.sheets[0]!.cells!.get("0,0")!.formula).toBe("Sheet2!A1+1")
+    expect(getCell(wb.sheets[0]!.cells!, 0, 0)!.formula).toBe("Sheet2!A1+1")
   })
 })
 
@@ -175,7 +176,7 @@ describe("ODS #405 — rich-text cells keep their text", () => {
   ]
 
   async function writeRichText(): Promise<Uint8Array> {
-    const cells = new Map<string, Partial<Cell>>([["0,0", { value: null, richText: runs }]])
+    const cells = createCellStore<Partial<Cell>>([[0, 0, { value: null, richText: runs }]])
     return await writeOds({ sheets: [{ name: "Sheet1", rows: [[null]], cells }] })
   }
 
@@ -216,10 +217,10 @@ describe("ODS #405 — rich-text cells keep their text", () => {
 describe("ODS #405 — hyperlinks on non-string cells", () => {
   it("keeps the link and the typed value on numbers, dates and booleans", async () => {
     const date = new Date(Date.UTC(2020, 0, 2))
-    const cells = new Map<string, Partial<Cell>>([
-      ["0,0", { value: 42, hyperlink: { target: "https://example.com/num" } }],
-      ["0,1", { value: date, hyperlink: { target: "https://example.com/date" } }],
-      ["0,2", { value: true, hyperlink: { target: "https://example.com/bool" } }],
+    const cells = createCellStore<Partial<Cell>>([
+      [0, 0, { value: 42, hyperlink: { target: "https://example.com/num" } }],
+      [0, 1, { value: date, hyperlink: { target: "https://example.com/date" } }],
+      [0, 2, { value: true, hyperlink: { target: "https://example.com/bool" } }],
     ])
     const data = await writeOds({
       sheets: [{ name: "Sheet1", rows: [[null, null, null]], cells }],
@@ -227,9 +228,9 @@ describe("ODS #405 — hyperlinks on non-string cells", () => {
 
     const wb = await readOds(data)
     const sheet = wb.sheets[0]!
-    expect(sheet.cells!.get("0,0")!.hyperlink!.target).toBe("https://example.com/num")
-    expect(sheet.cells!.get("0,1")!.hyperlink!.target).toBe("https://example.com/date")
-    expect(sheet.cells!.get("0,2")!.hyperlink!.target).toBe("https://example.com/bool")
+    expect(getCell(sheet.cells!, 0, 0)!.hyperlink!.target).toBe("https://example.com/num")
+    expect(getCell(sheet.cells!, 0, 1)!.hyperlink!.target).toBe("https://example.com/date")
+    expect(getCell(sheet.cells!, 0, 2)!.hyperlink!.target).toBe("https://example.com/bool")
 
     // The value must survive as its own type, not degrade to text.
     expect(sheet.rows[0]![0]).toBe(42)
@@ -242,21 +243,21 @@ describe("ODS #405 — hyperlinks on non-string cells", () => {
   })
 
   it("writes Hyperlink.display as the anchor text", async () => {
-    const cells = new Map<string, Partial<Cell>>([
-      ["0,0", { value: 42, hyperlink: { target: "https://example.com", display: "Click me" } }],
+    const cells = createCellStore<Partial<Cell>>([
+      [0, 0, { value: 42, hyperlink: { target: "https://example.com", display: "Click me" } }],
     ])
     const data = await writeOds({ sheets: [{ name: "Sheet1", rows: [[null]], cells }] })
 
     expect(await extractFile(data, "content.xml")).toContain(">Click me</text:a>")
     const wb = await readOds(data)
-    expect(wb.sheets[0]!.cells!.get("0,0")!.hyperlink!.display).toBe("Click me")
+    expect(getCell(wb.sheets[0]!.cells!, 0, 0)!.hyperlink!.display).toBe("Click me")
     expect(wb.sheets[0]!.rows[0]![0]).toBe(42)
   })
 })
 
 describe("ODS #405 — multi-section number formats", () => {
   async function styleXml(numFmt: string): Promise<any[]> {
-    const cells = new Map<string, Partial<Cell>>([["0,0", { value: -1234.5, style: { numFmt } }]])
+    const cells = createCellStore<Partial<Cell>>([[0, 0, { value: -1234.5, style: { numFmt } }]])
     const data = await writeOds({ sheets: [{ name: "Sheet1", rows: [[-1234.5]], cells }] })
     const doc = parseXml(await extractFile(data, "content.xml"))
     return findChildren(findChild(doc, "automatic-styles"), "number-style")
@@ -285,10 +286,10 @@ describe("ODS #405 — multi-section number formats", () => {
 
   it("round-trips all three sections", async () => {
     const numFmt = "#,##0.00;-#,##0.00;0.00"
-    const cells = new Map<string, Partial<Cell>>([["0,0", { value: 1, style: { numFmt } }]])
+    const cells = createCellStore<Partial<Cell>>([[0, 0, { value: 1, style: { numFmt } }]])
     const data = await writeOds({ sheets: [{ name: "Sheet1", rows: [[1]], cells }] })
     const wb = await readOds(data, { readStyles: true })
-    expect(wb.sheets[0]!.cells!.get("0,0")!.style!.numFmt).toBe(numFmt)
+    expect(getCell(wb.sheets[0]!.cells!, 0, 0)!.style!.numFmt).toBe(numFmt)
   })
 
   it("leaves a single-section format as one unmapped style", async () => {

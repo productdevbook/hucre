@@ -1,3 +1,4 @@
+import { createCellStore } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { writeXlsxStream } from "../src/xlsx/stream-writer"
@@ -67,7 +68,7 @@ describe("xml:space=preserve on every <t> that needs it", () => {
   })
 
   it("declares it on a rich-text run", async () => {
-    const cells = new Map([["0,0", { richText: [{ text: PADDED, font: { bold: true } }] }]])
+    const cells = createCellStore([[0, 0, { richText: [{ text: PADDED, font: { bold: true } }] }]])
     const bytes = await writeXlsx({ sheets: [{ name: "S", rows: [[null]], cells }] })
 
     const xml = await part(bytes, "xl/worksheets/sheet1.xml")

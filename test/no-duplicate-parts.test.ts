@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { createCellStore } from "../src/cell"
 import { openXlsx, saveXlsx } from "../src/xlsx/roundtrip"
 import { writeXlsx } from "../src/xlsx/writer"
 import { ZipReader } from "../src/zip/reader"
@@ -15,7 +16,7 @@ import { ZipReader } from "../src/zip/reader"
 // an explicit "skip the opened copy" rule; the feature bag never got one.
 // ═══════════════════════════════════════════════════════════════════════
 
-const CHECKBOX_CELLS = new Map([["0,0", { value: true, checkbox: true }]])
+const CHECKBOX_CELLS = createCellStore([[0, 0, { value: true, checkbox: true }]])
 
 function pathsIn(bytes: Uint8Array): string[] {
   return new ZipReader(bytes).entries()
@@ -34,7 +35,7 @@ function duplicates(paths: string[]): string[] {
 describe("a saved package has each part once", () => {
   it("round-trips a workbook with checkboxes without duplicating the feature bag", async () => {
     const original = await writeXlsx({
-      sheets: [{ name: "S", rows: [[true]], cells: CHECKBOX_CELLS as never }],
+      sheets: [{ name: "S", rows: [[true]], cells: CHECKBOX_CELLS }],
     })
 
     // The part has to be there in the first place, or the test proves nothing.
@@ -48,7 +49,7 @@ describe("a saved package has each part once", () => {
 
   it("survives a second round trip", async () => {
     const original = await writeXlsx({
-      sheets: [{ name: "S", rows: [[true]], cells: CHECKBOX_CELLS as never }],
+      sheets: [{ name: "S", rows: [[true]], cells: CHECKBOX_CELLS }],
     })
 
     const once = await saveXlsx(await openXlsx(original))
@@ -59,7 +60,7 @@ describe("a saved package has each part once", () => {
 
   it("keeps the checkbox through the round trip", async () => {
     const original = await writeXlsx({
-      sheets: [{ name: "S", rows: [[true]], cells: CHECKBOX_CELLS as never }],
+      sheets: [{ name: "S", rows: [[true]], cells: CHECKBOX_CELLS }],
     })
 
     const saved = await saveXlsx(await openXlsx(original))

@@ -1,3 +1,5 @@
+import { createCellStore, getCell, setCell } from "../cell-store"
+import type { CellStore } from "../_types"
 // ── Worksheet Parser ─────────────────────────────────────────────────
 // Parses xl/worksheets/sheetN.xml into a Sheet object.
 
@@ -36,23 +38,10 @@ import { cloneCellStyle } from "../_style"
 import { PAPER_SIZE_REVERSE } from "./worksheet-writer"
 import { serialToDate } from "../_date"
 import { parseSax, parseSaxStream, decodeOoxmlEscapes, type SaxHandlers } from "../xml/parser"
-import { MAX_CELL_MAP_ENTRIES, MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
+import { MAX_COL_INDEX, MAX_ROW_INDEX, MAX_TOTAL_CELLS } from "../limits"
 import { ParseError } from "../errors"
 
-/**
- * The message for a sheet whose bounding box is over the limit.
- *
- * Pure, and exported, because the branch that matters cannot be reached
- * from a test workbook: telling a caller *not* to try `sparse` needs a
- * sheet with more than 16.7 million filled cells, which is a couple of
- * gigabytes to build for one string.
- *
- * The advice is the point. A sparse sheet — 82k values over a 305M-slot
- * box, 0.03% filled — wants `sparse: true`, and a dense one cannot use
- * it: the cell count that blew the box limit is the same count that
- * blows the `Map` behind `cells`. The message used to offer it either
- * way. See #501, #527.
- */
+/** Dense-grid limits apply to the bounding box, not the sparse store. */
 export function oversizeSheetMessage(
   name: string,
   rowCount: number,
@@ -62,46 +51,14 @@ export function oversizeSheetMessage(
   cellLimit: number,
 ): string {
   const density = totalCells > 0 ? (100 * cellCount) / totalCells : 100
-  const sparseWouldFit = cellCount <= MAX_CELL_MAP_ENTRIES
-
   return (
     `Sheet "${name}" spans ${rowCount} rows x ${colCount} columns ` +
     `(${totalCells} cells, ${density.toFixed(2)}% of them filled), ` +
     `over the ${cellLimit} limit.\n` +
     `  - streamXlsxRows(input) reads it a row at a time, whatever the box.\n` +
-    (sparseWouldFit
-      ? `  - readXlsx(input, { sparse: true }) returns the cells and no grid.\n`
-      : `  - \`sparse: true\` cannot help here: ${cellCount} filled cells is past ` +
-        `the ${MAX_CELL_MAP_ENTRIES} a Map can hold.\n`) +
+    `  - readXlsx(input, { sparse: true }) returns the cells and no grid.\n` +
     `  - \`range\` or \`maxRows\` bound the area, if you know where the data is.\n` +
     `  - \`maxTotalCells\` raises the bound, if the sheet really is this large.`
-  )
-}
-
-/**
- * Refuse the cell that would overflow `Sheet.cells`.
- *
- * V8 caps a `Map` at 2^24 entries and answers the next `set` with a raw
- * `RangeError: Map maximum size exceeded` — not a `HucreError`, naming
- * no sheet, saying nothing about spreadsheets. Checking the size first
- * costs one comparison per cell and turns that into a `ParseError` that
- * names where to go instead.
- *
- * `has` is only consulted at the boundary, so the common path is the
- * comparison alone.
- */
-export function assertCellMapCapacity(
-  cells: Map<string, Cell>,
-  key: string,
-  sheetName: string | undefined,
-): void {
-  if (cells.size < MAX_CELL_MAP_ENTRIES || cells.has(key)) return
-
-  throw new ParseError(
-    `Sheet "${sheetName ?? "?"}" has more than ${MAX_CELL_MAP_ENTRIES} filled cells, ` +
-      `which is the most \`Sheet.cells\` can hold — a Map caps at 2^24 entries.\n` +
-      `  - streamXlsxRows(input) reads it a row at a time and has no such bound.\n` +
-      `The file is not damaged; it is larger than this model.`,
   )
 }
 
@@ -241,7 +198,7 @@ function worksheetParser(
   ctx: WorksheetContext,
 ): { handlers: SaxHandlers; finish: () => Sheet } {
   const rows: CellValue[][] = []
-  const cells = new Map<string, Cell>()
+  const cells = createCellStore<Cell>()
   const merges: MergeRange[] = []
   let maxCol = -1
   let maxRow = -1
@@ -1311,19 +1268,16 @@ function worksheetParser(
 
     for (const hl of rawHyperlinks) {
       const pos = parseCellRef(hl.ref)
-      const key = `${pos.row},${pos.col}`
+      if (!validateCellPosition(hl.ref, pos, ctx)) continue
 
-      // Get or create cell in the cells map
-      let cell = cells.get(key)
+      // Get or create cell in the cell store
+      let cell = getCell(cells, pos.row, pos.col)
       if (!cell) {
         cell = {
           value: (rows[pos.row] && rows[pos.row][pos.col]) ?? null,
           type: "string",
         }
-        // Far fewer hyperlinks than cells in any real file, but this is
-        // the other place `cells` grows and the check is one comparison.
-        assertCellMapCapacity(cells, key, name)
-        cells.set(key, cell)
+        setCell(cells, pos.row, pos.col, cell)
       }
 
       const hyperlink: Hyperlink = { target: "" }
@@ -1770,38 +1724,13 @@ function buildConditionalRule(
   return rule
 }
 
-// ── Cell Processing ──────────────────────────────────────────────────
-
-function processCell(
+/** Shared by cell values, hyperlinks and comments: malformed references
+ * are dropped with a warning; coordinates past the grid are file errors. */
+export function validateCellPosition(
   ref: string,
-  type: string,
-  styleIndex: number,
-  valueText: string,
-  formulaText: string,
-  inlineText: string,
-  inlineRichText: RichTextRun[] | undefined,
-  ctx: WorksheetContext,
-  rows: CellValue[][],
-  cells: Map<string, Cell>,
-  assertCellFitsDenseGrid: (row: number, col: number) => void,
-  formulaType?: string,
-  formulaSi?: number,
-  formulaRef?: string,
-  formulaCm?: boolean,
-  fallbackRow?: number,
-  fallbackCol?: number,
-): void {
-  // When the `r` attribute is missing, fall back to implicit row/col position
-  // (parity with the streaming reader).
-  const pos =
-    ref !== ""
-      ? parseCellRef(ref)
-      : fallbackRow !== undefined && fallbackCol !== undefined
-        ? { row: fallbackRow, col: fallbackCol }
-        : null
-  if (!pos) return
-  const { row, col } = pos
-
+  { row, col }: { row: number; col: number },
+  ctx: Pick<WorksheetContext, "sheetName" | "onWarning">,
+): boolean {
   // Two different failures, treated differently on purpose — the same
   // distinction `clampColumnBound` draws a few lines down.
   //
@@ -1830,8 +1759,45 @@ function processCell(
         "the sheet is read.",
       sheet: ctx.sheetName,
     })
-    return
+    return false
   }
+
+  return true
+}
+
+// ── Cell Processing ──────────────────────────────────────────────────
+
+function processCell(
+  ref: string,
+  type: string,
+  styleIndex: number,
+  valueText: string,
+  formulaText: string,
+  inlineText: string,
+  inlineRichText: RichTextRun[] | undefined,
+  ctx: WorksheetContext,
+  rows: CellValue[][],
+  cells: CellStore<Cell>,
+  assertCellFitsDenseGrid: (row: number, col: number) => void,
+  formulaType?: string,
+  formulaSi?: number,
+  formulaRef?: string,
+  formulaCm?: boolean,
+  fallbackRow?: number,
+  fallbackCol?: number,
+): void {
+  // When the `r` attribute is missing, fall back to implicit row/col position
+  // (parity with the streaming reader).
+  const pos =
+    ref !== ""
+      ? parseCellRef(ref)
+      : fallbackRow !== undefined && fallbackCol !== undefined
+        ? { row: fallbackRow, col: fallbackCol }
+        : null
+  if (!pos) return
+  const { row, col } = pos
+
+  if (!validateCellPosition(ref, pos, ctx)) return
 
   assertCellFitsDenseGrid(row, col)
 
@@ -2075,9 +2041,7 @@ function processCell(
         })
       }
     }
-    const cellKey = `${row},${col}`
-    assertCellMapCapacity(cells, cellKey, ctx.sheetName)
-    cells.set(cellKey, cell)
+    setCell(cells, row, col, cell)
   }
 }
 

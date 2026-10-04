@@ -1,3 +1,4 @@
+import { createCellStore, getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { deleteColumns, deleteRows, insertColumns, insertRows } from "../src/sheet-ops"
 import { shiftFormula } from "../src/_refs"
@@ -66,9 +67,9 @@ describe("shiftFormula", () => {
 })
 
 function sheet(): Sheet {
-  const cells = new Map<string, Cell>([
-    ["4,0", { value: 10, type: "number", formula: "SUM(A1:A4)" }],
-    ["4,1", { value: 1, type: "number", formula: "Other!B1+A5" }],
+  const cells = createCellStore<Cell>([
+    [4, 0, { value: 10, type: "number", formula: "SUM(A1:A4)" }],
+    [4, 1, { value: 1, type: "number", formula: "Other!B1+A5" }],
   ])
   return {
     name: "S",
@@ -91,7 +92,7 @@ describe("insertRows moves what names a position", () => {
 
     insertRows(s, 0, 2)
 
-    expect(s.cells!.get("6,0")!.formula).toBe("SUM(A3:A6)")
+    expect(getCell(s.cells!, 6, 0)!.formula).toBe("SUM(A3:A6)")
   })
 
   it("leaves another sheet's part of a formula alone", () => {
@@ -99,7 +100,7 @@ describe("insertRows moves what names a position", () => {
 
     insertRows(s, 0, 2)
 
-    expect(s.cells!.get("6,1")!.formula).toBe("Other!B1+A7")
+    expect(getCell(s.cells!, 6, 1)!.formula).toBe("Other!B1+A7")
   })
 
   it("moves the page breaks", () => {
@@ -142,12 +143,12 @@ describe("deleteRows leaves #REF! where a reference pointed", () => {
     const s: Sheet = {
       name: "S",
       rows: [[1], [2], [3]],
-      cells: new Map<string, Cell>([["2,0", { value: 1, type: "number", formula: "A2" }]]),
+      cells: createCellStore<Cell>([[2, 0, { value: 1, type: "number", formula: "A2" }]]),
     }
 
     deleteRows(s, 1, 1)
 
-    expect(s.cells!.get("1,0")!.formula).toBe("#REF!")
+    expect(getCell(s.cells!, 1, 0)!.formula).toBe("#REF!")
   })
 
   it("shrinks a range the deletion clipped", () => {
@@ -155,7 +156,7 @@ describe("deleteRows leaves #REF! where a reference pointed", () => {
 
     deleteRows(s, 1, 2)
 
-    expect(s.cells!.get("2,0")!.formula).toBe("SUM(A1:A2)")
+    expect(getCell(s.cells!, 2, 0)!.formula).toBe("SUM(A1:A2)")
   })
 
   it("moves the page breaks up", () => {
@@ -179,7 +180,7 @@ describe("the column operations do the same on the other axis", () => {
   const withFormula = (): Sheet => ({
     name: "S",
     rows: [[1, 2, 3]],
-    cells: new Map<string, Cell>([["0,2", { value: 3, type: "number", formula: "SUM(A1:B1)" }]]),
+    cells: createCellStore<Cell>([[0, 2, { value: 3, type: "number", formula: "SUM(A1:B1)" }]]),
     colBreaks: [2],
   })
 
@@ -188,7 +189,7 @@ describe("the column operations do the same on the other axis", () => {
 
     insertColumns(s, 0, 1)
 
-    expect(s.cells!.get("0,3")!.formula).toBe("SUM(B1:C1)")
+    expect(getCell(s.cells!, 0, 3)!.formula).toBe("SUM(B1:C1)")
     expect(s.colBreaks).toEqual([3])
   })
 
@@ -200,7 +201,7 @@ describe("the column operations do the same on the other axis", () => {
     // A is gone and B slides into its place, so the range shrinks to the
     // one column that survived rather than going #REF!. Only a range the
     // deletion swallows *whole* has nothing left to point at.
-    expect(s.cells!.get("0,1")!.formula).toBe("SUM(A1:A1)")
+    expect(getCell(s.cells!, 0, 1)!.formula).toBe("SUM(A1:A1)")
     expect(s.colBreaks).toEqual([1])
   })
 })

@@ -1,3 +1,4 @@
+import { createCellStore, setCell } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import { ZipReader } from "../src/zip/reader"
 import { parseXml } from "../src/xml/parser"
@@ -686,8 +687,8 @@ describe("image round-trip", () => {
 
 describe("image edge cases", () => {
   it("coexists with hyperlinks in sheet rels", async () => {
-    const cells = new Map<string, Partial<import("../src/_types").Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<import("../src/_types").Cell>>()
+    setCell(cells, 0, 0, {
       value: "Link",
       hyperlink: { target: "https://example.com" },
     })

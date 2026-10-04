@@ -1,3 +1,5 @@
+import { createCellStore, getCell } from "../src/cell-store"
+import type { CellStore } from "../src/_types"
 import { cellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
@@ -42,8 +44,8 @@ async function stylesXml(sheet: SheetInput) {
   return part(buf, "xl/styles.xml")
 }
 
-const cellMap = (entries: Array<[string, Partial<Cell>]>): Map<string, Partial<Cell>> =>
-  new Map(entries)
+const cellMap = (entries: Array<[number, number, Partial<Cell>]>): CellStore<Partial<Cell>> =>
+  createCellStore(entries)
 
 async function drain(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
   const chunks: Uint8Array[] = []
@@ -102,7 +104,7 @@ describe("worksheet rows without cells", () => {
     // A1..E1. Those placeholders must not become `<c/>` elements.
     const xml = await sheetXml({
       name: "S",
-      cells: cellMap([["0,5", { value: "far right" }]]),
+      cells: cellMap([[0, 5, { value: "far right" }]]),
     })
 
     expect(xml).toContain('<c r="F1"')
@@ -122,7 +124,8 @@ describe("styled cells of every value shape", () => {
       name: "S",
       cells: cellMap([
         [
-          "0,0",
+          0,
+          0,
           {
             style: styled,
             richText: [{ text: "bold-ish " }, { text: "run", font: { italic: true } }],
@@ -137,7 +140,7 @@ describe("styled cells of every value shape", () => {
   it("keeps the style index on an error cell", async () => {
     const xml = await sheetXml({
       name: "S",
-      cells: cellMap([["0,0", { value: cellError("#DIV/0!"), style: styled }]]),
+      cells: cellMap([[0, 0, { value: cellError("#DIV/0!"), style: styled }]]),
     })
 
     expect(xml).toMatch(/<c r="A1" t="e" s="\d+"><v>#DIV\/0!<\/v><\/c>/)
@@ -150,8 +153,8 @@ describe("styled cells of every value shape", () => {
     const xml = await sheetXml({
       name: "S",
       cells: cellMap([
-        ["0,0", { value: cellError("#SPILL!") }],
-        ["0,1", { value: cellError("#CALC!") }],
+        [0, 0, { value: cellError("#SPILL!") }],
+        [0, 1, { value: cellError("#CALC!") }],
       ]),
     })
 
@@ -161,7 +164,7 @@ describe("styled cells of every value shape", () => {
 
   it("keeps the style index on an inline string when stringMode is inline", async () => {
     const xml = await sheetXml(
-      { name: "S", cells: cellMap([["0,0", { value: "hello", style: styled }]]) },
+      { name: "S", cells: cellMap([[0, 0, { value: "hello", style: styled }]]) },
       { stringMode: "inline" },
     )
 
@@ -174,8 +177,8 @@ describe("styled cells of every value shape", () => {
     const xml = await sheetXml({
       name: "S",
       cells: cellMap([
-        ["0,0", { value: Number.POSITIVE_INFINITY, style: styled }],
-        ["1,0", { value: Number.NaN }],
+        [0, 0, { value: Number.POSITIVE_INFINITY, style: styled }],
+        [1, 0, { value: Number.NaN }],
       ]),
     })
 
@@ -190,8 +193,8 @@ describe("styled cells of every value shape", () => {
     const xml = await sheetXml({
       name: "S",
       cells: cellMap([
-        ["0,0", { value: { nested: true } as never }],
-        ["0,1", { value: "kept" }],
+        [0, 0, { value: { nested: true } as never }],
+        [0, 1, { value: "kept" }],
       ]),
     })
 
@@ -203,8 +206,8 @@ describe("styled cells of every value shape", () => {
     const xml = await sheetXml({
       name: "S",
       cells: cellMap([
-        ["0,0", { formula: "ISBLANK(B1)", formulaResult: true }],
-        ["1,0", { formula: "ISBLANK(B2)", formulaResult: false }],
+        [0, 0, { formula: "ISBLANK(B1)", formulaResult: true }],
+        [1, 0, { formula: "ISBLANK(B2)", formulaResult: false }],
       ]),
     })
 
@@ -220,7 +223,7 @@ describe("styled cells of every value shape", () => {
         {
           name: "S",
           cells: cellMap([
-            ["0,0", { value: new Date(Date.UTC(2024, 0, 15)), style: { numFmt: "mmm yyyy" } }],
+            [0, 0, { value: new Date(Date.UTC(2024, 0, 15)), style: { numFmt: "mmm yyyy" } }],
           ]),
         },
       ],
@@ -337,7 +340,8 @@ describe("rich text run properties", () => {
       name: "S",
       cells: cellMap([
         [
-          "0,0",
+          0,
+          0,
           {
             richText: [
               { text: "E=mc" },
@@ -519,9 +523,7 @@ describe("styles.xml colour and alignment coverage", () => {
   it("writes theme, tint and indexed on a font colour", async () => {
     const xml = await stylesXml({
       name: "S",
-      cells: cellMap([
-        ["0,0", { value: "x", style: { font: { color: { theme: 1, tint: 0.5 } } } }],
-      ]),
+      cells: cellMap([[0, 0, { value: "x", style: { font: { color: { theme: 1, tint: 0.5 } } } }]]),
     })
 
     expect(xml).toContain('theme="1"')
@@ -534,8 +536,8 @@ describe("styles.xml colour and alignment coverage", () => {
     const xml = await stylesXml({
       name: "S",
       cells: cellMap([
-        ["0,0", { value: "a", style: { font: { color: { indexed: 10 } } } }],
-        ["0,1", { value: "b", style: { font: { color: { indexed: 12 } } } }],
+        [0, 0, { value: "a", style: { font: { color: { indexed: 10 } } } }],
+        [0, 1, { value: "b", style: { font: { color: { indexed: 12 } } } }],
       ]),
     })
 
@@ -548,7 +550,8 @@ describe("styles.xml colour and alignment coverage", () => {
       name: "S",
       cells: cellMap([
         [
-          "0,0",
+          0,
+          0,
           {
             value: "x",
             style: {
@@ -574,8 +577,8 @@ describe("styles.xml colour and alignment coverage", () => {
     const xml = await stylesXml({
       name: "S",
       cells: cellMap([
-        ["0,0", { value: "a", style: { alignment: { readingOrder: "ltr" } } }],
-        ["0,1", { value: "b", style: { alignment: { readingOrder: "context" } } }],
+        [0, 0, { value: "a", style: { alignment: { readingOrder: "ltr" } } }],
+        [0, 1, { value: "b", style: { alignment: { readingOrder: "context" } } }],
       ]),
     })
 
@@ -587,7 +590,7 @@ describe("styles.xml colour and alignment coverage", () => {
     const xml = await stylesXml({
       name: "S",
       cells: cellMap([
-        ["0,0", { value: "x", style: { protection: { locked: true, hidden: false } } }],
+        [0, 0, { value: "x", style: { protection: { locked: true, hidden: false } } }],
       ]),
     })
 
@@ -601,8 +604,8 @@ describe("styles.xml colour and alignment coverage", () => {
     const xml = await stylesXml({
       name: "S",
       cells: cellMap([
-        ["0,0", { value: "a", style: { border: { top: thin }, font: { bold: true } } }],
-        ["0,1", { value: "b", style: { border: { top: thin }, font: { italic: true } } }],
+        [0, 0, { value: "a", style: { border: { top: thin }, font: { bold: true } } }],
+        [0, 1, { value: "b", style: { border: { top: thin }, font: { italic: true } } }],
       ]),
     })
 
@@ -614,7 +617,8 @@ describe("styles.xml colour and alignment coverage", () => {
       name: "S",
       cells: cellMap([
         [
-          "0,0",
+          0,
+          0,
           {
             value: "a",
             style: {
@@ -1156,9 +1160,10 @@ describe("writeXml mixed content and holes", () => {
 
 describe("worker serialization round trip", () => {
   it("carries rich text, image metadata, conditional rules, a11y and external links", () => {
-    const cells = new Map<string, Cell>([
+    const cells = createCellStore<Cell>([
       [
-        "0,0",
+        0,
+        0,
         {
           value: "styled",
           type: "richText",
@@ -1191,7 +1196,7 @@ describe("worker serialization round trip", () => {
 
     const round = structuredClone(wb)
 
-    expect(round.sheets[0].cells?.get("0,0")?.richText).toEqual([
+    expect(getCell(round.sheets[0].cells, 0, 0)?.richText).toEqual([
       { text: "bold", font: { bold: true } },
     ])
     expect(round.sheets[0].images?.[0].altText).toBe("logo")

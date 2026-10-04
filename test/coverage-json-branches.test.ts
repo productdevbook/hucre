@@ -1,3 +1,4 @@
+import { createCellStore, setCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { collectHeaders, flattenValue } from "../src/json/flatten"
 import { parseJson, parseNdjson, parseValue } from "../src/json/reader"
@@ -33,9 +34,10 @@ function sheet(rows: CellValue[][], extra?: Partial<Sheet>): Sheet {
 
 /** A sheet whose cells carry styles, for the HTML exporter. */
 function styledSheet(rows: CellValue[][], styles: Record<string, Partial<Cell>>): Sheet {
-  const cells = new Map<string, Cell>()
+  const cells = createCellStore<Cell>()
   for (const [key, cell] of Object.entries(styles)) {
-    cells.set(key, cell as Cell)
+    const [row, col] = key.split(",").map(Number)
+    setCell(cells, row, col, cell as Cell)
   }
   return { name: "Sheet1", rows, cells }
 }

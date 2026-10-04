@@ -1,3 +1,4 @@
+import { createCellStore, setCell, getCell } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import { parseXml } from "../src/xml/parser"
 import { writeXlsx } from "../src/xlsx/writer"
@@ -302,8 +303,8 @@ describe("sheet protection — writing", () => {
 
 describe("cell protection — writing", () => {
   it("writes locked=false on specific cells", () => {
-    const cells = new Map<string, any>()
-    cells.set("0,0", {
+    const cells = createCellStore<any>()
+    setCell(cells, 0, 0, {
       value: "Editable",
       style: { protection: { locked: false } },
     })
@@ -336,8 +337,8 @@ describe("cell protection — writing", () => {
   })
 
   it("writes hidden=true on cells", () => {
-    const cells = new Map<string, any>()
-    cells.set("0,0", {
+    const cells = createCellStore<any>()
+    setCell(cells, 0, 0, {
       value: "=SUM(A1:A10)",
       style: { protection: { hidden: true } },
     })
@@ -363,8 +364,8 @@ describe("cell protection — writing", () => {
   })
 
   it("writes both locked and hidden on cells", () => {
-    const cells = new Map<string, any>()
-    cells.set("0,0", {
+    const cells = createCellStore<any>()
+    setCell(cells, 0, 0, {
       value: "Secret",
       style: { protection: { locked: true, hidden: true } },
     })
@@ -546,12 +547,12 @@ describe("sheet protection — round-trip", () => {
   })
 
   it("round-trips cell protection (locked=false) with readStyles", async () => {
-    const cells = new Map<string, any>()
-    cells.set("0,0", {
+    const cells = createCellStore<any>()
+    setCell(cells, 0, 0, {
       value: "Editable",
       style: { protection: { locked: false } },
     })
-    cells.set("0,1", {
+    setCell(cells, 0, 1, {
       value: "Locked",
       style: { protection: { locked: true } },
     })
@@ -575,19 +576,19 @@ describe("sheet protection — round-trip", () => {
     expect(sheet.protection!.sheet).toBe(true)
 
     // Cell A1 (0,0) should have locked=false
-    const cellA1 = sheet.cells?.get("0,0")
+    const cellA1 = getCell(sheet.cells, 0, 0)
     expect(cellA1).toBeDefined()
     expect(cellA1!.style?.protection?.locked).toBe(false)
 
     // Cell B1 (0,1) should have locked=true
-    const cellB1 = sheet.cells?.get("0,1")
+    const cellB1 = getCell(sheet.cells, 0, 1)
     expect(cellB1).toBeDefined()
     expect(cellB1!.style?.protection?.locked).toBe(true)
   })
 
   it("round-trips cell hidden protection with readStyles", async () => {
-    const cells = new Map<string, any>()
-    cells.set("0,0", {
+    const cells = createCellStore<any>()
+    setCell(cells, 0, 0, {
       value: "Hidden formula",
       style: { protection: { hidden: true, locked: true } },
     })
@@ -604,7 +605,7 @@ describe("sheet protection — round-trip", () => {
     })
 
     const workbook = await readXlsx(data, { readStyles: true })
-    const cell = workbook.sheets[0].cells?.get("0,0")
+    const cell = getCell(workbook.sheets[0].cells, 0, 0)
     expect(cell).toBeDefined()
     expect(cell!.style?.protection?.hidden).toBe(true)
     expect(cell!.style?.protection?.locked).toBe(true)

@@ -23,6 +23,7 @@ import * as a11y from "../src/a11y"
 
 import type {
   Cell,
+  CellStore,
   CellStyle,
   CellValue,
   ChartAxisCrosses,
@@ -68,6 +69,7 @@ import type {
 /** Referencing each type keeps the imports load-bearing rather than unused. */
 type _SurfaceCheck = [
   Cell,
+  CellStore,
   CellStyle,
   CellValue,
   ChartAxisCrosses,

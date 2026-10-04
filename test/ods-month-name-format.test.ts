@@ -1,3 +1,4 @@
+import { createCellStore, getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { writeOds } from "../src/ods/writer"
 import { readOds } from "../src/ods/reader"
@@ -28,13 +29,13 @@ import type { CellStyle } from "../src/_types"
 const dec = new TextDecoder()
 
 async function odsNumFmt(numFmt: string): Promise<string | undefined> {
-  const cells = new Map([["0,0", { value: 45373, style: { numFmt } as CellStyle }]])
+  const cells = createCellStore([[0, 0, { value: 45373, style: { numFmt } as CellStyle }]])
   const bytes = await writeOds({ sheets: [{ name: "S", rows: [[45373]], cells }] })
-  return (await readOds(bytes, { readStyles: true })).sheets[0]!.cells?.get("0,0")?.style?.numFmt
+  return getCell((await readOds(bytes, { readStyles: true })).sheets[0]!.cells, 0, 0)?.style?.numFmt
 }
 
 async function contentXml(numFmt: string): Promise<string> {
-  const cells = new Map([["0,0", { value: 45373, style: { numFmt } as CellStyle }]])
+  const cells = createCellStore([[0, 0, { value: 45373, style: { numFmt } as CellStyle }]])
   const bytes = await writeOds({ sheets: [{ name: "S", rows: [[45373]], cells }] })
   return dec.decode(await new ZipReader(bytes).extract("content.xml"))
 }

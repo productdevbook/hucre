@@ -1,3 +1,4 @@
+import { createCellStore, setCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { toHtml } from "../src/export/html"
 import type { Sheet, Cell, MergeRange } from "../src/_types"
@@ -72,8 +73,8 @@ describe("toHtml", () => {
   })
 
   it("inline styles from CellStyle (bold, color, background, alignment)", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, {
       value: "Bold",
       type: "string",
       style: {
@@ -91,8 +92,8 @@ describe("toHtml", () => {
   })
 
   it("inline styles: border", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, {
       value: "Bordered",
       type: "string",
       style: {
@@ -109,8 +110,8 @@ describe("toHtml", () => {
   })
 
   it("inline styles: italic, underline, strikethrough, font-size, font-family", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, {
       value: "Styled",
       type: "string",
       style: {
@@ -299,8 +300,8 @@ describe("toHtml", () => {
   })
 
   it("styles: false does not add style attribute", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, {
       value: "Styled",
       type: "string",
       style: { font: { bold: true } },
@@ -326,8 +327,8 @@ describe("toHtml", () => {
   })
 
   it("header row with classes and styles combined", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, {
       value: "Name",
       type: "string",
       style: { font: { bold: true } },
@@ -346,8 +347,8 @@ describe("toHtml", () => {
   })
 
   it("dashed and dotted border styles", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, {
       value: "X",
       type: "string",
       style: {
@@ -364,8 +365,8 @@ describe("toHtml", () => {
   })
 
   it("medium border width", () => {
-    const cells = new Map<string, Cell>()
-    cells.set("0,0", {
+    const cells = createCellStore<Cell>()
+    setCell(cells, 0, 0, {
       value: "X",
       type: "string",
       style: {

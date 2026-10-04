@@ -1,9 +1,10 @@
+import { createCellStore, setCell, cellEntries } from "./cell-store"
 // ── Cell objects written inline in `rows` ───────────────────────────
 //
 // `SheetInput.rows` is the grid and `SheetInput.cells` the per-cell
-// detail, keyed `"row,col"`. Styling one cell therefore meant naming its
-// position twice — once in the row, once in the map — and keeping the
-// two in step by hand.
+// detail, indexed by numeric coordinates. Styling one cell therefore meant
+// naming its position twice — once in the row, once in the store — and
+// keeping the two in step by hand.
 //
 // The streaming writer never had that split: `addRow` has taken
 // `{ value, style, formula }` inline since it existed. `writeOdsStream`
@@ -87,7 +88,7 @@ export function toCellValues(rows: Array<Array<CellValue | InlineCell>>): CellVa
  * Returns the sheet **unchanged** when there are none, which is the
  * usual case — the scan is one `typeof` per cell and allocates nothing
  * until it finds something. A sheet that does carry them is copied
- * shallowly; the caller's arrays and map are never mutated.
+ * shallowly; the caller's arrays and store are never mutated.
  */
 export function splitInlineCells<T extends SheetInput>(sheet: T): T {
   const rows = sheet.rows
@@ -106,7 +107,7 @@ export function splitInlineCells<T extends SheetInput>(sheet: T): T {
   if (!found) return sheet
 
   const plainRows: CellValue[][] = []
-  const lifted = new Map<string, Partial<Cell>>()
+  const lifted = createCellStore<Partial<Cell>>()
 
   for (let r = 0; r < rows.length; r++) {
     const row = rows[r]!
@@ -114,7 +115,7 @@ export function splitInlineCells<T extends SheetInput>(sheet: T): T {
     for (let c = 0; c < row.length; c++) {
       const v = row[c]
       if (isInlineCell(v)) {
-        lifted.set(`${r},${c}`, v)
+        setCell(lifted, r, c, v)
         // The value stays in the grid too, so everything that reads only
         // `rows` — auto-width, a pivot's source range, a table's extent —
         // sees the cell rather than a hole.
@@ -127,10 +128,10 @@ export function splitInlineCells<T extends SheetInput>(sheet: T): T {
   }
 
   // The caller's own `cells` is applied second, so where both describe a
-  // position the explicit map wins — the same precedence `cells` already
+  // position the explicit store wins — the same precedence `cells` already
   // has over `rows`.
   if (sheet.cells) {
-    for (const [key, cell] of sheet.cells) lifted.set(key, cell)
+    for (const [row, col, cell] of cellEntries(sheet.cells)) setCell(lifted, row, col, cell)
   }
 
   return { ...sheet, rows: plainRows, cells: lifted }

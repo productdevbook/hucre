@@ -1,3 +1,4 @@
+import { hasCell, getCell, cellEntries } from "../cell-store"
 import { prepareOdsWorkbook } from "../_write-model"
 // ── ODS Writer ──────────────────────────────────────────────────────
 // Generates valid OpenDocument Spreadsheet (.ods) files.
@@ -1139,7 +1140,11 @@ function rowToOds(
   // documents per format. See #393.
   for (let c = lastMeaningful + 1; c <= effectiveMax; c++) {
     const key = `${rowIndex},${c}`
-    if (mergeMap.starts.has(key) || mergeMap.covered.has(key) || sheet.cells?.has(key)) {
+    if (
+      mergeMap.starts.has(key) ||
+      mergeMap.covered.has(key) ||
+      hasCell(sheet.cells, rowIndex, c)
+    ) {
       lastMeaningful = c
     }
   }
@@ -1169,7 +1174,7 @@ function rowToOds(
     }
 
     // Get cell override for values, formulas, hyperlinks, styles
-    const cellOverride = sheet.cells?.get(key)
+    const cellOverride = getCell(sheet.cells, rowIndex, i)
 
     // The override's value wins, matching resolveRows in the XLSX writer.
     // Reading only from `row` meant an override past the row's last value
@@ -1205,7 +1210,7 @@ function rowToOds(
           (i + count >= row.length || row[i + count] === null || row[i + count] === undefined) &&
           !mergeMap.covered.has(`${rowIndex},${i + count}`) &&
           !mergeMap.starts.has(`${rowIndex},${i + count}`) &&
-          !sheet.cells?.has(`${rowIndex},${i + count}`)
+          !hasCell(sheet.cells, rowIndex, i + count)
         ) {
           count++
         }
@@ -1270,11 +1275,8 @@ function writeContentXml(options: WritableWorkbook): string {
     // defect as the trailing-column case in serializeRow. See #393.
     if (sheet.cells && sheet.cells.size > 0) {
       let maxOverrideRow = -1
-      for (const key of sheet.cells.keys()) {
-        const comma = key.indexOf(",")
-        if (comma === -1) continue
-        const r = Number(key.slice(0, comma))
-        if (Number.isInteger(r) && r > maxOverrideRow) maxOverrideRow = r
+      for (const [row] of cellEntries(sheet.cells)) {
+        if (row > maxOverrideRow) maxOverrideRow = row
       }
       if (maxOverrideRow >= rows.length) {
         if (rows === sheet.rows) rows = [...rows]

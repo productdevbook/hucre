@@ -1,3 +1,4 @@
+import { getCell, createCellStore } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { readXlsx } from "../src/xlsx/reader"
 import { writeXlsx } from "../src/xlsx/writer"
@@ -100,8 +101,8 @@ describe("sparse: true reads what the grid cannot hold", () => {
     const sheet = wb.sheets[0]!
 
     expect(sheet.cells?.size).toBe(2000 * 24)
-    expect(sheet.cells?.get("0,0")?.value).toBe(0)
-    expect(sheet.cells?.get("1999,15311")?.value).toBe(70)
+    expect(getCell(sheet.cells, 0, 0)?.value).toBe(0)
+    expect(getCell(sheet.cells, 1999, 15311)?.value).toBe(70)
   }, 120_000)
 
   it("leaves rows empty, because the grid is what it is avoiding", async () => {
@@ -135,7 +136,7 @@ describe("sparse agrees with dense on a sheet both can read", () => {
     for (let r = 0; r < GRID.length; r++) {
       for (let c = 0; c < 3; c++) {
         const fromDense = dense.rows[r]?.[c] ?? null
-        const fromSparse = sparse.cells?.get(`${r},${c}`)?.value ?? null
+        const fromSparse = getCell(sparse.cells, r, c)?.value ?? null
         expect(fromSparse, `${r},${c}`).toEqual(fromDense)
       }
     }
@@ -147,14 +148,14 @@ describe("sparse agrees with dense on a sheet both can read", () => {
         {
           name: "S",
           rows: [["a"]],
-          cells: new Map([["0,0", { value: "a", style: { font: { bold: true } } }]]),
+          cells: createCellStore([[0, 0, { value: "a", style: { font: { bold: true } } }]]),
         },
       ],
     })
 
     const sparse = (await readXlsx(bytes, { sparse: true, readStyles: true })).sheets[0]!
 
-    expect(sparse.cells?.get("0,0")?.style?.font?.bold).toBe(true)
+    expect(getCell(sparse.cells, 0, 0)?.style?.font?.bold).toBe(true)
   })
 
   it("keeps formulas and their cached results", async () => {
@@ -163,12 +164,12 @@ describe("sparse agrees with dense on a sheet both can read", () => {
         {
           name: "S",
           rows: [[1, 2, null]],
-          cells: new Map([["0,2", { value: 3, formula: "A1+B1", formulaResult: 3 }]]),
+          cells: createCellStore([[0, 2, { value: 3, formula: "A1+B1", formulaResult: 3 }]]),
         },
       ],
     })
 
-    const cell = (await readXlsx(bytes, { sparse: true })).sheets[0]!.cells?.get("0,2")
+    const cell = getCell((await readXlsx(bytes, { sparse: true })).sheets[0]!.cells, 0, 2)
 
     expect(cell?.formula).toBe("A1+B1")
     expect(cell?.formulaResult).toBe(3)

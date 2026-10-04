@@ -1,3 +1,4 @@
+import { createCellStore } from "../src/cell-store"
 // A cell object written where a value goes — `rows: [[{ value, style }]]`.
 //
 // Before #433 the buffered writers read it as a value and emitted an
@@ -36,10 +37,10 @@ const mapSheet: SheetInput = {
     ["plain", "wrapped"],
     [1234.5, null],
   ],
-  cells: new Map([
-    ["0,1", { value: "wrapped", style: { alignment: { wrapText: true } } }],
-    ["1,0", { value: 1234.5, style: { numFmt: "#,##0.00" } }],
-    ["1,1", { formula: "A2*2" }],
+  cells: createCellStore([
+    [0, 1, { value: "wrapped", style: { alignment: { wrapText: true } } }],
+    [1, 0, { value: 1234.5, style: { numFmt: "#,##0.00" } }],
+    [1, 1, { formula: "A2*2" }],
   ]),
 }
 
@@ -80,7 +81,7 @@ describe("cell objects written inline in rows", () => {
     expect(await part(buf, "xl/worksheets/sheet1.xml")).toContain("<f>A2*2</f>")
   })
 
-  it("is the same document as the cells map spelling", async () => {
+  it("is the same document as the cell store spelling", async () => {
     const inline = await part(
       await writeXlsx({ sheets: [inlineSheet] }),
       "xl/worksheets/sheet1.xml",
@@ -99,7 +100,7 @@ describe("cell objects written inline in rows", () => {
         {
           name: "S",
           rows: [[{ value: "inline", style: { font: { bold: true } } }]],
-          cells: new Map([["0,0", { value: "explicit" }]]),
+          cells: createCellStore([[0, 0, { value: "explicit" }]]),
         },
       ],
     })

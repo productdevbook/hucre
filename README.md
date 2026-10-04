@@ -212,8 +212,16 @@ await writeXlsx({
 ```
 
 Anything a cell carries works there — `style`, `formula`, `richText`,
-`hyperlink`, `checkbox`. `cells` still takes a `"row,col"` map, and wins
+`hyperlink`, `checkbox`. `cells` takes a `CellStore` with numeric coordinates, and wins
 where both describe the same position.
+
+Read and edit cell metadata with `createCellStore`, `getCell`, `setCell`,
+`hasCell`, `deleteCell` and `cellEntries`, available from `hucre/cell`,
+`hucre/xlsx` and the root. Coordinates are zero-based; `cellEntries(cells)`
+yields `[row, column, cell]`. The store counts cells in `size`, supports
+`structuredClone` and groups numeric keys into blocks instead of retaining
+one coordinate string per cell. Editing metadata does not update `rows`;
+use the builder for edits that need both representations to stay in step.
 
 Features: cell styles, auto column widths, merged cells, freeze/split panes, auto-filter (with per-column value filters — `<filters><filter val="…"/></filters>`; custom/dynamic/colour criteria are not emitted), data validation, hyperlinks, images (PNG/JPEG/GIF/SVG/WebP), comments, tables, conditional formatting (all 15 rule types, with their dxf styles), named ranges, print settings, page breaks, sheet protection, workbook protection, rich text, shared/array/dynamic formulas, sparklines, textboxes, background images, number formats, hidden sheets, Excel 2024 native checkboxes, HTML/Markdown/JSON/TSV export, template engine.
 
@@ -273,14 +281,17 @@ const buffer = await writeXlsx({
 ### Hyperlinks
 
 ```ts
+import { writeXlsx, createCellStore } from "hucre/xlsx"
+
 const buffer = await writeXlsx({
   sheets: [
     {
       name: "Links",
       rows: [["Visit Google", "Go to Sheet2"]],
-      cells: new Map([
+      cells: createCellStore([
         [
-          "0,0",
+          0,
+          0,
           {
             value: "Visit Google",
             type: "string",
@@ -288,7 +299,8 @@ const buffer = await writeXlsx({
           },
         ],
         [
-          "0,1",
+          0,
+          1,
           {
             value: "Go to Sheet2",
             type: "string",
@@ -301,8 +313,8 @@ const buffer = await writeXlsx({
 })
 ```
 
-For tabular reports, put links **inline in `data` rows** instead of a parallel
-`cells` map — keyed by the column's `key`. Use the `link()` helper (or a plain
+For tabular reports, put links **inline in `data` rows**, keyed by the column's
+`key`. Use the `link()` helper (or a plain
 `{ text, hyperlink, tooltip? }` object). A `#`-prefixed target is treated as an
 internal reference (`#Sheet2!A1`).
 
@@ -1559,24 +1571,24 @@ Excel and LibreOffice fall back to the raw `TRUE`/`FALSE` display since the
 on-disk value is just a normal boolean.
 
 ```ts
-import { writeXlsx, readXlsx } from "hucre/xlsx"
+import { writeXlsx, readXlsx, createCellStore, getCell } from "hucre/xlsx"
 
 const buf = await writeXlsx({
   sheets: [
     {
       name: "Tasks",
       rows: [["Done?"], [true], [false], [true]],
-      cells: new Map([
-        ["1,0", { value: true, type: "boolean", checkbox: true }],
-        ["2,0", { value: false, type: "boolean", checkbox: true }],
-        ["3,0", { value: true, type: "boolean", checkbox: true }],
+      cells: createCellStore([
+        [1, 0, { value: true, type: "boolean", checkbox: true }],
+        [2, 0, { value: false, type: "boolean", checkbox: true }],
+        [3, 0, { value: true, type: "boolean", checkbox: true }],
       ]),
     },
   ],
 })
 
 const wb = await readXlsx(buf)
-wb.sheets[0].cells?.get("1,0")?.checkbox // true
+getCell(wb.sheets[0].cells, 1, 0)?.checkbox // true
 ```
 
 This is the first JS/TS implementation of native checkboxes — only `XlsxWriter`

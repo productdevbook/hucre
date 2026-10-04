@@ -1,3 +1,4 @@
+import { createCellStore, setCell } from "./cell-store"
 // ── Builder Pattern / Fluent API ─────────────────────────────────────
 // Provides a method-chaining API for constructing workbooks.
 
@@ -180,9 +181,9 @@ export class SheetBuilder {
     return this
   }
 
-  /** Set a cell-level override (keyed by "row,col", e.g. "0,2"). */
+  /** Set a cell-level override at zero-based row and column coordinates. */
   cell(row: number, col: number, cell: Partial<Cell>): this {
-    ;(this._rest.cells ??= new Map()).set(`${row},${col}`, cell)
+    setCell((this._rest.cells ??= createCellStore()), row, col, cell)
     return this
   }
 

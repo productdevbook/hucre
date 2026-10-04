@@ -25,10 +25,14 @@ import {
   cloneChart,
   chartKindToWriteKind,
   addChart,
+  createCellStore,
+  setCell,
 } from "hucre"
 import type {
   CellValue,
-  WriteSheet,
+  SheetInput,
+  CellStore,
+  Cell,
   SchemaDefinition,
   Sheet,
   Chart,
@@ -246,10 +250,10 @@ function setupWrite() {
       const columns: Record<string, { header?: string; width?: number; numFmt?: string }> = rawCols
       const columnKeys = Object.keys(columns)
 
-      // Build a cells Map flagging boolean cells in checkboxCols as Excel 2024 checkboxes.
-      let cellsMap: Map<string, { value: CellValue; type: "boolean"; checkbox: true }> | undefined
+      // Build cell metadata flagging boolean cells in checkboxCols as Excel 2024 checkboxes.
+      let cells: CellStore<Partial<Cell>> | undefined
       if (checkboxCols.length > 0) {
-        cellsMap = new Map()
+        cells = createCellStore()
         // header is row 0; data rows start at row 1
         for (let r = 0; r < rawData.length; r++) {
           for (const cbKey of checkboxCols) {
@@ -257,7 +261,7 @@ function setupWrite() {
             if (colIdx === -1) continue
             const v = (rawData[r] as Record<string, CellValue>)[cbKey]
             if (typeof v !== "boolean") continue
-            cellsMap.set(`${r + 1},${colIdx}`, {
+            setCell(cells, r + 1, colIdx, {
               value: v,
               type: "boolean",
               checkbox: true,
@@ -266,7 +270,7 @@ function setupWrite() {
         }
       }
 
-      const sheet: WriteSheet = {
+      const sheet: SheetInput = {
         name: sheetName,
         data: rawData,
         columns: Object.entries(columns).map(([key, col]) => ({
@@ -276,7 +280,7 @@ function setupWrite() {
           numFmt: col.numFmt,
           autoWidth: autoWidth && !col.width,
         })),
-        cells: cellsMap,
+        cells,
         freezePane: freezeRows > 0 ? { rows: freezeRows } : undefined,
         autoFilter: autoFilter
           ? {
@@ -1347,14 +1351,14 @@ function readChartUiOverride(
   return { picked, options: opts }
 }
 
-function cleanWorkbookForRewrite(wb: Workbook): WriteSheet[] {
+function cleanWorkbookForRewrite(wb: Workbook): SheetInput[] {
   // The reader produces a `Workbook` with `Sheet[]` shaped objects.
   // For the purpose of round-tripping data to the writer we keep just
   // the rows/name and drop the read-side metadata the writer doesn't
   // accept verbatim. We deliberately strip pre-existing charts on each
   // sheet — the demo re-emits a curated chart selection, so leaking
   // every original chart back into the output would double up.
-  return wb.sheets.map<WriteSheet>((s) => ({
+  return wb.sheets.map<SheetInput>((s) => ({
     name: s.name,
     rows: (s.rows ?? []) as CellValue[][],
   }))
@@ -1435,7 +1439,7 @@ function setupChartClone() {
       // Resolve destination sheet
       const destChoice = destSel.value
       const mode = modeSel.value
-      let destSheet: WriteSheet
+      let destSheet: SheetInput
       let destSheetLabel: string
       if (destChoice === "__new__") {
         const newName = ($("chart-clone-dest-name") as HTMLInputElement).value.trim() || "Charts"

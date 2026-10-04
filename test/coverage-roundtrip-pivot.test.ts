@@ -1,3 +1,4 @@
+import { createCellStore } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { openXlsx, saveXlsx } from "../src/xlsx/roundtrip"
@@ -702,7 +703,9 @@ describe("chart parts survive the roundtrip", () => {
     const sheet: SheetInput = {
       ...SALES,
       charts: [chartOn(7, "Sales")],
-      cells: new Map([["0,0", { value: "Region", hyperlink: { target: "https://example.com" } }]]),
+      cells: createCellStore([
+        [0, 0, { value: "Region", hyperlink: { target: "https://example.com" } }],
+      ]),
     }
     const base = await writeXlsx({ sheets: [sheet] })
     const relsPath = "xl/worksheets/_rels/sheet1.xml.rels"

@@ -1,3 +1,4 @@
+import { getCell } from "../cell-store"
 import { isCellError } from "../cell-error"
 import type { Sheet, CellValue, CellStyle, Color, MergeRange } from "../_types"
 
@@ -286,7 +287,7 @@ function buildCellAttrs(
 
   // Inline styles
   if (opts.styles) {
-    const cell = sheet.cells?.get(`${row},${col}`)
+    const cell = getCell(sheet.cells, row, col)
     if (cell?.style) {
       const css = styleToCss(cell.style)
       // Escape for the double-quoted attribute context — style values can

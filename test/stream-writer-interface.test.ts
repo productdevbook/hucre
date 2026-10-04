@@ -1,3 +1,4 @@
+import { getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { XlsxStreamWriter } from "../src/xlsx/stream-writer"
 import { CsvStreamWriter } from "../src/csv/stream"
@@ -107,7 +108,7 @@ describe("the four writers satisfy one interface", () => {
     const xlsx = new XlsxStreamWriter({ name: "S" })
     xlsx.addRow([styled, 3])
     const wb = await readXlsx(await xlsx.finish(), { readStyles: true })
-    expect(wb.sheets[0]!.cells?.get("0,0")?.style?.font?.bold).toBe(true)
+    expect(getCell(wb.sheets[0]!.cells, 0, 0)?.style?.font?.bold).toBe(true)
   })
 })
 

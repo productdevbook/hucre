@@ -1,3 +1,4 @@
+import { createCellStore, getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { cloneSheet, copySheetToWorkbook } from "../src/sheet-ops"
 import type { Cell, Sheet, Workbook } from "../src/_types"
@@ -47,7 +48,7 @@ const FULL_SHEET: Required<Sheet> = {
     ["a", 1],
     ["b", 2],
   ],
-  cells: new Map<string, Cell>([["0,0", FULL_CELL]]),
+  cells: createCellStore<Cell>([[0, 0, FULL_CELL]]),
   columns: [{ width: 12, style: { font: { name: "Arial" } } }],
   rowDefs: new Map([[0, { height: 30, hidden: true }]]),
   defaultRowHeight: 24,
@@ -137,7 +138,7 @@ describe("cloneSheet carries every field of Sheet", () => {
 
   it("carries the whole cell, formula shape included", () => {
     const copy = cloneSheet(FULL_SHEET, "Copy")
-    const cell = copy.cells!.get("0,0")!
+    const cell = getCell(copy.cells!, 0, 0)!
 
     // A shared-formula slave is `{ formula: "", formulaType: "shared", si }`.
     // Losing the type and the index left `{ formula: "" }`, which the

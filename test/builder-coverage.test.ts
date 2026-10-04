@@ -1,3 +1,4 @@
+import { createCellStore } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { fieldsOf } from "./_reflect"
 import { WorkbookBuilder } from "../src/builder"
@@ -50,7 +51,7 @@ describe("the named methods produce a readable workbook", () => {
         freezePane: { rows: 2 },
         hidden: false,
         columns: [{ width: 18 }],
-        cells: new Map([["0,1", { value: 3 }]]),
+        cells: createCellStore([[0, 1, { value: 3 }]]),
       })
       .build()
     const sheet = (await readXlsx(bytes)).sheets[0]

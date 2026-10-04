@@ -1,6 +1,6 @@
 # Migrating to v2
 
-v2 removes what v1 kept for compatibility and fixes the shapes v1 could not change without a major: duplicate read/write models, reader options that silently did nothing, and inconsistent streaming contracts. `Sheet.cells` remains a `Map`; its runtime ceiling is documented in `docs/PARITY.md`.
+v2 removes what v1 kept for compatibility and fixes the shapes v1 could not change without a major: duplicate read/write models, reader options that silently did nothing, and inconsistent streaming contracts. `Sheet.cells` becomes a portable numeric `CellStore`, removing the per-sheet capacity limit of a flat `Map`.
 
 Every change that can affect existing code is listed. TypeScript flags most of them; the ones it cannot are marked **behaviour**.
 
@@ -10,6 +10,7 @@ Every change that can affect existing code is listed. TypeScript flags most of t
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | [Deprecated names removed](#deprecated-names-removed)             | you reference `DefterError`, `readNdjsonStream`, `headerRow: true`, `write()`/`end()`, or import a `parse*` part parser from the root |
 | [One workbook model](#one-workbook-model-for-reading-and-writing) | you use `WriteSheet`, `WriteOptions`, `toWriteOptions` or encoding options inside the workbook                                        |
+| [Numeric cell storage](#numeric-cell-storage)                     | you construct, inspect or mutate `Sheet.cells` using string keys                                                                      |
 
 ---
 
@@ -33,6 +34,46 @@ The raw-XML part parsers moved to `hucre/ooxml` in v1 and were kept on the root 
 - import { parseChart } from "hucre"
 + import { parseChart } from "hucre/ooxml"
 ```
+
+## Numeric cell storage
+
+`Sheet.cells` now uses `CellStore<Cell>`; authoring inputs accept
+`CellStore<Partial<Cell>>`. The six helpers are exported from `hucre/cell`,
+`hucre/xlsx` and the root:
+
+```ts
+import { createCellStore, getCell, setCell, hasCell, deleteCell, cellEntries } from "hucre/cell"
+
+const cells = createCellStore([[0, 2, { value: 42, type: "number" as const }]])
+const cell = getCell(cells, 0, 2) // replaces cells.get("0,2")
+setCell(cells, 128, 3, cell!) // replaces cells.set("128,3", cell)
+hasCell(cells, 128, 3) // replaces cells.has("128,3")
+deleteCell(cells, 0, 2) // replaces cells.delete("0,2")
+for (const [row, col, metadata] of cellEntries(cells)) console.log(row, col, metadata)
+console.log(cells.size) // still counts cells
+```
+
+Coordinates are zero-based integers within Excel's bounds. Invalid writes
+throw `InvalidArgumentError`; invalid reads return `undefined` and invalid
+deletions return `false`. Iteration groups entries by block; do not rely
+on the global insertion order of the old flat map.
+
+`insertRows` and `insertColumns` reject moving metadata past Excel's bounds
+before changing the grid. XLSX values, comments and hyperlinks share the
+same reference validation: out-of-grid coordinates throw `ParseError`,
+and malformed references are dropped with a `malformed-cell-ref` warning.
+
+The store is a plain `{ blocks: Map<number, Map<number, T>>, size: number }`
+object, so a workbook still survives `structuredClone` and `postMessage`.
+Use the helpers to mutate it so `size` stays accurate. Metadata edits do
+not change `Sheet.rows`, matching the old map's behavior; update both for
+value edits, or use the builder. Inline cells in writer `rows` remain the
+shortest way to author styles and formulas.
+
+**Behaviour:** numeric blocks remove the 2^24-entry ceiling of a single V8
+Map and the coordinate strings retained by it. The store does not cap
+memory usage; streaming remains appropriate for large dense files. See
+`docs/PARITY.md` for the other bounds.
 
 ## Read options are per reader
 

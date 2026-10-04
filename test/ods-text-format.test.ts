@@ -1,3 +1,4 @@
+import { createCellStore, getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { writeOds } from "../src/ods/writer"
 import { readOds } from "../src/ods/reader"
@@ -28,7 +29,7 @@ async function bytesFor(numFmt: string): Promise<Uint8Array> {
       {
         name: "S",
         rows: [["hello"]],
-        cells: new Map([["0,0", { value: "hello", style: { numFmt } as CellStyle }]]),
+        cells: createCellStore([[0, 0, { value: "hello", style: { numFmt } as CellStyle }]]),
       },
     ],
   })
@@ -36,7 +37,7 @@ async function bytesFor(numFmt: string): Promise<Uint8Array> {
 
 async function roundTrip(numFmt: string): Promise<string | undefined> {
   const wb = await readOds(await bytesFor(numFmt), { readStyles: true })
-  return wb.sheets[0]!.cells?.get("0,0")?.style?.numFmt
+  return getCell(wb.sheets[0]!.cells, 0, 0)?.style?.numFmt
 }
 
 describe("the text format survives ODS", () => {

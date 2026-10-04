@@ -1,3 +1,4 @@
+import { cellEntries, createCellStore, setCell, deleteCell, getCell } from "./cell-store"
 // ── Sheet Operations ────────────────────────────────────────────────
 // In-memory row/column manipulation utilities for Sheet objects.
 
@@ -59,7 +60,7 @@ function shiftRangeCols(range: string, threshold: number, delta: number): string
  */
 function shiftReferences(sheet: Sheet, shift: RefShift): void {
   if (sheet.cells) {
-    for (const cell of sheet.cells.values()) {
+    for (const [, , cell] of cellEntries(sheet.cells)) {
       if (cell.formula) cell.formula = shiftFormula(cell.formula, shift)
       if (cell.formulaRef) cell.formulaRef = shiftFormula(cell.formulaRef, shift)
     }
@@ -156,15 +157,32 @@ function makeEmptyRow(width: number): null[] {
   return row
 }
 
+// One coordinate transformation serves every structural edit. Rebuild
+// before assigning so a rejected coordinate cannot leave partial metadata.
+function remapCells(
+  sheet: Sheet,
+  position: (row: number, col: number) => [number, number] | undefined,
+): void {
+  if (!sheet.cells?.size) return
+  const cells = createCellStore<Cell>()
+  for (const [row, col, cell] of cellEntries(sheet.cells)) {
+    const next = position(row, col)
+    if (next) setCell(cells, next[0], next[1], cell)
+  }
+  sheet.cells = cells
+}
+
 // ── Insert Rows ──────────────────────────────────────────────────────
 
 /**
  * Insert rows at the given position (0-based), shifting existing rows down.
  * Updates merge ranges, data validations, conditional rules, auto filter,
- * images, and cells Map keys.
+ * images, and cell metadata coordinates.
  */
 export function insertRows(sheet: Sheet, rowIndex: number, count: number): void {
   if (count <= 0) return
+
+  remapCells(sheet, (row, col) => [row >= rowIndex ? row + count : row, col])
 
   const width = getRowWidth(sheet)
   const newRows: null[][] = []
@@ -174,22 +192,6 @@ export function insertRows(sheet: Sheet, rowIndex: number, count: number): void 
 
   // Insert into rows array
   sheet.rows.splice(rowIndex, 0, ...newRows)
-
-  // Update cells Map
-  if (sheet.cells && sheet.cells.size > 0) {
-    const updated = new Map<string, import("./_types").Cell>()
-    for (const [key, cell] of sheet.cells) {
-      const [rowStr, colStr] = key.split(",")
-      const row = Number(rowStr)
-      const col = Number(colStr)
-      if (row >= rowIndex) {
-        updated.set(`${row + count},${col}`, cell)
-      } else {
-        updated.set(key, cell)
-      }
-    }
-    sheet.cells = updated
-  }
 
   // Update merge ranges
   if (sheet.merges) {
@@ -274,24 +276,9 @@ export function deleteRows(sheet: Sheet, rowIndex: number, count: number): void 
   // Remove rows from array
   sheet.rows.splice(rowIndex, count)
 
-  // Update cells Map
-  if (sheet.cells && sheet.cells.size > 0) {
-    const updated = new Map<string, import("./_types").Cell>()
-    for (const [key, cell] of sheet.cells) {
-      const [rowStr, colStr] = key.split(",")
-      const row = Number(rowStr)
-      const col = Number(colStr)
-      if (row >= rowIndex && row < deleteEnd) {
-        // Cell is in deleted range — remove it
-        continue
-      } else if (row >= deleteEnd) {
-        updated.set(`${row - count},${col}`, cell)
-      } else {
-        updated.set(key, cell)
-      }
-    }
-    sheet.cells = updated
-  }
+  remapCells(sheet, (row, col) =>
+    row >= rowIndex && row < deleteEnd ? undefined : [row >= deleteEnd ? row - count : row, col],
+  )
 
   // Update merge ranges
   if (sheet.merges) {
@@ -449,10 +436,12 @@ function shiftDeletedRangeRows(range: string, rowIndex: number, count: number): 
 /**
  * Insert columns at the given position (0-based), shifting existing columns right.
  * Updates merge ranges, data validations, conditional rules, auto filter,
- * images, column defs, and cells Map keys.
+ * images, column defs, and cell metadata coordinates.
  */
 export function insertColumns(sheet: Sheet, colIndex: number, count: number): void {
   if (count <= 0) return
+
+  remapCells(sheet, (row, col) => [row, col >= colIndex ? col + count : col])
 
   const nulls: null[] = makeEmptyRow(count)
 
@@ -470,22 +459,6 @@ export function insertColumns(sheet: Sheet, colIndex: number, count: number): vo
     // Ensure columns array is long enough
     while (sheet.columns.length < colIndex) sheet.columns.push({})
     sheet.columns.splice(colIndex, 0, ...newCols)
-  }
-
-  // Update cells Map
-  if (sheet.cells && sheet.cells.size > 0) {
-    const updated = new Map<string, import("./_types").Cell>()
-    for (const [key, cell] of sheet.cells) {
-      const [rowStr, colStr] = key.split(",")
-      const row = Number(rowStr)
-      const col = Number(colStr)
-      if (col >= colIndex) {
-        updated.set(`${row},${col + count}`, cell)
-      } else {
-        updated.set(key, cell)
-      }
-    }
-    sheet.cells = updated
   }
 
   // Update merge ranges
@@ -568,23 +541,9 @@ export function deleteColumns(sheet: Sheet, colIndex: number, count: number): vo
     }
   }
 
-  // Update cells Map
-  if (sheet.cells && sheet.cells.size > 0) {
-    const updated = new Map<string, import("./_types").Cell>()
-    for (const [key, cell] of sheet.cells) {
-      const [rowStr, colStr] = key.split(",")
-      const row = Number(rowStr)
-      const col = Number(colStr)
-      if (col >= colIndex && col < deleteEnd) {
-        continue // deleted
-      } else if (col >= deleteEnd) {
-        updated.set(`${row},${col - count}`, cell)
-      } else {
-        updated.set(key, cell)
-      }
-    }
-    sheet.cells = updated
-  }
+  remapCells(sheet, (row, col) =>
+    col >= colIndex && col < deleteEnd ? undefined : [row, col >= deleteEnd ? col - count : col],
+  )
 
   // Update merge ranges
   if (sheet.merges) {
@@ -722,19 +681,6 @@ export function moveRows(sheet: Sheet, fromIndex: number, count: number, toIndex
   // Extract rows
   const extractedRows = sheet.rows.splice(fromIndex, count)
 
-  // Extract cells for moved rows
-  const extractedCells = new Map<string, import("./_types").Cell>()
-  if (sheet.cells) {
-    for (const [key, cell] of sheet.cells) {
-      const [rowStr] = key.split(",")
-      const row = Number(rowStr)
-      if (row >= fromIndex && row < fromIndex + count) {
-        extractedCells.set(key, cell)
-        sheet.cells.delete(key)
-      }
-    }
-  }
-
   // Extract row defs for moved rows
   const extractedRowDefs = new Map<number, RowDef>()
   if (sheet.rowDefs) {
@@ -755,50 +701,15 @@ export function moveRows(sheet: Sheet, fromIndex: number, count: number, toIndex
   // Re-insert rows at adjusted position
   sheet.rows.splice(adjustedTo, 0, ...extractedRows)
 
-  // Rebuild cells Map: shift all remaining cells, then re-add extracted
-  if (sheet.cells || extractedCells.size > 0) {
-    const newCells = new Map<string, import("./_types").Cell>()
-
-    // Re-key all existing cells based on their new row positions
-    if (sheet.cells) {
-      // After splice-out and splice-in, we need to rebuild row indices
-      // The simplest approach: re-scan all rows and assign cell positions
-      // based on the final row layout.
-      // But cells map may have entries that don't correspond to rows array.
-      // Safer approach: rebuild by tracking position changes.
-
-      // After removal: rows above fromIndex stay, rows at fromIndex+ shift up by count
-      // After insertion: rows at adjustedTo+ shift down by count
-      for (const [key, cell] of sheet.cells) {
-        const [rowStr, colStr] = key.split(",")
-        let row = Number(rowStr)
-        const col = Number(colStr)
-
-        // After removal of [fromIndex, fromIndex+count):
-        if (row >= fromIndex) {
-          row -= count
-        }
-        // After insertion at adjustedTo:
-        if (row >= adjustedTo) {
-          row += count
-        }
-
-        newCells.set(`${row},${col}`, cell)
-      }
+  remapCells(sheet, (row, col) => {
+    if (row >= fromIndex && row < fromIndex + count) {
+      return [adjustedTo + row - fromIndex, col]
     }
+    const afterRemoval = row >= fromIndex + count ? row - count : row
+    return [afterRemoval >= adjustedTo ? afterRemoval + count : afterRemoval, col]
+  })
 
-    // Re-add extracted cells at their new positions
-    for (const [key, cell] of extractedCells) {
-      const [rowStr, colStr] = key.split(",")
-      const originalRow = Number(rowStr)
-      const col = Number(colStr)
-      const offset = originalRow - fromIndex
-      const newRow = adjustedTo + offset
-      newCells.set(`${newRow},${col}`, cell)
-    }
-
-    sheet.cells = newCells.size > 0 ? newCells : undefined
-  }
+  if (sheet.cells?.size === 0) sheet.cells = undefined
 
   // Rebuild row defs
   if (sheet.rowDefs || extractedRowDefs.size > 0) {
@@ -935,11 +846,11 @@ export function cloneSheet(sheet: Sheet, newName: string): Sheet {
   const cloned: Sheet = { name: newName, rows }
   if (sheet.kind !== undefined) cloned.kind = sheet.kind
 
-  // Deep copy cells Map
+  // Deep copy cell metadata
   if (sheet.cells && sheet.cells.size > 0) {
-    const cells = new Map<string, Cell>()
-    for (const [key, cell] of sheet.cells) {
-      cells.set(key, cloneCell(cell))
+    const cells = createCellStore<Cell>()
+    for (const [cellRow, cellCol, cell] of cellEntries(sheet.cells)) {
+      setCell(cells, cellRow, cellCol, cloneCell(cell))
     }
     cloned.cells = cells
   }
@@ -1160,8 +1071,7 @@ export function copyRange(
 
       // Read cell
       if (sheet.cells) {
-        const key = `${srcRow},${srcCol}`
-        const cell = sheet.cells.get(key)
+        const cell = getCell(sheet.cells, srcRow, srcCol)
         sourceCells[r].push(cell ? cloneCell(cell) : null)
       } else {
         sourceCells[r].push(null)
@@ -1184,10 +1094,10 @@ export function copyRange(
       // Copy cell data
       const srcCell = sourceCells[r][c]
       if (srcCell) {
-        if (!sheet.cells) sheet.cells = new Map()
-        sheet.cells.set(`${tgtRow},${tgtCol}`, srcCell)
+        if (!sheet.cells) sheet.cells = createCellStore()
+        setCell(sheet.cells, tgtRow, tgtCol, srcCell)
       } else if (sheet.cells) {
-        sheet.cells.delete(`${tgtRow},${tgtCol}`)
+        deleteCell(sheet.cells, tgtRow, tgtCol)
       }
     }
   }
@@ -1388,7 +1298,7 @@ export function sortRows(sheet: Sheet, colIndex: number, order?: "asc" | "desc")
   }
 
   // Everything keyed by row index has to move with its row: the per-cell
-  // override Map (styles, formulas, hyperlinks), the row definitions
+  // metadata (styles, formulas, hyperlinks), the row definitions
   // (heights, hidden, outline levels), and single-row merges. Tag each row
   // with its original index, sort, then remap through old→new.
   const tagged = sheet.rows.map((row, i) => ({ row, i }))
@@ -1405,18 +1315,7 @@ export function sortRows(sheet: Sheet, colIndex: number, order?: "asc" | "desc")
 
   sheet.rows = tagged.map((t) => t.row)
 
-  if (sheet.cells && sheet.cells.size > 0) {
-    const remapped = new Map<string, Cell>()
-    for (const [key, cell] of sheet.cells) {
-      const comma = key.indexOf(",")
-      const oldRow = Number(key.slice(0, comma))
-      const col = key.slice(comma + 1)
-      const newRow = oldToNew.get(oldRow)
-      // Keep non-positional keys untouched if any slipped in.
-      remapped.set(newRow === undefined ? key : `${newRow},${col}`, cell)
-    }
-    sheet.cells = remapped
-  }
+  remapCells(sheet, (row, col) => [oldToNew.get(row) ?? row, col])
 
   if (sheet.rowDefs && sheet.rowDefs.size > 0) {
     const remapped = new Map<number, RowDef>()
@@ -1438,13 +1337,13 @@ export function sortRows(sheet: Sheet, colIndex: number, order?: "asc" | "desc")
 }
 
 /**
- * Keep a sheet's per-cell override Map in sync when a row value changes via
+ * Keep a sheet's per-cell metadata in sync when a row value changes via
  * {@link replaceCells}: if an override exists at (row,col), update its
  * `value` so the writer (which prefers the override) doesn't emit the stale
  * pre-replace value.
  */
 function syncCellOverride(sheet: Sheet, row: number, col: number, value: CellValue): void {
-  const existing = sheet.cells?.get(`${row},${col}`)
+  const existing = getCell(sheet.cells, row, col)
   if (existing) existing.value = value
 }
 

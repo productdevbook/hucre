@@ -1,3 +1,4 @@
+import { cellEntries } from "./cell-store"
 // ── Accessibility Helpers ──────────────────────────────────────────
 // Audit and helpers for generating WCAG 2.1 AA-compliant spreadsheets.
 //
@@ -301,7 +302,7 @@ function auditSheetContrast(
   if (!sheet.cells || sheet.cells.size === 0) return
 
   let inspected = 0
-  for (const [key, cell] of sheet.cells) {
+  for (const [row, col, cell] of cellEntries(sheet.cells)) {
     if (inspected >= sampleLimit) break
     inspected++
     if (!hasUserText(cell)) continue
@@ -314,9 +315,6 @@ function auditSheetContrast(
 
     const ratio = contrastRatio(fg, bg)
     if (ratio < minContrast) {
-      const [rowStr, colStr] = key.split(",")
-      const row = parseInt(rowStr, 10)
-      const col = parseInt(colStr, 10)
       const ref = cellRef(row, col)
       push(
         issues,

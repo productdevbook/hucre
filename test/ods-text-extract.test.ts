@@ -1,3 +1,4 @@
+import { getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { ZipWriter } from "../src/zip/writer"
 import { readOds } from "../src/ods/reader"
@@ -41,7 +42,7 @@ describe("ODS reader — multi-paragraph and surrounded hyperlinks", () => {
       '<text:p>before <text:a xlink:href="https://example.com">link</text:a> after</text:p>',
     )
     const wb = await readOds(data)
-    const cell = wb.sheets[0].cells?.get("0,0")
+    const cell = getCell(wb.sheets[0].cells, 0, 0)
     expect(wb.sheets[0].rows[0][0]).toBe("before link after")
     expect(cell?.hyperlink?.target).toBe("https://example.com")
     expect(cell?.hyperlink?.display).toBe("link")

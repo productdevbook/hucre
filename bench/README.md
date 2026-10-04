@@ -68,3 +68,33 @@ changing the readers:
   strings**.
 - `maxRows` bounds the output, not the work: on the high-cardinality
   fixture it saved 28% of the time and 1% of the memory.
+
+## Numeric cell storage
+
+```bash
+bun run build
+node --expose-gc bench/cell-store.mjs flat wide
+node --expose-gc bench/cell-store.mjs blocks wide
+node --expose-gc bench/cell-store.mjs flat narrow
+node --expose-gc bench/cell-store.mjs blocks narrow
+```
+
+`blocks` calls the shipped `hucre/cell` helpers, including coordinate
+validation and cell counts. `flat` reproduces the old string-keyed Map.
+Both create identical cell objects and verify their counts and checksums.
+This measures metadata storage, not XLSX throughput or total workbook memory.
+
+macOS arm64, Node 24.21.0, three fresh processes per mode and shape:
+
+| Shape                    | Store  |  Build (ms) | Lookup (ms) | Retained heap (MB) | Peak RSS (MB) |
+| ------------------------ | ------ | ----------: | ----------: | -----------------: | ------------: |
+| 20,000 × 32 (640k cells) | flat   | 168.1–185.2 |  87.6–106.4 |          66.6–67.2 |   174.9–175.6 |
+| 20,000 × 32              | blocks |   31.6–33.3 |   11.8–12.3 |          41.1–41.3 |   128.3–129.2 |
+| 240,000 × 1 (240k cells) | flat   |   42.9–45.5 |   26.6–28.6 |          21.2–21.4 |   107.4–107.6 |
+| 240,000 × 1              | blocks |   15.0–16.9 |     6.2–7.2 |          15.3–15.7 |     82.7–83.2 |
+
+Retained heap is measured after GC while the store is still reachable;
+peak RSS includes runtime and module loading. Results vary by engine,
+machine and data shape. These samples do not allocate 2^24 cells: the
+capacity regression scales the per-Map threshold down, and the numeric
+block bounds establish why no metadata Map reaches V8's real threshold.

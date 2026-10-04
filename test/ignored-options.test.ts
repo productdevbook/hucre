@@ -1,3 +1,4 @@
+import { createCellStore, getCell } from "../src/cell-store"
 import { valuesOf } from "./_stream"
 import { describe, expect, it } from "vitest"
 import { readOds } from "../src/ods/reader"
@@ -62,12 +63,14 @@ describe("readOds honours maxRows and range", () => {
 
   it("drops the cell overrides it masked", async () => {
     const bytes = await writeOds({
-      sheets: [{ name: "S", rows: GRID, cells: new Map([["0,0", { value: 1, formula: "1+0" }]]) }],
+      sheets: [
+        { name: "S", rows: GRID, cells: createCellStore([[0, 0, { value: 1, formula: "1+0" }]]) },
+      ],
     })
 
     const wb = await readOds(bytes, { range: "B2:C3" })
 
-    expect(wb.sheets[0]!.cells?.get("0,0")).toBeUndefined()
+    expect(getCell(wb.sheets[0]!.cells, 0, 0)).toBeUndefined()
   })
 
   it("leaves everything alone when neither option is set", async () => {

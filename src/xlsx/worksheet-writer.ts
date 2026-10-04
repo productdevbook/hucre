@@ -1,3 +1,4 @@
+import { cellEntries } from "../cell-store"
 // ── Worksheet XML Writer ─────────────────────────────────────────────
 // Generates xl/worksheets/sheetN.xml for an XLSX package.
 
@@ -661,7 +662,7 @@ export function writeWorksheetXml(
   let commentsRId: string | null = null
   let hasComments = false
   if (sheet.cells) {
-    for (const [, cell] of sheet.cells) {
+    for (const [, , cell] of cellEntries(sheet.cells)) {
       if (cell.comment) {
         hasComments = true
         break
@@ -808,11 +809,7 @@ function resolveRows(sheet: SheetInput): Array<Array<ResolvedCell | null>> {
 
   // Apply cell overrides
   if (sheet.cells) {
-    for (const [key, cellOverride] of sheet.cells) {
-      const [rowStr, colStr] = key.split(",")
-      const r = parseInt(rowStr, 10)
-      const c = parseInt(colStr, 10)
-
+    for (const [r, c, cellOverride] of cellEntries(sheet.cells)) {
       // Ensure row exists
       while (resolved.length <= r) {
         resolved.push([])
@@ -1211,7 +1208,7 @@ export function collectHyperlinks(
   relationships: HyperlinkRelationship[]
 } {
   // Resolve the full grid so links from both inline `data` values and the
-  // `cells` override map are collected from a single source, in row-major order.
+  // `cells` overrides are collected from a single source, in row-major order.
   // `writeWorksheetXml` has already paid for that grid, so it hands it over
   // rather than making us rebuild every cell of the sheet a second time.
   const resolved = preResolved ?? resolveRows(sheet)
