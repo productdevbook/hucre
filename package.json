@@ -1,6 +1,6 @@
 {
   "name": "hucre",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Zero-dependency spreadsheet engine. Read & write XLSX, CSV, ODS. Schema validation, streaming, tree-shakeable. Pure TypeScript, works everywhere.",
   "keywords": [
     "csv",
@@ -32,6 +32,9 @@
   "bin": {
     "hucre": "./dist/cli.mjs"
   },
+  "workspaces": [
+    "web"
+  ],
   "files": [
     "dist",
     "MIGRATION.md",
@@ -86,18 +89,18 @@
   "scripts": {
     "bench": "node bench/index.mjs",
     "build": "obuild",
-    "verify:package": "pnpm build && node scripts/verify-package.mjs",
+    "verify:package": "bun run build && node scripts/verify-package.mjs",
     "coverage": "vitest run --coverage",
-    "size": "pnpm build && node scripts/size.mjs",
-    "size:update": "pnpm build && node scripts/size.mjs --update",
+    "size": "bun run build && node scripts/size.mjs",
+    "size:update": "bun run build && node scripts/size.mjs --update",
     "dev": "vitest",
     "lint": "oxlint . && oxfmt --check .",
     "lint:fix": "oxlint . --fix && oxfmt .",
     "fmt": "oxfmt .",
-    "test": "pnpm lint && pnpm typecheck && vitest run",
+    "test": "bun run lint && bun run typecheck && vitest run",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.cli.json",
-    "release": "pnpm test && pnpm build && bumpp --commit --tag --push --all",
-    "prepack": "pnpm build"
+    "release": "bun run test && bun run build && bumpp --commit --tag --push --all",
+    "prepack": "bun run build"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
@@ -115,5 +118,5 @@
   "engines": {
     "node": ">=24"
   },
-  "packageManager": "pnpm@11.15.1"
+  "packageManager": "bun@1.4.2"
 }

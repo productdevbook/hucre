@@ -50,6 +50,15 @@ export const MAX_COL_INDEX = 16_383
 export const MAX_TOTAL_CELLS = 20_000_000
 
 /**
+ * Number-format length accepted by formatValue, including all sections
+ * and literals. Bound scanning before any regex sees an untrusted format.
+ */
+export const MAX_NUMBER_FORMAT_LENGTH = 255
+
+/** Maximum precision accepted by JavaScript's toFixed / toExponential. */
+export const MAX_FORMAT_DECIMALS = 100
+
+/**
  * How many entries `Sheet.cells` can hold.
  *
  * Not a policy — a `Map` in V8 caps at 2^24 entries and throws

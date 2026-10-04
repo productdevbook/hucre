@@ -32,7 +32,7 @@ Raising the Node floor does not licence `node:fs` in a reader.
 
 ## The rest
 
-`CONTRIBUTING.md` has the working conventions — the gate (`pnpm test`),
+`CONTRIBUTING.md` has the working conventions — the gate (`bun run test`),
 the registers that break when a field is added and a copy forgets it, and
 the two habits this codebase holds to: a test that fails _before_ the fix,
 and a reason written into the code rather than only into the PR.

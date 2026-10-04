@@ -5,12 +5,14 @@ code, and the rest is here.
 
 ## Getting set up
 
+Use Bun 1.4.2 and Node.js 24 or newer.
+
 ```bash
-pnpm install
-pnpm test        # lint + typecheck + vitest
+bun install
+bun run test        # lint + typecheck + vitest
 ```
 
-`pnpm test` is the whole gate, and it is what CI runs. `pnpm dev` starts
+`bun run test` is the whole gate, and it is what CI runs. `bun run dev` starts
 vitest in watch mode.
 
 ## What a change looks like here

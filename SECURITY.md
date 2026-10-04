@@ -10,7 +10,7 @@ Please **do not open a public issue** for a security problem.
 
 Use GitHub's private reporting — [Security → Report a
 vulnerability](https://github.com/productdevbook/hucre/security/advisories/new)
-— or email <mehmet.k.hob@gmail.com>.
+— or email <hi@productdevbook.com>.
 
 Include the input that triggers it if you can. A file, or the few lines of
 markup or XML that reproduce it, is worth more than a description.
@@ -45,14 +45,21 @@ patch release, and the advisory is published once one is available.
 `src/limits.ts` is the list, and each entry says what it is defending
 against:
 
-| bound                    | default                                 | what it stops                                                                         |
-| ------------------------ | --------------------------------------- | ------------------------------------------------------------------------------------- |
-| `MAX_DECOMPRESSED_BYTES` | 2 GiB per entry                         | ZIP bombs — a small entry claiming a small compressed size and expanding to gigabytes |
-| `MAX_INPUT_BYTES`        | 1 GiB, overridable with `maxInputBytes` | a `ReadableStream` that never ends                                                    |
-| `MAX_TOTAL_CELLS`        | 20,000,000                              | two legal cells at opposite corners describing a 1.7e10-slot rectangle                |
-| `MAX_REPEAT_COUNT`       | 100,000                                 | ODS `text:c="900000000"`, a gigabyte of spaces in one cell                            |
-| `MAX_SPAN_CELLS`         | 1,000,000                               | HTML `rowspan` × `colspan` bombs                                                      |
-| `MAX_SPIN_COUNT`         | 10,000,000                              | a hostile encrypted file pinning a CPU in key derivation                              |
+| bound                      | default                                 | what it stops                                                                         |
+| -------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------- |
+| `MAX_DECOMPRESSED_BYTES`   | 2 GiB per entry                         | ZIP bombs — a small entry claiming a small compressed size and expanding to gigabytes |
+| `MAX_INPUT_BYTES`          | 1 GiB, overridable with `maxInputBytes` | a `ReadableStream` that never ends                                                    |
+| `MAX_TOTAL_CELLS`          | 20,000,000                              | two legal cells at opposite corners describing a 1.7e10-slot rectangle                |
+| `MAX_REPEAT_COUNT`         | 100,000                                 | ODS `text:c="900000000"`, a gigabyte of spaces in one cell                            |
+| `MAX_SPAN_CELLS`           | 1,000,000                               | HTML `rowspan` × `colspan` bombs                                                      |
+| `MAX_SPIN_COUNT`           | 10,000,000                              | a hostile encrypted file pinning a CPU in key derivation                              |
+| `MAX_NUMBER_FORMAT_LENGTH` | 255 characters                          | excessive scanning of number formats passed to `formatValue`                          |
+| `MAX_FORMAT_DECIMALS`      | 100 places                              | native precision errors in decimal and scientific number rendering                    |
+
+The XLSX dense-grid limit is checked before row or column padding grows,
+including streamed worksheet parsing. Fraction rendering uses at most 128
+continued-fraction steps and bounds variable denominators to safe integers;
+it does not scan every denominator allowed by the format's placeholders.
 
 Two structural properties are worth naming because they remove whole
 classes of attack rather than bounding them:

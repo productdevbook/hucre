@@ -1,10 +1,10 @@
-// ── pnpm bench ───────────────────────────────────────────────────────
+// ── bun run bench ───────────────────────────────────────────────────────
 //
 // Runs every scenario, one child process each, so `maxRSS` measures that
 // scenario and nothing else. Takes a couple of minutes.
 //
-//   pnpm bench            # 100k rows
-//   pnpm bench 300000     # or however many
+//   bun run bench            # 100k rows
+//   bun run bench 300000     # or however many
 
 import { spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
@@ -14,7 +14,7 @@ const rows = process.argv[2] ?? "100000"
 const here = (name) => fileURLToPath(new URL(name, import.meta.url))
 
 if (!existsSync(fileURLToPath(new URL("../dist/index.mjs", import.meta.url)))) {
-  console.error("dist/ not found — run `pnpm build` first.")
+  console.error("dist/ not found — run `bun run build` first.")
   process.exit(1)
 }
 

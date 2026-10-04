@@ -258,12 +258,28 @@ index, and it is what the readers' limits are sized against — the cost of
 a sheet is its bounding box rather than its cell count, which is why
 `maxTotalCells` bounds the product.
 
+The XLSX reader checks that growing product before allocating each cell's
+row or column padding, in both buffered and streamed worksheet parsing.
+An over-limit sheet is rejected as soon as its retained bounding box exceeds
+the bound; the error's dimensions and fill count describe that parsed prefix.
+
 The contract went unwritten and two readers did not hold it. `readXls`
 and `readXlsb` padded a row only to its _own_ last cell and never
 allocated a row the file left empty, so one authored sheet saved three
 ways came back three shapes, and a gap row came back as `undefined` —
 which `CellValue` cannot express. Fixed in #494; it is now stated on
 `Sheet.rows` as well as here.
+
+### Number-format rendering has explicit bounds
+
+`formatValue` rejects applied formats over 255 characters, decimal or
+scientific precision over 100 places, and fixed fraction denominators
+outside JavaScript's safe-integer range with `InvalidArgumentError`.
+Variable fraction denominators use a bounded continued-fraction
+approximation, capped at `Number.MAX_SAFE_INTEGER`; placeholder width still
+controls padding. Non-finite values under fraction formats return their
+string representation. These bounds apply to rendering; number-format
+strings are still preserved when reading and writing cell styles.
 
 ### Line endings are normalized on the way in
 
@@ -714,20 +730,23 @@ No writer exists for either. What the readers surface is narrower than
 XLSX, which matters because converting to XLSX can only carry what was
 read:
 
-|                                                 | XLS (BIFF8) | XLSB |
-| ----------------------------------------------- | ----------- | ---- |
-| Sheet names, strings, numbers, booleans, errors | yes         | yes  |
-| Dates, honouring the file's 1900/1904 flag      | yes         | yes  |
-| Formula **values** (never the formula text)     | yes         | yes  |
-| Merges                                          | yes         | yes  |
-| Everything else on `Sheet` / `Workbook`         | no          | no   |
+|                                                 | XLS (BIFF5 / BIFF8) | XLSB |
+| ----------------------------------------------- | ------------------- | ---- |
+| Sheet names, strings, numbers, booleans, errors | yes                 | yes  |
+| Dates, honouring the file's 1900/1904 flag      | yes                 | yes  |
+| Formula **values** (never the formula text)     | yes                 | yes  |
+| Merges                                          | yes                 | yes  |
+| Everything else on `Sheet` / `Workbook`         | no                  | no   |
 
 So **XLS/XLSB → XLSX is a values-and-names conversion**. Every formula
 becomes a hard-coded value, styles and dimensions are dropped, hidden
 sheets become visible, and workbook properties and named ranges are lost.
 
-BIFF5 and BIFF7 are rejected outright rather than misread — only BIFF8
-(Excel 97-2003) is supported.
+BIFF5 and BIFF7 (Excel 5.0/95) read the same set. Their text is bytes in
+one Windows code page: the file's CODEPAGE record names it, `codepage`
+stands in for a file that carries none (1C exports do this), and
+Windows-1252 is the last resort. Anything older is rejected outright
+rather than misread.
 
 ## CSV / TSV
 

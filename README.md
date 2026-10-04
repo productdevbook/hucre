@@ -92,7 +92,7 @@ single number. Minified + gzipped, bundled with rolldown against `dist/`:
 `hucre/xlsx` = **34 KB**, `{ readXlsx, writeXlsx }` = **68 KB**, the entire
 library (`export * from "hucre"`) = **129 KB**.
 
-These four are measured by `pnpm size` and pinned in
+These four are measured by `bun run size` and pinned in
 `scripts/size-budget.json`, so CI fails when one grows past its budget.
 They are in the README because they had already drifted once — the
 previous figures (2.3 / 32 / 64 / 114 KB) were true when written and were
@@ -509,7 +509,7 @@ styles and column widths.
 | Strings     | inline by default                            | shared string table               |
 | Sheets      | one, or several with `writeXlsxStreamSheets` | one, plus auto-split parts        |
 
-Measured with `pnpm bench` — the scenarios are in `bench/`, so these are
+Measured with `bun run bench` — the scenarios are in `bench/`, so these are
 reproducible rather than quoted. 5 columns of mixed text/number/date data,
 writing to a sink that discards the bytes (Node 24):
 
@@ -541,7 +541,7 @@ Two things worth knowing before you rely on either:
   100,000 saved 28% of the time and 1% of the memory on the
   high-cardinality fixture.
 
-Run `pnpm bench` to see both on your own machine.
+Run `bun run bench` to see both on your own machine.
 
 #### One surface across the incremental writers
 
@@ -697,16 +697,21 @@ the binary style table, honouring the workbook's own 1900/1904 date
 system). Read-only; password-protected `.xlsb` also decrypts with
 `{ password }`.
 
-### XLS (Legacy Excel 97-2003) — read
+### XLS (Legacy Excel 5.0–2003) — read
 
-Read legacy `.xls` (BIFF8) files — the OLE2/CFB binary format from Excel
-97-2003. `read()` auto-detects it, or call `readXls`:
+Read legacy `.xls` files — the OLE2/CFB binary format from Excel 97-2003
+(BIFF8) and Excel 5.0/95 (BIFF5/7, still what some 1C installs export).
+`read()` auto-detects it, or call `readXls`:
 
 ```ts
 import { read, readXls } from "hucre"
 
 const wb = await readXls(bytes)
 const same = await read(bytes) // auto-detected
+
+// A BIFF5 file stores text in one Windows code page. The file's own
+// CODEPAGE record wins; `codepage` covers a file that has none.
+const cyrillic = await readXls(bytes, { codepage: 1251 })
 ```
 
 Decodes the shared-string table (with CONTINUE spanning), RK / MULRK /
@@ -1456,6 +1461,11 @@ formatValue(1234, "$#,##0") // "$1,234"
 formatValue(0.333, "# ?/?") // "1/3"
 ```
 
+Applied formats are limited to 255 characters and 100 decimal places;
+exceeding either throws `InvalidArgumentError`. Fixed fraction denominators
+must be safe integers. Variable denominators use a bounded approximation,
+up to `Number.MAX_SAFE_INTEGER`, while retaining the format's padding width.
+
 ### Cell Utilities
 
 ```ts
@@ -2159,13 +2169,13 @@ worker-safe: there are no DOM or Node-only dependencies.
 ## Development
 
 ```sh
-pnpm install
-pnpm dev          # vitest watch
-pnpm test         # lint + typecheck + test
-pnpm build        # obuild: src/ transpiled file-by-file into dist/ (+ .d.mts),
+bun install
+bun run dev          # vitest watch
+bun run test         # lint + typecheck + test
+bun run build        # obuild: src/ transpiled file-by-file into dist/ (+ .d.mts),
                   # plus a bundled, minified dist/cli.mjs
-pnpm lint:fix     # oxlint + oxfmt
-pnpm typecheck    # tsc
+bun run lint:fix     # oxlint + oxfmt
+bun run typecheck    # tsc
 ```
 
 ### `hucre/ooxml` — low-level part parsers

@@ -7,7 +7,7 @@
 // than either, and `scripts/validate-ooxml.mjs` compiles it on demand —
 // nothing is checked in but the source.
 //
-// Used by that script; not part of `pnpm test`, which must not need a JVM.
+// Used by that script; not part of `bun run test`, which must not need a JVM.
 
 import javax.xml.XMLConstants;
 import javax.xml.transform.stream.StreamSource;

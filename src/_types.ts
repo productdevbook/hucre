@@ -1546,8 +1546,8 @@ export interface ReadOptionsBase {
    * describe 1.7e10 slots from a few hundred bytes of XML. It also
    * refuses a legitimate 25-million-cell sheet, which is why this is a
    * number rather than a ceiling: raise it when you know the file, and
-   * budget roughly 8 bytes per slot for the array alone.
-   *
+   * budget roughly 8 bytes per slot for the array alone. XLSX checks the
+   * growing bounding box before allocating rows or padding columns.
    */
   maxTotalCells?: number
 }
@@ -1714,6 +1714,12 @@ export interface XlsbReadOptions extends ReadOptionsBase, ZipReadOptions, Encryp
 /** Options `readXls` honours. A `.xls` is a CFB container, not a ZIP. */
 export interface XlsReadOptions extends ReadOptionsBase {
   /**
+   * Fallback Windows code page for BIFF5/7 files without a CODEPAGE record.
+   * Default: 1252. A file's own CODEPAGE takes precedence; BIFF8 ignores it.
+   */
+  codepage?: number
+
+  /**
    * Date system override. Default: `"auto"`, which takes the file's own
    * `date1904` flag.
    */
@@ -1725,7 +1731,7 @@ export interface XlsReadOptions extends ReadOptionsBase {
  * the bytes, so it takes the widest reader's options and hands the
  * detected reader the fields it understands.
  */
-export type ReadOptions = XlsxReadOptions
+export type ReadOptions = XlsxReadOptions & XlsReadOptions
 
 // ── Write Options ──────────────────────────────────────────────────
 
