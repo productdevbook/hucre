@@ -3,7 +3,7 @@
 // Packs the library exactly as npm would publish it, installs the
 // tarball into a throwaway project, and exercises it from there.
 //
-// This exists because `pnpm test` only ever sees `src/`. The published
+// This exists because `bun run test` only ever sees `src/`. The published
 // CLI was dead across two releases — `dist/cli.mjs` imported `citty` and
 // `consola` while `package.json` declared no runtime dependencies — and
 // nothing caught it, because nothing ran the packaged binary (#357).

@@ -17,7 +17,7 @@
     // left importing a declaration file that was never written. v0.6.2 went
     // out that way, missing types for `errors`, `json/stream` and
     // `xml/parser`. Typechecking under the same rule turns that warning into
-    // a `pnpm test` failure, where it is impossible to miss.
+    // a `bun run test` failure, where it is impossible to miss.
     "declaration": true,
     "isolatedDeclarations": true,
     // No ambient types, deliberately. The library is platform-neutral —
