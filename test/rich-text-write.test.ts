@@ -1,3 +1,4 @@
+import { createCellStore, setCell, getCell } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import { parseXml } from "../src/xml/parser"
 import { writeXlsx } from "../src/xlsx/writer"
@@ -35,8 +36,8 @@ function parseSheet(xml: string) {
 
 describe("rich text write — basic", () => {
   it("writes cell with rich text as inlineStr", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       richText: [{ text: "Bold", font: { bold: true } }, { text: " Normal" }],
     })
 
@@ -79,8 +80,8 @@ describe("rich text write — basic", () => {
 
 describe("rich text write — font properties", () => {
   it("writes rich text with color", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       richText: [{ text: "Red", font: { color: { rgb: "FF0000" } } }],
     })
 
@@ -104,8 +105,8 @@ describe("rich text write — font properties", () => {
   })
 
   it("writes rich text with italic", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       richText: [{ text: "Italic", font: { italic: true } }],
     })
 
@@ -128,8 +129,8 @@ describe("rich text write — font properties", () => {
   })
 
   it("writes rich text with underline", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       richText: [{ text: "Underline", font: { underline: true } }],
     })
 
@@ -152,8 +153,8 @@ describe("rich text write — font properties", () => {
   })
 
   it("writes rich text with double underline", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       richText: [{ text: "Double", font: { underline: "double" } }],
     })
 
@@ -177,8 +178,8 @@ describe("rich text write — font properties", () => {
   })
 
   it("writes rich text with strikethrough", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       richText: [{ text: "Strike", font: { strikethrough: true } }],
     })
 
@@ -201,8 +202,8 @@ describe("rich text write — font properties", () => {
   })
 
   it("writes rich text with font name and size", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       richText: [{ text: "Styled", font: { name: "Arial", size: 14 } }],
     })
 
@@ -227,8 +228,8 @@ describe("rich text write — font properties", () => {
   })
 
   it("writes rich text with multiple font properties", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       richText: [
         {
           text: "Fancy",
@@ -269,8 +270,8 @@ describe("rich text write — font properties", () => {
 
 describe("rich text write — empty run text", () => {
   it("writes rich text with empty run text", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       richText: [{ text: "", font: { bold: true } }, { text: "After empty" }],
     })
 
@@ -297,8 +298,8 @@ describe("rich text write — empty run text", () => {
 
 describe("rich text write — mixed sheet", () => {
   it("writes some cells as plain string and some as rich text", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("1,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 1, 0, {
       richText: [{ text: "Bold", font: { bold: true } }, { text: " text" }],
     })
 
@@ -331,8 +332,8 @@ describe("rich text write — mixed sheet", () => {
 
 describe("rich text write — round-trip", () => {
   it("round-trips bold + normal rich text", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       richText: [
         { text: "Bold", font: { bold: true, name: "Calibri", size: 11 } },
         { text: " Normal" },
@@ -350,7 +351,7 @@ describe("rich text write — round-trip", () => {
     })
 
     const workbook = await readXlsx(data)
-    const cell = workbook.sheets[0].cells?.get("0,0")
+    const cell = getCell(workbook.sheets[0].cells, 0, 0)
     expect(cell).toBeDefined()
     expect(cell!.type).toBe("richText")
     expect(cell!.richText).toBeDefined()
@@ -361,8 +362,8 @@ describe("rich text write — round-trip", () => {
   })
 
   it("round-trips rich text with color", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       richText: [
         { text: "Red", font: { color: { rgb: "FF0000" }, size: 11 } },
         { text: " Blue", font: { color: { rgb: "0000FF" }, size: 11 } },
@@ -380,7 +381,7 @@ describe("rich text write — round-trip", () => {
     })
 
     const workbook = await readXlsx(data)
-    const cell = workbook.sheets[0].cells?.get("0,0")
+    const cell = getCell(workbook.sheets[0].cells, 0, 0)
     expect(cell).toBeDefined()
     expect(cell!.richText).toBeDefined()
     expect(cell!.richText!.length).toBe(2)
@@ -391,8 +392,8 @@ describe("rich text write — round-trip", () => {
   })
 
   it("round-trips rich text with italic and underline", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       richText: [
         { text: "Italic", font: { italic: true } },
         { text: " Underline", font: { underline: true } },
@@ -410,7 +411,7 @@ describe("rich text write — round-trip", () => {
     })
 
     const workbook = await readXlsx(data)
-    const cell = workbook.sheets[0].cells?.get("0,0")
+    const cell = getCell(workbook.sheets[0].cells, 0, 0)
     expect(cell).toBeDefined()
     expect(cell!.richText).toBeDefined()
     expect(cell!.richText![0].font?.italic).toBe(true)
@@ -418,8 +419,8 @@ describe("rich text write — round-trip", () => {
   })
 
   it("round-trips mixed sheet with plain and rich text", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("1,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 1, 0, {
       richText: [{ text: "Bold", font: { bold: true } }, { text: " text" }],
     })
 
@@ -439,7 +440,7 @@ describe("rich text write — round-trip", () => {
     expect(workbook.sheets[0].rows[0][0]).toBe("Plain")
 
     // Row 1: rich text
-    const cell = workbook.sheets[0].cells?.get("1,0")
+    const cell = getCell(workbook.sheets[0].cells, 1, 0)
     expect(cell).toBeDefined()
     expect(cell!.type).toBe("richText")
     expect(cell!.richText!.length).toBe(2)
@@ -449,8 +450,8 @@ describe("rich text write — round-trip", () => {
   })
 
   it("round-trips value from rich text runs", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       richText: [{ text: "Hello " }, { text: "World" }],
     })
 

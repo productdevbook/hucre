@@ -1,3 +1,4 @@
+import { createCellStore, getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
@@ -180,13 +181,13 @@ describe("openXlsx → saveXlsx preserves workbook-level state", () => {
         {
           name: "S",
           rows: [["flag"]],
-          cells: new Map([["1,0", { value: true, type: "boolean", checkbox: true }]]),
+          cells: createCellStore([[1, 0, { value: true, type: "boolean", checkbox: true }]]),
         },
       ],
     })
 
     // The cell keeps its checkbox flag...
-    expect(workbook.sheets[0].cells?.get("1,0")?.checkbox).toBe(true)
+    expect(getCell(workbook.sheets[0].cells, 1, 0)?.checkbox).toBe(true)
 
     // ...and the part it depends on is actually in the archive, not just
     // declared. A dangling declaration is what Excel calls corrupt.
@@ -204,12 +205,12 @@ describe("openXlsx → saveXlsx preserves workbook-level state", () => {
         {
           name: "S",
           rows: [[null]],
-          cells: new Map([["0,0", { formula: "UNIQUE(B1:B5)", formulaDynamic: true }]]),
+          cells: createCellStore([[0, 0, { formula: "UNIQUE(B1:B5)", formulaDynamic: true }]]),
         },
       ],
     })
 
-    expect(workbook.sheets[0].cells?.get("0,0")?.formulaDynamic).toBe(true)
+    expect(getCell(workbook.sheets[0].cells, 0, 0)?.formulaDynamic).toBe(true)
 
     const zip = new ZipReader(saved)
     const metadataEntries = zip.entries().filter((e) => e.toLowerCase() === "xl/metadata.xml")
@@ -237,7 +238,7 @@ describe("saveXlsx output integrity", () => {
           rowBreaks: [3],
           sparklines: [{ type: "line", location: "D1", dataRange: "S!A1:C1" }],
           textBoxes: [{ text: "x", anchor: { from: { col: 3, row: 1 }, to: { col: 5, row: 3 } } }],
-          cells: new Map([["2,0", { value: false, type: "boolean", checkbox: true }]]),
+          cells: createCellStore([[2, 0, { value: false, type: "boolean", checkbox: true }]]),
         }),
       ],
       workbookProtection: { lockStructure: true },

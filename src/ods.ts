@@ -27,6 +27,7 @@ export type {
   Workbook,
   WorkbookProperties,
   WorkbookInput,
+  CellStore,
   WorkbookWriteOptions,
   WriteModelDrop,
   SheetInput,

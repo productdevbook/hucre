@@ -1,3 +1,4 @@
+import { createCellStore, getCell, setCell } from "../cell-store"
 // ── XLSX Reader ──────────────────────────────────────────────────────
 // Reads Office Open XML (.xlsx) spreadsheet files.
 
@@ -44,7 +45,7 @@ import type { ParsedStyles } from "./styles"
 import type { SharedString } from "./shared-strings"
 import type { Relationship } from "./relationships"
 import { parseComments } from "./comments-reader"
-import { parseCellRef } from "./worksheet"
+import { parseCellRef, validateCellPosition } from "./worksheet"
 import { parseCoreProperties, parseAppProperties, parseCustomProperties } from "./doc-props-reader"
 import { parseThemeColors } from "./theme"
 
@@ -512,18 +513,24 @@ export async function readXlsx(input: ReadInput, options?: XlsxReadOptions): Pro
           // Attach comments to cell objects
           if (commentsMap.size > 0) {
             if (!sheet.cells) {
-              sheet.cells = new Map()
+              sheet.cells = createCellStore()
             }
             for (const [cellRefStr, comment] of commentsMap) {
               const pos = parseCellRef(cellRefStr)
-              const key = `${pos.row},${pos.col}`
-              let cell = sheet.cells.get(key)
+              if (
+                !validateCellPosition(cellRefStr, pos, {
+                  sheetName: sheet.name,
+                  onWarning: options?.onWarning,
+                })
+              )
+                continue
+              let cell = getCell(sheet.cells, pos.row, pos.col)
               if (!cell) {
                 cell = {
                   value: (sheet.rows[pos.row] && sheet.rows[pos.row][pos.col]) ?? null,
                   type: "string",
                 }
-                sheet.cells.set(key, cell)
+                setCell(sheet.cells, pos.row, pos.col, cell)
               }
               cell.comment = comment
             }

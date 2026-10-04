@@ -1,3 +1,4 @@
+import { getCell } from "../src/cell-store"
 import { cellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { parseWorksheet } from "../src/xlsx/worksheet"
@@ -187,7 +188,7 @@ describe("cell types", () => {
 
   it('reads t="str" with a formula as a formula cell', () => {
     const s = data(`<row r="1"><c r="A1" t="str"><f>UPPER(B1)</f><v>HI</v></c></row>`)
-    const cell = s.cells!.get("0,0")!
+    const cell = getCell(s.cells!, 0, 0)!
     expect(cell.type).toBe("formula")
     expect(cell.formula).toBe("UPPER(B1)")
   })
@@ -195,7 +196,7 @@ describe("cell types", () => {
   it('reads t="e" error values', () => {
     const s = data(`<row r="1"><c r="A1" t="e"><v>#DIV/0!</v></c></row>`)
     expect(s.rows[0][0]).toEqual(cellError("#DIV/0!"))
-    expect(s.cells!.get("0,0")!.type).toBe("error")
+    expect(getCell(s.cells!, 0, 0)!.type).toBe("error")
   })
 
   it('accepts both boolean spellings for t="b"', () => {
@@ -230,7 +231,7 @@ describe("cell types", () => {
       { text: "ab", richText: [{ text: "a", font: { bold: true } }, { text: "b" }] },
     ]
     const s = data(`<row r="1"><c r="A1" t="s"><v>0</v></c></row>`, { sharedStrings: rich })
-    const cell = s.cells!.get("0,0")!
+    const cell = getCell(s.cells!, 0, 0)!
     expect(cell.type).toBe("richText")
     expect(cell.richText).toHaveLength(2)
   })
@@ -248,7 +249,7 @@ describe("inline strings", () => {
         `</is></c></row>`,
     )
     expect(s.rows[0][0]).toBe("Bold tail")
-    const cell = s.cells!.get("0,0")!
+    const cell = getCell(s.cells!, 0, 0)!
     expect(cell.type).toBe("richText")
     expect(cell.richText![0].font).toEqual({ bold: true })
     expect(cell.richText![1].font).toBeUndefined()
@@ -264,7 +265,7 @@ describe("inline strings", () => {
         `<family val="2"/><charset val="204"/><scheme val="minor"/>` +
         `</rPr><t>styled</t></r></is></c></row>`,
     )
-    expect(s.cells!.get("0,0")!.richText![0].font).toEqual({
+    expect(getCell(s.cells!, 0, 0)!.richText![0].font).toEqual({
       bold: true,
       italic: true,
       underline: "double",
@@ -288,7 +289,7 @@ describe("inline strings", () => {
         `<color rgb="00FF00" theme="4" tint="-0.25" indexed="9"/>` +
         `</rPr><t>off</t></r></is></c></row>`,
     )
-    expect(s.cells!.get("0,0")!.richText![0].font).toEqual({
+    expect(getCell(s.cells!, 0, 0)!.richText![0].font).toEqual({
       bold: false,
       italic: false,
       strikethrough: false,
@@ -304,7 +305,7 @@ describe("inline strings", () => {
         `<family/><charset/><scheme val="bogus"/>` +
         `</rPr><t>t</t></r></is></c></row>`,
     )
-    expect(s.cells!.get("0,0")!.richText![0].font).toEqual({})
+    expect(getCell(s.cells!, 0, 0)!.richText![0].font).toEqual({})
   })
 
   it("decodes OOXML escapes in a plain inline string", () => {
@@ -340,7 +341,7 @@ describe("hyperlinks", () => {
         `<hyperlinks><hyperlink ref="C10" r:id="rId1" tooltip="tip" display="shown"/></hyperlinks>`,
       { worksheetRels: [{ id: "rId1", type: "hyperlink", target: "https://example.com" }] },
     )
-    const cell = s.cells!.get("9,2")!
+    const cell = getCell(s.cells!, 9, 2)!
     expect(cell.value).toBeNull()
     expect(cell.hyperlink).toEqual({
       target: "https://example.com",
@@ -357,7 +358,7 @@ describe("hyperlinks", () => {
         `<hyperlinks><hyperlink ref="A1" r:id="rId99"/></hyperlinks>`,
       { worksheetRels: [] },
     )
-    expect(s.cells!.get("0,0")!.hyperlink).toEqual({ target: "" })
+    expect(getCell(s.cells!, 0, 0)!.hyperlink).toEqual({ target: "" })
   })
 
   it("uses the location for an internal link", () => {
@@ -365,7 +366,7 @@ describe("hyperlinks", () => {
       `<sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>` +
         `<hyperlinks><hyperlink ref="A1" location="Sheet2!A1"/></hyperlinks>`,
     )
-    expect(s.cells!.get("0,0")!.hyperlink).toEqual({
+    expect(getCell(s.cells!, 0, 0)!.hyperlink).toEqual({
       target: "Sheet2!A1",
       location: "Sheet2!A1",
     })
@@ -832,14 +833,14 @@ describe("formulas", () => {
       `<row r="1"><c r="A1"><f t="shared" ref="A1:A3" si="0">B1*2</f><v>2</v></c></row>` +
         `<row r="2"><c r="A2"><f t="shared" si="0"/><v>4</v></c></row>`,
     )
-    expect(s.cells!.get("0,0")).toMatchObject({
+    expect(getCell(s.cells!, 0, 0)).toMatchObject({
       formula: "B1*2",
       formulaType: "shared",
       formulaSharedIndex: 0,
       formulaRef: "A1:A3",
       formulaResult: 2,
     })
-    expect(s.cells!.get("1,0")).toMatchObject({
+    expect(getCell(s.cells!, 1, 0)).toMatchObject({
       formula: "",
       formulaType: "shared",
       formulaSharedIndex: 0,
@@ -851,7 +852,7 @@ describe("formulas", () => {
       `<row r="1"><c r="A1" cm="1"><f t="array" ref="A1:A3">SEQUENCE(3)</f>` + `<v>1</v></c></row>`,
       { dynamicArrayCm: new Set([1]) },
     )
-    expect(s.cells!.get("0,0")).toMatchObject({
+    expect(getCell(s.cells!, 0, 0)).toMatchObject({
       formulaType: "array",
       formulaRef: "A1:A3",
       formulaDynamic: true,
@@ -865,7 +866,7 @@ describe("formulas", () => {
     const s = data(
       `<row r="1"><c r="A1"><f t="array" ref="A1:A3" cm="1">SEQUENCE(3)</f>` + `<v>1</v></c></row>`,
     )
-    expect(s.cells!.get("0,0")).toMatchObject({ formulaDynamic: true })
+    expect(getCell(s.cells!, 0, 0)).toMatchObject({ formulaDynamic: true })
   })
 
   it("ignores a cm that the metadata part does not map to a dynamic array", () => {
@@ -875,7 +876,7 @@ describe("formulas", () => {
       // cell metadata and says nothing about spilling.
       { dynamicArrayCm: new Set([1]) },
     )
-    expect(s.cells!.get("0,0")!.formulaDynamic).toBeUndefined()
+    expect(getCell(s.cells!, 0, 0)!.formulaDynamic).toBeUndefined()
   })
 })
 
@@ -918,7 +919,7 @@ describe("styles", () => {
       styles: parseStyles(stylesXml),
       readStyles: true,
     })
-    expect(withStyles.cells!.get("0,0")!.style).toBeDefined()
+    expect(getCell(withStyles.cells!, 0, 0)!.style).toBeDefined()
   })
 
   it("skips style resolution for a cell with no s attribute", () => {

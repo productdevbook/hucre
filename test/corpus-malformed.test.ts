@@ -1,3 +1,4 @@
+import { getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
@@ -191,7 +192,7 @@ describe("content damage reads short, because a partial answer is useful", () =>
     )
 
     expect(wb.sheets[0]!.rows[1]![1]).toBe(3)
-    expect(wb.sheets[0]!.cells?.get("1,1")?.style).toBeUndefined()
+    expect(getCell(wb.sheets[0]!.cells, 1, 1)?.style).toBeUndefined()
   })
 
   it("a merge range whose end is before its start", async () => {

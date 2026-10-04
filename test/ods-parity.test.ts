@@ -1,3 +1,4 @@
+import { createCellStore, setCell, getCell } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import { writeOds } from "../src/ods/writer"
 import { readOds } from "../src/ods/reader"
@@ -147,12 +148,12 @@ describe("ODS parity — merged cells", () => {
 
 describe("ODS parity — hyperlinks", () => {
   it("write ODS with hyperlinks → read back → hyperlinks preserved", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Click here",
       hyperlink: { target: "https://example.com", display: "Click here" },
     })
-    cells.set("1,0", {
+    setCell(cells, 1, 0, {
       value: "Google",
       hyperlink: { target: "https://google.com", display: "Google" },
     })
@@ -168,20 +169,20 @@ describe("ODS parity — hyperlinks", () => {
 
     expect(wb.sheets[0].cells).toBeDefined()
 
-    const cell00 = wb.sheets[0].cells!.get("0,0")
+    const cell00 = getCell(wb.sheets[0].cells!, 0, 0)
     expect(cell00).toBeDefined()
     expect(cell00!.hyperlink).toBeDefined()
     expect(cell00!.hyperlink!.target).toBe("https://example.com")
 
-    const cell10 = wb.sheets[0].cells!.get("1,0")
+    const cell10 = getCell(wb.sheets[0].cells!, 1, 0)
     expect(cell10).toBeDefined()
     expect(cell10!.hyperlink).toBeDefined()
     expect(cell10!.hyperlink!.target).toBe("https://google.com")
   })
 
   it("reader extracts text:a hyperlinks", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Link Text",
       hyperlink: { target: "https://test.org", display: "Link Text" },
     })
@@ -201,15 +202,15 @@ describe("ODS parity — hyperlinks", () => {
 
     // Verify reader extracts hyperlink
     const wb = await readOds(data)
-    const cell = wb.sheets[0].cells!.get("0,0")
+    const cell = getCell(wb.sheets[0].cells!, 0, 0)
     expect(cell).toBeDefined()
     expect(cell!.hyperlink!.target).toBe("https://test.org")
     expect(cell!.hyperlink!.display).toBe("Link Text")
   })
 
   it("hyperlink cells still have correct text values in rows", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Visit",
       hyperlink: { target: "https://example.com" },
     })
@@ -232,24 +233,24 @@ describe("ODS parity — hyperlinks", () => {
 
 describe("ODS parity — styles", () => {
   it("write ODS with bold/italic/color styles → read back with readStyles", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Bold",
       style: { font: { bold: true } },
     })
-    cells.set("0,1", {
+    setCell(cells, 0, 1, {
       value: "Italic",
       style: { font: { italic: true } },
     })
-    cells.set("0,2", {
+    setCell(cells, 0, 2, {
       value: "Red",
       style: { font: { color: { rgb: "FF0000" } } },
     })
-    cells.set("1,0", {
+    setCell(cells, 1, 0, {
       value: "Big",
       style: { font: { size: 24 } },
     })
-    cells.set("1,1", {
+    setCell(cells, 1, 1, {
       value: "BG",
       style: {
         fill: { type: "pattern", pattern: "solid", fgColor: { rgb: "00FF00" } },
@@ -278,23 +279,23 @@ describe("ODS parity — styles", () => {
     // Read back with readStyles
     const wb = await readOds(data, { readStyles: true })
 
-    const cell00 = wb.sheets[0].cells!.get("0,0")
+    const cell00 = getCell(wb.sheets[0].cells!, 0, 0)
     expect(cell00).toBeDefined()
     expect(cell00!.style?.font?.bold).toBe(true)
 
-    const cell01 = wb.sheets[0].cells!.get("0,1")
+    const cell01 = getCell(wb.sheets[0].cells!, 0, 1)
     expect(cell01).toBeDefined()
     expect(cell01!.style?.font?.italic).toBe(true)
 
-    const cell02 = wb.sheets[0].cells!.get("0,2")
+    const cell02 = getCell(wb.sheets[0].cells!, 0, 2)
     expect(cell02).toBeDefined()
     expect(cell02!.style?.font?.color?.rgb).toBe("FF0000")
 
-    const cell10 = wb.sheets[0].cells!.get("1,0")
+    const cell10 = getCell(wb.sheets[0].cells!, 1, 0)
     expect(cell10).toBeDefined()
     expect(cell10!.style?.font?.size).toBe(24)
 
-    const cell11 = wb.sheets[0].cells!.get("1,1")
+    const cell11 = getCell(wb.sheets[0].cells!, 1, 1)
     expect(cell11).toBeDefined()
     expect(cell11!.style?.fill?.type).toBe("pattern")
     if (cell11!.style?.fill?.type === "pattern") {
@@ -303,8 +304,8 @@ describe("ODS parity — styles", () => {
   })
 
   it("styles are not collected when readStyles is false (default)", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Bold",
       style: { font: { bold: true } },
     })
@@ -318,10 +319,10 @@ describe("ODS parity — styles", () => {
     const data = await writeOds({ sheets: [sheet] })
     const wb = await readOds(data) // default: readStyles = false
 
-    // Without readStyles, cells map should not contain style-only entries
+    // Without readStyles, cell store should not contain style-only entries
     // (the cell has no formula or hyperlink, so it's only interesting for styles)
     if (wb.sheets[0].cells) {
-      const cell00 = wb.sheets[0].cells.get("0,0")
+      const cell00 = getCell(wb.sheets[0].cells, 0, 0)
       if (cell00) {
         expect(cell00.style).toBeUndefined()
       }
@@ -329,17 +330,17 @@ describe("ODS parity — styles", () => {
   })
 
   it("generates unique style names for different styles", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Bold",
       style: { font: { bold: true } },
     })
-    cells.set("0,1", {
+    setCell(cells, 0, 1, {
       value: "Italic",
       style: { font: { italic: true } },
     })
     // Same style as 0,0 — should reuse the style name
-    cells.set("1,0", {
+    setCell(cells, 1, 0, {
       value: "Also Bold",
       style: { font: { bold: true } },
     })
@@ -360,8 +361,8 @@ describe("ODS parity — styles", () => {
   })
 
   it("style references cells via table:style-name", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Styled",
       style: { font: { bold: true } },
     })
@@ -384,8 +385,8 @@ describe("ODS parity — styles", () => {
 
 describe("ODS parity — formulas", () => {
   it("write ODS with formulas → read back → formula text preserved", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("1,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 1, 0, {
       value: 55,
       formula: "SUM(A1:A1)",
     })
@@ -403,14 +404,14 @@ describe("ODS parity — formulas", () => {
     const wb = await readOds(data)
 
     expect(wb.sheets[0].cells).toBeDefined()
-    const cell = wb.sheets[0].cells!.get("1,0")
+    const cell = getCell(wb.sheets[0].cells!, 1, 0)
     expect(cell).toBeDefined()
     expect(cell!.formula).toBe("SUM(A1:A1)")
   })
 
   it("writes table:formula attribute with of:= prefix", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: 42,
       formula: "SUM(B1:B10)",
     })
@@ -429,8 +430,8 @@ describe("ODS parity — formulas", () => {
   })
 
   it("converts ODS cell references back to Excel style on read", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,2", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 2, {
       value: 100,
       formula: "A1+B1",
     })
@@ -449,13 +450,13 @@ describe("ODS parity — formulas", () => {
 
     // Read back and verify Excel format
     const wb = await readOds(data)
-    const cell = wb.sheets[0].cells!.get("0,2")
+    const cell = getCell(wb.sheets[0].cells!, 0, 2)
     expect(cell!.formula).toBe("A1+B1")
   })
 
   it("handles range formulas like SUM(A1:A10)", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: 0,
       formula: "SUM(A2:A10)",
     })
@@ -469,7 +470,7 @@ describe("ODS parity — formulas", () => {
     const data = await writeOds({ sheets: [sheet] })
     const wb = await readOds(data)
 
-    const cell = wb.sheets[0].cells!.get("0,0")
+    const cell = getCell(wb.sheets[0].cells!, 0, 0)
     expect(cell!.formula).toBe("SUM(A2:A10)")
   })
 })
@@ -549,13 +550,13 @@ describe("ODS parity — cross-format", () => {
 
 describe("ODS parity — combined features", () => {
   it("sheet with merges, styles, hyperlinks, and formulas together", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Bold Link",
       style: { font: { bold: true } },
       hyperlink: { target: "https://example.com" },
     })
-    cells.set("2,0", {
+    setCell(cells, 2, 0, {
       value: 100,
       formula: "SUM(A1:A2)",
     })
@@ -574,24 +575,24 @@ describe("ODS parity — combined features", () => {
     expect(wb.sheets[0].merges).toHaveLength(1)
 
     // Hyperlink on merged cell
-    const cell00 = wb.sheets[0].cells!.get("0,0")
+    const cell00 = getCell(wb.sheets[0].cells!, 0, 0)
     expect(cell00!.hyperlink!.target).toBe("https://example.com")
     expect(cell00!.style?.font?.bold).toBe(true)
 
     // Formula
-    const cell20 = wb.sheets[0].cells!.get("2,0")
+    const cell20 = getCell(wb.sheets[0].cells!, 2, 0)
     expect(cell20!.formula).toBe("SUM(A1:A2)")
   })
 
   it("multiple sheets with different features", async () => {
-    const cells1 = new Map<string, Partial<Cell>>()
-    cells1.set("0,0", {
+    const cells1 = createCellStore<Partial<Cell>>()
+    setCell(cells1, 0, 0, {
       value: "Link",
       hyperlink: { target: "https://a.com" },
     })
 
-    const cells2 = new Map<string, Partial<Cell>>()
-    cells2.set("0,0", {
+    const cells2 = createCellStore<Partial<Cell>>()
+    setCell(cells2, 0, 0, {
       value: 10,
       formula: "5+5",
     })
@@ -615,10 +616,10 @@ describe("ODS parity — combined features", () => {
     const wb = await readOds(data)
 
     // Sheet 1: hyperlink
-    expect(wb.sheets[0].cells!.get("0,0")!.hyperlink!.target).toBe("https://a.com")
+    expect(getCell(wb.sheets[0].cells!, 0, 0)!.hyperlink!.target).toBe("https://a.com")
 
     // Sheet 2: formula + merge
-    expect(wb.sheets[1].cells!.get("0,0")!.formula).toBe("5+5")
+    expect(getCell(wb.sheets[1].cells!, 0, 0)!.formula).toBe("5+5")
     expect(wb.sheets[1].merges).toHaveLength(1)
   })
 })

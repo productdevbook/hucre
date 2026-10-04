@@ -1,3 +1,4 @@
+import { createCellStore } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import { ZipReader } from "../src/zip/reader"
 import { parseXml } from "../src/xml/parser"
@@ -514,9 +515,10 @@ describe("writeWorksheetXml", () => {
     const sheet: SheetInput = {
       name: "Test",
       rows: [[10, 20]],
-      cells: new Map([
+      cells: createCellStore([
         [
-          "0,2",
+          0,
+          2,
           {
             formula: "A1+B1",
             formulaResult: 30,
@@ -860,9 +862,10 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [["Styled"]],
-          cells: new Map([
+          cells: createCellStore([
             [
-              "0,0",
+              0,
+              0,
               {
                 value: "Styled",
                 style: {
@@ -1072,9 +1075,10 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [[10, 20, null]],
-          cells: new Map([
+          cells: createCellStore([
             [
-              "0,2",
+              0,
+              2,
               {
                 formula: "SUM(A1:B1)",
                 formulaResult: 30,
@@ -1149,9 +1153,10 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [[1234.56]],
-          cells: new Map([
+          cells: createCellStore([
             [
-              "0,0",
+              0,
+              0,
               {
                 value: 1234.56,
                 style: { numFmt: "#,##0.00" },
@@ -1194,9 +1199,9 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [["A", "B"]],
-          cells: new Map([
-            ["0,0", { value: "A", style: boldStyle }],
-            ["0,1", { value: "B", style: boldStyle }],
+          cells: createCellStore([
+            [0, 0, { value: "A", style: boldStyle }],
+            [0, 1, { value: "B", style: boldStyle }],
           ]),
         },
       ],
@@ -1288,9 +1293,10 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [["Centered"]],
-          cells: new Map([
+          cells: createCellStore([
             [
-              "0,0",
+              0,
+              0,
               {
                 value: "Centered",
                 style: {
@@ -1328,9 +1334,10 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [["Protected"]],
-          cells: new Map([
+          cells: createCellStore([
             [
-              "0,0",
+              0,
+              0,
               {
                 value: "Protected",
                 style: {
@@ -1362,9 +1369,10 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [["Gradient"]],
-          cells: new Map([
+          cells: createCellStore([
             [
-              "0,0",
+              0,
+              0,
               {
                 value: "Gradient",
                 style: {
@@ -1401,10 +1409,10 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [[1234.5, 0.75, 42]],
-          cells: new Map([
-            ["0,0", { value: 1234.5, style: { numFmt: "#,##0.00" } }],
-            ["0,1", { value: 0.75, style: { numFmt: "0.00%" } }],
-            ["0,2", { value: 42, style: { numFmt: "#,##0.00" } }],
+          cells: createCellStore([
+            [0, 0, { value: 1234.5, style: { numFmt: "#,##0.00" } }],
+            [0, 1, { value: 0.75, style: { numFmt: "0.00%" } }],
+            [0, 2, { value: 42, style: { numFmt: "#,##0.00" } }],
           ]),
         },
       ],
@@ -1455,7 +1463,9 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [["Original", 100]],
-          cells: new Map([["0,0", { value: "Overridden", style: { font: { bold: true } } }]]),
+          cells: createCellStore([
+            [0, 0, { value: "Overridden", style: { font: { bold: true } } }],
+          ]),
         },
       ],
     })
@@ -1484,9 +1494,9 @@ describe("writeXlsx", () => {
         {
           name: "Sheet1",
           rows: [["Single", "Double"]],
-          cells: new Map([
-            ["0,0", { value: "Single", style: { font: { underline: true } } }],
-            ["0,1", { value: "Double", style: { font: { underline: "double" } } }],
+          cells: createCellStore([
+            [0, 0, { value: "Single", style: { font: { underline: true } } }],
+            [0, 1, { value: "Double", style: { font: { underline: "double" } } }],
           ]),
         },
       ],

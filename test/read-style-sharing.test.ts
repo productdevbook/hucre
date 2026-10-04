@@ -1,3 +1,4 @@
+import { getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
@@ -33,7 +34,7 @@ async function twoStyledCells() {
   })
   const wb = await readXlsx(bytes, { readStyles: true })
   const cells = wb.sheets[0]!.cells!
-  return { first: cells.get("0,0")!.style!, second: cells.get("1,0")!.style! }
+  return { first: getCell(cells, 0, 0)!.style!, second: getCell(cells, 1, 0)!.style! }
 }
 
 describe("a resolved style's parts are shared between cells of the same format", () => {

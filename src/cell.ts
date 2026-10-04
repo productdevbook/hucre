@@ -18,3 +18,5 @@ export {
 } from "./cell-utils"
 export type { RangeLike } from "./cell-utils"
 export type { MergeRange } from "./_types"
+export { createCellStore, getCell, setCell, hasCell, deleteCell, cellEntries } from "./cell-store"
+export type { CellStore } from "./_types"

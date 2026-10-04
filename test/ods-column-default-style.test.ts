@@ -1,3 +1,4 @@
+import { getCell, createCellStore } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { readFileSync } from "node:fs"
 import { readOds } from "../src/ods/reader"
@@ -32,7 +33,7 @@ describe("a column's default style reaches its cells", () => {
     const sheet = wb.sheets[0]!
 
     // Column C (index 2) is the date column; its style is on the column.
-    const dateCell = sheet.cells?.get("1,2")
+    const dateCell = getCell(sheet.cells, 1, 2)
 
     expect(dateCell?.style?.numFmt).toBe("yyyy-mm-dd")
   })
@@ -43,7 +44,7 @@ describe("a column's default style reaches its cells", () => {
     const bytes = new Uint8Array(readFileSync(LIBREOFFICE))
     const wb = await readOds(bytes)
 
-    expect(wb.sheets[0]!.cells?.get("1,2")?.style).toBeUndefined()
+    expect(getCell(wb.sheets[0]!.cells, 1, 2)?.style).toBeUndefined()
   })
 
   it("and the values are untouched either way", async () => {
@@ -64,11 +65,11 @@ describe("a cell's own style still wins", () => {
         {
           name: "S",
           rows: [[1, 2]],
-          cells: new Map([["0,0", { value: 1, style: { numFmt: "0.000" } }]]),
+          cells: createCellStore([[0, 0, { value: 1, style: { numFmt: "0.000" } }]]),
         },
       ],
     })
-    const cell = (await readOds(bytes, { readStyles: true })).sheets[0]!.cells?.get("0,0")
+    const cell = getCell((await readOds(bytes, { readStyles: true })).sheets[0]!.cells, 0, 0)
 
     expect(cell?.style?.numFmt).toBe("0.000")
   })
@@ -84,6 +85,6 @@ describe("what is still not reachable", () => {
     const bytes = new Uint8Array(readFileSync(LIBREOFFICE))
     const wb = await readOds(bytes, { readStyles: true })
 
-    expect(wb.sheets[0]!.cells?.get("1,0")?.style?.numFmt).toBeUndefined()
+    expect(getCell(wb.sheets[0]!.cells, 1, 0)?.style?.numFmt).toBeUndefined()
   })
 })

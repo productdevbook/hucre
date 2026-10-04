@@ -1,3 +1,4 @@
+import { createCellStore, setCell, deleteCell } from "../cell-store"
 // ── ODS Reader ──────────────────────────────────────────────────────
 // Reads OpenDocument Spreadsheet (.ods) files.
 
@@ -715,7 +716,7 @@ function parseContentXml(
 
     const rows: CellValue[][] = []
     const merges: MergeRange[] = []
-    const cells = new Map<string, Cell>()
+    const cells = createCellStore<Cell>()
     const tableRows = findChildren(table, "table-row")
 
     // LibreOffice puts a column's format on the column rather than on its
@@ -875,7 +876,7 @@ function parseContentXml(
               }
             }
 
-            cells.set(`${currentRow},${col}`, cellData)
+            setCell(cells, currentRow, col, cellData)
           }
 
           col++
@@ -959,7 +960,7 @@ function parseContentXml(
         for (let c = 0; c < row.length; c++) {
           if (!inRowSpan || c < rangeFilter.startCol || c > rangeFilter.endCol) {
             row[c] = null
-            cells.delete(`${r},${c}`)
+            deleteCell(cells, r, c)
           }
         }
       }

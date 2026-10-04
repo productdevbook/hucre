@@ -29,6 +29,12 @@ integration tests and shared fixture helpers are separated from unit
 tests; every test is typechecked in `tsconfig.test.json`. CI checks the
 `v2` branch as well as `main`.
 
+`Sheet.cells` now uses a plain numeric `CellStore`, with six coordinate
+helpers on `hucre/cell`, `hucre/xlsx` and the root. Blocks remove the
+single-Map filled-cell ceiling and coordinate strings, while preserving
+structured cloning. Readers, writers, builders and sheet operations share
+this storage; structural edits share one metadata remapping path.
+
 ## 1.1.0
 
 See the v1.1.0 tag.

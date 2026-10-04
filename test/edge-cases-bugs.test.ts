@@ -1,3 +1,4 @@
+import { createCellStore, setCell } from "../src/cell-store"
 /**
  * Targeted edge-case tests designed to find real bugs.
  * Each test focuses on a specific potential issue.
@@ -303,15 +304,15 @@ describe("XLSX: shared strings deduplication", () => {
 })
 
 // ═══════════════════════════════════════════════════════════════════════
-// BUG HUNT: XLSX with only cells Map, no rows
+// BUG HUNT: XLSX with only cell store, no rows
 // ═══════════════════════════════════════════════════════════════════════
 
-describe("XLSX: cells Map without rows", () => {
-  it("cells Map creates data even without rows array", async () => {
-    const cells = new Map<string, Partial<import("..//src/_types").Cell>>()
-    cells.set("0,0", { value: "A1", type: "string" })
-    cells.set("0,1", { value: "B1", type: "string" })
-    cells.set("1,0", { value: "A2", type: "string" })
+describe("XLSX: cell store without rows", () => {
+  it("cell store creates data even without rows array", async () => {
+    const cells = createCellStore<Partial<import("..//src/_types").Cell>>()
+    setCell(cells, 0, 0, { value: "A1", type: "string" })
+    setCell(cells, 0, 1, { value: "B1", type: "string" })
+    setCell(cells, 1, 0, { value: "A2", type: "string" })
 
     const wb = await writeAndRead([{ name: "S", cells }])
 

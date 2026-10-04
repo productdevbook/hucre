@@ -1,3 +1,4 @@
+import { getCell } from "../../src/cell-store"
 import type { Workbook } from "../../src/_types"
 import { read } from "../../src/defter"
 import { createHash } from "node:crypto"
@@ -43,14 +44,14 @@ function expectScenario(workbook: Workbook, scenario: Scenario): void {
     expect(sheet.rows.map((row) => row.map(flat))).toEqual(spec.rows)
     for (const [ref, formula] of Object.entries(spec.formulas ?? {})) {
       const { row, col } = parseCellRef(ref)
-      expect(sheet.cells?.get(`${row},${col}`)?.formula, ref).toBe(formula)
-      expect(flat(sheet.cells?.get(`${row},${col}`)?.formulaResult), ref).toBe(spec.rows[row][col])
+      expect(getCell(sheet.cells, row, col)?.formula, ref).toBe(formula)
+      expect(flat(getCell(sheet.cells, row, col)?.formulaResult), ref).toBe(spec.rows[row][col])
     }
     for (const [range, format] of Object.entries(spec.formats ?? {})) {
       const { startRow, startCol, endRow, endCol } = toRange(range)
       for (let r = startRow; r <= endRow; r++)
         for (let c = startCol; c <= endCol; c++) {
-          expect(sheet.cells?.get(`${r},${c}`)?.style?.numFmt, `${range}:${r},${c}`).toBe(format)
+          expect(getCell(sheet.cells, r, c)?.style?.numFmt, `${range}:${r},${c}`).toBe(format)
         }
     }
     expect(sheet.merges ?? []).toEqual((spec.merges ?? []).map(toRange))

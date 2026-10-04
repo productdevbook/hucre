@@ -1,3 +1,4 @@
+import { createCellStore, setCell, getCell } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import { ZipReader } from "../src/zip/reader"
 import { ZipWriter } from "../src/zip/writer"
@@ -41,12 +42,12 @@ function zipHas(data: Uint8Array, path: string): boolean {
 
 describe("collectHyperlinks", () => {
   it("produces the same result from a pre-resolved grid as it does on its own", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Click me",
       hyperlink: { target: "https://example.com" },
     })
-    cells.set("1,2", {
+    setCell(cells, 1, 2, {
       value: "Internal",
       hyperlink: { target: "", location: "Sheet2!A1" },
     })
@@ -78,8 +79,8 @@ describe("collectHyperlinks", () => {
   })
 
   it("returns empty when cells have no hyperlinks", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", { value: "Hello" })
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, { value: "Hello" })
     const sheet: SheetInput = { name: "Sheet1", rows: [["Hello"]], cells }
     const result = collectHyperlinks(sheet)
     expect(result.xml).toBe("")
@@ -87,8 +88,8 @@ describe("collectHyperlinks", () => {
   })
 
   it("collects external hyperlink with relationship", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Click me",
       hyperlink: { target: "https://example.com" },
     })
@@ -106,8 +107,8 @@ describe("collectHyperlinks", () => {
   })
 
   it("collects internal hyperlink without relationship", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Go to Sheet2",
       hyperlink: { target: "", location: "Sheet2!A1" },
     })
@@ -124,8 +125,8 @@ describe("collectHyperlinks", () => {
   })
 
   it("collects tooltip and display attributes", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Link",
       hyperlink: {
         target: "https://example.com",
@@ -141,12 +142,12 @@ describe("collectHyperlinks", () => {
   })
 
   it("collects multiple hyperlinks with sequential rIds", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Link 1",
       hyperlink: { target: "https://example.com" },
     })
-    cells.set("1,0", {
+    setCell(cells, 1, 0, {
       value: "Link 2",
       hyperlink: { target: "https://other.com" },
     })
@@ -165,16 +166,16 @@ describe("collectHyperlinks", () => {
   })
 
   it("handles mixed external and internal hyperlinks", () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "External",
       hyperlink: { target: "https://example.com" },
     })
-    cells.set("1,0", {
+    setCell(cells, 1, 0, {
       value: "Internal",
       hyperlink: { target: "", location: "Sheet2!B5" },
     })
-    cells.set("2,0", {
+    setCell(cells, 2, 0, {
       value: "Another external",
       hyperlink: { target: "https://other.com" },
     })
@@ -199,8 +200,8 @@ describe("collectHyperlinks", () => {
 
 describe("XLSX hyperlink writing", () => {
   it("writes external URL hyperlink with .rels file", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Click me",
       hyperlink: { target: "https://example.com" },
     })
@@ -231,8 +232,8 @@ describe("XLSX hyperlink writing", () => {
   })
 
   it("writes internal hyperlink without .rels entry", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Go to Sheet2",
       hyperlink: { target: "", location: "Sheet2!A1" },
     })
@@ -260,8 +261,8 @@ describe("XLSX hyperlink writing", () => {
   })
 
   it("writes hyperlink with tooltip", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Hover me",
       hyperlink: { target: "https://example.com", tooltip: "Click here" },
     })
@@ -277,8 +278,8 @@ describe("XLSX hyperlink writing", () => {
   })
 
   it("writes hyperlink with display text", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Link",
       hyperlink: {
         target: "https://example.com",
@@ -297,16 +298,16 @@ describe("XLSX hyperlink writing", () => {
   })
 
   it("writes multiple hyperlinks on same sheet", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Link 1",
       hyperlink: { target: "https://example.com" },
     })
-    cells.set("1,0", {
+    setCell(cells, 1, 0, {
       value: "Link 2",
       hyperlink: { target: "https://other.com" },
     })
-    cells.set("2,1", {
+    setCell(cells, 2, 1, {
       value: "Link 3",
       hyperlink: { target: "https://third.com", tooltip: "Third link" },
     })
@@ -333,12 +334,12 @@ describe("XLSX hyperlink writing", () => {
   })
 
   it("writes mixed external and internal hyperlinks", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "External link",
       hyperlink: { target: "https://example.com" },
     })
-    cells.set("1,0", {
+    setCell(cells, 1, 0, {
       value: "Internal link",
       hyperlink: { target: "", location: "Sheet2!A1", display: "Go to Sheet2" },
     })
@@ -552,7 +553,7 @@ describe("XLSX hyperlink reading", () => {
     const sheet = workbook.sheets[0]
 
     expect(sheet.cells).toBeDefined()
-    const cell = sheet.cells!.get("0,0")
+    const cell = getCell(sheet.cells!, 0, 0)
     expect(cell).toBeDefined()
     expect(cell!.hyperlink).toBeDefined()
     expect(cell!.hyperlink!.target).toBe("https://example.com")
@@ -569,7 +570,7 @@ describe("XLSX hyperlink reading", () => {
     const sheet = workbook.sheets[0]
 
     expect(sheet.cells).toBeDefined()
-    const cell = sheet.cells!.get("0,0")
+    const cell = getCell(sheet.cells!, 0, 0)
     expect(cell).toBeDefined()
     expect(cell!.hyperlink).toBeDefined()
     expect(cell!.hyperlink!.location).toBe("Sheet2!A1")
@@ -585,7 +586,7 @@ describe("XLSX hyperlink reading", () => {
     })
 
     const workbook = await readXlsx(xlsxData)
-    const cell = workbook.sheets[0].cells!.get("0,0")
+    const cell = getCell(workbook.sheets[0].cells!, 0, 0)
     expect(cell!.hyperlink!.tooltip).toBe("Click here")
     expect(cell!.hyperlink!.target).toBe("https://example.com")
   })
@@ -610,10 +611,10 @@ describe("XLSX hyperlink reading", () => {
     const workbook = await readXlsx(xlsxData)
     const sheet = workbook.sheets[0]
 
-    const cellA1 = sheet.cells!.get("0,0")
+    const cellA1 = getCell(sheet.cells!, 0, 0)
     expect(cellA1!.hyperlink!.target).toBe("https://example.com")
 
-    const cellB1 = sheet.cells!.get("0,1")
+    const cellB1 = getCell(sheet.cells!, 0, 1)
     expect(cellB1!.hyperlink!.target).toBe("https://other.com")
     expect(cellB1!.hyperlink!.tooltip).toBe("Second link")
   })
@@ -629,7 +630,7 @@ describe("XLSX hyperlink reading", () => {
     const workbook = await readXlsx(xlsxData)
     const sheet = workbook.sheets[0]
 
-    const cell = sheet.cells!.get("0,0")
+    const cell = getCell(sheet.cells!, 0, 0)
     expect(cell).toBeDefined()
     expect(cell!.hyperlink!.target).toBe("https://example.com")
     expect(cell!.value).toBe(42)
@@ -640,8 +641,8 @@ describe("XLSX hyperlink reading", () => {
 
 describe("XLSX hyperlink round-trip", () => {
   it("round-trips external hyperlink", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Example",
       hyperlink: {
         target: "https://example.com",
@@ -657,7 +658,7 @@ describe("XLSX hyperlink round-trip", () => {
     const sheet = workbook.sheets[0]
 
     expect(sheet.cells).toBeDefined()
-    const cell = sheet.cells!.get("0,0")
+    const cell = getCell(sheet.cells!, 0, 0)
     expect(cell).toBeDefined()
     expect(cell!.hyperlink).toBeDefined()
     expect(cell!.hyperlink!.target).toBe("https://example.com")
@@ -665,8 +666,8 @@ describe("XLSX hyperlink round-trip", () => {
   })
 
   it("round-trips internal hyperlink", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Go to Sheet2",
       hyperlink: {
         target: "",
@@ -685,7 +686,7 @@ describe("XLSX hyperlink round-trip", () => {
     const workbook = await readXlsx(written)
     const sheet = workbook.sheets[0]
 
-    const cell = sheet.cells!.get("0,0")
+    const cell = getCell(sheet.cells!, 0, 0)
     expect(cell).toBeDefined()
     expect(cell!.hyperlink).toBeDefined()
     expect(cell!.hyperlink!.location).toBe("Sheet2!A1")
@@ -693,16 +694,16 @@ describe("XLSX hyperlink round-trip", () => {
   })
 
   it("round-trips mixed hyperlinks", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "External link",
       hyperlink: { target: "https://example.com", tooltip: "External" },
     })
-    cells.set("1,0", {
+    setCell(cells, 1, 0, {
       value: "Internal link",
       hyperlink: { target: "", location: "Sheet2!B2", display: "Internal" },
     })
-    cells.set("2,0", {
+    setCell(cells, 2, 0, {
       value: "Another external",
       hyperlink: { target: "https://other.com" },
     })
@@ -722,29 +723,29 @@ describe("XLSX hyperlink round-trip", () => {
     const sheet = workbook.sheets[0]
 
     // External
-    const cellA1 = sheet.cells!.get("0,0")
+    const cellA1 = getCell(sheet.cells!, 0, 0)
     expect(cellA1!.hyperlink!.target).toBe("https://example.com")
     expect(cellA1!.hyperlink!.tooltip).toBe("External")
 
     // Internal
-    const cellA2 = sheet.cells!.get("1,0")
+    const cellA2 = getCell(sheet.cells!, 1, 0)
     expect(cellA2!.hyperlink!.location).toBe("Sheet2!B2")
     expect(cellA2!.hyperlink!.display).toBe("Internal")
 
     // Another external
-    const cellA3 = sheet.cells!.get("2,0")
+    const cellA3 = getCell(sheet.cells!, 2, 0)
     expect(cellA3!.hyperlink!.target).toBe("https://other.com")
   })
 
   it("round-trips hyperlinks on multiple sheets", async () => {
-    const cells1 = new Map<string, Partial<Cell>>()
-    cells1.set("0,0", {
+    const cells1 = createCellStore<Partial<Cell>>()
+    setCell(cells1, 0, 0, {
       value: "Sheet1 Link",
       hyperlink: { target: "https://sheet1.com" },
     })
 
-    const cells2 = new Map<string, Partial<Cell>>()
-    cells2.set("0,0", {
+    const cells2 = createCellStore<Partial<Cell>>()
+    setCell(cells2, 0, 0, {
       value: "Sheet2 Link",
       hyperlink: { target: "https://sheet2.com" },
     })
@@ -762,16 +763,16 @@ describe("XLSX hyperlink round-trip", () => {
 
     const workbook = await readXlsx(written)
 
-    const cell1 = workbook.sheets[0].cells!.get("0,0")
+    const cell1 = getCell(workbook.sheets[0].cells!, 0, 0)
     expect(cell1!.hyperlink!.target).toBe("https://sheet1.com")
 
-    const cell2 = workbook.sheets[1].cells!.get("0,0")
+    const cell2 = getCell(workbook.sheets[1].cells!, 0, 0)
     expect(cell2!.hyperlink!.target).toBe("https://sheet2.com")
   })
 
   it("preserves cell value alongside hyperlink", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: "Visit us",
       hyperlink: { target: "https://example.com" },
     })
@@ -787,7 +788,7 @@ describe("XLSX hyperlink round-trip", () => {
     expect(sheet.rows[0][0]).toBe("Visit us")
 
     // Hyperlink should also be present
-    const cell = sheet.cells!.get("0,0")
+    const cell = getCell(sheet.cells!, 0, 0)
     expect(cell!.hyperlink!.target).toBe("https://example.com")
     expect(cell!.value).toBe("Visit us")
   })
@@ -816,7 +817,7 @@ describe("inline hyperlinks in data rows", () => {
     const sheet = workbook.sheets[0]
 
     // Header is row 0, data starts at row 1; link column is col 0
-    const cell = sheet.cells!.get("1,0")
+    const cell = getCell(sheet.cells!, 1, 0)
     expect(cell!.value).toBe("Open")
     expect(cell!.hyperlink!.target).toBe("https://example.com/items/abc")
   })
@@ -833,7 +834,7 @@ describe("inline hyperlinks in data rows", () => {
     })
 
     const workbook = await readXlsx(written)
-    const cell = workbook.sheets[0].cells!.get("1,0")
+    const cell = getCell(workbook.sheets[0].cells!, 1, 0)
     expect(cell!.value).toBe("Open")
     expect(cell!.hyperlink!.target).toBe("https://example.com/items/abc")
   })
@@ -897,10 +898,10 @@ describe("inline hyperlinks in data rows", () => {
     expect(zipHas(written, "xl/worksheets/_rels/sheet1.xml.rels")).toBe(false)
   })
 
-  it("collects hyperlinks from both data rows and the cells map", async () => {
-    const cells = new Map<string, Partial<Cell>>()
+  it("collects hyperlinks from both data rows and the cell store", async () => {
+    const cells = createCellStore<Partial<Cell>>()
     // Override the ID column (col 1) of the data row with its own hyperlink
-    cells.set("1,1", { value: "abc", hyperlink: { target: "https://example.com/by-id" } })
+    setCell(cells, 1, 1, { value: "abc", hyperlink: { target: "https://example.com/by-id" } })
 
     const written = await writeXlsx({
       sheets: [
@@ -914,7 +915,7 @@ describe("inline hyperlinks in data rows", () => {
     })
 
     const sheet = (await readXlsx(written)).sheets[0]
-    expect(sheet.cells!.get("1,0")!.hyperlink!.target).toBe("https://example.com/items/abc")
-    expect(sheet.cells!.get("1,1")!.hyperlink!.target).toBe("https://example.com/by-id")
+    expect(getCell(sheet.cells!, 1, 0)!.hyperlink!.target).toBe("https://example.com/items/abc")
+    expect(getCell(sheet.cells!, 1, 1)!.hyperlink!.target).toBe("https://example.com/by-id")
   })
 })

@@ -1,3 +1,5 @@
+import { cellEntries } from "../cell-store"
+import type { CellStore } from "../_types"
 // ── Comments & VML Writer ─────────────────────────────────────────────
 // Generates xl/commentsN.xml and xl/drawings/vmlDrawingN.vml for XLSX.
 
@@ -24,7 +26,7 @@ const NS_SPREADSHEET = "http://schemas.openxmlformats.org/spreadsheetml/2006/mai
  * Returns null if no cells have comments.
  */
 export function writeComments(
-  cells: Map<string, Partial<Cell>>,
+  cells: CellStore<Partial<Cell>>,
   sheetIndex: number,
 ): CommentsResult | null {
   // Collect comments from cells
@@ -36,12 +38,9 @@ export function writeComments(
     text: string
   }> = []
 
-  for (const [key, cell] of cells) {
+  for (const [row, col, cell] of cellEntries(cells)) {
     if (!cell.comment) continue
 
-    const [rowStr, colStr] = key.split(",")
-    const row = parseInt(rowStr, 10)
-    const col = parseInt(colStr, 10)
     const ref = cellRef(row, col)
     const author = cell.comment.author ?? ""
     const text = cell.comment.text

@@ -1,3 +1,4 @@
+import { getCell, createCellStore } from "../src/cell-store"
 import { cellError } from "../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
@@ -69,11 +70,11 @@ describe("a streamed error value is an error, not a string", () => {
 
     const cells = (await readXlsx(bytes)).sheets[0]!.cells!
 
-    expect(cells.get("0,0")!.type).toBe("error")
-    expect(cells.get("0,1")!.type).toBe("error")
+    expect(getCell(cells, 0, 0)!.type).toBe("error")
+    expect(getCell(cells, 0, 1)!.type).toBe("error")
     // #SPILL! is one of the two dynamic-array errors ECMA does not list;
     // hucre knows them because #423 needed it to.
-    expect(cells.get("0,2")!.type).toBe("error")
+    expect(getCell(cells, 0, 2)!.type).toBe("error")
     // An ordinary string needs no cell entry at all, so check the value.
     expect((await readXlsx(bytes)).sheets[0]!.rows[0]![3]).toBe("ordinary")
   })
@@ -85,8 +86,8 @@ describe("a streamed error value is an error, not a string", () => {
     const authored = await readXlsx(await writeXlsx({ sheets: [{ name: "S", rows }] }))
 
     expect(streamed.sheets[0]!.rows).toEqual(authored.sheets[0]!.rows)
-    expect(streamed.sheets[0]!.cells!.get("0,0")!.type).toBe(
-      authored.sheets[0]!.cells!.get("0,0")!.type,
+    expect(getCell(streamed.sheets[0]!.cells!, 0, 0)!.type).toBe(
+      getCell(authored.sheets[0]!.cells!, 0, 0)!.type,
     )
   })
 })
@@ -98,10 +99,10 @@ describe("a non-finite cached result is dropped by both writers", () => {
   // On the authoring path the cached result is `formulaResult`; `value`
   // is the cell's own value. The streaming path has one slot for both,
   // which is why StreamStyledCell documents `value` as the cache.
-  const cells = new Map([
-    ["0,0", { value: null, formula: "0/0", formulaResult: Number.NaN }],
-    ["0,1", { value: null, formula: "1/0", formulaResult: Number.POSITIVE_INFINITY }],
-    ["0,2", { value: null, formula: "1+1", formulaResult: 2 }],
+  const cells = createCellStore([
+    [0, 0, { value: null, formula: "0/0", formulaResult: Number.NaN }],
+    [0, 1, { value: null, formula: "1/0", formulaResult: Number.POSITIVE_INFINITY }],
+    [0, 2, { value: null, formula: "1+1", formulaResult: 2 }],
   ])
 
   it("drops it on the authoring path", async () => {
@@ -114,9 +115,9 @@ describe("a non-finite cached result is dropped by both writers", () => {
     expect(xml).not.toContain("Infinity")
 
     const back = (await readXlsx(bytes)).sheets[0]!.cells!
-    expect(back.get("0,0")!.formula).toBe("0/0")
-    expect(back.get("0,0")!.value).toBeNull()
-    expect(back.get("0,2")!.value).toBe(2)
+    expect(getCell(back, 0, 0)!.formula).toBe("0/0")
+    expect(getCell(back, 0, 0)!.value).toBeNull()
+    expect(getCell(back, 0, 2)!.value).toBe(2)
   })
 
   it("drops it on the streaming path", async () => {
@@ -136,18 +137,18 @@ describe("a non-finite cached result is dropped by both writers", () => {
     expect(xml).not.toContain("NaN")
 
     const back = (await readXlsx(bytes)).sheets[0]!.cells!
-    expect(back.get("0,0")!.value).toBeNull()
-    expect(back.get("0,1")!.value).toBe(2)
+    expect(getCell(back, 0, 0)!.value).toBeNull()
+    expect(getCell(back, 0, 1)!.value).toBe(2)
   })
 })
 
 describe("the authoring path did not regress", () => {
   it("still writes rich text, checkboxes and shared formulas", async () => {
-    const cells = new Map<string, Record<string, unknown>>([
-      ["0,0", { richText: [{ text: "bold", font: { bold: true } }] }],
-      ["1,0", { value: true, checkbox: true }],
-      ["2,0", { value: 3, formula: "A1+A2", formulaType: "shared", formulaSharedIndex: 0 }],
-      ["3,0", { value: 1, formula: "SEQUENCE(3)", formulaDynamic: true }],
+    const cells = createCellStore<Record<string, unknown>>([
+      [0, 0, { richText: [{ text: "bold", font: { bold: true } }] }],
+      [1, 0, { value: true, checkbox: true }],
+      [2, 0, { value: 3, formula: "A1+A2", formulaType: "shared", formulaSharedIndex: 0 }],
+      [3, 0, { value: 1, formula: "SEQUENCE(3)", formulaDynamic: true }],
     ])
     const bytes = await writeXlsx({
       sheets: [{ name: "S", rows: [[null], [null], [null], [null]], cells: cells as never }],

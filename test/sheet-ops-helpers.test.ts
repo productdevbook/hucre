@@ -1,3 +1,5 @@
+import { cellEntries } from "../src/cell-store"
+import { createCellStore, getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { deleteColumns, deleteRows, findCells, replaceCells, sortRows } from "../src/sheet-ops"
 import { InvalidArgumentError } from "../src/errors"
@@ -9,8 +11,8 @@ import type { Cell, Sheet } from "../src/_types"
 
 describe("sortRows moves everything that is keyed by row", () => {
   function sheet(): Sheet {
-    const cells = new Map<string, Cell>([
-      ["0,0", { value: 3, type: "number", style: { font: { bold: true } } }],
+    const cells = createCellStore<Cell>([
+      [0, 0, { value: 3, type: "number", style: { font: { bold: true } } }],
     ])
     return {
       name: "S",
@@ -40,8 +42,8 @@ describe("sortRows moves everything that is keyed by row", () => {
 
     sortRows(s, 0, "asc")
 
-    expect([...s.cells!.keys()]).toEqual(["2,0"])
-    expect(s.cells!.get("2,0")!.style!.font!.bold).toBe(true)
+    expect([...cellEntries(s.cells)].map(([row, col]) => [row, col])).toEqual([[2, 0]])
+    expect(getCell(s.cells!, 2, 0)!.style!.font!.bold).toBe(true)
   })
 
   it("carries a single-row merge with its row", () => {

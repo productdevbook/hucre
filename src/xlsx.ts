@@ -59,6 +59,7 @@ export {
   toRanges,
 } from "./cell-utils"
 export type { RangeLike } from "./cell-utils"
+export { createCellStore, getCell, setCell, hasCell, deleteCell, cellEntries } from "./cell-store"
 
 // ── Shared types used by this entry point's signatures ──────────────
 // Re-exported so `import type { SheetInput } from "hucre/xlsx"` works
@@ -85,6 +86,7 @@ export type {
   Workbook,
   WorkbookProperties,
   WorkbookInput,
+  CellStore,
   WorkbookWriteOptions,
   XlsxWriteOptions,
   WriteModelDrop,

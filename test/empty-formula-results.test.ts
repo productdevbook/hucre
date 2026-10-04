@@ -1,3 +1,4 @@
+import { getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { cellError } from "../src/cell-error"
 import { readXlsx, writeXlsx, openXlsx, saveXlsx } from "../src/xlsx"
@@ -16,13 +17,13 @@ const results: Array<{ type: string; xml: string; value: CellValue }> = [
 describe("empty formula presence is independent of cached result type", () => {
   it("retains an empty formula without a cached value", async () => {
     const workbook = await readXlsx(await xlsxWithCells('<c r="A1"><f/></c>'))
-    expect(workbook.sheets[0].cells?.get("0,0")).toMatchObject({
+    expect(getCell(workbook.sheets[0].cells, 0, 0)).toMatchObject({
       formula: "",
       type: "formula",
       value: null,
     })
     const again = await readXlsx(await writeXlsx(workbook))
-    expect(again.sheets[0].cells?.get("0,0")?.formula).toBe("")
+    expect(getCell(again.sheets[0].cells, 0, 0)?.formula).toBe("")
   })
 
   for (const formula of ["<f/>", "<f></f>", '<f t="shared" si="0"/>']) {
@@ -33,14 +34,14 @@ describe("empty formula presence is independent of cached result type", () => {
           "shared text",
         )
         const workbook = await readXlsx(bytes)
-        const cell = workbook.sheets[0].cells?.get("0,0")
+        const cell = getCell(workbook.sheets[0].cells, 0, 0)
         expect(cell?.type).toBe("formula")
         expect(cell?.formula).toBe("")
         expect(cell?.formulaResult).toEqual(result.value)
         for (const output of [await writeXlsx(workbook), await saveXlsx(await openXlsx(bytes))]) {
           const again = await readXlsx(output)
           expect(again.sheets[0].rows[0][0]).toEqual(result.value)
-          expect(again.sheets[0].cells?.get("0,0")?.formulaResult).toEqual(result.value)
+          expect(getCell(again.sheets[0].cells, 0, 0)?.formulaResult).toEqual(result.value)
         }
       })
     }

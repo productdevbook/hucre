@@ -1,3 +1,4 @@
+import { createCellStore } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import { parseXml, parseSax } from "../src/xml/parser"
 import { createStylesCollector } from "../src/xlsx/styles-writer"
@@ -114,9 +115,10 @@ describe("#89: Rich text writing", () => {
     const sheet: SheetInput = {
       name: "Test",
       rows: [],
-      cells: new Map([
+      cells: createCellStore([
         [
-          "0,0",
+          0,
+          0,
           {
             richText: [
               { text: "Hello ", font: { bold: true } },

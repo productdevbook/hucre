@@ -199,8 +199,7 @@ Two answers, and the error now names both:
 - **`streamXlsxRows`** already read that file, a row at a time, and the
   message never said so. It is the better answer when you only need to
   walk the rows once.
-- **`readXlsx(input, { sparse: true })`** returns `cells` keyed
-  `"row,col"` and leaves `rows` empty. Memory tracks the values rather
+- **`readXlsx(input, { sparse: true })`** returns a numeric `CellStore` in `cells` and leaves `rows` empty. Memory tracks the values rather
   than the box, the bounding-box limit does not apply because nothing
   dense is built, and you get a `Workbook` — which is what streaming
   cannot give you.
@@ -209,30 +208,23 @@ The error also reports how full the box actually is, which is what turns
 "your sheet is too large" into "your sheet is mostly nothing" — a
 different problem with a different answer.
 
-`sparse` is XLSX-only and off by default. With it on, anything that reads
-`Sheet.rows` — `sheetToObjects`, `readObjects`, the writers — sees an
-empty sheet; `cells` is the whole answer.
+`sparse` is XLSX-only and off by default. With it on, consumers of
+`Sheet.rows`, such as `sheetToObjects` and `readObjects`, see an empty
+grid; `cells` contains the data. Buffered XLSX and ODS writers also read
+`cells` and can write that data, but may materialize its bounding box.
+Sparse reading does not make buffered writing memory-bounded.
 
-**`sparse` has a ceiling of its own: 16,777,216 filled cells.** `cells`
-is a `Map`, and V8 caps a `Map` at 2^24 entries. That is not a bound
-hucre chose and it cannot raise it without `Sheet.cells` ceasing to be a
-`Map`, which would break every caller using it as one.
+In v2, `cells` uses numeric blocks rather than one flat `Map`. Within
+Excel's coordinate bounds each block has at most 2,097,152 entries and the
+block directory has at most 8,192. The former 16,777,216-filled-cell limit
+of one V8 `Map` no longer limits the whole sheet. Use `getCell(cells, row,
+column)` and `cellEntries(cells)` from `hucre/cell` rather than string keys.
 
-It matters because the two ways a sheet can be over the bounding-box
-limit want different answers, and only one of them is `sparse`:
-
-| the sheet is…             | example                    | use              |
-| ------------------------- | -------------------------- | ---------------- |
-| a large box, mostly empty | 82k values over 305M slots | `sparse: true`   |
-| genuinely dense and large | 28.4M filled of 30.2M      | `streamXlsxRows` |
-
-For the second, the cell count that blew the box limit is the same count
-that blows the `Map`, so `sparse` cannot work by construction. The
-oversize error now says which case it is looking at and stops offering
-`sparse` when the filled count is already past what a `Map` holds; going
-over anyway is a `ParseError` naming the sheet, not a raw
-`RangeError: Map maximum size exceeded`. `streamXlsxRows` has no such
-bound. See #527.
+Sparse storage still retains every filled cell and its metadata. A genuinely
+dense sheet can therefore require substantial memory; `streamXlsxRows` is
+the better choice when rows can be processed once. The dense bounding-box
+limit, ZIP limits and Excel coordinate bounds remain in effect. Sparse
+storage removes a container limit, not the need to budget memory.
 
 ### A style-only cell does not widen the sheet
 
@@ -387,7 +379,9 @@ objects inside it are **the parsed records themselves** — one per distinct
 format in `xl/styles.xml`, referenced by every cell that uses it. So
 
 ```ts
-cells.get("0,0").style.font === cells.get("5,3").style.font // true, same format
+import { getCell } from "hucre/cell"
+
+getCell(cells, 0, 0)?.style?.font === getCell(cells, 5, 3)?.style?.font // true, same format
 ```
 
 and writing through one changes every cell that shares it. Copying per
@@ -422,9 +416,9 @@ These are parsed into the model and preserved through `openXlsx` →
 | WPS DISPIMG cell images                 | `Workbook.cellImages`                                                       |
 | Theme colours from the file             | `Workbook.themeColors` — `writeXlsx` always emits the standard Office theme |
 
-`SheetInput` has no fields for these, deliberately: a typed field that is
-silently discarded is worse than no field at all, which is why
-`SheetInput.threadedComments` was removed rather than left in place.
+`SheetInput` accepts these reader fields so a complete read workbook can
+be passed to a writer. Authoring writers report their loss through
+`onDrop`; use `openXlsx` / `saveXlsx` to preserve their original parts.
 
 ### Charts
 

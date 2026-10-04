@@ -1,3 +1,4 @@
+import { createCellStore, setCell } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import { ZipReader } from "../src/zip/reader"
 import { parseXml } from "../src/xml/parser"
@@ -573,8 +574,8 @@ describe("content types with tables", () => {
 
 describe("table coexistence", () => {
   it("coexists with hyperlinks in sheet rels", async () => {
-    const cells = new Map<string, Partial<import("../src/_types").Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<import("../src/_types").Cell>>()
+    setCell(cells, 0, 0, {
       value: "Link",
       hyperlink: { target: "https://example.com" },
     })
@@ -619,8 +620,8 @@ describe("table coexistence", () => {
     imageData[2] = 0x4e
     imageData[3] = 0x47
 
-    const cells = new Map<string, Partial<import("../src/_types").Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<import("../src/_types").Cell>>()
+    setCell(cells, 0, 0, {
       value: "Data",
       comment: { text: "A note" },
     })

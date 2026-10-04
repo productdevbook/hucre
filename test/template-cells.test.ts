@@ -1,3 +1,4 @@
+import { createCellStore, getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { fillTemplate } from "../src/template"
 import { writeXlsx } from "../src/xlsx/writer"
@@ -12,8 +13,11 @@ import type { Cell, CellValue, Sheet, Workbook } from "../src/_types"
  * the plain values and `cells` carries the rich record for the same
  * coordinate. `fillTemplate` walks both, so both must be exercised.
  */
-function workbookWithCells(entries: Array<[string, Cell]>, rows: CellValue[][] = [[]]): Workbook {
-  const sheet: Sheet = { name: "Sheet1", rows, cells: new Map(entries) }
+function workbookWithCells(
+  entries: Array<[number, number, Cell]>,
+  rows: CellValue[][] = [[]],
+): Workbook {
+  const sheet: Sheet = { name: "Sheet1", rows, cells: createCellStore(entries) }
   return { sheets: [sheet] }
 }
 
@@ -28,17 +32,17 @@ function cell(value: CellValue, type: Cell["type"] = "string"): Cell {
 // that is only substituted in `rows` would be written back out unfilled.
 // ═══════════════════════════════════════════════════════════════════════
 
-describe("fillTemplate — cells Map substitution", () => {
-  it("replaces a whole-cell placeholder in the cells Map", () => {
-    const wb = workbookWithCells([["0,0", cell("{{company}}")]])
+describe("fillTemplate — cell store substitution", () => {
+  it("replaces a whole-cell placeholder in the cell store", () => {
+    const wb = workbookWithCells([[0, 0, cell("{{company}}")]])
     fillTemplate(wb, { company: "Acme Corp" })
-    expect(wb.sheets[0].cells!.get("0,0")!.value).toBe("Acme Corp")
+    expect(getCell(wb.sheets[0].cells!, 0, 0)!.value).toBe("Acme Corp")
   })
 
   it("leaves a whole-cell placeholder untouched when the key is absent", () => {
-    const wb = workbookWithCells([["0,0", cell("{{missing}}")]])
+    const wb = workbookWithCells([[0, 0, cell("{{missing}}")]])
     fillTemplate(wb, { present: "x" })
-    const c = wb.sheets[0].cells!.get("0,0")!
+    const c = getCell(wb.sheets[0].cells!, 0, 0)!
     // Both value *and* type must survive: an unfilled template should be
     // re-savable and still look like the original template.
     expect(c.value).toBe("{{missing}}")
@@ -47,14 +51,14 @@ describe("fillTemplate — cells Map substitution", () => {
 
   it("skips cells whose value is not a string", () => {
     const wb = workbookWithCells([
-      ["0,0", cell(42, "number")],
-      ["0,1", cell(null, "empty")],
-      ["0,2", cell(true, "boolean")],
+      [0, 0, cell(42, "number")],
+      [0, 1, cell(null, "empty")],
+      [0, 2, cell(true, "boolean")],
     ])
     fillTemplate(wb, { anything: "x" })
-    expect(wb.sheets[0].cells!.get("0,0")!.value).toBe(42)
-    expect(wb.sheets[0].cells!.get("0,1")!.value).toBe(null)
-    expect(wb.sheets[0].cells!.get("0,2")!.value).toBe(true)
+    expect(getCell(wb.sheets[0].cells!, 0, 0)!.value).toBe(42)
+    expect(getCell(wb.sheets[0].cells!, 0, 1)!.value).toBe(null)
+    expect(getCell(wb.sheets[0].cells!, 0, 2)!.value).toBe(true)
   })
 
   it("leaves a whole-cell placeholder in `rows` untouched when the key is absent", () => {
@@ -67,9 +71,9 @@ describe("fillTemplate — cells Map substitution", () => {
   })
 
   it("skips string cells that contain no opening braces", () => {
-    const wb = workbookWithCells([["0,0", cell("plain text }} with a stray close")]])
+    const wb = workbookWithCells([[0, 0, cell("plain text }} with a stray close")]])
     fillTemplate(wb, { anything: "x" })
-    expect(wb.sheets[0].cells!.get("0,0")!.value).toBe("plain text }} with a stray close")
+    expect(getCell(wb.sheets[0].cells!, 0, 0)!.value).toBe("plain text }} with a stray close")
   })
 })
 
@@ -79,36 +83,36 @@ describe("fillTemplate — cells Map substitution", () => {
 // emit `<c t="s">` for a numeric value and corrupt the file.
 // ═══════════════════════════════════════════════════════════════════════
 
-describe("fillTemplate — cells Map keeps `type` in sync with `value`", () => {
+describe("fillTemplate — cell store keeps `type` in sync with `value`", () => {
   it("retypes to number for a numeric replacement", () => {
-    const wb = workbookWithCells([["0,0", cell("{{total}}")]])
+    const wb = workbookWithCells([[0, 0, cell("{{total}}")]])
     fillTemplate(wb, { total: 12500 })
-    const c = wb.sheets[0].cells!.get("0,0")!
+    const c = getCell(wb.sheets[0].cells!, 0, 0)!
     expect(c.value).toBe(12500)
     expect(c.type).toBe("number")
   })
 
   it("retypes to boolean for a boolean replacement", () => {
-    const wb = workbookWithCells([["0,0", cell("{{active}}")]])
+    const wb = workbookWithCells([[0, 0, cell("{{active}}")]])
     fillTemplate(wb, { active: false })
-    const c = wb.sheets[0].cells!.get("0,0")!
+    const c = getCell(wb.sheets[0].cells!, 0, 0)!
     expect(c.value).toBe(false)
     expect(c.type).toBe("boolean")
   })
 
   it("retypes to date for a Date replacement", () => {
     const due = new Date("2025-03-01T00:00:00Z")
-    const wb = workbookWithCells([["0,0", cell("{{due}}", "number")]])
+    const wb = workbookWithCells([[0, 0, cell("{{due}}", "number")]])
     fillTemplate(wb, { due })
-    const c = wb.sheets[0].cells!.get("0,0")!
+    const c = getCell(wb.sheets[0].cells!, 0, 0)!
     expect(c.value).toBeInstanceOf(Date)
     expect(c.type).toBe("date")
   })
 
   it("retypes back to string when the replacement is a string", () => {
-    const wb = workbookWithCells([["0,0", cell("{{name}}", "number")]])
+    const wb = workbookWithCells([[0, 0, cell("{{name}}", "number")]])
     fillTemplate(wb, { name: "Acme" })
-    const c = wb.sheets[0].cells!.get("0,0")!
+    const c = getCell(wb.sheets[0].cells!, 0, 0)!
     expect(c.value).toBe("Acme")
     expect(c.type).toBe("string")
   })
@@ -116,41 +120,41 @@ describe("fillTemplate — cells Map keeps `type` in sync with `value`", () => {
   it("stores a null replacement as a null value", () => {
     // The `type` for a null replacement falls through to "string"; the
     // writer keys off the null value, so the cell still serialises blank.
-    const wb = workbookWithCells([["0,0", cell("{{blank}}")]])
+    const wb = workbookWithCells([[0, 0, cell("{{blank}}")]])
     fillTemplate(wb, { blank: null })
-    expect(wb.sheets[0].cells!.get("0,0")!.value).toBe(null)
+    expect(getCell(wb.sheets[0].cells!, 0, 0)!.value).toBe(null)
   })
 })
 
 // ═══════════════════════════════════════════════════════════════════════
-// Mixed text in the cells Map goes through the same stringification rules
+// Mixed text in the cell store goes through the same stringification rules
 // as `rows`: null collapses to "", Date renders ISO-8601, everything else
 // goes through String().
 // ═══════════════════════════════════════════════════════════════════════
 
-describe("fillTemplate — cells Map mixed text", () => {
+describe("fillTemplate — cell store mixed text", () => {
   it("stringifies numbers embedded in surrounding text", () => {
-    const wb = workbookWithCells([["0,0", cell("Total: {{amount}} USD")]])
+    const wb = workbookWithCells([[0, 0, cell("Total: {{amount}} USD")]])
     fillTemplate(wb, { amount: 500 })
-    expect(wb.sheets[0].cells!.get("0,0")!.value).toBe("Total: 500 USD")
+    expect(getCell(wb.sheets[0].cells!, 0, 0)!.value).toBe("Total: 500 USD")
   })
 
   it("renders an embedded Date as an ISO-8601 string", () => {
-    const wb = workbookWithCells([["0,0", cell("Due {{due}}.")]])
+    const wb = workbookWithCells([[0, 0, cell("Due {{due}}.")]])
     fillTemplate(wb, { due: new Date("2025-03-01T00:00:00Z") })
-    expect(wb.sheets[0].cells!.get("0,0")!.value).toBe("Due 2025-03-01T00:00:00.000Z.")
+    expect(getCell(wb.sheets[0].cells!, 0, 0)!.value).toBe("Due 2025-03-01T00:00:00.000Z.")
   })
 
   it("renders an embedded null as an empty string", () => {
-    const wb = workbookWithCells([["0,0", cell("[{{nothing}}]")]])
+    const wb = workbookWithCells([[0, 0, cell("[{{nothing}}]")]])
     fillTemplate(wb, { nothing: null })
-    expect(wb.sheets[0].cells!.get("0,0")!.value).toBe("[]")
+    expect(getCell(wb.sheets[0].cells!, 0, 0)!.value).toBe("[]")
   })
 
   it("keeps unmatched placeholders while substituting matched ones", () => {
-    const wb = workbookWithCells([["0,0", cell("{{known}} / {{unknown}}")]])
+    const wb = workbookWithCells([[0, 0, cell("{{known}} / {{unknown}}")]])
     fillTemplate(wb, { known: "yes" })
-    expect(wb.sheets[0].cells!.get("0,0")!.value).toBe("yes / {{unknown}}")
+    expect(getCell(wb.sheets[0].cells!, 0, 0)!.value).toBe("yes / {{unknown}}")
   })
 
   it("substitutes every occurrence of a repeated placeholder", () => {
@@ -158,20 +162,20 @@ describe("fillTemplate — cells Map mixed text", () => {
     // leaked lastIndex would make the second occurrence (or the second
     // call) silently skip. Two cells in one pass catch that.
     const wb = workbookWithCells([
-      ["0,0", cell("{{x}}-{{x}}-{{x}}")],
-      ["0,1", cell("{{x}}!")],
+      [0, 0, cell("{{x}}-{{x}}-{{x}}")],
+      [0, 1, cell("{{x}}!")],
     ])
     fillTemplate(wb, { x: "A" })
-    expect(wb.sheets[0].cells!.get("0,0")!.value).toBe("A-A-A")
-    expect(wb.sheets[0].cells!.get("0,1")!.value).toBe("A!")
+    expect(getCell(wb.sheets[0].cells!, 0, 0)!.value).toBe("A-A-A")
+    expect(getCell(wb.sheets[0].cells!, 0, 1)!.value).toBe("A!")
   })
 
   it("does not leak regex state between successive fillTemplate calls", () => {
-    const first = workbookWithCells([["0,0", cell("{{a}} {{a}}")]])
-    const second = workbookWithCells([["0,0", cell("{{a}} {{a}}")]])
+    const first = workbookWithCells([[0, 0, cell("{{a}} {{a}}")]])
+    const second = workbookWithCells([[0, 0, cell("{{a}} {{a}}")]])
     fillTemplate(first, { a: "1" })
     fillTemplate(second, { a: "2" })
-    expect(second.sheets[0].cells!.get("0,0")!.value).toBe("2 2")
+    expect(getCell(second.sheets[0].cells!, 0, 0)!.value).toBe("2 2")
   })
 })
 
@@ -186,12 +190,12 @@ describe("fillTemplate — structural edge cases", () => {
     expect(fillTemplate(wb, { a: 1 })).toBe(wb)
   })
 
-  it("handles a sheet with no rows and no cells Map", () => {
+  it("handles a sheet with no rows and no cell store", () => {
     const wb: Workbook = { sheets: [{ name: "Empty", rows: [] }] }
     expect(() => fillTemplate(wb, { a: 1 })).not.toThrow()
   })
 
-  it("handles an empty cells Map", () => {
+  it("handles an empty cell store", () => {
     const wb = workbookWithCells([])
     expect(() => fillTemplate(wb, { a: 1 })).not.toThrow()
   })
@@ -207,20 +211,20 @@ describe("fillTemplate — structural edge cases", () => {
   })
 
   it("mutates and returns the same workbook instance", () => {
-    const wb = workbookWithCells([["0,0", cell("{{a}}")]], [["{{a}}"]])
+    const wb = workbookWithCells([[0, 0, cell("{{a}}")]], [["{{a}}"]])
     expect(fillTemplate(wb, { a: "x" })).toBe(wb)
   })
 
-  it("fills the cells Map on every sheet, not just the first", () => {
+  it("fills the cell store on every sheet, not just the first", () => {
     const wb: Workbook = {
       sheets: [
-        { name: "One", rows: [[]], cells: new Map([["0,0", cell("{{a}}")]]) },
-        { name: "Two", rows: [[]], cells: new Map([["0,0", cell("Hi {{a}}")]]) },
+        { name: "One", rows: [[]], cells: createCellStore([[0, 0, cell("{{a}}")]]) },
+        { name: "Two", rows: [[]], cells: createCellStore([[0, 0, cell("Hi {{a}}")]]) },
       ],
     }
     fillTemplate(wb, { a: "there" })
-    expect(wb.sheets[0].cells!.get("0,0")!.value).toBe("there")
-    expect(wb.sheets[1].cells!.get("0,0")!.value).toBe("Hi there")
+    expect(getCell(wb.sheets[0].cells!, 0, 0)!.value).toBe("there")
+    expect(getCell(wb.sheets[1].cells!, 0, 0)!.value).toBe("Hi there")
   })
 })
 
@@ -237,10 +241,10 @@ describe("fillTemplate — structural edge cases", () => {
 
 describe("fillTemplate — inherited Object.prototype keys", () => {
   it("leaves {{toString}} alone when `data` has no own `toString`", () => {
-    const wb = workbookWithCells([["0,0", cell("{{toString}}")]], [["{{toString}}"]])
+    const wb = workbookWithCells([[0, 0, cell("{{toString}}")]], [["{{toString}}"]])
     fillTemplate(wb, { name: "Acme" })
     expect(wb.sheets[0].rows[0][0]).toBe("{{toString}}")
-    expect(wb.sheets[0].cells!.get("0,0")!.value).toBe("{{toString}}")
+    expect(getCell(wb.sheets[0].cells!, 0, 0)!.value).toBe("{{toString}}")
   })
 
   it("leaves an inherited key alone inside mixed text", () => {
@@ -291,9 +295,9 @@ describe("fillTemplate — XLSX round-trip", () => {
           ],
           // Styling the placeholder cells is what makes the reader emit a
           // `cells` Map for them, so this covers both substitution paths.
-          cells: new Map([
-            ["0,1", { style: { font: { bold: true } } }],
-            ["1,1", { style: { font: { italic: true } } }],
+          cells: createCellStore([
+            [0, 1, { style: { font: { bold: true } } }],
+            [1, 1, { style: { font: { italic: true } } }],
           ]),
         },
       ],
@@ -301,7 +305,7 @@ describe("fillTemplate — XLSX round-trip", () => {
 
     const wb = await openXlsx(templateBytes, { readStyles: true })
     expect(wb.sheets[0].cells).toBeDefined()
-    expect(wb.sheets[0].cells!.get("0,1")!.value).toBe("{{customer}}")
+    expect(getCell(wb.sheets[0].cells!, 0, 1)!.value).toBe("{{customer}}")
 
     fillTemplate(wb, {
       customer: "Acme Corp",
@@ -309,8 +313,8 @@ describe("fillTemplate — XLSX round-trip", () => {
       due: new Date("2025-03-01T00:00:00Z"),
     })
 
-    // The cells Map entry is substituted *and* retyped, not just `rows`.
-    const filledCell = wb.sheets[0].cells!.get("1,1")!
+    // The cell store entry is substituted *and* retyped, not just `rows`.
+    const filledCell = getCell(wb.sheets[0].cells!, 1, 1)!
     expect(filledCell.value).toBe(1250.5)
     expect(filledCell.type).toBe("number")
     expect(filledCell.style?.font?.italic).toBe(true)
@@ -321,6 +325,6 @@ describe("fillTemplate — XLSX round-trip", () => {
     expect(reread.sheets[0].rows[1]).toEqual(["Total", 1250.5])
     expect(reread.sheets[0].rows[2][1]).toBe("Due 2025-03-01T00:00:00.000Z — thanks Acme Corp")
     // Styling from the template must not be lost by the fill.
-    expect(reread.sheets[0].cells!.get("0,1")!.style?.font?.bold).toBe(true)
+    expect(getCell(reread.sheets[0].cells!, 0, 1)!.style?.font?.bold).toBe(true)
   })
 })

@@ -1,3 +1,4 @@
+import { createCellStore, getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { fieldsOf } from "./_reflect"
 import { prepareWorkbook, prepareSheet } from "../src/_write-model"
@@ -138,14 +139,16 @@ describe("prepareWorkbook", () => {
     expect(drops).toEqual([])
   })
 
-  it("carries the cells map across, Cell being a valid Partial<Cell>", async () => {
+  it("carries the cell store across, Cell being a valid Partial<Cell>", async () => {
     const bytes = await writeXlsx({
-      sheets: [{ name: "S", rows: [[1]], cells: new Map([["0,0", { value: 1, formula: "1+0" }]]) }],
+      sheets: [
+        { name: "S", rows: [[1]], cells: createCellStore([[0, 0, { value: 1, formula: "1+0" }]]) },
+      ],
     })
     const wb = await readXlsx(bytes)
 
     const again = await readXlsx(await writeXlsx(wb))
 
-    expect(again.sheets[0]!.cells!.get("0,0")!.formula).toBe("1+0")
+    expect(getCell(again.sheets[0]!.cells!, 0, 0)!.formula).toBe("1+0")
   })
 })

@@ -1,3 +1,4 @@
+import { createCellStore, setCell, hasCell } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
@@ -241,8 +242,8 @@ describe("XLSX Writer Edge Cases", () => {
       },
     }
 
-    const cells = new Map<string, Partial<import("..//src/_types").Cell>>()
-    cells.set("0,0", { value: "styled", type: "string", style })
+    const cells = createCellStore<Partial<import("..//src/_types").Cell>>()
+    setCell(cells, 0, 0, { value: "styled", type: "string", style })
 
     // Should not throw
     const xlsx = await writeXlsx({
@@ -266,8 +267,8 @@ describe("XLSX Writer Edge Cases", () => {
       },
     }
 
-    const cells = new Map<string, Partial<import("..//src/_types").Cell>>()
-    cells.set("0,0", { value: "gradient", type: "string", style })
+    const cells = createCellStore<Partial<import("..//src/_types").Cell>>()
+    setCell(cells, 0, 0, { value: "gradient", type: "string", style })
 
     const xlsx = await writeXlsx({
       sheets: [{ name: "Gradient", rows: [["gradient"]], cells }],
@@ -289,11 +290,11 @@ describe("XLSX Writer Edge Cases", () => {
 
   it("many hyperlinks on one sheet", async () => {
     const rows: CellValue[][] = []
-    const cells = new Map<string, Partial<import("..//src/_types").Cell>>()
+    const cells = createCellStore<Partial<import("..//src/_types").Cell>>()
 
     for (let i = 0; i < 100; i++) {
       rows.push([`Link ${i}`])
-      cells.set(`${i},0`, {
+      setCell(cells, i, 0, {
         value: `Link ${i}`,
         type: "string",
         hyperlink: { target: `https://example.com/${i}`, tooltip: `Link ${i}` },
@@ -311,8 +312,8 @@ describe("XLSX Writer Edge Cases", () => {
   })
 
   it("formula with special characters", async () => {
-    const cells = new Map<string, Partial<import("..//src/_types").Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<import("..//src/_types").Cell>>()
+    setCell(cells, 0, 0, {
       value: 1,
       type: "formula",
       formula: 'IF(A2="hello ""world""",1,0)',
@@ -1423,16 +1424,16 @@ describe("Sheet Operations Edge Cases", () => {
     expect(sheet.merges!.length).toBe(0)
   })
 
-  it("insertRows updates cells Map keys", () => {
+  it("insertRows updates cell metadata coordinates", () => {
     const sheet = makeSheet([["a"], ["b"]])
-    sheet.cells = new Map()
-    sheet.cells.set("1,0", { value: "cellB", type: "string" } as any)
+    sheet.cells = createCellStore()
+    setCell(sheet.cells, 1, 0, { value: "cellB", type: "string" } as any)
 
     insertRows(sheet, 0, 1)
 
     // Cell at row 1 should now be at row 2
-    expect(sheet.cells.has("2,0")).toBe(true)
-    expect(sheet.cells.has("1,0")).toBe(false)
+    expect(hasCell(sheet.cells, 2, 0)).toBe(true)
+    expect(hasCell(sheet.cells, 1, 0)).toBe(false)
   })
 
   it("cloneSheet creates independent copy", () => {

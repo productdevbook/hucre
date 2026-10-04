@@ -1,3 +1,4 @@
+import { createCellStore, setCell } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import { ZipReader } from "../src/zip/reader"
 import { writeXlsx } from "../src/xlsx/writer"
@@ -266,8 +267,9 @@ describe("a11y.audit — images", () => {
 
 describe("a11y.audit — color contrast", () => {
   it("flags low-contrast cells via cell.style.font.color and cell.style.fill.fgColor", () => {
-    const cells = new Map()
-    cells.set("0,0", {
+    const cells = createCellStore()
+    setCell(cells, 0, 0, {
+      type: "string",
       value: "low",
       style: {
         font: { color: { rgb: "AAAAAA" } },
@@ -291,8 +293,9 @@ describe("a11y.audit — color contrast", () => {
   })
 
   it("does not flag high-contrast cells", () => {
-    const cells = new Map()
-    cells.set("0,0", {
+    const cells = createCellStore()
+    setCell(cells, 0, 0, {
+      type: "string",
       value: "ok",
       style: {
         font: { color: { rgb: "000000" } },
@@ -315,8 +318,9 @@ describe("a11y.audit — color contrast", () => {
   })
 
   it("respects skipContrast", () => {
-    const cells = new Map()
-    cells.set("0,0", {
+    const cells = createCellStore()
+    setCell(cells, 0, 0, {
+      type: "string",
       value: "low",
       style: {
         font: { color: { rgb: "AAAAAA" } },

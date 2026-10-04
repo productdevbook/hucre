@@ -1,3 +1,4 @@
+import { createCellStore, setCell, getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import {
   // High-level API
@@ -236,10 +237,10 @@ describe("Coverage gaps: empty workbook write/read (#135)", () => {
 
 describe("Coverage gaps: sheet with only formulas (no values) (#135)", () => {
   it("should write and read cells that have formulas but no cached values", async () => {
-    const cells = new Map<string, Partial<import("../src/_types").Cell>>()
-    cells.set("0,0", { formula: "1+1" })
-    cells.set("0,1", { formula: "SUM(A1:A10)" })
-    cells.set("1,0", { formula: "A1*2" })
+    const cells = createCellStore<Partial<import("../src/_types").Cell>>()
+    setCell(cells, 0, 0, { formula: "1+1" })
+    setCell(cells, 0, 1, { formula: "SUM(A1:A10)" })
+    setCell(cells, 1, 0, { formula: "A1*2" })
 
     const data = await writeXlsx({
       sheets: [
@@ -253,8 +254,8 @@ describe("Coverage gaps: sheet with only formulas (no values) (#135)", () => {
     const wb = await readXlsx(data)
     expect(wb.sheets.length).toBe(1)
     const sheet = wb.sheets[0]!
-    // The formulas should be preserved in the cells map
-    const cell00 = sheet.cells?.get("0,0")
+    // The formulas should be preserved in the cell store
+    const cell00 = getCell(sheet.cells, 0, 0)
     expect(cell00?.formula).toBe("1+1")
   })
 })

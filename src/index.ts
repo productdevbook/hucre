@@ -247,6 +247,7 @@ export {
   toRanges,
 } from "./cell-utils"
 export type { RangeLike } from "./cell-utils"
+export { createCellStore, getCell, setCell, hasCell, deleteCell, cellEntries } from "./cell-store"
 
 // ── Sheet Utilities ──────────────────────────────────────────────
 export { sheetToObjects, sheetToArrays } from "./sheet-utils"
@@ -310,6 +311,7 @@ export type {
   // Cell
   CellValue,
   CellInput,
+  CellStore,
   CellType,
   Cell,
   RichTextRun,

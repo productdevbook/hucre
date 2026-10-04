@@ -169,7 +169,7 @@ export interface Hyperlink {
 /**
  * A rich hyperlink value that can be placed inline in a {@link SheetInput.data}
  * row object, keyed by a column's `key`. The display text and link target live
- * together, so a "Link" column needs no parallel `cells` coordinate map.
+ * together, so a "Link" column needs no parallel `cells` store.
  *
  * @example
  * ```ts
@@ -914,8 +914,8 @@ export interface Sheet {
    * Read-only: hucre cannot author a chart sheet. See #499.
    */
   kind?: SheetKind
-  /** Detailed cell data (keyed by "row,col" e.g. "0,2") */
-  cells?: Map<string, Cell>
+  /** Sparse cell metadata; use the helpers from `hucre/cell` to access it. */
+  cells?: CellStore
   columns?: ColumnDef[]
   /** Row-level properties (keyed by 0-based row index) */
   rowDefs?: Map<number, RowDef>
@@ -1611,9 +1611,9 @@ export interface XlsxReadOptions extends ReadOptionsBase, ZipReadOptions, Encryp
    * holds one font, fill and border record per distinct format, and every
    * cell that indexes it gets that same object — copying per cell nearly
    * doubles peak memory on a styled read for a guarantee most callers
-   * never need. So `cells.get(a).style.font === cells.get(b).style.font`
-   * whenever `a` and `b` share a format, and writing through one changes
-   * both. Use `cloneCellStyle` before editing a single cell's format.
+   * never need. Cells using the same format share these records; writing
+   * through one changes both. Use `cloneCellStyle` before editing a
+   * single cell's format.
    */
   readStyles?: boolean
   /** Maximum number of data rows to read per sheet. Default: unlimited */
@@ -1633,8 +1633,8 @@ export interface XlsxReadOptions extends ReadOptionsBase, ZipReadOptions, Encryp
    * is columns. See #501.
    *
    * With this set, `rows` comes back empty and every cell that carries
-   * something is in {@link Sheet.cells}, keyed `"row,col"`. Memory then
-   * tracks the values rather than the box, and the bounding-box limit
+   * something is in {@link Sheet.cells}, indexed by numeric coordinates.
+   * Memory tracks the values rather than the box, and the bounding-box limit
    * does not apply because nothing dense is built.
    *
    * `streamXlsxRows` is the other answer and the better one when you
@@ -1690,9 +1690,9 @@ export interface OdsReadOptions extends ReadOptionsBase, ZipReadOptions {
    * holds one font, fill and border record per distinct format, and every
    * cell that indexes it gets that same object — copying per cell nearly
    * doubles peak memory on a styled read for a guarantee most callers
-   * never need. So `cells.get(a).style.font === cells.get(b).style.font`
-   * whenever `a` and `b` share a format, and writing through one changes
-   * both. Use `cloneCellStyle` before editing a single cell's format.
+   * never need. Cells using the same format share these records; writing
+   * through one changes both. Use `cloneCellStyle` before editing a
+   * single cell's format.
    */
   readStyles?: boolean
   /** Maximum number of data rows to read per sheet. Default: unlimited */
@@ -1739,6 +1739,17 @@ export type ReadOptions = XlsxReadOptions & XlsReadOptions
 // ── Writer input ────────────────────────────────────────────────────
 
 /**
+ * Plain sparse cell data, grouped into numeric blocks. Unlike a single
+ * Map, it can hold every Excel coordinate without a per-sheet Map cap.
+ * `size` counts cells, not blocks. Mutate with `setCell` / `deleteCell`
+ * so the count stays accurate. The entire store supports structuredClone.
+ */
+export interface CellStore<T extends Partial<Cell> = Cell> {
+  blocks: Map<number, Map<number, T>>
+  size: number
+}
+
+/**
  * Authoring shorthand derived from the read model. A complete `Sheet` is
  * already valid input; callers can also supply inline cells, object data
  * or A1 merges without constructing a dense read result first.
@@ -1753,7 +1764,7 @@ export interface SheetInput extends Omit<
 > {
   rows?: CellInput[][]
   data?: Array<Record<string, CellValue | HyperlinkValue>>
-  cells?: Map<string, Partial<Cell>>
+  cells?: CellStore<Partial<Cell>>
   merges?: Array<MergeRange | string>
   charts?: Array<Chart | SheetChart>
   pivotTables?: Array<PivotTable | WritePivotTable>

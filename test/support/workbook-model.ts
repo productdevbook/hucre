@@ -1,5 +1,6 @@
+import { cellEntries } from "../../src/cell-store"
 import { isCellError } from "../../src/cell-error"
-import type { Cell, CellStyle, Sheet, Workbook } from "../../src/_types"
+import type { CellStyle, Sheet, Workbook } from "../../src/_types"
 
 /** A cell value flattened to something a JSON golden can hold. */
 export type Flat = string | number | boolean | null
@@ -128,9 +129,8 @@ const styleLine = (s: CellStyle | undefined): string => {
 const projectSheet = (sheet: Sheet): SheetModel => {
   const styles: Record<string, string> = {}
   const formulas: Record<string, string> = {}
-  for (const [key, cell] of sheet.cells ?? new Map<string, Cell>()) {
-    const [r, c] = key.split(",").map(Number)
-    const a1 = `${colName(c as number)}${(r as number) + 1}`
+  for (const [r, c, cell] of cellEntries(sheet.cells)) {
+    const a1 = `${colName(c)}${r + 1}`
     const line = styleLine(cell.style)
     if (line !== "") styles[a1] = line
     if (cell.formula !== undefined) {
@@ -186,11 +186,10 @@ const projectSheet = (sheet: Sheet): SheetModel => {
       .filter(([k, v]) => v === true && k !== "password")
       .map(([k]) => k)
       .sort(),
-    comments: [...(sheet.cells ?? new Map<string, Cell>())]
-      .filter(([, c]) => c.comment)
-      .map(([key, c]) => {
-        const [r, cc] = key.split(",").map(Number)
-        return `${colName(cc as number)}${(r as number) + 1}: ${c.comment?.text ?? ""}`
+    comments: [...cellEntries(sheet.cells)]
+      .filter(([, , c]) => c.comment)
+      .map(([r, cc, c]) => {
+        return `${colName(cc)}${r + 1}: ${c.comment?.text ?? ""}`
       })
       .sort(),
     conditional: (sheet.conditionalRules ?? [])

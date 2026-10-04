@@ -1,3 +1,5 @@
+import type { Cell } from "../src/_types"
+import { createCellStore, getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { readFileSync } from "node:fs"
 import { writeOds } from "../src/ods/writer"
@@ -38,11 +40,11 @@ const style: CellStyle = {
   protection: { locked: false },
 }
 
-const roundTrip = async (cell: unknown): Promise<CellStyle | undefined> => {
+const roundTrip = async (cell: Partial<Cell>): Promise<CellStyle | undefined> => {
   const buf = await writeOds({
-    sheets: [{ name: "S", rows: [[1]], cells: new Map([["0,0", cell]]) }] as never,
+    sheets: [{ name: "S", rows: [[1]], cells: createCellStore([[0, 0, cell]]) }],
   })
-  return (await readOds(buf, { readStyles: true })).sheets[0].cells?.get("0,0")?.style
+  return getCell((await readOds(buf, { readStyles: true })).sheets[0].cells, 0, 0)?.style
 }
 
 describe("the six facets the README documents", () => {
@@ -86,13 +88,15 @@ describe("the facets the README says are not carried", () => {
         {
           name: "S",
           rows: [[1, 2]],
-          cells: new Map([
+          cells: createCellStore([
             [
-              "0,0",
+              0,
+              0,
               { value: 1, style: { font: { bold: true }, border: { top: { style: "thick" } } } },
             ],
             [
-              "0,1",
+              0,
+              1,
               { value: 2, style: { font: { bold: true }, border: { top: { style: "thin" } } } },
             ],
           ]),
@@ -100,10 +104,10 @@ describe("the facets the README says are not carried", () => {
       ] as never,
     })
     const cells = (await readOds(buf, { readStyles: true })).sheets[0].cells
-    expect(cells?.get("0,0")?.style?.font?.bold).toBe(true)
-    expect(cells?.get("0,1")?.style?.font?.bold).toBe(true)
-    expect(cells?.get("0,0")?.style?.border).toBeUndefined()
-    expect(cells?.get("0,1")?.style?.border).toBeUndefined()
+    expect(getCell(cells, 0, 0)?.style?.font?.bold).toBe(true)
+    expect(getCell(cells, 0, 1)?.style?.font?.bold).toBe(true)
+    expect(getCell(cells, 0, 0)?.style?.border).toBeUndefined()
+    expect(getCell(cells, 0, 1)?.style?.border).toBeUndefined()
   })
 })
 

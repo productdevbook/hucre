@@ -1,3 +1,4 @@
+import { getCell } from "../../src/cell-store"
 import { cellError } from "../../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { readFileSync, readdirSync } from "node:fs"
@@ -130,17 +131,17 @@ describe("whitespace-strings", () => {
 describe("styled", () => {
   it("reads fonts, fills, borders and number formats another tool wrote", async () => {
     const sheet = (await readXlsx(load("styled.xlsx"), { readStyles: true })).sheets[0]!
-    const cell = (key: string) => sheet.cells?.get(key)?.style
+    const cell = (row: number, col: number) => getCell(sheet.cells, row, col)?.style
 
-    expect(cell("0,0")?.font?.bold).toBe(true)
-    expect(cell("0,1")?.font).toMatchObject({ italic: true, size: 14, name: "Georgia" })
-    const fill = cell("0,2")?.fill
+    expect(cell(0, 0)?.font?.bold).toBe(true)
+    expect(cell(0, 1)?.font).toMatchObject({ italic: true, size: 14, name: "Georgia" })
+    const fill = cell(0, 2)?.fill
     expect(fill).toMatchObject({ type: "pattern", pattern: "solid" })
     expect(fill?.type === "pattern" ? fill.fgColor?.rgb : undefined).toBe("FFFF00")
-    expect(cell("0,3")?.border?.left).toMatchObject({ style: "medium" })
-    expect(cell("0,3")?.border?.left?.color?.rgb).toBe("FF0000")
-    expect(cell("0,3")?.border?.bottom?.style).toBe("double")
-    expect(cell("1,4")?.numFmt).toBe("#,##0.00")
+    expect(cell(0, 3)?.border?.left).toMatchObject({ style: "medium" })
+    expect(cell(0, 3)?.border?.left?.color?.rgb).toBe("FF0000")
+    expect(cell(0, 3)?.border?.bottom?.style).toBe("double")
+    expect(cell(1, 4)?.numFmt).toBe("#,##0.00")
   })
 
   it("reads a column width another tool wrote", async () => {
@@ -202,8 +203,8 @@ describe("hyperlinks-and-comments", () => {
     const sheet = (await readXlsx(load("hyperlinks-and-comments.xlsx"), { readStyles: true }))
       .sheets[0]!
 
-    expect(sheet.cells?.get("1,0")?.hyperlink?.target).toBe("https://example.com")
-    expect(sheet.cells?.get("2,0")?.comment?.text).toBe("a note from another tool")
+    expect(getCell(sheet.cells, 1, 0)?.hyperlink?.target).toBe("https://example.com")
+    expect(getCell(sheet.cells, 2, 0)?.comment?.text).toBe("a note from another tool")
   })
 })
 

@@ -1,3 +1,4 @@
+import { createCellStore } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { deflate, inflate } from "../src/zip/deflate"
 import { parseWorksheet } from "../src/xlsx/worksheet"
@@ -111,9 +112,10 @@ describe("HTML export XSS — style attribute escaping", () => {
     const sheet: Sheet = {
       name: "S",
       rows: [["x"]] as CellValue[][],
-      cells: new Map([
+      cells: createCellStore([
         [
-          "0,0",
+          0,
+          0,
           {
             value: "x",
             type: "string",

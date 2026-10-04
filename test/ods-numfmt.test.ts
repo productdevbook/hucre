@@ -1,3 +1,4 @@
+import { createCellStore, setCell, getCell } from "../src/cell-store"
 import { describe, it, expect } from "vitest"
 import { writeOds } from "../src/ods/writer"
 import { readOds } from "../src/ods/reader"
@@ -34,8 +35,8 @@ async function getAutomaticStyles(data: Uint8Array) {
 }
 
 function singleCellSheet(numFmt: string, value: number): SheetInput {
-  const cells = new Map<string, Partial<Cell>>()
-  cells.set("0,0", { value, style: { numFmt } })
+  const cells = createCellStore<Partial<Cell>>()
+  setCell(cells, 0, 0, { value, style: { numFmt } })
   return { name: "Sheet1", rows: [[value]], cells }
 }
 
@@ -176,10 +177,10 @@ describe("ODS writer — numFmt data styles", () => {
   })
 
   it("deduplicates styles that share a numFmt", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", { value: 1, style: { numFmt: "0.00" } })
-    cells.set("0,1", { value: 2, style: { numFmt: "0.00" } })
-    cells.set("0,2", { value: 3, style: { numFmt: "0.00%" } })
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, { value: 1, style: { numFmt: "0.00" } })
+    setCell(cells, 0, 1, { value: 2, style: { numFmt: "0.00" } })
+    setCell(cells, 0, 2, { value: 3, style: { numFmt: "0.00%" } })
     const data = await writeOds({
       sheets: [{ name: "Sheet1", rows: [[1, 2, 3]], cells }],
     })
@@ -196,8 +197,8 @@ describe("ODS writer — numFmt data styles", () => {
     // `@` used to be bundled in here on the belief that ODF had no
     // spelling for it; it does — `<number:text-style>` — and it is
     // covered in test/ods-text-format.test.ts.
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", { value: 1, style: { numFmt: "General" } })
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, { value: 1, style: { numFmt: "General" } })
     const data = await writeOds({
       sheets: [{ name: "Sheet1", rows: [[1]], cells }],
     })
@@ -213,8 +214,8 @@ describe("ODS writer — numFmt data styles", () => {
   })
 
   it("co-exists with font and fill properties on the same cell style", async () => {
-    const cells = new Map<string, Partial<Cell>>()
-    cells.set("0,0", {
+    const cells = createCellStore<Partial<Cell>>()
+    setCell(cells, 0, 0, {
       value: 0.5,
       style: {
         numFmt: "0.00%",
@@ -245,39 +246,39 @@ describe("ODS parity — numFmt roundtrip", () => {
   it("plain number format roundtrips through write/read", async () => {
     const data = await writeOds({ sheets: [singleCellSheet("0.00", 3.14)] })
     const wb = await readOds(data, { readStyles: true })
-    const cell = wb.sheets[0].cells!.get("0,0")
+    const cell = getCell(wb.sheets[0].cells!, 0, 0)
     expect(cell?.style?.numFmt).toBe("0.00")
   })
 
   it("grouping number format roundtrips", async () => {
     const data = await writeOds({ sheets: [singleCellSheet("#,##0.00", 1234.5)] })
     const wb = await readOds(data, { readStyles: true })
-    expect(wb.sheets[0].cells!.get("0,0")?.style?.numFmt).toBe("#,##0.00")
+    expect(getCell(wb.sheets[0].cells!, 0, 0)?.style?.numFmt).toBe("#,##0.00")
   })
 
   it("percentage format roundtrips", async () => {
     const data = await writeOds({ sheets: [singleCellSheet("0.00%", 0.5)] })
     const wb = await readOds(data, { readStyles: true })
-    expect(wb.sheets[0].cells!.get("0,0")?.style?.numFmt).toBe("0.00%")
+    expect(getCell(wb.sheets[0].cells!, 0, 0)?.style?.numFmt).toBe("0.00%")
   })
 
   it("date format yyyy-mm-dd roundtrips", async () => {
     const data = await writeOds({ sheets: [singleCellSheet("yyyy-mm-dd", 45000)] })
     const wb = await readOds(data, { readStyles: true })
-    expect(wb.sheets[0].cells!.get("0,0")?.style?.numFmt).toBe("yyyy-mm-dd")
+    expect(getCell(wb.sheets[0].cells!, 0, 0)?.style?.numFmt).toBe("yyyy-mm-dd")
   })
 
   it("time format hh:mm:ss roundtrips", async () => {
     const data = await writeOds({ sheets: [singleCellSheet("hh:mm:ss", 0.5)] })
     const wb = await readOds(data, { readStyles: true })
-    expect(wb.sheets[0].cells!.get("0,0")?.style?.numFmt).toBe("hh:mm:ss")
+    expect(getCell(wb.sheets[0].cells!, 0, 0)?.style?.numFmt).toBe("hh:mm:ss")
   })
 
   it("duration format [HH]:MM roundtrips", async () => {
     const data = await writeOds({ sheets: [singleCellSheet("[HH]:MM", 0.020833)] })
     const wb = await readOds(data, { readStyles: true })
     // Output normalises to lowercase brackets and short minute token
-    const code = wb.sheets[0].cells!.get("0,0")?.style?.numFmt
+    const code = getCell(wb.sheets[0].cells!, 0, 0)?.style?.numFmt
     expect(code).toBeDefined()
     expect(code!.startsWith("[h")).toBe(true)
     expect(code!.toLowerCase()).toContain("m")
@@ -286,7 +287,7 @@ describe("ODS parity — numFmt roundtrip", () => {
   it("readStyles=false keeps numFmt out of the cell metadata", async () => {
     const data = await writeOds({ sheets: [singleCellSheet("0.00%", 0.5)] })
     const wb = await readOds(data) // default: readStyles=false
-    const cell = wb.sheets[0].cells?.get("0,0")
+    const cell = getCell(wb.sheets[0].cells, 0, 0)
     // No style key collected when readStyles is off
     expect(cell?.style?.numFmt).toBeUndefined()
   })

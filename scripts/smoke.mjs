@@ -17,6 +17,12 @@ import {
   writeXlsxStream,
   readOds,
   writeOds,
+  createCellStore,
+  getCell,
+  setCell,
+  hasCell,
+  deleteCell,
+  cellEntries,
 } from "../dist/index.mjs"
 
 let failures = 0
@@ -53,6 +59,30 @@ const ROWS = [
   ["Name", "Amount", "When"],
   ["Ada", 1234.5, new Date(Date.UTC(2024, 0, 15))],
 ]
+
+console.log("cell metadata")
+{
+  const cells = createCellStore([[127, 1, { value: 42, type: "number" }]])
+  setCell(cells, 128, 2, { value: 7, type: "number" })
+  const cloned = structuredClone(cells)
+  deleteCell(cloned, 127, 1)
+  check(
+    "numeric blocks survive structured clone",
+    cells.size === 2 &&
+      cloned.size === 1 &&
+      hasCell(cloned, 128, 2) &&
+      getCell(cloned, 128, 2)?.value === 7 &&
+      [...cellEntries(cloned)].length === 1,
+  )
+  const bytes = await writeXlsx({ sheets: [{ name: "Metadata", cells }] })
+  const wb = await readXlsx(bytes, { sparse: true })
+  check(
+    "sparse metadata round trip",
+    wb.sheets[0].rows.length === 0 &&
+      getCell(wb.sheets[0].cells, 127, 1)?.value === 42 &&
+      getCell(wb.sheets[0].cells, 128, 2)?.value === 7,
+  )
+}
 
 console.log("csv")
 {

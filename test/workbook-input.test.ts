@@ -1,3 +1,4 @@
+import { createCellStore, getCell } from "../src/cell-store"
 import { describe, expect, it } from "vitest"
 import { readXlsx, writeXlsx } from "../src/xlsx"
 import { readOds, writeOds } from "../src/ods"
@@ -12,7 +13,7 @@ const workbook = (): Workbook => ({
         [125, true],
       ],
       freezePane: { rows: 1 },
-      cells: new Map([["1,0", { value: 125, type: "number", style: { numFmt: "0.00" } }]]),
+      cells: createCellStore([[1, 0, { value: 125, type: "number", style: { numFmt: "0.00" } }]]),
       charts: [
         { kinds: ["bar"], series: [], seriesCount: 0, anchor: { from: { row: 5, col: 0 } } },
       ],
@@ -27,7 +28,7 @@ describe("one workbook model at the writer boundary", () => {
     const output = await readXlsx(await writeXlsx(input), { readStyles: true })
     expect(output.sheets[0].rows).toEqual(input.sheets[0].rows)
     expect(output.sheets[0].freezePane).toEqual({ rows: 1 })
-    expect(output.sheets[0].cells?.get("1,0")?.style?.numFmt).toBe("0.00")
+    expect(getCell(output.sheets[0].cells, 1, 0)?.style?.numFmt).toBe("0.00")
     expect(output.properties?.title).toBe("Report")
   })
 
