@@ -654,10 +654,14 @@ Bun, Cloudflare Workers, and browsers.
 import { writeXlsx, readXlsx, readObjects, EncryptedFileError, DecryptionError } from "hucre"
 
 // Write an encrypted workbook
-const encrypted = await writeXlsx({
-  sheets: [{ name: "Secret", rows: [["pin", 1234]] }],
-  encryption: { password: "hunter2" },
-})
+const encrypted = await writeXlsx(
+  {
+    sheets: [{ name: "Secret", rows: [["pin", 1234]] }],
+  },
+  {
+    encryption: { password: "hunter2" },
+  },
+)
 
 // Read it back with the password
 const wb = await readXlsx(encrypted, { password: "hunter2" })
@@ -776,33 +780,30 @@ not a permanent one.
 
 ### Read, edit, write
 
-`readXlsx` returns a `Workbook`; `writeXlsx` takes `WriteOptions`. They
-are different types — `Chart` is not `SheetChart`, `PivotTable` is not
-`WritePivotTable` — so `writeXlsx({ sheets: wb.sheets })` does not
-typecheck. `toWriteOptions` converts:
+`readXlsx` returns a `Workbook`, which `writeXlsx` and `writeOds`
+accept directly. `WorkbookInput` and `SheetInput` derive their metadata
+from that same model and add authoring shorthand: inline cells, object
+rows and A1 merge ranges.
 
 ```ts
-import { readXlsx, toWriteOptions, writeXlsx } from "hucre"
+import { readXlsx, writeXlsx } from "hucre"
 
 const wb = await readXlsx(buffer)
 wb.sheets[0].rows[0][0] = "edited"
 
-const out = await writeXlsx(toWriteOptions(wb))
-```
-
-This is the **authoring** path, so it carries only what `WriteSheet` and
-`WriteOptions` describe. Pass `onDrop` to see what it could not:
-
-```ts
-toWriteOptions(wb, {
+const out = await writeXlsx(wb, {
   onDrop: ({ field, sheet, reason }) => console.warn(`dropped ${field}`, sheet, reason),
 })
-// dropped charts  Sheet1  the read model (`Chart`) and the write model …
 ```
 
-Editing someone else's file rather than producing a new one? Use
-`openXlsx` / `saveXlsx` below instead — that path preserves the parts
-hucre does not regenerate, so nothing is dropped.
+This is the **authoring** path. Reader chart and pivot-table records are
+inspection data; use authoring specifications to create them. `onDrop`
+reports populated features the selected writer cannot rebuild, including
+XLSX metadata omitted by the ODS writer.
+
+For editing someone else's file with its original charts, macros and
+unmodelled parts, use `openXlsx` / `saveXlsx` below. That path preserves
+the parts hucre does not regenerate.
 
 ### Round-trip Preservation
 
@@ -819,8 +820,8 @@ const output = await saveXlsx(workbook) // Charts, VBA, themes preserved
 Preservation is a property of **this** path. `openXlsx`/`saveXlsx` copies
 every part it does not regenerate byte-for-byte, so anything hucre does
 not model survives. `readXlsx`/`writeXlsx` is the authoring path: it
-rebuilds the workbook from the model, and only what `WriteSheet` and
-`WriteOptions` describe comes out the other side. Reading an `.xlsm` with
+rebuilds the workbook from the model, and only what `SheetInput` and
+`WorkbookInput` describe comes out the other side. Reading an `.xlsm` with
 `readXlsx` and writing it back leaves no `xl/vbaProject.bin` — use
 `openXlsx`/`saveXlsx` to edit a macro-enabled workbook.
 
@@ -828,10 +829,14 @@ To attach a macro project to a workbook you are authoring, pass the
 binary to `writeXlsx` — the output becomes macro-enabled:
 
 ```ts
-await writeXlsx({
-  sheets: [{ name: "Sheet1", rows }],
-  vbaProject: await readFile("vbaProject.bin"), // output is .xlsm
-})
+await writeXlsx(
+  {
+    sheets: [{ name: "Sheet1", rows }],
+  },
+  {
+    vbaProject: await readFile("vbaProject.bin"),
+  },
+)
 ```
 
 ### External Workbook References
@@ -1031,7 +1036,7 @@ Charts (`xl/charts/chartN.xml` plus the optional `styleN.xml` /
 
 `getCharts(workbook)` flattens every chart anchored on the workbook's
 sheets into a single array; `addChart(sheet, chart)` is the symmetric
-writer-side helper that appends a `SheetChart` to a `WriteSheet`.
+writer-side helper that appends a `SheetChart` to a `SheetInput`.
 
 #### Capability matrix
 
@@ -1274,7 +1279,14 @@ const wb = await read(buffer)
 
 // Write any of nine. Default xlsx; always returns bytes, so nothing
 // downstream has to branch on the format.
-const bytes = await write({ sheets, format: "ndjson" })
+const bytes = await write(
+  {
+    sheets,
+  },
+  {
+    format: "ndjson",
+  },
+)
 // "xlsx" | "ods" | "csv" | "tsv" | "json" | "ndjson" | "xml" | "html" | "markdown"
 
 // Quick: file → objects, plus the headers they were keyed by. Same
@@ -1501,7 +1513,7 @@ It reaches the whole model, not a subset of it. Beyond `columns` / `row` /
 `merge` / `freeze` / `validation` / `cell` there are named methods for
 conditional rules, auto-filter, split panes, row definitions, page setup,
 headers and footers, sheet views, protection, tables, images and charts —
-and `set()` for anything else on `WriteSheet`:
+and `set()` for anything else on `SheetInput`:
 
 ```ts
 const xlsx = await WorkbookBuilder.create()
@@ -1521,7 +1533,7 @@ const xlsx = await WorkbookBuilder.create()
 ```
 
 `set()` exists so the builder cannot fall behind the type: whatever
-`WriteSheet` or `WriteOptions` grows, it can already be expressed.
+`SheetInput` or `WorkbookInput` grows, it can already be expressed.
 
 ### Template Engine
 
@@ -1873,7 +1885,15 @@ without one:
 
 ```ts
 writeCsv(rows, { bom: true })
-await write({ sheets, format: "csv", csv: { delimiter: ";", bom: true } })
+await write(
+  {
+    sheets,
+  },
+  {
+    format: "csv",
+    csv: { delimiter: ";", bom: true },
+  },
+)
 ```
 
 ```bash
@@ -2016,47 +2036,46 @@ Zero dependencies. Pure TypeScript. The ZIP engine uses `CompressionStream`/`Dec
 | Function                       | Description                                                                                                                    |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
 | `read(input, options?)`        | Auto-detect format, returns `Workbook`. XLSX, ODS, XLS and XLSB by container shape; CSV, JSON, NDJSON, XML and HTML by content |
-| `write(options)`               | Write XLSX or ODS (via `format` option)                                                                                        |
+| `write(workbook, options?)`    | Write XLSX or ODS (via `format` option)                                                                                        |
 | `readObjects(input, options?)` | File → `{ data, headers }` (format-agnostic `*Objects` reader)                                                                 |
 | `writeObjects(data, options?)` | Objects → XLSX/ODS                                                                                                             |
 
 ### XLSX
 
-| Function                           | Description                                                                             |
-| ---------------------------------- | --------------------------------------------------------------------------------------- |
-| `readXlsx(input, options?)`        | Parse XLSX from `Uint8Array \| ArrayBuffer \| ReadableStream<Uint8Array>`               |
-| `writeXlsx(options)`               | Generate XLSX, returns `Uint8Array`                                                     |
-| `readXlsxObjects(input, options?)` | Read sheet as `{ data, headers }` — mirror of CSV                                       |
-| `writeXlsxObjects(data, options?)` | Write objects to XLSX (auto-derives headers from keys)                                  |
-| `openXlsx(input, options?)`        | Open for round-trip (preserves unknown parts)                                           |
-| `saveXlsx(workbook)`               | Save round-trip workbook back to XLSX                                                   |
-| `streamXlsxRows(input, options?)`  | AsyncGenerator yielding rows one at a time                                              |
-| `writeXlsxStream(rows, options)`   | Constant-memory XLSX writing — returns a `ReadableStream<Uint8Array>`                   |
-| `toWriteOptions(workbook, opts?)`  | Convert a read `Workbook` into `WriteOptions`; `onDrop` reports what it could not carry |
-| `XlsxStreamWriter`                 | Incremental XLSX writing (`addRow`/`addObject`); auto-splits past `maxRowsPerSheet`     |
-| `XLSX_MAX_ROWS_PER_SHEET`          | Excel hard row limit (1,048,576) — exported constant                                    |
-| `parseExternalLink(xml, relsXml?)` | Parse `xl/externalLinks/externalLinkN.xml` → `ExternalLink`                             |
-| `parseCellImages(xml)`             | Parse `xl/cellimages.xml` → `ParsedCellImageRef[]` (WPS DISPIMG)                        |
-| `assembleCellImages(refs, media)`  | Combine parsed refs with resolved media bytes → `CellImage[]`                           |
-| `parseSlicers(xml)`                | Parse `xl/slicers/slicerN.xml` → `Slicer[]`                                             |
-| `parseSlicerCache(xml)`            | Parse `xl/slicerCaches/slicerCacheN.xml` → `SlicerCache \| undefined`                   |
-| `parseTimelines(xml)`              | Parse `xl/timelines/timelineN.xml` → `Timeline[]`                                       |
-| `parseTimelineCache(xml)`          | Parse `xl/timelineCaches/timelineCacheN.xml` → `TimelineCache \| undefined`             |
-| `parsePivotTable(xml)`             | Parse `xl/pivotTables/pivotTableN.xml` → `PivotTable \| undefined`                      |
-| `parsePivotCacheDefinition(xml)`   | Parse `xl/pivotCache/pivotCacheDefinitionN.xml` → `PivotCache \| undefined`             |
-| `attachPivotCacheFields(pt, c)`    | Overlay `PivotCache.fieldNames` onto a `PivotTable.fields[].name`                       |
-| `parseChart(xml)`                  | Parse `xl/charts/chartN.xml` → `Chart \| undefined`                                     |
-| `cloneChart(source, options)`      | Convert a parsed `Chart` into a writer-ready `SheetChart`                               |
-| `chartKindToWriteKind(kind)`       | Map a read-side `ChartKind` onto its writable counterpart, if any                       |
-| `getCharts(workbook)`              | Enumerate every chart anchored on the workbook with its sheet context                   |
-| `addChart(sheet, chart)`           | Append a `SheetChart` to a `WriteSheet`, lazily creating the array                      |
+| Function                           | Description                                                                         |
+| ---------------------------------- | ----------------------------------------------------------------------------------- |
+| `readXlsx(input, options?)`        | Parse XLSX from `Uint8Array \| ArrayBuffer \| ReadableStream<Uint8Array>`           |
+| `writeXlsx(workbook, options?)`    | Generate XLSX, returns `Uint8Array`                                                 |
+| `readXlsxObjects(input, options?)` | Read sheet as `{ data, headers }` — mirror of CSV                                   |
+| `writeXlsxObjects(data, options?)` | Write objects to XLSX (auto-derives headers from keys)                              |
+| `openXlsx(input, options?)`        | Open for round-trip (preserves unknown parts)                                       |
+| `saveXlsx(workbook)`               | Save round-trip workbook back to XLSX                                               |
+| `streamXlsxRows(input, options?)`  | AsyncGenerator yielding rows one at a time                                          |
+| `writeXlsxStream(rows, options)`   | Constant-memory XLSX writing — returns a `ReadableStream<Uint8Array>`               |
+| `XlsxStreamWriter`                 | Incremental XLSX writing (`addRow`/`addObject`); auto-splits past `maxRowsPerSheet` |
+| `XLSX_MAX_ROWS_PER_SHEET`          | Excel hard row limit (1,048,576) — exported constant                                |
+| `parseExternalLink(xml, relsXml?)` | Parse `xl/externalLinks/externalLinkN.xml` → `ExternalLink`                         |
+| `parseCellImages(xml)`             | Parse `xl/cellimages.xml` → `ParsedCellImageRef[]` (WPS DISPIMG)                    |
+| `assembleCellImages(refs, media)`  | Combine parsed refs with resolved media bytes → `CellImage[]`                       |
+| `parseSlicers(xml)`                | Parse `xl/slicers/slicerN.xml` → `Slicer[]`                                         |
+| `parseSlicerCache(xml)`            | Parse `xl/slicerCaches/slicerCacheN.xml` → `SlicerCache \| undefined`               |
+| `parseTimelines(xml)`              | Parse `xl/timelines/timelineN.xml` → `Timeline[]`                                   |
+| `parseTimelineCache(xml)`          | Parse `xl/timelineCaches/timelineCacheN.xml` → `TimelineCache \| undefined`         |
+| `parsePivotTable(xml)`             | Parse `xl/pivotTables/pivotTableN.xml` → `PivotTable \| undefined`                  |
+| `parsePivotCacheDefinition(xml)`   | Parse `xl/pivotCache/pivotCacheDefinitionN.xml` → `PivotCache \| undefined`         |
+| `attachPivotCacheFields(pt, c)`    | Overlay `PivotCache.fieldNames` onto a `PivotTable.fields[].name`                   |
+| `parseChart(xml)`                  | Parse `xl/charts/chartN.xml` → `Chart \| undefined`                                 |
+| `cloneChart(source, options)`      | Convert a parsed `Chart` into a writer-ready `SheetChart`                           |
+| `chartKindToWriteKind(kind)`       | Map a read-side `ChartKind` onto its writable counterpart, if any                   |
+| `getCharts(workbook)`              | Enumerate every chart anchored on the workbook with its sheet context               |
+| `addChart(sheet, chart)`           | Append a `SheetChart` to a `SheetInput`, lazily creating the array                  |
 
 ### ODS
 
 | Function                          | Description                                                           |
 | --------------------------------- | --------------------------------------------------------------------- |
 | `readOds(input, options?)`        | Parse ODS (`Uint8Array \| ArrayBuffer \| ReadableStream<Uint8Array>`) |
-| `writeOds(options)`               | Generate ODS                                                          |
+| `writeOds(workbook, options?)`    | Generate ODS                                                          |
 | `readOdsObjects(input, options?)` | Read sheet as `{ data, headers }`                                     |
 | `writeOdsObjects(data, options?)` | Write objects to ODS                                                  |
 | `streamOdsRows(input, options?)`  | AsyncGenerator of `StreamRow`s; `sheet` picks one or `"all"`          |
@@ -2211,7 +2230,7 @@ not on that page, it is a bug worth reporting.
 The short version: use `openXlsx`/`saveXlsx` when editing someone else's
 workbook — parts hucre does not model are copied byte-for-byte. Use
 `readXlsx`/`writeXlsx` when producing a new one, where only what
-`WriteSheet` and `WriteOptions` describe survives.
+`SheetInput` and `WorkbookInput` describe survives.
 
 ## Migrating to v1
 
@@ -2240,7 +2259,7 @@ See the [issue tracker](https://github.com/productdevbook/hucre/issues) for the 
 - Conditional formatting: `timePeriod` rules, and the `rank` / `percent` / `bottom` / `aboveAverage` / `equalAverage` / `stdDev` knobs on `top10` and `aboveAverage`
 - Auto-filter criteria beyond value lists (custom, dynamic, colour, icon filters)
 - Pre-computed pivot value cells (the writer emits the structure; Excel computes on open)
-- Threaded comments (Excel 365+) — synthesize from a fresh write (read + roundtrip already supported). `WriteSheet` has no `threadedComments` field; it is not silently accepted
+- Threaded comments (Excel 365+) — synthesize from a fresh write (read + roundtrip already supported). `SheetInput` accepts reader metadata; `onDrop` reports unsupported `threadedComments`; it is not silently accepted
 - Slicers & timeline filters — synthesize from a fresh write (read + roundtrip already supported)
 - WPS DISPIMG cell-embedded images — synthesize from a fresh write (read + roundtrip already supported)
 - XLS / XLSB writing (both formats are read-only today)
@@ -2259,3 +2278,14 @@ Looking for a different approach? These libraries may fit your use case:
 ## License
 
 [MIT](./LICENSE) — Made by [productdevbook](https://github.com/productdevbook)
+
+### Example workbooks and integration tests
+
+[`examples/`](examples/README.md) contains 12 downloadable XLSX workbooks
+for invoices, budgets, inventory and other everyday workflows. Their
+literal scenarios and expected results are independent of hucre, and CI
+checks reading, streaming, formulas and both save paths. The corpus also
+includes the existing Microsoft Excel, openpyxl, ExcelJS, SheetJS and
+LibreOffice files under `test/fixtures/`.
+
+See [`test/README.md`](test/README.md) for the test layout and commands.

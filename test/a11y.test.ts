@@ -3,7 +3,7 @@ import { ZipReader } from "../src/zip/reader"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { audit, contrastRatio, relativeLuminance, applyA11ySummary } from "../src/a11y"
-import type { WriteOptions, Workbook } from "../src/_types"
+import type { WorkbookInput, Workbook } from "../src/_types"
 
 const decoder = new TextDecoder("utf-8")
 
@@ -368,7 +368,7 @@ describe("a11y.applyA11ySummary", () => {
 
 describe("writeXlsx — a11y integration", () => {
   it("emits descr= and title= on xdr:cNvPr for images with altText/title", async () => {
-    const opts: WriteOptions = {
+    const opts: WorkbookInput = {
       sheets: [
         {
           name: "S",
@@ -393,7 +393,7 @@ describe("writeXlsx — a11y integration", () => {
   })
 
   it("promotes the first sheet a11y.summary into docProps/core.xml when no description is set", async () => {
-    const opts: WriteOptions = {
+    const opts: WorkbookInput = {
       sheets: [{ name: "S1", rows: [["a"]], a11y: { summary: "Quarterly sales report" } }],
     }
     const out = await writeXlsx(opts)
@@ -402,7 +402,7 @@ describe("writeXlsx — a11y integration", () => {
   })
 
   it("does not override an explicit workbook description", async () => {
-    const opts: WriteOptions = {
+    const opts: WorkbookInput = {
       sheets: [{ name: "S1", rows: [["a"]], a11y: { summary: "from sheet" } }],
       properties: { description: "from properties" },
     }
@@ -417,7 +417,7 @@ describe("writeXlsx — a11y integration", () => {
 
 describe("readXlsx — drawing alt text / title roundtrip", () => {
   it("recovers altText and title from xdr:cNvPr on images", async () => {
-    const opts: WriteOptions = {
+    const opts: WorkbookInput = {
       sheets: [
         {
           name: "S",
@@ -443,7 +443,7 @@ describe("readXlsx — drawing alt text / title roundtrip", () => {
   })
 
   it("recovers altText and title from xdr:cNvPr on text boxes", async () => {
-    const opts: WriteOptions = {
+    const opts: WorkbookInput = {
       sheets: [
         {
           name: "S",
@@ -472,7 +472,7 @@ describe("readXlsx — drawing alt text / title roundtrip", () => {
 
   it("leaves altText/title undefined when the source XML has no descr/title", async () => {
     // Image written without altText/title — both should remain absent on re-read.
-    const opts: WriteOptions = {
+    const opts: WorkbookInput = {
       sheets: [
         {
           name: "S",

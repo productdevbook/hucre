@@ -98,9 +98,11 @@
     "lint:fix": "oxlint . --fix && oxfmt .",
     "fmt": "oxfmt .",
     "test": "bun run lint && bun run typecheck && vitest run",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.cli.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.cli.json && tsc --noEmit -p tsconfig.test.json",
     "release": "bun run test && bun run build && bumpp --commit --tag --push --all",
-    "prepack": "bun run build"
+    "prepack": "bun run build",
+    "test:unit": "vitest run --exclude 'test/integration/**'",
+    "test:integration": "vitest run test/integration"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

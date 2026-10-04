@@ -584,7 +584,7 @@ function worksheetParser(
             sparklineF = ""
           } else if (inCell) {
             inFormula = true
-            cellFormulaType = attrs["t"] ?? ""
+            cellFormulaType = attrs["t"] ?? "normal"
             if (attrs["si"] !== undefined) {
               cellFormulaSi = Number(attrs["si"])
             }
@@ -1026,6 +1026,7 @@ function worksheetParser(
               inlineText !== "" ||
               inlineRichText.length > 0 ||
               cellFormulaText !== "" ||
+              cellFormulaType !== "" ||
               cellType === "e" ||
               // An empty *inline* string is still a string. The producer
               // wrote `t="inlineStr"` and an `<is>` to say so, which is
@@ -1848,17 +1849,13 @@ function processCell(
 
   let value: CellValue = null
   let cellType: Cell["type"] = "empty"
-  let formula: string | undefined
   let formulaResult: CellValue | undefined
   let richText: RichTextRun[] | undefined
 
-  // Handle formula (including shared formula slave cells with no text)
-  if (formulaText) {
-    formula = formulaText
-  } else if (formulaType === "shared" && formulaSi !== undefined && formulaSi >= 0) {
-    // Shared formula slave cell: no formula text, but has si attribute
-    formula = ""
-  }
+  // Presence, not text truthiness: shared-formula followers and <f/>
+  // have an empty body but still carry cached results (#573). OOXML's
+  // default formula type is normal, so the SAX pass records it on <f>.
+  const formula = formulaType ? formulaText : undefined
 
   // Determine cell value based on type
   switch (type) {
@@ -1899,8 +1896,7 @@ function processCell(
       // the rest, emitting `<f>` with no `<v>`. The writer has always
       // been able to write them back. See #497.
       value = decodeOoxmlEscapes(valueText)
-      cellType = formula ? "formula" : "string"
-      if (formula) formulaResult = value
+      cellType = "string"
       break
     }
     case "inlineStr": {
@@ -1918,8 +1914,7 @@ function processCell(
     case "b": {
       // Boolean
       value = valueText === "1" || valueText.toLowerCase() === "true"
-      cellType = formula ? "formula" : "boolean"
-      if (formula) formulaResult = value
+      cellType = "boolean"
       break
     }
     case "e": {
@@ -1933,8 +1928,7 @@ function processCell(
       // error by its value is unaffected; a *hard-coded* error cell,
       // which carries no formula, still reports `"error"`. See #497.
       value = cellError(valueText)
-      cellType = formula ? "formula" : "error"
-      if (formula) formulaResult = value
+      cellType = "error"
       break
     }
     case "d": {
@@ -1962,16 +1956,12 @@ function processCell(
         value = null
         cellType = "empty"
       }
-      if (formula) {
-        formulaResult = value
-        cellType = "formula"
-      }
       break
     }
     case "n":
     default: {
       // Number (explicit or implied)
-      if (valueText === "" && !formula) {
+      if (valueText === "") {
         // Empty cell
         value = null
         cellType = "empty"
@@ -1994,12 +1984,15 @@ function processCell(
         cellType = "string"
       }
 
-      if (formula) {
-        formulaResult = value
-        cellType = "formula"
-      }
       break
     }
+  }
+
+  // Cache every value type in one place. Handling this inside five
+  // switch arms let string/boolean/error/date results drift apart.
+  if (formula !== undefined) {
+    cellType = "formula"
+    formulaResult = value
   }
 
   // Set the value in the rows array. In sparse mode there is no grid to

@@ -3,7 +3,7 @@ import { ZipReader } from "../src/zip/reader"
 import { parseXml } from "../src/xml/parser"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
-import type { WriteSheet, Cell } from "../src/_types"
+import type { SheetInput, Cell } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -52,7 +52,7 @@ describe("shared formula writing", () => {
       formulaResult: 10,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Val", "Doubled"], [5]],
       cells,
@@ -85,7 +85,7 @@ describe("shared formula writing", () => {
       formulaResult: 14,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Val", "Doubled"], [5], [7]],
       cells,
@@ -136,7 +136,7 @@ describe("shared formula writing", () => {
       formulaResult: 20,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Val", "Doubled"], [5], [7], [10]],
       cells,
@@ -179,7 +179,7 @@ describe("array formula writing", () => {
       formulaResult: 100,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["A", "B"], [1]],
       cells,
@@ -213,7 +213,7 @@ describe("array formula writing", () => {
       formulaResult: 1,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["A", "B"], [3]],
       cells,
@@ -250,7 +250,7 @@ describe("array formula writing", () => {
 // ── The metadata part `cm` indexes into ──────────────────────────────
 
 describe("dynamic array cell metadata part", () => {
-  const dynamicSheet: WriteSheet = {
+  const dynamicSheet: SheetInput = {
     name: "Sheet1",
     rows: [[null]],
     cells: new Map<string, Partial<Cell>>([
@@ -335,7 +335,7 @@ describe("normal formula writing (backward compatibility)", () => {
       formulaResult: 55,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [[1]],
       cells,
@@ -378,7 +378,7 @@ describe("shared formula reading", () => {
       formulaResult: 14,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Val", "Doubled"], [5], [7]],
       cells,
@@ -419,7 +419,7 @@ describe("array formula reading", () => {
       formulaResult: 100,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["A", "B"], [1]],
       cells,
@@ -447,7 +447,7 @@ describe("array formula reading", () => {
       formulaResult: 1,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["A", "B"], [3]],
       cells,
@@ -489,7 +489,7 @@ describe("shared formula round-trip", () => {
       })
     }
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Input", "Output"], [10], [20], [30], [40]],
       cells,
@@ -549,7 +549,7 @@ describe("shared formula round-trip", () => {
       formulaResult: 21,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Val", "x2", "x3"], [5], [7]],
       cells,
@@ -581,7 +581,7 @@ describe("array formula round-trip", () => {
       formulaResult: 100,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["A", "B", "C"],
@@ -611,7 +611,7 @@ describe("array formula round-trip", () => {
       formulaResult: "alpha",
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["alpha"]],
       cells,
@@ -639,7 +639,7 @@ describe("normal formula round-trip", () => {
       formulaResult: 6,
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [[5]],
       cells,

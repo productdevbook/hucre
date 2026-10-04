@@ -1,0 +1,218 @@
+[
+  {
+    "file": "invoice.xlsx",
+    "description": "Invoice with quantities, prices, cached formulas and a total",
+    "sheets": [
+      {
+        "name": "Invoice",
+        "rows": [
+          ["Item", "Quantity", "Unit price", "Amount"],
+          ["Keyboard", 2, 75, 150],
+          ["Mouse", 3, 20, 60],
+          ["Total", null, null, 210]
+        ],
+        "formulas": { "D2": "B2*C2", "D3": "B3*C3", "D4": "SUM(D2:D3)" },
+        "formats": { "C2:D4": "#,##0.00" }
+      }
+    ]
+  },
+  {
+    "file": "budget.xlsx",
+    "description": "Budget versus actual spend, including zero and negative variance",
+    "sheets": [
+      {
+        "name": "Budget",
+        "rows": [
+          ["Category", "Budget", "Actual", "Variance"],
+          ["Hosting", 1000, 850, 150],
+          ["Travel", 500, 650, -150],
+          ["Training", 200, 200, 0]
+        ],
+        "formulas": { "D2": "B2-C2", "D3": "B3-C3", "D4": "B4-C4" },
+        "formats": { "B2:D4": "#,##0.00;[Red](#,##0.00)" }
+      }
+    ]
+  },
+  {
+    "file": "inventory.xlsx",
+    "description": "Inventory table with text SKUs, booleans, filtering and validation",
+    "sheets": [
+      {
+        "name": "Inventory",
+        "rows": [
+          ["SKU", "Product", "Stock", "Active"],
+          ["000123", "Notebook", 24, true],
+          ["000124", "Pen", 0, false],
+          ["000125", "Folder", 6, true]
+        ],
+        "table": "InventoryTable",
+        "freezeRows": 1,
+        "validation": { "range": "C2:C4", "min": 0, "max": 10000 }
+      }
+    ]
+  },
+  {
+    "file": "sales.xlsx",
+    "description": "Monthly sales with a percentage margin and cached division results",
+    "sheets": [
+      {
+        "name": "Sales",
+        "rows": [
+          ["Month", "Revenue", "Profit", "Margin"],
+          ["January", 1000, 250, 0.25],
+          ["February", 1500, 450, 0.3],
+          ["March", 2000, 400, 0.2]
+        ],
+        "formulas": { "D2": "C2/B2", "D3": "C3/B3", "D4": "C4/B4" },
+        "formats": { "B2:C4": "#,##0.00", "D2:D4": "0.0%" }
+      }
+    ]
+  },
+  {
+    "file": "employees.xlsx",
+    "description": "Staff roster with accented names, dates and boolean cells",
+    "sheets": [
+      {
+        "name": "Employees",
+        "rows": [
+          ["ID", "Name", "Start date", "Active"],
+          ["E001", "Ayşe Yılmaz", "D:2024-02-29T00:00:00.000Z", true],
+          ["E002", "Renée Martin", "D:2024-03-01T00:00:00.000Z", false]
+        ],
+        "formats": { "C2:C3": "yyyy-mm-dd" }
+      }
+    ]
+  },
+  {
+    "file": "projects.xlsx",
+    "description": "Project tracker with list validation and conditional formatting",
+    "sheets": [
+      {
+        "name": "Projects",
+        "rows": [
+          ["Project", "Owner", "Status", "Progress"],
+          ["Import", "Ada", "In progress", 0.5],
+          ["Export", "Deniz", "Done", 1],
+          ["Docs", "Sam", "Not started", 0]
+        ],
+        "formats": { "D2:D4": "0%" },
+        "statusRange": "C2:C4",
+        "progressRange": "D2:D4"
+      }
+    ]
+  },
+  {
+    "file": "attendance.xlsx",
+    "description": "Attendance sheet distinguishing false, blank and zero",
+    "sheets": [
+      {
+        "name": "Attendance",
+        "rows": [
+          ["Name", "Monday", "Tuesday", "Hours"],
+          ["Ada", true, false, 8],
+          ["Deniz", false, null, 0],
+          ["Sam", true, true, 16]
+        ]
+      }
+    ]
+  },
+  {
+    "file": "expenses.xlsx",
+    "description": "Expense report with precise amounts, a refund and multiline text",
+    "sheets": [
+      {
+        "name": "Expenses",
+        "rows": [
+          ["Reference", "Description", "Amount"],
+          ["EX-001", "Hotel & breakfast", 1234.56],
+          ["EX-002", "Refund", -25.5],
+          ["EX-003", "Taxi\nAirport", 18.75]
+        ],
+        "formats": { "C2:C4": "#,##0.00" },
+        "wrap": "B2:B4"
+      }
+    ]
+  },
+  {
+    "file": "unicode.xlsx",
+    "description": "International text, XML characters, whitespace and repeated strings",
+    "sheets": [
+      {
+        "name": "Strings",
+        "rows": [
+          ["Language", "Text"],
+          ["Turkish", "İstanbul, ı, ş, ğ"],
+          ["Japanese", "東京"],
+          ["Arabic", "مرحبا"],
+          ["Emoji", "📊"],
+          ["Whitespace", "  keep me  "],
+          ["XML", "<tag> & \"quote\""],
+          ["Repeated", "東京"]
+        ],
+        "widths": [20, 35]
+      }
+    ]
+  },
+  {
+    "file": "dates-and-times.xlsx",
+    "description": "Leap-day dates, timestamps and fractional-day time values",
+    "sheets": [
+      {
+        "name": "Dates",
+        "rows": [
+          ["Date", "Timestamp", "Time"],
+          ["D:2024-02-29T00:00:00.000Z", "D:2024-02-29T12:30:00.000Z", 0.5],
+          ["D:2024-03-01T00:00:00.000Z", "D:2024-03-01T23:59:00.000Z", 0.25]
+        ],
+        "formats": { "A2:A3": "yyyy-mm-dd", "B2:B3": "yyyy-mm-dd hh:mm", "C2:C3": "0.00" },
+        "widths": [18, 25, 15]
+      }
+    ]
+  },
+  {
+    "file": "merged-report.xlsx",
+    "description": "Report with a merged heading, an empty row and styled totals",
+    "sheets": [
+      {
+        "name": "Report",
+        "rows": [
+          ["Quarterly report", null, null],
+          [null, null, null],
+          ["Region", "Units", "Amount"],
+          ["North", 12, 1200],
+          ["South", 8, 800],
+          ["Total", 20, 2000]
+        ],
+        "merges": ["A1:C1"],
+        "formulas": { "B6": "SUM(B4:B5)", "C6": "SUM(C4:C5)" },
+        "headerRow": 3,
+        "formats": { "C4:C6": "#,##0.00" }
+      }
+    ]
+  },
+  {
+    "file": "multi-sheet.xlsx",
+    "description": "Summary linked to a source tab whose name contains spaces and an apostrophe",
+    "sheets": [
+      {
+        "name": "Summary",
+        "rows": [
+          ["Metric", "Value"],
+          ["Total units", 30],
+          ["Total revenue", 900]
+        ],
+        "formulas": { "B2": "SUM('Team''s data'!B2:B3)", "B3": "SUM('Team''s data'!C2:C3)" }
+      },
+      {
+        "name": "Team's data",
+        "rows": [
+          ["Product", "Units", "Revenue"],
+          ["A", 10, 300],
+          ["B", 20, 600]
+        ],
+        "table": "SalesData",
+        "freezeRows": 1
+      }
+    ]
+  }
+]

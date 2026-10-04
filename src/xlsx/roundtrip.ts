@@ -1,17 +1,10 @@
+import { prepareSheet } from "../_write-model"
 // ── XLSX Round-Trip Preservation ─────────────────────────────────────
 // Read an XLSX file, modify cells, write it back without losing charts,
 // images, macros, shapes, or other features that hucre doesn't natively
 // understand.
 
-import type {
-  Sheet,
-  Workbook,
-  XlsxReadOptions,
-  WriteSheet,
-  Chart,
-  SheetChart,
-  ReadInput,
-} from "../_types"
+import type { Sheet, Workbook, XlsxReadOptions, Chart, SheetChart, ReadInput } from "../_types"
 import { readXlsx } from "./reader"
 import { ZipReader } from "../zip/reader"
 import { ZipWriter } from "../zip/writer"
@@ -185,8 +178,10 @@ export async function openXlsx(
     }
   }
 
-  // 1. Parse the workbook normally
-  const workbook = await readXlsx(data, options)
+  // Styles are regenerated on save, so omitting them from the model
+  // discards number formats and presentation despite preserving raw ZIP
+  // parts. Ordinary reads may skip styles; this editing path needs them.
+  const workbook = await readXlsx(data, { readStyles: true, ...options })
 
   // 2. Extract ALL raw ZIP entries
   const zip = new ZipReader(data, options?.maxDecompressedBytes)
@@ -237,42 +232,10 @@ export async function saveXlsx(
   const { sheets, properties, namedRanges, dateSystem, defaultFont, activeSheet } = workbook
   const { rawEntries } = roundtripState(workbook)
 
-  // Convert Sheet[] to WriteSheet[] for the writer infrastructure
-  const writeSheets: WriteSheet[] = sheets.map((sheet) => ({
-    name: sheet.name,
-    columns: sheet.columns,
-    rows: sheet.rows,
-    cells: sheet.cells,
-    merges: sheet.merges,
-    dataValidations: sheet.dataValidations,
-    conditionalRules: sheet.conditionalRules,
-    autoFilter: sheet.autoFilter,
-    freezePane: sheet.freezePane,
-    images: sheet.images,
-    protection: sheet.protection,
-    pageSetup: sheet.pageSetup,
-    headerFooter: sheet.headerFooter,
-    view: sheet.view,
-    hidden: sheet.hidden,
-    veryHidden: sheet.veryHidden,
-    tables: sheet.tables,
-    rowDefs: sheet.rowDefs,
-    // Everything below is read by the reader and understood by the
-    // writer, and was simply missing from this map — so opening a
-    // workbook and saving it back destroyed it. See #359.
-    splitPane: sheet.splitPane,
-    rowBreaks: sheet.rowBreaks,
-    colBreaks: sheet.colBreaks,
-    outlineProperties: sheet.outlineProperties,
-    sparklines: sheet.sparklines,
-    textBoxes: sheet.textBoxes,
-    backgroundImage: sheet.backgroundImage,
-    // `threadedComments`, `pivotTables`, `charts` and `a11y` are absent on
-    // purpose: the writer cannot author them, so they survive this path by
-    // raw-part preservation instead. `WriteSheet` no longer declares a
-    // `threadedComments` field at all, which is what stops someone adding
-    // a line here and assuming it does something — see #404.
-  }))
+  // Derive the writable subset once. Copying each metadata field here
+  // used to lose newly added fields even though both reader and writer
+  // understood them (#359). Unsupported parts are preserved below.
+  const writeSheets = sheets.map((sheet) => prepareSheet(sheet))
 
   // Create shared collectors
   const styles = createStylesCollector(defaultFont)

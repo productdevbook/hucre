@@ -1,13 +1,16 @@
+import { prepareWorkbook } from "../_write-model"
 // ── ODS Writer ──────────────────────────────────────────────────────
 // Generates valid OpenDocument Spreadsheet (.ods) files.
 
 import { isCellError } from "../cell-error"
 import type {
-  WriteOptions,
+  WorkbookInput,
+  WritableWorkbook,
+  WorkbookWriteOptions,
   WriteOutput,
   CellValue,
   WorkbookProperties,
-  WriteSheet,
+  SheetInput,
   Cell,
   CellStyle,
   FontStyle,
@@ -1110,7 +1113,7 @@ function buildMergeMap(merges: MergeRange[] | undefined): {
 function rowToOds(
   row: CellValue[],
   rowIndex: number,
-  sheet: WriteSheet,
+  sheet: SheetInput,
   mergeMap: { starts: Map<string, { colSpan: number; rowSpan: number }>; covered: Set<string> },
   styleCollector: StyleCollector,
   maxCol: number,
@@ -1132,7 +1135,7 @@ function rowToOds(
   // beyond the last data value. An override carries a formula, a style or
   // a comment that the row array cannot express, so stopping at the last
   // non-null value dropped it silently — and the XLSX writer grows its
-  // grid for exactly this case, so one WriteSheet produced different
+  // grid for exactly this case, so one SheetInput produced different
   // documents per format. See #393.
   for (let c = lastMeaningful + 1; c <= effectiveMax; c++) {
     const key = `${rowIndex},${c}`
@@ -1229,7 +1232,7 @@ function rowToOds(
 
 // ── content.xml ─────────────────────────────────────────────────────
 
-function writeContentXml(options: WriteOptions): string {
+function writeContentXml(options: WritableWorkbook): string {
   const { sheets } = options
 
   const styleCollector = createStyleCollector()
@@ -1279,7 +1282,7 @@ function writeContentXml(options: WriteOptions): string {
       }
     }
 
-    // A `WriteSheet` merge may be an A1 string; normalise once, here,
+    // A `SheetInput` merge may be an A1 string; normalise once, here,
     // rather than at each of the three places below. See #474.
     const merges = toRanges(sheet.merges)
 
@@ -1532,7 +1535,11 @@ export function writeManifestXml(): string {
  * Write a workbook to ODS format.
  * Returns a Uint8Array containing the ZIP archive.
  */
-export async function writeOds(options: WriteOptions): Promise<WriteOutput> {
+export async function writeOds(
+  input: WorkbookInput,
+  writeOptions?: WorkbookWriteOptions,
+): Promise<WriteOutput> {
+  let options = prepareWorkbook(input, writeOptions?.onDrop, "ods")
   // A cell object written inline in `rows` becomes a `cells` entry before
   // anything reads the grid — the same normalisation `writeXlsx` does, in
   // one implementation. See #433 and `src/_inline-cells.ts`.

@@ -7,7 +7,7 @@ import { XlsxStreamWriter } from "../src/xlsx/stream-writer"
 import { streamCsvRows, CsvStreamWriter } from "../src/csv/stream"
 import { parseCsv } from "../src/csv/reader"
 import { writeCsv } from "../src/csv/writer"
-import type { CellValue, WriteSheet } from "../src/_types"
+import type { CellValue, SheetInput } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -30,7 +30,7 @@ async function collectCsvRows(
 }
 
 /** Create a simple test XLSX via the regular writer */
-async function createTestXlsx(sheets: WriteSheet[]): Promise<Uint8Array> {
+async function createTestXlsx(sheets: SheetInput[]): Promise<Uint8Array> {
   return writeXlsx({ sheets })
 }
 

@@ -198,7 +198,7 @@ let failures = 0
 for (const [label, bytes] of await documents()) {
   console.log(`\n${label}  (${bytes.length} bytes)`)
 
-  const checks = [...PARTS.map((p) => [p, schema])]
+  const checks = PARTS.map((p) => [p, schema])
   if (manifestSchema) checks.push(["META-INF/manifest.xml", manifestSchema])
 
   for (const [part, rng] of checks) {

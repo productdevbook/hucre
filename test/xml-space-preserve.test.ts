@@ -44,10 +44,14 @@ async function collect(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> 
 
 describe("xml:space=preserve on every <t> that needs it", () => {
   it("declares it on an inline string", async () => {
-    const bytes = await writeXlsx({
-      stringMode: "inline",
-      sheets: [{ name: "S", rows: [[PADDED]] }],
-    })
+    const bytes = await writeXlsx(
+      {
+        sheets: [{ name: "S", rows: [[PADDED]] }],
+      },
+      {
+        stringMode: "inline",
+      },
+    )
 
     const xml = await part(bytes, "xl/worksheets/sheet1.xml")
 
@@ -80,10 +84,14 @@ describe("xml:space=preserve on every <t> that needs it", () => {
   })
 
   it("covers tabs and newlines, not only leading and trailing spaces", async () => {
-    const bytes = await writeXlsx({
-      stringMode: "inline",
-      sheets: [{ name: "S", rows: [[TABBED], [LINES]] }],
-    })
+    const bytes = await writeXlsx(
+      {
+        sheets: [{ name: "S", rows: [[TABBED], [LINES]] }],
+      },
+      {
+        stringMode: "inline",
+      },
+    )
 
     const xml = await part(bytes, "xl/worksheets/sheet1.xml")
 
@@ -92,10 +100,14 @@ describe("xml:space=preserve on every <t> that needs it", () => {
   })
 
   it("leaves it off text that does not need it", async () => {
-    const bytes = await writeXlsx({
-      stringMode: "inline",
-      sheets: [{ name: "S", rows: [["plain"]] }],
-    })
+    const bytes = await writeXlsx(
+      {
+        sheets: [{ name: "S", rows: [["plain"]] }],
+      },
+      {
+        stringMode: "inline",
+      },
+    )
 
     const xml = await part(bytes, "xl/worksheets/sheet1.xml")
 

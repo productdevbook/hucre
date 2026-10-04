@@ -1,10 +1,10 @@
-import { cellError } from "../src/cell-error"
+import { cellError } from "../../src/cell-error"
 import { describe, expect, it } from "vitest"
 import { readFileSync, readdirSync } from "node:fs"
-import { readOds } from "../src/ods/reader"
-import { streamOdsRows } from "../src/ods/stream"
-import { ZipReader } from "../src/zip/reader"
-import type { CellValue } from "../src/_types"
+import { readOds } from "../../src/ods/reader"
+import { streamOdsRows } from "../../src/ods/stream"
+import { ZipReader } from "../../src/zip/reader"
+import type { CellValue } from "../../src/_types"
 
 // ═══════════════════════════════════════════════════════════════════════
 // #464 — the XLSX side got a third-party corpus (Excel, openpyxl,
@@ -31,7 +31,7 @@ import type { CellValue } from "../src/_types"
 // See test/fixtures/third-party/README.md for provenance and licensing.
 // ═══════════════════════════════════════════════════════════════════════
 
-const DIR = new URL("./fixtures/third-party/", import.meta.url)
+const DIR = new URL("../fixtures/third-party/", import.meta.url)
 
 function load(name: string): Uint8Array {
   return new Uint8Array(readFileSync(new URL(name, DIR)))

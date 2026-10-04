@@ -9,12 +9,10 @@ export type { OdsStreamWriterOptions } from "./ods/incremental-writer"
 export type { OdsStreamWriteOptions } from "./ods/stream-writer"
 export { streamOdsRows } from "./ods/stream"
 export { readOdsObjects, writeOdsObjects } from "./ods/objects"
-export { toWriteOptions, toWriteSheet } from "./write-model"
-export type { WriteModelDrop, ToWriteOptionsOptions } from "./write-model"
 export type { OdsObjectsReadOptions, OdsObjectsResult, OdsObjectsWriteOptions } from "./ods/objects"
 
 // ── Shared types used by this entry point's signatures ──────────────
-// Re-exported so `import type { WriteSheet } from "hucre/ods"` works
+// Re-exported so `import type { SheetInput } from "hucre/ods"` works
 // without a second import from the root, which would pull the whole
 // type graph back in and defeat the point of a format subpath.
 export type {
@@ -28,8 +26,10 @@ export type {
   Sheet,
   Workbook,
   WorkbookProperties,
-  WriteOptions,
-  WriteSheet,
+  WorkbookInput,
+  WorkbookWriteOptions,
+  WriteModelDrop,
+  SheetInput,
 } from "./_types"
 
 // A cell may hold an error value; every writer takes one, and the spreadsheet readers produce them.

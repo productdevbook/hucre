@@ -8,7 +8,8 @@ import { padToRectangle } from "./_grid"
 import type {
   Workbook,
   ReadOptions,
-  WriteOptions,
+  WorkbookInput,
+  XlsxWriteOptions,
   WriteOutput,
   CellValue,
   ReadInput,
@@ -244,14 +245,19 @@ export interface TextFormatOptions {
   markdown?: MarkdownExportOptions
 }
 
+export interface WriteFormatOptions extends XlsxWriteOptions, TextFormatOptions {
+  format?: WriteFormat
+}
+
 export async function write(
-  options: WriteOptions & { format?: WriteFormat } & TextFormatOptions,
+  workbook: WorkbookInput,
+  options: WriteFormatOptions = {},
 ): Promise<WriteOutput> {
   const format = options.format ?? "xlsx"
-  if (format === "xlsx") return writeXlsx(options)
-  if (format === "ods") return writeOds(options)
+  if (format === "xlsx") return writeXlsx(workbook, options)
+  if (format === "ods") return writeOds(workbook, options)
 
-  const sheet = options.sheets[0]
+  const sheet = workbook.sheets[0]
   if (!sheet) {
     throw new UnsupportedFormatError(`${format} needs a sheet to write, and the workbook has none.`)
   }
@@ -289,7 +295,7 @@ export async function write(
 /**
  * Read the first row as field names and project the rest against it.
  *
- * The record-shaped writers need names; a `WriteSheet` is a grid. This is
+ * The record-shaped writers need names; a `SheetInput` is a grid. This is
  * the same convention `writeCsvObjects` and the CLI use, and the same one
  * {@link withHeaderRow} inverts on the way in.
  */
@@ -424,10 +430,14 @@ export async function writeObjects(
   const format = options?.format ?? "xlsx"
 
   if (data.length === 0) {
-    return write({
-      sheets: [{ name: sheetName, rows: [] }],
-      format,
-    })
+    return write(
+      {
+        sheets: [{ name: sheetName, rows: [] }],
+      },
+      {
+        format,
+      },
+    )
   }
 
   // Column set is the union of every record's keys, not just the first's.
@@ -479,10 +489,14 @@ export async function writeObjects(
     ]
   }
 
-  return write({
-    sheets: [{ name: sheetName, rows, tables }],
-    format,
-  })
+  return write(
+    {
+      sheets: [{ name: sheetName, rows, tables }],
+    },
+    {
+      format,
+    },
+  )
 }
 
 /** Simple column index to letter (0-based) */

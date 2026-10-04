@@ -1,6 +1,6 @@
 // ── Cell objects written inline in `rows` ───────────────────────────
 //
-// `WriteSheet.rows` is the grid and `WriteSheet.cells` the per-cell
+// `SheetInput.rows` is the grid and `SheetInput.cells` the per-cell
 // detail, keyed `"row,col"`. Styling one cell therefore meant naming its
 // position twice — once in the row, once in the map — and keeping the
 // two in step by hand.
@@ -23,7 +23,7 @@
 // over an inline one at the same position.
 
 import { isCellError } from "./cell-error"
-import type { Cell, CellValue, WriteSheet } from "./_types"
+import type { Cell, CellValue, SheetInput } from "./_types"
 import { isHyperlinkValue } from "./xlsx/hyperlink"
 
 /**
@@ -89,7 +89,7 @@ export function toCellValues(rows: Array<Array<CellValue | InlineCell>>): CellVa
  * until it finds something. A sheet that does carry them is copied
  * shallowly; the caller's arrays and map are never mutated.
  */
-export function splitInlineCells(sheet: WriteSheet): WriteSheet {
+export function splitInlineCells<T extends SheetInput>(sheet: T): T {
   const rows = sheet.rows
   if (!rows) return sheet
 
@@ -137,7 +137,7 @@ export function splitInlineCells(sheet: WriteSheet): WriteSheet {
 }
 
 /** {@link splitInlineCells} over a workbook's sheets. */
-export function splitInlineCellsInSheets(sheets: WriteSheet[]): WriteSheet[] {
+export function splitInlineCellsInSheets<T extends SheetInput>(sheets: T[]): T[] {
   let changed = false
   const out = sheets.map((s) => {
     const next = splitInlineCells(s)

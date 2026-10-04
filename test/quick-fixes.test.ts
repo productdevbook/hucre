@@ -10,11 +10,11 @@ import {
 import { xmlEscapeAttr } from "../src/xml/writer"
 import { sortRows } from "../src/sheet-ops"
 import { parseCsv, writeCsvObjects } from "../src/csv/index"
-import type { WriteSheet, Sheet } from "../src/_types"
+import type { SheetInput, Sheet } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function writeXml(sheet: WriteSheet): string {
+function writeXml(sheet: SheetInput): string {
   const styles = createStylesCollector()
   const ss = createSharedStrings()
   const result = writeWorksheetXml(sheet, styles, ss)
@@ -41,7 +41,7 @@ function getElementText(el: { children: Array<unknown> }): string {
 
 describe("#101: <dimension> element", () => {
   it("emits <dimension> with correct ref after sheetFormatPr", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [
         ["A", "B", "C"],
@@ -59,7 +59,7 @@ describe("#101: <dimension> element", () => {
   })
 
   it("calculates dimension from column defs when wider than data", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["A"]],
       columns: [{ width: 10 }, { width: 20 }, { width: 30 }, { width: 40 }],
@@ -78,7 +78,7 @@ describe("#101: <dimension> element", () => {
 
 describe("#102: <printOptions> element", () => {
   it("emits <printOptions> carrying the values that were set", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       pageSetup: { orientation: "landscape", showGridLines: true, showRowColHeaders: true },
@@ -98,7 +98,7 @@ describe("#102: <printOptions> element", () => {
     // setting an unrelated page option turned printed gridlines off. Those
     // zeros are also OOXML's defaults, which makes the element pure noise
     // when nothing was asked for. See #360.
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
       pageSetup: { orientation: "landscape" },
@@ -109,7 +109,7 @@ describe("#102: <printOptions> element", () => {
   })
 
   it("does not emit <printOptions> when pageSetup is absent", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["Data"]],
     }
@@ -221,7 +221,7 @@ describe("#115: xmlEscapeAttr apostrophe", () => {
 
 describe("#92: error cell values", () => {
   it("writes #VALUE! as error cell with t='e'", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [[cellError("#VALUE!")]],
     }
@@ -239,7 +239,7 @@ describe("#92: error cell values", () => {
   })
 
   it("writes #N/A as error cell", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [[cellError("#N/A")]],
     }
@@ -257,7 +257,7 @@ describe("#92: error cell values", () => {
   })
 
   it("writes #DIV/0! as error cell", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [[cellError("#DIV/0!")]],
     }
@@ -273,7 +273,7 @@ describe("#92: error cell values", () => {
   })
 
   it("does NOT treat arbitrary # strings as errors", () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Test",
       rows: [["#hashtag"]],
     }

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { ZipReader } from "../src/zip/reader"
 import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
-import type { WriteSheet, Sparkline } from "../src/_types"
+import type { SheetInput, Sparkline } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -18,7 +18,7 @@ async function extractXml(data: Uint8Array, path: string): Promise<string> {
 
 describe("Sparklines", () => {
   it("should write sparkline extLst in worksheet XML", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["Label", 10, 20, 30, 40, 50],
@@ -45,7 +45,7 @@ describe("Sparklines", () => {
   })
 
   it("should write line type sparkline (default)", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["", 1, 2, 3, 4, 5]],
       sparklines: [
@@ -66,7 +66,7 @@ describe("Sparklines", () => {
   })
 
   it("should write column type sparkline", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["", 1, 2, 3, 4, 5]],
       sparklines: [
@@ -85,7 +85,7 @@ describe("Sparklines", () => {
   })
 
   it("should write stacked (win/loss) type sparkline", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["", 1, -2, 3, -4, 5]],
       sparklines: [
@@ -104,7 +104,7 @@ describe("Sparklines", () => {
   })
 
   it("should write custom color", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["", 1, 2, 3]],
       sparklines: [
@@ -123,7 +123,7 @@ describe("Sparklines", () => {
   })
 
   it("should write markers attribute", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["", 1, 2, 3]],
       sparklines: [
@@ -142,7 +142,7 @@ describe("Sparklines", () => {
   })
 
   it("should write multiple sparklines", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["", 10, 20, 30],
@@ -177,7 +177,7 @@ describe("Sparklines", () => {
       { location: "A3", dataRange: "Sheet1!B3:D3", type: "stacked", markers: true },
     ]
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["", 10, 20, 30],
@@ -216,7 +216,7 @@ describe("Sparklines", () => {
   })
 
   it("should handle sparklines alongside other features", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["Name", 10, 20, 30],
@@ -235,7 +235,7 @@ describe("Sparklines", () => {
   })
 
   it("should write default color when none specified", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["", 1, 2, 3]],
       sparklines: [{ location: "A1", dataRange: "Sheet1!B1:D1" }],

@@ -5,7 +5,7 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { writeTable } from "../src/xlsx/table-writer"
 import { writeContentTypes } from "../src/xlsx/content-types-writer"
-import type { WriteSheet, TableDefinition } from "../src/_types"
+import type { SheetInput, TableDefinition } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -225,7 +225,7 @@ describe("writeTable", () => {
 
 describe("XLSX table writing", () => {
   it("writes a single table to the ZIP", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["Name", "Price", "Stock"],
@@ -256,7 +256,7 @@ describe("XLSX table writing", () => {
   })
 
   it("includes tableParts element in worksheet XML", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["Name", "Value"],
@@ -281,7 +281,7 @@ describe("XLSX table writing", () => {
   })
 
   it("includes content type override for table", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["A"], [1]],
       tables: [
@@ -301,7 +301,7 @@ describe("XLSX table writing", () => {
   })
 
   it("includes table relationship in sheet rels", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["A"], [1]],
       tables: [
@@ -325,7 +325,7 @@ describe("XLSX table writing", () => {
   })
 
   it("writes table with style name", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["X"], [1]],
       tables: [
@@ -345,7 +345,7 @@ describe("XLSX table writing", () => {
   })
 
   it("writes table with total row", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["Item", "Price"],
@@ -375,7 +375,7 @@ describe("XLSX table writing", () => {
   })
 
   it("auto-calculates range from row data", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["Name", "Value"],
@@ -400,7 +400,7 @@ describe("XLSX table writing", () => {
   })
 
   it("writes multiple tables on same sheet", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["A", "B", null, "C", "D"],
@@ -452,7 +452,7 @@ describe("XLSX table writing", () => {
   })
 
   it("writes tables on different sheets with global indexing", async () => {
-    const sheet1: WriteSheet = {
+    const sheet1: SheetInput = {
       name: "Sheet1",
       rows: [["A"], [1]],
       tables: [
@@ -463,7 +463,7 @@ describe("XLSX table writing", () => {
         },
       ],
     }
-    const sheet2: WriteSheet = {
+    const sheet2: SheetInput = {
       name: "Sheet2",
       rows: [["B"], [2]],
       tables: [
@@ -501,7 +501,7 @@ describe("XLSX table writing", () => {
   })
 
   it("does not create table parts for sheets without tables", async () => {
-    const sheet1: WriteSheet = {
+    const sheet1: SheetInput = {
       name: "WithTable",
       rows: [["A"], [1]],
       tables: [
@@ -512,7 +512,7 @@ describe("XLSX table writing", () => {
         },
       ],
     }
-    const sheet2: WriteSheet = {
+    const sheet2: SheetInput = {
       name: "NoTable",
       rows: [["B"], [2]],
     }
@@ -529,7 +529,7 @@ describe("XLSX table writing", () => {
   })
 
   it("empty tables array does not create table parts", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["Data"]],
       tables: [],
@@ -579,7 +579,7 @@ describe("table coexistence", () => {
       hyperlink: { target: "https://example.com" },
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["Link", "Value"],
@@ -625,7 +625,7 @@ describe("table coexistence", () => {
       comment: { text: "A note" },
     })
 
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["Data", "Value"],
@@ -674,7 +674,7 @@ describe("table coexistence", () => {
 
 describe("table round-trip", () => {
   it("round-trips a single table", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["Name", "Price", "Stock"],
@@ -707,7 +707,7 @@ describe("table round-trip", () => {
   })
 
   it("round-trips table with display name", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["A"], [1]],
       tables: [
@@ -729,7 +729,7 @@ describe("table round-trip", () => {
   })
 
   it("round-trips table columns", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["First", "Second", "Third"],
@@ -753,7 +753,7 @@ describe("table round-trip", () => {
   })
 
   it("round-trips table range", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["X", "Y"],
@@ -778,7 +778,7 @@ describe("table round-trip", () => {
   })
 
   it("round-trips table style", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["A"], [1]],
       tables: [
@@ -799,7 +799,7 @@ describe("table round-trip", () => {
   })
 
   it("round-trips showRowStripes and showColumnStripes", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [["A"], [1]],
       tables: [
@@ -822,7 +822,7 @@ describe("table round-trip", () => {
   })
 
   it("round-trips table with total row", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["Item", "Price"],
@@ -853,7 +853,7 @@ describe("table round-trip", () => {
   })
 
   it("round-trips multiple tables on different sheets", async () => {
-    const sheet1: WriteSheet = {
+    const sheet1: SheetInput = {
       name: "Sheet1",
       rows: [["A"], [1]],
       tables: [
@@ -864,7 +864,7 @@ describe("table round-trip", () => {
         },
       ],
     }
-    const sheet2: WriteSheet = {
+    const sheet2: SheetInput = {
       name: "Sheet2",
       rows: [["B"], [2]],
       tables: [
@@ -889,7 +889,7 @@ describe("table round-trip", () => {
   })
 
   it("sheet without tables has no tables array after read", async () => {
-    const sheet1: WriteSheet = {
+    const sheet1: SheetInput = {
       name: "WithTable",
       rows: [["A"], [1]],
       tables: [
@@ -900,7 +900,7 @@ describe("table round-trip", () => {
         },
       ],
     }
-    const sheet2: WriteSheet = {
+    const sheet2: SheetInput = {
       name: "NoTable",
       rows: [["B"], [2]],
     }
@@ -913,7 +913,7 @@ describe("table round-trip", () => {
   })
 
   it("round-trips multiple tables on the same sheet", async () => {
-    const sheet: WriteSheet = {
+    const sheet: SheetInput = {
       name: "Sheet1",
       rows: [
         ["A", "B", null, "C", "D"],

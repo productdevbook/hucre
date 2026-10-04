@@ -13,13 +13,11 @@
 
 import { InvalidArgumentError } from "../errors"
 import { isInlineCell } from "../_inline-cells"
-import { isCellError } from "../cell-error"
 import type {
   CellValue,
   CellStyle,
   WorkbookProperties,
   CellInput,
-  Cell,
   SpreadsheetStreamWriter,
 } from "../_types"
 import { validateSheetNames } from "../_validate"

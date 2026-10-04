@@ -7,11 +7,11 @@ import { writeXlsx } from "../src/xlsx/writer"
 import { readXlsx } from "../src/xlsx/reader"
 import { ZipReader } from "../src/zip/reader"
 import { parseXml } from "../src/xml/parser"
-import type { WriteSheet } from "../src/_types"
+import type { SheetInput } from "../src/_types"
 
 const decoder = new TextDecoder("utf-8")
 
-async function getWorksheetXml(sheets: WriteSheet[]): Promise<string> {
+async function getWorksheetXml(sheets: SheetInput[]): Promise<string> {
   const xlsx = await writeXlsx({ sheets })
   const zip = new ZipReader(xlsx)
   const raw = await zip.extract("xl/worksheets/sheet1.xml")

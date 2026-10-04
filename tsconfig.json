@@ -28,29 +28,6 @@
     // builtins, and it is checked by tsconfig.cli.json instead. See #399.
     "types": []
   },
-  "include": ["src", "test"],
-  "exclude": [
-    "src/cli.ts",
-    "src/cli",
-    "test/cli.test.ts",
-    "test/threaded-comments-write.test.ts",
-    "test/ods-fidelity.test.ts",
-    "test/parity-statement.test.ts",
-    "test/real-files.test.ts",
-    "test/write-model.test.ts",
-    // Reads src/_types.ts off disk, so it needs `node:fs` — the same
-    // reason the file-reading tests above are here. See #474.
-    "test/_reflect.ts",
-    "test/reflect.test.ts",
-    "test/read-options-per-reader.test.ts",
-    // Reads the fixture corpus off disk, so it needs `node:fs`.
-    "test/third-party-fixtures.test.ts",
-    "test/ods-third-party.test.ts",
-    "test/worksheet-stream-chunks.test.ts",
-    "test/xlsb-short-records.test.ts",
-    "test/xlsx-stream-parity.test.ts",
-    "test/indexed-color-palette.test.ts",
-    "test/ods-column-default-style.test.ts",
-    "test/builder-coverage.test.ts"
-  ]
+  "include": ["src"],
+  "exclude": ["src/cli.ts", "src/cli"]
 }

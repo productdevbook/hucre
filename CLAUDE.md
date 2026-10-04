@@ -25,8 +25,7 @@ APIs only** — no `node:` imports, no `process`, no `Buffer`.
 rather than something that quietly works on your machine.
 
 That is what makes the Deno, Bun, browser and Workers claims true. The
-CLI is the exception and is checked by `tsconfig.cli.json`; tests that
-read from disk belong in that project's include list.
+CLI is the exception and is checked by `tsconfig.cli.json`; all tests have their own `tsconfig.test.json` project.
 
 Raising the Node floor does not licence `node:fs` in a reader.
 

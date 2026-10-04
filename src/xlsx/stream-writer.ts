@@ -12,7 +12,6 @@
 //   memory is O(distinct styles), independent of row count.
 
 import { isInlineCell } from "../_inline-cells"
-import { isCellError } from "../cell-error"
 import type {
   AutoFilter,
   CellValue,
@@ -24,7 +23,6 @@ import type {
   RowDef,
   SpreadsheetStreamWriter,
   CellInput,
-  Cell,
 } from "../_types"
 import { toRanges } from "../cell-utils"
 import { ZipWriter } from "../zip/writer"

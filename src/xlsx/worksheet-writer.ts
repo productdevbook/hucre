@@ -6,7 +6,7 @@ import { toRanges } from "../cell-utils"
 import type {
   AutoFilter,
   RowDef,
-  WriteSheet,
+  SheetInput,
   CellValue,
   CellStyle,
   ColumnDef,
@@ -266,7 +266,7 @@ const DATE_STYLE_CACHE = /* @__PURE__ */ new WeakMap<CellStyle, CellStyle>()
 
 /** Generate xl/worksheets/sheetN.xml along with any hyperlink relationships */
 export function writeWorksheetXml(
-  sheet: WriteSheet,
+  sheet: SheetInput,
   styles: StylesCollector,
   sharedStrings: SharedStringsCollector,
   dateSystem?: "1900" | "1904",
@@ -749,7 +749,7 @@ function columnCellStyle(col: ColumnDef | undefined): CellStyle | undefined {
   return col.style
 }
 
-function resolveRows(sheet: WriteSheet): Array<Array<ResolvedCell | null>> {
+function resolveRows(sheet: SheetInput): Array<Array<ResolvedCell | null>> {
   const resolved: Array<Array<ResolvedCell | null>> = []
 
   if (sheet.data && sheet.columns) {
@@ -1204,7 +1204,7 @@ function serializeDataValidations(validations: DataValidation[]): string {
  * the `<hyperlinks>` XML section plus external relationship entries.
  */
 export function collectHyperlinks(
-  sheet: WriteSheet,
+  sheet: SheetInput,
   preResolved?: Array<Array<ResolvedCell | null>>,
 ): {
   xml: string

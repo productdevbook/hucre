@@ -1,11 +1,11 @@
-// ── Write → read parity over the whole WriteSheet / WriteOptions surface ──
+// ── Write → read parity over the whole SheetInput / WorkbookInput surface ──
 //
 // The invariant: anything `writeXlsx` accepts, `readXlsx` gives back.
 // It was broken in eight places at once (#407) — each silently, with no
 // error and no warning, just `undefined` where a value had been.
 //
 // Rather than eight regression tests, this file registers every field of
-// `WriteSheet` and `WriteOptions` exactly once. The registers are typed as
+// `SheetInput` and `WorkbookInput` exactly once. The registers are typed as
 // mapped types over `keyof Required<...>`, so adding a field to either
 // interface fails `tsc` until it is registered here — as a probe that
 // round-trips, or as a deliberate one-way entry with the reason it is one.
@@ -17,7 +17,15 @@
 import { describe, expect, it } from "vitest"
 import { readXlsx, writeXlsx } from "../src/xlsx"
 import { ZipReader } from "../src/zip"
-import type { Sheet, WriteOptions, WriteSheet, Workbook } from "../src/_types"
+import type {
+  Sheet,
+  WorkbookInput,
+  SheetInput,
+  Workbook,
+  WritableSheet,
+  WritableWorkbook,
+  XlsxWriteOptions,
+} from "../src/_types"
 
 // ── Register shapes ──────────────────────────────────────────────────
 
@@ -34,7 +42,7 @@ interface Probe<T> {
    */
   expected?: unknown
   /** Extra fields the probe needs to be meaningful (e.g. `data` needs `columns`). */
-  with?: Partial<WriteSheet>
+  with?: Partial<SheetInput>
 }
 
 /**
@@ -66,9 +74,9 @@ const PNG_1X1 = new Uint8Array([
   0x42, 0x60, 0x82,
 ])
 
-// ── WriteSheet register ──────────────────────────────────────────────
+// ── SheetInput register ──────────────────────────────────────────────
 
-const SHEET_FIELDS: { [K in keyof Required<WriteSheet>]: Entry<WriteSheet[K]> } = {
+const SHEET_FIELDS: { [K in keyof Required<WritableSheet>]: Entry<WritableSheet[K]> } = {
   // Every probe's sheet is named after its own key, so locating the sheet
   // by name is itself the check that `name` survived.
   name: { value: "name", read: (sheet) => sheet.name },
@@ -398,9 +406,13 @@ const SHEET_FIELDS: { [K in keyof Required<WriteSheet>]: Entry<WriteSheet[K]> } 
   },
 }
 
-// ── WriteOptions register ────────────────────────────────────────────
+// ── WorkbookInput register ────────────────────────────────────────────
 
-const OPTION_FIELDS: { [K in keyof Required<WriteOptions>]: Entry<WriteOptions[K]> } = {
+const OPTION_FIELDS: {
+  [K in keyof Required<WritableWorkbook & XlsxWriteOptions>]: Entry<
+    (WritableWorkbook & XlsxWriteOptions)[K]
+  >
+} = {
   sheets: {
     oneWay: "The container for everything above, covered field by field by SHEET_FIELDS.",
   },
@@ -444,6 +456,8 @@ const OPTION_FIELDS: { [K in keyof Required<WriteOptions>]: Entry<WriteOptions[K
     expected: { lockStructure: true, lockWindows: true },
   },
 
+  onDrop: { oneWay: "Callback for authoring losses; never part of the file." },
+
   stringMode: {
     oneWay:
       "A storage choice, not a property of the workbook: `shared` and " +
@@ -479,11 +493,11 @@ const OPTION_FIELDS: { [K in keyof Required<WriteOptions>]: Entry<WriteOptions[K
 
 const ONE_WAY_PASSWORDS = [
   {
-    field: "WriteSheet.protection.password",
+    field: "SheetInput.protection.password",
     why: "Stored as the legacy 16-bit sheet-protection hash. The hash is what the format defines; the password is not recoverable from it, by design.",
   },
   {
-    field: "WriteOptions.workbookProtection.password",
+    field: "WorkbookInput.workbookProtection.password",
     why: "Same hash, same reason — <workbookProtection workbookPassword> holds a digest, not the secret.",
   },
 ]
@@ -504,8 +518,8 @@ function entriesOf(register: Record<string, unknown>): Array<[string, AnyEntry]>
 const SHEET_ENTRIES = entriesOf(SHEET_FIELDS)
 const OPTION_ENTRIES = entriesOf(OPTION_FIELDS)
 
-function buildFixture(): WriteOptions {
-  const sheets: WriteSheet[] = []
+function buildFixture(): WorkbookInput {
+  const sheets: SheetInput[] = []
 
   for (const [key, entry] of SHEET_ENTRIES) {
     if (isOneWay(entry)) continue
@@ -514,7 +528,7 @@ function buildFixture(): WriteOptions {
       rows: BASE_ROWS,
       ...entry.with,
       [key]: entry.value,
-    } as WriteSheet)
+    } as SheetInput)
   }
 
   const options: Record<string, unknown> = { sheets }
@@ -522,7 +536,7 @@ function buildFixture(): WriteOptions {
     if (isOneWay(entry)) continue
     options[key] = entry.value
   }
-  return options as unknown as WriteOptions
+  return options as unknown as WorkbookInput
 }
 
 describe("xlsx write → read parity", () => {
@@ -538,7 +552,7 @@ describe("xlsx write → read parity", () => {
       if (isOneWay(entry)) continue
       const sheet = byName.get(key)
       if (!sheet) {
-        failures.push(`WriteSheet.${key}: sheet "${key}" is missing from the parsed workbook`)
+        failures.push(`SheetInput.${key}: sheet "${key}" is missing from the parsed workbook`)
         continue
       }
       const actual = entry.read(sheet, workbook)
@@ -547,7 +561,7 @@ describe("xlsx write → read parity", () => {
         expect(actual).toEqual(expected)
       } catch {
         failures.push(
-          `WriteSheet.${key}: wrote ${JSON.stringify(expected)}, read ${JSON.stringify(actual)}`,
+          `SheetInput.${key}: wrote ${JSON.stringify(expected)}, read ${JSON.stringify(actual)}`,
         )
       }
     }
@@ -563,7 +577,7 @@ describe("xlsx write → read parity", () => {
         expect(actual).toEqual(expected)
       } catch {
         failures.push(
-          `WriteOptions.${key}: wrote ${JSON.stringify(expected)}, read ${JSON.stringify(actual)}`,
+          `WorkbookInput.${key}: wrote ${JSON.stringify(expected)}, read ${JSON.stringify(actual)}`,
         )
       }
     }
@@ -573,8 +587,8 @@ describe("xlsx write → read parity", () => {
 
   it("states a reason for every field that does not come back", () => {
     const oneWays = [
-      ...SHEET_ENTRIES.map(([k, e]) => [`WriteSheet.${k}`, e] as const),
-      ...OPTION_ENTRIES.map(([k, e]) => [`WriteOptions.${k}`, e] as const),
+      ...SHEET_ENTRIES.map(([k, e]) => [`SheetInput.${k}`, e] as const),
+      ...OPTION_ENTRIES.map(([k, e]) => [`WorkbookInput.${k}`, e] as const),
     ].filter(([, e]) => isOneWay(e))
 
     for (const [field, entry] of oneWays) {
@@ -588,11 +602,12 @@ describe("xlsx write → read parity", () => {
     // Pin the shape of the register so a field cannot be quietly demoted
     // from "round-trips" to "one-way" without the change showing up here.
     expect(oneWays.map(([f]) => f)).toEqual([
-      "WriteSheet.a11y",
-      "WriteOptions.sheets",
-      "WriteOptions.stringMode",
-      "WriteOptions.vbaProject",
-      "WriteOptions.encryption",
+      "SheetInput.a11y",
+      "WorkbookInput.sheets",
+      "WorkbookInput.onDrop",
+      "WorkbookInput.stringMode",
+      "WorkbookInput.vbaProject",
+      "WorkbookInput.encryption",
     ])
   })
 

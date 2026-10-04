@@ -6,7 +6,7 @@ import { streamOdsRows } from "../src/ods/stream"
 import { streamXlsxRows } from "../src/xlsx/stream-reader"
 import { streamCsvRows } from "../src/csv/stream"
 import { writeXlsxStream } from "../src/xlsx/stream-writer"
-import type { CellValue, StreamRow, WriteSheet } from "../src/_types"
+import type { CellValue, StreamRow, SheetInput } from "../src/_types"
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -44,7 +44,7 @@ function streamOf(bytes: Uint8Array): ReadableStream<Uint8Array> {
   })
 }
 
-const twoSheets: WriteSheet[] = [
+const twoSheets: SheetInput[] = [
   { name: "First", rows: [["a1"], ["a2"]] },
   { name: "Second", rows: [["b1"], ["b2"], ["b3"]] },
 ]

@@ -11,25 +11,6 @@ import type { CellValue } from "../src/_types"
 // `addRow` alone, and `write`/`end` — so no format-agnostic export helper
 // could be written against them. These tests pin the shared surface.
 
-async function drain(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
-  const reader = stream.getReader()
-  const chunks: Uint8Array[] = []
-  let total = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    chunks.push(value)
-    total += value.length
-  }
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const chunk of chunks) {
-    out.set(chunk, offset)
-    offset += chunk.length
-  }
-  return out
-}
-
 describe("stream writer surface parity", () => {
   it("every writer exposes addRow / addObject / finish", () => {
     const writers = [

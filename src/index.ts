@@ -210,8 +210,6 @@ export { WorkbookBuilder, SheetBuilder } from "./builder"
 export { fillTemplate } from "./template"
 
 // ── Read model → write model ─────────────────────────────────────
-export { toWriteOptions, toWriteSheet } from "./write-model"
-export type { WriteModelDrop, ToWriteOptionsOptions } from "./write-model"
 
 // ── Sheet Operations ──────────────────────────────────────────────
 export {
@@ -368,8 +366,11 @@ export type {
   SheetFilterInfo,
   ReadWarning,
   // Write
-  WriteOptions,
-  WriteSheet,
+  WorkbookInput,
+  WorkbookWriteOptions,
+  XlsxWriteOptions,
+  WriteModelDrop,
+  SheetInput,
   WriteOutput,
   // Outline
   OutlineProperties,
@@ -381,7 +382,7 @@ export type {
   SchemaField,
   SchemaFieldType,
   SchemaValidationIssue,
-  // Sheet features reachable through WriteSheet / Sheet but previously
+  // Sheet features reachable through SheetInput / Sheet but previously
   // unnameable — you could build one inline and never annotate it.
   TableDefinition,
   TableColumn,

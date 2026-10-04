@@ -47,8 +47,8 @@ import type {
   ValidationOperator,
   ValidationType,
   Workbook,
-  WriteOptions,
-  WriteSheet,
+  WorkbookInput,
+  SheetInput,
 } from "../src/index"
 import type {
   CsvObjectsResult,
@@ -101,8 +101,8 @@ type _SurfaceCheck = [
   ValidationOperator,
   ValidationType,
   Workbook,
-  WriteOptions,
-  WriteSheet,
+  WorkbookInput,
+  SheetInput,
   XlsxObjectsResult,
   XlsxStreamSheet,
   XlsxStreamWriterOptions,

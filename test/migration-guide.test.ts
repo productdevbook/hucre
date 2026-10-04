@@ -414,7 +414,7 @@ describe("removed API that never did anything", () => {
     })
   }
 
-  it("no longer accepts WriteSheet.threadedComments", async () => {
+  it("no longer accepts SheetInput.threadedComments", async () => {
     // Typed and accepted, written by nothing — see #404. Removing it is
     // the only option that tells the caller anything.
     const buf = await writeXlsx({

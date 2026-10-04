@@ -17,7 +17,7 @@
 // a twelve-column sheet read back one column wide, with no error.
 //
 // BIFF5 is deliberately not generated: `readXls` supports BIFF8 only and
-// says so with a typed error, which `test/real-files.test.ts` covers.
+// says so with a typed error, which `test/integration/real-files.test.ts` covers.
 //
 // SheetJS is deliberately NOT a devDependency. The fixtures are
 // committed bytes, so neither CI nor a contributor needs it:
