@@ -10,7 +10,7 @@ Please **do not open a public issue** for a security problem.
 
 Use GitHub's private reporting — [Security → Report a
 vulnerability](https://github.com/productdevbook/hucre/security/advisories/new)
-— or email <mehmet.k.hob@gmail.com>.
+— or email <hi@productdevbook.com>.
 
 Include the input that triggers it if you can. A file, or the few lines of
 markup or XML that reproduce it, is worth more than a description.
