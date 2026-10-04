@@ -1,4 +1,4 @@
-import { prepareWorkbook } from "../_write-model"
+import { prepareOdsWorkbook } from "../_write-model"
 // ── ODS Writer ──────────────────────────────────────────────────────
 // Generates valid OpenDocument Spreadsheet (.ods) files.
 
@@ -1539,7 +1539,7 @@ export async function writeOds(
   input: WorkbookInput,
   writeOptions?: WorkbookWriteOptions,
 ): Promise<WriteOutput> {
-  let options = prepareWorkbook(input, writeOptions?.onDrop, "ods")
+  let options = prepareOdsWorkbook(input, writeOptions?.onDrop)
   // A cell object written inline in `rows` becomes a `cells` entry before
   // anything reads the grid — the same normalisation `writeXlsx` does, in
   // one implementation. See #433 and `src/_inline-cells.ts`.

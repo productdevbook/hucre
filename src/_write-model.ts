@@ -139,11 +139,7 @@ export function prepareSheet(sheet: SheetInput, onDrop?: OnDrop): WritableSheet 
   }
 }
 
-export function prepareWorkbook(
-  workbook: WorkbookInput,
-  onDrop?: OnDrop,
-  format: "xlsx" | "ods" = "xlsx",
-): WritableWorkbook {
+export function prepareWorkbook(workbook: WorkbookInput, onDrop?: OnDrop): WritableWorkbook {
   const {
     sheets,
     themeColors: _themeColors,
@@ -155,24 +151,32 @@ export function prepareWorkbook(
     timelineCaches: _timelineCaches,
     ...rest
   } = workbook
-  const drops = format === "ods" ? ODS_WORKBOOK_DROPS : WORKBOOK_DROPS
-  for (const [field, reason] of Object.entries(drops)) {
+  for (const [field, reason] of Object.entries(WORKBOOK_DROPS)) {
     if (populated(workbook[field as keyof WorkbookInput])) {
-      onDrop?.({ field, reason: typeof reason === "string" ? reason : ODS_REASON })
+      onDrop?.({ field, reason })
     }
   }
   return {
     ...rest,
-    sheets: sheets.map((sheet) => {
-      if (format === "ods") {
-        for (const field of Object.keys(ODS_SHEET_DROPS)) {
-          if (field === "kind" && (!sheet.kind || sheet.kind === "worksheet")) continue
-          if (populated(sheet[field as keyof typeof ODS_SHEET_DROPS])) {
-            onDrop?.({ field, sheet: sheet.name, reason: ODS_REASON })
-          }
-        }
-      }
-      return prepareSheet(sheet, format === "xlsx" ? onDrop : undefined)
-    }),
+    sheets: sheets.map((sheet) => prepareSheet(sheet, onDrop)),
   }
+}
+
+// A separate entry lets XLSX-only bundles omit the ODS capability
+// register while both writers still share the same model normalization.
+export function prepareOdsWorkbook(workbook: WorkbookInput, onDrop?: OnDrop): WritableWorkbook {
+  for (const field of Object.keys(ODS_WORKBOOK_DROPS)) {
+    if (populated(workbook[field as keyof typeof ODS_WORKBOOK_DROPS])) {
+      onDrop?.({ field, reason: ODS_REASON })
+    }
+  }
+  for (const sheet of workbook.sheets) {
+    for (const field of Object.keys(ODS_SHEET_DROPS)) {
+      if (field === "kind" && (!sheet.kind || sheet.kind === "worksheet")) continue
+      if (populated(sheet[field as keyof typeof ODS_SHEET_DROPS])) {
+        onDrop?.({ field, sheet: sheet.name, reason: ODS_REASON })
+      }
+    }
+  }
+  return prepareWorkbook(workbook)
 }
